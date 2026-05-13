@@ -396,6 +396,177 @@ def test_analytics_render_timeline_default_output_uses_validated_trace_id(tmp_pa
     assert expected.exists(), f"expected default HTML at {expected}, output: {result.output}"
 
 
+# -- AC-678: `autoctx analytics trace-findings` CLI subcommand --
+
+
+def _settings_for_cli(tmp_path: Path) -> Any:
+    from autocontext.config.settings import AppSettings
+
+    return AppSettings(
+        db_path=tmp_path / "runs" / "autocontext.sqlite3",
+        runs_root=tmp_path / "runs",
+        knowledge_root=tmp_path / "knowledge",
+        skills_root=tmp_path / "skills",
+        claude_skills_path=tmp_path / ".claude" / "skills",
+    )
+
+
+def test_analytics_trace_findings_emits_markdown_writeup(tmp_path: Path) -> None:
+    """AC-678: `autoctx analytics trace-findings --trace-id <id>` exposes the
+    existing `TraceReporter.generate_writeup` pipeline as a CLI command,
+    emitting Markdown to stdout by default. Closes the headline gap that the
+    Python report model existed without an operator-facing CLI."""
+    from unittest.mock import patch
+
+    from typer.testing import CliRunner
+
+    from autocontext.analytics.run_trace import TraceStore
+    from autocontext.cli import app
+
+    settings = _settings_for_cli(tmp_path)
+    trace = _trace_for_timeline()
+    TraceStore(settings.knowledge_root / "analytics").persist(trace)
+
+    runner = CliRunner()
+    with patch("autocontext.cli.load_settings", return_value=settings):
+        result = runner.invoke(
+            app,
+            ["analytics", "trace-findings", "--trace-id", trace.trace_id],
+        )
+
+    assert result.exit_code == 0, result.output
+    # Markdown heading from `render_trace_writeup_markdown` + evidence from
+    # the fixture's failure event surfaced in the findings list.
+    assert "# Run Summary: run-1" in result.output
+    assert "validation_failure" in result.output
+
+
+def test_analytics_trace_findings_json_emits_machine_readable_payload(tmp_path: Path) -> None:
+    """The `--json` flag must emit a machine-readable payload (the same shape
+    as `TraceWriteup.to_dict()`) so downstream tools can consume the report
+    without parsing Markdown."""
+    from unittest.mock import patch
+
+    from typer.testing import CliRunner
+
+    from autocontext.analytics.run_trace import TraceStore
+    from autocontext.cli import app
+
+    settings = _settings_for_cli(tmp_path)
+    trace = _trace_for_timeline()
+    TraceStore(settings.knowledge_root / "analytics").persist(trace)
+
+    runner = CliRunner()
+    with patch("autocontext.cli.load_settings", return_value=settings):
+        result = runner.invoke(
+            app,
+            ["analytics", "trace-findings", "--trace-id", trace.trace_id, "--json"],
+        )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["run_id"] == "run-1"
+    assert isinstance(payload["findings"], list) and payload["findings"], "expected at least one finding"
+    assert isinstance(payload["failure_motifs"], list) and payload["failure_motifs"]
+
+
+def test_analytics_trace_findings_kind_weakness_emits_recommendations(tmp_path: Path) -> None:
+    """`--kind weakness` switches to the WeaknessReport pipeline. The two
+    artifact kinds share extraction logic but diverge in summary +
+    recommendations, so we pin that the weakness variant emits the report's
+    distinctive sections."""
+    from unittest.mock import patch
+
+    from typer.testing import CliRunner
+
+    from autocontext.analytics.run_trace import TraceStore
+    from autocontext.cli import app
+
+    settings = _settings_for_cli(tmp_path)
+    trace = _trace_for_timeline()
+    TraceStore(settings.knowledge_root / "analytics").persist(trace)
+
+    runner = CliRunner()
+    with patch("autocontext.cli.load_settings", return_value=settings):
+        result = runner.invoke(
+            app,
+            ["analytics", "trace-findings", "--trace-id", trace.trace_id, "--kind", "weakness"],
+        )
+
+    assert result.exit_code == 0, result.output
+    # WeaknessReport markdown uses a distinct heading + recommendations section.
+    assert "# Weakness Report" in result.output
+    assert "Recommendations" in result.output
+
+
+def test_analytics_trace_findings_missing_trace_exits_with_error(tmp_path: Path) -> None:
+    """Missing trace id must fail loudly, mirroring `render-timeline`."""
+    from unittest.mock import patch
+
+    from typer.testing import CliRunner
+
+    from autocontext.cli import app
+
+    settings = _settings_for_cli(tmp_path)
+
+    runner = CliRunner()
+    with patch("autocontext.cli.load_settings", return_value=settings):
+        result = runner.invoke(
+            app,
+            ["analytics", "trace-findings", "--trace-id", "does-not-exist"],
+        )
+
+    assert result.exit_code != 0
+    assert "No trace found" in result.output
+
+
+def test_analytics_trace_findings_json_missing_trace_emits_parseable_error(tmp_path: Path) -> None:
+    """`--json` failures must keep stdout machine-readable for automation."""
+    from unittest.mock import patch
+
+    from typer.testing import CliRunner
+
+    from autocontext.cli import app
+
+    settings = _settings_for_cli(tmp_path)
+
+    runner = CliRunner()
+    with patch("autocontext.cli.load_settings", return_value=settings):
+        result = runner.invoke(
+            app,
+            ["analytics", "trace-findings", "--trace-id", "does-not-exist", "--json"],
+        )
+
+    assert result.exit_code != 0
+    payload = json.loads(result.output)
+    assert payload["status"] == "failed"
+    assert payload["trace_id"] == "does-not-exist"
+    assert "No trace found" in payload["error"]
+
+
+def test_analytics_trace_findings_rejects_trace_id_path_traversal(tmp_path: Path) -> None:
+    """Defense-in-depth: the same traversal validator that guards
+    `render-timeline` must apply here so `--trace-id ../external` cannot
+    escape the analytics/traces dir via the new subcommand either."""
+    from unittest.mock import patch
+
+    from typer.testing import CliRunner
+
+    from autocontext.cli import app
+
+    settings = _settings_for_cli(tmp_path)
+
+    runner = CliRunner()
+    with patch("autocontext.cli.load_settings", return_value=settings):
+        result = runner.invoke(
+            app,
+            ["analytics", "trace-findings", "--trace-id", "../external"],
+        )
+
+    assert result.exit_code != 0
+    assert "trace id" in result.output.lower() or "trace-id" in result.output.lower()
+
+
 def test_scenario_curation_html_is_read_only_and_exportable() -> None:
     from autocontext.analytics.artifact_rendering import (
         CurationItemView,

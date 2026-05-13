@@ -17,6 +17,27 @@ uv run autoctx analytics context-selection --run-id <run_id>
 uv run autoctx analytics context-selection --run-id <run_id> --json
 ```
 
+For completed runs with persisted `RunTrace` artifacts, emit trace-grounded
+findings from the same reporter used by run-end writeups. Trace ids are the
+filenames under `knowledge/analytics/traces/` without the `.json` suffix
+(for example `trace-run-123` from `knowledge/analytics/traces/trace-run-123.json`).
+If a run only has an events stream, rebuild traces first:
+
+```bash
+cd autocontext
+uv run autoctx analytics rebuild-traces --run-id <run_id> --json
+uv run autoctx analytics trace-findings --trace-id <trace_id>
+uv run autoctx analytics trace-findings --trace-id <trace_id> --kind weakness
+uv run autoctx analytics trace-findings --trace-id <trace_id> --json
+```
+
+Use `--kind writeup` (the default) for a full trace-grounded summary with
+`findings`, `failure_motifs`, `recovery_paths`, and `summary`. Use
+`--kind weakness` for a recommendation-focused report with `weaknesses`,
+`failure_motifs`, `recovery_analysis`, and `recommendations`. Under `--json`,
+missing traces return a parseable payload such as
+`{"status":"failed","error":"...","trace_id":"..."}` and exit non-zero.
+
 ## Repository Traffic
 
 For GitHub-hosted repo traffic, use the repository Traffic view:
