@@ -226,7 +226,7 @@ class TestClaudeCLIRuntime:
         output = runtime._parse_output(json.dumps(data))
         assert output.structured == {"answer": "Paris", "confidence": 1.0}
 
-    @patch("subprocess.run")
+    @patch("autocontext.runtimes.claude_cli._run_with_group_kill")
     def test_generate_calls_subprocess(self, mock_run):
         mock_run.return_value = subprocess.CompletedProcess(
             args=[],
@@ -239,10 +239,10 @@ class TestClaudeCLIRuntime:
         result = runtime.generate("Write something")
         assert result.text == "generated"
         mock_run.assert_called_once()
-        call_kwargs = mock_run.call_args
-        assert call_kwargs.kwargs["input"] == "Write something"
+        # `_run_with_group_kill` receives the prompt as a keyword argument.
+        assert mock_run.call_args.kwargs["prompt"] == "Write something"
 
-    @patch("subprocess.run")
+    @patch("autocontext.runtimes.claude_cli._run_with_group_kill")
     def test_revise_includes_feedback(self, mock_run):
         mock_run.return_value = subprocess.CompletedProcess(
             args=[],
@@ -254,11 +254,14 @@ class TestClaudeCLIRuntime:
         runtime._claude_path = "/usr/bin/claude"
         result = runtime.revise("Write a poem", "old poem", "needs more rhyme")
         assert result.text == "revised"
-        prompt_sent = mock_run.call_args.kwargs["input"]
+        prompt_sent = mock_run.call_args.kwargs["prompt"]
         assert "old poem" in prompt_sent
         assert "needs more rhyme" in prompt_sent
 
-    @patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="claude", timeout=120))
+    @patch(
+        "autocontext.runtimes.claude_cli._run_with_group_kill",
+        side_effect=subprocess.TimeoutExpired(cmd="claude", timeout=120),
+    )
     def test_timeout_handling(self, mock_run):
         runtime = ClaudeCLIRuntime()
         runtime._claude_path = "/usr/bin/claude"
@@ -267,7 +270,7 @@ class TestClaudeCLIRuntime:
         assert result.metadata.get("error") == "timeout"
 
     @patch("autocontext.runtimes.claude_cli.time.sleep")
-    @patch("subprocess.run")
+    @patch("autocontext.runtimes.claude_cli._run_with_group_kill")
     def test_timeout_retries_are_bounded_and_observable(
         self,
         mock_run,
@@ -300,12 +303,15 @@ class TestClaudeCLIRuntime:
         assert "claude CLI timed out after 3 attempt(s)" in messages
 
     @patch("autocontext.runtimes.claude_cli.time.sleep")
-    @patch("subprocess.run")
+    @patch("autocontext.runtimes.claude_cli._run_with_group_kill")
     def test_timeout_retry_can_recover(self, mock_run, mock_sleep):
         mock_run.side_effect = [
             subprocess.TimeoutExpired(cmd="claude", timeout=5),
             subprocess.CompletedProcess(
-                args=[], returncode=0, stdout=_mock_claude_json("recovered"), stderr="",
+                args=[],
+                returncode=0,
+                stdout=_mock_claude_json("recovered"),
+                stderr="",
             ),
         ]
         cfg = ClaudeCLIConfig(timeout=5.0, max_retries=2, retry_backoff_seconds=0.0)
@@ -321,7 +327,10 @@ class TestClaudeCLIRuntime:
         mock_sleep.assert_called_once_with(0.0)
 
     @patch("autocontext.runtimes.claude_cli.time.sleep")
-    @patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="claude", timeout=1))
+    @patch(
+        "autocontext.runtimes.claude_cli._run_with_group_kill",
+        side_effect=subprocess.TimeoutExpired(cmd="claude", timeout=1),
+    )
     def test_timeout_retry_skips_sleep_that_would_exhaust_total_cap(self, mock_run, mock_sleep):
         cfg = ClaudeCLIConfig(
             timeout=1.0,
@@ -340,14 +349,14 @@ class TestClaudeCLIRuntime:
         assert mock_run.call_count == 1
         mock_sleep.assert_not_called()
 
-    @patch("subprocess.run", side_effect=FileNotFoundError)
+    @patch("autocontext.runtimes.claude_cli._run_with_group_kill", side_effect=FileNotFoundError)
     def test_missing_cli(self, mock_run):
         runtime = ClaudeCLIRuntime()
         runtime._claude_path = "/usr/bin/claude"
         result = runtime.generate("task")
         assert result.metadata.get("error") == "claude_not_found"
 
-    @patch("subprocess.run")
+    @patch("autocontext.runtimes.claude_cli._run_with_group_kill")
     def test_nonzero_exit_with_output(self, mock_run):
         mock_run.return_value = subprocess.CompletedProcess(
             args=[],
@@ -360,7 +369,7 @@ class TestClaudeCLIRuntime:
         result = runtime.generate("task")
         assert result.text == "partial"  # Still parses output
 
-    @patch("subprocess.run")
+    @patch("autocontext.runtimes.claude_cli._run_with_group_kill")
     def test_nonzero_exit_no_output(self, mock_run):
         mock_run.return_value = subprocess.CompletedProcess(
             args=[],

@@ -14,7 +14,6 @@ Verifies that:
 from __future__ import annotations
 
 import json
-import subprocess
 from types import SimpleNamespace
 from typing import Any
 
@@ -27,9 +26,15 @@ from autocontext.runtimes.runtime_budget import RuntimeBudget
 
 
 class _FakeRun:
-    """Drop-in for ``subprocess.run`` that records the timeout it was passed.
+    """Drop-in for ``_run_with_group_kill`` that records the timeout it was passed.
 
     Returns a stub CompletedProcess with valid Claude CLI JSON output.
+
+    AC-761 / AC-735: the runtime no longer calls ``subprocess.run`` directly;
+    it goes through ``_run_with_group_kill`` so it can spawn the child in
+    its own process group and SIGKILL the whole group on timeout. Tests
+    that care about the *runtime-level* timeout/budget contract patch the
+    helper rather than the low-level subprocess call.
     """
 
     def __init__(self) -> None:
@@ -48,7 +53,9 @@ class _FakeRun:
 @pytest.fixture
 def fake_run(monkeypatch):
     fake = _FakeRun()
-    monkeypatch.setattr(subprocess, "run", fake)
+    from autocontext.runtimes import claude_cli as _claude_cli_module
+
+    monkeypatch.setattr(_claude_cli_module, "_run_with_group_kill", fake)
     return fake
 
 
