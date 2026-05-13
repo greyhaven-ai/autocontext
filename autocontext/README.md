@@ -190,12 +190,22 @@ uv run autoctx train --scenario support_triage --data training/support_triage.js
 uv run autoctx hermes inspect --json
 uv run autoctx hermes export-skill --output ~/.hermes/skills/autocontext/SKILL.md --json
 uv run autoctx analytics context-selection --run-id <run_id> --json
+uv run autoctx analytics trace-findings --trace-id <trace_id> --kind writeup --json
+uv run autoctx analytics trace-findings --trace-id <trace_id> --kind weakness
 uv run autoctx serve --host 127.0.0.1 --port 8000
 uv run autoctx mcp-serve
 uv run autoctx wait <condition_id> --json
 ```
 
 Saved custom scenarios under `knowledge/_custom_scenarios/` can be rerun and benchmarked by name once their `spec.json` has been persisted, so the `new-scenario` / `solve` workflow lines up with the named `run` and `benchmark` surfaces.
+
+Trace-finding reports read persisted `RunTrace` files from `knowledge/analytics/traces/`.
+Use the filename without `.json` as `--trace-id` (for example
+`trace-run-123` from `knowledge/analytics/traces/trace-run-123.json`), or run
+`uv run autoctx analytics rebuild-traces --run-id <run_id> --json` to rebuild
+trace artifacts from an events stream first. `--kind writeup` emits the full
+summary/findings/motifs/recovery-path shape; `--kind weakness` emits
+recommendations, weakness findings, motifs, and recovery analysis.
 
 Useful variants:
 

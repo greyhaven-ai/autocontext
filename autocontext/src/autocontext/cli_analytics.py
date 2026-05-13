@@ -96,6 +96,54 @@ def run_render_timeline_command(
     console.print(f"[green]Rendered[/green] {trace_id} -> {target_path}")
 
 
+def run_trace_findings_command(
+    *,
+    trace_id: str,
+    kind: str,
+    json_output: bool,
+    console: Console,
+    load_settings_fn: Callable[[], AppSettings],
+    write_json_stdout: Callable[[object], None],
+) -> None:
+    """Emit a trace-grounded findings report for a stored RunTrace (AC-678).
+
+    Exposes the existing :class:`TraceReporter` pipeline as an operator CLI
+    so structured findings, failure motifs, and recovery paths can be pulled
+    from a persisted trace without going through the HTTP API. The Markdown
+    body is the same one rendered into the run-end-time writeup artifact.
+    """
+    from autocontext.analytics.trace_reporter import TraceReporter
+
+    trace_id = _validated_trace_id(trace_id)
+    if kind not in {"writeup", "weakness"}:
+        raise typer.BadParameter(
+            f"kind must be 'writeup' or 'weakness', got {kind!r}",
+            param_hint="--kind",
+        )
+
+    settings = load_settings_fn()
+    analytics_root = settings.knowledge_root / "analytics"
+    store = TraceStore(analytics_root)
+    trace = store.load(trace_id)
+    if trace is None:
+        error = f"No trace found with id {trace_id!r} under {analytics_root}/traces"
+        if json_output:
+            write_json_stdout({"status": "failed", "error": error, "trace_id": trace_id})
+        else:
+            console.print(f"[red]{error}[/red]")
+        raise typer.Exit(code=1)
+
+    reporter = TraceReporter()
+    report = reporter.generate_writeup(trace) if kind == "writeup" else reporter.generate_weakness_report(trace)
+
+    if json_output:
+        write_json_stdout(report.to_dict())
+        return
+    # ``print`` not ``console.print`` so Markdown comes out unstyled and
+    # downstream tooling can pipe it cleanly.
+    print(report.to_markdown())
+
+
 def run_rebuild_traces_command(
     *,
     run_id: str,
@@ -322,6 +370,28 @@ def register_analytics_command(
             output_path=output,
             console=console,
             load_settings_fn=_cli_attr(dependency_module, "load_settings"),
+        )
+
+    @analytics_app.command("trace-findings")
+    def trace_findings(
+        trace_id: Annotated[str, typer.Option("--trace-id", help="Trace id to analyze")],
+        kind: Annotated[
+            str,
+            typer.Option(
+                "--kind",
+                help="Report kind: 'writeup' (full trace-grounded summary) or 'weakness' (recommendations).",
+            ),
+        ] = "writeup",
+        json_output: Annotated[bool, typer.Option("--json", help="Emit JSON instead of Markdown")] = False,
+    ) -> None:
+        """Emit a trace-grounded findings report for a stored RunTrace (AC-678)."""
+        run_trace_findings_command(
+            trace_id=trace_id,
+            kind=kind,
+            json_output=json_output,
+            console=console,
+            load_settings_fn=_cli_attr(dependency_module, "load_settings"),
+            write_json_stdout=_cli_attr(dependency_module, "_write_json_stdout"),
         )
 
     app.add_typer(analytics_app, name="analytics")
