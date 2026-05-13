@@ -8,8 +8,11 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
+import signal
 import subprocess
+import sys
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -19,6 +22,105 @@ from autocontext.runtimes.base import AgentOutput, AgentRuntime
 from autocontext.runtimes.runtime_budget import RuntimeBudget, RuntimeBudgetExpired
 
 logger = logging.getLogger(__name__)
+
+# AC-761 / AC-735: how long we let the drain after a timeout-kill take
+# before giving up entirely. claude-cli helper processes may keep pipe
+# fds open even after the parent dies, so we cap the wait rather than
+# relying on subprocess.run's unbounded inner communicate() drain.
+_TIMEOUT_KILL_GRACE_SECONDS = 5.0
+
+
+def _kill_process_group(proc: subprocess.Popen) -> None:
+    """Send SIGKILL to the whole process group of `proc`.
+
+    AC-761 / AC-735: `subprocess.run`'s built-in timeout handling calls
+    `proc.kill()` which only targets the immediate child. claude-cli is
+    a Node script that spawns helper processes; those grandchildren
+    inherit the parent's pipe fds, so killing the parent alone leaves
+    the pipes open and the subsequent communicate() drain blocks
+    indefinitely. Killing the whole process group avoids that.
+
+    No-op + best-effort on Windows (`os.killpg` is POSIX-only) -- the
+    bug repros on macOS/Linux; Windows fallback uses plain `proc.kill`.
+    """
+    if sys.platform == "win32":
+        try:
+            proc.kill()
+        except (ProcessLookupError, OSError) as exc:
+            logger.debug("claude-cli kill skipped: %s", exc)
+        return
+    try:
+        pgid = os.getpgid(proc.pid)
+    except (ProcessLookupError, PermissionError) as exc:
+        logger.debug("claude-cli getpgid failed: %s", exc)
+        return
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError) as exc:
+        logger.debug("claude-cli killpg skipped: %s", exc)
+
+
+def _run_with_group_kill(
+    args: list[str],
+    *,
+    prompt: str,
+    timeout: float,
+    grace_seconds: float = _TIMEOUT_KILL_GRACE_SECONDS,
+) -> subprocess.CompletedProcess[str]:
+    """Run claude-cli with a bounded wall-clock and process-group kill.
+
+    Drop-in replacement for `subprocess.run(..., timeout=timeout)` that:
+
+    1. Spawns the child in its own session so the helper processes it
+       launches inherit a fresh process group.
+    2. On timeout, sends SIGKILL to that whole process group rather than
+       only the immediate child, so grandchildren that hold pipe fds
+       open cannot stall the drain.
+    3. Bounds the post-kill drain by `grace_seconds`, so even a
+       pathological wedged pipe cannot extend wall-clock past
+       `timeout + grace_seconds`.
+
+    Re-raises `subprocess.TimeoutExpired` on timeout so the caller's
+    retry/backoff path keeps working.
+    """
+    popen_kwargs: dict[str, Any] = {
+        "stdin": subprocess.PIPE,
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+        "text": True,
+    }
+    if sys.platform != "win32":
+        popen_kwargs["start_new_session"] = True
+    proc = subprocess.Popen(args, **popen_kwargs)
+    try:
+        stdout, stderr = proc.communicate(input=prompt, timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        _kill_process_group(proc)
+        # Bounded drain: pull whatever the pipes will yield, but never
+        # block longer than `grace_seconds`. If the drain itself stalls
+        # (e.g., a wedged grandchild still has the fd), we accept the
+        # loss and let the timeout propagate.
+        try:
+            proc.communicate(timeout=grace_seconds)
+        except subprocess.TimeoutExpired:
+            logger.warning(
+                "claude-cli drain stalled after SIGKILL; abandoning pipes (grace=%.1fs)",
+                grace_seconds,
+            )
+        # Best-effort close so leaked fds don't accumulate across retries.
+        for stream in (proc.stdin, proc.stdout, proc.stderr):
+            if stream is not None:
+                try:
+                    stream.close()
+                except (OSError, ValueError):
+                    pass
+        raise exc
+    return subprocess.CompletedProcess(
+        args=args,
+        returncode=proc.returncode if proc.returncode is not None else -1,
+        stdout=stdout,
+        stderr=stderr,
+    )
 
 
 @dataclass(slots=True)
@@ -202,13 +304,7 @@ class ClaudeCLIRuntime(AgentRuntime):
 
             start = time.monotonic()
             try:
-                result = subprocess.run(
-                    args,
-                    input=prompt,
-                    capture_output=True,
-                    text=True,
-                    timeout=timeout,
-                )
+                result = _run_with_group_kill(args, prompt=prompt, timeout=timeout)
             except subprocess.TimeoutExpired:
                 elapsed = time.monotonic() - start
                 if attempt_index < max_retries and self._has_retry_budget(total_start):

@@ -61,7 +61,7 @@ class TestRetrySleepRespectsAttachedBudget:
             raise subprocess.TimeoutExpired(cmd="claude", timeout=kwargs.get("timeout", 1))
 
         with (
-            patch("autocontext.runtimes.claude_cli.subprocess.run", side_effect=fake_run),
+            patch("autocontext.runtimes.claude_cli._run_with_group_kill", side_effect=fake_run),
             patch("autocontext.runtimes.claude_cli.time.sleep", spy_sleep),
         ):
             output = runtime._invoke("hello", ["claude"])  # noqa: SLF001
@@ -85,7 +85,7 @@ class TestRetrySleepRespectsAttachedBudget:
             raise subprocess.TimeoutExpired(cmd="claude", timeout=kwargs.get("timeout", 1))
 
         with (
-            patch("autocontext.runtimes.claude_cli.subprocess.run", side_effect=fake_run),
+            patch("autocontext.runtimes.claude_cli._run_with_group_kill", side_effect=fake_run),
             patch("autocontext.runtimes.claude_cli.time.sleep", spy_sleep),
         ):
             runtime._invoke("hello", ["claude"])  # noqa: SLF001
@@ -120,7 +120,7 @@ class TestNoBudgetUnchangedBehavior:
             raise subprocess.TimeoutExpired(cmd="claude", timeout=kwargs.get("timeout", 1))
 
         with (
-            patch("autocontext.runtimes.claude_cli.subprocess.run", side_effect=fake_run),
+            patch("autocontext.runtimes.claude_cli._run_with_group_kill", side_effect=fake_run),
             patch("autocontext.runtimes.claude_cli.time.sleep", spy_sleep),
         ):
             runtime._invoke("hello", ["claude"])  # noqa: SLF001
