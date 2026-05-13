@@ -25,6 +25,44 @@ def _cli_attr(dependency_module: str, name: str) -> Any:
     return getattr(importlib.import_module(dependency_module), name)
 
 
+def run_render_timeline_command(
+    *,
+    trace_id: str,
+    output_path: Path | None,
+    console: Console,
+    load_settings_fn: Callable[[], AppSettings],
+) -> None:
+    """Render a persisted RunTrace as an interactive HTML timeline (AC-749).
+
+    Loads the trace by id from the analytics `TraceStore`, runs the existing
+    `timeline_inspection_view` + `render_timeline_inspection_html` pipeline,
+    and writes the HTML to ``output_path`` (or the default location under
+    ``<analytics_root>/inspections/<trace_id>.html``).
+
+    This is the on-demand counterpart to the run-end-time renderer in
+    ``loop/trace_artifacts.persist_run_inspection`` -- same view extractor
+    and renderer, just invoked by operators against older traces.
+    """
+    from autocontext.analytics.artifact_rendering import (
+        render_timeline_inspection_html,
+        timeline_inspection_view,
+    )
+
+    settings = load_settings_fn()
+    analytics_root = settings.knowledge_root / "analytics"
+    store = TraceStore(analytics_root)
+    trace = store.load(trace_id)
+    if trace is None:
+        console.print(f"[red]No trace found with id {trace_id!r} under {analytics_root}/traces[/red]")
+        raise typer.Exit(code=1)
+
+    target_path = output_path or (analytics_root / "inspections" / f"{trace.trace_id}.html")
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    html = render_timeline_inspection_html(timeline_inspection_view(trace))
+    target_path.write_text(html, encoding="utf-8")
+    console.print(f"[green]Rendered[/green] {trace.trace_id} -> {target_path}")
+
+
 def run_rebuild_traces_command(
     *,
     run_id: str,
@@ -76,13 +114,15 @@ def run_rebuild_traces_command(
         trace = events_to_trace(source_path, current_run_id)
         analytics_path = analytics_store.persist(trace)
         path = TraceStore(run_root, writer=artifacts.write_json).persist(trace)
-        rebuilt.append({
-            "run_id": current_run_id,
-            "trace_id": trace.trace_id,
-            "event_count": len(trace.events),
-            "path": str(path),
-            "analytics_path": str(analytics_path),
-        })
+        rebuilt.append(
+            {
+                "run_id": current_run_id,
+                "trace_id": trace.trace_id,
+                "event_count": len(trace.events),
+                "path": str(path),
+                "analytics_path": str(analytics_path),
+            }
+        )
 
     result: dict[str, Any] = {"status": "completed", "events_path": str(source_path), "rebuilt": rebuilt}
     if json_output:
@@ -90,9 +130,7 @@ def run_rebuild_traces_command(
         return
 
     for item in rebuilt:
-        console.print(
-            f"[green]Rebuilt[/green] {item['trace_id']} " f"({item['event_count']} events) -> {item['path']}"
-        )
+        console.print(f"[green]Rebuilt[/green] {item['trace_id']} ({item['event_count']} events) -> {item['path']}")
 
 
 def run_drift_command(
@@ -133,8 +171,7 @@ def run_drift_command(
         return
 
     console.print(
-        f"[green]Analyzed[/green] {snapshot.dimension_count} dimension(s) "
-        f"across {snapshot.generation_count} generation(s)."
+        f"[green]Analyzed[/green] {snapshot.dimension_count} dimension(s) across {snapshot.generation_count} generation(s)."
     )
     if not warnings:
         console.print("[dim]No dimension-level drift warnings.[/dim]")
@@ -233,6 +270,25 @@ def register_analytics_command(
             console=console,
             load_settings_fn=_cli_attr(dependency_module, "load_settings"),
             write_json_stdout=_cli_attr(dependency_module, "_write_json_stdout"),
+        )
+
+    @analytics_app.command("render-timeline")
+    def render_timeline(
+        trace_id: Annotated[str, typer.Option("--trace-id", help="Trace id to render")],
+        output: Annotated[
+            Path | None,
+            typer.Option(
+                "--output",
+                help=("Destination HTML path. Defaults to <knowledge_root>/analytics/inspections/<trace_id>.html."),
+            ),
+        ] = None,
+    ) -> None:
+        """Render an existing RunTrace as an interactive HTML timeline (AC-749)."""
+        run_render_timeline_command(
+            trace_id=trace_id,
+            output_path=output,
+            console=console,
+            load_settings_fn=_cli_attr(dependency_module, "load_settings"),
         )
 
     app.add_typer(analytics_app, name="analytics")
