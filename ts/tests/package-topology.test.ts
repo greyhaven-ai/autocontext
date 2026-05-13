@@ -6,6 +6,7 @@ const repoRoot = join(import.meta.dirname, "..", "..");
 const topologyPath = join(repoRoot, "packages", "package-topology.json");
 const boundariesPath = join(repoRoot, "packages", "package-boundaries.json");
 const packageSplitDocPath = join(repoRoot, "docs", "core-control-package-split.md");
+const conceptModelDocPath = join(repoRoot, "docs", "concept-model.md");
 
 type PackageEntry = {
   name: string;
@@ -169,6 +170,18 @@ describe("package topology", () => {
     expect(doc).toContain("Environment variables");
     expect(doc).toContain("Session persistence");
     expect(doc).toContain("Sandbox providers");
+  });
+
+  it("uses AutoContext-native vocabulary in public runtime decision docs", () => {
+    const publicDecisionDocs = [
+      packageSplitDocPath,
+      conceptModelDocPath,
+    ];
+
+    for (const docPath of publicDecisionDocs) {
+      const doc = readFileSync(docPath, "utf-8");
+      expect(doc).not.toMatch(/\b[Ff]lue\b/);
+    }
   });
 
   it("matches TypeScript package names to the topology", () => {

@@ -68,10 +68,9 @@ level while remaining Apache-2.0 in this repo.
 
 ## Agent App Build Targets
 
-The Flue-style `build --target node|cloudflare` idea is useful, but
-AutoContext should treat deployment targets as control-plane packaging around
-stable runtime contracts, not as new runtime contracts themselves. The
-machine-readable target boundary lives in
+AutoContext should treat `build --target node|cloudflare` deployment targets as
+control-plane packaging around stable runtime contracts, not as new runtime
+contracts themselves. The machine-readable target boundary lives in
 [`packages/package-topology.json`](../packages/package-topology.json) under
 `agentApps`.
 
