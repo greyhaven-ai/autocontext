@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  clearPromptCompactionCache,
   compactPromptComponents,
   compactPromptComponentsWithEntries,
   extractPromotableLines,
+  promptCompactionCacheStats,
 } from "../src/knowledge/semantic-compaction.js";
 import { buildPromptBundle } from "../src/prompts/templates.js";
 
@@ -83,6 +85,27 @@ describe("semantic prompt compaction", () => {
     expect(entry.tokensBefore).toBeGreaterThan(Number(entry.details?.tokensAfter));
     expect(entry.summary).toContain("## Critical Context");
     expect(entry.summary).toContain("stale hints amplified retries");
+  });
+
+  it("caches semantic compaction by component hash", () => {
+    clearPromptCompactionCache();
+    const components = {
+      lessons: "## Lessons\n" + [
+        ...Array.from({ length: 119 }, (_, index) => `- old lesson ${index + 1} ${"x".repeat(120)}`),
+        "- newest lesson keep me",
+      ].join("\n"),
+    };
+
+    const first = compactPromptComponents(components);
+    const afterFirst = promptCompactionCacheStats();
+    const second = compactPromptComponents(components);
+    const afterSecond = promptCompactionCacheStats();
+
+    expect(second).toEqual(first);
+    expect(afterFirst.misses).toBe(1);
+    expect(afterFirst.hits).toBe(0);
+    expect(afterSecond.misses).toBe(1);
+    expect(afterSecond.hits).toBe(1);
   });
 
   it("extracts promotable lines from report-like markdown", () => {

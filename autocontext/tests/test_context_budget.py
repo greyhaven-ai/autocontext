@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import autocontext.scenarios  # noqa: F401  # pre-import to avoid circular import through prompts.__init__
-from autocontext.prompts.context_budget import ContextBudget, estimate_tokens
+from autocontext.prompts.context_budget import ContextBudget, ContextBudgetPolicy, estimate_tokens
 
 
 def test_estimate_tokens_basic() -> None:
@@ -69,3 +69,76 @@ def test_budget_preserves_hints() -> None:
     }
     trimmed = budget.apply(components)
     assert trimmed["hints"] == "Keep this hint."
+
+
+def test_budget_deduplicates_equivalent_components_by_policy() -> None:
+    """Duplicate context is selected once, keeping the highest-priority source."""
+    duplicate = "Use the stable rollback guard."
+    budget = ContextBudget(max_tokens=1000)
+    components = {
+        "playbook": duplicate,
+        "analysis": duplicate,
+        "trajectory": "Gen 1: 0.5",
+        "hints": duplicate,
+    }
+
+    trimmed = budget.apply(components)
+
+    assert trimmed["playbook"] == duplicate
+    assert trimmed["analysis"] == ""
+    assert trimmed["hints"] == duplicate
+
+
+def test_budget_does_not_deduplicate_role_scoped_components() -> None:
+    """Role-scoped alternatives are used by separate final prompts, not together."""
+    duplicate = "Role-scoped evidence that multiple roles should receive."
+    budget = ContextBudget(max_tokens=1000)
+    components = {
+        "evidence_manifest_analyst": duplicate,
+        "evidence_manifest_architect": duplicate,
+        "notebook_analyst": duplicate,
+        "notebook_architect": duplicate,
+    }
+
+    trimmed = budget.apply(components)
+
+    assert trimmed == components
+
+
+def test_budget_applies_component_caps_before_global_trim() -> None:
+    """Bulky low-priority components are capped even when the global budget fits."""
+    budget = ContextBudget(
+        max_tokens=1000,
+        policy=ContextBudgetPolicy(component_token_caps={"analysis": 5}),
+    )
+    components = {
+        "playbook": "small playbook",
+        "analysis": "A" * 200,
+    }
+
+    trimmed = budget.apply(components)
+
+    assert trimmed["playbook"] == "small playbook"
+    assert len(trimmed["analysis"]) < len(components["analysis"])
+    assert estimate_tokens(trimmed["analysis"]) <= 5
+
+
+def test_budget_policy_overrides_trim_order_and_protected_components() -> None:
+    """The budget policy owns domain-specific trim order and protection."""
+    budget = ContextBudget(
+        max_tokens=10,
+        policy=ContextBudgetPolicy(
+            trim_order=("playbook", "analysis"),
+            protected_components=frozenset({"analysis"}),
+            component_token_caps={},
+        ),
+    )
+    components = {
+        "playbook": "P" * 200,
+        "analysis": "A" * 200,
+    }
+
+    trimmed = budget.apply(components)
+
+    assert len(trimmed["playbook"]) < len(components["playbook"])
+    assert trimmed["analysis"] == components["analysis"]

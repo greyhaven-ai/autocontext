@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import re
 import secrets
+from collections import OrderedDict
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from hashlib import sha256
 from typing import Any
 
 from autocontext.prompts.context_budget import estimate_tokens
@@ -43,6 +45,12 @@ _TAIL_PRESERVING_COMPONENTS = {
     "consultation_context",
     "consultation_strategy",
 }
+
+_COMPACTION_POLICY_VERSION = "semantic-compaction-v1"
+_COMPACTION_CACHE_MAX_SIZE = 512
+_COMPACTION_CACHE: OrderedDict[tuple[str, str, str, int], tuple[str, str]] = OrderedDict()
+_COMPACTION_CACHE_HITS = 0
+_COMPACTION_CACHE_MISSES = 0
 
 _IMPORTANT_KEYWORDS = (
     "root cause",
@@ -243,12 +251,31 @@ def _coerce_int(value: Any) -> int:
 
 def compact_prompt_component(key: str, value: str) -> str:
     """Compact a single prompt-facing component when a limit is configured."""
+    if not isinstance(value, str):
+        value = str(value)
     if not value:
         return value
     limit = _DEFAULT_COMPONENT_TOKEN_LIMITS.get(key)
     if limit is None:
         return value
-    return _compact_component(key, value, limit)
+    return _cached_compact_component(key, value, limit)
+
+
+def clear_prompt_compaction_cache() -> None:
+    """Clear the in-process semantic compaction cache."""
+    global _COMPACTION_CACHE_HITS, _COMPACTION_CACHE_MISSES
+    _COMPACTION_CACHE.clear()
+    _COMPACTION_CACHE_HITS = 0
+    _COMPACTION_CACHE_MISSES = 0
+
+
+def prompt_compaction_cache_stats() -> dict[str, int]:
+    """Return lightweight cache counters for tests and diagnostics."""
+    return {
+        "entries": len(_COMPACTION_CACHE),
+        "hits": _COMPACTION_CACHE_HITS,
+        "misses": _COMPACTION_CACHE_MISSES,
+    }
 
 
 def extract_promotable_lines(text: str, *, max_items: int = 3) -> list[str]:
@@ -310,6 +337,29 @@ def _compact_component(key: str, text: str, max_tokens: int) -> str:
 
     if estimate_tokens(compacted) > max_tokens:
         compacted = _truncate_text(compacted, max_tokens=max_tokens)
+    return compacted
+
+
+def _cached_compact_component(key: str, text: str, max_tokens: int) -> str:
+    global _COMPACTION_CACHE_HITS, _COMPACTION_CACHE_MISSES
+    cache_key = (
+        _COMPACTION_POLICY_VERSION,
+        key,
+        sha256(text.encode("utf-8")).hexdigest(),
+        max_tokens,
+    )
+    cached = _COMPACTION_CACHE.get(cache_key)
+    if cached is not None and cached[0] == text:
+        _COMPACTION_CACHE_HITS += 1
+        _COMPACTION_CACHE.move_to_end(cache_key)
+        return cached[1]
+
+    _COMPACTION_CACHE_MISSES += 1
+    compacted = _compact_component(key, text, max_tokens)
+    _COMPACTION_CACHE[cache_key] = (text, compacted)
+    _COMPACTION_CACHE.move_to_end(cache_key)
+    while len(_COMPACTION_CACHE) > _COMPACTION_CACHE_MAX_SIZE:
+        _COMPACTION_CACHE.popitem(last=False)
     return compacted
 
 

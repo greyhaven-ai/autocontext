@@ -45,6 +45,7 @@ import {
   buildPromptBundle,
   CompletionResultSchema,
   ContextBudget,
+  ContextBudgetPolicy,
   checkRubricCoherence,
   createProductionTrace,
   ExecutionLimitsSchema,
@@ -253,9 +254,9 @@ describe("@autocontext/core facade", () => {
   it("re-exports prompt context budget helpers", () => {
     expect(estimateTokens("abcdabcd")).toBe(2);
 
-    const budget = new ContextBudget(5);
+    const budget = new ContextBudget(20, new ContextBudgetPolicy({ componentTokenCaps: {} }));
     const result = budget.apply({
-      playbook: "12345678901234567890",
+      playbook: "12345678901234567890".repeat(20),
       hints: "keep-me",
     });
 

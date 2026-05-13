@@ -76,7 +76,8 @@ export type {
 } from "./storage/index.js";
 
 // Prompts
-export { ContextBudget, estimateTokens } from "./prompts/context-budget.js";
+export { ContextBudget, ContextBudgetPolicy, estimateTokens } from "./prompts/context-budget.js";
+export type { ContextBudgetPolicyOptions } from "./prompts/context-budget.js";
 export { buildPromptBundle } from "./prompts/templates.js";
 export type { PromptBundle, PromptContext } from "./prompts/templates.js";
 
@@ -419,7 +420,9 @@ export {
   compactPromptComponents,
   compactPromptComponentsWithEntries,
   compactionEntriesForComponents,
+  clearPromptCompactionCache,
   extractPromotableLines,
+  promptCompactionCacheStats,
   ScoreTrajectoryBuilder,
   EMPTY_PLAYBOOK_SENTINEL,
   PLAYBOOK_MARKERS,
