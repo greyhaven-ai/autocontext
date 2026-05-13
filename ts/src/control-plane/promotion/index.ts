@@ -13,3 +13,5 @@ export {
 
 export { decidePromotion } from "./decide.js";
 export type { DecidePromotionInputs } from "./decide.js";
+export { decideHarnessChangeProposal } from "./harness-change-proposal.js";
+export type { DecideHarnessChangeProposalInputs } from "./harness-change-proposal.js";

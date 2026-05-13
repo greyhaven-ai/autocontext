@@ -6,12 +6,14 @@ import { join } from "node:path";
 import type {
   ArtifactId,
   EnvironmentTag,
+  HarnessProposalId,
   Scenario,
 } from "../contract/branded-ids.js";
 import type {
   ActuatorType,
   Artifact,
   EvalRun,
+  HarnessChangeProposal,
   PromotionEvent,
 } from "../contract/types.js";
 import { createPromotionEvent } from "../contract/factories.js";
@@ -28,6 +30,12 @@ import {
   loadEvalRun as fsLoadEvalRun,
   listEvalRunIds,
 } from "./eval-run-store.js";
+import {
+  saveHarnessChangeProposal as fsSaveHarnessChangeProposal,
+  updateHarnessChangeProposal as fsUpdateHarnessChangeProposal,
+  loadHarnessChangeProposal as fsLoadHarnessChangeProposal,
+  listHarnessChangeProposalIds,
+} from "./harness-proposal-store.js";
 import {
   appendHistory,
   readHistory,
@@ -73,6 +81,13 @@ export {
   loadEvalRun,
   listEvalRunIds,
 } from "./eval-run-store.js";
+
+export {
+  saveHarnessChangeProposal,
+  updateHarnessChangeProposal,
+  loadHarnessChangeProposal,
+  listHarnessChangeProposalIds,
+} from "./harness-proposal-store.js";
 
 export {
   writeStatePointer,
@@ -123,6 +138,11 @@ export interface Registry {
 
   attachEvalRun(run: EvalRun): void;
   loadEvalRun(artifactId: ArtifactId, runId: string): EvalRun;
+
+  saveHarnessChangeProposal(proposal: HarnessChangeProposal): void;
+  updateHarnessChangeProposal(proposal: HarnessChangeProposal): void;
+  loadHarnessChangeProposal(id: HarnessProposalId): HarnessChangeProposal;
+  listHarnessChangeProposals(): HarnessChangeProposal[];
 
   /** Force a re-scan of every artifact's history and rebuild state/active/. Idempotent. */
   repair(): void;
@@ -202,6 +222,32 @@ export function openRegistry(cwd: string): Registry {
       return fsLoadEvalRun(dir, runId);
     },
 
+    saveHarnessChangeProposal(proposal): void {
+      const lock = acquireLock(cwd);
+      try {
+        fsSaveHarnessChangeProposal(cwd, proposal);
+      } finally {
+        lock.release();
+      }
+    },
+
+    updateHarnessChangeProposal(proposal): void {
+      const lock = acquireLock(cwd);
+      try {
+        fsUpdateHarnessChangeProposal(cwd, proposal);
+      } finally {
+        lock.release();
+      }
+    },
+
+    loadHarnessChangeProposal(id): HarnessChangeProposal {
+      return fsLoadHarnessChangeProposal(cwd, id);
+    },
+
+    listHarnessChangeProposals(): HarnessChangeProposal[] {
+      return listHarnessChangeProposalIds(cwd).map((id) => fsLoadHarnessChangeProposal(cwd, id));
+    },
+
     repair(): void {
       const lock = acquireLock(cwd);
       try {
@@ -273,3 +319,4 @@ void deleteStatePointer;
 void listStatePointers;
 void listEvalRunIds;
 void listArtifactIds;
+void listHarnessChangeProposalIds;

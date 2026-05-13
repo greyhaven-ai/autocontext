@@ -1,6 +1,7 @@
 import type {
   ArtifactId,
   ChangeSetId,
+  HarnessProposalId,
   Scenario,
   EnvironmentTag,
   SuiteId,
@@ -227,6 +228,72 @@ export type AblationVerificationAssessment = {
   readonly coveredTargets: readonly AblationTarget[];
   readonly missingTargets: readonly AblationTarget[];
   readonly reason?: string;
+};
+
+// ---- Harness change proposals ----
+
+export type HarnessChangeSurface =
+  | "prompt"
+  | "tool-schema"
+  | "tool-affordance-policy"
+  | "compaction-policy"
+  | "verifier-rubric"
+  | "retry-policy"
+  | "playbook";
+
+export type HarnessValidationMode =
+  | "dev"
+  | "heldout"
+  | "fresh";
+
+export type HarnessChangeProposalStatus =
+  | "proposed"
+  | "accepted"
+  | "rejected"
+  | "inconclusive";
+
+export type HarnessExpectedImpact = {
+  readonly qualityDelta?: number;
+  readonly costDelta?: CostMetric;
+  readonly latencyDelta?: LatencyMetric;
+  readonly riskReduction?: string;
+  readonly notes?: readonly string[];
+};
+
+export type HarnessProposedEdit = {
+  readonly summary: string;
+  readonly patches: readonly Patch[];
+};
+
+export type HarnessValidationEvidence = {
+  readonly mode: HarnessValidationMode;
+  readonly suiteId: SuiteId;
+  readonly evidenceRefs: readonly string[];
+};
+
+export type HarnessChangeDecision = {
+  readonly status: Exclude<HarnessChangeProposalStatus, "proposed">;
+  readonly reason: string;
+  readonly validation: HarnessValidationEvidence;
+  readonly promotionDecision: PromotionDecision;
+  readonly candidateArtifactId: ArtifactId;
+  readonly candidateEvalRunId: string;
+  readonly baselineArtifactId?: ArtifactId;
+  readonly baselineEvalRunId?: string;
+  readonly decidedAt: string;
+};
+
+export type HarnessChangeProposal = {
+  readonly schemaVersion: SchemaVersion;
+  readonly id: HarnessProposalId;
+  readonly status: HarnessChangeProposalStatus;
+  readonly findingIds: readonly string[];
+  readonly targetSurface: HarnessChangeSurface;
+  readonly proposedEdit: HarnessProposedEdit;
+  readonly expectedImpact: HarnessExpectedImpact;
+  readonly rollbackCriteria: readonly string[];
+  readonly provenance: Provenance;
+  readonly decision?: HarnessChangeDecision;
 };
 
 export type MemoryPackRef = {
