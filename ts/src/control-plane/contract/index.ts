@@ -5,6 +5,7 @@
 export type {
   ArtifactId,
   ChangeSetId,
+  HarnessProposalId,
   Scenario,
   EnvironmentTag,
   SuiteId,
@@ -15,6 +16,8 @@ export {
   parseArtifactId,
   newChangeSetId,
   parseChangeSetId,
+  newHarnessProposalId,
+  parseHarnessProposalId,
   parseScenario,
   parseEnvironmentTag,
   defaultEnvironmentTag,
@@ -65,6 +68,14 @@ export type {
   AblationVerification,
   AblationRequirement,
   AblationVerificationAssessment,
+  HarnessChangeSurface,
+  HarnessValidationMode,
+  HarnessChangeProposalStatus,
+  HarnessExpectedImpact,
+  HarnessProposedEdit,
+  HarnessValidationEvidence,
+  HarnessChangeDecision,
+  HarnessChangeProposal,
   MemoryPackRef,
   EvalRun,
   PromotionEvent,
@@ -83,6 +94,7 @@ export {
   validateArtifact,
   validatePromotionDecision,
   validatePatch,
+  validateHarnessChangeProposal,
 } from "./validators.js";
 
 export {
@@ -104,6 +116,14 @@ export {
 } from "./ablation-verification.js";
 
 export {
+  HARNESS_CHANGE_SURFACES,
+  HARNESS_VALIDATION_MODES,
+  isHarnessChangeSurface,
+  isHarnessValidationMode,
+  withHarnessChangeDecision,
+} from "./harness-change-proposal.js";
+
+export {
   buildStrategyIdentity,
   buildStrategyComponentsFromTree,
   detectStrategyDuplicate,
@@ -120,11 +140,13 @@ export {
   createArtifact,
   createPromotionEvent,
   createEvalRun,
+  createHarnessChangeProposal,
 } from "./factories.js";
 export type {
   CreateArtifactInputs,
   CreatePromotionEventInputs,
   CreateEvalRunInputs,
+  CreateHarnessChangeProposalInputs,
 } from "./factories.js";
 
 export {

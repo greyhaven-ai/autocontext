@@ -1,0 +1,161 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autocontext.dev/schema/harness-change-proposal.json",
+  "title": "HarnessChangeProposal",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "status",
+    "findingIds",
+    "targetSurface",
+    "proposedEdit",
+    "expectedImpact",
+    "rollbackCriteria",
+    "provenance"
+  ],
+  "oneOf": [
+    {
+      "properties": {
+        "status": { "const": "proposed" }
+      },
+      "required": ["status"],
+      "not": {
+        "properties": {
+          "decision": {}
+        },
+        "required": ["decision"]
+      }
+    },
+    {
+      "properties": {
+        "status": { "const": "accepted" },
+        "decision": {
+          "type": "object",
+          "properties": {
+            "status": { "const": "accepted" }
+          },
+          "required": ["status"]
+        }
+      },
+      "required": ["status", "decision"]
+    },
+    {
+      "properties": {
+        "status": { "const": "rejected" },
+        "decision": {
+          "type": "object",
+          "properties": {
+            "status": { "const": "rejected" }
+          },
+          "required": ["status"]
+        }
+      },
+      "required": ["status", "decision"]
+    },
+    {
+      "properties": {
+        "status": { "const": "inconclusive" },
+        "decision": {
+          "type": "object",
+          "properties": {
+            "status": { "const": "inconclusive" }
+          },
+          "required": ["status"]
+        }
+      },
+      "required": ["status", "decision"]
+    }
+  ],
+  "properties": {
+    "schemaVersion": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/SchemaVersion" },
+    "id": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/Ulid" },
+    "status": { "enum": ["proposed", "accepted", "rejected", "inconclusive"] },
+    "findingIds": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "targetSurface": {
+      "enum": [
+        "prompt",
+        "tool-schema",
+        "tool-affordance-policy",
+        "compaction-policy",
+        "verifier-rubric",
+        "retry-policy",
+        "playbook"
+      ]
+    },
+    "proposedEdit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary", "patches"],
+      "properties": {
+        "summary": { "type": "string", "minLength": 1 },
+        "patches": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "https://autocontext.dev/schema/patch.json" }
+        }
+      }
+    },
+    "expectedImpact": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "qualityDelta": { "type": "number" },
+        "costDelta": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/CostMetric" },
+        "latencyDelta": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/LatencyMetric" },
+        "riskReduction": { "type": "string", "minLength": 1 },
+        "notes": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "rollbackCriteria": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "provenance": { "$ref": "https://autocontext.dev/schema/provenance.json" },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "reason",
+        "validation",
+        "promotionDecision",
+        "candidateArtifactId",
+        "candidateEvalRunId",
+        "decidedAt"
+      ],
+      "properties": {
+        "status": { "enum": ["accepted", "rejected", "inconclusive"] },
+        "reason": { "type": "string", "minLength": 1 },
+        "validation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "suiteId", "evidenceRefs"],
+          "properties": {
+            "mode": { "enum": ["dev", "heldout", "fresh"] },
+            "suiteId": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/SuiteId" },
+            "evidenceRefs": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        "promotionDecision": { "$ref": "https://autocontext.dev/schema/promotion-decision.json" },
+        "candidateArtifactId": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/Ulid" },
+        "candidateEvalRunId": { "type": "string", "minLength": 1 },
+        "baselineArtifactId": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/Ulid" },
+        "baselineEvalRunId": { "type": "string", "minLength": 1 },
+        "decidedAt": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/IsoTimestamp" }
+      }
+    }
+  }
+}

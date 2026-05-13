@@ -1,10 +1,12 @@
 import {
   newArtifactId,
+  newHarnessProposalId,
   defaultEnvironmentTag,
   type ArtifactId,
   type ChangeSetId,
   type ContentHash,
   type EnvironmentTag,
+  type HarnessProposalId,
   type Scenario,
   type SuiteId,
 } from "./branded-ids.js";
@@ -19,6 +21,12 @@ import type {
   EvalRunIntegrity,
   EvalRunReconciliation,
   EvalTrial,
+  HarnessChangeDecision,
+  HarnessChangeProposal,
+  HarnessChangeSurface,
+  HarnessExpectedImpact,
+  HarnessProposedEdit,
+  HarnessChangeProposalStatus,
   MemoryPackRef,
   MetricBundle,
   PromotionEvent,
@@ -112,6 +120,35 @@ export function createEvalRun(inputs: CreateEvalRunInputs): EvalRun {
     ...(inputs.trials !== undefined ? { trials: inputs.trials } : {}),
     ...(inputs.reconciliation !== undefined ? { reconciliation: inputs.reconciliation } : {}),
     ...(inputs.memoryPacks !== undefined ? { memoryPacks: inputs.memoryPacks } : {}),
+  };
+}
+
+export interface CreateHarnessChangeProposalInputs {
+  readonly id?: HarnessProposalId;
+  readonly status?: HarnessChangeProposalStatus;
+  readonly findingIds: readonly string[];
+  readonly targetSurface: HarnessChangeSurface;
+  readonly proposedEdit: HarnessProposedEdit;
+  readonly expectedImpact?: HarnessExpectedImpact;
+  readonly rollbackCriteria: readonly string[];
+  readonly provenance: Provenance;
+  readonly decision?: HarnessChangeDecision;
+}
+
+export function createHarnessChangeProposal(
+  inputs: CreateHarnessChangeProposalInputs,
+): HarnessChangeProposal {
+  return {
+    schemaVersion: CURRENT_SCHEMA_VERSION,
+    id: inputs.id ?? newHarnessProposalId(),
+    status: inputs.status ?? inputs.decision?.status ?? "proposed",
+    findingIds: inputs.findingIds,
+    targetSurface: inputs.targetSurface,
+    proposedEdit: inputs.proposedEdit,
+    expectedImpact: inputs.expectedImpact ?? {},
+    rollbackCriteria: inputs.rollbackCriteria,
+    provenance: inputs.provenance,
+    ...(inputs.decision !== undefined ? { decision: inputs.decision } : {}),
   };
 }
 

@@ -62,6 +62,12 @@ describe("subprocess: control-plane --help on each namespace", () => {
     expect(r.stdout).toContain("decide");
   });
 
+  test("autoctx harness --help", () => {
+    const r = runCli(["harness", "--help"], { cwd: tmp });
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toContain("proposal");
+  });
+
   test("autoctx registry --help", () => {
     const r = runCli(["registry", "--help"], { cwd: tmp });
     expect(r.exitCode).toBe(0);

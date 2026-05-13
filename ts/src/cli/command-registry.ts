@@ -54,6 +54,7 @@ export type ControlPlaneCommandName =
   | "candidate"
   | "eval"
   | "promotion"
+  | "harness"
   | "registry"
   | "emit-pr";
 
@@ -106,6 +107,7 @@ const COMMANDS: readonly CommandDescriptor[] = [
   { name: "candidate", description: "Register/list/show/lineage/rollback control-plane artifacts", group: "control-plane", route: { kind: "control-plane", command: "candidate" } },
   { name: "eval", description: "Attach/list EvalRuns on artifacts", group: "control-plane", route: { kind: "control-plane", command: "eval" } },
   { name: "promotion", description: "Decide/apply/history for promotion transitions", group: "control-plane", route: { kind: "control-plane", command: "promotion" } },
+  { name: "harness", description: "Create and gate evidence-backed harness/context proposals", group: "control-plane", route: { kind: "control-plane", command: "harness" } },
   { name: "registry", description: "Repair/validate/migrate the control-plane registry", group: "control-plane", route: { kind: "control-plane", command: "registry" } },
   { name: "emit-pr", description: "Generate a promotion PR (or dry-run bundle) for a candidate", group: "control-plane", route: { kind: "control-plane", command: "emit-pr" } },
   { name: "production-traces", description: "Ingest/list/show/stats/build-dataset/export/policy/rotate-salt/prune (Foundation A — AC-539)", group: "control-plane", route: { kind: "no-db", command: "production-traces" } },
