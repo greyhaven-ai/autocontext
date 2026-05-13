@@ -116,6 +116,7 @@ class ImprovementLoop:
         cap_score_jumps: bool = False,
         dimension_threshold: float | None = None,
         output_verifier: OutputVerifier | None = None,
+        output_checkpointer: OutputVerifier | None = None,
         on_event: Callable[[ImprovementLoopEvent], None] | None = None,
     ) -> None:
         self.task = task
@@ -129,6 +130,13 @@ class ImprovementLoop:
         # When set, a non-passing verifier round forces effective_score to 0
         # and feeds the verifier's stderr/stdout into the next revision prompt.
         self.output_verifier = output_verifier if (output_verifier and output_verifier.enabled) else None
+        # AC-727: optional per-round checkpoint command. Same OutputVerifier
+        # plumbing but used as a non-vetoing side effect -- runs after each
+        # round and lets the operator preserve partial progress (e.g. git
+        # commit, copy output to a salvage location) before later rounds
+        # might overshoot or time out. Checkpoint failures are logged and
+        # surface as a `checkpoint_done` event but do NOT zero the score.
+        self.output_checkpointer = output_checkpointer if (output_checkpointer and output_checkpointer.enabled) else None
         # AC-752: optional per-round event sink so callers (e.g. `--ndjson`)
         # can stream progress without waiting for the final result blob.
         self._on_event: Callable[[ImprovementLoopEvent], None] = on_event or (lambda _e: None)
@@ -412,6 +420,28 @@ class ImprovementLoop:
                     effective_score=effective_score,
                 )
             )
+
+            # AC-727: run the optional checkpoint command after the round
+            # has been judged + (optionally) verified. Non-vetoing -- a
+            # failed checkpoint logs a warning and emits an event but does
+            # not influence the round's score or termination.
+            if self.output_checkpointer is not None:
+                checkpoint_outcome = self.output_checkpointer.run(current_output)
+                if not checkpoint_outcome.ok:
+                    logger.warning(
+                        "round %d: checkpoint command failed (exit %d): %s",
+                        round_num,
+                        checkpoint_outcome.exit_code,
+                        (checkpoint_outcome.stderr or checkpoint_outcome.stdout or "").strip()[:200],
+                    )
+                self._on_event(
+                    ImprovementLoopEvent(
+                        event="checkpoint_done",
+                        round=round_num,
+                        checkpoint_ok=checkpoint_outcome.ok,
+                        checkpoint_exit_code=checkpoint_outcome.exit_code,
+                    )
+                )
 
             # Dimension threshold gate is computed up front so the same
             # `dims_ok` value can be used by both the best-tracking update

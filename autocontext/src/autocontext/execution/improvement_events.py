@@ -30,6 +30,11 @@ class ImprovementLoopEvent:
       (AC-753).
     - `judge_done`: round, score
     - `verifier_done`: round, verifier_ok, verifier_exit_code
+    - `checkpoint_done`: round, checkpoint_ok, checkpoint_exit_code -- the
+      external `--checkpoint-cmd` ran after the round and either succeeded
+      (ok=True) or failed (ok=False). Unlike `verifier_done`, a failed
+      checkpoint does NOT veto the round's score; checkpointing is a
+      side-effect for preserving partial progress (AC-727).
     - `round_summary`: round, effective_score
     - `final`: best_score, best_round, total_rounds, met_threshold
     """
@@ -38,7 +43,7 @@ class ImprovementLoopEvent:
     # Existing callers may construct events positionally as
     # `ImprovementLoopEvent("judge_done", 1, 0.95)`; new fields go at the END so
     # they don't shift the meaning of trailing positional arguments. AC-753 added
-    # `output` and intentionally appends it after the older fields.
+    # `output`, AC-727 added the `checkpoint_*` fields, intentionally appended.
     event: str
     round: int | None = None
     score: float | None = None
@@ -50,3 +55,5 @@ class ImprovementLoopEvent:
     total_rounds: int | None = None
     met_threshold: bool | None = None
     output: str | None = None
+    checkpoint_ok: bool | None = None
+    checkpoint_exit_code: int | None = None

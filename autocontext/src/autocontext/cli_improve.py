@@ -119,6 +119,30 @@ def register_improve_command(
             min=1.0,
             help="Timeout in seconds for each --verify-cmd invocation.",
         ),
+        checkpoint_cmd: str = typer.Option(
+            "",
+            "--checkpoint-cmd",
+            help=(
+                "External command to checkpoint each round's output (AC-727). "
+                "Runs after the round is judged and verified; non-zero exit is "
+                "logged but does NOT veto the round (unlike --verify-cmd). "
+                "Use this to preserve partial progress -- e.g. "
+                "'git -C /repo commit -am round-checkpoint' or "
+                "'cp {file} /tmp/round.lean'. Same `{file}` placeholder "
+                "semantics as --verify-cmd."
+            ),
+        ),
+        checkpoint_suffix: str = typer.Option(
+            ".txt",
+            "--checkpoint-suffix",
+            help="Suffix for the temp file passed to --checkpoint-cmd (e.g. '.lean', '.py').",
+        ),
+        checkpoint_timeout: float = typer.Option(
+            300.0,
+            "--checkpoint-timeout",
+            min=1.0,
+            help="Timeout in seconds for each --checkpoint-cmd invocation.",
+        ),
     ) -> None:
         """Run multi-round improvement loop on agent output.
 
@@ -126,7 +150,10 @@ def register_improve_command(
         the improvement loop with judge-guided iteration.
         """
         from autocontext.execution.improvement_loop import ImprovementLoop
-        from autocontext.execution.output_verifier import make_verifier
+        from autocontext.execution.output_verifier import (
+            make_checkpointer,
+            make_verifier,
+        )
         from autocontext.execution.task_runner import SimpleAgentTask
         from autocontext.providers.registry import get_provider as get_judge_provider
 
@@ -165,6 +192,12 @@ def register_improve_command(
                 file_suffix=verify_suffix,
                 timeout_s=verify_timeout,
             )
+            # AC-727: optional non-vetoing per-round checkpoint command.
+            checkpointer = make_checkpointer(
+                checkpoint_cmd or None,
+                file_suffix=checkpoint_suffix,
+                timeout_s=checkpoint_timeout,
+            )
             # AC-752: when --ndjson is set, stream per-round events as JSON lines
             # so long-running loops have progress visibility before --json's final
             # blob lands. The event sink writes one compact JSON line per event.
@@ -185,6 +218,7 @@ def register_improve_command(
                 max_rounds=max_rounds,
                 quality_threshold=threshold,
                 output_verifier=verifier,
+                output_checkpointer=checkpointer,
                 on_event=on_event,
             )
             starting_output = initial_output or task.generate_output(state)

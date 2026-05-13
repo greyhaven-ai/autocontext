@@ -373,3 +373,139 @@ class TestVerifierVetoProvenance:
         assert score_jump_warnings, (
             "genuine score jump (no verifier veto on previous round) should still trigger the max_score_delta warning"
         )
+
+
+# -- AC-727 slice: per-round checkpoint command --
+
+
+class _RecordingTask(AgentTaskInterface):
+    """Two-round task. Each round produces a slightly different output so
+    we can assert the checkpoint command sees each one."""
+
+    def get_task_prompt(self, state):
+        return "."
+
+    def evaluate_output(self, output, state, **kwargs):
+        # Sub-threshold for both rounds so the loop runs to max_rounds.
+        return AgentTaskResult(score=0.5, reasoning="x", dimension_scores={})
+
+    def revise_output(self, current_output, judge_result, state):
+        return current_output + "-rev"
+
+    def get_rubric(self):
+        return "."
+
+    def initial_state(self, seed=None):
+        return {}
+
+    def describe_task(self):
+        return "."
+
+
+def _capturing_checkpoint(tmp_path):
+    """Build a checkpoint command that appends the per-round output to a
+    capture file, plus the path so the test can read it back. The command
+    uses `{file}` so we exercise the file-mode placeholder path.
+
+    Returns (command_template, captured_outputs_callable).
+    """
+    capture = tmp_path / "checkpoint-captures.log"
+    capture.write_text("")
+    script = textwrap.dedent(
+        f"""
+        import sys
+        from pathlib import Path
+        src = Path(sys.argv[1])
+        Path({str(capture)!r}).open("a", encoding="utf-8").write(src.read_text() + "\\n---\\n")
+        sys.exit(0)
+        """
+    ).strip()
+    return ([sys.executable, "-c", script, "{file}"], capture)
+
+
+def _failing_checkpoint():
+    """Checkpoint command that always exits non-zero."""
+    script = textwrap.dedent(
+        """
+        import sys
+        print('checkpoint script blew up', file=sys.stderr)
+        sys.exit(7)
+        """
+    ).strip()
+    return OutputVerifier(command=[sys.executable, "-c", script])
+
+
+class TestCheckpointer:
+    """AC-727: a per-round checkpoint command preserves partial progress
+    before later rounds overshoot. Unlike `--verify-cmd`, a checkpoint
+    failure must NOT veto the round."""
+
+    def test_checkpointer_invoked_each_round_with_output(self, tmp_path) -> None:
+        command, capture = _capturing_checkpoint(tmp_path)
+        checkpointer = OutputVerifier(command=command, file_suffix=".txt")
+
+        loop = ImprovementLoop(
+            task=_RecordingTask(),
+            max_rounds=2,
+            quality_threshold=0.9,
+            output_checkpointer=checkpointer,
+        )
+        loop.run("seed", {})
+
+        snapshots = [s for s in capture.read_text().split("\n---\n") if s]
+        assert snapshots == ["seed", "seed-rev"], f"checkpointer did not capture per-round output; got {snapshots!r}"
+
+    def test_checkpointer_failure_does_not_abort_loop(self) -> None:
+        # Failing checkpointer must not veto the run. The loop continues to
+        # max_rounds and the result reflects the judge's view, unchanged.
+        loop = ImprovementLoop(
+            task=_RecordingTask(),
+            max_rounds=2,
+            quality_threshold=0.9,
+            output_checkpointer=_failing_checkpoint(),
+        )
+        result = loop.run("seed", {})
+        assert result.total_rounds == 2
+        assert result.best_score == 0.5  # judge score, not 0; no veto
+
+    def test_checkpoint_done_event_emitted(self, tmp_path) -> None:
+        from autocontext.execution.improvement_events import ImprovementLoopEvent
+
+        events: list[ImprovementLoopEvent] = []
+        command, _capture = _capturing_checkpoint(tmp_path)
+        checkpointer = OutputVerifier(command=command, file_suffix=".txt")
+
+        loop = ImprovementLoop(
+            task=_RecordingTask(),
+            max_rounds=1,
+            quality_threshold=0.9,
+            output_checkpointer=checkpointer,
+            on_event=events.append,
+        )
+        loop.run("seed", {})
+
+        checkpoint_events = [e for e in events if e.event == "checkpoint_done"]
+        assert len(checkpoint_events) == 1
+        ev = checkpoint_events[0]
+        assert ev.round == 1
+        assert ev.checkpoint_ok is True
+        assert ev.checkpoint_exit_code == 0
+
+    def test_checkpoint_done_event_records_failure(self) -> None:
+        from autocontext.execution.improvement_events import ImprovementLoopEvent
+
+        events: list[ImprovementLoopEvent] = []
+        loop = ImprovementLoop(
+            task=_RecordingTask(),
+            max_rounds=1,
+            quality_threshold=0.9,
+            output_checkpointer=_failing_checkpoint(),
+            on_event=events.append,
+        )
+        loop.run("seed", {})
+
+        checkpoint_events = [e for e in events if e.event == "checkpoint_done"]
+        assert len(checkpoint_events) == 1
+        ev = checkpoint_events[0]
+        assert ev.checkpoint_ok is False
+        assert ev.checkpoint_exit_code == 7
