@@ -157,6 +157,11 @@ class ImprovementLoop:
         best_output = current_output
         best_score = 0.0
         best_round = 1
+        # AC-756 (reviewer P2): track whether the round that produced
+        # best_score also satisfied dimension_threshold, so the fallthrough
+        # met_threshold mirrors the full early-return predicate
+        # (score >= quality_threshold AND dims_ok), not just the score gate.
+        best_dims_ok = False
         judge_failures = 0
         total_internal_retries = 0
         last_good_result = None  # Carry forward for revision on judge failure
@@ -408,10 +413,19 @@ class ImprovementLoop:
                 )
             )
 
+            # Dimension threshold gate is computed up front so the same
+            # `dims_ok` value can be used by both the best-tracking update
+            # (AC-756 reviewer P2: fallthrough met_threshold must respect
+            # dimension_threshold) and the early-return predicate below.
+            dims_ok = True
+            if self.dimension_threshold is not None and result.dimension_scores:
+                dims_ok = all(v >= self.dimension_threshold for v in result.dimension_scores.values())
+
             if effective_score > best_score:
                 best_score = effective_score
                 best_output = current_output
                 best_round = round_num
+                best_dims_ok = dims_ok
 
             # AC-266: Add round output as Pareto candidate with dimension scores
             candidate_scores = {"task_score": effective_score}
@@ -467,11 +481,9 @@ class ImprovementLoop:
             if not verifier_vetoed:
                 last_unvetoed_score = result.score
 
-            # Dimension threshold gate: all dimensions must meet minimum
-            dims_ok = True
-            if self.dimension_threshold is not None and result.dimension_scores:
-                dims_ok = all(v >= self.dimension_threshold for v in result.dimension_scores.values())
-
+            # `dims_ok` was computed up front (alongside best-tracking) so
+            # both the best-round dims gate and the early-return predicate
+            # see the same value.
             if effective_score >= self.quality_threshold and round_num >= self.min_rounds and dims_ok:
                 near_threshold = effective_score < self.quality_threshold + NEAR_THRESHOLD_MARGIN
 
@@ -573,13 +585,13 @@ class ImprovementLoop:
 
         duration_ms = int((time.monotonic() - loop_start) * 1000)
         # AC-756: `met_threshold` semantically means "did the best output
-        # we produced clear the quality bar?". The early-return paths
-        # above already set it True only when effective_score >= threshold,
-        # so best_score >= threshold is guaranteed at those exits. On the
-        # fallthrough path (plateau-stall, unchanged_output, max_rounds,
-        # consecutive_failures, etc.) we previously hard-coded False, which
-        # contradicted the field name when the bar was crossed earlier in
-        # the run.
+        # we produced clear the quality bar?". Mirror the early-return
+        # predicate -- score >= quality_threshold AND dimension_threshold
+        # satisfied on the round that produced best_score -- so a
+        # plateau-stall / max-rounds / unchanged-output exit reflects the
+        # same gate that the early-return paths check (reviewer P2 on
+        # PR #935: dimension_threshold was being bypassed by an earlier
+        # version of this fix that only checked the overall score).
         return _emit_final(
             ImprovementResult(
                 rounds=rounds,
@@ -587,7 +599,7 @@ class ImprovementLoop:
                 best_score=best_score,
                 best_round=best_round,
                 total_rounds=len(rounds),
-                met_threshold=best_score >= self.quality_threshold,
+                met_threshold=best_score >= self.quality_threshold and best_dims_ok,
                 judge_failures=judge_failures,
                 termination_reason=termination_reason,
                 dimension_trajectory=dimension_trajectory,

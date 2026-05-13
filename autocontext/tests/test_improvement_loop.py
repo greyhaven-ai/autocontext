@@ -558,6 +558,32 @@ class TestTerminationReason:
         assert result.best_score == 0.5
         assert result.met_threshold is False
 
+    def test_met_threshold_false_when_best_round_failed_dimension_threshold(self):
+        """AC-756 reviewer P2: the early-return paths gate met_threshold=True
+        on `effective_score >= quality_threshold AND dims_ok`. The fallthrough
+        must mirror that gate, not just check the overall score. Otherwise a
+        run that hit max_rounds with a dimension below the per-dimension bar
+        is wrongly flagged as having met threshold and downstream automation
+        (notifications, TaskRunner persistence) treats it as a success.
+
+        Reviewer repro: quality_threshold=0.9, dimension_threshold=0.8,
+        score=0.95, dimensions={'action': 0.5}. Without dim gating in the
+        fallthrough, met_threshold returned True even though the action
+        dimension never crossed 0.8.
+        """
+        task = ProgrammableTask([AgentTaskResult(score=0.95, reasoning="x", dimension_scores={"action": 0.5})])
+        loop = ImprovementLoop(
+            task=task,
+            max_rounds=2,
+            quality_threshold=0.9,
+            dimension_threshold=0.8,
+        )
+        result = loop.run("test", {})
+        assert result.best_score == 0.95
+        # Best round did not satisfy dimension_threshold (action 0.5 < 0.8),
+        # so met_threshold must reflect that gate failure.
+        assert result.met_threshold is False
+
 
 # -- Plateau detection tests --
 
