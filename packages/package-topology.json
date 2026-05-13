@@ -26,6 +26,32 @@
     "compatibilityShell": "Thin package layer that re-exports or dispatches into the new internal artifacts while the migration is in progress.",
     "packageTopology": "The path and artifact map that defines which package owns each ecosystem role during the migration."
   },
+  "agentApps": {
+    "runtimeContractsStatus": "umbrella-owned-until-core-extraction",
+    "currentRuntimeContractsPackage": "autoctx/agent-runtime",
+    "plannedRuntimeContractsPackage": "@autocontext/core",
+    "buildDeployPackage": "@autocontext/control-plane",
+    "umbrellaCliCompatibility": "autoctx may dispatch build commands while the package split is in progress",
+    "hostedFleetOrchestration": "out-of-scope-proprietary-product",
+    "unextractedCoreContracts": [
+      "ts/src/agent-runtime/index.ts",
+      "ts/src/session/runtime-session.ts",
+      "ts/src/session/runtime-session-notifications.ts",
+      "tsx dependency for TypeScript handler loading"
+    ],
+    "targets": {
+      "node": {
+        "phase": "mvp",
+        "owner": "@autocontext/control-plane",
+        "runtime": "load local agent handlers through autoctx/agent-runtime until the surface is extracted into @autocontext/core"
+      },
+      "cloudflare": {
+        "phase": "spike",
+        "owner": "@autocontext/control-plane",
+        "runtime": "prototype Worker and Durable Object session persistence after Node target contracts stabilize"
+      }
+    }
+  },
   "python": {
     "umbrella": {
       "name": "autocontext",

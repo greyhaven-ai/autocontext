@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 const repoRoot = join(import.meta.dirname, "..", "..");
 const topologyPath = join(repoRoot, "packages", "package-topology.json");
 const boundariesPath = join(repoRoot, "packages", "package-boundaries.json");
+const packageSplitDocPath = join(repoRoot, "docs", "core-control-package-split.md");
 
 type PackageEntry = {
   name: string;
@@ -18,6 +19,18 @@ type TsPackageEntry = PackageEntry & {
 type Topology = {
   status: string;
   guardrails: Record<string, string>;
+  agentApps?: {
+    runtimeContractsStatus: string;
+    currentRuntimeContractsPackage: string;
+    plannedRuntimeContractsPackage: string;
+    buildDeployPackage: string;
+    hostedFleetOrchestration: string;
+    unextractedCoreContracts: string[];
+    targets: Record<string, {
+      phase: string;
+      owner: string;
+    }>;
+  };
   typescript: {
     umbrella: PackageEntry & { bin: string };
     core: TsPackageEntry;
@@ -99,6 +112,63 @@ describe("package topology", () => {
       futureProprietaryWork: "separate-repository",
       defaultInstallCompatibility: "preserve-autocontext-autoctx-and-autoctx-cli",
     });
+  });
+
+  it("records the agent app build target boundary", () => {
+    const topology = loadTopology();
+
+    expect(topology.agentApps).toMatchObject({
+      runtimeContractsStatus: "umbrella-owned-until-core-extraction",
+      currentRuntimeContractsPackage: "autoctx/agent-runtime",
+      plannedRuntimeContractsPackage: "@autocontext/core",
+      buildDeployPackage: "@autocontext/control-plane",
+      hostedFleetOrchestration: "out-of-scope-proprietary-product",
+      targets: {
+        node: {
+          phase: "mvp",
+          owner: "@autocontext/control-plane",
+        },
+        cloudflare: {
+          phase: "spike",
+          owner: "@autocontext/control-plane",
+        },
+      },
+    });
+  });
+
+  it("does not advertise unextracted agent runtime contracts as core-owned", () => {
+    const topology = loadTopology();
+    const coreConfig = loadTsConfig(topology.typescript.core.path);
+    const coreIncludes = new Set(coreConfig.include ?? []);
+
+    expect(topology.agentApps?.runtimeContractsStatus).toBe("umbrella-owned-until-core-extraction");
+    expect(topology.agentApps?.currentRuntimeContractsPackage).toBe("autoctx/agent-runtime");
+    expect(topology.agentApps?.plannedRuntimeContractsPackage).toBe(topology.typescript.core.name);
+    expect(topology.agentApps?.unextractedCoreContracts).toEqual([
+      "ts/src/agent-runtime/index.ts",
+      "ts/src/session/runtime-session.ts",
+      "ts/src/session/runtime-session-notifications.ts",
+      "tsx dependency for TypeScript handler loading",
+    ]);
+    expect(coreIncludes.has("../../../ts/src/agent-runtime/index.ts")).toBe(false);
+    expect(coreIncludes.has("../../../ts/src/session/runtime-session.ts")).toBe(false);
+    expect(coreIncludes.has("../../../ts/src/session/runtime-session-notifications.ts")).toBe(false);
+  });
+
+  it("documents the agent app deployment boundary and risks", () => {
+    const doc = readFileSync(packageSplitDocPath, "utf-8");
+
+    expect(doc).toContain("## Agent App Build Targets");
+    expect(doc).toContain("Runtime contracts are still umbrella-owned");
+    expect(doc).toContain("autoctx/agent-runtime");
+    expect(doc).toContain("importing missing core package");
+    expect(doc).toContain("Node Target MVP");
+    expect(doc).toContain("Cloudflare Target Spike");
+    expect(doc).toContain("Hosted fleet orchestration");
+    expect(doc).toContain("Bundling");
+    expect(doc).toContain("Environment variables");
+    expect(doc).toContain("Session persistence");
+    expect(doc).toContain("Sandbox providers");
   });
 
   it("matches TypeScript package names to the topology", () => {
