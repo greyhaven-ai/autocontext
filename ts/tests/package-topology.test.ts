@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 const repoRoot = join(import.meta.dirname, "..", "..");
 const topologyPath = join(repoRoot, "packages", "package-topology.json");
 const boundariesPath = join(repoRoot, "packages", "package-boundaries.json");
+const packageSplitDocPath = join(repoRoot, "docs", "core-control-package-split.md");
 
 type PackageEntry = {
   name: string;
@@ -18,6 +19,15 @@ type TsPackageEntry = PackageEntry & {
 type Topology = {
   status: string;
   guardrails: Record<string, string>;
+  agentApps?: {
+    runtimeContractsPackage: string;
+    buildDeployPackage: string;
+    hostedFleetOrchestration: string;
+    targets: Record<string, {
+      phase: string;
+      owner: string;
+    }>;
+  };
   typescript: {
     umbrella: PackageEntry & { bin: string };
     core: TsPackageEntry;
@@ -99,6 +109,39 @@ describe("package topology", () => {
       futureProprietaryWork: "separate-repository",
       defaultInstallCompatibility: "preserve-autocontext-autoctx-and-autoctx-cli",
     });
+  });
+
+  it("records the agent app build target boundary", () => {
+    const topology = loadTopology();
+
+    expect(topology.agentApps).toMatchObject({
+      runtimeContractsPackage: "@autocontext/core",
+      buildDeployPackage: "@autocontext/control-plane",
+      hostedFleetOrchestration: "out-of-scope-proprietary-product",
+      targets: {
+        node: {
+          phase: "mvp",
+          owner: "@autocontext/control-plane",
+        },
+        cloudflare: {
+          phase: "spike",
+          owner: "@autocontext/control-plane",
+        },
+      },
+    });
+  });
+
+  it("documents the agent app deployment boundary and risks", () => {
+    const doc = readFileSync(packageSplitDocPath, "utf-8");
+
+    expect(doc).toContain("## Agent App Build Targets");
+    expect(doc).toContain("Node Target MVP");
+    expect(doc).toContain("Cloudflare Target Spike");
+    expect(doc).toContain("Hosted fleet orchestration");
+    expect(doc).toContain("Bundling");
+    expect(doc).toContain("Environment variables");
+    expect(doc).toContain("Session persistence");
+    expect(doc).toContain("Sandbox providers");
   });
 
   it("matches TypeScript package names to the topology", () => {
