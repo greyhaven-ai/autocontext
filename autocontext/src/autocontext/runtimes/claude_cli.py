@@ -60,6 +60,35 @@ def _kill_process_group(proc: subprocess.Popen) -> None:
         logger.debug("claude-cli killpg skipped: %s", exc)
 
 
+def _bounded_drain_and_close(proc: subprocess.Popen, grace_seconds: float) -> None:
+    """Bounded post-kill cleanup: drain pipes with a wall-clock cap, then close.
+
+    Used by `_run_with_group_kill` after the process group has been
+    SIGKILL'd. If the drain itself stalls (a wedged grandchild still
+    holds an fd), we log and abandon the pipes rather than blocking the
+    caller. Pipe handles are then best-effort closed so leaked fds
+    don't accumulate across retries.
+    """
+    try:
+        proc.communicate(timeout=grace_seconds)
+    except subprocess.TimeoutExpired:
+        logger.warning(
+            "claude-cli drain stalled after SIGKILL; abandoning pipes (grace=%.1fs)",
+            grace_seconds,
+        )
+    except (OSError, ValueError):
+        # Pipes might already be closed or in a partially-torn-down state
+        # if the caller is mid-shutdown. Don't let cleanup mask the real
+        # exception we're re-raising.
+        pass
+    for stream in (proc.stdin, proc.stdout, proc.stderr):
+        if stream is not None:
+            try:
+                stream.close()
+            except (OSError, ValueError):
+                pass
+
+
 def _run_with_group_kill(
     args: list[str],
     *,
@@ -79,6 +108,12 @@ def _run_with_group_kill(
     3. Bounds the post-kill drain by `grace_seconds`, so even a
        pathological wedged pipe cannot extend wall-clock past
        `timeout + grace_seconds`.
+    4. Same cleanup runs on `KeyboardInterrupt` / any other
+       `BaseException` (AC-761 PR #940 review): because the child is
+       detached via `start_new_session=True`, terminal Ctrl-C does NOT
+       propagate to the claude process group and a leaked detached
+       claude would keep running. Catch any abnormal exit, kill the
+       group, drain bounded, and re-raise.
 
     Re-raises `subprocess.TimeoutExpired` on timeout so the caller's
     retry/backoff path keeps working.
@@ -94,27 +129,17 @@ def _run_with_group_kill(
     proc = subprocess.Popen(args, **popen_kwargs)
     try:
         stdout, stderr = proc.communicate(input=prompt, timeout=timeout)
-    except subprocess.TimeoutExpired as exc:
+    except subprocess.TimeoutExpired:
         _kill_process_group(proc)
-        # Bounded drain: pull whatever the pipes will yield, but never
-        # block longer than `grace_seconds`. If the drain itself stalls
-        # (e.g., a wedged grandchild still has the fd), we accept the
-        # loss and let the timeout propagate.
-        try:
-            proc.communicate(timeout=grace_seconds)
-        except subprocess.TimeoutExpired:
-            logger.warning(
-                "claude-cli drain stalled after SIGKILL; abandoning pipes (grace=%.1fs)",
-                grace_seconds,
-            )
-        # Best-effort close so leaked fds don't accumulate across retries.
-        for stream in (proc.stdin, proc.stdout, proc.stderr):
-            if stream is not None:
-                try:
-                    stream.close()
-                except (OSError, ValueError):
-                    pass
-        raise exc
+        _bounded_drain_and_close(proc, grace_seconds)
+        raise
+    except BaseException:
+        # KeyboardInterrupt, SystemExit, or any other unexpected abort.
+        # Without this branch the detached claude process group would
+        # outlive the autoctx process and keep consuming resources.
+        _kill_process_group(proc)
+        _bounded_drain_and_close(proc, grace_seconds)
+        raise
     return subprocess.CompletedProcess(
         args=args,
         returncode=proc.returncode if proc.returncode is not None else -1,
