@@ -572,6 +572,14 @@ class ImprovementLoop:
                 current_output = revised
 
         duration_ms = int((time.monotonic() - loop_start) * 1000)
+        # AC-756: `met_threshold` semantically means "did the best output
+        # we produced clear the quality bar?". The early-return paths
+        # above already set it True only when effective_score >= threshold,
+        # so best_score >= threshold is guaranteed at those exits. On the
+        # fallthrough path (plateau-stall, unchanged_output, max_rounds,
+        # consecutive_failures, etc.) we previously hard-coded False, which
+        # contradicted the field name when the bar was crossed earlier in
+        # the run.
         return _emit_final(
             ImprovementResult(
                 rounds=rounds,
@@ -579,7 +587,7 @@ class ImprovementLoop:
                 best_score=best_score,
                 best_round=best_round,
                 total_rounds=len(rounds),
-                met_threshold=False,
+                met_threshold=best_score >= self.quality_threshold,
                 judge_failures=judge_failures,
                 termination_reason=termination_reason,
                 dimension_trajectory=dimension_trajectory,
