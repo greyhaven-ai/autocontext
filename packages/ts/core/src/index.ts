@@ -102,7 +102,11 @@ export {
 } from "../../../../ts/src/production-traces/taxonomy/index.js";
 export {
 	ContextBudget,
+	ContextBudgetPolicy,
 	estimateTokens,
+} from "../../../../ts/src/prompts/context-budget.js";
+export type {
+	ContextBudgetPolicyOptions,
 } from "../../../../ts/src/prompts/context-budget.js";
 export type {
 	PromptBundle,

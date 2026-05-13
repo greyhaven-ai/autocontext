@@ -27,6 +27,28 @@ def test_build_prompt_bundle_accepts_role_specific_evidence_manifests() -> None:
     assert "Prior-Run Evidence (Architect)" not in bundle.analyst
 
 
+def test_build_prompt_bundle_preserves_shared_evidence_when_budgeted() -> None:
+    from autocontext.prompts.templates import build_prompt_bundle
+
+    shared_evidence = "## Prior-Run Evidence\nSHARED-EVIDENCE"
+    bundle = build_prompt_bundle(
+        scenario_rules="rules",
+        strategy_interface="interface",
+        evaluation_criteria="criteria",
+        previous_summary="summary",
+        observation=Observation(narrative="test", state={}, constraints=[]),
+        current_playbook="playbook",
+        available_tools="tools",
+        evidence_manifest=shared_evidence,
+        context_budget_tokens=100_000,
+        semantic_compaction=False,
+    )
+
+    assert "SHARED-EVIDENCE" in bundle.analyst
+    assert "SHARED-EVIDENCE" in bundle.architect
+    assert "SHARED-EVIDENCE" not in bundle.competitor
+
+
 def test_build_prompt_bundle_compacts_history_before_budget_fallback() -> None:
     from autocontext.prompts.templates import build_prompt_bundle
 

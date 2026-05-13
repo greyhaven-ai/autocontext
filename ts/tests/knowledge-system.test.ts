@@ -455,13 +455,79 @@ describe("ContextBudget", () => {
     expect(result).toEqual(components);
   });
 
-  it("truncated text ends with truncation marker", async () => {
+  it("truncated text ends with truncation marker when the marker fits the budget", async () => {
     const { ContextBudget } = await import("../src/prompts/context-budget.js");
-    const budget = new ContextBudget(5);
+    const budget = new ContextBudget(20);
     const components = {
       trajectory: "a".repeat(400),
     };
     const result = budget.apply(components);
     expect(result.trajectory).toContain("[... truncated for context budget ...]");
+  });
+
+  it("deduplicates equivalent components using canonical policy order", async () => {
+    const { ContextBudget } = await import("../src/prompts/context-budget.js");
+    const duplicate = "Use the stable rollback guard.";
+    const budget = new ContextBudget(1000);
+    const result = budget.apply({
+      playbook: duplicate,
+      analysis: duplicate,
+      trajectory: "Gen 1: 0.5",
+      hints: duplicate,
+    });
+
+    expect(result.playbook).toBe(duplicate);
+    expect(result.analysis).toBe("");
+    expect(result.hints).toBe(duplicate);
+  });
+
+  it("does not deduplicate role-scoped components globally", async () => {
+    const { ContextBudget } = await import("../src/prompts/context-budget.js");
+    const duplicate = "Role-scoped evidence that multiple roles should receive.";
+    const budget = new ContextBudget(1000);
+    const components = {
+      evidence_manifest_analyst: duplicate,
+      evidence_manifest_architect: duplicate,
+      notebook_analyst: duplicate,
+      notebook_architect: duplicate,
+    };
+    const result = budget.apply(components);
+
+    expect(result).toEqual(components);
+  });
+
+  it("applies component caps before global trimming", async () => {
+    const { ContextBudget, ContextBudgetPolicy, estimateTokens } = await import("../src/prompts/context-budget.js");
+    const budget = new ContextBudget(
+      1000,
+      new ContextBudgetPolicy({ componentTokenCaps: { analysis: 5 } }),
+    );
+    const result = budget.apply({
+      playbook: "small playbook",
+      analysis: "A".repeat(200),
+    });
+
+    expect(result.playbook).toBe("small playbook");
+    expect(result.analysis.length).toBeLessThan(200);
+    expect(estimateTokens(result.analysis)).toBeLessThanOrEqual(5);
+  });
+
+  it("lets policy override trim order and protected components", async () => {
+    const { ContextBudget, ContextBudgetPolicy } = await import("../src/prompts/context-budget.js");
+    const budget = new ContextBudget(
+      10,
+      new ContextBudgetPolicy({
+        trimOrder: ["playbook", "analysis"],
+        protectedComponents: ["analysis"],
+        componentTokenCaps: {},
+      }),
+    );
+    const result = budget.apply({
+      playbook: "P".repeat(200),
+      analysis: "A".repeat(200),
+    });
+
+    expect(result.playbook.length).toBeLessThan(200);
+    expect(result.analysis).toBe("A".repeat(200));
   });
 });
