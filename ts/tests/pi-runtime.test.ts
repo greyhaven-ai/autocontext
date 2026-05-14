@@ -4,15 +4,13 @@
 
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { EventEmitter } from "node:events";
-import { execFile, execFileSync, spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 
 vi.mock("node:child_process", () => ({
   execFile: vi.fn(),
-  execFileSync: vi.fn(),
   spawn: vi.fn(),
 }));
 
-const execFileSyncMock = vi.mocked(execFileSync);
 const spawnMock = vi.mocked(spawn);
 void execFile;
 
@@ -37,6 +35,12 @@ class FakeStream extends EventEmitter {
     this.writable = false;
     this.emit("finish");
   }
+
+  destroy(): void {
+    this.destroyed = true;
+    this.writable = false;
+    this.emit("close");
+  }
 }
 
 class InteractiveFakeStream extends EventEmitter {
@@ -60,6 +64,12 @@ class InteractiveFakeStream extends EventEmitter {
     this.writable = false;
     this.emit("finish");
   }
+
+  destroy(): void {
+    this.destroyed = true;
+    this.writable = false;
+    this.emit("close");
+  }
 }
 
 function createFakeSpawnProcess(stdoutLines: string[], closeCode = 0): {
@@ -68,8 +78,10 @@ function createFakeSpawnProcess(stdoutLines: string[], closeCode = 0): {
     stdout: FakeStream;
     stderr: FakeStream;
     killed: boolean;
+    pid: number;
     exitCode: number | null;
-    kill: () => void;
+    signalCode: NodeJS.Signals | null;
+    kill: (signal?: NodeJS.Signals | string) => void;
   };
   stdin: FakeStream;
 } {
@@ -78,8 +90,10 @@ function createFakeSpawnProcess(stdoutLines: string[], closeCode = 0): {
     stdout: FakeStream;
     stderr: FakeStream;
     killed: boolean;
+    pid: number;
     exitCode: number | null;
-    kill: () => void;
+    signalCode: NodeJS.Signals | null;
+    kill: (signal?: NodeJS.Signals | string) => void;
   };
   let emitted = false;
   const emitOutput = (): void => {
@@ -98,13 +112,56 @@ function createFakeSpawnProcess(stdoutLines: string[], closeCode = 0): {
   child.stdout = new FakeStream();
   child.stderr = new FakeStream();
   child.killed = false;
+  child.pid = 1234;
   child.exitCode = null;
-  child.kill = vi.fn(() => {
+  child.signalCode = null;
+  child.kill = vi.fn((signal?: NodeJS.Signals | string) => {
     child.killed = true;
     child.exitCode = -9;
-    child.emit("close", -9);
+    child.signalCode = (signal as NodeJS.Signals | undefined) ?? "SIGTERM";
+    child.emit("close", -9, child.signalCode);
   });
 
+  return { child, stdin };
+}
+
+function createHangingFakeSpawnProcess(pid = 1236): {
+  child: EventEmitter & {
+    stdin: FakeStream;
+    stdout: FakeStream;
+    stderr: FakeStream;
+    killed: boolean;
+    pid: number;
+    exitCode: number | null;
+    signalCode: NodeJS.Signals | null;
+    kill: (signal?: NodeJS.Signals | string) => void;
+  };
+  stdin: FakeStream;
+} {
+  const child = new EventEmitter() as EventEmitter & {
+    stdin: FakeStream;
+    stdout: FakeStream;
+    stderr: FakeStream;
+    killed: boolean;
+    pid: number;
+    exitCode: number | null;
+    signalCode: NodeJS.Signals | null;
+    kill: (signal?: NodeJS.Signals | string) => void;
+  };
+  const stdin = new FakeStream();
+  child.stdin = stdin;
+  child.stdout = new FakeStream();
+  child.stderr = new FakeStream();
+  child.killed = false;
+  child.pid = pid;
+  child.exitCode = null;
+  child.signalCode = null;
+  child.kill = vi.fn((signal?: NodeJS.Signals | string) => {
+    child.killed = true;
+    child.exitCode = -9;
+    child.signalCode = (signal as NodeJS.Signals | undefined) ?? "SIGTERM";
+    child.emit("close", -9, child.signalCode);
+  });
   return { child, stdin };
 }
 
@@ -114,8 +171,10 @@ function createInteractiveFakeSpawnProcess(): {
     stdout: FakeStream;
     stderr: FakeStream;
     killed: boolean;
+    pid: number;
     exitCode: number | null;
-    kill: () => void;
+    signalCode: NodeJS.Signals | null;
+    kill: (signal?: NodeJS.Signals | string) => void;
   };
   stdin: InteractiveFakeStream;
 } {
@@ -124,8 +183,10 @@ function createInteractiveFakeSpawnProcess(): {
     stdout: FakeStream;
     stderr: FakeStream;
     killed: boolean;
+    pid: number;
     exitCode: number | null;
-    kill: () => void;
+    signalCode: NodeJS.Signals | null;
+    kill: (signal?: NodeJS.Signals | string) => void;
   };
   let buffer = "";
   const emitRecord = (record: Record<string, unknown>): void => {
@@ -186,11 +247,14 @@ function createInteractiveFakeSpawnProcess(): {
   child.stdout = new FakeStream();
   child.stderr = new FakeStream();
   child.killed = false;
+  child.pid = 1235;
   child.exitCode = null;
-  child.kill = vi.fn(() => {
+  child.signalCode = null;
+  child.kill = vi.fn((signal?: NodeJS.Signals | string) => {
     child.killed = true;
     child.exitCode = -9;
-    child.emit("close", -9);
+    child.signalCode = (signal as NodeJS.Signals | undefined) ?? "SIGTERM";
+    child.emit("close", -9, child.signalCode);
   });
 
   return { child, stdin };
@@ -339,7 +403,8 @@ describe("PiCLIRuntime", () => {
 
   it("createConfiguredProvider threads Pi CLI settings into the live provider", async () => {
     vi.resetModules();
-    execFileSyncMock.mockReturnValue("pi output" as never);
+    const fakeProcess = createFakeSpawnProcess(["pi output"]);
+    spawnMock.mockReturnValue(fakeProcess.child as never);
 
     const { createConfiguredProvider } = await import("../src/providers/index.js");
     const { provider } = createConfiguredProvider(
@@ -360,22 +425,22 @@ describe("PiCLIRuntime", () => {
     });
 
     expect(result.text).toBe("pi output");
-    expect(execFileSyncMock).toHaveBeenCalledWith(
+    expect(spawnMock).toHaveBeenCalledWith(
       "pi-local",
       ["--print", "--model", "pi-checkpoint", "--no-context-files"],
       expect.objectContaining({
-        input: "system prompt\n\ntask prompt",
-        timeout: 33_000,
-        encoding: "utf-8",
+        detached: process.platform !== "win32",
         stdio: ["pipe", "pipe", "pipe"],
         cwd: "/tmp/pi-workspace",
       }),
     );
+    expect(fakeProcess.stdin.chunks.join("")).toBe("system prompt\n\ntask prompt");
   });
 
   it("buildRoleProviderBundle threads Pi CLI settings into run providers", async () => {
     vi.resetModules();
-    execFileSyncMock.mockReturnValue("bundle output" as never);
+    const fakeProcess = createFakeSpawnProcess(["bundle output"]);
+    spawnMock.mockReturnValue(fakeProcess.child as never);
 
     const { buildRoleProviderBundle } = await import("../src/providers/index.js");
     const bundle = buildRoleProviderBundle({
@@ -393,15 +458,75 @@ describe("PiCLIRuntime", () => {
     });
 
     expect(result.text).toBe("bundle output");
-    expect(execFileSyncMock).toHaveBeenCalledWith(
+    expect(spawnMock).toHaveBeenCalledWith(
       "pi-bundle",
       ["--print", "--model", "pi-bundle-model", "--no-context-files"],
       expect.objectContaining({
-        input: "bundle task",
-        timeout: 12_000,
+        detached: process.platform !== "win32",
+        stdio: ["pipe", "pipe", "pipe"],
         cwd: "/tmp/pi-bundle-workspace",
       }),
     );
+    expect(fakeProcess.stdin.chunks.join("")).toBe("bundle task");
+  });
+
+  it("returns timeout metadata and attempts process-group kill", async () => {
+    vi.resetModules();
+    vi.useFakeTimers();
+    const fakeProcess = createHangingFakeSpawnProcess(4321);
+    spawnMock.mockReturnValue(fakeProcess.child as never);
+    const killSpy = vi.spyOn(process, "kill").mockImplementation(() => {
+      throw new Error("missing process group");
+    });
+
+    try {
+      const { PiCLIConfig, PiCLIRuntime } = await import("../src/runtimes/pi-cli.js");
+      const runtime = new PiCLIRuntime(new PiCLIConfig({ piCommand: "pi-timeout", timeout: 0.01 }));
+      const resultPromise = runtime.generate({ prompt: "timeout task" });
+
+      await vi.advanceTimersByTimeAsync(10);
+      const result = await resultPromise;
+
+      expect(result.text).toBe("");
+      expect(result.metadata).toEqual(expect.objectContaining({ error: "timeout", timeoutSeconds: 0.01 }));
+      if (process.platform !== "win32") {
+        expect(killSpy).toHaveBeenCalledWith(-4321, "SIGKILL");
+      }
+      expect(fakeProcess.child.kill).toHaveBeenCalledWith("SIGKILL");
+      expect(fakeProcess.child.stdout.destroyed).toBe(true);
+      expect(fakeProcess.child.stderr.destroyed).toBe(true);
+    } finally {
+      killSpy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("bounds timeout cleanup when descendants keep pipes open", async () => {
+    vi.resetModules();
+    vi.useFakeTimers();
+    const fakeProcess = createHangingFakeSpawnProcess(9876);
+    spawnMock.mockReturnValue(fakeProcess.child as never);
+    const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
+
+    try {
+      const { PiCLIConfig, PiCLIRuntime } = await import("../src/runtimes/pi-cli.js");
+      const runtime = new PiCLIRuntime(new PiCLIConfig({ piCommand: "pi-leaky", timeout: 0.01 }));
+      const resultPromise = runtime.generate({ prompt: "leaky timeout" });
+
+      await vi.advanceTimersByTimeAsync(10);
+      if (process.platform !== "win32") {
+        expect(killSpy).toHaveBeenCalledWith(-9876, "SIGKILL");
+      }
+      expect(fakeProcess.child.kill).not.toHaveBeenCalled();
+      expect(fakeProcess.child.stdout.destroyed).toBe(true);
+
+      await vi.advanceTimersByTimeAsync(5_000);
+      const result = await resultPromise;
+      expect(result.metadata).toEqual(expect.objectContaining({ error: "timeout", timeoutSeconds: 0.01 }));
+    } finally {
+      killSpy.mockRestore();
+      vi.useRealTimers();
+    }
   });
 });
 
