@@ -62,7 +62,6 @@
 			"blockedImportPrefixes": [
 				"autocontext.cli",
 				"autocontext.consultation",
-				"autocontext.knowledge",
 				"autocontext.mcp",
 				"autocontext.monitor",
 				"autocontext.notebook",
@@ -76,6 +75,7 @@
 			"allowedImports": [
 				"autocontext.harness.scoring.elo",
 				"autocontext.prompts.context_budget",
+				"autocontext.knowledge.context_selection_report",
 				"autocontext.prompts.templates",
 				"autocontext.providers.base",
 				"autocontext.execution.judge",
@@ -119,6 +119,7 @@
 				"../../../ts/src/execution/elo.ts",
 				"../../../ts/src/judge/parse.ts",
 				"../../../ts/src/judge/rubric-coherence.ts",
+				"../../../ts/src/knowledge/context-selection-report.ts",
 				"../../../ts/src/prompts/context-budget.ts",
 				"../../../ts/src/prompts/templates.ts",
 				"../../../ts/src/runtimes/workspace-env.ts",
