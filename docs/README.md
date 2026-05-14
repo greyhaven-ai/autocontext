@@ -41,6 +41,7 @@ This directory is the maintainer-facing landing page for repository docs. Use it
 - **`simulate`** — modeled-world exploration with sweeps, replay, compare, export
 - **`investigate`** — evidence-driven diagnosis in synthetic harness or iterative LLM modes
 - **`analyze`** — interpret and compare outputs from all surfaces
+- **`context-selection`** — inspect persisted prompt context telemetry for run budget/cache tuning
 - **`mission`** — real-world goal execution with adaptive planning and campaigns
 - **`agent`** — TypeScript local runner/dev server for experimental `.autoctx/agents` handlers
 - **`train`** — distill curated datasets into scenario-local models
