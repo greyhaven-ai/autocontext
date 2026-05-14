@@ -530,4 +530,37 @@ describe("ContextBudget", () => {
     expect(result.playbook.length).toBeLessThan(200);
     expect(result.analysis).toBe("A".repeat(200));
   });
+
+  it("records telemetry for dedupe, component caps, and global trims", async () => {
+    const { ContextBudget, ContextBudgetPolicy } = await import("../src/prompts/context-budget.js");
+    const budget = new ContextBudget(
+      20,
+      new ContextBudgetPolicy({ componentTokenCaps: { tools: 5 } }),
+    );
+    const duplicate = "Use the stable rollback guard.";
+    const components = {
+      playbook: duplicate,
+      analysis: duplicate,
+      tools: "T".repeat(200),
+      trajectory: "R".repeat(200),
+      hints: "keep this hint",
+    };
+
+    const result = budget.applyWithTelemetry(components);
+
+    expect(result.components).toEqual(budget.apply(components));
+    expect(result.telemetry.maxTokens).toBe(20);
+    expect(result.telemetry.inputTokenEstimate).toBeGreaterThan(result.telemetry.outputTokenEstimate);
+    expect(result.telemetry.componentTokensBefore.analysis).toBeGreaterThan(0);
+    expect(result.telemetry.componentTokensAfter.analysis).toBe(0);
+    expect(result.telemetry.dedupeHitCount).toBe(1);
+    expect(result.telemetry.deduplicatedComponents).toEqual(["analysis"]);
+    expect(result.telemetry.componentCapHitCount).toBe(1);
+    expect(result.telemetry.componentCapHits[0]).toMatchObject({
+      component: "tools",
+      capTokens: 5,
+    });
+    expect(result.telemetry.trimmedComponentCount).toBeGreaterThanOrEqual(1);
+    expect(result.telemetry.trimmedComponents).toContain("trajectory");
+  });
 });

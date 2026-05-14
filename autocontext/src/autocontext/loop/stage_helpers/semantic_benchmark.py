@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from autocontext.extensions import HookEvents
-from autocontext.knowledge.compaction import CompactionEntry
+from autocontext.knowledge.compaction import CompactionEntry, prompt_compaction_cache_stats
 from autocontext.knowledge.context_selection import build_prompt_context_selection_decision
 from autocontext.knowledge.semantic_compaction_benchmark import (
     build_semantic_compaction_benchmark_report,
@@ -20,6 +21,31 @@ if TYPE_CHECKING:
     from autocontext.storage import ArtifactStore
 
 logger = logging.getLogger(__name__)
+
+
+def _cache_counter_delta(before: Mapping[str, int], after: Mapping[str, int], key: str) -> int:
+    return max(0, _coerce_cache_int(after.get(key)) - _coerce_cache_int(before.get(key)))
+
+
+def _coerce_cache_int(value: Any) -> int:
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    return 0
+
+
+def _prompt_compaction_cache_delta(before: Mapping[str, int], after: Mapping[str, int]) -> dict[str, int]:
+    hits = _cache_counter_delta(before, after, "hits")
+    misses = _cache_counter_delta(before, after, "misses")
+    return {
+        "hits": hits,
+        "misses": misses,
+        "lookups": hits + misses,
+        "entries": _coerce_cache_int(after.get("entries")),
+    }
 
 
 def _latest_compaction_parent_id(artifacts: ArtifactStore, run_id: str) -> str:
@@ -303,16 +329,22 @@ def prepare_generation_prompts(
     prompt_kwargs["compaction_entry_sink"] = lambda entries: _append_compaction_entries_for_context(ctx, artifacts, entries)
     raw_context_components = _benchmarkable_prompt_components_from_kwargs(prompt_kwargs)
     selected_context_components: dict[str, str] = {}
+    context_budget_telemetry: list[dict[str, Any]] = []
     prompt_kwargs["context_component_sink"] = selected_context_components.update
+    prompt_kwargs["context_budget_telemetry_sink"] = lambda telemetry: context_budget_telemetry.append(telemetry.to_dict())
+    compaction_cache_before = prompt_compaction_cache_stats()
     build_start = time.perf_counter()
     prompts = build_prompt_bundle(**prompt_kwargs)
     semantic_build_latency_ms = (time.perf_counter() - build_start) * 1000.0
+    compaction_cache_after = prompt_compaction_cache_stats()
     _persist_generation_context_selection(
         ctx,
         artifacts=artifacts,
         candidate_components=raw_context_components,
         selected_components=selected_context_components,
         context_budget_tokens=context_budget_tokens,
+        context_budget_telemetry=context_budget_telemetry[-1] if context_budget_telemetry else None,
+        prompt_compaction_cache=_prompt_compaction_cache_delta(compaction_cache_before, compaction_cache_after),
         evidence_cache_hits=evidence_cache_hits,
         evidence_cache_lookups=evidence_cache_lookups,
     )
@@ -322,6 +354,7 @@ def prepare_generation_prompts(
     baseline_start = time.perf_counter()
     baseline_prompt_kwargs = dict(prompt_kwargs)
     baseline_prompt_kwargs.pop("context_component_sink", None)
+    baseline_prompt_kwargs.pop("context_budget_telemetry_sink", None)
     budget_only_prompts = build_prompt_bundle(**baseline_prompt_kwargs, semantic_compaction=False)
     budget_only_build_latency_ms = (time.perf_counter() - baseline_start) * 1000.0
     benchmark_report = build_semantic_compaction_benchmark_report(
@@ -355,9 +388,21 @@ def _persist_generation_context_selection(
     candidate_components: dict[str, str],
     selected_components: dict[str, str],
     context_budget_tokens: int,
+    context_budget_telemetry: dict[str, Any] | None,
+    prompt_compaction_cache: Mapping[str, int],
     evidence_cache_hits: int,
     evidence_cache_lookups: int,
 ) -> None:
+    metadata: dict[str, Any] = {
+        "context_budget_tokens": context_budget_tokens,
+        "semantic_compaction": True,
+        "selected_component_scope": "final_role_prompts_after_context_hook",
+        "prompt_compaction_cache": dict(prompt_compaction_cache),
+        "evidence_cache_hits": evidence_cache_hits,
+        "evidence_cache_lookups": evidence_cache_lookups,
+    }
+    if context_budget_telemetry is not None:
+        metadata["context_budget_telemetry"] = dict(context_budget_telemetry)
     decision = build_prompt_context_selection_decision(
         run_id=ctx.run_id,
         scenario_name=ctx.scenario_name,
@@ -365,13 +410,7 @@ def _persist_generation_context_selection(
         stage="generation_prompt_context",
         candidate_components=candidate_components,
         selected_components=selected_components,
-        metadata={
-            "context_budget_tokens": context_budget_tokens,
-            "semantic_compaction": True,
-            "selected_component_scope": "final_role_prompts_after_context_hook",
-            "evidence_cache_hits": evidence_cache_hits,
-            "evidence_cache_lookups": evidence_cache_lookups,
-        },
+        metadata=metadata,
     )
     try:
         persist_context_selection_decision(artifacts, decision)

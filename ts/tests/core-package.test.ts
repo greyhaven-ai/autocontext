@@ -8,6 +8,8 @@ import type {
   AppId,
   ArtifactEditingInterface,
   CreateProductionTraceInputs,
+  ContextBudgetResult,
+  ContextBudgetTelemetry,
   EnvironmentTag,
   ExecutionLimits,
   FeedbackRefId,
@@ -255,13 +257,16 @@ describe("@autocontext/core facade", () => {
     expect(estimateTokens("abcdabcd")).toBe(2);
 
     const budget = new ContextBudget(20, new ContextBudgetPolicy({ componentTokenCaps: {} }));
-    const result = budget.apply({
+    const telemetryResult: ContextBudgetResult = budget.applyWithTelemetry({
       playbook: "12345678901234567890".repeat(20),
       hints: "keep-me",
     });
+    const telemetry: ContextBudgetTelemetry = telemetryResult.telemetry;
+    const result = telemetryResult.components;
 
     expect(result.hints).toBe("keep-me");
     expect(result.playbook).toContain("truncated for context budget");
+    expect(telemetry.tokenReduction).toBeGreaterThan(0);
   });
 
   it("re-exports prompt bundle assembly", () => {

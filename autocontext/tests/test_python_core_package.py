@@ -13,6 +13,9 @@ if str(PY_CORE_SRC) not in sys.path:
 core_package = import_module("autocontext_core")
 CompletionResult = core_package.CompletionResult
 ContextBudget = core_package.ContextBudget
+ContextBudgetPolicy = core_package.ContextBudgetPolicy
+ContextBudgetResult = core_package.ContextBudgetResult
+ContextBudgetTelemetry = core_package.ContextBudgetTelemetry
 PromptBundle = core_package.PromptBundle
 ProviderError = core_package.ProviderError
 build_prompt_bundle = core_package.build_prompt_bundle
@@ -36,11 +39,15 @@ def test_python_core_reexports_elo_primitives() -> None:
 def test_python_core_reexports_prompt_budget_helpers() -> None:
     assert estimate_tokens("abcdabcd") == 2
 
-    budget = ContextBudget(max_tokens=20)
-    result = budget.apply({"playbook": "12345678901234567890" * 20, "hints": "keep-me"})
+    budget = ContextBudget(max_tokens=20, policy=ContextBudgetPolicy(component_token_caps={}))
+    telemetry_result = budget.apply_with_telemetry({"playbook": "12345678901234567890" * 20, "hints": "keep-me"})
+    result = telemetry_result.components
 
     assert result["hints"] == "keep-me"
     assert "truncated for context budget" in result["playbook"]
+    assert isinstance(telemetry_result, ContextBudgetResult)
+    assert isinstance(telemetry_result.telemetry, ContextBudgetTelemetry)
+    assert telemetry_result.telemetry.token_reduction > 0
 
 
 def test_python_core_reexports_prompt_bundle_assembly() -> None:

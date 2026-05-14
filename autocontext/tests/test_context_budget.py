@@ -142,3 +142,49 @@ def test_budget_policy_overrides_trim_order_and_protected_components() -> None:
 
     assert len(trimmed["playbook"]) < len(components["playbook"])
     assert trimmed["analysis"] == components["analysis"]
+
+
+def test_budget_apply_with_telemetry_records_dedupe_caps_and_trims() -> None:
+    """Budget telemetry explains the reduction path without exposing raw content."""
+    budget = ContextBudget(
+        max_tokens=20,
+        policy=ContextBudgetPolicy(component_token_caps={"tools": 5}),
+    )
+    duplicate = "Use the stable rollback guard."
+
+    result = budget.apply_with_telemetry(
+        {
+            "playbook": duplicate,
+            "analysis": duplicate,
+            "tools": "T" * 200,
+            "trajectory": "R" * 200,
+            "hints": "keep this hint",
+        }
+    )
+
+    telemetry = result.telemetry
+    assert result.components == budget.apply(
+        {
+            "playbook": duplicate,
+            "analysis": duplicate,
+            "tools": "T" * 200,
+            "trajectory": "R" * 200,
+            "hints": "keep this hint",
+        }
+    )
+    assert telemetry.max_tokens == 20
+    assert telemetry.input_token_estimate > telemetry.output_token_estimate
+    assert telemetry.component_tokens_before["analysis"] > 0
+    assert telemetry.component_tokens_after["analysis"] == 0
+    assert telemetry.dedupe_hit_count == 1
+    assert telemetry.deduplicated_components == ("analysis",)
+    assert telemetry.component_cap_hit_count == 1
+    assert telemetry.component_cap_hits[0]["component"] == "tools"
+    assert telemetry.component_cap_hits[0]["cap_tokens"] == 5
+    assert telemetry.trimmed_component_count >= 1
+    assert "trajectory" in telemetry.trimmed_components
+
+    payload = telemetry.to_dict()
+    assert payload["input_token_estimate"] == telemetry.input_token_estimate
+    assert payload["dedupe_hit_count"] == 1
+    assert payload["component_cap_hit_count"] == 1

@@ -10,7 +10,7 @@ from autocontext.knowledge.compaction import (
     compact_prompt_components,
     compaction_entries_for_components,
 )
-from autocontext.prompts.context_budget import ContextBudget
+from autocontext.prompts.context_budget import ContextBudget, ContextBudgetTelemetry
 from autocontext.scenarios.base import Observation
 from autocontext.strategy_interface import is_action_plan_interface
 
@@ -125,6 +125,7 @@ def build_prompt_bundle(
     compaction_entry_parent_id: str = "",
     compaction_entry_sink: Callable[[list[CompactionEntry]], None] | None = None,
     context_component_sink: Callable[[dict[str, str]], None] | None = None,
+    context_budget_telemetry_sink: Callable[[ContextBudgetTelemetry], None] | None = None,
 ) -> PromptBundle:
     _nb = dict(notebook_contexts or {})
     _evidence = dict(evidence_manifests or {})
@@ -209,7 +210,10 @@ def build_prompt_bundle(
     }
     if context_budget_tokens > 0:
         budget = ContextBudget(max_tokens=context_budget_tokens)
-        budgeted = budget.apply(context_components)
+        budget_result = budget.apply_with_telemetry(context_components)
+        budgeted = budget_result.components
+        if context_budget_telemetry_sink is not None:
+            context_budget_telemetry_sink(budget_result.telemetry)
         context_components = budgeted
         current_playbook = budgeted["playbook"]
         score_trajectory = budgeted["trajectory"]

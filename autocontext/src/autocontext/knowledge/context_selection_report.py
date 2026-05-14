@@ -12,6 +12,8 @@ class ContextSelectionDiagnosticPolicy:
     duplicate_content_rate_threshold: float = 0.25
     useful_artifact_recall_floor: float = 0.70
     selected_token_estimate_threshold: int = 8000
+    compaction_cache_hit_rate_floor: float = 0.50
+    compaction_cache_min_lookups: int = 5
 
 
 @dataclass(frozen=True)
@@ -55,6 +57,16 @@ class ContextSelectionStageSummary:
     duplicate_content_rate: float
     useful_artifact_recall: float | None
     mean_selected_freshness_generation_delta: float | None
+    budget_input_token_estimate: int
+    budget_output_token_estimate: int
+    budget_token_reduction: int
+    budget_dedupe_hit_count: int
+    budget_component_cap_hit_count: int
+    budget_trimmed_component_count: int
+    compaction_cache_hits: int
+    compaction_cache_misses: int
+    compaction_cache_lookups: int
+    compaction_cache_hit_rate: float | None
 
     @classmethod
     def from_decision(cls, decision: ContextSelectionDecision) -> ContextSelectionStageSummary:
@@ -76,6 +88,16 @@ class ContextSelectionStageSummary:
                 metrics,
                 "mean_selected_freshness_generation_delta",
             ),
+            budget_input_token_estimate=_int_metric(metrics, "budget_input_token_estimate"),
+            budget_output_token_estimate=_int_metric(metrics, "budget_output_token_estimate"),
+            budget_token_reduction=_int_metric(metrics, "budget_token_reduction"),
+            budget_dedupe_hit_count=_int_metric(metrics, "budget_dedupe_hit_count"),
+            budget_component_cap_hit_count=_int_metric(metrics, "budget_component_cap_hit_count"),
+            budget_trimmed_component_count=_int_metric(metrics, "budget_trimmed_component_count"),
+            compaction_cache_hits=_int_metric(metrics, "compaction_cache_hits"),
+            compaction_cache_misses=_int_metric(metrics, "compaction_cache_misses"),
+            compaction_cache_lookups=_int_metric(metrics, "compaction_cache_lookups"),
+            compaction_cache_hit_rate=_optional_float_metric(metrics, "compaction_cache_hit_rate"),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -93,6 +115,16 @@ class ContextSelectionStageSummary:
             "duplicate_content_rate": self.duplicate_content_rate,
             "useful_artifact_recall": self.useful_artifact_recall,
             "mean_selected_freshness_generation_delta": self.mean_selected_freshness_generation_delta,
+            "budget_input_token_estimate": self.budget_input_token_estimate,
+            "budget_output_token_estimate": self.budget_output_token_estimate,
+            "budget_token_reduction": self.budget_token_reduction,
+            "budget_dedupe_hit_count": self.budget_dedupe_hit_count,
+            "budget_component_cap_hit_count": self.budget_component_cap_hit_count,
+            "budget_trimmed_component_count": self.budget_trimmed_component_count,
+            "compaction_cache_hits": self.compaction_cache_hits,
+            "compaction_cache_misses": self.compaction_cache_misses,
+            "compaction_cache_lookups": self.compaction_cache_lookups,
+            "compaction_cache_hit_rate": self.compaction_cache_hit_rate,
         }
 
 
@@ -107,6 +139,8 @@ class ContextSelectionReport:
         selected_count = sum(stage.selected_count for stage in self.stages)
         candidate_tokens = sum(stage.candidate_token_estimate for stage in self.stages)
         selected_tokens = sum(stage.selected_token_estimate for stage in self.stages)
+        compaction_cache_hits = sum(stage.compaction_cache_hits for stage in self.stages)
+        compaction_cache_lookups = sum(stage.compaction_cache_lookups for stage in self.stages)
         return {
             "candidate_count": candidate_count,
             "selected_count": selected_count,
@@ -123,6 +157,20 @@ class ContextSelectionReport:
             "mean_useful_artifact_recall": _mean_optional(stage.useful_artifact_recall for stage in self.stages),
             "mean_selected_freshness_generation_delta": _mean_optional(
                 stage.mean_selected_freshness_generation_delta for stage in self.stages
+            ),
+            "budget_input_token_estimate": sum(stage.budget_input_token_estimate for stage in self.stages),
+            "budget_output_token_estimate": sum(stage.budget_output_token_estimate for stage in self.stages),
+            "budget_token_reduction": sum(stage.budget_token_reduction for stage in self.stages),
+            "budget_dedupe_hit_count": sum(stage.budget_dedupe_hit_count for stage in self.stages),
+            "budget_component_cap_hit_count": sum(stage.budget_component_cap_hit_count for stage in self.stages),
+            "budget_trimmed_component_count": sum(stage.budget_trimmed_component_count for stage in self.stages),
+            "compaction_cache_hits": compaction_cache_hits,
+            "compaction_cache_misses": sum(stage.compaction_cache_misses for stage in self.stages),
+            "compaction_cache_lookups": compaction_cache_lookups,
+            "compaction_cache_hit_rate": (
+                compaction_cache_hits / compaction_cache_lookups
+                if compaction_cache_lookups
+                else None
             ),
         }
 
@@ -189,6 +237,31 @@ class ContextSelectionReport:
                     stage=token_stage.stage,
                 )
             )
+        cache_stages = [
+            stage
+            for stage in self.stages
+            if stage.compaction_cache_hit_rate is not None
+            and stage.compaction_cache_lookups >= policy.compaction_cache_min_lookups
+        ]
+        if cache_stages:
+            cache_stage = min(cache_stages, key=lambda stage: stage.compaction_cache_hit_rate or 0.0)
+            hit_rate = cache_stage.compaction_cache_hit_rate
+            if hit_rate is not None and hit_rate < policy.compaction_cache_hit_rate_floor:
+                diagnostics.append(
+                    ContextSelectionDiagnostic(
+                        code="LOW_COMPACTION_CACHE_HIT_RATE",
+                        severity="info",
+                        metric_name="compaction_cache_hit_rate",
+                        value=hit_rate,
+                        threshold=policy.compaction_cache_hit_rate_floor,
+                        message="Semantic compaction cache reuse was low for a prompt assembly stage.",
+                        recommendation=(
+                            "Check whether repeated prompt components use stable canonical text before cache lookup."
+                        ),
+                        generation=cache_stage.generation,
+                        stage=cache_stage.stage,
+                    )
+                )
         return tuple(diagnostics)
 
     def to_dict(self) -> dict[str, Any]:
