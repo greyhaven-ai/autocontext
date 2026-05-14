@@ -18,7 +18,7 @@ This directory is the maintainer-facing landing page for repository docs. Use it
 ## Integrating External Agents
 
 - [External agent integration guide](../autocontext/docs/agent-integration.md)
-- [Hermes Curator + AutoContext positioning](hermes-positioning.md)
+- [Hermes Curator + autocontext positioning](hermes-positioning.md)
 - [Python and TypeScript extension hooks](../autocontext/docs/extensions.md)
 - [Sandbox and executor notes](../autocontext/docs/sandbox.md)
 - [Persistent host worker](../autocontext/docs/persistent-host.md)

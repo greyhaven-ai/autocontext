@@ -1,27 +1,27 @@
-# Hermes Curator + AutoContext: Positioning
+# Hermes Curator + autocontext: Positioning
 
-Short doc to keep the product story crisp when AutoContext is used
+Short doc to keep the product story crisp when autocontext is used
 alongside [Hermes v0.12](https://github.com/NousResearch/hermes-agent)
 and its Curator subsystem.
 
 The headline:
 
 > **Hermes Curator is the live skill-library maintainer.
-> AutoContext is the evaluation, trace, replay, export, and
+> autocontext is the evaluation, trace, replay, export, and
 > local-training layer.**
 
-They are complementary. AutoContext does **not** replace Curator: it
+They are complementary. autocontext does **not** replace Curator: it
 observes Curator's outputs, evaluates them, and turns them into
 durable artifacts (traces, datasets, exports) that operators and
 training pipelines can consume.
 
 ## At a glance
 
-| Concern                                   | Hermes Curator       | AutoContext                                                                                 |
+| Concern                                   | Hermes Curator       | autocontext                                                                                 |
 | ----------------------------------------- | -------------------- | ------------------------------------------------------------------------------------------- |
 | Live skill mutation (`~/.hermes/skills/`) | **Yes** (sole owner) | No (read-only inspection only)                                                              |
 | Curator decision logs                     | Source of truth      | Ingest target                                                                               |
-| Session and trajectory data               | Hermes writes        | AutoContext imports (with explicit redaction)                                               |
+| Session and trajectory data               | Hermes writes        | autocontext imports (with explicit redaction)                                               |
 | Evaluation against a rubric               | Out of scope         | `autoctx judge` / `autoctx improve`                                                         |
 | Replay / artifact storage                 | Per-Hermes-run logs  | Durable `Run` / `Artifact` / `Knowledge` model (see [concept-model.md](./concept-model.md)) |
 | Local MLX / CUDA training                 | Out of scope         | `autoctx train` (advisory, narrow)                                                          |
@@ -40,14 +40,14 @@ training pipelines can consume.
    Detailed flag and output reference: see
    [agent-integration.md → autoctx hermes](../autocontext/docs/agent-integration.md#autoctx-hermes-inspect-hermes-and-export-the-hermes-skill).
 
-2. **Install the AutoContext skill into Hermes** so Hermes agents know
-   when to use AutoContext at all:
+2. **Install the autocontext skill into Hermes** so Hermes agents know
+   when to use autocontext at all:
 
    ```bash
    autoctx hermes export-skill --output ~/.hermes/skills/autocontext/SKILL.md --json
    ```
 
-3. **Evaluate** an agent or output via the AutoContext CLI from inside
+3. **Evaluate** an agent or output via the autocontext CLI from inside
    a Hermes terminal session:
 
    ```bash
@@ -83,10 +83,10 @@ are later capability paths.
 ## Read-only import boundary
 
 `autoctx hermes inspect` does **not** mutate `~/.hermes`. It only
-reads. The Curator artifacts AutoContext can import are:
+reads. The Curator artifacts autocontext can import are:
 
 - **Curator decision reports** (per-run JSON + Markdown reports).
-  Become AutoContext `ProductionTrace` JSONL via the curator-report
+  Become autocontext `ProductionTrace` JSONL via the curator-report
   ingest path (AC-704, in flight).
 - **Usage telemetry** (`~/.hermes/skills/.usage.json` and adjacent
   state). Used as context for joining decisions to skill use.
@@ -94,9 +94,9 @@ reads. The Curator artifacts AutoContext can import are:
   `trajectory_samples.jsonl`, `failed_trajectories.jsonl`). Imported
   only when explicitly requested and with redaction.
 
-Curator stays the only writer to `~/.hermes/skills/`. AutoContext
+Curator stays the only writer to `~/.hermes/skills/`. autocontext
 exports skills in the opposite direction: `autoctx hermes
-export-skill` writes the AutoContext skill into `~/.hermes/skills/`
+export-skill` writes the autocontext skill into `~/.hermes/skills/`
 so Hermes can load it. The export is one file, on one explicit
 operator command.
 
@@ -106,7 +106,7 @@ Sessions and trajectories contain raw model prompts and responses,
 which can include sensitive content the operator did not intend for
 external storage. Before any session or trajectory import:
 
-- AutoContext requires an explicit `--include-sessions` /
+- autocontext requires an explicit `--include-sessions` /
   `--include-trajectories` flag (no implicit inclusion).
 - Imports run a redaction policy before persisting; the policy is
   shared with the production-traces redaction path
@@ -117,7 +117,7 @@ external storage. Before any session or trajectory import:
   like other production traces, so the same `autoctx
 production-traces` lifecycle (rotate-salt, prune, policy) applies.
 
-The AutoContext side does not transmit imported content anywhere.
+The autocontext side does not transmit imported content anywhere.
 Outbound moves (e.g., dataset export for training) are separate
 operator commands with their own consent surfaces.
 
@@ -142,21 +142,21 @@ Hermes Curator: Curator still owns the mutation. (See AC-708 / AC-709
 for the in-flight training and recommendation surface; not yet
 shipped.)
 
-## Why AutoContext does not replace Curator
+## Why autocontext does not replace Curator
 
 Curator's job is to keep the live skill library coherent: prune stale
 skills, consolidate near-duplicates, gate patches against test runs.
 That work is **stateful and online** by design.
 
-AutoContext's job is to make Curator's work **auditable and
+autocontext's job is to make Curator's work **auditable and
 reusable**: every decision becomes an artifact, every artifact can be
 replayed and exported, and the export shape is stable enough that
 future agents (and human reviewers) can use it as evidence without
 re-running the original session.
 
-If AutoContext started mutating `~/.hermes/skills/`, both systems
-would have to coordinate every change. Keeping AutoContext read-only
-on Hermes state preserves the property that "running AutoContext
+If autocontext started mutating `~/.hermes/skills/`, both systems
+would have to coordinate every change. Keeping autocontext read-only
+on Hermes state preserves the property that "running autocontext
 against my Hermes home does not change what Hermes will do next."
 That property is load-bearing for evaluation, replay, and review.
 
@@ -170,7 +170,7 @@ That property is load-bearing for evaluation, replay, and review.
   trajectory import with redaction), AC-705 (curator-decision
   dataset export), AC-708 / AC-709 (advisor model + read-only
   recommendations), AC-707 (Hermes plugin emitter spike).
-- Out of scope (today): AutoContext writing to `~/.hermes/skills/`,
-  AutoContext replacing Curator's pruning / consolidation /
+- Out of scope (today): autocontext writing to `~/.hermes/skills/`,
+  autocontext replacing Curator's pruning / consolidation /
   gating workflow, frontier-scale training from a single operator's
   Hermes home.
