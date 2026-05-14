@@ -21,8 +21,14 @@ this doc is positioning, not new vocabulary.
   child-task inheritance model on runtime grants and the
   `runtime-session-run-trace` adapter that maps lineage into `RunTrace`.
 - **Runtime context layering and `cwd` discovery.** Landed in the
-  workspace adapters (`createLocalWorkspaceEnv`,
-  `createInMemoryWorkspaceEnv`) and their virtual-path resolution.
+  session runtime-context modules: `ts/src/session/runtime-context.ts`
+  and `autocontext/src/autocontext/session/runtime_context.py` own the
+  canonical layer order, repo instruction discovery
+  (`AGENTS.md`/`CLAUDE.md`), skill discovery, and the
+  `assembleRuntimeContext` / `assemble_runtime_context` helpers.
+  Workspace adapters (`createLocalWorkspaceEnv`,
+  `createInMemoryWorkspaceEnv`) own virtual `cwd` / path resolution
+  beneath that layer, not the layering itself.
 - **Programmable agent app runner and deploy targets** (later, post-spike).
   In flight as the agent-app build-target work (AC-724 parent, AC-762
   Node MVP, AC-763 Cloudflare spike).
