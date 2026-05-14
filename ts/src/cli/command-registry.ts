@@ -21,6 +21,7 @@ export type NoDbCommandName =
   | "simulate"
   | "investigate"
   | "analyze"
+  | "context-selection"
   | "blob"
   | "production-traces"
   | "instrument"
@@ -271,6 +272,12 @@ const COMMANDS: readonly CommandDescriptor[] = [
     description: "Analyze and compare runs, simulations, investigations, and missions",
     group: "primary",
     route: { kind: "no-db", command: "analyze" },
+  },
+  {
+    name: "context-selection",
+    description: "Inspect persisted context-selection telemetry",
+    group: "primary",
+    route: { kind: "no-db", command: "context-selection" },
   },
   {
     name: "mcp-serve",

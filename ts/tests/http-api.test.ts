@@ -274,6 +274,54 @@ function expectTestRunRuntimeSessionDiscovery(value: unknown): void {
   });
 }
 
+function persistContextSelectionDecision(dir: string): void {
+  const contextDir = join(dir, "runs", "test-run-1", "context_selection");
+  mkdirSync(contextDir, { recursive: true });
+  writeFileSync(
+    join(contextDir, "gen_1_generation_prompt_context.json"),
+    JSON.stringify({
+      schema_version: 1,
+      run_id: "test-run-1",
+      scenario_name: "grid_ctf",
+      generation: 1,
+      stage: "generation_prompt_context",
+      created_at: "2026-01-02T03:04:05.000Z",
+      metadata: {
+        context_budget_telemetry: {
+          input_token_estimate: 120,
+          output_token_estimate: 20,
+          dedupe_hit_count: 1,
+          component_cap_hit_count: 2,
+          trimmed_component_count: 1,
+        },
+        prompt_compaction_cache: {
+          hits: 0,
+          misses: 10,
+          lookups: 10,
+        },
+      },
+      metrics: {
+        candidate_count: 1,
+        selected_count: 1,
+        candidate_token_estimate: 100,
+        selected_token_estimate: 20,
+      },
+      candidates: [{
+        artifact_id: "playbook",
+        artifact_type: "prompt_component",
+        source: "prompt_assembly",
+        candidate_token_estimate: 100,
+        selected_token_estimate: 20,
+        selected: true,
+        selection_reason: "retained_after_prompt_assembly",
+        candidate_content_hash: "candidate",
+        selected_content_hash: "selected",
+      }],
+    }, null, 2),
+    "utf-8",
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Health endpoint (already exists — regression check)
 // ---------------------------------------------------------------------------
@@ -314,6 +362,7 @@ describe("HTTP API — health", () => {
     expect(endpoints.notebooks).toBe("/api/notebooks");
     expect(endpoints.openclaw).toBe("/api/openclaw");
     expect(endpoints.cockpit).toBe("/api/cockpit");
+    expect(endpoints.context_selection).toBe("/api/cockpit/runs/:run_id/context-selection");
     expect(endpoints.hub).toBe("/api/hub");
     expect(endpoints.knowledge).toMatchObject({
       scenarios: "/api/knowledge/scenarios",
@@ -382,6 +431,11 @@ describe("HTTP API — health", () => {
     expect(matrix.routes).toContainEqual(expect.objectContaining({
       method: "GET",
       path: "/api/cockpit/runs",
+      status: "aligned",
+    }));
+    expect(matrix.routes).toContainEqual(expect.objectContaining({
+      method: "GET",
+      path: "/api/cockpit/runs/:run_id/context-selection",
       status: "aligned",
     }));
     expect(matrix.routes).toContainEqual(expect.objectContaining({
@@ -884,6 +938,53 @@ describe("HTTP API — cockpit", () => {
       })],
     });
     expectTestRunRuntimeSessionDiscovery(body);
+  });
+
+  it("GET /api/cockpit/runs/:run_id/context-selection returns telemetry cards", async () => {
+    persistContextSelectionDecision(dir);
+
+    const { status, body } = await fetchJson(`${baseUrl}/api/cockpit/runs/test-run-1/context-selection`);
+
+    expect(status).toBe(200);
+    expect(body).toMatchObject({
+      status: "completed",
+      run_id: "test-run-1",
+      scenario_name: "grid_ctf",
+      summary: expect.objectContaining({
+        budget_token_reduction: 100,
+        compaction_cache_hit_rate: 0,
+      }),
+      telemetry_cards: expect.arrayContaining([
+        expect.objectContaining({
+          key: "context_budget",
+          severity: "warning",
+          value: "100 est. tokens reduced",
+        }),
+        expect.objectContaining({
+          key: "semantic_compaction_cache",
+          severity: "warning",
+          value: "0.0% hit rate",
+        }),
+      ]),
+    });
+  });
+
+  it("GET /api/cockpit/runs/:run_id/context-selection handles missing artifacts", async () => {
+    const { status, body } = await fetchJson(`${baseUrl}/api/cockpit/runs/test-run-1/context-selection`);
+
+    expect(status).toBe(404);
+    expect(body).toMatchObject({
+      detail: expect.stringContaining("No context selection artifacts"),
+    });
+  });
+
+  it("GET /api/cockpit/runs/:run_id/context-selection rejects escaped run ids", async () => {
+    const { status, body } = await fetchJson(`${baseUrl}/api/cockpit/runs/%2E%2E%2Foutside/context-selection`);
+
+    expect(status).toBe(422);
+    expect(body).toMatchObject({
+      detail: expect.stringContaining("escapes runs root"),
+    });
   });
 
   it("GET /api/cockpit/runs/:run_id/compare/:gen_a/:gen_b compares generations", async () => {

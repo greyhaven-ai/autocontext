@@ -1,6 +1,8 @@
 import type { AppSettings } from "../config/index.js";
 import { createProvider as defaultCreateProvider } from "../providers/provider-factory.js";
 import type { CreateProviderOpts } from "../providers/provider-factory.js";
+import { buildContextSelectionReport } from "../knowledge/context-selection-report.js";
+import { loadContextSelectionDecisions } from "../knowledge/context-selection-store.js";
 import type {
   GenerationRow,
   NotebookRow,
@@ -31,6 +33,7 @@ export interface CockpitApiRoutes {
   listRuns(): CockpitApiResponse;
   runStatus(runId: string): CockpitApiResponse;
   changelog(runId: string): CockpitApiResponse;
+  contextSelection(runId: string): CockpitApiResponse;
   compareGenerations(runId: string, genA: number, genB: number): CockpitApiResponse;
   resumeInfo(runId: string): CockpitApiResponse;
   writeup(runId: string): CockpitApiResponse;
@@ -121,6 +124,21 @@ export function buildCockpitApiRoutes(opts: {
       }
       return { status: 200, body: buildChangelog(store, runId) };
     }),
+    contextSelection: (runId) => {
+      let decisions;
+      try {
+        decisions = loadContextSelectionDecisions(opts.runsRoot, runId.trim());
+      } catch (error) {
+        return { status: 422, body: { detail: errorMessage(error) } };
+      }
+      if (decisions.length === 0) {
+        return {
+          status: 404,
+          body: { detail: `No context selection artifacts found for run '${runId.trim()}'` },
+        };
+      }
+      return { status: 200, body: buildContextSelectionReport(decisions).toDict() };
+    },
     compareGenerations: (runId, genA, genB) => withStore(opts.openStore, (store) => {
       const generations = store.getGenerations(runId);
       const rowA = generations.find((generation) => generation.generation_index === genA);
@@ -246,6 +264,10 @@ function withRuntimeSessionStore<T>(
   } finally {
     store.close?.();
   }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function summarizeRun(store: SQLiteStore, run: RunRow): Record<string, unknown> {

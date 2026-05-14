@@ -47,6 +47,7 @@ const NO_DB_COMMAND_HANDLERS: Record<NoDbCommandName, () => Promise<void>> = {
   simulate: cmdSimulate,
   investigate: cmdInvestigate,
   analyze: cmdAnalyze,
+  "context-selection": cmdContextSelection,
   blob: cmdBlob,
   "production-traces": cmdProductionTraces,
   instrument: cmdInstrument,
@@ -3134,6 +3135,52 @@ Examples:
       console.log(`\nLimitations:`);
       for (const l of result.limitations) console.log(`  ⚠ ${l}`);
     }
+  }
+}
+
+async function cmdContextSelection(): Promise<void> {
+  const { values, positionals } = parseArgs({
+    args: process.argv.slice(3),
+    allowPositionals: true,
+    options: {
+      "run-id": { type: "string" },
+      json: { type: "boolean" },
+      help: { type: "boolean", short: "h" },
+    },
+  });
+  const {
+    CONTEXT_SELECTION_HELP_TEXT,
+    executeContextSelectionCommandWorkflow,
+    planContextSelectionCommand,
+  } = await import("./context-selection-command-workflow.js");
+
+  if (values.help) {
+    console.log(CONTEXT_SELECTION_HELP_TEXT);
+    process.exit(0);
+  }
+
+  let plan;
+  try {
+    plan = planContextSelectionCommand(values, positionals);
+  } catch (error) {
+    console.error(errorMessage(error));
+    process.exit(1);
+  }
+
+  const { loadSettings } = await import("../config/index.js");
+  const settings = loadSettings();
+  const result = executeContextSelectionCommandWorkflow({
+    runsRoot: resolve(settings.runsRoot),
+    plan,
+  });
+  if (result.stdout) {
+    console.log(result.stdout);
+  }
+  if (result.stderr) {
+    console.error(result.stderr);
+  }
+  if (result.exitCode !== 0) {
+    process.exit(result.exitCode);
   }
 }
 

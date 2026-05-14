@@ -17,6 +17,14 @@ uv run autoctx analytics context-selection --run-id <run_id>
 uv run autoctx analytics context-selection --run-id <run_id> --json
 ```
 
+The TypeScript CLI exposes the same persisted report shape for npm-backed
+operator workflows:
+
+```bash
+autoctx context-selection --run-id <run_id>
+autoctx context-selection --run-id <run_id> --json
+```
+
 For completed runs with persisted `RunTrace` artifacts, emit trace-grounded
 findings from the same reporter used by run-end writeups. Trace ids are the
 filenames under `knowledge/analytics/traces/` without the `.json` suffix
