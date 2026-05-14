@@ -35,6 +35,7 @@ This directory is the maintainer-facing landing page for repository docs. Use it
 - [Core/control package split](core-control-package-split.md)
 - [Scenario parity matrix — Python & TypeScript](scenario-parity-matrix.md)
 - [Browser exploration contract](browser-exploration-contract.md)
+- [OpenTelemetry bridge](opentelemetry-bridge.md)
 
 ## Execution Surfaces (0.3.0)
 

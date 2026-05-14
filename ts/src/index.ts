@@ -566,6 +566,23 @@ export type {
 } from "./traces/public-schema.js";
 
 export {
+  OtelResourceSpansSchema,
+  OtelScopeSpansSchema,
+  OtelSpanSchema,
+  otelResourceSpansToPublicTrace,
+  publicTraceToOtelResourceSpans,
+} from "./traces/otel-bridge.js";
+export type {
+  OtelAttributes,
+  OtelResourceSpans,
+  OtelScopeSpans,
+  OtelSpan,
+  OtelToPublicTraceErr,
+  OtelToPublicTraceOk,
+  OtelToPublicTraceResult,
+} from "./traces/otel-bridge.js";
+
+export {
   SensitiveDataDetector,
   RedactionPolicy,
   applyRedactionPolicy,
