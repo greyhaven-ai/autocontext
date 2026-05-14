@@ -1,0 +1,21 @@
+{
+  "started_at": "2026-05-13T16:00:00Z",
+  "duration_seconds": 12.0,
+  "provider": "anthropic",
+  "model": "claude-sonnet-4-5",
+  "counts": {
+    "consolidated_this_run": 3,
+    "pruned_this_run": 0,
+    "archived_this_run": 0,
+    "added_this_run": 0
+  },
+  "auto_transitions": {},
+  "tool_call_counts": {
+    "patch_skill": 3
+  },
+  "consolidated": ["skill-x", "skill-y", "skill-z"],
+  "pruned": [],
+  "archived": [],
+  "added": [],
+  "llm_final_summary": "Three skills consolidated into one umbrella."
+}

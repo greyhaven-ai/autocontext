@@ -1,0 +1,34 @@
+{
+  "started_at": "2026-05-13T15:00:00Z",
+  "duration_seconds": 42.5,
+  "provider": "anthropic",
+  "model": "claude-sonnet-4-5",
+  "counts": {
+    "consolidated_this_run": 2,
+    "pruned_this_run": 1,
+    "archived_this_run": 0,
+    "added_this_run": 1
+  },
+  "auto_transitions": {
+    "stale_to_archived": 0,
+    "pinned_to_active": 1
+  },
+  "tool_call_counts": {
+    "list_skills": 3,
+    "read_skill": 5,
+    "patch_skill": 2
+  },
+  "consolidated": ["skill-a", "skill-b"],
+  "pruned": ["skill-c"],
+  "archived": [],
+  "added": ["skill-d"],
+  "llm_final_summary": "Consolidated skill-a + skill-b into a single umbrella. Pruned skill-c (no activity in 30 days). Added skill-d to cover new task family.",
+  "tool_calls": [
+    { "toolName": "list_skills", "args": { "include_archived": false } },
+    {
+      "toolName": "patch_skill",
+      "args": { "name": "skill-a", "operation": "merge" },
+      "error": null
+    }
+  ]
+}
