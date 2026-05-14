@@ -264,6 +264,7 @@ autoctx list --json
 autoctx runtime-sessions list --limit 10
 autoctx runtime-sessions show --run-id <run-id> --json
 autoctx runtime-sessions timeline --run-id <run-id> --json
+autoctx context-selection --run-id <run-id> --json
 autoctx agent run support --id ticket-123 --payload '{"message":"Please triage this."}' --env .env.local --json
 autoctx agent dev --port 3583 --env .env.local
 autoctx status <run-id>
@@ -656,11 +657,16 @@ The TypeScript package includes the current 0.4.x operator-facing surfaces:
 - `simulate`
 - `investigate`
 - `analyze`
+- `context-selection`
 - `trace-findings` — extract structured findings (`TraceFindingReport`) from a `PublicTrace` JSON file (AC-679)
 - `mission`
 - `train` as a validation plus executor-hook surface
 
 `campaign` now ships as a first-class TypeScript CLI/API/MCP workflow for multi-mission coordination.
+
+`context-selection` reads persisted per-run context-selection artifacts and
+renders the same budget, semantic compaction cache, diagnostics, and selected
+context telemetry cards exposed through Cockpit HTTP.
 
 For end-to-end local MLX/CUDA training, the Python package is still the canonical out-of-the-box runtime.
 

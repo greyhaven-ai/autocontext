@@ -279,6 +279,7 @@ export class InteractiveServer {
           notebooks: "/api/notebooks",
           openclaw: "/api/openclaw",
           cockpit: "/api/cockpit",
+          context_selection: "/api/cockpit/runs/:run_id/context-selection",
           runtime_sessions: {
             list: "/api/cockpit/runtime-sessions",
             show: "/api/cockpit/runtime-sessions/:session_id",
@@ -583,6 +584,16 @@ export class InteractiveServer {
     if (method === "GET" && cockpitRunRuntimeSessionMatch) {
       const [, rawRunId] = cockpitRunRuntimeSessionMatch;
       const response = runtimeSessionApi.getByRunId(decodeURIComponent(rawRunId!));
+      json(response.status, response.body);
+      return;
+    }
+
+    const cockpitContextSelectionMatch = url.match(
+      /^\/api\/cockpit\/runs\/([^/]+)\/context-selection$/,
+    );
+    if (method === "GET" && cockpitContextSelectionMatch) {
+      const [, rawRunId] = cockpitContextSelectionMatch;
+      const response = cockpitApi.contextSelection(decodeURIComponent(rawRunId!));
       json(response.status, response.body);
       return;
     }

@@ -45,6 +45,10 @@ describe("CLI command registry", () => {
       kind: "db",
       command: "runtime-sessions",
     });
+    expect(resolveCliCommand("context-selection")).toEqual({
+      kind: "no-db",
+      command: "context-selection",
+    });
     expect(resolveCliCommand("mission")).toEqual({
       kind: "db",
       command: "mission",

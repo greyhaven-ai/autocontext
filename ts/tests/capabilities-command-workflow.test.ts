@@ -49,6 +49,7 @@ describe("capabilities command workflow", () => {
         "simulate",
         "investigate",
         "analyze",
+        "context-selection",
         "candidate",
         "eval",
         "promotion",

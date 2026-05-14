@@ -210,6 +210,7 @@ export const HTTP_API_PARITY_ROUTES: readonly HttpApiParityEntry[] = [
   both("cockpit", "GET", "/api/cockpit/runs", PY_COCKPIT_API),
   both("cockpit", "GET", "/api/cockpit/runs/:run_id/status", PY_COCKPIT_API),
   both("cockpit", "GET", "/api/cockpit/runs/:run_id/changelog", PY_COCKPIT_API),
+  both("cockpit", "GET", "/api/cockpit/runs/:run_id/context-selection", PY_COCKPIT_API),
   both("cockpit", "GET", "/api/cockpit/runs/:run_id/compare/:gen_a/:gen_b", PY_COCKPIT_API),
   both("cockpit", "GET", "/api/cockpit/runs/:run_id/resume", PY_COCKPIT_API),
   both("cockpit", "GET", "/api/cockpit/writeup/:run_id", PY_COCKPIT_API),
