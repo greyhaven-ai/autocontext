@@ -463,17 +463,9 @@ export {
   parseArchitectOutput,
   extractDelimitedSection,
 } from "./agents/roles.js";
-export {
-  RuntimeBridgeProvider,
-  RetryProvider,
-} from "./agents/provider-bridge.js";
-export {
-  ModelRouter,
-  TierConfig,
-} from "./agents/model-router.js";
-export {
-  AgentOrchestrator,
-} from "./agents/orchestrator.js";
+export { RuntimeBridgeProvider, RetryProvider } from "./agents/provider-bridge.js";
+export { ModelRouter, TierConfig } from "./agents/model-router.js";
+export { AgentOrchestrator } from "./agents/orchestrator.js";
 export type {
   Role,
   RoleConfig,
@@ -482,18 +474,9 @@ export type {
   CoachOutput,
   ArchitectOutput,
 } from "./agents/roles.js";
-export type {
-  RetryOpts,
-  RuntimeBridgeProviderOpts,
-} from "./agents/provider-bridge.js";
-export type {
-  TierConfigOpts,
-  SelectOpts,
-} from "./agents/model-router.js";
-export type {
-  GenerationPrompts,
-  GenerationResult,
-} from "./agents/orchestrator.js";
+export type { RetryOpts, RuntimeBridgeProviderOpts } from "./agents/provider-bridge.js";
+export type { TierConfigOpts, SelectOpts } from "./agents/model-router.js";
+export type { GenerationPrompts, GenerationResult } from "./agents/orchestrator.js";
 
 // Loop
 export {
@@ -513,16 +496,29 @@ export type {
   RunResult,
 } from "./loop/index.js";
 
-
 // Analytics / Traces
 export { ActorRef, TraceEvent, RunTrace } from "./analytics/run-trace.js";
 export type { TraceEventInit } from "./analytics/run-trace.js";
+export { runtimeSessionLogToRunTrace } from "./analytics/runtime-session-run-trace.js";
+export type { RuntimeSessionRunTraceOpts } from "./analytics/runtime-session-run-trace.js";
 export {
-  runtimeSessionLogToRunTrace,
-} from "./analytics/runtime-session-run-trace.js";
+  TRACE_FINDING_CATEGORIES,
+  TraceFindingCategorySchema,
+  TraceFindingSchema,
+  FailureMotifSchema,
+  TraceFindingReportSchema,
+  extractFindings,
+  extractFailureMotifs,
+  generateTraceFindingReport,
+  renderTraceFindingReportMarkdown,
+} from "./analytics/trace-findings.js";
 export type {
-  RuntimeSessionRunTraceOpts,
-} from "./analytics/runtime-session-run-trace.js";
+  TraceFinding,
+  TraceFindingCategory,
+  FailureMotif,
+  TraceFindingReport,
+  GenerateTraceFindingReportOptions,
+} from "./analytics/trace-findings.js";
 export {
   SCHEMA_VERSION,
   ToolCallSchema,
@@ -548,7 +544,11 @@ export type {
   ValidationResult as PublicTraceValidationResult,
 } from "./traces/public-schema.js";
 
-export { SensitiveDataDetector, RedactionPolicy, applyRedactionPolicy } from "./traces/redaction.js";
+export {
+  SensitiveDataDetector,
+  RedactionPolicy,
+  applyRedactionPolicy,
+} from "./traces/redaction.js";
 export type {
   DetectionCategory,
   PolicyAction,
@@ -626,16 +626,8 @@ export {
   defaultBackendRegistry,
   TrainingRunner,
 } from "./training/backends.js";
-export type {
-  TrainingConfig,
-  TrainingResult,
-  PublishedArtifact,
-} from "./training/backends.js";
-export {
-  ACTIVATION_STATES,
-  ModelRegistry,
-  PromotionEngine,
-} from "./training/promotion.js";
+export type { TrainingConfig, TrainingResult, PublishedArtifact } from "./training/backends.js";
+export { ACTIVATION_STATES, ModelRegistry, PromotionEngine } from "./training/promotion.js";
 export type {
   ActivationState,
   PromotionEvent,
@@ -659,7 +651,6 @@ export type {
   AlignmentReport,
   ShareGPTExample,
 } from "./training/prompt-alignment.js";
-
 
 // MCP
 export { createMcpServer, startServer } from "./mcp/server.js";
