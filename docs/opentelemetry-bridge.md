@@ -1,8 +1,8 @@
 # OpenTelemetry Bridge
 
-Optional bridge between AutoContext's [`PublicTrace`](./concept-model.md)
+Optional bridge between autocontext's [`PublicTrace`](./concept-model.md)
 and a minimal subset of OpenTelemetry JSON `ResourceSpans`. The bridge
-lets operators move trace data between AutoContext and external OTel
+lets operators move trace data between autocontext and external OTel
 trace stores without losing the core agent-transcript fields.
 
 > **Slice 1 (this doc):** TypeScript only. Python parity, OTLP protobuf
@@ -123,7 +123,7 @@ party OTel collectors may drop, truncate, or rename them.
 - `ToolCall.result` (encoded as `tool.result.json`; may be very large)
 
 If your downstream consumer relies on these fields, prefer round-
-tripping the canonical AutoContext `PublicTrace` JSON instead of going
+tripping the canonical autocontext `PublicTrace` JSON instead of going
 through OTel.
 
 ## Privacy / retention boundary
@@ -139,8 +139,8 @@ trace. Callers are responsible for:
   consumers see that fields were redacted upstream (the test suite
   pins this).
 
-The bridge is optional and does not replace AutoContext's native trace
-schema. `PublicTrace` remains the canonical form for AutoContext
+The bridge is optional and does not replace autocontext's native trace
+schema. `PublicTrace` remains the canonical form for autocontext
 analytics and the cross-runtime contract (see
 [concept-model.md](./concept-model.md) and the cross-runtime fixture at
 `fixtures/cross-runtime/trace-finding-report.json`).

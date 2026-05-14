@@ -1,13 +1,13 @@
 # Core/Control Package Split
 
-This document is the source of truth for the AutoContext core/control package
+This document is the source of truth for the autocontext core/control package
 boundary. It turns the Linear strategy in AC-642, AC-643, AC-644, AC-648,
 AC-649, and AC-650 into a concrete implementation guardrail before moving
 behavior or changing public install paths.
 
 ## Strategy
 
-AutoContext is keeping the existing public repository and already-written code
+autocontext is keeping the existing public repository and already-written code
 Apache-2.0. The boundary work continues as architecture and package hygiene, not
 as a historical relicensing project.
 
@@ -68,7 +68,7 @@ level while remaining Apache-2.0 in this repo.
 
 ## Agent App Build Targets
 
-AutoContext should treat `build --target node|cloudflare` deployment targets as
+autocontext should treat `build --target node|cloudflare` deployment targets as
 control-plane packaging around stable runtime contracts, not as new runtime
 contracts themselves. The machine-readable target boundary lives in
 [`packages/package-topology.json`](../packages/package-topology.json) under

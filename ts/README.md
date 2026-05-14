@@ -454,7 +454,7 @@ Credential resolution order is:
 - Project `runs/` and `knowledge/` roots
 - The default SQLite database location under the configured `runs_dir`
 
-`autoctx init` also writes an `AGENTS.md` block with the recommended local AutoContext workflow.
+`autoctx init` also writes an `AGENTS.md` block with the recommended local autocontext workflow.
 
 `autoctx capabilities` returns structured JSON describing commands, providers, scenarios, the canonical concept model, and project-specific state such as the current project config, active runs, and knowledge directory summary.
 

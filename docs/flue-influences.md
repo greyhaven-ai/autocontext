@@ -1,11 +1,11 @@
 # Flue-Inspired Runtime Decisions
 
-Short design note recording what AutoContext borrowed from a [Flue](https://github.com/withastro/flue)
+Short design note recording what autocontext borrowed from a [Flue](https://github.com/withastro/flue)
 review and what it explicitly did not borrow. This is internal reference
 material so future contributors do not copy Flue terms, APIs, or product
 positioning by accident.
 
-The canonical AutoContext concept model remains [concept-model.md](./concept-model.md);
+The canonical autocontext concept model remains [concept-model.md](./concept-model.md);
 this doc is positioning, not new vocabulary.
 
 ## What we borrowed (and where it landed)
@@ -35,15 +35,15 @@ this doc is positioning, not new vocabulary.
 
 ## What we explicitly did not borrow
 
-- **The Flue dependency itself.** AutoContext does not import or wrap
+- **The Flue dependency itself.** autocontext does not import or wrap
   Flue at runtime. The borrowed ideas are reimplemented against
-  AutoContext's own contracts and pass our own test suites.
-- **Flue API names.** AutoContext keeps its own surface
+  autocontext's own contracts and pass our own test suites.
+- **Flue API names.** autocontext keeps its own surface
   (`createLocalWorkspaceEnv`, `defineRuntimeCommand`, etc.). Code review
   should flag any drift toward Flue-shaped names.
 - **Flue's provider stack** (Astro / Vite assumptions, etc.). Out of
   scope.
-- **Flue vocabulary as a replacement for AutoContext nouns.** AutoContext
+- **Flue vocabulary as a replacement for autocontext nouns.** autocontext
   keeps its own product model: `Scenario`, `Task`, `Mission`,
   `Campaign`, `Run`, `Step`, `Verifier`, `Artifact`, `Knowledge`,
   `Budget`, `Policy`. See [concept-model.md](./concept-model.md) for the
