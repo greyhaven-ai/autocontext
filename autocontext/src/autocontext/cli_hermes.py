@@ -8,6 +8,7 @@ import typer
 from rich.table import Table
 
 from autocontext.hermes.inspection import HermesInventory, inspect_hermes_home
+from autocontext.hermes.references import list_references, render_reference
 from autocontext.hermes.skill import AUTOCONTEXT_HERMES_SKILL_NAME, render_autocontext_skill
 
 if TYPE_CHECKING:
@@ -38,20 +39,23 @@ def run_hermes_export_skill_command(
     *,
     output: Path | None,
     force: bool,
+    with_references: bool,
     json_output: bool,
     console: Console,
     write_json_stdout: Any,
     write_json_stderr: Any,
 ) -> None:
-    """Emit the bundled Hermes Autocontext skill."""
+    """Emit the bundled Hermes autocontext skill."""
 
     skill_markdown = render_autocontext_skill()
     if output is None:
         if json_output:
-            write_json_stdout({
-                "skill_name": AUTOCONTEXT_HERMES_SKILL_NAME,
-                "skill_markdown": skill_markdown,
-            })
+            write_json_stdout(
+                {
+                    "skill_name": AUTOCONTEXT_HERMES_SKILL_NAME,
+                    "skill_markdown": skill_markdown,
+                }
+            )
         else:
             console.print(skill_markdown.rstrip())
         return
@@ -66,15 +70,37 @@ def run_hermes_export_skill_command(
 
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(skill_markdown, encoding="utf-8")
-    payload = {
+    payload: dict[str, Any] = {
         "skill_name": AUTOCONTEXT_HERMES_SKILL_NAME,
         "output_path": str(output),
         "bytes_written": len(skill_markdown.encode("utf-8")),
     }
+
+    if with_references:
+        references_dir = output.parent / "references"
+        references_dir.mkdir(parents=True, exist_ok=True)
+        written: list[dict[str, Any]] = []
+        for name in list_references():
+            target = references_dir / f"{name}.md"
+            if target.exists() and not force:
+                message = f"Refusing to overwrite existing reference without --force: {target}"
+                if json_output:
+                    write_json_stderr(message)
+                else:
+                    console.print(f"[red]{message}[/red]")
+                raise typer.Exit(code=1)
+            body = render_reference(name)
+            target.write_text(body, encoding="utf-8")
+            written.append({"name": name, "path": str(target), "bytes_written": len(body.encode("utf-8"))})
+        payload["references"] = written
+        payload["references_dir"] = str(references_dir)
+
     if json_output:
         write_json_stdout(payload)
     else:
         console.print(f"[green]Wrote[/green] {AUTOCONTEXT_HERMES_SKILL_NAME} skill to {output}")
+        if with_references:
+            console.print(f"[green]Wrote[/green] {len(payload['references'])} references to {payload['references_dir']}")
 
 
 def register_hermes_command(
@@ -108,7 +134,14 @@ def register_hermes_command(
             Path | None,
             typer.Option("--output", help="Write the Hermes SKILL.md to this path; omit to print it"),
         ] = None,
-        force: Annotated[bool, typer.Option("--force", help="Overwrite --output if it already exists")] = False,
+        force: Annotated[bool, typer.Option("--force", help="Overwrite --output and any existing references")] = False,
+        with_references: Annotated[
+            bool,
+            typer.Option(
+                "--with-references",
+                help="Also write progressive-disclosure references next to SKILL.md (AC-702)",
+            ),
+        ] = False,
         json_output: Annotated[bool, typer.Option("--json", help="Output structured JSON")] = False,
     ) -> None:
         """Emit the first-class Hermes autocontext skill."""
@@ -116,6 +149,7 @@ def register_hermes_command(
         run_hermes_export_skill_command(
             output=output,
             force=force,
+            with_references=with_references,
             json_output=json_output,
             console=console,
             write_json_stdout=_cli_attr(dependency_module, "_write_json_stdout"),

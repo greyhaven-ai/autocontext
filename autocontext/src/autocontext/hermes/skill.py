@@ -183,4 +183,15 @@ Use MCP only when it adds value beyond the CLI: stable schemas, lower parsing bu
 - [ ] Prefer CLI commands for first-run workflows.
 - [ ] Use MCP only when configured and materially better for the task.
 - [ ] Keep Hermes Curator as the system of record for Hermes skill lifecycle changes.
+
+## References
+
+Progressive-disclosure docs available alongside this skill. Load only when relevant.
+
+- `references/hermes-curator.md` — How Hermes Curator and autocontext cooperate; who owns what; the read-only-first rule.
+- `references/cli-workflows.md` — Exact `autoctx` commands for inventory, curator ingest, dataset export, judging, replay.
+- `references/mcp-workflows.md` — MCP server setup, CLI-to-MCP tool name mapping, when to prefer MCP over CLI.
+- `references/local-training.md` — How autocontext-exported datasets feed local MLX/CUDA advisor training; what the advisor predicts; expected scope.
+
+Operators can write all references next to this skill via `autoctx hermes export-skill --with-references --output <dir>/SKILL.md`.
 """
