@@ -77,7 +77,14 @@ export type {
 
 // Prompts
 export { ContextBudget, ContextBudgetPolicy, estimateTokens } from "./prompts/context-budget.js";
-export type { ContextBudgetPolicyOptions } from "./prompts/context-budget.js";
+export type {
+  ComponentBudgetHit,
+  ComponentCapHit,
+  ContextBudgetPolicyOptions,
+  ContextBudgetResult,
+  ContextBudgetTelemetry,
+  GlobalTrimHit,
+} from "./prompts/context-budget.js";
 export { buildPromptBundle } from "./prompts/templates.js";
 export type { PromptBundle, PromptContext } from "./prompts/templates.js";
 

@@ -106,7 +106,12 @@ export {
 	estimateTokens,
 } from "../../../../ts/src/prompts/context-budget.js";
 export type {
+	ComponentBudgetHit,
+	ComponentCapHit,
 	ContextBudgetPolicyOptions,
+	ContextBudgetResult,
+	ContextBudgetTelemetry,
+	GlobalTrimHit,
 } from "../../../../ts/src/prompts/context-budget.js";
 export type {
 	PromptBundle,

@@ -107,6 +107,43 @@ export class ContextBudgetPolicy {
   }
 }
 
+export interface ComponentBudgetHit {
+  component: string;
+  beforeTokens: number;
+  afterTokens: number;
+}
+
+export interface ComponentCapHit extends ComponentBudgetHit {
+  capTokens: number;
+}
+
+export interface GlobalTrimHit extends ComponentBudgetHit {
+  targetTokens: number;
+}
+
+export interface ContextBudgetTelemetry {
+  maxTokens: number;
+  inputTokenEstimate: number;
+  outputTokenEstimate: number;
+  tokenReduction: number;
+  componentTokensBefore: Record<string, number>;
+  componentTokensAfter: Record<string, number>;
+  dedupeHitCount: number;
+  deduplicatedComponents: string[];
+  roleScopedDedupeSkipCount: number;
+  protectedDedupeSkipCount: number;
+  componentCapHitCount: number;
+  componentCapHits: ComponentCapHit[];
+  trimmedComponentCount: number;
+  trimmedComponents: string[];
+  globalTrimHits: GlobalTrimHit[];
+}
+
+export interface ContextBudgetResult {
+  components: Record<string, string>;
+  telemetry: ContextBudgetTelemetry;
+}
+
 export function estimateTokens(text: string): number {
   return Math.floor(text.length / 4);
 }
@@ -135,81 +172,181 @@ export class ContextBudget {
   }
 
   apply(components: Record<string, string>): Record<string, string> {
-    if (this.maxTokens <= 0) return { ...components };
+    return this.applyWithTelemetry(components).components;
+  }
 
-    const result = applyComponentCaps(
-      deduplicateEquivalentComponents({ ...components }, this.policy),
+  applyWithTelemetry(components: Record<string, string>): ContextBudgetResult {
+    const inputComponents = { ...components };
+    const componentTokensBefore = componentTokenCounts(inputComponents);
+    const inputTokenEstimate = sumTokens(componentTokensBefore);
+    if (this.maxTokens <= 0) {
+      return {
+        components: inputComponents,
+        telemetry: buildTelemetry({
+          maxTokens: this.maxTokens,
+          inputTokenEstimate,
+          componentTokensBefore,
+          componentTokensAfter: { ...componentTokensBefore },
+        }),
+      };
+    }
+
+    const deduped = deduplicateEquivalentComponents(inputComponents, this.policy);
+    const capped = applyComponentCaps(
+      deduped.components,
       this.policy,
     );
+    const result = capped.components;
 
     let total = 0;
     for (const v of Object.values(result)) {
       total += estimateTokens(v);
     }
-    if (total <= this.maxTokens) return result;
-
+    const globalTrimHits: GlobalTrimHit[] = [];
     let remaining = total;
 
-    for (const key of this.policy.trimOrder) {
-      if (!(key in result) || this.policy.protectedComponents.has(key)) continue;
-      if (remaining <= this.maxTokens) break;
+    if (total > this.maxTokens) {
+      for (const key of this.policy.trimOrder) {
+        if (!(key in result) || this.policy.protectedComponents.has(key)) continue;
+        if (remaining <= this.maxTokens) break;
 
-      const overshoot = remaining - this.maxTokens;
-      const oldTokens = estimateTokens(result[key]);
-      const targetTokens = Math.max(0, oldTokens - overshoot);
+        const overshoot = remaining - this.maxTokens;
+        const oldTokens = estimateTokens(result[key]);
+        const targetTokens = Math.max(0, oldTokens - overshoot);
 
-      if (targetTokens < oldTokens) {
-        result[key] = truncateToTokens(result[key], targetTokens);
-        const newTokens = estimateTokens(result[key]);
-        remaining -= oldTokens - newTokens;
+        if (targetTokens < oldTokens) {
+          result[key] = truncateToTokens(result[key], targetTokens);
+          const newTokens = estimateTokens(result[key]);
+          remaining -= oldTokens - newTokens;
+          globalTrimHits.push({
+            component: key,
+            beforeTokens: oldTokens,
+            afterTokens: newTokens,
+            targetTokens,
+          });
+        }
       }
     }
 
-    return result;
+    return {
+      components: result,
+      telemetry: buildTelemetry({
+        maxTokens: this.maxTokens,
+        inputTokenEstimate,
+        componentTokensBefore,
+        componentTokensAfter: componentTokenCounts(result),
+        deduplicatedComponents: deduped.deduplicatedComponents,
+        roleScopedDedupeSkipCount: deduped.roleScopedDedupeSkipCount,
+        protectedDedupeSkipCount: deduped.protectedDedupeSkipCount,
+        componentCapHits: capped.componentCapHits,
+        globalTrimHits,
+      }),
+    };
   }
+}
+
+interface TelemetryInput {
+  maxTokens: number;
+  inputTokenEstimate: number;
+  componentTokensBefore: Record<string, number>;
+  componentTokensAfter: Record<string, number>;
+  deduplicatedComponents?: string[];
+  roleScopedDedupeSkipCount?: number;
+  protectedDedupeSkipCount?: number;
+  componentCapHits?: ComponentCapHit[];
+  globalTrimHits?: GlobalTrimHit[];
+}
+
+function buildTelemetry(input: TelemetryInput): ContextBudgetTelemetry {
+  const componentCapHits = input.componentCapHits ?? [];
+  const globalTrimHits = input.globalTrimHits ?? [];
+  const outputTokenEstimate = sumTokens(input.componentTokensAfter);
+  return {
+    maxTokens: input.maxTokens,
+    inputTokenEstimate: input.inputTokenEstimate,
+    outputTokenEstimate,
+    tokenReduction: Math.max(0, input.inputTokenEstimate - outputTokenEstimate),
+    componentTokensBefore: { ...input.componentTokensBefore },
+    componentTokensAfter: { ...input.componentTokensAfter },
+    dedupeHitCount: input.deduplicatedComponents?.length ?? 0,
+    deduplicatedComponents: [...(input.deduplicatedComponents ?? [])],
+    roleScopedDedupeSkipCount: input.roleScopedDedupeSkipCount ?? 0,
+    protectedDedupeSkipCount: input.protectedDedupeSkipCount ?? 0,
+    componentCapHitCount: componentCapHits.length,
+    componentCapHits: componentCapHits.map((hit) => ({ ...hit })),
+    trimmedComponentCount: globalTrimHits.length,
+    trimmedComponents: globalTrimHits.map((hit) => hit.component),
+    globalTrimHits: globalTrimHits.map((hit) => ({ ...hit })),
+  };
 }
 
 function deduplicateEquivalentComponents(
   components: Record<string, string>,
   policy: ContextBudgetPolicy,
-): Record<string, string> {
+): {
+  components: Record<string, string>;
+  deduplicatedComponents: string[];
+  roleScopedDedupeSkipCount: number;
+  protectedDedupeSkipCount: number;
+} {
   const groups = new Map<string, string[]>();
+  let roleScopedDedupeSkipCount = 0;
   for (const [key, value] of Object.entries(components)) {
-    if (policy.roleScopedComponents.has(key)) continue;
+    if (policy.roleScopedComponents.has(key)) {
+      if (duplicateKey(value)) roleScopedDedupeSkipCount += 1;
+      continue;
+    }
     const normalized = duplicateKey(value);
     if (!normalized) continue;
     groups.set(normalized, [...(groups.get(normalized) ?? []), key]);
   }
 
   const rank = canonicalRank(policy.canonicalComponentOrder);
+  const deduplicatedComponents: string[] = [];
+  let protectedDedupeSkipCount = 0;
   for (const keys of groups.values()) {
     if (keys.length < 2) continue;
+    protectedDedupeSkipCount += keys.filter((key) => policy.protectedComponents.has(key)).length;
     const unprotected = keys.filter((key) => !policy.protectedComponents.has(key));
     if (unprotected.length === 0) continue;
     const keep = [...unprotected].sort((a, b) => rank(a) - rank(b))[0];
     for (const key of unprotected) {
       if (key !== keep) {
         components[key] = "";
+        deduplicatedComponents.push(key);
       }
     }
   }
-  return components;
+  return {
+    components,
+    deduplicatedComponents,
+    roleScopedDedupeSkipCount,
+    protectedDedupeSkipCount,
+  };
 }
 
 function applyComponentCaps(
   components: Record<string, string>,
   policy: ContextBudgetPolicy,
-): Record<string, string> {
+): { components: Record<string, string>; componentCapHits: ComponentCapHit[] } {
   const result = { ...components };
+  const componentCapHits: ComponentCapHit[] = [];
   for (const [key, cap] of Object.entries(policy.componentTokenCaps)) {
     if (!(key in result) || policy.protectedComponents.has(key)) continue;
     if (!Number.isFinite(cap)) continue;
     const value = result[key];
-    if (estimateTokens(value) > cap) {
+    const beforeTokens = estimateTokens(value);
+    if (beforeTokens > cap) {
       result[key] = truncateToTokens(value, cap);
+      componentCapHits.push({
+        component: key,
+        beforeTokens,
+        afterTokens: estimateTokens(result[key]),
+        capTokens: cap,
+      });
     }
   }
-  return result;
+  return { components: result, componentCapHits };
 }
 
 function duplicateKey(value: string): string {
@@ -219,4 +356,14 @@ function duplicateKey(value: string): string {
 function canonicalRank(order: readonly string[]): (key: string) => number {
   const ranks = new Map(order.map((key, index) => [key, index]));
   return (key: string) => ranks.get(key) ?? ranks.size;
+}
+
+function componentTokenCounts(components: Record<string, string>): Record<string, number> {
+  return Object.fromEntries(
+    Object.entries(components).map(([key, value]) => [key, estimateTokens(value)]),
+  );
+}
+
+function sumTokens(counts: Record<string, number>): number {
+  return Object.values(counts).reduce((total, value) => total + value, 0);
 }

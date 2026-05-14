@@ -47,7 +47,13 @@ def _generation_context(tmp_path: Path, *, hook_bus: HookBus | None = None) -> t
     )
 
 
-def _prepare_generation_prompts(ctx: GenerationContext, artifacts: ArtifactStore, *, current_playbook: str = "abcd") -> None:
+def _prepare_generation_prompts(
+    ctx: GenerationContext,
+    artifacts: ArtifactStore,
+    *,
+    current_playbook: str = "abcd",
+    context_budget_tokens: int = 0,
+) -> None:
     prepare_generation_prompts(
         ctx,
         artifacts=artifacts,
@@ -76,7 +82,7 @@ def _prepare_generation_prompts(ctx: GenerationContext, artifacts: ArtifactStore
         session_reports="",
         architect_tool_usage_report="",
         constraint_mode=False,
-        context_budget_tokens=0,
+        context_budget_tokens=context_budget_tokens,
         notebook_contexts=None,
         environment_snapshot="",
         evidence_manifest="",
@@ -188,6 +194,57 @@ def test_context_selection_decision_round_trips_without_prompt_content() -> None
     assert restored == decision
     assert "secret strategy text" not in str(payload)
     assert payload["metrics"]["selected_token_estimate"] == 1
+
+
+def test_context_selection_decision_metrics_include_budget_and_compaction_telemetry() -> None:
+    from autocontext.knowledge.context_selection import (
+        ContextSelectionCandidate,
+        ContextSelectionDecision,
+    )
+
+    decision = ContextSelectionDecision(
+        run_id="run-1",
+        scenario_name="grid_ctf",
+        generation=2,
+        stage="prompt_context",
+        candidates=(
+            ContextSelectionCandidate.from_contents(
+                artifact_id="playbook",
+                artifact_type="prompt_component",
+                source="prompt_assembly",
+                candidate_content="x" * 200,
+                selected_content="x" * 40,
+                selection_reason="trimmed",
+            ),
+        ),
+        metadata={
+            "context_budget_telemetry": {
+                "input_token_estimate": 120,
+                "output_token_estimate": 40,
+                "dedupe_hit_count": 2,
+                "component_cap_hit_count": 1,
+                "trimmed_component_count": 3,
+            },
+            "prompt_compaction_cache": {
+                "hits": 4,
+                "misses": 6,
+                "lookups": 10,
+            },
+        },
+    )
+
+    metrics = decision.metrics()
+
+    assert metrics["budget_input_token_estimate"] == 120
+    assert metrics["budget_output_token_estimate"] == 40
+    assert metrics["budget_token_reduction"] == 80
+    assert metrics["budget_dedupe_hit_count"] == 2
+    assert metrics["budget_component_cap_hit_count"] == 1
+    assert metrics["budget_trimmed_component_count"] == 3
+    assert metrics["compaction_cache_hits"] == 4
+    assert metrics["compaction_cache_misses"] == 6
+    assert metrics["compaction_cache_lookups"] == 10
+    assert metrics["compaction_cache_hit_rate"] == 0.4
 
 
 def test_persist_context_selection_decision_writes_under_run_root(tmp_path: Path) -> None:
@@ -404,6 +461,61 @@ def test_context_selection_report_emits_actionable_diagnostics() -> None:
     assert "Diagnostics" in report.to_markdown()
 
 
+def test_context_selection_report_summarizes_budget_and_cache_regression_gates() -> None:
+    from autocontext.knowledge.context_selection import (
+        ContextSelectionCandidate,
+        ContextSelectionDecision,
+    )
+    from autocontext.knowledge.context_selection_report import build_context_selection_report
+
+    report = build_context_selection_report(
+        (
+            ContextSelectionDecision(
+                run_id="run-1",
+                scenario_name="grid_ctf",
+                generation=3,
+                stage="generation_prompt_context",
+                candidates=(
+                    ContextSelectionCandidate.from_contents(
+                        artifact_id="playbook",
+                        artifact_type="prompt_component",
+                        source="prompt_assembly",
+                        candidate_content="x" * 400,
+                        selected_content="x" * 80,
+                        selection_reason="trimmed",
+                    ),
+                ),
+                metadata={
+                    "context_budget_telemetry": {
+                        "input_token_estimate": 120,
+                        "output_token_estimate": 20,
+                        "dedupe_hit_count": 1,
+                        "component_cap_hit_count": 2,
+                        "trimmed_component_count": 1,
+                    },
+                    "prompt_compaction_cache": {
+                        "hits": 0,
+                        "misses": 10,
+                        "lookups": 10,
+                    },
+                },
+            ),
+        )
+    )
+
+    payload = report.to_dict()
+    summary = payload["summary"]
+    diagnostics = {diagnostic["code"]: diagnostic for diagnostic in payload["diagnostics"]}
+
+    assert summary["budget_token_reduction"] == 100
+    assert summary["budget_dedupe_hit_count"] == 1
+    assert summary["budget_component_cap_hit_count"] == 2
+    assert summary["budget_trimmed_component_count"] == 1
+    assert summary["compaction_cache_hit_rate"] == 0.0
+    assert "LOW_COMPACTION_CACHE_HIT_RATE" in diagnostics
+    assert "cache" in diagnostics["LOW_COMPACTION_CACHE_HIT_RATE"]["recommendation"].lower()
+
+
 def _diagnostic_by_code(payload: dict[str, Any], code: str) -> dict[str, Any]:
     return next(diagnostic for diagnostic in payload["diagnostics"] if diagnostic["code"] == code)
 
@@ -544,6 +656,29 @@ def test_prepare_generation_prompts_persists_context_selection_artifact(tmp_path
     assert payload["metrics"]["selected_count"] >= 3
     assert payload["metrics"]["selected_token_estimate"] > 0
     assert payload["metrics"]["duplicate_content_rate"] > 0
+
+
+def test_prepare_generation_prompts_persists_budget_and_compaction_telemetry(tmp_path: Path) -> None:
+    from autocontext.knowledge.compaction import clear_prompt_compaction_cache
+
+    clear_prompt_compaction_cache()
+    artifacts, ctx = _generation_context(tmp_path)
+
+    _prepare_generation_prompts(
+        ctx,
+        artifacts,
+        current_playbook="x" * 400,
+        context_budget_tokens=50,
+    )
+
+    payload = _context_selection_payload(artifacts)
+    metadata = payload["metadata"]
+
+    assert metadata["context_budget_telemetry"]["max_tokens"] == 50
+    assert payload["metrics"]["budget_input_token_estimate"] > payload["metrics"]["budget_output_token_estimate"]
+    assert payload["metrics"]["budget_trimmed_component_count"] >= 1
+    assert metadata["prompt_compaction_cache"]["lookups"] > 0
+    assert payload["metrics"]["compaction_cache_misses"] > 0
 
 
 def test_context_selection_candidates_reflect_context_components_hook(tmp_path: Path) -> None:

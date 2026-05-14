@@ -125,6 +125,18 @@ class ContextSelectionDecision:
             if freshness_values
             else None
         )
+        budget_telemetry = _coerce_mapping(self.metadata.get("context_budget_telemetry"))
+        budget_input_tokens = _coerce_int(budget_telemetry.get("input_token_estimate"))
+        budget_output_tokens = _coerce_int(budget_telemetry.get("output_token_estimate"))
+        compaction_cache = _coerce_mapping(self.metadata.get("prompt_compaction_cache"))
+        compaction_hits = _coerce_int(compaction_cache.get("hits"))
+        compaction_misses = _coerce_int(compaction_cache.get("misses"))
+        compaction_lookups = _coerce_int(compaction_cache.get("lookups")) or compaction_hits + compaction_misses
+        compaction_hit_rate = (
+            compaction_hits / compaction_lookups
+            if compaction_lookups
+            else None
+        )
         return {
             "candidate_count": len(candidates),
             "selected_count": len(selected),
@@ -136,6 +148,16 @@ class ContextSelectionDecision:
             "useful_selected_count": len(useful_selected),
             "useful_artifact_recall": useful_recall,
             "mean_selected_freshness_generation_delta": mean_freshness,
+            "budget_input_token_estimate": budget_input_tokens,
+            "budget_output_token_estimate": budget_output_tokens,
+            "budget_token_reduction": max(0, budget_input_tokens - budget_output_tokens),
+            "budget_dedupe_hit_count": _coerce_int(budget_telemetry.get("dedupe_hit_count")),
+            "budget_component_cap_hit_count": _coerce_int(budget_telemetry.get("component_cap_hit_count")),
+            "budget_trimmed_component_count": _coerce_int(budget_telemetry.get("trimmed_component_count")),
+            "compaction_cache_hits": compaction_hits,
+            "compaction_cache_misses": compaction_misses,
+            "compaction_cache_lookups": compaction_lookups,
+            "compaction_cache_hit_rate": compaction_hit_rate,
         }
 
     def to_dict(self) -> dict[str, Any]:
@@ -264,3 +286,9 @@ def _coerce_optional_bool(value: Any) -> bool | None:
         if normalized in {"false", "0", "no"}:
             return False
     return None
+
+
+def _coerce_mapping(value: Any) -> Mapping[str, Any]:
+    if isinstance(value, Mapping):
+        return value
+    return {}

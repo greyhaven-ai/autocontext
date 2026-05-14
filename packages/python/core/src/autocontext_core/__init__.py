@@ -25,6 +25,9 @@ _storage_row_types = import_module("autocontext.storage.row_types")
 expected_score = _elo.expected_score
 update_elo = _elo.update_elo
 ContextBudget = _context_budget.ContextBudget
+ContextBudgetPolicy = _context_budget.ContextBudgetPolicy
+ContextBudgetResult = _context_budget.ContextBudgetResult
+ContextBudgetTelemetry = _context_budget.ContextBudgetTelemetry
 estimate_tokens = _context_budget.estimate_tokens
 PromptBundle = _templates.PromptBundle
 build_prompt_bundle = _templates.build_prompt_bundle
@@ -121,6 +124,9 @@ __all__ = [
     "CompletionResult",
     "ContextValidity",
     "ContextBudget",
+    "ContextBudgetPolicy",
+    "ContextBudgetResult",
+    "ContextBudgetTelemetry",
     "DisagreementMetrics",
     "EnvironmentSpec",
     "CoordinationInterface",
