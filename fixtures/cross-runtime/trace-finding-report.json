@@ -1,0 +1,42 @@
+{
+  "reportId": "report-cross-runtime-canonical",
+  "traceId": "trace_cross_runtime_canonical",
+  "sourceHarness": "autocontext",
+  "summary": "2 finding(s) across 2 category(ies).",
+  "createdAt": "2026-05-13T18:00:00.000Z",
+  "findings": [
+    {
+      "findingId": "finding-0",
+      "category": "tool_call_failure",
+      "severity": "high",
+      "title": "Tool call to 'patch' failed",
+      "description": "hunk failed",
+      "evidenceMessageIndexes": [1]
+    },
+    {
+      "findingId": "finding-1",
+      "category": "low_outcome_score",
+      "severity": "high",
+      "title": "Outcome score 0.30 below 0.5",
+      "description": "broken",
+      "evidenceMessageIndexes": []
+    }
+  ],
+  "failureMotifs": [
+    {
+      "motifId": "motif-0",
+      "category": "low_outcome_score",
+      "occurrenceCount": 1,
+      "evidenceMessageIndexes": [],
+      "description": "low_outcome_score occurred 1 time(s)"
+    },
+    {
+      "motifId": "motif-1",
+      "category": "tool_call_failure",
+      "occurrenceCount": 1,
+      "evidenceMessageIndexes": [1],
+      "description": "tool_call_failure occurred 1 time(s)"
+    }
+  ],
+  "metadata": {}
+}

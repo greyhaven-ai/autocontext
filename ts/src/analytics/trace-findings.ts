@@ -349,3 +349,107 @@ export function renderWeaknessReportMarkdown(report: WeaknessReport): string {
   }
   return lines.join("\n");
 }
+
+// AC-679 slice 3c: HTML rendering. Mirrors the shape of Python's
+// `render_trace_writeup_html` (escaped user content, anchored evidence,
+// data attributes for client-side filtering, offline-first <style> block).
+
+const HTML_ENTITIES: Record<string, string> = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+  "'": "&#39;",
+};
+
+function htmlEscape(value: string): string {
+  return value.replace(/[&<>"']/g, (char) => HTML_ENTITIES[char] ?? char);
+}
+
+function evidenceHtml(indexes: readonly number[]): string {
+  if (indexes.length === 0) return '<span class="evidence-none">evidence: none</span>';
+  const items = indexes
+    .map((index) => `<a class="evidence-ref" href="#msg-${index}">msg #${index}</a>`)
+    .join(", ");
+  return `<span class="evidence">evidence: ${items}</span>`;
+}
+
+const TRACE_FINDINGS_STYLE = `
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; max-width: 880px; margin: 2rem auto; padding: 0 1rem; color: #1f2933; }
+  h1 { font-size: 1.5rem; border-bottom: 1px solid #d1d5db; padding-bottom: 0.25rem; }
+  section { margin-top: 1.25rem; }
+  .meta { color: #4b5563; font-size: 0.9rem; }
+  ul { list-style: none; padding-left: 0; }
+  li.finding, li.motif { padding: 0.5rem 0.75rem; border-left: 3px solid #d1d5db; margin: 0.25rem 0; }
+  li.finding[data-severity="high"] { border-left-color: #b91c1c; }
+  li.finding[data-severity="medium"] { border-left-color: #d97706; }
+  li.finding[data-severity="low"] { border-left-color: #2563eb; }
+  .tag { display: inline-block; font-size: 0.75rem; padding: 0.1rem 0.4rem; border-radius: 0.25rem; background: #e5e7eb; color: #1f2933; margin-right: 0.25rem; }
+  .evidence-ref { color: #2563eb; text-decoration: none; }
+  .evidence-ref:hover { text-decoration: underline; }
+  .empty { color: #6b7280; font-style: italic; }
+`.trim();
+
+export function renderTraceFindingReportHtml(report: TraceFindingReport): string {
+  const findings =
+    report.findings.length === 0
+      ? '<p class="empty">No notable findings.</p>'
+      : `<ul>${report.findings
+          .map((finding) => {
+            return [
+              `<li class="finding"`,
+              ` id="finding-${htmlEscape(finding.findingId)}"`,
+              ` data-category="${htmlEscape(finding.category)}"`,
+              ` data-severity="${htmlEscape(finding.severity)}"`,
+              `>`,
+              `<strong>${htmlEscape(finding.title)}</strong>`,
+              ` <span class="tag">${htmlEscape(finding.category)}</span>`,
+              `<span class="tag">${htmlEscape(finding.severity)}</span>`,
+              ` <span class="description">${htmlEscape(finding.description)}</span>`,
+              ` ${evidenceHtml(finding.evidenceMessageIndexes)}`,
+              `</li>`,
+            ].join("");
+          })
+          .join("")}</ul>`;
+
+  const motifs =
+    report.failureMotifs.length === 0
+      ? '<p class="empty">No recurring failure motifs.</p>'
+      : `<ul>${report.failureMotifs
+          .map((motif) => {
+            return [
+              `<li class="motif" data-category="${htmlEscape(motif.category)}">`,
+              `<strong>${htmlEscape(motif.category)}</strong>: `,
+              `${motif.occurrenceCount} occurrence(s)`,
+              `</li>`,
+            ].join("");
+          })
+          .join("")}</ul>`;
+
+  return [
+    "<!doctype html>",
+    '<html lang="en">',
+    "<head>",
+    '<meta charset="utf-8">',
+    `<title>Trace Findings: ${htmlEscape(report.traceId)}</title>`,
+    `<style>${TRACE_FINDINGS_STYLE}</style>`,
+    "</head>",
+    "<body>",
+    `<h1>Trace Findings: ${htmlEscape(report.traceId)}</h1>`,
+    `<p class="meta">Source: ${htmlEscape(report.sourceHarness)} | Created: ${htmlEscape(report.createdAt)}</p>`,
+    '<section class="summary">',
+    "<h2>Summary</h2>",
+    `<p>${htmlEscape(report.summary)}</p>`,
+    "</section>",
+    '<section class="findings">',
+    "<h2>Findings</h2>",
+    findings,
+    "</section>",
+    '<section class="motifs">',
+    "<h2>Failure Motifs</h2>",
+    motifs,
+    "</section>",
+    "</body>",
+    "</html>",
+  ].join("\n");
+}

@@ -529,6 +529,7 @@ export {
   generateTraceFindingReport,
   generateWeaknessReport,
   renderTraceFindingReportMarkdown,
+  renderTraceFindingReportHtml,
   renderWeaknessReportMarkdown,
 } from "./analytics/trace-findings.js";
 export type {
