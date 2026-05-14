@@ -152,7 +152,3 @@ Python and TypeScript command grants use the same runtime-session event vocabula
 - Prefer `Run`, `Step`, `Verifier`, `Artifact`, `Knowledge`, `Budget`, and `Policy` when describing execution behavior.
 - Use `playbook`, `replay`, `checkpoint`, `package`, `skill`, and `sandbox` as specific artifacts or operations, not as top-level peer concepts.
 - Where internal code still uses legacy names, document the mapping explicitly rather than pretending the mismatch does not exist.
-
-## External Influences
-
-- The runtime workspace/session contract, scoped command/tool grants, and child-agent task execution model drew inspiration from a [Flue](https://github.com/withastro/flue) review. The borrow/non-borrow list lives in [flue-influences.md](./flue-influences.md). AutoContext keeps its own vocabulary above; the Flue influences shaped runtime contracts, not the user-facing concept model.
