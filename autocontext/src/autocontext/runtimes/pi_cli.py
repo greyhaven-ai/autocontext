@@ -8,16 +8,27 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
+import signal
 import subprocess
+import sys
 import time
 from dataclasses import dataclass, field
+from typing import Any
 
 from autocontext.runtimes.base import AgentOutput, AgentRuntime
 from autocontext.runtimes.pi_artifacts import PiExecutionTrace
 from autocontext.runtimes.pi_defaults import PI_DEFAULT_TIMEOUT_SECONDS
 
 logger = logging.getLogger(__name__)
+
+# AC-764: mirror the Claude CLI hard-timeout shape for Pi CLI calls.
+# `subprocess.run(..., timeout=...)` only kills the immediate child and can then
+# block in an unbounded communicate() drain when grandchildren keep inherited
+# stdout/stderr pipe fds open. Pi is also a Node-based CLI that may spawn helper
+# processes, so use a fresh process group and a bounded post-kill drain.
+_TIMEOUT_KILL_GRACE_SECONDS = 5.0
 
 
 @dataclass(slots=True)
@@ -31,6 +42,97 @@ class PiCLIConfig:
     workspace: str = ""
     no_context_files: bool = False
     extra_args: list[str] = field(default_factory=list)
+
+
+def _kill_process_group(proc: subprocess.Popen[str]) -> None:
+    """Best-effort SIGKILL for the full Pi process group."""
+
+    if sys.platform == "win32":
+        try:
+            proc.kill()
+        except (ProcessLookupError, OSError) as exc:
+            logger.debug("pi-cli kill skipped: %s", exc)
+        return
+
+    try:
+        pgid = os.getpgid(proc.pid)
+    except (ProcessLookupError, PermissionError) as exc:
+        logger.debug("pi-cli getpgid failed: %s", exc)
+        return
+
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError) as exc:
+        logger.debug("pi-cli killpg skipped: %s", exc)
+
+
+def _bounded_drain_and_close(proc: subprocess.Popen[str], grace_seconds: float) -> None:
+    """Drain after process-group kill with a strict grace, then close pipes."""
+
+    try:
+        proc.communicate(timeout=grace_seconds)
+    except subprocess.TimeoutExpired:
+        logger.warning(
+            "pi-cli drain stalled after SIGKILL; abandoning pipes (grace=%.1fs)",
+            grace_seconds,
+        )
+    except (OSError, ValueError):
+        # Pipes may already be closed during interpreter shutdown or after an
+        # interrupted communicate call. Cleanup should not mask the original
+        # timeout/interrupt that the caller handles.
+        pass
+
+    for stream in (proc.stdin, proc.stdout, proc.stderr):
+        if stream is None:
+            continue
+        try:
+            stream.close()
+        except (OSError, ValueError):
+            pass
+
+
+def _run_with_group_kill(
+    args: list[str],
+    *,
+    timeout: float,
+    cwd: str | None = None,
+    grace_seconds: float = _TIMEOUT_KILL_GRACE_SECONDS,
+) -> subprocess.CompletedProcess[str]:
+    """Run Pi CLI with process-group kill and bounded post-timeout cleanup.
+
+    Re-raises `subprocess.TimeoutExpired` on timeout so `PiCLIRuntime` can keep
+    its existing timeout metadata contract. Also cleans up on `KeyboardInterrupt`
+    or any other abnormal exit because `start_new_session=True` detaches the Pi
+    child from the terminal's signal-delivery group.
+    """
+
+    popen_kwargs: dict[str, Any] = {
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+        "text": True,
+        "cwd": cwd,
+    }
+    if sys.platform != "win32":
+        popen_kwargs["start_new_session"] = True
+
+    proc = subprocess.Popen(args, **popen_kwargs)
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _kill_process_group(proc)
+        _bounded_drain_and_close(proc, grace_seconds)
+        raise
+    except BaseException:
+        _kill_process_group(proc)
+        _bounded_drain_and_close(proc, grace_seconds)
+        raise
+
+    return subprocess.CompletedProcess(
+        args=args,
+        returncode=proc.returncode if proc.returncode is not None else -1,
+        stdout=stdout,
+        stderr=stderr,
+    )
 
 
 class PiCLIRuntime(AgentRuntime):
@@ -107,10 +209,8 @@ class PiCLIRuntime(AgentRuntime):
         t0 = time.monotonic()
 
         try:
-            result = subprocess.run(
+            result = _run_with_group_kill(
                 args,
-                capture_output=True,
-                text=True,
                 timeout=self._config.timeout,
                 cwd=self._config.workspace or None,
             )
