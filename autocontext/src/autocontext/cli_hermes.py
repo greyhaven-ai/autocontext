@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Annotated, Any
 import typer
 from rich.table import Table
 
+from autocontext.hermes.dataset_export import ExportSummary, export_dataset
 from autocontext.hermes.inspection import HermesInventory, inspect_hermes_home
 from autocontext.hermes.skill import AUTOCONTEXT_HERMES_SKILL_NAME, render_autocontext_skill
 
@@ -48,10 +49,12 @@ def run_hermes_export_skill_command(
     skill_markdown = render_autocontext_skill()
     if output is None:
         if json_output:
-            write_json_stdout({
-                "skill_name": AUTOCONTEXT_HERMES_SKILL_NAME,
-                "skill_markdown": skill_markdown,
-            })
+            write_json_stdout(
+                {
+                    "skill_name": AUTOCONTEXT_HERMES_SKILL_NAME,
+                    "skill_markdown": skill_markdown,
+                }
+            )
         else:
             console.print(skill_markdown.rstrip())
         return
@@ -75,6 +78,53 @@ def run_hermes_export_skill_command(
         write_json_stdout(payload)
     else:
         console.print(f"[green]Wrote[/green] {AUTOCONTEXT_HERMES_SKILL_NAME} skill to {output}")
+
+
+def run_hermes_export_dataset_command(
+    *,
+    kind: str,
+    home: Path | None,
+    output: Path,
+    since: str | None,
+    limit: int | None,
+    json_output: bool,
+    console: Console,
+    write_json_stdout: Any,
+) -> None:
+    """Export a Hermes curator decision dataset for local training (AC-705)."""
+
+    from autocontext.hermes.inspection import _resolve_hermes_home
+
+    resolved_home = _resolve_hermes_home(home)
+    try:
+        summary: ExportSummary = export_dataset(
+            kind=kind,
+            home=resolved_home,
+            output=output,
+            since=since,
+            limit=limit,
+        )
+    except (NotImplementedError, ValueError) as err:
+        if json_output:
+            write_json_stdout({"status": "failed", "error": str(err), "kind": kind})
+        else:
+            console.print(f"[red]{err}[/red]")
+        raise typer.Exit(code=1) from err
+
+    payload = {
+        "kind": kind,
+        "hermes_home": str(resolved_home),
+        "output_path": str(output),
+        "runs_read": summary.runs_read,
+        "examples_written": summary.examples_written,
+        "warnings": list(summary.warnings),
+    }
+    if json_output:
+        write_json_stdout(payload)
+        return
+    console.print(
+        f"[green]Exported[/green] {summary.examples_written} {kind} examples from {summary.runs_read} curator run(s) -> {output}"
+    )
 
 
 def register_hermes_command(
@@ -120,6 +170,46 @@ def register_hermes_command(
             console=console,
             write_json_stdout=_cli_attr(dependency_module, "_write_json_stdout"),
             write_json_stderr=_cli_attr(dependency_module, "_write_json_stderr"),
+        )
+
+    @hermes_app.command("export-dataset")
+    def export_dataset_cmd(
+        kind: Annotated[
+            str,
+            typer.Option(
+                "--kind",
+                help="Dataset kind: curator-decisions (shipped); other kinds documented but not yet implemented",
+            ),
+        ] = "curator-decisions",
+        home: Annotated[
+            Path | None,
+            typer.Option("--home", help="Hermes home directory (default: HERMES_HOME or ~/.hermes)"),
+        ] = None,
+        output: Annotated[
+            Path,
+            typer.Option("--output", help="Destination JSONL path for training examples"),
+        ] = Path("hermes-curator-decisions.jsonl"),
+        since: Annotated[
+            str | None,
+            typer.Option("--since", help="ISO-8601 timestamp; skip curator runs strictly before this"),
+        ] = None,
+        limit: Annotated[
+            int | None,
+            typer.Option("--limit", help="Maximum number of examples to write"),
+        ] = None,
+        json_output: Annotated[bool, typer.Option("--json", help="Output structured JSON")] = False,
+    ) -> None:
+        """Export Hermes curator decisions as training JSONL (AC-705)."""
+
+        run_hermes_export_dataset_command(
+            kind=kind,
+            home=home,
+            output=output,
+            since=since,
+            limit=limit,
+            json_output=json_output,
+            console=console,
+            write_json_stdout=_cli_attr(dependency_module, "_write_json_stdout"),
         )
 
     app.add_typer(hermes_app, name="hermes")
