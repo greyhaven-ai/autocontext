@@ -1,6 +1,6 @@
 /**
  * AC-682 (slice 1): bidirectional bridge between `PublicTrace` and a
- * minimal subset of OpenTelemetry JSON `ResourceSpans`.
+ * minimal validated subset of OpenTelemetry JSON `ResourceSpans`.
  *
  * Scope: TypeScript only; the bridge is optional and does not replace
  * AutoContext's native trace schema. Python parity, OTLP protobuf wire
@@ -9,15 +9,26 @@
  * See `docs/opentelemetry-bridge.md` for the canonical attribute
  * vocabulary and the known-gap list (fields that don't round-trip
  * cleanly).
+ *
+ * OTel ID format (review feedback PR #959):
+ *
+ * - OTel span-context requires 32-hex-char traceIds and 16-hex-char
+ *   spanIds. The bridge derives valid hex IDs deterministically by
+ *   hashing the source PublicTrace identifiers so a round-trip emits
+ *   identical IDs. The original `PublicTrace.traceId` is preserved as
+ *   the `ai.trace.id` attribute on every span and used by the reverse
+ *   path; the OTel-format traceId is opaque to PublicTrace consumers.
  */
+
+import { createHash } from "node:crypto";
 
 import { z } from "zod";
 
 import {
   PublicTraceSchema,
   type PublicTrace,
-  type TraceMessage,
   type ToolCall,
+  type TraceMessage,
 } from "./public-schema-contracts.js";
 
 // ----------------------------------------------------------------------------
@@ -34,9 +45,12 @@ const OtelSpanStatusSchema = z.object({
 });
 
 export const OtelSpanSchema = z.object({
-  traceId: z.string().min(1),
-  spanId: z.string().min(1),
-  parentSpanId: z.string().min(1).optional(),
+  traceId: z.string().regex(/^[0-9a-f]{32}$/, "traceId must be 32 hex chars"),
+  spanId: z.string().regex(/^[0-9a-f]{16}$/, "spanId must be 16 hex chars"),
+  parentSpanId: z
+    .string()
+    .regex(/^[0-9a-f]{16}$/, "parentSpanId must be 16 hex chars")
+    .optional(),
   name: z.string().min(1),
   kind: z.enum(["internal", "client", "server", "producer", "consumer"]).optional(),
   startTimeUnixNano: z.string().min(1),
@@ -65,6 +79,25 @@ const SCOPE_VERSION = "1.0.0";
 const SPAN_NAME_MESSAGE_PREFIX = "message:";
 const SPAN_NAME_TOOL_PREFIX = "tool:";
 
+// Span / trace IDs are SHA-256-derived hex strings of the right widths so
+// downstream OTel stores accept them. The PublicTrace's own traceId is
+// preserved as the `ai.trace.id` attribute and is the source of truth on
+// the reverse path; the OTel hex IDs are opaque correlation handles.
+const TRACE_ID_HEX_LEN = 32;
+const SPAN_ID_HEX_LEN = 16;
+
+function sha256Hex(input: string): string {
+  return createHash("sha256").update(input).digest("hex");
+}
+
+function deriveTraceIdHex(traceId: string): string {
+  return sha256Hex(`trace|${traceId}`).slice(0, TRACE_ID_HEX_LEN);
+}
+
+function deriveSpanIdHex(traceId: string, slot: string): string {
+  return sha256Hex(`span|${traceId}|${slot}`).slice(0, SPAN_ID_HEX_LEN);
+}
+
 // ----------------------------------------------------------------------------
 // Forward: PublicTrace -> OtelResourceSpans
 // ----------------------------------------------------------------------------
@@ -75,13 +108,6 @@ function isoToUnixNano(iso: string): string {
   const ms = Date.parse(iso);
   if (Number.isNaN(ms)) return "0";
   return `${BigInt(ms) * 1_000_000n}`;
-}
-
-function spanId(prefix: string, index: number): string {
-  // Stable, deterministic span ids derived from a prefix + index. Real OTel
-  // producers use 16-hex-char ids; ours are deterministic strings so the
-  // forward/reverse round-trip is byte-identical without a counter.
-  return `${prefix}-${index.toString().padStart(2, "0")}`;
 }
 
 function attributesForMessage(message: TraceMessage, index: number): OtelAttributes {
@@ -97,9 +123,12 @@ function attributesForMessage(message: TraceMessage, index: number): OtelAttribu
   return attrs;
 }
 
-function attributesForToolCall(call: ToolCall): OtelAttributes {
+function attributesForToolCall(call: ToolCall, index: number): OtelAttributes {
+  // `tool.index` is mandatory on emission so reverse import can reconstruct
+  // tool-call order even when the OTel store reorders sibling spans.
   const attrs: OtelAttributes = {
     "tool.name": call.toolName,
+    "tool.index": index,
     "tool.args.json": JSON.stringify(call.args ?? {}),
   };
   if (typeof call.durationMs === "number") {
@@ -118,6 +147,7 @@ function attributesForToolCall(call: ToolCall): OtelAttributes {
 
 function rootSpanAttributes(trace: PublicTrace): OtelAttributes {
   const attrs: OtelAttributes = {
+    "ai.trace.id": trace.traceId,
     "ai.trace.collectedAt": trace.collectedAt,
     "ai.trace.schemaVersion": trace.schemaVersion,
   };
@@ -145,13 +175,14 @@ function rootSpanAttributes(trace: PublicTrace): OtelAttributes {
 }
 
 export function publicTraceToOtelResourceSpans(trace: PublicTrace): OtelResourceSpans {
+  const traceIdHex = deriveTraceIdHex(trace.traceId);
+  const rootSpanIdHex = deriveSpanIdHex(trace.traceId, "root");
   const spans: OtelSpan[] = [];
   const rootStart = isoToUnixNano(trace.collectedAt);
 
-  const rootId = spanId("root", 0);
   spans.push({
-    traceId: trace.traceId,
-    spanId: rootId,
+    traceId: traceIdHex,
+    spanId: rootSpanIdHex,
     name: `autocontext.run:${trace.traceId}`,
     kind: "internal",
     startTimeUnixNano: rootStart,
@@ -159,11 +190,11 @@ export function publicTraceToOtelResourceSpans(trace: PublicTrace): OtelResource
   });
 
   trace.messages.forEach((message, index) => {
-    const messageSpanId = spanId("msg", index);
+    const messageSpanIdHex = deriveSpanIdHex(trace.traceId, `msg-${index}`);
     spans.push({
-      traceId: trace.traceId,
-      spanId: messageSpanId,
-      parentSpanId: rootId,
+      traceId: traceIdHex,
+      spanId: messageSpanIdHex,
+      parentSpanId: rootSpanIdHex,
       name: `${SPAN_NAME_MESSAGE_PREFIX}${message.role}`,
       kind: "internal",
       startTimeUnixNano: isoToUnixNano(message.timestamp),
@@ -171,15 +202,15 @@ export function publicTraceToOtelResourceSpans(trace: PublicTrace): OtelResource
     });
 
     (message.toolCalls ?? []).forEach((call, callIndex) => {
-      const toolSpanIdValue = spanId(`tool-${index}`, callIndex);
+      const toolSpanIdHex = deriveSpanIdHex(trace.traceId, `tool-${index}-${callIndex}`);
       const span: OtelSpan = {
-        traceId: trace.traceId,
-        spanId: toolSpanIdValue,
-        parentSpanId: messageSpanId,
+        traceId: traceIdHex,
+        spanId: toolSpanIdHex,
+        parentSpanId: messageSpanIdHex,
         name: `${SPAN_NAME_TOOL_PREFIX}${call.toolName}`,
         kind: "client",
         startTimeUnixNano: isoToUnixNano(message.timestamp),
-        attributes: attributesForToolCall(call),
+        attributes: attributesForToolCall(call, callIndex),
       };
       if (typeof call.error === "string" && call.error.length > 0) {
         span.status = { code: "ERROR", message: call.error };
@@ -204,7 +235,7 @@ export function publicTraceToOtelResourceSpans(trace: PublicTrace): OtelResource
 }
 
 // ----------------------------------------------------------------------------
-// Reverse: OtelResourceSpans -> PublicTrace
+// Reverse: OtelResourceSpans (or arbitrary `unknown` JSON) -> PublicTrace
 // ----------------------------------------------------------------------------
 
 export interface OtelToPublicTraceOk {
@@ -246,66 +277,90 @@ function readOutcomeFromRoot(attrs: OtelAttributes): PublicTrace["outcome"] | un
   return { score, reasoning, dimensions };
 }
 
-function messageFromSpan(
-  messageSpan: OtelSpan,
-  toolSpans: readonly OtelSpan[],
-): TraceMessage | { error: string } {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object";
+}
+
+type BuildMessageResult =
+  | { kind: "ok"; message: Record<string, unknown> }
+  | { kind: "err"; error: string };
+
+function buildMessage(messageSpan: OtelSpan, toolSpans: readonly OtelSpan[]): BuildMessageResult {
   const role = messageSpan.attributes["ai.role"];
   const content = messageSpan.attributes["ai.content"];
   const timestamp = messageSpan.attributes["ai.message.timestamp"];
   if (typeof role !== "string" || typeof content !== "string" || typeof timestamp !== "string") {
     return {
+      kind: "err",
       error: `message span ${messageSpan.spanId} missing ai.role/ai.content/ai.message.timestamp`,
     };
   }
   if (!["user", "assistant", "system", "tool"].includes(role)) {
-    return { error: `message span ${messageSpan.spanId} has unknown role ${role}` };
+    return { kind: "err", error: `message span ${messageSpan.spanId} has unknown role ${role}` };
   }
-  const message: TraceMessage = {
-    role: role as TraceMessage["role"],
-    content,
-    timestamp,
-  };
+  const message: Record<string, unknown> = { role, content, timestamp };
   const metadata = parseJsonAttr(messageSpan.attributes, "ai.message.metadata.json");
-  if (metadata !== undefined && typeof metadata === "object" && metadata !== null) {
-    (message as { metadata?: Record<string, unknown> }).metadata = metadata as Record<
-      string,
-      unknown
-    >;
+  if (isRecord(metadata)) {
+    message.metadata = metadata;
   }
-  const calls: ToolCall[] = [];
-  for (const toolSpan of toolSpans) {
+  // Sort tool spans by their authoring index, not the order the OTel store
+  // happened to deliver them. Falls back to position when `tool.index` is
+  // missing (e.g., spans from a non-AutoContext producer).
+  const orderedTools = [...toolSpans].sort((a, b) => {
+    const ai = typeof a.attributes["tool.index"] === "number" ? a.attributes["tool.index"] : 0;
+    const bi = typeof b.attributes["tool.index"] === "number" ? b.attributes["tool.index"] : 0;
+    return ai - bi;
+  });
+  const calls: Record<string, unknown>[] = [];
+  for (const toolSpan of orderedTools) {
     const toolName = toolSpan.attributes["tool.name"];
     if (typeof toolName !== "string") continue;
     const argsRaw = parseJsonAttr(toolSpan.attributes, "tool.args.json");
-    const args =
-      argsRaw !== null && typeof argsRaw === "object" ? (argsRaw as Record<string, unknown>) : {};
-    const call: ToolCall = { toolName, args };
+    const args = isRecord(argsRaw) ? argsRaw : {};
+    const call: Record<string, unknown> = { toolName, args };
     const duration = toolSpan.attributes["tool.duration_ms"];
-    if (typeof duration === "number") (call as { durationMs?: number }).durationMs = duration;
+    if (typeof duration === "number") call.durationMs = duration;
     const error = toolSpan.attributes["tool.error"];
-    if (typeof error === "string") (call as { error?: string }).error = error;
+    if (typeof error === "string") call.error = error;
     const result = parseJsonAttr(toolSpan.attributes, "tool.result.json");
-    if (result !== undefined) (call as { result?: unknown }).result = result;
+    if (result !== undefined) call.result = result;
     calls.push(call);
   }
   if (calls.length > 0) {
-    (message as { toolCalls?: ToolCall[] }).toolCalls = calls;
+    message.toolCalls = calls;
   }
-  return message;
+  return { kind: "ok", message };
 }
 
-export function otelResourceSpansToPublicTrace(input: OtelResourceSpans): OtelToPublicTraceResult {
-  const sourceHarness = input.resource.attributes["service.name"];
+export function otelResourceSpansToPublicTrace(input: unknown): OtelToPublicTraceResult {
+  // Parse at the boundary so malformed external JSON cannot throw inside
+  // the bridge. The reverse path then operates on the typed schema-parsed
+  // value rather than dereferencing arbitrary input.
+  const parsed = OtelResourceSpansSchema.safeParse(input);
+  if (!parsed.success) {
+    const issues = parsed.error.issues
+      .map((i) => `${i.path.join(".") || "<root>"}: ${i.message}`)
+      .join("; ");
+    return { error: `OTel input failed OtelResourceSpansSchema validation: ${issues}` };
+  }
+  const valid = parsed.data;
+
+  const sourceHarness = valid.resource.attributes["service.name"];
   if (typeof sourceHarness !== "string" || sourceHarness.length === 0) {
     return { error: "OTel ResourceSpans is missing resource.attributes['service.name']" };
   }
-  const spans = flatSpans(input);
+  const spans = flatSpans(valid);
   const root = spans.find((s) => s.parentSpanId === undefined);
   if (root === undefined) {
     return { error: "OTel ResourceSpans has no root span (every span has parentSpanId set)" };
   }
 
+  // The PublicTrace's own traceId is preserved as ai.trace.id; the OTel
+  // hex traceId on each span is just a correlation handle.
+  const originalTraceId = root.attributes["ai.trace.id"];
+  if (typeof originalTraceId !== "string" || originalTraceId.length === 0) {
+    return { error: "OTel root span is missing ai.trace.id attribute" };
+  }
   const collectedAt = root.attributes["ai.trace.collectedAt"];
   const schemaVersion = root.attributes["ai.trace.schemaVersion"];
   if (typeof collectedAt !== "string" || typeof schemaVersion !== "string") {
@@ -315,27 +370,29 @@ export function otelResourceSpansToPublicTrace(input: OtelResourceSpans): OtelTo
   const messageSpans = spans
     .filter((s) => s.name.startsWith(SPAN_NAME_MESSAGE_PREFIX) && s.parentSpanId === root.spanId)
     .sort((a, b) => {
-      const ai = (a.attributes["ai.message.index"] ?? 0) as number;
-      const bi = (b.attributes["ai.message.index"] ?? 0) as number;
+      const ai =
+        typeof a.attributes["ai.message.index"] === "number" ? a.attributes["ai.message.index"] : 0;
+      const bi =
+        typeof b.attributes["ai.message.index"] === "number" ? b.attributes["ai.message.index"] : 0;
       return ai - bi;
     });
 
-  const messages: TraceMessage[] = [];
+  const messages: Record<string, unknown>[] = [];
   for (const messageSpan of messageSpans) {
     const toolSpans = spans.filter(
       (s) => s.parentSpanId === messageSpan.spanId && s.name.startsWith(SPAN_NAME_TOOL_PREFIX),
     );
-    const built = messageFromSpan(messageSpan, toolSpans);
-    if ("error" in built) return { error: built.error };
-    messages.push(built);
+    const built = buildMessage(messageSpan, toolSpans);
+    if (built.kind === "err") return { error: built.error };
+    messages.push(built.message);
   }
   if (messages.length === 0) {
     return { error: "OTel ResourceSpans contains no message spans under the root" };
   }
 
-  const trace: PublicTrace = {
-    schemaVersion: schemaVersion as PublicTrace["schemaVersion"],
-    traceId: root.traceId,
+  const trace: Record<string, unknown> = {
+    schemaVersion,
+    traceId: originalTraceId,
     sourceHarness,
     collectedAt,
     messages,
@@ -343,36 +400,33 @@ export function otelResourceSpansToPublicTrace(input: OtelResourceSpans): OtelTo
 
   const sessionId = root.attributes["ai.session.id"];
   if (typeof sessionId === "string") {
-    (trace as { sessionId?: string }).sessionId = sessionId;
+    trace.sessionId = sessionId;
   }
   const outcome = readOutcomeFromRoot(root.attributes);
   if (outcome !== undefined) {
-    (trace as { outcome?: PublicTrace["outcome"] }).outcome = outcome;
+    trace.outcome = outcome;
   }
   const fileReferences = parseJsonAttr(root.attributes, "ai.file_references.json");
   if (Array.isArray(fileReferences)) {
-    (trace as { fileReferences?: PublicTrace["fileReferences"] }).fileReferences =
-      fileReferences as PublicTrace["fileReferences"];
+    trace.fileReferences = fileReferences;
   }
   const redactions = parseJsonAttr(root.attributes, "ai.redactions.json");
   if (Array.isArray(redactions)) {
-    (trace as { redactions?: PublicTrace["redactions"] }).redactions =
-      redactions as PublicTrace["redactions"];
+    trace.redactions = redactions;
   }
   const metadata = parseJsonAttr(root.attributes, "ai.metadata.json");
-  if (metadata !== null && typeof metadata === "object") {
-    (trace as { metadata?: Record<string, unknown> }).metadata = metadata as Record<
-      string,
-      unknown
-    >;
+  if (isRecord(metadata)) {
+    trace.metadata = metadata;
   }
 
   // Defensive: validate the synthesized trace against the canonical schema
   // so a broken reverse path can't silently produce invalid traces.
-  const parsed = PublicTraceSchema.safeParse(trace);
-  if (!parsed.success) {
-    const issues = parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
+  const tracePayload = PublicTraceSchema.safeParse(trace);
+  if (!tracePayload.success) {
+    const issues = tracePayload.error.issues
+      .map((i) => `${i.path.join(".")}: ${i.message}`)
+      .join("; ");
     return { error: `reconstructed trace failed PublicTraceSchema validation: ${issues}` };
   }
-  return { trace: parsed.data };
+  return { trace: tracePayload.data };
 }

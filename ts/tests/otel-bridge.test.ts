@@ -64,11 +64,15 @@ describe("publicTraceToOtelResourceSpans", () => {
   it("carries traceId and source as service.name", () => {
     const otel = publicTraceToOtelResourceSpans(SAMPLE_TRACE);
     expect(otel.resource.attributes["service.name"]).toBe("autocontext");
-    // Every span shares the same hex traceId.
+    // Every span shares the same OTel-format (32-hex) traceId. The
+    // PublicTrace's own traceId is preserved as the `ai.trace.id`
+    // attribute instead (verified in the dedicated ID-format suite).
     const flatSpans = otel.scopeSpans.flatMap((s) => s.spans);
     expect(flatSpans.length).toBeGreaterThan(0);
+    const first = flatSpans[0]?.traceId;
+    expect(first).toMatch(/^[0-9a-f]{32}$/);
     for (const span of flatSpans) {
-      expect(span.traceId).toBe(SAMPLE_TRACE.traceId);
+      expect(span.traceId).toBe(first);
     }
   });
 
@@ -173,6 +177,100 @@ describe("otelResourceSpansToPublicTrace", () => {
     if ("error" in result) throw new Error(result.error);
     expect(result.trace.messages).toHaveLength(1);
     expect(result.trace.messages[0]?.toolCalls).toBeUndefined();
+  });
+});
+
+describe("OTel span-context ID format (PR #959 review)", () => {
+  it("emits 32-hex-char traceIds and 16-hex-char spanIds for every span", () => {
+    const otel = publicTraceToOtelResourceSpans(SAMPLE_TRACE);
+    const spans = otel.scopeSpans.flatMap((s) => s.spans);
+    expect(spans.length).toBeGreaterThan(0);
+    for (const span of spans) {
+      expect(span.traceId).toMatch(/^[0-9a-f]{32}$/);
+      expect(span.spanId).toMatch(/^[0-9a-f]{16}$/);
+      if (span.parentSpanId !== undefined) {
+        expect(span.parentSpanId).toMatch(/^[0-9a-f]{16}$/);
+      }
+    }
+  });
+
+  it("preserves the PublicTrace traceId on the ai.trace.id attribute (not on otel.traceId)", () => {
+    const otel = publicTraceToOtelResourceSpans(SAMPLE_TRACE);
+    const root = otel.scopeSpans.flatMap((s) => s.spans).find((s) => s.parentSpanId === undefined);
+    expect(root?.attributes["ai.trace.id"]).toBe(SAMPLE_TRACE.traceId);
+    // The OTel-format traceId is a hex correlation handle, not the original.
+    expect(root?.traceId).not.toBe(SAMPLE_TRACE.traceId);
+  });
+
+  it("derives IDs deterministically (round-trip emits identical IDs)", () => {
+    const first = publicTraceToOtelResourceSpans(SAMPLE_TRACE);
+    const second = publicTraceToOtelResourceSpans(SAMPLE_TRACE);
+    expect(first).toEqual(second);
+  });
+});
+
+describe("Malformed reverse-import input (PR #959 review)", () => {
+  it("returns { error } instead of throwing when input is null", () => {
+    const result = otelResourceSpansToPublicTrace(null);
+    expect("error" in result).toBe(true);
+  });
+
+  it("returns { error } instead of throwing when scopeSpans is malformed", () => {
+    // The reviewer's repro: `scopeSpans: [{}]` previously threw
+    // "Cannot read properties of undefined" inside the bridge.
+    const result = otelResourceSpansToPublicTrace({
+      resource: { attributes: { "service.name": "x" } },
+      scopeSpans: [{}],
+    });
+    expect("error" in result).toBe(true);
+  });
+
+  it("returns { error } when resource is missing entirely", () => {
+    const result = otelResourceSpansToPublicTrace({ scopeSpans: [] });
+    expect("error" in result).toBe(true);
+  });
+
+  it("returns { error } when input is a string", () => {
+    const result = otelResourceSpansToPublicTrace("not an OTel payload");
+    expect("error" in result).toBe(true);
+  });
+});
+
+describe("Tool-call ordering after span reordering (PR #959 review)", () => {
+  it("preserves tool-call order even when OTel sibling spans are reshuffled", () => {
+    const multiTool: PublicTrace = {
+      ...SAMPLE_TRACE,
+      messages: [
+        { role: "user", content: "x", timestamp: "2026-05-14T18:00:01.000Z" },
+        {
+          role: "assistant",
+          content: "ok",
+          timestamp: "2026-05-14T18:00:02.000Z",
+          toolCalls: [
+            { toolName: "first", args: {} },
+            { toolName: "second", args: {} },
+            { toolName: "third", args: {} },
+          ],
+        },
+      ],
+    };
+    const otel = publicTraceToOtelResourceSpans(multiTool);
+
+    // Reverse the tool spans inside the scopeSpans array to simulate what
+    // an OTel store might do (no guaranteed sibling-span order).
+    const shuffled: typeof otel = {
+      ...otel,
+      scopeSpans: otel.scopeSpans.map((scope) => {
+        const toolSpans = scope.spans.filter((s) => s.name.startsWith("tool:"));
+        const otherSpans = scope.spans.filter((s) => !s.name.startsWith("tool:"));
+        return { ...scope, spans: [...otherSpans, ...toolSpans.reverse()] };
+      }),
+    };
+
+    const result = otelResourceSpansToPublicTrace(shuffled);
+    if ("error" in result) throw new Error(result.error);
+    const tools = result.trace.messages[1]?.toolCalls?.map((c) => c.toolName);
+    expect(tools).toEqual(["first", "second", "third"]);
   });
 });
 

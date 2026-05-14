@@ -23,6 +23,21 @@ import {
 The bridge uses these canonical attribute names. Anything outside this
 table is dropped on the reverse path or stored opaquely as a JSON blob.
 
+### OTel span-context IDs
+
+External OTel stores reject span-context IDs that don't match the spec
+format (16-byte hex traceId, 8-byte hex spanId). The bridge emits valid
+hex IDs derived deterministically by hashing the source
+`PublicTrace.traceId` (and a per-span slot for span IDs):
+
+- Forward-emit always yields valid OTel IDs.
+- Running `publicTraceToOtelResourceSpans(trace)` twice on the same
+  input emits byte-identical IDs (deterministic round-trip).
+- The original `PublicTrace.traceId` is preserved as the `ai.trace.id`
+  attribute on the root span; the reverse path uses that to reconstruct
+  the PublicTrace, treating the OTel hex traceId as an opaque
+  correlation handle.
+
 ### Resource attributes
 
 | Key            | Source                      | Notes                            |
@@ -63,16 +78,26 @@ name `message:<role>`:
 One span per `message.toolCalls[]` entry, parented to its message span,
 name `tool:<toolName>`, kind `client`:
 
-| Key                | Source            | Round-trips?                                                                               |
-| ------------------ | ----------------- | ------------------------------------------------------------------------------------------ |
-| `tool.name`        | `call.toolName`   | Yes                                                                                        |
-| `tool.args.json`   | `call.args`       | Yes (JSON blob, parsed back into args)                                                     |
-| `tool.duration_ms` | `call.durationMs` | Yes (optional)                                                                             |
-| `tool.error`       | `call.error`      | Yes (also surfaces as `status.code = "ERROR"`)                                             |
-| `tool.result.json` | `call.result`     | Lossy: complex result payloads can be large; OTel collectors may drop oversize attributes. |
+| Key                | Source                               | Round-trips?                                                                               |
+| ------------------ | ------------------------------------ | ------------------------------------------------------------------------------------------ |
+| `tool.name`        | `call.toolName`                      | Yes                                                                                        |
+| `tool.index`       | array index in `message.toolCalls[]` | Yes — reverse import sorts by `tool.index` so order survives OTel sibling-span reordering. |
+| `tool.args.json`   | `call.args`                          | Yes (JSON blob, parsed back into args)                                                     |
+| `tool.duration_ms` | `call.durationMs`                    | Yes (optional)                                                                             |
+| `tool.error`       | `call.error`                         | Yes (also surfaces as `status.code = "ERROR"`)                                             |
+| `tool.result.json` | `call.result`                        | Lossy: complex result payloads can be large; OTel collectors may drop oversize attributes. |
 
 When `tool.error` is set, the span's `status.code` is `ERROR` and the
 `status.message` carries the error text.
+
+### Boundary safety on the reverse path
+
+`otelResourceSpansToPublicTrace()` accepts `unknown` and parses through
+`OtelResourceSpansSchema` before dereferencing any field. Malformed
+external JSON (such as `{ scopeSpans: [{}] }`, `null`, a string
+literal) returns the documented `{ error }` result instead of throwing.
+Callers can safely pass the raw output of `JSON.parse(...)` from an
+external trace store.
 
 ## Round-trip guarantees
 
