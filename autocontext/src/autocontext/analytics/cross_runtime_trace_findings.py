@@ -14,7 +14,7 @@ runtimes' test suites; any drift in either schema breaks that test.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, NonNegativeInt
 
@@ -77,7 +77,7 @@ class CrossRuntimeTraceFindingReport(_CamelModel):
     failure_motifs: list[CrossRuntimeFailureMotif] = Field(alias="failureMotifs", default_factory=list)
     summary: str = Field(min_length=1)
     created_at: str = Field(alias="createdAt", min_length=1)
-    metadata: dict[str, object] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 __all__ = [
