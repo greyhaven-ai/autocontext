@@ -51,6 +51,15 @@ end-to-end, autocontext will not write to Hermes state on its own.
 Recommendations from autocontext flow back to Curator as suggestions;
 Curator stays the mutation owner.
 
+## Command availability
+
+`autoctx hermes inspect` and `autoctx hermes export-skill` ship in
+the same release as these references. `autoctx hermes ingest-curator`
+(AC-704) and `autoctx hermes export-dataset` (AC-705) ship on
+follow-up PRs in the Hermes integration cluster; run `autoctx hermes
+--help` to confirm what is installed locally before recommending one
+of them to the user.
+
 ## What an agent should do
 
 1. Ask the user what they want to learn from Hermes state.
@@ -68,6 +77,12 @@ _CLI_WORKFLOWS_REFERENCE = """# CLI Workflows
 
 Concrete `autoctx` commands for Hermes terminal usage. Use this when an
 agent needs the exact command + flag form for a common workflow.
+
+> **Command availability.** `inspect` and `export-skill` are always
+> present in releases that include this reference. `ingest-curator` and
+> `export-dataset` ship on follow-up Hermes-integration PRs; run
+> `autoctx hermes --help` to confirm what is installed locally before
+> recommending one of them.
 
 ## Inventory: what does my Hermes home contain?
 
@@ -204,6 +219,12 @@ _LOCAL_TRAINING_REFERENCE = """# Local Training
 How autocontext-exported datasets feed local MLX or CUDA training. Use
 this when the user asks "can I train a model from my Hermes data" or
 when an agent needs to scope training expectations.
+
+> **Command availability.** `autoctx hermes export-dataset` (AC-705)
+> ships on a follow-up PR in the Hermes-integration cluster.
+> `autoctx train` is shipped today. Run `autoctx hermes --help` and
+> `autoctx train --help` to confirm what is installed locally before
+> recommending the end-to-end flow below.
 
 ## Scope (read this first)
 

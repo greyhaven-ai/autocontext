@@ -35,7 +35,7 @@ The Python package is the full control-plane surface in this repo. It currently 
 - plain-language investigation via `autoctx investigate`
 - local training workflows via `autoctx export-training-data` and `autoctx train`
 - scenario creation and materialization via `autoctx new-scenario`
-- Hermes Agent integration helpers via `autoctx hermes inspect` and `autoctx hermes export-skill`
+- Hermes Agent integration helpers via `autoctx hermes inspect` and `autoctx hermes export-skill` (with optional `--with-references` for progressive-disclosure reference files; AC-702)
 - HTTP API and MCP server surfaces via `autoctx serve` and `autoctx mcp-serve`, including runtime-session log and timeline readers for provider-backed runs
 
 Some newer operator-facing surfaces are currently TypeScript-first:
@@ -189,6 +189,7 @@ uv run autoctx export-training-data --scenario support_triage --all-runs --outpu
 uv run autoctx train --scenario support_triage --data training/support_triage.jsonl --time-budget 300
 uv run autoctx hermes inspect --json
 uv run autoctx hermes export-skill --output ~/.hermes/skills/autocontext/SKILL.md --json
+uv run autoctx hermes export-skill --output ~/.hermes/skills/autocontext/SKILL.md --with-references --json
 uv run autoctx analytics context-selection --run-id <run_id> --json
 uv run autoctx analytics trace-findings --trace-id <trace_id> --kind writeup --json
 uv run autoctx analytics trace-findings --trace-id <trace_id> --kind weakness

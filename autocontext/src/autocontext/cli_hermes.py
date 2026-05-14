@@ -60,8 +60,22 @@ def run_hermes_export_skill_command(
             console.print(skill_markdown.rstrip())
         return
 
+    # PR #965 review (P2): preflight every destination before any write so
+    # a reference-name collision can't leave SKILL.md half-installed
+    # ahead of the failure.
+    collisions: list[Path] = []
     if output.exists() and not force:
-        message = f"Refusing to overwrite existing file without --force: {output}"
+        collisions.append(output)
+    references_dir: Path | None = None
+    if with_references:
+        references_dir = output.parent / "references"
+        if not force:
+            for name in list_references():
+                candidate = references_dir / f"{name}.md"
+                if candidate.exists():
+                    collisions.append(candidate)
+    if collisions:
+        message = "Refusing to overwrite existing files without --force: " + ", ".join(str(p) for p in collisions)
         if json_output:
             write_json_stderr(message)
         else:
@@ -76,19 +90,11 @@ def run_hermes_export_skill_command(
         "bytes_written": len(skill_markdown.encode("utf-8")),
     }
 
-    if with_references:
-        references_dir = output.parent / "references"
+    if with_references and references_dir is not None:
         references_dir.mkdir(parents=True, exist_ok=True)
         written: list[dict[str, Any]] = []
         for name in list_references():
             target = references_dir / f"{name}.md"
-            if target.exists() and not force:
-                message = f"Refusing to overwrite existing reference without --force: {target}"
-                if json_output:
-                    write_json_stderr(message)
-                else:
-                    console.print(f"[red]{message}[/red]")
-                raise typer.Exit(code=1)
             body = render_reference(name)
             target.write_text(body, encoding="utf-8")
             written.append({"name": name, "path": str(target), "bytes_written": len(body.encode("utf-8"))})

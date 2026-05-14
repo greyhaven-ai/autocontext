@@ -143,3 +143,30 @@ def test_export_skill_refuses_to_overwrite_references_without_force(tmp_path: Pa
     # Pre-existing reference at output_b should block re-run without --force.
     result = runner.invoke(app, ["hermes", "export-skill", "--output", str(output_b), "--with-references"])
     assert result.exit_code != 0
+
+
+def test_export_skill_preflight_does_not_write_skill_md_when_reference_collides(tmp_path: Path) -> None:
+    """PR #965 review (P2): SKILL.md must not be installed when a
+    reference-name collision is about to fail the command. The preflight
+    check has to refuse before the first write, otherwise the operator
+    is left with a half-installed skill bundle (new SKILL.md, stale
+    references)."""
+    runner = CliRunner()
+    skill_dir = tmp_path / "skill"
+    skill_dir.mkdir()
+    references_dir = skill_dir / "references"
+    references_dir.mkdir()
+    stale = references_dir / "cli-workflows.md"
+    stale.write_text("STALE CONTENT", encoding="utf-8")
+
+    output = skill_dir / "SKILL.md"
+    # SKILL.md does not exist yet; only one reference collides. The command
+    # must still refuse and must not create SKILL.md.
+    result = runner.invoke(
+        app,
+        ["hermes", "export-skill", "--output", str(output), "--with-references"],
+    )
+    assert result.exit_code != 0
+    assert not output.exists(), "SKILL.md was written despite a reference collision"
+    # And the stale reference is untouched.
+    assert stale.read_text(encoding="utf-8") == "STALE CONTENT"

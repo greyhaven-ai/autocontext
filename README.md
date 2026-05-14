@@ -89,6 +89,10 @@ After that, Python MCP exposes prefixed tools such as `autocontext_solve_scenari
 ```bash
 cd autocontext
 uv run autoctx hermes export-skill --output ~/.hermes/skills/autocontext/SKILL.md --json
+# Add progressive-disclosure reference files alongside SKILL.md (AC-702)
+uv run autoctx hermes export-skill \
+    --output ~/.hermes/skills/autocontext/SKILL.md \
+    --with-references --json
 uv run autoctx hermes inspect --json
 ```
 
@@ -205,6 +209,7 @@ uv run autoctx train --scenario support_triage --data training/billing.jsonl --t
 ```
 
 <!-- autocontext-whats-new:start -->
+
 ## What's New in 0.5.0
 
 - **Plain-language CLI continuity** lets Python and TypeScript callers use positional goals/scenarios, `--iterations`, and run-scoped exports while preserving the existing flag forms.
@@ -239,23 +244,23 @@ pi install npm:pi-autocontext
 
 ## Surfaces
 
-| Surface            | Command                                                | When to use it                                                                         |
-| ------------------ | ------------------------------------------------------ | -------------------------------------------------------------------------------------- |
-| `solve`            | `autoctx solve "..." --iterations 3`                   | Hand the harness a goal in plain language; it generates the scenario and runs the loop |
-| `run`              | `autoctx run <scenario> --iterations 3`                | Improve behavior inside a saved scenario across generations                            |
-| `simulate`         | `autoctx simulate -d "..."`                            | Model a system, sweep parameters, replay, compare                                      |
-| `investigate`      | `autoctx investigate -d "..."`                         | Evidence-driven diagnosis, either synthetic harness or live iterative LLM session      |
-| `analyze`          | `autoctx analyze --id <id> --type <kind>`              | Inspect or compare runs, simulations, investigations, or missions after the fact       |
-| `mission`          | `autoctx mission create --name "..." --goal "..."`     | Verifier-driven goal advanced step by step until done                                  |
-| `campaign`         | `bunx autoctx campaign ...` (TypeScript)               | Coordinate multiple missions with budgets, dependencies, progress aggregation          |
-| `worker`           | `autoctx worker --poll-interval 5`                     | Process queued tasks on a persistent host beside `autoctx serve`                       |
-| `export`           | `autoctx export <run-id>`                              | Share solved knowledge as JSON, skills, or Pi-local package directories                |
-| `train`            | `autoctx train --scenario <name> --data <jsonl>`       | Distill stable exported data into a cheaper local runtime                              |
-| `context-selection` | `bunx autoctx context-selection --run-id <run-id> --json` (TypeScript CLI) | Inspect persisted prompt context budget, cache, diagnostics, and selection telemetry   |
-| `runtime-sessions` | `bunx autoctx runtime-sessions timeline --run-id <run-id>` (TypeScript CLI) | Inspect persisted provider prompts, messages, child-task events, and operator-facing timelines from runtime-backed runs; also exposed through Python and TypeScript MCP/cockpit HTTP, the TypeScript TUI `/timeline` plus persisted filterable and resettable `/activity` live feed, and `/ws/events` updates |
-| `agent`            | `bunx autoctx agent run support --id ticket-123 --payload '{"message":"..."}' --json` (TypeScript CLI) | Invoke experimental `.autoctx/agents` handlers locally, or run `autoctx agent dev` for `/manifest` and `/agents/<name>/invoke` routes |
-| `hermes`           | `uv run autoctx hermes inspect --json` (Python)        | Inspect Hermes v0.12 skill usage and Curator reports, or export the Hermes skill       |
-| `replay`           | `autoctx replay <run_id> --generation N`               | Inspect what happened before deciding what knowledge should persist                    |
+| Surface             | Command                                                                                                | When to use it                                                                                                                                                                                                                                                                                                |
+| ------------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `solve`             | `autoctx solve "..." --iterations 3`                                                                   | Hand the harness a goal in plain language; it generates the scenario and runs the loop                                                                                                                                                                                                                        |
+| `run`               | `autoctx run <scenario> --iterations 3`                                                                | Improve behavior inside a saved scenario across generations                                                                                                                                                                                                                                                   |
+| `simulate`          | `autoctx simulate -d "..."`                                                                            | Model a system, sweep parameters, replay, compare                                                                                                                                                                                                                                                             |
+| `investigate`       | `autoctx investigate -d "..."`                                                                         | Evidence-driven diagnosis, either synthetic harness or live iterative LLM session                                                                                                                                                                                                                             |
+| `analyze`           | `autoctx analyze --id <id> --type <kind>`                                                              | Inspect or compare runs, simulations, investigations, or missions after the fact                                                                                                                                                                                                                              |
+| `mission`           | `autoctx mission create --name "..." --goal "..."`                                                     | Verifier-driven goal advanced step by step until done                                                                                                                                                                                                                                                         |
+| `campaign`          | `bunx autoctx campaign ...` (TypeScript)                                                               | Coordinate multiple missions with budgets, dependencies, progress aggregation                                                                                                                                                                                                                                 |
+| `worker`            | `autoctx worker --poll-interval 5`                                                                     | Process queued tasks on a persistent host beside `autoctx serve`                                                                                                                                                                                                                                              |
+| `export`            | `autoctx export <run-id>`                                                                              | Share solved knowledge as JSON, skills, or Pi-local package directories                                                                                                                                                                                                                                       |
+| `train`             | `autoctx train --scenario <name> --data <jsonl>`                                                       | Distill stable exported data into a cheaper local runtime                                                                                                                                                                                                                                                     |
+| `context-selection` | `bunx autoctx context-selection --run-id <run-id> --json` (TypeScript CLI)                             | Inspect persisted prompt context budget, cache, diagnostics, and selection telemetry                                                                                                                                                                                                                          |
+| `runtime-sessions`  | `bunx autoctx runtime-sessions timeline --run-id <run-id>` (TypeScript CLI)                            | Inspect persisted provider prompts, messages, child-task events, and operator-facing timelines from runtime-backed runs; also exposed through Python and TypeScript MCP/cockpit HTTP, the TypeScript TUI `/timeline` plus persisted filterable and resettable `/activity` live feed, and `/ws/events` updates |
+| `agent`             | `bunx autoctx agent run support --id ticket-123 --payload '{"message":"..."}' --json` (TypeScript CLI) | Invoke experimental `.autoctx/agents` handlers locally, or run `autoctx agent dev` for `/manifest` and `/agents/<name>/invoke` routes                                                                                                                                                                         |
+| `hermes`            | `uv run autoctx hermes inspect --json` (Python)                                                        | Inspect Hermes v0.12 skill usage and Curator reports, or export the Hermes skill                                                                                                                                                                                                                              |
+| `replay`            | `autoctx replay <run_id> --generation N`                                                               | Inspect what happened before deciding what knowledge should persist                                                                                                                                                                                                                                           |
 
 ## Scenario Families
 

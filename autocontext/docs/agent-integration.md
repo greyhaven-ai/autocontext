@@ -277,7 +277,20 @@ autoctx hermes inspect --home "$HERMES_HOME" --json
 
 # Export the Hermes autocontext skill for Hermes to load
 autoctx hermes export-skill --output ~/.hermes/skills/autocontext/SKILL.md --json
+
+# Also write progressive-disclosure reference files next to SKILL.md (AC-702)
+autoctx hermes export-skill \
+    --output ~/.hermes/skills/autocontext/SKILL.md \
+    --with-references --json
 ```
+
+`--with-references` writes one markdown file per reference into a
+sibling `references/` directory (`hermes-curator.md`,
+`cli-workflows.md`, `mcp-workflows.md`, `local-training.md`). Use
+`--force` to overwrite an existing `SKILL.md` or any colliding
+reference file; without `--force`, all destinations are checked up
+front and the command refuses without writing anything, so an
+operator never ends up with a half-installed skill bundle.
 
 JSON output shape for `inspect`:
 
