@@ -89,7 +89,7 @@ Child assembly helpers recompute workspace-discovered layers from the child `cwd
 | 7 | tool affordances and scoped grants | Runtime | Ephemeral grant scope | Summarize tool metadata and redact secrets; scoped grants carry explicit inheritance policy. | Inherit only grants allowed by policy. |
 | 8 | recent session history and compaction summaries | Runtime session | Runtime-session log and compaction artifacts | Compact when pressure crosses policy thresholds; summaries point back to source events. | Child tasks use their own session log and linked parent lineage. |
 
-Repo instruction discovery walks from workspace root to the current `cwd`, loading `AGENTS.md` and `CLAUDE.md` when present. Skill discovery walks from the current `cwd` back to the root so more specific skill roots can override broad ones by name while still falling back to shared root skills. This intentionally borrows the useful Flue distinction between bundled role behavior and runtime workspace discovery without replacing AutoContext's `Scenario`, `Task`, `Mission`, `Run`, `Artifact`, or `Knowledge` vocabulary.
+Repo instruction discovery walks from workspace root to the current `cwd`, loading `AGENTS.md` and `CLAUDE.md` when present. Skill discovery walks from the current `cwd` back to the root so more specific skill roots can override broad ones by name while still falling back to shared root skills. Bundled role behavior stays separate from runtime workspace discovery, without replacing AutoContext's `Scenario`, `Task`, `Mission`, `Run`, `Artifact`, or `Knowledge` vocabulary.
 
 ## Durable Session Event Storage
 
