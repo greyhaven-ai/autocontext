@@ -9,7 +9,7 @@ The goal is to support browser exploration in a way that is thin, inspectable, a
 
 ## Design Guide
 
-The architecture is inspired by thin browser-control projects such as `browser-harness`, but adapted to fit AutoContext's package model:
+The architecture is inspired by thin browser-control projects such as `browser-harness`, but adapted to fit autocontext's package model:
 
 - shared contract, separate Python and TypeScript projections
 - no heavyweight browser framework bundled into core
