@@ -41,12 +41,14 @@ class TestPiCLIProtocol:
         config = PiCLIConfig(workspace="/tmp/test-ws")
         runtime = PiCLIRuntime(config)
         completed = MagicMock(returncode=0, stdout="response text", stderr="")
-        with patch("subprocess.run", return_value=completed) as mock_run:
+        with patch("autocontext.runtimes.pi_cli._run_with_group_kill", return_value=completed) as mock_run:
             runtime.generate("test prompt")
         # Workspace should be passed as cwd to subprocess
         call_kwargs = mock_run.call_args
-        assert call_kwargs.kwargs.get("cwd") == "/tmp/test-ws" or \
-               (call_kwargs[1] if len(call_kwargs) > 1 else {}).get("cwd") == "/tmp/test-ws"
+        assert (
+            call_kwargs.kwargs.get("cwd") == "/tmp/test-ws"
+            or (call_kwargs[1] if len(call_kwargs) > 1 else {}).get("cwd") == "/tmp/test-ws"
+        )
 
     def test_cli_treats_print_output_as_plain_text(self) -> None:
         """--print returns plain text, not JSON. Default config should not parse as JSON."""
