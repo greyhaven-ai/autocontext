@@ -50,6 +50,7 @@ const NO_DB_COMMAND_HANDLERS: Record<NoDbCommandName, () => Promise<void>> = {
   blob: cmdBlob,
   "production-traces": cmdProductionTraces,
   instrument: cmdInstrument,
+  "trace-findings": cmdTraceFindings,
 };
 
 const DB_COMMAND_HANDLERS: Record<DbCommandName, (dbPath: string) => Promise<void>> = {
@@ -93,9 +94,7 @@ async function main(): Promise<void> {
       console.log(JSON.stringify(projectConfig, null, 2));
     } else {
       console.log(HELP);
-      console.log(
-        "\nTip: Run `autoctx init` to set up this project with a .autoctx.json config.",
-      );
+      console.log("\nTip: Run `autoctx init` to set up this project with a .autoctx.json config.");
     }
     process.exit(0);
   }
@@ -123,9 +122,7 @@ async function main(): Promise<void> {
       await cmdControlPlane(route.command as ControlPlaneCommandName);
       break;
     case "python-only":
-      console.error(
-        `${route.command} is only supported by the Python package, not the npm CLI.\n`,
-      );
+      console.error(`${route.command} is only supported by the Python package, not the npm CLI.\n`);
       console.log(HELP);
       process.exit(1);
     case "unknown":
@@ -183,28 +180,20 @@ interface SavedAgentTaskScenario {
   qualityThreshold?: number;
 }
 
-function mergeUniqueStrings(
-  primary?: string[],
-  secondary?: string[],
-): string[] | undefined {
+function mergeUniqueStrings(primary?: string[], secondary?: string[]): string[] | undefined {
   const merged = [...(primary ?? []), ...(secondary ?? [])]
     .map((value) => value.trim())
     .filter(Boolean);
   return merged.length > 0 ? [...new Set(merged)] : undefined;
 }
 
-async function loadSavedAgentTaskScenario(
-  name: string,
-): Promise<SavedAgentTaskScenario | null> {
+async function loadSavedAgentTaskScenario(name: string): Promise<SavedAgentTaskScenario | null> {
   const { loadSettings } = await import("../config/index.js");
   const { resolveCustomJudgeScenario, renderAgentTaskPrompt } =
     await import("../scenarios/custom-loader.js");
 
   const settings = loadSettings();
-  const saved = resolveCustomJudgeScenario(
-    resolve(settings.knowledgeRoot),
-    name,
-  );
+  const saved = resolveCustomJudgeScenario(resolve(settings.knowledgeRoot), name);
   if (!saved) {
     return null;
   }
@@ -222,9 +211,7 @@ async function loadSavedAgentTaskScenario(
   };
 }
 
-async function resolveScenarioOption(
-  explicit?: string,
-): Promise<string | undefined> {
+async function resolveScenarioOption(explicit?: string): Promise<string | undefined> {
   if (explicit?.trim()) {
     return explicit.trim();
   }
@@ -268,10 +255,7 @@ async function summarizeDirectory(
   return { exists: true, directories, files };
 }
 
-async function buildProjectConfigSummary(): Promise<Record<
-  string,
-  unknown
-> | null> {
+async function buildProjectConfigSummary(): Promise<Record<string, unknown> | null> {
   const { findProjectConfigLocation, loadProjectConfig, loadSettings } =
     await import("../config/index.js");
   const projectConfig = loadProjectConfig();
@@ -336,11 +320,7 @@ async function writeAgentsGuide(targetDir: string): Promise<boolean> {
     if (start !== -1 && end !== -1 && end > start) {
       const replacementEnd = end + "<!-- AUTOCTX_GUIDE_END -->".length;
       const updated = `${existing.slice(0, start)}${block}${existing.slice(replacementEnd)}`;
-      writeFileSync(
-        agentsPath,
-        updated.endsWith("\n") ? updated : updated + "\n",
-        "utf-8",
-      );
+      writeFileSync(agentsPath, updated.endsWith("\n") ? updated : updated + "\n", "utf-8");
       return true;
     }
     if (existing.includes("## AutoContext")) {
@@ -363,15 +343,10 @@ async function validateOllamaConnection(baseUrl: string): Promise<void> {
   try {
     const response = await fetch(`${normalizeOllamaBaseUrl(baseUrl)}/api/tags`);
     if (!response.ok) {
-      throw new Error(
-        `Ollama connection failed: ${response.status} ${response.statusText}`,
-      );
+      throw new Error(`Ollama connection failed: ${response.status} ${response.statusText}`);
     }
   } catch (err) {
-    if (
-      err instanceof Error &&
-      err.message.startsWith("Ollama connection failed:")
-    ) {
+    if (err instanceof Error && err.message.startsWith("Ollama connection failed:")) {
       throw err;
     }
     throw new Error(
@@ -392,10 +367,7 @@ async function getProvider(
   const { loadSettings } = await import("../config/index.js");
 
   try {
-    const { provider, config } = createConfiguredProvider(
-      overrides,
-      loadSettings(),
-    );
+    const { provider, config } = createConfiguredProvider(overrides, loadSettings());
     const model = config.model ?? provider.defaultModel();
     return { provider, model };
   } catch (err) {
@@ -506,9 +478,8 @@ async function createAutoctxAgentCliRuntime(plan: {
   const { loadSettings } = await import("../config/index.js");
   const { createConfiguredProvider } = await import("../providers/index.js");
   const { DirectAPIRuntime } = await import("../runtimes/index.js");
-  const configured = withTemporaryProcessEnv(
-    plan.env,
-    () => createConfiguredProvider(
+  const configured = withTemporaryProcessEnv(plan.env, () =>
+    createConfiguredProvider(
       {
         providerType: plan.provider,
         model: plan.model,
@@ -527,10 +498,7 @@ async function createAutoctxAgentCliRuntime(plan: {
   };
 }
 
-function withTemporaryProcessEnv<T>(
-  env: Readonly<Record<string, string>>,
-  callback: () => T,
-): T {
+function withTemporaryProcessEnv<T>(env: Readonly<Record<string, string>>, callback: () => T): T {
   const previous = new Map<string, string | undefined>();
   for (const [key, value] of Object.entries(env)) {
     previous.set(key, process.env[key]);
@@ -581,8 +549,7 @@ async function cmdRun(dbPath: string): Promise<void> {
   const { SQLiteStore } = await import("../storage/index.js");
   const { GenerationRunner } = await import("../loop/generation-runner.js");
   const { SCENARIO_REGISTRY } = await import("../scenarios/registry.js");
-  const { assertFamilyContract } =
-    await import("../scenarios/family-interfaces.js");
+  const { assertFamilyContract } = await import("../scenarios/family-interfaces.js");
   const { loadSettings } = await import("../config/index.js");
   const { buildRoleProviderBundle } = await import("../providers/index.js");
   const { initializeHookBus } = await import("../extensions/index.js");
@@ -636,8 +603,7 @@ async function cmdRun(dbPath: string): Promise<void> {
       plan.scenarioName,
     );
     if (savedAgentTask) {
-      const { executeAgentTaskSolve } =
-        await import("../knowledge/agent-task-solve-execution.js");
+      const { executeAgentTaskSolve } = await import("../knowledge/agent-task-solve-execution.js");
       const result = await executeAgentTaskRunCommandWorkflow({
         plan,
         providerBundle,
@@ -681,13 +647,11 @@ async function cmdRun(dbPath: string): Promise<void> {
     assertFamilyContract,
     createStore: (runDbPath) => new SQLiteStore(runDbPath),
     createRunner: (runnerOpts) =>
-      new GenerationRunner(
-        {
-          ...(runnerOpts as import("../loop/generation-runner.js").GenerationRunnerOpts),
-          hookBus,
-          loadedExtensions,
-        },
-      ),
+      new GenerationRunner({
+        ...(runnerOpts as import("../loop/generation-runner.js").GenerationRunnerOpts),
+        hookBus,
+        loadedExtensions,
+      }),
   });
 
   const rendered = renderRunResult(result, plan.json);
@@ -780,12 +744,8 @@ async function cmdTui(dbPath: string): Promise<void> {
     },
   });
 
-  const {
-    buildHeadlessTuiOutput,
-    buildInteractiveTuiRequest,
-    planTuiCommand,
-    TUI_HELP_TEXT,
-  } = await import("./tui-command-workflow.js");
+  const { buildHeadlessTuiOutput, buildInteractiveTuiRequest, planTuiCommand, TUI_HELP_TEXT } =
+    await import("./tui-command-workflow.js");
 
   if (values.help) {
     console.log(TUI_HELP_TEXT);
@@ -1050,12 +1010,8 @@ async function cmdRepl(_dbPath: string): Promise<void> {
     },
   });
 
-  const {
-    buildReplSessionRequest,
-    getReplUsageExitCode,
-    planReplCommand,
-    REPL_HELP_TEXT,
-  } = await import("./repl-command-workflow.js");
+  const { buildReplSessionRequest, getReplUsageExitCode, planReplCommand, REPL_HELP_TEXT } =
+    await import("./repl-command-workflow.js");
 
   if (values.help || (!values.scenario && (!values.prompt || !values.rubric))) {
     console.log(REPL_HELP_TEXT);
@@ -1113,12 +1069,8 @@ async function cmdQueue(dbPath: string): Promise<void> {
     },
   });
 
-  const {
-    getQueueUsageExitCode,
-    planQueueCommand,
-    QUEUE_HELP_TEXT,
-    renderQueuedTaskResult,
-  } = await import("./queue-status-command-workflow.js");
+  const { getQueueUsageExitCode, planQueueCommand, QUEUE_HELP_TEXT, renderQueuedTaskResult } =
+    await import("./queue-status-command-workflow.js");
 
   if (values.help || !values.spec) {
     console.log(QUEUE_HELP_TEXT);
@@ -1154,12 +1106,8 @@ async function cmdWorker(dbPath: string): Promise<void> {
     },
   });
 
-  const {
-    planWorkerCommand,
-    renderWorkerResult,
-    resolveWorkerConcurrency,
-    WORKER_HELP_TEXT,
-  } = await import("./worker-command-workflow.js");
+  const { planWorkerCommand, renderWorkerResult, resolveWorkerConcurrency, WORKER_HELP_TEXT } =
+    await import("./worker-command-workflow.js");
 
   if (values.help) {
     console.log(WORKER_HELP_TEXT);
@@ -1168,18 +1116,14 @@ async function cmdWorker(dbPath: string): Promise<void> {
 
   const plan = planWorkerCommand(values);
   const { SQLiteStore } = await import("../storage/index.js");
-  const {
-    createTaskRunnerFromSettings,
-  } = await import("../execution/task-runner.js");
+  const { createTaskRunnerFromSettings } = await import("../execution/task-runner.js");
   const { loadSettings } = await import("../config/index.js");
   const { initializeHookBus } = await import("../extensions/index.js");
 
   const settings = loadSettings();
   const store = new SQLiteStore(dbPath);
   store.migrate(getMigrationsDir());
-  const { provider, model } = await getProvider(
-    plan.model ? { model: plan.model } : {},
-  );
+  const { provider, model } = await getProvider(plan.model ? { model: plan.model } : {});
   const concurrency = resolveWorkerConcurrency(provider, plan.concurrency);
 
   const { hookBus } = await initializeHookBus({
@@ -1203,16 +1147,16 @@ async function cmdWorker(dbPath: string): Promise<void> {
   process.once("SIGTERM", handleShutdown);
 
   try {
-    const tasksProcessed = plan.once
-      ? await runner.runBatch(concurrency)
-      : await runner.run();
-    console.log(renderWorkerResult({
-      mode: plan.once ? "once" : "daemon",
-      tasksProcessed,
-      pollInterval: plan.pollInterval,
-      concurrency,
-      json: plan.json,
-    }));
+    const tasksProcessed = plan.once ? await runner.runBatch(concurrency) : await runner.run();
+    console.log(
+      renderWorkerResult({
+        mode: plan.once ? "once" : "daemon",
+        tasksProcessed,
+        pollInterval: plan.pollInterval,
+        concurrency,
+        json: plan.json,
+      }),
+    );
   } finally {
     process.off("SIGINT", handleShutdown);
     process.off("SIGTERM", handleShutdown);
@@ -1281,11 +1225,8 @@ async function cmdServeHttp(dbPath: string): Promise<void> {
     },
   });
 
-  const {
-    planServeCommand,
-    renderServeStartup,
-    SERVE_HELP_TEXT,
-  } = await import("./serve-command-workflow.js");
+  const { planServeCommand, renderServeStartup, SERVE_HELP_TEXT } =
+    await import("./serve-command-workflow.js");
 
   if (values.help) {
     console.log(SERVE_HELP_TEXT);
@@ -1395,11 +1336,8 @@ async function cmdList(dbPath: string): Promise<void> {
     },
   });
 
-  const {
-    executeListCommandWorkflow,
-    LIST_HELP_TEXT,
-    planListCommand,
-  } = await import("./list-command-workflow.js");
+  const { executeListCommandWorkflow, LIST_HELP_TEXT, planListCommand } =
+    await import("./list-command-workflow.js");
 
   if (values.help) {
     console.log(LIST_HELP_TEXT);
@@ -1467,11 +1405,8 @@ async function cmdReplay(_dbPath: string): Promise<void> {
     },
   });
 
-  const {
-    executeReplayCommandWorkflow,
-    planReplayCommand,
-    REPLAY_HELP_TEXT,
-  } = await import("./replay-command-workflow.js");
+  const { executeReplayCommandWorkflow, planReplayCommand, REPLAY_HELP_TEXT } =
+    await import("./replay-command-workflow.js");
 
   if (values.help) {
     console.log(REPLAY_HELP_TEXT);
@@ -1520,11 +1455,8 @@ async function cmdShow(dbPath: string): Promise<void> {
     },
   });
 
-  const {
-    renderRunShow,
-    resolveRunId,
-    SHOW_HELP_TEXT,
-  } = await import("./run-inspection-command-workflow.js");
+  const { renderRunShow, resolveRunId, SHOW_HELP_TEXT } =
+    await import("./run-inspection-command-workflow.js");
 
   if (values.help) {
     console.log(SHOW_HELP_TEXT);
@@ -1662,8 +1594,7 @@ async function cmdBenchmark(dbPath: string): Promise<void> {
   const { SQLiteStore } = await import("../storage/index.js");
   const { GenerationRunner } = await import("../loop/generation-runner.js");
   const { SCENARIO_REGISTRY } = await import("../scenarios/registry.js");
-  const { assertFamilyContract } =
-    await import("../scenarios/family-interfaces.js");
+  const { assertFamilyContract } = await import("../scenarios/family-interfaces.js");
   const { loadSettings } = await import("../config/index.js");
   const { buildRoleProviderBundle } = await import("../providers/index.js");
   const { initializeHookBus } = await import("../extensions/index.js");
@@ -1701,11 +1632,12 @@ async function cmdBenchmark(dbPath: string): Promise<void> {
     ScenarioClass,
     assertFamilyContract,
     createStore: (benchmarkDbPath) => new SQLiteStore(benchmarkDbPath),
-    createRunner: (runnerOpts) => new GenerationRunner({
-      ...runnerOpts,
-      hookBus,
-      loadedExtensions,
-    }),
+    createRunner: (runnerOpts) =>
+      new GenerationRunner({
+        ...runnerOpts,
+        hookBus,
+        loadedExtensions,
+      }),
   });
   const rendered = renderBenchmarkResult(result, plan.json);
   if (rendered.stderr) {
@@ -1727,11 +1659,8 @@ async function cmdExport(dbPath: string): Promise<void> {
     },
   });
 
-  const {
-    executeExportCommandWorkflow,
-    EXPORT_HELP_TEXT,
-    planExportCommand,
-  } = await import("./export-command-workflow.js");
+  const { executeExportCommandWorkflow, EXPORT_HELP_TEXT, planExportCommand } =
+    await import("./export-command-workflow.js");
 
   if (values.help) {
     console.log(EXPORT_HELP_TEXT);
@@ -2078,8 +2007,7 @@ async function cmdNewScenario(_dbPath: string): Promise<void> {
     const result = await getProvider();
     provider = result.provider;
   } catch {
-    const { DeterministicProvider } =
-      await import("../providers/deterministic.js");
+    const { DeterministicProvider } = await import("../providers/deterministic.js");
     provider = new DeterministicProvider();
   }
 
@@ -2133,8 +2061,7 @@ async function cmdInit(): Promise<void> {
   }
 
   const { existsSync, mkdirSync, writeFileSync } = await import("node:fs");
-  const { loadPersistedCredentials, loadProjectConfig } =
-    await import("../config/index.js");
+  const { loadPersistedCredentials, loadProjectConfig } = await import("../config/index.js");
   const { resolveProviderConfig } = await import("../providers/index.js");
 
   let plan;
@@ -2158,11 +2085,7 @@ async function cmdInit(): Promise<void> {
   mkdirSync(plan.targetDir, { recursive: true });
   mkdirSync(join(plan.targetDir, "runs"), { recursive: true });
   mkdirSync(join(plan.targetDir, "knowledge"), { recursive: true });
-  writeFileSync(
-    plan.configPath,
-    JSON.stringify(plan.config, null, 2) + "\n",
-    "utf-8",
-  );
+  writeFileSync(plan.configPath, JSON.stringify(plan.config, null, 2) + "\n", "utf-8");
 
   const agentsMdUpdated = await writeAgentsGuide(plan.targetDir);
 
@@ -2176,19 +2099,12 @@ async function cmdInit(): Promise<void> {
 }
 
 async function cmdCapabilities(): Promise<void> {
-  const { buildCapabilitiesPayload } =
-    await import("./capabilities-command-workflow.js");
+  const { buildCapabilitiesPayload } = await import("./capabilities-command-workflow.js");
   const { getCapabilities } = await import("../mcp/capabilities.js");
   const projectConfig = await buildProjectConfigSummary();
   const baseCapabilities = getCapabilities();
 
-  console.log(
-    JSON.stringify(
-      buildCapabilitiesPayload(baseCapabilities, projectConfig),
-      null,
-      2,
-    ),
-  );
+  console.log(JSON.stringify(buildCapabilitiesPayload(baseCapabilities, projectConfig), null, 2));
 }
 
 async function cmdLogin(): Promise<void> {
@@ -2232,8 +2148,7 @@ async function cmdLogin(): Promise<void> {
 
   // Validate API key format before saving (AC-430)
   if (request.apiKey) {
-    const { validateApiKey, resolveApiKeyValue } =
-      await import("../config/credentials.js");
+    const { validateApiKey, resolveApiKeyValue } = await import("../config/credentials.js");
     // Resolve shell-command escape hatch (e.g. "!security find-generic-password -ws 'anthropic'")
     const resolvedKey = resolveApiKeyValue(request.apiKey);
     const validation = await validateApiKey(request.provider, resolvedKey);
@@ -2245,20 +2160,14 @@ async function cmdLogin(): Promise<void> {
   // Save to multi-provider credential store with 0600 permissions (AC-430)
   const { saveProviderCredentials } = await import("../config/credentials.js");
   const configDir = resolveConfigDir(request.configDir);
-  saveProviderCredentials(
-    configDir,
-    request.provider,
-    buildStoredProviderCredentials(request),
-  );
+  saveProviderCredentials(configDir, request.provider, buildStoredProviderCredentials(request));
 
   console.log(buildLoginSuccessMessage(request));
 }
 
 async function cmdWhoami(): Promise<void> {
-  const { buildWhoamiPayload } =
-    await import("./auth-provider-command-workflow.js");
-  const { loadPersistedCredentials, loadProjectConfig } =
-    await import("../config/index.js");
+  const { buildWhoamiPayload } = await import("./auth-provider-command-workflow.js");
+  const { loadPersistedCredentials, loadProjectConfig } = await import("../config/index.js");
   const { resolveProviderConfig } = await import("../providers/index.js");
   const { resolveConfigDir } = await import("../config/index.js");
 
@@ -2345,8 +2254,7 @@ async function cmdLogout(): Promise<void> {
   }
 
   const { existsSync, unlinkSync } = await import("node:fs");
-  const { loadPersistedCredentials, resolveConfigDir } =
-    await import("../config/index.js");
+  const { loadPersistedCredentials, resolveConfigDir } = await import("../config/index.js");
   const configDir = resolveConfigDir(values["config-dir"]);
   const credentialsPath = join(configDir, "credentials.json");
   const existing = loadPersistedCredentials(configDir);
@@ -2361,22 +2269,17 @@ async function cmdLogout(): Promise<void> {
 }
 
 async function cmdProviders(): Promise<void> {
-  const { buildProvidersPayload } =
-    await import("./auth-provider-command-workflow.js");
-  const { KNOWN_PROVIDERS, discoverAllProviders } =
-    await import("../config/credentials.js");
+  const { buildProvidersPayload } = await import("./auth-provider-command-workflow.js");
+  const { KNOWN_PROVIDERS, discoverAllProviders } = await import("../config/credentials.js");
   const { resolveConfigDir } = await import("../config/index.js");
   const configDir = resolveConfigDir();
   const discovered = discoverAllProviders(configDir);
 
-  console.log(
-    JSON.stringify(buildProvidersPayload(KNOWN_PROVIDERS, discovered), null, 2),
-  );
+  console.log(JSON.stringify(buildProvidersPayload(KNOWN_PROVIDERS, discovered), null, 2));
 }
 
 async function cmdModels(): Promise<void> {
-  const { renderModelsResult } =
-    await import("./auth-provider-command-workflow.js");
+  const { renderModelsResult } = await import("./auth-provider-command-workflow.js");
   const { listAuthenticatedModels } = await import("../config/credentials.js");
   const { resolveConfigDir } = await import("../config/index.js");
   const configDir = resolveConfigDir();
@@ -2491,8 +2394,7 @@ async function cmdMission(dbPath: string): Promise<void> {
             if (!plan.needsAdaptivePlanning) {
               return undefined;
             }
-            const { createProvider, resolveProviderConfig } =
-              await import("../providers/index.js");
+            const { createProvider, resolveProviderConfig } = await import("../providers/index.js");
             return createProvider(resolveProviderConfig());
           },
           runMissionLoop,
@@ -2643,9 +2545,7 @@ async function cmdMission(dbPath: string): Promise<void> {
         break;
       }
       default:
-        console.error(
-          `Unknown mission subcommand: ${subcommand}. Run 'autoctx mission --help'.`,
-        );
+        console.error(`Unknown mission subcommand: ${subcommand}. Run 'autoctx mission --help'.`);
         process.exit(1);
     }
   } finally {
@@ -2694,10 +2594,7 @@ async function cmdCampaign(dbPath: string): Promise<void> {
     return campaign;
   }
 
-  function parseCampaignPositiveInteger(
-    raw: string | undefined,
-    label: string,
-  ): number {
+  function parseCampaignPositiveInteger(raw: string | undefined, label: string): number {
     try {
       return parsePositiveInteger(raw, label);
     } catch (error) {
@@ -2744,10 +2641,7 @@ async function cmdCampaign(dbPath: string): Promise<void> {
         });
         let id: string;
         try {
-          id = getCampaignIdOrThrow(
-            values,
-            "Usage: autoctx campaign status --id <campaign-id>",
-          );
+          id = getCampaignIdOrThrow(values, "Usage: autoctx campaign status --id <campaign-id>");
         } catch (error) {
           console.error(errorMessage(error));
           process.exit(1);
@@ -2829,10 +2723,7 @@ async function cmdCampaign(dbPath: string): Promise<void> {
         });
         let id: string;
         try {
-          id = getCampaignIdOrThrow(
-            values,
-            "Usage: autoctx campaign progress --id <campaign-id>",
-          );
+          id = getCampaignIdOrThrow(values, "Usage: autoctx campaign progress --id <campaign-id>");
         } catch (error) {
           console.error(errorMessage(error));
           process.exit(1);
@@ -2893,9 +2784,7 @@ async function cmdCampaign(dbPath: string): Promise<void> {
         break;
       }
       default:
-        console.error(
-          `Unknown campaign subcommand: ${subcommand}. Run 'autoctx campaign --help'.`,
-        );
+        console.error(`Unknown campaign subcommand: ${subcommand}. Run 'autoctx campaign --help'.`);
         process.exit(1);
     }
   } finally {
@@ -3118,10 +3007,7 @@ async function cmdInvestigate(): Promise<void> {
   const { provider } = await getProvider();
 
   const settings = loadSettings();
-  const engine = new InvestigationEngine(
-    provider,
-    resolve(settings.knowledgeRoot),
-  );
+  const engine = new InvestigationEngine(provider, resolve(settings.knowledgeRoot));
 
   let request;
   let result;
@@ -3200,11 +3086,7 @@ Examples:
     runsRoot: resolve(settings.runsRoot),
     dbPath: resolve(settings.dbPath),
   });
-  const type = (values.type ?? "simulation") as
-    | "run"
-    | "simulation"
-    | "investigation"
-    | "mission";
+  const type = (values.type ?? "simulation") as "run" | "simulation" | "investigation" | "mission";
 
   let result;
   if (values.left && values.right) {
@@ -3216,9 +3098,7 @@ Examples:
   } else if (values.id) {
     result = engine.analyze({ id: values.id, type, focus: values.focus });
   } else {
-    console.error(
-      "Error: --id or --left/--right required. Run 'autoctx analyze --help'.",
-    );
+    console.error("Error: --id or --left/--right required. Run 'autoctx analyze --help'.");
     process.exit(1);
   }
 
@@ -3279,12 +3159,8 @@ async function cmdTrain(): Promise<void> {
     },
   });
 
-  const {
-    executeTrainCommandWorkflow,
-    planTrainCommand,
-    renderTrainSuccess,
-    TRAIN_HELP_TEXT,
-  } = await import("./train-command-workflow.js");
+  const { executeTrainCommandWorkflow, planTrainCommand, renderTrainSuccess, TRAIN_HELP_TEXT } =
+    await import("./train-command-workflow.js");
 
   if (values.help) {
     console.log(TRAIN_HELP_TEXT);
@@ -3352,9 +3228,7 @@ async function cmdBlob(): Promise<void> {
   const settings = loadSettings();
 
   if (!settings.blobStoreEnabled) {
-    console.error(
-      "Error: blob store is not enabled. Set AUTOCONTEXT_BLOB_STORE_ENABLED=true",
-    );
+    console.error("Error: blob store is not enabled. Set AUTOCONTEXT_BLOB_STORE_ENABLED=true");
     process.exit(1);
   }
 
@@ -3436,9 +3310,7 @@ async function cmdBlob(): Promise<void> {
       break;
     }
     default:
-      console.error(
-        `Unknown blob subcommand: ${subcommand}. Run 'autoctx blob --help'`,
-      );
+      console.error(`Unknown blob subcommand: ${subcommand}. Run 'autoctx blob --help'`);
       process.exit(1);
   }
 }
@@ -3448,9 +3320,7 @@ async function cmdBlob(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function cmdControlPlane(topCommand: string): Promise<void> {
-  const { runControlPlaneCommand } = await import(
-    "../control-plane/cli/index.js"
-  );
+  const { runControlPlaneCommand } = await import("../control-plane/cli/index.js");
   const subArgs = process.argv.slice(3);
   const result = await runControlPlaneCommand([topCommand, ...subArgs]);
   if (result.stdout) process.stdout.write(result.stdout + "\n");
@@ -3463,9 +3333,7 @@ async function cmdControlPlane(topCommand: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function cmdProductionTraces(): Promise<void> {
-  const { runProductionTracesCommand } = await import(
-    "../production-traces/cli/index.js"
-  );
+  const { runProductionTracesCommand } = await import("../production-traces/cli/index.js");
   const subArgs = process.argv.slice(3);
   const result = await runProductionTracesCommand(subArgs);
   if (result.stdout) process.stdout.write(result.stdout + "\n");
@@ -3476,11 +3344,18 @@ async function cmdProductionTraces(): Promise<void> {
 // Instrument namespace (A2-I / Layer 7 — AC-540)
 
 async function cmdInstrument(): Promise<void> {
-  const { runInstrumentCommand } = await import(
-    "../control-plane/instrument/cli/index.js"
-  );
+  const { runInstrumentCommand } = await import("../control-plane/instrument/cli/index.js");
   const subArgs = process.argv.slice(3);
   const result = await runInstrumentCommand(subArgs);
+  if (result.stdout) process.stdout.write(result.stdout + "\n");
+  if (result.stderr) process.stderr.write(result.stderr + "\n");
+  process.exit(result.exitCode);
+}
+
+async function cmdTraceFindings(): Promise<void> {
+  const { runTraceFindingsCommand } = await import("./trace-findings-command-workflow.js");
+  const subArgs = process.argv.slice(3);
+  const result = await runTraceFindingsCommand(subArgs);
   if (result.stdout) process.stdout.write(result.stdout + "\n");
   if (result.stderr) process.stderr.write(result.stderr + "\n");
   process.exit(result.exitCode);

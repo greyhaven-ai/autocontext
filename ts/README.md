@@ -81,11 +81,7 @@ export default async function ({ id, init, payload }: AutoctxAgentContext<Payloa
 ```
 
 ```ts
-import {
-  discoverAutoctxAgents,
-  invokeAutoctxAgent,
-  loadAutoctxAgent,
-} from "autoctx/agent-runtime";
+import { discoverAutoctxAgents, invokeAutoctxAgent, loadAutoctxAgent } from "autoctx/agent-runtime";
 import { createInMemoryWorkspaceEnv } from "autoctx";
 
 const [entry] = await discoverAutoctxAgents({ cwd: process.cwd() });
@@ -294,6 +290,8 @@ autoctx investigate -d "why did conversion drop after Tuesday's release"
 autoctx investigate -d "checkout is failing" --browser-url https://status.example.com
 autoctx analyze --id deploy_sim --type simulation
 autoctx analyze --left sim_a --right sim_b --type simulation
+autoctx trace-findings --trace ./trace.json          # Markdown report
+autoctx trace-findings --trace ./trace.json --json   # TraceFindingReport JSON
 autoctx mission create --name "Ship login" --goal "Implement OAuth"
 autoctx mission create --type code --name "Fix login" --goal "Tests pass" --repo-path . --test-command "npm test"
 autoctx mission run --id <mission-id> --max-iterations 3
@@ -592,20 +590,20 @@ record under `.autocontext/harness-proposals/`.
 
 `mcp-serve` starts the MCP server on stdio with tools across these families:
 
-| Family        | Tools                                                                                                            |
-| ------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Scenarios     | list_scenarios, get_scenario, validate_strategy, run_match, run_tournament, run_scenario                         |
+| Family        | Tools                                                                                                                                  |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Scenarios     | list_scenarios, get_scenario, validate_strategy, run_match, run_tournament, run_scenario                                               |
 | Runs          | list_runs, get_run_status, get_generation_detail, list_runtime_sessions, get_runtime_session, get_runtime_session_timeline, run_replay |
-| Knowledge     | get_playbook, read_trajectory, read_hints, read_analysis, read_tools, read_skills                                |
-| Evaluation    | evaluate_output, run_improvement_loop, run_repl_session, generate_output                                         |
-| Task queue    | queue_task, get_queue_status, get_task_result                                                                    |
-| Export/Search | export_skill, export_package, import_package, list_solved, search_strategies                                     |
-| Feedback      | record_feedback, get_feedback                                                                                    |
-| Solve         | solve_scenario, solve_status, solve_result                                                                       |
-| Sandbox       | sandbox_create, sandbox_run, sandbox_status, sandbox_playbook, sandbox_list, sandbox_destroy                     |
-| Agent tasks   | create_agent_task, list_agent_tasks, get_agent_task                                                              |
-| Missions      | create_mission, mission_status, mission_result, mission_artifacts, pause_mission, resume_mission, cancel_mission |
-| Discovery     | capabilities                                                                                                     |
+| Knowledge     | get_playbook, read_trajectory, read_hints, read_analysis, read_tools, read_skills                                                      |
+| Evaluation    | evaluate_output, run_improvement_loop, run_repl_session, generate_output                                                               |
+| Task queue    | queue_task, get_queue_status, get_task_result                                                                                          |
+| Export/Search | export_skill, export_package, import_package, list_solved, search_strategies                                                           |
+| Feedback      | record_feedback, get_feedback                                                                                                          |
+| Solve         | solve_scenario, solve_status, solve_result                                                                                             |
+| Sandbox       | sandbox_create, sandbox_run, sandbox_status, sandbox_playbook, sandbox_list, sandbox_destroy                                           |
+| Agent tasks   | create_agent_task, list_agent_tasks, get_agent_task                                                                                    |
+| Missions      | create_mission, mission_status, mission_result, mission_artifacts, pause_mission, resume_mission, cancel_mission                       |
+| Discovery     | capabilities                                                                                                                           |
 
 `create_mission` and `autoctx mission create` both support a code-mission variant with `type=code` plus `repo_path` / `test_command` (and optional `lint_command` / `build_command`) so mission success is tied to external checks instead of model self-report.
 
@@ -658,6 +656,7 @@ The TypeScript package includes the current 0.4.x operator-facing surfaces:
 - `simulate`
 - `investigate`
 - `analyze`
+- `trace-findings` — extract structured findings (`TraceFindingReport`) from a `PublicTrace` JSON file (AC-679)
 - `mission`
 - `train` as a validation plus executor-hook surface
 

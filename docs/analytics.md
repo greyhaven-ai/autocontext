@@ -38,6 +38,32 @@ Use `--kind writeup` (the default) for a full trace-grounded summary with
 missing traces return a parseable payload such as
 `{"status":"failed","error":"...","trace_id":"..."}` and exit non-zero.
 
+### TypeScript: `autoctx trace-findings` (AC-679)
+
+The TypeScript package ships a parallel `autoctx trace-findings` command
+that operates on a `PublicTrace` JSON file (the data plane primitive that
+flows through `autoctx production-traces`) rather than on a stored
+`RunTrace` by id. Cross-runtime parity is at the **output** layer: both
+runtimes emit a `TraceFindingReport` matching the
+`TraceFindingReportSchema` Zod contract, even though the input artifacts
+differ.
+
+The TS command surfaces an agent-behavior taxonomy detectable from the
+PublicTrace transcript + outcome (`tool_call_failure`, `agent_refusal`,
+`low_outcome_score`, `dimension_inconsistency`), complementing the
+harness-event-typed findings the Python command produces.
+
+```bash
+# From the npm package (no Python runtime required):
+autoctx trace-findings --trace ./trace.json          # Markdown report
+autoctx trace-findings --trace ./trace.json --json   # JSON report
+autoctx trace-findings --help                        # Usage
+```
+
+`--trace <path>` is required and must point to a JSON file matching
+`PublicTraceSchema`. Loading by stored trace id (`--trace-id <id>` against
+the ProductionTrace store) is a follow-up slice.
+
 ## Repository Traffic
 
 For GitHub-hosted repo traffic, use the repository Traffic view:
