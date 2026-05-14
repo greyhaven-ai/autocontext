@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 
 import type { ContextSelectionDecisionInput } from "./context-selection-report.js";
@@ -12,7 +12,8 @@ export function loadContextSelectionDecisions(
   runId: string,
 ): ContextSelectionDecisionInput[] {
   const cleanRunId = runId.trim();
-  const contextDir = join(resolveRunRoot(runsRoot, cleanRunId), "context_selection");
+  const runRoot = resolveRunRoot(runsRoot, cleanRunId);
+  const contextDir = resolveContextSelectionDir(runRoot);
   if (!existsSync(contextDir)) {
     return [];
   }
@@ -20,7 +21,7 @@ export function loadContextSelectionDecisions(
   for (const fileName of readdirSync(contextDir).sort()) {
     const match = DECISION_FILE_RE.exec(fileName);
     if (!match?.groups) continue;
-    const data = JSON.parse(readFileSync(join(contextDir, fileName), "utf-8"));
+    const data = JSON.parse(readFileSync(resolveContextSelectionFile(contextDir, fileName), "utf-8"));
     const decision = decisionFromPayload(data, {
       runId: cleanRunId,
       generation: Number.parseInt(match.groups.generation!, 10),
@@ -49,7 +50,43 @@ function resolveRunRoot(runsRoot: string, runId: string): string {
   if (relativePath === "" || relativePath.startsWith("..") || isAbsolute(relativePath)) {
     throw new Error(`run_id escapes runs root: ${runId}`);
   }
+  if (existsSync(candidate)) {
+    const realRoot = realpathSync(root);
+    const realCandidate = realpathSync(candidate);
+    if (!isContainedPath(realRoot, realCandidate)) {
+      throw new Error(`run_id escapes runs root: ${runId}`);
+    }
+    return realCandidate;
+  }
   return candidate;
+}
+
+function resolveContextSelectionDir(runRoot: string): string {
+  const contextDir = join(runRoot, "context_selection");
+  if (!existsSync(contextDir)) {
+    return contextDir;
+  }
+  const realRunRoot = realpathSync(runRoot);
+  const realContextDir = realpathSync(contextDir);
+  if (!isContainedPath(realRunRoot, realContextDir)) {
+    throw new Error("context_selection directory escapes run root");
+  }
+  return realContextDir;
+}
+
+function isContainedPath(root: string, candidate: string): boolean {
+  const relativePath = relative(root, candidate);
+  return relativePath !== "" && !relativePath.startsWith("..") && !isAbsolute(relativePath);
+}
+
+function resolveContextSelectionFile(contextDir: string, fileName: string): string {
+  const filePath = join(contextDir, fileName);
+  const realContextDir = realpathSync(contextDir);
+  const realFilePath = realpathSync(filePath);
+  if (!isContainedPath(realContextDir, realFilePath)) {
+    throw new Error("context_selection decision file escapes context-selection directory");
+  }
+  return realFilePath;
 }
 
 function decisionFromPayload(

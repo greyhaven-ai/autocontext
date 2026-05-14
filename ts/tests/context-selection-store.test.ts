@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -57,6 +57,12 @@ function writeDecision(name: string, payload: Record<string, unknown>): void {
   writeFileSync(join(contextDir, name), JSON.stringify(payload, null, 2), "utf-8");
 }
 
+function writeDecisionUnder(root: string, name: string, payload: Record<string, unknown>): void {
+  const contextDir = join(root, "context_selection");
+  mkdirSync(contextDir, { recursive: true });
+  writeFileSync(join(contextDir, name), JSON.stringify(payload, null, 2), "utf-8");
+}
+
 describe("context selection store", () => {
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "context-selection-store-"));
@@ -88,6 +94,50 @@ describe("context selection store", () => {
   it("rejects run ids that escape the runs root", () => {
     expect(() => loadContextSelectionDecisions(join(dir, "runs"), "../outside")).toThrow(
       /escapes runs root/,
+    );
+  });
+
+  it("rejects run directory symlinks that escape the runs root", () => {
+    const runsRoot = join(dir, "runs");
+    const outsideRun = join(dir, "outside-run");
+    mkdirSync(runsRoot, { recursive: true });
+    writeDecisionUnder(outsideRun, "gen_1_generation_prompt_context.json", decisionPayload({
+      run_id: "link",
+    }));
+    symlinkSync(outsideRun, join(runsRoot, "link"), "dir");
+
+    expect(() => loadContextSelectionDecisions(runsRoot, "link")).toThrow(
+      /escapes runs root/,
+    );
+  });
+
+  it("rejects context-selection directory symlinks that escape the run root", () => {
+    const runsRoot = join(dir, "runs");
+    const runRoot = join(runsRoot, "run-1");
+    const outsideContextRoot = join(dir, "outside-context");
+    mkdirSync(runRoot, { recursive: true });
+    writeDecisionUnder(outsideContextRoot, "gen_1_generation_prompt_context.json", decisionPayload());
+    symlinkSync(join(outsideContextRoot, "context_selection"), join(runRoot, "context_selection"), "dir");
+
+    expect(() => loadContextSelectionDecisions(runsRoot, "run-1")).toThrow(
+      /escapes run root/,
+    );
+  });
+
+  it("rejects decision file symlinks that escape the context-selection directory", () => {
+    const runsRoot = join(dir, "runs");
+    const contextDir = join(runsRoot, "run-1", "context_selection");
+    const outsideFile = join(dir, "outside-decision.json");
+    mkdirSync(contextDir, { recursive: true });
+    writeFileSync(
+      outsideFile,
+      JSON.stringify(decisionPayload(), null, 2),
+      "utf-8",
+    );
+    symlinkSync(outsideFile, join(contextDir, "gen_1_generation_prompt_context.json"));
+
+    expect(() => loadContextSelectionDecisions(runsRoot, "run-1")).toThrow(
+      /escapes context-selection directory/,
     );
   });
 });
