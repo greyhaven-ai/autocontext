@@ -27,6 +27,17 @@ export {
   promptCompactionCacheStats,
 } from "./semantic-compaction.js";
 export type { PromptCompactionOptions, PromptCompactionResult } from "./semantic-compaction.js";
+export { buildContextSelectionReport, ContextSelectionReport } from "./context-selection-report.js";
+export type {
+  ContextSelectionCandidateInput,
+  ContextSelectionDecisionInput,
+  ContextSelectionDiagnostic,
+  ContextSelectionDiagnosticPolicy,
+  ContextSelectionReportPayload,
+  ContextSelectionReportSummary,
+  ContextSelectionStageSummary,
+  ContextSelectionTelemetryCard,
+} from "./context-selection-report.js";
 export { ScoreTrajectoryBuilder } from "./trajectory.js";
 export type { TrajectoryRow } from "./trajectory.js";
 export { exportStrategyPackage, importStrategyPackage } from "./package.js";

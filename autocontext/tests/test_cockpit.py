@@ -378,6 +378,59 @@ class TestCockpitRunStatus:
         assert gen1["elo"] == 1000.0
         assert gen1["gate_decision"] == "advance"
 
+    def test_run_context_selection_report(self, cockpit_env: dict[str, Any]) -> None:
+        from autocontext.knowledge.context_selection import (
+            ContextSelectionCandidate,
+            ContextSelectionDecision,
+        )
+        from autocontext.storage.context_selection_store import persist_context_selection_decision
+
+        client: TestClient = cockpit_env["client"]
+        artifacts: ArtifactStore = cockpit_env["artifacts"]
+        persist_context_selection_decision(
+            artifacts,
+            ContextSelectionDecision(
+                run_id="run1",
+                scenario_name="grid_ctf",
+                generation=1,
+                stage="generation_prompt_context",
+                candidates=(
+                    ContextSelectionCandidate.from_contents(
+                        artifact_id="playbook",
+                        artifact_type="prompt_component",
+                        source="prompt_assembly",
+                        candidate_content="x" * 400,
+                        selected_content="x" * 80,
+                        selection_reason="trimmed",
+                    ),
+                ),
+                metadata={
+                    "context_budget_telemetry": {
+                        "input_token_estimate": 120,
+                        "output_token_estimate": 20,
+                        "trimmed_component_count": 1,
+                    },
+                    "prompt_compaction_cache": {"hits": 0, "misses": 10, "lookups": 10},
+                },
+            ),
+        )
+
+        resp = client.get("/api/cockpit/runs/run1/context-selection")
+
+        assert resp.status_code == 200
+        payload = resp.json()
+        cards = {card["key"]: card for card in payload["telemetry_cards"]}
+        assert payload["run_id"] == "run1"
+        assert payload["summary"]["budget_token_reduction"] == 100
+        assert cards["context_budget"]["severity"] == "warning"
+        assert cards["semantic_compaction_cache"]["value"] == "0.0% hit rate"
+
+    def test_run_context_selection_report_missing(self, cockpit_env: dict[str, Any]) -> None:
+        resp = cockpit_env["client"].get("/api/cockpit/runs/missing/context-selection")
+
+        assert resp.status_code == 404
+        assert "No context selection artifacts" in resp.json()["detail"]
+
 
 class TestCockpitChangelog:
     def test_changelog_endpoint(self, cockpit_env: dict[str, Any]) -> None:

@@ -118,6 +118,20 @@ export type {
 	PromptContext,
 } from "../../../../ts/src/prompts/templates.js";
 export { buildPromptBundle } from "../../../../ts/src/prompts/templates.js";
+export {
+	buildContextSelectionReport,
+	ContextSelectionReport,
+} from "../../../../ts/src/knowledge/context-selection-report.js";
+export type {
+	ContextSelectionCandidateInput,
+	ContextSelectionDecisionInput,
+	ContextSelectionDiagnostic,
+	ContextSelectionDiagnosticPolicy,
+	ContextSelectionReportPayload,
+	ContextSelectionReportSummary,
+	ContextSelectionStageSummary,
+	ContextSelectionTelemetryCard,
+} from "../../../../ts/src/knowledge/context-selection-report.js";
 export type {
 	ExecutionLimits,
 	LegalAction,

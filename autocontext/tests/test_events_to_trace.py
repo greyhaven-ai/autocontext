@@ -192,6 +192,7 @@ def test_analytics_context_selection_cli_reports_run_summary(tmp_path: Path) -> 
     assert payload["run_id"] == "run-1"
     assert payload["diagnostics"] == []
     assert payload["summary"]["selected_token_estimate"] == 1
+    assert payload["telemetry_cards"][0]["key"] == "selected_context"
 
 
 def test_analytics_context_selection_cli_rejects_missing_artifacts(tmp_path: Path) -> None:

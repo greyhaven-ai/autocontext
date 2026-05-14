@@ -12,6 +12,7 @@ from autocontext.analytics.artifact_rendering import render_scenario_curation_ht
 from autocontext.consultation.runner import ConsultationRunner
 from autocontext.consultation.types import ConsultationRequest as ConsReq
 from autocontext.consultation.types import ConsultationTrigger
+from autocontext.knowledge.context_selection_report import build_context_selection_report
 from autocontext.notebook.context_provider import NotebookContextProvider
 from autocontext.notebook.types import SessionNotebook
 from autocontext.providers.base import LLMProvider
@@ -33,6 +34,7 @@ from autocontext.session.runtime_session_timeline import (
     read_runtime_session_timeline_by_run_id,
 )
 from autocontext.storage import ArtifactStore, SQLiteStore, artifact_store_from_settings
+from autocontext.storage.context_selection_store import load_context_selection_decisions
 from autocontext.storage.scenario_paths import normalize_scenario_name_segment
 
 logger = logging.getLogger(__name__)
@@ -418,6 +420,24 @@ def run_status(run_id: str, request: Request) -> dict[str, Any]:
         "generations": generations,
         **runtime_session_discovery,
     }
+
+
+@cockpit_router.get("/runs/{run_id}/context-selection")
+def run_context_selection_report(run_id: str, request: Request) -> dict[str, Any]:
+    """Context-selection telemetry report for cockpit inspection."""
+    settings = getattr(request.app.state, "app_settings", None)
+    if settings is None:
+        raise HTTPException(status_code=500, detail="Application settings are not configured")
+    clean_run_id = run_id.strip()
+    if not clean_run_id:
+        raise HTTPException(status_code=422, detail="run_id is required")
+    try:
+        decisions = load_context_selection_decisions(settings.runs_root, clean_run_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if not decisions:
+        raise HTTPException(status_code=404, detail=f"No context selection artifacts found for run '{clean_run_id}'")
+    return build_context_selection_report(decisions).to_dict()
 
 
 @cockpit_router.get("/runs/{run_id}/changelog")

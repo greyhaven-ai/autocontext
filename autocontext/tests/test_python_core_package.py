@@ -16,9 +16,12 @@ ContextBudget = core_package.ContextBudget
 ContextBudgetPolicy = core_package.ContextBudgetPolicy
 ContextBudgetResult = core_package.ContextBudgetResult
 ContextBudgetTelemetry = core_package.ContextBudgetTelemetry
+ContextSelectionReport = core_package.ContextSelectionReport
+ContextSelectionTelemetryCard = core_package.ContextSelectionTelemetryCard
 PromptBundle = core_package.PromptBundle
 ProviderError = core_package.ProviderError
 build_prompt_bundle = core_package.build_prompt_bundle
+build_context_selection_report = core_package.build_context_selection_report
 estimate_tokens = core_package.estimate_tokens
 expected_score = core_package.expected_score
 package_role = core_package.package_role
@@ -48,6 +51,15 @@ def test_python_core_reexports_prompt_budget_helpers() -> None:
     assert isinstance(telemetry_result, ContextBudgetResult)
     assert isinstance(telemetry_result.telemetry, ContextBudgetTelemetry)
     assert telemetry_result.telemetry.token_reduction > 0
+
+
+def test_python_core_reexports_context_selection_report_helpers() -> None:
+    report = build_context_selection_report(())
+
+    assert isinstance(report, ContextSelectionReport)
+    card = report.telemetry_cards()[0]
+    assert isinstance(card, ContextSelectionTelemetryCard)
+    assert card.key == "selected_context"
 
 
 def test_python_core_reexports_prompt_bundle_assembly() -> None:
