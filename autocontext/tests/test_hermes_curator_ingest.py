@@ -21,7 +21,6 @@ from autocontext.hermes.curator_ingest import (
     IngestSummary,
     ingest_curator_reports,
 )
-
 from autocontext.production_traces.contract.models import ProductionTrace
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "hermes_curator"
