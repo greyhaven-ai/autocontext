@@ -86,8 +86,11 @@ are later capability paths.
 reads. The Curator artifacts autocontext can import are:
 
 - **Curator decision reports** (per-run JSON + Markdown reports).
-  Become autocontext `ProductionTrace` JSONL via the curator-report
-  ingest path (AC-704, in flight).
+  Become autocontext `ProductionTrace` JSONL via `autoctx hermes
+ingest-curator` (AC-704), and supervised training JSONL via
+  `autoctx hermes export-dataset --kind curator-decisions` (AC-705).
+  Both commands read only; pinned, bundled, and hub-installed skills
+  are protected from becoming mutation targets in the dataset.
 - **Usage telemetry** (`~/.hermes/skills/.usage.json` and adjacent
   state). Used as context for joining decisions to skill use.
 - **Session DB and trajectory samples** (`~/.hermes/state.db`,
@@ -163,13 +166,13 @@ That property is load-bearing for evaluation, replay, and review.
 ## Status (as of today)
 
 - Shipped: `autoctx hermes inspect`, `autoctx hermes export-skill`,
-  the rendered Hermes-format SKILL.md, the integration surface order
-  decision (CLI-first / MCP-optional / native runtime / plugin /
-  gateway).
-- In flight: AC-704 (curator-report ingest), AC-706 (session and
-  trajectory import with redaction), AC-705 (curator-decision
-  dataset export), AC-708 / AC-709 (advisor model + read-only
-  recommendations), AC-707 (Hermes plugin emitter spike).
+  `autoctx hermes ingest-curator` (AC-704), `autoctx hermes
+export-dataset --kind curator-decisions` (AC-705), the rendered
+  Hermes-format SKILL.md, the integration surface order decision
+  (CLI-first / MCP-optional / native runtime / plugin / gateway).
+- In flight: AC-706 (session and trajectory import with redaction),
+  AC-708 / AC-709 (advisor model + read-only recommendations), AC-707
+  (Hermes plugin emitter spike).
 - Out of scope (today): autocontext writing to `~/.hermes/skills/`,
   autocontext replacing Curator's pruning / consolidation /
   gating workflow, frontier-scale training from a single operator's

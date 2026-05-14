@@ -61,12 +61,13 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from autocontext.hermes.inspection import (
     CuratorRunSummary,
+    HermesInventory,
     HermesSkill,
     inspect_hermes_home,
 )
@@ -130,15 +131,34 @@ def export_curator_decisions(
 
     inventory = inspect_hermes_home(home)
     skills_by_name = {skill.name: skill for skill in inventory.skills}
+    # PR #964 review (P2): a name listed in `.usage.json` as pinned, or
+    # in `.bundled_manifest` / `.hub/lock.json`, is protected even when
+    # it's no longer in the active SKILL.md inventory. Build that set
+    # once and check membership before emitting a strong label.
+    protected_names = _collect_protected_names(home=home, inventory=inventory)
     summary.runs_read = inventory.curator.run_count
 
-    since_dt = _parse_iso(since) if since is not None else None
+    # PR #964 review (P2): reject invalid `--since` at the boundary
+    # instead of silently disabling the filter; ensure aware UTC so
+    # comparisons against run timestamps cannot raise TypeError.
+    since_dt: datetime | None = None
+    if since is not None:
+        since_dt = _parse_iso(since)
+        if since_dt is None:
+            raise ValueError(f"invalid --since value {since!r}; expected ISO-8601 timestamp")
+        if since_dt.tzinfo is None:
+            since_dt = since_dt.replace(tzinfo=UTC)
+
     examples: list[dict[str, Any]] = []
     for run in inventory.curator.runs:
         if limit is not None and len(examples) >= limit:
             break
-        started_at_dt = _parse_iso(run.started_at) if run.started_at else None
-        if since_dt is not None and started_at_dt is not None and started_at_dt < since_dt:
+
+        # Compute effective started_at: parsed run.started_at if present
+        # and parseable, file mtime otherwise. Ensures missing
+        # started_at still honors --since (PR #964 review P2).
+        effective_dt = _effective_started_at(run)
+        if since_dt is not None and effective_dt < since_dt:
             continue
 
         # Strongest-label-wins precedence: consolidated > pruned > archived > added.
@@ -149,7 +169,7 @@ def export_curator_decisions(
             if limit is not None and len(examples) >= limit:
                 break
             skill = skills_by_name.get(skill_name)
-            if not _is_valid_target(skill):
+            if not _is_valid_target(skill_name=skill_name, skill=skill, protected_names=protected_names):
                 continue
             example = _build_example(
                 run=run,
@@ -174,10 +194,10 @@ def _collect_action_labels(run: CuratorRunSummary) -> dict[str, str]:
     appears in multiple lists gets a single labeled example.
     """
     data = _read_run_json(run.path)
-    consolidated = _as_str_list(data.get("consolidated"))
-    pruned = _as_str_list(data.get("pruned"))
-    archived = _as_str_list(data.get("archived"))
-    added = _as_str_list(data.get("added"))
+    consolidated = _as_name_list(data.get("consolidated"))
+    pruned = _as_name_list(data.get("pruned"))
+    archived = _as_name_list(data.get("archived"))
+    added = _as_name_list(data.get("added"))
 
     labels: dict[str, str] = {}
     for name in consolidated:
@@ -191,12 +211,28 @@ def _collect_action_labels(run: CuratorRunSummary) -> dict[str, str]:
     return labels
 
 
-def _is_valid_target(skill: HermesSkill | None) -> bool:
-    """A `pinned` skill is a hard protection: never a mutation target.
-    `bundled` / `hub` skills are out-of-scope as targets; they're
-    context only. A skill missing from the inventory still counts as a
-    valid target (historical decision; the example is emitted with
-    `unknown` features)."""
+def _is_valid_target(
+    *,
+    skill_name: str,
+    skill: HermesSkill | None,
+    protected_names: set[str],
+) -> bool:
+    """Strong-label gate.
+
+    Protections (any of these block a skill from being a mutation
+    target):
+    - `skill.pinned` is True;
+    - `skill.provenance` is `bundled` or `hub`;
+    - the name appears in the protected-name set derived from raw
+      `.usage.json` / `.bundled_manifest` / `.hub/lock.json` even when
+      the skill is no longer in the active inventory (PR #964 review P2).
+
+    Skills missing from BOTH the active inventory AND the protected
+    set still emit a strong-label row (historical decision use case)
+    with `skill_*` features set to `unknown`/0/False.
+    """
+    if skill_name in protected_names:
+        return False
     if skill is None:
         return True
     if skill.pinned:
@@ -204,6 +240,70 @@ def _is_valid_target(skill: HermesSkill | None) -> bool:
     if skill.provenance in {"bundled", "hub"}:
         return False
     return True
+
+
+def _collect_protected_names(*, home: Path, inventory: HermesInventory) -> set[str]:
+    """Names that should never be mutation targets, even when the active
+    SKILL.md tree no longer contains them.
+
+    Sources:
+    - active-inventory skills with `pinned` / `provenance in (bundled, hub)`
+    - `.usage.json` entries marked `pinned: true`
+    - `.bundled_manifest` lines (one name per line, optional `:` suffix)
+    - `.hub/lock.json` `installed` keys
+
+    The set is queried once per ingest call.
+    """
+    protected: set[str] = set()
+    for skill in inventory.skills:
+        if skill.pinned or skill.provenance in {"bundled", "hub"}:
+            protected.add(skill.name)
+
+    skills_dir = home / "skills"
+    usage_path = skills_dir / ".usage.json"
+    if usage_path.exists():
+        try:
+            raw = json.loads(usage_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            raw = None
+        if isinstance(raw, dict):
+            for name, record in raw.items():
+                if isinstance(record, dict) and bool(record.get("pinned")):
+                    protected.add(str(name))
+
+    bundled_path = skills_dir / ".bundled_manifest"
+    if bundled_path.exists():
+        try:
+            for line in bundled_path.read_text(encoding="utf-8").splitlines():
+                name = line.strip().split(":", 1)[0].strip()
+                if name:
+                    protected.add(name)
+        except OSError:
+            pass
+
+    hub_path = skills_dir / ".hub" / "lock.json"
+    if hub_path.exists():
+        try:
+            raw = json.loads(hub_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            raw = None
+        if isinstance(raw, dict):
+            installed = raw.get("installed")
+            if isinstance(installed, dict):
+                protected.update(str(name) for name in installed.keys())
+
+    return protected
+
+
+def _effective_started_at(run: CuratorRunSummary) -> datetime:
+    """Aware UTC datetime: parsed `run.started_at` if present, else file
+    mtime. Used by --since filtering so missing-start runs cannot
+    bypass incremental imports (PR #964 review P2)."""
+    if run.started_at:
+        parsed = _parse_iso(run.started_at)
+        if parsed is not None:
+            return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+    return datetime.fromtimestamp(run.path.stat().st_mtime, tz=UTC)
 
 
 def _build_example(
@@ -277,10 +377,22 @@ def _parse_iso(value: str) -> datetime | None:
         return None
 
 
-def _as_str_list(value: Any) -> list[str]:
+def _as_name_list(value: Any) -> list[str]:
+    """Accept both Hermes v0.12 action shapes: a list of strings OR a
+    list of `{"name": ...}` dicts. Drops entries with no usable name
+    (PR #964 review P1).
+    """
     if not isinstance(value, list):
         return []
-    return [item for item in value if isinstance(item, str)]
+    names: list[str] = []
+    for item in value:
+        if isinstance(item, str):
+            names.append(item)
+        elif isinstance(item, dict):
+            name = item.get("name")
+            if isinstance(name, str):
+                names.append(name)
+    return names
 
 
 __all__ = [

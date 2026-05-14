@@ -422,3 +422,195 @@ def test_unknown_kind_raises(tmp_path: Path) -> None:
     output = tmp_path / "out.jsonl"
     with pytest.raises(NotImplementedError, match="consolidation-pairs"):
         export_dataset(kind="consolidation-pairs", home=home, output=output)
+
+
+def test_object_shape_actions_emit_examples(tmp_path: Path) -> None:
+    """PR #964 review (P1): real Hermes v0.12 Curator action objects use
+    `[{"name": "...", ...}, ...]` not `["...", ...]`. Both shapes must
+    produce training rows so the exporter doesn't silently emit zero
+    examples against a real Curator run."""
+    home = _plant_hermes_home(
+        tmp_path,
+        skills=[{"name": "skill-obj", "provenance": "agent-created"}],
+        curator_runs=[
+            {
+                "run_id": "run-001",
+                "data": {
+                    "started_at": "2026-05-13T15:00:00Z",
+                    "duration_seconds": 5.0,
+                    "provider": "anthropic",
+                    "model": "claude-sonnet-4-5",
+                    "consolidated": [
+                        {"name": "skill-obj", "reason": "merged with sibling"},
+                    ],
+                    "pruned": [],
+                    "archived": [],
+                    "added": [],
+                },
+            },
+        ],
+    )
+    output = tmp_path / "out.jsonl"
+    summary = export_curator_decisions(home=home, output=output)
+    rows = _load_jsonl(output)
+    assert summary.examples_written == 1
+    assert rows[0]["input"]["skill_name"] == "skill-obj"
+    assert rows[0]["label"] == "consolidated"
+
+
+def test_pinned_via_usage_json_blocks_target_when_skill_missing(tmp_path: Path) -> None:
+    """PR #964 review (P2): a name marked `pinned: true` in `.usage.json`
+    must remain protected even when the SKILL.md folder has been removed
+    (skill not in the active inventory). Otherwise the exporter would
+    treat the missing-but-pinned skill as a normal mutation target with
+    skill_pinned=False."""
+    home = _plant_hermes_home(
+        tmp_path,
+        skills=[],  # no active SKILL.md folders
+        usage={"pinned-ghost": {"state": "active", "pinned": True}},
+        curator_runs=[
+            {
+                "run_id": "run-001",
+                "data": {
+                    "started_at": "2026-05-13T15:00:00Z",
+                    "duration_seconds": 5.0,
+                    "provider": "anthropic",
+                    "model": "claude-sonnet-4-5",
+                    "consolidated": ["pinned-ghost"],
+                },
+            },
+        ],
+    )
+    output = tmp_path / "out.jsonl"
+    export_curator_decisions(home=home, output=output)
+    rows = _load_jsonl(output)
+    assert rows == []
+
+
+def test_bundled_manifest_blocks_target_when_skill_missing(tmp_path: Path) -> None:
+    """PR #964 review (P2): a name in `.bundled_manifest` is upstream-
+    owned and must not become a mutation target even when no active
+    SKILL.md folder exists for it."""
+    home = tmp_path / "hermes"
+    skills_dir = home / "skills"
+    skills_dir.mkdir(parents=True)
+    (skills_dir / ".bundled_manifest").write_text("bundled-ghost\n", encoding="utf-8")
+    curator_root = home / "logs" / "curator"
+    curator_root.mkdir(parents=True)
+    (curator_root / "run-001").mkdir()
+    (curator_root / "run-001" / "run.json").write_text(
+        json.dumps(
+            {
+                "started_at": "2026-05-13T15:00:00Z",
+                "duration_seconds": 5.0,
+                "provider": "anthropic",
+                "model": "claude-sonnet-4-5",
+                "pruned": ["bundled-ghost"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    output = tmp_path / "out.jsonl"
+    export_curator_decisions(home=home, output=output)
+    rows = _load_jsonl(output)
+    assert rows == []
+
+
+def test_hub_lock_blocks_target_when_skill_missing(tmp_path: Path) -> None:
+    """PR #964 review (P2): a name in `.hub/lock.json` is hub-installed
+    and must not become a mutation target even when no active SKILL.md
+    folder exists for it."""
+    home = tmp_path / "hermes"
+    skills_dir = home / "skills"
+    (skills_dir / ".hub").mkdir(parents=True)
+    (skills_dir / ".hub" / "lock.json").write_text(
+        json.dumps({"installed": {"hub-ghost": {"version": "1.0"}}}),
+        encoding="utf-8",
+    )
+    curator_root = home / "logs" / "curator"
+    curator_root.mkdir(parents=True)
+    (curator_root / "run-001").mkdir()
+    (curator_root / "run-001" / "run.json").write_text(
+        json.dumps(
+            {
+                "started_at": "2026-05-13T15:00:00Z",
+                "duration_seconds": 5.0,
+                "provider": "anthropic",
+                "model": "claude-sonnet-4-5",
+                "archived": ["hub-ghost"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    output = tmp_path / "out.jsonl"
+    export_curator_decisions(home=home, output=output)
+    rows = _load_jsonl(output)
+    assert rows == []
+
+
+def test_invalid_since_raises_value_error(tmp_path: Path) -> None:
+    """PR #964 review (P2): silently disabling --since on a parse failure
+    hides operator mistakes. Invalid ISO timestamps must surface as a
+    ValueError so the caller can correct the input."""
+    home = _plant_hermes_home(
+        tmp_path,
+        skills=[{"name": "skill-a", "provenance": "agent-created"}],
+        curator_runs=[
+            {
+                "run_id": "run-001",
+                "data": {
+                    "started_at": "2026-05-13T15:00:00Z",
+                    "duration_seconds": 5.0,
+                    "consolidated": ["skill-a"],
+                },
+            },
+        ],
+    )
+    output = tmp_path / "out.jsonl"
+    with pytest.raises(ValueError, match="invalid --since"):
+        export_curator_decisions(home=home, output=output, since="not-a-date")
+
+
+def test_since_filter_applies_to_mtime_fallback_when_started_at_missing(tmp_path: Path) -> None:
+    """PR #964 review (P2): runs without a parseable `started_at` must
+    still honor --since via the file mtime fallback. Otherwise missing-
+    timestamp runs sneak through incremental imports."""
+    import os
+    import time
+
+    home = _plant_hermes_home(
+        tmp_path,
+        skills=[
+            {"name": "skill-a", "provenance": "agent-created"},
+            {"name": "skill-b", "provenance": "agent-created"},
+        ],
+        curator_runs=[
+            {
+                "run_id": "run-no-ts",
+                "data": {
+                    "provider": "anthropic",
+                    "model": "claude-sonnet-4-5",
+                    "consolidated": ["skill-a"],
+                },
+            },
+            {
+                "run_id": "run-no-ts-new",
+                "data": {
+                    "provider": "anthropic",
+                    "model": "claude-sonnet-4-5",
+                    "consolidated": ["skill-b"],
+                },
+            },
+        ],
+    )
+    # Backdate the first run's run.json mtime so it falls before --since.
+    old_path = home / "logs" / "curator" / "run-no-ts" / "run.json"
+    old_ts = time.mktime(time.strptime("2026-05-01T00:00:00", "%Y-%m-%dT%H:%M:%S"))
+    os.utime(old_path, (old_ts, old_ts))
+
+    output = tmp_path / "out.jsonl"
+    export_curator_decisions(home=home, output=output, since="2026-05-10T00:00:00Z")
+    rows = _load_jsonl(output)
+    target_names = {r["input"]["skill_name"] for r in rows}
+    assert "skill-a" not in target_names
+    assert "skill-b" in target_names

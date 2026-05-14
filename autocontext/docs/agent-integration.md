@@ -277,7 +277,39 @@ autoctx hermes inspect --home "$HERMES_HOME" --json
 
 # Export the Hermes autocontext skill for Hermes to load
 autoctx hermes export-skill --output ~/.hermes/skills/autocontext/SKILL.md --json
+
+# Ingest Curator decision reports as ProductionTrace JSONL (AC-704)
+autoctx hermes ingest-curator --home "$HERMES_HOME" \
+  --output .autocontext/production-traces/ingested/hermes-curator.jsonl \
+  --since 2026-05-01T00:00:00Z --json
+
+# Export Curator decisions as training JSONL for narrow advisors (AC-705)
+autoctx hermes export-dataset --kind curator-decisions \
+  --home "$HERMES_HOME" \
+  --output training/hermes-curator-decisions.jsonl \
+  --since 2026-05-01T00:00:00Z --limit 5000 --json
 ```
+
+`export-dataset` flags:
+
+- `--kind curator-decisions` (shipped). Other documented kinds
+  (`consolidation-pairs`, `skill-selection`, `skill-quality-signals`)
+  raise `NotImplementedError` until their slices land.
+- `--since <ISO-8601>`: skip curator runs strictly before this
+  timestamp. Invalid timestamps raise `ValueError`; runs without a
+  `started_at` field fall back to file mtime for the comparison.
+- `--limit <int>`: cap the number of training examples written.
+
+Behavior notes:
+
+- Strong labels only: `consolidated`, `pruned`, `archived`, `added`
+  are emitted with `confidence: "strong"`.
+- Pinned skills (`.usage.json` `pinned: true`), bundled
+  (`.bundled_manifest`), and hub-installed (`.hub/lock.json`) skills
+  are protected: they never appear as mutation targets, even when no
+  active SKILL.md folder is present.
+- Both Hermes v0.12 action shapes are accepted: a list of strings or
+  a list of `{"name": ...}` objects.
 
 JSON output shape for `inspect`:
 
