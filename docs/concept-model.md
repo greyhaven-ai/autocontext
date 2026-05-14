@@ -23,26 +23,26 @@ The repo already has strong runtime primitives, but the vocabulary is not yet un
 
 These are the nouns we should prefer in docs, APIs, and product copy when describing what the system helps a person do.
 
-| Concept | Definition | Current status |
-| --- | --- | --- |
-| `Scenario` | A reusable environment, simulation, or evaluation context with stable rules and scoring. | Implemented across Python, TypeScript, CLI, MCP, API/TUI surfaces, and docs. |
-| `Task` | A user-authored unit of work or prompt-centric objective that can be evaluated directly or embedded inside another surface. | Partial: prompt-centric task support exists, but the name is still overloaded across agent-task specs, queued runtime jobs, and generic prompts. |
-| `Mission` | A long-running goal advanced step by step until a verifier says it is complete. | Partial: implemented in TypeScript CLI/MCP/API/TUI surfaces, but not yet a shared Python package concept. |
-| `Campaign` | A planned grouping of missions, runs, and/or scenarios used to coordinate broader work over time. | Partially implemented through TypeScript CLI/API/MCP surfaces. Not yet a Python package surface. |
+| Concept    | Definition                                                                                                                  | Current status                                                                                                                                   |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Scenario` | A reusable environment, simulation, or evaluation context with stable rules and scoring.                                    | Implemented across Python, TypeScript, CLI, MCP, API/TUI surfaces, and docs.                                                                     |
+| `Task`     | A user-authored unit of work or prompt-centric objective that can be evaluated directly or embedded inside another surface. | Partial: prompt-centric task support exists, but the name is still overloaded across agent-task specs, queued runtime jobs, and generic prompts. |
+| `Mission`  | A long-running goal advanced step by step until a verifier says it is complete.                                             | Partial: implemented in TypeScript CLI/MCP/API/TUI surfaces, but not yet a shared Python package concept.                                        |
+| `Campaign` | A planned grouping of missions, runs, and/or scenarios used to coordinate broader work over time.                           | Partially implemented through TypeScript CLI/API/MCP surfaces. Not yet a Python package surface.                                                 |
 
 ### Runtime concepts
 
 These are the execution nouns we should use when describing how the system actually runs.
 
-| Concept | Definition | Current status |
-| --- | --- | --- |
-| `Run` | A concrete execution instance of a `Scenario` or `Task`. | Implemented broadly. |
-| `Step` | A bounded action taken while advancing a `Mission` or another long-running workflow. | Partial: implemented for missions, but not yet generalized across every long-running workflow. |
-| `Verifier` | The runtime check that decides whether a mission, step, or output is acceptable. | Partial: implemented for missions and several evaluation flows, but not yet a unified runtime concept. |
-| `Artifact` | A persisted runtime output such as a replay, checkpoint, package, report, harness, or skill export. | Implemented broadly. |
-| `Knowledge` | Persisted learned state that should carry forward across runs, such as playbooks, hints, lessons, and analysis. | Implemented broadly. |
-| `Budget` | Constraints that bound runtime behavior, such as max steps, cost, time, or retries. | Partial: implemented in several places, but not yet described consistently. |
-| `Policy` | Structured rules that constrain or guide runtime behavior, such as escalation, hint volume, cost, conflict, or harness policies. | Partial: implemented in pockets, but not yet presented as one concept. |
+| Concept     | Definition                                                                                                                       | Current status                                                                                         |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `Run`       | A concrete execution instance of a `Scenario` or `Task`.                                                                         | Implemented broadly.                                                                                   |
+| `Step`      | A bounded action taken while advancing a `Mission` or another long-running workflow.                                             | Partial: implemented for missions, but not yet generalized across every long-running workflow.         |
+| `Verifier`  | The runtime check that decides whether a mission, step, or output is acceptable.                                                 | Partial: implemented for missions and several evaluation flows, but not yet a unified runtime concept. |
+| `Artifact`  | A persisted runtime output such as a replay, checkpoint, package, report, harness, or skill export.                              | Implemented broadly.                                                                                   |
+| `Knowledge` | Persisted learned state that should carry forward across runs, such as playbooks, hints, lessons, and analysis.                  | Implemented broadly.                                                                                   |
+| `Budget`    | Constraints that bound runtime behavior, such as max steps, cost, time, or retries.                                              | Partial: implemented in several places, but not yet described consistently.                            |
+| `Policy`    | Structured rules that constrain or guide runtime behavior, such as escalation, hint volume, cost, conflict, or harness policies. | Partial: implemented in pockets, but not yet presented as one concept.                                 |
 
 ## Relationship Model
 
@@ -56,17 +56,17 @@ These are the execution nouns we should use when describing how the system actua
 
 ## Mapping Today's Surfaces
 
-| Current surface | Canonical meaning | Notes |
-| --- | --- | --- |
-| `run` | `Run` operation over a `Scenario` or `Task` | Keep the verb for CLI/MCP, but document the noun as `Run`. |
-| `task` queue / `TaskRow` | Background job runtime, not the user-facing `Task` concept | This is the sharpest naming collision today. |
-| `AgentTask` / `AgentTaskSpec` | Current implementation of a prompt-centric `Task` | Valid internal name, but user docs should emphasize `Task`. |
-| `solve` | Workflow that creates or selects a `Scenario`/`Task`, then launches a `Run` and exports resulting knowledge | `solve` is an operation, not a peer object model noun. |
-| sandbox | Isolated execution boundary for a `Run` | Better treated as runtime isolation/policy, not a top-level concept. |
-| replay | `Artifact` view over a `Run` generation | The replay itself is an artifact. |
-| playbook | A `Knowledge` artifact | It should be described as one kind of knowledge, not the whole knowledge system. |
-| artifacts | Umbrella category over runtime outputs | Use as a collection term, not a peer to `Scenario` or `Mission`. |
-| runtime-session event log | `Artifact` emitted by a `Run` or child task | Durable observability and replay source for provider turns, shell/tool activity, child-task lineage, and compaction summaries. |
+| Current surface               | Canonical meaning                                                                                           | Notes                                                                                                                          |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `run`                         | `Run` operation over a `Scenario` or `Task`                                                                 | Keep the verb for CLI/MCP, but document the noun as `Run`.                                                                     |
+| `task` queue / `TaskRow`      | Background job runtime, not the user-facing `Task` concept                                                  | This is the sharpest naming collision today.                                                                                   |
+| `AgentTask` / `AgentTaskSpec` | Current implementation of a prompt-centric `Task`                                                           | Valid internal name, but user docs should emphasize `Task`.                                                                    |
+| `solve`                       | Workflow that creates or selects a `Scenario`/`Task`, then launches a `Run` and exports resulting knowledge | `solve` is an operation, not a peer object model noun.                                                                         |
+| sandbox                       | Isolated execution boundary for a `Run`                                                                     | Better treated as runtime isolation/policy, not a top-level concept.                                                           |
+| replay                        | `Artifact` view over a `Run` generation                                                                     | The replay itself is an artifact.                                                                                              |
+| playbook                      | A `Knowledge` artifact                                                                                      | It should be described as one kind of knowledge, not the whole knowledge system.                                               |
+| artifacts                     | Umbrella category over runtime outputs                                                                      | Use as a collection term, not a peer to `Scenario` or `Mission`.                                                               |
+| runtime-session event log     | `Artifact` emitted by a `Run` or child task                                                                 | Durable observability and replay source for provider turns, shell/tool activity, child-task lineage, and compaction summaries. |
 
 ## Runtime Context Assembly
 
@@ -78,16 +78,16 @@ Python and TypeScript also expose a small materialization surface for this contr
 
 Child assembly helpers recompute workspace-discovered layers from the child `cwd`, inherit only globally safe layers, and require explicit child `Scenario`/`Task` slices and child session history overrides when those layers should be present.
 
-| Order | Layer | Owner | Persistence | Budget / compaction behavior | Child-task behavior |
-| --- | --- | --- | --- | --- | --- |
-| 1 | system/runtime policy | Runtime | Bundled | Protected; never trimmed by prompt budget. | Inherited. |
-| 2 | repo-local instructions (`AGENTS.md`, `CLAUDE.md`) | Workspace | Repo files | Protected; missing files are allowed. | Recomputed from the child task `cwd`. |
-| 3 | AutoContext role instructions | AutoContext | Bundled | Protected; role-specific overrides should replace, not duplicate, base role text. | Inherited or overridden by the child role. |
-| 4 | `Scenario`/`Task` prompt context | Scenario / Task | Run input | Protected task slice; too-large user context should fail or be summarized before execution. | Parent passes only the child task slice. |
-| 5 | persisted `Knowledge` (playbooks, hints, lessons, dead ends) | Knowledge store | Knowledge artifacts | Compressible/promotable; include only applicable, non-empty, non-excluded components. | Re-selected for the child task and scenario. |
-| 6 | runtime-discovered skills | Workspace / skill store | Repo or skill store | Manifest-first; load full bodies lazily and deduplicate by skill name. | Recomputed from the child `cwd`; nearest cwd skill roots win duplicate names. |
-| 7 | tool affordances and scoped grants | Runtime | Ephemeral grant scope | Summarize tool metadata and redact secrets; scoped grants carry explicit inheritance policy. | Inherit only grants allowed by policy. |
-| 8 | recent session history and compaction summaries | Runtime session | Runtime-session log and compaction artifacts | Compact when pressure crosses policy thresholds; summaries point back to source events. | Child tasks use their own session log and linked parent lineage. |
+| Order | Layer                                                        | Owner                   | Persistence                                  | Budget / compaction behavior                                                                 | Child-task behavior                                                           |
+| ----- | ------------------------------------------------------------ | ----------------------- | -------------------------------------------- | -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| 1     | system/runtime policy                                        | Runtime                 | Bundled                                      | Protected; never trimmed by prompt budget.                                                   | Inherited.                                                                    |
+| 2     | repo-local instructions (`AGENTS.md`, `CLAUDE.md`)           | Workspace               | Repo files                                   | Protected; missing files are allowed.                                                        | Recomputed from the child task `cwd`.                                         |
+| 3     | AutoContext role instructions                                | AutoContext             | Bundled                                      | Protected; role-specific overrides should replace, not duplicate, base role text.            | Inherited or overridden by the child role.                                    |
+| 4     | `Scenario`/`Task` prompt context                             | Scenario / Task         | Run input                                    | Protected task slice; too-large user context should fail or be summarized before execution.  | Parent passes only the child task slice.                                      |
+| 5     | persisted `Knowledge` (playbooks, hints, lessons, dead ends) | Knowledge store         | Knowledge artifacts                          | Compressible/promotable; include only applicable, non-empty, non-excluded components.        | Re-selected for the child task and scenario.                                  |
+| 6     | runtime-discovered skills                                    | Workspace / skill store | Repo or skill store                          | Manifest-first; load full bodies lazily and deduplicate by skill name.                       | Recomputed from the child `cwd`; nearest cwd skill roots win duplicate names. |
+| 7     | tool affordances and scoped grants                           | Runtime                 | Ephemeral grant scope                        | Summarize tool metadata and redact secrets; scoped grants carry explicit inheritance policy. | Inherit only grants allowed by policy.                                        |
+| 8     | recent session history and compaction summaries              | Runtime session         | Runtime-session log and compaction artifacts | Compact when pressure crosses policy thresholds; summaries point back to source events.      | Child tasks use their own session log and linked parent lineage.              |
 
 Repo instruction discovery walks from workspace root to the current `cwd`, loading `AGENTS.md` and `CLAUDE.md` when present. Skill discovery walks from the current `cwd` back to the root so more specific skill roots can override broad ones by name while still falling back to shared root skills. Bundled role behavior stays separate from runtime workspace discovery, without replacing AutoContext's `Scenario`, `Task`, `Mission`, `Run`, `Artifact`, or `Knowledge` vocabulary.
 
@@ -97,13 +97,13 @@ A durable `runtime-session event log` is an append-only `Artifact` for one `Run`
 
 The concrete cross-runtime shape is `RuntimeSessionEventLog`, persisted through `RuntimeSessionEventStore` in TypeScript and Python. Each log has a stable `sessionId`, optional `parentSessionId`, optional `taskId`, optional `workerId`, metadata for the run/runtime surface, and ordered events with `eventId`, `sequence`, timestamp, event type, and JSON-safe payload. A parent run log uses the run-scoped session id; every child task log has its own unique child session id and keeps `parentSessionId`, `taskId`, and `workerId` as lineage rather than identity.
 
-| Event | Canonical mapping | Durable storage requirement |
-| --- | --- | --- |
-| `PROMPT_SUBMITTED` / `ASSISTANT_MESSAGE` | Provider turn inside a `Run`; may be evidence for a `Step` when emitted from a mission or child workflow. | Preserve request correlation (`requestId` or prompt event reference), role, model/runtime metadata, sanitized prompt/response previews, and failure metadata without changing runtime failure semantics. |
-| `SHELL_COMMAND` | Runtime action constrained by `Budget` and `Policy`; may become `Step` evidence. | Persist command name, cwd, exit status, duration, and redacted stdout/stderr/error previews. Redaction metadata must cover the effective environment passed to the command. |
-| `TOOL_CALL` | Runtime tool/grant action constrained by `Policy`; may emit an `Artifact` or modify run state. | Persist tool or grant name, input/output previews, duration, status, and redaction metadata. Scoped grants should keep inheritance policy visible for child-task review. |
-| `CHILD_TASK_STARTED` / `CHILD_TASK_COMPLETED` | Child `Task` or child `Run` launched while advancing a parent `Run`/`Step`. | Parent events include `taskId`, `workerId`, and `childSessionId`; the child log uses that `childSessionId` as `sessionId` and points back with `parentSessionId`. Reused logical task ids must not overwrite prior child logs. |
-| `COMPACTION` | Summary checkpoint over a prior event range; usually a compaction `Artifact`, and only `Knowledge` after validation/promotion. | Persist source event range, summary artifact id/path, summary text or preview, and any promoted knowledge id. Compaction never deletes the original event log. |
+| Event                                         | Canonical mapping                                                                                                              | Durable storage requirement                                                                                                                                                                                                    |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `PROMPT_SUBMITTED` / `ASSISTANT_MESSAGE`      | Provider turn inside a `Run`; may be evidence for a `Step` when emitted from a mission or child workflow.                      | Preserve request correlation (`requestId` or prompt event reference), role, model/runtime metadata, sanitized prompt/response previews, and failure metadata without changing runtime failure semantics.                       |
+| `SHELL_COMMAND`                               | Runtime action constrained by `Budget` and `Policy`; may become `Step` evidence.                                               | Persist command name, cwd, exit status, duration, and redacted stdout/stderr/error previews. Redaction metadata must cover the effective environment passed to the command.                                                    |
+| `TOOL_CALL`                                   | Runtime tool/grant action constrained by `Policy`; may emit an `Artifact` or modify run state.                                 | Persist tool or grant name, input/output previews, duration, status, and redaction metadata. Scoped grants should keep inheritance policy visible for child-task review.                                                       |
+| `CHILD_TASK_STARTED` / `CHILD_TASK_COMPLETED` | Child `Task` or child `Run` launched while advancing a parent `Run`/`Step`.                                                    | Parent events include `taskId`, `workerId`, and `childSessionId`; the child log uses that `childSessionId` as `sessionId` and points back with `parentSessionId`. Reused logical task ids must not overwrite prior child logs. |
+| `COMPACTION`                                  | Summary checkpoint over a prior event range; usually a compaction `Artifact`, and only `Knowledge` after validation/promotion. | Persist source event range, summary artifact id/path, summary text or preview, and any promoted knowledge id. Compaction never deletes the original event log.                                                                 |
 
 Replay requirements are observational, not deterministic re-execution. A replay reader must be able to load one `RuntimeSessionEventLog`, order by `sequence`, correlate prompt/response pairs by stable event or request ids instead of FIFO assumptions, follow `childSessionId` links into child logs, and render shell/tool/grant activity without exposing secrets. Missing payload fields should degrade the timeline, not invalidate the log.
 
@@ -152,3 +152,7 @@ Python and TypeScript command grants use the same runtime-session event vocabula
 - Prefer `Run`, `Step`, `Verifier`, `Artifact`, `Knowledge`, `Budget`, and `Policy` when describing execution behavior.
 - Use `playbook`, `replay`, `checkpoint`, `package`, `skill`, and `sandbox` as specific artifacts or operations, not as top-level peer concepts.
 - Where internal code still uses legacy names, document the mapping explicitly rather than pretending the mismatch does not exist.
+
+## External Influences
+
+- The runtime workspace/session contract, scoped command/tool grants, and child-agent task execution model drew inspiration from a [Flue](https://github.com/withastro/flue) review. The borrow/non-borrow list lives in [flue-influences.md](./flue-influences.md). AutoContext keeps its own vocabulary above; the Flue influences shaped runtime contracts, not the user-facing concept model.
