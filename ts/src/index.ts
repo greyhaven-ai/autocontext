@@ -759,12 +759,31 @@ export type {
 // Control-plane external eval helpers
 export { reconcileEvalTrials } from "./control-plane/eval-ledger/index.js";
 export type { ReconcileEvalTrialsOptions } from "./control-plane/eval-ledger/index.js";
-export { probeDirectoryContract } from "./control-plane/contract-probes/index.js";
+export {
+  probeArtifactContract,
+  probeDirectoryContract,
+  probeServiceContract,
+  probeTerminalContract,
+} from "./control-plane/contract-probes/index.js";
 export type {
+  ArtifactContractFailure,
+  ArtifactContractFailureKind,
+  ArtifactContractProbeInputs,
+  ArtifactContractProbeResult,
   DirectoryContractFailure,
   DirectoryContractFailureKind,
   DirectoryContractProbeInputs,
   DirectoryContractProbeResult,
+  ServiceContractFailure,
+  ServiceContractFailureKind,
+  ServiceContractProbeInputs,
+  ServiceContractProbeResult,
+  ServiceEndpointObservation,
+  ServiceEndpointProtocol,
+  TerminalContractFailure,
+  TerminalContractFailureKind,
+  TerminalContractProbeInputs,
+  TerminalContractProbeResult,
 } from "./control-plane/contract-probes/index.js";
 export {
   compileOperationalMemoryContext,
