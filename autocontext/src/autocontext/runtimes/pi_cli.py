@@ -44,7 +44,7 @@ class PiCLIConfig:
     extra_args: list[str] = field(default_factory=list)
 
 
-def _kill_process_group(proc: subprocess.Popen[str]) -> None:
+def _kill_process_group(proc: subprocess.Popen[str], *, pgid: int | None = None) -> None:
     """Best-effort SIGKILL for the full Pi process group."""
 
     if sys.platform == "win32":
@@ -54,14 +54,16 @@ def _kill_process_group(proc: subprocess.Popen[str]) -> None:
             logger.debug("pi-cli kill skipped: %s", exc)
         return
 
-    try:
-        pgid = os.getpgid(proc.pid)
-    except (ProcessLookupError, PermissionError) as exc:
-        logger.debug("pi-cli getpgid failed: %s", exc)
-        return
+    target_pgid = pgid
+    if target_pgid is None:
+        try:
+            target_pgid = os.getpgid(proc.pid)
+        except (ProcessLookupError, PermissionError) as exc:
+            logger.debug("pi-cli getpgid failed: %s", exc)
+            return
 
     try:
-        os.killpg(pgid, signal.SIGKILL)
+        os.killpg(target_pgid, signal.SIGKILL)
     except (ProcessLookupError, PermissionError) as exc:
         logger.debug("pi-cli killpg skipped: %s", exc)
 
@@ -116,14 +118,19 @@ def _run_with_group_kill(
         popen_kwargs["start_new_session"] = True
 
     proc = subprocess.Popen(args, **popen_kwargs)
+    # With start_new_session=True, the child's process group id is the child's
+    # pid. Capture it immediately: if the direct Pi parent exits but same-group
+    # descendants keep stdout/stderr fds open, os.getpgid(proc.pid) can already
+    # fail even though the descendants are still alive and need to be killed.
+    pgid = proc.pid if sys.platform != "win32" else None
     try:
         stdout, stderr = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
-        _kill_process_group(proc)
+        _kill_process_group(proc, pgid=pgid)
         _bounded_drain_and_close(proc, grace_seconds)
         raise
     except BaseException:
-        _kill_process_group(proc)
+        _kill_process_group(proc, pgid=pgid)
         _bounded_drain_and_close(proc, grace_seconds)
         raise
 

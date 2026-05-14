@@ -58,7 +58,7 @@ def test_run_with_group_kill_kills_process_group_on_timeout() -> None:
 
     with (
         patch("subprocess.Popen", side_effect=_fake_popen),
-        patch("os.getpgid", return_value=9999),
+        patch("os.getpgid", side_effect=ProcessLookupError),
         patch("os.killpg", side_effect=_fake_killpg),
         pytest.raises(subprocess.TimeoutExpired),
     ):
@@ -104,7 +104,7 @@ def test_run_with_group_kill_cleans_up_on_keyboard_interrupt() -> None:
 
     with (
         patch("subprocess.Popen", side_effect=_fake_popen),
-        patch("os.getpgid", return_value=9998),
+        patch("os.getpgid", side_effect=ProcessLookupError),
         patch("os.killpg", side_effect=_fake_killpg),
         pytest.raises(KeyboardInterrupt),
     ):
@@ -114,6 +114,64 @@ def test_run_with_group_kill_cleans_up_on_keyboard_interrupt() -> None:
     assert isinstance(popen_kwargs, dict)
     assert popen_kwargs["start_new_session"] is True
     assert recorded["killpg"] == (9998, signal.SIGKILL)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX process groups are not available")
+def test_run_with_group_kill_kills_same_group_descendant_after_parent_exits() -> None:
+    with tempfile.TemporaryDirectory(prefix="pi-cli-parent-exit-") as tmp:
+        pid_file = Path(tmp) / "same-group-child.pid"
+        survived_file = Path(tmp) / "same-group-child.survived"
+        same_group_child_pid: int | None = None
+        parent_code = r"""
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+pid_file = Path(sys.argv[1])
+survived_file = Path(sys.argv[2])
+grandchild_code = r'''
+import os
+import sys
+import time
+from pathlib import Path
+
+Path(sys.argv[1]).write_text(str(os.getpid()), encoding="utf-8")
+print("same-group-child-start", flush=True)
+time.sleep(0.8)
+Path(sys.argv[2]).write_text("survived", encoding="utf-8")
+'''
+subprocess.Popen(
+    [sys.executable, "-c", grandchild_code, str(pid_file), str(survived_file)],
+    stdout=sys.stdout,
+    stderr=sys.stderr,
+    close_fds=False,
+)
+deadline = time.monotonic() + 0.2
+while time.monotonic() < deadline and not pid_file.exists():
+    time.sleep(0.01)
+print("parent-exiting", flush=True)
+"""
+
+        try:
+            proc_args = [sys.executable, "-c", parent_code, str(pid_file), str(survived_file)]
+            with pytest.raises(subprocess.TimeoutExpired):
+                _run_with_group_kill(proc_args, timeout=0.3, grace_seconds=0.3)
+
+            if pid_file.exists():
+                same_group_child_pid = int(pid_file.read_text(encoding="utf-8"))
+            deadline = time.monotonic() + 1.0
+            while time.monotonic() < deadline and not survived_file.exists():
+                time.sleep(0.02)
+            assert not survived_file.exists(), "same-process-group descendant survived timeout cleanup"
+        finally:
+            if same_group_child_pid is None and pid_file.exists():
+                same_group_child_pid = int(pid_file.read_text(encoding="utf-8"))
+            if same_group_child_pid is not None:
+                try:
+                    os.kill(same_group_child_pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX process groups are not available")

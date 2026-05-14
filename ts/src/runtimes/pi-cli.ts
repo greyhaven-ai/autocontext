@@ -24,6 +24,7 @@ const PI_CLI_CONFIG_DEFAULTS = {
 };
 
 const TIMEOUT_KILL_GRACE_MS = 5_000;
+const MANAGED_EXIT_SIGNALS: NodeJS.Signals[] = ["SIGINT", "SIGTERM"];
 
 interface PiCLIProcessResult {
   stdout: string;
@@ -157,12 +158,40 @@ function runPiCLIWithGroupKill(
     let settled = false;
     let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
     let graceHandle: ReturnType<typeof setTimeout> | undefined;
+    let removeProcessHandlers = (): void => {};
+
+    const cleanupActiveChild = (): void => {
+      killProcessGroup(child);
+      closeChildStdio(child);
+    };
+    const signalHandlers = new Map<NodeJS.Signals, () => void>();
+    const onProcessExit = (): void => {
+      cleanupActiveChild();
+    };
+    for (const signal of MANAGED_EXIT_SIGNALS) {
+      const handler = (): void => {
+        cleanupActiveChild();
+        removeProcessHandlers();
+        reraiseSignal(signal);
+      };
+      signalHandlers.set(signal, handler);
+      process.once(signal, handler);
+    }
+    process.once("exit", onProcessExit);
+    removeProcessHandlers = (): void => {
+      for (const [signal, handler] of signalHandlers) {
+        process.off(signal, handler);
+      }
+      signalHandlers.clear();
+      process.off("exit", onProcessExit);
+    };
 
     const settle = (result: Omit<PiCLIProcessResult, "stdout" | "stderr" | "timedOut">): void => {
       if (settled) return;
       settled = true;
       if (timeoutHandle) clearTimeout(timeoutHandle);
       if (graceHandle) clearTimeout(graceHandle);
+      removeProcessHandlers();
       closeChildStdio(child);
       resolve({
         stdout,
@@ -225,6 +254,20 @@ function closeChildStdio(child: ChildProcessWithoutNullStreams): void {
   child.stdin.destroy();
   child.stdout.destroy();
   child.stderr.destroy();
+}
+
+function reraiseSignal(signal: NodeJS.Signals): void {
+  try {
+    process.kill(process.pid, signal);
+  } catch {
+    process.exit(signalToExitCode(signal));
+  }
+}
+
+function signalToExitCode(signal: NodeJS.Signals): number {
+  if (signal === "SIGINT") return 130;
+  if (signal === "SIGTERM") return 143;
+  return 1;
 }
 
 function toError(err: unknown): Error {
