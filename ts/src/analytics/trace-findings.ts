@@ -226,6 +226,130 @@ export function renderTraceFindingReportMarkdown(report: TraceFindingReport): st
   return lines.join("\n");
 }
 
+// AC-679 slice 3d: WeaknessReport variant. Mirrors Python's
+// `WeaknessReport` shape (recommendation-focused, with recovery analysis)
+// alongside the existing `TraceFindingReport` (writeup-style summary).
+
+export const WeaknessReportSchema = z.object({
+  reportId: z.string().min(1),
+  traceId: z.string().min(1),
+  sourceHarness: z.string().min(1),
+  weaknesses: z.array(TraceFindingSchema),
+  failureMotifs: z.array(FailureMotifSchema),
+  recoveryAnalysis: z.string(),
+  recommendations: z.array(z.string()),
+  summary: z.string().min(1),
+  createdAt: z.string().datetime({ message: "createdAt must be ISO 8601 format" }),
+  metadata: z.record(z.unknown()).default({}),
+});
+
+export type WeaknessReport = z.infer<typeof WeaknessReportSchema>;
+
+// Per-category recommendation copy. Deliberately a single line each so
+// downstream Markdown / HTML rendering stays predictable; a future slice
+// can expand to multi-line or context-aware suggestions.
+const RECOMMENDATION_BY_CATEGORY: Record<TraceFindingCategory, string> = {
+  tool_call_failure:
+    "Add retry-on-error or argument validation around the failing tool to reduce repeat failures.",
+  agent_refusal:
+    "Review the prompt for ambiguous instructions or conflict with safety policy that may trigger refusals.",
+  low_outcome_score:
+    "Inspect the outcome reasoning field for specific failure points and revise the harness or task definition.",
+  dimension_inconsistency:
+    "Re-weight or recalibrate scoring dimensions so they reflect a coherent quality signal.",
+};
+
+function composeRecoveryAnalysis(trace: PublicTrace, weaknessCount: number): string {
+  if (!trace.outcome) {
+    return weaknessCount === 0
+      ? "Trace completed without an explicit outcome; no weaknesses surfaced."
+      : "Trace completed without an explicit outcome; weaknesses were recorded but recovery is undetermined.";
+  }
+  const score = trace.outcome.score;
+  if (weaknessCount === 0) {
+    return `Trace concluded cleanly with outcome score ${score.toFixed(2)}.`;
+  }
+  if (score >= LOW_SCORE_THRESHOLD) {
+    return `Trace concluded with outcome score ${score.toFixed(2)} above the ${LOW_SCORE_THRESHOLD} threshold despite ${weaknessCount} weakness(es); some recovery occurred.`;
+  }
+  return `Trace concluded with outcome score ${score.toFixed(2)} below the ${LOW_SCORE_THRESHOLD} threshold; no recovery observed across ${weaknessCount} weakness(es).`;
+}
+
+export function generateWeaknessReport(
+  trace: PublicTrace,
+  options: GenerateTraceFindingReportOptions = {},
+): WeaknessReport {
+  const clock = options.now ?? ((): Date => new Date());
+  const weaknesses = extractFindings(trace);
+  const motifs = extractFailureMotifs(weaknesses);
+
+  // One recommendation per distinct category surfaced (deduplicated).
+  const categoriesSeen = new Set<TraceFindingCategory>();
+  for (const weakness of weaknesses) {
+    categoriesSeen.add(weakness.category);
+  }
+  const recommendations = [...categoriesSeen]
+    .sort((left, right) => left.localeCompare(right))
+    .map((category) => RECOMMENDATION_BY_CATEGORY[category]);
+
+  const recoveryAnalysis = composeRecoveryAnalysis(trace, weaknesses.length);
+
+  const summary =
+    weaknesses.length === 0
+      ? "No weaknesses identified."
+      : `${weaknesses.length} weakness(es) detected across ${motifs.length} category(ies).`;
+  const timestamp = clock().toISOString();
+  return {
+    reportId: `weakness-${trace.traceId}-${timestamp}`,
+    traceId: trace.traceId,
+    sourceHarness: trace.sourceHarness,
+    weaknesses,
+    failureMotifs: motifs,
+    recoveryAnalysis,
+    recommendations,
+    summary,
+    createdAt: timestamp,
+    metadata: {},
+  };
+}
+
+export function renderWeaknessReportMarkdown(report: WeaknessReport): string {
+  const lines: string[] = [
+    `# Weakness Report: ${report.traceId}`,
+    `**Source:** ${report.sourceHarness}`,
+    "",
+    "## Summary",
+    report.summary,
+    "",
+    "## Weaknesses",
+  ];
+  if (report.weaknesses.length === 0) {
+    lines.push("No weaknesses identified.");
+  } else {
+    for (const weakness of report.weaknesses) {
+      const evidence =
+        weakness.evidenceMessageIndexes.length === 0
+          ? "evidence: none"
+          : `evidence: ${weakness.evidenceMessageIndexes.map((index) => `msg #${index}`).join(", ")}`;
+      lines.push(
+        `- **${weakness.title}** [${weakness.category}/${weakness.severity}] ${weakness.description} (${evidence})`,
+      );
+    }
+  }
+
+  lines.push("", "## Recovery Analysis", report.recoveryAnalysis, "");
+
+  lines.push("## Recommendations");
+  if (report.recommendations.length === 0) {
+    lines.push("No actionable recommendations.");
+  } else {
+    for (const recommendation of report.recommendations) {
+      lines.push(`- ${recommendation}`);
+    }
+  }
+  return lines.join("\n");
+}
+
 // AC-679 slice 3c: HTML rendering. Mirrors the shape of Python's
 // `render_trace_writeup_html` (escaped user content, anchored evidence,
 // data attributes for client-side filtering, offline-first <style> block).

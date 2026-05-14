@@ -523,17 +523,21 @@ export {
   TraceFindingSchema,
   FailureMotifSchema,
   TraceFindingReportSchema,
+  WeaknessReportSchema,
   extractFindings,
   extractFailureMotifs,
   generateTraceFindingReport,
+  generateWeaknessReport,
   renderTraceFindingReportMarkdown,
   renderTraceFindingReportHtml,
+  renderWeaknessReportMarkdown,
 } from "./analytics/trace-findings.js";
 export type {
   TraceFinding,
   TraceFindingCategory,
   FailureMotif,
   TraceFindingReport,
+  WeaknessReport,
   GenerateTraceFindingReportOptions,
 } from "./analytics/trace-findings.js";
 export {
