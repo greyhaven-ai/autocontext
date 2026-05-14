@@ -89,7 +89,10 @@ export { buildPromptBundle } from "./prompts/templates.js";
 export type { PromptBundle, PromptContext } from "./prompts/templates.js";
 
 // Context selection reports
-export { buildContextSelectionReport, ContextSelectionReport } from "./knowledge/context-selection-report.js";
+export {
+  buildContextSelectionReport,
+  ContextSelectionReport,
+} from "./knowledge/context-selection-report.js";
 export type {
   ContextSelectionCandidateInput,
   ContextSelectionDecisionInput,
@@ -520,16 +523,20 @@ export {
   TraceFindingSchema,
   FailureMotifSchema,
   TraceFindingReportSchema,
+  WeaknessReportSchema,
   extractFindings,
   extractFailureMotifs,
   generateTraceFindingReport,
+  generateWeaknessReport,
   renderTraceFindingReportMarkdown,
+  renderWeaknessReportMarkdown,
 } from "./analytics/trace-findings.js";
 export type {
   TraceFinding,
   TraceFindingCategory,
   FailureMotif,
   TraceFindingReport,
+  WeaknessReport,
   GenerateTraceFindingReportOptions,
 } from "./analytics/trace-findings.js";
 export {
