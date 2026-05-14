@@ -1,0 +1,21 @@
+{
+  "started_at": "2026-05-13T17:00:00Z",
+  "duration_seconds": 3.2,
+  "provider": "anthropic",
+  "model": "claude-sonnet-4-5",
+  "counts": {
+    "consolidated_this_run": 0,
+    "pruned_this_run": 0,
+    "archived_this_run": 0,
+    "added_this_run": 0
+  },
+  "auto_transitions": {
+    "stale_to_archived": 2,
+    "pinned_to_active": 0
+  },
+  "tool_call_counts": {},
+  "consolidated": [],
+  "pruned": [],
+  "archived": [],
+  "added": []
+}

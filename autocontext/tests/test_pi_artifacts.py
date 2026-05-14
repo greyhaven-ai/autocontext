@@ -129,7 +129,10 @@ def test_trace_attached_to_agent_output() -> None:
     json_output = json.dumps({"result": "hello", "model": "pi-1", "session_id": "sess-42"})
     mock_result = subprocess.CompletedProcess(args=[], returncode=0, stdout=json_output, stderr="")
 
-    with patch("subprocess.run", return_value=mock_result), patch("shutil.which", return_value="/usr/bin/pi"):
+    with (
+        patch("autocontext.runtimes.pi_cli._run_with_group_kill", return_value=mock_result),
+        patch("shutil.which", return_value="/usr/bin/pi"),
+    ):
         output = runtime.generate("test prompt")
 
     assert "pi_trace" in output.metadata
@@ -155,7 +158,10 @@ def test_trace_roundtrip_through_artifact_store(tmp_path: Path) -> None:
     json_output = json.dumps({"result": "output", "model": "pi-1"})
     mock_result = subprocess.CompletedProcess(args=[], returncode=0, stdout=json_output, stderr="")
 
-    with patch("subprocess.run", return_value=mock_result), patch("shutil.which", return_value="/usr/bin/pi"):
+    with (
+        patch("autocontext.runtimes.pi_cli._run_with_group_kill", return_value=mock_result),
+        patch("shutil.which", return_value="/usr/bin/pi"),
+    ):
         agent_output = runtime.generate("original prompt")
 
     trace = agent_output.metadata["pi_trace"]
@@ -316,10 +322,7 @@ def test_latest_compaction_entry_id_tails_legacy_ledger_without_reading_entries(
     ledger.parent.mkdir(parents=True, exist_ok=True)
     ledger.write_text(
         "\n".join(
-            [
-                json.dumps({"type": "compaction", "id": f"old-{index}"})
-                for index in range(50)
-            ]
+            [json.dumps({"type": "compaction", "id": f"old-{index}"}) for index in range(50)]
             + [json.dumps({"type": "compaction", "id": "legacy-last"})]
         )
         + "\n",

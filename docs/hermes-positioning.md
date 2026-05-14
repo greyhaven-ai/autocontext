@@ -91,6 +91,21 @@ ingest-curator` (AC-704), and supervised training JSONL via
   `autoctx hermes export-dataset --kind curator-decisions` (AC-705).
   Both commands read only; pinned, bundled, and hub-installed skills
   are protected from becoming mutation targets in the dataset.
+
+  ```bash
+  autoctx hermes ingest-curator \
+      --home ~/.hermes \
+      --output traces/hermes-curator.jsonl \
+      [--since 2026-05-01T00:00:00Z] \
+      [--limit 100] \
+      [--json]
+  ```
+
+  Privacy defaults: `--include-llm-final` and `--include-tool-args`
+  are off; pass them explicitly to attach the curator's LLM final
+  summary or raw tool args. The JSON summary (under `--json`) reports
+  `runs_read`, `traces_written`, `skipped`, and per-run `warnings`.
+
 - **Usage telemetry** (`~/.hermes/skills/.usage.json` and adjacent
   state). Used as context for joining decisions to skill use.
 - **Session DB and trajectory samples** (`~/.hermes/state.db`,

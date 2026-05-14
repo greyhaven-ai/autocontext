@@ -278,10 +278,15 @@ autoctx hermes inspect --home "$HERMES_HOME" --json
 # Export the Hermes autocontext skill for Hermes to load
 autoctx hermes export-skill --output ~/.hermes/skills/autocontext/SKILL.md --json
 
-# Ingest Curator decision reports as ProductionTrace JSONL (AC-704)
-autoctx hermes ingest-curator --home "$HERMES_HOME" \
-  --output .autocontext/production-traces/ingested/hermes-curator.jsonl \
-  --since 2026-05-01T00:00:00Z --json
+# Ingest Hermes curator run reports as autocontext ProductionTrace JSONL (AC-704)
+autoctx hermes ingest-curator \
+    --home ~/.hermes \
+    --output traces/hermes-curator.jsonl \
+    [--since 2026-05-01T00:00:00Z] \
+    [--limit 100] \
+    [--include-llm-final] \
+    [--include-tool-args] \
+    --json
 
 # Export Curator decisions as training JSONL for narrow advisors (AC-705)
 autoctx hermes export-dataset --kind curator-decisions \
@@ -289,6 +294,15 @@ autoctx hermes export-dataset --kind curator-decisions \
   --output training/hermes-curator-decisions.jsonl \
   --since 2026-05-01T00:00:00Z --limit 5000 --json
 ```
+
+`ingest-curator` is read-only against `~/.hermes`. Privacy defaults:
+`--include-llm-final` (off) gates whether the curator's LLM final
+summary is attached as an assistant message;
+`--include-tool-args` (off) gates whether raw tool-call args are
+preserved. `--since` rejects unparseable timestamps with a clear
+error and also applies to runs whose `started_at` is missing (file
+mtime is the fallback comparison timestamp). The JSON summary reports
+`runs_read`, `traces_written`, `skipped`, and per-run `warnings`.
 
 `export-dataset` flags:
 
