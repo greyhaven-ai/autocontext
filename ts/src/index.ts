@@ -88,6 +88,19 @@ export type {
 export { buildPromptBundle } from "./prompts/templates.js";
 export type { PromptBundle, PromptContext } from "./prompts/templates.js";
 
+// Context selection reports
+export { buildContextSelectionReport, ContextSelectionReport } from "./knowledge/context-selection-report.js";
+export type {
+  ContextSelectionCandidateInput,
+  ContextSelectionDecisionInput,
+  ContextSelectionDiagnostic,
+  ContextSelectionDiagnosticPolicy,
+  ContextSelectionReportPayload,
+  ContextSelectionReportSummary,
+  ContextSelectionStageSummary,
+  ContextSelectionTelemetryCard,
+} from "./knowledge/context-selection-report.js";
+
 // Config
 export { AppSettingsSchema, loadSettings, applyPreset, PRESETS } from "./config/index.js";
 export type { AppSettings } from "./config/index.js";

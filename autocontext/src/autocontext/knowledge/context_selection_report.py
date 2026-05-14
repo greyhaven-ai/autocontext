@@ -43,6 +43,26 @@ class ContextSelectionDiagnostic:
 
 
 @dataclass(frozen=True)
+class ContextSelectionTelemetryCard:
+    """Operator-facing summary tile for context-selection observability."""
+
+    key: str
+    label: str
+    value: str
+    severity: str
+    detail: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "key": self.key,
+            "label": self.label,
+            "value": self.value,
+            "severity": self.severity,
+            "detail": self.detail,
+        }
+
+
+@dataclass(frozen=True)
 class ContextSelectionStageSummary:
     run_id: str
     scenario_name: str
@@ -264,6 +284,20 @@ class ContextSelectionReport:
                 )
         return tuple(diagnostics)
 
+    def telemetry_cards(
+        self,
+        policy: ContextSelectionDiagnosticPolicy | None = None,
+    ) -> tuple[ContextSelectionTelemetryCard, ...]:
+        summary = self.summary()
+        diagnostics = self.diagnostics(policy)
+        diagnostic_codes = {diagnostic.code for diagnostic in diagnostics}
+        return (
+            _selected_context_card(summary, diagnostic_codes),
+            _context_budget_card(summary),
+            _semantic_compaction_cache_card(summary, diagnostic_codes),
+            _diagnostics_card(diagnostics),
+        )
+
     def to_dict(self) -> dict[str, Any]:
         generations = {stage.generation for stage in self.stages}
         diagnostics = self.diagnostics()
@@ -274,6 +308,7 @@ class ContextSelectionReport:
             "decision_count": len(self.stages),
             "generation_count": len(generations),
             "summary": self.summary(),
+            "telemetry_cards": [card.to_dict() for card in self.telemetry_cards()],
             "diagnostic_count": len(diagnostics),
             "diagnostics": [diagnostic.to_dict() for diagnostic in diagnostics],
             "stages": [stage.to_dict() for stage in self.stages],
@@ -293,6 +328,24 @@ class ContextSelectionReport:
         freshness = summary["mean_selected_freshness_generation_delta"]
         if freshness is not None:
             lines.append(f"- Mean selected freshness delta: {freshness:.2f} generation(s)")
+        lines.extend(
+            [
+                "",
+                "## Context Budget",
+                f"- Input estimate: {summary['budget_input_token_estimate']}",
+                f"- Output estimate: {summary['budget_output_token_estimate']}",
+                f"- Token reduction: {summary['budget_token_reduction']}",
+                f"- Dedupe hits: {summary['budget_dedupe_hit_count']}",
+                f"- Component caps: {summary['budget_component_cap_hit_count']}",
+                f"- Global trims: {summary['budget_trimmed_component_count']}",
+                "",
+                "## Semantic Compaction Cache",
+                f"- Hit rate: {_format_optional_percent(summary['compaction_cache_hit_rate'])}",
+                f"- Hits: {summary['compaction_cache_hits']}",
+                f"- Misses: {summary['compaction_cache_misses']}",
+                f"- Lookups: {summary['compaction_cache_lookups']}",
+            ]
+        )
         diagnostics = self.diagnostics()
         if diagnostics:
             lines.extend(["", "## Diagnostics"])
@@ -353,3 +406,94 @@ def _mean(values: Iterable[float]) -> float:
 def _mean_optional(values: Iterable[float | None]) -> float | None:
     items = [value for value in values if value is not None]
     return sum(items) / len(items) if items else None
+
+
+def _selected_context_card(
+    summary: dict[str, Any],
+    diagnostic_codes: set[str],
+) -> ContextSelectionTelemetryCard:
+    severity = "warning" if "SELECTED_TOKEN_BLOAT" in diagnostic_codes else "ok"
+    return ContextSelectionTelemetryCard(
+        key="selected_context",
+        label="Selected context",
+        value=f"{_int_metric(summary, 'selected_token_estimate')} est. tokens",
+        severity=severity,
+        detail=(
+            f"{_int_metric(summary, 'selected_count')}/{_int_metric(summary, 'candidate_count')} components "
+            f"selected ({_float_metric(summary, 'selection_rate'):.1%})"
+        ),
+    )
+
+
+def _context_budget_card(summary: dict[str, Any]) -> ContextSelectionTelemetryCard:
+    input_tokens = _int_metric(summary, "budget_input_token_estimate")
+    output_tokens = _int_metric(summary, "budget_output_token_estimate")
+    token_reduction = _int_metric(summary, "budget_token_reduction")
+    dedupe_hits = _int_metric(summary, "budget_dedupe_hit_count")
+    cap_hits = _int_metric(summary, "budget_component_cap_hit_count")
+    trim_hits = _int_metric(summary, "budget_trimmed_component_count")
+    if input_tokens <= 0:
+        return ContextSelectionTelemetryCard(
+            key="context_budget",
+            label="Context budget",
+            value="No telemetry",
+            severity="info",
+            detail="No context budget telemetry recorded.",
+        )
+    severity = "warning" if trim_hits > 0 else "ok"
+    return ContextSelectionTelemetryCard(
+        key="context_budget",
+        label="Context budget",
+        value=f"{token_reduction} est. tokens reduced",
+        severity=severity,
+        detail=(
+            f"{input_tokens}->{output_tokens} est. tokens; "
+            f"{dedupe_hits} dedupe, {cap_hits} caps, {trim_hits} trims"
+        ),
+    )
+
+
+def _semantic_compaction_cache_card(
+    summary: dict[str, Any],
+    diagnostic_codes: set[str],
+) -> ContextSelectionTelemetryCard:
+    lookups = _int_metric(summary, "compaction_cache_lookups")
+    hit_rate = _optional_float_metric(summary, "compaction_cache_hit_rate")
+    if lookups <= 0 or hit_rate is None:
+        return ContextSelectionTelemetryCard(
+            key="semantic_compaction_cache",
+            label="Semantic compaction cache",
+            value="No lookups",
+            severity="info",
+            detail="No semantic compaction cache lookups recorded.",
+        )
+    severity = "warning" if "LOW_COMPACTION_CACHE_HIT_RATE" in diagnostic_codes else "ok"
+    return ContextSelectionTelemetryCard(
+        key="semantic_compaction_cache",
+        label="Semantic compaction cache",
+        value=f"{hit_rate:.1%} hit rate",
+        severity=severity,
+        detail=(
+            f"{_int_metric(summary, 'compaction_cache_hits')} hits, "
+            f"{_int_metric(summary, 'compaction_cache_misses')} misses, {lookups} lookups"
+        ),
+    )
+
+
+def _diagnostics_card(diagnostics: tuple[ContextSelectionDiagnostic, ...]) -> ContextSelectionTelemetryCard:
+    severity = "warning" if diagnostics else "ok"
+    detail = ", ".join(diagnostic.code for diagnostic in diagnostics) if diagnostics else "No diagnostics."
+    return ContextSelectionTelemetryCard(
+        key="diagnostics",
+        label="Diagnostics",
+        value=f"{len(diagnostics)} finding(s)",
+        severity=severity,
+        detail=detail,
+    )
+
+
+def _format_optional_percent(value: Any) -> str:
+    try:
+        return f"{float(value):.1%}" if value is not None else "n/a"
+    except (TypeError, ValueError):
+        return "n/a"

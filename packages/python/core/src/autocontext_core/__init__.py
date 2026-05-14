@@ -5,6 +5,7 @@ from typing import Any
 
 _elo = import_module("autocontext.harness.scoring.elo")
 _context_budget = import_module("autocontext.prompts.context_budget")
+_context_selection_report = import_module("autocontext.knowledge.context_selection_report")
 _templates = import_module("autocontext.prompts.templates")
 _providers_base = import_module("autocontext.providers.base")
 _execution_judge = import_module("autocontext.execution.judge")
@@ -28,6 +29,9 @@ ContextBudget = _context_budget.ContextBudget
 ContextBudgetPolicy = _context_budget.ContextBudgetPolicy
 ContextBudgetResult = _context_budget.ContextBudgetResult
 ContextBudgetTelemetry = _context_budget.ContextBudgetTelemetry
+ContextSelectionReport = _context_selection_report.ContextSelectionReport
+ContextSelectionTelemetryCard = _context_selection_report.ContextSelectionTelemetryCard
+build_context_selection_report = _context_selection_report.build_context_selection_report
 estimate_tokens = _context_budget.estimate_tokens
 PromptBundle = _templates.PromptBundle
 build_prompt_bundle = _templates.build_prompt_bundle
@@ -127,6 +131,8 @@ __all__ = [
     "ContextBudgetPolicy",
     "ContextBudgetResult",
     "ContextBudgetTelemetry",
+    "ContextSelectionReport",
+    "ContextSelectionTelemetryCard",
     "DisagreementMetrics",
     "EnvironmentSpec",
     "CoordinationInterface",
@@ -180,6 +186,7 @@ __all__ = [
     "WorkflowResult",
     "WorkflowStep",
     "build_prompt_bundle",
+    "build_context_selection_report",
     "check_rubric_coherence",
     "estimate_tokens",
     "expected_score",

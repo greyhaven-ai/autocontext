@@ -516,6 +516,64 @@ def test_context_selection_report_summarizes_budget_and_cache_regression_gates()
     assert "cache" in diagnostics["LOW_COMPACTION_CACHE_HIT_RATE"]["recommendation"].lower()
 
 
+def test_context_selection_report_exposes_budget_cache_visibility_cards_and_markdown() -> None:
+    from autocontext.knowledge.context_selection import (
+        ContextSelectionCandidate,
+        ContextSelectionDecision,
+    )
+    from autocontext.knowledge.context_selection_report import build_context_selection_report
+
+    report = build_context_selection_report(
+        (
+            ContextSelectionDecision(
+                run_id="run-1",
+                scenario_name="grid_ctf",
+                generation=4,
+                stage="generation_prompt_context",
+                candidates=(
+                    ContextSelectionCandidate.from_contents(
+                        artifact_id="playbook",
+                        artifact_type="prompt_component",
+                        source="prompt_assembly",
+                        candidate_content="x" * 400,
+                        selected_content="x" * 80,
+                        selection_reason="trimmed",
+                    ),
+                ),
+                metadata={
+                    "context_budget_telemetry": {
+                        "input_token_estimate": 120,
+                        "output_token_estimate": 20,
+                        "dedupe_hit_count": 1,
+                        "component_cap_hit_count": 2,
+                        "trimmed_component_count": 1,
+                    },
+                    "prompt_compaction_cache": {
+                        "hits": 0,
+                        "misses": 10,
+                        "lookups": 10,
+                    },
+                },
+            ),
+        )
+    )
+
+    payload = report.to_dict()
+    cards = {card["key"]: card for card in payload["telemetry_cards"]}
+    markdown = report.to_markdown()
+
+    assert cards["context_budget"]["severity"] == "warning"
+    assert cards["context_budget"]["value"] == "100 est. tokens reduced"
+    assert "1 trims" in cards["context_budget"]["detail"]
+    assert cards["semantic_compaction_cache"]["severity"] == "warning"
+    assert cards["semantic_compaction_cache"]["value"] == "0.0% hit rate"
+    assert cards["diagnostics"]["severity"] == "warning"
+    assert "## Context Budget" in markdown
+    assert "- Token reduction: 100" in markdown
+    assert "## Semantic Compaction Cache" in markdown
+    assert "- Hit rate: 0.0%" in markdown
+
+
 def _diagnostic_by_code(payload: dict[str, Any], code: str) -> dict[str, Any]:
     return next(diagnostic for diagnostic in payload["diagnostics"] if diagnostic["code"] == code)
 
