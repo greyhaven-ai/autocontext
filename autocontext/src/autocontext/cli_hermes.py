@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Annotated, Any
 import typer
 from rich.table import Table
 
+from autocontext.hermes.curator_ingest import IngestSummary, ingest_curator_reports
 from autocontext.hermes.inspection import HermesInventory, inspect_hermes_home
 from autocontext.hermes.skill import AUTOCONTEXT_HERMES_SKILL_NAME, render_autocontext_skill
 
@@ -48,10 +49,12 @@ def run_hermes_export_skill_command(
     skill_markdown = render_autocontext_skill()
     if output is None:
         if json_output:
-            write_json_stdout({
-                "skill_name": AUTOCONTEXT_HERMES_SKILL_NAME,
-                "skill_markdown": skill_markdown,
-            })
+            write_json_stdout(
+                {
+                    "skill_name": AUTOCONTEXT_HERMES_SKILL_NAME,
+                    "skill_markdown": skill_markdown,
+                }
+            )
         else:
             console.print(skill_markdown.rstrip())
         return
@@ -75,6 +78,50 @@ def run_hermes_export_skill_command(
         write_json_stdout(payload)
     else:
         console.print(f"[green]Wrote[/green] {AUTOCONTEXT_HERMES_SKILL_NAME} skill to {output}")
+
+
+def run_hermes_ingest_curator_command(
+    *,
+    home: Path | None,
+    output: Path,
+    since: str | None,
+    limit: int | None,
+    include_llm_final: bool,
+    include_tool_args: bool,
+    json_output: bool,
+    console: Console,
+    write_json_stdout: Any,
+) -> None:
+    """Ingest Hermes curator reports into a ProductionTrace JSONL file (AC-704)."""
+
+    from autocontext.hermes.inspection import _resolve_hermes_home
+
+    resolved_home = _resolve_hermes_home(home)
+    summary: IngestSummary = ingest_curator_reports(
+        home=resolved_home,
+        output=output,
+        since=since,
+        limit=limit,
+        include_llm_final=include_llm_final,
+        include_tool_args=include_tool_args,
+    )
+    payload = {
+        "hermes_home": str(resolved_home),
+        "output_path": str(output),
+        "runs_read": summary.runs_read,
+        "traces_written": summary.traces_written,
+        "skipped": summary.skipped,
+        "warnings": list(summary.warnings),
+    }
+    if json_output:
+        write_json_stdout(payload)
+        return
+    console.print(
+        f"[green]Ingested[/green] {summary.traces_written}/{summary.runs_read} "
+        f"curator runs -> {output} (skipped={summary.skipped})"
+    )
+    for warning in summary.warnings:
+        console.print(f"[yellow]warning:[/yellow] {warning}")
 
 
 def register_hermes_command(
@@ -120,6 +167,54 @@ def register_hermes_command(
             console=console,
             write_json_stdout=_cli_attr(dependency_module, "_write_json_stdout"),
             write_json_stderr=_cli_attr(dependency_module, "_write_json_stderr"),
+        )
+
+    @hermes_app.command("ingest-curator")
+    def ingest_curator(
+        home: Annotated[
+            Path | None,
+            typer.Option("--home", help="Hermes home directory (default: HERMES_HOME or ~/.hermes)"),
+        ] = None,
+        output: Annotated[
+            Path,
+            typer.Option("--output", help="Destination JSONL path for ProductionTrace entries"),
+        ] = Path("hermes-curator-traces.jsonl"),
+        since: Annotated[
+            str | None,
+            typer.Option("--since", help="ISO-8601 timestamp; skip curator runs strictly before this"),
+        ] = None,
+        limit: Annotated[
+            int | None,
+            typer.Option("--limit", help="Maximum number of traces to write"),
+        ] = None,
+        include_llm_final: Annotated[
+            bool,
+            typer.Option(
+                "--include-llm-final",
+                help="Attach the curator's LLM final summary as an assistant message (off by default for privacy)",
+            ),
+        ] = False,
+        include_tool_args: Annotated[
+            bool,
+            typer.Option(
+                "--include-tool-args",
+                help="Attach raw tool-call args (off by default to avoid leaking sensitive arguments)",
+            ),
+        ] = False,
+        json_output: Annotated[bool, typer.Option("--json", help="Output structured JSON")] = False,
+    ) -> None:
+        """Ingest Hermes curator reports into ProductionTrace JSONL (AC-704)."""
+
+        run_hermes_ingest_curator_command(
+            home=home,
+            output=output,
+            since=since,
+            limit=limit,
+            include_llm_final=include_llm_final,
+            include_tool_args=include_tool_args,
+            json_output=json_output,
+            console=console,
+            write_json_stdout=_cli_attr(dependency_module, "_write_json_stdout"),
         )
 
     app.add_typer(hermes_app, name="hermes")

@@ -277,7 +277,26 @@ autoctx hermes inspect --home "$HERMES_HOME" --json
 
 # Export the Hermes autocontext skill for Hermes to load
 autoctx hermes export-skill --output ~/.hermes/skills/autocontext/SKILL.md --json
+
+# Ingest Hermes curator run reports as autocontext ProductionTrace JSONL (AC-704)
+autoctx hermes ingest-curator \
+    --home ~/.hermes \
+    --output traces/hermes-curator.jsonl \
+    [--since 2026-05-01T00:00:00Z] \
+    [--limit 100] \
+    [--include-llm-final] \
+    [--include-tool-args] \
+    --json
 ```
+
+`ingest-curator` is read-only against `~/.hermes`. Privacy defaults:
+`--include-llm-final` (off) gates whether the curator's LLM final
+summary is attached as an assistant message;
+`--include-tool-args` (off) gates whether raw tool-call args are
+preserved. `--since` rejects unparseable timestamps with a clear
+error and also applies to runs whose `started_at` is missing (file
+mtime is the fallback comparison timestamp). The JSON summary reports
+`runs_read`, `traces_written`, `skipped`, and per-run `warnings`.
 
 JSON output shape for `inspect`:
 
