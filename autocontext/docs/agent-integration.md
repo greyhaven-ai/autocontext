@@ -282,6 +282,22 @@ autoctx hermes export-skill --output ~/.hermes/skills/autocontext/SKILL.md --jso
 autoctx hermes export-skill \
     --output ~/.hermes/skills/autocontext/SKILL.md \
     --with-references --json
+
+# Ingest Hermes curator run reports as autocontext ProductionTrace JSONL (AC-704)
+autoctx hermes ingest-curator \
+    --home ~/.hermes \
+    --output traces/hermes-curator.jsonl \
+    [--since 2026-05-01T00:00:00Z] \
+    [--limit 100] \
+    [--include-llm-final] \
+    [--include-tool-args] \
+    --json
+
+# Export Curator decisions as training JSONL for narrow advisors (AC-705)
+autoctx hermes export-dataset --kind curator-decisions \
+  --home "$HERMES_HOME" \
+  --output training/hermes-curator-decisions.jsonl \
+  --since 2026-05-01T00:00:00Z --limit 5000 --json
 ```
 
 `--with-references` writes one markdown file per reference into a
@@ -291,6 +307,36 @@ sibling `references/` directory (`hermes-curator.md`,
 reference file; without `--force`, all destinations are checked up
 front and the command refuses without writing anything, so an
 operator never ends up with a half-installed skill bundle.
+
+`ingest-curator` is read-only against `~/.hermes`. Privacy defaults:
+`--include-llm-final` (off) gates whether the curator's LLM final
+summary is attached as an assistant message;
+`--include-tool-args` (off) gates whether raw tool-call args are
+preserved. `--since` rejects unparseable timestamps with a clear
+error and also applies to runs whose `started_at` is missing (file
+mtime is the fallback comparison timestamp). The JSON summary reports
+`runs_read`, `traces_written`, `skipped`, and per-run `warnings`.
+
+`export-dataset` flags:
+
+- `--kind curator-decisions` (shipped). Other documented kinds
+  (`consolidation-pairs`, `skill-selection`, `skill-quality-signals`)
+  raise `NotImplementedError` until their slices land.
+- `--since <ISO-8601>`: skip curator runs strictly before this
+  timestamp. Invalid timestamps raise `ValueError`; runs without a
+  `started_at` field fall back to file mtime for the comparison.
+- `--limit <int>`: cap the number of training examples written.
+
+Behavior notes:
+
+- Strong labels only: `consolidated`, `pruned`, `archived`, `added`
+  are emitted with `confidence: "strong"`.
+- Pinned skills (`.usage.json` `pinned: true`), bundled
+  (`.bundled_manifest`), and hub-installed (`.hub/lock.json`) skills
+  are protected: they never appear as mutation targets, even when no
+  active SKILL.md folder is present.
+- Both Hermes v0.12 action shapes are accepted: a list of strings or
+  a list of `{"name": ...}` objects.
 
 JSON output shape for `inspect`:
 

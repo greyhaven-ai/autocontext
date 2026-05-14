@@ -64,7 +64,10 @@ def test_generate_json_output() -> None:
     json_output = json.dumps({"result": "hello from pi", "model": "pi-1", "cost_usd": 0.01})
     mock_result = subprocess.CompletedProcess(args=[], returncode=0, stdout=json_output, stderr="")
 
-    with patch("subprocess.run", return_value=mock_result), patch("shutil.which", return_value="/usr/bin/pi"):
+    with (
+        patch("autocontext.runtimes.pi_cli._run_with_group_kill", return_value=mock_result),
+        patch("shutil.which", return_value="/usr/bin/pi"),
+    ):
         output = runtime.generate("test prompt")
     assert output.text == "hello from pi"
     assert output.model == "pi-1"
@@ -80,7 +83,10 @@ def test_generate_raw_text_fallback() -> None:
     runtime = PiCLIRuntime(PiCLIConfig(json_output=True))
     mock_result = subprocess.CompletedProcess(args=[], returncode=0, stdout="plain text output\n", stderr="")
 
-    with patch("subprocess.run", return_value=mock_result), patch("shutil.which", return_value="/usr/bin/pi"):
+    with (
+        patch("autocontext.runtimes.pi_cli._run_with_group_kill", return_value=mock_result),
+        patch("shutil.which", return_value="/usr/bin/pi"),
+    ):
         output = runtime.generate("test prompt")
     assert output.text == "plain text output"
     assert output.model == "pi"
@@ -100,7 +106,10 @@ def test_generate_json_object_without_result_serializes_full_payload() -> None:
         stderr="",
     )
 
-    with patch("subprocess.run", return_value=mock_result), patch("shutil.which", return_value="/usr/bin/pi"):
+    with (
+        patch("autocontext.runtimes.pi_cli._run_with_group_kill", return_value=mock_result),
+        patch("shutil.which", return_value="/usr/bin/pi"),
+    ):
         output = runtime.generate("test prompt")
 
     assert json.loads(output.text) == raw_payload
@@ -111,7 +120,10 @@ def test_generate_json_output_disabled() -> None:
     runtime = PiCLIRuntime(PiCLIConfig(json_output=False))
     mock_result = subprocess.CompletedProcess(args=[], returncode=0, stdout="raw output\n", stderr="")
 
-    with patch("subprocess.run", return_value=mock_result), patch("shutil.which", return_value="/usr/bin/pi"):
+    with (
+        patch("autocontext.runtimes.pi_cli._run_with_group_kill", return_value=mock_result),
+        patch("shutil.which", return_value="/usr/bin/pi"),
+    ):
         output = runtime.generate("test prompt")
     assert output.text == "raw output"
 
@@ -124,7 +136,7 @@ def test_generate_json_output_disabled() -> None:
 def test_generate_timeout() -> None:
     runtime = PiCLIRuntime(PiCLIConfig(timeout=5.0))
 
-    with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="pi", timeout=5.0)):
+    with patch("autocontext.runtimes.pi_cli._run_with_group_kill", side_effect=subprocess.TimeoutExpired(cmd="pi", timeout=5.0)):
         with patch("shutil.which", return_value="/usr/bin/pi"):
             output = runtime.generate("test prompt")
     assert output.text == ""
@@ -141,7 +153,10 @@ def test_generate_nonzero_exit() -> None:
     runtime = PiCLIRuntime(PiCLIConfig())
     mock_result = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="segfault")
 
-    with patch("subprocess.run", return_value=mock_result), patch("shutil.which", return_value="/usr/bin/pi"):
+    with (
+        patch("autocontext.runtimes.pi_cli._run_with_group_kill", return_value=mock_result),
+        patch("shutil.which", return_value="/usr/bin/pi"),
+    ):
         output = runtime.generate("test prompt")
     assert output.text == ""
     assert output.metadata.get("error") == "nonzero_exit"
@@ -153,7 +168,10 @@ def test_generate_nonzero_exit_with_stdout() -> None:
     runtime = PiCLIRuntime(PiCLIConfig())
     mock_result = subprocess.CompletedProcess(args=[], returncode=1, stdout="partial output\n", stderr="warning")
 
-    with patch("subprocess.run", return_value=mock_result), patch("shutil.which", return_value="/usr/bin/pi"):
+    with (
+        patch("autocontext.runtimes.pi_cli._run_with_group_kill", return_value=mock_result),
+        patch("shutil.which", return_value="/usr/bin/pi"),
+    ):
         output = runtime.generate("test prompt")
     assert output.text == "partial output"
 
@@ -172,7 +190,10 @@ def test_revise_builds_correct_prompt() -> None:
         captured_args.extend(args)
         return mock_result
 
-    with patch("subprocess.run", side_effect=mock_run), patch("shutil.which", return_value="/usr/bin/pi"):
+    with (
+        patch("autocontext.runtimes.pi_cli._run_with_group_kill", side_effect=mock_run),
+        patch("shutil.which", return_value="/usr/bin/pi"),
+    ):
         output = runtime.revise("original task", "old output", "fix the formatting")
     assert output.text == "revised output"
     # The prompt (last arg) should contain all revision parts
@@ -190,7 +211,10 @@ def test_revise_builds_correct_prompt() -> None:
 def test_generate_binary_not_found() -> None:
     runtime = PiCLIRuntime(PiCLIConfig(pi_command="nonexistent-pi"))
 
-    with patch("subprocess.run", side_effect=FileNotFoundError), patch("shutil.which", return_value=None):
+    with (
+        patch("autocontext.runtimes.pi_cli._run_with_group_kill", side_effect=FileNotFoundError),
+        patch("shutil.which", return_value=None),
+    ):
         output = runtime.generate("test")
     assert output.metadata.get("error") == "pi_not_found"
 
@@ -317,7 +341,10 @@ def test_generate_with_system_prompt() -> None:
         captured_args.extend(args)
         return mock_result
 
-    with patch("subprocess.run", side_effect=mock_run), patch("shutil.which", return_value="/usr/bin/pi"):
+    with (
+        patch("autocontext.runtimes.pi_cli._run_with_group_kill", side_effect=mock_run),
+        patch("shutil.which", return_value="/usr/bin/pi"),
+    ):
         runtime.generate("user prompt", system="system prompt")
     # System + user prompt should be combined in the last arg
     prompt_arg = captured_args[-1]

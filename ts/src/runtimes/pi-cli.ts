@@ -3,7 +3,7 @@
  * Mirrors Python's autocontext/runtimes/pi_cli.py.
  */
 
-import { execFileSync } from "node:child_process";
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import type { AgentOutput } from "./base.js";
 import { definedConfigOptions } from "./config-options.js";
 
@@ -22,6 +22,25 @@ const PI_CLI_CONFIG_DEFAULTS = {
   workspace: "",
   noContextFiles: false,
 };
+
+const TIMEOUT_KILL_GRACE_MS = 5_000;
+const MANAGED_EXIT_SIGNALS: NodeJS.Signals[] = ["SIGINT", "SIGTERM"];
+
+interface PiCLIProcessResult {
+  stdout: string;
+  stderr: string;
+  exitCode: number | null;
+  signal: NodeJS.Signals | null;
+  timedOut: boolean;
+  error?: Error;
+}
+
+interface RunPiCLIOptions {
+  input: string;
+  timeoutMs: number;
+  cwd?: string;
+  graceMs?: number;
+}
 
 export class PiCLIConfig {
   readonly piCommand!: string;
@@ -58,7 +77,7 @@ export class PiCLIRuntime {
       `## Original Output\n${opts.previousOutput}\n\n` +
       `## Judge Feedback\n${opts.feedback}\n\n` +
       `## Original Task\n${opts.prompt}\n\n` +
-      `Produce an improved version:`;
+      "Produce an improved version:";
     return this.#invoke(revisionPrompt);
   }
 
@@ -68,7 +87,7 @@ export class PiCLIRuntime {
     return { text: trimmed, metadata: {} };
   }
 
-  #invoke(prompt: string): AgentOutput {
+  async #invoke(prompt: string): Promise<AgentOutput> {
     const args = ["--print"];
     if (this.#config.model) {
       args.push("--model", this.#config.model);
@@ -77,21 +96,180 @@ export class PiCLIRuntime {
       args.push("--no-context-files");
     }
 
+    const result = await runPiCLIWithGroupKill(this.#config.piCommand, args, {
+      input: prompt,
+      timeoutMs: this.#config.timeout * 1000,
+      cwd: this.#config.workspace || undefined,
+    });
+
+    if (result.timedOut) {
+      return {
+        text: "",
+        metadata: { error: "timeout", timeoutSeconds: this.#config.timeout },
+      };
+    }
+    if (result.error) {
+      return { text: "", metadata: { error: result.error.message || "unknown" } };
+    }
+    if (result.exitCode !== 0 && !result.stdout.trim()) {
+      return {
+        text: "",
+        metadata: {
+          error: "nonzero_exit",
+          exitCode: result.exitCode,
+          signal: result.signal,
+          stderr: result.stderr.slice(0, 500),
+        },
+      };
+    }
+
+    return this.parseOutput(result.stdout);
+  }
+}
+
+function runPiCLIWithGroupKill(
+  command: string,
+  args: string[],
+  opts: RunPiCLIOptions,
+): Promise<PiCLIProcessResult> {
+  return new Promise((resolve) => {
+    let child: ChildProcessWithoutNullStreams;
     try {
-      const stdout = execFileSync(this.#config.piCommand, args, {
-        input: prompt,
-        timeout: this.#config.timeout * 1000,
-        encoding: "utf-8",
+      child = spawn(command, args, {
+        cwd: opts.cwd,
+        detached: process.platform !== "win32",
         stdio: ["pipe", "pipe", "pipe"],
-        cwd: this.#config.workspace || undefined,
       });
-      return this.parseOutput(stdout);
     } catch (err: unknown) {
-      const error = err as { code?: string; message?: string };
-      if (error.code === "ETIMEDOUT") {
-        return { text: "", metadata: { error: "timeout" } };
+      resolve({
+        stdout: "",
+        stderr: "",
+        exitCode: null,
+        signal: null,
+        timedOut: false,
+        error: toError(err),
+      });
+      return;
+    }
+
+    let stdout = "";
+    let stderr = "";
+    let timedOut = false;
+    let settled = false;
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+    let graceHandle: ReturnType<typeof setTimeout> | undefined;
+    let removeProcessHandlers = (): void => {};
+
+    const cleanupActiveChild = (): void => {
+      killProcessGroup(child);
+      closeChildStdio(child);
+    };
+    const signalHandlers = new Map<NodeJS.Signals, () => void>();
+    const onProcessExit = (): void => {
+      cleanupActiveChild();
+    };
+    for (const signal of MANAGED_EXIT_SIGNALS) {
+      const handler = (): void => {
+        cleanupActiveChild();
+        removeProcessHandlers();
+        reraiseSignal(signal);
+      };
+      signalHandlers.set(signal, handler);
+      process.once(signal, handler);
+    }
+    process.once("exit", onProcessExit);
+    removeProcessHandlers = (): void => {
+      for (const [signal, handler] of signalHandlers) {
+        process.off(signal, handler);
       }
-      return { text: "", metadata: { error: error.message ?? "unknown" } };
+      signalHandlers.clear();
+      process.off("exit", onProcessExit);
+    };
+
+    const settle = (result: Omit<PiCLIProcessResult, "stdout" | "stderr" | "timedOut">): void => {
+      if (settled) return;
+      settled = true;
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+      if (graceHandle) clearTimeout(graceHandle);
+      removeProcessHandlers();
+      closeChildStdio(child);
+      resolve({
+        stdout,
+        stderr,
+        timedOut,
+        ...result,
+      });
+    };
+
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string | Buffer) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on("data", (chunk: string | Buffer) => {
+      stderr += chunk.toString();
+    });
+    child.on("error", (err) => {
+      settle({ exitCode: null, signal: null, error: toError(err) });
+    });
+    child.on("close", (code, signal) => {
+      settle({ exitCode: code, signal });
+    });
+    child.stdin.on("error", () => {
+      // Child may exit before it consumes the prompt; close/error metadata will
+      // arrive via the process events above.
+    });
+
+    timeoutHandle = setTimeout(() => {
+      timedOut = true;
+      killProcessGroup(child);
+      closeChildStdio(child);
+      graceHandle = setTimeout(() => {
+        settle({ exitCode: child.exitCode, signal: child.signalCode });
+      }, opts.graceMs ?? TIMEOUT_KILL_GRACE_MS);
+    }, opts.timeoutMs);
+
+    if (opts.input) {
+      child.stdin.write(opts.input);
+    }
+    child.stdin.end();
+  });
+}
+
+function killProcessGroup(child: ChildProcessWithoutNullStreams): void {
+  if (process.platform !== "win32" && child.pid !== undefined) {
+    try {
+      process.kill(-child.pid, "SIGKILL");
+      return;
+    } catch {
+      // Fall back to killing the direct child if the process group is already
+      // gone or the platform rejects negative PIDs.
     }
   }
+
+  child.kill("SIGKILL");
+}
+
+function closeChildStdio(child: ChildProcessWithoutNullStreams): void {
+  child.stdin.destroy();
+  child.stdout.destroy();
+  child.stderr.destroy();
+}
+
+function reraiseSignal(signal: NodeJS.Signals): void {
+  try {
+    process.kill(process.pid, signal);
+  } catch {
+    process.exit(signalToExitCode(signal));
+  }
+}
+
+function signalToExitCode(signal: NodeJS.Signals): number {
+  if (signal === "SIGINT") return 130;
+  if (signal === "SIGTERM") return 143;
+  return 1;
+}
+
+function toError(err: unknown): Error {
+  return err instanceof Error ? err : new Error(String(err));
 }
