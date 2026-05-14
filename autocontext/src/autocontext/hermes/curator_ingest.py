@@ -27,6 +27,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from pydantic import ValidationError
+
 from autocontext.production_traces.emit import build_trace
 
 
@@ -82,7 +84,15 @@ def ingest_curator_reports(
     if not curator_root.exists():
         return summary
 
-    since_dt = _parse_iso(since) if since is not None else None
+    # Reject invalid `since` at the boundary (PR #963 review). Silently
+    # falling open lets a typo like `--since not-a-date` import every
+    # available run.
+    since_dt: datetime | None = None
+    if since is not None:
+        since_dt = _parse_iso(since)
+        if since_dt is None:
+            raise ValueError(f"invalid --since value {since!r}; expected ISO-8601 timestamp")
+
     run_paths = sorted(curator_root.rglob("run.json"))
     summary.runs_read = len(run_paths)
 
@@ -99,19 +109,28 @@ def ingest_curator_reports(
             summary.warnings.append(f"{path}: malformed JSON ({err})")
             continue
 
-        started_at = _as_str(data.get("started_at"))
-        if since_dt is not None and started_at is not None:
-            parsed_started = _parse_iso(started_at)
-            if parsed_started is not None and parsed_started < since_dt:
-                continue
+        # Compute an effective timestamp BEFORE filtering so a missing
+        # `started_at` still honors `--since` via the file mtime fallback.
+        # Otherwise old runs without `started_at` would leak past
+        # incremental imports (PR #963 review).
+        effective_started_at_dt = _effective_started_at(data, path)
+        if since_dt is not None and effective_started_at_dt < since_dt:
+            continue
 
-        trace = _curator_run_to_trace(
-            data=data,
-            run_path=path,
-            include_llm_final=include_llm_final,
-            include_tool_args=include_tool_args,
-            warnings=summary.warnings,
-        )
+        try:
+            trace = _curator_run_to_trace(
+                data=data,
+                run_path=path,
+                include_llm_final=include_llm_final,
+                include_tool_args=include_tool_args,
+                warnings=summary.warnings,
+            )
+        except (ValueError, ValidationError) as err:
+            # Per-run validation failures must not abort the batch
+            # (PR #963 review). Record the warning, skip, continue.
+            summary.skipped += 1
+            summary.warnings.append(f"{path}: schema validation failed ({err})")
+            continue
         traces.append(trace)
 
     if traces:
@@ -124,6 +143,25 @@ def ingest_curator_reports(
     return summary
 
 
+# Valid Provider enum values per
+# `autocontext.production_traces.contract.models.Provider`. Anything outside
+# this set folds to `"other"` so the trace passes Pydantic validation
+# instead of aborting the batch (PR #963 review).
+_KNOWN_PROVIDERS = frozenset({"openai", "anthropic", "openai-compatible", "langchain", "vercel-ai-sdk", "litellm", "other"})
+
+
+def _effective_started_at(data: dict[str, Any], path: Path) -> datetime:
+    """Resolve the run's effective timestamp: `started_at` if parseable,
+    file mtime otherwise. Always returns an aware UTC datetime so callers
+    can compare against `since` without naive/aware mismatches."""
+    started_at = _as_str(data.get("started_at"))
+    if started_at is not None:
+        parsed = _parse_iso(started_at)
+        if parsed is not None:
+            return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+    return datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
+
+
 def _curator_run_to_trace(
     *,
     data: dict[str, Any],
@@ -134,7 +172,18 @@ def _curator_run_to_trace(
 ) -> dict[str, Any]:
     started_at = _as_str(data.get("started_at"))
     duration = _as_float(data.get("duration_seconds"))
-    provider = _as_str(data.get("provider")) or "unknown"
+    raw_provider = _as_str(data.get("provider"))
+    # ProductionTrace.provider.name is a strict Literal enum. Fold anything
+    # outside the known set to "other" with a warning, so a missing or
+    # unrecognized provider does not abort the whole batch (PR #963 review).
+    if raw_provider is None:
+        warnings.append(f"{run_path}: missing provider, defaulting to 'other'")
+        provider = "other"
+    elif raw_provider in _KNOWN_PROVIDERS:
+        provider = raw_provider
+    else:
+        warnings.append(f"{run_path}: provider {raw_provider!r} not in known set, recording as 'other'")
+        provider = "other"
     model = _as_str(data.get("model")) or "unknown"
 
     if started_at is None:

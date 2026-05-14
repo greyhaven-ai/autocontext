@@ -17,6 +17,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from autocontext.hermes.curator_ingest import (
     IngestSummary,
     ingest_curator_reports,
@@ -205,3 +207,132 @@ def test_timing_uses_started_at_and_duration(tmp_path: Path) -> None:
     # Accept whichever ISO format the emitter picks; just pin it's > startedAt.
     assert trace["timing"]["endedAt"] > trace["timing"]["startedAt"]
     assert trace["timing"]["latencyMs"] == 42500
+
+
+# -- PR #963 review feedback --
+
+
+def test_missing_provider_falls_back_to_other_not_unknown(tmp_path: Path) -> None:
+    """ProductionTrace.provider.name is a strict Literal enum; "unknown"
+    is rejected. A run missing `provider` must fold to "other" with a
+    warning instead of aborting the batch."""
+    home = tmp_path / "home"
+    curator = home / "logs" / "curator" / "run-no-provider"
+    curator.mkdir(parents=True)
+    (curator / "run.json").write_text(
+        json.dumps(
+            {
+                "started_at": "2026-05-13T15:00:00Z",
+                "duration_seconds": 1.0,
+                "model": "claude-sonnet-4-5",
+                "consolidated": ["skill-a"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    output = tmp_path / "out.jsonl"
+    summary = ingest_curator_reports(home=home, output=output)
+    assert summary.traces_written == 1
+    assert summary.skipped == 0
+    trace = _load_jsonl(output)[0]
+    assert trace["provider"]["name"] == "other"
+    assert any("missing provider" in w for w in summary.warnings)
+
+
+def test_unrecognized_provider_folds_to_other(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    curator = home / "logs" / "curator" / "run-weird"
+    curator.mkdir(parents=True)
+    (curator / "run.json").write_text(
+        json.dumps(
+            {
+                "started_at": "2026-05-13T15:00:00Z",
+                "duration_seconds": 1.0,
+                "provider": "made-up-provider",
+                "model": "claude-sonnet-4-5",
+                "consolidated": ["skill-a"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    output = tmp_path / "out.jsonl"
+    summary = ingest_curator_reports(home=home, output=output)
+    assert summary.traces_written == 1
+    trace = _load_jsonl(output)[0]
+    assert trace["provider"]["name"] == "other"
+    assert any("'made-up-provider'" in w for w in summary.warnings)
+
+
+def test_invalid_since_raises_value_error(tmp_path: Path) -> None:
+    """An unparseable `--since` must NOT silently disable the filter."""
+    home = _make_hermes_home(tmp_path, "normal-run")
+    output = tmp_path / "out.jsonl"
+    with pytest.raises(ValueError, match="invalid --since"):
+        ingest_curator_reports(home=home, output=output, since="not-a-date")
+
+
+def test_since_filter_applies_to_mtime_fallback_when_started_at_is_missing(
+    tmp_path: Path,
+) -> None:
+    """Runs without `started_at` must still honor `--since` via the file
+    mtime fallback."""
+    import os
+    import time as _time
+
+    home = tmp_path / "home"
+    old_dir = home / "logs" / "curator" / "old"
+    old_dir.mkdir(parents=True)
+    old_path = old_dir / "run.json"
+    old_path.write_text(
+        json.dumps(
+            {
+                "duration_seconds": 1.0,
+                "provider": "anthropic",
+                "model": "claude-sonnet-4-5",
+                "consolidated": ["skill-old"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    old_mtime = _time.mktime((2026, 1, 1, 0, 0, 0, 0, 0, 0))
+    os.utime(old_path, (old_mtime, old_mtime))
+
+    output = tmp_path / "out.jsonl"
+    summary = ingest_curator_reports(
+        home=home,
+        output=output,
+        since="2026-05-01T00:00:00Z",
+    )
+    assert summary.traces_written == 0
+
+
+def test_per_run_validation_failure_does_not_abort_batch(tmp_path: Path) -> None:
+    """If one run produces an invalid ProductionTrace, the rest must still
+    process. The bad run is skipped with a warning."""
+    home = tmp_path / "home"
+    bad_dir = home / "logs" / "curator" / "bad"
+    good_dir = home / "logs" / "curator" / "good"
+    bad_dir.mkdir(parents=True)
+    good_dir.mkdir(parents=True)
+    # Negative duration -> TimingInfo.latencyMs (Field(ge=0.0)) validation
+    # fails, forcing the per-run try/except branch to fire.
+    (bad_dir / "run.json").write_text(
+        json.dumps(
+            {
+                "started_at": "2026-05-13T15:00:00Z",
+                "duration_seconds": -10.0,
+                "provider": "anthropic",
+                "model": "claude-sonnet-4-5",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (good_dir / "run.json").write_text(
+        (FIXTURE_ROOT / "normal-run" / "run.json").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    output = tmp_path / "out.jsonl"
+    summary = ingest_curator_reports(home=home, output=output)
+    assert summary.traces_written == 1
+    assert summary.skipped == 1
+    assert any("validation" in w.lower() for w in summary.warnings)
