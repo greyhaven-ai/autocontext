@@ -298,6 +298,20 @@ autoctx hermes export-dataset --kind curator-decisions \
   --home "$HERMES_HOME" \
   --output training/hermes-curator-decisions.jsonl \
   --since 2026-05-01T00:00:00Z --limit 5000 --json
+
+# Ingest Hermes trajectory JSONL with redaction (AC-706 slice 1)
+autoctx hermes ingest-trajectories \
+  --input "$HERMES_HOME/trajectory_samples.jsonl" \
+  --output training/hermes-trajectories-redacted.jsonl \
+  --redact standard --json
+
+# Strict mode with caller-supplied regexes; --dry-run reports counts only
+autoctx hermes ingest-trajectories \
+  --input "$HERMES_HOME/trajectory_samples.jsonl" \
+  --output training/hermes-trajectories-redacted.jsonl \
+  --redact strict \
+  --user-patterns '[{"name":"ticket","pattern":"TKT-\\d+"}]' \
+  --dry-run --json
 ```
 
 `--with-references` writes one markdown file per reference into a
@@ -337,6 +351,27 @@ Behavior notes:
   active SKILL.md folder is present.
 - Both Hermes v0.12 action shapes are accepted: a list of strings or
   a list of `{"name": ...}` objects.
+
+`ingest-trajectories` flags:
+
+- `--input <jsonl>`: source file. Required.
+- `--output <jsonl>`: destination for the redacted JSONL. Created
+  (with parents) if missing; ignored when `--dry-run` is set.
+- `--redact off | standard | strict` (default `standard`): redaction
+  mode. `strict` requires `--user-patterns`. `off` writes raw
+  content and surfaces a CLI warning since AC-706 requires explicit
+  operator opt-in for raw content.
+- `--user-patterns <json>`: JSON array of `{name, pattern}` regex
+  objects. Hits are tagged `[REDACTED_USER_PATTERN:<name>]` so
+  downstream consumers can tell distinct user patterns apart.
+- `--limit <int>`: cap on trajectories written.
+- `--dry-run`: count and redact without writing the output.
+
+Per-line tolerance: malformed JSON lines, non-object lines, and
+blank lines are skipped with per-line warnings rather than aborting
+the whole import. The input file is never mutated. AC-706 slice 2
+(`autoctx hermes ingest-sessions` from `~/.hermes/state.db`) is a
+follow-up.
 
 JSON output shape for `inspect`:
 

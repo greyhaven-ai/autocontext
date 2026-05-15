@@ -182,10 +182,13 @@ That property is load-bearing for evaluation, replay, and review.
 
 - Shipped: `autoctx hermes inspect`, `autoctx hermes export-skill`,
   `autoctx hermes ingest-curator` (AC-704), `autoctx hermes
-export-dataset --kind curator-decisions` (AC-705), the rendered
-  Hermes-format SKILL.md, the integration surface order decision
-  (CLI-first / MCP-optional / native runtime / plugin / gateway).
-- In flight: AC-706 (session and trajectory import with redaction),
+export-dataset --kind curator-decisions` (AC-705), `autoctx hermes
+ingest-trajectories --redact standard|strict|off` (AC-706 slice 1),
+  the rendered Hermes-format SKILL.md, the integration surface order
+  decision (CLI-first / MCP-optional / native runtime / plugin /
+  gateway).
+- In flight: AC-706 slice 2 (`ingest-sessions` from
+  `~/.hermes/state.db` with WAL/SHM tolerance and schema drift),
   AC-708 / AC-709 (advisor model + read-only recommendations), AC-707
   (Hermes plugin emitter spike).
 - Out of scope (today): autocontext writing to `~/.hermes/skills/`,
