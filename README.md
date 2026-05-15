@@ -89,6 +89,10 @@ After that, Python MCP exposes prefixed tools such as `autocontext_solve_scenari
 ```bash
 cd autocontext
 uv run autoctx hermes export-skill --output ~/.hermes/skills/autocontext/SKILL.md --json
+# Add progressive-disclosure reference files alongside SKILL.md (AC-702)
+uv run autoctx hermes export-skill \
+    --output ~/.hermes/skills/autocontext/SKILL.md \
+    --with-references --json
 uv run autoctx hermes inspect --json
 ```
 

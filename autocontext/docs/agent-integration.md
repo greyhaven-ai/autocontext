@@ -278,6 +278,11 @@ autoctx hermes inspect --home "$HERMES_HOME" --json
 # Export the Hermes autocontext skill for Hermes to load
 autoctx hermes export-skill --output ~/.hermes/skills/autocontext/SKILL.md --json
 
+# Also write progressive-disclosure reference files next to SKILL.md (AC-702)
+autoctx hermes export-skill \
+    --output ~/.hermes/skills/autocontext/SKILL.md \
+    --with-references --json
+
 # Ingest Hermes curator run reports as autocontext ProductionTrace JSONL (AC-704)
 autoctx hermes ingest-curator \
     --home ~/.hermes \
@@ -294,6 +299,14 @@ autoctx hermes export-dataset --kind curator-decisions \
   --output training/hermes-curator-decisions.jsonl \
   --since 2026-05-01T00:00:00Z --limit 5000 --json
 ```
+
+`--with-references` writes one markdown file per reference into a
+sibling `references/` directory (`hermes-curator.md`,
+`cli-workflows.md`, `mcp-workflows.md`, `local-training.md`). Use
+`--force` to overwrite an existing `SKILL.md` or any colliding
+reference file; without `--force`, all destinations are checked up
+front and the command refuses without writing anything, so an
+operator never ends up with a half-installed skill bundle.
 
 `ingest-curator` is read-only against `~/.hermes`. Privacy defaults:
 `--include-llm-final` (off) gates whether the curator's LLM final
