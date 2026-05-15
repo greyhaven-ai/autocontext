@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from autocontext.harness.evaluation.types import EvaluationSummary
     from autocontext.harness.pipeline.holdout import HoldoutResult
     from autocontext.knowledge.tuning import TuningConfig
+    from autocontext.loop.fixture_loader import Fixture
     from autocontext.prompts.templates import PromptBundle
     from autocontext.scenarios.base import ScenarioInterface
 
@@ -78,6 +79,9 @@ class GenerationContext:
     # Environment snapshot prompt section (AC-503)
     environment_snapshot: str = ""
     evidence_manifest: str = ""
+
+    # AC-767: authoritative reference fixtures, populated by stage_preflight.
+    fixtures: dict[str, Fixture] = field(default_factory=dict)
 
     # Consultation result (AC-212)
     consultation_result: Any | None = None
