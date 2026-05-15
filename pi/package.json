@@ -1,9 +1,18 @@
 {
   "name": "pi-autocontext",
-  "version": "0.2.4",
-  "description": "autocontext extension for Pi coding agent \u2014 iterative strategy generation, LLM judging, and evaluation tools",
+  "version": "0.2.5",
+  "description": "autocontext extension for Pi coding agent — iterative strategy generation, LLM judging, and evaluation tools",
   "type": "module",
-  "keywords": ["pi-package", "pi", "pi-extension", "autocontext", "autoctx", "evaluation", "llm", "judging"],
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-extension",
+    "autocontext",
+    "autoctx",
+    "evaluation",
+    "llm",
+    "judging"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -12,23 +21,32 @@
   },
   "homepage": "https://github.com/greyhaven-ai/autocontext/tree/main/pi",
   "peerDependencies": {
-    "@mariozechner/pi-coding-agent": "*",
-    "@mariozechner/pi-ai": "*",
-    "@mariozechner/pi-tui": "*",
-    "@sinclair/typebox": "*"
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
   },
   "dependencies": {
-    "autoctx": "^0.4.9 || ^0.5.0"
+    "autoctx": "^0.5.1"
   },
   "devDependencies": {
-    "@sinclair/typebox": "^0.34.0",
+    "@earendil-works/pi-ai": "^0.74.0",
+    "@earendil-works/pi-coding-agent": "^0.74.0",
+    "@earendil-works/pi-tui": "^0.74.0",
+    "typebox": "^1.1.24",
     "typescript": "^5.7.0",
     "vitest": "^3.2.0"
   },
   "pi": {
-    "extensions": ["./src/index.ts"],
-    "skills": ["./skills"],
-    "prompts": ["./prompts"]
+    "extensions": [
+      "./src/index.ts"
+    ],
+    "skills": [
+      "./skills"
+    ],
+    "prompts": [
+      "./prompts"
+    ]
   },
   "files": [
     "src",

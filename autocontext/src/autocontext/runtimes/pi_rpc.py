@@ -4,7 +4,7 @@ Pi RPC mode (`pi --mode rpc`) communicates over the process's stdin/stdout
 using strict JSONL framing (LF-delimited). This is NOT an HTTP protocol.
 
 Protocol reference:
-  https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/rpc.md
+  https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/rpc.md
 """
 
 from __future__ import annotations
