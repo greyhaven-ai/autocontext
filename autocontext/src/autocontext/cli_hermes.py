@@ -12,6 +12,7 @@ from autocontext.hermes.dataset_export import ExportSummary, export_dataset
 from autocontext.hermes.inspection import HermesInventory, inspect_hermes_home
 from autocontext.hermes.redaction import RedactionPolicy, compile_user_patterns
 from autocontext.hermes.references import list_references, render_reference
+from autocontext.hermes.session_ingest import SessionIngestSummary, ingest_session_db
 from autocontext.hermes.skill import AUTOCONTEXT_HERMES_SKILL_NAME, render_autocontext_skill
 from autocontext.hermes.trajectory_ingest import TrajectoryIngestSummary, ingest_trajectory_jsonl
 
@@ -281,6 +282,87 @@ def run_hermes_ingest_trajectories_command(
         console.print(f"[yellow]warning:[/yellow] {warning}")
 
 
+def run_hermes_ingest_sessions_command(
+    *,
+    home: Path | None,
+    output: Path,
+    redact: str,
+    user_patterns_json: str | None,
+    since: str | None,
+    limit: int | None,
+    dry_run: bool,
+    json_output: bool,
+    console: Console,
+    write_json_stdout: Any,
+    write_json_stderr: Any,
+) -> None:
+    """Ingest Hermes session DB into ProductionTrace JSONL (AC-706 slice 2)."""
+
+    import json as _json
+
+    from autocontext.hermes.inspection import _resolve_hermes_home
+
+    user_patterns_raw: list[dict[str, str]] | None = None
+    if user_patterns_json is not None:
+        try:
+            parsed = _json.loads(user_patterns_json)
+        except _json.JSONDecodeError as err:
+            message = f"--user-patterns is not valid JSON: {err.msg}"
+            if json_output:
+                write_json_stderr(message)
+            else:
+                console.print(f"[red]{message}[/red]")
+            raise typer.Exit(code=1) from err
+        if not isinstance(parsed, list):
+            message = "--user-patterns must be a JSON array of {name, pattern} objects"
+            if json_output:
+                write_json_stderr(message)
+            else:
+                console.print(f"[red]{message}[/red]")
+            raise typer.Exit(code=1)
+        user_patterns_raw = parsed
+
+    try:
+        user_patterns = compile_user_patterns(user_patterns_raw)
+        policy = RedactionPolicy(mode=redact, user_patterns=user_patterns)
+    except ValueError as err:
+        if json_output:
+            write_json_stderr(str(err))
+        else:
+            console.print(f"[red]{err}[/red]")
+        raise typer.Exit(code=1) from err
+
+    resolved_home = _resolve_hermes_home(home)
+    try:
+        summary: SessionIngestSummary = ingest_session_db(
+            home=resolved_home,
+            output=output,
+            policy=policy,
+            since=since,
+            limit=limit,
+            dry_run=dry_run,
+        )
+    except ValueError as err:
+        if json_output:
+            write_json_stderr(str(err))
+        else:
+            console.print(f"[red]{err}[/red]")
+        raise typer.Exit(code=1) from err
+
+    if json_output:
+        write_json_stdout(summary.to_dict())
+        return
+    action = "Would write" if dry_run else "Wrote"
+    target = str(output) if not dry_run else "(dry-run, no file written)"
+    console.print(
+        f"[green]{action}[/green] {summary.traces_written}/{summary.sessions_read} session traces -> {target}"
+    )
+    if summary.redactions.total:
+        console.print(f"[dim]Redactions:[/dim] {summary.redactions.to_dict()}")
+    for warning in summary.warnings:
+        console.print(f"[yellow]warning:[/yellow] {warning}")
+
+
 def register_hermes_command(
     app: typer.Typer,
     *,
@@ -469,6 +551,63 @@ def register_hermes_command(
             output=output,
             redact=redact,
             user_patterns_json=user_patterns_json,
+            limit=limit,
+            dry_run=dry_run,
+            json_output=json_output,
+            console=console,
+            write_json_stdout=_cli_attr(dependency_module, "_write_json_stdout"),
+            write_json_stderr=_cli_attr(dependency_module, "_write_json_stderr"),
+        )
+
+    @hermes_app.command("ingest-sessions")
+    def ingest_sessions(
+        home: Annotated[
+            Path | None,
+            typer.Option("--home", help="Hermes home directory (default: HERMES_HOME or ~/.hermes)"),
+        ] = None,
+        output: Annotated[
+            Path,
+            typer.Option("--output", help="Destination JSONL path for ProductionTrace entries"),
+        ] = Path("hermes-sessions.jsonl"),
+        redact: Annotated[
+            str,
+            typer.Option(
+                "--redact",
+                help="Redaction mode: off | standard (default) | strict. 'strict' requires --user-patterns.",
+            ),
+        ] = "standard",
+        user_patterns_json: Annotated[
+            str | None,
+            typer.Option(
+                "--user-patterns",
+                help="JSON array of {name, pattern} regex objects for --redact strict",
+            ),
+        ] = None,
+        since: Annotated[
+            str | None,
+            typer.Option("--since", help="ISO-8601 timestamp; skip sessions strictly before this"),
+        ] = None,
+        limit: Annotated[
+            int | None,
+            typer.Option("--limit", help="Maximum number of session traces to write"),
+        ] = None,
+        dry_run: Annotated[
+            bool,
+            typer.Option(
+                "--dry-run",
+                help="Count and redact but do not write the output file (AC-706 privacy preview)",
+            ),
+        ] = False,
+        json_output: Annotated[bool, typer.Option("--json", help="Output structured JSON")] = False,
+    ) -> None:
+        """Ingest Hermes session DB into ProductionTrace JSONL (AC-706 slice 2)."""
+
+        run_hermes_ingest_sessions_command(
+            home=home,
+            output=output,
+            redact=redact,
+            user_patterns_json=user_patterns_json,
+            since=since,
             limit=limit,
             dry_run=dry_run,
             json_output=json_output,
