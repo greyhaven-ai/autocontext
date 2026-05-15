@@ -6,22 +6,38 @@ JSON object with a ``messages`` array of ``{"role", "content"}``
 entries, optionally accompanied by run-level metadata.
 
 This module reads the input JSONL line-by-line (so a single corrupt
-line cannot abort the whole import), routes every ``content`` string
+line cannot abort the whole import), routes every string content
 through :func:`autocontext.hermes.redaction.redact_text`, and writes a
 redacted JSONL output with the same shape plus a
-``trajectory_redactions`` entry that summarizes what was removed
-(category -> count). Operators can audit the count without re-reading
-the original raw file.
+``trajectory_redactions`` entry on every row that summarizes what was
+removed (category -> count). Operators can audit the count without
+re-reading the original raw file.
 
 The importer never writes to the input file or the Hermes home; the
-output is always a separate JSONL path the operator chose. See AC-706
+output is always a separate JSONL path the operator chose. Passing
+the same path for ``--input`` and ``--output`` (or two paths that
+resolve to the same file) is rejected at the boundary. See AC-706
 acceptance criteria.
+
+Content shapes the redactor walks:
+
+* ``messages[*].content`` as a string: redacted directly.
+* ``messages[*].content`` as a list of content blocks
+  (OpenAI/Anthropic-style ``[{"type": "text", "text": "..."}]``):
+  every string leaf in the block is redacted, so secrets cannot hide
+  inside ``text`` / ``input`` / ``output`` fields of structured
+  blocks.
+* ``prompt`` / ``response`` / ``output`` / ``input`` top-level
+  strings: redacted in place.
+* everything else: passed through verbatim.
 
 Privacy posture:
 
 - Default mode is ``standard``: the full ``sharing/redactor`` pipeline.
 - ``off`` is supported but requires an explicit operator opt-in. The
-  CLI surfaces a clear warning when ``--redact off`` is passed.
+  ingester records a policy warning in ``summary.warnings`` whenever
+  ``off`` is used so JSON callers and audit logs see the opt-in
+  marker as well as the CLI's human-mode warning.
 - ``--dry-run`` returns the counts and redaction stats without writing
   the output file. AC-706 calls for this so operators can review the
   blast radius before committing content to disk.
@@ -35,6 +51,10 @@ from pathlib import Path
 from typing import Any
 
 from autocontext.hermes.redaction import RedactionPolicy, RedactionStats, redact_text
+
+# Marker the CLI surfaces and JSON callers can match on so automation
+# knows raw content was written without parsing free-form warning text.
+RAW_CONTENT_WARNING = "policy=off: raw content written; AC-706 requires explicit operator opt-in"
 
 
 @dataclass(slots=True)
@@ -78,7 +98,9 @@ def ingest_trajectory_jsonl(
             ``failed_trajectories.jsonl``, or a batch runner export).
         output_path: where to write the redacted JSONL. The parent
             directory is created if missing. Ignored when ``dry_run``
-            is True.
+            is True. Must not resolve to the same file as
+            ``input_path`` (the importer never mutates Hermes
+            artifacts).
         policy: redaction policy (mode + optional user patterns).
         limit: cap on the number of trajectories written. Useful for
             sampling before a full import.
@@ -92,16 +114,30 @@ def ingest_trajectory_jsonl(
 
     Raises:
         FileNotFoundError: if ``input_path`` does not exist.
+        ValueError: if ``output_path`` resolves to the same file as
+            ``input_path`` (would overwrite the source, violating
+            AC-706's "input file never modified" invariant).
     """
 
     if not input_path.exists():
         raise FileNotFoundError(f"trajectory input not found: {input_path}")
+
+    if not dry_run and _same_file(input_path, output_path):
+        raise ValueError(
+            f"output {output_path!s} resolves to the same file as input {input_path!s}; "
+            "refusing to overwrite the source trajectory (AC-706 invariant)"
+        )
 
     summary = TrajectoryIngestSummary(
         input_path=input_path,
         output_path=None if dry_run else output_path,
         dry_run=dry_run,
     )
+    if policy.mode == "off":
+        # JSON callers cannot see the CLI's human-mode warning; record
+        # the opt-in marker in the summary so automation can match on
+        # it (PR review P3).
+        summary.warnings.append(RAW_CONTENT_WARNING)
 
     out_lines: list[str] = []
     with input_path.open("r", encoding="utf-8") as fh:
@@ -123,7 +159,14 @@ def ingest_trajectory_jsonl(
                 summary.warnings.append(f"line {summary.lines_read}: trajectory must be a JSON object")
                 continue
 
-            redacted = _redact_trajectory(trajectory, policy=policy, stats=summary.redactions)
+            redacted, per_row_stats = _redact_trajectory(trajectory, policy=policy)
+            # Per-row audit trail (PR review P2): each output row carries
+            # its own redaction count breakdown so downstream consumers
+            # can match a row to what was removed from it without the
+            # CLI summary.
+            redacted["trajectory_redactions"] = per_row_stats.to_dict()
+            for category, count in per_row_stats.by_category.items():
+                summary.redactions.add(category, count)
             out_lines.append(json.dumps(redacted, separators=(",", ":")))
             summary.trajectories_written += 1
 
@@ -136,26 +179,45 @@ def ingest_trajectory_jsonl(
     return summary
 
 
+def _same_file(a: Path, b: Path) -> bool:
+    """Return True when ``a`` and ``b`` point at the same file.
+
+    Uses :py:meth:`Path.samefile` when both exist (handles symlinks and
+    hardlinks). Falls back to resolved-path equality when ``b`` does
+    not exist yet, which catches the common "operator typed the same
+    path twice" case before any read or write.
+    """
+    if a.exists() and b.exists():
+        try:
+            return a.samefile(b)
+        except OSError:
+            return False
+    return a.resolve() == b.resolve()
+
+
 def _redact_trajectory(
     trajectory: dict[str, Any],
     *,
     policy: RedactionPolicy,
-    stats: RedactionStats,
-) -> dict[str, Any]:
-    """Return a copy of ``trajectory`` with every text field redacted.
+) -> tuple[dict[str, Any], RedactionStats]:
+    """Return ``(redacted_trajectory, per_row_stats)``.
 
     Walks the standard ShareGPT-like keys plus the common Hermes batch
     runner fields:
-    * ``messages[*].content``: redacted via the policy.
+
+    * ``messages[*].content``: string content is redacted via the
+      policy; structured content blocks
+      (``[{"type": "text", "text": "..."}]``) have every string leaf
+      redacted recursively, so secrets inside ``text`` / ``input``
+      fields of OpenAI/Anthropic-style blocks cannot pass through
+      unredacted (PR review P2).
     * ``prompt`` / ``response`` / ``output`` / ``input``: redacted if
       present as strings.
     * everything else: passed through verbatim.
-
-    The per-trajectory category counts are added to ``stats`` so the
-    summary reflects the whole-file totals.
     """
 
     out: dict[str, Any] = dict(trajectory)
+    stats = RedactionStats()
 
     messages = trajectory.get("messages")
     if isinstance(messages, list):
@@ -166,10 +228,9 @@ def _redact_trajectory(
         if isinstance(value, str):
             redacted, sub = redact_text(value, policy)
             out[key] = redacted
-            for category, count in sub.by_category.items():
-                stats.add(category, count)
+            _accumulate(stats, sub)
 
-    return out
+    return out, stats
 
 
 def _redact_message(
@@ -181,12 +242,34 @@ def _redact_message(
     if not isinstance(message, dict):
         return message
     content = message.get("content")
-    if not isinstance(content, str):
+    if content is None:
         return message
-    redacted, sub = redact_text(content, policy)
-    for category, count in sub.by_category.items():
-        stats.add(category, count)
-    return {**message, "content": redacted}
+    new_content = _redact_value(content, policy=policy, stats=stats)
+    return {**message, "content": new_content}
 
 
-__all__ = ["TrajectoryIngestSummary", "ingest_trajectory_jsonl"]
+def _redact_value(value: Any, *, policy: RedactionPolicy, stats: RedactionStats) -> Any:
+    """Recursively redact string leaves while preserving structure.
+
+    Used for both message content (which may be a string or a list of
+    structured content blocks) and for nested fields inside those
+    blocks. Non-string values are returned unchanged; lists and dicts
+    are walked.
+    """
+    if isinstance(value, str):
+        redacted, sub = redact_text(value, policy)
+        _accumulate(stats, sub)
+        return redacted
+    if isinstance(value, list):
+        return [_redact_value(item, policy=policy, stats=stats) for item in value]
+    if isinstance(value, dict):
+        return {k: _redact_value(v, policy=policy, stats=stats) for k, v in value.items()}
+    return value
+
+
+def _accumulate(target: RedactionStats, source: RedactionStats) -> None:
+    for category, count in source.by_category.items():
+        target.add(category, count)
+
+
+__all__ = ["RAW_CONTENT_WARNING", "TrajectoryIngestSummary", "ingest_trajectory_jsonl"]

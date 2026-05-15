@@ -251,11 +251,6 @@ def run_hermes_ingest_trajectories_command(
             console.print(f"[red]{err}[/red]")
         raise typer.Exit(code=1) from err
 
-    if redact == "off" and not json_output:
-        console.print(
-            "[yellow]warning:[/yellow] --redact off writes raw content to disk; AC-706 requires explicit operator opt-in."
-        )
-
     try:
         summary: TrajectoryIngestSummary = ingest_trajectory_jsonl(
             input_path=input_path,
@@ -264,7 +259,7 @@ def run_hermes_ingest_trajectories_command(
             limit=limit,
             dry_run=dry_run,
         )
-    except FileNotFoundError as err:
+    except (FileNotFoundError, ValueError) as err:
         if json_output:
             write_json_stderr(str(err))
         else:
