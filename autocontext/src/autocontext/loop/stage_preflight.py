@@ -77,6 +77,34 @@ def stage_preflight(
         except Exception:
             logger.warning("failed to collect environment snapshot", exc_info=True)
 
+    # AC-767: pre-fetch authoritative reference fixtures at gen 1.
+    if settings.fixture_loader_enabled and ctx.generation == 1:
+        try:
+            from autocontext.loop.fixture_loader import (
+                apply_to_context,
+                load_scenario_fixtures,
+            )
+
+            cache_root = artifacts.knowledge_root / settings.fixture_loader_cache_dir
+            fixtures = load_scenario_fixtures(
+                ctx.scenario_name,
+                knowledge_root=artifacts.knowledge_root,
+                cache_root=cache_root,
+            )
+            apply_to_context(ctx, fixtures)
+            events.emit(
+                "fixtures_loaded",
+                {
+                    "run_id": ctx.run_id,
+                    "scenario": ctx.scenario_name,
+                    "count": len(fixtures),
+                    "keys": [fx.key for fx in fixtures],
+                },
+            )
+            logger.info("loaded %d authoritative fixtures for %s", len(fixtures), ctx.scenario_name)
+        except Exception:
+            logger.warning("failed to load authoritative fixtures", exc_info=True)
+
     # Gate: disabled
     if not settings.harness_preflight_enabled:
         return ctx
