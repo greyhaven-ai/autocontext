@@ -1,6 +1,6 @@
 # pi-autocontext
 
-Autocontext extension for [Pi coding agent](https://github.com/badlogic/pi-mono) — iterative strategy generation, LLM judging, and evaluation tools.
+Autocontext extension for [Pi coding agent](https://github.com/earendil-works/pi) — iterative strategy generation, LLM judging, and evaluation tools.
 
 ## Install
 
@@ -57,7 +57,7 @@ Or use the skill for guided workflows:
 
 ## Requirements
 
-- [Pi coding agent](https://github.com/badlogic/pi-mono)
+- [Pi coding agent](https://github.com/earendil-works/pi)
 - An LLM provider configured in Pi (Anthropic, OpenAI, etc.)
 - Optional: `autoctx` CLI for standalone usage outside Pi
 
@@ -74,4 +74,4 @@ The extension auto-discovers your autocontext configuration:
 
 - [autocontext](https://github.com/greyhaven-ai/autocontext) — Main repository
 - [autoctx on npm](https://www.npmjs.com/package/autoctx) — Core TypeScript package
-- [Pi coding agent](https://github.com/badlogic/pi-mono) — The Pi agent
+- [Pi coding agent](https://github.com/earendil-works/pi) — The Pi agent

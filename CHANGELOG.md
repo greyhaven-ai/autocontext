@@ -66,7 +66,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
-- Python `autocontext` and TypeScript `autoctx` package metadata are bumped to `0.5.1` for the Pi CLI timeout-hardening release. The Pi `pi-autocontext` package remains at `0.2.4` because its existing `autoctx` dependency range (`^0.4.9 || ^0.5.0`) already admits `0.5.1` and no Pi package files changed.
+- Python `autocontext` and TypeScript `autoctx` package metadata are bumped to `0.5.1` for the Pi CLI timeout-hardening release. Follow-up Pi `pi-autocontext` package metadata is bumped to `0.2.5`, its extension imports and peer dependencies are migrated to the Pi 0.74 `@earendil-works/*` / `typebox` package names, and its `autoctx` dependency now requires the hardened `^0.5.1` line.
 - Default of `AUTOCONTEXT_CLAUDE_MAX_TOTAL_SECONDS` is now `0` (disabled, opt-in). Set explicitly when you want a wall-clock cap on total Claude CLI runtime; the per-invocation retry cap inside `ClaudeCLIConfig` keeps its 25-minute default for in-process retry sequences.
 
 ## [0.5.0] - 2026-05-01
