@@ -13,6 +13,7 @@ def build_refinement_prompt(
     score_trajectory: str = "",
     operational_lessons: str = "",
     imported_signatures: str = "",
+    remediation_hints: str = "",
 ) -> str:
     """Build a prompt for refining an existing strategy (tree search mode).
 
@@ -23,11 +24,17 @@ def build_refinement_prompt(
     :func:`autocontext.loop.signature_surfacer.render_signatures` (AC-768) — a
     prompt block listing the signatures of local-module symbols actually imported
     by ``parent_strategy``. Empty string omits the block.
+
+    ``remediation_hints`` is the rendered output of
+    :func:`autocontext.loop.remediation_router.render_hints` (AC-769) — a
+    prompt block listing concrete next-move suggestions derived from the
+    failure pattern. Empty string omits the block.
     """
     playbook_block = f"Current playbook:\n{current_playbook}\n\n" if current_playbook else ""
     trajectory_block = f"Score trajectory:\n{score_trajectory}\n\n" if score_trajectory else ""
     lessons_block = f"Operational lessons:\n{operational_lessons}\n\n" if operational_lessons else ""
     signatures_block = f"{imported_signatures}\n\n" if imported_signatures else ""
+    hints_block = f"{remediation_hints}\n\n" if remediation_hints else ""
     return (
         f"Scenario rules:\n{scenario_rules}\n\n"
         f"Strategy interface:\n{strategy_interface}\n\n"
@@ -36,6 +43,7 @@ def build_refinement_prompt(
         f"{trajectory_block}"
         f"{lessons_block}"
         f"{signatures_block}"
+        f"{hints_block}"
         "--- STRATEGY REFINEMENT ---\n\n"
         "You are refining an existing strategy, not creating one from scratch.\n\n"
         f"Current strategy to refine:\n<strategy>\n{parent_strategy}\n</strategy>\n\n"
