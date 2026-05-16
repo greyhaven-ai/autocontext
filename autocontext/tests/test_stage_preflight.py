@@ -180,11 +180,14 @@ class TestPreflightSkips:
         result = stage_preflight(ctx, events=events, artifacts=store)
         assert result is ctx
         # Should emit preflight_skipped
-        events.emit.assert_any_call("preflight_skipped", {
-            "run_id": "test_run_001",
-            "scenario": "grid_ctf",
-            "reason": "harness already exists",
-        })
+        events.emit.assert_any_call(
+            "preflight_skipped",
+            {
+                "run_id": "test_run_001",
+                "scenario": "grid_ctf",
+                "reason": "harness already exists",
+            },
+        )
 
     def test_force_ignores_existing_harness(self, tmp_path: Path) -> None:
         """When force=True, should re-synthesize even if harness exists."""
@@ -204,8 +207,10 @@ class TestPreflightSkips:
         (harness_dir / "preflight_synthesized.py").write_text("# existing", encoding="utf-8")
 
         # Mock the synthesis path
-        with patch("autocontext.loop.stage_preflight.HarnessSynthesizer") as MockSynth, \
-             patch("autocontext.loop.stage_preflight.SampleStateGenerator") as MockGen:
+        with (
+            patch("autocontext.loop.stage_preflight.HarnessSynthesizer") as MockSynth,
+            patch("autocontext.loop.stage_preflight.SampleStateGenerator") as MockGen,
+        ):
             mock_result = MagicMock()
             mock_result.harness_source = "def validate_strategy(s, sc): return True, []\n"
             mock_result.converged = True
@@ -235,9 +240,11 @@ class TestPreflightExecution:
         events = _make_events(tmp_path)
         store = _make_store(tmp_path)
 
-        with patch("autocontext.loop.stage_preflight.HarnessSynthesizer") as MockSynth, \
-             patch("autocontext.loop.stage_preflight.SampleStateGenerator") as MockGen, \
-             patch("autocontext.loop.stage_preflight.get_provider") as mock_get_provider:
+        with (
+            patch("autocontext.loop.stage_preflight.HarnessSynthesizer") as MockSynth,
+            patch("autocontext.loop.stage_preflight.SampleStateGenerator") as MockGen,
+            patch("autocontext.loop.stage_preflight.get_provider") as mock_get_provider,
+        ):
             mock_provider = MagicMock()
             mock_get_provider.return_value = mock_provider
 
@@ -266,9 +273,11 @@ class TestPreflightExecution:
         events = _make_events(tmp_path)
         store = _make_store(tmp_path)
 
-        with patch("autocontext.loop.stage_preflight.HarnessSynthesizer") as MockSynth, \
-             patch("autocontext.loop.stage_preflight.SampleStateGenerator") as MockGen, \
-             patch("autocontext.loop.stage_preflight.get_provider"):
+        with (
+            patch("autocontext.loop.stage_preflight.HarnessSynthesizer") as MockSynth,
+            patch("autocontext.loop.stage_preflight.SampleStateGenerator") as MockGen,
+            patch("autocontext.loop.stage_preflight.get_provider"),
+        ):
             mock_result = MagicMock()
             mock_result.harness_source = "pass"
             mock_result.converged = True
@@ -279,10 +288,13 @@ class TestPreflightExecution:
 
             stage_preflight(ctx, events=events, artifacts=store)
 
-        events.emit.assert_any_call("preflight_start", {
-            "run_id": "test_run_001",
-            "scenario": "grid_ctf",
-        })
+        events.emit.assert_any_call(
+            "preflight_start",
+            {
+                "run_id": "test_run_001",
+                "scenario": "grid_ctf",
+            },
+        )
 
     def test_emits_preflight_complete_when_converged(self, tmp_path: Path) -> None:
         """Should emit preflight_complete when synthesis converges."""
@@ -292,9 +304,11 @@ class TestPreflightExecution:
         events = _make_events(tmp_path)
         store = _make_store(tmp_path)
 
-        with patch("autocontext.loop.stage_preflight.HarnessSynthesizer") as MockSynth, \
-             patch("autocontext.loop.stage_preflight.SampleStateGenerator") as MockGen, \
-             patch("autocontext.loop.stage_preflight.get_provider"):
+        with (
+            patch("autocontext.loop.stage_preflight.HarnessSynthesizer") as MockSynth,
+            patch("autocontext.loop.stage_preflight.SampleStateGenerator") as MockGen,
+            patch("autocontext.loop.stage_preflight.get_provider"),
+        ):
             mock_result = MagicMock()
             mock_result.harness_source = "pass"
             mock_result.converged = True
@@ -305,13 +319,16 @@ class TestPreflightExecution:
 
             stage_preflight(ctx, events=events, artifacts=store)
 
-        events.emit.assert_any_call("preflight_complete", {
-            "run_id": "test_run_001",
-            "scenario": "grid_ctf",
-            "converged": True,
-            "accuracy": 0.95,
-            "iterations": 5,
-        })
+        events.emit.assert_any_call(
+            "preflight_complete",
+            {
+                "run_id": "test_run_001",
+                "scenario": "grid_ctf",
+                "converged": True,
+                "accuracy": 0.95,
+                "iterations": 5,
+            },
+        )
 
     def test_emits_preflight_incomplete_when_not_converged(self, tmp_path: Path) -> None:
         """Should emit preflight_incomplete when synthesis does not converge."""
@@ -321,9 +338,11 @@ class TestPreflightExecution:
         events = _make_events(tmp_path)
         store = _make_store(tmp_path)
 
-        with patch("autocontext.loop.stage_preflight.HarnessSynthesizer") as MockSynth, \
-             patch("autocontext.loop.stage_preflight.SampleStateGenerator") as MockGen, \
-             patch("autocontext.loop.stage_preflight.get_provider"):
+        with (
+            patch("autocontext.loop.stage_preflight.HarnessSynthesizer") as MockSynth,
+            patch("autocontext.loop.stage_preflight.SampleStateGenerator") as MockGen,
+            patch("autocontext.loop.stage_preflight.get_provider"),
+        ):
             mock_result = MagicMock()
             mock_result.harness_source = "pass"
             mock_result.converged = False
@@ -334,13 +353,16 @@ class TestPreflightExecution:
 
             stage_preflight(ctx, events=events, artifacts=store)
 
-        events.emit.assert_any_call("preflight_incomplete", {
-            "run_id": "test_run_001",
-            "scenario": "grid_ctf",
-            "converged": False,
-            "accuracy": 0.6,
-            "iterations": 30,
-        })
+        events.emit.assert_any_call(
+            "preflight_incomplete",
+            {
+                "run_id": "test_run_001",
+                "scenario": "grid_ctf",
+                "converged": False,
+                "accuracy": 0.6,
+                "iterations": 30,
+            },
+        )
 
     def test_passes_settings_to_synthesizer(self, tmp_path: Path) -> None:
         """Should pass max_iterations and target_accuracy from settings."""
@@ -355,9 +377,11 @@ class TestPreflightExecution:
         events = _make_events(tmp_path)
         store = _make_store(tmp_path)
 
-        with patch("autocontext.loop.stage_preflight.HarnessSynthesizer") as MockSynth, \
-             patch("autocontext.loop.stage_preflight.SampleStateGenerator") as MockGen, \
-             patch("autocontext.loop.stage_preflight.get_provider"):
+        with (
+            patch("autocontext.loop.stage_preflight.HarnessSynthesizer") as MockSynth,
+            patch("autocontext.loop.stage_preflight.SampleStateGenerator") as MockGen,
+            patch("autocontext.loop.stage_preflight.get_provider"),
+        ):
             mock_result = MagicMock()
             mock_result.harness_source = "pass"
             mock_result.converged = True
@@ -382,9 +406,11 @@ class TestPreflightExecution:
         events = _make_events(tmp_path)
         store = _make_store(tmp_path)
 
-        with patch("autocontext.loop.stage_preflight.HarnessSynthesizer") as MockSynth, \
-             patch("autocontext.loop.stage_preflight.SampleStateGenerator") as MockGen, \
-             patch("autocontext.loop.stage_preflight.get_provider"):
+        with (
+            patch("autocontext.loop.stage_preflight.HarnessSynthesizer") as MockSynth,
+            patch("autocontext.loop.stage_preflight.SampleStateGenerator") as MockGen,
+            patch("autocontext.loop.stage_preflight.get_provider"),
+        ):
             mock_result = MagicMock()
             mock_result.harness_source = "pass"
             mock_result.converged = True
@@ -408,8 +434,7 @@ class TestPreflightPipelineWiring:
         """generation_pipeline.py should import stage_preflight."""
         from autocontext.loop import generation_pipeline
 
-        assert hasattr(generation_pipeline, "stage_preflight") or \
-            "stage_preflight" in dir(generation_pipeline)
+        assert hasattr(generation_pipeline, "stage_preflight") or "stage_preflight" in dir(generation_pipeline)
 
     def test_pipeline_calls_preflight_on_gen_1(self, tmp_path: Path) -> None:
         """GenerationPipeline.run_generation should call stage_preflight for gen 1."""
@@ -419,3 +444,109 @@ class TestPreflightPipelineWiring:
             # the full pipeline test requires many more mocks.
             # Import verification suffices for wiring.
             assert mock_stage is not None  # confirms patching worked
+
+
+# ---------------------------------------------------------------------------
+# AC-767: authoritative fixture loader integration
+# ---------------------------------------------------------------------------
+
+
+class TestPreflightFixtures:
+    def test_fixture_loader_disabled_by_default(self) -> None:
+        settings = _make_settings()
+        assert settings.fixture_loader_enabled is False
+
+    def test_skips_when_fixture_loader_disabled(self, tmp_path: Path) -> None:
+        """No manifest read, no fixtures populated, when feature flag off."""
+        from autocontext.loop.stage_preflight import stage_preflight
+
+        ctx = _make_ctx(tmp_path, fixture_loader_enabled=False)
+        events = _make_events(tmp_path)
+        store = _make_store(tmp_path)
+
+        stage_preflight(ctx, events=events, artifacts=store)
+        assert ctx.fixtures == {}
+
+    def test_skips_when_not_gen_1(self, tmp_path: Path) -> None:
+        from autocontext.loop.stage_preflight import stage_preflight
+
+        ctx = _make_ctx(tmp_path, generation=2, fixture_loader_enabled=True)
+        events = _make_events(tmp_path)
+        store = _make_store(tmp_path)
+
+        stage_preflight(ctx, events=events, artifacts=store)
+        assert ctx.fixtures == {}
+
+    def test_missing_manifest_is_no_op(self, tmp_path: Path) -> None:
+        """No fixtures.json under knowledge/<scenario>/: empty dict, no error."""
+        from autocontext.loop.stage_preflight import stage_preflight
+
+        ctx = _make_ctx(tmp_path, fixture_loader_enabled=True)
+        events = _make_events(tmp_path)
+        store = _make_store(tmp_path)
+        # knowledge dir exists (created by _make_store), but no fixtures.json.
+
+        stage_preflight(ctx, events=events, artifacts=store)
+        assert ctx.fixtures == {}
+
+    def test_loads_manifest_and_populates_ctx_fixtures(self, tmp_path: Path) -> None:
+        """When a manifest exists, fixtures are fetched and attached to ctx."""
+        import hashlib
+        import json as _json
+
+        from autocontext.loop.stage_preflight import stage_preflight
+
+        ctx = _make_ctx(tmp_path, fixture_loader_enabled=True)
+        events = _make_events(tmp_path)
+        store = _make_store(tmp_path)
+
+        # Set up manifest under knowledge/grid_ctf/fixtures.json
+        scen_dir = store.knowledge_root / ctx.scenario_name
+        scen_dir.mkdir(parents=True, exist_ok=True)
+        body = b"reference data v1"
+        sha = hashlib.sha256(body).hexdigest()
+        (scen_dir / "fixtures.json").write_text(
+            _json.dumps(
+                {
+                    "entries": [
+                        {
+                            "key": "challenge_19_data",
+                            "source": "https://example.com/19",
+                            "expected_sha256": sha,
+                        }
+                    ]
+                }
+            )
+        )
+
+        # Patch the fetcher's underlying urlopen so the test stays hermetic.
+        fake_response = type(
+            "R",
+            (),
+            {
+                "read": lambda self: body,
+                "__enter__": lambda self: self,
+                "__exit__": lambda *a: None,
+            },
+        )()
+        with patch("autocontext.loop.fixture_loader.urlopen", return_value=fake_response):
+            stage_preflight(ctx, events=events, artifacts=store)
+
+        # Acceptance: ctx.fixtures["challenge_19_data"].bytes_ == body
+        assert "challenge_19_data" in ctx.fixtures
+        assert ctx.fixtures["challenge_19_data"].bytes_ == body
+        assert ctx.fixtures["challenge_19_data"].provenance.sha256 == sha
+        events.emit.assert_any_call(
+            "fixtures_loaded",
+            {
+                "run_id": "test_run_001",
+                "scenario": "grid_ctf",
+                "count": 1,
+                "keys": ["challenge_19_data"],
+            },
+        )
+        # PR #968 review (P2): fixtures must surface in agent prompts via
+        # ctx.environment_snapshot so the existing prompt plumbing carries
+        # them into every role.
+        assert "challenge_19_data" in ctx.environment_snapshot
+        assert "## Available fixtures" in ctx.environment_snapshot

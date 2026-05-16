@@ -312,6 +312,12 @@ autoctx hermes ingest-trajectories \
   --redact strict \
   --user-patterns '[{"name":"ticket","pattern":"TKT-\\d+"}]' \
   --dry-run --json
+
+# Ingest Hermes session DB into ProductionTrace JSONL (AC-706 slice 2)
+autoctx hermes ingest-sessions \
+  --home "$HERMES_HOME" \
+  --output traces/hermes-sessions.jsonl \
+  --redact standard --json
 ```
 
 `--with-references` writes one markdown file per reference into a
@@ -369,9 +375,27 @@ Behavior notes:
 
 Per-line tolerance: malformed JSON lines, non-object lines, and
 blank lines are skipped with per-line warnings rather than aborting
-the whole import. The input file is never mutated. AC-706 slice 2
-(`autoctx hermes ingest-sessions` from `~/.hermes/state.db`) is a
-follow-up.
+the whole import. The input file is never mutated; same-path
+`--input`/`--output` is rejected at the boundary.
+
+`ingest-sessions` flags (AC-706 slice 2):
+
+- `--home <path>`: Hermes home directory. Default `HERMES_HOME` or
+  `~/.hermes`. The DB at `<home>/state.db` is opened read-only via
+  SQLite URI `mode=ro`; missing DB returns an empty summary.
+- `--output <jsonl>`: destination for the ProductionTrace JSONL.
+- `--redact`, `--user-patterns`, `--limit`, `--dry-run`: same
+  semantics as `ingest-trajectories`; the redaction policy is
+  shared between the two ingesters.
+- `--since <ISO-8601>`: skip sessions with `started_at` strictly
+  before. Invalid timestamps raise `ValueError`.
+
+Schema-drift posture: the repository reads only the columns it
+needs (`session_id`, `started_at`, `ended_at`, `agent_id`,
+`metadata` on `sessions`; `session_id`, `seq`, `role`, `content`,
+`timestamp`, `metadata` on `messages`). Extra columns are ignored;
+missing optional columns are tolerated. WAL/SHM sidecars are not
+required. The importer never writes to the Hermes DB.
 
 JSON output shape for `inspect`:
 

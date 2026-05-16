@@ -50,7 +50,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from autocontext.hermes.redaction import RedactionPolicy, RedactionStats, redact_text
+from autocontext.hermes.redaction import RedactionPolicy, RedactionStats, redact_text, redact_value
 
 # Marker the CLI surfaces and JSON callers can match on so automation
 # knows raw content was written without parsing free-form warning text.
@@ -244,27 +244,9 @@ def _redact_message(
     content = message.get("content")
     if content is None:
         return message
-    new_content = _redact_value(content, policy=policy, stats=stats)
+    new_content, sub = redact_value(content, policy)
+    _accumulate(stats, sub)
     return {**message, "content": new_content}
-
-
-def _redact_value(value: Any, *, policy: RedactionPolicy, stats: RedactionStats) -> Any:
-    """Recursively redact string leaves while preserving structure.
-
-    Used for both message content (which may be a string or a list of
-    structured content blocks) and for nested fields inside those
-    blocks. Non-string values are returned unchanged; lists and dicts
-    are walked.
-    """
-    if isinstance(value, str):
-        redacted, sub = redact_text(value, policy)
-        _accumulate(stats, sub)
-        return redacted
-    if isinstance(value, list):
-        return [_redact_value(item, policy=policy, stats=stats) for item in value]
-    if isinstance(value, dict):
-        return {k: _redact_value(v, policy=policy, stats=stats) for k, v in value.items()}
-    return value
 
 
 def _accumulate(target: RedactionStats, source: RedactionStats) -> None:
