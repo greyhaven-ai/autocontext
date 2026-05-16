@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -106,31 +107,61 @@ class Fetcher(Protocol):
     def fetch(self, source: str) -> bytes: ...
 
 
+_URL_SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.\-]*://")
+
+
 class UrlFetcher:
-    """Default fetcher: urllib for http(s), local file read for file paths."""
+    """Default fetcher: ``urlopen`` for ``http(s)://`` and ``file://`` sources;
+    plain filesystem read for source strings without a scheme."""
 
     def fetch(self, source: str) -> bytes:
+        # Local path: anything without a URL scheme prefix.
+        if not _URL_SCHEME.match(source):
+            try:
+                return Path(source).read_bytes()
+            except OSError as e:
+                raise FixtureFetchError(f"could not read local fixture {source}: {e}") from e
         try:
             with urlopen(source) as response:
                 body: bytes = response.read()
                 return body
-        except OSError as e:
+        except (OSError, ValueError) as e:
+            # urlopen raises ValueError for unknown schemes; treat as a fetch failure.
             raise FixtureFetchError(f"could not fetch {source}: {e}") from e
 
 
 # --- Cache -----------------------------------------------------------------
 
 
+_SAFE_NAME = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.\-]*$")
+
+
+def _require_safe_name(label: str, value: str) -> None:
+    """Reject names that could break out of a directory (``..``, ``/``,
+    leading dot, etc.). Allowed: letters, digits, ``_``, ``-``, ``.``;
+    must not start with ``.``."""
+    if not isinstance(value, str) or not value or not _SAFE_NAME.match(value):
+        raise ValueError(f"unsafe {label} name: {value!r}")
+    if ".." in value:
+        raise ValueError(f"unsafe {label} name (contains '..'): {value!r}")
+
+
 class FixtureCache:
     """File-backed cache, scenario-scoped.
 
     Layout: ``<root>/<scenario>/<key>.bin`` and ``<key>.provenance.json``.
+
+    ``scenario`` and ``key`` are validated against a safe-name allowlist to
+    prevent path traversal — names must match ``[A-Za-z0-9_][A-Za-z0-9_.\\-]*``
+    and may not contain ``..``.
     """
 
     def __init__(self, root: Path) -> None:
         self._root = root
 
     def _paths(self, scenario: str, key: str) -> tuple[Path, Path]:
+        _require_safe_name("scenario", scenario)
+        _require_safe_name("key", key)
         scen_dir = self._root / scenario
         return scen_dir / f"{key}.bin", scen_dir / f"{key}.provenance.json"
 
@@ -140,10 +171,16 @@ class FixtureCache:
             return None
         body = bin_path.read_bytes()
         prov_data = json.loads(prov_path.read_text(encoding="utf-8"))
+        # Reviewer F3: never trust the provenance hash alone. Re-hash the
+        # actual bytes; if they don't match, the cache entry is corrupted
+        # or tampered with and we report it as missing so the caller refetches.
+        actual_sha = _sha256(body)
+        if actual_sha != prov_data["sha256"]:
+            return None
         provenance = FixtureProvenance(
             source=prov_data["source"],
             fetched_at=prov_data["fetched_at"],
-            sha256=prov_data["sha256"],
+            sha256=actual_sha,
         )
         return Fixture(key=key, bytes_=body, provenance=provenance)
 
@@ -214,8 +251,16 @@ def load_fixtures(
 
 
 def _cache_is_fresh(cached: Fixture, entry: FixtureManifestEntry) -> bool:
-    """A cache entry is fresh if it has no required sha, or if the cached
-    payload's sha still matches the manifest's expected_sha256."""
+    """A cache entry is fresh iff:
+      * the source it was fetched from matches the manifest's current source, AND
+      * the cached payload's sha matches the manifest's expected_sha256
+        (when one is given; otherwise just the source check suffices).
+
+    Reviewer F5: previously a no-checksum cache hit was always treated as
+    fresh, so editing the manifest's source URL did not trigger a refetch.
+    """
+    if cached.provenance.source != entry.source:
+        return False
     if entry.expected_sha256 is None:
         return True
     return cached.provenance.sha256 == entry.expected_sha256

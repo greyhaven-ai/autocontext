@@ -107,11 +107,7 @@ def _evidence_source_run_ids(ctx: GenerationContext, *, artifacts: ArtifactStore
     if not snapshots_dir.is_dir():
         return []
     try:
-        return sorted(
-            path.name
-            for path in snapshots_dir.iterdir()
-            if path.is_dir() and path.name != ctx.run_id
-        )
+        return sorted(path.name for path in snapshots_dir.iterdir() if path.is_dir() and path.name != ctx.run_id)
     except OSError:
         return []
 
@@ -161,6 +157,7 @@ def _benchmarkable_prompt_components(
     session_reports: str,
     architect_tool_usage_report: str,
     environment_snapshot: str,
+    fixtures_section: str,
     evidence_manifest: str,
     evidence_manifests: dict[str, str] | None,
     notebook_contexts: dict[str, str] | None,
@@ -186,6 +183,7 @@ def _benchmarkable_prompt_components(
         "session_reports": session_reports,
         "tool_usage_report": architect_tool_usage_report,
         "environment_snapshot": environment_snapshot,
+        "fixtures": fixtures_section,
         "evidence_manifest": evidence_manifest,
         "evidence_manifest_analyst": _evidence.get("analyst", evidence_manifest),
         "evidence_manifest_architect": _evidence.get("architect", evidence_manifest),
@@ -215,6 +213,7 @@ def _benchmarkable_prompt_components_from_kwargs(prompt_kwargs: dict[str, Any]) 
         session_reports=_as_str(prompt_kwargs.get("session_reports")),
         architect_tool_usage_report=_as_str(prompt_kwargs.get("architect_tool_usage_report")),
         environment_snapshot=_as_str(prompt_kwargs.get("environment_snapshot")),
+        fixtures_section=_as_str(prompt_kwargs.get("fixtures_section")),
         evidence_manifest=_as_str(prompt_kwargs.get("evidence_manifest")),
         evidence_manifests=_as_str_dict(prompt_kwargs.get("evidence_manifests")),
         notebook_contexts=_as_str_dict(prompt_kwargs.get("notebook_contexts")),
@@ -228,11 +227,7 @@ def _as_str(value: Any) -> str:
 def _as_str_dict(value: Any) -> dict[str, str] | None:
     if not isinstance(value, dict):
         return None
-    return {
-        str(key): str(item)
-        for key, item in value.items()
-        if isinstance(key, str) and isinstance(item, str)
-    }
+    return {str(key): str(item) for key, item in value.items() if isinstance(key, str) and isinstance(item, str)}
 
 
 def prepare_generation_prompts(
@@ -267,6 +262,7 @@ def prepare_generation_prompts(
     context_budget_tokens: int,
     notebook_contexts: dict[str, str] | None,
     environment_snapshot: str,
+    fixtures_section: str,
     evidence_manifest: str,
     evidence_manifests: dict[str, str] | None,
     evidence_cache_hits: int,
@@ -301,6 +297,7 @@ def prepare_generation_prompts(
         "context_budget_tokens": context_budget_tokens,
         "notebook_contexts": notebook_contexts,
         "environment_snapshot": environment_snapshot,
+        "fixtures_section": fixtures_section,
         "evidence_manifest": evidence_manifest,
         "evidence_manifests": evidence_manifests,
     }
@@ -372,10 +369,7 @@ def prepare_generation_prompts(
     )
     report_payload = benchmark_report.to_dict()
     report_path = (
-        artifacts.knowledge_root
-        / ctx.scenario_name
-        / "semantic_compaction_reports"
-        / f"{ctx.run_id}_gen_{ctx.generation}.json"
+        artifacts.knowledge_root / ctx.scenario_name / "semantic_compaction_reports" / f"{ctx.run_id}_gen_{ctx.generation}.json"
     )
     write_json(report_path, report_payload)
     return prompts, report_payload

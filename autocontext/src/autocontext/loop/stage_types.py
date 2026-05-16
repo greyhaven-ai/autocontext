@@ -82,6 +82,7 @@ class GenerationContext:
 
     # AC-767: authoritative reference fixtures, populated by stage_preflight.
     fixtures: dict[str, Fixture] = field(default_factory=dict)
+    fixtures_section: str = ""  # rendered prompt block; threads through templates.py
 
     # Consultation result (AC-212)
     consultation_result: Any | None = None

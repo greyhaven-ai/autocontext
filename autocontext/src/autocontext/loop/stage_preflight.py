@@ -83,15 +83,17 @@ def stage_preflight(
             from autocontext.loop.fixture_loader import (
                 apply_to_context,
                 load_scenario_fixtures,
+                render_fixtures,
             )
 
-            cache_root = artifacts.knowledge_root / settings.fixture_loader_cache_dir
+            cache_root = artifacts.knowledge_root / ".fixture-cache"
             fixtures = load_scenario_fixtures(
                 ctx.scenario_name,
                 knowledge_root=artifacts.knowledge_root,
                 cache_root=cache_root,
             )
             apply_to_context(ctx, fixtures)
+            ctx.fixtures_section = render_fixtures(fixtures)
             events.emit(
                 "fixtures_loaded",
                 {

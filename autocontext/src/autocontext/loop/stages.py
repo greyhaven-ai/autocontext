@@ -427,6 +427,7 @@ def stage_knowledge_setup(
         context_budget_tokens=runtime_profile.context_budget_tokens,
         notebook_contexts=notebook_contexts,
         environment_snapshot="" if ablation else ctx.environment_snapshot,
+        fixtures_section="" if ablation else ctx.fixtures_section,
         evidence_manifest=evidence_manifest,
         evidence_manifests=evidence_manifests,
         evidence_cache_hits=evidence_cache_hits,
