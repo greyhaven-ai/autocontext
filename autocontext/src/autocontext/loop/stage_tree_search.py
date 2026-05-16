@@ -17,6 +17,7 @@ from autocontext.harness.mutations.parser import parse_mutations
 from autocontext.knowledge.rapid_gate import rapid_gate
 from autocontext.loop.hypothesis_tree import HypothesisTree
 from autocontext.loop.refinement_prompt import build_refinement_prompt
+from autocontext.loop.signature_surfacer import surface_for_strategy
 from autocontext.loop.stage_helpers.harness_mutations import persist_approved_harness_mutations
 from autocontext.loop.stage_types import GenerationContext
 
@@ -60,11 +61,14 @@ def stage_tree_search(
         temperature=settings.tree_sampling_temperature,
     )
 
-    events.emit("tree_search_start", {
-        "run_id": ctx.run_id,
-        "generation": ctx.generation,
-        "max_hypotheses": settings.tree_max_hypotheses,
-    })
+    events.emit(
+        "tree_search_start",
+        {
+            "run_id": ctx.run_id,
+            "generation": ctx.generation,
+            "max_hypotheses": settings.tree_max_hypotheses,
+        },
+    )
 
     # ── Phase 1: Seed hypotheses ─────────────────────────────────────
     initial_seeds = min(settings.tree_max_hypotheses, _MAX_INITIAL_SEEDS)
@@ -73,8 +77,11 @@ def stage_tree_search(
     for seed_idx in range(initial_seeds):
         try:
             strategy = _generate_and_translate(
-                orchestrator, ctx.prompts.competitor, strategy_interface,
-                ctx.tool_context, settings.code_strategies_enabled,
+                orchestrator,
+                ctx.prompts.competitor,
+                strategy_interface,
+                ctx.tool_context,
+                settings.code_strategies_enabled,
             )
         except Exception:
             logger.debug("seed %d generation failed", seed_idx, exc_info=True)
@@ -85,7 +92,9 @@ def stage_tree_search(
 
         node = tree.add(strategy, generation=ctx.generation)
         tournament = _run_mini_tournament(
-            scenario, supervisor, strategy,
+            scenario,
+            supervisor,
+            strategy,
             seed_base=settings.seed_base + (ctx.generation * 100) + (seed_idx * 10),
             trials=trials_per_seed,
             challenger_elo=ctx.challenger_elo,
@@ -99,7 +108,8 @@ def stage_tree_search(
     if tree.size() == 0:
         logger.warning("all seed hypotheses failed; falling back to single attempt")
         raw_text, competitor_exec = orchestrator.competitor.run(
-            ctx.prompts.competitor, tool_context=ctx.tool_context,
+            ctx.prompts.competitor,
+            tool_context=ctx.tool_context,
         )
         if settings.code_strategies_enabled:
             strategy, _ = orchestrator.translator.translate_code(raw_text)
@@ -111,36 +121,57 @@ def stage_tree_search(
     max_rounds = settings.tree_max_hypotheses * 2
     for round_idx in range(max_rounds):
         if tree.converged() or tree.size() < 2:
-            events.emit("tree_converged", {
-                "run_id": ctx.run_id,
-                "generation": ctx.generation,
-                "round": round_idx,
-            })
+            events.emit(
+                "tree_converged",
+                {
+                    "run_id": ctx.run_id,
+                    "generation": ctx.generation,
+                    "round": round_idx,
+                },
+            )
             break
 
         selected = tree.select()
-        events.emit("hypothesis_selected", {
-            "run_id": ctx.run_id,
-            "generation": ctx.generation,
-            "node_id": selected.id,
-            "elo": selected.elo,
-        })
+        events.emit(
+            "hypothesis_selected",
+            {
+                "run_id": ctx.run_id,
+                "generation": ctx.generation,
+                "node_id": selected.id,
+                "elo": selected.elo,
+            },
+        )
 
         # Build refinement prompt
         recent_scores = selected.scores[-5:] if selected.scores else []
         match_feedback = f"Recent scores: {recent_scores}, Elo: {selected.elo:.0f}"
+        # AC-768: when the strategy is Python source (code_strategies_enabled),
+        # statically surface the signatures of any local helpers it imports so
+        # the refinement model sees the call-site contract.
+        imported_signatures = surface_for_strategy(
+            selected.strategy,
+            code_strategies_enabled=settings.code_strategies_enabled,
+            search_roots=[
+                artifacts.tools_dir(ctx.scenario_name),
+                artifacts.harness_dir(ctx.scenario_name),
+            ],
+        )
         refinement_prompt = build_refinement_prompt(
             scenario_rules=scenario.describe_rules(),
             strategy_interface=strategy_interface,
             evaluation_criteria=scenario.describe_evaluation_criteria(),
             parent_strategy=json.dumps(selected.strategy, sort_keys=True),
             match_feedback=match_feedback,
+            imported_signatures=imported_signatures,
         )
 
         try:
             refined_strategy = _generate_and_translate(
-                orchestrator, refinement_prompt, strategy_interface,
-                ctx.tool_context, settings.code_strategies_enabled,
+                orchestrator,
+                refinement_prompt,
+                strategy_interface,
+                ctx.tool_context,
+                settings.code_strategies_enabled,
             )
         except Exception:
             logger.debug("refinement round %d failed", round_idx, exc_info=True)
@@ -151,7 +182,9 @@ def stage_tree_search(
 
         refined_node = tree.add(refined_strategy, parent_id=selected.id, generation=ctx.generation)
         tournament = _run_mini_tournament(
-            scenario, supervisor, refined_strategy,
+            scenario,
+            supervisor,
+            refined_strategy,
             seed_base=settings.seed_base + (ctx.generation * 100) + 50 + round_idx,
             trials=trials_per_seed,
             challenger_elo=ctx.challenger_elo,
@@ -161,13 +194,16 @@ def stage_tree_search(
         )
         tree.update(refined_node.id, [r.score for r in tournament.results], tournament.elo_after)
 
-        events.emit("hypothesis_refined", {
-            "run_id": ctx.run_id,
-            "generation": ctx.generation,
-            "parent_id": selected.id,
-            "child_id": refined_node.id,
-            "score": tournament.best_score,
-        })
+        events.emit(
+            "hypothesis_refined",
+            {
+                "run_id": ctx.run_id,
+                "generation": ctx.generation,
+                "parent_id": selected.id,
+                "child_id": refined_node.id,
+                "score": tournament.best_score,
+            },
+        )
 
     # ── Phase 3: Final tournament with best strategy ─────────────────
     best_node = tree.best()
@@ -177,12 +213,15 @@ def stage_tree_search(
     runner = EvaluationRunner(evaluator, scoring_backend=settings.scoring_backend)
 
     def _on_match(match_index: int, result: Any) -> None:
-        events.emit("match_completed", {
-            "run_id": ctx.run_id,
-            "generation": ctx.generation,
-            "match_index": match_index,
-            "score": result.score,
-        })
+        events.emit(
+            "match_completed",
+            {
+                "run_id": ctx.run_id,
+                "generation": ctx.generation,
+                "match_index": match_index,
+                "score": result.score,
+            },
+        )
 
     final_tournament = runner.run(
         candidate=best_strategy,
@@ -199,24 +238,30 @@ def stage_tree_search(
     gate_decision = gate_result.decision
     gate_delta = round(final_tournament.best_score - ctx.previous_best, 6)
 
-    events.emit("tournament_completed", {
-        "run_id": ctx.run_id,
-        "generation": ctx.generation,
-        "mean_score": final_tournament.mean_score,
-        "best_score": final_tournament.best_score,
-        "wins": final_tournament.wins,
-        "losses": final_tournament.losses,
-        "scoring_backend": final_tournament.scoring_backend,
-        "rating_uncertainty": final_tournament.uncertainty_after,
-    })
-    events.emit("gate_decided", {
-        "run_id": ctx.run_id,
-        "generation": ctx.generation,
-        "decision": gate_decision,
-        "delta": gate_delta,
-        "scoring_backend": final_tournament.scoring_backend,
-        "rating_uncertainty": final_tournament.uncertainty_after,
-    })
+    events.emit(
+        "tournament_completed",
+        {
+            "run_id": ctx.run_id,
+            "generation": ctx.generation,
+            "mean_score": final_tournament.mean_score,
+            "best_score": final_tournament.best_score,
+            "wins": final_tournament.wins,
+            "losses": final_tournament.losses,
+            "scoring_backend": final_tournament.scoring_backend,
+            "rating_uncertainty": final_tournament.uncertainty_after,
+        },
+    )
+    events.emit(
+        "gate_decided",
+        {
+            "run_id": ctx.run_id,
+            "generation": ctx.generation,
+            "decision": gate_decision,
+            "delta": gate_delta,
+            "scoring_backend": final_tournament.scoring_backend,
+            "rating_uncertainty": final_tournament.uncertainty_after,
+        },
+    )
 
     # ── Phase 5: Run analyst / coach / architect ─────────────────────
     def _notify(role: str, status: str) -> None:
@@ -244,7 +289,8 @@ def stage_tree_search(
     coach_playbook, coach_lessons, coach_hints = parse_coach_sections(coach_exec.content)
 
     competitor_typed = parse_competitor_output(
-        json.dumps(best_strategy, sort_keys=True), best_strategy,
+        json.dumps(best_strategy, sort_keys=True),
+        best_strategy,
         is_code_strategy=settings.code_strategies_enabled,
     )
     analyst_typed = parse_analyst_output(analyst_exec.content)
