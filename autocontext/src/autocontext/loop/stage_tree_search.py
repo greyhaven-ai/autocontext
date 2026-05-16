@@ -10,16 +10,61 @@ from autocontext.agents.architect import parse_architect_harness_specs, parse_ar
 from autocontext.agents.coach import parse_coach_sections
 from autocontext.agents.parsers import parse_analyst_output, parse_architect_output, parse_coach_output, parse_competitor_output
 from autocontext.agents.types import AgentOutputs
+from autocontext.harness.evaluation.failure_report import FailureReport, MatchDiagnosis
 from autocontext.harness.evaluation.runner import EvaluationRunner
 from autocontext.harness.evaluation.scenario_evaluator import ScenarioEvaluator
 from autocontext.harness.evaluation.types import EvaluationLimits as HarnessLimits
 from autocontext.harness.mutations.parser import parse_mutations
 from autocontext.knowledge.rapid_gate import rapid_gate
-from autocontext.loop.hypothesis_tree import HypothesisTree
+from autocontext.loop.fixture_loader import Fixture
+from autocontext.loop.hypothesis_tree import HypothesisNode, HypothesisTree
 from autocontext.loop.refinement_prompt import build_refinement_prompt
+from autocontext.loop.remediation_router import (
+    render_hints,
+    route_remediations,
+)
 from autocontext.loop.signature_surfacer import surface_for_strategy
 from autocontext.loop.stage_helpers.harness_mutations import persist_approved_harness_mutations
 from autocontext.loop.stage_types import GenerationContext
+
+
+def remediation_hints_for_node(
+    node: HypothesisNode,
+    *,
+    fixtures: dict[str, Fixture] | None = None,
+) -> str:
+    """AC-769 wiring: build a :class:`FailureReport` from the most recent
+    tournament's per-match errors stored on ``node.last_errors``, route it
+    through :func:`route_remediations`, and return the rendered prompt block.
+
+    Returns ``""`` when there are no per-match errors to reason about.
+    """
+    if not node.last_errors:
+        return ""
+    diagnoses = [
+        MatchDiagnosis(
+            match_index=i,
+            score=node.scores[i] if i < len(node.scores) else 0.0,
+            passed=False,
+            errors=list(errs),
+            summary=f"Match {i}",
+        )
+        for i, errs in enumerate(node.last_errors)
+        if errs
+    ]
+    if not diagnoses:
+        return ""
+    report = FailureReport(
+        match_diagnoses=diagnoses,
+        overall_delta=0.0,
+        threshold=0.0,
+        previous_best=0.0,
+        current_best=node.scores[-1] if node.scores else 0.0,
+        strategy_summary="",
+    )
+    hints = route_remediations(report, fixtures=fixtures)
+    return render_hints(hints)
+
 
 if TYPE_CHECKING:
     from autocontext.agents.orchestrator import AgentOrchestrator
@@ -102,7 +147,12 @@ def stage_tree_search(
             scoring_backend=settings.scoring_backend,
             hook_bus=ctx.hook_bus,
         )
-        tree.update(node.id, [r.score for r in tournament.results], tournament.elo_after)
+        tree.update(
+            node.id,
+            [r.score for r in tournament.results],
+            tournament.elo_after,
+            errors_per_match=[list(r.errors) for r in tournament.results],
+        )
 
     # Fallback: if no seeds survived, run one more attempt with the base prompt
     if tree.size() == 0:
@@ -156,6 +206,9 @@ def stage_tree_search(
                 artifacts.harness_dir(ctx.scenario_name),
             ],
         )
+        # AC-769: route the selected node's last-tournament errors through the
+        # remediation router so concrete next-move suggestions land in the prompt.
+        remediation_hints = remediation_hints_for_node(selected, fixtures=ctx.fixtures)
         refinement_prompt = build_refinement_prompt(
             scenario_rules=scenario.describe_rules(),
             strategy_interface=strategy_interface,
@@ -163,6 +216,7 @@ def stage_tree_search(
             parent_strategy=json.dumps(selected.strategy, sort_keys=True),
             match_feedback=match_feedback,
             imported_signatures=imported_signatures,
+            remediation_hints=remediation_hints,
         )
 
         try:
@@ -192,7 +246,12 @@ def stage_tree_search(
             scoring_backend=settings.scoring_backend,
             hook_bus=ctx.hook_bus,
         )
-        tree.update(refined_node.id, [r.score for r in tournament.results], tournament.elo_after)
+        tree.update(
+            refined_node.id,
+            [r.score for r in tournament.results],
+            tournament.elo_after,
+            errors_per_match=[list(r.errors) for r in tournament.results],
+        )
 
         events.emit(
             "hypothesis_refined",

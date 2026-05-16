@@ -240,3 +240,48 @@ class TestRender:
         assert "data_c19" in out
         assert "c10_cbc_mode" in out
         assert "detect_secret_len" in out
+
+
+class TestStageTreeSearchWiring:
+    """Reviewer P2 (PR #971): the production refinement loop must call
+    ``route_remediations`` from the most recent tournament's errors and
+    thread the rendered hints into ``build_refinement_prompt``.
+
+    We test the wiring at the seam exposed for this purpose:
+    ``stage_tree_search.remediation_hints_for_node`` takes a HypothesisNode
+    plus the GenerationContext-shaped fixtures dict and returns a rendered
+    prompt block."""
+
+    def test_node_with_off_by_one_errors_produces_smallcaseverify_block(self) -> None:
+        from autocontext.loop.hypothesis_tree import HypothesisNode
+        from autocontext.loop.stage_tree_search import remediation_hints_for_node
+
+        node = HypothesisNode(
+            id="n1",
+            strategy={"__code__": "x = 1"},
+            parent_id=None,
+            scores=[0.3, 0.4],
+            elo=950.0,
+            generation=1,
+            refinement_count=0,
+            last_errors=[["AssertionError: expected 138, got 139"]],
+        )
+        block = remediation_hints_for_node(node, fixtures={})
+        assert "## Suggested next moves" in block
+        assert "small-case verify" in block.lower()
+
+    def test_node_without_errors_returns_empty_block(self) -> None:
+        from autocontext.loop.hypothesis_tree import HypothesisNode
+        from autocontext.loop.stage_tree_search import remediation_hints_for_node
+
+        node = HypothesisNode(
+            id="n1",
+            strategy={"x": 1},
+            parent_id=None,
+            scores=[0.9],
+            elo=1500.0,
+            generation=1,
+            refinement_count=0,
+            last_errors=[],
+        )
+        assert remediation_hints_for_node(node, fixtures={}) == ""
