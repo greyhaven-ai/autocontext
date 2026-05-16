@@ -318,6 +318,12 @@ autoctx hermes ingest-sessions \
   --home "$HERMES_HOME" \
   --output traces/hermes-sessions.jsonl \
   --redact standard --json
+
+# Train a baseline curator advisor from AC-705 JSONL (AC-708 slice 1)
+autoctx hermes train-advisor \
+  --data training/hermes-curator-decisions.jsonl \
+  --baseline \
+  --output training/advisor-metrics.json --json
 ```
 
 `--with-references` writes one markdown file per reference into a
@@ -396,6 +402,23 @@ needs (`session_id`, `started_at`, `ended_at`, `agent_id`,
 `timestamp`, `metadata` on `messages`). Extra columns are ignored;
 missing optional columns are tolerated. WAL/SHM sidecars are not
 required. The importer never writes to the Hermes DB.
+
+`train-advisor` flags (AC-708 slice 1):
+
+- `--data <jsonl>`: AC-705 `curator-decisions` export to train and
+  evaluate on. Required.
+- `--baseline`: train the majority-class baseline advisor (the only
+  kind shipped in slice 1; logistic-regression / MLX / CUDA
+  backends arrive in slice 2).
+- `--output <json>`: optional metrics destination on disk; `--json`
+  still prints to stdout.
+
+Loader posture: per-line tolerant (malformed JSON, missing fields,
+unknown labels skip the row). Metrics surface `accuracy`, per-label
+`precision` / `recall` / `support`, and an `insufficient_data` flag
+that fires below `INSUFFICIENT_DATA_THRESHOLD` (20) examples so a
+small Hermes home does not act on noise. The baseline accuracy is
+the floor any later trained advisor must beat.
 
 JSON output shape for `inspect`:
 
