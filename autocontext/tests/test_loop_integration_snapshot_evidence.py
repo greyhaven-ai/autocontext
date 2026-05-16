@@ -40,6 +40,26 @@ class TestPromptBundleIntegration:
         assert "## Environment" in bundle.competitor
         assert "Python 3.13" in bundle.competitor
 
+    def test_accepts_fixtures_section_parameter(self) -> None:
+        """Reviewer F2 (PR #970): fixtures_section must thread through into
+        the competitor prompt so agents actually see the fetched reference data."""
+        from autocontext.prompts.templates import build_prompt_bundle
+        from autocontext.scenarios.base import Observation
+
+        obs = Observation(narrative="test", state={}, constraints=[])
+        bundle = build_prompt_bundle(
+            scenario_rules="rules",
+            strategy_interface="interface",
+            evaluation_criteria="criteria",
+            previous_summary="best 0.5",
+            observation=obs,
+            current_playbook="playbook",
+            available_tools="tools",
+            fixtures_section="## Available fixtures\n\n- `data_c19` (123 bytes, sha abcd1234) — https://example.com/19",
+        )
+        assert "## Available fixtures" in bundle.competitor
+        assert "data_c19" in bundle.competitor
+
     def test_accepts_evidence_manifest_parameter(self) -> None:
         from autocontext.prompts.templates import build_prompt_bundle
         from autocontext.scenarios.base import Observation

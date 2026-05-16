@@ -718,13 +718,8 @@ class AppSettings(BaseModel):
     env_snapshot_redact_hostname: bool = Field(default=True, description="Redact hostname in env snapshot")
     env_snapshot_redact_username: bool = Field(default=True, description="Redact username in env snapshot")
     env_snapshot_redact_paths: bool = Field(default=True, description="Redact absolute paths in env snapshot")
-    # Authoritative fixture loader (AC-767)
-    fixture_loader_enabled: bool = Field(
-        default=False, description="Pre-fetch authoritative reference fixtures listed in knowledge/<scenario>/fixtures.json"
-    )
-    fixture_loader_cache_dir: str = Field(
-        default=".fixture-cache", description="Cache directory (under run root) for fetched fixtures"
-    )
+    # AC-767 fixture loader (cache dir is fixed at .fixture-cache under knowledge root)
+    fixture_loader_enabled: bool = Field(default=False, description="Pre-fetch fixtures from knowledge/<scenario>/fixtures.json")
     # Evidence workspace (AC-504)
     evidence_workspace_enabled: bool = Field(default=False, description="Materialize prior-run evidence workspace")
     evidence_workspace_budget_mb: int = Field(default=10, ge=1, description="Evidence workspace budget in MB")

@@ -122,6 +122,69 @@ class TestFixtureCache:
         assert cache.get("b", "shared") is None
         assert cache.get("a", "shared") is not None
 
+    def test_traversing_scenario_name_rejected(self, tmp_path: Path) -> None:
+        """Reviewer F4: ``../outside`` as scenario must not escape the cache root."""
+        cache = FixtureCache(tmp_path)
+        prov = FixtureProvenance(source="x", fetched_at="t", sha256=_sha256(b"x"))
+        fixture = Fixture(key="k", bytes_=b"x", provenance=prov)
+        with pytest.raises(ValueError):
+            cache.put("../outside", fixture)
+        with pytest.raises(ValueError):
+            cache.get("../outside", "k")
+
+    def test_traversing_key_rejected(self, tmp_path: Path) -> None:
+        """Reviewer F4: ``../escape`` as key must not escape the scenario dir."""
+        cache = FixtureCache(tmp_path)
+        prov = FixtureProvenance(source="x", fetched_at="t", sha256=_sha256(b"x"))
+        fixture = Fixture(key="../../escape", bytes_=b"x", provenance=prov)
+        with pytest.raises(ValueError):
+            cache.put("scen", fixture)
+        with pytest.raises(ValueError):
+            cache.get("scen", "../../escape")
+
+    def test_absolute_path_in_name_rejected(self, tmp_path: Path) -> None:
+        cache = FixtureCache(tmp_path)
+        prov = FixtureProvenance(source="x", fetched_at="t", sha256=_sha256(b"x"))
+        with pytest.raises(ValueError):
+            cache.put("/abs", Fixture(key="k", bytes_=b"x", provenance=prov))
+
+
+class TestFixtureCacheBytesIntegrity:
+    """Reviewer F3: cache reads must verify the actual bytes, not trust provenance."""
+
+    def test_corrupted_bin_with_intact_provenance_is_rejected(self, tmp_path: Path) -> None:
+        cache = FixtureCache(tmp_path)
+        # Put a clean fixture, then tamper with the .bin while leaving provenance.
+        good = b"clean payload"
+        prov = FixtureProvenance(source="https://x", fetched_at="t", sha256=_sha256(good))
+        cache.put("scen", Fixture(key="k", bytes_=good, provenance=prov))
+        # Find the cached .bin and overwrite.
+        bin_path = tmp_path / "scen" / "k.bin"
+        assert bin_path.is_file()
+        bin_path.write_bytes(b"CORRUPTED")
+        # get() must NOT silently return corrupted bytes claiming the old sha.
+        assert cache.get("scen", "k") is None
+
+
+class TestLoadFixturesSourceChange:
+    """Reviewer F5: cache-hit must invalidate when the manifest source changes,
+    even when no expected_sha256 is given."""
+
+    def test_source_change_triggers_refetch(self, tmp_path: Path) -> None:
+        old_body = b"old"
+        new_body = b"new"
+        cache = FixtureCache(tmp_path)
+        # Seed with body from source=old.
+        prov = FixtureProvenance(source="https://example.com/old", fetched_at="t", sha256=_sha256(old_body))
+        cache.put("scen", Fixture(key="k", bytes_=old_body, provenance=prov))
+
+        # Manifest now points at source=new; no expected_sha256.
+        manifest = FixtureManifest(entries=[FixtureManifestEntry(key="k", source="https://example.com/new")])
+        fetcher = StubFetcher({"https://example.com/new": new_body})
+        result = load_fixtures(manifest, fetcher=fetcher, cache=cache, scenario="scen")
+        assert result[0].bytes_ == new_body
+        assert fetcher.calls == ["https://example.com/new"]
+
 
 # --- TestLoadFixtures -----------------------------------------------------
 
@@ -296,6 +359,25 @@ class TestUrlFetcher:
         with patch("autocontext.loop.fixture_loader.urlopen", side_effect=OSError("boom")):
             with pytest.raises(FixtureFetchError):
                 fetcher.fetch("https://example.com/x")
+
+    def test_local_file_path_is_supported(self, tmp_path: Path) -> None:
+        """Reviewer F6: docstring claims local paths supported. Verify it actually works."""
+        target = tmp_path / "fixture.dat"
+        target.write_bytes(b"local payload")
+        fetcher = UrlFetcher()
+        assert fetcher.fetch(str(target)) == b"local payload"
+
+    def test_missing_local_file_raises_fixture_fetch_error(self, tmp_path: Path) -> None:
+        fetcher = UrlFetcher()
+        with pytest.raises(FixtureFetchError):
+            fetcher.fetch(str(tmp_path / "does-not-exist.dat"))
+
+    def test_unknown_url_scheme_wrapped_as_fixture_fetch_error(self) -> None:
+        """If urlopen raises ValueError ('unknown url type'), wrap it so callers
+        get a single exception type to handle."""
+        fetcher = UrlFetcher()
+        with pytest.raises(FixtureFetchError):
+            fetcher.fetch("gopher://example.com/x")
 
 
 # --- TestRender -----------------------------------------------------------

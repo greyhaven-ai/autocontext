@@ -46,11 +46,7 @@ def _selected_context_components(
     roles: Mapping[str, str],
 ) -> dict[str, str]:
     role_text = "\n\n".join(roles.values())
-    return {
-        key: value
-        for key, value in components.items()
-        if isinstance(value, str) and value.strip() and value in role_text
-    }
+    return {key: value for key, value in components.items() if isinstance(value, str) and value.strip() and value in role_text}
 
 
 # Analyst/architect constraint bullets shared with rlm/prompts.py — keep in sync
@@ -117,6 +113,7 @@ def build_prompt_bundle(
     context_budget_tokens: int = 0,
     notebook_contexts: dict[str, str] | None = None,
     environment_snapshot: str = "",
+    fixtures_section: str = "",
     evidence_manifest: str = "",
     evidence_manifests: dict[str, str] | None = None,
     semantic_compaction: bool = True,
@@ -201,6 +198,7 @@ def build_prompt_bundle(
         "session_reports": session_reports,
         "tool_usage_report": architect_tool_usage_report,
         "environment_snapshot": environment_snapshot,
+        "fixtures": fixtures_section,
         "evidence_manifest_analyst": analyst_evidence_manifest,
         "evidence_manifest_architect": architect_evidence_manifest,
         "notebook_competitor": _nb.get("competitor", ""),
@@ -232,6 +230,7 @@ def build_prompt_bundle(
         session_reports = budgeted["session_reports"]
         architect_tool_usage_report = budgeted["tool_usage_report"]
         environment_snapshot = budgeted["environment_snapshot"]
+        fixtures_section = budgeted["fixtures"]
         analyst_evidence_manifest = budgeted["evidence_manifest_analyst"]
         architect_evidence_manifest = budgeted["evidence_manifest_architect"]
         _nb = {
@@ -257,6 +256,7 @@ def build_prompt_bundle(
     session_reports_block = f"Prior session reports:\n{session_reports}\n\n" if session_reports else ""
     tool_usage_block = f"{architect_tool_usage_report.strip()}\n\n" if architect_tool_usage_report else ""
     snapshot_block = f"{environment_snapshot}\n\n" if environment_snapshot else ""
+    fixtures_block = f"{fixtures_section}\n\n" if fixtures_section else ""
     analyst_evidence_block = f"{analyst_evidence_manifest}\n\n" if analyst_evidence_manifest else ""
     architect_evidence_block = f"{architect_evidence_manifest}\n\n" if architect_evidence_manifest else ""
     base_context = (
@@ -267,6 +267,7 @@ def build_prompt_bundle(
         f"Observation state:\n{observation.state}\n\n"
         f"Constraints:\n{observation.constraints}\n\n"
         f"{snapshot_block}"
+        f"{fixtures_block}"
         f"Current playbook:\n{current_playbook}\n\n"
         f"{lessons_block}"
         f"{analysis_block}"

@@ -545,3 +545,8 @@ class TestPreflightFixtures:
                 "keys": ["challenge_19_data"],
             },
         )
+        # Reviewer F2: the rendered prompt block must populate ctx.fixtures_section
+        # so downstream stages (stages.py → templates.py) can inject it into
+        # the actual agent prompts.
+        assert "## Available fixtures" in ctx.fixtures_section
+        assert "challenge_19_data" in ctx.fixtures_section
