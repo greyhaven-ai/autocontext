@@ -369,6 +369,16 @@ def run_hermes_ingest_sessions_command(
         console.print(f"[yellow]warning:[/yellow] {warning}")
 
 
+def _same_file(a: Path, b: Path) -> bool:
+    """Return True when ``a`` and ``b`` point at the same file (resolved)."""
+    if a.exists() and b.exists():
+        try:
+            return a.samefile(b)
+        except OSError:
+            return False
+    return a.resolve() == b.resolve()
+
+
 def run_hermes_train_advisor_command(
     *,
     data: Path,
@@ -382,6 +392,18 @@ def run_hermes_train_advisor_command(
     """Train and evaluate a Hermes curator advisor (AC-708 slice 1)."""
 
     import json as _json
+
+    # PR #972 review (P2): refuse to overwrite the source dataset.
+    if output is not None and _same_file(data, output):
+        message = (
+            f"output {output!s} resolves to the same file as --data {data!s}; "
+            "refusing to overwrite the source dataset"
+        )
+        if json_output:
+            write_json_stderr(message)
+        else:
+            console.print(f"[red]{message}[/red]")
+        raise typer.Exit(code=1)
 
     examples = load_curator_examples(data)
     if not examples:

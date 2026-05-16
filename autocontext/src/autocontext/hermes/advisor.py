@@ -219,16 +219,46 @@ def _example_from_row(row: Any) -> CuratorDecisionExample | None:
     skill_name = features.get("skill_name")
     if not isinstance(skill_name, str):
         return None
+    # PR #972 review (P2): numeric features may arrive as non-numeric
+    # strings (e.g. a Hermes export with a corrupted column). Skip the
+    # row rather than abort the loader so per-line tolerance matches
+    # the AC-704 / AC-706 ingest posture.
+    use_count = _as_int(features.get("skill_use_count"))
+    view_count = _as_int(features.get("skill_view_count"))
+    patch_count = _as_int(features.get("skill_patch_count"))
+    if use_count is None or view_count is None or patch_count is None:
+        return None
     return CuratorDecisionExample(
         skill_name=skill_name,
         label=label,
         state=str(features.get("skill_state") or "unknown"),
         provenance=str(features.get("skill_provenance") or "unknown"),
         pinned=bool(features.get("skill_pinned", False)),
-        use_count=int(features.get("skill_use_count") or 0),
-        view_count=int(features.get("skill_view_count") or 0),
-        patch_count=int(features.get("skill_patch_count") or 0),
+        use_count=use_count,
+        view_count=view_count,
+        patch_count=patch_count,
     )
+
+
+def _as_int(value: Any) -> int | None:
+    """Coerce a JSON value to int; return None when the value cannot be
+    parsed (non-numeric string, list, dict, etc.). ``None`` from the
+    source means "0" (the AC-705 export uses None for "no telemetry").
+    """
+    if value is None:
+        return 0
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return None
+    return None
 
 
 __all__ = [

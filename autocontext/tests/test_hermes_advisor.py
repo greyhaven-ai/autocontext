@@ -128,6 +128,32 @@ def test_load_rejects_unknown_label(tmp_path: Path) -> None:
     assert examples == []
 
 
+def test_load_skips_row_with_non_numeric_int_field(tmp_path: Path) -> None:
+    """PR #972 review (P2): a row with a non-numeric `skill_use_count`
+    must not abort the loader. The contract is per-line tolerant
+    (matches AC-704 / AC-706 ingest posture)."""
+    src = tmp_path / "data.jsonl"
+    bad = _ac705_row(skill_name="s_bad", label="consolidated")
+    bad["input"]["skill_use_count"] = "not-an-int"
+    good = _ac705_row(skill_name="s_good", label="pruned")
+    _write_jsonl(src, [bad, good])
+    examples = load_curator_examples(src)
+    assert [ex.skill_name for ex in examples] == ["s_good"]
+
+
+def test_load_skips_row_with_negative_numeric_string(tmp_path: Path) -> None:
+    """Numeric strings (`"12"`) coerce cleanly; non-numeric strings
+    skip the row. The negative-int case is allowed (Hermes can record
+    rollback counts) so it does NOT skip."""
+    src = tmp_path / "data.jsonl"
+    row = _ac705_row(skill_name="s1", label="consolidated")
+    row["input"]["skill_view_count"] = "-3"
+    _write_jsonl(src, [row])
+    examples = load_curator_examples(src)
+    assert len(examples) == 1
+    assert examples[0].view_count == -3
+
+
 def test_load_empty_file_returns_empty_list(tmp_path: Path) -> None:
     src = tmp_path / "data.jsonl"
     src.write_text("", encoding="utf-8")
@@ -404,6 +430,66 @@ def test_cli_train_advisor_surfaces_insufficient_data_warning(tmp_path: Path) ->
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
     assert payload["metrics"]["insufficient_data"] is True
+
+
+def test_cli_rejects_same_path_for_data_and_output(tmp_path: Path) -> None:
+    """PR #972 review (P2): `--output` must not be allowed to equal
+    `--data`, otherwise the source dataset gets overwritten with
+    metrics JSON."""
+    from typer.testing import CliRunner
+
+    from autocontext.cli import app
+
+    src = tmp_path / "data.jsonl"
+    _write_jsonl(src, [_ac705_row(skill_name="s1", label="consolidated")])
+    original = src.read_text(encoding="utf-8")
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "hermes",
+            "train-advisor",
+            "--data",
+            str(src),
+            "--baseline",
+            "--output",
+            str(src),
+            "--json",
+        ],
+    )
+    assert result.exit_code != 0
+    # Source dataset is untouched.
+    assert src.read_text(encoding="utf-8") == original
+
+
+def test_cli_rejects_same_path_via_symlink(tmp_path: Path) -> None:
+    """A symlink that resolves to the source dataset must also be
+    rejected, matching the trajectory-ingest same-file guard."""
+    from typer.testing import CliRunner
+
+    from autocontext.cli import app
+
+    src = tmp_path / "data.jsonl"
+    _write_jsonl(src, [_ac705_row(skill_name="s1", label="consolidated")])
+    link = tmp_path / "link.jsonl"
+    link.symlink_to(src)
+    original = src.read_text(encoding="utf-8")
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "hermes",
+            "train-advisor",
+            "--data",
+            str(src),
+            "--baseline",
+            "--output",
+            str(link),
+            "--json",
+        ],
+    )
+    assert result.exit_code != 0
+    assert src.read_text(encoding="utf-8") == original
 
 
 def test_cli_train_advisor_rejects_empty_dataset(tmp_path: Path) -> None:
