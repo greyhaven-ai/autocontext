@@ -139,10 +139,41 @@ def compile_user_patterns(raw: list[dict[str, str]] | None) -> tuple[UserPattern
     return tuple(compiled)
 
 
+def redact_value(value: Any, policy: RedactionPolicy) -> tuple[Any, RedactionStats]:
+    """Recursively redact string leaves while preserving structure.
+
+    Shared between the trajectory and session ingesters so a JSON-y
+    blob (message content blocks, session metadata, nested config) is
+    redacted with the same rules. Non-string scalars (int / float /
+    bool / None) pass through unchanged.
+
+    Returns ``(redacted_value, stats)``; ``stats`` aggregates the
+    per-leaf redactions so callers can fold them into their own
+    per-row or per-call totals without re-walking the structure.
+    """
+    stats = RedactionStats()
+    out = _walk(value, policy=policy, stats=stats)
+    return out, stats
+
+
+def _walk(value: Any, *, policy: RedactionPolicy, stats: RedactionStats) -> Any:
+    if isinstance(value, str):
+        redacted, sub = redact_text(value, policy)
+        for category, count in sub.by_category.items():
+            stats.add(category, count)
+        return redacted
+    if isinstance(value, list):
+        return [_walk(item, policy=policy, stats=stats) for item in value]
+    if isinstance(value, dict):
+        return {k: _walk(v, policy=policy, stats=stats) for k, v in value.items()}
+    return value
+
+
 __all__ = [
     "RedactionPolicy",
     "RedactionStats",
     "UserPattern",
     "compile_user_patterns",
     "redact_text",
+    "redact_value",
 ]

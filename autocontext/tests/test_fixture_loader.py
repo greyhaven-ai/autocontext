@@ -344,3 +344,91 @@ class TestApplyToContext:
         new_fx = Fixture(key="data_c19", bytes_=b"payload", provenance=prov)
         apply_to_context(ctx, [new_fx])
         assert set(ctx.fixtures) == {"existing", "data_c19"}  # type: ignore[attr-defined]
+
+
+# --- PR #968 review fixes ---------------------------------------------------
+
+
+class TestLocalFilePaths:
+    """PR #968 review (P3): support `file://` URIs and bare local paths so
+    the loader can seed from on-disk fixtures during offline runs."""
+
+    def test_file_uri_is_read_from_disk(self, tmp_path: Path) -> None:
+        target = tmp_path / "fixture.bin"
+        target.write_bytes(b"local-bytes")
+        fetcher = UrlFetcher()
+        assert fetcher.fetch(f"file://{target}") == b"local-bytes"
+
+    def test_bare_path_is_read_from_disk(self, tmp_path: Path) -> None:
+        target = tmp_path / "fixture.bin"
+        target.write_bytes(b"local-bytes")
+        fetcher = UrlFetcher()
+        assert fetcher.fetch(str(target)) == b"local-bytes"
+
+    def test_missing_local_file_raises_fixture_fetch_error(self, tmp_path: Path) -> None:
+        fetcher = UrlFetcher()
+        with pytest.raises(FixtureFetchError):
+            fetcher.fetch(str(tmp_path / "does-not-exist.bin"))
+
+
+class TestCachePathTraversal:
+    """PR #968 review (P2): path-segment validation rejects `..`,
+    absolute paths, and separators in scenario/key."""
+
+    def test_rejects_dotdot_in_scenario(self, tmp_path: Path) -> None:
+        cache = FixtureCache(tmp_path / "cache")
+        prov = FixtureProvenance(source="s", fetched_at="t", sha256="x")
+        fx = Fixture(key="ok", bytes_=b"x", provenance=prov)
+        with pytest.raises(ValueError, match="scenario"):
+            cache.put("../outside", fx)
+
+    def test_rejects_dotdot_in_key(self, tmp_path: Path) -> None:
+        cache = FixtureCache(tmp_path / "cache")
+        prov = FixtureProvenance(source="s", fetched_at="t", sha256="x")
+        fx = Fixture(key="../../escape", bytes_=b"x", provenance=prov)
+        with pytest.raises(ValueError, match="key"):
+            cache.put("scen", fx)
+
+    def test_rejects_absolute_path_components(self, tmp_path: Path) -> None:
+        cache = FixtureCache(tmp_path / "cache")
+        prov = FixtureProvenance(source="s", fetched_at="t", sha256="x")
+        fx = Fixture(key="/tmp/escape", bytes_=b"x", provenance=prov)
+        with pytest.raises(ValueError):
+            cache.put("scen", fx)
+
+    def test_rejects_path_separator_in_key(self, tmp_path: Path) -> None:
+        cache = FixtureCache(tmp_path / "cache")
+        prov = FixtureProvenance(source="s", fetched_at="t", sha256="x")
+        fx = Fixture(key="sub/dir/key", bytes_=b"x", provenance=prov)
+        with pytest.raises(ValueError):
+            cache.put("scen", fx)
+
+    def test_get_also_rejects_dotdot(self, tmp_path: Path) -> None:
+        cache = FixtureCache(tmp_path / "cache")
+        with pytest.raises(ValueError):
+            cache.get("../outside", "key")
+
+
+class TestCacheIntegrity:
+    """PR #968 review (P2): cache freshness must hash the cached bytes,
+    not trust the provenance JSON."""
+
+    def test_cached_bin_tampered_with_intact_provenance_is_refetched(self, tmp_path: Path) -> None:
+        cache_root = tmp_path / "cache"
+        body = b"the body"
+        expected = _sha256(body)
+        manifest = FixtureManifest(
+            entries=[FixtureManifestEntry(key="k1", source="https://example.com/k1", expected_sha256=expected)]
+        )
+        fetcher = StubFetcher({"https://example.com/k1": body})
+
+        load_fixtures(manifest, fetcher=fetcher, cache=FixtureCache(cache_root), scenario="scen")
+        assert fetcher.calls == ["https://example.com/k1"]
+
+        bin_path = cache_root / "scen" / "k1.bin"
+        bin_path.write_bytes(b"tampered payload")
+
+        result = load_fixtures(manifest, fetcher=fetcher, cache=FixtureCache(cache_root), scenario="scen")
+        assert fetcher.calls == ["https://example.com/k1", "https://example.com/k1"]
+        assert result[0].bytes_ == body
+

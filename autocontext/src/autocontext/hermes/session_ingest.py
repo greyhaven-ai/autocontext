@@ -27,7 +27,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from autocontext.hermes.redaction import RedactionPolicy, RedactionStats, redact_text
+from autocontext.hermes.redaction import RedactionPolicy, RedactionStats, redact_text, redact_value
 from autocontext.hermes.sessions import (
     HermesMessage,
     HermesSession,
@@ -174,13 +174,23 @@ def _session_to_trace(
             }
         )
 
+    # PR #968 review (P2): session.metadata is operator-controlled and may
+    # carry API keys, bearer tokens, or PII. Route it through the same
+    # RedactionPolicy as message content so secrets cannot bypass the
+    # ingester via the metadata path.
+    redacted_session_metadata, metadata_stats = redact_value(
+        dict(session.metadata) if session.metadata else {},
+        policy,
+    )
+    for category, count in metadata_stats.by_category.items():
+        stats.add(category, count)
     metadata: dict[str, Any] = {
         "source": "hermes.session",
         "session_id": session.session_id,
         "agent_id": session.agent_id,
         "session_started_at": session.started_at,
         "session_ended_at": session.ended_at,
-        "session_metadata": dict(session.metadata) if session.metadata else {},
+        "session_metadata": redacted_session_metadata,
     }
 
     trace = build_trace(

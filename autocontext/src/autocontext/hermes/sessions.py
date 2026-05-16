@@ -104,8 +104,14 @@ class HermesSessionRepository:
         if "sessions" not in self._table_names():
             return
         cols = self._session_columns
+        if not cols:
+            return
         col_sql = ", ".join(cols)
-        cursor = self._connection.execute(f"SELECT {col_sql} FROM sessions ORDER BY started_at")
+        # PR #968 review (P2): ORDER BY drops to no-op when `started_at`
+        # is absent so a bare-minimum `sessions(session_id PRIMARY KEY)`
+        # still iterates (schema-drift posture).
+        order_clause = "ORDER BY started_at" if "started_at" in cols else ""
+        cursor = self._connection.execute(f"SELECT {col_sql} FROM sessions {order_clause}".strip())
         for row in cursor:
             session = self._row_to_session(row, cols)
             if since is not None:

@@ -314,6 +314,43 @@ def test_per_trace_metadata_carries_session_envelope(tmp_path: Path) -> None:
     assert rows[0]["metadata"]["session_metadata"] == {"topic": "billing"}
 
 
+def test_session_metadata_strings_are_redacted(tmp_path: Path) -> None:
+    """PR #968 review (P2): session metadata is copied verbatim into
+    trace metadata. If it contains secrets (API keys, bearer tokens),
+    they must pass through the same RedactionPolicy as message content."""
+    home = tmp_path / "hermes"
+    _plant_hermes_home_with_sessions(
+        home,
+        sessions=[
+            {
+                "session_id": "s1",
+                "started_at": "2026-05-10T00:00:00Z",
+                "metadata": json.dumps(
+                    {
+                        "api_key": "sk-ant-abcdef1234567890abcdef",
+                        "nested": {"contact": "alice@example.com"},
+                        "tags": ["sk-ant-abcdef1234567890abcdef", "ok"],
+                        "count": 7,
+                    }
+                ),
+            }
+        ],
+        messages=[],
+    )
+    output = tmp_path / "sessions.jsonl"
+    summary = ingest_session_db(
+        home=home,
+        output=output,
+        policy=RedactionPolicy(mode="standard"),
+    )
+    row = _load_jsonl(output)[0]
+    serialized = json.dumps(row)
+    assert "sk-ant-" not in serialized
+    assert "alice@example.com" not in serialized
+    assert row["metadata"]["session_metadata"]["count"] == 7
+    assert summary.redactions.total >= 2
+
+
 def test_invalid_since_raises_value_error(tmp_path: Path) -> None:
     """Same boundary contract as slice 1's --since: silently disabling
     on a typo lets every session in. Raise at the boundary instead."""

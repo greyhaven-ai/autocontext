@@ -10,7 +10,8 @@ Six concerns, each independently testable:
   1. :class:`FixtureManifest` — parse manifest files (``from_json``).
   2. :class:`FixtureCache` — read/write cache files, scenario-scoped paths.
   3. :func:`load_fixtures` — orchestrate fetch + cache + checksum.
-  4. :class:`UrlFetcher` — default urllib fetcher.
+  4. :class:`UrlFetcher` — default fetcher (http(s) via urllib; ``file://``
+     URIs and bare local paths read directly from disk).
   5. :func:`render_fixtures` — prompt-block emission.
   6. :func:`apply_to_context` — attach fixtures to a ``GenerationContext``.
 
@@ -23,11 +24,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
+from urllib.parse import urlparse
 from urllib.request import urlopen
 
 # --- Errors ----------------------------------------------------------------
@@ -107,9 +110,21 @@ class Fetcher(Protocol):
 
 
 class UrlFetcher:
-    """Default fetcher: urllib for http(s), local file read for file paths."""
+    """Default fetcher: urllib for http(s), direct disk read for local paths.
+
+    Local-path support (PR #968 review P3): ``file:///abs/path`` URIs and
+    bare absolute/relative paths read from disk via :class:`Path`. http(s)
+    URLs read via ``urllib.request.urlopen``.
+    """
 
     def fetch(self, source: str) -> bytes:
+        scheme = urlparse(source).scheme
+        if scheme in ("", "file"):
+            local_path = _local_path_for(source)
+            try:
+                return local_path.read_bytes()
+            except OSError as e:
+                raise FixtureFetchError(f"could not read {source}: {e}") from e
         try:
             with urlopen(source) as response:
                 body: bytes = response.read()
@@ -118,21 +133,50 @@ class UrlFetcher:
             raise FixtureFetchError(f"could not fetch {source}: {e}") from e
 
 
+def _local_path_for(source: str) -> Path:
+    """Resolve a ``file://`` URI or bare path to a :class:`Path`."""
+    parsed = urlparse(source)
+    if parsed.scheme == "file":
+        return Path(parsed.path)
+    return Path(source)
+
+
 # --- Cache -----------------------------------------------------------------
+
+# PR #968 review (P2): cache path segments must be single-segment names —
+# no separators, no `..`, no absolute components — so a malicious manifest
+# or scenario name cannot write outside the cache root.
+_SAFE_SEGMENT = re.compile(r"^[A-Za-z0-9._\-]+$")
+
+
+def _validate_segment(name: str, *, kind: str) -> str:
+    """Reject a path segment that would let a write escape the cache root."""
+    if not name or name in {".", ".."}:
+        raise ValueError(f"invalid {kind} {name!r}: must be a non-empty single path segment")
+    if not _SAFE_SEGMENT.match(name):
+        raise ValueError(f"invalid {kind} {name!r}: only alphanumerics, dot, underscore, and hyphen are allowed")
+    return name
 
 
 class FixtureCache:
     """File-backed cache, scenario-scoped.
 
     Layout: ``<root>/<scenario>/<key>.bin`` and ``<key>.provenance.json``.
+
+    Both ``scenario`` and ``key`` must be single safe path segments
+    (alphanumerics + ``.`` ``_`` ``-``); anything else raises
+    :class:`ValueError` at the boundary so a manifest cannot write
+    outside the cache root.
     """
 
     def __init__(self, root: Path) -> None:
         self._root = root
 
     def _paths(self, scenario: str, key: str) -> tuple[Path, Path]:
-        scen_dir = self._root / scenario
-        return scen_dir / f"{key}.bin", scen_dir / f"{key}.provenance.json"
+        safe_scen = _validate_segment(scenario, kind="scenario")
+        safe_key = _validate_segment(key, kind="key")
+        scen_dir = self._root / safe_scen
+        return scen_dir / f"{safe_key}.bin", scen_dir / f"{safe_key}.provenance.json"
 
     def get(self, scenario: str, key: str) -> Fixture | None:
         bin_path, prov_path = self._paths(scenario, key)
@@ -185,7 +229,9 @@ def load_fixtures(
     """Resolve every manifest entry to a :class:`Fixture`.
 
     For each entry:
-      - If cache hit and checksum still matches (or no expected sha): return cached.
+      - If cache hit AND the on-disk bytes still hash to the manifest's
+        expected sha (or, when no expected sha is set, the cached
+        provenance's recorded sha): return cached.
       - Else: fetch, verify checksum (if expected), cache, return.
 
     Raises :class:`FixtureChecksumError` if a fetched body fails its expected sha.
@@ -214,11 +260,18 @@ def load_fixtures(
 
 
 def _cache_is_fresh(cached: Fixture, entry: FixtureManifestEntry) -> bool:
-    """A cache entry is fresh if it has no required sha, or if the cached
-    payload's sha still matches the manifest's expected_sha256."""
+    """A cache entry is fresh iff its on-disk bytes still hash to the
+    expected sha.
+
+    PR #968 review (P2): the prior implementation trusted the
+    provenance JSON's recorded sha. That let a corrupted ``.bin``
+    alongside an intact provenance silently return tampered bytes.
+    Rehash the actual cached payload so cache freshness is decided by
+    what will be served, not by what the side-car claims.
+    """
     if entry.expected_sha256 is None:
-        return True
-    return cached.provenance.sha256 == entry.expected_sha256
+        return _sha256(cached.bytes_) == cached.provenance.sha256
+    return _sha256(cached.bytes_) == entry.expected_sha256
 
 
 # --- Scenario-level convenience --------------------------------------------

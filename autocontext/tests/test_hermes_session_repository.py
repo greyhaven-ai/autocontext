@@ -262,6 +262,27 @@ def test_corrupt_metadata_json_falls_back_to_empty_dict(tmp_path: Path) -> None:
     assert session.metadata == {}
 
 
+def test_bare_minimum_sessions_table_without_started_at(tmp_path: Path) -> None:
+    """PR #968 review (P2): a DB with only `sessions(session_id TEXT PRIMARY KEY)`
+    should still iterate. The `ORDER BY started_at` clause must drop
+    to a no-op when the column is absent (schema-drift posture)."""
+    db = tmp_path / "state.db"
+    conn = sqlite3.connect(db)
+    try:
+        conn.execute("CREATE TABLE sessions (session_id TEXT PRIMARY KEY)")
+        conn.execute("CREATE TABLE messages (session_id TEXT, seq INTEGER, role TEXT, content TEXT)")
+        conn.execute("INSERT INTO sessions VALUES ('s1')")
+        conn.execute("INSERT INTO sessions VALUES ('s2')")
+        conn.commit()
+    finally:
+        conn.close()
+
+    repo = HermesSessionRepository(db)
+    sessions = list(repo.iter_sessions())
+    assert {s.session_id for s in sessions} == {"s1", "s2"}
+    assert all(s.started_at is None for s in sessions)
+
+
 def test_messages_for_unknown_session_returns_empty(tmp_path: Path) -> None:
     db = tmp_path / "state.db"
     _plant_session_db(

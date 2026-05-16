@@ -83,6 +83,7 @@ def stage_preflight(
             from autocontext.loop.fixture_loader import (
                 apply_to_context,
                 load_scenario_fixtures,
+                render_fixtures,
             )
 
             cache_root = artifacts.knowledge_root / settings.fixture_loader_cache_dir
@@ -92,6 +93,16 @@ def stage_preflight(
                 cache_root=cache_root,
             )
             apply_to_context(ctx, fixtures)
+            # PR #968 review (P2): ctx.fixtures alone never surfaced in
+            # any agent prompt. Fold the rendered block into the
+            # environment-snapshot section so downstream stages see the
+            # authoritative keys via existing prompt plumbing.
+            fixtures_block = render_fixtures(fixtures)
+            if fixtures_block:
+                if ctx.environment_snapshot:
+                    ctx.environment_snapshot = ctx.environment_snapshot + "\n\n" + fixtures_block
+                else:
+                    ctx.environment_snapshot = fixtures_block
             events.emit(
                 "fixtures_loaded",
                 {

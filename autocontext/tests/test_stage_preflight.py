@@ -545,3 +545,8 @@ class TestPreflightFixtures:
                 "keys": ["challenge_19_data"],
             },
         )
+        # PR #968 review (P2): fixtures must surface in agent prompts via
+        # ctx.environment_snapshot so the existing prompt plumbing carries
+        # them into every role.
+        assert "challenge_19_data" in ctx.environment_snapshot
+        assert "## Available fixtures" in ctx.environment_snapshot
