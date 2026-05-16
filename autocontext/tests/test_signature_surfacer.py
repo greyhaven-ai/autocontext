@@ -17,6 +17,7 @@ from autocontext.loop.signature_surfacer import (
     extract_symbols,
     render_signatures,
     resolve_imports,
+    surface_for_strategy,
     surface_signatures,
 )
 
@@ -180,6 +181,43 @@ class TestSurfaceSignatures:
     def test_no_imports_returns_empty(self, tmp_path: Path) -> None:
         assert surface_signatures("x = 1\nprint(x)", [tmp_path]) == []
 
+    def test_multiple_from_statements_for_same_module_union(self, tmp_path: Path) -> None:
+        """Reviewer finding (PR #969): two separate `from many import …`
+        statements for the same module should surface symbols from BOTH,
+        not just the first."""
+        (tmp_path / "many.py").write_text(
+            textwrap.dedent("""\
+            def needed(): pass
+            def also_needed(): pass
+            def unused(): pass
+        """)
+        )
+        source = "from many import needed\nfrom many import also_needed\n"
+        surfaced = surface_signatures(source, [tmp_path])
+        names = {s.name for s in surfaced}
+        assert names == {"needed", "also_needed"}
+
+    def test_dotted_import_resolves_submodule(self, tmp_path: Path) -> None:
+        """Reviewer finding (PR #969): `from pkg.helpers import foo` should
+        resolve to `pkg/helpers.py`, not truncate to `pkg/__init__.py`."""
+        (tmp_path / "pkg").mkdir()
+        (tmp_path / "pkg" / "__init__.py").write_text("")
+        (tmp_path / "pkg" / "helpers.py").write_text("def foo(x: int) -> int: return x\n")
+        source = "from pkg.helpers import foo"
+        surfaced = surface_signatures(source, [tmp_path])
+        names = {s.name for s in surfaced}
+        assert names == {"foo"}
+
+    def test_bare_dotted_import_resolves_submodule(self, tmp_path: Path) -> None:
+        """`import pkg.helpers` should surface symbols from pkg/helpers.py."""
+        (tmp_path / "pkg").mkdir()
+        (tmp_path / "pkg" / "__init__.py").write_text("")
+        (tmp_path / "pkg" / "helpers.py").write_text("def bar(): pass\n")
+        source = "import pkg.helpers"
+        surfaced = surface_signatures(source, [tmp_path])
+        names = {s.name for s in surfaced}
+        assert names == {"bar"}
+
 
 class TestRefinementPromptIntegration:
     def test_signature_block_included_in_refinement_prompt(self, tmp_path: Path) -> None:
@@ -258,3 +296,42 @@ class TestRenderSignatures:
             ),
         ]
         assert "CBCCipher.encrypt" in render_signatures(symbols)
+
+
+class TestSurfaceForStrategy:
+    """High-level wiring used by stage_tree_search (PR #969 finding 1).
+
+    Confirms that when ``code_strategies_enabled`` is true and the strategy
+    dict carries a ``__code__`` payload, the helper surfaces a non-empty
+    prompt block from local imports."""
+
+    def test_code_strategy_with_local_imports(self, tmp_path: Path) -> None:
+        (tmp_path / "helpers.py").write_text(
+            textwrap.dedent('''\
+            def cbc_decrypt(key: bytes, iv: bytes, ciphertext: bytes) -> bytes:
+                """Decrypt CBC ciphertext."""
+                return b""
+        ''')
+        )
+        strategy = {"__code__": "from helpers import cbc_decrypt\nresult = cbc_decrypt(k, ct, iv)"}
+        block = surface_for_strategy(strategy, code_strategies_enabled=True, search_roots=[tmp_path])
+        assert "## Imported symbols available" in block
+        assert "cbc_decrypt(key: bytes, iv: bytes, ciphertext: bytes) -> bytes" in block
+
+    def test_disabled_returns_empty(self, tmp_path: Path) -> None:
+        strategy = {"__code__": "from x import y"}
+        assert surface_for_strategy(strategy, code_strategies_enabled=False, search_roots=[tmp_path]) == ""
+
+    def test_non_code_strategy_returns_empty(self, tmp_path: Path) -> None:
+        # JSON-shaped strategies (no ``__code__`` field) yield no signatures.
+        strategy = {"action": "move", "x": 0}
+        assert surface_for_strategy(strategy, code_strategies_enabled=True, search_roots=[tmp_path]) == ""
+
+    def test_non_dict_strategy_returns_empty(self, tmp_path: Path) -> None:
+        # Defensive against odd shapes.
+        assert surface_for_strategy("not a dict", code_strategies_enabled=True, search_roots=[tmp_path]) == ""
+
+    def test_code_with_no_local_imports_returns_empty(self, tmp_path: Path) -> None:
+        strategy = {"__code__": "import os\nx = 1"}
+        # stdlib import isn't in search_roots → empty block.
+        assert surface_for_strategy(strategy, code_strategies_enabled=True, search_roots=[tmp_path]) == ""

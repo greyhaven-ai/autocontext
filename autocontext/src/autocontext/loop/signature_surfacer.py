@@ -18,7 +18,7 @@ import ast
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 SymbolKind = Literal["function", "class", "method"]
 
@@ -187,22 +187,29 @@ def _imports(source: str) -> tuple[list[str], list[tuple[str, list[str], bool]]]
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
-                bare.append(alias.name.split(".", 1)[0])
+                # Preserve dotted names so `import pkg.helpers` can resolve
+                # to `pkg/helpers.py` rather than the package root.
+                bare.append(alias.name)
         elif isinstance(node, ast.ImportFrom):
             if node.module is None or node.level != 0:
                 continue
             star = any(alias.name == "*" for alias in node.names)
             names = [alias.name for alias in node.names if alias.name != "*"]
-            froms.append((node.module.split(".", 1)[0], names, star))
+            froms.append((node.module, names, star))
     return bare, froms
 
 
 def _locate(module_name: str, search_roots: Sequence[Path]) -> Path | None:
+    """Resolve ``module_name`` (possibly dotted, e.g. ``pkg.helpers``) to a
+    Python file. Tries ``<root>/<a>/<b>.py`` first, then
+    ``<root>/<a>/<b>/__init__.py``."""
+    parts = module_name.split(".")
     for root in search_roots:
-        candidate = root / f"{module_name}.py"
+        leaf = root.joinpath(*parts)
+        candidate = leaf.with_suffix(".py")
         if candidate.is_file():
             return candidate
-        pkg_init = root / module_name / "__init__.py"
+        pkg_init = leaf / "__init__.py"
         if pkg_init.is_file():
             return pkg_init
     return None
@@ -236,18 +243,29 @@ def _filter_for_imports(
     froms: list[tuple[str, list[str], bool]],
     bare_imports: list[str],
 ) -> list[Symbol]:
-    """Filter ``symbols`` from ``module`` to those actually imported by source."""
-    # `from module import *` or `import module` → all public.
+    """Filter ``symbols`` from ``module`` to those actually imported by source.
+
+    Accumulates wanted names across ALL `from module import …` statements that
+    target the same module — a `*` import unions in all public symbols."""
+    # `import module` (or any nested form) surfaces everything public.
     if module in bare_imports:
         return list(symbols)
+
+    wanted: set[str] = set()
+    star = False
     for from_module, names, is_star in froms:
         if from_module != module:
             continue
         if is_star:
-            return list(symbols)
-        wanted = set(names)
-        return [s for s in symbols if s.name in wanted or (s.qualified_name and s.qualified_name.split(".", 1)[0] in wanted)]
-    return []
+            star = True
+        else:
+            wanted.update(names)
+    if star:
+        return list(symbols)
+    if not wanted:
+        return []
+    symbols_list = list(symbols)
+    return [s for s in symbols_list if s.name in wanted or (s.qualified_name and s.qualified_name.split(".", 1)[0] in wanted)]
 
 
 def surface_signatures(source: str, search_roots: Sequence[Path]) -> list[Symbol]:
@@ -268,6 +286,26 @@ def surface_signatures(source: str, search_roots: Sequence[Path]) -> list[Symbol
 
 
 # --- Rendering -------------------------------------------------------------
+
+
+def surface_for_strategy(
+    strategy: dict[str, Any] | object,
+    *,
+    code_strategies_enabled: bool,
+    search_roots: Sequence[Path],
+) -> str:
+    """High-level wiring for ``stage_tree_search``: given a tree-search strategy
+    dict, surface signatures for any local imports in its ``__code__`` payload
+    and return a rendered prompt block. Returns ``""`` for non-code strategies
+    or when nothing local resolves."""
+    if not code_strategies_enabled:
+        return ""
+    if not isinstance(strategy, dict):
+        return ""
+    code = strategy.get("__code__")
+    if not isinstance(code, str) or not code:
+        return ""
+    return render_signatures(surface_signatures(code, search_roots))
 
 
 def render_signatures(symbols: Sequence[Symbol]) -> str:
