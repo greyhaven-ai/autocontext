@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 import random
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(slots=True)
@@ -19,6 +19,9 @@ class HypothesisNode:
     elo: float
     generation: int
     refinement_count: int
+    # AC-769: most recent tournament's per-match error lists, used by
+    # ``remediation_hints_for_node`` to drive the failure-type router.
+    last_errors: list[list[str]] = field(default_factory=list)
 
 
 class HypothesisTree:
@@ -89,14 +92,27 @@ class HypothesisTree:
         assert best_node is not None
         return best_node
 
-    def update(self, node_id: str, scores: list[float], elo: float) -> None:
-        """Update a node with new match results."""
+    def update(
+        self,
+        node_id: str,
+        scores: list[float],
+        elo: float,
+        errors_per_match: list[list[str]] | None = None,
+    ) -> None:
+        """Update a node with new match results.
+
+        ``errors_per_match`` (AC-769) — when provided, overwrites the node's
+        ``last_errors`` so the refinement step can route remediations off the
+        most recent tournament's structured failures.
+        """
         if node_id not in self.nodes:
             raise KeyError(f"Node {node_id} not found")
         node = self.nodes[node_id]
         node.scores.extend(scores)
         node.elo = elo
         node.refinement_count += 1
+        if errors_per_match is not None:
+            node.last_errors = [list(errs) for errs in errors_per_match]
 
     def prune(self, protected_ids: set[str] | None = None) -> list[HypothesisNode]:
         """Remove lowest-Elo nodes to stay within max_hypotheses.
