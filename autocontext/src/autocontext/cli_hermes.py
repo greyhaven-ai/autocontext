@@ -7,6 +7,12 @@ from typing import TYPE_CHECKING, Annotated, Any
 import typer
 from rich.table import Table
 
+from autocontext.hermes.advisor import (
+    AdvisorMetrics,
+    evaluate,
+    load_curator_examples,
+    train_baseline,
+)
 from autocontext.hermes.curator_ingest import IngestSummary, ingest_curator_reports
 from autocontext.hermes.dataset_export import ExportSummary, export_dataset
 from autocontext.hermes.inspection import HermesInventory, inspect_hermes_home
@@ -363,6 +369,87 @@ def run_hermes_ingest_sessions_command(
         console.print(f"[yellow]warning:[/yellow] {warning}")
 
 
+def _same_file(a: Path, b: Path) -> bool:
+    """Return True when ``a`` and ``b`` point at the same file (resolved)."""
+    if a.exists() and b.exists():
+        try:
+            return a.samefile(b)
+        except OSError:
+            return False
+    return a.resolve() == b.resolve()
+
+
+def run_hermes_train_advisor_command(
+    *,
+    data: Path,
+    baseline: bool,
+    output: Path | None,
+    json_output: bool,
+    console: Console,
+    write_json_stdout: Any,
+    write_json_stderr: Any,
+) -> None:
+    """Train and evaluate a Hermes curator advisor (AC-708 slice 1)."""
+
+    import json as _json
+
+    # PR #972 review (P2): refuse to overwrite the source dataset.
+    if output is not None and _same_file(data, output):
+        message = (
+            f"output {output!s} resolves to the same file as --data {data!s}; "
+            "refusing to overwrite the source dataset"
+        )
+        if json_output:
+            write_json_stderr(message)
+        else:
+            console.print(f"[red]{message}[/red]")
+        raise typer.Exit(code=1)
+
+    examples = load_curator_examples(data)
+    if not examples:
+        message = f"no labeled examples loaded from {data}"
+        if json_output:
+            write_json_stderr(message)
+        else:
+            console.print(f"[red]{message}[/red]")
+        raise typer.Exit(code=1)
+
+    if not baseline:
+        message = "only --baseline is supported in this slice; trained backends arrive in AC-708 slice 2"
+        if json_output:
+            write_json_stderr(message)
+        else:
+            console.print(f"[red]{message}[/red]")
+        raise typer.Exit(code=1)
+
+    advisor = train_baseline(examples)
+    # AC-708 slice 1 evaluates the baseline against the training set as
+    # a sanity check; held-out splits arrive with the trained backends.
+    metrics: AdvisorMetrics = evaluate(advisor, examples)
+    payload = {
+        "advisor_kind": "baseline",
+        "majority_label": advisor.majority_label,
+        "label_counts": dict(advisor.label_counts),
+        "metrics": metrics.to_dict(),
+    }
+    if output is not None:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(_json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    if json_output:
+        write_json_stdout(payload)
+        return
+    console.print(
+        f"[green]Trained baseline[/green] majority={advisor.majority_label!r} on {metrics.example_count} examples; "
+        f"accuracy={metrics.accuracy:.3f}"
+    )
+    if metrics.insufficient_data:
+        console.print(
+            f"[yellow]warning:[/yellow] only {metrics.example_count} examples; per-label metrics may not be meaningful"
+        )
+    for label, m in metrics.per_label.items():
+        console.print(f"  {label}: precision={m.precision:.3f} recall={m.recall:.3f} support={m.support}")
+
+
 def register_hermes_command(
     app: typer.Typer,
     *,
@@ -610,6 +697,43 @@ def register_hermes_command(
             since=since,
             limit=limit,
             dry_run=dry_run,
+            json_output=json_output,
+            console=console,
+            write_json_stdout=_cli_attr(dependency_module, "_write_json_stdout"),
+            write_json_stderr=_cli_attr(dependency_module, "_write_json_stderr"),
+        )
+
+    @hermes_app.command("train-advisor")
+    def train_advisor(
+        data: Annotated[
+            Path,
+            typer.Option(
+                "--data",
+                help="AC-705 curator-decisions JSONL to train and evaluate on",
+            ),
+        ],
+        baseline: Annotated[
+            bool,
+            typer.Option(
+                "--baseline",
+                help="Train the majority-class baseline (slice 1 ships baseline only)",
+            ),
+        ] = False,
+        output: Annotated[
+            Path | None,
+            typer.Option(
+                "--output",
+                help="Optional metrics JSON destination; --json prints to stdout regardless",
+            ),
+        ] = None,
+        json_output: Annotated[bool, typer.Option("--json", help="Output structured JSON")] = False,
+    ) -> None:
+        """Train + evaluate a Hermes curator advisor (AC-708 slice 1)."""
+
+        run_hermes_train_advisor_command(
+            data=data,
+            baseline=baseline,
+            output=output,
             json_output=json_output,
             console=console,
             write_json_stdout=_cli_attr(dependency_module, "_write_json_stdout"),

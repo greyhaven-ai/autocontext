@@ -186,12 +186,15 @@ export-dataset --kind curator-decisions` (AC-705), `autoctx hermes
 ingest-trajectories --redact standard|strict|off` (AC-706 slice 1),
   `autoctx hermes ingest-sessions --redact standard|strict|off`
   (AC-706 slice 2, read-only SQLite + schema drift + WAL/SHM
-  independence), the rendered Hermes-format SKILL.md, the integration
-  surface order decision (CLI-first / MCP-optional / native runtime /
-  plugin / gateway).
-- In flight: AC-708 / AC-709 (advisor model + read-only
-  recommendations), AC-707 (Hermes plugin emitter spike), AC-711
-  (skill validation), AC-712 (distribution).
+  independence), `autoctx hermes train-advisor --baseline` (AC-708
+  slice 1, data + evaluation contract with majority-class baseline
+  and insufficient-data floor), the rendered Hermes-format
+  SKILL.md, the integration surface order decision (CLI-first /
+  MCP-optional / native runtime / plugin / gateway).
+- In flight: AC-708 slice 2 (logistic-regression / MLX / CUDA
+  trained advisor), AC-709 (read-only recommendation surface),
+  AC-707 (Hermes plugin emitter spike), AC-711 (skill validation),
+  AC-712 (distribution).
 - Out of scope (today): autocontext writing to `~/.hermes/skills/`,
   autocontext replacing Curator's pruning / consolidation /
   gating workflow, frontier-scale training from a single operator's
