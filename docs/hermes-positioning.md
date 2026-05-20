@@ -198,9 +198,9 @@ ingest-trajectories --redact standard|strict|off` (AC-706 slice 1),
   decision (CLI-first / MCP-optional / native runtime / plugin /
   gateway).
 - In flight: AC-708 slice 2 (logistic-regression / MLX / CUDA
-  trained advisor), AC-707 (Hermes plugin emitter spike), AC-711
-  (skill validation), upstream Hermes / agentskills.io submission
-  (AC-712 follow-up).
+  trained advisor), AC-707 follow-up implementation (only if revisited
+  per spike doc), AC-711 (skill validation), upstream Hermes /
+  agentskills.io submission (AC-712 follow-up).
 - Out of scope (today): autocontext writing to `~/.hermes/skills/`,
   autocontext replacing Curator's pruning / consolidation /
   gating workflow, frontier-scale training from a single operator's
