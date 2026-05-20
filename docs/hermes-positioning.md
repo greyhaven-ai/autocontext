@@ -194,7 +194,7 @@ ingest-trajectories --redact standard|strict|off` (AC-706 slice 1),
   Hermes-format SKILL.md, the integration surface order decision
   (CLI-first / MCP-optional / native runtime / plugin / gateway).
 - In flight: AC-708 slice 2 (logistic-regression / MLX / CUDA
-  trained advisor), AC-707 (Hermes plugin emitter spike), AC-711
+  trained advisor), AC-707 follow-up implementation (only if revisited per spike doc), AC-711
   (skill validation), AC-712 (distribution).
 - Out of scope (today): autocontext writing to `~/.hermes/skills/`,
   autocontext replacing Curator's pruning / consolidation /
