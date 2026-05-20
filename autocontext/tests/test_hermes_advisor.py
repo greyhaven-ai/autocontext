@@ -198,8 +198,8 @@ def test_baseline_predicts_majority_class() -> None:
     ]
     advisor = train_baseline(examples)
     assert isinstance(advisor, BaselineAdvisor)
-    assert advisor.predict(examples[0]) == "consolidated"
-    assert advisor.predict(examples[2]) == "consolidated"  # still predicts majority
+    assert advisor.predict(examples[0].features) == "consolidated"
+    assert advisor.predict(examples[2].features) == "consolidated"  # still predicts majority
 
 
 def test_baseline_breaks_ties_deterministically() -> None:
@@ -220,7 +220,7 @@ def test_baseline_breaks_ties_deterministically() -> None:
     ]
     advisor1 = train_baseline(examples)
     advisor2 = train_baseline(list(reversed(examples)))
-    assert advisor1.predict(examples[0]) == advisor2.predict(examples[0])
+    assert advisor1.predict(examples[0].features) == advisor2.predict(examples[0].features)
 
 
 def test_baseline_on_empty_dataset_raises_clear_error() -> None:

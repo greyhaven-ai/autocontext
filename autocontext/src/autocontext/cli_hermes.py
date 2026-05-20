@@ -16,6 +16,7 @@ from autocontext.hermes.advisor import (
 from autocontext.hermes.curator_ingest import IngestSummary, ingest_curator_reports
 from autocontext.hermes.dataset_export import ExportSummary, export_dataset
 from autocontext.hermes.inspection import HermesInventory, inspect_hermes_home
+from autocontext.hermes.recommendations import Recommendation, recommend
 from autocontext.hermes.redaction import RedactionPolicy, compile_user_patterns
 from autocontext.hermes.references import list_references, render_reference
 from autocontext.hermes.session_ingest import SessionIngestSummary, ingest_session_db
@@ -450,6 +451,80 @@ def run_hermes_train_advisor_command(
         console.print(f"  {label}: precision={m.precision:.3f} recall={m.recall:.3f} support={m.support}")
 
 
+def run_hermes_recommend_command(
+    *,
+    home: Path | None,
+    baseline_from: Path,
+    output: Path,
+    include_protected: bool,
+    json_output: bool,
+    console: Console,
+    write_json_stdout: Any,
+    write_json_stderr: Any,
+) -> None:
+    """Emit read-only recommendations from a trained advisor (AC-709)."""
+
+    import json as _json
+
+    from autocontext.hermes.inspection import _resolve_hermes_home, inspect_hermes_home
+
+    # Same-file guard matches the AC-706 / AC-708 ingest posture: never
+    # overwrite the training input with the recommendation output.
+    if _same_file(baseline_from, output):
+        message = (
+            f"output {output!s} resolves to the same file as --baseline-from "
+            f"{baseline_from!s}; refusing to overwrite the training input"
+        )
+        if json_output:
+            write_json_stderr(message)
+        else:
+            console.print(f"[red]{message}[/red]")
+        raise typer.Exit(code=1)
+
+    examples = load_curator_examples(baseline_from)
+    if not examples:
+        message = f"no labeled examples loaded from {baseline_from}; cannot train baseline advisor"
+        if json_output:
+            write_json_stderr(message)
+        else:
+            console.print(f"[red]{message}[/red]")
+        raise typer.Exit(code=1)
+
+    advisor = train_baseline(examples)
+    resolved_home = _resolve_hermes_home(home)
+    inventory = inspect_hermes_home(resolved_home)
+    recs: list[Recommendation] = recommend(
+        inventory=inventory,
+        advisor=advisor,
+        include_protected=include_protected,
+    )
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with output.open("w", encoding="utf-8") as fh:
+        for rec in recs:
+            fh.write(_json.dumps(rec.to_dict(), separators=(",", ":")) + "\n")
+
+    actionable = sum(1 for r in recs if r.status == "actionable")
+    protected = sum(1 for r in recs if r.status == "protected")
+    payload = {
+        "home": str(resolved_home),
+        "output_path": str(output),
+        "advisor_kind": "baseline",
+        "majority_label": advisor.majority_label,
+        "recommendation_count": len(recs),
+        "actionable_count": actionable,
+        "protected_count": protected,
+    }
+    if json_output:
+        write_json_stdout(payload)
+        return
+    console.print(
+        f"[green]Wrote[/green] {len(recs)} recommendation(s) ({actionable} actionable, {protected} protected) -> {output}"
+    )
+    if not recs:
+        console.print("[dim]No unprotected skills in inventory; no recommendations emitted.[/dim]")
+
+
 def register_hermes_command(
     app: typer.Typer,
     *,
@@ -734,6 +809,45 @@ def register_hermes_command(
             data=data,
             baseline=baseline,
             output=output,
+            json_output=json_output,
+            console=console,
+            write_json_stdout=_cli_attr(dependency_module, "_write_json_stdout"),
+            write_json_stderr=_cli_attr(dependency_module, "_write_json_stderr"),
+        )
+
+    @hermes_app.command("recommend")
+    def recommend_cmd(
+        home: Annotated[
+            Path | None,
+            typer.Option("--home", help="Hermes home directory (default: HERMES_HOME or ~/.hermes)"),
+        ] = None,
+        baseline_from: Annotated[
+            Path,
+            typer.Option(
+                "--baseline-from",
+                help="AC-705 curator-decisions JSONL to train a baseline advisor from",
+            ),
+        ] = Path("hermes-curator-decisions.jsonl"),
+        output: Annotated[
+            Path,
+            typer.Option("--output", help="Destination JSONL for the recommendations"),
+        ] = Path("hermes-recommendations.jsonl"),
+        include_protected: Annotated[
+            bool,
+            typer.Option(
+                "--include-protected",
+                help="Surface recommendations for pinned/bundled/hub skills tagged status=protected",
+            ),
+        ] = False,
+        json_output: Annotated[bool, typer.Option("--json", help="Output structured JSON")] = False,
+    ) -> None:
+        """Emit read-only advisor recommendations against a live Hermes home (AC-709)."""
+
+        run_hermes_recommend_command(
+            home=home,
+            baseline_from=baseline_from,
+            output=output,
+            include_protected=include_protected,
             json_output=json_output,
             console=console,
             write_json_stdout=_cli_attr(dependency_module, "_write_json_stdout"),

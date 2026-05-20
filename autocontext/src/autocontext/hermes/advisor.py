@@ -49,6 +49,29 @@ INSUFFICIENT_DATA_THRESHOLD = 20
 
 
 @dataclass(frozen=True, slots=True)
+class SkillFeatures:
+    """Inference-time input shape: the feature fields of a skill, no label.
+
+    Used by :class:`Advisor` implementations at prediction time. The
+    same shape underlies the labeled :class:`CuratorDecisionExample`
+    used for training, so a feature engineered for one path
+    automatically applies to the other (DRY).
+    """
+
+    skill_name: str
+    state: str
+    provenance: str
+    pinned: bool
+    use_count: int
+    view_count: int
+    patch_count: int
+
+    @property
+    def activity_count(self) -> int:
+        return self.use_count + self.view_count + self.patch_count
+
+
+@dataclass(frozen=True, slots=True)
 class CuratorDecisionExample:
     """One labeled curator decision, ready to feed into training/eval.
 
@@ -70,6 +93,19 @@ class CuratorDecisionExample:
     @property
     def activity_count(self) -> int:
         return self.use_count + self.view_count + self.patch_count
+
+    @property
+    def features(self) -> SkillFeatures:
+        """Drop the label; return the prediction-time input shape."""
+        return SkillFeatures(
+            skill_name=self.skill_name,
+            state=self.state,
+            provenance=self.provenance,
+            pinned=self.pinned,
+            use_count=self.use_count,
+            view_count=self.view_count,
+            patch_count=self.patch_count,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,9 +139,9 @@ class AdvisorMetrics:
 
 
 class Advisor(Protocol):
-    """Anything that can predict a label from a CuratorDecisionExample."""
+    """Anything that can predict a label from :class:`SkillFeatures`."""
 
-    def predict(self, example: CuratorDecisionExample) -> str: ...
+    def predict(self, features: SkillFeatures) -> str: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,7 +156,7 @@ class BaselineAdvisor:
     majority_label: str
     label_counts: dict[str, int] = field(default_factory=dict)
 
-    def predict(self, example: CuratorDecisionExample) -> str:  # noqa: ARG002 (unused for baseline)
+    def predict(self, features: SkillFeatures) -> str:  # noqa: ARG002 (unused for baseline)
         return self.majority_label
 
 
@@ -154,7 +190,7 @@ def evaluate(advisor: Advisor, examples: list[CuratorDecisionExample]) -> Adviso
     correct = 0
 
     for ex in examples:
-        pred = advisor.predict(ex)
+        pred = advisor.predict(ex.features)
         support[ex.label] = support.get(ex.label, 0) + 1
         if pred == ex.label:
             correct += 1
@@ -269,6 +305,7 @@ __all__ = [
     "BaselineAdvisor",
     "CuratorDecisionExample",
     "LabelMetrics",
+    "SkillFeatures",
     "evaluate",
     "load_curator_examples",
     "train_baseline",

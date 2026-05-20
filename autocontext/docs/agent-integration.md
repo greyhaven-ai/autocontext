@@ -324,6 +324,12 @@ autoctx hermes train-advisor \
   --data training/hermes-curator-decisions.jsonl \
   --baseline \
   --output training/advisor-metrics.json --json
+
+# Emit read-only recommendations against a live Hermes home (AC-709)
+autoctx hermes recommend \
+  --home "$HERMES_HOME" \
+  --baseline-from training/hermes-curator-decisions.jsonl \
+  --output recommendations.jsonl --json
 ```
 
 `--with-references` writes one markdown file per reference into a
@@ -419,6 +425,30 @@ unknown labels skip the row). Metrics surface `accuracy`, per-label
 that fires below `INSUFFICIENT_DATA_THRESHOLD` (20) examples so a
 small Hermes home does not act on noise. The baseline accuracy is
 the floor any later trained advisor must beat.
+
+`recommend` flags (AC-709):
+
+- `--home <path>`: Hermes home to inspect. Read-only; the surface
+  never writes to `~/.hermes`.
+- `--baseline-from <jsonl>`: AC-705 export to train the baseline
+  advisor on. The same-file guard rejects `--output` equal to
+  `--baseline-from`.
+- `--output <jsonl>`: destination for the recommendation rows. One
+  row per recommendation: `skill_name`, `predicted_action`,
+  `confidence: "advisory"`, `status: actionable | protected`,
+  `features` (the inference inputs), and `reason` (per-advisor
+  rationale; baseline reads "baseline majority class (<label>)").
+- `--include-protected`: surface pinned / bundled / hub skills as
+  well, tagged `status="protected"`. Default omits them so
+  downstream consumers cannot accidentally act on upstream-owned or
+  operator-pinned content.
+
+Read-only invariant: Curator stays the mutation owner. The
+recommendation surface emits suggestions; applying them is the
+operator's call (or Curator's, when AC-708 slice 2 wires the
+trained advisor through). Until trained backends ship, the
+baseline produces majority-class recommendations only — useful for
+plumbing validation, not for acting on.
 
 JSON output shape for `inspect`:
 
