@@ -485,111 +485,119 @@ def rule_indexing_base(
 # because Python-ecosystem patterns don't match Lean's error vocabulary.
 # Pure regex, pluggable into ``DEFAULT_RULES``.
 
-# Lean errors carry a ``<path>:<line>:<col>: error:`` preamble. We don't
-# require it: the patterns below operate on whatever line(s) carry the
-# error keyword, falling back to line 0 when not present.
+# Lean errors carry a preamble. Two shapes seen in the wild:
+#   ``<path>:<line>:<col>: error: <body>``                  (classic / mathlib)
+#   ``<path>:<line>:<col>: error(lean.<code>): <body>``     (Lean 4.29+ diagnostic codes)
+# We use this single preamble regex both to extract line numbers and to bound
+# each error body — the next preamble marks where the current error ends.
 
-_LEAN_LINE = re.compile(r":(?P<line>\d+):\d+:\s*error:")
-_LEAN_UNKNOWN_IDENT = re.compile(r"unknown (?:identifier|constant) '(?P<name>[^']+)'")
+_LEAN_PREAMBLE = re.compile(
+    r"^[^\s:][^\n:]*:(?P<line>\d+):\d+:\s*error(?:\(lean\.\w+\))?:\s*(?P<body>.*?)"
+    r"(?=^[^\s:][^\n:]*:\d+:\d+:\s*error(?:\(lean\.\w+\))?:|\Z)",
+    re.DOTALL | re.MULTILINE,
+)
+
+# Body-level patterns. PR #982 review (P2): broadened to match Lean 4.29+
+# stderr forms (capital initial, backtick-quoted names, ``but this term has
+# type`` phrasing, ``type class instance expected``) alongside the older
+# mathlib forms.
+
+_LEAN_UNKNOWN_IDENT = re.compile(r"[Uu]nknown\s+(?:identifier|constant)\s+[`']?(?P<name>[A-Za-z_][\w.]*)[`']?")
 _LEAN_TYPE_MISMATCH = re.compile(
-    r"(?:type mismatch|function expected at).*?\n(?P<got_or_subject>.*?)\n"
-    r"(?:has type|term has type)\n"
+    # Capture the subject between the opening line and the ``has type`` divider.
+    r"[Tt]ype\s+mismatch\b.*?\n"
+    r"(?P<subject>.*?)\n"
+    r"(?:has type|term has type)\s*\n"
     r"(?P<got>.*?)\n"
-    r"(?:but is expected to have type|expected type:)\s*\n?"
-    r"(?P<expected>.*?)(?:\n\n|\Z)",
+    r"(?:but is expected to have type|but this term has type|expected type:?)\s*\n?"
+    r"(?P<expected>.*?)\Z",
     re.DOTALL,
 )
 _LEAN_FUNCTION_EXPECTED = re.compile(
-    r"function expected at\n(?P<subject>.*?)\nterm has type\n(?P<got>.*?)(?:\n\n|\Z)",
+    # Accept both ``term has type`` (classic) and ``but this term has type``
+    # (Lean 4.29+).
+    r"[Ff]unction\s+expected(?:\s+at)?\s*\n"
+    r"(?P<subject>.*?)\n"
+    r"(?:but this term has type|term has type|has type)\s*\n"
+    r"(?P<got>.*?)\Z",
     re.DOTALL,
 )
-_LEAN_UNSOLVED_GOALS = re.compile(
-    r"unsolved goals\n(?P<body>.*?)(?=\n\S+:\d+:\d+:|\Z)",
-    re.DOTALL,
-)
+_LEAN_UNSOLVED_GOALS = re.compile(r"[Uu]nsolved\s+goals\s*\n(?P<body>.*?)\Z", re.DOTALL)
 _LEAN_TYPECLASS_FAIL = re.compile(
-    r"failed to synthesize instance\n\s*(?P<typeclass>\S+)(?:\s+(?P<context>.+?))?(?:\n|$)",
+    # Old: ``failed to synthesize instance`` — new (Lean 4.29+):
+    # ``type class instance expected``. Both are followed by the unresolved
+    # typeclass on the next indented line.
+    r"(?:failed to synthesize(?: instance)?|type\s*class\s+instance\s+expected)\s*\n"
+    r"\s*(?P<typeclass>\S+)(?:\s+(?P<context>.+?))?(?:\n|\Z)"
 )
-
-
-def _nearest_line(error: str, offset: int) -> int:
-    """Return the line number from the nearest preceding ``:N:C: error:``
-    marker, or 0 if none."""
-    last = 0
-    for m in _LEAN_LINE.finditer(error[:offset]):
-        last = int(m.group("line"))
-    return last
 
 
 def rule_lean_compile_error(report: FailureReport, **_: Any) -> list[RemediationHint]:
     """Pattern-match ``lake env lean`` stderr into typed hints.
 
-    Emits :class:`UnknownIdentifier`, :class:`TypeMismatch`,
-    :class:`UnsolvedGoals`, or :class:`TypeclassSearch` per matched error.
-    Errors that don't match any Lean pattern produce no hint (Python
-    tracebacks and similar are routed by other rules).
+    The error string is split into per-error bodies via :data:`_LEAN_PREAMBLE`,
+    so each body's regex captures cannot bleed past the next ``:line:col: error``
+    marker (PR #982 review P2). Each body is then scanned for the four
+    recognised error classes; non-Lean errors (Python tracebacks etc.)
+    yield no preamble matches and produce no hints.
     """
     hints: list[RemediationHint] = []
     for diagnosis in report.match_diagnoses:
         for error in diagnosis.errors:
             reason = f"match {diagnosis.match_index}"
 
-            for m in _LEAN_UNKNOWN_IDENT.finditer(error):
-                hints.append(
-                    UnknownIdentifier(
-                        name=m.group("name"),
-                        line=_nearest_line(error, m.start()),
-                        reason=reason,
-                    )
+            # Split into per-error bodies bounded by the next preamble.
+            for pre in _LEAN_PREAMBLE.finditer(error):
+                line = int(pre.group("line"))
+                body = pre.group("body")
+
+                hints.extend(
+                    UnknownIdentifier(name=m.group("name"), line=line, reason=reason) for m in _LEAN_UNKNOWN_IDENT.finditer(body)
                 )
 
-            for m in _LEAN_TYPE_MISMATCH.finditer(error):
-                hints.append(
-                    TypeMismatch(
-                        expected=m.group("expected").strip(),
-                        got=m.group("got").strip(),
-                        line=_nearest_line(error, m.start()),
-                        reason=reason,
-                    )
-                )
-
-            # ``function expected at ... term has type ...`` is a sub-case of
-            # type mismatch; route to the same hint kind but only when the
-            # full type-mismatch pattern didn't fire to avoid duplicates.
-            if not any(isinstance(h, TypeMismatch) for h in hints[-3:]):
-                for m in _LEAN_FUNCTION_EXPECTED.finditer(error):
+                # Each body usually has at most ONE structural error. We try
+                # type-mismatch first; only fall through to function-expected
+                # if no type-mismatch matched THIS body (anchored dedup, not
+                # the global last-three-hints heuristic the reviewer flagged).
+                tm_match = _LEAN_TYPE_MISMATCH.search(body)
+                if tm_match is not None:
                     hints.append(
                         TypeMismatch(
-                            expected="<callable>",
-                            got=m.group("got").strip(),
-                            line=_nearest_line(error, m.start()),
+                            expected=tm_match.group("expected").strip(),
+                            got=tm_match.group("got").strip(),
+                            line=line,
                             reason=reason,
                         )
                     )
+                else:
+                    fe_match = _LEAN_FUNCTION_EXPECTED.search(body)
+                    if fe_match is not None:
+                        hints.append(
+                            TypeMismatch(
+                                expected="<callable>",
+                                got=fe_match.group("got").strip(),
+                                line=line,
+                                reason=reason,
+                            )
+                        )
 
-            for m in _LEAN_UNSOLVED_GOALS.finditer(error):
-                body = m.group("body").strip()
-                # Each goal usually starts with ⊢; split on it.
-                goals = ["⊢ " + part.strip() for part in re.split(r"⊢\s*", body) if part.strip()]
-                if not goals:
-                    goals = [body[:200]]
-                hints.append(
-                    UnsolvedGoals(
-                        goals=tuple(goals),
-                        line=_nearest_line(error, m.start()),
-                        reason=reason,
-                    )
-                )
+                ug_match = _LEAN_UNSOLVED_GOALS.search(body)
+                if ug_match is not None:
+                    body_text = ug_match.group("body").strip()
+                    goals = ["⊢ " + part.strip() for part in re.split(r"⊢\s*", body_text) if part.strip()]
+                    if not goals:
+                        goals = [body_text[:200]]
+                    hints.append(UnsolvedGoals(goals=tuple(goals), line=line, reason=reason))
 
-            for m in _LEAN_TYPECLASS_FAIL.finditer(error):
-                hints.append(
-                    TypeclassSearch(
-                        typeclass=m.group("typeclass").strip(),
-                        context=(m.group("context") or "").strip(),
-                        line=_nearest_line(error, m.start()),
-                        reason=reason,
+                for m in _LEAN_TYPECLASS_FAIL.finditer(body):
+                    hints.append(
+                        TypeclassSearch(
+                            typeclass=m.group("typeclass").strip(),
+                            context=(m.group("context") or "").strip(),
+                            line=line,
+                            reason=reason,
+                        )
                     )
-                )
 
     return hints
 
