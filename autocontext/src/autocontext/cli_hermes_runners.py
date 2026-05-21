@@ -31,6 +31,11 @@ from autocontext.hermes.references import list_references, render_reference
 from autocontext.hermes.session_ingest import SessionIngestSummary, ingest_session_db
 from autocontext.hermes.skill import AUTOCONTEXT_HERMES_SKILL_NAME, render_autocontext_skill
 from autocontext.hermes.skill_validation import DEFAULT_RUBRIC, ValidationReport, render_markdown_report, validate_skill
+from autocontext.hermes.trained_advisor import (
+    load_advisor,
+    save_advisor,
+    train_logistic,
+)
 from autocontext.hermes.trajectory_ingest import TrajectoryIngestSummary, ingest_trajectory_jsonl
 
 if TYPE_CHECKING:
@@ -388,19 +393,68 @@ def run_hermes_train_advisor_command(
     *,
     data: Path,
     baseline: bool,
+    logistic: bool,
     output: Path | None,
+    checkpoint: Path | None,
     json_output: bool,
     console: Console,
     write_json_stdout: Any,
     write_json_stderr: Any,
 ) -> None:
-    """Train and evaluate a Hermes curator advisor (AC-708 slice 1)."""
+    """Train and evaluate a Hermes curator advisor.
+
+    AC-708 slice 1 shipped ``--baseline``; AC-708 slice 2a adds the
+    pure-Python ``--logistic`` trained backend (closes the
+    AC-705 → AC-708 → AC-709 loop end-to-end). Exactly one of
+    ``--baseline`` / ``--logistic`` must be passed.
+    """
 
     import json as _json
 
     # PR #972 review (P2): refuse to overwrite the source dataset.
     if output is not None and _same_file(data, output):
         message = f"output {output!s} resolves to the same file as --data {data!s}; refusing to overwrite the source dataset"
+        if json_output:
+            write_json_stderr(message)
+        else:
+            console.print(f"[red]{message}[/red]")
+        raise typer.Exit(code=1)
+
+    # PR #980 review (P2): the checkpoint path is a separate writable
+    # surface from --output, so it needs its own collision guards.
+    # Writing the trained-advisor checkpoint over --data would clobber
+    # the labeled examples; writing it over --output would clobber the
+    # JSON metrics payload mid-flight. Both fail loud before training
+    # touches disk.
+    if checkpoint is not None and _same_file(data, checkpoint):
+        message = (
+            f"checkpoint {checkpoint!s} resolves to the same file as --data {data!s}; refusing to overwrite the source dataset"
+        )
+        if json_output:
+            write_json_stderr(message)
+        else:
+            console.print(f"[red]{message}[/red]")
+        raise typer.Exit(code=1)
+    if checkpoint is not None and output is not None and _same_file(output, checkpoint):
+        message = (
+            f"checkpoint {checkpoint!s} resolves to the same file as --output {output!s}; "
+            "refusing to overwrite the metrics output"
+        )
+        if json_output:
+            write_json_stderr(message)
+        else:
+            console.print(f"[red]{message}[/red]")
+        raise typer.Exit(code=1)
+
+    # AC-708 slice 2a: exactly one backend must be picked. Neither
+    # silently falling through to baseline (would hide intent) nor
+    # accepting both (ambiguous which to write to --checkpoint).
+    if baseline == logistic:
+        message = (
+            "exactly one of --baseline or --logistic must be passed"
+            if not baseline and not logistic
+            else "--baseline and --logistic are mutually exclusive"
+        )
         if json_output:
             write_json_stderr(message)
         else:
@@ -416,24 +470,42 @@ def run_hermes_train_advisor_command(
             console.print(f"[red]{message}[/red]")
         raise typer.Exit(code=1)
 
-    if not baseline:
-        message = "only --baseline is supported in this slice; trained backends arrive in AC-708 slice 2"
-        if json_output:
-            write_json_stderr(message)
-        else:
-            console.print(f"[red]{message}[/red]")
-        raise typer.Exit(code=1)
+    advisor_kind: str
+    if baseline:
+        baseline_advisor = train_baseline(examples)
+        # AC-708 slice 1 evaluates the baseline against the training set
+        # as a sanity check; held-out splits arrive with the trained
+        # backends.
+        metrics: AdvisorMetrics = evaluate(baseline_advisor, examples)
+        payload: dict[str, Any] = {
+            "advisor_kind": "baseline",
+            "majority_label": baseline_advisor.majority_label,
+            "label_counts": dict(baseline_advisor.label_counts),
+            "metrics": metrics.to_dict(),
+        }
+        advisor_kind = "baseline"
+        # Baselines don't need a checkpoint; the majority label is in
+        # the metrics payload.
+        summary_first = f"majority={baseline_advisor.majority_label!r}"
+    else:
+        trained = train_logistic(examples)
+        metrics = evaluate(trained, examples)
+        payload = {
+            "advisor_kind": "logistic_regression",
+            "labels": list(trained.labels),
+            "label_counts": dict(trained.label_counts),
+            "feature_names": list(trained.feature_names),
+            "trained_on": trained.trained_on,
+            "epochs": trained.epochs,
+            "learning_rate": trained.learning_rate,
+            "metrics": metrics.to_dict(),
+        }
+        if checkpoint is not None:
+            save_advisor(trained, checkpoint)
+            payload["checkpoint_path"] = str(checkpoint)
+        advisor_kind = "logistic_regression"
+        summary_first = f"labels={list(trained.labels)}"
 
-    advisor = train_baseline(examples)
-    # AC-708 slice 1 evaluates the baseline against the training set as
-    # a sanity check; held-out splits arrive with the trained backends.
-    metrics: AdvisorMetrics = evaluate(advisor, examples)
-    payload = {
-        "advisor_kind": "baseline",
-        "majority_label": advisor.majority_label,
-        "label_counts": dict(advisor.label_counts),
-        "metrics": metrics.to_dict(),
-    }
     if output is not None:
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(_json.dumps(payload, indent=2) + "\n", encoding="utf-8")
@@ -441,7 +513,7 @@ def run_hermes_train_advisor_command(
         write_json_stdout(payload)
         return
     console.print(
-        f"[green]Trained baseline[/green] majority={advisor.majority_label!r} on {metrics.example_count} examples; "
+        f"[green]Trained {advisor_kind}[/green] {summary_first} on {metrics.example_count} examples; "
         f"accuracy={metrics.accuracy:.3f}"
     )
     if metrics.insufficient_data:
@@ -453,7 +525,8 @@ def run_hermes_train_advisor_command(
 def run_hermes_recommend_command(
     *,
     home: Path | None,
-    baseline_from: Path,
+    baseline_from: Path | None,
+    advisor_path: Path | None,
     output: Path,
     include_protected: bool,
     json_output: bool,
@@ -461,19 +534,35 @@ def run_hermes_recommend_command(
     write_json_stdout: Any,
     write_json_stderr: Any,
 ) -> None:
-    """Emit read-only recommendations from a trained advisor (AC-709)."""
+    """Emit read-only recommendations from an advisor (AC-709).
+
+    Backend selection (AC-708 slice 2a):
+    * ``--baseline-from <jsonl>``: train a majority-class baseline
+      on the fly from AC-705 export data.
+    * ``--advisor <checkpoint>``: load a trained advisor (e.g. the
+      logistic-regression checkpoint produced by
+      ``autoctx hermes train-advisor --logistic --checkpoint ...``).
+    Exactly one must be passed.
+    """
 
     import json as _json
 
     from autocontext.hermes.inspection import _resolve_hermes_home, inspect_hermes_home
 
+    if (baseline_from is None) == (advisor_path is None):
+        message = "exactly one of --baseline-from or --advisor must be passed"
+        if json_output:
+            write_json_stderr(message)
+        else:
+            console.print(f"[red]{message}[/red]")
+        raise typer.Exit(code=1)
+
     # Same-file guard matches the AC-706 / AC-708 ingest posture: never
-    # overwrite the training input with the recommendation output.
-    if _same_file(baseline_from, output):
-        message = (
-            f"output {output!s} resolves to the same file as --baseline-from "
-            f"{baseline_from!s}; refusing to overwrite the training input"
-        )
+    # overwrite the input file with the recommendation output.
+    input_path = baseline_from if baseline_from is not None else advisor_path
+    assert input_path is not None
+    if _same_file(input_path, output):
+        message = f"output {output!s} resolves to the same file as the advisor input {input_path!s}; refusing to overwrite"
         if json_output:
             write_json_stderr(message)
         else:
@@ -495,16 +584,36 @@ def run_hermes_recommend_command(
             console.print(f"[red]{message}[/red]")
         raise typer.Exit(code=1)
 
-    examples = load_curator_examples(baseline_from)
-    if not examples:
-        message = f"no labeled examples loaded from {baseline_from}; cannot train baseline advisor"
-        if json_output:
-            write_json_stderr(message)
-        else:
-            console.print(f"[red]{message}[/red]")
-        raise typer.Exit(code=1)
+    advisor: Any
+    advisor_kind: str
+    summary_extra: dict[str, Any]
+    if baseline_from is not None:
+        examples = load_curator_examples(baseline_from)
+        if not examples:
+            message = f"no labeled examples loaded from {baseline_from}; cannot train baseline advisor"
+            if json_output:
+                write_json_stderr(message)
+            else:
+                console.print(f"[red]{message}[/red]")
+            raise typer.Exit(code=1)
+        baseline_advisor = train_baseline(examples)
+        advisor = baseline_advisor
+        advisor_kind = "baseline"
+        summary_extra = {"majority_label": baseline_advisor.majority_label}
+    else:
+        assert advisor_path is not None
+        try:
+            trained = load_advisor(advisor_path)
+        except (FileNotFoundError, ValueError) as err:
+            if json_output:
+                write_json_stderr(str(err))
+            else:
+                console.print(f"[red]{err}[/red]")
+            raise typer.Exit(code=1) from err
+        advisor = trained
+        advisor_kind = "logistic_regression"
+        summary_extra = {"labels": list(trained.labels)}
 
-    advisor = train_baseline(examples)
     resolved_home = _resolve_hermes_home(home)
     inventory = inspect_hermes_home(resolved_home)
     recs: list[Recommendation] = recommend(
@@ -520,14 +629,14 @@ def run_hermes_recommend_command(
 
     actionable = sum(1 for r in recs if r.status == "actionable")
     protected = sum(1 for r in recs if r.status == "protected")
-    payload = {
+    payload: dict[str, Any] = {
         "home": str(resolved_home),
         "output_path": str(output),
-        "advisor_kind": "baseline",
-        "majority_label": advisor.majority_label,
+        "advisor_kind": advisor_kind,
         "recommendation_count": len(recs),
         "actionable_count": actionable,
         "protected_count": protected,
+        **summary_extra,
     }
     if json_output:
         write_json_stdout(payload)

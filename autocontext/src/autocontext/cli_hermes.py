@@ -292,7 +292,14 @@ def register_hermes_command(
             bool,
             typer.Option(
                 "--baseline",
-                help="Train the majority-class baseline (slice 1 ships baseline only)",
+                help="Train the majority-class baseline (AC-708 slice 1)",
+            ),
+        ] = False,
+        logistic: Annotated[
+            bool,
+            typer.Option(
+                "--logistic",
+                help="Train the pure-Python logistic-regression advisor (AC-708 slice 2a)",
             ),
         ] = False,
         output: Annotated[
@@ -302,14 +309,23 @@ def register_hermes_command(
                 help="Optional metrics JSON destination; --json prints to stdout regardless",
             ),
         ] = None,
+        checkpoint: Annotated[
+            Path | None,
+            typer.Option(
+                "--checkpoint",
+                help="Optional advisor-checkpoint destination (logistic only; recommend --advisor consumes it)",
+            ),
+        ] = None,
         json_output: Annotated[bool, typer.Option("--json", help="Output structured JSON")] = False,
     ) -> None:
-        """Train + evaluate a Hermes curator advisor (AC-708 slice 1)."""
+        """Train + evaluate a Hermes curator advisor (AC-708)."""
 
         run_hermes_train_advisor_command(
             data=data,
             baseline=baseline,
+            logistic=logistic,
             output=output,
+            checkpoint=checkpoint,
             json_output=json_output,
             console=console,
             write_json_stdout=_cli_attr(dependency_module, "_write_json_stdout"),
@@ -323,12 +339,19 @@ def register_hermes_command(
             typer.Option("--home", help="Hermes home directory (default: HERMES_HOME or ~/.hermes)"),
         ] = None,
         baseline_from: Annotated[
-            Path,
+            Path | None,
             typer.Option(
                 "--baseline-from",
                 help="AC-705 curator-decisions JSONL to train a baseline advisor from",
             ),
-        ] = Path("hermes-curator-decisions.jsonl"),
+        ] = None,
+        advisor_path: Annotated[
+            Path | None,
+            typer.Option(
+                "--advisor",
+                help="Trained advisor checkpoint (AC-708 slice 2a; produced by train-advisor --logistic --checkpoint)",
+            ),
+        ] = None,
         output: Annotated[
             Path,
             typer.Option("--output", help="Destination JSONL for the recommendations"),
@@ -347,6 +370,7 @@ def register_hermes_command(
         run_hermes_recommend_command(
             home=home,
             baseline_from=baseline_from,
+            advisor_path=advisor_path,
             output=output,
             include_protected=include_protected,
             json_output=json_output,

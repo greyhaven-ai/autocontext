@@ -328,10 +328,27 @@ autoctx hermes train-advisor \
   --baseline \
   --output training/advisor-metrics.json --json
 
-# Emit read-only recommendations against a live Hermes home (AC-709)
+# Train the pure-Python logistic-regression advisor (AC-708 slice 2a)
+# and persist a checkpoint for later --advisor loading. Exactly one of
+# --baseline / --logistic must be passed.
+autoctx hermes train-advisor \
+  --data training/hermes-curator-decisions.jsonl \
+  --logistic \
+  --output training/advisor-metrics.json \
+  --checkpoint training/curator-advisor.json --json
+
+# Emit read-only recommendations against a live Hermes home (AC-709).
+# --baseline-from trains the slice-1 baseline on the fly; --advisor
+# loads a previously trained checkpoint (e.g. the slice-2a logistic
+# regression above) and routes inference through it.
 autoctx hermes recommend \
   --home "$HERMES_HOME" \
   --baseline-from training/hermes-curator-decisions.jsonl \
+  --output recommendations.jsonl --json
+
+autoctx hermes recommend \
+  --home "$HERMES_HOME" \
+  --advisor training/curator-advisor.json \
   --output recommendations.jsonl --json
 
 # Validate the rendered SKILL.md against the AC-711 content rubric
@@ -416,35 +433,53 @@ needs (`session_id`, `started_at`, `ended_at`, `agent_id`,
 missing optional columns are tolerated. WAL/SHM sidecars are not
 required. The importer never writes to the Hermes DB.
 
-`train-advisor` flags (AC-708 slice 1):
+`train-advisor` flags (AC-708 slices 1 + 2a):
 
 - `--data <jsonl>`: AC-705 `curator-decisions` export to train and
   evaluate on. Required.
-- `--baseline`: train the majority-class baseline advisor (the only
-  kind shipped in slice 1; logistic-regression / MLX / CUDA
-  backends arrive in slice 2).
+- `--baseline`: train the majority-class baseline advisor (slice 1).
+- `--logistic`: train the pure-Python multinomial logistic-regression
+  advisor (slice 2a; gradient descent over the AC-705 feature set,
+  no numpy / GPU dependency). Exactly one of `--baseline` / `--logistic`
+  must be passed.
 - `--output <json>`: optional metrics destination on disk; `--json`
   still prints to stdout.
+- `--checkpoint <json>`: when `--logistic` is set, persist the trained
+  weights to this path. The checkpoint is what `autoctx hermes
+recommend --advisor <path>` loads at inference time. Ignored under
+  `--baseline` (the majority label already ships in the metrics
+  payload). Same-file guards reject `--checkpoint` equal to either
+  `--data` (would clobber the source dataset) or `--output` (would
+  clobber the metrics payload mid-flight).
 
 Loader posture: per-line tolerant (malformed JSON, missing fields,
 unknown labels skip the row). Metrics surface `accuracy`, per-label
 `precision` / `recall` / `support`, and an `insufficient_data` flag
 that fires below `INSUFFICIENT_DATA_THRESHOLD` (20) examples so a
 small Hermes home does not act on noise. The baseline accuracy is
-the floor any later trained advisor must beat.
+the floor any later trained advisor must beat. Checkpoint loader
+posture: rejects unknown `kind` values and dimension-mismatched
+weight matrices (`labels` / `weights` / `intercepts` row counts must
+agree, and each weight row must match `feature_names` length).
 
-`recommend` flags (AC-709):
+`recommend` flags (AC-709 + AC-708 slice 2a):
 
 - `--home <path>`: Hermes home to inspect. Read-only; the surface
   never writes to `~/.hermes`.
 - `--baseline-from <jsonl>`: AC-705 export to train the baseline
   advisor on. The same-file guard rejects `--output` equal to
-  `--baseline-from`.
+  `--baseline-from`. Mutually exclusive with `--advisor`.
+- `--advisor <json>`: load a previously trained advisor checkpoint
+  (e.g. the slice-2a logistic regression produced by
+  `autoctx hermes train-advisor --logistic --checkpoint ...`). The
+  loaded advisor drives `predicted_action` and `reason` in each
+  recommendation row. Mutually exclusive with `--baseline-from`.
 - `--output <jsonl>`: destination for the recommendation rows. One
   row per recommendation: `skill_name`, `predicted_action`,
   `confidence: "advisory"`, `status: actionable | protected`,
   `features` (the inference inputs), and `reason` (per-advisor
-  rationale; baseline reads "baseline majority class (<label>)").
+  rationale; baseline reads "baseline majority class (<label>)",
+  logistic reads "logistic regression top class p=<prob>").
 - `--include-protected`: surface pinned / bundled / hub skills as
   well, tagged `status="protected"`. Default omits them so
   downstream consumers cannot accidentally act on upstream-owned or
@@ -452,10 +487,8 @@ the floor any later trained advisor must beat.
 
 Read-only invariant: Curator stays the mutation owner. The
 recommendation surface emits suggestions; applying them is the
-operator's call (or Curator's, when AC-708 slice 2 wires the
-trained advisor through). Until trained backends ship, the
-baseline produces majority-class recommendations only — useful for
-plumbing validation, not for acting on.
+operator's call. Slice 2a wires the trained-logistic backend through
+end-to-end; MLX (2b) and CUDA (2c) follow.
 
 JSON output shape for `inspect`:
 
