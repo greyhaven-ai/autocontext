@@ -295,9 +295,15 @@ _ZERO_OR_NEAR_ZERO_HITS = re.compile(
     r"(?P<k>\d+)\s*/\s*(?P<total>\d+)\s+(?:bytes\s+)?(?:recovered|hits|correct)",
     re.IGNORECASE,
 )
-# Source-code patterns: `position = N` / `Z_N` / `index_N` style.
+# Source-code patterns: capture three shapes in one pass —
+#   a) literature-style identifier:  `Z_16`, `index_32`, `idx_first` …
+#   b) assignment to a generic name:  `position = 16`, `index = 32` …
+#   c) assignment whose lvalue is itself the literature name:
+#      `index_32 = 32`, `Z_16 = 15` …  (PR #979 review P2)
+# Each match yields either a literature_value (group `n`) or a
+# code_value (group `value`) or both (case c).
 _INDEX_NAMED_CONSTANT = re.compile(
-    r"\b(?P<name>(?:position|index|Z|X|idx)_(?P<n>\d+))\b|"
+    r"\b(?P<name>(?:position|index|Z|X|idx)_(?P<n>\d+))(?:\s*=\s*(?P<value_named>\d+))?\b|"
     r"\b(?P<assign>position|index|idx)\s*=\s*(?P<value>\d+)",
     re.IGNORECASE,
 )
@@ -307,20 +313,24 @@ def _detect_index_mismatch(source_code: str) -> tuple[int, int] | None:
     """Look for a literature-style identifier (e.g. ``Z_16``, ``index_32``)
     paired with a code-side numeric constant in the same source. Return
     ``(literature_value, code_value)`` when both candidates are present
-    AND they differ by exactly 1 (the 0-vs-1-indexed mismatch shape).
+    AND they differ by exactly 1 OR equal each other (the 0-vs-1-indexed
+    mismatch shape; see c56 in the Cryptopals validation set).
     """
     literature_values: list[int] = []
     code_values: list[int] = []
     for match in _INDEX_NAMED_CONSTANT.finditer(source_code):
         if match.group("name") is not None:
             literature_values.append(int(match.group("n")))
+            # PR #979 review P2: a `<name>_N = N` match also yields the
+            # code-side value on the same line. Record both.
+            value_named = match.group("value_named")
+            if value_named is not None:
+                code_values.append(int(value_named))
         elif match.group("value") is not None:
             code_values.append(int(match.group("value")))
     for lit in literature_values:
         for code in code_values:
             if abs(lit - code) == 1 or lit == code:
-                # Either the off-by-1 shape OR exact match (both point
-                # at the same numeric, which is the c56 signature).
                 return (lit, code)
     return None
 
@@ -331,8 +341,19 @@ def rule_indexing_base(
     source_code: str | None = None,
     **_: Any,
 ) -> list[RemediationHint]:
-    """Emit :class:`IndexingCheck` when a near-zero hit rate looks like
-    a 0-vs-1-indexed mismatch between literature naming and code."""
+    """Emit :class:`IndexingCheck` when a near-zero hit rate AND source
+    code together suggest a 0-vs-1-indexed mismatch between literature
+    naming and code.
+
+    PR #979 review (P2): the rule fires ONLY when source-code evidence
+    is available. A bare 0/N failure is ambiguous (could be an AC-770
+    budget problem) so the indexing rule stays quiet without source
+    evidence rather than sending refinement down the wrong path. The
+    rule is also NOT in :data:`DEFAULT_RULES`; callers with source
+    code opt in explicitly.
+    """
+    if not source_code:
+        return []
     hints: list[RemediationHint] = []
     for diagnosis in report.match_diagnoses:
         for error in diagnosis.errors:
@@ -344,33 +365,21 @@ def rule_indexing_base(
             if total == 0 or k > total * 0.25:
                 # 15/16 isn't an indexing issue; skip.
                 continue
-            mismatch = _detect_index_mismatch(source_code) if source_code else None
-            if mismatch is not None:
-                lit, code = mismatch
-                # Surface both candidate offsets so the agent can try
-                # 0-indexed (lit - 1) and 1-indexed (lit) on the next
-                # iteration. When lit == code (the c56 shape), we
-                # surface lit - 1 vs lit.
-                zero_indexed = lit - 1 if lit == code else min(lit, code)
-                one_indexed = lit if lit == code else max(lit, code)
-                hints.append(
-                    IndexingCheck(
-                        reason=(
-                            f"match {diagnosis.match_index}: {k}/{total} hits with "
-                            f"indexing-name vs constant — try {zero_indexed} (0-indexed) "
-                            f"and {one_indexed} (1-indexed)"
-                        ),
-                    )
+            mismatch = _detect_index_mismatch(source_code)
+            if mismatch is None:
+                continue
+            lit, code = mismatch
+            zero_indexed = lit - 1 if lit == code else min(lit, code)
+            one_indexed = lit if lit == code else max(lit, code)
+            hints.append(
+                IndexingCheck(
+                    reason=(
+                        f"match {diagnosis.match_index}: {k}/{total} hits with "
+                        f"indexing-name vs constant — try {zero_indexed} (0-indexed) "
+                        f"and {one_indexed} (1-indexed)"
+                    ),
                 )
-            else:
-                hints.append(
-                    IndexingCheck(
-                        reason=(
-                            f"match {diagnosis.match_index}: {k}/{total} hits — "
-                            "consider 0-vs-1 indexing mismatch"
-                        ),
-                    )
-                )
+            )
     return hints
 
 
@@ -379,7 +388,11 @@ DEFAULT_RULES: list[Rule] = [
     rule_positional_typerror,
     rule_stale_fixture,
     rule_threshold_budget,
-    rule_indexing_base,
+    # PR #979 review (P2): rule_indexing_base is intentionally NOT in
+    # the default set. It fires on 0/N failures, which equally describe
+    # AC-770 budget problems; mixing both in the default path sends
+    # refinement down the wrong remediation. Callers with source code
+    # opt in via `rules=[*DEFAULT_RULES, rule_indexing_base]`.
 ]
 
 

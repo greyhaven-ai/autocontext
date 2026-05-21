@@ -367,13 +367,15 @@ class TestRuleIndexingBase:
         # 0-indexed (15) and 1-indexed (16) on the next iteration.
         assert "15" in hint.reason and "16" in hint.reason
 
-    def test_zero_hits_without_source_emits_low_confidence_hint(self) -> None:
-        """A 0/N failure with no source context still emits an
-        IndexingCheck so the agent at least considers indexing as a
-        candidate. The hint is generic (no specific candidate)."""
+    def test_zero_hits_without_source_emits_no_hint(self) -> None:
+        """PR #979 review (P2): a 0/N failure with no source context
+        is ambiguous — it could be a budget problem (AC-770) or an
+        indexing-base mismatch (AC-771). Without source evidence the
+        indexing rule must stay quiet so it does not send refinement
+        down the wrong path for ordinary AC-770 budget failures."""
         report = _report(["AssertionError: 0/16 bytes recovered"])
         hints = rule_indexing_base(report, source_code=None)
-        assert any(isinstance(h, IndexingCheck) for h in hints)
+        assert all(not isinstance(h, IndexingCheck) for h in hints)
 
     def test_zero_hits_with_source_but_no_indexing_pattern_no_hint(self) -> None:
         """0/N failure but the source has no index-like identifier
@@ -399,12 +401,18 @@ class TestRuleIndexingBase:
         assert rule_indexing_base(report) == []
 
     def test_index_underscore_pattern_recognized(self) -> None:
-        """`index_32 = 32` paired with identifier `index_32` is the same
-        shape as the Z_16 case and must fire."""
+        """PR #979 review (P2): `index_32 = 32` paired with identifier
+        `index_32` must surface the candidate offsets (31 / 32),
+        not the generic fallback. The matcher should pick up both
+        the literature value (32 from `index_32`) and the code-side
+        value (32 from `= 32`)."""
         report = _report(["AssertionError: 0/32 hits at 1M trials"])
         source = "index_32 = 32\nresult = lookup(index_32)"
         hints = rule_indexing_base(report, source_code=source)
         assert any(isinstance(h, IndexingCheck) for h in hints)
+        hint = next(h for h in hints if isinstance(h, IndexingCheck))
+        # Specific candidates surfaced: 31 (0-indexed) and 32 (1-indexed).
+        assert "31" in hint.reason and "32" in hint.reason
 
 
 # --- Router integration: AC-770 + AC-771 in DEFAULT_RULES ------------------
@@ -414,18 +422,37 @@ class TestNewRulesInDefaultRules:
     def test_default_rules_include_threshold_budget(self) -> None:
         assert rule_threshold_budget in DEFAULT_RULES
 
-    def test_default_rules_include_indexing_base(self) -> None:
-        assert rule_indexing_base in DEFAULT_RULES
+    def test_default_rules_omit_indexing_base(self) -> None:
+        """PR #979 review (P2): rule_indexing_base must NOT be in the
+        default ruleset. It fires on 0/N failures which can equally
+        be AC-770 budget problems; mixing both in the default path
+        sends refinement down the wrong remediation. Callers that
+        have source code can opt in by passing `rules=DEFAULT_RULES
+        + [rule_indexing_base]` or running the rule directly."""
+        assert rule_indexing_base not in DEFAULT_RULES
 
     def test_route_remediations_passes_source_code_through(self) -> None:
-        """route_remediations must accept and forward source_code so the
-        AC-771 rule can read it."""
+        """route_remediations must accept and forward source_code so
+        any opted-in indexing rule can read it. Since
+        rule_indexing_base is NOT in DEFAULT_RULES (PR #979 review),
+        the caller passes it explicitly."""
         report = _report(["AssertionError: 0/16 bytes recovered"])
         hints = route_remediations(
             report,
             source_code="position = 16  # Z_16",
+            rules=[*DEFAULT_RULES, rule_indexing_base],
         )
         assert any(isinstance(h, IndexingCheck) for h in hints)
+
+    def test_route_remediations_default_path_does_not_fire_indexing(self) -> None:
+        """PR #979 review (P2): the default route must not produce an
+        IndexingCheck on a plain budget failure. Without explicit
+        rule selection, 0/N from a budget shortage should propose
+        BudgetIncrease only."""
+        report = _report(["AssertionError: 0/16 correct at 1024 trials"])
+        hints = route_remediations(report, source_code="position = 16  # Z_16")
+        assert all(not isinstance(h, IndexingCheck) for h in hints)
+        assert any(isinstance(h, BudgetIncrease) for h in hints)
 
 
 # --- Rendering: new hints have human-readable descriptions ----------------
