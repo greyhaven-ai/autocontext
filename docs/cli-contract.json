@@ -1,26 +1,32 @@
 {
   "schema_version": 1,
-  "description": "AC-697 slice 1 — canonical autoctx command contract. Single source of truth for Python and TypeScript parity. Each runtime's loader walks its CLI surface and a parity test verifies that every command claiming runtime_support.<runtime> == \"yes\" is actually registered at the canonical path. Follow-up AC-697 slices fill in friction fixes (status semantics, queue add parity, --iterations alias plumbing) and expand contract coverage to internal commands.",
+  "description": "AC-697 slice 1 \u2014 canonical autoctx command contract. Single source of truth for Python and TypeScript parity. Each runtime's loader walks its CLI surface and a parity test verifies that every command claiming runtime_support.<runtime> == \"yes\" is actually registered at the canonical path. Follow-up AC-697 slices fill in friction fixes (status semantics, queue add parity, --iterations alias plumbing) and expand contract coverage to internal commands.",
   "commands": [
     {
       "id": "solve",
-      "path": ["solve"],
+      "path": [
+        "solve"
+      ],
       "summary": "Take a natural-language objective, generate or select a scenario, run iterations against a real evaluator, and export the learned approach.",
       "audience": "paved_road",
       "maturity": "stable",
       "domain_concept": null,
       "aliases": [],
       "runtime_support": {
-        "python": { "status": "yes" },
-        "typescript": { "status": "yes" }
+        "python": {
+          "status": "yes"
+        },
+        "typescript": {
+          "status": "yes"
+        }
       },
       "flags": [
         {
           "name": "iterations",
           "type": "int",
-          "aliases": ["gens", "rounds", "max-iterations"],
+          "aliases": [],
           "required": false,
-          "description": "Number of refinement rounds. Canonical name across both runtimes."
+          "description": "Number of refinement rounds. Canonical name across both runtimes. Legacy aliases (--gens, --rounds, --max-iterations) are tracked in AC-697 follow-up slices that add alias plumbing; the contract documents only honored options today."
         },
         {
           "name": "description",
@@ -28,36 +34,35 @@
           "aliases": [],
           "required": false,
           "description": "Plain-language goal. The positional form (`autoctx solve \"goal\"`) is canonical shorthand."
-        },
-        {
-          "name": "provider",
-          "type": "string",
-          "aliases": [],
-          "required": false,
-          "description": "LLM provider override. Honored when set; otherwise env-driven."
         }
       ],
       "output_contract": "json"
     },
     {
       "id": "run",
-      "path": ["run"],
+      "path": [
+        "run"
+      ],
       "summary": "Execute a saved scenario for one or more iterations and produce a Run artifact.",
       "audience": "paved_road",
       "maturity": "stable",
       "domain_concept": "Scenario",
       "aliases": [],
       "runtime_support": {
-        "python": { "status": "yes" },
-        "typescript": { "status": "yes" }
+        "python": {
+          "status": "yes"
+        },
+        "typescript": {
+          "status": "yes"
+        }
       },
       "flags": [
         {
           "name": "iterations",
           "type": "int",
-          "aliases": ["gens", "rounds"],
+          "aliases": [],
           "required": false,
-          "description": "Number of generations to execute."
+          "description": "Number of generations to execute. Canonical name across both runtimes. Legacy aliases (--gens, --rounds) are tracked in AC-697 follow-up slices."
         },
         {
           "name": "run-id",
@@ -71,14 +76,18 @@
     },
     {
       "id": "status",
-      "path": ["status"],
+      "path": [
+        "status"
+      ],
       "summary": "Show run status for the given <run-id>. Canonical meaning is RUN status; queue status lives under `queue status`.",
       "audience": "paved_road",
       "maturity": "stable",
       "domain_concept": "Run",
       "aliases": [],
       "runtime_support": {
-        "python": { "status": "yes" },
+        "python": {
+          "status": "yes"
+        },
         "typescript": {
           "status": "intentional_gap",
           "reason": "Today TypeScript `status` reports queue pending count. AC-697 follow-up slice retargets `status` to run status and moves queue pending under `queue status`."
@@ -89,7 +98,9 @@
     },
     {
       "id": "watch",
-      "path": ["watch"],
+      "path": [
+        "watch"
+      ],
       "summary": "Stream live updates for an in-flight run.",
       "audience": "paved_road",
       "maturity": "beta",
@@ -100,14 +111,18 @@
           "status": "intentional_gap",
           "reason": "Python ships `autoctx wait <condition_id>` but not `watch <run-id>`. AC-697 follow-up slice adds a watch command that wraps the existing event-stream WebSocket."
         },
-        "typescript": { "status": "yes" }
+        "typescript": {
+          "status": "yes"
+        }
       },
       "flags": [],
       "output_contract": "text"
     },
     {
       "id": "show",
-      "path": ["show"],
+      "path": [
+        "show"
+      ],
       "summary": "Render a human-readable view of a finished run's artifacts (best strategy, scores, playbook).",
       "audience": "paved_road",
       "maturity": "beta",
@@ -118,7 +133,9 @@
           "status": "intentional_gap",
           "reason": "Python ships `replay` and `status` but no `show`. AC-697 follow-up slice adds `show` (with `--best`) that composes existing read surfaces."
         },
-        "typescript": { "status": "yes" }
+        "typescript": {
+          "status": "yes"
+        }
       },
       "flags": [
         {
@@ -133,15 +150,21 @@
     },
     {
       "id": "export",
-      "path": ["export"],
+      "path": [
+        "export"
+      ],
       "summary": "Export a Run's learned knowledge as a portable artifact (JSON package, Pi-package directory, or Hermes skill).",
       "audience": "paved_road",
       "maturity": "stable",
       "domain_concept": "Artifact",
       "aliases": [],
       "runtime_support": {
-        "python": { "status": "yes" },
-        "typescript": { "status": "yes" }
+        "python": {
+          "status": "yes"
+        },
+        "typescript": {
+          "status": "yes"
+        }
       },
       "flags": [
         {
@@ -156,74 +179,102 @@
     },
     {
       "id": "run.list",
-      "path": ["list"],
+      "path": [
+        "list"
+      ],
       "summary": "List recent runs.",
       "audience": "advanced",
       "maturity": "stable",
       "domain_concept": "Run",
       "aliases": [],
       "runtime_support": {
-        "python": { "status": "yes" },
-        "typescript": { "status": "yes" }
+        "python": {
+          "status": "yes"
+        },
+        "typescript": {
+          "status": "yes"
+        }
       },
       "flags": [],
       "output_contract": "json"
     },
     {
       "id": "run.replay",
-      "path": ["replay"],
+      "path": [
+        "replay"
+      ],
       "summary": "Replay a stored generation from a run.",
       "audience": "advanced",
       "maturity": "stable",
       "domain_concept": "Run",
       "aliases": [],
       "runtime_support": {
-        "python": { "status": "yes" },
-        "typescript": { "status": "yes" }
+        "python": {
+          "status": "yes"
+        },
+        "typescript": {
+          "status": "yes"
+        }
       },
       "flags": [],
       "output_contract": "text"
     },
     {
       "id": "task.judge",
-      "path": ["judge"],
+      "path": [
+        "judge"
+      ],
       "summary": "Score a single agent output against a rubric.",
       "audience": "advanced",
       "maturity": "stable",
       "domain_concept": "Task",
       "aliases": [],
       "runtime_support": {
-        "python": { "status": "yes" },
-        "typescript": { "status": "yes" }
+        "python": {
+          "status": "yes"
+        },
+        "typescript": {
+          "status": "yes"
+        }
       },
       "flags": [],
       "output_contract": "json"
     },
     {
       "id": "task.improve",
-      "path": ["improve"],
+      "path": [
+        "improve"
+      ],
       "summary": "Run an evaluate-revise improvement loop against a rubric.",
       "audience": "advanced",
       "maturity": "stable",
       "domain_concept": "Task",
       "aliases": [],
       "runtime_support": {
-        "python": { "status": "yes" },
-        "typescript": { "status": "yes" }
+        "python": {
+          "status": "yes"
+        },
+        "typescript": {
+          "status": "yes"
+        }
       },
       "flags": [],
       "output_contract": "json"
     },
     {
       "id": "queue",
-      "path": ["queue"],
+      "path": [
+        "queue"
+      ],
       "summary": "Manage the task queue. Subcommands cover add / status / list.",
       "audience": "advanced",
       "maturity": "stable",
       "domain_concept": "Task",
       "aliases": [],
       "runtime_support": {
-        "python": { "status": "yes" },
+        "python": {
+          "status": "yes"
+        },
         "typescript": {
           "status": "intentional_gap",
           "reason": "TypeScript currently exposes `autoctx queue -s <spec> ...` for queue-add. AC-697 follow-up slice adds `autoctx queue add ...` and moves queue-add to the canonical path."
@@ -234,7 +285,10 @@
     },
     {
       "id": "queue.status",
-      "path": ["queue", "status"],
+      "path": [
+        "queue",
+        "status"
+      ],
       "summary": "Show queue pending / in-flight counts. Distinct from top-level `status` (which is run status).",
       "audience": "advanced",
       "maturity": "beta",
@@ -255,12 +309,17 @@
     },
     {
       "id": "scenario.create",
-      "path": ["scenario", "create"],
+      "path": [
+        "scenario",
+        "create"
+      ],
       "summary": "Materialize a new scenario from a description, template, or harness spec.",
       "audience": "advanced",
       "maturity": "beta",
       "domain_concept": "Scenario",
-      "aliases": ["new-scenario"],
+      "aliases": [
+        "new-scenario"
+      ],
       "runtime_support": {
         "python": {
           "status": "intentional_gap",
@@ -276,7 +335,9 @@
     },
     {
       "id": "mission",
-      "path": ["mission"],
+      "path": [
+        "mission"
+      ],
       "summary": "Long-running verified-goal mission manager (create / run / list).",
       "audience": "advanced",
       "maturity": "beta",
@@ -287,34 +348,47 @@
           "status": "intentional_gap",
           "reason": "Mission is TypeScript-only today (per autocontext/README.md). Python parity is out of scope for AC-697 slice 1."
         },
-        "typescript": { "status": "yes" }
+        "typescript": {
+          "status": "yes"
+        }
       },
       "flags": [],
       "output_contract": "json"
     },
     {
       "id": "serve.http",
-      "path": ["serve"],
+      "path": [
+        "serve"
+      ],
       "summary": "Start the HTTP API + WebSocket server.",
       "audience": "advanced",
       "maturity": "stable",
       "domain_concept": null,
       "aliases": [],
       "runtime_support": {
-        "python": { "status": "yes" },
-        "typescript": { "status": "yes" }
+        "python": {
+          "status": "yes"
+        },
+        "typescript": {
+          "status": "yes"
+        }
       },
       "flags": [],
       "output_contract": "text"
     },
     {
       "id": "serve.mcp",
-      "path": ["serve", "mcp"],
+      "path": [
+        "serve",
+        "mcp"
+      ],
       "summary": "Start the MCP server on stdio. Canonical path is `serve mcp`; legacy single-token `mcp-serve` is kept as a registered alias on both runtimes.",
       "audience": "advanced",
       "maturity": "stable",
       "domain_concept": null,
-      "aliases": ["mcp-serve"],
+      "aliases": [
+        "mcp-serve"
+      ],
       "runtime_support": {
         "python": {
           "status": "intentional_gap",
@@ -330,7 +404,9 @@
     },
     {
       "id": "capabilities",
-      "path": ["capabilities"],
+      "path": [
+        "capabilities"
+      ],
       "summary": "Enumerate canonical commands, aliases, and per-runtime support. Operator-facing surface for the AC-697 contract.",
       "audience": "advanced",
       "maturity": "beta",
@@ -341,7 +417,10 @@
           "status": "intentional_gap",
           "reason": "Python does not ship `capabilities` yet. AC-697 follow-up slice adds it (loads docs/cli-contract.json and renders the canonical surface)."
         },
-        "typescript": { "status": "yes" }
+        "typescript": {
+          "status": "intentional_gap",
+          "reason": "Today TypeScript `autoctx capabilities --json` returns the legacy registry-only payload from capabilities-command-workflow.ts (command names only). AC-697 follow-up slice wires capabilities to load docs/cli-contract.json and return canonical commands + aliases + per-runtime support."
+        }
       },
       "flags": [],
       "output_contract": "json"
