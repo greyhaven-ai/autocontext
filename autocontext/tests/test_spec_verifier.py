@@ -274,6 +274,63 @@ class TestDeriveInvariants:
         _, user_prompt = provider.calls[0]
         assert "expected_first_line" in user_prompt
 
+    def test_changing_fixtures_invalidates_cache(self, tmp_path: Path) -> None:
+        """PR #977 review (P2): the cache key currently keys on the
+        spec only, but fixtures go into the LLM prompt. A fixture
+        refresh (e.g. AC-767 re-fetch) must invalidate the cache so
+        the next derivation reflects the new fixture content."""
+        cache = InvariantCache(tmp_path)
+        provider = StubProvider(
+            responses=[
+                '<invariant kind="literal" confidence="high">OLD</invariant>',
+                '<invariant kind="literal" confidence="high">NEW</invariant>',
+            ]
+        )
+        old_block = "## Available fixtures\n- `payload`: OLD"
+        new_block = "## Available fixtures\n- `payload`: NEW"
+
+        first = derive_invariants(
+            "spec",
+            scenario="scen",
+            provider=provider,
+            cache=cache,
+            fixtures_block=old_block,
+        )
+        second = derive_invariants(
+            "spec",
+            scenario="scen",
+            provider=provider,
+            cache=cache,
+            fixtures_block=new_block,
+        )
+
+        # The provider must have been called twice (once per fixture
+        # variant); the second call's invariant text reflects NEW.
+        assert len(provider.calls) == 2
+        assert first.invariants[0].statement == "OLD"
+        assert second.invariants[0].statement == "NEW"
+
+    def test_same_fixtures_hits_cache(self, tmp_path: Path) -> None:
+        """The cache must still hit when the same spec + same fixtures
+        come back; otherwise we punish the common case."""
+        cache = InvariantCache(tmp_path)
+        provider = StubProvider(responses=['<invariant kind="literal" confidence="high">SAME</invariant>'])
+        block = "## Available fixtures\n- `payload`: SAME"
+
+        first = derive_invariants("spec", scenario="scen", provider=provider, cache=cache, fixtures_block=block)
+        second = derive_invariants("spec", scenario="scen", provider=provider, cache=cache, fixtures_block=block)
+        assert len(provider.calls) == 1
+        assert first.invariants == second.invariants
+
+    def test_fixtures_none_vs_empty_block_treated_consistently(self, tmp_path: Path) -> None:
+        """``None`` and ``""`` for fixtures must produce the same cache
+        key (both mean "no fixtures") so consecutive calls hit cache."""
+        cache = InvariantCache(tmp_path)
+        provider = StubProvider(responses=['<invariant kind="literal" confidence="high">X</invariant>'])
+        derive_invariants("spec", scenario="scen", provider=provider, cache=cache, fixtures_block=None)
+        derive_invariants("spec", scenario="scen", provider=provider, cache=cache, fixtures_block="")
+        assert len(provider.calls) == 1
+
 
 def spec_hash_(text: str) -> str:
     # Local helper, distinct from the import to keep test concerns isolated.
@@ -375,6 +432,40 @@ class TestRuleInvariantViolation:
         out = render_hints([hint])
         assert "roundtrip" in out
         assert "garbage" in out
+
+    def test_rule_invariant_violation_in_default_rules(self) -> None:
+        """PR #977 review (P2): rule_invariant_violation must be in
+        the default ruleset so production callers of
+        ``route_remediations(report)`` actually receive
+        AssertionMismatch hints from invariant failures."""
+        from autocontext.loop.remediation_router import DEFAULT_RULES
+
+        assert rule_invariant_violation in DEFAULT_RULES
+
+    def test_route_remediations_default_emits_assertion_mismatch(self) -> None:
+        """End-to-end: a FailureReport containing InvariantViolation:
+        flows through the default router and produces
+        AssertionMismatch without the caller having to opt in."""
+        from autocontext.loop.remediation_router import route_remediations
+
+        report = FailureReport(
+            match_diagnoses=[
+                MatchDiagnosis(
+                    match_index=0,
+                    score=0.0,
+                    passed=False,
+                    errors=['InvariantViolation: "roundtrip" failed; observed: b"garbage"'],
+                    summary="m0",
+                )
+            ],
+            overall_delta=-0.5,
+            threshold=0.0,
+            previous_best=1.0,
+            current_best=0.5,
+            strategy_summary="",
+        )
+        hints = route_remediations(report)
+        assert any(isinstance(h, AssertionMismatch) for h in hints)
 
 
 # --------------------------------------------------------------------------

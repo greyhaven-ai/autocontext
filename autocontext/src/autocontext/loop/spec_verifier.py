@@ -33,8 +33,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from autocontext.harness.evaluation.failure_report import FailureReport
-from autocontext.loop.remediation_router import AssertionMismatch
+from autocontext.loop.remediation_router import AssertionMismatch, rule_invariant_violation
 from autocontext.providers.base import LLMProvider
 
 __all__ = [
@@ -42,6 +41,7 @@ __all__ = [
     "Invariant",
     "InvariantCache",
     "InvariantSet",
+    "derivation_input_hash",
     "derive_invariants",
     "parse_invariants",
     "render_invariants",
@@ -143,6 +143,19 @@ def spec_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
+def derivation_input_hash(spec: str, fixtures_block: str | None) -> str:
+    """Stable hex digest of (spec, fixtures_block) for cache keying.
+
+    PR #977 review (P2): the cache must reflect every input the
+    derivation prompt sees. ``None`` and empty fixtures collapse to
+    the same key (both mean "no fixtures") so consecutive calls hit
+    cache. Otherwise the fixture bytes participate in the digest so
+    a fixture refresh (AC-767 re-fetch) invalidates the cache.
+    """
+    payload = spec + "\x00" + (fixtures_block or "")
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+
 # --------------------------------------------------------------------------
 # Cache (mirrors AC-767's FixtureCache safe-name discipline)
 # --------------------------------------------------------------------------
@@ -239,7 +252,7 @@ def derive_invariants(
     Caches by ``(scenario, spec_hash)``. Returns an empty ``InvariantSet``
     when the provider fails to emit any parseable blocks.
     """
-    h = spec_hash(spec)
+    h = derivation_input_hash(spec, fixtures_block)
     cached = cache.get(scenario, h)
     if cached is not None:
         return cached
@@ -255,28 +268,9 @@ def derive_invariants(
 # --------------------------------------------------------------------------
 # AC-769 router rule
 # --------------------------------------------------------------------------
-
-
-_INVARIANT_VIOLATION_RE = re.compile(
-    r"InvariantViolation:\s*(?P<inv>.+?)\s+failed;\s*observed:\s*(?P<obs>.+?)(?:$|\n)",
-    re.IGNORECASE | re.DOTALL,
-)
-
-
-def rule_invariant_violation(report: FailureReport, **_: object) -> list[AssertionMismatch]:
-    """Emit one :class:`AssertionMismatch` per ``InvariantViolation:`` error
-    string in the report."""
-    out: list[AssertionMismatch] = []
-    for diagnosis in report.match_diagnoses:
-        for error in diagnosis.errors:
-            for match in _INVARIANT_VIOLATION_RE.finditer(error):
-                inv = match.group("inv").strip().strip('"')
-                obs = match.group("obs").strip().strip('"')
-                out.append(
-                    AssertionMismatch(
-                        invariant=inv,
-                        observed=obs,
-                        reason=f"match {diagnosis.match_index}",
-                    )
-                )
-    return out
+#
+# ``rule_invariant_violation`` lives in ``remediation_router`` (alongside
+# ``DEFAULT_RULES``) so production callers of ``route_remediations``
+# always see the rule without having to import this module first (PR
+# #977 review P2). It is re-exported from this module so callers that
+# imported it from here historically still resolve.
