@@ -54,7 +54,16 @@ class SmallCaseVerify:
     reason: str
 
 
-RemediationHint = RefreshFixture | SurfaceSignatures | SmallCaseVerify
+@dataclass(frozen=True, slots=True)
+class AssertionMismatch:
+    """A runtime invariant from AC-772 fired against the candidate solution."""
+
+    invariant: str
+    observed: str
+    reason: str
+
+
+RemediationHint = RefreshFixture | SurfaceSignatures | SmallCaseVerify | AssertionMismatch
 
 
 # --- Rule Protocol ---------------------------------------------------------
@@ -232,6 +241,8 @@ def _describe(hint: RemediationHint) -> str:
     if isinstance(hint, SmallCaseVerify):
         target = f"`{hint.function}`" if hint.function else "the failing function"
         return f"small-case verify {target} ({hint.reason})"
+    if isinstance(hint, AssertionMismatch):
+        return f"invariant `{hint.invariant}` failed; observed `{hint.observed}` ({hint.reason})"
     return repr(hint)  # unreachable
 
 
