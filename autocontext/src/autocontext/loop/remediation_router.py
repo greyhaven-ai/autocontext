@@ -90,6 +90,48 @@ class IndexingCheck:
     reason: str
 
 
+# AC-773: typed hints for Lean 4 / mathlib ``lake env lean`` compile errors.
+
+
+@dataclass(frozen=True, slots=True)
+class UnknownIdentifier:
+    """``unknown identifier '<name>'`` or ``unknown constant '<Name>'``."""
+
+    name: str
+    line: int
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
+class TypeMismatch:
+    """``type mismatch`` or ``function expected, term has type ...``."""
+
+    expected: str
+    got: str
+    line: int
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
+class UnsolvedGoals:
+    """``unsolved goals`` — proof structurally complete but doesn't close
+    the remaining proof obligations."""
+
+    goals: tuple[str, ...]
+    line: int
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
+class TypeclassSearch:
+    """``failed to synthesize instance ...`` — typeclass resolution gap."""
+
+    typeclass: str
+    context: str
+    line: int
+    reason: str
+
+
 RemediationHint = (
     RefreshFixture
     | SurfaceSignatures
@@ -97,6 +139,10 @@ RemediationHint = (
     | AssertionMismatch
     | BudgetIncrease
     | IndexingCheck
+    | UnknownIdentifier
+    | TypeMismatch
+    | UnsolvedGoals
+    | TypeclassSearch
 )
 
 
@@ -432,12 +478,129 @@ def rule_indexing_base(
     return hints
 
 
+# --- AC-773: Lean 4 / mathlib compile-error rule --------------------------
+#
+# Surfaced by the Erdős #986 (Spencer k=3) campaign (2026-05-21): the
+# existing rules emitted 0 hints across 4 ``lake env lean`` failures
+# because Python-ecosystem patterns don't match Lean's error vocabulary.
+# Pure regex, pluggable into ``DEFAULT_RULES``.
+
+# Lean errors carry a ``<path>:<line>:<col>: error:`` preamble. We don't
+# require it: the patterns below operate on whatever line(s) carry the
+# error keyword, falling back to line 0 when not present.
+
+_LEAN_LINE = re.compile(r":(?P<line>\d+):\d+:\s*error:")
+_LEAN_UNKNOWN_IDENT = re.compile(r"unknown (?:identifier|constant) '(?P<name>[^']+)'")
+_LEAN_TYPE_MISMATCH = re.compile(
+    r"(?:type mismatch|function expected at).*?\n(?P<got_or_subject>.*?)\n"
+    r"(?:has type|term has type)\n"
+    r"(?P<got>.*?)\n"
+    r"(?:but is expected to have type|expected type:)\s*\n?"
+    r"(?P<expected>.*?)(?:\n\n|\Z)",
+    re.DOTALL,
+)
+_LEAN_FUNCTION_EXPECTED = re.compile(
+    r"function expected at\n(?P<subject>.*?)\nterm has type\n(?P<got>.*?)(?:\n\n|\Z)",
+    re.DOTALL,
+)
+_LEAN_UNSOLVED_GOALS = re.compile(
+    r"unsolved goals\n(?P<body>.*?)(?=\n\S+:\d+:\d+:|\Z)",
+    re.DOTALL,
+)
+_LEAN_TYPECLASS_FAIL = re.compile(
+    r"failed to synthesize instance\n\s*(?P<typeclass>\S+)(?:\s+(?P<context>.+?))?(?:\n|$)",
+)
+
+
+def _nearest_line(error: str, offset: int) -> int:
+    """Return the line number from the nearest preceding ``:N:C: error:``
+    marker, or 0 if none."""
+    last = 0
+    for m in _LEAN_LINE.finditer(error[:offset]):
+        last = int(m.group("line"))
+    return last
+
+
+def rule_lean_compile_error(report: FailureReport, **_: Any) -> list[RemediationHint]:
+    """Pattern-match ``lake env lean`` stderr into typed hints.
+
+    Emits :class:`UnknownIdentifier`, :class:`TypeMismatch`,
+    :class:`UnsolvedGoals`, or :class:`TypeclassSearch` per matched error.
+    Errors that don't match any Lean pattern produce no hint (Python
+    tracebacks and similar are routed by other rules).
+    """
+    hints: list[RemediationHint] = []
+    for diagnosis in report.match_diagnoses:
+        for error in diagnosis.errors:
+            reason = f"match {diagnosis.match_index}"
+
+            for m in _LEAN_UNKNOWN_IDENT.finditer(error):
+                hints.append(
+                    UnknownIdentifier(
+                        name=m.group("name"),
+                        line=_nearest_line(error, m.start()),
+                        reason=reason,
+                    )
+                )
+
+            for m in _LEAN_TYPE_MISMATCH.finditer(error):
+                hints.append(
+                    TypeMismatch(
+                        expected=m.group("expected").strip(),
+                        got=m.group("got").strip(),
+                        line=_nearest_line(error, m.start()),
+                        reason=reason,
+                    )
+                )
+
+            # ``function expected at ... term has type ...`` is a sub-case of
+            # type mismatch; route to the same hint kind but only when the
+            # full type-mismatch pattern didn't fire to avoid duplicates.
+            if not any(isinstance(h, TypeMismatch) for h in hints[-3:]):
+                for m in _LEAN_FUNCTION_EXPECTED.finditer(error):
+                    hints.append(
+                        TypeMismatch(
+                            expected="<callable>",
+                            got=m.group("got").strip(),
+                            line=_nearest_line(error, m.start()),
+                            reason=reason,
+                        )
+                    )
+
+            for m in _LEAN_UNSOLVED_GOALS.finditer(error):
+                body = m.group("body").strip()
+                # Each goal usually starts with ⊢; split on it.
+                goals = ["⊢ " + part.strip() for part in re.split(r"⊢\s*", body) if part.strip()]
+                if not goals:
+                    goals = [body[:200]]
+                hints.append(
+                    UnsolvedGoals(
+                        goals=tuple(goals),
+                        line=_nearest_line(error, m.start()),
+                        reason=reason,
+                    )
+                )
+
+            for m in _LEAN_TYPECLASS_FAIL.finditer(error):
+                hints.append(
+                    TypeclassSearch(
+                        typeclass=m.group("typeclass").strip(),
+                        context=(m.group("context") or "").strip(),
+                        line=_nearest_line(error, m.start()),
+                        reason=reason,
+                    )
+                )
+
+    return hints
+
+
 DEFAULT_RULES: list[Rule] = [
     rule_off_by_one,
     rule_positional_typerror,
     rule_stale_fixture,
     rule_threshold_budget,
     rule_invariant_violation,
+    rule_lean_compile_error,
     # PR #979 review (P2): rule_indexing_base is intentionally NOT in
     # the default set. It fires on 0/N failures, which equally describe
     # AC-770 budget problems; mixing both in the default path sends
@@ -493,12 +656,25 @@ def _describe(hint: RemediationHint) -> str:
         return f"invariant `{hint.invariant}` failed; observed `{hint.observed}` ({hint.reason})"
     if isinstance(hint, BudgetIncrease):
         scope = f"`{hint.parameter}`"
-        return (
-            f"increase {scope} budget by {hint.suggested_factor}x "
-            f"(currently {hint.current}; {hint.reason})"
-        )
+        return f"increase {scope} budget by {hint.suggested_factor}x (currently {hint.current}; {hint.reason})"
     if isinstance(hint, IndexingCheck):
         return f"check 0-vs-1 indexing-base ({hint.reason})"
+    if isinstance(hint, UnknownIdentifier):
+        loc = f" at line {hint.line}" if hint.line else ""
+        return f"unknown Lean identifier `{hint.name}`{loc}: check imports / typo ({hint.reason})"
+    if isinstance(hint, TypeMismatch):
+        loc = f" at line {hint.line}" if hint.line else ""
+        return f"Lean type mismatch{loc}: expected `{hint.expected}`, got `{hint.got}` ({hint.reason})"
+    if isinstance(hint, UnsolvedGoals):
+        loc = f" at line {hint.line}" if hint.line else ""
+        goals_str = "; ".join(hint.goals[:3])
+        if len(hint.goals) > 3:
+            goals_str += f"; (+{len(hint.goals) - 3} more)"
+        return f"Lean unsolved goals{loc}: {goals_str} ({hint.reason})"
+    if isinstance(hint, TypeclassSearch):
+        loc = f" at line {hint.line}" if hint.line else ""
+        ctx = f" for `{hint.context}`" if hint.context else ""
+        return f"Lean typeclass search failed{loc}: `{hint.typeclass}`{ctx} ({hint.reason})"
     return repr(hint)  # unreachable
 
 
