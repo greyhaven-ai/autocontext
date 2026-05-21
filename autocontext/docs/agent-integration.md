@@ -333,6 +333,10 @@ autoctx hermes recommend \
   --home "$HERMES_HOME" \
   --baseline-from training/hermes-curator-decisions.jsonl \
   --output recommendations.jsonl --json
+
+# Validate the rendered SKILL.md against the AC-711 content rubric
+autoctx hermes validate-skill \
+  --output docs/hermes-skill-validation-report.md --json
 ```
 
 `--with-references` writes one markdown file per reference into a

@@ -30,6 +30,7 @@ from autocontext.hermes.redaction import RedactionPolicy, compile_user_patterns
 from autocontext.hermes.references import list_references, render_reference
 from autocontext.hermes.session_ingest import SessionIngestSummary, ingest_session_db
 from autocontext.hermes.skill import AUTOCONTEXT_HERMES_SKILL_NAME, render_autocontext_skill
+from autocontext.hermes.skill_validation import DEFAULT_RUBRIC, ValidationReport, render_markdown_report, validate_skill
 from autocontext.hermes.trajectory_ingest import TrajectoryIngestSummary, ingest_trajectory_jsonl
 
 if TYPE_CHECKING:
@@ -366,9 +367,7 @@ def run_hermes_ingest_sessions_command(
         return
     action = "Would write" if dry_run else "Wrote"
     target = str(output) if not dry_run else "(dry-run, no file written)"
-    console.print(
-        f"[green]{action}[/green] {summary.traces_written}/{summary.sessions_read} session traces -> {target}"
-    )
+    console.print(f"[green]{action}[/green] {summary.traces_written}/{summary.sessions_read} session traces -> {target}")
     if summary.redactions.total:
         console.print(f"[dim]Redactions:[/dim] {summary.redactions.to_dict()}")
     for warning in summary.warnings:
@@ -401,10 +400,7 @@ def run_hermes_train_advisor_command(
 
     # PR #972 review (P2): refuse to overwrite the source dataset.
     if output is not None and _same_file(data, output):
-        message = (
-            f"output {output!s} resolves to the same file as --data {data!s}; "
-            "refusing to overwrite the source dataset"
-        )
+        message = f"output {output!s} resolves to the same file as --data {data!s}; refusing to overwrite the source dataset"
         if json_output:
             write_json_stderr(message)
         else:
@@ -449,9 +445,7 @@ def run_hermes_train_advisor_command(
         f"accuracy={metrics.accuracy:.3f}"
     )
     if metrics.insufficient_data:
-        console.print(
-            f"[yellow]warning:[/yellow] only {metrics.example_count} examples; per-label metrics may not be meaningful"
-        )
+        console.print(f"[yellow]warning:[/yellow] only {metrics.example_count} examples; per-label metrics may not be meaningful")
     for label, m in metrics.per_label.items():
         console.print(f"  {label}: precision={m.precision:.3f} recall={m.recall:.3f} support={m.support}")
 
@@ -545,8 +539,6 @@ def run_hermes_recommend_command(
         console.print("[dim]No unprotected skills in inventory; no recommendations emitted.[/dim]")
 
 
-
-
 def _is_inside(path: Path, parent: Path) -> bool:
     """Return True when ``path`` resolves inside ``parent`` (or equals it)."""
     try:
@@ -607,6 +599,39 @@ def _print_inventory(inventory: HermesInventory, *, console: Console) -> None:
     )
 
 
+def run_hermes_validate_skill_command(
+    *,
+    output: Path | None,
+    json_output: bool,
+    console: Console,
+    write_json_stdout: Any,
+    write_json_stderr: Any,
+) -> None:
+    """Validate the rendered Hermes ``autocontext`` SKILL.md against
+    the AC-711 content rubric. Exits non-zero on any rubric failure."""
+
+    import typer
+
+    report: ValidationReport = validate_skill(rubric=DEFAULT_RUBRIC)
+    payload = report.to_dict()
+    if output is not None:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(render_markdown_report(report) + "\n", encoding="utf-8")
+    if json_output:
+        write_json_stdout(payload)
+    else:
+        console.print(
+            f"[{'green' if report.failed_count == 0 else 'red'}]"
+            f"AC-711 rubric:[/] {report.passed_count}/{report.case_count} cases passed"
+        )
+        for result in report.results:
+            if result.passed:
+                continue
+            console.print(f"  [red]FAIL[/red] {result.prompt_id} ({result.scenario}): missing {sorted(result.missing_behaviors)}")
+    if report.failed_count > 0:
+        raise typer.Exit(code=1)
+
+
 __all__ = [
     "run_hermes_export_dataset_command",
     "run_hermes_export_skill_command",
@@ -616,4 +641,5 @@ __all__ = [
     "run_hermes_inspect_command",
     "run_hermes_recommend_command",
     "run_hermes_train_advisor_command",
+    "run_hermes_validate_skill_command",
 ]

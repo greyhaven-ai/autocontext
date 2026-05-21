@@ -190,17 +190,22 @@ ingest-trajectories --redact standard|strict|off` (AC-706 slice 1),
   slice 1, data + evaluation contract with majority-class baseline
   and insufficient-data floor), `autoctx hermes recommend
 --baseline-from <jsonl>` (AC-709, read-only recommendation surface
-  with protected-skill filter and audit mode), the rendered
-  Hermes-format SKILL.md, the committed `skills/autocontext/`
-  distribution snapshot with CI sync invariant (AC-712, see
-  [hermes-skill-distribution.md](./hermes-skill-distribution.md) for
-  install / update / versioning), the integration surface order
-  decision (CLI-first / MCP-optional / native runtime / plugin /
-  gateway).
+  with protected-skill filter and audit mode), `autoctx hermes
+validate-skill --json` (AC-711, static content rubric over the
+  rendered SKILL.md with six behaviors and three negative
+  regression tests; see
+  [hermes-skill-validation.md](./hermes-skill-validation.md)),
+  the rendered Hermes-format SKILL.md, the committed
+  `skills/autocontext/` distribution snapshot with CI sync
+  invariant (AC-712, see
+  [hermes-skill-distribution.md](./hermes-skill-distribution.md)
+  for install / update / versioning), the integration surface
+  order decision (CLI-first / MCP-optional / native runtime /
+  plugin / gateway).
 - In flight: AC-708 slice 2 (logistic-regression / MLX / CUDA
-  trained advisor), AC-707 follow-up implementation (only if revisited
-  per spike doc), AC-711 (skill validation), upstream Hermes /
-  agentskills.io submission (AC-712 follow-up).
+  trained advisor), AC-707 follow-up implementation (only if
+  revisited per spike doc), upstream Hermes / agentskills.io
+  submission (AC-712 follow-up).
 - Out of scope (today): autocontext writing to `~/.hermes/skills/`,
   autocontext replacing Curator's pruning / consolidation /
   gating workflow, frontier-scale training from a single operator's

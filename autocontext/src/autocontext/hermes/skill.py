@@ -141,6 +141,12 @@ Read the output as an inventory:
 
 Autocontext can use these signals for reports, datasets, and recommendations. Hermes Curator remains the writer for Hermes skill lifecycle changes.
 
+## Privacy Before Session and Trajectory Ingest
+
+Curator decision reports are decision metadata and safe to import without redaction. Session and trajectory imports are different: they contain raw model prompts and responses, which may include secrets, tokens, or content the operator did not intend for external storage.
+
+Before recommending or running `autoctx hermes ingest-sessions` or `autoctx hermes ingest-trajectories`, explain the privacy tradeoff: the importer is read-only against `~/.hermes`, but the output JSONL contains the same content unless redaction is applied. Default is `--redact standard` (Anthropic/OpenAI keys, bearer tokens, emails, IPs, env values, paths, high-risk file refs). `--redact strict` adds user-defined regexes. `--redact off` writes raw content and the importer surfaces an explicit opt-in marker. Sessions in particular live in a SQLite store: an unwarranted ingest creates a new copy of every prompt and response. Prefer `--dry-run` first when the operator is unsure of the blast radius.
+
 ## Training Path
 
 For Autocontext-owned runs, export training data and train locally:

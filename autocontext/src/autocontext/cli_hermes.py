@@ -15,6 +15,7 @@ from autocontext.cli_hermes_runners import (
     run_hermes_inspect_command,
     run_hermes_recommend_command,
     run_hermes_train_advisor_command,
+    run_hermes_validate_skill_command,
 )
 
 if TYPE_CHECKING:
@@ -348,6 +349,27 @@ def register_hermes_command(
             baseline_from=baseline_from,
             output=output,
             include_protected=include_protected,
+            json_output=json_output,
+            console=console,
+            write_json_stdout=_cli_attr(dependency_module, "_write_json_stdout"),
+            write_json_stderr=_cli_attr(dependency_module, "_write_json_stderr"),
+        )
+
+    @hermes_app.command("validate-skill")
+    def validate_skill_cmd(
+        output: Annotated[
+            Path | None,
+            typer.Option(
+                "--output",
+                help="Optional markdown report destination; --json prints to stdout regardless",
+            ),
+        ] = None,
+        json_output: Annotated[bool, typer.Option("--json", help="Output structured JSON")] = False,
+    ) -> None:
+        """Validate the rendered Hermes autocontext SKILL.md (AC-711)."""
+
+        run_hermes_validate_skill_command(
+            output=output,
             json_output=json_output,
             console=console,
             write_json_stdout=_cli_attr(dependency_module, "_write_json_stdout"),
