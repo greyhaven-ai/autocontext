@@ -55,6 +55,15 @@ class SmallCaseVerify:
 
 
 @dataclass(frozen=True, slots=True)
+class AssertionMismatch:
+    """A runtime invariant from AC-772 fired against the candidate solution."""
+
+    invariant: str
+    observed: str
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
 class BudgetIncrease:
     """Increase a trial / sample budget (AC-770).
 
@@ -81,7 +90,14 @@ class IndexingCheck:
     reason: str
 
 
-RemediationHint = RefreshFixture | SurfaceSignatures | SmallCaseVerify | BudgetIncrease | IndexingCheck
+RemediationHint = (
+    RefreshFixture
+    | SurfaceSignatures
+    | SmallCaseVerify
+    | AssertionMismatch
+    | BudgetIncrease
+    | IndexingCheck
+)
 
 
 # --- Rule Protocol ---------------------------------------------------------
@@ -220,6 +236,39 @@ def rule_stale_fixture(
                     )
                     seen_keys.add(key)
     return hints
+
+
+# --- AC-772 rule: invariant violation detector -----------------------------
+
+_INVARIANT_VIOLATION_RE = re.compile(
+    r"InvariantViolation:\s*(?P<inv>.+?)\s+failed;\s*observed:\s*(?P<obs>.+?)(?:$|\n)",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def rule_invariant_violation(report: FailureReport, **_: Any) -> list[RemediationHint]:
+    """Emit one :class:`AssertionMismatch` per ``InvariantViolation:`` error
+    string in the report (AC-772).
+
+    Lives alongside the other AC-769 rules and :data:`DEFAULT_RULES`
+    rather than in :mod:`spec_verifier` so production callers of
+    :func:`route_remediations` always see the rule without having to
+    import :mod:`spec_verifier` first (PR #977 review P2).
+    """
+    out: list[RemediationHint] = []
+    for diagnosis in report.match_diagnoses:
+        for error in diagnosis.errors:
+            for match in _INVARIANT_VIOLATION_RE.finditer(error):
+                inv = match.group("inv").strip().strip('"')
+                obs = match.group("obs").strip().strip('"')
+                out.append(
+                    AssertionMismatch(
+                        invariant=inv,
+                        observed=obs,
+                        reason=f"match {diagnosis.match_index}",
+                    )
+                )
+    return out
 
 
 # --- AC-770: threshold-vs-actual budget mismatch ---------------------------
@@ -388,6 +437,7 @@ DEFAULT_RULES: list[Rule] = [
     rule_positional_typerror,
     rule_stale_fixture,
     rule_threshold_budget,
+    rule_invariant_violation,
     # PR #979 review (P2): rule_indexing_base is intentionally NOT in
     # the default set. It fires on 0/N failures, which equally describe
     # AC-770 budget problems; mixing both in the default path sends
@@ -439,6 +489,8 @@ def _describe(hint: RemediationHint) -> str:
     if isinstance(hint, SmallCaseVerify):
         target = f"`{hint.function}`" if hint.function else "the failing function"
         return f"small-case verify {target} ({hint.reason})"
+    if isinstance(hint, AssertionMismatch):
+        return f"invariant `{hint.invariant}` failed; observed `{hint.observed}` ({hint.reason})"
     if isinstance(hint, BudgetIncrease):
         scope = f"`{hint.parameter}`"
         return (
