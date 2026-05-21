@@ -65,11 +65,11 @@ curl -fsSL \
   -o ~/.hermes/skills/autocontext/SKILL.md
 
 # Optional: install the references too
-mkdir -p ~/.hermes/skills/autocontext/references
+mkdir -p "$HOME/.hermes/skills/autocontext/references"
 for ref in hermes-curator cli-workflows mcp-workflows local-training; do
   curl -fsSL \
     "https://raw.githubusercontent.com/greyhaven-ai/autocontext/main/skills/autocontext/references/${ref}.md" \
-    -o "~/.hermes/skills/autocontext/references/${ref}.md"
+    -o "$HOME/.hermes/skills/autocontext/references/${ref}.md"
 done
 ```
 
