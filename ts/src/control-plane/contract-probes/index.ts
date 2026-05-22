@@ -375,7 +375,8 @@ export type CleanupContractFailureKind =
   | "broken-symlink"
   | "stale-lockfile"
   | "stray-sidecar"
-  | "stray-backup";
+  | "stray-backup"
+  | "missing-observation";
 
 export interface CleanupContractFailure {
   readonly kind: CleanupContractFailureKind;
@@ -459,12 +460,22 @@ export function probeCleanupContract(
         continue;
       }
       if (allowedSymlinkTargets !== undefined) {
-        const target = entry.symlinkTarget ?? "<unknown>";
-        if (!allowedSymlinkTargets.includes(target)) {
+        // PR #985 review lesson, retrofitted: a declared expectation
+        // (allowedSymlinkTargets) without its observation (symlinkTarget)
+        // must fail with missing-observation, not silently treat the
+        // target as "<unknown>" and let a broken extractor satisfy the
+        // allowlist contract.
+        if (entry.symlinkTarget === undefined) {
+          failures.push({
+            kind: "missing-observation",
+            path: entry.path,
+            message: `${entry.path} is a symlink but no symlinkTarget was supplied; cannot evaluate allowedSymlinkTargets contract`,
+          });
+        } else if (!allowedSymlinkTargets.includes(entry.symlinkTarget)) {
           failures.push({
             kind: "stray-symlink",
             path: entry.path,
-            message: `${entry.path} is a symlink to ${target}; target is not in the allowlist`,
+            message: `${entry.path} is a symlink to ${entry.symlinkTarget}; target is not in the allowlist`,
           });
         }
       }
@@ -472,17 +483,29 @@ export function probeCleanupContract(
     }
 
     if (matchesAny(entry.path, lockfilePatterns)) {
-      if (
-        maxLockfileAgeMs === undefined ||
-        (entry.mtime !== undefined && now.getTime() - entry.mtime.getTime() > maxLockfileAgeMs)
-      ) {
+      if (maxLockfileAgeMs === undefined) {
+        // No age contract declared; the lockfile is flagged unconditionally.
         failures.push({
           kind: "stale-lockfile",
           path: entry.path,
-          message:
-            maxLockfileAgeMs === undefined
-              ? `${entry.path} is a leftover lockfile`
-              : `${entry.path} is a lockfile older than ${maxLockfileAgeMs}ms`,
+          message: `${entry.path} is a leftover lockfile`,
+        });
+      } else if (entry.mtime === undefined) {
+        // PR #985 review lesson, retrofitted: caller declared a
+        // maxLockfileAgeMs contract; the lockfile entry without mtime
+        // cannot satisfy it. Fail with missing-observation rather than
+        // letting a stat-failing extractor pass the age contract by
+        // omitting mtime.
+        failures.push({
+          kind: "missing-observation",
+          path: entry.path,
+          message: `${entry.path} matched a lockfile pattern but no mtime was supplied; cannot evaluate maxLockfileAgeMs contract`,
+        });
+      } else if (now.getTime() - entry.mtime.getTime() > maxLockfileAgeMs) {
+        failures.push({
+          kind: "stale-lockfile",
+          path: entry.path,
+          message: `${entry.path} is a lockfile older than ${maxLockfileAgeMs}ms`,
         });
       }
       continue;

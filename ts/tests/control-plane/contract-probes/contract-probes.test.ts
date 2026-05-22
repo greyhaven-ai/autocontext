@@ -368,6 +368,73 @@ describe("probeCleanupContract", () => {
       path: "solution.txt.foo",
     });
   });
+
+  // PR #985 review lesson, applied to the cleanup probe: a declared
+  // expectation without its observation must fail with missing-observation,
+  // not silently pass. The cleanup probe has two such surfaces: lockfile
+  // age checks (need mtime to compare) and symlink-target allowlists
+  // (need symlinkTarget to compare).
+
+  test("flags missing-observation when maxLockfileAgeMs is set but lockfile entry has no mtime", () => {
+    const result = probeCleanupContract({
+      entries: [
+        { path: "solution.txt" },
+        // Lockfile entry without mtime: a stat-failing or stripped extractor
+        // must not be able to satisfy the age contract by omitting mtime.
+        { path: "stale.lock" },
+      ],
+      now: new Date("2026-05-21T12:00:00Z"),
+      maxLockfileAgeMs: 5 * 60 * 1000,
+    });
+    expect(result.passed).toBe(false);
+    expect(result.failures).toContainEqual({
+      kind: "missing-observation",
+      path: "stale.lock",
+      message:
+        "stale.lock matched a lockfile pattern but no mtime was supplied; cannot evaluate maxLockfileAgeMs contract",
+    });
+  });
+
+  test("does not require mtime when no maxLockfileAgeMs is configured", () => {
+    const result = probeCleanupContract({
+      entries: [{ path: "solution.txt" }, { path: "stale.lock" }],
+    });
+    expect(result.passed).toBe(false);
+    expect(result.failures).toHaveLength(1);
+    expect(result.failures[0]).toMatchObject({
+      kind: "stale-lockfile",
+      path: "stale.lock",
+    });
+  });
+
+  test("flags missing-observation when allowedSymlinkTargets is set but a symlink entry has no symlinkTarget", () => {
+    const result = probeCleanupContract({
+      entries: [
+        // Caller asked us to verify the target is on the allowlist but
+        // shipped no target. That must be a missing-observation failure;
+        // silently treating the target as "<unknown>" lets a broken
+        // extractor pass the allowlist contract.
+        { path: "alias", isSymlink: true },
+      ],
+      allowedSymlinkTargets: ["solution.txt"],
+    });
+    expect(result.passed).toBe(false);
+    expect(result.failures).toEqual([
+      {
+        kind: "missing-observation",
+        path: "alias",
+        message:
+          "alias is a symlink but no symlinkTarget was supplied; cannot evaluate allowedSymlinkTargets contract",
+      },
+    ]);
+  });
+
+  test("does not require symlinkTarget when no allowlist or forbid policy is set", () => {
+    const result = probeCleanupContract({
+      entries: [{ path: "alias", isSymlink: true }],
+    });
+    expect(result.passed).toBe(true);
+  });
 });
 
 describe("probeDistributedContract", () => {
