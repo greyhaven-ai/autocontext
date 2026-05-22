@@ -694,6 +694,31 @@ class TestRuleLeanCompileError:
         hints = rule_lean_compile_error(_report([err]))
         assert any(isinstance(h, TacticFailure) and h.tactic == "simp" for h in hints)
 
+    # AC-775: a body followed by ``warning: declaration uses 'sorry'`` lines
+    # must NOT include those warning lines in the captured ``expected`` field.
+    # Surfaced by the Erdős #986 (Spencer k=3) loop driver on 2026-05-22 where
+    # iterations 0 and 2 emitted hints whose `expected` bled into trailing
+    # sorry warnings; AC-773's per-error split only bounded on `error:`.
+
+    def test_type_mismatch_expected_does_not_bleed_into_warning(self) -> None:
+        err = (
+            "MathlibScratch/Erdos986.lean:106:4: error: type mismatch\n"
+            "  hwit\n"
+            "has type\n"
+            "  sInf ?m.230 ∈ ?m.230\n"
+            "but is expected to have type\n"
+            "  IsRamseyWitness m 2 n\n"
+            "MathlibScratch/Erdos986.lean:117:8: warning: declaration uses `sorry`\n"
+            "MathlibScratch/Erdos986.lean:122:8: warning: declaration uses `sorry`\n"
+        )
+        hints = rule_lean_compile_error(_report([err]))
+        tms = [h for h in hints if isinstance(h, TypeMismatch)]
+        assert tms, "expected at least one TypeMismatch hint"
+        first = tms[0]
+        assert "warning" not in first.expected
+        assert "sorry" not in first.expected
+        assert first.expected.strip() == "IsRamseyWitness m 2 n"
+
 
 class TestRenderTacticFailure:
     def test_render_tactic_failure(self) -> None:

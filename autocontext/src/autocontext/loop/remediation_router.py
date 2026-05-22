@@ -508,10 +508,13 @@ def rule_indexing_base(
 #   ``<path>:<line>:<col>: error(lean.<code>): <body>``     (Lean 4.29+ diagnostic codes)
 # We use this single preamble regex both to extract line numbers and to bound
 # each error body — the next preamble marks where the current error ends.
+# AC-775: the body-bound lookahead also matches ``warning:`` preambles so a
+# following ``warning: declaration uses 'sorry'`` line does NOT bleed into
+# captures like the type-mismatch ``expected`` field.
 
 _LEAN_PREAMBLE = re.compile(
     r"^[^\s:][^\n:]*:(?P<line>\d+):\d+:\s*error(?:\(lean\.\w+\))?:\s*(?P<body>.*?)"
-    r"(?=^[^\s:][^\n:]*:\d+:\d+:\s*error(?:\(lean\.\w+\))?:|\Z)",
+    r"(?=^[^\s:][^\n:]*:\d+:\d+:\s*(?:error(?:\(lean\.\w+\))?|warning):|\Z)",
     re.DOTALL | re.MULTILINE,
 )
 
