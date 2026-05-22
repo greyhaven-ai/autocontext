@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   probeArtifactContract,
+  probeCleanupContract,
   probeDirectoryContract,
   probeServiceContract,
   probeTerminalContract,
@@ -213,5 +214,156 @@ describe("probeArtifactContract", () => {
     });
     expect(result.passed).toBe(false);
     expect(result.failures[0]).toMatchObject({ kind: "invalid-json" });
+  });
+});
+
+describe("probeCleanupContract", () => {
+  test("passes when the directory listing has no leftover artifacts", () => {
+    const result = probeCleanupContract({
+      entries: [{ path: "solution.txt" }, { path: "manifest.json" }, { path: "src/main.py" }],
+    });
+    expect(result.passed).toBe(true);
+    expect(result.failures).toEqual([]);
+  });
+
+  test("flags broken symlinks even when symlinks are allowed", () => {
+    const result = probeCleanupContract({
+      entries: [
+        { path: "solution.txt" },
+        { path: "broken-link", isSymlink: true, symlinkBroken: true },
+      ],
+    });
+    expect(result.passed).toBe(false);
+    expect(result.failures).toEqual([
+      {
+        kind: "broken-symlink",
+        path: "broken-link",
+        message: "broken-link is a broken symlink (target missing)",
+      },
+    ]);
+  });
+
+  test("flags every symlink when forbidSymlinks is set", () => {
+    const result = probeCleanupContract({
+      entries: [
+        { path: "solution.txt" },
+        { path: "alias", isSymlink: true, symlinkTarget: "solution.txt" },
+      ],
+      forbidSymlinks: true,
+    });
+    expect(result.passed).toBe(false);
+    expect(result.failures).toEqual([
+      {
+        kind: "stray-symlink",
+        path: "alias",
+        message: "alias is a symlink (target solution.txt); symlinks are forbidden by contract",
+      },
+    ]);
+  });
+
+  test("flags symlinks whose target is outside the allowlist", () => {
+    const result = probeCleanupContract({
+      entries: [{ path: "alias", isSymlink: true, symlinkTarget: "/etc/passwd" }],
+      allowedSymlinkTargets: ["solution.txt"],
+    });
+    expect(result.passed).toBe(false);
+    expect(result.failures).toEqual([
+      {
+        kind: "stray-symlink",
+        path: "alias",
+        message: "alias is a symlink to /etc/passwd; target is not in the allowlist",
+      },
+    ]);
+  });
+
+  test("permits symlinks whose target is on the allowlist", () => {
+    const result = probeCleanupContract({
+      entries: [
+        { path: "alias", isSymlink: true, symlinkTarget: "solution.txt" },
+        { path: "solution.txt" },
+      ],
+      allowedSymlinkTargets: ["solution.txt"],
+    });
+    expect(result.passed).toBe(true);
+  });
+
+  test("flags default sidecar leftovers (.swp, ~, .DS_Store)", () => {
+    const result = probeCleanupContract({
+      entries: [
+        { path: "solution.txt" },
+        { path: ".solution.txt.swp" },
+        { path: "notes~" },
+        { path: ".DS_Store" },
+      ],
+    });
+    expect(result.passed).toBe(false);
+    expect(result.failures.map((f) => f.kind).sort()).toEqual([
+      "stray-sidecar",
+      "stray-sidecar",
+      "stray-sidecar",
+    ]);
+  });
+
+  test("flags default backup leftovers (.bak, .orig)", () => {
+    const result = probeCleanupContract({
+      entries: [
+        { path: "solution.txt" },
+        { path: "solution.txt.bak" },
+        { path: "manifest.json.orig" },
+      ],
+    });
+    expect(result.passed).toBe(false);
+    expect(result.failures.map((f) => f.kind).sort()).toEqual(["stray-backup", "stray-backup"]);
+  });
+
+  test("flags lockfiles unconditionally when no age threshold is set", () => {
+    const result = probeCleanupContract({
+      entries: [{ path: "solution.txt" }, { path: ".lock" }, { path: "build.pid" }],
+    });
+    expect(result.passed).toBe(false);
+    expect(result.failures.map((f) => f.kind).sort()).toEqual(["stale-lockfile", "stale-lockfile"]);
+  });
+
+  test("flags lockfiles only when older than maxLockfileAgeMs", () => {
+    const now = new Date("2026-05-21T12:00:00Z");
+    const fresh = new Date("2026-05-21T11:59:00Z"); // 60s ago
+    const stale = new Date("2026-05-21T10:00:00Z"); // 2h ago
+    const result = probeCleanupContract({
+      entries: [
+        { path: "solution.txt" },
+        { path: "fresh.lock", mtime: fresh },
+        { path: "stale.lock", mtime: stale },
+      ],
+      now,
+      maxLockfileAgeMs: 5 * 60 * 1000, // 5 minutes
+    });
+    expect(result.passed).toBe(false);
+    expect(result.failures).toHaveLength(1);
+    expect(result.failures[0]).toMatchObject({
+      kind: "stale-lockfile",
+      path: "stale.lock",
+    });
+  });
+
+  test("respects ignoredPatterns the same way as probeDirectoryContract", () => {
+    const result = probeCleanupContract({
+      entries: [{ path: "solution.txt" }, { path: "trace.swp" }],
+      // /^trace\./ mirrors the AC-728 slice 1 directory-probe convention.
+      ignoredPatterns: [/^trace\./],
+    });
+    expect(result.passed).toBe(true);
+  });
+
+  test("accepts caller-supplied sidecar and backup pattern overrides", () => {
+    const result = probeCleanupContract({
+      entries: [{ path: "solution.txt" }, { path: "solution.txt.foo" }],
+      backupPatterns: [/\.foo$/],
+      sidecarPatterns: [],
+    });
+    expect(result.passed).toBe(false);
+    expect(result.failures[0]).toMatchObject({
+      kind: "stray-backup",
+      path: "solution.txt.foo",
+    });
   });
 });

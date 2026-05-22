@@ -356,3 +356,160 @@ export function probeArtifactContract(
 
   return { passed: failures.length === 0, failures };
 }
+
+// ----------------------------------------------------------------------------
+// AC-728: cleanup contract probe
+// ----------------------------------------------------------------------------
+//
+// Catches the leftover-artifact class of contract bugs the directory probe
+// alone can miss: stray symlinks (broken or pointing outside an allowlist),
+// stale lockfiles, OS / editor sidecars (.swp, ~, .DS_Store), and backup
+// copies (.bak, .orig). The caller supplies a directory listing as
+// CleanupFileEntry records carrying the metadata the probe needs (symlink
+// status, mtime); the probe itself does no filesystem IO so it composes
+// cleanly with the same trace-replay surfaces the AC-728 slice 1 probes
+// already use.
+
+export type CleanupContractFailureKind =
+  | "stray-symlink"
+  | "broken-symlink"
+  | "stale-lockfile"
+  | "stray-sidecar"
+  | "stray-backup";
+
+export interface CleanupContractFailure {
+  readonly kind: CleanupContractFailureKind;
+  readonly path: string;
+  readonly message: string;
+}
+
+export interface CleanupFileEntry {
+  readonly path: string;
+  readonly isSymlink?: boolean;
+  readonly symlinkTarget?: string;
+  readonly symlinkBroken?: boolean;
+  readonly mtime?: Date;
+}
+
+export interface CleanupContractProbeInputs {
+  readonly entries: readonly CleanupFileEntry[];
+  readonly now?: Date;
+  readonly maxLockfileAgeMs?: number;
+  readonly lockfilePatterns?: readonly RegExp[];
+  readonly sidecarPatterns?: readonly RegExp[];
+  readonly backupPatterns?: readonly RegExp[];
+  readonly forbidSymlinks?: boolean;
+  readonly allowedSymlinkTargets?: readonly string[];
+  readonly ignoredPatterns?: readonly RegExp[];
+}
+
+export interface CleanupContractProbeResult {
+  readonly passed: boolean;
+  readonly failures: readonly CleanupContractFailure[];
+}
+
+const DEFAULT_LOCKFILE_PATTERNS: readonly RegExp[] = [/\.(lock|lck|pid)$/i];
+
+// .swp / .swo are vim swap files; *~ is the emacs / generic editor backup
+// suffix; .DS_Store is the macOS finder sidecar; .~lock.*# is LibreOffice's
+// lock sidecar. Kept narrow on purpose so the default does not false-positive
+// against legitimate dotfiles like .gitignore or .env.
+const DEFAULT_SIDECAR_PATTERNS: readonly RegExp[] = [
+  /\.sw[op]$/i,
+  /~$/,
+  /(^|\/)\.DS_Store$/,
+  /(^|\/)\.~lock\..*#$/,
+];
+
+const DEFAULT_BACKUP_PATTERNS: readonly RegExp[] = [/\.(bak|orig)$/i];
+
+export function probeCleanupContract(
+  inputs: CleanupContractProbeInputs,
+): CleanupContractProbeResult {
+  const ignored = inputs.ignoredPatterns ?? [];
+  const lockfilePatterns = inputs.lockfilePatterns ?? DEFAULT_LOCKFILE_PATTERNS;
+  const sidecarPatterns = inputs.sidecarPatterns ?? DEFAULT_SIDECAR_PATTERNS;
+  const backupPatterns = inputs.backupPatterns ?? DEFAULT_BACKUP_PATTERNS;
+  const allowedSymlinkTargets = inputs.allowedSymlinkTargets;
+  const now = inputs.now ?? new Date();
+  const maxLockfileAgeMs = inputs.maxLockfileAgeMs;
+  const failures: CleanupContractFailure[] = [];
+
+  for (const entry of inputs.entries) {
+    if (isIgnored(entry.path, ignored)) {
+      continue;
+    }
+
+    if (entry.isSymlink) {
+      if (entry.symlinkBroken) {
+        failures.push({
+          kind: "broken-symlink",
+          path: entry.path,
+          message: `${entry.path} is a broken symlink (target missing)`,
+        });
+        continue;
+      }
+      if (inputs.forbidSymlinks) {
+        const target = entry.symlinkTarget ?? "<unknown>";
+        failures.push({
+          kind: "stray-symlink",
+          path: entry.path,
+          message: `${entry.path} is a symlink (target ${target}); symlinks are forbidden by contract`,
+        });
+        continue;
+      }
+      if (allowedSymlinkTargets !== undefined) {
+        const target = entry.symlinkTarget ?? "<unknown>";
+        if (!allowedSymlinkTargets.includes(target)) {
+          failures.push({
+            kind: "stray-symlink",
+            path: entry.path,
+            message: `${entry.path} is a symlink to ${target}; target is not in the allowlist`,
+          });
+        }
+      }
+      continue;
+    }
+
+    if (matchesAny(entry.path, lockfilePatterns)) {
+      if (
+        maxLockfileAgeMs === undefined ||
+        (entry.mtime !== undefined && now.getTime() - entry.mtime.getTime() > maxLockfileAgeMs)
+      ) {
+        failures.push({
+          kind: "stale-lockfile",
+          path: entry.path,
+          message:
+            maxLockfileAgeMs === undefined
+              ? `${entry.path} is a leftover lockfile`
+              : `${entry.path} is a lockfile older than ${maxLockfileAgeMs}ms`,
+        });
+      }
+      continue;
+    }
+
+    if (matchesAny(entry.path, sidecarPatterns)) {
+      failures.push({
+        kind: "stray-sidecar",
+        path: entry.path,
+        message: `${entry.path} is an editor/OS sidecar leftover`,
+      });
+      continue;
+    }
+
+    if (matchesAny(entry.path, backupPatterns)) {
+      failures.push({
+        kind: "stray-backup",
+        path: entry.path,
+        message: `${entry.path} is a backup copy leftover`,
+      });
+      continue;
+    }
+  }
+
+  return { passed: failures.length === 0, failures };
+}
+
+function matchesAny(path: string, patterns: readonly RegExp[]): boolean {
+  return patterns.some((pattern) => pattern.test(path));
+}
