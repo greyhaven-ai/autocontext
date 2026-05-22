@@ -27,6 +27,7 @@ describe("package root exports", () => {
     expect(pkg.evaluateTaskBudget).toBeDefined();
     expect(pkg.reconcileEvalTrials).toBeDefined();
     expect(pkg.probeDirectoryContract).toBeDefined();
+    expect(pkg.probeCleanupContract).toBeDefined();
     expect(pkg.validateOperationalMemoryPack).toBeDefined();
     expect(pkg.classifyExternalEvalTrial).toBeDefined();
     expect(pkg.assessExternalEvalBoundaryPolicy).toBeDefined();
