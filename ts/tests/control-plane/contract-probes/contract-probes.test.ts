@@ -4,6 +4,7 @@ import {
   probeCleanupContract,
   probeDirectoryContract,
   probeDistributedContract,
+  probeMediaContract,
   probeServiceContract,
   probeTerminalContract,
 } from "../../../src/control-plane/contract-probes/index.js";
@@ -540,6 +541,184 @@ describe("probeDistributedContract", () => {
       kind: "duplicate-rank",
       rank: 0,
       message: "rank 0 reported more than once",
+    });
+  });
+});
+
+describe("probeMediaContract", () => {
+  // PNG magic bytes: 89 50 4E 47 0D 0A 1A 0A. Reused across multiple tests.
+  const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+
+  test("passes when no expectations are supplied", () => {
+    const result = probeMediaContract({ path: "rendered.png" });
+    expect(result.passed).toBe(true);
+    expect(result.failures).toEqual([]);
+  });
+
+  test("passes when every supplied expectation matches", () => {
+    const result = probeMediaContract({
+      path: "rendered.png",
+      headerBytes: [...PNG_MAGIC, 0x00, 0x00],
+      expectedMagicBytes: PNG_MAGIC,
+      width: 256,
+      height: 128,
+      expectedWidth: 256,
+      expectedHeight: 128,
+      byteSize: 5_000,
+      minByteSize: 1_000,
+      maxByteSize: 10_000,
+    });
+    expect(result.passed).toBe(true);
+  });
+
+  test("flags wrong magic bytes (declared format mismatch)", () => {
+    const result = probeMediaContract({
+      path: "rendered.png",
+      headerBytes: [0xff, 0xd8, 0xff, 0xe0], // JPEG magic
+      expectedMagicBytes: PNG_MAGIC,
+    });
+    expect(result.passed).toBe(false);
+    expect(result.failures).toHaveLength(1);
+    expect(result.failures[0]).toMatchObject({
+      kind: "wrong-magic-bytes",
+      path: "rendered.png",
+    });
+  });
+
+  test("flags wrong dimensions when width or height disagree", () => {
+    const result = probeMediaContract({
+      path: "thumb.png",
+      width: 100,
+      height: 50,
+      expectedWidth: 128,
+      expectedHeight: 64,
+    });
+    expect(result.passed).toBe(false);
+    expect(result.failures.map((f) => f.kind).sort()).toEqual([
+      "wrong-dimensions",
+      "wrong-dimensions",
+    ]);
+  });
+
+  test("flags byte-size below minByteSize", () => {
+    const result = probeMediaContract({
+      path: "empty.png",
+      byteSize: 8,
+      minByteSize: 1_000,
+    });
+    expect(result.passed).toBe(false);
+    expect(result.failures[0]).toMatchObject({
+      kind: "wrong-byte-size",
+      path: "empty.png",
+    });
+  });
+
+  test("flags byte-size above maxByteSize", () => {
+    const result = probeMediaContract({
+      path: "huge.png",
+      byteSize: 50_000_000,
+      maxByteSize: 1_000_000,
+    });
+    expect(result.passed).toBe(false);
+    expect(result.failures[0]).toMatchObject({ kind: "wrong-byte-size" });
+  });
+
+  test("flags tabular column-count mismatch", () => {
+    const result = probeMediaContract({
+      path: "scores.csv",
+      columnCount: 3,
+      expectedColumnCount: 5,
+    });
+    expect(result.passed).toBe(false);
+    expect(result.failures[0]).toMatchObject({
+      kind: "wrong-column-count",
+      path: "scores.csv",
+    });
+  });
+
+  test("flags missing required column names (exact match, case sensitive)", () => {
+    const result = probeMediaContract({
+      path: "scores.csv",
+      columnNames: ["run_id", "score"],
+      requiredColumnNames: ["run_id", "score", "elo"],
+    });
+    expect(result.passed).toBe(false);
+    expect(result.failures).toHaveLength(1);
+    expect(result.failures[0]).toMatchObject({
+      kind: "missing-column",
+      path: "elo",
+    });
+  });
+
+  test("flags wrong-line-count for tabular / JSONL streams", () => {
+    const result = probeMediaContract({
+      path: "events.jsonl",
+      lineCount: 7,
+      expectedLineCount: 10,
+    });
+    expect(result.passed).toBe(false);
+    expect(result.failures[0]).toMatchObject({
+      kind: "wrong-line-count",
+      path: "events.jsonl",
+    });
+  });
+
+  test("does not check fields the caller declared no expectation about", () => {
+    // A probe call that only declares magic-byte expectations should not
+    // fail just because width / column-count metadata is undefined; the
+    // caller did not commit to a contract about those fields.
+    const result = probeMediaContract({
+      path: "rendered.png",
+      headerBytes: PNG_MAGIC,
+      expectedMagicBytes: PNG_MAGIC,
+    });
+    expect(result.passed).toBe(true);
+  });
+
+  // PR #985 review (P2): the previous version of this probe let declared
+  // expectations silently pass whenever the observed metadata was missing
+  // (a corrupt artifact or a broken metadata extractor would satisfy the
+  // contract by omitting observations). The probe now emits
+  // missing-observation for every declared-but-not-observed expectation.
+  test("flags every declared expectation whose observation was not supplied", () => {
+    const result = probeMediaContract({
+      path: "rendered.png",
+      expectedMagicBytes: PNG_MAGIC,
+      expectedWidth: 256,
+      expectedHeight: 128,
+      minByteSize: 1_000,
+      expectedColumnCount: 5,
+      requiredColumnNames: ["score"],
+      expectedLineCount: 10,
+      // No headerBytes / width / height / byteSize / columnCount /
+      // columnNames / lineCount supplied -> all 7 must fail.
+    });
+    expect(result.passed).toBe(false);
+    const missing = result.failures.filter((f) => f.kind === "missing-observation");
+    expect(missing.map((f) => f.message).sort()).toEqual(
+      [
+        "rendered.png declared expectation on byteSize but no observation was supplied",
+        "rendered.png declared expectation on columnCount but no observation was supplied",
+        "rendered.png declared expectation on columnNames but no observation was supplied",
+        "rendered.png declared expectation on headerBytes but no observation was supplied",
+        "rendered.png declared expectation on height but no observation was supplied",
+        "rendered.png declared expectation on lineCount but no observation was supplied",
+        "rendered.png declared expectation on width but no observation was supplied",
+      ].sort(),
+    );
+  });
+
+  test("byte-size expectation requires byteSize even when only one bound is set", () => {
+    const result = probeMediaContract({
+      path: "rendered.png",
+      maxByteSize: 1_000_000,
+      // byteSize observation missing
+    });
+    expect(result.passed).toBe(false);
+    expect(result.failures).toHaveLength(1);
+    expect(result.failures[0]).toMatchObject({
+      kind: "missing-observation",
+      path: "rendered.png",
     });
   });
 });

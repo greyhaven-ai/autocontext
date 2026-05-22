@@ -668,3 +668,180 @@ export function probeDistributedContract(
 
   return { passed: failures.length === 0, failures };
 }
+
+// ----------------------------------------------------------------------------
+// AC-728: media / tabular contract probe
+// ----------------------------------------------------------------------------
+//
+// Closes the "media/data artifact dimensions, encoding, headers, and units"
+// item from the AC-728 ticket. The caller pre-extracts whatever metadata it
+// observed (header bytes, width / height, byte size, column metadata, line
+// count); the probe verifies each declared expectation against its
+// observation and reports the specific mismatch. Pure function with no IO,
+// same posture as the other AC-728 probes. Per the PR #985 review: a
+// declared expectation without its observation fails as
+// missing-observation, not silently passes.
+
+export type MediaContractFailureKind =
+  | "wrong-magic-bytes"
+  | "wrong-dimensions"
+  | "wrong-byte-size"
+  | "wrong-column-count"
+  | "missing-column"
+  | "wrong-line-count"
+  | "missing-observation";
+
+export interface MediaContractFailure {
+  readonly kind: MediaContractFailureKind;
+  readonly path: string;
+  readonly message: string;
+}
+
+export interface MediaContractProbeInputs {
+  readonly path: string;
+  readonly headerBytes?: readonly number[];
+  readonly expectedMagicBytes?: readonly number[];
+  readonly width?: number;
+  readonly height?: number;
+  readonly expectedWidth?: number;
+  readonly expectedHeight?: number;
+  readonly byteSize?: number;
+  readonly minByteSize?: number;
+  readonly maxByteSize?: number;
+  readonly columnCount?: number;
+  readonly expectedColumnCount?: number;
+  readonly columnNames?: readonly string[];
+  readonly requiredColumnNames?: readonly string[];
+  readonly lineCount?: number;
+  readonly expectedLineCount?: number;
+}
+
+export interface MediaContractProbeResult {
+  readonly passed: boolean;
+  readonly failures: readonly MediaContractFailure[];
+}
+
+export function probeMediaContract(inputs: MediaContractProbeInputs): MediaContractProbeResult {
+  const failures: MediaContractFailure[] = [];
+
+  function missingObservation(field: string): void {
+    failures.push({
+      kind: "missing-observation",
+      path: inputs.path,
+      message: `${inputs.path} declared expectation on ${field} but no observation was supplied`,
+    });
+  }
+
+  if (inputs.expectedMagicBytes !== undefined) {
+    if (inputs.headerBytes === undefined) {
+      missingObservation("headerBytes");
+    } else {
+      const expected = inputs.expectedMagicBytes;
+      const header = inputs.headerBytes;
+      const matched =
+        header.length >= expected.length && expected.every((byte, index) => header[index] === byte);
+      if (!matched) {
+        failures.push({
+          kind: "wrong-magic-bytes",
+          path: inputs.path,
+          message: `${inputs.path} header ${formatBytes(header.slice(0, expected.length))} does not match expected magic ${formatBytes(expected)}`,
+        });
+      }
+    }
+  }
+
+  if (inputs.expectedWidth !== undefined) {
+    if (inputs.width === undefined) {
+      missingObservation("width");
+    } else if (inputs.width !== inputs.expectedWidth) {
+      failures.push({
+        kind: "wrong-dimensions",
+        path: inputs.path,
+        message: `${inputs.path} width ${inputs.width} does not match expected ${inputs.expectedWidth}`,
+      });
+    }
+  }
+
+  if (inputs.expectedHeight !== undefined) {
+    if (inputs.height === undefined) {
+      missingObservation("height");
+    } else if (inputs.height !== inputs.expectedHeight) {
+      failures.push({
+        kind: "wrong-dimensions",
+        path: inputs.path,
+        message: `${inputs.path} height ${inputs.height} does not match expected ${inputs.expectedHeight}`,
+      });
+    }
+  }
+
+  if (inputs.minByteSize !== undefined || inputs.maxByteSize !== undefined) {
+    if (inputs.byteSize === undefined) {
+      missingObservation("byteSize");
+    } else {
+      if (inputs.minByteSize !== undefined && inputs.byteSize < inputs.minByteSize) {
+        failures.push({
+          kind: "wrong-byte-size",
+          path: inputs.path,
+          message: `${inputs.path} byte size ${inputs.byteSize} is below minimum ${inputs.minByteSize}`,
+        });
+      }
+      if (inputs.maxByteSize !== undefined && inputs.byteSize > inputs.maxByteSize) {
+        failures.push({
+          kind: "wrong-byte-size",
+          path: inputs.path,
+          message: `${inputs.path} byte size ${inputs.byteSize} is above maximum ${inputs.maxByteSize}`,
+        });
+      }
+    }
+  }
+
+  if (inputs.expectedColumnCount !== undefined) {
+    if (inputs.columnCount === undefined) {
+      missingObservation("columnCount");
+    } else if (inputs.columnCount !== inputs.expectedColumnCount) {
+      failures.push({
+        kind: "wrong-column-count",
+        path: inputs.path,
+        message: `${inputs.path} has ${inputs.columnCount} columns; expected ${inputs.expectedColumnCount}`,
+      });
+    }
+  }
+
+  if (inputs.requiredColumnNames !== undefined) {
+    if (inputs.columnNames === undefined) {
+      missingObservation("columnNames");
+    } else {
+      const observed = new Set(inputs.columnNames);
+      for (const required of inputs.requiredColumnNames) {
+        if (!observed.has(required)) {
+          // Per-column failure path so a caller iterating failures can act
+          // on the missing column name directly (mirrors
+          // probeArtifactContract's missing-json-field convention).
+          failures.push({
+            kind: "missing-column",
+            path: required,
+            message: `${inputs.path} is missing required column ${JSON.stringify(required)}`,
+          });
+        }
+      }
+    }
+  }
+
+  if (inputs.expectedLineCount !== undefined) {
+    if (inputs.lineCount === undefined) {
+      missingObservation("lineCount");
+    } else if (inputs.lineCount !== inputs.expectedLineCount) {
+      failures.push({
+        kind: "wrong-line-count",
+        path: inputs.path,
+        message: `${inputs.path} has ${inputs.lineCount} lines; expected ${inputs.expectedLineCount}`,
+      });
+    }
+  }
+
+  return { passed: failures.length === 0, failures };
+}
+
+function formatBytes(bytes: readonly number[]): string {
+  return bytes.map((b) => b.toString(16).padStart(2, "0")).join(" ");
+}

@@ -781,6 +781,7 @@ export {
   probeCleanupContract,
   probeDirectoryContract,
   probeDistributedContract,
+  probeMediaContract,
   probeServiceContract,
   probeTerminalContract,
 } from "./control-plane/contract-probes/index.js";
@@ -803,6 +804,10 @@ export type {
   DistributedContractProbeInputs,
   DistributedContractProbeResult,
   DistributedRankReport,
+  MediaContractFailure,
+  MediaContractFailureKind,
+  MediaContractProbeInputs,
+  MediaContractProbeResult,
   ServiceContractFailure,
   ServiceContractFailureKind,
   ServiceContractProbeInputs,
