@@ -664,6 +664,45 @@ class TestRuleLeanCompileError:
         assert "test.lean" not in first.expected
         assert "function expected" not in first.expected.lower()
 
+    # Surfaced by the AC-773 deterministic validation harness
+    # (`runs/erdos-986-spencer-k3/validate_ac773.py`, 2026-05-21): Lean 4
+    # emits a distinct ``Tactic '<name>' failed: <reason>`` error class
+    # for tactic-level failures (e.g., `rfl` against a non-definitionally-
+    # equal goal). The validation found this is the most common shape on
+    # incorrect proofs and AC-773 wasn't covering it.
+
+    def test_tactic_failed_emits_tactic_failure_hint(self) -> None:
+        from autocontext.loop.remediation_router import TacticFailure
+
+        err = (
+            "test.lean:6:2: error: Tactic `rfl` failed: The left-hand side\n"
+            "  n + 1\n"
+            "is not definitionally equal to the right-hand side\n"
+            "  n\n"
+        )
+        hints = rule_lean_compile_error(_report([err]))
+        assert any(isinstance(h, TacticFailure) for h in hints)
+        tf = next(h for h in hints if isinstance(h, TacticFailure))
+        assert tf.tactic == "rfl"
+        assert "definitionally equal" in tf.reason_text
+
+    def test_tactic_failed_lowercase_tactic_form(self) -> None:
+        """Older mathlib emits ``tactic 'simp' failed``."""
+        from autocontext.loop.remediation_router import TacticFailure
+
+        err = "test.lean:10:0: error: tactic 'simp' failed, nothing to simplify\n"
+        hints = rule_lean_compile_error(_report([err]))
+        assert any(isinstance(h, TacticFailure) and h.tactic == "simp" for h in hints)
+
+
+class TestRenderTacticFailure:
+    def test_render_tactic_failure(self) -> None:
+        from autocontext.loop.remediation_router import TacticFailure
+
+        block = render_hints([TacticFailure(tactic="rfl", reason_text="not definitionally equal", line=6, reason="match 0")])
+        assert "rfl" in block
+        assert "tactic" in block.lower()
+
 
 class TestRenderLeanHints:
     def test_render_unknown_identifier(self) -> None:

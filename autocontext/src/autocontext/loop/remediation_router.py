@@ -132,6 +132,23 @@ class TypeclassSearch:
     reason: str
 
 
+@dataclass(frozen=True, slots=True)
+class TacticFailure:
+    """``Tactic '<name>' failed: <reason>`` — distinct from ``unsolved goals``.
+
+    Lean 4 fires this when a specific tactic refuses to close the current
+    proof step (e.g., ``rfl`` against a non-definitionally-equal goal,
+    ``simp`` with no progress). Surfaced by the AC-773 deterministic
+    validation harness on 2026-05-21; the most common Lean error class
+    on incorrect proofs.
+    """
+
+    tactic: str
+    reason_text: str
+    line: int
+    reason: str
+
+
 RemediationHint = (
     RefreshFixture
     | SurfaceSignatures
@@ -143,6 +160,7 @@ RemediationHint = (
     | TypeMismatch
     | UnsolvedGoals
     | TypeclassSearch
+    | TacticFailure
 )
 
 
@@ -523,6 +541,13 @@ _LEAN_FUNCTION_EXPECTED = re.compile(
     re.DOTALL,
 )
 _LEAN_UNSOLVED_GOALS = re.compile(r"[Uu]nsolved\s+goals\s*\n(?P<body>.*?)\Z", re.DOTALL)
+# AC-773 follow-up: Lean 4 emits ``Tactic `name` failed: <reason>`` with a
+# capital T and backtick-quoted tactic name; mathlib historically used
+# ``tactic 'name' failed[, <reason>]``. Accept both.
+_LEAN_TACTIC_FAILED = re.compile(
+    r"[Tt]actic\s+[`']?(?P<tactic>[\w.]+)[`']?\s+failed[,:\s]+(?P<rest>.*?)(?:\n\n|\Z)",
+    re.DOTALL,
+)
 _LEAN_TYPECLASS_FAIL = re.compile(
     # Old: ``failed to synthesize instance`` — new (Lean 4.29+):
     # ``type class instance expected``. Both are followed by the unresolved
@@ -594,6 +619,17 @@ def rule_lean_compile_error(report: FailureReport, **_: Any) -> list[Remediation
                         TypeclassSearch(
                             typeclass=m.group("typeclass").strip(),
                             context=(m.group("context") or "").strip(),
+                            line=line,
+                            reason=reason,
+                        )
+                    )
+
+                # AC-773 follow-up: tactic-level failures.
+                for m in _LEAN_TACTIC_FAILED.finditer(body):
+                    hints.append(
+                        TacticFailure(
+                            tactic=m.group("tactic").strip(),
+                            reason_text=m.group("rest").strip()[:200],
                             line=line,
                             reason=reason,
                         )
@@ -683,6 +719,9 @@ def _describe(hint: RemediationHint) -> str:
         loc = f" at line {hint.line}" if hint.line else ""
         ctx = f" for `{hint.context}`" if hint.context else ""
         return f"Lean typeclass search failed{loc}: `{hint.typeclass}`{ctx} ({hint.reason})"
+    if isinstance(hint, TacticFailure):
+        loc = f" at line {hint.line}" if hint.line else ""
+        return f"Lean tactic `{hint.tactic}` failed{loc}: {hint.reason_text} ({hint.reason})"
     return repr(hint)  # unreachable
 
 
