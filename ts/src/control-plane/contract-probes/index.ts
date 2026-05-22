@@ -513,3 +513,158 @@ export function probeCleanupContract(
 function matchesAny(path: string, patterns: readonly RegExp[]): boolean {
   return patterns.some((pattern) => pattern.test(path));
 }
+
+// ----------------------------------------------------------------------------
+// AC-728: distributed / multi-process contract probe
+// ----------------------------------------------------------------------------
+//
+// Closes the "distributed/multi-process parity checks beyond world-size 1"
+// item from the AC-728 ticket. Distributed tensor code can pass shallow
+// checks (process started, gradient computed locally) and still fail
+// multi-rank parity: world size mismatch, missing rank, divergent gradient
+// hash between ranks, or a rank running fewer steps than the others.
+//
+// The caller does the runtime IO (collect per-rank reports via
+// torchrun / NCCL / MPI / whatever) and passes a `DistributedRankReport`
+// per rank. The probe verifies the cross-rank invariants the caller
+// declared. Pure function, no IO, same posture as the other AC-728 probes.
+// Mirrors the PR #985 review lesson: a declared expectation without its
+// observation must fail (missing-observation), not silently pass.
+
+export type DistributedContractFailureKind =
+  | "wrong-world-size"
+  | "missing-rank"
+  | "duplicate-rank"
+  | "rank-divergence"
+  | "wrong-step-count"
+  | "missing-observation";
+
+export interface DistributedContractFailure {
+  readonly kind: DistributedContractFailureKind;
+  readonly message: string;
+  readonly rank?: number;
+  readonly key?: string;
+}
+
+export interface DistributedRankReport {
+  readonly rank: number;
+  readonly steps?: number;
+  readonly observations?: Readonly<Record<string, string>>;
+}
+
+export interface DistributedContractProbeInputs {
+  readonly ranks: readonly DistributedRankReport[];
+  readonly worldSize?: number;
+  readonly expectedWorldSize?: number;
+  readonly expectedSteps?: number;
+  readonly mustMatchAcrossRanks?: readonly string[];
+}
+
+export interface DistributedContractProbeResult {
+  readonly passed: boolean;
+  readonly failures: readonly DistributedContractFailure[];
+}
+
+export function probeDistributedContract(
+  inputs: DistributedContractProbeInputs,
+): DistributedContractProbeResult {
+  const failures: DistributedContractFailure[] = [];
+
+  if (inputs.expectedWorldSize !== undefined) {
+    if (inputs.worldSize === undefined) {
+      failures.push({
+        kind: "missing-observation",
+        message: "declared expectation on worldSize but no observation was supplied",
+      });
+    } else if (inputs.worldSize !== inputs.expectedWorldSize) {
+      failures.push({
+        kind: "wrong-world-size",
+        message: `observed world size ${inputs.worldSize} does not match expected ${inputs.expectedWorldSize}`,
+      });
+    }
+  }
+
+  // Track which ranks were seen so we can flag duplicates and missing ids.
+  const seenRanks = new Map<number, DistributedRankReport>();
+  for (const report of inputs.ranks) {
+    if (seenRanks.has(report.rank)) {
+      failures.push({
+        kind: "duplicate-rank",
+        rank: report.rank,
+        message: `rank ${report.rank} reported more than once`,
+      });
+      continue;
+    }
+    seenRanks.set(report.rank, report);
+  }
+
+  // Missing-rank coverage only applies once we know the observed world size.
+  if (inputs.worldSize !== undefined) {
+    for (let r = 0; r < inputs.worldSize; r++) {
+      if (!seenRanks.has(r)) {
+        failures.push({
+          kind: "missing-rank",
+          rank: r,
+          message: `rank ${r} did not report (world size ${inputs.worldSize})`,
+        });
+      }
+    }
+  }
+
+  if (inputs.expectedSteps !== undefined) {
+    for (const report of seenRanks.values()) {
+      if (report.steps === undefined) {
+        failures.push({
+          kind: "missing-observation",
+          rank: report.rank,
+          message: `rank ${report.rank} declared step-count expectation but no steps observation was supplied`,
+        });
+      } else if (report.steps !== inputs.expectedSteps) {
+        failures.push({
+          kind: "wrong-step-count",
+          rank: report.rank,
+          message: `rank ${report.rank} ran ${report.steps} steps; expected ${inputs.expectedSteps}`,
+        });
+      }
+    }
+  }
+
+  if (inputs.mustMatchAcrossRanks !== undefined && seenRanks.size > 0) {
+    for (const key of inputs.mustMatchAcrossRanks) {
+      // Collect the observation for `key` from every reporting rank; flag
+      // any rank that did not report it, then flag divergence across the
+      // values the rest produced.
+      const valuesByRank = new Map<number, string>();
+      let anyMissing = false;
+      for (const report of seenRanks.values()) {
+        const value = report.observations?.[key];
+        if (value === undefined) {
+          failures.push({
+            kind: "missing-observation",
+            rank: report.rank,
+            key,
+            message: `rank ${report.rank} did not report observation '${key}'`,
+          });
+          anyMissing = true;
+          continue;
+        }
+        valuesByRank.set(report.rank, value);
+      }
+      if (anyMissing) {
+        continue;
+      }
+      const distinctValues = new Set(valuesByRank.values());
+      if (distinctValues.size > 1) {
+        failures.push({
+          kind: "rank-divergence",
+          key,
+          message: `ranks disagree on '${key}': observed distinct values ${[...distinctValues]
+            .map((v) => JSON.stringify(v))
+            .join(", ")}`,
+        });
+      }
+    }
+  }
+
+  return { passed: failures.length === 0, failures };
+}

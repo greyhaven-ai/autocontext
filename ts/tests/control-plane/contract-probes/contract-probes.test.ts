@@ -3,6 +3,7 @@ import {
   probeArtifactContract,
   probeCleanupContract,
   probeDirectoryContract,
+  probeDistributedContract,
   probeServiceContract,
   probeTerminalContract,
 } from "../../../src/control-plane/contract-probes/index.js";
@@ -364,6 +365,181 @@ describe("probeCleanupContract", () => {
     expect(result.failures[0]).toMatchObject({
       kind: "stray-backup",
       path: "solution.txt.foo",
+    });
+  });
+});
+
+describe("probeDistributedContract", () => {
+  // A clean 4-rank parity report: every rank reported the same
+  // final-loss hash and the same step count.
+  const FOUR_RANK_CLEAN = [
+    { rank: 0, steps: 100, observations: { final_loss: "abc", grad_norm: "xyz" } },
+    { rank: 1, steps: 100, observations: { final_loss: "abc", grad_norm: "xyz" } },
+    { rank: 2, steps: 100, observations: { final_loss: "abc", grad_norm: "xyz" } },
+    { rank: 3, steps: 100, observations: { final_loss: "abc", grad_norm: "xyz" } },
+  ] as const;
+
+  test("passes when world size, ranks, steps, and observations all agree", () => {
+    const result = probeDistributedContract({
+      worldSize: 4,
+      ranks: FOUR_RANK_CLEAN,
+      expectedWorldSize: 4,
+      expectedSteps: 100,
+      mustMatchAcrossRanks: ["final_loss", "grad_norm"],
+    });
+    expect(result.passed).toBe(true);
+    expect(result.failures).toEqual([]);
+  });
+
+  test("flags wrong-world-size when observed world disagrees with expected", () => {
+    const result = probeDistributedContract({
+      worldSize: 2,
+      ranks: [
+        { rank: 0, steps: 100, observations: {} },
+        { rank: 1, steps: 100, observations: {} },
+      ],
+      expectedWorldSize: 4,
+    });
+    expect(result.passed).toBe(false);
+    expect(result.failures).toContainEqual({
+      kind: "wrong-world-size",
+      message: "observed world size 2 does not match expected 4",
+    });
+  });
+
+  test("flags missing-rank when not every rank in [0, worldSize) reported", () => {
+    const result = probeDistributedContract({
+      worldSize: 4,
+      ranks: [
+        { rank: 0, steps: 100, observations: {} },
+        { rank: 1, steps: 100, observations: {} },
+        // rank 2 missing
+        { rank: 3, steps: 100, observations: {} },
+      ],
+    });
+    expect(result.passed).toBe(false);
+    expect(result.failures).toContainEqual({
+      kind: "missing-rank",
+      rank: 2,
+      message: "rank 2 did not report (world size 4)",
+    });
+  });
+
+  test("flags rank-divergence when a must-match observation disagrees across ranks", () => {
+    const result = probeDistributedContract({
+      worldSize: 4,
+      ranks: [
+        { rank: 0, steps: 100, observations: { final_loss: "abc" } },
+        { rank: 1, steps: 100, observations: { final_loss: "abc" } },
+        { rank: 2, steps: 100, observations: { final_loss: "DIFFERENT" } },
+        { rank: 3, steps: 100, observations: { final_loss: "abc" } },
+      ],
+      mustMatchAcrossRanks: ["final_loss"],
+    });
+    expect(result.passed).toBe(false);
+    expect(result.failures).toHaveLength(1);
+    expect(result.failures[0]).toMatchObject({
+      kind: "rank-divergence",
+      key: "final_loss",
+    });
+    // The message must enumerate the distinct values so the caller can see
+    // which ranks diverged on which value.
+    expect(result.failures[0].message).toMatch(/abc/);
+    expect(result.failures[0].message).toMatch(/DIFFERENT/);
+  });
+
+  test("flags wrong-step-count when a rank reports fewer steps than expected", () => {
+    const result = probeDistributedContract({
+      worldSize: 2,
+      ranks: [
+        { rank: 0, steps: 100, observations: {} },
+        { rank: 1, steps: 87, observations: {} },
+      ],
+      expectedSteps: 100,
+    });
+    expect(result.passed).toBe(false);
+    expect(result.failures).toContainEqual({
+      kind: "wrong-step-count",
+      rank: 1,
+      message: "rank 1 ran 87 steps; expected 100",
+    });
+  });
+
+  test("flags missing-observation when a must-match key is absent from any rank", () => {
+    // PR #985 review lesson: an expectation declared without an observation
+    // must fail, not silently pass. Applies here when mustMatchAcrossRanks
+    // names a key that some rank never reported.
+    const result = probeDistributedContract({
+      worldSize: 2,
+      ranks: [
+        { rank: 0, steps: 100, observations: { final_loss: "abc" } },
+        { rank: 1, steps: 100, observations: {} }, // missing final_loss
+      ],
+      mustMatchAcrossRanks: ["final_loss"],
+    });
+    expect(result.passed).toBe(false);
+    expect(result.failures).toContainEqual({
+      kind: "missing-observation",
+      rank: 1,
+      key: "final_loss",
+      message: "rank 1 did not report observation 'final_loss'",
+    });
+  });
+
+  test("flags missing-observation when worldSize is expected but unobserved", () => {
+    const result = probeDistributedContract({
+      // No worldSize observation supplied.
+      ranks: [],
+      expectedWorldSize: 4,
+    });
+    expect(result.passed).toBe(false);
+    expect(result.failures).toContainEqual({
+      kind: "missing-observation",
+      message: "declared expectation on worldSize but no observation was supplied",
+    });
+  });
+
+  test("does not check fields the caller declared no expectation about", () => {
+    // Caller only declared mustMatchAcrossRanks; steps, world size, and
+    // any other observations are not part of the contract this call signed
+    // up for.
+    const result = probeDistributedContract({
+      worldSize: 2,
+      ranks: [
+        { rank: 0, steps: 50, observations: { x: "1" } },
+        { rank: 1, steps: 75, observations: { x: "1" } },
+      ],
+      mustMatchAcrossRanks: ["x"],
+    });
+    expect(result.passed).toBe(true);
+  });
+
+  test("treats a single-rank report with expectedWorldSize=1 as valid", () => {
+    // World size 1 is degenerate but lawful: parity-with-self holds and the
+    // probe should treat the trivial case as passing.
+    const result = probeDistributedContract({
+      worldSize: 1,
+      ranks: [{ rank: 0, steps: 10, observations: { loss: "0.1" } }],
+      expectedWorldSize: 1,
+      expectedSteps: 10,
+      mustMatchAcrossRanks: ["loss"],
+    });
+    expect(result.passed).toBe(true);
+  });
+
+  test("flags duplicate-rank when the same rank id appears twice", () => {
+    const result = probeDistributedContract({
+      worldSize: 2,
+      ranks: [
+        { rank: 0, steps: 100, observations: {} },
+        { rank: 0, steps: 100, observations: {} },
+      ],
+    });
+    expect(result.passed).toBe(false);
+    expect(result.failures).toContainEqual({
+      kind: "duplicate-rank",
+      rank: 0,
+      message: "rank 0 reported more than once",
     });
   });
 });
