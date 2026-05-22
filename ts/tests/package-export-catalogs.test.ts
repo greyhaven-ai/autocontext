@@ -30,6 +30,9 @@ describe("package root exports", () => {
     expect(pkg.probeCleanupContract).toBeDefined();
     expect(pkg.probeDistributedContract).toBeDefined();
     expect(pkg.probeMediaContract).toBeDefined();
+    expect(pkg.runContractProbeSuite).toBeDefined();
+    expect(pkg.loadContractProbeSuite).toBeDefined();
+    expect(pkg.ContractProbeSuiteSchema).toBeDefined();
     expect(pkg.validateOperationalMemoryPack).toBeDefined();
     expect(pkg.classifyExternalEvalTrial).toBeDefined();
     expect(pkg.assessExternalEvalBoundaryPolicy).toBeDefined();

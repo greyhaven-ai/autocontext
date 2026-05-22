@@ -777,6 +777,9 @@ export type {
 export { reconcileEvalTrials } from "./control-plane/eval-ledger/index.js";
 export type { ReconcileEvalTrialsOptions } from "./control-plane/eval-ledger/index.js";
 export {
+  ContractProbeKindEnum,
+  ContractProbeSuiteSchema,
+  loadContractProbeSuite,
   probeArtifactContract,
   probeCleanupContract,
   probeDirectoryContract,
@@ -784,6 +787,7 @@ export {
   probeMediaContract,
   probeServiceContract,
   probeTerminalContract,
+  runContractProbeSuite,
 } from "./control-plane/contract-probes/index.js";
 export type {
   ArtifactContractFailure,
@@ -795,6 +799,12 @@ export type {
   CleanupContractProbeInputs,
   CleanupContractProbeResult,
   CleanupFileEntry,
+  ContractProbeFailure,
+  ContractProbeInvocation,
+  ContractProbeKind,
+  ContractProbeRunResult,
+  ContractProbeSuite,
+  ContractProbeSuiteResult,
   DirectoryContractFailure,
   DirectoryContractFailureKind,
   DirectoryContractProbeInputs,
