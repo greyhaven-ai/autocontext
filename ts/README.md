@@ -293,6 +293,8 @@ autoctx analyze --id deploy_sim --type simulation
 autoctx analyze --left sim_a --right sim_b --type simulation
 autoctx trace-findings --trace ./trace.json          # Markdown report
 autoctx trace-findings --trace ./trace.json --json   # TraceFindingReport JSON
+autoctx probes check --suite ./suite.json            # AC-728 contract probes (see Contract Probes below)
+autoctx probes check --suite ./suite.json --json     # structured ContractProbeSuiteResult
 autoctx mission create --name "Ship login" --goal "Implement OAuth"
 autoctx mission create --type code --name "Fix login" --goal "Tests pass" --repo-path . --test-command "npm test"
 autoctx mission run --id <mission-id> --max-iterations 3
@@ -315,6 +317,83 @@ autoctx status
 ```
 
 Stateful persistent providers, including persistent Pi RPC, run with effective worker concurrency `1` to keep long-lived runtime sessions isolated.
+
+## Contract Probes
+
+`autoctx probes check --suite <path>` runs the AC-728 contract-probe suite against observed harness state and reports per-probe pass/fail. It exits 0 on a full pass and 1 on any failure or any load / parse error. Default output is human-readable; pass `--json` to emit a structured `ContractProbeSuiteResult` payload that downstream tools can consume.
+
+The suite file is a JSON document validated by `ContractProbeSuiteSchema`. Every nested object is strict: unknown keys (e.g. a typo like `requiredStdoutPattern` missing the trailing `s`) fail validation rather than silently disappearing. Every declared expectation requires the matching observation; an `expected*` field without its observation fails as `missing-observation` rather than silently passing.
+
+Minimal suite example:
+
+```json
+{
+  "schema_version": 1,
+  "probes": [
+    {
+      "kind": "directory",
+      "label": "final-workdir",
+      "inputs": {
+        "presentFiles": ["solution.txt"],
+        "requiredFiles": ["solution.txt"],
+        "allowedFiles": ["solution.txt"],
+        "ignoredPatterns": ["^trace\\."]
+      }
+    },
+    {
+      "kind": "terminal",
+      "label": "after-build",
+      "inputs": {
+        "exitCode": 0,
+        "stdout": "All checks passed.\n",
+        "stderr": "",
+        "expectedExitCode": 0,
+        "requiredStdoutPatterns": ["checks passed"]
+      }
+    },
+    {
+      "kind": "cleanup",
+      "inputs": {
+        "entries": [
+          { "path": "solution.txt" },
+          { "path": "stale.lock", "mtime": "2026-05-21T10:00:00Z" }
+        ],
+        "now": "2026-05-21T12:00:00Z",
+        "maxLockfileAgeMs": 300000
+      }
+    }
+  ]
+}
+```
+
+Seven probe kinds are supported: `directory`, `terminal`, `service`, `artifact`, `cleanup`, `media`, `distributed`. Each invocation accepts an optional `label` string (caller-supplied attribution; surfaced in the report) and a `kind`-specific `inputs` object. Wire-format notes:
+
+- RegExp values may be a bare pattern string (`"^trace\\."`) or `{ "source": "^trace\\.", "flags": "i" }`. Invalid regexes (e.g. `"[unclosed"`) fail validation cleanly via Zod.
+- Date values are ISO-8601 strings. Malformed dates fail validation cleanly via Zod.
+
+`--json` payload shape:
+
+```json
+{
+  "passed": false,
+  "results": [
+    {
+      "kind": "cleanup",
+      "label": "after-build",
+      "passed": false,
+      "failures": [
+        {
+          "kind": "stale-lockfile",
+          "path": "stale.lock",
+          "message": "stale.lock is a lockfile older than 300000ms"
+        }
+      ]
+    }
+  ]
+}
+```
+
+The `results` field is a discriminated union by `kind`, so TypeScript callers can switch on `kind` and access each probe's typed failure fields (`path`, `rank`, `key`, `endpoint`, etc.) without casting. The library API (`runContractProbeSuite`, `loadContractProbeSuite`, `ContractProbeSuiteSchema`) is exported from the package root for programmatic use.
 
 ## Provider Configuration
 

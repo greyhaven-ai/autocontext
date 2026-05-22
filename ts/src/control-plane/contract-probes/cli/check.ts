@@ -49,11 +49,12 @@ Exit codes:
   0   every probe in the suite passed.
   1   at least one probe failed, or the suite failed to load / parse.
 
-The JSON spec format is documented in
-ts/src/control-plane/contract-probes/runner.ts. Every input field that
-the suite declares an expectation about must carry a corresponding
-observation; missing observations fail with kind \`missing-observation\`
-rather than silently passing.
+The JSON suite-file format (with a minimal example and the seven
+probe kinds) is documented under the "Contract Probes" section of
+the autoctx README. Every input field that the suite declares an
+expectation about must carry a corresponding observation; missing
+observations fail with kind \`missing-observation\` rather than
+silently passing.
 `;
 
 interface ParsedArgs {
