@@ -336,6 +336,12 @@ export const HarnessTraceSchema = z
         // Per-artifact: every expectation must reference a path that the
         // observations actually contain.
         const observedPaths = new Set(obs.artifacts.map((a) => a.path));
+        // PR #993 review (P2): duplicate per-path expectations silently lost
+        // assertions because the extractor stored them in a Map keyed by
+        // path -- the second entry overwrote the first. Reject duplicates
+        // at parse time so the caller either merges entries or sees the
+        // collision.
+        const seenPaths = new Set<string>();
         exp.artifacts.forEach((artExp, index) => {
           if (!observedPaths.has(artExp.path)) {
             ctx.addIssue({
@@ -346,6 +352,16 @@ export const HarnessTraceSchema = z
               )} but no observation with that path was recorded`,
             });
           }
+          if (seenPaths.has(artExp.path)) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ["expectations", "artifacts", index, "path"],
+              message: `duplicate per-artifact expectation for path ${JSON.stringify(
+                artExp.path,
+              )}; merge into a single entry`,
+            });
+          }
+          seenPaths.add(artExp.path);
         });
       }
     }
@@ -367,6 +383,10 @@ export const HarnessTraceSchema = z
         });
       } else {
         const observedPaths = new Set(obs.media.map((m) => m.path));
+        // PR #993 review (P2): same Map-keyed-by-path collision the
+        // artifact extractor had -- reject duplicates rather than silently
+        // overwrite earlier entries.
+        const seenPaths = new Set<string>();
         exp.media.forEach((mExp, index) => {
           if (!observedPaths.has(mExp.path)) {
             ctx.addIssue({
@@ -377,16 +397,52 @@ export const HarnessTraceSchema = z
               )} but no observation with that path was recorded`,
             });
           }
+          if (seenPaths.has(mExp.path)) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ["expectations", "media", index, "path"],
+              message: `duplicate per-media expectation for path ${JSON.stringify(
+                mExp.path,
+              )}; merge into a single entry`,
+            });
+          }
+          seenPaths.add(mExp.path);
         });
       }
     }
-    if (exp.distributed !== undefined && obs.distributed === undefined) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["expectations", "distributed"],
-        message:
-          "distributed expectation declared without a matching observation; add `observations.distributed.ranks`",
-      });
+    if (exp.distributed !== undefined) {
+      if (obs.distributed === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["expectations", "distributed"],
+          message:
+            "distributed expectation declared without a matching observation; add `observations.distributed.ranks`",
+        });
+      } else if (obs.distributed.ranks.length === 0) {
+        // PR #993 review (P2): rank-scoped expectations (`expectedSteps`,
+        // `mustMatchAcrossRanks`) silently pass when there are zero rank
+        // reports because the slice-5 distributed probe's per-rank loop
+        // is vacuous. The non-rank-scoped `expectedWorldSize` is fine to
+        // check against `observations.distributed.worldSize` even with an
+        // empty rank list, so it does not require ranks. Reject only the
+        // two rank-scoped expectations when ranks is empty.
+        if (exp.distributed.expectedSteps !== undefined) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["expectations", "distributed", "expectedSteps"],
+            message:
+              "rank-scoped expectation `expectedSteps` requires `observations.distributed.ranks` to contain at least one report",
+          });
+        }
+        if (exp.distributed.mustMatchAcrossRanks !== undefined) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["expectations", "distributed", "mustMatchAcrossRanks"],
+            message:
+              "rank-scoped expectation `mustMatchAcrossRanks` requires `observations.distributed.ranks` to contain at least one report",
+          });
+        }
+      }
     }
   });
 

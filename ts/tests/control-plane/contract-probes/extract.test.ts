@@ -223,6 +223,100 @@ describe("HarnessTraceSchema", () => {
       expect(messages).toMatch(/distributed expectation declared without a matching observation/);
     }
   });
+
+  // PR #993 review (P2): rank-scoped expectations (`expectedSteps`,
+  // `mustMatchAcrossRanks`) silently passed against `ranks: []` because the
+  // slice-5 distributed probe's per-rank loop is vacuous on empty input.
+  // The schema now rejects those expectations when the rank list is empty;
+  // `expectedWorldSize` is still allowed since it's checked against
+  // `observations.distributed.worldSize` directly.
+
+  test("rejects rank-scoped expectations against an empty ranks list (mustMatchAcrossRanks)", () => {
+    const result = HarnessTraceSchema.safeParse({
+      schema_version: 1,
+      observations: { distributed: { worldSize: 0, ranks: [] } },
+      expectations: { distributed: { mustMatchAcrossRanks: ["loss"] } },
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const messages = result.error.issues.map((i) => i.message).join("|");
+      expect(messages).toMatch(
+        /rank-scoped expectation `mustMatchAcrossRanks` requires `observations.distributed.ranks` to contain at least one report/,
+      );
+    }
+  });
+
+  test("rejects rank-scoped expectations against an empty ranks list (expectedSteps)", () => {
+    const result = HarnessTraceSchema.safeParse({
+      schema_version: 1,
+      observations: { distributed: { ranks: [] } },
+      expectations: { distributed: { expectedSteps: 100 } },
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const messages = result.error.issues.map((i) => i.message).join("|");
+      expect(messages).toMatch(
+        /rank-scoped expectation `expectedSteps` requires `observations.distributed.ranks` to contain at least one report/,
+      );
+    }
+  });
+
+  test("permits non-rank-scoped expectedWorldSize even with empty ranks", () => {
+    // expectedWorldSize is checked against `observations.distributed.worldSize`,
+    // not against the rank list -- so it's fine to declare with no ranks.
+    const result = HarnessTraceSchema.safeParse({
+      schema_version: 1,
+      observations: { distributed: { worldSize: 0, ranks: [] } },
+      expectations: { distributed: { expectedWorldSize: 0 } },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  // PR #993 review (P2): per-path expectations (artifacts, media) were stored
+  // in a Map keyed by `path`, so a second entry for the same path silently
+  // overwrote the first and dropped its assertions. Reject duplicates at
+  // parse time so the caller merges entries (or sees the collision).
+
+  test("rejects duplicate per-artifact expectations for the same path", () => {
+    const result = HarnessTraceSchema.safeParse({
+      schema_version: 1,
+      observations: {
+        artifacts: [{ path: "manifest.json", content: "{}" }],
+      },
+      expectations: {
+        artifacts: [
+          { path: "manifest.json", requiredJsonFields: ["name"] },
+          { path: "manifest.json", requiredJsonFields: ["version"] },
+        ],
+      },
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const messages = result.error.issues.map((i) => i.message).join("|");
+      expect(messages).toMatch(/duplicate per-artifact expectation/);
+    }
+  });
+
+  test("rejects duplicate per-media expectations for the same path", () => {
+    // Reviewer's exact repro: two `rendered.png` entries, first declares
+    // expectedWidth, second declares expectedHeight; the previous extractor
+    // silently dropped the width assertion.
+    const result = HarnessTraceSchema.safeParse({
+      schema_version: 1,
+      observations: { media: [{ path: "rendered.png", width: 100, height: 50 }] },
+      expectations: {
+        media: [
+          { path: "rendered.png", expectedWidth: 100 },
+          { path: "rendered.png", expectedHeight: 50 },
+        ],
+      },
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const messages = result.error.issues.map((i) => i.message).join("|");
+      expect(messages).toMatch(/duplicate per-media expectation/);
+    }
+  });
 });
 
 describe("extractContractProbeSuite", () => {
