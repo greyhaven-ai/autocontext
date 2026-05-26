@@ -15,9 +15,10 @@
  * The extractor joins them into a runnable `ContractProbeSuite`. The
  * slice-6 `autoctx probes check` runs the resulting suite.
  *
- * Slice 7 supports the four AC-728 slice-1 probe kinds (terminal,
- * directory, service, artifact). Cleanup / media / distributed kinds
- * land in follow-up slices once their trace formats are settled.
+ * Coverage: all seven AC-728 probe kinds (terminal, directory, service,
+ * artifact since slice 7; cleanup, media, distributed since slice 8).
+ * Every section's expectations require a matching observation; orphan
+ * expectations fail validation at parse time.
  *
  * Wire-format invariants mirror the suite runner (PR #990):
  *
@@ -66,9 +67,12 @@ Exit codes:
   0   the trace parsed and a suite was emitted.
   1   the trace failed to load / parse, or a write to --output failed.
 
-The slice-7 extractor supports four probe kinds (terminal, directory,
-service, artifact). Cleanup / media / distributed kinds are scaffolded
-in follow-up slices once their trace formats settle.
+The extractor covers all seven AC-728 probe kinds: terminal, directory,
+service, artifact, cleanup, media, distributed. Per-section
+observations and expectations must both be supplied for any kind the
+suite asserts on; orphan expectations (declared without a matching
+observation) fail validation at parse time rather than silently
+producing a vacuously-passing suite.
 `;
 
 // --- Shared Zod helpers (mirroring runner.ts) ------------------------------
@@ -154,6 +158,103 @@ const ArtifactExpectations = z
   })
   .strict();
 
+// --- Slice 8: cleanup / media / distributed observation+expectation schemas
+
+const DateJson = z.union([z.string(), z.date()]).transform((value, ctx) => {
+  if (value instanceof Date) {
+    return value;
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `invalid ISO-8601 date: ${JSON.stringify(value)}`,
+    });
+    return z.NEVER;
+  }
+  return parsed;
+});
+
+const CleanupEntry = z
+  .object({
+    path: z.string(),
+    isSymlink: z.boolean().optional(),
+    symlinkTarget: z.string().optional(),
+    symlinkBroken: z.boolean().optional(),
+    mtime: DateJson.optional(),
+  })
+  .strict();
+
+const CleanupObservation = z
+  .object({
+    entries: z.array(CleanupEntry),
+  })
+  .strict();
+
+const CleanupExpectations = z
+  .object({
+    now: DateJson.optional(),
+    maxLockfileAgeMs: z.number().optional(),
+    lockfilePatterns: z.array(RegExpJson).optional(),
+    sidecarPatterns: z.array(RegExpJson).optional(),
+    backupPatterns: z.array(RegExpJson).optional(),
+    forbidSymlinks: z.boolean().optional(),
+    allowedSymlinkTargets: z.array(z.string()).optional(),
+    ignoredPatterns: z.array(RegExpJson).optional(),
+  })
+  .strict();
+
+const MediaObservation = z
+  .object({
+    path: z.string(),
+    headerBytes: z.array(z.number()).optional(),
+    width: z.number().optional(),
+    height: z.number().optional(),
+    byteSize: z.number().optional(),
+    columnCount: z.number().optional(),
+    columnNames: z.array(z.string()).optional(),
+    lineCount: z.number().optional(),
+  })
+  .strict();
+
+const MediaExpectations = z
+  .object({
+    path: z.string(),
+    label: z.string().optional(),
+    expectedMagicBytes: z.array(z.number()).optional(),
+    expectedWidth: z.number().optional(),
+    expectedHeight: z.number().optional(),
+    minByteSize: z.number().optional(),
+    maxByteSize: z.number().optional(),
+    expectedColumnCount: z.number().optional(),
+    requiredColumnNames: z.array(z.string()).optional(),
+    expectedLineCount: z.number().optional(),
+  })
+  .strict();
+
+const DistributedRank = z
+  .object({
+    rank: z.number(),
+    steps: z.number().optional(),
+    observations: z.record(z.string(), z.string()).optional(),
+  })
+  .strict();
+
+const DistributedObservation = z
+  .object({
+    worldSize: z.number().optional(),
+    ranks: z.array(DistributedRank),
+  })
+  .strict();
+
+const DistributedExpectations = z
+  .object({
+    expectedWorldSize: z.number().optional(),
+    expectedSteps: z.number().optional(),
+    mustMatchAcrossRanks: z.array(z.string()).optional(),
+  })
+  .strict();
+
 // --- HarnessTrace envelope -------------------------------------------------
 
 const HarnessObservationsSchema = z
@@ -162,6 +263,9 @@ const HarnessObservationsSchema = z
     workdir: WorkdirObservation.optional(),
     services: z.array(ServiceEndpoint).optional(),
     artifacts: z.array(ArtifactObservation).optional(),
+    cleanup: CleanupObservation.optional(),
+    media: z.array(MediaObservation).optional(),
+    distributed: DistributedObservation.optional(),
   })
   .strict();
 
@@ -171,6 +275,9 @@ const HarnessExpectationsSchema = z
     directory: DirectoryExpectations.optional(),
     services: ServiceExpectations.optional(),
     artifacts: z.array(ArtifactExpectations).optional(),
+    cleanup: CleanupExpectations.optional(),
+    media: z.array(MediaExpectations).optional(),
+    distributed: DistributedExpectations.optional(),
   })
   .strict();
 
@@ -229,6 +336,12 @@ export const HarnessTraceSchema = z
         // Per-artifact: every expectation must reference a path that the
         // observations actually contain.
         const observedPaths = new Set(obs.artifacts.map((a) => a.path));
+        // PR #993 review (P2): duplicate per-path expectations silently lost
+        // assertions because the extractor stored them in a Map keyed by
+        // path -- the second entry overwrote the first. Reject duplicates
+        // at parse time so the caller either merges entries or sees the
+        // collision.
+        const seenPaths = new Set<string>();
         exp.artifacts.forEach((artExp, index) => {
           if (!observedPaths.has(artExp.path)) {
             ctx.addIssue({
@@ -239,7 +352,96 @@ export const HarnessTraceSchema = z
               )} but no observation with that path was recorded`,
             });
           }
+          if (seenPaths.has(artExp.path)) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ["expectations", "artifacts", index, "path"],
+              message: `duplicate per-artifact expectation for path ${JSON.stringify(
+                artExp.path,
+              )}; merge into a single entry`,
+            });
+          }
+          seenPaths.add(artExp.path);
         });
+      }
+    }
+    if (exp.cleanup !== undefined && obs.cleanup === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["expectations", "cleanup"],
+        message:
+          "cleanup expectation declared without a matching observation; add `observations.cleanup.entries`",
+      });
+    }
+    if (exp.media !== undefined) {
+      if (obs.media === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["expectations", "media"],
+          message:
+            "per-media expectations declared without `observations.media`; add the matching media observations",
+        });
+      } else {
+        const observedPaths = new Set(obs.media.map((m) => m.path));
+        // PR #993 review (P2): same Map-keyed-by-path collision the
+        // artifact extractor had -- reject duplicates rather than silently
+        // overwrite earlier entries.
+        const seenPaths = new Set<string>();
+        exp.media.forEach((mExp, index) => {
+          if (!observedPaths.has(mExp.path)) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ["expectations", "media", index, "path"],
+              message: `expectation references media path ${JSON.stringify(
+                mExp.path,
+              )} but no observation with that path was recorded`,
+            });
+          }
+          if (seenPaths.has(mExp.path)) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ["expectations", "media", index, "path"],
+              message: `duplicate per-media expectation for path ${JSON.stringify(
+                mExp.path,
+              )}; merge into a single entry`,
+            });
+          }
+          seenPaths.add(mExp.path);
+        });
+      }
+    }
+    if (exp.distributed !== undefined) {
+      if (obs.distributed === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["expectations", "distributed"],
+          message:
+            "distributed expectation declared without a matching observation; add `observations.distributed.ranks`",
+        });
+      } else if (obs.distributed.ranks.length === 0) {
+        // PR #993 review (P2): rank-scoped expectations (`expectedSteps`,
+        // `mustMatchAcrossRanks`) silently pass when there are zero rank
+        // reports because the slice-5 distributed probe's per-rank loop
+        // is vacuous. The non-rank-scoped `expectedWorldSize` is fine to
+        // check against `observations.distributed.worldSize` even with an
+        // empty rank list, so it does not require ranks. Reject only the
+        // two rank-scoped expectations when ranks is empty.
+        if (exp.distributed.expectedSteps !== undefined) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["expectations", "distributed", "expectedSteps"],
+            message:
+              "rank-scoped expectation `expectedSteps` requires `observations.distributed.ranks` to contain at least one report",
+          });
+        }
+        if (exp.distributed.mustMatchAcrossRanks !== undefined) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["expectations", "distributed", "mustMatchAcrossRanks"],
+            message:
+              "rank-scoped expectation `mustMatchAcrossRanks` requires `observations.distributed.ranks` to contain at least one report",
+          });
+        }
       }
     }
   });
@@ -340,6 +542,97 @@ export function extractContractProbeSuite(trace: HarnessTrace): ContractProbeSui
         },
       });
     }
+  }
+
+  if (trace.observations.cleanup !== undefined) {
+    const exp = expectations.cleanup ?? {};
+    probes.push({
+      kind: "cleanup",
+      ...(label !== undefined ? { label } : {}),
+      inputs: {
+        entries: trace.observations.cleanup.entries,
+        ...(exp.now !== undefined ? { now: exp.now } : {}),
+        ...(exp.maxLockfileAgeMs !== undefined ? { maxLockfileAgeMs: exp.maxLockfileAgeMs } : {}),
+        ...(exp.lockfilePatterns !== undefined ? { lockfilePatterns: exp.lockfilePatterns } : {}),
+        ...(exp.sidecarPatterns !== undefined ? { sidecarPatterns: exp.sidecarPatterns } : {}),
+        ...(exp.backupPatterns !== undefined ? { backupPatterns: exp.backupPatterns } : {}),
+        ...(exp.forbidSymlinks !== undefined ? { forbidSymlinks: exp.forbidSymlinks } : {}),
+        ...(exp.allowedSymlinkTargets !== undefined
+          ? { allowedSymlinkTargets: exp.allowedSymlinkTargets }
+          : {}),
+        ...(exp.ignoredPatterns !== undefined ? { ignoredPatterns: exp.ignoredPatterns } : {}),
+      },
+    });
+  }
+
+  if (trace.observations.media !== undefined) {
+    // Per-media: match each observation by `path` against an expectations
+    // entry; absent expectations leave the media probe in a no-op shape
+    // (path + observed metadata only, no expected*/min/max/required lists).
+    const mediaExpectationsByPath = new Map<string, z.infer<typeof MediaExpectations>>();
+    for (const mExp of expectations.media ?? []) {
+      mediaExpectationsByPath.set(mExp.path, mExp);
+    }
+    for (const observation of trace.observations.media) {
+      const exp = mediaExpectationsByPath.get(observation.path);
+      probes.push({
+        kind: "media",
+        ...(exp?.label !== undefined ? { label: exp.label } : label !== undefined ? { label } : {}),
+        inputs: {
+          path: observation.path,
+          ...(observation.headerBytes !== undefined
+            ? { headerBytes: observation.headerBytes }
+            : {}),
+          ...(observation.width !== undefined ? { width: observation.width } : {}),
+          ...(observation.height !== undefined ? { height: observation.height } : {}),
+          ...(observation.byteSize !== undefined ? { byteSize: observation.byteSize } : {}),
+          ...(observation.columnCount !== undefined
+            ? { columnCount: observation.columnCount }
+            : {}),
+          ...(observation.columnNames !== undefined
+            ? { columnNames: observation.columnNames }
+            : {}),
+          ...(observation.lineCount !== undefined ? { lineCount: observation.lineCount } : {}),
+          ...(exp?.expectedMagicBytes !== undefined
+            ? { expectedMagicBytes: exp.expectedMagicBytes }
+            : {}),
+          ...(exp?.expectedWidth !== undefined ? { expectedWidth: exp.expectedWidth } : {}),
+          ...(exp?.expectedHeight !== undefined ? { expectedHeight: exp.expectedHeight } : {}),
+          ...(exp?.minByteSize !== undefined ? { minByteSize: exp.minByteSize } : {}),
+          ...(exp?.maxByteSize !== undefined ? { maxByteSize: exp.maxByteSize } : {}),
+          ...(exp?.expectedColumnCount !== undefined
+            ? { expectedColumnCount: exp.expectedColumnCount }
+            : {}),
+          ...(exp?.requiredColumnNames !== undefined
+            ? { requiredColumnNames: exp.requiredColumnNames }
+            : {}),
+          ...(exp?.expectedLineCount !== undefined
+            ? { expectedLineCount: exp.expectedLineCount }
+            : {}),
+        },
+      });
+    }
+  }
+
+  if (trace.observations.distributed !== undefined) {
+    const exp = expectations.distributed ?? {};
+    probes.push({
+      kind: "distributed",
+      ...(label !== undefined ? { label } : {}),
+      inputs: {
+        ranks: trace.observations.distributed.ranks,
+        ...(trace.observations.distributed.worldSize !== undefined
+          ? { worldSize: trace.observations.distributed.worldSize }
+          : {}),
+        ...(exp.expectedWorldSize !== undefined
+          ? { expectedWorldSize: exp.expectedWorldSize }
+          : {}),
+        ...(exp.expectedSteps !== undefined ? { expectedSteps: exp.expectedSteps } : {}),
+        ...(exp.mustMatchAcrossRanks !== undefined
+          ? { mustMatchAcrossRanks: exp.mustMatchAcrossRanks }
+          : {}),
+      },
+    });
   }
 
   return { schema_version: 1, probes };

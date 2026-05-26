@@ -173,6 +173,150 @@ describe("HarnessTraceSchema", () => {
       expect(result.error.issues.length).toBeGreaterThanOrEqual(4);
     }
   });
+
+  // --- Slice 8: orphan-rejection coverage for cleanup / media / distributed
+
+  test("rejects orphan cleanup expectation (no observations.cleanup)", () => {
+    const result = HarnessTraceSchema.safeParse({
+      schema_version: 1,
+      observations: {},
+      expectations: { cleanup: { maxLockfileAgeMs: 1000 } },
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const messages = result.error.issues.map((i) => i.message).join("|");
+      expect(messages).toMatch(/cleanup expectation declared without a matching observation/);
+    }
+  });
+
+  test("rejects orphan media expectation (no observations.media)", () => {
+    const result = HarnessTraceSchema.safeParse({
+      schema_version: 1,
+      observations: {},
+      expectations: { media: [{ path: "rendered.png", expectedWidth: 100 }] },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  test("rejects orphan per-media expectations (observation list omits the path)", () => {
+    const result = HarnessTraceSchema.safeParse({
+      schema_version: 1,
+      observations: { media: [{ path: "a.png", width: 1 }] },
+      expectations: { media: [{ path: "b.png", expectedWidth: 100 }] },
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const messages = result.error.issues.map((i) => i.message).join("|");
+      expect(messages).toMatch(/no observation with that path was recorded/);
+    }
+  });
+
+  test("rejects orphan distributed expectation (no observations.distributed)", () => {
+    const result = HarnessTraceSchema.safeParse({
+      schema_version: 1,
+      observations: {},
+      expectations: { distributed: { expectedWorldSize: 4 } },
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const messages = result.error.issues.map((i) => i.message).join("|");
+      expect(messages).toMatch(/distributed expectation declared without a matching observation/);
+    }
+  });
+
+  // PR #993 review (P2): rank-scoped expectations (`expectedSteps`,
+  // `mustMatchAcrossRanks`) silently passed against `ranks: []` because the
+  // slice-5 distributed probe's per-rank loop is vacuous on empty input.
+  // The schema now rejects those expectations when the rank list is empty;
+  // `expectedWorldSize` is still allowed since it's checked against
+  // `observations.distributed.worldSize` directly.
+
+  test("rejects rank-scoped expectations against an empty ranks list (mustMatchAcrossRanks)", () => {
+    const result = HarnessTraceSchema.safeParse({
+      schema_version: 1,
+      observations: { distributed: { worldSize: 0, ranks: [] } },
+      expectations: { distributed: { mustMatchAcrossRanks: ["loss"] } },
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const messages = result.error.issues.map((i) => i.message).join("|");
+      expect(messages).toMatch(
+        /rank-scoped expectation `mustMatchAcrossRanks` requires `observations.distributed.ranks` to contain at least one report/,
+      );
+    }
+  });
+
+  test("rejects rank-scoped expectations against an empty ranks list (expectedSteps)", () => {
+    const result = HarnessTraceSchema.safeParse({
+      schema_version: 1,
+      observations: { distributed: { ranks: [] } },
+      expectations: { distributed: { expectedSteps: 100 } },
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const messages = result.error.issues.map((i) => i.message).join("|");
+      expect(messages).toMatch(
+        /rank-scoped expectation `expectedSteps` requires `observations.distributed.ranks` to contain at least one report/,
+      );
+    }
+  });
+
+  test("permits non-rank-scoped expectedWorldSize even with empty ranks", () => {
+    // expectedWorldSize is checked against `observations.distributed.worldSize`,
+    // not against the rank list -- so it's fine to declare with no ranks.
+    const result = HarnessTraceSchema.safeParse({
+      schema_version: 1,
+      observations: { distributed: { worldSize: 0, ranks: [] } },
+      expectations: { distributed: { expectedWorldSize: 0 } },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  // PR #993 review (P2): per-path expectations (artifacts, media) were stored
+  // in a Map keyed by `path`, so a second entry for the same path silently
+  // overwrote the first and dropped its assertions. Reject duplicates at
+  // parse time so the caller merges entries (or sees the collision).
+
+  test("rejects duplicate per-artifact expectations for the same path", () => {
+    const result = HarnessTraceSchema.safeParse({
+      schema_version: 1,
+      observations: {
+        artifacts: [{ path: "manifest.json", content: "{}" }],
+      },
+      expectations: {
+        artifacts: [
+          { path: "manifest.json", requiredJsonFields: ["name"] },
+          { path: "manifest.json", requiredJsonFields: ["version"] },
+        ],
+      },
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const messages = result.error.issues.map((i) => i.message).join("|");
+      expect(messages).toMatch(/duplicate per-artifact expectation/);
+    }
+  });
+
+  test("rejects duplicate per-media expectations for the same path", () => {
+    // Reviewer's exact repro: two `rendered.png` entries, first declares
+    // expectedWidth, second declares expectedHeight; the previous extractor
+    // silently dropped the width assertion.
+    const result = HarnessTraceSchema.safeParse({
+      schema_version: 1,
+      observations: { media: [{ path: "rendered.png", width: 100, height: 50 }] },
+      expectations: {
+        media: [
+          { path: "rendered.png", expectedWidth: 100 },
+          { path: "rendered.png", expectedHeight: 50 },
+        ],
+      },
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const messages = result.error.issues.map((i) => i.message).join("|");
+      expect(messages).toMatch(/duplicate per-media expectation/);
+    }
+  });
 });
 
 describe("extractContractProbeSuite", () => {
@@ -350,6 +494,190 @@ describe("extractContractProbeSuite", () => {
     const result = runContractProbeSuite(reparsed);
     expect(result.passed).toBe(true);
     expect(result.results.every((r) => r.label === "smoke-run-2026-05-22")).toBe(true);
+  });
+
+  // --- Slice 8: cleanup / media / distributed extractors ------------------
+
+  test("cleanup: joins entries + age-threshold expectation into a cleanup probe", () => {
+    const trace = HarnessTraceSchema.parse({
+      schema_version: 1,
+      observations: {
+        cleanup: {
+          entries: [
+            { path: "solution.txt" },
+            { path: "stale.lock", mtime: "2026-05-21T10:00:00Z" },
+          ],
+        },
+      },
+      expectations: {
+        cleanup: { now: "2026-05-21T12:00:00Z", maxLockfileAgeMs: 5 * 60 * 1000 },
+      },
+    });
+    const suite = extractContractProbeSuite(trace);
+    expect(suite.probes).toHaveLength(1);
+    const probe = suite.probes[0];
+    if (probe.kind !== "cleanup") {
+      throw new Error("expected cleanup");
+    }
+    const result = runContractProbeSuite(suite);
+    expect(result.passed).toBe(false);
+    if (result.results[0].kind !== "cleanup") {
+      throw new Error("expected cleanup");
+    }
+    expect(result.results[0].failures[0].kind).toBe("stale-lockfile");
+  });
+
+  test("cleanup: observation-only trace produces a cleanup probe with default policy", () => {
+    const trace = HarnessTraceSchema.parse({
+      schema_version: 1,
+      observations: { cleanup: { entries: [{ path: ".DS_Store" }] } },
+    });
+    const suite = extractContractProbeSuite(trace);
+    const result = runContractProbeSuite(suite);
+    expect(result.passed).toBe(false);
+    if (result.results[0].kind !== "cleanup") {
+      throw new Error("expected cleanup");
+    }
+    expect(result.results[0].failures[0].kind).toBe("stray-sidecar");
+  });
+
+  test("media: matches per-media expectations by path", () => {
+    const trace = HarnessTraceSchema.parse({
+      schema_version: 1,
+      observations: {
+        media: [
+          {
+            path: "rendered.png",
+            headerBytes: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a],
+            width: 100,
+            height: 50,
+          },
+        ],
+      },
+      expectations: {
+        media: [
+          {
+            path: "rendered.png",
+            expectedMagicBytes: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a],
+            expectedWidth: 128,
+            expectedHeight: 64,
+          },
+        ],
+      },
+    });
+    const suite = extractContractProbeSuite(trace);
+    expect(suite.probes).toHaveLength(1);
+    const result = runContractProbeSuite(suite);
+    expect(result.passed).toBe(false);
+    if (result.results[0].kind !== "media") {
+      throw new Error("expected media");
+    }
+    // PNG header matches, but width and height disagree -> two
+    // wrong-dimensions failures.
+    expect(result.results[0].failures.map((f) => f.kind).sort()).toEqual([
+      "wrong-dimensions",
+      "wrong-dimensions",
+    ]);
+  });
+
+  test("media: observation-without-matching-expectation yields a no-op media probe", () => {
+    const trace = HarnessTraceSchema.parse({
+      schema_version: 1,
+      observations: {
+        media: [
+          { path: "extra.png", width: 100 },
+          { path: "other.png", width: 200 },
+        ],
+      },
+      expectations: {
+        media: [{ path: "other.png", expectedWidth: 200 }],
+      },
+    });
+    const suite = extractContractProbeSuite(trace);
+    expect(suite.probes).toHaveLength(2);
+    const result = runContractProbeSuite(suite);
+    // extra.png: no expectations -> passes; other.png: width matches ->
+    // passes; aggregate passes.
+    expect(result.passed).toBe(true);
+  });
+
+  test("distributed: joins ranks + cross-rank expectation into a distributed probe", () => {
+    const trace = HarnessTraceSchema.parse({
+      schema_version: 1,
+      observations: {
+        distributed: {
+          worldSize: 2,
+          ranks: [
+            { rank: 0, steps: 100, observations: { final_loss: "abc" } },
+            { rank: 1, steps: 100, observations: { final_loss: "DIFFERENT" } },
+          ],
+        },
+      },
+      expectations: {
+        distributed: { expectedWorldSize: 2, mustMatchAcrossRanks: ["final_loss"] },
+      },
+    });
+    const suite = extractContractProbeSuite(trace);
+    expect(suite.probes).toHaveLength(1);
+    const result = runContractProbeSuite(suite);
+    expect(result.passed).toBe(false);
+    if (result.results[0].kind !== "distributed") {
+      throw new Error("expected distributed");
+    }
+    expect(result.results[0].failures[0].kind).toBe("rank-divergence");
+  });
+
+  test("distributed: observation-only trace passes without cross-rank assertions", () => {
+    const trace = HarnessTraceSchema.parse({
+      schema_version: 1,
+      observations: {
+        distributed: {
+          worldSize: 1,
+          ranks: [{ rank: 0, steps: 10 }],
+        },
+      },
+    });
+    const suite = extractContractProbeSuite(trace);
+    expect(runContractProbeSuite(suite).passed).toBe(true);
+  });
+
+  test("end-to-end: a seven-probe trace round-trips through extract + runner", () => {
+    const trace = HarnessTraceSchema.parse({
+      schema_version: 1,
+      observations: {
+        terminal: { exitCode: 0, stdout: "ok", stderr: "" },
+        workdir: { presentFiles: ["a.txt"] },
+        services: [{ host: "127.0.0.1", port: 8080, protocol: "tcp" }],
+        artifacts: [{ path: "manifest.json", content: '{"name":"x"}' }],
+        cleanup: { entries: [{ path: "a.txt" }] },
+        media: [{ path: "rendered.png", width: 100, height: 50 }],
+        distributed: {
+          worldSize: 1,
+          ranks: [{ rank: 0, observations: { loss: "0.1" } }],
+        },
+      },
+      expectations: {
+        terminal: { expectedExitCode: 0 },
+        directory: { requiredFiles: ["a.txt"], allowedFiles: ["a.txt"] },
+        services: { required: [{ host: "127.0.0.1", port: 8080, protocol: "tcp" }] },
+        artifacts: [{ path: "manifest.json", requiredJsonFields: ["name"] }],
+        cleanup: {},
+        media: [{ path: "rendered.png", expectedWidth: 100, expectedHeight: 50 }],
+        distributed: { expectedWorldSize: 1, mustMatchAcrossRanks: ["loss"] },
+      },
+    });
+    const suite = extractContractProbeSuite(trace);
+    expect(suite.probes.map((p) => p.kind)).toEqual([
+      "terminal",
+      "directory",
+      "service",
+      "artifact",
+      "cleanup",
+      "media",
+      "distributed",
+    ]);
+    const result = runContractProbeSuite(suite);
+    expect(result.passed).toBe(true);
   });
 });
 

@@ -401,6 +401,8 @@ The `results` field is a discriminated union by `kind`, so TypeScript callers ca
 
 For workflows that record a run and then verify it (rather than hand-authoring a suite), `autoctx probes extract --trace <path>` synthesizes a runnable probe suite from a harness-trace JSON file. The trace bundles both `observations` (what actually happened) and optional `expectations` (what the operator declared should have happened); the extractor joins them.
 
+Coverage: all seven AC-728 probe kinds (terminal, directory, service, artifact, cleanup, media, distributed). Orphan expectations (declared without a matching observation) fail validation at parse time rather than silently producing a vacuously-passing suite.
+
 Minimal trace example:
 
 ```json
@@ -411,7 +413,18 @@ Minimal trace example:
     "terminal": { "exitCode": 0, "stdout": "All checks passed.\n", "stderr": "" },
     "workdir": { "presentFiles": ["solution.txt", "trace.log"] },
     "services": [{ "host": "127.0.0.1", "port": 8080, "protocol": "tcp" }],
-    "artifacts": [{ "path": "manifest.json", "content": "{\"name\":\"x\",\"version\":\"1.0\"}" }]
+    "artifacts": [{ "path": "manifest.json", "content": "{\"name\":\"x\"}" }],
+    "cleanup": {
+      "entries": [
+        { "path": "solution.txt" },
+        { "path": "stale.lock", "mtime": "2026-05-21T10:00:00Z" }
+      ]
+    },
+    "media": [{ "path": "rendered.png", "width": 256, "height": 128, "byteSize": 4096 }],
+    "distributed": {
+      "worldSize": 1,
+      "ranks": [{ "rank": 0, "steps": 100, "observations": { "loss": "0.1" } }]
+    }
   },
   "expectations": {
     "terminal": { "expectedExitCode": 0, "requiredStdoutPatterns": ["checks passed"] },
@@ -421,7 +434,10 @@ Minimal trace example:
       "ignoredPatterns": ["^trace\\."]
     },
     "services": { "required": [{ "host": "127.0.0.1", "port": 8080, "protocol": "tcp" }] },
-    "artifacts": [{ "path": "manifest.json", "requiredJsonFields": ["name", "version"] }]
+    "artifacts": [{ "path": "manifest.json", "requiredJsonFields": ["name"] }],
+    "cleanup": { "now": "2026-05-21T12:00:00Z", "maxLockfileAgeMs": 300000 },
+    "media": [{ "path": "rendered.png", "expectedWidth": 256, "expectedHeight": 128 }],
+    "distributed": { "expectedWorldSize": 1, "mustMatchAcrossRanks": ["loss"] }
   }
 }
 ```
@@ -433,8 +449,6 @@ autoctx probes extract --trace trace.json | autoctx probes check --suite -
 autoctx probes extract --trace trace.json --output suite.json
 autoctx probes check --suite suite.json --json
 ```
-
-Slice 7 supports the four slice-1 probe kinds (terminal, directory, service, artifact); cleanup, media, and distributed extractors land in follow-up slices once their trace formats settle.
 
 ## Provider Configuration
 
@@ -492,7 +506,7 @@ autoctx run support_triage --json
 
 # Deterministic (CI/testing)
 AUTOCONTEXT_AGENT_PROVIDER=deterministic autoctx run support_triage --json
-```
+````
 
 `ANTHROPIC_API_KEY` is the preferred Anthropic credential env var. `AUTOCONTEXT_ANTHROPIC_API_KEY` remains supported as a compatibility alias.
 
