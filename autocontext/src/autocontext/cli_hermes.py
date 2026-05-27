@@ -302,6 +302,14 @@ def register_hermes_command(
                 help="Train the pure-Python logistic-regression advisor (AC-708 slice 2a)",
             ),
         ] = False,
+        mlx: Annotated[
+            bool,
+            typer.Option(
+                "--mlx",
+                help="Train the MLX-backed logistic-regression advisor (AC-708 slice 2b; "
+                "requires `pip install autocontext[mlx]`)",
+            ),
+        ] = False,
         output: Annotated[
             Path | None,
             typer.Option(
@@ -313,7 +321,7 @@ def register_hermes_command(
             Path | None,
             typer.Option(
                 "--checkpoint",
-                help="Optional advisor-checkpoint destination (logistic only; recommend --advisor consumes it)",
+                help="Optional advisor-checkpoint destination (--logistic or --mlx only; recommend --advisor consumes it)",
             ),
         ] = None,
         json_output: Annotated[bool, typer.Option("--json", help="Output structured JSON")] = False,
@@ -324,6 +332,7 @@ def register_hermes_command(
             data=data,
             baseline=baseline,
             logistic=logistic,
+            mlx=mlx,
             output=output,
             checkpoint=checkpoint,
             json_output=json_output,

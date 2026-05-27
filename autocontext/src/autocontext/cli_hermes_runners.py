@@ -25,6 +25,11 @@ from autocontext.hermes.advisor import (
 from autocontext.hermes.curator_ingest import IngestSummary, ingest_curator_reports
 from autocontext.hermes.dataset_export import ExportSummary, export_dataset
 from autocontext.hermes.inspection import HermesInventory, inspect_hermes_home
+from autocontext.hermes.mlx_trained_advisor import (
+    HAS_MLX_ADVISOR,
+    save_mlx_advisor,
+    train_mlx_logistic,
+)
 from autocontext.hermes.recommendations import Recommendation, recommend
 from autocontext.hermes.redaction import RedactionPolicy, compile_user_patterns
 from autocontext.hermes.references import list_references, render_reference
@@ -394,6 +399,7 @@ def run_hermes_train_advisor_command(
     data: Path,
     baseline: bool,
     logistic: bool,
+    mlx: bool,
     output: Path | None,
     checkpoint: Path | None,
     json_output: bool,
@@ -403,10 +409,9 @@ def run_hermes_train_advisor_command(
 ) -> None:
     """Train and evaluate a Hermes curator advisor.
 
-    AC-708 slice 1 shipped ``--baseline``; AC-708 slice 2a adds the
-    pure-Python ``--logistic`` trained backend (closes the
-    AC-705 → AC-708 → AC-709 loop end-to-end). Exactly one of
-    ``--baseline`` / ``--logistic`` must be passed.
+    Backends: ``--baseline`` (slice 1, majority class), ``--logistic``
+    (slice 2a, pure-Python multinomial LR), ``--mlx`` (slice 2b, same
+    LR trained on MLX). Exactly one must be passed.
     """
 
     import json as _json
@@ -446,14 +451,31 @@ def run_hermes_train_advisor_command(
             console.print(f"[red]{message}[/red]")
         raise typer.Exit(code=1)
 
-    # AC-708 slice 2a: exactly one backend must be picked. Neither
-    # silently falling through to baseline (would hide intent) nor
-    # accepting both (ambiguous which to write to --checkpoint).
-    if baseline == logistic:
+    # AC-708 slices 2a/2b: exactly one backend must be picked.
+    # Neither silently falling through to baseline (would hide
+    # intent) nor accepting more than one (ambiguous which to
+    # write to --checkpoint).
+    selected = sum(1 for flag in (baseline, logistic, mlx) if flag)
+    if selected != 1:
         message = (
-            "exactly one of --baseline or --logistic must be passed"
-            if not baseline and not logistic
-            else "--baseline and --logistic are mutually exclusive"
+            "exactly one of --baseline, --logistic, or --mlx must be passed"
+            if selected == 0
+            else "--baseline, --logistic, and --mlx are mutually exclusive"
+        )
+        if json_output:
+            write_json_stderr(message)
+        else:
+            console.print(f"[red]{message}[/red]")
+        raise typer.Exit(code=1)
+
+    # AC-708 slice 2b: surface a clear error when --mlx is requested
+    # without the optional MLX dependency, rather than crashing inside
+    # an opaque ImportError mid-training.
+    if mlx and not HAS_MLX_ADVISOR:
+        message = (
+            "MLX is not installed; install the `mlx` extra "
+            "(e.g. `uv pip install autocontext[mlx]`) to use --mlx, "
+            "or fall back to --logistic for the pure-Python backend"
         )
         if json_output:
             write_json_stderr(message)
@@ -487,7 +509,7 @@ def run_hermes_train_advisor_command(
         # Baselines don't need a checkpoint; the majority label is in
         # the metrics payload.
         summary_first = f"majority={baseline_advisor.majority_label!r}"
-    else:
+    elif logistic:
         trained = train_logistic(examples)
         metrics = evaluate(trained, examples)
         payload = {
@@ -505,6 +527,28 @@ def run_hermes_train_advisor_command(
             payload["checkpoint_path"] = str(checkpoint)
         advisor_kind = "logistic_regression"
         summary_first = f"labels={list(trained.labels)}"
+    else:
+        # AC-708 slice 2b: MLX-trained logistic regression. Same JSON
+        # checkpoint schema as slice 2a with a backend-specific
+        # ``kind`` so audits can tell which backend produced the file.
+        trained = train_mlx_logistic(examples)
+        metrics = evaluate(trained, examples)
+        payload = {
+            "advisor_kind": "mlx_logistic_regression",
+            "labels": list(trained.labels),
+            "label_counts": dict(trained.label_counts),
+            "feature_names": list(trained.feature_names),
+            "trained_on": trained.trained_on,
+            "epochs": trained.epochs,
+            "learning_rate": trained.learning_rate,
+            "backend": "mlx",
+            "metrics": metrics.to_dict(),
+        }
+        if checkpoint is not None:
+            save_mlx_advisor(trained, checkpoint)
+            payload["checkpoint_path"] = str(checkpoint)
+        advisor_kind = "mlx_logistic_regression"
+        summary_first = f"labels={list(trained.labels)} backend=mlx"
 
     if output is not None:
         output.parent.mkdir(parents=True, exist_ok=True)

@@ -43,6 +43,7 @@ from autocontext.hermes.advisor import (
     train_baseline,
 )
 from autocontext.hermes.trained_advisor import (
+    _FEATURE_NAMES,  # noqa: PLC2701 - canonical feature list for checkpoint fixture
     LogisticRegressionAdvisor,
     load_advisor,
     save_advisor,
@@ -222,15 +223,56 @@ def test_checkpoint_has_stable_schema(tmp_path: Path) -> None:
 
 
 def test_load_advisor_rejects_unknown_kind(tmp_path: Path) -> None:
-    """A checkpoint with `kind != "logistic_regression"` must raise so
-    a future MLX/CUDA backend cannot silently load as logistic."""
+    """A checkpoint with a `kind` outside the accepted set must raise.
+    Accepted kinds today: `logistic_regression` (slice 2a),
+    `mlx_logistic_regression` (slice 2b), `cuda_logistic_regression`
+    (slice 2c, reserved). Anything else fails fast."""
     path = tmp_path / "advisor.json"
     path.write_text(
-        json.dumps({"kind": "mlx_neural_net", "version": 1, "labels": [], "feature_names": [], "weights": [], "intercepts": []}),
+        json.dumps(
+            {
+                "kind": "mlx_neural_net",  # not in accepted set
+                "version": 1,
+                "labels": [],
+                "feature_names": [],
+                "weights": [],
+                "intercepts": [],
+            }
+        ),
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="unknown advisor kind"):
         load_advisor(path)
+
+
+def test_load_advisor_accepts_mlx_kind(tmp_path: Path) -> None:
+    """AC-708 slice 2b: a checkpoint with `kind: "mlx_logistic_regression"`
+    must load as a regular :class:`LogisticRegressionAdvisor`. Inference
+    math is identical to slice 2a; only the training backend differs, so
+    the loaded type is uniform across backends and `recommend --advisor`
+    works against either checkpoint."""
+    path = tmp_path / "mlx-advisor.json"
+    path.write_text(
+        json.dumps(
+            {
+                "kind": "mlx_logistic_regression",
+                "version": 1,
+                "labels": ["consolidated", "pruned"],
+                "feature_names": list(_FEATURE_NAMES),
+                "weights": [[0.0] * len(_FEATURE_NAMES), [0.0] * len(_FEATURE_NAMES)],
+                "intercepts": [0.0, 0.0],
+                "trained_on": 10,
+                "seed": 0,
+                "epochs": 50,
+                "learning_rate": 0.5,
+                "backend": "mlx",
+            }
+        ),
+        encoding="utf-8",
+    )
+    loaded = load_advisor(path)
+    assert isinstance(loaded, LogisticRegressionAdvisor)
+    assert loaded.labels == ("consolidated", "pruned")
 
 
 def test_load_advisor_rejects_missing_file(tmp_path: Path) -> None:

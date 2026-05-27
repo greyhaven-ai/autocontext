@@ -49,6 +49,18 @@ from autocontext.hermes.advisor import (
 )
 
 _CHECKPOINT_KIND = "logistic_regression"
+# Accepted kinds at load time. Slice 2a wrote ``logistic_regression``;
+# slice 2b (MLX) and slice 2c (CUDA) use backend-specific kinds because
+# the JSON schema is identical and inference math is identical, only
+# the training backend differs. The kind stays in the file for audit;
+# loaded type is always :class:`LogisticRegressionAdvisor`.
+_ACCEPTED_CHECKPOINT_KINDS = frozenset(
+    {
+        "logistic_regression",
+        "mlx_logistic_regression",
+        "cuda_logistic_regression",
+    }
+)
 _CHECKPOINT_VERSION = 1
 
 # Stable categorical value lists so the feature encoding is the same
@@ -258,8 +270,8 @@ def load_advisor(path: Path) -> LogisticRegressionAdvisor:
     except json.JSONDecodeError as err:
         raise ValueError(f"invalid advisor checkpoint at {path}: {err.msg}") from err
     kind = payload.get("kind")
-    if kind != _CHECKPOINT_KIND:
-        raise ValueError(f"unknown advisor kind {kind!r} at {path}; expected {_CHECKPOINT_KIND!r}")
+    if kind not in _ACCEPTED_CHECKPOINT_KINDS:
+        raise ValueError(f"unknown advisor kind {kind!r} at {path}; expected one of {sorted(_ACCEPTED_CHECKPOINT_KINDS)}")
     labels = tuple(payload["labels"])
     feature_names = tuple(payload["feature_names"])
     weights = tuple(tuple(row) for row in payload["weights"])

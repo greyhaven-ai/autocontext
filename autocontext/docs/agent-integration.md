@@ -330,12 +330,23 @@ autoctx hermes train-advisor \
 
 # Train the pure-Python logistic-regression advisor (AC-708 slice 2a)
 # and persist a checkpoint for later --advisor loading. Exactly one of
-# --baseline / --logistic must be passed.
+# --baseline / --logistic / --mlx must be passed.
 autoctx hermes train-advisor \
   --data training/hermes-curator-decisions.jsonl \
   --logistic \
   --output training/advisor-metrics.json \
   --checkpoint training/curator-advisor.json --json
+
+# Same model trained via MLX (AC-708 slice 2b; Apple-silicon GPU
+# backend). Requires `pip install autocontext[mlx]`. Same JSON
+# checkpoint schema as --logistic with a backend-specific `kind` so
+# audits can tell which backend produced the file; either kind loads
+# through `recommend --advisor`.
+autoctx hermes train-advisor \
+  --data training/hermes-curator-decisions.jsonl \
+  --mlx \
+  --output training/advisor-metrics.json \
+  --checkpoint training/mlx-advisor.json --json
 
 # Emit read-only recommendations against a live Hermes home (AC-709).
 # --baseline-from trains the slice-1 baseline on the fly; --advisor
@@ -433,24 +444,35 @@ needs (`session_id`, `started_at`, `ended_at`, `agent_id`,
 missing optional columns are tolerated. WAL/SHM sidecars are not
 required. The importer never writes to the Hermes DB.
 
-`train-advisor` flags (AC-708 slices 1 + 2a):
+`train-advisor` flags (AC-708 slices 1 + 2a + 2b):
 
 - `--data <jsonl>`: AC-705 `curator-decisions` export to train and
   evaluate on. Required.
 - `--baseline`: train the majority-class baseline advisor (slice 1).
 - `--logistic`: train the pure-Python multinomial logistic-regression
   advisor (slice 2a; gradient descent over the AC-705 feature set,
-  no numpy / GPU dependency). Exactly one of `--baseline` / `--logistic`
-  must be passed.
+  no numpy / GPU dependency).
+- `--mlx`: train the MLX-backed logistic-regression advisor (slice 2b;
+  same model architecture as `--logistic` but the gradient descent
+  runs on MLX so the matrix multiplies can be GPU-accelerated on
+  Apple silicon). Requires `pip install autocontext[mlx]`. The
+  resulting JSON checkpoint uses `kind: "mlx_logistic_regression"`
+  - `backend: "mlx"` so audits can tell which backend produced a
+    file; either kind loads through `recommend --advisor`.
+- Exactly one of `--baseline` / `--logistic` / `--mlx` must be passed
+  (mutually exclusive). Passing `--mlx` without the optional MLX
+  extra surfaces a loud, actionable error rather than crashing
+  mid-training.
 - `--output <json>`: optional metrics destination on disk; `--json`
   still prints to stdout.
-- `--checkpoint <json>`: when `--logistic` is set, persist the trained
-  weights to this path. The checkpoint is what `autoctx hermes
-recommend --advisor <path>` loads at inference time. Ignored under
-  `--baseline` (the majority label already ships in the metrics
-  payload). Same-file guards reject `--checkpoint` equal to either
-  `--data` (would clobber the source dataset) or `--output` (would
-  clobber the metrics payload mid-flight).
+- `--checkpoint <json>`: when `--logistic` or `--mlx` is set, persist
+  the trained weights to this path. The checkpoint is what
+  `autoctx hermes recommend --advisor <path>` loads at inference
+  time. Ignored under `--baseline` (the majority label already
+  ships in the metrics payload). Same-file guards reject
+  `--checkpoint` equal to either `--data` (would clobber the source
+  dataset) or `--output` (would clobber the metrics payload
+  mid-flight).
 
 Loader posture: per-line tolerant (malformed JSON, missing fields,
 unknown labels skip the row). Metrics surface `accuracy`, per-label
