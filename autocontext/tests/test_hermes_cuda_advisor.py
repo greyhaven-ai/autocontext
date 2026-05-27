@@ -175,20 +175,24 @@ def test_load_advisor_accepts_cuda_kind(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(not HAS_CUDA_ADVISOR, reason="torch not installed")
-def test_train_cuda_logistic_returns_a_LogisticRegressionAdvisor() -> None:
+def test_train_cuda_logistic_returns_advisor_and_device() -> None:
+    """PR #996 review (P2): the trained advisor and the device used for
+    training are returned as a tuple so the audit `device` field in
+    save_cuda_advisor reflects where training actually ran."""
     examples = _separable_dataset()
-    trained = train_cuda_logistic(examples, epochs=50, seed=0)
+    trained, device = train_cuda_logistic(examples, epochs=50, seed=0)
     assert isinstance(trained, LogisticRegressionAdvisor)
     assert trained.labels == ("consolidated", "pruned")
     assert len(trained.weights) == 2
     assert all(len(row) == len(trained.feature_names) for row in trained.weights)
+    assert device in {"cuda", "cpu"}
 
 
 @pytest.mark.skipif(not HAS_CUDA_ADVISOR, reason="torch not installed")
 def test_cuda_trained_advisor_beats_baseline_on_separable_data() -> None:
     examples = _separable_dataset()
     baseline = train_baseline(examples)
-    cuda_advisor = train_cuda_logistic(examples, epochs=100, seed=0)
+    cuda_advisor, _ = train_cuda_logistic(examples, epochs=100, seed=0)
     baseline_metrics = evaluate(baseline, examples)
     cuda_metrics = evaluate(cuda_advisor, examples)
     assert cuda_metrics.accuracy > baseline_metrics.accuracy
@@ -197,18 +201,46 @@ def test_cuda_trained_advisor_beats_baseline_on_separable_data() -> None:
 @pytest.mark.skipif(not HAS_CUDA_ADVISOR, reason="torch not installed")
 def test_save_load_cuda_advisor_round_trip(tmp_path: Path) -> None:
     examples = _separable_dataset()
-    trained = train_cuda_logistic(examples, epochs=50, seed=0)
+    trained, device = train_cuda_logistic(examples, epochs=50, seed=0)
     path = tmp_path / "cuda-advisor.json"
-    save_cuda_advisor(trained, path)
+    save_cuda_advisor(trained, path, device=device)
     payload = json.loads(path.read_text(encoding="utf-8"))
     assert payload["kind"] == CUDA_CHECKPOINT_KIND
     assert payload["backend"] == "cuda"
-    # `device` is "cuda" or "cpu" depending on the host; both are valid.
-    assert payload["device"] in {"cuda", "cpu"}
+    assert payload["device"] == device  # reflects training device, not save-host device
     loaded = load_advisor(path)
     assert isinstance(loaded, LogisticRegressionAdvisor)
     for ex in examples:
         assert trained.predict(ex.features) == loaded.predict(ex.features)
+
+
+@pytest.mark.skipif(not HAS_CUDA_ADVISOR, reason="torch not installed")
+def test_save_cuda_advisor_rejects_unknown_device(tmp_path: Path) -> None:
+    """PR #996 review (P2): `device` must be `cuda` or `cpu`; passing
+    anything else is rejected so the audit contract stays narrow."""
+    examples = _separable_dataset()
+    trained, _ = train_cuda_logistic(examples, epochs=10, seed=0)
+    path = tmp_path / "bad.json"
+    with pytest.raises(ValueError, match="unexpected training device"):
+        save_cuda_advisor(trained, path, device="rocm")
+
+
+@pytest.mark.skipif(not HAS_CUDA_ADVISOR, reason="torch not installed")
+def test_save_cuda_advisor_records_training_device_not_save_host(tmp_path: Path) -> None:
+    """PR #996 review (P2): the audit `device` field reflects the
+    device passed in (i.e. where training ran), not whatever device
+    happens to be available at save time. Pass an explicit ``device``
+    that disagrees with the live host and confirm the file records
+    the passed value."""
+    examples = _separable_dataset()
+    trained, _ = train_cuda_logistic(examples, epochs=10, seed=0)
+    # Force the audit value to "cpu" regardless of host availability;
+    # the saver must honor what the caller declared rather than
+    # recomputing torch.cuda.is_available().
+    path = tmp_path / "advisor.json"
+    save_cuda_advisor(trained, path, device="cpu")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["device"] == "cpu"
 
 
 @pytest.mark.skipif(not HAS_CUDA_ADVISOR, reason="torch not installed")

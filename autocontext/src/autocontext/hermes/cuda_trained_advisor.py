@@ -82,7 +82,7 @@ def train_cuda_logistic(
     learning_rate: float = 0.5,
     l2: float = 0.001,
     seed: int = 0,
-) -> LogisticRegressionAdvisor:
+) -> tuple[LogisticRegressionAdvisor, str]:
     """Train a multinomial logistic regression via PyTorch gradient descent.
 
     Same algorithm and hyperparameters as
@@ -91,9 +91,16 @@ def train_cuda_logistic(
     but the inner loop runs on PyTorch tensors so the matrix multiplies
     can be GPU-accelerated when ``torch.cuda.is_available()``. Falls
     back transparently to CPU torch when CUDA is not available.
-    Returns a
-    :class:`~autocontext.hermes.trained_advisor.LogisticRegressionAdvisor`
-    so the loaded checkpoint type stays uniform across backends.
+
+    Returns a tuple ``(advisor, device)`` where ``advisor`` is the
+    trained :class:`~autocontext.hermes.trained_advisor.LogisticRegressionAdvisor`
+    (the same dataclass slice 2a / 2b return, so the loaded
+    checkpoint type stays uniform across backends) and ``device`` is
+    ``"cuda"`` or ``"cpu"`` reflecting where the training actually
+    ran. PR #996 review (P2): the device must come from training,
+    not from ``torch.cuda.is_available()`` at save time, otherwise
+    a checkpoint trained on CUDA could be saved later from a
+    CPU-only host (or vice versa) and the audit record would lie.
 
     Raises :class:`ValueError` when ``examples`` is empty;
     :class:`RuntimeError` when torch is not installed.
@@ -157,7 +164,7 @@ def train_cuda_logistic(
     for ex in examples:
         label_counts[ex.label] = label_counts.get(ex.label, 0) + 1
 
-    return LogisticRegressionAdvisor(
+    advisor = LogisticRegressionAdvisor(
         labels=labels,
         feature_names=_FEATURE_NAMES,
         weights=weights_py,
@@ -168,25 +175,30 @@ def train_cuda_logistic(
         learning_rate=learning_rate,
         label_counts=label_counts,
     )
+    return advisor, device.type
 
 
-def save_cuda_advisor(advisor: LogisticRegressionAdvisor, path: Path) -> None:
+def save_cuda_advisor(
+    advisor: LogisticRegressionAdvisor,
+    path: Path,
+    *,
+    device: str,
+) -> None:
     """Persist ``advisor`` to JSON with the CUDA kind discriminator.
 
     Same JSON schema as
     :func:`~autocontext.hermes.trained_advisor.save_advisor` modulo the
     ``kind`` field, an additional ``backend`` audit field, and a
-    ``device`` field that records whether the training run actually
-    landed on a CUDA device or fell back to CPU torch.
-    """
-    device_str = "cpu"
-    if HAS_CUDA_ADVISOR:
-        try:
-            import torch
+    ``device`` field that records where training actually ran (the
+    second element of the tuple returned by :func:`train_cuda_logistic`).
 
-            device_str = "cuda" if torch.cuda.is_available() else "cpu"
-        except ImportError:
-            pass
+    PR #996 review (P2): the ``device`` argument is required so the
+    audit record reflects the host that trained the model, not
+    whatever device happens to be available at save time on a
+    different host.
+    """
+    if device not in {"cuda", "cpu"}:
+        raise ValueError(f"unexpected training device {device!r}; expected 'cuda' or 'cpu'")
     payload: dict[str, Any] = {
         "kind": CUDA_CHECKPOINT_KIND,
         "version": _CHECKPOINT_VERSION,
@@ -200,7 +212,7 @@ def save_cuda_advisor(advisor: LogisticRegressionAdvisor, path: Path) -> None:
         "learning_rate": advisor.learning_rate,
         "label_counts": dict(advisor.label_counts),
         "backend": "cuda",
-        "device": device_str,
+        "device": device,
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")

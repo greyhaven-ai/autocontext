@@ -503,23 +503,30 @@ def run_hermes_train_advisor_command(
         summary_first = f"majority={baseline_advisor.majority_label!r}"
     else:
         # AC-708 slices 2a/2b/2c: the three trained backends share an
-        # identical JSON payload shape modulo `advisor_kind` and an
-        # optional `backend` audit field. Dispatch on which flag was
-        # set, then build the payload uniformly.
+        # identical JSON payload shape modulo `advisor_kind`, an
+        # optional `backend` audit field, and (for CUDA only) a
+        # `device` audit field that records where training actually
+        # ran. Dispatch on which flag was set, then build the payload
+        # uniformly.
+        backend_label: str | None
+        # The saver is bound late so the CUDA branch can capture
+        # `training_device` and thread it into save_cuda_advisor;
+        # PR #996 review (P2): the device must come from training,
+        # not from torch.cuda.is_available() at save time.
         if logistic:
             trained = train_logistic(examples)
             advisor_kind = "logistic_regression"
-            saver = save_advisor
-            backend_label: str | None = None
+            saver: Any = save_advisor
+            backend_label = None
         elif mlx:
             trained = train_mlx_logistic(examples)
             advisor_kind = "mlx_logistic_regression"
             saver = save_mlx_advisor
             backend_label = "mlx"
         else:  # cuda
-            trained = train_cuda_logistic(examples)
+            trained, training_device = train_cuda_logistic(examples)
             advisor_kind = "cuda_logistic_regression"
-            saver = save_cuda_advisor
+            saver = lambda a, p: save_cuda_advisor(a, p, device=training_device)  # noqa: E731
             backend_label = "cuda"
         metrics = evaluate(trained, examples)
         payload = {
@@ -534,6 +541,8 @@ def run_hermes_train_advisor_command(
         }
         if backend_label is not None:
             payload["backend"] = backend_label
+        if cuda:
+            payload["device"] = training_device
         if checkpoint is not None:
             saver(trained, checkpoint)
             payload["checkpoint_path"] = str(checkpoint)
