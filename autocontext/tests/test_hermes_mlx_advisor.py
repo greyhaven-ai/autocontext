@@ -76,9 +76,11 @@ def test_require_mlx_message_is_actionable() -> None:
 
 
 def test_cli_train_advisor_three_way_mutex_requires_one_backend(tmp_path: Path) -> None:
-    """AC-708 slice 2b: --baseline / --logistic / --mlx are mutually
-    exclusive and exactly one must be passed. Passing zero or two
-    surfaces a loud failure rather than silently picking a default."""
+    """AC-708 slice 2b: the slice extended the slice-1/2a two-flag mutex
+    to a three-way (--baseline / --logistic / --mlx). Slice 2c extended
+    it again to four-way; this test pins the "at least one backend must
+    be passed" invariant, accepting either wording so the test stays
+    stable as future slices add CUDA / future backends."""
     src = tmp_path / "data.jsonl"
     src.write_text(
         json.dumps(
@@ -112,7 +114,8 @@ def test_cli_train_advisor_three_way_mutex_requires_one_backend(tmp_path: Path) 
     # No flag set -> require exactly one.
     result = CliRunner().invoke(app, ["hermes", "train-advisor", "--data", str(src), "--json"])
     assert result.exit_code != 0
-    assert "exactly one of --baseline, --logistic, or --mlx" in result.output
+    assert "exactly one of --baseline, --logistic" in result.output
+    assert "--mlx" in result.output
 
 
 def test_cli_train_advisor_baseline_and_logistic_are_mutex(tmp_path: Path) -> None:

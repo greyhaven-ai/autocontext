@@ -40,6 +40,7 @@ mcp = ["mcp>=1.0.0"]
 agent-sdk = ["claude-agent-sdk>=0.1.0"]
 monty = ["pydantic-monty>=0.0.7"]
 mlx = ["mlx>=0.30.0", "rustbpe>=0.1.0", "tiktoken>=0.11.0", "safetensors>=0.4.0"]
+cuda = ["torch>=2.0.0"]
 openai = ["openai>=1.0.0"]
 all = ["autocontext[mcp,agent-sdk,monty,openai]"]
 
@@ -102,5 +103,5 @@ warn_unused_configs = true
 exclude = "(^tests/)|(^migrations/)"
 
 [[tool.mypy.overrides]]
-module = ["pydantic_monty", "mcp.*", "claude_agent_sdk", "mlx", "mlx.*", "rustbpe", "tiktoken", "safetensors", "safetensors.*", "numpy", "numpy.*"]
+module = ["pydantic_monty", "mcp.*", "claude_agent_sdk", "mlx", "mlx.*", "rustbpe", "tiktoken", "safetensors", "safetensors.*", "numpy", "numpy.*", "torch", "torch.*"]
 ignore_missing_imports = true

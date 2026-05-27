@@ -348,6 +348,18 @@ autoctx hermes train-advisor \
   --output training/advisor-metrics.json \
   --checkpoint training/mlx-advisor.json --json
 
+# Same model trained via PyTorch with CUDA when available (AC-708
+# slice 2c; NVIDIA GPU backend, falls back transparently to CPU
+# torch when CUDA is not available -- the `device` audit field in
+# the checkpoint records which path actually ran). Requires
+# `pip install autocontext[cuda]`. Same JSON schema as --logistic
+# / --mlx with `kind: "cuda_logistic_regression"`.
+autoctx hermes train-advisor \
+  --data training/hermes-curator-decisions.jsonl \
+  --cuda \
+  --output training/advisor-metrics.json \
+  --checkpoint training/cuda-advisor.json --json
+
 # Emit read-only recommendations against a live Hermes home (AC-709).
 # --baseline-from trains the slice-1 baseline on the fly; --advisor
 # loads a previously trained checkpoint (e.g. the slice-2a logistic
@@ -444,7 +456,7 @@ needs (`session_id`, `started_at`, `ended_at`, `agent_id`,
 missing optional columns are tolerated. WAL/SHM sidecars are not
 required. The importer never writes to the Hermes DB.
 
-`train-advisor` flags (AC-708 slices 1 + 2a + 2b):
+`train-advisor` flags (AC-708 slices 1 + 2a + 2b + 2c):
 
 - `--data <jsonl>`: AC-705 `curator-decisions` export to train and
   evaluate on. Required.
@@ -459,17 +471,26 @@ required. The importer never writes to the Hermes DB.
   resulting JSON checkpoint uses `kind: "mlx_logistic_regression"`
   - `backend: "mlx"` so audits can tell which backend produced a
     file; either kind loads through `recommend --advisor`.
-- Exactly one of `--baseline` / `--logistic` / `--mlx` must be passed
-  (mutually exclusive). Passing `--mlx` without the optional MLX
-  extra surfaces a loud, actionable error rather than crashing
-  mid-training.
+- `--cuda`: train the PyTorch/CUDA-backed logistic-regression advisor
+  (slice 2c; same model architecture as `--logistic` / `--mlx` but
+  the gradient descent runs on PyTorch tensors so the matrix
+  multiplies can be GPU-accelerated on NVIDIA hardware). Falls back
+  transparently to CPU torch when `torch.cuda.is_available()` is
+  False; the resulting checkpoint records `kind:
+"cuda_logistic_regression"`, `backend: "cuda"`, plus a `device`
+  audit field that says whether the run actually landed on CUDA or
+  fell back to CPU. Requires `pip install autocontext[cuda]`.
+- Exactly one of `--baseline` / `--logistic` / `--mlx` / `--cuda`
+  must be passed (mutually exclusive). Passing `--mlx` or `--cuda`
+  without the matching optional extra surfaces a loud actionable
+  error rather than crashing mid-training.
 - `--output <json>`: optional metrics destination on disk; `--json`
   still prints to stdout.
-- `--checkpoint <json>`: when `--logistic` or `--mlx` is set, persist
-  the trained weights to this path. The checkpoint is what
-  `autoctx hermes recommend --advisor <path>` loads at inference
-  time. Ignored under `--baseline` (the majority label already
-  ships in the metrics payload). Same-file guards reject
+- `--checkpoint <json>`: when `--logistic`, `--mlx`, or `--cuda` is
+  set, persist the trained weights to this path. The checkpoint is
+  what `autoctx hermes recommend --advisor <path>` loads at
+  inference time. Ignored under `--baseline` (the majority label
+  already ships in the metrics payload). Same-file guards reject
   `--checkpoint` equal to either `--data` (would clobber the source
   dataset) or `--output` (would clobber the metrics payload
   mid-flight).

@@ -310,6 +310,14 @@ def register_hermes_command(
                 "requires `pip install autocontext[mlx]`)",
             ),
         ] = False,
+        cuda: Annotated[
+            bool,
+            typer.Option(
+                "--cuda",
+                help="Train the PyTorch/CUDA-backed logistic-regression advisor (AC-708 slice 2c; "
+                "requires `pip install autocontext[cuda]`; falls back to CPU torch when CUDA is unavailable)",
+            ),
+        ] = False,
         output: Annotated[
             Path | None,
             typer.Option(
@@ -321,7 +329,9 @@ def register_hermes_command(
             Path | None,
             typer.Option(
                 "--checkpoint",
-                help="Optional advisor-checkpoint destination (--logistic or --mlx only; recommend --advisor consumes it)",
+                help=(
+                    "Optional advisor-checkpoint destination (--logistic / --mlx / --cuda only; recommend --advisor consumes it)"
+                ),
             ),
         ] = None,
         json_output: Annotated[bool, typer.Option("--json", help="Output structured JSON")] = False,
@@ -333,6 +343,7 @@ def register_hermes_command(
             baseline=baseline,
             logistic=logistic,
             mlx=mlx,
+            cuda=cuda,
             output=output,
             checkpoint=checkpoint,
             json_output=json_output,

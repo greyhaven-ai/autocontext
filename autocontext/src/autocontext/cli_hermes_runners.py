@@ -22,6 +22,11 @@ from autocontext.hermes.advisor import (
     load_curator_examples,
     train_baseline,
 )
+from autocontext.hermes.cuda_trained_advisor import (
+    HAS_CUDA_ADVISOR,
+    save_cuda_advisor,
+    train_cuda_logistic,
+)
 from autocontext.hermes.curator_ingest import IngestSummary, ingest_curator_reports
 from autocontext.hermes.dataset_export import ExportSummary, export_dataset
 from autocontext.hermes.inspection import HermesInventory, inspect_hermes_home
@@ -400,6 +405,7 @@ def run_hermes_train_advisor_command(
     baseline: bool,
     logistic: bool,
     mlx: bool,
+    cuda: bool,
     output: Path | None,
     checkpoint: Path | None,
     json_output: bool,
@@ -411,19 +417,25 @@ def run_hermes_train_advisor_command(
 
     Backends: ``--baseline`` (slice 1, majority class), ``--logistic``
     (slice 2a, pure-Python multinomial LR), ``--mlx`` (slice 2b, same
-    LR trained on MLX). Exactly one must be passed.
+    LR trained on MLX), ``--cuda`` (slice 2c, same LR trained on
+    PyTorch with CUDA when available). Exactly one must be passed.
     """
 
     import json as _json
 
-    # PR #972 review (P2): refuse to overwrite the source dataset.
-    if output is not None and _same_file(data, output):
-        message = f"output {output!s} resolves to the same file as --data {data!s}; refusing to overwrite the source dataset"
+    def _fail(message: str) -> None:
+        # Single emit-and-exit helper for the repeated "json -> stderr,
+        # else -> console.print(red)" pattern. Keeps the runner under the
+        # 800-line module guard while four backends share the file.
         if json_output:
             write_json_stderr(message)
         else:
             console.print(f"[red]{message}[/red]")
         raise typer.Exit(code=1)
+
+    # PR #972 review (P2): refuse to overwrite the source dataset.
+    if output is not None and _same_file(data, output):
+        _fail(f"output {output!s} resolves to the same file as --data {data!s}; refusing to overwrite the source dataset")
 
     # PR #980 review (P2): the checkpoint path is a separate writable
     # surface from --output, so it needs its own collision guards.
@@ -432,65 +444,45 @@ def run_hermes_train_advisor_command(
     # JSON metrics payload mid-flight. Both fail loud before training
     # touches disk.
     if checkpoint is not None and _same_file(data, checkpoint):
-        message = (
-            f"checkpoint {checkpoint!s} resolves to the same file as --data {data!s}; refusing to overwrite the source dataset"
-        )
-        if json_output:
-            write_json_stderr(message)
-        else:
-            console.print(f"[red]{message}[/red]")
-        raise typer.Exit(code=1)
+        _fail(f"checkpoint {checkpoint!s} resolves to the same file as --data {data!s}; refusing to overwrite the source dataset")
     if checkpoint is not None and output is not None and _same_file(output, checkpoint):
-        message = (
+        _fail(
             f"checkpoint {checkpoint!s} resolves to the same file as --output {output!s}; "
             "refusing to overwrite the metrics output"
         )
-        if json_output:
-            write_json_stderr(message)
-        else:
-            console.print(f"[red]{message}[/red]")
-        raise typer.Exit(code=1)
 
-    # AC-708 slices 2a/2b: exactly one backend must be picked.
-    # Neither silently falling through to baseline (would hide
-    # intent) nor accepting more than one (ambiguous which to
-    # write to --checkpoint).
-    selected = sum(1 for flag in (baseline, logistic, mlx) if flag)
+    # AC-708 slices 2a/2b/2c: exactly one backend must be picked.
+    # Neither silently falling through to baseline (would hide intent)
+    # nor accepting more than one (ambiguous which to write to
+    # --checkpoint).
+    selected = sum(1 for flag in (baseline, logistic, mlx, cuda) if flag)
     if selected != 1:
-        message = (
-            "exactly one of --baseline, --logistic, or --mlx must be passed"
-            if selected == 0
-            else "--baseline, --logistic, and --mlx are mutually exclusive"
-        )
-        if json_output:
-            write_json_stderr(message)
+        if selected == 0:
+            _fail("exactly one of --baseline, --logistic, --mlx, or --cuda must be passed")
         else:
-            console.print(f"[red]{message}[/red]")
-        raise typer.Exit(code=1)
+            _fail("--baseline, --logistic, --mlx, and --cuda are mutually exclusive")
 
     # AC-708 slice 2b: surface a clear error when --mlx is requested
     # without the optional MLX dependency, rather than crashing inside
     # an opaque ImportError mid-training.
     if mlx and not HAS_MLX_ADVISOR:
-        message = (
+        _fail(
             "MLX is not installed; install the `mlx` extra "
             "(e.g. `uv pip install autocontext[mlx]`) to use --mlx, "
             "or fall back to --logistic for the pure-Python backend"
         )
-        if json_output:
-            write_json_stderr(message)
-        else:
-            console.print(f"[red]{message}[/red]")
-        raise typer.Exit(code=1)
+
+    # AC-708 slice 2c: same posture for the CUDA backend.
+    if cuda and not HAS_CUDA_ADVISOR:
+        _fail(
+            "PyTorch is not installed; install the `cuda` extra "
+            "(e.g. `uv pip install autocontext[cuda]`) to use --cuda, "
+            "or fall back to --logistic for the pure-Python backend"
+        )
 
     examples = load_curator_examples(data)
     if not examples:
-        message = f"no labeled examples loaded from {data}"
-        if json_output:
-            write_json_stderr(message)
-        else:
-            console.print(f"[red]{message}[/red]")
-        raise typer.Exit(code=1)
+        _fail(f"no labeled examples loaded from {data}")
 
     advisor_kind: str
     if baseline:
@@ -509,46 +501,47 @@ def run_hermes_train_advisor_command(
         # Baselines don't need a checkpoint; the majority label is in
         # the metrics payload.
         summary_first = f"majority={baseline_advisor.majority_label!r}"
-    elif logistic:
-        trained = train_logistic(examples)
-        metrics = evaluate(trained, examples)
-        payload = {
-            "advisor_kind": "logistic_regression",
-            "labels": list(trained.labels),
-            "label_counts": dict(trained.label_counts),
-            "feature_names": list(trained.feature_names),
-            "trained_on": trained.trained_on,
-            "epochs": trained.epochs,
-            "learning_rate": trained.learning_rate,
-            "metrics": metrics.to_dict(),
-        }
-        if checkpoint is not None:
-            save_advisor(trained, checkpoint)
-            payload["checkpoint_path"] = str(checkpoint)
-        advisor_kind = "logistic_regression"
-        summary_first = f"labels={list(trained.labels)}"
     else:
-        # AC-708 slice 2b: MLX-trained logistic regression. Same JSON
-        # checkpoint schema as slice 2a with a backend-specific
-        # ``kind`` so audits can tell which backend produced the file.
-        trained = train_mlx_logistic(examples)
+        # AC-708 slices 2a/2b/2c: the three trained backends share an
+        # identical JSON payload shape modulo `advisor_kind` and an
+        # optional `backend` audit field. Dispatch on which flag was
+        # set, then build the payload uniformly.
+        if logistic:
+            trained = train_logistic(examples)
+            advisor_kind = "logistic_regression"
+            saver = save_advisor
+            backend_label: str | None = None
+        elif mlx:
+            trained = train_mlx_logistic(examples)
+            advisor_kind = "mlx_logistic_regression"
+            saver = save_mlx_advisor
+            backend_label = "mlx"
+        else:  # cuda
+            trained = train_cuda_logistic(examples)
+            advisor_kind = "cuda_logistic_regression"
+            saver = save_cuda_advisor
+            backend_label = "cuda"
         metrics = evaluate(trained, examples)
         payload = {
-            "advisor_kind": "mlx_logistic_regression",
+            "advisor_kind": advisor_kind,
             "labels": list(trained.labels),
             "label_counts": dict(trained.label_counts),
             "feature_names": list(trained.feature_names),
             "trained_on": trained.trained_on,
             "epochs": trained.epochs,
             "learning_rate": trained.learning_rate,
-            "backend": "mlx",
             "metrics": metrics.to_dict(),
         }
+        if backend_label is not None:
+            payload["backend"] = backend_label
         if checkpoint is not None:
-            save_mlx_advisor(trained, checkpoint)
+            saver(trained, checkpoint)
             payload["checkpoint_path"] = str(checkpoint)
-        advisor_kind = "mlx_logistic_regression"
-        summary_first = f"labels={list(trained.labels)} backend=mlx"
+        summary_first = (
+            f"labels={list(trained.labels)}"
+            if backend_label is None
+            else f"labels={list(trained.labels)} backend={backend_label}"
+        )
 
     if output is not None:
         output.parent.mkdir(parents=True, exist_ok=True)
