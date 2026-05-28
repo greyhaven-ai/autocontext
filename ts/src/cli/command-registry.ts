@@ -43,6 +43,7 @@ export type DbCommandName =
   | "export-training-data"
   | "import-package"
   | "new-scenario"
+  | "scenario"
   | "tui"
   | "judge"
   | "improve"
@@ -138,9 +139,15 @@ const COMMANDS: readonly CommandDescriptor[] = [
   },
   {
     name: "new-scenario",
-    description: "Create or scaffold a scenario",
+    description: "Create or scaffold a scenario (legacy alias of `scenario create`)",
     group: "primary",
     route: { kind: "db", command: "new-scenario" },
+  },
+  {
+    name: "scenario",
+    description: "Manage scenarios (subcommand: `scenario create`)",
+    group: "primary",
+    route: { kind: "db", command: "scenario" },
   },
   {
     name: "capabilities",

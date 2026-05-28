@@ -96,9 +96,20 @@ describe("AC-697 CLI contract — TypeScript parity", () => {
             registered.has(cmd.path[0]),
             `contract claims TS support for ${cmd.id} at ${JSON.stringify(cmd.path)} but registry has no matching command`,
           ).toBe(true);
+        } else if (cmd.path.length >= 2) {
+          // AC-697 slice 4: multi-token canonical paths must at least
+          // have their parent token registered. Subcommand-level
+          // dispatch (e.g. `cmdScenario` checking for `create`) is
+          // internal to each handler, so this partial check catches
+          // the case where the parent command isn't even mounted.
+          // Strengthening to fully verify the subcommand path lives
+          // in a future slice that introduces a TS subcommand
+          // registry.
+          expect(
+            registered.has(cmd.path[0]),
+            `contract claims TS support for ${cmd.id} at ${JSON.stringify(cmd.path)} but the parent token ${JSON.stringify(cmd.path[0])} is not a registered command`,
+          ).toBe(true);
         }
-        // Multi-token canonical paths are checked once the TS
-        // registry models subcommand groups (AC-697 follow-up).
       }
     }
   });

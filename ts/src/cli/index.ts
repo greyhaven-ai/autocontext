@@ -70,6 +70,7 @@ const DB_COMMAND_HANDLERS: Record<DbCommandName, (dbPath: string) => Promise<voi
   "export-training-data": cmdExportTrainingData,
   "import-package": cmdImportPackage,
   "new-scenario": cmdNewScenario,
+  scenario: cmdScenario,
   tui: cmdTui,
   judge: cmdJudge,
   improve: cmdImprove,
@@ -1868,6 +1869,47 @@ async function cmdImportPackage(_dbPath: string): Promise<void> {
       importStrategyPackage,
     }),
   );
+}
+
+/**
+ * AC-697 slice 4: `autoctx scenario` is the canonical sub-Typer group
+ * for scenario management. Today it ships a single subcommand,
+ * `create`, that delegates to the legacy `new-scenario` handler so
+ * the scaffolding logic stays single-sourced. `new-scenario` is kept
+ * as a top-level alias for backward compatibility with existing
+ * scripts; the slice-1 contract pins `aliases: ["new-scenario"]` on
+ * the `scenario.create` entry.
+ */
+async function cmdScenario(dbPath: string): Promise<void> {
+  const subArgs = process.argv.slice(3);
+  if (subArgs[0] === "create") {
+    // PR #999 review (P3): the slice-4 delegation routed
+    // `autoctx scenario create --help` through cmdNewScenario,
+    // which prints help under the legacy `autoctx new-scenario`
+    // header. Intercept --help here so users asking about the
+    // canonical command name see canonical text.
+    const createArgs = subArgs.slice(1);
+    if (createArgs.includes("--help") || createArgs.includes("-h")) {
+      const { SCENARIO_CREATE_HELP_TEXT } = await import("./new-scenario-command-workflow.js");
+      console.log(SCENARIO_CREATE_HELP_TEXT);
+      process.exit(0);
+    }
+    // Rewrite argv so cmdNewScenario sees its sub-args at the
+    // canonical position (process.argv.slice(3)).
+    process.argv = [...process.argv.slice(0, 2), "new-scenario", ...createArgs];
+    return cmdNewScenario(dbPath);
+  }
+  if (subArgs.length === 0 || subArgs[0] === "--help" || subArgs[0] === "-h") {
+    console.log(
+      "autoctx scenario -- manage scenarios.\n\n" +
+        "Subcommands:\n" +
+        "  create   Scaffold a new scenario from a template, family pipeline, or natural-language description.\n\n" +
+        "Run `autoctx scenario create --help` for details.",
+    );
+    process.exit(subArgs.length === 0 ? 1 : 0);
+  }
+  console.error(`autoctx scenario: unknown subcommand ${JSON.stringify(subArgs[0])}`);
+  process.exit(1);
 }
 
 async function cmdNewScenario(_dbPath: string): Promise<void> {

@@ -292,8 +292,7 @@
           "status": "yes"
         },
         "typescript": {
-          "status": "intentional_gap",
-          "reason": "TypeScript currently ships `new-scenario` as the legacy single-token command. AC-697 slice 4 will mount a `scenario` sub-Typer group with `create` as the canonical subcommand, mirroring the Python slice-3 refactor; `new-scenario` becomes an alias on both runtimes."
+          "status": "yes"
         }
       },
       "flags": [],
