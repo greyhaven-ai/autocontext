@@ -57,112 +57,170 @@ def _create_family_scenario(
     return create_for_family(family, llm_fn, settings.knowledge_root).create(description, name=name)
 
 
+def _scaffold_scenario_body(
+    *,
+    list_templates: bool,
+    list_families: bool,
+    template: str | None,
+    family: str | None,
+    name: str | None,
+    description: str | None,
+    judge_model: str | None,
+    non_interactive: bool,
+    console: Any,
+    dependency_module: str,
+) -> None:
+    """Shared body for `autoctx new-scenario` (legacy) and
+    `autoctx scenario create` (AC-697 slice 3 canonical path).
+
+    Both entry points delegate here so the scaffolding logic is
+    not duplicated and both invocations remain bit-identical.
+    """
+    del non_interactive
+    from autocontext.scenarios.templates import TemplateLoader
+
+    loader = TemplateLoader()
+
+    if list_templates:
+        templates = loader.list_templates()
+        table = Table(title="Available Scenario Templates")
+        table.add_column("Name", style="bold")
+        table.add_column("Description")
+        table.add_column("Output Format")
+        table.add_column("Max Rounds", justify="right")
+        for t in templates:
+            table.add_row(t.name, t.description, t.output_format, str(t.max_rounds))
+        console.print(table)
+        return
+
+    if list_families:
+        from autocontext.scenarios.custom.creator_registry import FAMILY_CONFIGS
+
+        table = Table(title="Available Scenario Family Pipelines")
+        table.add_column("Family", style="bold")
+        table.add_column("Spec")
+        for family_name, config in sorted(FAMILY_CONFIGS.items()):
+            table.add_row(family_name, config.spec_class_path.rsplit(":", 1)[-1])
+        console.print(table)
+        return
+
+    if family is not None:
+        if template is not None:
+            console.print("[red]--template cannot be combined with --family[/red]")
+            raise typer.Exit(code=1)
+        if name is None:
+            console.print("[red]--name is required when generating a family scenario[/red]")
+            raise typer.Exit(code=1)
+        if not description:
+            console.print("[red]--description is required when generating a family scenario[/red]")
+            raise typer.Exit(code=1)
+        settings = _cli_attr(dependency_module, "load_settings")()
+        try:
+            _create_family_scenario(
+                family=family,
+                name=name,
+                description=description,
+                settings=settings,
+            )
+        except Exception as e:
+            logger.debug("cli: caught Exception", exc_info=True)
+            console.print(f"[red]Failed to generate scenario: {e}[/red]")
+            raise typer.Exit(code=1) from None
+
+        target_dir = settings.knowledge_root / "_custom_scenarios" / name
+        console.print(f"[green]Scenario '{name}' created with family pipeline '{family}'[/green]")
+        console.print(f"[dim]Files scaffolded to: {target_dir}[/dim]")
+        return
+
+    if template is None:
+        console.print("[red]--template is required when not using --list[/red]")
+        raise typer.Exit(code=1)
+    if name is None:
+        console.print("[red]--name is required when scaffolding a scenario[/red]")
+        raise typer.Exit(code=1)
+
+    try:
+        loader.get_template(template)
+    except KeyError:
+        console.print(f"[red]Template '{template}' not found. Use --list to see available templates.[/red]")
+        raise typer.Exit(code=1) from None
+
+    overrides: dict[str, Any] = {}
+    if judge_model is not None:
+        overrides["judge_model"] = judge_model
+
+    target_dir = _get_custom_scenarios_dir() / name
+    try:
+        loader.scaffold(template_name=template, target_dir=target_dir, overrides=overrides or None)
+    except Exception as e:
+        logger.debug("cli: caught Exception", exc_info=True)
+        console.print(f"[red]Failed to scaffold scenario: {e}[/red]")
+        raise typer.Exit(code=1) from None
+
+    from autocontext.scenarios.custom.registry import load_all_custom_scenarios
+
+    loaded = load_all_custom_scenarios(target_dir.parent.parent)
+    registered = loaded.get(name)
+    if registered is not None:
+        SCENARIO_REGISTRY[name] = registered
+
+    console.print(f"[green]Scenario '{name}' created from template '{template}'[/green]")
+    console.print(f"[dim]Files scaffolded to: {target_dir}[/dim]")
+    console.print("[dim]Available to agent-task tooling after scaffold/load via the custom scenario registry.[/dim]")
+
+
+
 def register_new_scenario_command(
     app: typer.Typer,
     *,
     console: Any,
     dependency_module: str = "autocontext.cli",
 ) -> None:
-    @app.command("new-scenario")
-    def new_scenario(
-        list_templates: bool = typer.Option(False, "--list", help="List available templates"),
-        list_families: bool = typer.Option(False, "--list-families", help="List available family pipelines"),
-        template: str | None = typer.Option(None, "--template", help="Template to scaffold from"),
-        family: str | None = typer.Option(None, "--family", help="Family-specific pipeline to generate from"),
-        name: str | None = typer.Option(None, "--name", help="Name for the new scenario"),
-        description: str | None = typer.Option(None, "--description", help="Natural-language scenario description"),
-        judge_model: str | None = typer.Option(None, "--judge-model", help="Override judge model"),
-        non_interactive: bool = typer.Option(False, "--non-interactive", help="Use defaults, skip prompts"),
-    ) -> None:
-        """Scaffold a new scenario from the template library."""
-        del non_interactive
-        from autocontext.scenarios.templates import TemplateLoader
+    """Mount `new-scenario` (legacy) and `scenario create` (AC-697 canonical) on `app`.
 
-        loader = TemplateLoader()
+    Both entry points delegate to :func:`_scaffold_scenario_body` so the
+    scaffolding logic stays single-sourced. The `scenario` sub-Typer
+    group exposes `create` at the canonical path the slice-1 contract
+    pins; `new-scenario` stays as a top-level alias for backward
+    compatibility with existing scripts.
+    """
 
-        if list_templates:
-            templates = loader.list_templates()
-            table = Table(title="Available Scenario Templates")
-            table.add_column("Name", style="bold")
-            table.add_column("Description")
-            table.add_column("Output Format")
-            table.add_column("Max Rounds", justify="right")
-            for t in templates:
-                table.add_row(t.name, t.description, t.output_format, str(t.max_rounds))
-            console.print(table)
-            return
+    def _make_scenario_command_callable() -> Any:
+        def _impl(
+            list_templates: bool = typer.Option(False, "--list", help="List available templates"),
+            list_families: bool = typer.Option(False, "--list-families", help="List available family pipelines"),
+            template: str | None = typer.Option(None, "--template", help="Template to scaffold from"),
+            family: str | None = typer.Option(None, "--family", help="Family-specific pipeline to generate from"),
+            name: str | None = typer.Option(None, "--name", help="Name for the new scenario"),
+            description: str | None = typer.Option(None, "--description", help="Natural-language scenario description"),
+            judge_model: str | None = typer.Option(None, "--judge-model", help="Override judge model"),
+            non_interactive: bool = typer.Option(False, "--non-interactive", help="Use defaults, skip prompts"),
+        ) -> None:
+            _scaffold_scenario_body(
+                list_templates=list_templates,
+                list_families=list_families,
+                template=template,
+                family=family,
+                name=name,
+                description=description,
+                judge_model=judge_model,
+                non_interactive=non_interactive,
+                console=console,
+                dependency_module=dependency_module,
+            )
 
-        if list_families:
-            from autocontext.scenarios.custom.creator_registry import FAMILY_CONFIGS
+        return _impl
 
-            table = Table(title="Available Scenario Family Pipelines")
-            table.add_column("Family", style="bold")
-            table.add_column("Spec")
-            for family_name, config in sorted(FAMILY_CONFIGS.items()):
-                table.add_row(family_name, config.spec_class_path.rsplit(":", 1)[-1])
-            console.print(table)
-            return
+    # Legacy path: `autoctx new-scenario ...` (unchanged for backward
+    # compatibility with scripts that pin the old name).
+    new_scenario = _make_scenario_command_callable()
+    new_scenario.__doc__ = "Scaffold a new scenario from the template library."
+    app.command("new-scenario")(new_scenario)
 
-        if family is not None:
-            if template is not None:
-                console.print("[red]--template cannot be combined with --family[/red]")
-                raise typer.Exit(code=1)
-            if name is None:
-                console.print("[red]--name is required when generating a family scenario[/red]")
-                raise typer.Exit(code=1)
-            if not description:
-                console.print("[red]--description is required when generating a family scenario[/red]")
-                raise typer.Exit(code=1)
-            settings = _cli_attr(dependency_module, "load_settings")()
-            try:
-                _create_family_scenario(
-                    family=family,
-                    name=name,
-                    description=description,
-                    settings=settings,
-                )
-            except Exception as e:
-                logger.debug("cli: caught Exception", exc_info=True)
-                console.print(f"[red]Failed to generate scenario: {e}[/red]")
-                raise typer.Exit(code=1) from None
-
-            target_dir = settings.knowledge_root / "_custom_scenarios" / name
-            console.print(f"[green]Scenario '{name}' created with family pipeline '{family}'[/green]")
-            console.print(f"[dim]Files scaffolded to: {target_dir}[/dim]")
-            return
-
-        if template is None:
-            console.print("[red]--template is required when not using --list[/red]")
-            raise typer.Exit(code=1)
-        if name is None:
-            console.print("[red]--name is required when scaffolding a scenario[/red]")
-            raise typer.Exit(code=1)
-
-        try:
-            loader.get_template(template)
-        except KeyError:
-            console.print(f"[red]Template '{template}' not found. Use --list to see available templates.[/red]")
-            raise typer.Exit(code=1) from None
-
-        overrides: dict[str, Any] = {}
-        if judge_model is not None:
-            overrides["judge_model"] = judge_model
-
-        target_dir = _get_custom_scenarios_dir() / name
-        try:
-            loader.scaffold(template_name=template, target_dir=target_dir, overrides=overrides or None)
-        except Exception as e:
-            logger.debug("cli: caught Exception", exc_info=True)
-            console.print(f"[red]Failed to scaffold scenario: {e}[/red]")
-            raise typer.Exit(code=1) from None
-
-        from autocontext.scenarios.custom.registry import load_all_custom_scenarios
-
-        loaded = load_all_custom_scenarios(target_dir.parent.parent)
-        registered = loaded.get(name)
-        if registered is not None:
-            SCENARIO_REGISTRY[name] = registered
-
-        console.print(f"[green]Scenario '{name}' created from template '{template}'[/green]")
-        console.print(f"[dim]Files scaffolded to: {target_dir}[/dim]")
-        console.print("[dim]Available to agent-task tooling after scaffold/load via the custom scenario registry.[/dim]")
+    # Canonical path: `autoctx scenario create ...` (AC-697 slice 1
+    # contract pinned this path; slice 3 ships it).
+    scenario_app = typer.Typer(help="Manage scenarios.")
+    scenario_create = _make_scenario_command_callable()
+    scenario_create.__doc__ = "Scaffold a new scenario from the template library."
+    scenario_app.command("create")(scenario_create)
+    app.add_typer(scenario_app, name="scenario")

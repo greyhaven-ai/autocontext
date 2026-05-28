@@ -151,21 +151,34 @@ def register_queue_command(
     console: Console,
     dependency_module: str = "autocontext.cli",
 ) -> None:
-    @app.command()
-    def queue(
-        action: str = typer.Argument("add"),
-        spec: str = typer.Option("", "--spec", "-s", help="Task spec name"),
-        task_prompt: str = typer.Option("", "--task-prompt", "--prompt", "-p", help="The queued task prompt"),
-        rubric: str = typer.Option("", "--rubric", "-r", help="Evaluation rubric"),
-        browser_url: str = typer.Option("", "--browser-url", help="Optional browser URL to capture before execution"),
-        max_rounds: int = typer.Option(5, "--rounds", "-n", min=1, help="Maximum improvement rounds"),
-        threshold: float = typer.Option(0.9, "--threshold", "-t", help="Quality threshold to stop"),
-        min_rounds: int = typer.Option(1, "--min-rounds", min=1, help="Minimum rounds before threshold stops"),
-        priority: int = typer.Option(0, "--priority", help="Task priority"),
-        provider: str = typer.Option("", "--provider", help="Provider override accepted for queue-script compatibility"),
-        json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
+    """Mount the `queue` typer group on `app`.
+
+    AC-697 slice 3 promoted `queue` from a single typer command with
+    an `action` positional to a sub-Typer group with `add` and
+    `status` subcommands. Backward compatibility is preserved via the
+    group's `invoke_without_command` callback: `autoctx queue -s
+    <spec>` (no subcommand) still routes to the add behavior, so
+    existing scripts continue to work.
+
+    Closes the slice-2 Python `queue.status` contract gap: the
+    walker in :func:`autocontext.cli_contract.iter_python_command_paths`
+    now sees `["queue", "status"]` as a registered subcommand.
+    """
+
+    def _dispatch(
+        *,
+        action: str,
+        spec: str,
+        task_prompt: str,
+        rubric: str,
+        browser_url: str,
+        max_rounds: int,
+        threshold: float,
+        min_rounds: int,
+        priority: int,
+        provider: str,
+        json_output: bool,
     ) -> None:
-        """Add a task to the background runner queue."""
         from autocontext.execution.task_runner import enqueue_task
 
         run_queue_command(
@@ -187,3 +200,87 @@ def register_queue_command(
             write_json_stdout=_cli_attr(dependency_module, "_write_json_stdout"),
             write_json_stderr=_cli_attr(dependency_module, "_write_json_stderr"),
         )
+
+    queue_app = typer.Typer(invoke_without_command=True, help="Manage the background task queue.")
+
+    @queue_app.callback(invoke_without_command=True)
+    def queue_root(
+        ctx: typer.Context,
+        spec: str = typer.Option("", "--spec", "-s", help="Task spec name (legacy `queue -s <spec>` form)"),
+        task_prompt: str = typer.Option("", "--task-prompt", "--prompt", "-p", help="The queued task prompt"),
+        rubric: str = typer.Option("", "--rubric", "-r", help="Evaluation rubric"),
+        browser_url: str = typer.Option("", "--browser-url", help="Optional browser URL to capture before execution"),
+        max_rounds: int = typer.Option(5, "--rounds", "-n", min=1, help="Maximum improvement rounds"),
+        threshold: float = typer.Option(0.9, "--threshold", "-t", help="Quality threshold to stop"),
+        min_rounds: int = typer.Option(1, "--min-rounds", min=1, help="Minimum rounds before threshold stops"),
+        priority: int = typer.Option(0, "--priority", help="Task priority"),
+        provider: str = typer.Option("", "--provider", help="Provider override accepted for queue-script compatibility"),
+        json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
+    ) -> None:
+        """Backward-compat: `autoctx queue -s <spec>` (no subcommand) routes to add."""
+        if ctx.invoked_subcommand is not None:
+            return
+        _dispatch(
+            action="add",
+            spec=spec,
+            task_prompt=task_prompt,
+            rubric=rubric,
+            browser_url=browser_url,
+            max_rounds=max_rounds,
+            threshold=threshold,
+            min_rounds=min_rounds,
+            priority=priority,
+            provider=provider,
+            json_output=json_output,
+        )
+
+    @queue_app.command("add")
+    def queue_add(
+        spec: str = typer.Option("", "--spec", "-s", help="Task spec name"),
+        task_prompt: str = typer.Option("", "--task-prompt", "--prompt", "-p", help="The queued task prompt"),
+        rubric: str = typer.Option("", "--rubric", "-r", help="Evaluation rubric"),
+        browser_url: str = typer.Option("", "--browser-url", help="Optional browser URL to capture before execution"),
+        max_rounds: int = typer.Option(5, "--rounds", "-n", min=1, help="Maximum improvement rounds"),
+        threshold: float = typer.Option(0.9, "--threshold", "-t", help="Quality threshold to stop"),
+        min_rounds: int = typer.Option(1, "--min-rounds", min=1, help="Minimum rounds before threshold stops"),
+        priority: int = typer.Option(0, "--priority", help="Task priority"),
+        provider: str = typer.Option("", "--provider", help="Provider override accepted for queue-script compatibility"),
+        json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
+    ) -> None:
+        """Add a task to the background runner queue."""
+        _dispatch(
+            action="add",
+            spec=spec,
+            task_prompt=task_prompt,
+            rubric=rubric,
+            browser_url=browser_url,
+            max_rounds=max_rounds,
+            threshold=threshold,
+            min_rounds=min_rounds,
+            priority=priority,
+            provider=provider,
+            json_output=json_output,
+        )
+
+    @queue_app.command("status")
+    def queue_status(
+        json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
+    ) -> None:
+        """Show the count of pending tasks in the background queue."""
+        # `_dispatch` accepts unused-for-status arguments; the
+        # run_queue_command helper ignores them when action="status".
+        _dispatch(
+            action="status",
+            spec="",
+            task_prompt="",
+            rubric="",
+            browser_url="",
+            max_rounds=5,
+            threshold=0.9,
+            min_rounds=1,
+            priority=0,
+            provider="",
+            json_output=json_output,
+        )
+
+    app.add_typer(queue_app, name="queue")

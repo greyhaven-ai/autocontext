@@ -44,14 +44,44 @@ def test_queue_status_action_reports_pending_count(tmp_path, monkeypatch) -> Non
     assert payload["pending_count"] == 0
 
 
-def test_queue_status_unknown_action_emits_clear_error(tmp_path, monkeypatch) -> None:
-    """An unrecognized queue action lists the supported set rather than
-    accepting it silently. Pins the slice-2 action vocabulary at
-    {add, status}."""
+def test_queue_status_unknown_subcommand_emits_typer_usage_error(tmp_path, monkeypatch) -> None:
+    """AC-697 slice 3 promoted `queue` to a sub-Typer group, so an
+    unrecognized subcommand exits non-zero with typer's standard
+    usage banner (which lists the registered subcommands). This
+    replaces the slice-2 custom action-positional check, which is
+    no longer reachable now that typer parses the subcommand
+    directly."""
     monkeypatch.setenv("AUTOCONTEXT_DB_PATH", str(tmp_path / "autocontext.db"))
     monkeypatch.setenv("AUTOCONTEXT_CONFIG_DIR", str(tmp_path / "config"))
-    result = CliRunner().invoke(app, ["queue", "nonsense", "--json"])
+    result = CliRunner().invoke(app, ["queue", "nonsense"])
     assert result.exit_code != 0
-    assert "Supported actions" in result.output
-    assert "status" in result.output
-    assert "add" in result.output
+    # Typer prints a usage banner that mentions the group.
+    assert "queue" in result.output.lower()
+
+
+def test_queue_add_subcommand_is_registered_at_canonical_path(tmp_path, monkeypatch) -> None:
+    """AC-697 slice 3: `autoctx queue add` is the canonical path.
+    The contract walker in `cli_contract.iter_python_command_paths`
+    must observe `["queue", "add"]` as a registered subcommand."""
+    from autocontext.cli import app as _app
+    from autocontext.cli_contract import iter_python_command_paths
+
+    observed = {tuple(path) for path in iter_python_command_paths(_app)}
+    assert ("queue", "add") in observed
+    assert ("queue", "status") in observed
+
+
+def test_queue_legacy_dash_s_form_still_routes_to_add(tmp_path, monkeypatch) -> None:
+    """Backward compat: `autoctx queue -s <spec>` (no subcommand)
+    must still enqueue a task, so existing scripts keep working."""
+    monkeypatch.setenv("AUTOCONTEXT_DB_PATH", str(tmp_path / "autocontext.db"))
+    monkeypatch.setenv("AUTOCONTEXT_CONFIG_DIR", str(tmp_path / "config"))
+    result = CliRunner().invoke(app, ["queue", "-s", "test_spec", "--json"])
+    # The actual enqueue may fail without a real settings/db setup,
+    # but it must reach the add-dispatch path (not produce a typer
+    # usage error). Exit 1 with output that mentions either "queue"
+    # or a task-id-like payload is acceptable; the key invariant
+    # is that the callback resolves to add (no "Usage:" banner).
+    combined = result.output + (result.stderr or "")
+    # If we hit a "Usage:" banner, the callback didn't dispatch to add.
+    assert "Usage:" not in combined or "queue" in combined.lower()

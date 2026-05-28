@@ -67,15 +67,12 @@ describe("AC-697 slice 2: contract entries flipped to yes for TS status + queue.
     expect(queueStatus!.runtime_support.typescript.status).toBe("yes");
   });
 
-  test("docs/cli-contract.json: Python `queue.status` retains an intentional_gap reason naming action-positional dispatch", () => {
-    // Python's `autoctx queue status` works via the action-positional
-    // dispatch in the existing queue typer command (the slice-2
-    // Python code added `action="status"` handling), but the contract
-    // walker reads Typer's registered subcommands and will not see
-    // `status` as a registered child of `queue` until a follow-up
-    // slice promotes `queue` to a sub-Typer group. The reason field
-    // documents this intentional gap so reviewers can tell apart
-    // "decided not to ship" from "shipped via different mechanism".
+  test("docs/cli-contract.json: Python `queue.status` is yes after the slice-3 typer-group refactor", () => {
+    // AC-697 slice 3 promoted Python `queue` to a sub-Typer group
+    // with `add` + `status` subcommands. The contract walker now sees
+    // both `("queue", "add")` and `("queue", "status")` in the
+    // registered paths, so `queue.status` is fully supported and the
+    // slice-2 action-positional intentional_gap is closed.
     const path = resolve(import.meta.dirname, "..", "..", "docs", "cli-contract.json");
     const contract = JSON.parse(readFileSync(path, "utf-8")) as {
       commands: {
@@ -88,8 +85,7 @@ describe("AC-697 slice 2: contract entries flipped to yes for TS status + queue.
     const byId = new Map(contract.commands.map((c) => [c.id, c]));
     const queueStatus = byId.get("queue.status");
     expect(queueStatus).toBeDefined();
-    expect(queueStatus!.runtime_support.python.status).toBe("intentional_gap");
-    expect(queueStatus!.runtime_support.python.reason ?? "").toContain("action-positional");
+    expect(queueStatus!.runtime_support.python.status).toBe("yes");
   });
 
   test("`status` summary continues to pin run-status as the canonical meaning", () => {

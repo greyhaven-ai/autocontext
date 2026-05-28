@@ -178,6 +178,11 @@ def _walk_typer(app: typer.Typer, *, prefix: list[str]) -> Iterable[list[str]]:
     for group in app.registered_groups:
         group_name = group.name or ""
         if group_name and group.typer_instance is not None:
+            # AC-697 slice 3: yield the group prefix itself so contract
+            # entries that pin a typer-group's top-level path (e.g.
+            # `queue` as the umbrella for `queue add` / `queue status`)
+            # match the observed registry.
+            yield [*prefix, group_name]
             yield from _walk_typer(group.typer_instance, prefix=[*prefix, group_name])
 
 
