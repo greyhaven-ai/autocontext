@@ -1,4 +1,13 @@
-export const NEW_SCENARIO_HELP_TEXT = `autoctx new-scenario — create a scenario
+/**
+ * PR #999 review (P3): the help text was hard-coded to
+ * `autoctx new-scenario`, which leaked into `autoctx scenario create
+ * --help` after slice 4 added the canonical sub-Typer path. The
+ * builder lets each entry point render help under its own command
+ * name without duplicating the body, so the canonical and legacy
+ * surfaces stay byte-identical except for the header.
+ */
+export function buildScenarioHelpText(commandName: string): string {
+  return `autoctx ${commandName} — create a scenario
 
 Modes:
   --list                  List built-in templates (no LLM needed)
@@ -26,6 +35,10 @@ Options:
   --name <scenario>       Scenario name to use when scaffolding a template
   --json                  Output as JSON
   -h, --help              Show this help`;
+}
+
+export const NEW_SCENARIO_HELP_TEXT = buildScenarioHelpText("new-scenario");
+export const SCENARIO_CREATE_HELP_TEXT = buildScenarioHelpText("scenario create");
 
 export type {
   CreatedScenarioOutput,

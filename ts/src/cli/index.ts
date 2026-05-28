@@ -1883,9 +1883,20 @@ async function cmdImportPackage(_dbPath: string): Promise<void> {
 async function cmdScenario(dbPath: string): Promise<void> {
   const subArgs = process.argv.slice(3);
   if (subArgs[0] === "create") {
+    // PR #999 review (P3): the slice-4 delegation routed
+    // `autoctx scenario create --help` through cmdNewScenario,
+    // which prints help under the legacy `autoctx new-scenario`
+    // header. Intercept --help here so users asking about the
+    // canonical command name see canonical text.
+    const createArgs = subArgs.slice(1);
+    if (createArgs.includes("--help") || createArgs.includes("-h")) {
+      const { SCENARIO_CREATE_HELP_TEXT } = await import("./new-scenario-command-workflow.js");
+      console.log(SCENARIO_CREATE_HELP_TEXT);
+      process.exit(0);
+    }
     // Rewrite argv so cmdNewScenario sees its sub-args at the
     // canonical position (process.argv.slice(3)).
-    process.argv = [...process.argv.slice(0, 2), "new-scenario", ...subArgs.slice(1)];
+    process.argv = [...process.argv.slice(0, 2), "new-scenario", ...createArgs];
     return cmdNewScenario(dbPath);
   }
   if (subArgs.length === 0 || subArgs[0] === "--help" || subArgs[0] === "-h") {

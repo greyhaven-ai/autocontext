@@ -22,6 +22,11 @@ import { resolve } from "node:path";
 import { describe, expect, test } from "vitest";
 
 import { visibleSupportedCommandNames } from "../src/cli/command-registry.js";
+import {
+  NEW_SCENARIO_HELP_TEXT,
+  SCENARIO_CREATE_HELP_TEXT,
+  buildScenarioHelpText,
+} from "../src/cli/new-scenario-command-workflow.js";
 
 describe("AC-697 slice 4: `scenario` is registered + `scenario.create` flipped to yes", () => {
   test("`scenario` appears in visibleSupportedCommandNames()", () => {
@@ -50,5 +55,32 @@ describe("AC-697 slice 4: `scenario` is registered + `scenario.create` flipped t
     const scenarioCreate = contract.commands.find((c) => c.id === "scenario.create");
     expect(scenarioCreate).toBeDefined();
     expect(scenarioCreate!.aliases).toContain("new-scenario");
+  });
+
+  // PR #999 review (P3): the canonical help text must reflect the
+  // canonical command name. The slice-4 delegation routed
+  // `scenario create --help` through cmdNewScenario, which printed
+  // the legacy `autoctx new-scenario --` header. The builder now
+  // takes the command name and the two surfaces stay byte-identical
+  // except for the header.
+  test("buildScenarioHelpText renders the body once with a configurable command-name header", () => {
+    const newScenarioBody = NEW_SCENARIO_HELP_TEXT.split("\n").slice(1).join("\n");
+    const canonicalBody = SCENARIO_CREATE_HELP_TEXT.split("\n").slice(1).join("\n");
+    expect(canonicalBody).toBe(newScenarioBody);
+  });
+
+  test("legacy help header still names `new-scenario`", () => {
+    expect(NEW_SCENARIO_HELP_TEXT.split("\n")[0]).toBe("autoctx new-scenario — create a scenario");
+  });
+
+  test("canonical help header names `scenario create`", () => {
+    expect(SCENARIO_CREATE_HELP_TEXT.split("\n")[0]).toBe(
+      "autoctx scenario create — create a scenario",
+    );
+  });
+
+  test("buildScenarioHelpText is the single source of truth for both surfaces", () => {
+    expect(buildScenarioHelpText("new-scenario")).toBe(NEW_SCENARIO_HELP_TEXT);
+    expect(buildScenarioHelpText("scenario create")).toBe(SCENARIO_CREATE_HELP_TEXT);
   });
 });
