@@ -1050,8 +1050,41 @@ async function cmdRepl(_dbPath: string): Promise<void> {
 }
 
 async function cmdQueue(dbPath: string): Promise<void> {
+  // AC-697 slice 2: detect `autoctx queue status` subcommand before
+  // the existing `queue -s <spec>` parseArgs runs. The status
+  // subcommand reports the queue-pending count (the semantic that
+  // used to live under top-level `status` in TypeScript). The
+  // existing queue-add path is unchanged for backward compatibility.
+  const subArgs = process.argv.slice(3);
+  if (subArgs[0] === "status") {
+    const { values: statusValues } = parseArgs({
+      args: subArgs.slice(1),
+      options: { json: { type: "boolean" }, help: { type: "boolean", short: "h" } },
+    });
+    if (statusValues.help) {
+      console.log(
+        "autoctx queue status [--json]\n\nShow the count of pending tasks in the background queue.",
+      );
+      process.exit(0);
+    }
+    const { executeStatusCommandWorkflow, renderStatusResult } =
+      await import("./queue-status-command-workflow.js");
+    const { SQLiteStore } = await import("../storage/index.js");
+    const store = new SQLiteStore(dbPath);
+    const result = executeStatusCommandWorkflow({
+      store,
+      migrationsDir: getMigrationsDir(),
+    });
+    if (statusValues.json) {
+      console.log(renderStatusResult(result));
+    } else {
+      console.log(`Pending queued tasks: ${result.pendingCount}`);
+    }
+    return;
+  }
+
   const { values } = parseArgs({
-    args: process.argv.slice(3),
+    args: subArgs,
     options: {
       spec: { type: "string", short: "s" },
       prompt: { type: "string", short: "p" },
@@ -1185,34 +1218,33 @@ async function cmdStatus(dbPath: string): Promise<void> {
     process.exit(0);
   }
 
-  const { executeStatusCommandWorkflow, renderStatusResult } =
-    await import("./queue-status-command-workflow.js");
-  const { SQLiteStore } = await import("../storage/index.js");
-  const store = new SQLiteStore(dbPath);
-
-  if (runId) {
-    const { renderRunStatus } = await import("./run-inspection-command-workflow.js");
-    store.migrate(getMigrationsDir());
-    const run = store.getRun(runId);
-    if (!run) {
-      console.error(`Error: run '${runId}' not found`);
-      store.close();
-      process.exit(1);
+  // AC-697 slice 2: top-level `status` is run-status only, matching the
+  // Python CLI and the slice-1 contract (`docs/cli-contract.json` pins
+  // `status.domain_concept = "Run"`). The previous fall-through that
+  // rendered queue-pending counts moved to `autoctx queue status`.
+  if (!runId) {
+    const message =
+      "Error: `autoctx status` requires <run-id>. Use `autoctx queue status` for the queue-pending count.";
+    if (values.json) {
+      process.stdout.write(JSON.stringify({ error: message }) + "\n");
+    } else {
+      console.error(message);
     }
-    const runtimeSession = await loadRuntimeSessionSummaryForRun(dbPath, runId);
-    console.log(renderRunStatus(run, store.getGenerations(runId), !!values.json, runtimeSession));
-    store.close();
-    return;
+    process.exit(1);
   }
 
-  console.log(
-    renderStatusResult(
-      executeStatusCommandWorkflow({
-        store,
-        migrationsDir: getMigrationsDir(),
-      }),
-    ),
-  );
+  const { SQLiteStore } = await import("../storage/index.js");
+  const store = new SQLiteStore(dbPath);
+  const { renderRunStatus } = await import("./run-inspection-command-workflow.js");
+  store.migrate(getMigrationsDir());
+  const run = store.getRun(runId);
+  if (!run) {
+    console.error(`Error: run '${runId}' not found`);
+    store.close();
+    process.exit(1);
+  }
+  const runtimeSession = await loadRuntimeSessionSummaryForRun(dbPath, runId);
+  console.log(renderRunStatus(run, store.getGenerations(runId), !!values.json, runtimeSession));
   store.close();
 }
 

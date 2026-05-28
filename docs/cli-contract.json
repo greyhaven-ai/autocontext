@@ -4,9 +4,7 @@
   "commands": [
     {
       "id": "solve",
-      "path": [
-        "solve"
-      ],
+      "path": ["solve"],
       "summary": "Take a natural-language objective, generate or select a scenario, run iterations against a real evaluator, and export the learned approach.",
       "audience": "paved_road",
       "maturity": "stable",
@@ -40,9 +38,7 @@
     },
     {
       "id": "run",
-      "path": [
-        "run"
-      ],
+      "path": ["run"],
       "summary": "Execute a saved scenario for one or more iterations and produce a Run artifact.",
       "audience": "paved_road",
       "maturity": "stable",
@@ -76,9 +72,7 @@
     },
     {
       "id": "status",
-      "path": [
-        "status"
-      ],
+      "path": ["status"],
       "summary": "Show run status for the given <run-id>. Canonical meaning is RUN status; queue status lives under `queue status`.",
       "audience": "paved_road",
       "maturity": "stable",
@@ -89,8 +83,7 @@
           "status": "yes"
         },
         "typescript": {
-          "status": "intentional_gap",
-          "reason": "Today TypeScript `status` reports queue pending count. AC-697 follow-up slice retargets `status` to run status and moves queue pending under `queue status`."
+          "status": "yes"
         }
       },
       "flags": [],
@@ -98,9 +91,7 @@
     },
     {
       "id": "watch",
-      "path": [
-        "watch"
-      ],
+      "path": ["watch"],
       "summary": "Stream live updates for an in-flight run.",
       "audience": "paved_road",
       "maturity": "beta",
@@ -120,9 +111,7 @@
     },
     {
       "id": "show",
-      "path": [
-        "show"
-      ],
+      "path": ["show"],
       "summary": "Render a human-readable view of a finished run's artifacts (best strategy, scores, playbook).",
       "audience": "paved_road",
       "maturity": "beta",
@@ -150,9 +139,7 @@
     },
     {
       "id": "export",
-      "path": [
-        "export"
-      ],
+      "path": ["export"],
       "summary": "Export a Run's learned knowledge as a portable artifact (JSON package, Pi-package directory, or Hermes skill).",
       "audience": "paved_road",
       "maturity": "stable",
@@ -179,9 +166,7 @@
     },
     {
       "id": "run.list",
-      "path": [
-        "list"
-      ],
+      "path": ["list"],
       "summary": "List recent runs.",
       "audience": "advanced",
       "maturity": "stable",
@@ -200,9 +185,7 @@
     },
     {
       "id": "run.replay",
-      "path": [
-        "replay"
-      ],
+      "path": ["replay"],
       "summary": "Replay a stored generation from a run.",
       "audience": "advanced",
       "maturity": "stable",
@@ -221,9 +204,7 @@
     },
     {
       "id": "task.judge",
-      "path": [
-        "judge"
-      ],
+      "path": ["judge"],
       "summary": "Score a single agent output against a rubric.",
       "audience": "advanced",
       "maturity": "stable",
@@ -242,9 +223,7 @@
     },
     {
       "id": "task.improve",
-      "path": [
-        "improve"
-      ],
+      "path": ["improve"],
       "summary": "Run an evaluate-revise improvement loop against a rubric.",
       "audience": "advanced",
       "maturity": "stable",
@@ -263,9 +242,7 @@
     },
     {
       "id": "queue",
-      "path": [
-        "queue"
-      ],
+      "path": ["queue"],
       "summary": "Manage the task queue. Subcommands cover add / status / list.",
       "audience": "advanced",
       "maturity": "stable",
@@ -285,10 +262,7 @@
     },
     {
       "id": "queue.status",
-      "path": [
-        "queue",
-        "status"
-      ],
+      "path": ["queue", "status"],
       "summary": "Show queue pending / in-flight counts. Distinct from top-level `status` (which is run status).",
       "audience": "advanced",
       "maturity": "beta",
@@ -297,11 +271,10 @@
       "runtime_support": {
         "python": {
           "status": "intentional_gap",
-          "reason": "Python ships queue add/list, not a queue status subcommand. AC-697 follow-up adds it."
+          "reason": "Behavior shipped: `autoctx queue status` works via action-positional dispatch in the existing `queue` typer command. The contract walker reads Typer's registered subcommands and does not see `status` as a registered child of `queue` until a follow-up AC-697 slice promotes `queue` to a sub-Typer group (which would break `autoctx queue -s <spec>` callers and needs its own slice)."
         },
         "typescript": {
-          "status": "intentional_gap",
-          "reason": "Queue status semantics currently live under the top-level `status` command in TypeScript. AC-697 follow-up moves them to the canonical `queue status` path."
+          "status": "yes"
         }
       },
       "flags": [],
@@ -309,17 +282,12 @@
     },
     {
       "id": "scenario.create",
-      "path": [
-        "scenario",
-        "create"
-      ],
+      "path": ["scenario", "create"],
       "summary": "Materialize a new scenario from a description, template, or harness spec.",
       "audience": "advanced",
       "maturity": "beta",
       "domain_concept": "Scenario",
-      "aliases": [
-        "new-scenario"
-      ],
+      "aliases": ["new-scenario"],
       "runtime_support": {
         "python": {
           "status": "intentional_gap",
@@ -335,9 +303,7 @@
     },
     {
       "id": "mission",
-      "path": [
-        "mission"
-      ],
+      "path": ["mission"],
       "summary": "Long-running verified-goal mission manager (create / run / list).",
       "audience": "advanced",
       "maturity": "beta",
@@ -357,9 +323,7 @@
     },
     {
       "id": "serve.http",
-      "path": [
-        "serve"
-      ],
+      "path": ["serve"],
       "summary": "Start the HTTP API + WebSocket server.",
       "audience": "advanced",
       "maturity": "stable",
@@ -378,17 +342,12 @@
     },
     {
       "id": "serve.mcp",
-      "path": [
-        "serve",
-        "mcp"
-      ],
+      "path": ["serve", "mcp"],
       "summary": "Start the MCP server on stdio. Canonical path is `serve mcp`; legacy single-token `mcp-serve` is kept as a registered alias on both runtimes.",
       "audience": "advanced",
       "maturity": "stable",
       "domain_concept": null,
-      "aliases": [
-        "mcp-serve"
-      ],
+      "aliases": ["mcp-serve"],
       "runtime_support": {
         "python": {
           "status": "intentional_gap",
@@ -404,9 +363,7 @@
     },
     {
       "id": "capabilities",
-      "path": [
-        "capabilities"
-      ],
+      "path": ["capabilities"],
       "summary": "Enumerate canonical commands, aliases, and per-runtime support. Operator-facing surface for the AC-697 contract.",
       "audience": "advanced",
       "maturity": "beta",

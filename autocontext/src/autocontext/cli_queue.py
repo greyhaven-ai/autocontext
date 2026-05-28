@@ -72,13 +72,34 @@ def run_queue_command(
     write_json_stderr: Callable[[str], None],
 ) -> None:
     normalized_action = (action or "add").strip().lower()
-    if normalized_action != "add":
-        message = f"Unsupported queue action '{action}'. Only 'add' is supported."
+    if normalized_action not in {"add", "status"}:
+        message = f"Unsupported queue action '{action}'. Supported actions: 'add', 'status'."
         if json_output:
             write_json_stderr(message)
         else:
             console.print(f"[red]{message}[/red]")
         raise typer.Exit(code=1)
+
+    # AC-697 slice 2: `autoctx queue status` reports the queue-pending
+    # count (the semantic that used to live under top-level `status` in
+    # TypeScript). Python's top-level `status` already meant run-status,
+    # so this slice fills the parity gap by adding the queue subcommand.
+    # No spec / task_prompt is required for the status action.
+    if normalized_action == "status":
+        settings = load_settings_fn()
+        store = sqlite_from_settings(settings)
+        try:
+            pending = int(store.pending_task_count())
+        finally:
+            close = getattr(store, "close", None)
+            if callable(close):
+                close()
+        payload: dict[str, Any] = {"pending_count": pending}
+        if json_output:
+            write_json_stdout(payload)
+        else:
+            console.print(f"Pending queued tasks: {pending}")
+        return
 
     try:
         resolved_spec_name = resolve_queue_spec_name(spec, task_prompt)
