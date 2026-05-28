@@ -178,6 +178,18 @@ def _walk_typer(app: typer.Typer, *, prefix: list[str]) -> Iterable[list[str]]:
     for group in app.registered_groups:
         group_name = group.name or ""
         if group_name and group.typer_instance is not None:
+            # AC-697 slice 3 review (P3): yield the group prefix only
+            # when the group is itself invokable (`invoke_without_command`
+            # is truthy on its TyperInfo). Bare groups without a
+            # no-subcommand callback exit with `Missing command.` when
+            # invoked at their top-level path, so listing them as
+            # supported commands would weaken the parity guard for
+            # future contract entries that legitimately pin bare-group
+            # paths. typer's default sentinel for an unset value is a
+            # `DefaultPlaceholder`, so check for explicit truthiness.
+            invoke_without_command = group.typer_instance.info.invoke_without_command
+            if invoke_without_command is True:
+                yield [*prefix, group_name]
             yield from _walk_typer(group.typer_instance, prefix=[*prefix, group_name])
 
 
