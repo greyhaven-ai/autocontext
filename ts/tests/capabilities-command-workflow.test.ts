@@ -135,6 +135,34 @@ describe("capabilities command workflow", () => {
     expect(scenarioCreate?.aliases).toContain("new-scenario");
   });
 
+  // PR #1000 review (P2): the npm package ships
+  // `docs/cli-contract.json` as `dist/cli-contract.json` via the
+  // `build:cli-contract` script chained into `npm run build`. The
+  // TS loader resolves from there first, falling back to the
+  // repo-relative path only for the dev tree (tsx-from-source).
+  it("buildCapabilitiesPayload resolves the contract from a known location", () => {
+    // The loader must succeed in this test (which runs against the
+    // dev tree). Both branches return an absolute path; the call
+    // itself failing means the fallback walked off the file system.
+    const payload = buildCapabilitiesPayload(
+      {
+        version: "0.3.7",
+        scenarios: [],
+        providers: [],
+        features: [],
+        pythonOnly: [],
+        concept_model: {
+          source_doc: "docs/concept-model.md",
+          user_facing: [],
+          runtime: [],
+        },
+      },
+      null,
+    );
+    expect(payload.contract.schema_version).toBeGreaterThan(0);
+    expect(Array.isArray(payload.contract.commands)).toBe(true);
+  });
+
   it("contract entries carry runtime_support with python + typescript status", () => {
     const payload = buildCapabilitiesPayload(
       {

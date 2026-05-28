@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -48,10 +49,21 @@ export interface CapabilitiesCommandPayload extends Omit<Capabilities, "features
 }
 
 function _defaultContractPath(): string {
-  // The contract JSON ships under the repo root's `docs/`. From the
-  // built `dist/cli/` location it's three levels up; tsx-run from
-  // `src/cli/` is the same. Both resolve via this relative walk.
+  // PR #1000 review (P2): the previous design walked three levels up
+  // from `dist/cli/file.js` to reach `<repo>/docs/cli-contract.json`,
+  // which works in the monorepo but lands outside the package
+  // directory in the installed npm tarball. The `build:cli-contract`
+  // script (chained into `npm run build`) copies the contract source
+  // into `dist/cli-contract.json` at build time, so the runtime
+  // loader resolves it relative to `dist/cli/file.js` -> `..` ->
+  // `dist/cli-contract.json`. The dev tree (tsx-from-source from
+  // `src/cli/`) falls back to the repo-relative path.
   const here = dirname(fileURLToPath(import.meta.url));
+  const distCopy = resolve(here, "..", "cli-contract.json");
+  if (existsSync(distCopy)) {
+    return distCopy;
+  }
+  // Dev tree fallback: `src/cli/` -> `..` -> `..` -> `..` -> repo root.
   return resolve(here, "..", "..", "..", "docs", "cli-contract.json");
 }
 

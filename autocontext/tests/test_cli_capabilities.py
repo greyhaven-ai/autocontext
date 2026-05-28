@@ -78,3 +78,18 @@ def test_cli_autoctx_capabilities_no_json_emits_human_summary(tmp_path, monkeypa
     assert result.exit_code == 0, result.output
     assert "autoctx CLI contract" in result.output
     assert "capabilities" in result.output
+
+
+def test_default_contract_path_resolves_to_an_existing_file() -> None:
+    """PR #1000 review (P2): the wheel ships docs/cli-contract.json
+    as autocontext/cli_contract.json (via hatch force-include), and
+    the loader resolves it via importlib.resources at runtime. The
+    dev tree falls back to the repo-relative walk. Either branch
+    must yield an existing file."""
+    from autocontext.cli_capabilities import _default_contract_path
+
+    path = _default_contract_path()
+    assert path.exists(), f"resolved contract path does not exist: {path}"
+    # Either dev-tree path (`cli-contract.json`) or packaged path
+    # (`cli_contract.json`). Both spellings are valid file names.
+    assert path.name in {"cli-contract.json", "cli_contract.json"}

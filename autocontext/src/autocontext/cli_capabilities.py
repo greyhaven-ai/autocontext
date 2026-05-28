@@ -25,12 +25,30 @@ if TYPE_CHECKING:
 
 
 def _default_contract_path() -> Path:
-    """Locate ``docs/cli-contract.json`` from the installed package.
+    """Locate ``cli-contract.json`` for the running install context.
 
-    The package layout is ``<repo>/autocontext/src/autocontext/`` for
-    the source tree and a similar relative layout post-install. We
-    walk up to the repository root and resolve ``docs/cli-contract.json``.
+    PR #1000 review (P2): the wheel-installed package can't reach the
+    repo's ``docs/`` directory because it lives outside the source
+    tree. Hatch's ``force-include`` (see ``pyproject.toml``) packages
+    ``docs/cli-contract.json`` as ``autocontext/cli_contract.json``
+    inside the wheel, so the packaged copy is reachable via
+    :mod:`importlib.resources`. The dev tree (editable installs,
+    direct execution from ``src/``) still resolves via the
+    repo-relative walk so contract edits land in the next invocation
+    without rebuilding the wheel.
     """
+    # Try the packaged copy first (wheel installs).
+    try:
+        from importlib.resources import files
+
+        packaged = files("autocontext").joinpath("cli_contract.json")
+        if packaged.is_file():
+            return Path(str(packaged))
+    except Exception:
+        # importlib.resources isn't available or the package isn't
+        # installed; fall through to the dev-tree fallback.
+        pass
+    # Fall back to the repo-relative path for the source tree.
     here = Path(__file__).resolve()
     # cli_capabilities.py -> autocontext -> src -> autocontext (pkg root) -> repo root
     repo_root = here.parents[3]

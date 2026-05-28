@@ -112,8 +112,9 @@
     "./package.json": "./package.json"
   },
   "scripts": {
-    "build": "tsc && npm run build:production-traces-sdk-cjs",
+    "build": "tsc && npm run build:cli-contract && npm run build:production-traces-sdk-cjs",
     "build:browser-contract-types": "node scripts/generate-browser-contract-types.mjs",
+    "build:cli-contract": "node scripts/copy-cli-contract.mjs",
     "build:production-traces-sdk-cjs": "node scripts/build-production-traces-sdk-cjs.mjs",
     "test": "vitest run",
     "test:watch": "vitest",

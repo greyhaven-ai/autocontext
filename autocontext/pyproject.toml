@@ -72,6 +72,10 @@ packages = ["src/autocontext"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "assets" = "autocontext/assets"
+# AC-697 slice 5 packaging fix: ship docs/cli-contract.json inside the
+# wheel so `autoctx capabilities` works after `pip install` without
+# the surrounding repo.
+"../docs/cli-contract.json" = "autocontext/cli_contract.json"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
