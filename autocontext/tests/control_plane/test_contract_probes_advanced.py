@@ -203,6 +203,32 @@ def test_distributed_probe_emits_missing_observation_for_must_match_key() -> Non
     assert result.failures[0].kind == "missing-observation"
 
 
+def test_distributed_probe_emits_missing_observation_when_expected_steps_declared_without_any_ranks() -> None:
+    """PR #1005 review (P2): a broken extractor that omits all rank
+    reports must not be able to satisfy declared rank-scoped
+    expectations by silence. `expected_steps` against zero rank
+    reports fails loudly with `missing-observation`.
+    """
+    result = probe_distributed_contract(DistributedContractProbeInputs(ranks=(), expected_steps=100))
+    assert result.passed is False
+    assert any(f.kind == "missing-observation" for f in result.failures)
+
+
+def test_distributed_probe_emits_missing_observation_when_must_match_declared_without_any_ranks() -> None:
+    """PR #1005 review (P2): same shape for `must_match_across_ranks`.
+    Each declared key surfaces its own `missing-observation` so a
+    multi-key expectation does not collapse to a single failure."""
+    result = probe_distributed_contract(
+        DistributedContractProbeInputs(
+            ranks=(),
+            must_match_across_ranks=("hash", "loss"),
+        )
+    )
+    assert result.passed is False
+    keys_with_missing = {f.key for f in result.failures if f.kind == "missing-observation"}
+    assert keys_with_missing == {"hash", "loss"}
+
+
 def test_distributed_probe_emits_missing_observation_for_world_size() -> None:
     result = probe_distributed_contract(
         DistributedContractProbeInputs(

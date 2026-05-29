@@ -307,6 +307,17 @@ def probe_distributed_contract(
                 )
 
     if inputs.expected_steps is not None:
+        # PR #1005 review (P2): a declared rank-scoped expectation
+        # without any rank reports must fail loudly. Iterating
+        # `seen_ranks.values()` alone would let a broken extractor
+        # satisfy `expected_steps` by omitting every rank report.
+        if not seen_ranks:
+            failures.append(
+                DistributedContractFailure(
+                    kind="missing-observation",
+                    message=("declared expectation on expected_steps but no rank reports were supplied"),
+                )
+            )
         for report in seen_ranks.values():
             if report.steps is None:
                 failures.append(
@@ -324,6 +335,19 @@ def probe_distributed_contract(
                         message=(f"rank {report.rank} ran {report.steps} steps; expected {inputs.expected_steps}"),
                     )
                 )
+
+    if inputs.must_match_across_ranks is not None and not seen_ranks:
+        # PR #1005 review (P2): same shape as expected_steps above.
+        # Declared cross-rank expectations with zero rank reports must
+        # fail loudly, not pass silently.
+        for key in inputs.must_match_across_ranks:
+            failures.append(
+                DistributedContractFailure(
+                    kind="missing-observation",
+                    key=key,
+                    message=(f"declared must_match_across_ranks expectation on '{key}' but no rank reports were supplied"),
+                )
+            )
 
     if inputs.must_match_across_ranks is not None and seen_ranks:
         for key in inputs.must_match_across_ranks:
