@@ -181,6 +181,9 @@ uv run autoctx worker --poll-interval 5 --concurrency 2
 uv run autoctx simulate --replay deploy_sim --variables threshold=0.9
 uv run autoctx list
 uv run autoctx status <run_id>
+uv run autoctx show <run_id> --best
+uv run autoctx show <run_id> --generation 2 --json
+uv run autoctx watch <run_id> --interval 2
 uv run autoctx replay <run_id> --generation 1
 uv run autoctx run support_triage --iterations 3
 uv run autoctx benchmark --scenario support_triage --runs 5

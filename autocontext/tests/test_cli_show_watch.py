@@ -193,6 +193,34 @@ def test_watch_breaks_immediately_on_a_terminal_generation(tmp_path, monkeypatch
     assert sleep_calls == []
 
 
+def test_watch_terminal_run_with_no_generations_exits(tmp_path, monkeypatch) -> None:
+    """PR #1002 review (P2): a failed run with `run_status=[]` used
+    to loop forever because the previous design only checked the
+    latest generation's status to break the loop. The fix polls the
+    run row each iteration and exits when the run row itself is in a
+    terminal status, even without generation rows."""
+    monkeypatch.setenv("AUTOCONTEXT_DB_PATH", str(tmp_path / "autocontext.db"))
+    monkeypatch.setenv("AUTOCONTEXT_CONFIG_DIR", str(tmp_path / "config"))
+
+    monkeypatch.setattr(
+        "autocontext.cli._sqlite_from_settings",
+        lambda _: _make_store_stub(
+            {"scenario": "x", "status": "failed"},  # terminal run row
+            [],  # no generations recorded
+        ),
+    )
+    sleep_calls: list[float] = []
+    monkeypatch.setattr("time.sleep", lambda s: sleep_calls.append(s))
+
+    result = CliRunner().invoke(app, ["watch", "abc123", "--json"])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output.strip())
+    # Run-level terminal status surfaced with `generation: null`.
+    assert payload == {"run_id": "abc123", "generation": None, "status": "failed"}
+    # No sleep needed: terminal run is detected on the first poll.
+    assert sleep_calls == []
+
+
 def test_watch_missing_run_exits_non_zero(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("AUTOCONTEXT_DB_PATH", str(tmp_path / "autocontext.db"))
     monkeypatch.setenv("AUTOCONTEXT_CONFIG_DIR", str(tmp_path / "config"))
