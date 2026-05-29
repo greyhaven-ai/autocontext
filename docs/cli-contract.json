@@ -347,12 +347,10 @@
       "aliases": ["mcp-serve"],
       "runtime_support": {
         "python": {
-          "status": "intentional_gap",
-          "reason": "Python ships at the legacy single-token path `mcp-serve` today. AC-697 follow-up slice registers the canonical `serve mcp` path and keeps `mcp-serve` as an alias."
+          "status": "yes"
         },
         "typescript": {
-          "status": "intentional_gap",
-          "reason": "TypeScript ships at the legacy single-token path `mcp-serve` today. AC-697 follow-up slice mirrors the canonical `serve mcp` path."
+          "status": "yes"
         }
       },
       "flags": [],

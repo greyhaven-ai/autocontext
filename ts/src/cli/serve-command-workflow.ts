@@ -2,6 +2,9 @@ export const SERVE_HELP_TEXT = [
   "autoctx serve [--port 8000] [--host 127.0.0.1] [--json]",
   "Starts the HTTP API server (matches Python 'autoctx serve').",
   "With --json, prints a machine-parseable JSON line on startup.",
+  "",
+  "Subcommands:",
+  "  mcp    Start the MCP server on stdio (canonical path; alias: `mcp-serve`).",
 ].join("\n");
 
 export interface ServeCommandValues {

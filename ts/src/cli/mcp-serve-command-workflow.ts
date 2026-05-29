@@ -1,4 +1,14 @@
-export const MCP_SERVE_HELP_TEXT = `autoctx mcp-serve — Start MCP server on stdio
+/**
+ * PR #1001 review (P3): the help text was hard-coded to
+ * `autoctx mcp-serve`, which leaked into `autoctx serve mcp --help`
+ * after slice 6 added the canonical sub-command path. The builder
+ * lets each entry point render help under its own command name
+ * without duplicating the body, so the canonical and legacy
+ * surfaces stay byte-identical except for the header. Same pattern
+ * as PR #999's `buildScenarioHelpText`.
+ */
+export function buildMcpServeHelpText(commandName: string): string {
+  return `autoctx ${commandName} — Start MCP server on stdio
 
 Starts the Model Context Protocol server on stdio for integration with
 Claude Code, Cursor, and other MCP-compatible editors.
@@ -23,6 +33,10 @@ Additional tools cover playbooks, sandboxing, tournaments, and package import/ex
 Transport: stdio (JSON-RPC over stdin/stdout)
 
 See also: serve, judge, improve`;
+}
+
+export const MCP_SERVE_HELP_TEXT = buildMcpServeHelpText("mcp-serve");
+export const SERVE_MCP_HELP_TEXT = buildMcpServeHelpText("serve mcp");
 
 export function buildMcpServeRequest<TStore, TProvider>(input: {
   store: TStore;

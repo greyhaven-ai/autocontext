@@ -602,14 +602,93 @@ def status(
         console.print(table)
 
 
-@app.command()
-def serve(
+def _run_http_serve(host: str, port: int) -> None:
+    """Backend for `autoctx serve` and `autoctx serve http`.
+
+    Extracted so the canonical sub-Typer group can route bare
+    `autoctx serve` (legacy form) and `autoctx serve http`
+    (explicit subcommand) through the same code path.
+    """
+    uvicorn.run("autocontext.server.app:app", host=host, port=port, reload=False)
+
+
+# AC-697 slice 6: `serve` is a sub-Typer group with `invoke_without_command`
+# so the legacy `autoctx serve [--host ...] [--port ...]` form continues
+# to start the HTTP API, while the canonical `serve mcp` path the slice-1
+# contract pins now exists as a registered subcommand.
+
+# PR #1001 review (P2): the bare callback parses --host/--port options
+# whenever they appear before the subcommand. The previous design discarded
+# those parsed values when typer saw a subcommand, breaking
+# `autoctx serve --host 0.0.0.0 --port 9001 http` (callback values
+# ignored, http subcommand used its own defaults). Mirror of the PR #998
+# queue fix: stash callback values on `ctx.obj` and merge in the http
+# subcommand. Subcommand-explicit > callback-explicit > default.
+_SERVE_DEFAULTS: dict[str, Any] = {"host": "127.0.0.1", "port": 8000}
+
+
+def _merge_serve_options(ctx: typer.Context, **subcommand_values: Any) -> dict[str, Any]:
+    """Return effective serve options, merging callback values from ctx.obj."""
+    callback_values: dict[str, Any] = (ctx.obj or {}) if isinstance(ctx.obj, dict) else {}
+    merged: dict[str, Any] = {}
+    for key, default in _SERVE_DEFAULTS.items():
+        sub_val = subcommand_values.get(key, default)
+        cb_val = callback_values.get(key, default)
+        if sub_val != default:
+            merged[key] = sub_val
+        elif cb_val != default:
+            merged[key] = cb_val
+        else:
+            merged[key] = default
+    return merged
+
+
+_serve_app = typer.Typer(invoke_without_command=True, help="Serve API or MCP endpoints.")
+
+
+@_serve_app.callback(invoke_without_command=True)
+def _serve_root(
+    ctx: typer.Context,
+    host: str = typer.Option("127.0.0.1", "--host"),
+    port: int = typer.Option(8000, "--port"),
+) -> None:
+    """`autoctx serve [--host ...] [--port ...]` -> HTTP (legacy form).
+
+    Options passed to the callback (before the subcommand) are stashed
+    on `ctx.obj` so subcommands can merge them with their own explicit
+    values; this preserves legacy forms like
+    `autoctx serve --host 0.0.0.0 --port 9001 http` that put flags
+    before the subcommand.
+    """
+    ctx.obj = {"host": host, "port": port}
+    if ctx.invoked_subcommand is not None:
+        return
+    _run_http_serve(host, port)
+
+
+@_serve_app.command("http")
+def _serve_http(
+    ctx: typer.Context,
     host: str = typer.Option("127.0.0.1", "--host"),
     port: int = typer.Option(8000, "--port"),
 ) -> None:
     """Serve HTTP API and WebSocket stream."""
+    merged = _merge_serve_options(ctx, host=host, port=port)
+    _run_http_serve(merged["host"], merged["port"])
 
-    uvicorn.run("autocontext.server.app:app", host=host, port=port, reload=False)
+
+@_serve_app.command("mcp")
+def _serve_mcp() -> None:
+    """Start the MCP server on stdio (canonical path for `mcp-serve`)."""
+    try:
+        from autocontext.mcp.server import run_server
+    except ImportError:
+        console.print("[red]MCP dependencies not installed. Run: uv sync --extra mcp[/red]")
+        raise typer.Exit(code=1) from None
+    run_server()
+
+
+app.add_typer(_serve_app, name="serve")
 
 
 @app.command()
