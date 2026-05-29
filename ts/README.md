@@ -313,9 +313,11 @@ autoctx improve --scenario my_saved_task [-o <output>]
 autoctx repl --scenario my_saved_task
 
 # Task queue
-autoctx queue -s <spec> [--priority N] [--browser-url https://status.example.com]
+autoctx queue add -s <spec> [--priority N] [--browser-url https://status.example.com]
+autoctx queue -s <spec> [...]   # legacy alias; prefer `queue add`
+autoctx queue status [--json]
 autoctx worker --poll-interval 5 --concurrency 2
-autoctx status
+autoctx status <run-id>
 ```
 
 Stateful persistent providers, including persistent Pi RPC, run with effective worker concurrency `1` to keep long-lived runtime sessions isolated.
@@ -506,7 +508,7 @@ autoctx run support_triage --json
 
 # Deterministic (CI/testing)
 AUTOCONTEXT_AGENT_PROVIDER=deterministic autoctx run support_triage --json
-````
+```
 
 `ANTHROPIC_API_KEY` is the preferred Anthropic credential env var. `AUTOCONTEXT_ANTHROPIC_API_KEY` remains supported as a compatibility alias.
 
