@@ -295,6 +295,25 @@ def test_artifact_probe_short_circuits_on_invalid_json_when_json_fields_required
     assert all(f.kind != "missing-json-field" for f in result.failures)
 
 
+def test_artifact_probe_json_null_value_satisfies_required_field() -> None:
+    """PR #1004 review (P2): a key present with JSON null is NOT missing.
+
+    TS probe treats only `undefined` as missing; the Python port used
+    to return `None` from both "key absent" and "key present with
+    null", causing `{"status": null}` to fail `required_json_fields:
+    ["status"]`. Sentinel-based dot-path lookup keeps the present-but-
+    null case as a pass to match the TS semantics.
+    """
+    result = probe_artifact_contract(
+        ArtifactContractProbeInputs(
+            path="out.json",
+            content='{"status": null}',
+            required_json_fields=("status",),
+        )
+    )
+    assert result.passed is True
+
+
 def test_artifact_probe_dotted_json_field_paths_check_nested_keys() -> None:
     result = probe_artifact_contract(
         ArtifactContractProbeInputs(

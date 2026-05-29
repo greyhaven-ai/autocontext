@@ -326,14 +326,20 @@ class ArtifactContractProbeResult(_Frozen):
 
 _BARE_LF_RE = re.compile(r"(?<!\r)\n")
 
+# Sentinel distinguishing "JSON key absent" from "JSON key present with
+# null value". The TS probe treats `undefined` as missing but accepts
+# `null` as a present-but-null value; mirroring that here requires a
+# sentinel because Python `json.loads` decodes JSON `null` to `None`.
+_MISSING = object()
 
-def _read_json_dot_path(value: object, path: str) -> object | None:
-    cursor: object | None = value
+
+def _read_json_dot_path(value: object, path: str) -> object:
+    cursor: object = value
     for segment in path.split("."):
         if not isinstance(cursor, dict):
-            return None
+            return _MISSING
         if segment not in cursor:
-            return None
+            return _MISSING
         cursor = cursor[segment]
     return cursor
 
@@ -395,7 +401,7 @@ def probe_artifact_contract(
             )
             return ArtifactContractProbeResult(passed=False, failures=tuple(failures))
         for field in inputs.required_json_fields:
-            if _read_json_dot_path(parsed, field) is None:
+            if _read_json_dot_path(parsed, field) is _MISSING:
                 failures.append(
                     ArtifactContractFailure(
                         kind="missing-json-field",
