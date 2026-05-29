@@ -1,6 +1,8 @@
 export const QUEUE_HELP_TEXT =
-  "autoctx queue -s <spec-name> [-p prompt] [-r rubric] [--priority N] " +
-  "[--min-rounds N] [--browser-url URL] [--rlm] [--rlm-turns N]";
+  "autoctx queue add -s <spec-name> [-p prompt] [-r rubric] [--priority N] " +
+  "[--min-rounds N] [--browser-url URL] [--rlm] [--rlm-turns N]\n" +
+  "autoctx queue -s <spec-name> [...]  (legacy alias; prefer `queue add`)\n" +
+  "autoctx queue status [--json]";
 
 export interface QueueCommandValues {
   spec?: string;
@@ -74,14 +76,10 @@ export function planQueueCommand(
       maxRounds: savedScenario?.maxRounds,
       qualityThreshold: savedScenario?.qualityThreshold,
       priority: Number.parseInt(values.priority ?? "0", 10),
-      ...(values["min-rounds"]
-        ? { minRounds: Number.parseInt(values["min-rounds"], 10) }
-        : {}),
+      ...(values["min-rounds"] ? { minRounds: Number.parseInt(values["min-rounds"], 10) } : {}),
       rlmEnabled: values.rlm,
       rlmModel: values["rlm-model"],
-      ...(values["rlm-turns"]
-        ? { rlmMaxTurns: Number.parseInt(values["rlm-turns"], 10) }
-        : {}),
+      ...(values["rlm-turns"] ? { rlmMaxTurns: Number.parseInt(values["rlm-turns"], 10) } : {}),
       ...(values["rlm-max-tokens"]
         ? { rlmMaxTokensPerTurn: Number.parseInt(values["rlm-max-tokens"], 10) }
         : {}),
@@ -101,10 +99,7 @@ export function planQueueCommand(
   };
 }
 
-export function renderQueuedTaskResult(input: {
-  taskId: string;
-  specName: string;
-}): string {
+export function renderQueuedTaskResult(input: { taskId: string; specName: string }): string {
   return JSON.stringify({
     taskId: input.taskId,
     specName: input.specName,

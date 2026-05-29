@@ -251,8 +251,7 @@
           "status": "yes"
         },
         "typescript": {
-          "status": "intentional_gap",
-          "reason": "TypeScript currently exposes `autoctx queue -s <spec> ...` for queue-add. AC-697 follow-up slice adds `autoctx queue add ...` and moves queue-add to the canonical path."
+          "status": "yes"
         }
       },
       "flags": [],

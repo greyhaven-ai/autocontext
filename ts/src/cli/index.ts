@@ -1054,9 +1054,17 @@ async function cmdQueue(dbPath: string): Promise<void> {
   // AC-697 slice 2: detect `autoctx queue status` subcommand before
   // the existing `queue -s <spec>` parseArgs runs. The status
   // subcommand reports the queue-pending count (the semantic that
-  // used to live under top-level `status` in TypeScript). The
-  // existing queue-add path is unchanged for backward compatibility.
-  const subArgs = process.argv.slice(3);
+  // used to live under top-level `status` in TypeScript).
+  //
+  // AC-697 slice 8: also detect `autoctx queue add` as the canonical
+  // queue-add subcommand. The remaining args are handed to the
+  // existing parseArgs / planQueueCommand workhorse, so the only
+  // difference vs. the legacy `queue -s <spec>` form is the leading
+  // `add` token. The legacy form is preserved for backward compat.
+  let subArgs = process.argv.slice(3);
+  if (subArgs[0] === "add") {
+    subArgs = subArgs.slice(1);
+  }
   if (subArgs[0] === "status") {
     const { values: statusValues } = parseArgs({
       args: subArgs.slice(1),
