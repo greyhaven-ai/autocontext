@@ -99,8 +99,7 @@
       "aliases": [],
       "runtime_support": {
         "python": {
-          "status": "intentional_gap",
-          "reason": "Python ships `autoctx wait <condition_id>` but not `watch <run-id>`. AC-697 follow-up slice adds a watch command that wraps the existing event-stream WebSocket."
+          "status": "yes"
         },
         "typescript": {
           "status": "yes"
@@ -119,8 +118,7 @@
       "aliases": [],
       "runtime_support": {
         "python": {
-          "status": "intentional_gap",
-          "reason": "Python ships `replay` and `status` but no `show`. AC-697 follow-up slice adds `show` (with `--best`) that composes existing read surfaces."
+          "status": "yes"
         },
         "typescript": {
           "status": "yes"
