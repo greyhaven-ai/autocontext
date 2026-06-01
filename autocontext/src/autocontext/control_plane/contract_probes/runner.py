@@ -35,8 +35,9 @@ from pydantic import (
     BeforeValidator,
     ConfigDict,
     Field,
-    ValidationInfo,
-    field_validator,
+    StrictBool,
+    StrictInt,
+    model_validator,
 )
 
 from ._advanced import (
@@ -158,13 +159,44 @@ _PatternList = Annotated[tuple[re.Pattern[str], ...], BeforeValidator(_coerce_pa
 
 
 class _Strict(BaseModel):
+    """Base for every JSON-shape model.
+
+    - ``extra="forbid"``: unknown keys reject. Mirrors TS `.strict()`.
+    - ``arbitrary_types_allowed=True``: lets compiled ``re.Pattern[str]``
+      ride through after the ``_coerce_patterns`` BeforeValidator.
+
+    Primitive coercion is blocked per-field via ``StrictInt`` /
+    ``StrictBool`` (PR #1006 review P3). String -> string is a no-op
+    so plain ``str`` is fine; we want lists -> tuples to keep
+    working, so the model is not blanket-strict.
+    """
+
     model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_explicit_null(cls, data: object) -> object:
+        # PR #1006 review P2: TS `.optional()` accepts omission but
+        # not `null`. Python should reject explicit nulls so a
+        # broken extractor cannot weaken declared expectations by
+        # writing `requiredStdoutPatterns: null`.
+        if isinstance(data, dict):
+            nulls = [k for k, v in data.items() if v is None and k in cls.model_fields]
+            if nulls:
+                fields = ", ".join(sorted(nulls))
+                raise ValueError(
+                    f"explicit null not allowed for optional field(s): {fields}; omit the key to disable the expectation"
+                )
+        return data
 
 
 class _DirectoryInputsSchema(_Strict):
-    presentFiles: tuple[str, ...] = ()
-    requiredFiles: tuple[str, ...] = ()
-    allowedFiles: tuple[str, ...] = ()
+    # PR #1006 review P2: TS marks these fields required (not optional).
+    # A broken extractor that omits observations should fail validation,
+    # not silently turn into an empty-passing suite.
+    presentFiles: tuple[str, ...]
+    requiredFiles: tuple[str, ...]
+    allowedFiles: tuple[str, ...]
     ignoredPatterns: _PatternList | None = None
 
     def to_inputs(self) -> DirectoryContractProbeInputs:
@@ -177,10 +209,12 @@ class _DirectoryInputsSchema(_Strict):
 
 
 class _TerminalInputsSchema(_Strict):
-    exitCode: int
+    # PR #1006 review P3: use Strict* so the JSON schema rejects
+    # `"exitCode": "0"` etc rather than coercing them silently.
+    exitCode: StrictInt
     stdout: str
     stderr: str
-    expectedExitCode: int | None = None
+    expectedExitCode: StrictInt | None = None
     requiredStdoutPatterns: _PatternList | None = None
     forbiddenStdoutPatterns: _PatternList | None = None
     requiredStderrPatterns: _PatternList | None = None
@@ -201,7 +235,7 @@ class _TerminalInputsSchema(_Strict):
 
 class _ServiceEndpointSchema(_Strict):
     host: str
-    port: int
+    port: StrictInt
     protocol: Literal["tcp", "udp"] | None = None
 
     def to_inputs(self) -> ServiceEndpointObservation:
@@ -209,8 +243,9 @@ class _ServiceEndpointSchema(_Strict):
 
 
 class _ServiceInputsSchema(_Strict):
-    observed: tuple[_ServiceEndpointSchema, ...] = ()
-    required: tuple[_ServiceEndpointSchema, ...] = ()
+    # PR #1006 review P2: TS marks `observed` + `required` required.
+    observed: tuple[_ServiceEndpointSchema, ...]
+    required: tuple[_ServiceEndpointSchema, ...]
     allowed: tuple[_ServiceEndpointSchema, ...] | None = None
 
     def to_inputs(self) -> ServiceContractProbeInputs:
@@ -242,9 +277,9 @@ class _ArtifactInputsSchema(_Strict):
 
 class _CleanupEntrySchema(_Strict):
     path: str
-    isSymlink: bool | None = None
+    isSymlink: StrictBool | None = None
     symlinkTarget: str | None = None
-    symlinkBroken: bool | None = None
+    symlinkBroken: StrictBool | None = None
     mtime: datetime | None = None
 
     def to_inputs(self) -> CleanupFileEntry:
@@ -258,13 +293,14 @@ class _CleanupEntrySchema(_Strict):
 
 
 class _CleanupInputsSchema(_Strict):
-    entries: tuple[_CleanupEntrySchema, ...] = ()
+    # PR #1006 review P2: TS marks `entries` required.
+    entries: tuple[_CleanupEntrySchema, ...]
     now: datetime | None = None
-    maxLockfileAgeMs: int | None = None
+    maxLockfileAgeMs: StrictInt | None = None
     lockfilePatterns: _PatternList | None = None
     sidecarPatterns: _PatternList | None = None
     backupPatterns: _PatternList | None = None
-    forbidSymlinks: bool | None = None
+    forbidSymlinks: StrictBool | None = None
     allowedSymlinkTargets: tuple[str, ...] | None = None
     ignoredPatterns: _PatternList | None = None
 
@@ -284,21 +320,21 @@ class _CleanupInputsSchema(_Strict):
 
 class _MediaInputsSchema(_Strict):
     path: str
-    headerBytes: tuple[int, ...] | None = None
-    expectedMagicBytes: tuple[int, ...] | None = None
-    width: int | None = None
-    height: int | None = None
-    expectedWidth: int | None = None
-    expectedHeight: int | None = None
-    byteSize: int | None = None
-    minByteSize: int | None = None
-    maxByteSize: int | None = None
-    columnCount: int | None = None
-    expectedColumnCount: int | None = None
+    headerBytes: tuple[StrictInt, ...] | None = None
+    expectedMagicBytes: tuple[StrictInt, ...] | None = None
+    width: StrictInt | None = None
+    height: StrictInt | None = None
+    expectedWidth: StrictInt | None = None
+    expectedHeight: StrictInt | None = None
+    byteSize: StrictInt | None = None
+    minByteSize: StrictInt | None = None
+    maxByteSize: StrictInt | None = None
+    columnCount: StrictInt | None = None
+    expectedColumnCount: StrictInt | None = None
     columnNames: tuple[str, ...] | None = None
     requiredColumnNames: tuple[str, ...] | None = None
-    lineCount: int | None = None
-    expectedLineCount: int | None = None
+    lineCount: StrictInt | None = None
+    expectedLineCount: StrictInt | None = None
 
     def to_inputs(self) -> MediaContractProbeInputs:
         return MediaContractProbeInputs(
@@ -322,8 +358,8 @@ class _MediaInputsSchema(_Strict):
 
 
 class _DistributedRankSchema(_Strict):
-    rank: int
-    steps: int | None = None
+    rank: StrictInt
+    steps: StrictInt | None = None
     observations: dict[str, str] | None = None
 
     def to_inputs(self) -> DistributedRankReport:
@@ -331,10 +367,11 @@ class _DistributedRankSchema(_Strict):
 
 
 class _DistributedInputsSchema(_Strict):
-    ranks: tuple[_DistributedRankSchema, ...] = ()
-    worldSize: int | None = None
-    expectedWorldSize: int | None = None
-    expectedSteps: int | None = None
+    # PR #1006 review P2: TS marks `ranks` required.
+    ranks: tuple[_DistributedRankSchema, ...]
+    worldSize: StrictInt | None = None
+    expectedWorldSize: StrictInt | None = None
+    expectedSteps: StrictInt | None = None
     mustMatchAcrossRanks: tuple[str, ...] | None = None
 
     def to_inputs(self) -> DistributedContractProbeInputs:
@@ -407,19 +444,17 @@ ContractProbeInvocation = Annotated[_InvocationUnion, Field(discriminator="kind"
 
 
 class ContractProbeSuite(_Strict):
-    """JSON wire-format suite envelope."""
+    """JSON wire-format suite envelope.
+
+    Both fields are required. PR #1006 review P2: ``probes: null``
+    used to coerce to an empty passing suite; the explicit-null
+    rejection in ``_Strict._reject_explicit_null`` plus the lack of
+    a default here makes ``null`` and omission both fail validation
+    (TS rejects ``null`` the same way).
+    """
 
     schema_version: Literal[1]
     probes: tuple[ContractProbeInvocation, ...]
-
-    @field_validator("probes", mode="before")
-    @classmethod
-    def _coerce_probes(cls, value: object, _info: ValidationInfo) -> object:
-        # Pydantic accepts list-of-dicts directly; this validator only
-        # exists to surface a clear error if the field is missing entirely.
-        if value is None:
-            return ()
-        return value
 
 
 ContractProbeSuiteSchema = ContractProbeSuite

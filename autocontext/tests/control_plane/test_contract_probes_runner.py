@@ -135,6 +135,113 @@ def test_iso_date_string_parses_to_datetime() -> None:
     assert any(f.kind == "stale-lockfile" for f in result.results[0].failures)
 
 
+def test_probes_null_rejected() -> None:
+    """PR #1006 review (P2): a `probes: null` envelope used to coerce
+    to an empty passing suite. The schema now rejects it loudly so
+    corrupted JSON cannot present as a green empty run.
+    """
+    with pytest.raises(ValidationError):
+        ContractProbeSuiteSchema.model_validate({"schema_version": 1, "probes": None})
+
+
+def test_required_observation_fields_must_be_present() -> None:
+    """PR #1006 review (P2): TS-required fields like `presentFiles`,
+    `observed`, `entries`, `ranks` were optional in the Python
+    schema. A broken extractor that omitted them would silently
+    produce passing suites. They now reject as missing.
+    """
+    # directory: presentFiles / requiredFiles / allowedFiles
+    with pytest.raises(ValidationError):
+        _suite(
+            {
+                "kind": "directory",
+                "inputs": {"requiredFiles": [], "allowedFiles": []},
+            }
+        )
+    # service: observed / required
+    with pytest.raises(ValidationError):
+        _suite({"kind": "service", "inputs": {"required": []}})
+    # cleanup: entries
+    with pytest.raises(ValidationError):
+        _suite({"kind": "cleanup", "inputs": {}})
+    # distributed: ranks
+    with pytest.raises(ValidationError):
+        _suite({"kind": "distributed", "inputs": {}})
+
+
+def test_explicit_null_for_optional_expectation_fields_rejected() -> None:
+    """PR #1006 review (P2): TS `.optional()` accepts omission but
+    not `null`. Writing an explicit `null` for an optional expectation
+    used to disable the expectation silently; the schema now rejects
+    explicit nulls on every declared field.
+    """
+    # terminal optional pattern list
+    with pytest.raises(ValidationError):
+        _suite(
+            {
+                "kind": "terminal",
+                "inputs": {
+                    "exitCode": 0,
+                    "stdout": "",
+                    "stderr": "",
+                    "requiredStdoutPatterns": None,
+                },
+            }
+        )
+    # artifact optional substrings
+    with pytest.raises(ValidationError):
+        _suite(
+            {
+                "kind": "artifact",
+                "inputs": {"path": "x", "content": "", "requiredSubstrings": None},
+            }
+        )
+    # distributed optional must-match
+    with pytest.raises(ValidationError):
+        _suite(
+            {
+                "kind": "distributed",
+                "inputs": {"ranks": [], "mustMatchAcrossRanks": None},
+            }
+        )
+
+
+def test_strict_typing_rejects_coerced_primitives() -> None:
+    """PR #1006 review (P3): the schema used to coerce
+    `"exitCode": "0"`, `"port": "8000"`, `"forbidSymlinks": "false"`
+    and so on, mirroring lax Pydantic behaviour. Strict types now
+    reject these forms so bad suite generation surfaces at parse
+    time.
+    """
+    # terminal exitCode must be a real int
+    with pytest.raises(ValidationError):
+        _suite(
+            {
+                "kind": "terminal",
+                "inputs": {"exitCode": "0", "stdout": "", "stderr": ""},
+            }
+        )
+    # service port must be a real int
+    with pytest.raises(ValidationError):
+        _suite(
+            {
+                "kind": "service",
+                "inputs": {
+                    "observed": [{"host": "127.0.0.1", "port": "8000"}],
+                    "required": [],
+                },
+            }
+        )
+    # cleanup forbidSymlinks must be a real bool
+    with pytest.raises(ValidationError):
+        _suite(
+            {
+                "kind": "cleanup",
+                "inputs": {"entries": [], "forbidSymlinks": "false"},
+            }
+        )
+
+
 def test_malformed_date_rejected() -> None:
     with pytest.raises(ValidationError):
         _suite(
