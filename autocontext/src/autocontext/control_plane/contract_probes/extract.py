@@ -1,11 +1,11 @@
-"""AC-728 `autoctx probes extract` library surface (Python parity, slice 5).
+"""AC-728 `autoctx probes extract` library surface (Python parity, slices 5 + 6).
 
-Mirrors the slice-1 / TS PR #992 portion of
-``ts/src/control-plane/contract-probes/cli/extract.ts``: reads a
-harness-trace JSON envelope and synthesises a runnable
-``ContractProbeSuite`` covering the four slice-1 probe kinds
-(terminal / directory / service / artifact). The advanced kinds
-(cleanup / media / distributed) land in slice 6.
+Mirrors ``ts/src/control-plane/contract-probes/cli/extract.ts`` (TS
+PRs #992 + #993): reads a harness-trace JSON envelope and
+synthesises a runnable ``ContractProbeSuite`` covering all seven
+AC-728 probe kinds. Slice 5 shipped the four base kinds (terminal /
+directory / service / artifact); slice 6 extends coverage to
+cleanup / media / distributed.
 
 A harness trace bundles two halves:
 
@@ -15,7 +15,11 @@ A harness trace bundles two halves:
 The extractor joins them. Per the slice-1 audit invariant, every
 declared expectation must have a matching observation; orphan
 expectations fail validation at parse time rather than silently
-producing a vacuously-passing suite.
+producing a vacuously-passing suite. Per the slice-2 P2 fix,
+rank-scoped distributed expectations (``expectedSteps``,
+``mustMatchAcrossRanks``) reject when the trace records zero ranks;
+the non-rank-scoped ``expectedWorldSize`` is fine to declare even
+against an empty rank list.
 
 Module split lives next to ``runner.py`` so both load the same
 ``ContractProbeSuite`` and ``_PatternList`` helpers.
@@ -24,10 +28,12 @@ Module split lives next to ``runner.py`` so both load the same
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
 from pydantic import (
+    StrictBool,
     StrictInt,
     model_validator,
 )
@@ -101,6 +107,75 @@ class _ArtifactExpectations(_Strict):
 
 
 # ---------------------------------------------------------------------------
+# slice 6: cleanup / media / distributed observation + expectation schemas
+# ---------------------------------------------------------------------------
+
+
+class _CleanupEntrySchema(_Strict):
+    path: str
+    isSymlink: StrictBool | None = None
+    symlinkTarget: str | None = None
+    symlinkBroken: StrictBool | None = None
+    mtime: datetime | None = None
+
+
+class _CleanupObservation(_Strict):
+    entries: tuple[_CleanupEntrySchema, ...]
+
+
+class _CleanupExpectations(_Strict):
+    now: datetime | None = None
+    maxLockfileAgeMs: StrictInt | None = None
+    lockfilePatterns: _PatternList | None = None
+    sidecarPatterns: _PatternList | None = None
+    backupPatterns: _PatternList | None = None
+    forbidSymlinks: StrictBool | None = None
+    allowedSymlinkTargets: tuple[str, ...] | None = None
+    ignoredPatterns: _PatternList | None = None
+
+
+class _MediaObservation(_Strict):
+    path: str
+    headerBytes: tuple[StrictInt, ...] | None = None
+    width: StrictInt | None = None
+    height: StrictInt | None = None
+    byteSize: StrictInt | None = None
+    columnCount: StrictInt | None = None
+    columnNames: tuple[str, ...] | None = None
+    lineCount: StrictInt | None = None
+
+
+class _MediaExpectations(_Strict):
+    path: str
+    label: str | None = None
+    expectedMagicBytes: tuple[StrictInt, ...] | None = None
+    expectedWidth: StrictInt | None = None
+    expectedHeight: StrictInt | None = None
+    minByteSize: StrictInt | None = None
+    maxByteSize: StrictInt | None = None
+    expectedColumnCount: StrictInt | None = None
+    requiredColumnNames: tuple[str, ...] | None = None
+    expectedLineCount: StrictInt | None = None
+
+
+class _DistributedRankSchema(_Strict):
+    rank: StrictInt
+    steps: StrictInt | None = None
+    observations: dict[str, str] | None = None
+
+
+class _DistributedObservation(_Strict):
+    worldSize: StrictInt | None = None
+    ranks: tuple[_DistributedRankSchema, ...]
+
+
+class _DistributedExpectations(_Strict):
+    expectedWorldSize: StrictInt | None = None
+    expectedSteps: StrictInt | None = None
+    mustMatchAcrossRanks: tuple[str, ...] | None = None
+
+
+# ---------------------------------------------------------------------------
 # Trace envelope
 # ---------------------------------------------------------------------------
 
@@ -110,6 +185,9 @@ class _HarnessObservations(_Strict):
     workdir: _WorkdirObservation | None = None
     services: tuple[_ServiceEndpointSchema, ...] | None = None
     artifacts: tuple[_ArtifactObservation, ...] | None = None
+    cleanup: _CleanupObservation | None = None
+    media: tuple[_MediaObservation, ...] | None = None
+    distributed: _DistributedObservation | None = None
 
 
 class _HarnessExpectations(_Strict):
@@ -117,6 +195,9 @@ class _HarnessExpectations(_Strict):
     directory: _DirectoryExpectations | None = None
     services: _ServiceExpectations | None = None
     artifacts: tuple[_ArtifactExpectations, ...] | None = None
+    cleanup: _CleanupExpectations | None = None
+    media: tuple[_MediaExpectations, ...] | None = None
+    distributed: _DistributedExpectations | None = None
 
 
 class HarnessTrace(_Strict):
@@ -182,6 +263,66 @@ class HarnessTrace(_Strict):
                             "merge into a single entry"
                         )
                     seen_paths.add(art_exp.path)
+
+        # ---- slice 6: cleanup / media / distributed ----------------------
+
+        if exp.cleanup is not None and obs.cleanup is None:
+            violations.append("expectations.cleanup: declared without observations.cleanup.entries; add the directory listing")
+
+        if exp.media is not None:
+            if obs.media is None:
+                violations.append(
+                    "expectations.media: per-media expectations declared "
+                    "without observations.media; add the matching observations"
+                )
+            else:
+                observed_media_paths = {m.path for m in obs.media}
+                seen_media_paths: set[str] = set()
+                for index, m_exp in enumerate(exp.media):
+                    if m_exp.path not in observed_media_paths:
+                        violations.append(
+                            f"expectations.media.{index}.path: expectation "
+                            f"references {m_exp.path!r} but no observation "
+                            "with that path was recorded"
+                        )
+                    if m_exp.path in seen_media_paths:
+                        # PR #993 review (P2) parity: duplicate per-media
+                        # expectations silently lost assertions because the
+                        # extractor stored them in a path-keyed dict. Reject
+                        # at parse time rather than overwrite.
+                        violations.append(
+                            f"expectations.media.{index}.path: duplicate "
+                            f"per-media expectation for {m_exp.path!r}; "
+                            "merge into a single entry"
+                        )
+                    seen_media_paths.add(m_exp.path)
+
+        if exp.distributed is not None:
+            if obs.distributed is None:
+                violations.append(
+                    "expectations.distributed: declared without observations.distributed.ranks; add the rank reports"
+                )
+            elif len(obs.distributed.ranks) == 0:
+                # PR #1005 review (P2) parity: rank-scoped expectations
+                # (`expectedSteps`, `mustMatchAcrossRanks`) silently pass
+                # when there are zero rank reports because the slice-2
+                # distributed probe's per-rank loop is vacuous. The
+                # non-rank-scoped `expectedWorldSize` is fine to declare
+                # against an empty rank list, so we reject only the two
+                # rank-scoped expectations here.
+                if exp.distributed.expectedSteps is not None:
+                    violations.append(
+                        "expectations.distributed.expectedSteps: rank-scoped "
+                        "expectation requires observations.distributed.ranks "
+                        "to contain at least one report"
+                    )
+                if exp.distributed.mustMatchAcrossRanks is not None:
+                    violations.append(
+                        "expectations.distributed.mustMatchAcrossRanks: "
+                        "rank-scoped expectation requires "
+                        "observations.distributed.ranks to contain at least "
+                        "one report"
+                    )
 
         if violations:
             raise ValueError("\n".join(violations))
@@ -318,7 +459,122 @@ def extract_contract_probe_suite(trace: HarnessTrace) -> dict:
                 probe["label"] = probe_label
             probes.append(probe)
 
+    # ---- slice 6: cleanup / media / distributed emission --------------------
+
+    if trace.observations.cleanup is not None:
+        cln_exp = expectations.cleanup if expectations else None
+        inputs = {
+            "entries": [_cleanup_entry_dict(e) for e in trace.observations.cleanup.entries],
+        }
+        if cln_exp is not None:
+            if cln_exp.now is not None:
+                inputs["now"] = cln_exp.now.isoformat()
+            if cln_exp.maxLockfileAgeMs is not None:
+                inputs["maxLockfileAgeMs"] = cln_exp.maxLockfileAgeMs
+            if cln_exp.lockfilePatterns is not None:
+                inputs["lockfilePatterns"] = _patterns_dict_list(cln_exp.lockfilePatterns)
+            if cln_exp.sidecarPatterns is not None:
+                inputs["sidecarPatterns"] = _patterns_dict_list(cln_exp.sidecarPatterns)
+            if cln_exp.backupPatterns is not None:
+                inputs["backupPatterns"] = _patterns_dict_list(cln_exp.backupPatterns)
+            if cln_exp.forbidSymlinks is not None:
+                inputs["forbidSymlinks"] = cln_exp.forbidSymlinks
+            if cln_exp.allowedSymlinkTargets is not None:
+                inputs["allowedSymlinkTargets"] = list(cln_exp.allowedSymlinkTargets)
+            if cln_exp.ignoredPatterns is not None:
+                inputs["ignoredPatterns"] = _patterns_dict_list(cln_exp.ignoredPatterns)
+        probe = {"kind": "cleanup", "inputs": inputs}
+        if label is not None:
+            probe["label"] = label
+        probes.append(probe)
+
+    if trace.observations.media is not None:
+        media_exp_by_path: dict[str, _MediaExpectations] = {}
+        if expectations is not None and expectations.media is not None:
+            for declared_m_exp in expectations.media:
+                media_exp_by_path[declared_m_exp.path] = declared_m_exp
+        for observation in trace.observations.media:
+            m_exp = media_exp_by_path.get(observation.path)
+            inputs = {"path": observation.path}
+            if observation.headerBytes is not None:
+                inputs["headerBytes"] = list(observation.headerBytes)
+            if observation.width is not None:
+                inputs["width"] = observation.width
+            if observation.height is not None:
+                inputs["height"] = observation.height
+            if observation.byteSize is not None:
+                inputs["byteSize"] = observation.byteSize
+            if observation.columnCount is not None:
+                inputs["columnCount"] = observation.columnCount
+            if observation.columnNames is not None:
+                inputs["columnNames"] = list(observation.columnNames)
+            if observation.lineCount is not None:
+                inputs["lineCount"] = observation.lineCount
+            if m_exp is not None:
+                if m_exp.expectedMagicBytes is not None:
+                    inputs["expectedMagicBytes"] = list(m_exp.expectedMagicBytes)
+                if m_exp.expectedWidth is not None:
+                    inputs["expectedWidth"] = m_exp.expectedWidth
+                if m_exp.expectedHeight is not None:
+                    inputs["expectedHeight"] = m_exp.expectedHeight
+                if m_exp.minByteSize is not None:
+                    inputs["minByteSize"] = m_exp.minByteSize
+                if m_exp.maxByteSize is not None:
+                    inputs["maxByteSize"] = m_exp.maxByteSize
+                if m_exp.expectedColumnCount is not None:
+                    inputs["expectedColumnCount"] = m_exp.expectedColumnCount
+                if m_exp.requiredColumnNames is not None:
+                    inputs["requiredColumnNames"] = list(m_exp.requiredColumnNames)
+                if m_exp.expectedLineCount is not None:
+                    inputs["expectedLineCount"] = m_exp.expectedLineCount
+            probe = {"kind": "media", "inputs": inputs}
+            probe_label = m_exp.label if m_exp is not None and m_exp.label is not None else label
+            if probe_label is not None:
+                probe["label"] = probe_label
+            probes.append(probe)
+
+    if trace.observations.distributed is not None:
+        dist_exp = expectations.distributed if expectations else None
+        inputs = {
+            "ranks": [_distributed_rank_dict(r) for r in trace.observations.distributed.ranks],
+        }
+        if trace.observations.distributed.worldSize is not None:
+            inputs["worldSize"] = trace.observations.distributed.worldSize
+        if dist_exp is not None:
+            if dist_exp.expectedWorldSize is not None:
+                inputs["expectedWorldSize"] = dist_exp.expectedWorldSize
+            if dist_exp.expectedSteps is not None:
+                inputs["expectedSteps"] = dist_exp.expectedSteps
+            if dist_exp.mustMatchAcrossRanks is not None:
+                inputs["mustMatchAcrossRanks"] = list(dist_exp.mustMatchAcrossRanks)
+        probe = {"kind": "distributed", "inputs": inputs}
+        if label is not None:
+            probe["label"] = label
+        probes.append(probe)
+
     return {"schema_version": 1, "probes": probes}
+
+
+def _cleanup_entry_dict(entry: _CleanupEntrySchema) -> dict:
+    payload: dict = {"path": entry.path}
+    if entry.isSymlink is not None:
+        payload["isSymlink"] = entry.isSymlink
+    if entry.symlinkTarget is not None:
+        payload["symlinkTarget"] = entry.symlinkTarget
+    if entry.symlinkBroken is not None:
+        payload["symlinkBroken"] = entry.symlinkBroken
+    if entry.mtime is not None:
+        payload["mtime"] = entry.mtime.isoformat()
+    return payload
+
+
+def _distributed_rank_dict(rank: _DistributedRankSchema) -> dict:
+    payload: dict = {"rank": rank.rank}
+    if rank.steps is not None:
+        payload["steps"] = rank.steps
+    if rank.observations is not None:
+        payload["observations"] = dict(rank.observations)
+    return payload
 
 
 def serialize_suite(suite: dict) -> str:
