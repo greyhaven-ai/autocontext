@@ -652,6 +652,16 @@ export function probeDistributedContract(
   }
 
   if (inputs.expectedSteps !== undefined) {
+    // AC-728 Python parity PR #1005 review (P2) backport: a declared
+    // rank-scoped expectation without any rank reports must fail
+    // loudly. Iterating `seenRanks.values()` alone would let a broken
+    // extractor satisfy `expectedSteps` by omitting every rank report.
+    if (seenRanks.size === 0) {
+      failures.push({
+        kind: "missing-observation",
+        message: "declared expectation on expectedSteps but no rank reports were supplied",
+      });
+    }
     for (const report of seenRanks.values()) {
       if (report.steps === undefined) {
         failures.push({
@@ -666,6 +676,19 @@ export function probeDistributedContract(
           message: `rank ${report.rank} ran ${report.steps} steps; expected ${inputs.expectedSteps}`,
         });
       }
+    }
+  }
+
+  if (inputs.mustMatchAcrossRanks !== undefined && seenRanks.size === 0) {
+    // AC-728 Python parity PR #1005 review (P2) backport: same shape
+    // as expectedSteps above. Emit one failure per declared key so
+    // multi-key expectations do not collapse to a single failure.
+    for (const key of inputs.mustMatchAcrossRanks) {
+      failures.push({
+        kind: "missing-observation",
+        key,
+        message: `declared mustMatchAcrossRanks expectation on '${key}' but no rank reports were supplied`,
+      });
     }
   }
 

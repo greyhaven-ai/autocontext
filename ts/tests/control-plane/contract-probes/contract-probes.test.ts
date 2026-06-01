@@ -582,6 +582,35 @@ describe("probeDistributedContract", () => {
     expect(result.passed).toBe(true);
   });
 
+  test("rank-scoped expectedSteps with zero rank reports fails loudly with missing-observation", () => {
+    // AC-728 Python parity PR #1005 review (P2) backport: a declared
+    // rank-scoped expectation without any rank reports must fail
+    // loudly. Iterating `seenRanks.values()` alone would let a broken
+    // extractor satisfy `expectedSteps` by omitting every rank report.
+    const result = probeDistributedContract({
+      ranks: [],
+      expectedSteps: 100,
+    });
+    expect(result.passed).toBe(false);
+    expect(result.failures).toContainEqual({
+      kind: "missing-observation",
+      message: "declared expectation on expectedSteps but no rank reports were supplied",
+    });
+  });
+
+  test("rank-scoped mustMatchAcrossRanks with zero rank reports fails loudly per key", () => {
+    // PR #1005 review (P2) backport: same shape as expectedSteps. Emit
+    // one failure per declared key so multi-key expectations do not
+    // collapse to a single failure.
+    const result = probeDistributedContract({
+      ranks: [],
+      mustMatchAcrossRanks: ["hash", "loss"],
+    });
+    expect(result.passed).toBe(false);
+    const keys = result.failures.filter((f) => f.kind === "missing-observation").map((f) => f.key);
+    expect(new Set(keys)).toEqual(new Set(["hash", "loss"]));
+  });
+
   test("treats a single-rank report with expectedWorldSize=1 as valid", () => {
     // World size 1 is degenerate but lawful: parity-with-self holds and the
     // probe should treat the trivial case as passing.
