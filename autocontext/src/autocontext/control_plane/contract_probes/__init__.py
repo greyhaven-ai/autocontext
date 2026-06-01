@@ -58,9 +58,25 @@ from ._base import (
     probe_service_contract,
     probe_terminal_contract,
 )
+from .runner import (
+    ContractProbeInvocation,
+    ContractProbeKind,
+    ContractProbeRunResult,
+    ContractProbeSuite,
+    ContractProbeSuiteResult,
+    ContractProbeSuiteSchema,
+    load_contract_probe_suite,
+    run_contract_probe_suite,
+)
 
 __all__ = [
     "ArtifactContractFailure",
+    "ContractProbeInvocation",
+    "ContractProbeKind",
+    "ContractProbeRunResult",
+    "ContractProbeSuite",
+    "ContractProbeSuiteResult",
+    "ContractProbeSuiteSchema",
     "ArtifactContractFailureKind",
     "ArtifactContractProbeInputs",
     "ArtifactContractProbeResult",
@@ -92,6 +108,7 @@ __all__ = [
     "TerminalContractFailureKind",
     "TerminalContractProbeInputs",
     "TerminalContractProbeResult",
+    "load_contract_probe_suite",
     "probe_artifact_contract",
     "probe_cleanup_contract",
     "probe_directory_contract",
@@ -99,4 +116,5 @@ __all__ = [
     "probe_media_contract",
     "probe_service_contract",
     "probe_terminal_contract",
+    "run_contract_probe_suite",
 ]
