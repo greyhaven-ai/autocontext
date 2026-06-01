@@ -147,6 +147,33 @@ def _coerce_patterns(value: object) -> tuple[re.Pattern[str], ...]:
 _PatternList = Annotated[tuple[re.Pattern[str], ...], BeforeValidator(_coerce_patterns)]
 
 
+def _require_string_or_datetime(value: object) -> object:
+    """Reject non-string / non-datetime JSON inputs for datetime fields.
+
+    PR #1011 review (P2): without this guard, Pydantic happily
+    coerced ``{"mtime": 0}`` into ``1970-01-01T00:00:00+00:00`` via
+    Unix-timestamp interpretation, which bypasses the advertised
+    ISO-8601 contract and diverges from the TS `DateJson` parser
+    that accepts only strings or `Date` objects. Letting the
+    BeforeValidator pass through valid inputs (``datetime`` instances
+    or ISO-8601 strings) keeps the downstream ``datetime`` field
+    type intact; everything else (numbers, booleans, dicts) raises.
+    """
+    from datetime import datetime as _dt
+
+    if isinstance(value, (str, _dt)):
+        return value
+    raise ValueError(f"datetime fields require an ISO-8601 string or a datetime instance; got {type(value).__name__}")
+
+
+# Use this for any datetime field where the JSON wire format should
+# reject numeric inputs (the TS extractor's `DateJson` only accepts
+# strings or Date objects). The BeforeValidator gates input so only
+# strings or `datetime` instances flow through to Pydantic's normal
+# datetime parsing; ints / floats / dicts / lists raise.
+_StrictDate = Annotated[datetime, BeforeValidator(_require_string_or_datetime)]
+
+
 # ---------------------------------------------------------------------------
 # Per-probe JSON-shape schemas
 # ---------------------------------------------------------------------------
@@ -280,7 +307,10 @@ class _CleanupEntrySchema(_Strict):
     isSymlink: StrictBool | None = None
     symlinkTarget: str | None = None
     symlinkBroken: StrictBool | None = None
-    mtime: datetime | None = None
+    # PR #1011 review (P2): plain `datetime` coerced JSON ints
+    # (Unix timestamps); reject non-string / non-datetime inputs at
+    # the field boundary so the JSON wire format matches TS DateJson.
+    mtime: _StrictDate | None = None
 
     def to_inputs(self) -> CleanupFileEntry:
         return CleanupFileEntry(
@@ -295,7 +325,8 @@ class _CleanupEntrySchema(_Strict):
 class _CleanupInputsSchema(_Strict):
     # PR #1006 review P2: TS marks `entries` required.
     entries: tuple[_CleanupEntrySchema, ...]
-    now: datetime | None = None
+    # PR #1011 review (P2): same strict-date guard as `mtime` above.
+    now: _StrictDate | None = None
     maxLockfileAgeMs: StrictInt | None = None
     lockfilePatterns: _PatternList | None = None
     sidecarPatterns: _PatternList | None = None

@@ -28,7 +28,6 @@ Module split lives next to ``runner.py`` so both load the same
 from __future__ import annotations
 
 import json
-from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
@@ -41,6 +40,7 @@ from pydantic import (
 from .runner import (
     _PatternList,
     _Strict,
+    _StrictDate,
 )
 
 __all__ = [
@@ -116,7 +116,10 @@ class _CleanupEntrySchema(_Strict):
     isSymlink: StrictBool | None = None
     symlinkTarget: str | None = None
     symlinkBroken: StrictBool | None = None
-    mtime: datetime | None = None
+    # PR #1011 review (P2): plain `datetime` coerced JSON ints
+    # (Unix timestamps); reject non-string / non-datetime inputs so
+    # the trace JSON wire format matches TS `DateJson`.
+    mtime: _StrictDate | None = None
 
 
 class _CleanupObservation(_Strict):
@@ -124,7 +127,8 @@ class _CleanupObservation(_Strict):
 
 
 class _CleanupExpectations(_Strict):
-    now: datetime | None = None
+    # PR #1011 review (P2): same strict-date guard as `mtime` above.
+    now: _StrictDate | None = None
     maxLockfileAgeMs: StrictInt | None = None
     lockfilePatterns: _PatternList | None = None
     sidecarPatterns: _PatternList | None = None

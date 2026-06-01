@@ -52,6 +52,74 @@ def test_cleanup_expectation_without_observation_rejected() -> None:
     assert "expectations.cleanup" in str(excinfo.value)
 
 
+def test_cleanup_numeric_mtime_rejected_at_trace_layer() -> None:
+    """PR #1011 review (P2): plain `datetime` coerced JSON ints
+    (Unix timestamps) so `{"mtime": 0}` became 1970-01-01T00:00:00Z,
+    bypassing the advertised ISO-8601 trace contract. The
+    BeforeValidator now rejects anything that is not a string or a
+    `datetime` instance.
+    """
+    with pytest.raises(ValidationError):
+        HarnessTraceSchema.model_validate(
+            {
+                "schema_version": 1,
+                "observations": {
+                    "cleanup": {"entries": [{"path": "x", "mtime": 0}]},
+                },
+            }
+        )
+
+
+def test_cleanup_numeric_now_rejected_at_trace_layer() -> None:
+    with pytest.raises(ValidationError):
+        HarnessTraceSchema.model_validate(
+            {
+                "schema_version": 1,
+                "observations": {"cleanup": {"entries": [{"path": "x"}]}},
+                "expectations": {"cleanup": {"now": 1234567890}},
+            }
+        )
+
+
+def test_cleanup_numeric_mtime_rejected_at_runner_layer() -> None:
+    """PR #1011 review (P2) parity: the same coercion gap existed in
+    the runner suite schema, so a hand-written check-only suite could
+    declare `{"mtime": 0}` and pass validation. The strict-date guard
+    applies there too."""
+    from autocontext.control_plane.contract_probes import ContractProbeSuiteSchema
+
+    with pytest.raises(ValidationError):
+        ContractProbeSuiteSchema.model_validate(
+            {
+                "schema_version": 1,
+                "probes": [
+                    {
+                        "kind": "cleanup",
+                        "inputs": {"entries": [{"path": "x", "mtime": 0}]},
+                    }
+                ],
+            }
+        )
+
+
+def test_cleanup_iso_string_mtime_still_accepted() -> None:
+    """The strict-date guard lets valid ISO-8601 strings flow through."""
+    trace = HarnessTraceSchema.model_validate(
+        {
+            "schema_version": 1,
+            "observations": {
+                "cleanup": {
+                    "entries": [
+                        {"path": "x", "mtime": "2026-01-01T00:00:00Z"},
+                    ]
+                },
+            },
+        }
+    )
+    suite_dict = extract_contract_probe_suite(trace)
+    assert suite_dict["probes"][0]["kind"] == "cleanup"
+
+
 def test_cleanup_full_join_round_trip_through_runner() -> None:
     trace = HarnessTraceSchema.model_validate(
         {
