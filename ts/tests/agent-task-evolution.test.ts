@@ -5,6 +5,7 @@ import {
   AgentTaskEvolutionRunner,
   FunctionSlot,
   type AgentTaskGenerationEvaluation,
+  type LessonSignal,
 } from "../src/execution/agent-task-evolution.js";
 import type { AgentTaskResult } from "../src/types/index.js";
 
@@ -145,5 +146,43 @@ describe("AgentTaskEvolutionRunner slot mode (AC-776)", () => {
     });
     expect(out).toContain("HARNESS_CODE_HERE");
     expect(out).toContain("Fixed Harness");
+  });
+});
+
+describe("domain-aware lesson accumulation (parity with Python)", () => {
+  it("renders hint, plateau guidance, and metrics from a signal", () => {
+    const signal: LessonSignal = {
+      hint: "demote some members to admit new points",
+      plateau: true,
+      metrics: { size: 224, delta: 0 },
+    };
+    const lesson = accumulateLessons(judge(0.95, "valid"), 3, signal);
+    expect(lesson).toContain("Hint: demote some members to admit new points");
+    expect(lesson.toLowerCase()).toContain("plateau");
+    expect(lesson).toContain("size=224");
+    expect(lesson).toContain("delta=0");
+  });
+
+  it("matches legacy behavior with no signal", () => {
+    const lesson = accumulateLessons(judge(0.6, "needs work"), 1);
+    expect(lesson).toContain("Generation 1 (score: 0.60):");
+    expect(lesson).not.toContain("Hint:");
+    expect(lesson.toLowerCase()).not.toContain("plateau");
+  });
+
+  it("runner threads the evaluation's signal into the playbook", () => {
+    const runner = new AgentTaskEvolutionRunner({
+      taskPrompt: "t",
+      generateFn: (_p, _g) => "candidate",
+      evaluateFn: (output, _g): AgentTaskGenerationEvaluation => ({
+        output,
+        score: 0.5,
+        reasoning: "ok",
+        dimensionScores: {},
+        lessonSignal: { hint: "try a different family" },
+      }),
+    });
+    const { state } = runner.runWithState(1);
+    expect(state.playbook).toContain("Hint: try a different family");
   });
 });

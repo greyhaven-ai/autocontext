@@ -32,6 +32,22 @@ class AgentTaskGenerationState(BaseModel):
 
 
 @dataclass(slots=True)
+class LessonSignal:
+    """Structured, evaluator-provided guidance for the next generation.
+
+    Domain-aware lesson accumulation: a deterministic evaluator usually
+    knows *why* a candidate plateaued and *what* to try next (the size
+    delta, which constraints bind, an explicit hint). Carrying that here
+    lets ``accumulate_lessons`` write actionable playbook entries instead
+    of only score + dimension scores.
+    """
+
+    hint: str = ""
+    plateau: bool = False
+    metrics: dict[str, float] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
 class AgentTaskGenerationEvaluation:
     """Evaluation result for one cross-generation candidate."""
 
@@ -42,6 +58,7 @@ class AgentTaskGenerationEvaluation:
     round_count: int = 1
     met_threshold: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
+    lesson_signal: LessonSignal | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,8 +86,14 @@ class FunctionSlot:
 def accumulate_lessons(
     judge_result: AgentTaskResult,
     generation: int,
+    signal: LessonSignal | None = None,
 ) -> str:
-    """Extract a structured lesson from judge feedback for the playbook."""
+    """Extract a structured lesson from judge feedback for the playbook.
+
+    When the evaluator supplies a :class:`LessonSignal`, its actionable
+    guidance (hint, plateau flag, metrics) is rendered alongside the score
+    and dimension scores so the playbook carries move-level direction.
+    """
     parts: list[str] = [f"Generation {generation} (score: {judge_result.score:.2f}):"]
 
     if judge_result.reasoning:
@@ -88,6 +111,18 @@ def accumulate_lessons(
 
     if not judge_result.reasoning and not weak_dims:
         parts.append(f"  Score: {judge_result.score:.2f}")
+
+    if signal is not None:
+        if signal.hint:
+            parts.append(f"  Hint: {signal.hint}")
+        if signal.plateau:
+            parts.append(
+                "  Plateau detected — a structurally different approach is needed; "
+                "incremental tweaks are not advancing the score."
+            )
+        if signal.metrics:
+            metric_strs = [f"{k}={v:g}" for k, v in sorted(signal.metrics.items())]
+            parts.append(f"  Metrics: {', '.join(metric_strs)}")
 
     return "\n".join(parts)
 
@@ -276,7 +311,7 @@ class AgentTaskEvolutionRunner:
             dimension_scores=evaluation.dimension_scores,
         )
 
-        lesson = accumulate_lessons(judge_result, state.generation + 1)
+        lesson = accumulate_lessons(judge_result, state.generation + 1, signal=evaluation.lesson_signal)
         new_playbook = state.playbook
         if lesson:
             new_playbook = (state.playbook + "\n" + lesson).strip() if state.playbook else lesson

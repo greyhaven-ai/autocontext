@@ -21,6 +21,20 @@ export interface AgentTaskGenerationState {
   metadata: Record<string, unknown>;
 }
 
+/**
+ * Structured, evaluator-provided guidance for the next generation.
+ *
+ * Domain-aware lesson accumulation: a deterministic evaluator usually knows
+ * why a candidate plateaued and what to try next. Carrying that here lets
+ * `accumulateLessons` write actionable playbook entries instead of only
+ * score + dimension scores.
+ */
+export interface LessonSignal {
+  hint?: string;
+  plateau?: boolean;
+  metrics?: Record<string, number>;
+}
+
 /** Evaluation result for one cross-generation candidate. */
 export interface AgentTaskGenerationEvaluation {
   output: string;
@@ -30,6 +44,7 @@ export interface AgentTaskGenerationEvaluation {
   roundCount?: number;
   metThreshold?: boolean;
   metadata?: Record<string, unknown>;
+  lessonSignal?: LessonSignal;
 }
 
 /** Trajectory report for a multi-generation agent task run. */
@@ -72,8 +87,23 @@ function fixed2(value: number): string {
   return value.toFixed(2);
 }
 
-/** Extract a structured lesson from judge feedback for the playbook. */
-export function accumulateLessons(judgeResult: AgentTaskResult, generation: number): string {
+function formatMetric(value: number): string {
+  // Mirror Python's `{v:g}` general format (trims trailing zeros).
+  return Number.isInteger(value) ? String(value) : String(value);
+}
+
+/**
+ * Extract a structured lesson from judge feedback for the playbook.
+ *
+ * When the evaluator supplies a {@link LessonSignal}, its actionable guidance
+ * (hint, plateau flag, metrics) is rendered alongside the score and dimension
+ * scores so the playbook carries move-level direction.
+ */
+export function accumulateLessons(
+  judgeResult: AgentTaskResult,
+  generation: number,
+  signal?: LessonSignal,
+): string {
   const parts: string[] = [`Generation ${generation} (score: ${fixed2(judgeResult.score)}):`];
 
   if (judgeResult.reasoning) {
@@ -98,6 +128,24 @@ export function accumulateLessons(judgeResult: AgentTaskResult, generation: numb
 
   if (!judgeResult.reasoning && weak.length === 0) {
     parts.push(`  Score: ${fixed2(judgeResult.score)}`);
+  }
+
+  if (signal) {
+    if (signal.hint) {
+      parts.push(`  Hint: ${signal.hint}`);
+    }
+    if (signal.plateau) {
+      parts.push(
+        "  Plateau detected — a structurally different approach is needed; " +
+          "incremental tweaks are not advancing the score.",
+      );
+    }
+    if (signal.metrics && Object.keys(signal.metrics).length > 0) {
+      const metricStrs = Object.entries(signal.metrics)
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([k, v]) => `${k}=${formatMetric(v)}`);
+      parts.push(`  Metrics: ${metricStrs.join(", ")}`);
+    }
   }
 
   return parts.join("\n");
@@ -216,7 +264,7 @@ export class AgentTaskEvolutionRunner {
       internalRetries: 0,
     };
 
-    const lesson = accumulateLessons(judgeResult, state.generation + 1);
+    const lesson = accumulateLessons(judgeResult, state.generation + 1, evaluation.lessonSignal);
     let newPlaybook = state.playbook;
     if (lesson) {
       newPlaybook = state.playbook ? `${state.playbook}\n${lesson}`.trim() : lesson;
