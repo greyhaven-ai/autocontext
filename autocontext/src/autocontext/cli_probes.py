@@ -126,12 +126,13 @@ Exit codes:
   0   the trace parsed and a suite was emitted.
   1   the trace failed to load / parse, or a write to --output failed.
 
-Slice 5 covers the four base probe kinds (terminal, directory,
-service, artifact); cleanup / media / distributed extraction lands
-in slice 6. Per-section observations and expectations must both be
-supplied for any kind the suite asserts on; orphan expectations
-fail validation at parse time rather than silently producing a
-vacuously-passing suite.
+Covers all seven AC-728 probe kinds: terminal, directory, service,
+artifact, cleanup, media, distributed. Per-section observations and
+expectations must both be supplied for any kind the suite asserts
+on; orphan expectations fail validation at parse time rather than
+silently producing a vacuously-passing suite. Rank-scoped
+distributed expectations (`expectedSteps`, `mustMatchAcrossRanks`)
+require at least one rank report to be present.
 """
 
 

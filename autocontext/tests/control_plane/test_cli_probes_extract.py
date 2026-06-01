@@ -405,9 +405,18 @@ def test_extract_then_check_pipe_round_trip(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_help_text_documents_slice_5_scope() -> None:
-    assert "terminal" in EXTRACT_HELP_TEXT
-    assert "artifact" in EXTRACT_HELP_TEXT
+def test_help_text_documents_seven_probe_kinds() -> None:
+    """Slice 6 broadened the help text to advertise full 7-kind coverage."""
+    for kind in (
+        "terminal",
+        "directory",
+        "service",
+        "artifact",
+        "cleanup",
+        "media",
+        "distributed",
+    ):
+        assert kind in EXTRACT_HELP_TEXT
 
 
 def test_result_dataclass_is_frozen() -> None:
