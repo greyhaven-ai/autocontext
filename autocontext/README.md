@@ -200,6 +200,8 @@ uv run autoctx serve --host 127.0.0.1 --port 8000
 uv run autoctx mcp-serve
 uv run autoctx probes check --suite contract-probes.json
 uv run autoctx probes check --suite contract-probes.json --json
+uv run autoctx probes extract --trace harness-trace.json
+uv run autoctx probes extract --trace harness-trace.json --output contract-probes.json
 uv run autoctx wait <condition_id> --json
 ```
 
@@ -273,6 +275,36 @@ Minimal suite example:
 ```
 
 The seven probe kinds (`directory`, `terminal`, `service`, `artifact`, `cleanup`, `media`, `distributed`) each verify a different facet of observed harness state. RegExp values accept a bare pattern string or `{"source": ..., "flags": ...}`; ISO-8601 strings parse to `datetime`. Every declared expectation must carry a corresponding observation; missing observations fail with kind `missing-observation` rather than silently passing.
+
+### Synthesizing a suite from a harness trace
+
+`uv run autoctx probes extract --trace <path>` reads a harness-trace JSON envelope that bundles two halves:
+
+- `observations`: what actually happened in a recorded run (terminal exit code / stdout / stderr; the workdir's present files; observed service endpoints; emitted artifacts and their content).
+- `expectations`: what the operator declared should have happened (expected exit code, required / allowed files, required endpoints, per-artifact JSON-field / substring / line-ending expectations).
+
+The extractor joins them into a runnable `ContractProbeSuite` that `autoctx probes check` can execute. Per-artifact expectations join observations by `path`; observations without a matching expectation are still encoded as no-op artifact probes (path + content only, no assertions). Orphan expectations (declared without a matching observation) fail validation at parse time rather than producing a vacuously-passing suite.
+
+Pipe form: `autoctx probes extract --trace t.json | autoctx probes check --suite -` works cross-platform; the typer wrapper writes parse / validation errors to stderr so JSON consumers can parse stdout cleanly. `--output <path>` writes the suite to a file (parent directories are created); omit it to emit to stdout.
+
+Slice 5 covers the four base probe kinds (`terminal`, `directory`, `service`, `artifact`); cleanup / media / distributed extraction lands in a follow-up slice. Minimal trace example:
+
+```json
+{
+  "schema_version": 1,
+  "label": "solve-cli",
+  "observations": {
+    "terminal": { "exitCode": 0, "stdout": "solution.txt written", "stderr": "" },
+    "workdir": { "presentFiles": ["solution.txt"] },
+    "artifacts": [{ "path": "solution.txt", "content": "answer\n" }]
+  },
+  "expectations": {
+    "terminal": { "requiredStdoutPatterns": ["solution\\.txt"] },
+    "directory": { "requiredFiles": ["solution.txt"], "allowedFiles": ["solution.txt"] },
+    "artifacts": [{ "path": "solution.txt", "requiredSubstrings": ["answer"] }]
+  }
+}
+```
 
 ## Training Workflow
 

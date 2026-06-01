@@ -332,7 +332,18 @@ def run_probes_extract(args: list[str]) -> ProbesExtractResult:
 
     try:
         raw = Path(trace_path).read_text(encoding="utf-8")
-    except FileNotFoundError as err:
+    except (OSError, UnicodeDecodeError) as err:
+        # PR #1010 review (P2): the previous `except FileNotFoundError`
+        # only handled the missing-file case. Passing a directory
+        # raised `IsADirectoryError`, permission errors raised
+        # `PermissionError`, and non-UTF8 files raised
+        # `UnicodeDecodeError` — all of which escaped as Rich
+        # tracebacks instead of returning a `ProbesExtractResult` with
+        # a friendly stderr message. Catching `OSError` covers the
+        # full filesystem-error family (it is the base of
+        # `FileNotFoundError`, `IsADirectoryError`,
+        # `PermissionError`, etc.) and `UnicodeDecodeError` covers
+        # the encoding case.
         return ProbesExtractResult(
             stdout="",
             stderr=f"autoctx probes extract: failed to read trace from {trace_path}: {err}",

@@ -89,6 +89,30 @@ def test_missing_file_surfaces_load_error(tmp_path: Path) -> None:
     assert "failed to read trace" in result.stderr
 
 
+def test_passing_a_directory_surfaces_load_error_not_traceback(tmp_path: Path) -> None:
+    """PR #1010 review (P2): the previous `except FileNotFoundError`
+    only handled the missing-file case. Passing a directory raised
+    `IsADirectoryError`, which escaped as a Rich traceback instead of
+    a friendly stderr message. Catching `OSError` covers the family.
+    """
+    result = run_probes_extract(["--trace", str(tmp_path)])
+    assert result.exit_code == 1
+    assert "failed to read trace" in result.stderr
+
+
+def test_non_utf8_trace_file_surfaces_load_error(tmp_path: Path) -> None:
+    """PR #1010 review (P2): a non-UTF8 trace file raised
+    `UnicodeDecodeError` from `read_text(encoding="utf-8")`. Catch it
+    too so the error returns through the same `failed to read trace`
+    stderr path.
+    """
+    bad = tmp_path / "binary.json"
+    bad.write_bytes(b"\xff\xfe\x00\x00not valid utf-8")
+    result = run_probes_extract(["--trace", str(bad)])
+    assert result.exit_code == 1
+    assert "failed to read trace" in result.stderr
+
+
 def test_malformed_json_rejected(tmp_path: Path) -> None:
     bad = tmp_path / "bad.json"
     bad.write_text("{not json")
