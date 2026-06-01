@@ -166,6 +166,34 @@ def build_enriched_prompt(
     return "\n".join(sections)
 
 
+def migrate_states(
+    states: list[AgentTaskGenerationState],
+) -> list[AgentTaskGenerationState]:
+    """Island migration: seed lagging islands with the global champion.
+
+    Each island below the best score adopts the champion's best output and
+    score (so winners propagate), but keeps its own playbook so accumulated
+    lessons stay diverse. The champion island (and any tied) are unchanged.
+    """
+    if not states:
+        return states
+    champion = max(states, key=lambda s: s.best_score)
+    migrated: list[AgentTaskGenerationState] = []
+    for s in states:
+        if s.best_score < champion.best_score:
+            migrated.append(
+                s.model_copy(
+                    update={
+                        "best_output": champion.best_output,
+                        "best_score": champion.best_score,
+                    }
+                )
+            )
+        else:
+            migrated.append(s)
+    return migrated
+
+
 class AgentTaskTrajectory(BaseModel):
     """Trajectory report for a multi-generation agent task run."""
 
@@ -391,3 +419,54 @@ class AgentTaskEvolutionRunner:
         """Run multiple generations and return a trajectory report."""
         trajectory, _ = self.run_with_state(num_generations)
         return trajectory
+
+    def run_islands(
+        self,
+        num_islands: int = 4,
+        num_generations: int = 10,
+        migrate_every: int = 0,
+    ) -> AgentTaskTrajectory:
+        """Run ``num_islands`` parallel lineages, optionally migrating the
+        global champion into laggards every ``migrate_every`` generations.
+
+        Islands preserve diversity (each keeps its own playbook and lineage)
+        while migration shares winners — the population analogue of the
+        single-lineage :meth:`run`. ``migrate_every=0`` disables migration
+        (pure parallel islands).
+        """
+        states = [
+            AgentTaskGenerationState(
+                generation=0,
+                best_output="",
+                best_score=0.0,
+                playbook="",
+                score_history=[],
+                lesson_history=[],
+                metadata={},
+            )
+            for _ in range(num_islands)
+        ]
+
+        best_per_gen: list[float] = []
+        for gen in range(num_generations):
+            states = [self.run_generation(s) for s in states]
+            best_per_gen.append(max(s.best_score for s in states))
+            if migrate_every and (gen + 1) % migrate_every == 0:
+                states = migrate_states(states)
+
+        champion = max(states, key=lambda s: s.best_score)
+        return AgentTaskTrajectory(
+            task_name=self._task_name,
+            total_generations=num_generations,
+            score_history=best_per_gen,
+            lessons_per_generation=[num_islands] * len(best_per_gen),
+            cold_start_score=best_per_gen[0] if best_per_gen else 0.0,
+            final_score=best_per_gen[-1] if best_per_gen else 0.0,
+            improvement_delta=round((best_per_gen[-1] - best_per_gen[0]) if best_per_gen else 0.0, 4),
+            metadata={
+                "best_output": champion.best_output,
+                "best_score": champion.best_score,
+                "num_islands": num_islands,
+                "playbook": champion.playbook,
+            },
+        )

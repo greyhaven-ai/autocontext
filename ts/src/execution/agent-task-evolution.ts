@@ -200,6 +200,30 @@ export function buildEnrichedPrompt(args: {
   return sections.join("\n");
 }
 
+/**
+ * Island migration: seed lagging islands with the global champion.
+ *
+ * Each island below the best score adopts the champion's best output and
+ * score (winners propagate), but keeps its own playbook so accumulated
+ * lessons stay diverse. The champion island (and any tied) are unchanged.
+ */
+export function migrateStates(states: AgentTaskGenerationState[]): AgentTaskGenerationState[] {
+  if (states.length === 0) {
+    return states;
+  }
+  let champion = states[0];
+  for (const s of states) {
+    if (s.bestScore > champion.bestScore) {
+      champion = s;
+    }
+  }
+  return states.map((s) =>
+    s.bestScore < champion.bestScore
+      ? { ...s, bestOutput: champion.bestOutput, bestScore: champion.bestScore }
+      : s,
+  );
+}
+
 /** Multi-generation runner for AgentTask scenarios with lesson accumulation. */
 export class AgentTaskEvolutionRunner {
   private readonly taskPrompt: string;
@@ -348,5 +372,68 @@ export class AgentTaskEvolutionRunner {
 
   run(numGenerations = 10): AgentTaskTrajectory {
     return this.runWithState(numGenerations).trajectory;
+  }
+
+  /**
+   * Run `numIslands` parallel lineages, optionally migrating the global
+   * champion into laggards every `migrateEvery` generations. Islands
+   * preserve diversity (each keeps its own playbook/lineage) while migration
+   * shares winners. `migrateEvery = 0` disables migration.
+   */
+  runIslands(
+    args: {
+      numIslands?: number;
+      numGenerations?: number;
+      migrateEvery?: number;
+    } = {},
+  ): AgentTaskTrajectory {
+    const numIslands = args.numIslands ?? 4;
+    const numGenerations = args.numGenerations ?? 10;
+    const migrateEvery = args.migrateEvery ?? 0;
+
+    let states: AgentTaskGenerationState[] = Array.from({ length: numIslands }, () => ({
+      generation: 0,
+      bestOutput: "",
+      bestScore: 0,
+      playbook: "",
+      scoreHistory: [],
+      lessonHistory: [],
+      metadata: {},
+    }));
+
+    const bestPerGen: number[] = [];
+    for (let gen = 0; gen < numGenerations; gen += 1) {
+      states = states.map((s) => this.runGeneration(s));
+      bestPerGen.push(Math.max(...states.map((s) => s.bestScore)));
+      if (migrateEvery && (gen + 1) % migrateEvery === 0) {
+        states = migrateStates(states);
+      }
+    }
+
+    let champion = states[0];
+    for (const s of states) {
+      if (s.bestScore > champion.bestScore) {
+        champion = s;
+      }
+    }
+    const delta =
+      bestPerGen.length > 0
+        ? Math.round((bestPerGen[bestPerGen.length - 1] - bestPerGen[0]) * 1e4) / 1e4
+        : 0;
+    return {
+      taskName: this.taskName,
+      totalGenerations: numGenerations,
+      scoreHistory: bestPerGen,
+      lessonsPerGeneration: bestPerGen.map(() => numIslands),
+      coldStartScore: bestPerGen.length > 0 ? bestPerGen[0] : 0,
+      finalScore: bestPerGen.length > 0 ? bestPerGen[bestPerGen.length - 1] : 0,
+      improvementDelta: delta,
+      metadata: {
+        bestOutput: champion.bestOutput,
+        bestScore: champion.bestScore,
+        numIslands,
+        playbook: champion.playbook,
+      },
+    };
   }
 }

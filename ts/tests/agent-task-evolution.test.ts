@@ -4,7 +4,9 @@ import {
   buildEnrichedPrompt,
   AgentTaskEvolutionRunner,
   FunctionSlot,
+  migrateStates,
   type AgentTaskGenerationEvaluation,
+  type AgentTaskGenerationState,
   type LessonSignal,
 } from "../src/execution/agent-task-evolution.js";
 import type { AgentTaskResult } from "../src/types/index.js";
@@ -184,5 +186,51 @@ describe("domain-aware lesson accumulation (parity with Python)", () => {
     });
     const { state } = runner.runWithState(1);
     expect(state.playbook).toContain("Hint: try a different family");
+  });
+});
+
+describe("island mode (AC parity with Python)", () => {
+  function island(bestOutput: string, bestScore: number): AgentTaskGenerationState {
+    return {
+      generation: 1,
+      bestOutput,
+      bestScore,
+      playbook: `playbook-for-${bestOutput}`,
+      scoreHistory: [bestScore],
+      lessonHistory: ["l"],
+      metadata: {},
+    };
+  }
+
+  it("migrateStates copies the champion into laggards", () => {
+    const migrated = migrateStates([island("champ", 0.9), island("weak", 0.4), island("mid", 0.6)]);
+    expect(migrated.every((s) => s.bestScore === 0.9)).toBe(true);
+    expect(migrated.every((s) => s.bestOutput === "champ")).toBe(true);
+  });
+
+  it("migrateStates preserves per-island playbook", () => {
+    const migrated = migrateStates([island("champ", 0.9), island("weak", 0.4)]);
+    expect(migrated[1].playbook).toBe("playbook-for-weak");
+  });
+
+  it("runIslands returns a trajectory with the global best", () => {
+    let n = 0;
+    const runner = new AgentTaskEvolutionRunner({
+      taskPrompt: "t",
+      generateFn: (_p, _g) => {
+        n += 1;
+        return `cand${n}`;
+      },
+      evaluateFn: (output, _g): AgentTaskGenerationEvaluation => {
+        const idx = output.startsWith("cand") ? Number(output.replace("cand", "")) : 0;
+        return { output, score: Math.min(1.0, 0.1 * idx), reasoning: "ok", dimensionScores: {} };
+      },
+    });
+    const traj = runner.runIslands({ numIslands: 3, numGenerations: 2 });
+    expect(traj.totalGenerations).toBe(2);
+    expect(traj.scoreHistory.length).toBe(2);
+    expect(traj.metadata.numIslands).toBe(3);
+    expect(traj.metadata.bestScore).toBe(Math.max(...traj.scoreHistory));
+    expect([...traj.scoreHistory]).toEqual([...traj.scoreHistory].sort((a, b) => a - b));
   });
 });
