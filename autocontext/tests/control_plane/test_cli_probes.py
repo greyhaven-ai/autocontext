@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from autocontext.cli import app
@@ -220,6 +221,39 @@ def test_typer_probes_check_json_emits_parseable_payload(tmp_path: Path) -> None
 def test_typer_probes_check_missing_suite_exits_nonzero() -> None:
     result = CliRunner().invoke(app, ["probes", "check"])
     assert result.exit_code == 1
+
+
+def test_typer_probes_check_json_failure_leaves_stdout_parseable(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """PR #1008 review (P2): errors used to flow through the rich
+    `console`, which writes to stdout by default. That contaminated
+    `--json` output on load / parse / validation failures, so
+    JSON-mode consumers could not safely parse stdout. The typer
+    wrapper now routes errors to real stderr.
+    """
+    missing = tmp_path / "nope.json"
+    # Use the in-process handler + capsys to assert the stdout / stderr
+    # split directly; CliRunner across click versions disagrees on
+    # `mix_stderr` so we exercise the typer wrapper via the typer app
+    # but inspect the raw streams via capsys.
+    import typer as _typer
+    from rich.console import Console as _Console
+
+    from autocontext.cli_probes import register_probes_command
+
+    local_app = _typer.Typer()
+    register_probes_command(local_app, console=_Console())
+    # Run the typer app directly; it raises typer.Exit on completion.
+    with pytest.raises(SystemExit):
+        local_app(["probes", "check", "--suite", str(missing), "--json"], standalone_mode=True)
+    captured = capsys.readouterr()
+    # stdout must be empty so JSON consumers do not choke on a
+    # human-readable error message.
+    assert captured.out == ""
+    # stderr carries the actionable error.
+    assert "failed to load suite" in captured.err
 
 
 # ---------------------------------------------------------------------------

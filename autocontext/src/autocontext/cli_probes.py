@@ -244,7 +244,14 @@ def register_probes_command(app: typer.Typer, *, console: Console) -> None:
             # console adds ANSI codes that break JSON consumers.
             print(result.stdout)
         if result.stderr:
-            console.print(result.stderr, style="red")
+            # PR #1008 review (P2): the parent `console` writes to
+            # stdout by default, so routing errors through it would
+            # contaminate `--json` output on load / parse / validation
+            # failures. Write directly to stderr instead.
+            sys.stderr.write(result.stderr)
+            if not result.stderr.endswith("\n"):
+                sys.stderr.write("\n")
+            sys.stderr.flush()
         raise typer.Exit(code=result.exit_code)
 
     app.add_typer(probes_app, name="probes")

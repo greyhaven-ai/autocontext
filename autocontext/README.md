@@ -198,6 +198,8 @@ uv run autoctx analytics trace-findings --trace-id <trace_id> --kind writeup --j
 uv run autoctx analytics trace-findings --trace-id <trace_id> --kind weakness
 uv run autoctx serve --host 127.0.0.1 --port 8000
 uv run autoctx mcp-serve
+uv run autoctx probes check --suite contract-probes.json
+uv run autoctx probes check --suite contract-probes.json --json
 uv run autoctx wait <condition_id> --json
 ```
 
@@ -227,6 +229,50 @@ uv run autoctx solve "improve customer-support replies for billing disputes" --i
 AUTOCONTEXT_AGENT_PROVIDER=deterministic AUTOCONTEXT_RLM_ENABLED=true \
 uv run autoctx solve "improve customer-support replies for billing disputes" --iterations 3
 ```
+
+## Contract Probes
+
+`uv run autoctx probes check --suite <path>` runs the AC-728 contract-probe suite against observed harness state and reports per-probe pass/fail. It exits 0 on a full pass and 1 on any failure or any load / parse error. Default output is human-readable; pass `--json` to emit a structured `ContractProbeSuiteResult` payload (`{passed, results: [{kind, label?, passed, failures: [{kind, message, ...}]}]}`) that downstream tools can consume. On load / parse / validation failure, the typer wrapper writes the actionable error to stderr so `--json` consumers can safely parse stdout.
+
+The suite file is a JSON document validated by `ContractProbeSuiteSchema`. Every nested model is strict: unknown keys (for example a typo like `requiredStdoutPattern` missing the trailing `s`) fail validation rather than silently disappearing. Required observation fields (`presentFiles`, `observed`, `entries`, `ranks`) must be present and primitives are not coerced (`"exitCode": "0"` rejects). Optional expectation fields accept omission but not explicit `null`.
+
+Stdin form lets the canonical pipe pattern stay cross-platform:
+
+```bash
+uv run autoctx probes check --suite contract-probes.json --json
+cat contract-probes.json | uv run autoctx probes check --suite -
+```
+
+Minimal suite example:
+
+```json
+{
+  "schema_version": 1,
+  "probes": [
+    {
+      "kind": "terminal",
+      "label": "solve-cli",
+      "inputs": {
+        "exitCode": 0,
+        "stdout": "solution.txt written",
+        "stderr": "",
+        "requiredStdoutPatterns": ["solution\\.txt"]
+      }
+    },
+    {
+      "kind": "directory",
+      "label": "final-workdir",
+      "inputs": {
+        "presentFiles": ["solution.txt"],
+        "requiredFiles": ["solution.txt"],
+        "allowedFiles": ["solution.txt"]
+      }
+    }
+  ]
+}
+```
+
+The seven probe kinds (`directory`, `terminal`, `service`, `artifact`, `cleanup`, `media`, `distributed`) each verify a different facet of observed harness state. RegExp values accept a bare pattern string or `{"source": ..., "flags": ...}`; ISO-8601 strings parse to `datetime`. Every declared expectation must carry a corresponding observation; missing observations fail with kind `missing-observation` rather than silently passing.
 
 ## Training Workflow
 
