@@ -13,6 +13,17 @@ silent-pass shape simply does not arise here. The follow-up slice-2
 cleanup / media / distributed probes (mirroring TS PRs #983, #985,
 #987) emit explicit ``missing-observation`` failure kinds; this
 slice does not need that surface.
+
+Slice-7 audit conclusion
+------------------------
+Closed AC-728 PY parity slice 7 confirms the four base shapes carry
+the missing-observation invariant by construction (no optional
+observation fields), so a future refactor that loosens a field to
+``X | None`` would have to also add a ``missing-observation`` failure
+kind to the probe. The parametrised pinning tests in
+``tests/control_plane/test_missing_observation_audit.py`` exercise
+the "expectation + minimum observation -> loud failure" path for
+each base probe so any such loosening surfaces immediately.
 """
 
 from __future__ import annotations

@@ -5,6 +5,30 @@ Mirrors the cleanup / distributed / media surfaces from
 / #987). All three probes carry explicit ``missing-observation``
 failure kinds: a declared expectation without its matching
 observation must fail loudly rather than silently pass.
+
+Slice-7 audit conclusion
+------------------------
+Closed AC-728 PY parity slice 7 confirms each advanced probe emits
+``missing-observation`` for every optional observation field that
+gates a declared expectation:
+
+- cleanup: ``CleanupFileEntry.symlink_target`` against
+  ``allowed_symlink_targets``; ``CleanupFileEntry.mtime`` against
+  ``max_lockfile_age_ms``.
+- distributed: ``DistributedRankReport.steps`` against
+  ``expected_steps``; ``DistributedRankReport.observations`` keys
+  against ``must_match_across_ranks``; ``world_size`` against
+  ``expected_world_size``; and (from the PR #1005 review P2 fix) any
+  rank-scoped expectation declared against a zero-rank report list.
+- media: every ``Media*`` observation field that gates a matching
+  ``Media*`` expectation (header_bytes / width / height / byte_size /
+  column_count / column_names / line_count).
+
+The parametrised pinning tests in
+``tests/control_plane/test_missing_observation_audit.py`` exercise
+each of these "expectation declared but observation missing"
+permutations so any future refactor that lets one slip through
+silently surfaces immediately.
 """
 
 from __future__ import annotations
