@@ -44,6 +44,27 @@ export interface AgentTaskTrajectory {
   metadata: Record<string, unknown>;
 }
 
+/**
+ * A fixed code harness with a small evolved slot (AC-776).
+ *
+ * Function-slot evolution mode keeps the evolved unit small: the runner
+ * carries only the slot in state and in the enriched prompt (so prompts stay
+ * compact), while evaluation runs the assembled harness + slot. This avoids
+ * the whole-program-bloat failure mode where carrying a large generated
+ * artifact in `bestOutput` ballooned every prompt.
+ *
+ * Convention: the slot is prepended to the harness so the harness can
+ * reference names the slot defines.
+ */
+export class FunctionSlot {
+  constructor(public readonly harness: string) {}
+
+  /** Return the full runnable program: slot prepended to harness. */
+  assemble(slot: string): string {
+    return `${slot}\n\n${this.harness}`;
+  }
+}
+
 export type GenerateFn = (prompt: string, generation: number) => string;
 export type EvaluateFn = (output: string, generation: number) => AgentTaskGenerationEvaluation;
 
@@ -82,17 +103,30 @@ export function accumulateLessons(judgeResult: AgentTaskResult, generation: numb
   return parts.join("\n");
 }
 
-/** Enrich a task prompt with cross-generation context. */
+/**
+ * Enrich a task prompt with cross-generation context.
+ *
+ * In function-slot mode (`harness` provided), the fixed harness is shown once
+ * as stable context so the model knows the contract it writes the slot
+ * against. The evolved slot itself is carried via `bestOutput`.
+ */
 export function buildEnrichedPrompt(args: {
   taskPrompt: string;
   playbook: string;
   generation: number;
   bestOutput: string;
   bestScore: number;
+  harness?: string;
 }): string {
   const playbook = compactPromptComponent("agent_task_playbook", args.playbook);
   const bestOutput = compactPromptComponent("agent_task_best_output", args.bestOutput);
   const sections: string[] = [args.taskPrompt];
+
+  if (args.harness) {
+    sections.push(
+      "\n\n## Fixed Harness (do not modify; you write only the slot)\n" + `${args.harness}`,
+    );
+  }
 
   if (playbook) {
     sections.push(
@@ -125,6 +159,7 @@ export class AgentTaskEvolutionRunner {
   private readonly evaluateFn: EvaluateFn;
   private readonly initialOutput: string;
   private readonly taskName: string;
+  private readonly slot: FunctionSlot | undefined;
 
   constructor(args: {
     taskPrompt: string;
@@ -132,12 +167,14 @@ export class AgentTaskEvolutionRunner {
     evaluateFn: EvaluateFn;
     initialOutput?: string;
     taskName?: string;
+    slot?: FunctionSlot;
   }) {
     this.taskPrompt = args.taskPrompt;
     this.generateFn = args.generateFn;
     this.evaluateFn = args.evaluateFn;
     this.initialOutput = args.initialOutput ?? "";
     this.taskName = args.taskName ?? "agent_task";
+    this.slot = args.slot;
   }
 
   runGeneration(state: AgentTaskGenerationState): AgentTaskGenerationState {
@@ -147,6 +184,7 @@ export class AgentTaskEvolutionRunner {
       generation: state.generation + 1,
       bestOutput: state.bestOutput,
       bestScore: state.bestScore,
+      harness: this.slot?.harness,
     });
 
     let candidateOutput: string;
@@ -159,8 +197,17 @@ export class AgentTaskEvolutionRunner {
       }
     }
 
-    const evaluation = this.evaluateFn(candidateOutput, state.generation);
-    const evaluatedOutput = evaluation.output.trim() || candidateOutput;
+    let evaluation: AgentTaskGenerationEvaluation;
+    let evaluatedOutput: string;
+    if (this.slot !== undefined) {
+      // Function-slot mode: evaluate the assembled harness+slot, but carry
+      // only the small slot forward (no whole-program bloat).
+      evaluation = this.evaluateFn(this.slot.assemble(candidateOutput), state.generation);
+      evaluatedOutput = candidateOutput;
+    } else {
+      evaluation = this.evaluateFn(candidateOutput, state.generation);
+      evaluatedOutput = evaluation.output.trim() || candidateOutput;
+    }
 
     const judgeResult: AgentTaskResult = {
       score: evaluation.score,

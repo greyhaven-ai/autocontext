@@ -3,6 +3,7 @@ import {
   accumulateLessons,
   buildEnrichedPrompt,
   AgentTaskEvolutionRunner,
+  FunctionSlot,
   type AgentTaskGenerationEvaluation,
 } from "../src/execution/agent-task-evolution.js";
 import type { AgentTaskResult } from "../src/types/index.js";
@@ -98,5 +99,51 @@ describe("AgentTaskEvolutionRunner (parity with Python runner)", () => {
     expect(traj.scoreHistory.length).toBe(3);
     expect(traj.finalScore).toBeGreaterThan(traj.coldStartScore);
     expect(traj.improvementDelta).toBeCloseTo(0.4, 5);
+  });
+});
+
+describe("FunctionSlot (AC-776, parity with Python)", () => {
+  it("assemble prepends the slot to the harness", () => {
+    const slot = new FunctionSlot("def build():\n    return priority");
+    const assembled = slot.assemble("def priority(v):\n    return 1.0");
+    expect(assembled).toContain("def priority(v):");
+    expect(assembled).toContain("def build():");
+    expect(assembled.indexOf("def priority(v):")).toBeLessThan(assembled.indexOf("def build():"));
+  });
+});
+
+describe("AgentTaskEvolutionRunner slot mode (AC-776)", () => {
+  it("carries the slot, evaluates the assembled program", () => {
+    const slot = new FunctionSlot("def build():\n    return priority  # HARNESS_MARKER");
+    const evalInputs: string[] = [];
+    const runner = new AgentTaskEvolutionRunner({
+      taskPrompt: "t",
+      generateFn: (_p, _g) => "def priority(v):\n    return 2.0",
+      evaluateFn: (output, _g): AgentTaskGenerationEvaluation => {
+        evalInputs.push(output);
+        return { output, score: 0.5, reasoning: "ok", dimensionScores: {} };
+      },
+      initialOutput: "def priority(v):\n    return 0.0",
+      slot,
+    });
+    const { state } = runner.runWithState(2);
+    // evaluate received the ASSEMBLED program (harness present)
+    expect(evalInputs.some((i) => i.includes("HARNESS_MARKER"))).toBe(true);
+    // but best_output is only the SLOT (no harness)
+    expect(state.bestOutput).not.toContain("HARNESS_MARKER");
+    expect(state.bestOutput).toContain("def priority(v):");
+  });
+
+  it("includes a Fixed Harness section in the enriched prompt", () => {
+    const out = buildEnrichedPrompt({
+      taskPrompt: "t",
+      playbook: "",
+      generation: 1,
+      bestOutput: "",
+      bestScore: 0,
+      harness: "HARNESS_CODE_HERE",
+    });
+    expect(out).toContain("HARNESS_CODE_HERE");
+    expect(out).toContain("Fixed Harness");
   });
 });
