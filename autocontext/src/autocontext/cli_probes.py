@@ -1,20 +1,29 @@
-"""AC-728 `autoctx probes` CLI surface (Python parity, slice 4).
+"""AC-728 `autoctx probes` CLI surface (Python parity, slices 4 + 5).
 
 Mirrors ``ts/src/control-plane/contract-probes/cli/check.ts`` (TS
-PR #991). In-process handler:
+PR #991) for ``check`` and the slice-1 portion of
+``ts/src/control-plane/contract-probes/cli/extract.ts`` (TS PR #992)
+for ``extract``. In-process handlers:
 
 - ``run_probes_check(args)`` parses args, loads the suite (file path
   or stdin via ``-``), runs ``run_contract_probe_suite``, and returns
-  ``{stdout, stderr, exit_code}``. Tests consume this directly so
-  there is no need to spawn a subprocess.
+  ``{stdout, stderr, exit_code}``.
+- ``run_probes_extract(args)`` parses args, loads + validates a
+  harness trace via ``HarnessTraceSchema``, joins observations with
+  expectations into a ``ContractProbeSuite``, and returns
+  ``{stdout, stderr, exit_code}``. The suite is emitted to stdout
+  by default; ``--output <path>`` writes it to a file (parent
+  directories created).
 - ``register_probes_command(app, *, console)`` mounts a ``probes``
-  sub-Typer with ``check`` as the first subcommand. The outer typer
-  command translates the in-process result to stdout / stderr /
-  ``typer.Exit``.
+  sub-Typer with ``check`` and ``extract`` subcommands. The outer
+  typer commands translate the in-process result to stdout / stderr
+  / ``typer.Exit``.
 
-Schema-invalid suites surface every Pydantic issue line by line so
-operators can fix typos at parse time rather than discover the
-missing expectation in a green-but-wrong run.
+Tests consume the in-process handlers directly so there is no need
+to spawn a subprocess. Schema-invalid suites or traces surface every
+Pydantic issue line by line so operators can fix typos at parse
+time rather than discover the missing expectation in a green-but-
+wrong run.
 """
 
 from __future__ import annotations
@@ -22,6 +31,7 @@ from __future__ import annotations
 import json
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 
 import typer
 from pydantic import ValidationError
@@ -33,12 +43,20 @@ from autocontext.control_plane.contract_probes import (
     load_contract_probe_suite,
     run_contract_probe_suite,
 )
+from autocontext.control_plane.contract_probes.extract import (
+    HarnessTraceSchema,
+    extract_contract_probe_suite,
+    serialize_suite,
+)
 
 __all__ = [
     "CHECK_HELP_TEXT",
+    "EXTRACT_HELP_TEXT",
     "ProbesCheckResult",
+    "ProbesExtractResult",
     "register_probes_command",
     "run_probes_check",
+    "run_probes_extract",
 ]
 
 
@@ -84,8 +102,48 @@ silently passing.
 """
 
 
+EXTRACT_HELP_TEXT = """autoctx probes extract -- synthesize a contract-probe suite from a harness trace.
+
+Usage:
+  autoctx probes extract --trace <path> [--output <path>]
+  autoctx probes extract --help
+
+A harness trace bundles observations (what happened in a recorded run)
+and expectations (what the operator declared should have happened). The
+extractor joins them into a runnable probe suite that `autoctx probes
+check` can execute. See the "Contract Probes" section of the autocontext
+README for the harness-trace JSON format and a minimal example.
+
+Options:
+  --trace <path>   Path to a harness-trace JSON file. Required.
+  --output <path>  Write the resulting suite to this path. Parent
+                   directories are created. If omitted, the suite is
+                   emitted to stdout so it can be piped to
+                   `autoctx probes check --suite -`.
+  -h, --help       Show this help text.
+
+Exit codes:
+  0   the trace parsed and a suite was emitted.
+  1   the trace failed to load / parse, or a write to --output failed.
+
+Slice 5 covers the four base probe kinds (terminal, directory,
+service, artifact); cleanup / media / distributed extraction lands
+in slice 6. Per-section observations and expectations must both be
+supplied for any kind the suite asserts on; orphan expectations
+fail validation at parse time rather than silently producing a
+vacuously-passing suite.
+"""
+
+
 @dataclass(frozen=True)
 class ProbesCheckResult:
+    stdout: str
+    stderr: str
+    exit_code: int
+
+
+@dataclass(frozen=True)
+class ProbesExtractResult:
     stdout: str
     stderr: str
     exit_code: int
@@ -216,9 +274,112 @@ def run_probes_check(
     )
 
 
+def run_probes_extract(args: list[str]) -> ProbesExtractResult:
+    """Pure in-process entry point for `autoctx probes extract`.
+
+    Parses argv, loads + validates a harness trace via
+    ``HarnessTraceSchema``, joins observations with expectations into
+    a ``ContractProbeSuite`` dict, and returns
+    ``{stdout, stderr, exit_code}``. Mirrors the TS handler shape so
+    tests can consume it directly without spawning a subprocess.
+    """
+    trace_path: str | None = None
+    output_path: str | None = None
+    help_flag = False
+
+    it = iter(args)
+    for arg in it:
+        if arg in ("-h", "--help"):
+            help_flag = True
+        elif arg == "--trace":
+            try:
+                trace_path = next(it)
+            except StopIteration:
+                return ProbesExtractResult(
+                    stdout="",
+                    stderr=f"autoctx probes extract: --trace requires a value\n\n{EXTRACT_HELP_TEXT}",
+                    exit_code=1,
+                )
+        elif arg.startswith("--trace="):
+            trace_path = arg.split("=", 1)[1]
+        elif arg == "--output":
+            try:
+                output_path = next(it)
+            except StopIteration:
+                return ProbesExtractResult(
+                    stdout="",
+                    stderr=f"autoctx probes extract: --output requires a value\n\n{EXTRACT_HELP_TEXT}",
+                    exit_code=1,
+                )
+        elif arg.startswith("--output="):
+            output_path = arg.split("=", 1)[1]
+        else:
+            return ProbesExtractResult(
+                stdout="",
+                stderr=f"autoctx probes extract: unknown argument {arg!r}\n\n{EXTRACT_HELP_TEXT}",
+                exit_code=1,
+            )
+
+    if help_flag:
+        return ProbesExtractResult(stdout=EXTRACT_HELP_TEXT, stderr="", exit_code=0)
+
+    if not trace_path:
+        return ProbesExtractResult(
+            stdout="",
+            stderr=f"autoctx probes extract: --trace <path> is required\n\n{EXTRACT_HELP_TEXT}",
+            exit_code=1,
+        )
+
+    try:
+        raw = Path(trace_path).read_text(encoding="utf-8")
+    except FileNotFoundError as err:
+        return ProbesExtractResult(
+            stdout="",
+            stderr=f"autoctx probes extract: failed to read trace from {trace_path}: {err}",
+            exit_code=1,
+        )
+
+    try:
+        parsed_json = json.loads(raw)
+    except json.JSONDecodeError as err:
+        return ProbesExtractResult(
+            stdout="",
+            stderr=f"autoctx probes extract: invalid JSON in {trace_path}: {err.msg}",
+            exit_code=1,
+        )
+
+    try:
+        trace = HarnessTraceSchema.model_validate(parsed_json)
+    except ValidationError as err:
+        rendered = _render_validation_error(err)
+        return ProbesExtractResult(
+            stdout="",
+            stderr=f"autoctx probes extract: trace validation failed\n{rendered}",
+            exit_code=1,
+        )
+
+    suite_dict = extract_contract_probe_suite(trace)
+    serialized = serialize_suite(suite_dict)
+
+    if output_path:
+        try:
+            out = Path(output_path)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(serialized + "\n", encoding="utf-8")
+        except OSError as err:
+            return ProbesExtractResult(
+                stdout="",
+                stderr=f"autoctx probes extract: failed to write suite to {output_path}: {err}",
+                exit_code=1,
+            )
+        return ProbesExtractResult(stdout=f"wrote suite to {output_path}", stderr="", exit_code=0)
+
+    return ProbesExtractResult(stdout=serialized, stderr="", exit_code=0)
+
+
 def register_probes_command(app: typer.Typer, *, console: Console) -> None:
-    """Mount the `probes` sub-Typer on ``app`` with `check` as the
-    first subcommand."""
+    """Mount the `probes` sub-Typer on ``app`` with `check` and
+    `extract` as the first two subcommands."""
     probes_app = typer.Typer(help="AC-728 contract probes.")
 
     @probes_app.command("check")
@@ -248,6 +409,40 @@ def register_probes_command(app: typer.Typer, *, console: Console) -> None:
             # stdout by default, so routing errors through it would
             # contaminate `--json` output on load / parse / validation
             # failures. Write directly to stderr instead.
+            sys.stderr.write(result.stderr)
+            if not result.stderr.endswith("\n"):
+                sys.stderr.write("\n")
+            sys.stderr.flush()
+        raise typer.Exit(code=result.exit_code)
+
+    @probes_app.command("extract")
+    def _extract(
+        trace: str = typer.Option(
+            "",
+            "--trace",
+            help="Path to a harness-trace JSON file.",
+        ),
+        output: str = typer.Option(
+            "",
+            "--output",
+            help="Write the resulting suite to this path (parent dirs created); omit to emit to stdout.",
+        ),
+    ) -> None:
+        """Synthesize a contract-probe suite from a harness trace."""
+        args: list[str] = []
+        if trace:
+            args.extend(["--trace", trace])
+        if output:
+            args.extend(["--output", output])
+        result = run_probes_extract(args)
+        if result.stdout:
+            # Plain stdout so the JSON suite is parseable; the rich
+            # console adds ANSI codes that break JSON consumers.
+            print(result.stdout)
+        if result.stderr:
+            # PR #1008 review (P2): same stderr-routing fix as `check`
+            # so the documented `extract | check` pipe pattern stays
+            # parseable even on parse / validation failures.
             sys.stderr.write(result.stderr)
             if not result.stderr.endswith("\n"):
                 sys.stderr.write("\n")
