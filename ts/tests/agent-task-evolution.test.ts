@@ -62,7 +62,7 @@ describe("buildEnrichedPrompt (parity with Python build_enriched_prompt)", () =>
 });
 
 describe("AgentTaskEvolutionRunner (parity with Python runner)", () => {
-  it("uses initialOutput for the cold-start generation", () => {
+  it("uses initialOutput for the cold-start generation", async () => {
     const seen: string[] = [];
     const runner = new AgentTaskEvolutionRunner({
       taskPrompt: "make a thing",
@@ -79,13 +79,13 @@ describe("AgentTaskEvolutionRunner (parity with Python runner)", () => {
       initialOutput: "SEED",
       taskName: "t",
     });
-    const traj = runner.run(1);
+    const traj = await runner.run(1);
     expect(seen.length).toBe(0); // gen 0 used the seed, never called generateFn
     expect(traj.scoreHistory).toEqual([0.9]);
     expect(traj.metadata.bestOutput).toBe("SEED");
   });
 
-  it("climbs across generations and reports a trajectory", () => {
+  it("climbs across generations and reports a trajectory", async () => {
     let g = 0;
     const runner = new AgentTaskEvolutionRunner({
       taskPrompt: "improve",
@@ -97,7 +97,7 @@ describe("AgentTaskEvolutionRunner (parity with Python runner)", () => {
       initialOutput: "",
       taskName: "climb",
     });
-    const traj = runner.run(3);
+    const traj = await runner.run(3);
     expect(traj.totalGenerations).toBe(3);
     expect(traj.scoreHistory.length).toBe(3);
     expect(traj.finalScore).toBeGreaterThan(traj.coldStartScore);
@@ -116,7 +116,7 @@ describe("FunctionSlot (AC-776, parity with Python)", () => {
 });
 
 describe("AgentTaskEvolutionRunner slot mode (AC-776)", () => {
-  it("carries the slot, evaluates the assembled program", () => {
+  it("carries the slot, evaluates the assembled program", async () => {
     const slot = new FunctionSlot("def build():\n    return priority  # HARNESS_MARKER");
     const evalInputs: string[] = [];
     const runner = new AgentTaskEvolutionRunner({
@@ -129,7 +129,7 @@ describe("AgentTaskEvolutionRunner slot mode (AC-776)", () => {
       initialOutput: "def priority(v):\n    return 0.0",
       slot,
     });
-    const { state } = runner.runWithState(2);
+    const { state } = await runner.runWithState(2);
     // evaluate received the ASSEMBLED program (harness present)
     expect(evalInputs.some((i) => i.includes("HARNESS_MARKER"))).toBe(true);
     // but best_output is only the SLOT (no harness)
@@ -172,7 +172,7 @@ describe("domain-aware lesson accumulation (parity with Python)", () => {
     expect(lesson.toLowerCase()).not.toContain("plateau");
   });
 
-  it("runner threads the evaluation's signal into the playbook", () => {
+  it("runner threads the evaluation's signal into the playbook", async () => {
     const runner = new AgentTaskEvolutionRunner({
       taskPrompt: "t",
       generateFn: (_p, _g) => "candidate",
@@ -184,7 +184,7 @@ describe("domain-aware lesson accumulation (parity with Python)", () => {
         lessonSignal: { hint: "try a different family" },
       }),
     });
-    const { state } = runner.runWithState(1);
+    const { state } = await runner.runWithState(1);
     expect(state.playbook).toContain("Hint: try a different family");
   });
 });
@@ -213,7 +213,7 @@ describe("island mode (AC parity with Python)", () => {
     expect(migrated[1].playbook).toBe("playbook-for-weak");
   });
 
-  it("runIslands returns a trajectory with the global best", () => {
+  it("runIslands returns a trajectory with the global best", async () => {
     let n = 0;
     const runner = new AgentTaskEvolutionRunner({
       taskPrompt: "t",
@@ -226,11 +226,60 @@ describe("island mode (AC parity with Python)", () => {
         return { output, score: Math.min(1.0, 0.1 * idx), reasoning: "ok", dimensionScores: {} };
       },
     });
-    const traj = runner.runIslands({ numIslands: 3, numGenerations: 2 });
+    const traj = await runner.runIslands({ numIslands: 3, numGenerations: 2 });
     expect(traj.totalGenerations).toBe(2);
     expect(traj.scoreHistory.length).toBe(2);
     expect(traj.metadata.numIslands).toBe(3);
     expect(traj.metadata.bestScore).toBe(Math.max(...traj.scoreHistory));
     expect([...traj.scoreHistory]).toEqual([...traj.scoreHistory].sort((a, b) => a - b));
+  });
+
+  it("rejects numIslands < 1 (P3)", async () => {
+    const runner = new AgentTaskEvolutionRunner({
+      taskPrompt: "t",
+      generateFn: (_p, _g) => "x",
+      evaluateFn: (output, _g): AgentTaskGenerationEvaluation => ({
+        output,
+        score: 0.5,
+        reasoning: "ok",
+        dimensionScores: {},
+      }),
+    });
+    await expect(runner.runIslands({ numIslands: 0, numGenerations: 2 })).rejects.toThrow(
+      /numIslands must be >= 1/,
+    );
+  });
+});
+
+describe("async generate/evaluate (P2b: promise-based providers)", () => {
+  it("awaits async generateFn and evaluateFn", async () => {
+    const runner = new AgentTaskEvolutionRunner({
+      taskPrompt: "t",
+      generateFn: async (_p, _g) => "async-candidate",
+      evaluateFn: async (output, _g): Promise<AgentTaskGenerationEvaluation> => ({
+        output,
+        score: 0.7,
+        reasoning: "async ok",
+        dimensionScores: {},
+      }),
+    });
+    const traj = await runner.run(1);
+    expect(traj.scoreHistory).toEqual([0.7]);
+    expect(traj.metadata.bestOutput).toBe("async-candidate");
+  });
+
+  it("awaits async fns in island mode", async () => {
+    const runner = new AgentTaskEvolutionRunner({
+      taskPrompt: "t",
+      generateFn: async (_p, _g) => "x",
+      evaluateFn: async (output, _g): Promise<AgentTaskGenerationEvaluation> => ({
+        output,
+        score: 0.5,
+        reasoning: "ok",
+        dimensionScores: {},
+      }),
+    });
+    const traj = await runner.runIslands({ numIslands: 2, numGenerations: 2 });
+    expect(traj.totalGenerations).toBe(2);
   });
 });

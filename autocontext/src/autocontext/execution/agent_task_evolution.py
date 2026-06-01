@@ -434,6 +434,8 @@ class AgentTaskEvolutionRunner:
         single-lineage :meth:`run`. ``migrate_every=0`` disables migration
         (pure parallel islands).
         """
+        if num_islands < 1:
+            raise ValueError(f"num_islands must be >= 1, got {num_islands}")
         states = [
             AgentTaskGenerationState(
                 generation=0,

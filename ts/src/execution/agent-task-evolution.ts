@@ -80,8 +80,11 @@ export class FunctionSlot {
   }
 }
 
-export type GenerateFn = (prompt: string, generation: number) => string;
-export type EvaluateFn = (output: string, generation: number) => AgentTaskGenerationEvaluation;
+export type GenerateFn = (prompt: string, generation: number) => string | Promise<string>;
+export type EvaluateFn = (
+  output: string,
+  generation: number,
+) => AgentTaskGenerationEvaluation | Promise<AgentTaskGenerationEvaluation>;
 
 function fixed2(value: number): string {
   return value.toFixed(2);
@@ -249,7 +252,7 @@ export class AgentTaskEvolutionRunner {
     this.slot = args.slot;
   }
 
-  runGeneration(state: AgentTaskGenerationState): AgentTaskGenerationState {
+  async runGeneration(state: AgentTaskGenerationState): Promise<AgentTaskGenerationState> {
     const prompt = buildEnrichedPrompt({
       taskPrompt: this.taskPrompt,
       playbook: state.playbook,
@@ -263,7 +266,7 @@ export class AgentTaskEvolutionRunner {
     if (state.generation === 0 && this.initialOutput) {
       candidateOutput = this.initialOutput;
     } else {
-      candidateOutput = this.generateFn(prompt, state.generation).trim();
+      candidateOutput = (await this.generateFn(prompt, state.generation)).trim();
       if (!candidateOutput) {
         candidateOutput = state.bestOutput;
       }
@@ -274,10 +277,10 @@ export class AgentTaskEvolutionRunner {
     if (this.slot !== undefined) {
       // Function-slot mode: evaluate the assembled harness+slot, but carry
       // only the small slot forward (no whole-program bloat).
-      evaluation = this.evaluateFn(this.slot.assemble(candidateOutput), state.generation);
+      evaluation = await this.evaluateFn(this.slot.assemble(candidateOutput), state.generation);
       evaluatedOutput = candidateOutput;
     } else {
-      evaluation = this.evaluateFn(candidateOutput, state.generation);
+      evaluation = await this.evaluateFn(candidateOutput, state.generation);
       evaluatedOutput = evaluation.output.trim() || candidateOutput;
     }
 
@@ -331,10 +334,10 @@ export class AgentTaskEvolutionRunner {
     };
   }
 
-  runWithState(numGenerations = 10): {
+  async runWithState(numGenerations = 10): Promise<{
     trajectory: AgentTaskTrajectory;
     state: AgentTaskGenerationState;
-  } {
+  }> {
     let state: AgentTaskGenerationState = {
       generation: 0,
       bestOutput: "",
@@ -346,7 +349,7 @@ export class AgentTaskEvolutionRunner {
     };
 
     for (let i = 0; i < numGenerations; i += 1) {
-      state = this.runGeneration(state);
+      state = await this.runGeneration(state);
     }
 
     const sh = state.scoreHistory;
@@ -370,8 +373,8 @@ export class AgentTaskEvolutionRunner {
     return { trajectory, state };
   }
 
-  run(numGenerations = 10): AgentTaskTrajectory {
-    return this.runWithState(numGenerations).trajectory;
+  async run(numGenerations = 10): Promise<AgentTaskTrajectory> {
+    return (await this.runWithState(numGenerations)).trajectory;
   }
 
   /**
@@ -380,16 +383,20 @@ export class AgentTaskEvolutionRunner {
    * preserve diversity (each keeps its own playbook/lineage) while migration
    * shares winners. `migrateEvery = 0` disables migration.
    */
-  runIslands(
+  async runIslands(
     args: {
       numIslands?: number;
       numGenerations?: number;
       migrateEvery?: number;
     } = {},
-  ): AgentTaskTrajectory {
+  ): Promise<AgentTaskTrajectory> {
     const numIslands = args.numIslands ?? 4;
     const numGenerations = args.numGenerations ?? 10;
     const migrateEvery = args.migrateEvery ?? 0;
+
+    if (numIslands < 1) {
+      throw new RangeError(`numIslands must be >= 1, got ${numIslands}`);
+    }
 
     let states: AgentTaskGenerationState[] = Array.from({ length: numIslands }, () => ({
       generation: 0,
@@ -403,7 +410,8 @@ export class AgentTaskEvolutionRunner {
 
     const bestPerGen: number[] = [];
     for (let gen = 0; gen < numGenerations; gen += 1) {
-      states = states.map((s) => this.runGeneration(s));
+      // Islands are independent within a generation — run them concurrently.
+      states = await Promise.all(states.map((s) => this.runGeneration(s)));
       bestPerGen.push(Math.max(...states.map((s) => s.bestScore)));
       if (migrateEvery && (gen + 1) % migrateEvery === 0) {
         states = migrateStates(states);

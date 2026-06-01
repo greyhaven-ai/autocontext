@@ -9,6 +9,10 @@ describe("package root exports", () => {
     expect(pkg.SQLiteStore).toBeDefined();
     expect(pkg.createProvider).toBeDefined();
     expect(pkg.ActionFilterHarness).toBeDefined();
+    expect(pkg.AgentTaskEvolutionRunner).toBeDefined();
+    expect(pkg.FunctionSlot).toBeDefined();
+    expect(pkg.migrateStates).toBeDefined();
+    expect(pkg.accumulateLessons).toBeDefined();
     expect(pkg.SkillPackage).toBeDefined();
     expect(pkg.DataPlane).toBeDefined();
     expect(pkg.ModelStrategySelector).toBeDefined();

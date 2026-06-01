@@ -188,6 +188,21 @@ export { ImprovementLoop, isParseFailure, isImproved } from "./execution/improve
 export type { ImprovementLoopOpts } from "./execution/improvement-loop.js";
 export { cleanRevisionOutput } from "./execution/output-cleaner.js";
 export {
+  AgentTaskEvolutionRunner,
+  FunctionSlot,
+  accumulateLessons,
+  buildEnrichedPrompt,
+  migrateStates,
+} from "./execution/agent-task-evolution.js";
+export type {
+  AgentTaskGenerationState,
+  AgentTaskGenerationEvaluation,
+  AgentTaskTrajectory,
+  LessonSignal,
+  GenerateFn,
+  EvaluateFn,
+} from "./execution/agent-task-evolution.js";
+export {
   TaskRunner,
   SimpleAgentTask,
   enqueueTask,

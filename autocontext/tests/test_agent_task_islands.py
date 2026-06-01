@@ -71,6 +71,24 @@ class TestRunIslands:
         # score_history is the per-generation best across islands (non-decreasing)
         assert traj.score_history == sorted(traj.score_history)
 
+    def test_rejects_zero_islands(self) -> None:
+        import pytest
+
+        from autocontext.execution.agent_task_evolution import (
+            AgentTaskEvolutionRunner,
+            AgentTaskGenerationEvaluation,
+        )
+
+        def gen(prompt: str, g: int) -> str:
+            return "x"
+
+        def ev(output: str, g: int) -> AgentTaskGenerationEvaluation:
+            return AgentTaskGenerationEvaluation(output=output, score=0.5, reasoning="ok")
+
+        runner = AgentTaskEvolutionRunner(task_prompt="t", generate_fn=gen, evaluate_fn=ev)
+        with pytest.raises(ValueError, match="num_islands must be >= 1"):
+            runner.run_islands(num_islands=0, num_generations=2)
+
     def test_migration_runs_without_error(self) -> None:
         from autocontext.execution.agent_task_evolution import (
             AgentTaskEvolutionRunner,
