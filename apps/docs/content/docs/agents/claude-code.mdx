@@ -5,6 +5,16 @@ description: Add autocontext to Claude Code as an MCP server.
 
 Claude Code connects to autocontext through the [MCP server](/docs/agents/mcp). You register the server once in your project settings, and Claude Code launches it on stdio whenever it needs an autocontext tool.
 
+## Prerequisites
+
+The command in the configuration below runs `autoctx mcp-serve` from your autocontext checkout, which requires the Python MCP extra to be installed in that checkout first:
+
+```bash
+uv sync --group dev --extra mcp
+```
+
+See [MCP Server](/docs/agents/mcp) for more on starting the server.
+
 ## Configure the MCP server
 
 Add an entry to your project's `.claude/settings.json` under `mcpServers`:
@@ -24,7 +34,7 @@ Add an entry to your project's `.claude/settings.json` under `mcpServers`:
 }
 ```
 
-Replace `/path/to/autocontext` with the absolute path to your autocontext checkout. The `env` block sets the provider that decides where your agent roles run. The example above routes to a local Pi runtime, but you can use any provider: see [Providers](/docs/providers) for the full set of `env` choices (hosted API, local server, MLX, or another coding-agent CLI).
+Replace `/path/to/autocontext` with the absolute path to your autocontext checkout. The `env` block sets the provider that decides where your agent roles run. The example above routes to a local Pi runtime, which assumes the `pi` CLI is installed and on your PATH. You can swap in any provider: see [Providers](/docs/providers) for the full set of `env` choices (hosted API, local server, MLX, or another coding-agent CLI), and set the matching env vars there.
 
 <Callout type="info">
 The `mcp-serve` and `serve mcp` commands are equivalent. The configuration above uses `mcp-serve`; `serve mcp` works identically if you prefer the canonical form.
