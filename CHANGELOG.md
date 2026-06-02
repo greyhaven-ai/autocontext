@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-06-02
+
+Two ticket series closed end-to-end in this release:
+
+- **AC-697 — shared canonical CLI contract.** All `intentional_gap` entries in `docs/cli-contract.json` are closed. `autoctx capabilities` is contract-driven on both runtimes. Every contracted command has matching Typer / registry registration. Includes the mission Python parity sub-plan (5 slices: store + types → MissionManager + verifiers + planner → control-plane workflows → CLI subcommands → lifecycle subcommands + README).
+- **AC-728 — contract-probe library + CLI parity.** Python parity sub-plan (7 slices) brings the 4 base + 3 advanced probes, suite runner + Pydantic schema, `autoctx probes check`, `autoctx probes extract`, and the missing-observation audit close-out. Both runtimes share the same probe shapes, failure-kind enums, strict wire format (RegExp + ISO-8601 + strict primitives + null rejection), CLI surface, and trace-extractor orphan-rejection contract.
+
+Cross-runtime mission checkpoint contract is unified: collision-free wall-clock-nanosecond filenames, camelCase + snake_case loader interop, atomic restore with no orphan rows, and an `AsyncContextError` guard for sync-from-async callers.
+
+A new cross-runtime parity audit (`test_cli_contract_parity.py` + `cli-contract-parity.test.ts`) pins the reverse direction (every observed top-level command/group is contracted, aliased, or explicitly allowlisted) plus cross-runtime id invariants (unique, well-formed, no runtime-specific prefix, no per-runtime path divergence).
+
 ### Added
 
 - AC-728 Python parity slice 1: four base contract probes. Mirrors `ts/src/control-plane/contract-probes/index.ts` at the PR #957 shape (`probeDirectoryContract` / `probeTerminalContract` / `probeServiceContract` / `probeArtifactContract`) as pure Python functions in a new `autocontext.control_plane.contract_probes` package. Inputs / outputs / failures are Pydantic v2 frozen models (`extra="forbid"`, `arbitrary_types_allowed=True` so compiled `re.Pattern[str]` regex objects can ride through unchanged). Same failure-kind enums as the TS surface: directory (`unexpected-file`, `missing-file`), terminal (`unexpected-exit-code`, `missing-stdout-pattern`, `forbidden-stdout-pattern`, `missing-stderr-pattern`, `forbidden-stderr-pattern`), service (`missing-endpoint`, `unexpected-endpoint`, `wrong-interface` with port + protocol normalization so `tcp` is the default), artifact (`missing-substring`, `forbidden-substring`, `wrong-line-ending`, `invalid-json`, `missing-json-field` with dotted-path JSON field lookup and the same early-return shape on JSON parse failure). The slice-1 audit invariant (every observation field is non-optional so the silent-pass shape cannot arise) is pinned by a parametrised `test_expectation_against_minimum_observation_always_fails_loudly` that mirrors the TS close-out audit (PR #1000). 25 new Python tests covering the per-probe pass / fail surfaces and the missing-observation pinning property. `ruff` + `mypy` clean; module is 407 lines (under the 800-line guard).
