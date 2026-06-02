@@ -242,8 +242,20 @@ def _render_mission_artifacts_text(payload: dict[str, Any]) -> str:
 def register_mission_command(app: typer.Typer, *, console: Console) -> None:
     """Mount the ``mission`` sub-Typer on ``app`` with the slice-4
     subcommands (create / run / status / list / artifacts). The
-    slice-5 lifecycle subcommands land on the same sub-app."""
-    mission_app = typer.Typer(help="Manage verifier-driven missions.")
+    slice-5 lifecycle subcommands land on the same sub-app.
+
+    ``invoke_without_command=True`` so the contract walker yields
+    ``("mission",)`` as a registered path (matches the slice-3
+    `serve` and slice-3 `queue` groups). The empty callback just
+    prints help when the bare ``autoctx mission`` invocation is
+    used; subcommands behave as registered.
+    """
+    mission_app = typer.Typer(invoke_without_command=True, help="Manage verifier-driven missions.")
+
+    @mission_app.callback(invoke_without_command=True)
+    def _mission_root(ctx: typer.Context) -> None:
+        if ctx.invoked_subcommand is None:
+            console.print(MISSION_HELP_TEXT)
 
     @mission_app.command("create")
     def _create(
