@@ -50,8 +50,12 @@ describe("MissionSpec", () => {
 
 describe("Subgoals", () => {
   let dir: string;
-  beforeEach(() => { dir = makeTempDir(); });
-  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+  beforeEach(() => {
+    dir = makeTempDir();
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   it("store creates and retrieves subgoals", async () => {
     const { MissionStore } = await import("../src/mission/store.js");
@@ -135,8 +139,12 @@ describe("Subgoals", () => {
 
 describe("Mission checkpoints", () => {
   let dir: string;
-  beforeEach(() => { dir = makeTempDir(); });
-  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+  beforeEach(() => {
+    dir = makeTempDir();
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   it("saveCheckpoint writes a JSON snapshot to disk", async () => {
     const { MissionStore } = await import("../src/mission/store.js");
@@ -239,6 +247,200 @@ describe("Mission checkpoints", () => {
     expect(data.budgetUsage.maxSteps).toBe(10);
     store.close();
   });
+
+  // -------------------------------------------------------------------------
+  // AC-697 Python parity PR #1016 review backports
+  // -------------------------------------------------------------------------
+
+  it("saveCheckpoint produces collision-free filenames for back-to-back writes", async () => {
+    /**
+     * PR #1016 review (P3) backport: the previous filename pattern
+     * `<missionId>-<Date.now()>.json` collided when two saves landed
+     * in the same millisecond and silently overwrote each other.
+     * The new `<missionId>-<ns>-<uuid8>.json` shape stays unique
+     * even in a tight loop.
+     */
+    const { MissionStore } = await import("../src/mission/store.js");
+    const { saveCheckpoint } = await import("../src/mission/checkpoint.js");
+    const store = new MissionStore(join(dir, "collide.db"));
+    const mId = store.createMission({ name: "Collide", goal: "g" });
+    const checkpointDir = join(dir, "checkpoints");
+    const paths = new Set<string>();
+    for (let i = 0; i < 10; i++) {
+      paths.add(saveCheckpoint(store, mId, checkpointDir));
+    }
+    expect(paths.size).toBe(10);
+    for (const path of paths) {
+      expect(existsSync(path)).toBe(true);
+    }
+    store.close();
+  });
+
+  it("loadCheckpoint accepts Python-shaped snake_case keys", async () => {
+    /**
+     * PR #1016 review (P2) backport: a Python-shaped checkpoint
+     * stores fields in snake_case (`created_at`, `budget.max_steps`,
+     * ...). Before this fix the TS loader only read camelCase, so
+     * Python -> TS resume dropped budget caps and timestamps. The
+     * loader now accepts either shape.
+     */
+    const { MissionStore } = await import("../src/mission/store.js");
+    const { loadCheckpoint } = await import("../src/mission/checkpoint.js");
+    const { writeFileSync } = await import("node:fs");
+
+    const pythonShapedCheckpoint = {
+      version: 1,
+      checkpointedAt: "2026-06-02T00:00:00Z",
+      mission: {
+        id: "mission-pysnake",
+        name: "py-shaped",
+        goal: "g",
+        status: "active",
+        budget: { max_steps: 9, max_cost_usd: 4.25 },
+        metadata: { missionType: "code" },
+        created_at: "2026-06-02T01:00:00Z",
+        updated_at: "2026-06-02T02:00:00Z",
+        completed_at: null,
+      },
+      steps: [
+        {
+          id: "step-1",
+          mission_id: "mission-pysnake",
+          description: "did a",
+          status: "completed",
+          result: null,
+          created_at: "2026-06-02T03:00:00Z",
+          completed_at: "2026-06-02T03:01:00Z",
+        },
+      ],
+      subgoals: [],
+      verifications: [],
+      budgetUsage: { steps_used: 1, exhausted: false },
+    };
+    const checkpointPath = join(dir, "py-shaped.json");
+    writeFileSync(checkpointPath, JSON.stringify(pythonShapedCheckpoint), "utf-8");
+
+    const store = new MissionStore(join(dir, "py-resume.db"));
+    const restoredId = loadCheckpoint(store, checkpointPath);
+    expect(restoredId).toBe("mission-pysnake");
+    const mission = store.getMission(restoredId);
+    expect(mission!.budget).toEqual({ maxSteps: 9, maxCostUsd: 4.25 });
+    expect(mission!.createdAt).toBe("2026-06-02T01:00:00Z");
+    expect(mission!.updatedAt).toBe("2026-06-02T02:00:00Z");
+    expect(store.getSteps(restoredId)[0].createdAt).toBe("2026-06-02T03:00:00Z");
+    store.close();
+  });
+
+  it("loadCheckpoint rolls back the partial restore on duplicate child rows", async () => {
+    /**
+     * PR #1016 review (P2) backport: the previous loader inserted
+     * rows one at a time without a transaction, so a later FK /
+     * UNIQUE failure left a partial mission + first step behind and
+     * a retry choked on the already-existing mission row. The
+     * better-sqlite3 `db.transaction` wrapper rolls back every
+     * insert on failure so the operator can retry.
+     */
+    const { MissionStore } = await import("../src/mission/store.js");
+    const { loadCheckpoint } = await import("../src/mission/checkpoint.js");
+    const { writeFileSync } = await import("node:fs");
+
+    const duplicateStepId = "step-dup";
+    const payload = {
+      version: 1,
+      checkpointedAt: "2026-06-02T00:00:00Z",
+      mission: {
+        id: "mission-rb",
+        name: "rb",
+        goal: "g",
+        status: "active",
+        budget: null,
+        metadata: {},
+        createdAt: "2026-06-02T00:00:00Z",
+        updatedAt: null,
+        completedAt: null,
+      },
+      steps: [
+        {
+          id: duplicateStepId,
+          description: "first",
+          status: "completed",
+          result: null,
+          createdAt: "2026-06-02T00:01:00Z",
+          completedAt: null,
+        },
+        // Duplicate id triggers UNIQUE constraint failure on the
+        // second insert; the rollback should drop the mission row
+        // AND the first step.
+        {
+          id: duplicateStepId,
+          description: "second",
+          status: "completed",
+          result: null,
+          createdAt: "2026-06-02T00:02:00Z",
+          completedAt: null,
+        },
+      ],
+      subgoals: [],
+      verifications: [],
+      budgetUsage: { stepsUsed: 2, exhausted: false },
+    };
+    const checkpointPath = join(dir, "rb.json");
+    writeFileSync(checkpointPath, JSON.stringify(payload), "utf-8");
+
+    const store = new MissionStore(join(dir, "rb.db"));
+    expect(() => loadCheckpoint(store, checkpointPath)).toThrow(/UNIQUE/i);
+
+    // PR #1020 review (P2): the previous shape created the mission
+    // row via `store.createMission()` BEFORE the transaction, so a
+    // child-row failure left an orphan mission row with a
+    // freshly-generated id (not the original) committed. Inserting
+    // the mission row INSIDE the transaction means the rollback
+    // returns the DB to its prior empty state: no row with the
+    // original id, and no row with a fresh id either.
+    expect(store.getMission("mission-rb")).toBeNull();
+    expect(store.getSteps("mission-rb")).toEqual([]);
+    expect(store.listMissions()).toEqual([]);
+
+    // Retry succeeds after the operator dedupes the steps.
+    payload.steps[1].id = "step-dup-2";
+    writeFileSync(checkpointPath, JSON.stringify(payload), "utf-8");
+    const restoredId = loadCheckpoint(store, checkpointPath);
+    expect(restoredId).toBe("mission-rb");
+    expect(store.getSteps(restoredId)).toHaveLength(2);
+    store.close();
+  });
+
+  it("saveCheckpoint filenames embed a wall-clock unix-ns prefix that survives a reboot", async () => {
+    /**
+     * PR #1020 review (P2): the first backport used
+     * `process.hrtime.bigint()`, which is a monotonic counter since
+     * process start (not Unix time). After a reboot a newer
+     * checkpoint could sort before an older one, so downstream
+     * artifact / analysis readers that pick "newest by filename"
+     * would surface stale state. The fixed shape uses wall-clock
+     * nanoseconds via `Date.now() * 1e6 + (hrtime % 1e6)` so the
+     * prefix is reboot-stable and lexicographic sort matches Unix
+     * chronological order.
+     */
+    const { MissionStore } = await import("../src/mission/store.js");
+    const { saveCheckpoint } = await import("../src/mission/checkpoint.js");
+    const store = new MissionStore(join(dir, "wallclock.db"));
+    const mId = store.createMission({ name: "WallClock", goal: "g" });
+    const checkpointDir = join(dir, "checkpoints");
+    const path = saveCheckpoint(store, mId, checkpointDir);
+    const filename = path.split("/").pop()!;
+    // Filename shape: `<mid>-<ns>-<uuid8>.json`.
+    const match = filename.match(/^mission-[0-9a-f]+-(\d+)-[0-9a-f]+\.json$/);
+    expect(match).not.toBeNull();
+    const ns = BigInt(match![1]);
+    const nowMs = BigInt(Date.now());
+    // The ns prefix is wall-clock-ns, so dividing by 1e6 must
+    // land within a few milliseconds of `Date.now()`.
+    const filenameMs = ns / 1_000_000n;
+    expect(filenameMs).toBeGreaterThanOrEqual(nowMs - 1_000n);
+    expect(filenameMs).toBeLessThanOrEqual(nowMs + 1_000n);
+    store.close();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -247,8 +449,12 @@ describe("Mission checkpoints", () => {
 
 describe("Budget usage", () => {
   let dir: string;
-  beforeEach(() => { dir = makeTempDir(); });
-  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+  beforeEach(() => {
+    dir = makeTempDir();
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   it("getBudgetUsage returns steps used vs budget", async () => {
     const { MissionStore } = await import("../src/mission/store.js");
