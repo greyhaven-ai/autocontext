@@ -397,3 +397,115 @@ def test_context_manager_closes(tmp_path: Path) -> None:
     # connection closed
     with pytest.raises(sqlite3.ProgrammingError):
         store._db.execute("SELECT 1")
+
+
+# ---------------------------------------------------------------------------
+# PR #1014 review (P2): runtime status validation
+# ---------------------------------------------------------------------------
+
+
+def test_update_mission_status_rejects_unknown_value_before_write(
+    tmp_path: Path,
+) -> None:
+    """`Literal` is a static-analysis hint only. Without the runtime
+    guard a typo would persist an unreadable row that later raises
+    `ValidationError` on read. Mirrors the TS Zod
+    `StatusSchema.parse(status)` pre-write guard."""
+    store = _store(tmp_path)
+    try:
+        mid = store.create_mission(name="x", goal="g")
+        with pytest.raises(ValueError, match="invalid mission status 'banana'"):
+            store.update_mission_status(mid, "banana")  # type: ignore[arg-type]
+        # Row is still readable; the existing status is unchanged.
+        mission = store.get_mission(mid)
+        assert mission is not None
+        assert mission.status == "active"
+    finally:
+        store.close()
+
+
+def test_update_step_status_rejects_unknown_value_before_write(
+    tmp_path: Path,
+) -> None:
+    store = _store(tmp_path)
+    try:
+        mid = store.create_mission(name="x", goal="g")
+        sid = store.add_step(mid, description="x")
+        with pytest.raises(ValueError, match="invalid step status 'banana'"):
+            store.update_step_status(sid, "banana")  # type: ignore[arg-type]
+        step = store.get_steps(mid)[0]
+        # original status preserved
+        assert step.status == "completed"
+    finally:
+        store.close()
+
+
+def test_update_subgoal_status_rejects_unknown_value_before_write(
+    tmp_path: Path,
+) -> None:
+    store = _store(tmp_path)
+    try:
+        mid = store.create_mission(name="x", goal="g")
+        sgid = store.add_subgoal(mid, description="x")
+        with pytest.raises(ValueError, match="invalid subgoal status 'banana'"):
+            store.update_subgoal_status(sgid, "banana")  # type: ignore[arg-type]
+        subgoal = store.get_subgoals(mid)[0]
+        assert subgoal.status == "pending"
+    finally:
+        store.close()
+
+
+# ---------------------------------------------------------------------------
+# PR #1014 review (P2): primitive coercion blocked via StrictInt / StrictBool
+# ---------------------------------------------------------------------------
+
+
+def test_mission_budget_rejects_bool_for_max_steps() -> None:
+    """`MissionBudget(max_steps=True)` used to coerce to 1; strict
+    typing now rejects it. Mirrors the TS Zod schema's int-only
+    contract."""
+    from pydantic import ValidationError
+
+    from autocontext.mission import MissionBudget
+
+    with pytest.raises(ValidationError):
+        MissionBudget(max_steps=True)  # type: ignore[arg-type]
+
+
+def test_mission_budget_rejects_string_for_max_steps() -> None:
+    from pydantic import ValidationError
+
+    from autocontext.mission import MissionBudget
+
+    with pytest.raises(ValidationError):
+        MissionBudget(max_steps="5")  # type: ignore[arg-type]
+
+
+def test_mission_budget_rejects_string_for_max_cost_usd() -> None:
+    from pydantic import ValidationError
+
+    from autocontext.mission import MissionBudget
+
+    with pytest.raises(ValidationError):
+        MissionBudget(max_cost_usd="2.5")  # type: ignore[arg-type]
+
+
+def test_verifier_result_rejects_string_for_passed() -> None:
+    """`VerifierResult(passed="no")` used to coerce to False; strict
+    typing now rejects it. Mirrors the TS Zod boolean contract."""
+    from pydantic import ValidationError
+
+    from autocontext.mission import VerifierResult
+
+    with pytest.raises(ValidationError):
+        VerifierResult(passed="no", reason="x")  # type: ignore[arg-type]
+
+
+def test_verifier_result_accepts_real_booleans() -> None:
+    """The strict guard must not break the happy path."""
+    from autocontext.mission import VerifierResult
+
+    ok = VerifierResult(passed=True, reason="ok")
+    assert ok.passed is True
+    bad = VerifierResult(passed=False, reason="fail")
+    assert bad.passed is False

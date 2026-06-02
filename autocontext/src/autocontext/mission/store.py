@@ -21,6 +21,9 @@ from datetime import UTC, datetime
 from typing import Any
 
 from autocontext.mission.types import (
+    MISSION_STATUSES,
+    STEP_STATUSES,
+    SUBGOAL_STATUSES,
     BudgetUsage,
     Mission,
     MissionBudget,
@@ -34,6 +37,16 @@ from autocontext.mission.types import (
 )
 
 __all__ = ["MissionStore"]
+
+
+def _require_status(value: str, allowed: frozenset[str], kind: str) -> None:
+    """PR #1014 review (P2): ``Literal`` is a static-analysis hint
+    only; the store must guard updates at runtime so a typo cannot
+    persist an unreadable row that later raises ``ValidationError``
+    on read. Mirrors the TS Zod ``StatusSchema.parse(status)``
+    pre-write guard."""
+    if value not in allowed:
+        raise ValueError(f"invalid {kind} status {value!r}; expected one of {sorted(allowed)}")
 
 
 _MISSION_TERMINAL_STATUSES: frozenset[str] = frozenset({"completed", "failed", "canceled"})
@@ -163,6 +176,7 @@ class MissionStore:
         return [self._mission_from_row(row) for row in rows]
 
     def update_mission_status(self, mission_id: str, status: MissionStatus) -> None:
+        _require_status(status, MISSION_STATUSES, "mission")
         completed_at = _completion_timestamp(status, _MISSION_TERMINAL_STATUSES)
         self._db.execute(
             "UPDATE missions SET status = ?, updated_at = datetime('now'), completed_at = ? WHERE id = ?",
@@ -192,6 +206,7 @@ class MissionStore:
         return [self._step_from_row(row) for row in rows]
 
     def update_step_status(self, step_id: str, status: StepStatus, result: str | None = None) -> None:
+        _require_status(status, STEP_STATUSES, "step")
         completed_at = _completion_timestamp(status, _STEP_TERMINAL_STATUSES)
         self._db.execute(
             "UPDATE mission_steps SET status = ?, result = COALESCE(?, result), completed_at = ? WHERE id = ?",
@@ -243,6 +258,7 @@ class MissionStore:
         return [self._subgoal_from_row(row) for row in rows]
 
     def update_subgoal_status(self, subgoal_id: str, status: SubgoalStatus) -> None:
+        _require_status(status, SUBGOAL_STATUSES, "subgoal")
         completed_at = _completion_timestamp(status, _SUBGOAL_TERMINAL_STATUSES)
         self._db.execute(
             "UPDATE mission_subgoals SET status = ?, completed_at = ? WHERE id = ?",
