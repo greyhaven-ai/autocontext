@@ -31,6 +31,22 @@ def _store(tmp_path: Path) -> MissionStore:
 # ---------------------------------------------------------------------------
 
 
+def test_open_creates_missing_parent_directory(tmp_path: Path) -> None:
+    """PR #1017 review (P1): opening a path under a not-yet-created
+    directory used to fail with `OperationalError: unable to open
+    database file` from a fresh checkout. The store now creates the
+    parent on demand, matching the other SQLite stores in this
+    package."""
+    nested = tmp_path / "runs" / "subdir"
+    db_path = nested / "mission.sqlite3"
+    assert not nested.exists()
+    store = MissionStore(str(db_path))
+    try:
+        assert db_path.is_file()
+    finally:
+        store.close()
+
+
 def test_open_creates_all_four_tables(tmp_path: Path) -> None:
     """The TS and Python stores share the same on-disk schema so a
     shared `AUTOCONTEXT_DB_PATH` can be read from either runtime."""

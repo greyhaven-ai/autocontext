@@ -305,8 +305,7 @@
       "aliases": [],
       "runtime_support": {
         "python": {
-          "status": "intentional_gap",
-          "reason": "Mission is TypeScript-only today (per autocontext/README.md). Python parity is out of scope for AC-697 slice 1."
+          "status": "yes"
         },
         "typescript": {
           "status": "yes"

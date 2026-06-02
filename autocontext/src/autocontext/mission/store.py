@@ -18,6 +18,7 @@ import json
 import sqlite3
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from autocontext.mission.types import (
@@ -78,6 +79,14 @@ class MissionStore:
 
     def __init__(self, db_path: str) -> None:
         self._db_path = db_path
+        # PR #1017 review (P1): create the parent directory before
+        # opening the database. Without this, opening a path under
+        # `runs/` in a fresh checkout failed with `OperationalError:
+        # unable to open database file`. Mirrors the behaviour of
+        # the other SQLite stores in this package.
+        parent = Path(db_path).expanduser().parent
+        if str(parent) and not parent.exists():
+            parent.mkdir(parents=True, exist_ok=True)
         self._db = sqlite3.connect(db_path, isolation_level=None)
         # Match the TS pragma settings.
         self._db.execute("PRAGMA journal_mode = WAL")

@@ -301,3 +301,18 @@ def test_cli_run_rejects_non_positive_max_iterations(monkeypatch: pytest.MonkeyP
 def test_help_text_lists_slice_4_subcommands() -> None:
     for sub in ("create", "run", "status", "list", "artifacts"):
         assert sub in MISSION_HELP_TEXT
+
+
+def test_contract_marks_mission_python_yes() -> None:
+    """PR #1017 review (P3): registering the public command without
+    flipping the contract entry would leave capability/contract
+    tooling hiding the new Python surface. The slice-4 subcommands
+    are live, so the contract now marks Python as `yes`."""
+    contract = (
+        json.loads((Path(__file__).resolve().parents[2] / "docs" / "cli-contract.json").read_text(encoding="utf-8"))
+        if (Path(__file__).resolve().parents[2] / "docs" / "cli-contract.json").exists()
+        else json.loads((Path(__file__).resolve().parents[3] / "docs" / "cli-contract.json").read_text(encoding="utf-8"))
+    )
+    mission = next(c for c in contract["commands"] if c["id"] == "mission")
+    assert mission["runtime_support"]["python"]["status"] == "yes"
+    assert mission["runtime_support"]["python"].get("reason") is None
