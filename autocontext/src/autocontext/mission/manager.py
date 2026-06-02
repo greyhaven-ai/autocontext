@@ -10,6 +10,8 @@ verifier -> completed; failing verifier leaves status untouched).
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 from collections.abc import Callable
 from typing import Any
 
@@ -123,21 +125,60 @@ class MissionManager:
         """Run the registered verifier (or surface "no verifier" when
         none is registered), persist the outcome, transition the
         mission status if the outcome demands it, and return the
-        result."""
+        result.
+
+        PR #1015 review:
+
+        - P2 (async verifiers): the TS `MissionVerifier` contract is
+          promise-based; an `async def` Python verifier returns a
+          coroutine. We detect coroutines via ``inspect.iscoroutine``
+          and run them to completion via ``asyncio.run`` so an async
+          verifier resolves into a real ``VerifierResult`` instead of
+          flowing through the error path as `'coroutine' object has
+          no attribute 'passed'`. Sync verifiers are unchanged. The
+          caller must not be inside a running event loop (matches
+          the standard sync-to-async bridge limitation).
+
+        - P2 (transition ordering): a verifier outcome that demands a
+          status transition (passing -> completed) must validate the
+          transition BEFORE persisting the verification record or
+          emitting events. Otherwise a `paused` mission with a
+          passing verifier would persist a passing record + emit
+          `mission_verified`, then raise on the invalid
+          `paused -> completed` transition and leave the mission in
+          an inconsistent state. We resolve + apply the transition,
+          then record the verification, then emit events.
+        """
         verifier = self._verifiers.get(mission_id)
         if verifier is None:
             outcome = build_missing_verifier_outcome()
         else:
             try:
-                outcome = resolve_mission_verification_outcome(verifier(mission_id))
+                raw = verifier(mission_id)
+                if inspect.iscoroutine(raw):
+                    raw = asyncio.run(raw)
+                outcome = resolve_mission_verification_outcome(raw)
             except Exception as err:
                 outcome = resolve_mission_verification_error_outcome(str(err), type(err).__name__)
 
+        # Pre-validate the status transition so an invalid one does not
+        # leave a stranded verification record + status-change event.
+        transition = None
+        previous_status: MissionStatus | None = None
+        if outcome.next_status is not None:
+            mission = self._store.get_mission(mission_id)
+            previous_status = mission.status if mission is not None else None
+            transition = resolve_mission_status_transition(previous_status, outcome.next_status)
+
+        # Validation passed: persist verification + transition together,
+        # then emit best-effort notifications.
         self._store.record_verification(mission_id, outcome.result)
+        if transition is not None:
+            self._store.update_mission_status(mission_id, transition.next_status)
         if self._events is not None:
             self._events.emit_verified(mission_id, outcome.result.passed, outcome.result.reason)
-        if outcome.next_status is not None:
-            self._transition_mission_status(mission_id, outcome.next_status)
+            if transition is not None and previous_status is not None and transition.should_emit_status_change:
+                self._events.emit_status_change(mission_id, previous_status, transition.next_status)
         return outcome.result
 
     def verifications(self, mission_id: str) -> list[MissionVerificationRecord]:

@@ -179,6 +179,94 @@ def test_events_emit_created_step_status_and_verified(tmp_path: Path) -> None:
     ]
 
 
+# ---------------------------------------------------------------------------
+# PR #1015 review (P2): async verifier support
+# ---------------------------------------------------------------------------
+
+
+def test_async_verifier_is_awaited_and_completes_mission(tmp_path: Path) -> None:
+    """The TS `MissionVerifier` contract is promise-based; an
+    `async def` Python verifier returns a coroutine. The manager now
+    detects coroutines and runs them via `asyncio.run` so an async
+    verifier resolves into a real `VerifierResult` instead of
+    flowing through the error path as a coroutine-attribute error.
+    """
+    with _manager(tmp_path) as mgr:
+        mid = mgr.create(name="x", goal="g")
+
+        async def passing(_mid: str) -> VerifierResult:
+            return VerifierResult(passed=True, reason="green")
+
+        mgr.set_verifier(mid, passing)
+        result = mgr.verify(mid)
+        assert result.passed is True
+        assert mgr.get(mid).status == "completed"
+
+
+def test_async_verifier_that_raises_yields_failing_result(tmp_path: Path) -> None:
+    with _manager(tmp_path) as mgr:
+        mid = mgr.create(name="x", goal="g")
+
+        async def boom(_mid: str) -> VerifierResult:
+            raise RuntimeError("kaboom")
+
+        mgr.set_verifier(mid, boom)
+        result = mgr.verify(mid)
+        assert result.passed is False
+        assert result.metadata["errorName"] == "RuntimeError"
+        assert "kaboom" in result.reason
+
+
+# ---------------------------------------------------------------------------
+# PR #1015 review (P2): transition ordering
+# ---------------------------------------------------------------------------
+
+
+def test_invalid_transition_under_verify_does_not_persist_verification(
+    tmp_path: Path,
+) -> None:
+    """A paused mission with a passing verifier raises
+    `paused -> completed`. Before this fix the verification record
+    was already persisted and the `mission_verified` event already
+    emitted, leaving an inconsistent state. After the fix the
+    transition is pre-validated so the rejection short-circuits
+    before either side effect.
+    """
+    with _manager(tmp_path) as mgr:
+        mid = mgr.create(name="x", goal="g")
+        mgr.pause(mid)
+        mgr.set_verifier(mid, lambda _mid: VerifierResult(passed=True, reason="green"))
+        with pytest.raises(ValueError, match="paused -> completed"):
+            mgr.verify(mid)
+        # No verification record persisted because the transition
+        # rejection short-circuited first.
+        assert mgr.verifications(mid) == []
+        # Mission still paused.
+        assert mgr.get(mid).status == "paused"
+
+
+def test_verified_listener_raising_does_not_block_status_completion(
+    tmp_path: Path,
+) -> None:
+    """Status transitions are durable state; events are
+    best-effort. If a `mission_verified` listener raises, the
+    status update is already persisted so the mission stays
+    completed."""
+    events = MissionEventEmitter()
+    events.on(
+        "mission_verified",
+        lambda _payload: (_ for _ in ()).throw(RuntimeError("listener boom")),
+    )
+    with MissionManager(str(tmp_path / "m.sqlite3"), events=events) as mgr:
+        mid = mgr.create(name="x", goal="g")
+        mgr.set_verifier(mid, lambda _mid: VerifierResult(passed=True, reason="green"))
+        with pytest.raises(RuntimeError, match="listener boom"):
+            mgr.verify(mid)
+        # The status transition is already persisted; the listener
+        # exception did not block it.
+        assert mgr.get(mid).status == "completed"
+
+
 def test_status_change_event_carries_from_and_to(tmp_path: Path) -> None:
     events = MissionEventEmitter()
     payloads: list[object] = []
