@@ -303,6 +303,119 @@ def test_help_text_lists_slice_4_subcommands() -> None:
         assert sub in MISSION_HELP_TEXT
 
 
+# ---------------------------------------------------------------------------
+# slice 5: pause / resume / cancel
+# ---------------------------------------------------------------------------
+
+
+def _create_mission(runner: CliRunner) -> str:
+    result = runner.invoke(app, ["mission", "create", "--name", "x", "--goal", "g", "--json"])
+    assert result.exit_code == 0, result.output
+    return json.loads(result.stdout)["id"]
+
+
+def test_cli_pause_then_resume_round_trips_status(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _env_isolated(monkeypatch, tmp_path)
+    runner = CliRunner()
+    mid = _create_mission(runner)
+
+    paused = runner.invoke(app, ["mission", "pause", "--id", mid, "--json"])
+    assert paused.exit_code == 0, paused.output
+    paused_payload = json.loads(paused.stdout)
+    assert paused_payload["status"] == "paused"
+    assert Path(paused_payload["checkpointPath"]).is_file()
+
+    resumed = runner.invoke(app, ["mission", "resume", "--id", mid, "--json"])
+    assert resumed.exit_code == 0
+    assert json.loads(resumed.stdout)["status"] == "active"
+
+
+def test_cli_cancel_marks_mission_canceled(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _env_isolated(monkeypatch, tmp_path)
+    runner = CliRunner()
+    mid = _create_mission(runner)
+    result = runner.invoke(app, ["mission", "cancel", "--id", mid, "--json"])
+    assert result.exit_code == 0
+    assert json.loads(result.stdout)["status"] == "canceled"
+
+
+def test_cli_resume_after_cancel_reopens_mission(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """PR #1018 review (P2) alignment: the slice-2 transition table
+    allows ``canceled -> active``, so an operator can ``resume`` a
+    canceled mission. Only ``completed`` is truly terminal. Pin the
+    intended contract so docs and code stay aligned."""
+    _env_isolated(monkeypatch, tmp_path)
+    runner = CliRunner()
+    mid = _create_mission(runner)
+    runner.invoke(app, ["mission", "cancel", "--id", mid, "--json"])
+    result = runner.invoke(app, ["mission", "resume", "--id", mid, "--json"])
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["status"] == "active"
+
+
+def test_cli_completed_mission_cannot_be_reopened(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """`completed` is the only truly-terminal status: the transition
+    table allows only ``completed -> completed`` so ``resume`` /
+    ``pause`` / ``cancel`` all reject."""
+    from autocontext.config import load_settings
+    from autocontext.mission import MissionManager
+
+    _env_isolated(monkeypatch, tmp_path)
+    runner = CliRunner()
+    mid = _create_mission(runner)
+    # Directly force the mission to `completed` to exercise the
+    # rejection branch; the CLI doesn't surface a manual
+    # "complete" affordance.
+    with MissionManager(str(load_settings().db_path)) as mgr:
+        mgr.set_status(mid, "completed")
+    for action in ("pause", "resume", "cancel"):
+        result = runner.invoke(app, ["mission", action, "--id", mid])
+        assert result.exit_code == 1, f"{action} should reject on completed mission"
+
+
+def test_cli_resume_from_active_is_a_lawful_self_loop(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """The slice-2 transition table allows ``active -> active`` as a
+    self-loop; resume on an active mission should be a clean no-op
+    rather than raising."""
+    _env_isolated(monkeypatch, tmp_path)
+    runner = CliRunner()
+    mid = _create_mission(runner)
+    result = runner.invoke(app, ["mission", "resume", "--id", mid, "--json"])
+    assert result.exit_code == 0
+    assert json.loads(result.stdout)["status"] == "active"
+
+
+def test_cli_pause_after_cancel_rejects_with_clear_error(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """`canceled -> paused` is not allowed; the manager raises and the
+    CLI surfaces the slice-2 transition error rather than silently
+    persisting an invalid state change."""
+    _env_isolated(monkeypatch, tmp_path)
+    runner = CliRunner()
+    mid = _create_mission(runner)
+    runner.invoke(app, ["mission", "cancel", "--id", mid, "--json"])
+    result = runner.invoke(app, ["mission", "pause", "--id", mid])
+    assert result.exit_code == 1
+
+
+@pytest.mark.parametrize("action", ["pause", "resume", "cancel"])
+def test_cli_lifecycle_rejects_missing_id(action: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _env_isolated(monkeypatch, tmp_path)
+    result = CliRunner().invoke(app, ["mission", action])
+    assert result.exit_code == 1
+
+
+@pytest.mark.parametrize("action", ["pause", "resume", "cancel"])
+def test_cli_lifecycle_rejects_unknown_id(action: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _env_isolated(monkeypatch, tmp_path)
+    result = CliRunner().invoke(app, ["mission", action, "--id", "mission-nope"])
+    assert result.exit_code == 1
+
+
+def test_help_text_lists_slice_5_subcommands() -> None:
+    for sub in ("pause", "resume", "cancel"):
+        assert sub in MISSION_HELP_TEXT
+
+
 def test_contract_marks_mission_python_yes() -> None:
     """PR #1017 review (P3): registering the public command without
     flipping the contract entry would leave capability/contract

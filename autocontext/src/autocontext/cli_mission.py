@@ -57,6 +57,9 @@ Subcommands:
   run        Advance a mission and write a checkpoint
   status     Show mission details
   list       List all missions
+  pause      Pause an active mission
+  resume     Resume a paused, blocked, or canceled mission back to active
+  cancel     Cancel a mission (reopen with `resume` if needed)
   artifacts  Inspect saved mission checkpoints
 
 Examples:
@@ -65,6 +68,9 @@ Examples:
   autoctx mission run --id mission-abc123 --max-iterations 3
   autoctx mission list --status active
   autoctx mission status --id mission-abc123
+  autoctx mission pause --id mission-abc123
+  autoctx mission resume --id mission-abc123
+  autoctx mission cancel --id mission-abc123
   autoctx mission artifacts --id mission-abc123
 """
 
@@ -422,5 +428,66 @@ def register_mission_command(app: typer.Typer, *, console: Console) -> None:
             print(json.dumps(payload, indent=2))
         else:
             console.print(_render_mission_artifacts_text(payload))
+
+    def _lifecycle(
+        action: str,
+        *,
+        mission_id: str,
+        json_output: bool,
+    ) -> None:
+        """Slice-5 shared lifecycle body. ``action`` is one of
+        ``pause`` / ``resume`` / ``cancel``; mirrors the TS
+        `executeMissionLifecycleCommand` shape: the manager applies
+        the transition (which raises on an invalid one), a fresh
+        checkpoint is written under the canonical mission directory,
+        and the status payload is emitted with `checkpointPath`
+        appended.
+        """
+        if not mission_id:
+            _write_error_stderr(f"autoctx mission {action}: --id <mission-id> is required")
+            raise typer.Exit(code=1)
+        settings = load_settings()
+        with _mission_manager(settings) as mgr:
+            try:
+                getattr(mgr, action)(mission_id)
+            except ValueError as err:
+                _write_error_stderr(f"autoctx mission {action}: {err}")
+                raise typer.Exit(code=1) from err
+            try:
+                payload = _checkpoint_payload(mgr, mission_id, _checkpoint_runs_root(settings))
+            except ValueError as err:
+                _write_error_stderr(f"autoctx mission {action}: {err}")
+                raise typer.Exit(code=1) from err
+        if json_output:
+            print(json.dumps(payload, indent=2))
+        else:
+            console.print(_render_mission_status_text(payload))
+
+    @mission_app.command("pause")
+    def _pause(
+        mission_id: str = typer.Option("", "--id", help="Mission id."),
+        json_output: bool = typer.Option(False, "--json", help="Emit a structured JSON payload."),
+    ) -> None:
+        """Pause an active mission. Writes a fresh checkpoint after the
+        transition so the artifacts surface stays in sync."""
+        _lifecycle("pause", mission_id=mission_id, json_output=json_output)
+
+    @mission_app.command("resume")
+    def _resume(
+        mission_id: str = typer.Option("", "--id", help="Mission id."),
+        json_output: bool = typer.Option(False, "--json", help="Emit a structured JSON payload."),
+    ) -> None:
+        """Resume a paused mission back to ``active``."""
+        _lifecycle("resume", mission_id=mission_id, json_output=json_output)
+
+    @mission_app.command("cancel")
+    def _cancel(
+        mission_id: str = typer.Option("", "--id", help="Mission id."),
+        json_output: bool = typer.Option(False, "--json", help="Emit a structured JSON payload."),
+    ) -> None:
+        """Cancel a mission. Per the slice-2 transition table only
+        ``completed`` is truly terminal; ``canceled`` can be reopened
+        via ``resume`` if the operator changes their mind."""
+        _lifecycle("cancel", mission_id=mission_id, json_output=json_output)
 
     app.add_typer(mission_app, name="mission")

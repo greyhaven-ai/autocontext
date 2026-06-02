@@ -202,6 +202,14 @@ uv run autoctx probes check --suite contract-probes.json
 uv run autoctx probes check --suite contract-probes.json --json
 uv run autoctx probes extract --trace harness-trace.json
 uv run autoctx probes extract --trace harness-trace.json --output contract-probes.json
+uv run autoctx mission create --name "Ship login" --goal "Implement OAuth"
+uv run autoctx mission run --id <mission_id> --max-iterations 3 --json
+uv run autoctx mission status --id <mission_id> --json
+uv run autoctx mission list --status active --json
+uv run autoctx mission pause --id <mission_id>
+uv run autoctx mission resume --id <mission_id>
+uv run autoctx mission cancel --id <mission_id>
+uv run autoctx mission artifacts --id <mission_id> --json
 uv run autoctx wait <condition_id> --json
 ```
 
@@ -305,6 +313,45 @@ Slice 5 covers the four base probe kinds (`terminal`, `directory`, `service`, `a
   }
 }
 ```
+
+## Missions
+
+`uv run autoctx mission ...` manages long-running, verifier-driven missions. A mission bundles a goal, a budget, a status that follows the state-machine table (active / paused / blocked / completed / failed / canceled / budget_exhausted / verifier_failed), and an optional verifier that gates completion. Two flavours land:
+
+- Generic missions advance via a subgoal-stepping loop; the fallback verifier passes once every subgoal reaches a terminal state.
+- Code missions register a `CodeMissionSpec` whose `test_command` (and optional `lint_command` / `build_command`) is wrapped in a `CommandVerifier` (composite when multiple commands are supplied). A code mission rejected by its verifier is downgraded from `active` to `failed` when the run loop returns.
+
+Every subcommand emits human-readable text by default and a structured JSON payload under `--json`. Errors route to stderr so JSON consumers can safely parse stdout on failure paths. State persists under `settings.db_path`; each `create` / `run` / `pause` / `resume` / `cancel` action writes a fresh checkpoint under `<settings.runs_root>/missions/<mission_id>/checkpoints/`. The checkpoint filename embeds nanosecond resolution + an 8-char uuid suffix so concurrent writes never collide; loaders accept both Python-shaped (snake_case) and TS-shaped (camelCase) checkpoints so a shared `AUTOCONTEXT_DB_PATH` can resume from either runtime.
+
+Minimal end-to-end (generic mission):
+
+```bash
+uv run autoctx mission create --name "Ship login" --goal "Implement OAuth" --json
+# -> {"id": "mission-abc12345", "status": "active", ...}
+uv run autoctx mission run --id mission-abc12345 --max-iterations 3 --json
+# -> {"id": "...", "finalStatus": "active", "stepsExecuted": 3, "verifierPassed": false, ...}
+uv run autoctx mission status --id mission-abc12345 --json
+uv run autoctx mission pause --id mission-abc12345 --json
+uv run autoctx mission cancel --id mission-abc12345 --json
+uv run autoctx mission artifacts --id mission-abc12345 --json
+```
+
+Code mission example:
+
+```bash
+uv run autoctx mission create \
+  --type code \
+  --name "Fix login" \
+  --goal "Tests pass" \
+  --repo-path . \
+  --test-command "pytest -x" \
+  --lint-command "ruff check src" \
+  --max-steps 5 \
+  --json
+uv run autoctx mission run --id <mission_id> --max-iterations 5 --json
+```
+
+Status transitions are enforced by the slice-2 transition table. Only `completed` is truly terminal (self-loop only). `canceled` can be reopened via `resume` (e.g. an operator who changes their mind), so a `mission cancel` followed by `mission resume` returns the mission to `active`. `paused -> completed` rejects because the verifier must observe a live mission. An invalid transition surfaces a clear error and does not mutate state. Async verifiers and async step executors are supported; the CLI is a sync entry point so they cannot be combined with a running event loop (calling from inside an active loop raises `AsyncContextError` before any state mutation).
 
 ## Training Workflow
 
