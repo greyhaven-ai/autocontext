@@ -217,6 +217,36 @@ def test_async_verifier_that_raises_yields_failing_result(tmp_path: Path) -> Non
         assert "kaboom" in result.reason
 
 
+def test_async_verifier_inside_running_loop_raises_without_persisting(
+    tmp_path: Path,
+) -> None:
+    """PR #1016 review (P2) parity with the executor fix: the sync
+    `verify()` API cannot bridge an async verifier from inside a
+    running event loop because `asyncio.run` rejects a nested call.
+    The fix raises `AsyncContextError` BEFORE recording any
+    verification so the mission stays state-consistent.
+    """
+    import asyncio
+
+    from autocontext.mission._async_bridge import AsyncContextError
+
+    with _manager(tmp_path) as mgr:
+        mid = mgr.create(name="x", goal="g")
+
+        async def passing(_mid: str) -> VerifierResult:
+            return VerifierResult(passed=True, reason="green")
+
+        mgr.set_verifier(mid, passing)
+
+        async def driver() -> None:
+            with pytest.raises(AsyncContextError):
+                mgr.verify(mid)
+
+        asyncio.run(driver())
+        assert mgr.verifications(mid) == []
+        assert mgr.get(mid).status == "active"
+
+
 # ---------------------------------------------------------------------------
 # PR #1015 review (P2): transition ordering
 # ---------------------------------------------------------------------------

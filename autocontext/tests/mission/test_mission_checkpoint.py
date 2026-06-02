@@ -131,6 +131,176 @@ def test_load_checkpoint_into_db_with_existing_id_rejects(tmp_path: Path) -> Non
         store.close()
 
 
+# ---------------------------------------------------------------------------
+# PR #1016 review (P2): camelCase TS-shaped checkpoint compatibility
+# ---------------------------------------------------------------------------
+
+
+def test_load_checkpoint_accepts_ts_camelcase_budget_and_timestamps(
+    tmp_path: Path,
+) -> None:
+    """PR #1016 review (P2): the TS checkpoint format uses camelCase
+    (`createdAt`, `budget.maxSteps`, ...). Before the fix the Python
+    loader only read snake_case, so a TS-shaped checkpoint dropped
+    the budget caps and regenerated timestamps. The fix accepts
+    either shape so a shared `AUTOCONTEXT_DB_PATH` resumes cleanly.
+    """
+    ts_checkpoint = {
+        "version": 1,
+        "checkpointedAt": "2026-06-02T00:00:00Z",
+        "mission": {
+            "id": "mission-tscamel",
+            "name": "ts-shaped",
+            "goal": "g",
+            "status": "active",
+            "budget": {"maxSteps": 7, "maxCostUsd": 3.5},
+            "metadata": {"missionType": "code"},
+            "createdAt": "2026-06-02T01:00:00Z",
+            "updatedAt": "2026-06-02T02:00:00Z",
+            "completedAt": None,
+        },
+        "steps": [
+            {
+                "id": "step-1",
+                "mission_id": "mission-tscamel",
+                "description": "did a",
+                "status": "completed",
+                "result": None,
+                "createdAt": "2026-06-02T03:00:00Z",
+                "completedAt": "2026-06-02T03:01:00Z",
+            }
+        ],
+        "subgoals": [],
+        "verifications": [],
+        "budgetUsage": {"steps_used": 1, "exhausted": False},
+    }
+    path = tmp_path / "ts-checkpoint.json"
+    path.write_text(json.dumps(ts_checkpoint))
+
+    dest = MissionStore(str(tmp_path / "dest.sqlite3"))
+    try:
+        restored_id = load_checkpoint(dest, path)
+        assert restored_id == "mission-tscamel"
+        mission = dest.get_mission(restored_id)
+        assert mission is not None
+        assert mission.budget == MissionBudget(max_steps=7, max_cost_usd=3.5)
+        assert mission.created_at == "2026-06-02T01:00:00Z"
+        assert mission.updated_at == "2026-06-02T02:00:00Z"
+        # Steps inherited their TS-shaped createdAt too.
+        step = dest.get_steps(restored_id)[0]
+        assert step.created_at == "2026-06-02T03:00:00Z"
+    finally:
+        dest.close()
+
+
+# ---------------------------------------------------------------------------
+# PR #1016 review (P2): atomic restore
+# ---------------------------------------------------------------------------
+
+
+def test_load_checkpoint_rolls_back_on_duplicate_child_row(tmp_path: Path) -> None:
+    """PR #1016 review (P2): a child-row failure used to leave a
+    partial mission + first step behind; a retry then choked on the
+    already-existing mission row. The transaction wrapper rolls back
+    the partial restore so the operator can retry without first
+    cleaning up."""
+    duplicate_step_id = "step-dup"
+    payload = {
+        "version": 1,
+        "checkpointedAt": "2026-06-02T00:00:00Z",
+        "mission": {
+            "id": "mission-rb",
+            "name": "x",
+            "goal": "g",
+            "status": "active",
+            "budget": None,
+            "metadata": {},
+            "created_at": "2026-06-02T00:00:00Z",
+            "updated_at": None,
+            "completed_at": None,
+        },
+        "steps": [
+            {
+                "id": duplicate_step_id,
+                "mission_id": "mission-rb",
+                "description": "first",
+                "status": "completed",
+                "result": None,
+                "created_at": "2026-06-02T00:01:00Z",
+                "completed_at": None,
+            },
+            # Duplicate id triggers UNIQUE constraint failure on the
+            # second insert; the rollback should drop the mission row
+            # AND the first step.
+            {
+                "id": duplicate_step_id,
+                "mission_id": "mission-rb",
+                "description": "second",
+                "status": "completed",
+                "result": None,
+                "created_at": "2026-06-02T00:02:00Z",
+                "completed_at": None,
+            },
+        ],
+        "subgoals": [],
+        "verifications": [],
+        "budgetUsage": {"steps_used": 2, "exhausted": False},
+    }
+    path = tmp_path / "rb.json"
+    path.write_text(json.dumps(payload))
+
+    dest = MissionStore(str(tmp_path / "dest_rb.sqlite3"))
+    try:
+        import sqlite3
+
+        with pytest.raises(sqlite3.IntegrityError):
+            load_checkpoint(dest, path)
+        # Mission row was rolled back.
+        assert dest.get_mission("mission-rb") is None
+        # First step was rolled back.
+        assert (
+            dest._db.execute(
+                "SELECT COUNT(*) AS c FROM mission_steps WHERE mission_id = ?",
+                ("mission-rb",),
+            ).fetchone()["c"]
+            == 0
+        )
+        # A retry succeeds after the operator dedupes the steps.
+        payload["steps"][1]["id"] = "step-dup-2"  # type: ignore[index]
+        path.write_text(json.dumps(payload))
+        restored_id = load_checkpoint(dest, path)
+        assert restored_id == "mission-rb"
+    finally:
+        dest.close()
+
+
+# ---------------------------------------------------------------------------
+# PR #1016 review (P3): filename collision
+# ---------------------------------------------------------------------------
+
+
+def test_save_checkpoint_two_saves_in_same_millisecond_do_not_collide(
+    tmp_path: Path,
+) -> None:
+    """PR #1016 review (P3): `<mid>-<unix_ms>.json` collided when two
+    saves landed in the same millisecond. The new `<mid>-<ns>-<uuid8>.json`
+    layout makes the path unique even on fast hardware and across
+    concurrent writers.
+    """
+    store = _store(tmp_path)
+    try:
+        mid = store.create_mission(name="x", goal="g")
+        cp_dir = tmp_path / "cp"
+        # Save 10 in a tight loop — millisecond ties are likely.
+        paths = {save_checkpoint(store, mid, cp_dir) for _ in range(10)}
+        assert len(paths) == 10
+        # All files actually exist (no overwrites).
+        for p in paths:
+            assert Path(p).is_file()
+    finally:
+        store.close()
+
+
 def test_load_checkpoint_assigns_id_for_verifications_missing_one(
     tmp_path: Path,
 ) -> None:

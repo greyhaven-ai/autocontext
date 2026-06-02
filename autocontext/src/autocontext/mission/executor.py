@@ -21,6 +21,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
+from autocontext.mission._async_bridge import AsyncContextError, has_running_loop
 from autocontext.mission.types import MissionStatus
 
 if TYPE_CHECKING:
@@ -68,10 +69,27 @@ async callables, mirroring the slice-2 verifier shape."""
 
 def _await_if_needed(value: StepResult | Awaitable[StepResult]) -> StepResult:
     """Drive an awaitable step executor to completion. Same
-    sync-to-async bridge as ``MissionManager.verify``."""
-    if inspect.isawaitable(value):
-        return asyncio.run(value)  # type: ignore[arg-type]
-    return value
+    sync-to-async bridge as ``MissionManager.verify``.
+
+    PR #1016 review (P2): when called from inside a running event
+    loop with an awaitable value, raise ``AsyncContextError`` so the
+    caller (``run_step``) knows not to record a failed step. Calling
+    ``asyncio.run`` from inside a running loop raises
+    ``RuntimeError`` — without this guard the exception would be
+    swallowed by the catch-all in ``run_step`` and a spurious failed
+    step would be persisted.
+    """
+    if not inspect.isawaitable(value):
+        return value
+    if has_running_loop():
+        if hasattr(value, "close"):
+            value.close()  # avoid an unawaited-coroutine warning
+        raise AsyncContextError(
+            "run_step received an async executor while a running event loop is "
+            "active. Run from sync code, or call the step executor yourself and "
+            "pass the resolved StepResult into run_step."
+        )
+    return asyncio.run(value)  # type: ignore[arg-type]
 
 
 def run_step(manager: MissionManager, mission_id: str, executor: StepExecutor) -> RunStepResult:
@@ -101,6 +119,10 @@ def run_step(manager: MissionManager, mission_id: str, executor: StepExecutor) -
 
     try:
         result = _await_if_needed(executor(mission_id))
+    except AsyncContextError:
+        # PR #1016 review (P2): propagate the async-context guard so
+        # the caller can react. State has not been mutated yet.
+        raise
     except Exception as err:  # noqa: BLE001 — executor exceptions become a failing step
         message = str(err)
         step_id = manager.advance(mission_id, f"Error: {message}")

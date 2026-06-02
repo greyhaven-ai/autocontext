@@ -15,6 +15,7 @@ import inspect
 from collections.abc import Callable
 from typing import Any
 
+from autocontext.mission._async_bridge import AsyncContextError, has_running_loop
 from autocontext.mission.events import MissionEventEmitter
 from autocontext.mission.lifecycle import resolve_mission_status_transition
 from autocontext.mission.store import MissionStore
@@ -156,8 +157,25 @@ class MissionManager:
             try:
                 raw = verifier(mission_id)
                 if inspect.iscoroutine(raw):
+                    # PR #1016 review (P2) parity for executor.py: refuse
+                    # the async-in-running-loop case BEFORE recording any
+                    # state. Without the pre-check, `asyncio.run` would
+                    # raise `RuntimeError` from inside an active loop, the
+                    # catch-all would persist a failing verification, and
+                    # the mission would stay open even though the verifier
+                    # would have passed.
+                    if has_running_loop():
+                        raw.close()  # avoid an unawaited-coroutine warning
+                        raise AsyncContextError(
+                            "MissionManager.verify received an async verifier while a "
+                            "running event loop is active. Run from sync code, or "
+                            "await the verifier yourself and pass the resolved "
+                            "VerifierResult into a future async-aware verify API."
+                        )
                     raw = asyncio.run(raw)
                 outcome = resolve_mission_verification_outcome(raw)
+            except AsyncContextError:
+                raise
             except Exception as err:
                 outcome = resolve_mission_verification_error_outcome(str(err), type(err).__name__)
 

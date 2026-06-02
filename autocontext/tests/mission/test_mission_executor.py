@@ -161,6 +161,36 @@ def test_run_step_supports_async_executor(tmp_path: Path) -> None:
         assert mgr.steps(mid)[0].description == "async did a"
 
 
+def test_run_step_async_inside_running_loop_raises_without_mutating_state(
+    tmp_path: Path,
+) -> None:
+    """PR #1016 review (P2): the sync `run_step` API cannot bridge
+    async executors from inside a running event loop because
+    `asyncio.run` rejects a nested call. Without the guard the
+    catch-all would have persisted a falsely-failed step. The fix
+    raises `AsyncContextError` BEFORE recording any step, so the
+    caller can react and the mission state stays untouched.
+    """
+    import asyncio
+
+    from autocontext.mission._async_bridge import AsyncContextError
+
+    with _manager(tmp_path) as mgr:
+        mid = mgr.create(name="x", goal="g")
+
+        async def driver() -> None:
+            async def step(_mid: str) -> StepResult:
+                return StepResult(description="never recorded", status="completed")
+
+            with pytest.raises(AsyncContextError):
+                run_step(mgr, mid, step)
+
+        asyncio.run(driver())
+        # No step was recorded — the guard fired before any state mutation.
+        assert mgr.steps(mid) == []
+        assert mgr.get(mid).status == "active"
+
+
 # ---------------------------------------------------------------------------
 # run_until_done
 # ---------------------------------------------------------------------------
