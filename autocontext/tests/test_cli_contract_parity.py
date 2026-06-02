@@ -64,11 +64,14 @@ def contract() -> Contract:
 UNCONTRACTED_TOP_LEVEL_ALLOWLIST: frozenset[str] = frozenset(
     {
         "ab-test",
+        "analytics",
         "benchmark",
         "ecosystem",
         "export-training-data",
+        "hermes",
         "import-package",
         "investigate",
+        "probes",
         "resume",
         "simulate",
         "train",
@@ -84,12 +87,35 @@ UNCONTRACTED_TOP_LEVEL_ALLOWLIST: frozenset[str] = frozenset(
 # ---------------------------------------------------------------------------
 
 
+def _observed_top_level_names(app: object) -> set[str]:
+    """PR #1021 review (P2): combine ``iter_python_command_paths``
+    output with ``app.registered_groups`` so visible Typer GROUPS
+    (like ``analytics``, ``hermes``, ``probes``, ``scenario``) are
+    surfaced even when they don't set ``invoke_without_command=True``.
+    ``iter_python_command_paths`` only emits a group prefix when the
+    group itself is invokable; a public group whose only purpose is
+    to hold subcommands would otherwise slip past the reverse-
+    direction audit even though it appears in ``autoctx --help``.
+    """
+    iter_paths: set[str] = {
+        p[0]
+        for p in iter_python_command_paths(app)  # type: ignore[arg-type]
+        if len(p) == 1
+    }
+    group_names: set[str] = {
+        g.name
+        for g in app.registered_groups  # type: ignore[attr-defined]
+        if g.name is not None
+    }
+    return iter_paths | group_names
+
+
 def test_every_observed_top_level_command_is_accounted_for(
     contract: Contract,
 ) -> None:
-    """Every top-level Typer command on the live ``app`` must be in
-    the contract, in a contracted alias list, or on the explicit
-    ``UNCONTRACTED_TOP_LEVEL_ALLOWLIST``.
+    """Every top-level Typer command OR group on the live ``app``
+    must be in the contract, in a contracted alias list, or on the
+    explicit ``UNCONTRACTED_TOP_LEVEL_ALLOWLIST``.
 
     A new command shipped without a contract entry surfaces here so
     the operator either adds it to the contract or documents why it
@@ -97,15 +123,19 @@ def test_every_observed_top_level_command_is_accounted_for(
     """
     from autocontext.cli import app
 
-    observed = {p[0] for p in iter_python_command_paths(app) if len(p) == 1}
+    observed = _observed_top_level_names(app)
     contracted_top_level = {c.path[0] for c in contract.commands if len(c.path) == 1}
     contracted_aliases = {a for c in contract.commands for a in c.aliases}
-    accounted_for = contracted_top_level | contracted_aliases | UNCONTRACTED_TOP_LEVEL_ALLOWLIST
+    # Multi-token contract entries (e.g. `scenario.create`) anchor
+    # their top-level token; that token IS the visible Typer group
+    # name and must count as contracted.
+    contracted_parents = {c.path[0] for c in contract.commands if len(c.path) >= 2}
+    accounted_for = contracted_top_level | contracted_parents | contracted_aliases | UNCONTRACTED_TOP_LEVEL_ALLOWLIST
 
     leaked = observed - accounted_for
     assert not leaked, (
-        "Top-level Typer commands shipped without a contract entry or "
-        "allowlist line: "
+        "Top-level Typer commands/groups shipped without a contract "
+        "entry or allowlist line: "
         f"{sorted(leaked)}. Either add them to docs/cli-contract.json "
         "or to UNCONTRACTED_TOP_LEVEL_ALLOWLIST in this test."
     )
@@ -120,14 +150,15 @@ def test_every_contracted_alias_path_is_registered_in_typer(
     contract: Contract,
 ) -> None:
     """Every contracted alias must still resolve to a registered
-    top-level Typer command. Catches the case where a future
-    refactor drops a legacy alias without updating the contract."""
+    top-level Typer command OR group. Catches the case where a
+    future refactor drops a legacy alias without updating the
+    contract."""
     from autocontext.cli import app
 
-    observed_top_level = {p[0] for p in iter_python_command_paths(app) if len(p) == 1}
+    observed = _observed_top_level_names(app)
     for cmd in contract.commands:
         for alias in cmd.aliases:
-            assert alias in observed_top_level, (
+            assert alias in observed, (
                 f"contracted alias {alias!r} on {cmd.id!r} is no longer registered as a top-level Typer command"
             )
 
