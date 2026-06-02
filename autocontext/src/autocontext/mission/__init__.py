@@ -1,4 +1,4 @@
-"""AC-697 mission Python parity surface (slices 1 + 2).
+"""AC-697 mission Python parity surface (slices 1 + 2 + 3).
 
 Mirrors ``ts/src/mission/`` step-by-step.
 
@@ -6,16 +6,40 @@ Mirrors ``ts/src/mission/`` step-by-step.
 - slice 2: MissionManager + verifiers + planner + lifecycle helpers
   (``manager``, ``verifiers``, ``planner``, ``lifecycle``,
   ``verification``, ``events``).
-- slice 3: control-plane workflows (checkpoint, status payloads).
+- slice 3: control-plane workflows (``checkpoint``, ``executor``,
+  ``control_plane``).
 - slice 4 / 5: ``autoctx mission`` CLI.
 """
 
+from autocontext.mission.checkpoint import (
+    CHECKPOINT_VERSION,
+    load_checkpoint,
+    save_checkpoint,
+)
+from autocontext.mission.control_plane import (
+    build_fallback_verifier,
+    build_mission_artifacts_payload,
+    build_mission_result_payload,
+    build_mission_status_payload,
+    mission_checkpoint_dir,
+    require_mission,
+    run_mission_loop,
+    write_mission_checkpoint,
+)
 from autocontext.mission.events import (
     MissionCreatedEvent,
     MissionEventEmitter,
     MissionStatusChangedEvent,
     MissionStepEvent,
     MissionVerifiedEvent,
+)
+from autocontext.mission.executor import (
+    RunStepResult,
+    RunUntilDoneResult,
+    StepExecutor,
+    StepResult,
+    run_step,
+    run_until_done,
 )
 from autocontext.mission.lifecycle import (
     MissionStatusTransition,
@@ -66,6 +90,7 @@ from autocontext.mission.verifiers import (
 )
 
 __all__ = [
+    "CHECKPOINT_VERSION",
     "BudgetUsage",
     "CodeMissionSpec",
     "CommandVerifier",
@@ -92,7 +117,11 @@ __all__ = [
     "MissionVerifierCallable",
     "PlanNextStepOpts",
     "PlanResult",
+    "RunStepResult",
+    "RunUntilDoneResult",
+    "StepExecutor",
     "StepPlan",
+    "StepResult",
     "StepStatus",
     "SubgoalPlan",
     "SubgoalStatus",
@@ -100,13 +129,25 @@ __all__ = [
     "VerifierFeedback",
     "VerifierResult",
     "attach_code_mission_verifier",
+    "build_fallback_verifier",
+    "build_mission_artifacts_payload",
+    "build_mission_result_payload",
+    "build_mission_status_payload",
     "build_missing_verifier_outcome",
     "build_verifier_error_result",
     "can_transition_mission_status",
     "create_code_mission",
     "derive_mission_status_from_verifier_result",
+    "load_checkpoint",
+    "mission_checkpoint_dir",
     "rehydrate_mission_verifier",
+    "require_mission",
     "resolve_mission_status_transition",
     "resolve_mission_verification_error_outcome",
     "resolve_mission_verification_outcome",
+    "run_mission_loop",
+    "run_step",
+    "run_until_done",
+    "save_checkpoint",
+    "write_mission_checkpoint",
 ]

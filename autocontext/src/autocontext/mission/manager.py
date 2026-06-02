@@ -208,6 +208,20 @@ class MissionManager:
         return self._store.get_budget_usage(mission_id)
 
     # -------------------------------------------------------------------
+    # Checkpoint
+    # -------------------------------------------------------------------
+
+    def save_checkpoint(self, mission_id: str, checkpoint_dir: str) -> str:
+        """Persist a full mission snapshot to ``checkpoint_dir``.
+        Returns the resulting file path. Mirrors TS
+        ``manager.saveCheckpoint``."""
+        # Local import keeps the slice-1/2 manager free of the
+        # slice-3 checkpoint dependency until callers actually use it.
+        from autocontext.mission.checkpoint import save_checkpoint
+
+        return save_checkpoint(self._store, mission_id, checkpoint_dir)
+
+    # -------------------------------------------------------------------
     # Bookkeeping
     # -------------------------------------------------------------------
 
