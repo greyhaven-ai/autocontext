@@ -351,7 +351,7 @@ uv run autoctx mission create \
 uv run autoctx mission run --id <mission_id> --max-iterations 5 --json
 ```
 
-Status transitions are enforced by the slice-2 transition table (e.g. `paused -> completed` rejects; `canceled` and `completed` are terminal). An invalid transition surfaces a clear error and does not mutate state. Async verifiers and async step executors are supported; the CLI is a sync entry point so they cannot be combined with a running event loop (calling from inside an active loop raises `AsyncContextError` before any state mutation).
+Status transitions are enforced by the slice-2 transition table. Only `completed` is truly terminal (self-loop only). `canceled` can be reopened via `resume` (e.g. an operator who changes their mind), so a `mission cancel` followed by `mission resume` returns the mission to `active`. `paused -> completed` rejects because the verifier must observe a live mission. An invalid transition surfaces a clear error and does not mutate state. Async verifiers and async step executors are supported; the CLI is a sync entry point so they cannot be combined with a running event loop (calling from inside an active loop raises `AsyncContextError` before any state mutation).
 
 ## Training Workflow
 

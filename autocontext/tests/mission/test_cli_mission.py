@@ -339,6 +339,40 @@ def test_cli_cancel_marks_mission_canceled(monkeypatch: pytest.MonkeyPatch, tmp_
     assert json.loads(result.stdout)["status"] == "canceled"
 
 
+def test_cli_resume_after_cancel_reopens_mission(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """PR #1018 review (P2) alignment: the slice-2 transition table
+    allows ``canceled -> active``, so an operator can ``resume`` a
+    canceled mission. Only ``completed`` is truly terminal. Pin the
+    intended contract so docs and code stay aligned."""
+    _env_isolated(monkeypatch, tmp_path)
+    runner = CliRunner()
+    mid = _create_mission(runner)
+    runner.invoke(app, ["mission", "cancel", "--id", mid, "--json"])
+    result = runner.invoke(app, ["mission", "resume", "--id", mid, "--json"])
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["status"] == "active"
+
+
+def test_cli_completed_mission_cannot_be_reopened(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """`completed` is the only truly-terminal status: the transition
+    table allows only ``completed -> completed`` so ``resume`` /
+    ``pause`` / ``cancel`` all reject."""
+    from autocontext.config import load_settings
+    from autocontext.mission import MissionManager
+
+    _env_isolated(monkeypatch, tmp_path)
+    runner = CliRunner()
+    mid = _create_mission(runner)
+    # Directly force the mission to `completed` to exercise the
+    # rejection branch; the CLI doesn't surface a manual
+    # "complete" affordance.
+    with MissionManager(str(load_settings().db_path)) as mgr:
+        mgr.set_status(mid, "completed")
+    for action in ("pause", "resume", "cancel"):
+        result = runner.invoke(app, ["mission", action, "--id", mid])
+        assert result.exit_code == 1, f"{action} should reject on completed mission"
+
+
 def test_cli_resume_from_active_is_a_lawful_self_loop(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """The slice-2 transition table allows ``active -> active`` as a
     self-loop; resume on an active mission should be a clean no-op

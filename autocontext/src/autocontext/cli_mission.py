@@ -58,8 +58,8 @@ Subcommands:
   status     Show mission details
   list       List all missions
   pause      Pause an active mission
-  resume     Resume a paused mission
-  cancel     Cancel a mission (terminal)
+  resume     Resume a paused, blocked, or canceled mission back to active
+  cancel     Cancel a mission (reopen with `resume` if needed)
   artifacts  Inspect saved mission checkpoints
 
 Examples:
@@ -485,7 +485,9 @@ def register_mission_command(app: typer.Typer, *, console: Console) -> None:
         mission_id: str = typer.Option("", "--id", help="Mission id."),
         json_output: bool = typer.Option(False, "--json", help="Emit a structured JSON payload."),
     ) -> None:
-        """Cancel a mission. Terminal: the mission cannot be reopened."""
+        """Cancel a mission. Per the slice-2 transition table only
+        ``completed`` is truly terminal; ``canceled`` can be reopened
+        via ``resume`` if the operator changes their mind."""
         _lifecycle("cancel", mission_id=mission_id, json_output=json_output)
 
     app.add_typer(mission_app, name="mission")
