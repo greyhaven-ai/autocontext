@@ -1,0 +1,41 @@
+---
+title: Agent Integration
+description: Wire autocontext into your coding agent via CLI skill or MCP.
+---
+
+autocontext is built to be driven by another agent. Your coding agent (Claude Code, Pi, Hermes, or anything that can run a shell command) calls autocontext to solve a scenario, judge an output against a rubric, or run an improvement loop, then reads the result back. There are two ways to wire this up.
+
+## Why CLI-first
+
+The `autoctx` CLI is the default integration surface, and Unix-style command-line interfaces turn out to be a natural fit for LLM agents:
+
+- **Everything is text.** Commands take text arguments and return text output. There is no serialization protocol to negotiate.
+- **Commands compose cleanly.** Pipe, redirect, and chain with `&&`: standard shell patterns that agents already handle well.
+- **Success and failure are explicit.** Exit code 0 means success, non-zero means failure. There are no ambiguous status fields to parse.
+- **stdout and stderr separation is a proven contract.** Data goes to stdout (use `--json` for a machine-readable payload), diagnostics and errors go to stderr.
+- **Agents already perform well with shell-style interaction.** Most LLM agents have extensive training on CLI usage.
+
+In practice, users report smoother integrations via the CLI than via MCP: it is simpler to set up, easier to debug, and more predictable.
+
+<Callout type="info">
+If your agent can run shell commands, start with a CLI-backed skill. Reach for MCP only when your runtime specifically wants a typed tool catalog or when host policy makes discovery worth the extra setup.
+</Callout>
+
+## Two integration patterns
+
+### CLI-backed skill
+
+A skill is a set of natural-language wrappers over the `autoctx` CLI. Your agent reads short instructions ("to solve a scenario, run `autoctx solve ... --json`") and drives autocontext through the same commands a human would type. This keeps the contract simple: text in, JSON out, explicit exit codes. The [Pi skill](/docs/agents/pi-skill) and the [Hermes](/docs/agents/hermes) integration both follow this pattern.
+
+### MCP tool catalog
+
+The [MCP server](/docs/agents/mcp) exposes autocontext as a catalog of typed tools over stdio. Your agent discovers tools (`autocontext_solve_scenario`, `autocontext_evaluate_output`, and the rest) and invokes them through the MCP protocol instead of through a shell. Use this when your runtime expects MCP discovery, or when you want autocontext to appear alongside other tool providers in a multi-tool agent. [Claude Code](/docs/agents/claude-code) connects this way.
+
+## Pick your agent
+
+- **[MCP Server](/docs/agents/mcp)**: start the server, understand the tool families, both runtimes.
+- **[Claude Code](/docs/agents/claude-code)**: add autocontext to `.claude/settings.json` as an MCP server.
+- **[Pi Skill](/docs/agents/pi-skill)**: `pi install npm:pi-autocontext` for a natural-language entry point.
+- **[Hermes](/docs/agents/hermes)**: a CLI-first skill that also inspects Hermes Curator state.
+
+For the environment variables that decide where your agent roles run, see [Providers](/docs/providers).

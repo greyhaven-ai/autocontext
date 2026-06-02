@@ -1,0 +1,52 @@
+---
+title: Hermes
+description: Use autocontext from Hermes with a CLI-first skill.
+---
+
+Hermes drives autocontext through a CLI-first skill. Rather than wiring up a tool catalog, you install an autocontext skill into the active Hermes profile and Hermes drives `autoctx` commands directly, using `--json` output and standard shell primitives. This keeps the integration simple: text in, JSON out, explicit exit codes.
+
+<Callout type="info">
+The CLI-first path is recommended for getting started with Hermes. autocontext also ships an MCP server and an OpenAI-compatible provider for Hermes if your environment specifically needs them, but the skill is the lowest-complexity option. See the canonical agent integration guide at `docs/agent-integration.md` in the autocontext repository for those alternatives.
+</Callout>
+
+## Install the skill
+
+Export the Hermes-facing autocontext skill into the active Hermes profile:
+
+```bash
+autoctx hermes export-skill --output ~/.hermes/skills/autocontext/SKILL.md --json
+```
+
+To also write the progressive-disclosure reference files alongside `SKILL.md`, add `--with-references`:
+
+```bash
+autoctx hermes export-skill \
+  --output ~/.hermes/skills/autocontext/SKILL.md \
+  --with-references --json
+```
+
+Once the skill is in place, the Hermes agent can drive autocontext through the same `autoctx` commands a human would run: `autoctx solve`, `autoctx run`, `autoctx status`, and `autoctx export`, each with `--json` for machine-readable output.
+
+## Inspect Hermes Curator state
+
+The skill can read Hermes state without an MCP connection. `autoctx hermes inspect` produces a read-only inventory of the Hermes profile's skills, usage telemetry, and Curator reports:
+
+```bash
+# Inventory of the default Hermes home
+autoctx hermes inspect --json
+
+# Inspect a non-default profile
+autoctx hermes inspect --home "$HERMES_HOME" --json
+```
+
+This is read-only against the Hermes home, so it is safe to run before any autocontext run that consumes local Hermes data.
+
+## Skill export and distribution
+
+`export-skill` writes the rendered `SKILL.md` (and optional `references/` files) so Hermes can load it directly. autocontext also commits a snapshot of the skill at the repository root, which you can install instead of regenerating it.
+
+For installation alternatives (including `curl` and sparse-clone approaches for distributing the skill without a full checkout), see `docs/hermes-skill-distribution.md` in the autocontext repository.
+
+<Callout type="info">
+The full Hermes integration, including the CLI-first starter workflow, Curator dataset ingestion, and the OpenAI-compatible and MCP alternatives, is documented in `docs/agent-integration.md` in the autocontext repository.
+</Callout>

@@ -1,0 +1,50 @@
+---
+title: Pi Skill
+description: Give Pi a natural-language entry point to autocontext.
+---
+
+The Pi skill gives a Pi agent a natural-language entry point to autocontext. It is a set of wrappers over autocontext's live tools, so Pi can solve scenarios, judge outputs, and run improvement loops by asking in plain language rather than constructing tool calls by hand.
+
+## Install
+
+Install the skill from npm with the Pi package manager:
+
+```bash
+pi install npm:pi-autocontext
+```
+
+You can also declare it in your Pi configuration:
+
+```json
+{
+  "packages": ["npm:pi-autocontext"]
+}
+```
+
+Once installed, Pi loads the natural-language wrappers and the underlying tools become available to the agent.
+
+## Wrapped tools
+
+The skill wraps autocontext's headline live tools:
+
+- `autocontext_solve_scenario`: solve a scenario on demand.
+- `autocontext_evaluate_output`: judge an output against a rubric.
+- `autocontext_run_improvement_loop`: run an iterative improvement loop.
+- `autocontext_run_status`: check the status of a run.
+- `autocontext_list_scenarios`: discover available scenarios.
+
+## Ask-style invocation
+
+Because the tools are wrapped in natural language, you drive them by asking:
+
+> Ask autocontext to solve: write a regression-safe migration plan for the billing schema.
+
+> Have autocontext judge this draft against the rubric and improve it until it scores at least 0.8.
+
+> List the scenarios autocontext knows about, then check the status of the last run.
+
+Pi translates each request into the matching wrapped tool and reads the result back.
+
+<Callout type="info">
+Pi handles its own authentication and model routing, so you do not set autocontext provider credentials for the skill to call Pi. For how the Pi runtime is configured, see [the Pi runtime](/docs/providers/pi).
+</Callout>

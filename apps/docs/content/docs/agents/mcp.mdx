@@ -1,0 +1,93 @@
+---
+title: MCP Server
+description: Expose autocontext as MCP tools over stdio.
+---
+
+The MCP server presents autocontext as a catalog of typed tools that an MCP-aware agent can discover and invoke. Both the Python and TypeScript runtimes ship an MCP server, and both speak the stdio transport.
+
+## Starting the server
+
+The canonical command is `serve mcp`, with `mcp-serve` kept as an alias. Either works on both runtimes:
+
+```bash
+# Canonical
+autoctx serve mcp
+
+# Alias
+autoctx mcp-serve
+```
+
+On the Python runtime, install the MCP extras first, then start the server:
+
+```bash
+uv sync --group dev --extra mcp
+uv run autoctx mcp-serve
+```
+
+The server communicates over stdio, so you do not run it standalone in a terminal for normal use. Instead, your agent host (Claude Code, Hermes, or another MCP client) launches the command and connects to its stdin/stdout. See [Claude Code](/docs/agents/claude-code) for the host configuration.
+
+<Callout type="info">
+The server inherits its provider configuration from the environment it is launched in. Set `AUTOCONTEXT_AGENT_PROVIDER` and the related variables in the host's `env` block. See [Providers](/docs/providers).
+</Callout>
+
+## Python tools
+
+The Python server exposes roughly 60 tools, all carrying the `autocontext_` prefix. Rather than enumerate them here, the headline tools grouped by purpose:
+
+### Solve, evaluate, improve, status
+
+The core production-loop entry points:
+
+- `autocontext_solve_scenario`: solve a scenario on demand.
+- `autocontext_evaluate_output`: judge an output against a rubric.
+- `autocontext_run_improvement_loop`: run an iterative improvement loop.
+- `autocontext_run_status`: check the status of a run.
+- `autocontext_list_scenarios` and `autocontext_describe_scenario`: discover and inspect scenarios.
+
+### Knowledge readers
+
+Read the artifacts autocontext produces and consumes:
+
+- `autocontext_read_playbook`, `autocontext_read_hints`: read the strategy knowledge for a scenario.
+- `autocontext_search_strategies`: search across banked strategies.
+- `autocontext_export_skill`: export a scenario as an agent-loadable skill.
+
+### Runtime-session readers
+
+Inspect live and historical runtime sessions:
+
+- `autocontext_list_runs`, `autocontext_list_runtime_sessions`.
+- `autocontext_get_runtime_session`, `autocontext_get_runtime_session_timeline`.
+
+### Additional families
+
+The catalog also includes several families for more advanced workflows:
+
+- **Sandbox** (`autocontext_sandbox_create`, `autocontext_sandbox_run`, `autocontext_sandbox_destroy`, and more): stateful sandbox sessions.
+- **Monitors** (`autocontext_create_monitor`, `autocontext_list_monitors`, `autocontext_wait_for_monitor`, and more): production monitoring.
+- **Agent tasks** (`autocontext_create_agent_task`, `autocontext_get_agent_task`, `autocontext_export_agent_task_skill`, and more): judge-based agent task scenarios.
+- **Evidence** (`autocontext_evidence_list`, `autocontext_evidence_artifact`): evidence and artifact retrieval.
+
+For the complete, parameter-level catalog of all tools, see [the full MCP tool reference](/docs/reference/mcp-tools).
+
+## TypeScript tools
+
+The TypeScript server exposes a smaller, focused catalog organized into two families.
+
+### Solve family
+
+Submit a solve job, poll it, and retrieve the result:
+
+- `solve_scenario`, `solve_status`, `solve_result`.
+- The same operations are also published under the prefixed names `autocontext_solve_scenario`, `autocontext_solve_status`, and `autocontext_solve_result` for hosts that expect the `autocontext_` prefix.
+
+### Campaign and mission family
+
+Orchestrate multi-run campaigns and their missions:
+
+- `create_campaign`, `list_campaigns`, `campaign_status`, `campaign_progress`, `add_campaign_mission`, `pause_campaign`, `resume_campaign`, `cancel_campaign`.
+- `create_mission`, `mission_status`, `mission_result`, `mission_artifacts`, `pause_mission`, `resume_mission`, `cancel_mission`.
+
+<Callout type="info">
+Tool names appear differently depending on the host. Claude Code uses the names as published. Hermes registers MCP tools as `mcp_<server_name>_<tool_name>`, so `autocontext_list_scenarios` appears as `mcp_autocontext_list_scenarios`.
+</Callout>
