@@ -12,7 +12,7 @@ For how these variables map onto provider selection, see [providers](/docs/provi
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `AUTOCONTEXT_AGENT_PROVIDER` | `deterministic` | Selects the agent provider that drives the loop. |
-| `AUTOCONTEXT_EXECUTOR_MODE` | `local` | Where strategies are executed (`local`, `primeintellect`, `monty`). |
+| `AUTOCONTEXT_EXECUTOR_MODE` | `local` | Where strategies are executed (`local`, `primeintellect`, `monty`, `ssh`). `gondolin` is reserved and fail-closed. |
 
 <Callout type="warn">
 `.env.example` ships `AUTOCONTEXT_AGENT_PROVIDER=deterministic` so the offline demo runs without credentials, but the code default when the variable is unset is `anthropic`. Set the variable explicitly to avoid surprises, and see [providers](/docs/providers) for the full list of accepted values (`deterministic`, `anthropic`, `agent_sdk`, `pi`, `pi-rpc`, `openai`, `ollama`, `vllm`).

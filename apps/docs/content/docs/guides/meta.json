@@ -1,4 +1,11 @@
 {
   "title": "Guides",
-  "pages": ["distillation-mlx", "sandbox", "persistent-host", "fixtures", "production-traces"]
+  "pages": [
+    "index",
+    "distillation-mlx",
+    "sandbox",
+    "persistent-host",
+    "fixtures",
+    "production-traces"
+  ]
 }

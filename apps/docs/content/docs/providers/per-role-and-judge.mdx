@@ -5,6 +5,10 @@ description: Assign different models to roles and control the judge.
 
 A single run uses several agent roles: competitor, analyst, coach, architect, translator, and curator. By default they all share the provider you set with `AUTOCONTEXT_AGENT_PROVIDER`, but you can give each role its own model, and the four core roles can even use a different provider, key, and endpoint.
 
+<Callout type="info">
+The concepts pages describe five conceptual roles (competitor, analyst, coach, architect, curator). The translator is an internal helper role that extracts structured strategy from competitor output, which is why a separate `AUTOCONTEXT_MODEL_TRANSLATOR` variable exists alongside the five.
+</Callout>
+
 ## Per-role models
 
 Every role has a model environment variable. These set the model name passed to whatever provider that role uses.

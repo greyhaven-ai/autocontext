@@ -13,7 +13,7 @@ Both. Each package exposes the same `autoctx` CLI, and the two are at parity for
 
 ## Where do my results go?
 
-Each run writes to `runs/<run_id>/`, which holds the trace, report, generations, and artifacts for that run. Learned knowledge that survives across runs persists under `knowledge/<scenario>/`. See [runs, traces, and artifacts](/docs/concepts/runs-traces-artifacts) for the full layout.
+Each run writes per-generation artifacts to `runs/<run_id>/` (under `generations/gen_<N>/`). Learned knowledge that survives across runs, including the human-readable session report at `reports/<run_id>.md`, persists under `knowledge/<scenario>/`. The run's event trace is not a fixed top-level file; inspect it with `autoctx show`/`autoctx replay`. See [runs, traces, and artifacts](/docs/concepts/runs-traces-artifacts) for the full layout.
 
 ## How is this different from a prompt loop?
 

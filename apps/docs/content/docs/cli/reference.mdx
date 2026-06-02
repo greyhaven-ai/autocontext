@@ -83,10 +83,12 @@ A few commands marked "both" have a deeper implementation on one runtime. `missi
 
 | Command | Description | Runtime | Key flags |
 | --- | --- | --- | --- |
-| `serve http` | Start the HTTP API server | both | `--port`, `--json` |
-| `serve mcp` | Start the MCP server | both | varies (see `--help`) |
+| `serve http` | Start the HTTP API server | both | `--host` (default `127.0.0.1`), `--port`, `--json` |
+| `serve mcp` | Start the MCP server over stdio | both | varies (see `--help`) |
 | `mcp-serve` | Start the MCP server on stdio | both | |
 | `tui` | Start the interactive server for a terminal UI client | both | `--port` |
+
+The bare `autoctx serve` (with `--host` and `--port`) is the legacy equivalent of `autoctx serve http`.
 
 ## Control plane (TypeScript only)
 
