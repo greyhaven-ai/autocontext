@@ -23,6 +23,7 @@ from autocontext.cli_capabilities import register_capabilities_command
 from autocontext.cli_hermes import register_hermes_command
 from autocontext.cli_improve import register_improve_command
 from autocontext.cli_investigate import run_investigate_command
+from autocontext.cli_mission import register_mission_command
 from autocontext.cli_new_scenario import register_new_scenario_command
 from autocontext.cli_probes import register_probes_command
 from autocontext.cli_queue import register_queue_command
@@ -1556,6 +1557,7 @@ register_analytics_command(app, console=console)
 register_capabilities_command(app, console=console)
 register_hermes_command(app, console=console)
 register_improve_command(app, console=console)
+register_mission_command(app, console=console)
 register_new_scenario_command(app, console=console)
 register_run_inspect_commands(app, console=console)
 register_solve_command(app, console=console)
