@@ -62,13 +62,20 @@ export function saveCheckpoint(
     budgetUsage,
   };
 
-  // PR #1016 review (P3) backport: two saves landing in the same
-  // millisecond overwrote each other because the filename was only
-  // `<missionId>-<ms>.json`. Use nanosecond resolution plus an
-  // 8-char uuid suffix so the path is unique even on fast hardware
-  // and across concurrent writers. Newest-first ordering still
-  // works because the ns prefix sorts lexicographically.
-  const filename = `${missionId}-${process.hrtime.bigint().toString()}-${randomUUID().slice(0, 8)}.json`;
+  // PR #1016 review (P3) + PR #1020 review (P2) backport: two saves
+  // landing in the same millisecond used to overwrite each other.
+  // The first attempt switched to `process.hrtime.bigint()` ns but
+  // that counter is monotonic since process start (not Unix time),
+  // so after a reboot a newer checkpoint can sort before an older
+  // one and downstream artifact / analysis readers that pick
+  // newest-by-filename would surface stale state. Use wall-clock
+  // nanoseconds via `Date.now() * 1e6 + (hrtime % 1e6)` so the
+  // prefix is Unix-time-based and survives reboots; the lower 6
+  // digits come from hrtime's sub-ms resolution so two saves inside
+  // the same ms still differ. The 8-char uuid suffix is the final
+  // tiebreaker for fully-concurrent writers.
+  const wallClockNanos = BigInt(Date.now()) * 1_000_000n + (process.hrtime.bigint() % 1_000_000n);
+  const filename = `${missionId}-${wallClockNanos.toString()}-${randomUUID().slice(0, 8)}.json`;
   const path = join(checkpointDir, filename);
   writeFileSync(path, JSON.stringify(checkpoint, null, 2), "utf-8");
   return path;
@@ -125,42 +132,60 @@ export function loadCheckpoint(store: MissionStore, checkpointPath: string): str
   const mission = raw.mission;
   const restoredId = mission.id as string;
 
-  // Re-create the mission
-  const missionId = store.createMission({
-    name: mission.name as string,
-    goal: mission.goal as string,
-    budget: normaliseBudget(mission.budget),
-    metadata: (mission.metadata as Record<string, unknown>) ?? {},
-  });
-
-  // The store generates a new ID — we need to update it to the original.
-  // For checkpoint restore, we use the original ID by directly updating.
   const db = (
     store as unknown as {
       db: {
-        prepare: (sql: string) => { run: (...args: unknown[]) => void };
+        prepare: (sql: string) => {
+          run: (...args: unknown[]) => void;
+          get: (...args: unknown[]) => unknown;
+        };
         transaction: <T extends (...args: unknown[]) => unknown>(fn: T) => T;
       };
     }
   ).db;
 
-  // PR #1016 review (P2) backport: wrap the multi-row restore in a
-  // single SQLite transaction via better-sqlite3's
-  // ``db.transaction`` helper. A row failure (FK violation, UNIQUE
-  // duplicate, etc.) rolls back the partial restore so the operator
-  // can retry without first cleaning up the half-loaded mission row.
+  // PR #1020 review (P2): refuse to restore over an existing
+  // mission row. The previous behaviour was to let SQLite raise on
+  // the INSERT, but a friendlier message helps the operator
+  // distinguish "shared db with the original mission still in it"
+  // from a more subtle FK / UNIQUE failure deeper in the restore.
+  const existing = db.prepare("SELECT id FROM missions WHERE id = ?").get(restoredId) as
+    | { id: string }
+    | undefined;
+  if (existing !== undefined) {
+    throw new Error(`Cannot restore checkpoint: mission ${restoredId} already exists`);
+  }
+
+  // PR #1016 review (P2) backport + PR #1020 review (P2): wrap the
+  // FULL restore (mission insert + child rows) in a single SQLite
+  // transaction via better-sqlite3's ``db.transaction`` helper. The
+  // previous shape called ``store.createMission()`` BEFORE the
+  // transaction, so a later child-row failure rolled back only the
+  // child inserts and left an orphan mission row with a freshly
+  // generated id (not the original) committed. The fix inserts the
+  // mission row directly via SQL inside the transaction so a
+  // rollback returns the DB to its prior state with no orphan.
+  const missionRecord = mission as Record<string, unknown>;
+  const budgetDict = normaliseBudget(mission.budget);
+  const budgetBlob = budgetDict ? JSON.stringify(budgetDict) : null;
+  const metadataBlob = JSON.stringify(
+    (mission.metadata as Record<string, unknown> | undefined) ?? {},
+  );
+
   const restoreAll = db.transaction((): void => {
-    const missionRecord = mission as Record<string, unknown>;
-    const createdAtOverride = pickField<string>(missionRecord, "createdAt", "created_at");
     db.prepare(
-      "UPDATE missions SET id = ?, status = ?, created_at = COALESCE(?, created_at), updated_at = ?, completed_at = ? WHERE id = ?",
+      "INSERT INTO missions (id, name, goal, status, budget, metadata, created_at, updated_at, completed_at) " +
+        "VALUES (?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), ?, ?)",
     ).run(
       restoredId,
+      mission.name as string,
+      mission.goal as string,
       mission.status as string,
-      createdAtOverride ?? null,
+      budgetBlob,
+      metadataBlob,
+      pickField<string>(missionRecord, "createdAt", "created_at") ?? null,
       pickField<string>(missionRecord, "updatedAt", "updated_at") ?? null,
       pickField<string>(missionRecord, "completedAt", "completed_at") ?? null,
-      missionId,
     );
 
     for (const step of raw.steps) {

@@ -390,10 +390,16 @@ describe("Mission checkpoints", () => {
     const store = new MissionStore(join(dir, "rb.db"));
     expect(() => loadCheckpoint(store, checkpointPath)).toThrow(/UNIQUE/i);
 
-    // Mission row was rolled back.
+    // PR #1020 review (P2): the previous shape created the mission
+    // row via `store.createMission()` BEFORE the transaction, so a
+    // child-row failure left an orphan mission row with a
+    // freshly-generated id (not the original) committed. Inserting
+    // the mission row INSIDE the transaction means the rollback
+    // returns the DB to its prior empty state: no row with the
+    // original id, and no row with a fresh id either.
     expect(store.getMission("mission-rb")).toBeNull();
-    // First step was rolled back too.
     expect(store.getSteps("mission-rb")).toEqual([]);
+    expect(store.listMissions()).toEqual([]);
 
     // Retry succeeds after the operator dedupes the steps.
     payload.steps[1].id = "step-dup-2";
@@ -401,6 +407,38 @@ describe("Mission checkpoints", () => {
     const restoredId = loadCheckpoint(store, checkpointPath);
     expect(restoredId).toBe("mission-rb");
     expect(store.getSteps(restoredId)).toHaveLength(2);
+    store.close();
+  });
+
+  it("saveCheckpoint filenames embed a wall-clock unix-ns prefix that survives a reboot", async () => {
+    /**
+     * PR #1020 review (P2): the first backport used
+     * `process.hrtime.bigint()`, which is a monotonic counter since
+     * process start (not Unix time). After a reboot a newer
+     * checkpoint could sort before an older one, so downstream
+     * artifact / analysis readers that pick "newest by filename"
+     * would surface stale state. The fixed shape uses wall-clock
+     * nanoseconds via `Date.now() * 1e6 + (hrtime % 1e6)` so the
+     * prefix is reboot-stable and lexicographic sort matches Unix
+     * chronological order.
+     */
+    const { MissionStore } = await import("../src/mission/store.js");
+    const { saveCheckpoint } = await import("../src/mission/checkpoint.js");
+    const store = new MissionStore(join(dir, "wallclock.db"));
+    const mId = store.createMission({ name: "WallClock", goal: "g" });
+    const checkpointDir = join(dir, "checkpoints");
+    const path = saveCheckpoint(store, mId, checkpointDir);
+    const filename = path.split("/").pop()!;
+    // Filename shape: `<mid>-<ns>-<uuid8>.json`.
+    const match = filename.match(/^mission-[0-9a-f]+-(\d+)-[0-9a-f]+\.json$/);
+    expect(match).not.toBeNull();
+    const ns = BigInt(match![1]);
+    const nowMs = BigInt(Date.now());
+    // The ns prefix is wall-clock-ns, so dividing by 1e6 must
+    // land within a few milliseconds of `Date.now()`.
+    const filenameMs = ns / 1_000_000n;
+    expect(filenameMs).toBeGreaterThanOrEqual(nowMs - 1_000n);
+    expect(filenameMs).toBeLessThanOrEqual(nowMs + 1_000n);
     store.close();
   });
 });
