@@ -31,7 +31,7 @@ A few commands marked "both" have a deeper implementation on one runtime. `missi
 | `judge` | One-shot evaluation against a rubric | both | `--task-prompt`/`-p`, `--output`/`-o`, `--rubric`/`-r`, `--provider`, `--model`, `--timeout`, `--json` |
 | `improve` | Multi-round improvement loop | both | `--task-prompt`/`-p`, `--rubric`/`-r`, `--output`/`-o`, `--rounds`/`-n`, `--threshold`/`-t`, `--provider`, `--json` |
 | `repl` | Direct REPL-loop session | both | (interactive) |
-| `ab-test` | Compare a baseline against a variant | Python | `--scenario`, `--baseline` |
+| `ab-test` | Paired A/B test comparing two configurations | Python | `--scenario`, `--baseline`, `--treatment`, `--runs`, `--gens`, `--seed` |
 
 ## Plain-language
 

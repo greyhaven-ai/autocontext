@@ -9,9 +9,6 @@ These commands operate on the evaluation side of autocontext: scoring a single o
 
 `judge` is a one-shot evaluation. It scores a candidate output against a task prompt and a rubric, then reports the score.
 
-<Tabs items={['Python','TypeScript']}>
-<Tab value="Python">
-
 ```bash
 AUTOCONTEXT_AGENT_PROVIDER=pi autoctx judge \
   --task-prompt "Summarize the incident report" \
@@ -19,20 +16,6 @@ AUTOCONTEXT_AGENT_PROVIDER=pi autoctx judge \
   --rubric "Accurate, concise, mentions root cause" \
   --json
 ```
-
-</Tab>
-<Tab value="TypeScript">
-
-```bash
-AUTOCONTEXT_AGENT_PROVIDER=pi autoctx judge \
-  --task-prompt "Summarize the incident report" \
-  --output "The outage lasted 12 minutes due to a bad deploy." \
-  --rubric "Accurate, concise, mentions root cause" \
-  --json
-```
-
-</Tab>
-</Tabs>
 
 Flags:
 
@@ -91,13 +74,25 @@ See [Solve & Run](/docs/cli/solve-run) for the full benchmark flags.
 `ab-test` is a Python-only command. It is not available in the npm (TypeScript) package.
 </Callout>
 
-`ab-test` compares two configurations of the same scenario (a baseline against a variant) to measure the effect of a change:
+`ab-test` runs a paired A/B test comparing two configurations of the same scenario, reporting per-run scores, the mean delta, and a McNemar significance test. The baseline and treatment are each expressed as comma-separated `KEY=VALUE` environment overrides, so you can A/B a toggle like enabling or disabling a feature:
 
 ```bash
-AUTOCONTEXT_AGENT_PROVIDER=pi autoctx ab-test --scenario grid_ctf
+AUTOCONTEXT_AGENT_PROVIDER=pi autoctx ab-test \
+  --scenario grid_ctf \
+  --baseline "AUTOCONTEXT_RLM_ENABLED=false" \
+  --treatment "AUTOCONTEXT_RLM_ENABLED=true" \
+  --runs 5 \
+  --gens 3
 ```
 
-The baseline and variant are expressed as environment-variable overrides, so you can A/B toggles like enabling or disabling a feature.
+Flags:
+
+- `--scenario`: scenario to test (default `grid_ctf`).
+- `--baseline`: comma-separated `KEY=VALUE` env overrides for the baseline condition (default `AUTOCONTEXT_RLM_ENABLED=false`).
+- `--treatment`: comma-separated `KEY=VALUE` env overrides for the treatment condition (default `AUTOCONTEXT_RLM_ENABLED=true`).
+- `--runs`: runs per condition (default 5).
+- `--gens`: generations per run (default 3).
+- `--seed`: random seed for condition ordering (default 42).
 
 ## Related
 

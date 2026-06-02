@@ -9,26 +9,11 @@ The core working loop of autoctx is: turn a goal into a scenario, run it, and in
 
 `solve` takes a plain-language description, compiles it into a scenario, and runs the improvement loop on it. It is the fastest path from an idea to a result.
 
-<Tabs items={['Python','TypeScript']}>
-<Tab value="Python">
-
 ```bash
 AUTOCONTEXT_AGENT_PROVIDER=pi autoctx solve \
   "build an orbital transfer optimizer" \
   --iterations 3
 ```
-
-</Tab>
-<Tab value="TypeScript">
-
-```bash
-AUTOCONTEXT_AGENT_PROVIDER=pi autoctx solve \
-  "build an orbital transfer optimizer" \
-  --iterations 3
-```
-
-</Tab>
-</Tabs>
 
 The description can be a positional argument, the `--description` / `-d` flag, or loaded from a file with `--task-file` (mutually exclusive with `--description`, convenient for long prompts). Other useful flags:
 
@@ -44,26 +29,11 @@ The description can be a positional argument, the `--description` / `-d` flag, o
 
 `run` executes the generation loop for a scenario that already exists (for example `grid_ctf`), rather than compiling one from a description.
 
-<Tabs items={['Python','TypeScript']}>
-<Tab value="Python">
-
 ```bash
 AUTOCONTEXT_AGENT_PROVIDER=pi autoctx run \
   --scenario grid_ctf \
   --iterations 3
 ```
-
-</Tab>
-<Tab value="TypeScript">
-
-```bash
-AUTOCONTEXT_AGENT_PROVIDER=pi autoctx run \
-  --scenario grid_ctf \
-  --iterations 3
-```
-
-</Tab>
-</Tabs>
 
 The scenario can be passed positionally (`autoctx run grid_ctf`) or via `--scenario`. When neither is given, it defaults to `grid_ctf`. Flags:
 

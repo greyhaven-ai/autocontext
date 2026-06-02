@@ -9,9 +9,6 @@ autocontext can run improvement tasks in the background. You enqueue work with `
 
 `queue add` puts a task on the background runner queue.
 
-<Tabs items={['Python','TypeScript']}>
-<Tab value="Python">
-
 ```bash
 AUTOCONTEXT_AGENT_PROVIDER=pi autoctx queue add \
   --task-prompt "Write a clear changelog entry for v2.0" \
@@ -19,20 +16,6 @@ AUTOCONTEXT_AGENT_PROVIDER=pi autoctx queue add \
   --rounds 5 \
   --threshold 0.9
 ```
-
-</Tab>
-<Tab value="TypeScript">
-
-```bash
-AUTOCONTEXT_AGENT_PROVIDER=pi autoctx queue add \
-  --task-prompt "Write a clear changelog entry for v2.0" \
-  --rubric "Clear, accurate, well-structured" \
-  --rounds 5 \
-  --threshold 0.9
-```
-
-</Tab>
-</Tabs>
 
 Flags:
 
