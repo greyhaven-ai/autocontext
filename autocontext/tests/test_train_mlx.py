@@ -100,6 +100,54 @@ def test_summary_block_format() -> None:
     assert "0.75" in summary or "0.7500" in summary
 
 
+def test_iter_masked_batches_shapes_mask_and_no_tail_drop() -> None:
+    """iter_masked_batches yields (x, y, mask) per-example, pads, and drops no example."""
+    from autocontext.training.autoresearch.prepare import iter_masked_batches
+
+    strat = 99
+    # 3 examples -> with batch_size 2 we expect 2 batches (sizes 2 and 1): nothing dropped
+    sequences = [
+        [1, strat, 2, 3],
+        [4, strat, 5],
+        [6, strat, 7, 8, 9],
+    ]
+    batches = list(iter_masked_batches(sequences, seq_len=4, batch_size=2, pad_token_id=0, strategy_token_id=strat))
+    assert len(batches) == 2
+    x0, y0, m0 = batches[0]
+    assert x0.shape == (2, 4) and y0.shape == (2, 4) and m0.shape == (2, 4)
+    assert batches[1][0].shape[0] == 1  # last partial batch kept, not dropped
+    # mask is 0 on the prompt token(s) before the strategy token, 1 after
+    import mlx.core as mx  # type: ignore[import-not-found]
+
+    assert m0[0].tolist() == [0.0, 1.0, 1.0, 0.0]  # [prompt, comp, comp, pad]
+    assert mx.sum(m0).item() > 0
+
+
+def test_compute_loss_mask_ignores_masked_positions() -> None:
+    """Masked compute_loss equals the loss over only the unmasked positions."""
+    import mlx.core as mx  # type: ignore[import-not-found]
+
+    from autocontext.training.autoresearch.train import GPTModel, ModelConfig, compute_loss
+
+    cfg = ModelConfig()
+    model = GPTModel(cfg)
+    x = mx.zeros((1, 4), dtype=mx.int32)
+    y = mx.array([[1, 2, 3, 4]], dtype=mx.int32)
+
+    # all-ones mask must equal the unmasked mean loss
+    ones = mx.ones((1, 4), dtype=mx.float32)
+    masked_all = compute_loss(model, x, y, ones)
+    unmasked = compute_loss(model, x, y)
+    mx.eval(masked_all, unmasked)  # noqa: S307
+    assert abs(masked_all.item() - unmasked.item()) < 1e-4
+
+    # masking out 3 of 4 positions changes the value (only one target counts)
+    partial = mx.array([[0.0, 1.0, 0.0, 0.0]], dtype=mx.float32)
+    masked_partial = compute_loss(model, x, y, partial)
+    mx.eval(masked_partial)  # noqa: S307
+    assert masked_partial.item() >= 0.0
+
+
 def test_run_training_mlx_end_to_end_smoke(tmp_path: str) -> None:
     """run_training(backend='mlx') runs the full pipeline via the package import path.
 

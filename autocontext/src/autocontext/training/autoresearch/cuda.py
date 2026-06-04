@@ -12,6 +12,8 @@ from autocontext.training.autoresearch.prepare import save_tokenizer_json
 from autocontext.training.autoresearch.sequence_format import (
     TrainingExample,
     build_generation_prompt,
+    build_masked_example,
+    build_special_tokens,
     extract_strategy,
     generation_logit_mask_values,
 )
@@ -33,27 +35,39 @@ def require_torch_cuda() -> Any:
     return torch
 
 
-def _create_torch_dataloader(
-    token_ids: list[int],
+def _create_torch_masked_dataloader(
+    sequences: list[list[int]],
     *,
     torch_module: Any,
     device: Any,
     seq_len: int,
     batch_size: int,
-) -> list[tuple[Any, Any]]:
-    stride = seq_len + 1
-    total_seqs = len(token_ids) // stride
-    usable_seqs = (total_seqs // batch_size) * batch_size
-    total_tokens = usable_seqs * stride
-    if total_tokens == 0:
-        return []
+    pad_token_id: int,
+    strategy_token_id: int,
+) -> list[tuple[Any, Any, Any]]:
+    """Per-example, completion-masked torch batches (mirrors prepare.iter_masked_batches).
 
-    data = torch_module.tensor(token_ids[:total_tokens], dtype=torch_module.long, device=device)
-    data = data.reshape(usable_seqs, stride)
-    batches: list[tuple[Any, Any]] = []
-    for batch_start in range(0, usable_seqs, batch_size):
-        batch = data[batch_start : batch_start + batch_size]
-        batches.append((batch[:, :seq_len], batch[:, 1 : seq_len + 1]))
+    No cross-example packing (document boundaries respected), no tail dropped, and a
+    completion-only loss mask (prompt + padding zeroed). Returns ``(x, y, mask)`` tuples.
+    """
+    built: list[tuple[list[int], list[int], list[int]]] = []
+    for tokens in sequences:
+        example = build_masked_example(
+            tokens,
+            seq_len=seq_len,
+            pad_token_id=pad_token_id,
+            strategy_token_id=strategy_token_id,
+        )
+        if example is not None:
+            built.append(example)
+
+    batches: list[tuple[Any, Any, Any]] = []
+    for start in range(0, len(built), batch_size):
+        chunk = built[start : start + batch_size]
+        x = torch_module.tensor([c[0] for c in chunk], dtype=torch_module.long, device=device)
+        y = torch_module.tensor([c[1] for c in chunk], dtype=torch_module.long, device=device)
+        mask = torch_module.tensor([c[2] for c in chunk], dtype=torch_module.float32, device=device)
+        batches.append((x, y, mask))
     return batches
 
 
@@ -272,16 +286,18 @@ def run_cuda_training(
     corpus_path.write_text(_build_corpus(records), encoding="utf-8")
     tokenizer = train_tokenizer(corpus_path)
 
-    token_ids: list[int] = []
-    for record in records:
-        token_ids.extend(tokenizer.encode(TrainingExample.from_record(record).to_sequence()))
-
-    batches = _create_torch_dataloader(
-        token_ids,
+    sequences = [tokenizer.encode(TrainingExample.from_record(record).to_sequence()) for record in records]
+    base_vocab = int(getattr(tokenizer, "base_vocab_size", 8192))
+    strategy_token_id = build_special_tokens(base_vocab)["<|strategy|>"]
+    pad_token_id = getattr(tokenizer, "end_token_id", 0) or 0
+    batches = _create_torch_masked_dataloader(
+        sequences,
         torch_module=torch_module,
         device=device,
         seq_len=seq_len,
         batch_size=batch_size,
+        pad_token_id=pad_token_id,
+        strategy_token_id=strategy_token_id,
     )
     if not batches:
         raise ValueError("not enough tokenized training data for a single batch")
@@ -301,13 +317,16 @@ def run_cuda_training(
     for step in range(train_steps):
         if time.perf_counter() >= deadline:
             break
-        x, y = batches[step % len(batches)]
+        x, y, loss_mask = batches[step % len(batches)]
         optimizer.zero_grad(set_to_none=True)
         logits = model(x)
-        loss = torch_module.nn.functional.cross_entropy(
+        per_token = torch_module.nn.functional.cross_entropy(
             logits.reshape(-1, cfg.vocab_size),
             y.reshape(-1),
+            reduction="none",
         )
+        mask_flat = loss_mask.reshape(-1)
+        loss = (per_token * mask_flat).sum() / mask_flat.sum().clamp(min=1.0)
         loss.backward()
         optimizer.step()
         steps_completed += 1

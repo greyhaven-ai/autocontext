@@ -120,6 +120,62 @@ def test_training_example_defaults_missing_context() -> None:
     assert ex.context == json.dumps({}, sort_keys=True)
 
 
+def test_completion_loss_mask_trains_only_after_strategy() -> None:
+    from autocontext.training.autoresearch.sequence_format import completion_loss_mask
+
+    # tokens: [A, <strat>, B, C] with strategy id = 99
+    # targets (token_ids[1:]) = [<strat>, B, C]; only B, C are completion targets
+    mask = completion_loss_mask([5, 99, 7, 8], strategy_token_id=99)
+    assert mask == [0, 1, 1]
+
+
+def test_completion_loss_mask_all_ones_when_strategy_absent() -> None:
+    from autocontext.training.autoresearch.sequence_format import completion_loss_mask
+
+    assert completion_loss_mask([1, 2, 3, 4], strategy_token_id=99) == [1, 1, 1]
+
+
+def test_completion_loss_mask_short_sequences() -> None:
+    from autocontext.training.autoresearch.sequence_format import completion_loss_mask
+
+    assert completion_loss_mask([], strategy_token_id=99) == []
+    assert completion_loss_mask([99], strategy_token_id=99) == []
+
+
+def test_build_masked_example_no_pad() -> None:
+    from autocontext.training.autoresearch.sequence_format import build_masked_example
+
+    # tokens [A, <strat>=99, B, C], seq_len 3 -> exactly fills, no padding
+    x, y, mask = build_masked_example([5, 99, 7, 8], seq_len=3, pad_token_id=0, strategy_token_id=99)
+    assert x == [5, 99, 7]
+    assert y == [99, 7, 8]
+    assert mask == [0, 1, 1]  # train only on completion targets
+
+
+def test_build_masked_example_pads_and_masks_padding() -> None:
+    from autocontext.training.autoresearch.sequence_format import build_masked_example
+
+    x, y, mask = build_masked_example([5, 99, 7], seq_len=4, pad_token_id=0, strategy_token_id=99)
+    assert x == [5, 99, 0, 0]
+    assert y == [99, 7, 0, 0]
+    assert mask == [0, 1, 0, 0]  # prompt (0) + completion (1) + padding (0,0)
+
+
+def test_build_masked_example_truncates_keeping_tail() -> None:
+    from autocontext.training.autoresearch.sequence_format import build_masked_example
+
+    # 6 tokens, seq_len 3 -> keep last seq_len+1 = 4 tokens
+    x, y, mask = build_masked_example([1, 2, 3, 99, 5, 6], seq_len=3, pad_token_id=0, strategy_token_id=99)
+    assert len(x) == 3 and len(y) == 3 and len(mask) == 3
+    assert x == [3, 99, 5] and y == [99, 5, 6]
+
+
+def test_build_masked_example_too_short_returns_none() -> None:
+    from autocontext.training.autoresearch.sequence_format import build_masked_example
+
+    assert build_masked_example([7], seq_len=4, pad_token_id=0, strategy_token_id=99) is None
+
+
 def test_cuda_uses_shared_contract_no_duplicate_definitions() -> None:
     """cuda.py must not redefine the parser/resolvers; it consumes sequence_format."""
     import inspect

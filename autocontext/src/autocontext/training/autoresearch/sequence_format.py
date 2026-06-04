@@ -190,6 +190,61 @@ def extract_strategy(text: str) -> dict[str, Any] | None:
     return result if isinstance(result, dict) else None
 
 
+def completion_loss_mask(token_ids: list[int], *, strategy_token_id: int) -> list[int]:
+    """Per-target loss mask for completion-only training (1 = train, 0 = ignore).
+
+    For next-token prediction the target sequence is ``token_ids[1:]`` (aligned to
+    inputs ``token_ids[:-1]``), so the mask has length ``len(token_ids) - 1``. Loss
+    is enabled only for targets that fall *after* the ``<|strategy|>`` token (the
+    completion the model must learn to generate); the scenario/context prompt that
+    precedes it is masked out. This is the standard completion-only / "loss over
+    completions" objective used in instruction tuning.
+
+    If the strategy token is absent (unexpected/legacy), all positions are trained
+    (all-ones) so no example is silently dropped.
+    """
+    n = len(token_ids)
+    if n <= 1:
+        return []
+    try:
+        strategy_index = token_ids.index(strategy_token_id)
+    except ValueError:
+        return [1] * (n - 1)
+    # input j predicts token_ids[j+1]; it is a completion target iff j+1 > strategy_index
+    return [1 if (j + 1) > strategy_index else 0 for j in range(n - 1)]
+
+
+def build_masked_example(
+    tokens: list[int],
+    *,
+    seq_len: int,
+    pad_token_id: int,
+    strategy_token_id: int,
+) -> tuple[list[int], list[int], list[int]] | None:
+    """Build a padded ``(input_ids, target_ids, loss_mask)`` triple for one example.
+
+    Pure and backend-agnostic (the MLX and torch dataloaders both wrap this). The
+    example is right-truncated to ``seq_len + 1`` tokens when too long (keeping the
+    tail so the completion survives), then split into next-token ``input``/``target``
+    of length ``seq_len`` and padded with ``pad_token_id``. The loss mask is the
+    completion-only mask with padding positions zeroed. Returns ``None`` for
+    sequences too short to form a single (input, target) pair.
+    """
+    if len(tokens) < 2:
+        return None
+    if len(tokens) > seq_len + 1:
+        tokens = tokens[-(seq_len + 1) :]
+    mask = completion_loss_mask(tokens, strategy_token_id=strategy_token_id)
+    input_ids = tokens[:-1]
+    target_ids = tokens[1:]
+    pad = seq_len - len(input_ids)
+    if pad > 0:
+        input_ids = input_ids + [pad_token_id] * pad
+        target_ids = target_ids + [pad_token_id] * pad
+        mask = mask + [0] * pad
+    return input_ids, target_ids, mask
+
+
 @dataclass(frozen=True, slots=True)
 class TrainingExample:
     """A training record reduced to the fields that define its token sequence.

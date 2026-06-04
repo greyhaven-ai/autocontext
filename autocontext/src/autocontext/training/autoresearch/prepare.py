@@ -30,7 +30,9 @@ from autocontext.training.autoresearch.sequence_format import (  # noqa: F401
     SPECIAL_TOKEN_STRINGS,
     TrainingExample,
     build_generation_prompt,
+    build_masked_example,
     build_special_tokens,
+    completion_loss_mask,
     decodable_vocab_size,
     format_example,
     generation_logit_mask_values,
@@ -239,6 +241,40 @@ if HAS_MLX:
             x = batch[:, :seq_len]
             y = batch[:, 1 : seq_len + 1]
             yield x, y
+
+    def iter_masked_batches(
+        sequences: list[list[int]],
+        *,
+        seq_len: int,
+        batch_size: int,
+        pad_token_id: int,
+        strategy_token_id: int,
+    ) -> Iterator[tuple[Any, Any, Any]]:
+        """Yield ``(x, y, loss_mask)`` batches of per-example, completion-masked sequences.
+
+        Each example is encoded independently (no cross-example packing, so the model
+        never predicts across a document boundary), right-truncated to keep the
+        completion when it exceeds ``seq_len + 1``, padded to ``seq_len``, and its loss
+        mask zeroes both the prompt tokens (completion-only loss) and the padding.
+        No batch is dropped: the final partial batch is yielded as-is.
+        """
+        built: list[tuple[list[int], list[int], list[int]]] = []
+        for tokens in sequences:
+            example = build_masked_example(
+                tokens,
+                seq_len=seq_len,
+                pad_token_id=pad_token_id,
+                strategy_token_id=strategy_token_id,
+            )
+            if example is not None:
+                built.append(example)
+
+        for start in range(0, len(built), batch_size):
+            chunk = built[start : start + batch_size]
+            xs = mx.array([c[0] for c in chunk], dtype=mx.int32)
+            ys = mx.array([c[1] for c in chunk], dtype=mx.int32)
+            ms = mx.array([c[2] for c in chunk], dtype=mx.float32)
+            yield xs, ys, ms
 
     # -----------------------------------------------------------------------
     # 5. Assessment oracle

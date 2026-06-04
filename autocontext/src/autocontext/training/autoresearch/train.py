@@ -188,14 +188,23 @@ if HAS_MLX:
             h = self.norm(h)
             return self.head(h)
 
-    def compute_loss(model: GPTModel, x: Any, y: Any) -> Any:
-        """Cross-entropy loss for next-token prediction."""
+    def compute_loss(model: GPTModel, x: Any, y: Any, loss_mask: Any = None) -> Any:
+        """Cross-entropy loss for next-token prediction.
+
+        When ``loss_mask`` is provided (same shape as ``y``, 1.0 = train / 0.0 =
+        ignore) the loss is averaged over only the unmasked positions, giving the
+        completion-only objective. With ``loss_mask=None`` it averages over all
+        positions (legacy behavior; keeps existing callers byte-identical).
+        """
         logits = model(x)
-        # Reshape for cross entropy: [batch*seq, vocab]
         batch, seq_len, vocab = logits.shape
         logits_flat = logits.reshape(-1, vocab)
         targets_flat = y.reshape(-1)
-        return mx.mean(nn.losses.cross_entropy(logits_flat, targets_flat))
+        per_token = nn.losses.cross_entropy(logits_flat, targets_flat)
+        if loss_mask is None:
+            return mx.mean(per_token)
+        mask_flat = loss_mask.reshape(-1)
+        return (per_token * mask_flat).sum() / mx.maximum(mask_flat.sum(), 1.0)
 
     def save_checkpoint(model: GPTModel, path: Path) -> None:
         """Save model weights to safetensors format."""
@@ -438,14 +447,16 @@ def _run_mlx_training(
         from prepare import (  # type: ignore[import-not-found]
             TrainingExample,
             assess_strategy_quality,
-            create_dataloader,
+            build_special_tokens,
+            iter_masked_batches,
             train_tokenizer,
         )
     except ImportError:
         from autocontext.training.autoresearch.prepare import (
             TrainingExample,
             assess_strategy_quality,
-            create_dataloader,
+            build_special_tokens,
+            iter_masked_batches,
             train_tokenizer,
         )
 
@@ -458,11 +469,22 @@ def _run_mlx_training(
     corpus_path.write_text(_build_corpus(records), encoding="utf-8")
     tokenizer = train_tokenizer(corpus_path)
 
-    token_ids: list[int] = []
-    for record in records:
-        token_ids.extend(tokenizer.encode(TrainingExample.from_record(record).to_sequence()))
-
-    batches = list(create_dataloader(token_ids, seq_len=seq_len, batch_size=batch_size))
+    # Per-example, completion-masked sequences: loss is computed only on the strategy
+    # completion (tokens after <|strategy|>), examples do not pack across document
+    # boundaries, and no tail is dropped.
+    sequences = [tokenizer.encode(TrainingExample.from_record(record).to_sequence()) for record in records]
+    base_vocab = int(getattr(tokenizer, "base_vocab_size", BASE_VOCAB_SIZE))
+    strategy_token_id = build_special_tokens(base_vocab)["<|strategy|>"]
+    pad_token_id = getattr(tokenizer, "end_token_id", 0) or 0
+    batches = list(
+        iter_masked_batches(
+            sequences,
+            seq_len=seq_len,
+            batch_size=batch_size,
+            pad_token_id=pad_token_id,
+            strategy_token_id=strategy_token_id,
+        )
+    )
     if not batches:
         raise ValueError("not enough tokenized training data for a single batch")
 
@@ -477,8 +499,8 @@ def _run_mlx_training(
     for step in range(train_steps):
         if time.perf_counter() >= deadline:
             break
-        x, y = batches[step % len(batches)]
-        loss, grads = loss_and_grad(model, x, y)
+        x, y, loss_mask = batches[step % len(batches)]
+        loss, grads = loss_and_grad(model, x, y, loss_mask)
         optimizer.update(model, grads)
         mx.eval(model.parameters(), optimizer.state, loss)  # noqa: S307
         steps_completed += 1
