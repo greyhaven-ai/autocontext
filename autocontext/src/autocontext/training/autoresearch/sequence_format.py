@@ -34,11 +34,13 @@ SPECIAL_TOKEN_STRINGS = (
     "<|strategy|>",
     "<|score|>",
     "<|end|>",
-    # Quality/return control token (Decision-Transformer / Quark style): appended
-    # last so the existing token ids (scenario..end) stay stable. Emitted before the
-    # strategy only when score-conditioned training is enabled.
-    "<|quality|>",
 )
+
+# Quality/return control token (Decision-Transformer / Quark style). It is GATED
+# behind score-conditioned training: appended last (id = base + 5) only when
+# ``include_quality`` is set, so default training keeps the original 5-token vocab
+# (no change to the default model head/embedding size).
+QUALITY_TOKEN = "<|quality|>"
 
 # Number of discrete quality buckets the score is quantized into for conditioning.
 NUM_QUALITY_BUCKETS = 5
@@ -56,14 +58,23 @@ _BPE_PAT = (
 _STRATEGY_RE = re.compile(r"<\|strategy\|>(.*?)(?:<\||$)", re.DOTALL)
 
 
-def build_special_tokens(base_vocab_size: int) -> dict[str, int]:
-    """Map the autoresearch special tokens above the base tokenizer range."""
-    return {token: base_vocab_size + offset for offset, token in enumerate(SPECIAL_TOKEN_STRINGS)}
+def build_special_tokens(base_vocab_size: int, *, include_quality: bool = False) -> dict[str, int]:
+    """Map the autoresearch special tokens above the base tokenizer range.
+
+    The five base tokens always map to ``base..base+4``. When ``include_quality`` is
+    set (score-conditioned training), ``<|quality|>`` is appended at ``base+5``.
+    """
+    tokens = list(SPECIAL_TOKEN_STRINGS) + ([QUALITY_TOKEN] if include_quality else [])
+    return {token: base_vocab_size + offset for offset, token in enumerate(tokens)}
 
 
-def total_vocab_size(base_vocab_size: int) -> int:
-    """Return the embedding/output vocab size including special tokens."""
-    return base_vocab_size + len(SPECIAL_TOKEN_STRINGS)
+def total_vocab_size(base_vocab_size: int, *, include_quality: bool = False) -> int:
+    """Return the embedding/output vocab size including special tokens.
+
+    Defaults to the original five-token vocab; ``include_quality`` reserves one more
+    slot for the gated quality control token.
+    """
+    return base_vocab_size + len(SPECIAL_TOKEN_STRINGS) + (1 if include_quality else 0)
 
 
 def score_to_quality_bucket(score: float, *, num_buckets: int = NUM_QUALITY_BUCKETS, lo: float = 0.0, hi: float = 1.0) -> int:
@@ -121,8 +132,10 @@ def generation_logit_mask_values(
     for i in range(max(0, n_base), min(base, vocab_size)):
         mask[i] = -1e9
     if block_structural_specials:
-        specials = build_special_tokens(base)
-        for name in ("<|scenario|>", "<|context|>", "<|strategy|>", "<|quality|>"):
+        # Use the tokenizer's own special-token map when available so the quality
+        # token is blocked only for score-conditioned tokenizers that actually have it.
+        specials = getattr(tokenizer, "special_tokens", None) or build_special_tokens(base)
+        for name in ("<|scenario|>", "<|context|>", "<|strategy|>", QUALITY_TOKEN):
             sid = specials.get(name)
             if sid is not None and 0 <= sid < vocab_size:
                 mask[sid] = -1e9

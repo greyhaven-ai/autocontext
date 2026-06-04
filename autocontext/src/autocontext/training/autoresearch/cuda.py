@@ -298,7 +298,7 @@ def run_cuda_training(
     output_dir.mkdir(parents=True, exist_ok=True)
     corpus_path = output_dir / "corpus.txt"
     corpus_path.write_text(_build_corpus(records, score_conditioned=score_conditioned), encoding="utf-8")
-    tokenizer = train_tokenizer(corpus_path)
+    tokenizer = train_tokenizer(corpus_path, score_conditioned=score_conditioned)
 
     sequences = [
         tokenizer.encode(TrainingExample.from_record(record).to_sequence(score_conditioned=score_conditioned))
@@ -319,7 +319,7 @@ def run_cuda_training(
     if not batches:
         raise ValueError("not enough tokenized training data for a single batch")
 
-    cfg = ModelConfig(seq_len=seq_len)
+    cfg = ModelConfig(seq_len=seq_len, vocab_size=int(tokenizer.vocab_size))
     model = _build_torch_model(cfg, torch_module).to(device)
     optimizer = torch_module.optim.AdamW(model.parameters(), lr=learning_rate)
     try:

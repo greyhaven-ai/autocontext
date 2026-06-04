@@ -332,6 +332,12 @@ def save_inference_bundle(
             for key in ("depth", "aspect_ratio", "head_dim", "n_kv_heads", "vocab_size", "seq_len")
             if hasattr(cfg, key)
         }
+    # Persist the conditioning contract so the serving path (MLXProvider) applies the
+    # same top-bucket quality prompt the model was trained with.
+    score_conditioned = bool(getattr(tokenizer, "include_quality", False))
+    config_payload["score_conditioned"] = score_conditioned
+    if score_conditioned:
+        config_payload["num_quality_buckets"] = NUM_QUALITY_BUCKETS
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "config.json").write_text(
         json.dumps(config_payload, indent=2, sort_keys=True),
@@ -502,7 +508,7 @@ def _run_mlx_training(
     output_dir.mkdir(parents=True, exist_ok=True)
     corpus_path = output_dir / "corpus.txt"
     corpus_path.write_text(_build_corpus(train_records, score_conditioned=score_conditioned), encoding="utf-8")
-    tokenizer = train_tokenizer(corpus_path)
+    tokenizer = train_tokenizer(corpus_path, score_conditioned=score_conditioned)
 
     base_vocab = int(getattr(tokenizer, "base_vocab_size", BASE_VOCAB_SIZE))
     strategy_token_id = build_special_tokens(base_vocab)["<|strategy|>"]
@@ -526,7 +532,9 @@ def _run_mlx_training(
         raise ValueError("not enough tokenized training data for a single batch")
     val_batches = _masked_batches(val_records)
 
-    cfg = ModelConfig(seq_len=seq_len)
+    # Size the model head/embedding to the tokenizer (grows by one slot only when
+    # score-conditioned, so the default architecture is unchanged).
+    cfg = ModelConfig(seq_len=seq_len, vocab_size=int(tokenizer.vocab_size))
     model = GPTModel(cfg)
     optimizer = optim.AdamW(learning_rate=learning_rate)
     loss_and_grad = nn.value_and_grad(model, compute_loss)

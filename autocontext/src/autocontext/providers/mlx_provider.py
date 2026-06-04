@@ -115,15 +115,16 @@ def _load_tokenizer(model_dir: Path) -> Any:
 
         decoded_ranks = {base64.b64decode(k): v for k, v in mergeable_ranks.items()}
         base_vocab_size = int(tok_data.get("base_vocab_size", BASE_VOCAB_SIZE))
+        include_quality = bool(tok_data.get("include_quality", False))
         pat_str = str(tok_data.get("pat_str", _BPE_PAT))
-        special_tokens = build_special_tokens(base_vocab_size)
+        special_tokens = build_special_tokens(base_vocab_size, include_quality=include_quality)
         enc = tiktoken.Encoding(
             name="mts_mlx_provider",
             pat_str=pat_str,
             mergeable_ranks=decoded_ranks,
             special_tokens=special_tokens,
         )
-        return AutoresearchTokenizer(enc, base_vocab_size=base_vocab_size)
+        return AutoresearchTokenizer(enc, base_vocab_size=base_vocab_size, include_quality=include_quality)
 
     # Fallback: return a simple mock-compatible tokenizer for testing
     raise ProviderError(f"Unsupported tokenizer format in {tokenizer_path}")
@@ -154,6 +155,31 @@ class MLXProvider(LLMProvider):
         self._max_tokens = max_tokens
         self._model, self._tokenizer = _load_model_and_tokenizer(model_dir)
 
+        # Score-conditioned checkpoints were trained with a <|quality|> control token;
+        # the serving path must reproduce the same top-bucket conditioning prompt.
+        import json
+
+        raw_config = json.loads((model_dir / "config.json").read_text(encoding="utf-8"))
+        self._score_conditioned = bool(raw_config.get("score_conditioned", False))
+        num_buckets = int(raw_config.get("num_quality_buckets", 5))
+        self._target_quality = max(0, num_buckets - 1)
+
+    def _condition_prompt(self, prompt: str) -> str:
+        """For score-conditioned models, inject the top-bucket quality control token.
+
+        Placed immediately before ``<|strategy|>`` when the prompt is in the
+        autoresearch header format, else prepended, so the served prompt matches the
+        training sequence the model was conditioned on.
+        """
+        if not self._score_conditioned:
+            return prompt
+        marker = f"<|quality|>{self._target_quality}"
+        if "<|quality|>" in prompt:
+            return prompt
+        if "<|strategy|>" in prompt:
+            return prompt.replace("<|strategy|>", f"{marker}<|strategy|>", 1)
+        return f"{marker}{prompt}"
+
     def complete(
         self,
         system_prompt: str,
@@ -171,6 +197,7 @@ class MLXProvider(LLMProvider):
         effective_max = min(max_tokens, self._max_tokens) if max_tokens != 4096 else self._max_tokens
 
         prompt = f"{system_prompt}\n{user_prompt}" if system_prompt else user_prompt
+        prompt = self._condition_prompt(prompt)
 
         try:
             text = self._generate(prompt, temperature=effective_temp, max_tokens=effective_max)

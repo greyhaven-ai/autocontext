@@ -550,6 +550,7 @@ class TrainingRunner:
             "elite_fraction": float(self.config.elite_fraction),
             "dedupe": 1.0 if self.config.dedupe else 0.0,
             "dedupe_near_threshold": float(self.config.dedupe_near_threshold),
+            "score_conditioned": 1.0 if self.config.score_conditioned else 0.0,
         }
         try:
             line_count = sum(1 for _ in self.config.data_path.open(encoding="utf-8"))

@@ -103,8 +103,14 @@ curated record counts (`data_stats`) so a trained model's data split is reproduc
 (Decision-Transformer / Quark style): each training example gets a `<|quality|>`
 control token before the strategy, derived from its score (quantized into 5 buckets
 over `[0, 1]`). At assessment/inference the model is prompted with the **top** bucket,
-steering it toward high-quality outputs rather than the dataset mean. Default off, so
-the sequence format is unchanged unless the flag is set. Pairs naturally with
+steering it toward high-quality outputs rather than the dataset mean.
+
+The control token is **gated**: it is reserved (one extra vocab slot, id appended
+last) and registered only for score-conditioned runs, so the default model vocab and
+architecture are byte-identical unless the flag is set. The conditioning contract is
+persisted in the checkpoint `config.json` (`score_conditioned`, `num_quality_buckets`)
+and in the registry `data_stats`, and `MLXProvider` reapplies the top-bucket prompt
+automatically when serving a score-conditioned checkpoint. Pairs naturally with
 `--elite-fraction` (train on the best, then ask for the best):
 
 ```bash

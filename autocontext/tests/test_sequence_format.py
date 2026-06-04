@@ -39,17 +39,27 @@ def test_special_tokens_and_vocab_via_prepare() -> None:
         total_vocab_size,
     )
 
+    # Default: the original five tokens only (quality is gated -> default arch unchanged).
     specials = build_special_tokens(BASE_VOCAB_SIZE)
-    # The original five ids stay stable; <|quality|> is appended last (id base+5).
     assert specials == {
         "<|scenario|>": BASE_VOCAB_SIZE + 0,
         "<|context|>": BASE_VOCAB_SIZE + 1,
         "<|strategy|>": BASE_VOCAB_SIZE + 2,
         "<|score|>": BASE_VOCAB_SIZE + 3,
         "<|end|>": BASE_VOCAB_SIZE + 4,
-        "<|quality|>": BASE_VOCAB_SIZE + 5,
     }
+    assert "<|quality|>" not in specials
     assert total_vocab_size(BASE_VOCAB_SIZE) == BASE_VOCAB_SIZE + len(SPECIAL_TOKEN_STRINGS)
+
+
+def test_special_tokens_include_quality_is_gated() -> None:
+    from autocontext.training.autoresearch.prepare import BASE_VOCAB_SIZE, build_special_tokens, total_vocab_size
+
+    specials = build_special_tokens(BASE_VOCAB_SIZE, include_quality=True)
+    assert specials["<|quality|>"] == BASE_VOCAB_SIZE + 5  # appended last, ids 0..4 stable
+    assert total_vocab_size(BASE_VOCAB_SIZE, include_quality=True) == BASE_VOCAB_SIZE + 6
+    # default stays at the original size
+    assert total_vocab_size(BASE_VOCAB_SIZE) == BASE_VOCAB_SIZE + 5
 
 
 def test_generation_logit_mask_values_via_prepare_unchanged() -> None:
@@ -232,10 +242,12 @@ def test_quality_token_blocked_in_structural_mask() -> None:
         total_vocab_size,
     )
 
-    vocab = total_vocab_size(16)
-    quality_id = build_special_tokens(16)["<|quality|>"]
+    # A score-conditioned tokenizer exposes the quality token in special_tokens, so
+    # the mask (which reads tokenizer.special_tokens) blocks it during body generation.
+    vocab = total_vocab_size(16, include_quality=True)
+    quality_id = build_special_tokens(16, include_quality=True)["<|quality|>"]
     mask = generation_logit_mask_values(_FakeTok16(), vocab, block_structural_specials=True)
-    assert mask[quality_id] == -1e9  # header token blocked during body generation
+    assert mask[quality_id] == -1e9
 
 
 class _FakeTok16:
@@ -244,6 +256,15 @@ class _FakeTok16:
 
     _encoding = _Enc()
     base_vocab_size = 16
+    # score-conditioned special-token map (base 16): ids 16..21
+    special_tokens = {
+        "<|scenario|>": 16,
+        "<|context|>": 17,
+        "<|strategy|>": 18,
+        "<|score|>": 19,
+        "<|end|>": 20,
+        "<|quality|>": 21,
+    }
 
 
 def test_cuda_uses_shared_contract_no_duplicate_definitions() -> None:

@@ -526,3 +526,34 @@ class TestBundleCompatibility:
         assert (bundle_dir / "config.json").exists()
         assert (bundle_dir / "tokenizer.json").exists()
         mock_save_checkpoint.assert_called_once_with(model, bundle_dir / "model.safetensors")
+
+
+class TestScoreConditionedServing:
+    """A score-conditioned checkpoint must serve with the top-bucket quality token."""
+
+    def _provider(self, *, score_conditioned: bool, target_quality: int = 4):
+        from autocontext.providers.mlx_provider import MLXProvider
+
+        p = MLXProvider.__new__(MLXProvider)  # bypass __init__/model loading
+        p._score_conditioned = score_conditioned
+        p._target_quality = target_quality
+        return p
+
+    def test_inserts_quality_before_strategy(self) -> None:
+        p = self._provider(score_conditioned=True)
+        out = p._condition_prompt("<|scenario|>capset<|context|>c<|strategy|>")
+        assert out == "<|scenario|>capset<|context|>c<|quality|>4<|strategy|>"
+
+    def test_prepends_when_no_strategy_token(self) -> None:
+        p = self._provider(score_conditioned=True)
+        assert p._condition_prompt("free-form prompt") == "<|quality|>4free-form prompt"
+
+    def test_idempotent_when_quality_present(self) -> None:
+        p = self._provider(score_conditioned=True)
+        prompt = "<|scenario|>s<|context|>c<|quality|>4<|strategy|>"
+        assert p._condition_prompt(prompt) == prompt
+
+    def test_noop_when_not_score_conditioned(self) -> None:
+        p = self._provider(score_conditioned=False)
+        prompt = "<|scenario|>s<|context|>c<|strategy|>"
+        assert p._condition_prompt(prompt) == prompt

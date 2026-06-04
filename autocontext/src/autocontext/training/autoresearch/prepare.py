@@ -69,6 +69,7 @@ def serialize_tokenizer(tokenizer: Any) -> dict[str, Any]:
     return {
         "type": "BPE",
         "base_vocab_size": base_vocab_size,
+        "include_quality": bool(getattr(tokenizer, "include_quality", False)),
         "pat_str": pat_str,
         "mergeable_ranks": encoded_ranks,
     }
@@ -146,11 +147,12 @@ def extract_best_opponent(records: list[dict[str, Any]]) -> dict[str, Any]:
 class AutoresearchTokenizer:
     """Thin wrapper that preserves special-token metadata for training/inference."""
 
-    def __init__(self, encoding: Any, *, base_vocab_size: int) -> None:
+    def __init__(self, encoding: Any, *, base_vocab_size: int, include_quality: bool = False) -> None:
         self._encoding = encoding
         self.base_vocab_size = base_vocab_size
-        self.special_tokens = build_special_tokens(base_vocab_size)
-        self.vocab_size = total_vocab_size(base_vocab_size)
+        self.include_quality = include_quality
+        self.special_tokens = build_special_tokens(base_vocab_size, include_quality=include_quality)
+        self.vocab_size = total_vocab_size(base_vocab_size, include_quality=include_quality)
 
     @property
     def end_token_id(self) -> int:
@@ -164,11 +166,14 @@ class AutoresearchTokenizer:
         return cast(str, self._encoding.decode(token_ids))
 
 
-def train_tokenizer(corpus_path: Path, vocab_size: int = BASE_VOCAB_SIZE) -> AutoresearchTokenizer:
+def train_tokenizer(
+    corpus_path: Path, vocab_size: int = BASE_VOCAB_SIZE, *, score_conditioned: bool = False
+) -> AutoresearchTokenizer:
     """Train a BPE tokenizer on the given corpus.
 
     Uses rustbpe for fast BPE training and wraps with tiktoken for
-    encode/decode.
+    encode/decode. When ``score_conditioned`` is set, the ``<|quality|>`` control
+    token is registered as a special token (gated: omitted by default).
 
     Parameters
     ----------
@@ -176,6 +181,8 @@ def train_tokenizer(corpus_path: Path, vocab_size: int = BASE_VOCAB_SIZE) -> Aut
         Path to a text file containing the training corpus.
     vocab_size:
         Target vocabulary size.
+    score_conditioned:
+        Whether to reserve/register the quality control token.
 
     Returns
     -------
@@ -189,7 +196,7 @@ def train_tokenizer(corpus_path: Path, vocab_size: int = BASE_VOCAB_SIZE) -> Aut
     tokenizer = rustbpe.Tokenizer()
     tokenizer.train_from_iterator([text], vocab_size=vocab_size)
     merges = {bytes(k): v for k, v in tokenizer.get_mergeable_ranks()}
-    special_tokens = build_special_tokens(vocab_size)
+    special_tokens = build_special_tokens(vocab_size, include_quality=score_conditioned)
 
     enc = tiktoken.Encoding(
         name="mts_autoresearch",
@@ -197,7 +204,7 @@ def train_tokenizer(corpus_path: Path, vocab_size: int = BASE_VOCAB_SIZE) -> Aut
         mergeable_ranks=merges,
         special_tokens=special_tokens,
     )
-    return AutoresearchTokenizer(enc, base_vocab_size=vocab_size)
+    return AutoresearchTokenizer(enc, base_vocab_size=vocab_size, include_quality=score_conditioned)
 
 
 if HAS_MLX:
