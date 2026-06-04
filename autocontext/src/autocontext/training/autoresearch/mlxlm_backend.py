@@ -99,10 +99,10 @@ def write_completion_dataset(
     """Write ``train.jsonl`` + ``valid.jsonl`` (mlx-lm requires both) and return their sizes."""
     comps = records_to_completions(records, task_prompt=task_prompt, score_conditioned=score_conditioned, num_buckets=num_buckets)
     n_val = max(1, int(len(comps) * val_fraction)) if len(comps) > 1 else 0
-    val = comps[:n_val]
-    train = comps[n_val:] or comps
-    if not val:  # mlx-lm needs a non-empty valid set; reuse one train example
-        val = train[:1]
+    # Hold out the TAIL for validation. Records arrive elite-first (curated highest
+    # score first), so the strongest examples stay in train; we validate on the rest.
+    train = comps[: len(comps) - n_val] or list(comps)
+    val = comps[len(comps) - n_val :] if n_val else train[:1]
     data_dir.mkdir(parents=True, exist_ok=True)
     (data_dir / "train.jsonl").write_text("\n".join(json.dumps(c) for c in train) + "\n", encoding="utf-8")
     (data_dir / "valid.jsonl").write_text("\n".join(json.dumps(c) for c in val) + "\n", encoding="utf-8")
@@ -145,6 +145,7 @@ def run_mlxlm_training(
     num_layers: int = 8,
     assess_samples: int = 8,
     assess_temperature: float = 0.0,
+    assess_top_k: int = 0,
     elite_fraction: float = 1.0,
     dedupe: bool = False,
     dedupe_near_threshold: float = 1.0,
@@ -208,6 +209,7 @@ def run_mlxlm_training(
         task_prompt=task_prompt,
         n_samples=assess_samples,
         temperature=assess_temperature,
+        top_k=assess_top_k,
         score_conditioned=score_conditioned,
     )
     return {
@@ -231,21 +233,25 @@ def _assess_mlxlm(
     task_prompt: str,
     n_samples: int,
     temperature: float,
+    top_k: int,
     score_conditioned: bool,
 ) -> dict[str, float]:
     from mlx_lm import generate, load  # type: ignore[import-not-found]
+    from mlx_lm.sample_utils import make_sampler  # type: ignore[import-not-found]
 
     loaded = load(base_model, adapter_path=str(adapter_dir))
     model, tokenizer = loaded[0], loaded[1]
     prefix = _quality_prefix(NUM_QUALITY_BUCKETS - 1, NUM_QUALITY_BUCKETS) if score_conditioned else ""
     prompt = prefix + task_prompt
     is_game = hasattr(scenario, "execute_match")
+    # Honor the requested assessment sampling (temp<=0 => greedy; top_k truncation).
+    sampler = make_sampler(temp=max(float(temperature), 0.0), top_k=int(top_k))
 
     scores: list[float] = []
     valid = 0
     for _ in range(max(1, n_samples)):
         try:
-            text = generate(model, tokenizer, prompt=prompt, max_tokens=512, verbose=False)
+            text = generate(model, tokenizer, prompt=prompt, max_tokens=512, verbose=False, sampler=sampler)
             if is_game:
                 strategy = extract_strategy(text)
                 if strategy is None:

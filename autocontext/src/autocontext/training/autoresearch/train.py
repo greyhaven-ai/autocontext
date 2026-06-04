@@ -695,7 +695,11 @@ def run_training(
         from autocontext.training.autoresearch.mlxlm_backend import DEFAULT_BASE_MODEL, run_mlxlm_training
 
         return run_mlxlm_training(
-            **common, base_model=base_model or DEFAULT_BASE_MODEL, fine_tune_type=fine_tune_type, num_layers=num_layers
+            **common,
+            assess_top_k=assess_top_k,
+            base_model=base_model or DEFAULT_BASE_MODEL,
+            fine_tune_type=fine_tune_type,
+            num_layers=num_layers,
         )
     raise ValueError("unsupported training backend: expected 'mlx', 'cuda', or 'mlxlm'")
 

@@ -58,6 +58,45 @@ def test_write_completion_dataset_single_record_reuses_for_valid(tmp_path: Path)
     assert n_train == 1 and n_val == 1  # valid reuses the single example
 
 
+def test_mlxlm_registered_in_backend_registry() -> None:
+    # [P1] regression: the public TrainingRunner resolves the backend via this registry.
+    from autocontext.training.backends import default_backend_registry
+
+    backend = default_backend_registry().get("mlxlm")
+    assert backend is not None
+    assert backend.name == "mlxlm"
+    assert "mlxlm" in str(backend.default_checkpoint_dir("grid_ctf"))
+
+
+def test_training_runner_accepts_mlxlm_backend(tmp_path: Path) -> None:
+    # [P1] regression: constructing the runner with backend="mlxlm" must not raise
+    # "Unknown training backend" (the documented autoctx train --backend mlxlm path).
+    from autocontext.training.runner import TrainingConfig, TrainingRunner
+
+    cfg = TrainingConfig(scenario="grid_ctf", data_path=tmp_path / "data.jsonl", backend="mlxlm")
+    runner = TrainingRunner(cfg, work_dir=tmp_path / "ws")
+    assert runner is not None
+
+
+def test_write_completion_dataset_holds_out_tail_not_elite(tmp_path: Path) -> None:
+    # [P2] regression: records arrive elite-first; the top record must be TRAINED on,
+    # not held out for validation.
+    records = [{"strategy": {"rank": s}, "score": s / 10} for s in (9, 8, 7, 6, 5)]
+    data_dir = tmp_path / "data"
+    mb.write_completion_dataset(records, data_dir, task_prompt="T")
+
+    def _ranks(path: Path) -> set[int]:
+        return {
+            json.loads(json.loads(line)["completion"])["rank"] for line in path.read_text(encoding="utf-8").splitlines() if line
+        }
+
+    train_ranks = _ranks(data_dir / "train.jsonl")
+    valid_ranks = _ranks(data_dir / "valid.jsonl")
+    assert 9 in train_ranks  # best example is trained on
+    assert 9 not in valid_ranks
+    assert valid_ranks == {5}  # the lowest-scoring elite is held out
+
+
 def test_scenario_task_prompt_prefers_get_task_prompt() -> None:
     class _Scn:
         def initial_state(self, seed: int | None = None) -> dict:
