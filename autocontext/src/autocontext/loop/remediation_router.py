@@ -511,7 +511,7 @@ def rule_indexing_base(
 
 _LEAN_PREAMBLE = re.compile(
     r"^[^\s:][^\n:]*:(?P<line>\d+):\d+:\s*error(?:\(lean\.\w+\))?:\s*(?P<body>.*?)"
-    r"(?=^[^\s:][^\n:]*:\d+:\d+:\s*error(?:\(lean\.\w+\))?:|\Z)",
+    r"(?=^[^\s:][^\n:]*:\d+:\d+:\s*(?:error|warning)(?:\(lean\.\w+\))?:|\Z)",
     re.DOTALL | re.MULTILINE,
 )
 
