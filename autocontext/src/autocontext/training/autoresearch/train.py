@@ -443,6 +443,7 @@ def _run_mlx_training(
         )
     except ImportError:
         from autocontext.training.autoresearch.prepare import (
+            TrainingExample,
             assess_strategy_quality,
             create_dataloader,
             train_tokenizer,

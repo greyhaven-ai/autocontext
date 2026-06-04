@@ -3,6 +3,7 @@
 All tests are skipped when MLX is not installed (CI-safe).
 Note: mx.eval() is MLX's lazy evaluation trigger, not Python's eval().
 """
+
 from __future__ import annotations
 
 import pytest
@@ -97,6 +98,50 @@ def test_summary_block_format() -> None:
     assert "num_params_M" in summary
     assert "depth" in summary
     assert "0.75" in summary or "0.7500" in summary
+
+
+def test_run_training_mlx_end_to_end_smoke(tmp_path: str) -> None:
+    """run_training(backend='mlx') runs the full pipeline via the package import path.
+
+    Regression guard (PR #1027 review): _run_mlx_training's tokenization loop uses
+    TrainingExample, which must be importable in BOTH the script-local and the
+    package (autocontext.training.autoresearch.prepare) fallback import branches.
+    Normal package/CLI execution takes the fallback branch; a missing import there
+    raised UnboundLocalError. Existing tests never ran the full loop, so this pins it.
+    """
+    import json
+    from pathlib import Path
+
+    from autocontext.training.autoresearch.train import run_training
+
+    records = [
+        {
+            "run_id": f"r{i % 2}",
+            "scenario": "grid_ctf",
+            "context": {"playbook": "p"},
+            "strategy": {"aggression": 0.5, "defense": 0.3},
+            "score": 0.5 + 0.01 * i,
+        }
+        for i in range(6)
+    ]
+    data_path = Path(tmp_path) / "data.jsonl"
+    data_path.write_text("\n".join(json.dumps(r) for r in records), encoding="utf-8")
+
+    metrics = run_training(
+        scenario_name="grid_ctf",
+        data_path=data_path,
+        output_dir=Path(tmp_path) / "out",
+        time_budget=30,
+        memory_limit_mb=4096,
+        train_steps=1,
+        batch_size=1,
+        seq_len=16,
+        assess_samples=1,
+        backend="mlx",
+    )
+    assert "avg_score" in metrics and "valid_rate" in metrics
+    # the inference bundle should have been written without error
+    assert (Path(tmp_path) / "out" / "model.safetensors").exists()
 
 
 def test_checkpoint_save_load(tmp_path: str) -> None:
