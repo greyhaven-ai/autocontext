@@ -45,6 +45,41 @@ def test_decodable_vocab_size_falls_back_to_base() -> None:
     assert decodable_vocab_size(_Tok()) == 512
 
 
+def test_generation_logit_mask_values_blocks_phantom_and_structural() -> None:
+    from autocontext.training.autoresearch.prepare import (
+        build_special_tokens,
+        generation_logit_mask_values,
+        total_vocab_size,
+    )
+
+    # base 16 -> specials at 16..20; learned only 4 base ids -> phantom gap [4, 16)
+    class _Enc:
+        _mergeable_ranks = {bytes([i]): i for i in range(4)}
+
+    class _Tok:
+        _encoding = _Enc()
+        base_vocab_size = 16
+
+    vocab = total_vocab_size(16)
+    specials = build_special_tokens(16)
+    mask = generation_logit_mask_values(_Tok(), vocab, block_structural_specials=True)
+
+    # decodable BPE ids allowed
+    assert mask[0] == 0.0 and mask[3] == 0.0
+    # phantom gap blocked
+    assert mask[4] == -1e9 and mask[15] == -1e9
+    # structural specials blocked, score/end allowed
+    assert mask[specials["<|scenario|>"]] == -1e9
+    assert mask[specials["<|strategy|>"]] == -1e9
+    assert mask[specials["<|score|>"]] == 0.0
+    assert mask[specials["<|end|>"]] == 0.0
+
+    # provider mode keeps structural specials available (still blocks phantom gap)
+    mask_provider = generation_logit_mask_values(_Tok(), vocab, block_structural_specials=False)
+    assert mask_provider[specials["<|scenario|>"]] == 0.0
+    assert mask_provider[4] == -1e9
+
+
 # ---------------------------------------------------------------------------
 # Real-path generation (MLX required)
 # ---------------------------------------------------------------------------

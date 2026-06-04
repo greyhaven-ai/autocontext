@@ -4,6 +4,7 @@ Loads a trained MLX model checkpoint (safetensors) and generates strategies
 using temperature-based sampling.  All MLX imports are behind guards so the
 module is importable for type-checking even when MLX is not installed.
 """
+
 from __future__ import annotations
 
 import logging
@@ -53,19 +54,14 @@ def _load_model_and_tokenizer(model_dir: Path) -> tuple[Any, Any]:
 
         from autocontext.training.autoresearch.train import GPTModel, ModelConfig, load_checkpoint
     except ImportError as exc:
-        raise ProviderError(
-            f"MLX dependencies not available: {exc}. Install with: uv sync --group dev --extra mlx"
-        ) from exc
+        raise ProviderError(f"MLX dependencies not available: {exc}. Install with: uv sync --group dev --extra mlx") from exc
 
     # Load config
     import json
 
     config_path = model_dir / "config.json"
     if not config_path.exists():
-        raise ProviderError(
-            f"Model config not found: {config_path}. "
-            "Generate an inference bundle with save_inference_bundle()."
-        )
+        raise ProviderError(f"Model config not found: {config_path}. Generate an inference bundle with save_inference_bundle().")
 
     with open(config_path, encoding="utf-8") as f:
         raw_config = json.load(f)
@@ -202,7 +198,7 @@ class MLXProvider(LLMProvider):
         """
         prompt_tokens = self._tokenizer.encode(prompt)
         all_tokens = self._sample_tokens(prompt_tokens, temperature=temperature, max_tokens=max_tokens)
-        generated_tokens = all_tokens[len(prompt_tokens):]
+        generated_tokens = all_tokens[len(prompt_tokens) :]
         end_token_id = getattr(self._tokenizer, "end_token_id", None)
         if generated_tokens and end_token_id is not None and generated_tokens[-1] == end_token_id:
             generated_tokens = generated_tokens[:-1]
@@ -232,11 +228,27 @@ class MLXProvider(LLMProvider):
         seq_len = int(self._model.cfg.seq_len)
         end_token_id = getattr(self._tokenizer, "end_token_id", None)
 
+        # Mask undecodable phantom BPE ids so sampling can never produce a token
+        # that later crashes ``tokenizer.decode``. Structural special tokens are
+        # left available (this is general-purpose inference, not the training
+        # header template), so block_structural_specials=False.
+        mask = None
+        try:
+            from autocontext.training.autoresearch.prepare import generation_logit_mask_values
+
+            vocab_size = int(getattr(self._model.cfg, "vocab_size", 0))
+            if vocab_size > 0:
+                mask = mx.array(generation_logit_mask_values(self._tokenizer, vocab_size, block_structural_specials=False))
+        except Exception:
+            logger.debug("providers.mlx_provider: could not build decodable mask; sampling unmasked", exc_info=True)
+
         for _ in range(max_tokens):
             window = tokens[-seq_len:]
             x = mx.array([window], dtype=mx.int32)
             logits = self._model(x)
             next_logits = logits[:, -1, :]
+            if mask is not None:
+                next_logits = next_logits + mask
 
             if temperature > 0:
                 # Temperature-scaled sampling

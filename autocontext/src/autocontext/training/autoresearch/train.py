@@ -433,6 +433,7 @@ def _run_mlx_training(
     assess_temperature: float = 0.0,
     assess_top_k: int = 0,
 ) -> dict[str, float]:
+    _preflight_backend_deps("mlx")
     if not HAS_MLX:
         raise RuntimeError("MLX is required for local training. Install with: uv sync --group dev --extra mlx")
 
@@ -560,7 +561,9 @@ def run_training(
     backend: str = "mlx",
 ) -> dict[str, float]:
     normalized_backend = backend.strip().lower()
-    _preflight_backend_deps(normalized_backend)
+    # Dependency preflight runs inside each backend entry (_run_mlx_training /
+    # run_cuda_training) so routing/dispatch stays importable and unit-testable
+    # without the optional extras installed.
     if normalized_backend == "mlx":
         return _run_mlx_training(
             scenario_name=scenario_name,
@@ -590,6 +593,8 @@ def run_training(
             learning_rate=learning_rate,
             seq_len=seq_len,
             assess_samples=assess_samples,
+            assess_temperature=assess_temperature,
+            assess_top_k=assess_top_k,
         )
     raise ValueError("unsupported training backend: expected 'mlx' or 'cuda'")
 

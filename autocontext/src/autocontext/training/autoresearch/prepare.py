@@ -117,6 +117,37 @@ def decodable_vocab_size(tokenizer: Any) -> int:
     return int(base) if base else BASE_VOCAB_SIZE
 
 
+def generation_logit_mask_values(
+    tokenizer: Any,
+    vocab_size: int,
+    *,
+    block_structural_specials: bool = True,
+) -> list[float]:
+    """Additive logit-mask values (0.0 = allowed, -1e9 = blocked).
+
+    Always blocks the phantom-id gap ``[decodable_vocab_size, base_vocab_size)``
+    that the tokenizer cannot decode, so neither training-time assessment nor
+    ``MLXProvider`` inference can sample an id that later crashes ``decode``.
+
+    When ``block_structural_specials`` is true (training assessment) it also blocks
+    the ``<|scenario|>`` / ``<|context|>`` / ``<|strategy|>`` tokens so a generated
+    body cannot restart the header. Providers doing general completion pass
+    ``False`` to leave all (decodable) special tokens available.
+    """
+    base = int(getattr(tokenizer, "base_vocab_size", BASE_VOCAB_SIZE))
+    n_base = decodable_vocab_size(tokenizer)
+    mask = [0.0] * vocab_size
+    for i in range(max(0, n_base), min(base, vocab_size)):
+        mask[i] = -1e9
+    if block_structural_specials:
+        specials = build_special_tokens(base)
+        for name in ("<|scenario|>", "<|context|>", "<|strategy|>"):
+            sid = specials.get(name)
+            if sid is not None and 0 <= sid < vocab_size:
+                mask[sid] = -1e9
+    return mask
+
+
 # ---------------------------------------------------------------------------
 # 1. Data loading (no MLX dependency)
 # ---------------------------------------------------------------------------
@@ -378,25 +409,13 @@ if HAS_MLX:
         }
 
     def _generation_logit_mask(tokenizer: Any, vocab_size: int) -> Any:
-        """Additive logit mask allowing only decodable BPE ids + score/end specials.
+        """MLX additive logit mask for training-time assessment generation.
 
-        Blocks (a) phantom ids in ``[n_learned, base_vocab_size)`` that cannot be
-        decoded, and (b) the structural special tokens ``<|scenario|>`` /
-        ``<|context|>`` / ``<|strategy|>`` so a generated body cannot restart the
-        header (the failure mode that collapses greedy generation). ``<|score|>``
-        and ``<|end|>`` remain allowed as natural stop tokens.
+        Wraps the shared :func:`generation_logit_mask_values` (blocks the phantom-id
+        gap and the structural scenario/context/strategy tokens; ``<|score|>`` and
+        ``<|end|>`` remain allowed as stops).
         """
-        base = int(getattr(tokenizer, "base_vocab_size", BASE_VOCAB_SIZE))
-        n_base = decodable_vocab_size(tokenizer)
-        specials = build_special_tokens(base)
-        allowed_specials = {specials.get("<|score|>"), specials.get("<|end|>")}
-        mask = [-1e9] * vocab_size
-        for i in range(min(n_base, vocab_size)):
-            mask[i] = 0.0
-        for sid in allowed_specials:
-            if sid is not None and 0 <= sid < vocab_size:
-                mask[sid] = 0.0
-        return mx.array(mask)
+        return mx.array(generation_logit_mask_values(tokenizer, vocab_size, block_structural_specials=True))
 
     def _generate_strategy_text(
         *,
