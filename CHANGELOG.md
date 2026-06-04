@@ -7,6 +7,10 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - autoresearch generation sampling controls. `assess_strategy_quality` and the local-training generator (`prepare._generate_strategy_text`) now accept `temperature`, `top_k`, and a per-sample seed, threaded through `run_training` / `_run_mlx_training` and exposed as `--assess-temperature` / `--assess-top-k` on the train CLI. The default is `temperature=0.0` (greedy and deterministic, byte-identical to prior behavior), so diverse assessment is opt-in: pass a positive temperature to draw varied samples and let the oracle measure generation diversity. The CUDA backend (`run_cuda_training`) threads the same controls through its torch generator for parity.
+- autoresearch training-data pipeline improvements (all opt-in; defaults reproduce prior behavior):
+  - Completion-only loss + document-boundary packing: loss is computed only on the strategy completion (tokens after `<|strategy|>`), examples are batched per-document with no cross-example contamination, and the final partial batch is no longer dropped.
+  - Held-out validation: `autoctx train` reports a `val_loss`, and `--val-select` keeps the best-by-validation-loss checkpoint and early-stops (MLX backend only).
+  - Record curation: `--elite-fraction <0-1]` trains on only the top fraction of records by score, `--dedupe` drops duplicate constructions (keeping the highest-scoring representative), and `--dedupe-near-threshold <0-1]` additionally removes near-duplicates by character-shingle similarity. Out-of-range values are rejected before training; the published model artifact records the curation settings plus raw and curated record counts. See `docs/mlx-training.md`.
 
 ### Fixed
 

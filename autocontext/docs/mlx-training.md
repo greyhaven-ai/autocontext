@@ -8,13 +8,13 @@ Docker containers on macOS run inside a Linux VM and cannot access Metal. The ML
 
 ## Prerequisites
 
-| Component | Version | Install |
-|-----------|---------|---------|
-| Apple Silicon Mac | M1/M2/M3/M4 | - |
-| macOS | Tahoe (26.x) or later | - |
-| Homebrew | Latest | [brew.sh](https://brew.sh) |
-| Python | 3.12+ | `brew install python@3.12` |
-| uv | 0.10+ | `brew install uv` |
+| Component         | Version               | Install                    |
+| ----------------- | --------------------- | -------------------------- |
+| Apple Silicon Mac | M1/M2/M3/M4           | -                          |
+| macOS             | Tahoe (26.x) or later | -                          |
+| Homebrew          | Latest                | [brew.sh](https://brew.sh) |
+| Python            | 3.12+                 | `brew install python@3.12` |
+| uv                | 0.10+                 | `brew install uv`          |
 
 The package requires Python 3.11+, but Homebrew Python 3.12 is the safest host setup for MLX on Apple Silicon.
 
@@ -68,6 +68,34 @@ uv run autoctx train \
 Use absolute paths for `--data`. The CLI resolves relative paths from the current working directory, which may differ from the location that originally produced the training data.
 
 The training loop writes its workspace under `runs/train_<scenario>/` and produces a checkpoint bundle that `MLXProvider` can load for local inference.
+
+### Record curation (optional)
+
+These flags curate the training records before tokenization (defaults are a no-op,
+so omitting them reproduces the previous behavior). Curation is applied to the
+training split only; the held-out validation split is untouched.
+
+| Flag                      | Default | Range    | Effect                                                                                                                                                                       |
+| ------------------------- | ------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--elite-fraction`        | `1.0`   | `(0, 1]` | Train on only the top fraction of records by score (e.g. `0.25` keeps the best quarter). Rejection-sampling fine-tuning: imitate the best of the distribution, not its mean. |
+| `--dedupe`                | off     | flag     | Drop duplicate constructions (exact by canonical strategy JSON), keeping the highest-scoring representative.                                                                 |
+| `--dedupe-near-threshold` | `1.0`   | `(0, 1]` | With `--dedupe`, also drop near-duplicates at/above this character-shingle Jaccard similarity. `1.0` = exact only; e.g. `0.9` removes near-identical strategies.             |
+
+Out-of-range values are rejected before training starts. Example (train on the
+best 20% with exact + near deduplication, and keep the best-by-validation-loss
+checkpoint):
+
+```bash
+uv run autoctx train \
+  --scenario grid_ctf \
+  --data /absolute/path/to/training/grid_ctf.jsonl \
+  --elite-fraction 0.2 \
+  --dedupe --dedupe-near-threshold 0.9 \
+  --val-select
+```
+
+The published model artifact records the curation settings plus the raw and
+curated record counts (`data_stats`) so a trained model's data split is reproducible.
 
 ## Automating Host Training for Sandboxed Agents
 
@@ -282,6 +310,7 @@ launchctl list com.autocontext.train-watcher
 ```
 
 Also verify that:
+
 - the watched directory exists
 - request files match `request-*.json`
 - the script is executable

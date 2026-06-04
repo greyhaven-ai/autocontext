@@ -79,6 +79,30 @@ def test_run_training_rejects_val_select_on_cuda(tmp_path: Path) -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "kwargs, match",
+    [
+        ({"elite_fraction": 1.5}, "elite_fraction"),
+        ({"elite_fraction": 0.0}, "elite_fraction"),
+        ({"elite_fraction": -1.0}, "elite_fraction"),
+        ({"dedupe_near_threshold": 0.0}, "dedupe_near_threshold"),
+        ({"dedupe_near_threshold": 1.5}, "dedupe_near_threshold"),
+    ],
+)
+def test_run_training_rejects_out_of_range_curation(tmp_path: Path, kwargs: dict, match: str) -> None:
+    # Validation happens before backend dispatch, so this holds without MLX/torch.
+    with pytest.raises(ValueError, match=match):
+        train_module.run_training(
+            scenario_name="grid_ctf",
+            data_path=tmp_path / "training.jsonl",
+            output_dir=tmp_path / "out",
+            time_budget=1,
+            memory_limit_mb=1024,
+            backend="mlx",
+            **kwargs,
+        )
+
+
 def test_run_training_rejects_unknown_backend(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="unsupported training backend"):
         train_module.run_training(

@@ -714,3 +714,34 @@ class TestCurationSubprocess:
         assert "--dedupe" in command
         assert "--dedupe-near-threshold" in command
         assert command[command.index("--dedupe-near-threshold") + 1] == "0.8"
+
+
+class TestDataStatsProvenance:
+    """Published data_stats records the curation settings + raw/curated counts."""
+
+    def test_data_stats_includes_curation_settings_and_counts(self, tmp_path: Path) -> None:
+        data_path = tmp_path / "data.jsonl"
+        data_path.write_text("{}\n{}\n{}\n{}\n", encoding="utf-8")  # 4 raw records
+        cfg = TrainingConfig(
+            scenario="grid_ctf",
+            data_path=data_path,
+            elite_fraction=0.5,
+            dedupe=True,
+            dedupe_near_threshold=0.9,
+        )
+        runner = TrainingRunner(cfg, work_dir=tmp_path / "workspace")
+        best = ExperimentResult(
+            experiment_index=0,
+            avg_score=0.5,
+            valid_rate=1.0,
+            peak_memory_mb=1.0,
+            training_seconds=1.0,
+            outcome=ExperimentOutcome.KEPT,
+            summary_metrics={"num_records": 2.0},  # curated count from the subprocess summary
+        )
+        stats = runner._data_stats(best)
+        assert stats["elite_fraction"] == 0.5
+        assert stats["dedupe"] == 1.0
+        assert stats["dedupe_near_threshold"] == 0.9
+        assert stats["records"] == 4.0  # raw JSONL line count
+        assert stats["curated_records"] == 2.0  # records actually used after curation

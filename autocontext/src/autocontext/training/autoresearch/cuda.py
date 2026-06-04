@@ -366,6 +366,7 @@ def run_cuda_training(
         "training_seconds": time.perf_counter() - started,
         "peak_memory_mb": min(peak_memory_mb, float(memory_limit_mb)),
         "num_steps": float(steps_completed),
+        "num_records": float(len(records)),  # records used after curation
         "num_params_m": _count_torch_params_million(model),
         "depth": float(cfg.depth),
     }
