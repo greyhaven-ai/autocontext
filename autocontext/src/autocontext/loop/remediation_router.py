@@ -510,11 +510,12 @@ def rule_indexing_base(
 # each error body — the next preamble marks where the current error ends.
 # AC-775: the body-bound lookahead also matches ``warning:`` preambles so a
 # following ``warning: declaration uses 'sorry'`` line does NOT bleed into
-# captures like the type-mismatch ``expected`` field.
+# captures like the type-mismatch ``expected`` field. Warning preambles may also
+# carry Lean diagnostic codes, mirroring ``error(lean.<code>)``.
 
 _LEAN_PREAMBLE = re.compile(
     r"^[^\s:][^\n:]*:(?P<line>\d+):\d+:\s*error(?:\(lean\.\w+\))?:\s*(?P<body>.*?)"
-    r"(?=^[^\s:][^\n:]*:\d+:\d+:\s*(?:error(?:\(lean\.\w+\))?|warning):|\Z)",
+    r"(?=^[^\s:][^\n:]*:\d+:\d+:\s*(?:error|warning)(?:\(lean\.\w+\))?:|\Z)",
     re.DOTALL | re.MULTILINE,
 )
 
