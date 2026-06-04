@@ -353,15 +353,20 @@ def format_summary(
     num_steps: int,
     num_params_m: float,
     depth: int,
+    val_loss: float | None = None,
 ) -> str:
     """Format the training results summary block.
 
-    This block is printed to stdout and parsed by the autoresearch agent.
+    This block is printed to stdout and parsed by the autoresearch agent and by
+    TrainingRunner.parse_summary. ``val_loss`` is included only when available
+    (MLX backend with a validation split) so existing callers stay unchanged.
     """
+    val_loss_line = f"val_loss: {val_loss:.4f}\n" if val_loss is not None else ""
     return (
         "=== TRAINING SUMMARY ===\n"
         f"avg_score: {avg_score:.4f}\n"
         f"valid_rate: {valid_rate:.4f}\n"
+        f"{val_loss_line}"
         f"training_seconds: {training_seconds:.1f}\n"
         f"peak_memory_mb: {peak_memory_mb:.1f}\n"
         f"num_steps: {num_steps}\n"
@@ -432,6 +437,7 @@ def _run_mlx_training(
     assess_samples: int = 8,
     assess_temperature: float = 0.0,
     assess_top_k: int = 0,
+    val_select: bool = False,
 ) -> dict[str, float]:
     _preflight_backend_deps("mlx")
     if not HAS_MLX:
@@ -440,6 +446,7 @@ def _run_mlx_training(
     import mlx.core as mx  # type: ignore[import-not-found]
     import mlx.nn as nn  # type: ignore[import-not-found]
     import mlx.optimizers as optim  # type: ignore[import-not-found]
+    from mlx.utils import tree_map  # type: ignore[import-not-found]
 
     from autocontext.scenarios import SCENARIO_REGISTRY
 
@@ -449,6 +456,7 @@ def _run_mlx_training(
             assess_strategy_quality,
             build_special_tokens,
             iter_masked_batches,
+            load_jsonl,
             train_tokenizer,
         )
     except ImportError:
@@ -457,42 +465,68 @@ def _run_mlx_training(
             assess_strategy_quality,
             build_special_tokens,
             iter_masked_batches,
+            load_jsonl,
             train_tokenizer,
         )
 
     if scenario_name not in SCENARIO_REGISTRY:
         raise ValueError(f"unknown scenario: {scenario_name}")
 
-    records = _all_records(data_path)
+    # Hold out the validation split (previously loaded then discarded): the tokenizer
+    # and training use the train split only; val drives the validation loss + optional
+    # best-checkpoint selection / early stopping.
+    train_records, val_records = load_jsonl(data_path)
+    if not train_records:
+        train_records, val_records = list(val_records), []
+    if not train_records:
+        raise ValueError(f"no training records found in {data_path}")
+
     output_dir.mkdir(parents=True, exist_ok=True)
     corpus_path = output_dir / "corpus.txt"
-    corpus_path.write_text(_build_corpus(records), encoding="utf-8")
+    corpus_path.write_text(_build_corpus(train_records), encoding="utf-8")
     tokenizer = train_tokenizer(corpus_path)
 
-    # Per-example, completion-masked sequences: loss is computed only on the strategy
-    # completion (tokens after <|strategy|>), examples do not pack across document
-    # boundaries, and no tail is dropped.
-    sequences = [tokenizer.encode(TrainingExample.from_record(record).to_sequence()) for record in records]
     base_vocab = int(getattr(tokenizer, "base_vocab_size", BASE_VOCAB_SIZE))
     strategy_token_id = build_special_tokens(base_vocab)["<|strategy|>"]
     pad_token_id = getattr(tokenizer, "end_token_id", 0) or 0
-    batches = list(
-        iter_masked_batches(
-            sequences,
-            seq_len=seq_len,
-            batch_size=batch_size,
-            pad_token_id=pad_token_id,
-            strategy_token_id=strategy_token_id,
+
+    # Per-example, completion-masked batches (no cross-document packing, no tail drop).
+    def _masked_batches(recs: list[dict[str, Any]]) -> list[Any]:
+        seqs = [tokenizer.encode(TrainingExample.from_record(r).to_sequence()) for r in recs]
+        return list(
+            iter_masked_batches(
+                seqs,
+                seq_len=seq_len,
+                batch_size=batch_size,
+                pad_token_id=pad_token_id,
+                strategy_token_id=strategy_token_id,
+            )
         )
-    )
+
+    batches = _masked_batches(train_records)
     if not batches:
         raise ValueError("not enough tokenized training data for a single batch")
+    val_batches = _masked_batches(val_records)
 
     cfg = ModelConfig(seq_len=seq_len)
     model = GPTModel(cfg)
     optimizer = optim.AdamW(learning_rate=learning_rate)
     loss_and_grad = nn.value_and_grad(model, compute_loss)
 
+    def _mean_val_loss() -> float | None:
+        if not val_batches:
+            return None
+        total = 0.0
+        for vx, vy, vmask in val_batches:
+            vloss = compute_loss(model, vx, vy, vmask)
+            mx.eval(vloss)  # noqa: S307
+            total += float(vloss.item())
+        return total / len(val_batches)
+
+    best_val = float("inf")
+    best_params = None
+    since_improve = 0
+    patience = max(3, train_steps // 4)
     started = time.perf_counter()
     deadline = started + max(float(time_budget) - 1.0, 1.0)
     steps_completed = 0
@@ -504,6 +538,24 @@ def _run_mlx_training(
         optimizer.update(model, grads)
         mx.eval(model.parameters(), optimizer.state, loss)  # noqa: S307
         steps_completed += 1
+        if val_select and val_batches:
+            current = _mean_val_loss()
+            if current is not None and current < best_val - 1e-6:
+                best_val = current
+                best_params = tree_map(lambda a: mx.array(a), model.parameters())
+                since_improve = 0
+            else:
+                since_improve += 1
+                if since_improve >= patience:
+                    break  # early stop: validation loss plateaued
+
+    val_loss: float | None
+    if val_select and best_params is not None:
+        model.update(best_params)  # restore the best-by-val-loss checkpoint
+        mx.eval(model.parameters())  # noqa: S307
+        val_loss = best_val
+    else:
+        val_loss = _mean_val_loss()
 
     scenario = SCENARIO_REGISTRY[scenario_name]()
     metrics = assess_strategy_quality(
@@ -519,6 +571,7 @@ def _run_mlx_training(
     return {
         "avg_score": metrics["avg_score"],
         "valid_rate": metrics["valid_rate"],
+        "val_loss": float(val_loss) if val_loss is not None else float("nan"),
         "training_seconds": time.perf_counter() - started,
         "peak_memory_mb": min(_peak_memory_mb(), float(memory_limit_mb)),
         "num_steps": float(steps_completed),
@@ -563,6 +616,7 @@ def run_training(
     assess_samples: int = 8,
     assess_temperature: float = 0.0,
     assess_top_k: int = 0,
+    val_select: bool = False,
     backend: str = "mlx",
 ) -> dict[str, float]:
     normalized_backend = backend.strip().lower()
@@ -583,8 +637,13 @@ def run_training(
             assess_samples=assess_samples,
             assess_temperature=assess_temperature,
             assess_top_k=assess_top_k,
+            val_select=val_select,
         )
     if normalized_backend == "cuda":
+        if val_select:
+            raise ValueError(
+                "val_select (validation-based checkpoint selection) is currently MLX-only; omit it for the cuda backend"
+            )
         from autocontext.training.autoresearch.cuda import run_cuda_training
 
         return run_cuda_training(
@@ -624,6 +683,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="sampling temperature for assessment generation (<=0 = greedy; >0 enables diverse samples)",
     )
     parser.add_argument("--assess-top-k", type=int, default=0, help="optional top-k truncation when sampling")
+    parser.add_argument(
+        "--val-select",
+        action="store_true",
+        help="keep the best-by-validation-loss checkpoint and early-stop (MLX backend only)",
+    )
     return parser
 
 
@@ -644,6 +708,7 @@ def main(argv: list[str] | None = None) -> int:
             assess_samples=args.assess_samples,
             assess_temperature=args.assess_temperature,
             assess_top_k=args.assess_top_k,
+            val_select=args.val_select,
             backend=args.backend,
         )
     except Exception as exc:
@@ -660,6 +725,7 @@ def main(argv: list[str] | None = None) -> int:
             num_steps=int(metrics["num_steps"]),
             num_params_m=metrics["num_params_m"],
             depth=int(metrics["depth"]),
+            val_loss=metrics.get("val_loss"),
         )
     )
     return 0

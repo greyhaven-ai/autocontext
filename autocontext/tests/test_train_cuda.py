@@ -65,6 +65,20 @@ def test_run_training_routes_cuda_backend(tmp_path: Path) -> None:
     assert fwd["assess_top_k"] == 20
 
 
+def test_run_training_rejects_val_select_on_cuda(tmp_path: Path) -> None:
+    # val_select is MLX-only; the cuda path must reject it explicitly (not silently drop)
+    with pytest.raises(ValueError, match="MLX-only"):
+        train_module.run_training(
+            scenario_name="grid_ctf",
+            data_path=tmp_path / "training.jsonl",
+            output_dir=tmp_path / "out",
+            time_budget=1,
+            memory_limit_mb=1024,
+            backend="cuda",
+            val_select=True,
+        )
+
+
 def test_run_training_rejects_unknown_backend(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="unsupported training backend"):
         train_module.run_training(

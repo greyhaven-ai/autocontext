@@ -192,6 +192,73 @@ def test_run_training_mlx_end_to_end_smoke(tmp_path: str) -> None:
     assert (Path(tmp_path) / "out" / "model.safetensors").exists()
 
 
+def _write_grid_ctf_dataset(tmp_path: str):
+    import json
+    from pathlib import Path
+
+    # 6 records across two run_ids so load_jsonl yields a non-empty val split
+    records = [
+        {
+            "run_id": f"r{i % 2}",
+            "scenario": "grid_ctf",
+            "context": {"playbook": "p"},
+            "strategy": {"aggression": 0.5, "defense": 0.3},
+            "score": 0.5 + 0.01 * i,
+        }
+        for i in range(6)
+    ]
+    data_path = Path(tmp_path) / "data.jsonl"
+    data_path.write_text("\n".join(json.dumps(r) for r in records), encoding="utf-8")
+    return data_path
+
+
+def test_run_training_reports_validation_loss(tmp_path: str) -> None:
+    """run_training holds out the val split and reports a finite val_loss."""
+    import math
+    from pathlib import Path
+
+    from autocontext.training.autoresearch.train import run_training
+
+    metrics = run_training(
+        scenario_name="grid_ctf",
+        data_path=_write_grid_ctf_dataset(tmp_path),
+        output_dir=Path(tmp_path) / "out",
+        time_budget=30,
+        memory_limit_mb=4096,
+        train_steps=2,
+        batch_size=1,
+        seq_len=16,
+        assess_samples=1,
+        backend="mlx",
+    )
+    assert "val_loss" in metrics
+    assert math.isfinite(metrics["val_loss"])  # a held-out val split was scored
+
+
+def test_run_training_val_select_completes(tmp_path: str) -> None:
+    """val_select runs best-checkpoint selection + early stopping end-to-end."""
+    import math
+    from pathlib import Path
+
+    from autocontext.training.autoresearch.train import run_training
+
+    metrics = run_training(
+        scenario_name="grid_ctf",
+        data_path=_write_grid_ctf_dataset(tmp_path),
+        output_dir=Path(tmp_path) / "out",
+        time_budget=30,
+        memory_limit_mb=4096,
+        train_steps=3,
+        batch_size=1,
+        seq_len=16,
+        assess_samples=1,
+        val_select=True,
+        backend="mlx",
+    )
+    assert math.isfinite(metrics["val_loss"])
+    assert (Path(tmp_path) / "out" / "model.safetensors").exists()
+
+
 def test_checkpoint_save_load(tmp_path: str) -> None:
     """Model weights can be saved and loaded from a checkpoint."""
     from pathlib import Path

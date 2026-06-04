@@ -7,6 +7,7 @@ Orchestrates the autoresearch-style experiment loop:
 4. Optionally iterate with agent-proposed train.py revisions under keep/discard git control
 5. Return the best kept inference bundle path
 """
+
 from __future__ import annotations
 
 import logging
@@ -57,6 +58,7 @@ class TrainingConfig:
     backend: str = "mlx"
     agent_provider: str = "anthropic"
     agent_model: str = ""
+    val_select: bool = False  # keep best-by-validation-loss checkpoint + early stop (MLX only)
 
 
 @dataclass(slots=True)
@@ -368,6 +370,8 @@ class TrainingRunner:
             "--backend",
             self.config.backend,
         ]
+        if self.config.val_select:
+            command.append("--val-select")
         return subprocess.run(
             command,
             cwd=self.work_dir,
@@ -557,6 +561,7 @@ class TrainingRunner:
             training_metrics={
                 "avg_score": best_result.avg_score,
                 "valid_rate": best_result.valid_rate,
+                "val_loss": best_result.summary_metrics.get("val_loss", float("nan")),
                 "peak_memory_mb": best_result.peak_memory_mb,
                 "training_seconds": best_result.training_seconds,
                 "num_steps": best_result.summary_metrics.get("num_steps", 0.0),

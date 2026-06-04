@@ -903,6 +903,11 @@ def train(
     backend: str = typer.Option("mlx", "--backend", help="Training backend to publish and activate (mlx, cuda)"),
     agent_provider: str = typer.Option("anthropic", "--agent-provider", help="LLM provider for training agent"),
     agent_model: str = typer.Option("", "--agent-model", help="Model for training agent (empty = provider default)"),
+    val_select: bool = typer.Option(
+        False,
+        "--val-select",
+        help="Keep the best-by-validation-loss checkpoint and early-stop (MLX backend only)",
+    ),
     json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
 ) -> None:
     """Launch the autoresearch-style training loop."""
@@ -919,6 +924,7 @@ def train(
         backend=backend,
         agent_provider=agent_provider,
         agent_model=agent_model,
+        val_select=val_select,
     )
 
     try:

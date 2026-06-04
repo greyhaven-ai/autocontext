@@ -1,4 +1,5 @@
 """Tests for training loop runner (AC-179) and CLI command (AC-180)."""
+
 from __future__ import annotations
 
 import json
@@ -35,6 +36,7 @@ class TestTrainingConfig:
         assert cfg.backend == "mlx"
         assert cfg.agent_provider == "anthropic"
         assert cfg.agent_model == ""
+        assert cfg.val_select is False
 
     def test_custom_values(self) -> None:
         cfg = TrainingConfig(
@@ -597,14 +599,22 @@ class TestTrainCLI:
                 app,
                 [
                     "train",
-                    "--scenario", "grid_ctf",
-                    "--data", "data.jsonl",
-                    "--time-budget", "600",
-                    "--max-experiments", "50",
-                    "--memory-limit", "8192",
-                    "--backend", "cuda",
-                    "--agent-provider", "deterministic",
-                    "--agent-model", "custom-model",
+                    "--scenario",
+                    "grid_ctf",
+                    "--data",
+                    "data.jsonl",
+                    "--time-budget",
+                    "600",
+                    "--max-experiments",
+                    "50",
+                    "--memory-limit",
+                    "8192",
+                    "--backend",
+                    "cuda",
+                    "--agent-provider",
+                    "deterministic",
+                    "--agent-model",
+                    "custom-model",
                 ],
             )
             assert result.exit_code == 0, result.output
@@ -647,3 +657,27 @@ class TestTrainCLI:
             # Should not crash — graceful exit
             assert result.exit_code in (0, 1), result.output
             assert "interrupted" in result.output.lower() or "best" in result.output.lower() or result.exit_code == 1
+
+
+class TestValSelectSubprocess:
+    """val_select must reach the train.py subprocess (and stay off by default)."""
+
+    def _capture_command(self, tmp_path: Path, *, val_select: bool) -> list[str]:
+        cfg = TrainingConfig(
+            scenario="grid_ctf",
+            data_path=tmp_path / "data.jsonl",
+            val_select=val_select,
+        )
+        runner = TrainingRunner(cfg, work_dir=tmp_path / "workspace")
+        fake = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+        with patch("autocontext.training.runner.subprocess.run", return_value=fake) as mock_run:
+            runner._run_experiment_subprocess(0)
+        return list(mock_run.call_args.args[0])
+
+    def test_val_select_appends_flag(self, tmp_path: Path) -> None:
+        command = self._capture_command(tmp_path, val_select=True)
+        assert "--val-select" in command
+
+    def test_no_val_select_omits_flag(self, tmp_path: Path) -> None:
+        command = self._capture_command(tmp_path, val_select=False)
+        assert "--val-select" not in command
