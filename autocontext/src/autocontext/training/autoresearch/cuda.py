@@ -19,8 +19,7 @@ def require_torch_cuda() -> Any:
         import torch  # type: ignore[import-not-found]
     except ImportError as exc:
         raise RuntimeError(
-            "PyTorch with CUDA is required for --backend cuda. "
-            "Install a CUDA-enabled torch build before running CUDA training."
+            "PyTorch with CUDA is required for --backend cuda. Install a CUDA-enabled torch build before running CUDA training."
         ) from exc
 
     cuda_module = getattr(torch, "cuda", None)
@@ -176,24 +175,47 @@ def _generate_torch_strategy_text(
     device: Any,
     seed: int,
     max_new_tokens: int = 128,
+    temperature: float = 0.0,
+    top_k: int = 0,
 ) -> str:
-    prompt = (
-        f"<|scenario|>{_resolve_scenario_name(scenario)}"
-        f"<|context|>{_resolve_scenario_context(scenario)}"
-        "<|strategy|>"
-    )
+    from autocontext.training.autoresearch.prepare import generation_logit_mask_values
+
+    prompt = f"<|scenario|>{_resolve_scenario_name(scenario)}<|context|>{_resolve_scenario_context(scenario)}<|strategy|>"
     token_ids = list(tokenizer.encode(prompt))
     seq_len = int(model.cfg.seq_len)
+    vocab_size = int(getattr(model.cfg, "vocab_size", 0))
     end_token_id = getattr(tokenizer, "end_token_id", None)
     torch_module.manual_seed(seed)
+
+    # Mask phantom ids + structural specials (mirrors the MLX path) so neither
+    # greedy nor sampled generation emits an undecodable id or restarts the header.
+    mask = None
+    if vocab_size > 0:
+        mask = torch_module.tensor(
+            generation_logit_mask_values(tokenizer, vocab_size, block_structural_specials=True),
+            dtype=torch_module.float32,
+            device=device,
+        )
+    sampling = temperature is not None and temperature > 0.0
 
     model.eval()
     with torch_module.no_grad():
         for _ in range(max_new_tokens):
             window = token_ids[-seq_len:]
             x = torch_module.tensor([window], dtype=torch_module.long, device=device)
-            logits = model(x)
-            next_token = int(torch_module.argmax(logits[:, -1, :], dim=-1).item())
+            next_logits = model(x)[:, -1, :]
+            if mask is not None:
+                next_logits = next_logits + mask
+            if sampling:
+                scaled = next_logits / float(temperature)
+                if top_k and top_k > 0:
+                    k = min(int(top_k), int(scaled.shape[-1]))
+                    kth = torch_module.topk(scaled, k, dim=-1).values[..., -1, None]
+                    scaled = torch_module.where(scaled < kth, torch_module.full_like(scaled, float("-inf")), scaled)
+                probs = torch_module.softmax(scaled, dim=-1)
+                next_token = int(torch_module.multinomial(probs, num_samples=1).item())
+            else:
+                next_token = int(torch_module.argmax(next_logits, dim=-1).item())
             token_ids.append(next_token)
             if end_token_id is not None and next_token == end_token_id:
                 break
@@ -208,6 +230,8 @@ def _assess_torch_strategy_quality(
     torch_module: Any,
     device: Any,
     n_samples: int,
+    temperature: float = 0.0,
+    top_k: int = 0,
 ) -> dict[str, float]:
     scores: list[float] = []
     valid_count = 0
@@ -222,6 +246,8 @@ def _assess_torch_strategy_quality(
                 torch_module=torch_module,
                 device=device,
                 seed=i,
+                temperature=temperature,
+                top_k=top_k,
             )
             strategy = _extract_strategy_json(raw_output)
             if strategy is None:
@@ -254,12 +280,18 @@ def run_cuda_training(
     learning_rate: float = 1e-3,
     seq_len: int = 128,
     assess_samples: int = 8,
+    assess_temperature: float = 0.0,
+    assess_top_k: int = 0,
 ) -> dict[str, float]:
+    from autocontext.training.autoresearch.train import _preflight_backend_deps
+
+    _preflight_backend_deps("cuda")
     torch_module = require_torch_cuda()
     device = torch_module.device("cuda")
 
     from autocontext.scenarios import SCENARIO_REGISTRY
     from autocontext.training.autoresearch.train import ModelConfig, _all_records, _build_corpus, _peak_memory_mb
+
     try:
         from prepare import format_example, train_tokenizer  # type: ignore[import-not-found]
     except ImportError:
@@ -331,6 +363,8 @@ def run_cuda_training(
         torch_module=torch_module,
         device=device,
         n_samples=assess_samples,
+        temperature=assess_temperature,
+        top_k=assess_top_k,
     )
     _save_torch_checkpoint_bundle(
         model=model,

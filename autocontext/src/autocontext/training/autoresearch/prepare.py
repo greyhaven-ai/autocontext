@@ -9,6 +9,7 @@ It provides:
 
 MLX-dependent code is behind import guards.
 """
+
 from __future__ import annotations
 
 import base64
@@ -49,9 +50,7 @@ _BPE_PAT = (
 def build_special_tokens(base_vocab_size: int) -> dict[str, int]:
     """Map the autoresearch special tokens above the base tokenizer range."""
 
-    return {
-        token: base_vocab_size + offset for offset, token in enumerate(SPECIAL_TOKEN_STRINGS)
-    }
+    return {token: base_vocab_size + offset for offset, token in enumerate(SPECIAL_TOKEN_STRINGS)}
 
 
 def total_vocab_size(base_vocab_size: int) -> int:
@@ -71,10 +70,7 @@ def serialize_tokenizer(tokenizer: Any) -> dict[str, Any]:
 
     pat_str = getattr(encoding, "_pat_str", _BPE_PAT)
     base_vocab_size = int(getattr(tokenizer, "base_vocab_size", BASE_VOCAB_SIZE))
-    encoded_ranks = {
-        base64.b64encode(token_bytes).decode("ascii"): token_id
-        for token_bytes, token_id in mergeable_ranks.items()
-    }
+    encoded_ranks = {base64.b64encode(token_bytes).decode("ascii"): token_id for token_bytes, token_id in mergeable_ranks.items()}
     return {
         "type": "BPE",
         "base_vocab_size": base_vocab_size,
@@ -102,6 +98,54 @@ def _extract_strategy_json(text: str) -> dict[str, Any] | None:
         return json.loads(text)  # type: ignore[no-any-return]
     except json.JSONDecodeError:
         return None
+
+
+def decodable_vocab_size(tokenizer: Any) -> int:
+    """Number of real, decodable BPE base tokens the tokenizer learned.
+
+    On small corpora the BPE trainer learns fewer than ``base_vocab_size`` merges,
+    leaving a gap of ids in ``[n_learned, base_vocab_size)`` that the underlying
+    tiktoken encoding cannot decode (``decode`` raises ``KeyError``). Sampling must
+    not emit ids in that gap. Returns ``max(rank) + 1`` over the mergeable ranks,
+    falling back to ``base_vocab_size`` when the ranks are unavailable.
+    """
+    enc = getattr(tokenizer, "_encoding", None)
+    ranks = getattr(enc, "_mergeable_ranks", None)
+    if isinstance(ranks, dict) and ranks:
+        return int(max(ranks.values())) + 1
+    base = getattr(tokenizer, "base_vocab_size", None)
+    return int(base) if base else BASE_VOCAB_SIZE
+
+
+def generation_logit_mask_values(
+    tokenizer: Any,
+    vocab_size: int,
+    *,
+    block_structural_specials: bool = True,
+) -> list[float]:
+    """Additive logit-mask values (0.0 = allowed, -1e9 = blocked).
+
+    Always blocks the phantom-id gap ``[decodable_vocab_size, base_vocab_size)``
+    that the tokenizer cannot decode, so neither training-time assessment nor
+    ``MLXProvider`` inference can sample an id that later crashes ``decode``.
+
+    When ``block_structural_specials`` is true (training assessment) it also blocks
+    the ``<|scenario|>`` / ``<|context|>`` / ``<|strategy|>`` tokens so a generated
+    body cannot restart the header. Providers doing general completion pass
+    ``False`` to leave all (decodable) special tokens available.
+    """
+    base = int(getattr(tokenizer, "base_vocab_size", BASE_VOCAB_SIZE))
+    n_base = decodable_vocab_size(tokenizer)
+    mask = [0.0] * vocab_size
+    for i in range(max(0, n_base), min(base, vocab_size)):
+        mask[i] = -1e9
+    if block_structural_specials:
+        specials = build_special_tokens(base)
+        for name in ("<|scenario|>", "<|context|>", "<|strategy|>"):
+            sid = specials.get(name)
+            if sid is not None and 0 <= sid < vocab_size:
+                mask[sid] = -1e9
+    return mask
 
 
 # ---------------------------------------------------------------------------
@@ -240,7 +284,6 @@ def train_tokenizer(corpus_path: Path, vocab_size: int = BASE_VOCAB_SIZE) -> Aut
 
 
 if HAS_MLX:
-
     # -----------------------------------------------------------------------
     # 4. Dataloader (MLX arrays)
     # -----------------------------------------------------------------------
@@ -292,6 +335,9 @@ if HAS_MLX:
         tokenizer: Any,
         scenario: Any,
         n_samples: int = 10,
+        temperature: float = 0.0,
+        top_k: int = 0,
+        seed_base: int = 0,
     ) -> dict[str, float]:
         """Assess model quality by generating strategies and scoring them.
 
@@ -309,6 +355,15 @@ if HAS_MLX:
             A scenario instance (game or agent task).
         n_samples:
             Number of strategies to generate and evaluate.
+        temperature:
+            Sampling temperature. ``<= 0`` (default) is greedy/deterministic, in
+            which case every sample is identical; ``> 0`` draws diverse samples so
+            the diversity of the model's output is actually measured.
+        top_k:
+            Optional top-k truncation applied when sampling.
+        seed_base:
+            Offset added to the per-sample seed (lets callers vary draws across
+            rounds without colliding).
 
         Returns
         -------
@@ -325,7 +380,9 @@ if HAS_MLX:
                     model=model,
                     tokenizer=tokenizer,
                     scenario=scenario,
-                    seed=i,
+                    seed=seed_base + i,
+                    temperature=temperature,
+                    top_k=top_k,
                 )
                 strategy = _extract_strategy_json(raw_output)
 
@@ -351,6 +408,15 @@ if HAS_MLX:
             "valid_rate": valid_rate,
         }
 
+    def _generation_logit_mask(tokenizer: Any, vocab_size: int) -> Any:
+        """MLX additive logit mask for training-time assessment generation.
+
+        Wraps the shared :func:`generation_logit_mask_values` (blocks the phantom-id
+        gap and the structural scenario/context/strategy tokens; ``<|score|>`` and
+        ``<|end|>`` remain allowed as stops).
+        """
+        return mx.array(generation_logit_mask_values(tokenizer, vocab_size, block_structural_specials=True))
+
     def _generate_strategy_text(
         *,
         model: Any,
@@ -358,27 +424,45 @@ if HAS_MLX:
         scenario: Any,
         seed: int,
         max_new_tokens: int = 128,
+        temperature: float = 0.0,
+        top_k: int = 0,
     ) -> str:
-        """Generate a candidate strategy from the model with a deterministic prompt."""
+        """Generate a candidate strategy from the model.
+
+        ``temperature <= 0`` (default) uses greedy argmax and is deterministic.
+        ``temperature > 0`` samples from the (optionally top-k truncated) softmax,
+        seeded by ``seed`` so distinct seeds yield diverse completions. In both
+        modes a vocab/special-token mask keeps generation within decodable ids and
+        prevents the body from re-emitting structural header tokens.
+        """
 
         if not hasattr(model, "cfg"):
             # Test doubles may not expose a sampling surface; fall back to the tokenizer stub.
             return cast(str, tokenizer.decode([seed] * 32))
 
-        prompt = (
-            f"<|scenario|>{_resolve_scenario_name(scenario)}"
-            f"<|context|>{_resolve_scenario_context(scenario)}"
-            "<|strategy|>"
-        )
+        prompt = f"<|scenario|>{_resolve_scenario_name(scenario)}<|context|>{_resolve_scenario_context(scenario)}<|strategy|>"
         token_ids = list(tokenizer.encode(prompt))
         seq_len = int(model.cfg.seq_len)
+        vocab_size = int(getattr(model.cfg, "vocab_size", total_vocab_size(BASE_VOCAB_SIZE)))
         end_token_id = getattr(tokenizer, "end_token_id", None)
+        mask = _generation_logit_mask(tokenizer, vocab_size)
+        sampling = temperature is not None and temperature > 0.0
+        if sampling:
+            mx.random.seed(int(seed))
 
         for _ in range(max_new_tokens):
             window = token_ids[-seq_len:]
             x = mx.array([window], dtype=mx.int32)
-            logits = model(x)
-            next_token = int(mx.argmax(logits[:, -1, :], axis=-1).item())
+            logits = model(x)[0, -1, :] + mask  # [vocab]
+            if sampling:
+                logits = logits / float(temperature)
+                if top_k and top_k > 0:
+                    k = min(int(top_k), int(logits.shape[-1]))
+                    kth = mx.sort(logits)[-k]
+                    logits = mx.where(logits < kth, mx.full(logits.shape, -1e9, dtype=logits.dtype), logits)
+                next_token = int(mx.random.categorical(logits).item())
+            else:
+                next_token = int(mx.argmax(logits, axis=-1).item())
             token_ids.append(next_token)
             if end_token_id is not None and next_token == end_token_id:
                 break

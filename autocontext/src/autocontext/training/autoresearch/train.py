@@ -4,9 +4,11 @@ All MLX code is behind import guards so the module can be imported
 (for type checking, tests, etc.) even when MLX is not installed. CUDA support
 imports PyTorch only inside the CUDA execution path.
 """
+
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import logging
 import math
@@ -428,7 +430,10 @@ def _run_mlx_training(
     learning_rate: float = 1e-3,
     seq_len: int = 128,
     assess_samples: int = 8,
+    assess_temperature: float = 0.0,
+    assess_top_k: int = 0,
 ) -> dict[str, float]:
+    _preflight_backend_deps("mlx")
     if not HAS_MLX:
         raise RuntimeError("MLX is required for local training. Install with: uv sync --group dev --extra mlx")
 
@@ -437,6 +442,7 @@ def _run_mlx_training(
     import mlx.optimizers as optim  # type: ignore[import-not-found]
 
     from autocontext.scenarios import SCENARIO_REGISTRY
+
     try:
         from prepare import (  # type: ignore[import-not-found]
             assess_strategy_quality,
@@ -501,6 +507,8 @@ def _run_mlx_training(
         tokenizer=tokenizer,
         scenario=scenario,
         n_samples=assess_samples,
+        temperature=assess_temperature,
+        top_k=assess_top_k,
     )
     save_inference_bundle(model, cfg, tokenizer, output_dir)
 
@@ -515,6 +523,28 @@ def _run_mlx_training(
     }
 
 
+def _preflight_backend_deps(backend: str) -> None:
+    """Fail fast if a backend's runtime dependencies are missing.
+
+    Training runs do work for tens of seconds before the checkpoint is written,
+    so a missing ``numpy``/``safetensors`` used only at save time would otherwise
+    crash *after* all that work. Check imports up front with an actionable message.
+    """
+
+    required = {
+        "mlx": ["mlx", "rustbpe", "tiktoken", "numpy", "safetensors"],
+        "cuda": ["torch", "numpy", "safetensors"],
+    }.get(backend, [])
+    missing = [m for m in required if importlib.util.find_spec(m) is None]
+    if missing:
+        extra = "mlx" if backend == "mlx" else "cuda"
+        lead = {
+            "mlx": "MLX is required for local training",
+            "cuda": "CUDA (torch) is required for local training",
+        }.get(backend, f"missing dependencies for '{backend}' training backend")
+        raise RuntimeError(f"{lead}; missing: {', '.join(missing)}. Install with: uv sync --group dev --extra {extra}")
+
+
 def run_training(
     *,
     scenario_name: str,
@@ -527,9 +557,14 @@ def run_training(
     learning_rate: float = 1e-3,
     seq_len: int = 128,
     assess_samples: int = 8,
+    assess_temperature: float = 0.0,
+    assess_top_k: int = 0,
     backend: str = "mlx",
 ) -> dict[str, float]:
     normalized_backend = backend.strip().lower()
+    # Dependency preflight runs inside each backend entry (_run_mlx_training /
+    # run_cuda_training) so routing/dispatch stays importable and unit-testable
+    # without the optional extras installed.
     if normalized_backend == "mlx":
         return _run_mlx_training(
             scenario_name=scenario_name,
@@ -542,6 +577,8 @@ def run_training(
             learning_rate=learning_rate,
             seq_len=seq_len,
             assess_samples=assess_samples,
+            assess_temperature=assess_temperature,
+            assess_top_k=assess_top_k,
         )
     if normalized_backend == "cuda":
         from autocontext.training.autoresearch.cuda import run_cuda_training
@@ -557,6 +594,8 @@ def run_training(
             learning_rate=learning_rate,
             seq_len=seq_len,
             assess_samples=assess_samples,
+            assess_temperature=assess_temperature,
+            assess_top_k=assess_top_k,
         )
     raise ValueError("unsupported training backend: expected 'mlx' or 'cuda'")
 
@@ -574,6 +613,13 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--learning-rate", type=float, default=1e-3)
     parser.add_argument("--seq-len", type=int, default=128)
     parser.add_argument("--assess-samples", type=int, default=8)
+    parser.add_argument(
+        "--assess-temperature",
+        type=float,
+        default=0.0,
+        help="sampling temperature for assessment generation (<=0 = greedy; >0 enables diverse samples)",
+    )
+    parser.add_argument("--assess-top-k", type=int, default=0, help="optional top-k truncation when sampling")
     return parser
 
 
@@ -592,6 +638,8 @@ def main(argv: list[str] | None = None) -> int:
             learning_rate=args.learning_rate,
             seq_len=args.seq_len,
             assess_samples=args.assess_samples,
+            assess_temperature=args.assess_temperature,
+            assess_top_k=args.assess_top_k,
             backend=args.backend,
         )
     except Exception as exc:

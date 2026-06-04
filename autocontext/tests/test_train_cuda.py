@@ -1,4 +1,5 @@
 """CUDA backend routing tests for autoresearch training."""
+
 from __future__ import annotations
 
 import sys
@@ -42,6 +43,8 @@ def test_parser_accepts_cuda_backend() -> None:
 
 
 def test_run_training_routes_cuda_backend(tmp_path: Path) -> None:
+    # Routing/dispatch must work without the cuda extras installed: the dependency
+    # preflight runs inside run_cuda_training (patched here), not in run_training.
     with patch.object(cuda_module, "run_cuda_training", return_value=_summary_metrics()) as run_cuda:
         result = train_module.run_training(
             scenario_name="grid_ctf",
@@ -50,10 +53,16 @@ def test_run_training_routes_cuda_backend(tmp_path: Path) -> None:
             time_budget=1,
             memory_limit_mb=1024,
             backend="cuda",
+            assess_temperature=1.2,
+            assess_top_k=20,
         )
 
     assert result["num_steps"] == 2.0
     run_cuda.assert_called_once()
+    # sampling params are forwarded to the CUDA backend, not silently dropped
+    fwd = run_cuda.call_args.kwargs
+    assert fwd["assess_temperature"] == 1.2
+    assert fwd["assess_top_k"] == 20
 
 
 def test_run_training_rejects_unknown_backend(tmp_path: Path) -> None:
