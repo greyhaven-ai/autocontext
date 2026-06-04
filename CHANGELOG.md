@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- autoresearch generation sampling controls. `assess_strategy_quality` and the local-training generator (`prepare._generate_strategy_text`) now accept `temperature`, `top_k`, and a per-sample seed, threaded through `run_training` / `_run_mlx_training` and exposed as `--assess-temperature` / `--assess-top-k` on the train CLI. The default is `temperature=0.0` (greedy and deterministic, byte-identical to prior behavior), so diverse assessment is opt-in: pass a positive temperature to draw varied samples and let the oracle measure generation diversity. The CUDA backend (`run_cuda_training`) threads the same controls through its torch generator for parity.
+
+### Fixed
+
+- autoresearch assessment generation collapsed on structured-output scenarios. Greedy argmax with no per-sample seed produced N identical completions, and for JSON-style strategies it decoded into the most frequent special token, yielding `valid_rate=0`. A shared, pure `generation_logit_mask_values` now blocks both the undecodable phantom-id gap (when the BPE learns fewer merges than `base_vocab_size`, sampling those ids previously raised `KeyError: Invalid token for decoding`) and the structural `<|scenario|>` / `<|context|>` / `<|strategy|>` tokens. The mask is applied in both the greedy and sampling paths and is reused by `MLXProvider` inference so saved bundles cannot sample an undecodable id at serving time.
+- the `mlx` optional-dependency extra was missing `numpy`, so `save_checkpoint` crashed at the end of every local training run. The extra now installs `mlx`, `rustbpe`, `tiktoken`, `safetensors`, and `numpy`, and the lockfile is regenerated to match.
+- `run_training` now runs a backend dependency preflight inside each backend entry, failing fast with an actionable install hint (`uv sync --group dev --extra mlx`) instead of crashing partway through a run when a backend dependency is absent.
+
 ## [0.6.0] - 2026-06-02
 
 Two ticket series closed end-to-end in this release:
