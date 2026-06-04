@@ -27,7 +27,26 @@ def test_select_top_fraction_full_is_noop_preserving_order() -> None:
 
 def test_select_top_fraction_keeps_at_least_one() -> None:
     records = [_rec({"a": i}, i) for i in range(5)]
-    assert len(select_top_fraction(records, 0.0)) == 1
+    # a valid tiny fraction still keeps at least one record
+    assert len(select_top_fraction(records, 0.01)) == 1
+
+
+def test_select_top_fraction_rejects_out_of_range() -> None:
+    import pytest
+
+    records = [_rec({"a": i}, i) for i in range(5)]
+    for bad in (0.0, -1.0, 1.5):
+        with pytest.raises(ValueError, match="fraction"):
+            select_top_fraction(records, bad)
+
+
+def test_dedupe_rejects_out_of_range_threshold() -> None:
+    import pytest
+
+    records = [_rec({"a": 1}, 0.5)]
+    for bad in (0.0, -0.1, 1.5):
+        with pytest.raises(ValueError, match="near_threshold"):
+            dedupe_records(records, near_threshold=bad)
 
 
 def test_dedupe_exact_keeps_highest_score() -> None:

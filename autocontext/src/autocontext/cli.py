@@ -924,6 +924,12 @@ def train(
     """Launch the autoresearch-style training loop."""
     from autocontext.training.runner import TrainingConfig
 
+    # Fail fast on out-of-range curation values before any workspace/subprocess setup.
+    if not 0.0 < elite_fraction <= 1.0:
+        raise typer.BadParameter(f"--elite-fraction must be in (0, 1], got {elite_fraction}")
+    if not 0.0 < dedupe_near_threshold <= 1.0:
+        raise typer.BadParameter(f"--dedupe-near-threshold must be in (0, 1], got {dedupe_near_threshold}")
+
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
     config = TrainingConfig(

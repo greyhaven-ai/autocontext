@@ -59,7 +59,12 @@ def dedupe_records(records: Sequence[dict[str, Any]], *, near_threshold: float =
     whose strategy shingle-Jaccard similarity to an already-kept record is at least
     the threshold. Order of survivors follows descending score so the strongest
     representative of each group is the one retained.
+
+    Raises ``ValueError`` for ``near_threshold`` outside ``(0, 1]`` (a threshold of
+    0 would collapse all records to a single representative).
     """
+    if not 0.0 < near_threshold <= 1.0:
+        raise ValueError(f"near_threshold must be in (0, 1], got {near_threshold}")
     # Sort by score desc so the first record seen for any (near-)duplicate group is
     # the best one; ties keep original order (stable sort).
     ordered = sorted(records, key=_score, reverse=True)
@@ -85,15 +90,20 @@ def dedupe_records(records: Sequence[dict[str, Any]], *, near_threshold: float =
 def select_top_fraction(records: Sequence[dict[str, Any]], fraction: float) -> list[dict[str, Any]]:
     """Keep the highest-scoring ``fraction`` of records (at least one).
 
-    ``fraction >= 1.0`` returns all records unchanged (preserving order); otherwise
+    ``fraction == 1.0`` returns all records unchanged (preserving order); otherwise
     the top ``ceil(n * fraction)`` records by score are returned, highest first.
+
+    Raises ``ValueError`` for ``fraction`` outside ``(0, 1]`` rather than clamping
+    (a clamped fraction would silently collapse the dataset to its single top record).
     """
-    if fraction >= 1.0:
+    if not 0.0 < fraction <= 1.0:
+        raise ValueError(f"fraction must be in (0, 1], got {fraction}")
+    if fraction == 1.0:
         return list(records)
     n = len(records)
     if n == 0:
         return []
-    keep = max(1, math.ceil(n * max(fraction, 0.0)))
+    keep = max(1, math.ceil(n * fraction))
     return sorted(records, key=_score, reverse=True)[:keep]
 
 
