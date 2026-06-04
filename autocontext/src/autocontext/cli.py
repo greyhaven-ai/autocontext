@@ -904,9 +904,7 @@ def train(
     agent_provider: str = typer.Option("anthropic", "--agent-provider", help="LLM provider for training agent"),
     agent_model: str = typer.Option("", "--agent-model", help="Model for training agent (empty = provider default)"),
     val_select: bool = typer.Option(
-        False,
-        "--val-select",
-        help="Keep the best-by-validation-loss checkpoint and early-stop (MLX backend only)",
+        False, "--val-select", help="Keep the best-by-validation-loss checkpoint and early-stop (MLX only)"
     ),
     elite_fraction: float = typer.Option(
         1.0, "--elite-fraction", help="Train on only the top fraction of records by score (1.0 = all)"
@@ -915,14 +913,10 @@ def train(
         False, "--dedupe", help="Drop duplicate constructions, keeping the highest-scoring representative"
     ),
     dedupe_near_threshold: float = typer.Option(
-        1.0,
-        "--dedupe-near-threshold",
-        help="With --dedupe, also drop near-duplicates at/above this similarity (1.0 = exact only)",
+        1.0, "--dedupe-near-threshold", help="With --dedupe, also drop near-duplicates at/above this similarity"
     ),
     score_conditioned: bool = typer.Option(
-        False,
-        "--score-conditioned",
-        help="Emit a quality control token and generate conditioned on the top quality bucket",
+        False, "--score-conditioned", help="Emit a quality control token; generate conditioned on the top bucket"
     ),
     json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
 ) -> None:

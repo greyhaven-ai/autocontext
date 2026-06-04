@@ -716,40 +716,15 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--learning-rate", type=float, default=1e-3)
     parser.add_argument("--seq-len", type=int, default=128)
     parser.add_argument("--assess-samples", type=int, default=8)
-    parser.add_argument(
-        "--assess-temperature",
-        type=float,
-        default=0.0,
-        help="sampling temperature for assessment generation (<=0 = greedy; >0 enables diverse samples)",
-    )
+    parser.add_argument("--assess-temperature", type=float, default=0.0, help="assessment sampling temp (<=0 greedy)")
     parser.add_argument("--assess-top-k", type=int, default=0, help="optional top-k truncation when sampling")
+    parser.add_argument("--val-select", action="store_true", help="keep best-by-val-loss checkpoint + early-stop (MLX)")
+    parser.add_argument("--elite-fraction", type=float, default=1.0, help="train on only the top fraction by score")
+    parser.add_argument("--dedupe", action="store_true", help="drop duplicate constructions (keep highest-scoring)")
     parser.add_argument(
-        "--val-select",
-        action="store_true",
-        help="keep the best-by-validation-loss checkpoint and early-stop (MLX backend only)",
+        "--dedupe-near-threshold", type=float, default=1.0, help="with --dedupe, drop near-dups at/above this similarity"
     )
-    parser.add_argument(
-        "--elite-fraction",
-        type=float,
-        default=1.0,
-        help="train on only the top fraction of records by score (1.0 = all)",
-    )
-    parser.add_argument(
-        "--dedupe",
-        action="store_true",
-        help="drop duplicate constructions, keeping the highest-scoring representative",
-    )
-    parser.add_argument(
-        "--dedupe-near-threshold",
-        type=float,
-        default=1.0,
-        help="with --dedupe, also drop near-duplicates at/above this shingle-Jaccard similarity (1.0 = exact only)",
-    )
-    parser.add_argument(
-        "--score-conditioned",
-        action="store_true",
-        help="emit a quality control token before the strategy and generate conditioned on the top quality bucket",
-    )
+    parser.add_argument("--score-conditioned", action="store_true", help="emit quality token; generate conditioned on top bucket")
     return parser
 
 
