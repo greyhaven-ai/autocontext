@@ -64,6 +64,8 @@ If you already work inside a coding agent, you can wire autocontext in once and 
 pi install npm:pi-autocontext@0.2.5
 ```
 
+Pi is on a separate package line: `pi-autocontext@0.2.5` currently depends on `autoctx@^0.5.1`. Use it for the current Pi tools/skills, and use `autocontext==0.6.0` or `autoctx@0.6.0` directly when you need the 0.6 runtime features until the next Pi extension release updates its bundled TypeScript dependency.
+
 Then you just ask:
 
 > "Solve: improve customer-support replies for billing disputes."
@@ -216,7 +218,10 @@ uv run autoctx train --scenario support_triage --data training/billing.jsonl --t
 - **CLI contract parity** aligns the Python and TypeScript `autoctx` command surfaces around the shared canonical contract, including capabilities, mission lifecycle commands, queue commands, scenario creation, serve/MCP paths, show/watch, status behavior, and aliases.
 - **Contract probes** add terminal, directory, service, artifact, cleanup, media, and distributed probe families, plus `autoctx probes check` and `autoctx probes extract` for harness verification.
 - **Mission checkpoints** now share a cross-runtime checkpoint contract with collision-free filenames, camelCase/snake_case loader interop, atomic restore behavior, and async-boundary guards.
-- **Training pipeline work** on `main` adds opt-in teacher-reasoning distillation, sampling controls, MLX-LM fine-tuning, score-conditioned generation, reward-weighted loss, and self-improving local-training loops. See [CHANGELOG.md](CHANGELOG.md) and [autocontext.ai/docs/changelog](https://autocontext.ai/docs/changelog).
+
+## On main (unreleased)
+
+- **Training pipeline work** adds opt-in teacher-reasoning distillation, sampling controls, MLX-LM fine-tuning, score-conditioned generation, reward-weighted loss, and self-improving local-training loops. These features are on `main` and in [CHANGELOG.md](CHANGELOG.md), but they are not included in the pinned `0.6.0` packages yet.
 <!-- autocontext-whats-new:end -->
 
 ## Choose Your Package
@@ -241,7 +246,7 @@ bun add -g autoctx@0.6.0
 pi install npm:pi-autocontext@0.2.5
 ```
 
-> The PyPI package is `autocontext`. The CLI entrypoint is `autoctx`. The npm packages are `autoctx` and `pi-autocontext` (note: an unrelated package on npm uses the name `autocontext`; that is not this project).
+> The PyPI package is `autocontext`. The CLI entrypoint is `autoctx`. The npm packages are `autoctx` and `pi-autocontext` (note: an unrelated package on npm uses the name `autocontext`; that is not this project). `pi-autocontext@0.2.5` currently depends on `autoctx@^0.5.1`; it remains the current Pi extension package, but it does not bundle `autoctx@0.6.0` until the next Pi package release.
 
 ## Surfaces
 

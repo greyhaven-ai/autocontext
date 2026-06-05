@@ -10,7 +10,7 @@ The intended use is to hand the harness a real task in plain language, let it so
 pip install autocontext
 ```
 
-The current PyPI release line is `autocontext==0.5.0`.
+The current PyPI release line is `autocontext==0.6.0`.
 The PyPI package name is now `autocontext`. The CLI entrypoint remains `autoctx`.
 
 ## Working Directory
@@ -35,7 +35,7 @@ The Python package is the full control-plane surface in this repo. It currently 
 - plain-language investigation via `autoctx investigate`
 - local training workflows via `autoctx export-training-data` and `autoctx train`
 - scenario creation and materialization via `autoctx new-scenario`
-- Hermes Agent integration helpers via `autoctx hermes inspect` and `autoctx hermes export-skill` (with optional `--with-references` for progressive-disclosure reference files; AC-702)
+- Hermes Agent integration helpers via `autoctx hermes inspect` and `autoctx hermes export-skill` (with optional `--with-references` for progressive-disclosure reference files)
 - HTTP API and MCP server surfaces via `autoctx serve` and `autoctx mcp-serve`, including runtime-session log and timeline readers for provider-backed runs
 
 Some newer operator-facing surfaces are currently TypeScript-first:
@@ -242,7 +242,7 @@ uv run autoctx solve "improve customer-support replies for billing disputes" --i
 
 ## Contract Probes
 
-`uv run autoctx probes check --suite <path>` runs the AC-728 contract-probe suite against observed harness state and reports per-probe pass/fail. It exits 0 on a full pass and 1 on any failure or any load / parse error. Default output is human-readable; pass `--json` to emit a structured `ContractProbeSuiteResult` payload (`{passed, results: [{kind, label?, passed, failures: [{kind, message, ...}]}]}`) that downstream tools can consume. On load / parse / validation failure, the typer wrapper writes the actionable error to stderr so `--json` consumers can safely parse stdout.
+`uv run autoctx probes check --suite <path>` runs the contract-probe suite against observed harness state and reports per-probe pass/fail. It exits 0 on a full pass and 1 on any failure or any load / parse error. Default output is human-readable; pass `--json` to emit a structured `ContractProbeSuiteResult` payload (`{passed, results: [{kind, label?, passed, failures: [{kind, message, ...}]}]}`) that downstream tools can consume. On load / parse / validation failure, the typer wrapper writes the actionable error to stderr so `--json` consumers can safely parse stdout.
 
 The suite file is a JSON document validated by `ContractProbeSuiteSchema`. Every nested model is strict: unknown keys (for example a typo like `requiredStdoutPattern` missing the trailing `s`) fail validation rather than silently disappearing. Required observation fields (`presentFiles`, `observed`, `entries`, `ranks`) must be present and primitives are not coerced (`"exitCode": "0"` rejects). Optional expectation fields accept omission but not explicit `null`.
 
@@ -468,7 +468,7 @@ autocontext exposes:
 
 ## OpenAI integration
 
-Autocontext ships a zero-configuration OpenAI instrumentation path that
+autocontext ships a zero-configuration OpenAI instrumentation path that
 automatically wraps your existing `OpenAI(...)` calls and emits structured
 traces to a sink of your choice.
 
@@ -582,7 +582,7 @@ For the TypeScript equivalent, see `ts/src/integrations/openai/STABILITY.md`.
 
 ## Anthropic integration
 
-Autocontext ships a zero-configuration Anthropic instrumentation path that
+autocontext ships a zero-configuration Anthropic instrumentation path that
 automatically wraps your existing `Anthropic(...)` calls and emits structured
 traces to a sink of your choice.
 

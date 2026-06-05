@@ -147,7 +147,7 @@ export function register(api) {
 npm install autoctx
 ```
 
-The current npm release line is `autoctx@0.5.0`.
+The current npm release line is `autoctx@0.6.0`.
 Important: use `autoctx`, not `autocontext`.
 `autocontext` on npm is a different package and not this project.
 
@@ -293,7 +293,7 @@ autoctx analyze --id deploy_sim --type simulation
 autoctx analyze --left sim_a --right sim_b --type simulation
 autoctx trace-findings --trace ./trace.json          # Markdown report
 autoctx trace-findings --trace ./trace.json --json   # TraceFindingReport JSON
-autoctx probes check --suite ./suite.json            # AC-728 contract probes (see Contract Probes below)
+autoctx probes check --suite ./suite.json            # contract probes (see Contract Probes below)
 autoctx probes check --suite ./suite.json --json     # structured ContractProbeSuiteResult
 autoctx probes extract --trace ./trace.json          # synthesize a probe suite from a harness trace
 autoctx probes extract --trace ./trace.json --output ./suite.json
@@ -324,7 +324,7 @@ Stateful persistent providers, including persistent Pi RPC, run with effective w
 
 ## Contract Probes
 
-`autoctx probes check --suite <path>` runs the AC-728 contract-probe suite against observed harness state and reports per-probe pass/fail. It exits 0 on a full pass and 1 on any failure or any load / parse error. Default output is human-readable; pass `--json` to emit a structured `ContractProbeSuiteResult` payload that downstream tools can consume.
+`autoctx probes check --suite <path>` runs the contract-probe suite against observed harness state and reports per-probe pass/fail. It exits 0 on a full pass and 1 on any failure or any load / parse error. Default output is human-readable; pass `--json` to emit a structured `ContractProbeSuiteResult` payload that downstream tools can consume.
 
 The suite file is a JSON document validated by `ContractProbeSuiteSchema`. Every nested object is strict: unknown keys (e.g. a typo like `requiredStdoutPattern` missing the trailing `s`) fail validation rather than silently disappearing. Every declared expectation requires the matching observation; an `expected*` field without its observation fails as `missing-observation` rather than silently passing.
 
@@ -403,7 +403,7 @@ The `results` field is a discriminated union by `kind`, so TypeScript callers ca
 
 For workflows that record a run and then verify it (rather than hand-authoring a suite), `autoctx probes extract --trace <path>` synthesizes a runnable probe suite from a harness-trace JSON file. The trace bundles both `observations` (what actually happened) and optional `expectations` (what the operator declared should have happened); the extractor joins them.
 
-Coverage: all seven AC-728 probe kinds (terminal, directory, service, artifact, cleanup, media, distributed). Orphan expectations (declared without a matching observation) fail validation at parse time rather than silently producing a vacuously-passing suite.
+Coverage: all seven probe kinds (terminal, directory, service, artifact, cleanup, media, distributed). Orphan expectations (declared without a matching observation) fail validation at parse time rather than silently producing a vacuously-passing suite.
 
 Minimal trace example:
 
@@ -794,7 +794,7 @@ The TypeScript package includes the current 0.4.x operator-facing surfaces:
 - `investigate`
 - `analyze`
 - `context-selection`
-- `trace-findings` — extract structured findings (`TraceFindingReport`) from a `PublicTrace` JSON file (AC-679)
+- `trace-findings` — extract structured findings (`TraceFindingReport`) from a `PublicTrace` JSON file
 - `mission`
 - `train` as a validation plus executor-hook surface
 
@@ -829,7 +829,7 @@ These workflows require infrastructure not available in the npm package:
 
 ## OpenAI integration
 
-Autocontext ships a zero-configuration OpenAI instrumentation path that
+autocontext ships a zero-configuration OpenAI instrumentation path that
 automatically wraps your existing `new OpenAI(...)` calls and emits structured
 traces to a sink of your choice.
 
@@ -945,7 +945,7 @@ For the Python equivalent, see
 
 ## Anthropic integration
 
-Autocontext ships a zero-configuration Anthropic instrumentation path that
+autocontext ships a zero-configuration Anthropic instrumentation path that
 automatically wraps your existing `new Anthropic(...)` calls and emits structured
 traces to a sink of your choice.
 
