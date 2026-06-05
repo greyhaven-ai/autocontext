@@ -52,6 +52,24 @@ def _write_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
     path.write_text("\n".join(json.dumps(r) for r in records) + "\n", encoding="utf-8")
 
 
+def representative_context(records: list[dict[str, Any]]) -> Any:
+    """The most common ``context`` among seed records (canonical-JSON keyed).
+
+    Generated samples are produced from a scenario-level prompt and carry no
+    per-record context of their own, so the loop stamps them with the seed
+    dataset's dominant context. That keeps every training example on the same
+    context prefix instead of mixing the seed records' rich playbook/hints
+    context with empty ``{}`` prefixes for generated examples (which would train
+    context-rich scenarios on a split distribution).
+    """
+    from collections import Counter
+
+    if not records:
+        return {}
+    counts = Counter(json.dumps(r.get("context", {}), sort_keys=True) for r in records)
+    return json.loads(counts.most_common(1)[0][0])
+
+
 def run_self_improving_loop(
     *,
     scenario_name: str,
@@ -70,13 +88,36 @@ def run_self_improving_loop(
     dedupe_near_threshold: float = 1.0,
     time_budget: int = 600,
     memory_limit_mb: int = 16384,
+    final_train: bool = True,
+    generated_context: Any = None,
 ) -> dict[str, Any]:
     """Run the ReST-EM self-improving loop on the MLX backend.
 
+    Each round trains on the current dataset, samples + scores constructions,
+    keeps the top ``elite_fraction`` and appends them. Because a round trains
+    *before* appending its own elite, the last round's elite would otherwise
+    never be trained into a model; ``final_train`` (default ``True``) runs one
+    last training pass over the full accumulated dataset so the shipped model and
+    its reported ``final_avg_score`` reflect every collected sample. The model
+    artifact lives in ``<output_dir>/final``.
+
+    Generated elite records inherit ``generated_context`` (defaulting to the seed
+    dataset's :func:`representative_context`) so they share the seed distribution's
+    context prefix; see that function for why.
+
     Returns a dict with the per-round ``history`` (avg_score, sample/elite counts,
-    growing dataset size), the final dataset path, and the best avg_score seen.
+    growing dataset size), the final dataset path and size, the final model dir +
+    ``final_avg_score`` (``None`` when ``final_train`` is off), and the best
+    avg_score seen across all training passes.
     """
     from autocontext.training.autoresearch.train import run_training
+
+    if rounds < 1:
+        raise ValueError(f"rounds must be a positive integer, got {rounds}")
+    if samples_per_round < 1:
+        raise ValueError(f"samples_per_round must be a positive integer, got {samples_per_round}")
+    if train_steps < 1:
+        raise ValueError(f"train_steps must be a positive integer, got {train_steps}")
 
     output_dir = Path(output_dir)
     # Diverse sampling is required for ReST-EM (greedy would collect identical samples).
@@ -86,19 +127,15 @@ def run_self_improving_loop(
     accumulated = _read_jsonl(Path(data_path))
     if not accumulated:
         raise ValueError(f"no seed training records found in {data_path}")
+    carry_context = generated_context if generated_context is not None else representative_context(accumulated)
     history: list[dict[str, Any]] = []
     best_avg = float("-inf")
 
-    for r in range(rounds):
-        round_dir = output_dir / f"round_{r}"
-        dataset_path = round_dir / "dataset.jsonl"
-        samples_path = round_dir / "samples.jsonl"
-        _write_jsonl(dataset_path, accumulated)
-
-        metrics = run_training(
+    def _train(dataset_path: Path, run_dir: Path, *, collect: Path | None) -> dict[str, float]:
+        return run_training(
             scenario_name=scenario_name,
             data_path=dataset_path,
-            output_dir=round_dir,
+            output_dir=run_dir,
             time_budget=time_budget,
             memory_limit_mb=memory_limit_mb,
             train_steps=train_steps,
@@ -110,13 +147,21 @@ def run_self_improving_loop(
             score_conditioned=score_conditioned,
             dedupe=dedupe,
             dedupe_near_threshold=dedupe_near_threshold,
-            collect_samples_path=samples_path,
+            collect_samples_path=collect,
             backend="mlx",
         )
 
+    for r in range(rounds):
+        round_dir = output_dir / f"round_{r}"
+        dataset_path = round_dir / "dataset.jsonl"
+        samples_path = round_dir / "samples.jsonl"
+        _write_jsonl(dataset_path, accumulated)
+
+        metrics = _train(dataset_path, round_dir, collect=samples_path)
+
         samples = _read_jsonl(samples_path)
         elite = select_elite_samples(samples, fraction=elite_fraction) if samples else []
-        new_records = samples_to_records(elite, scenario_name=scenario_name, run_id=f"gen_{r}")
+        new_records = samples_to_records(elite, scenario_name=scenario_name, run_id=f"gen_{r}", context=carry_context)
         accumulated = accumulated + new_records
 
         best_avg = max(best_avg, float(metrics.get("avg_score", 0.0)))
@@ -133,11 +178,24 @@ def run_self_improving_loop(
 
     final_path = output_dir / "final_dataset.jsonl"
     _write_jsonl(final_path, accumulated)
+
+    final_avg_score: float | None = None
+    final_model_dir: str | None = None
+    if final_train:
+        # Bake every collected sample (including the last round's elite) into a model.
+        final_dir = output_dir / "final"
+        final_metrics = _train(final_path, final_dir, collect=None)
+        final_avg_score = float(final_metrics.get("avg_score", 0.0))
+        best_avg = max(best_avg, final_avg_score)
+        final_model_dir = str(final_dir)
+
     return {
         "scenario": scenario_name,
         "rounds": rounds,
         "history": history,
         "final_dataset": str(final_path),
         "final_dataset_size": len(accumulated),
+        "final_model_dir": final_model_dir,
+        "final_avg_score": final_avg_score,
         "best_avg_score": best_avg if best_avg != float("-inf") else 0.0,
     }

@@ -31,6 +31,12 @@ def register_self_improve_command(app: typer.Typer, console: Console) -> None:
 
         if not 0.0 < elite_fraction <= 1.0:
             raise typer.BadParameter(f"--elite-fraction must be in (0, 1], got {elite_fraction}")
+        if rounds < 1:
+            raise typer.BadParameter(f"--rounds must be a positive integer, got {rounds}")
+        if samples_per_round < 1:
+            raise typer.BadParameter(f"--samples-per-round must be a positive integer, got {samples_per_round}")
+        if train_steps < 1:
+            raise typer.BadParameter(f"--train-steps must be a positive integer, got {train_steps}")
 
         logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
         try:
@@ -68,3 +74,8 @@ def register_self_improve_command(app: typer.Typer, console: Console) -> None:
             )
         console.print(table)
         console.print(f"[green]Best avg_score:[/green] {result['best_avg_score']:.4f} | final dataset: {result['final_dataset']}")
+        if result.get("final_model_dir"):
+            console.print(
+                f"[green]Final model:[/green] {result['final_model_dir']} "
+                f"(avg_score {result['final_avg_score']:.4f}, trained on all {result['final_dataset_size']} records)"
+            )

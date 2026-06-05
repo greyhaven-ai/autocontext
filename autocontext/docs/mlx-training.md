@@ -166,6 +166,14 @@ Sampling uses a positive temperature so the collected constructions are diverse
 (greedy decoding would collect identical samples and stall the loop). Sample
 collection is MLX-only for now, so the loop drives the `mlx` backend.
 
+Because each round trains _before_ appending its own elite, the loop runs one final
+training pass over the full accumulated dataset so the shipped model reflects every
+collected sample (including the last round's elite). That model lands in
+`<output-dir>/final` and its score is reported as `final_avg_score`. Generated elite
+records inherit the seed dataset's representative (most common) `context` so every
+training example shares the same context prefix, rather than mixing the seed records'
+playbook/hints context with empty prefixes for generated examples.
+
 | Flag                  | Default | Meaning                                                 |
 | --------------------- | ------- | ------------------------------------------------------- |
 | `--rounds`            | `3`     | Number of generate -> filter -> retrain rounds.         |
@@ -183,8 +191,9 @@ uv run autoctx self-improve \
 ```
 
 The command prints a per-round table (avg_score, samples generated, elite kept,
-growing dataset size) and writes the final accumulated dataset to
-`<output-dir>/final_dataset.jsonl`. Pass `--json` for the structured `history`.
+growing dataset size), the final model directory + its `final_avg_score`, and writes
+the full accumulated dataset to `<output-dir>/final_dataset.jsonl`. Pass `--json` for
+the structured `history` plus `final_model_dir` / `final_avg_score` / `best_avg_score`.
 
 ## Automating Host Training for Sandboxed Agents
 
