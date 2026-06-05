@@ -46,6 +46,14 @@ QUALITY_TOKEN = "<|quality|>"
 # Number of discrete quality buckets the score is quantized into for conditioning.
 NUM_QUALITY_BUCKETS = 5
 
+# Reasoning segment (teacher-reasoning distillation). Like ``<|quality|>`` it is GATED:
+# the token is reserved (id appended after the base tokens, and after quality when both
+# are enabled) only when ``include_reasoning`` is set, and the segment is emitted only
+# when a record actually carries reasoning, so default training is unchanged. The
+# rationale sits between the (optional) quality token and ``<|strategy|>`` so the model
+# learns to reason and then construct.
+REASONING_TOKEN = "<|reasoning|>"
+
 # rustbpe / tiktoken split pattern (GPT-style). Part of the tokenizer contract.
 _BPE_PAT = (
     r"(?i:'s|'t|'re|'ve|'m|'ll|'d)"
@@ -59,23 +67,30 @@ _BPE_PAT = (
 _STRATEGY_RE = re.compile(r"<\|strategy\|>(.*?)(?:<\||$)", re.DOTALL)
 
 
-def build_special_tokens(base_vocab_size: int, *, include_quality: bool = False) -> dict[str, int]:
+def build_special_tokens(
+    base_vocab_size: int, *, include_quality: bool = False, include_reasoning: bool = False
+) -> dict[str, int]:
     """Map the autoresearch special tokens above the base tokenizer range.
 
-    The five base tokens always map to ``base..base+4``. When ``include_quality`` is
-    set (score-conditioned training), ``<|quality|>`` is appended at ``base+5``.
+    The five base tokens always map to ``base..base+4``. Gated control tokens are
+    appended after them in a fixed order so ids stay stable: ``<|quality|>`` (when
+    ``include_quality``) then ``<|reasoning|>`` (when ``include_reasoning``).
     """
-    tokens = list(SPECIAL_TOKEN_STRINGS) + ([QUALITY_TOKEN] if include_quality else [])
+    tokens = (
+        list(SPECIAL_TOKEN_STRINGS)
+        + ([QUALITY_TOKEN] if include_quality else [])
+        + ([REASONING_TOKEN] if include_reasoning else [])
+    )
     return {token: base_vocab_size + offset for offset, token in enumerate(tokens)}
 
 
-def total_vocab_size(base_vocab_size: int, *, include_quality: bool = False) -> int:
+def total_vocab_size(base_vocab_size: int, *, include_quality: bool = False, include_reasoning: bool = False) -> int:
     """Return the embedding/output vocab size including special tokens.
 
-    Defaults to the original five-token vocab; ``include_quality`` reserves one more
-    slot for the gated quality control token.
+    Defaults to the original five-token vocab; each gated control token
+    (``include_quality`` / ``include_reasoning``) reserves one more slot.
     """
-    return base_vocab_size + len(SPECIAL_TOKEN_STRINGS) + (1 if include_quality else 0)
+    return base_vocab_size + len(SPECIAL_TOKEN_STRINGS) + (1 if include_quality else 0) + (1 if include_reasoning else 0)
 
 
 def score_to_quality_bucket(score: float, *, num_buckets: int = NUM_QUALITY_BUCKETS, lo: float = 0.0, hi: float = 1.0) -> int:
@@ -199,7 +214,7 @@ def generation_logit_mask_values(
         # Use the tokenizer's own special-token map when available so the quality
         # token is blocked only for score-conditioned tokenizers that actually have it.
         specials = getattr(tokenizer, "special_tokens", None) or build_special_tokens(base)
-        for name in ("<|scenario|>", "<|context|>", "<|strategy|>", QUALITY_TOKEN):
+        for name in ("<|scenario|>", "<|context|>", "<|strategy|>", QUALITY_TOKEN, REASONING_TOKEN):
             sid = specials.get(name)
             if sid is not None and 0 <= sid < vocab_size:
                 mask[sid] = -1e9
@@ -252,29 +267,38 @@ def format_example(
     strategy_json: str,
     score: float,
     quality: int | None = None,
+    reasoning: str | None = None,
 ) -> str:
     """Format a single training example in the standard input format.
 
-    Format (``quality`` omitted unless score-conditioned):
-        <|scenario|>{scenario}<|context|>{context}[<|quality|>{quality}]<|strategy|>{strategy_json}<|score|>{score}<|end|>
+    Format (``quality`` / ``reasoning`` segments omitted unless present):
+        <|scenario|>{scenario}<|context|>{context}[<|quality|>{quality}][<|reasoning|>{reasoning}]<|strategy|>{strategy_json}<|score|>{score}<|end|>
+
+    A falsy ``reasoning`` (``None`` or empty string) omits the segment, so default and
+    answer-only records remain byte-identical to the pre-reasoning format.
     """
     quality_segment = f"<|quality|>{quality}" if quality is not None else ""
-    return f"<|scenario|>{scenario}<|context|>{context}{quality_segment}<|strategy|>{strategy_json}<|score|>{score}<|end|>"
+    reasoning_segment = f"<|reasoning|>{reasoning}" if reasoning else ""
+    return (
+        f"<|scenario|>{scenario}<|context|>{context}"
+        f"{quality_segment}{reasoning_segment}<|strategy|>{strategy_json}<|score|>{score}<|end|>"
+    )
 
 
-def build_generation_prompt(scenario: Any, *, target_quality: int | None = None) -> str:
-    """Build the generation prompt for a scenario (header up to ``<|strategy|>``).
+def build_generation_prompt(scenario: Any, *, target_quality: int | None = None, reason_then_construct: bool = False) -> str:
+    """Build the generation prompt for a scenario (the header the model completes).
 
     Single source for both the MLX and CUDA generators (and any provider) so the
     prompt prefix stays in lockstep with :func:`format_example`. When
     ``target_quality`` is given (score-conditioned generation) the quality control
-    token is emitted before ``<|strategy|>`` to steer toward that quality bucket.
+    token is emitted to steer toward that quality bucket. When
+    ``reason_then_construct`` is set the prompt ends at ``<|reasoning|>`` so the model
+    generates its rationale first and then ``<|strategy|>{...}``; otherwise it ends at
+    ``<|strategy|>`` (answer-only).
     """
     quality_segment = f"<|quality|>{target_quality}" if target_quality is not None else ""
-    return (
-        f"<|scenario|>{resolve_scenario_name(scenario)}<|context|>{resolve_scenario_context(scenario)}"
-        f"{quality_segment}<|strategy|>"
-    )
+    tail = "<|reasoning|>" if reason_then_construct else "<|strategy|>"
+    return f"<|scenario|>{resolve_scenario_name(scenario)}<|context|>{resolve_scenario_context(scenario)}{quality_segment}{tail}"
 
 
 def extract_strategy(text: str) -> dict[str, Any] | None:
@@ -297,28 +321,37 @@ def extract_strategy(text: str) -> dict[str, Any] | None:
     return result if isinstance(result, dict) else None
 
 
-def completion_loss_mask(token_ids: list[int], *, strategy_token_id: int) -> list[int]:
+def completion_loss_mask(token_ids: list[int], *, strategy_token_id: int, reasoning_token_id: int | None = None) -> list[int]:
     """Per-target loss mask for completion-only training (1 = train, 0 = ignore).
 
     For next-token prediction the target sequence is ``token_ids[1:]`` (aligned to
     inputs ``token_ids[:-1]``), so the mask has length ``len(token_ids) - 1``. Loss
-    is enabled only for targets that fall *after* the ``<|strategy|>`` token (the
-    completion the model must learn to generate); the scenario/context prompt that
-    precedes it is masked out. This is the standard completion-only / "loss over
-    completions" objective used in instruction tuning.
+    is enabled only for targets that fall *after* the completion anchor; the
+    scenario/context prompt that precedes it is masked out. This is the standard
+    completion-only / "loss over completions" objective used in instruction tuning.
 
-    If the strategy token is absent (unexpected/legacy), all positions are trained
-    (all-ones) so no example is silently dropped.
+    The anchor is ``<|reasoning|>`` when ``reasoning_token_id`` is given and present in
+    the sequence (so the model is trained on the rationale *and* the strategy);
+    otherwise it is ``<|strategy|>`` (answer-only). If neither anchor is present
+    (unexpected/legacy) all positions are trained (all-ones) so no example is silently
+    dropped.
     """
     n = len(token_ids)
     if n <= 1:
         return []
-    try:
-        strategy_index = token_ids.index(strategy_token_id)
-    except ValueError:
-        return [1] * (n - 1)
-    # input j predicts token_ids[j+1]; it is a completion target iff j+1 > strategy_index
-    return [1 if (j + 1) > strategy_index else 0 for j in range(n - 1)]
+    anchor: int | None = None
+    if reasoning_token_id is not None:
+        try:
+            anchor = token_ids.index(reasoning_token_id)
+        except ValueError:
+            anchor = None
+    if anchor is None:
+        try:
+            anchor = token_ids.index(strategy_token_id)
+        except ValueError:
+            return [1] * (n - 1)
+    # input j predicts token_ids[j+1]; it is a completion target iff j+1 > anchor
+    return [1 if (j + 1) > anchor else 0 for j in range(n - 1)]
 
 
 def build_masked_example(
@@ -366,6 +399,7 @@ class TrainingExample:
     context: str
     strategy_json: str
     score: float
+    reasoning: str = ""
 
     @classmethod
     def from_record(cls, record: Mapping[str, Any]) -> TrainingExample:
@@ -374,6 +408,7 @@ class TrainingExample:
             context=json.dumps(record.get("context", {}), sort_keys=True),
             strategy_json=json.dumps(record["strategy"], sort_keys=True),
             score=float(record["score"]),
+            reasoning=str(record.get("reasoning") or ""),
         )
 
     def to_sequence(self, *, score_conditioned: bool = False, num_buckets: int = NUM_QUALITY_BUCKETS) -> str:
@@ -381,7 +416,10 @@ class TrainingExample:
 
         When ``score_conditioned`` is set, a quality control token derived from the
         record's score is emitted before the strategy so the model learns to map a
-        target quality onto a construction (Decision-Transformer / Quark style).
+        target quality onto a construction (Decision-Transformer / Quark style). When
+        the record carries ``reasoning``, a ``<|reasoning|>`` segment is emitted before
+        the strategy (teacher-reasoning distillation); an empty reasoning omits it, so
+        answer-only records stay byte-identical.
         """
         quality = score_to_quality_bucket(self.score, num_buckets=num_buckets) if score_conditioned else None
         return format_example(
@@ -390,4 +428,5 @@ class TrainingExample:
             strategy_json=self.strategy_json,
             score=self.score,
             quality=quality,
+            reasoning=self.reasoning or None,
         )

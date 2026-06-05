@@ -56,13 +56,18 @@ def build_completion_record(
     strategy_json: str,
     quality: int | None = None,
     num_buckets: int = NUM_QUALITY_BUCKETS,
+    reasoning: str | None = None,
 ) -> dict[str, str]:
     """Build one mlx-lm ``{"prompt", "completion"}`` record.
 
     The prompt is the scenario task instruction (optionally prefixed with a quality
-    directive for score-conditioned training); the completion is the strategy JSON.
+    directive for score-conditioned training). The completion is the strategy JSON,
+    optionally preceded by the teacher's rationale (reason-then-construct): with
+    completion-only loss the model trains to produce the reasoning and then the
+    construction. A falsy ``reasoning`` yields the bare strategy JSON (answer-only).
     """
-    return {"prompt": _quality_prefix(quality, num_buckets) + task_prompt, "completion": strategy_json}
+    completion = f"{reasoning}\n{strategy_json}" if reasoning else strategy_json
+    return {"prompt": _quality_prefix(quality, num_buckets) + task_prompt, "completion": completion}
 
 
 def records_to_completions(
@@ -82,6 +87,7 @@ def records_to_completions(
                 strategy_json=json.dumps(record["strategy"], sort_keys=True),
                 quality=quality,
                 num_buckets=num_buckets,
+                reasoning=str(record.get("reasoning") or "") or None,
             )
         )
     return out
