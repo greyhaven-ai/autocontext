@@ -321,6 +321,40 @@ def extract_strategy(text: str) -> dict[str, Any] | None:
     return result if isinstance(result, dict) else None
 
 
+# A fenced ```json ... ``` block; group 1 is the JSON object.
+_FENCED_JSON_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
+
+
+def extract_json_object(text: str) -> dict[str, Any] | None:
+    """Robustly extract a JSON object from free-form model output.
+
+    Used to parse reason-then-construct generations (``rationale ... {construction}``)
+    where the construction follows prose, which :func:`extract_strategy` cannot handle.
+    Tries, in order: the ``<|strategy|>`` / whole-text path (``extract_strategy``), a
+    fenced ```json block, then the ``{...}`` span from the first ``{`` to the last
+    ``}``. Returns ``None`` if nothing parses to a dict.
+    """
+    direct = extract_strategy(text)
+    if direct is not None:
+        return direct
+    fenced = _FENCED_JSON_RE.search(text)
+    candidate: str | None = None
+    if fenced:
+        candidate = fenced.group(1)
+    else:
+        start = text.find("{")
+        end = text.rfind("}")
+        if 0 <= start < end:
+            candidate = text[start : end + 1]
+    if candidate is None:
+        return None
+    try:
+        result = json.loads(candidate)
+    except json.JSONDecodeError:
+        return None
+    return result if isinstance(result, dict) else None
+
+
 def completion_loss_mask(token_ids: list[int], *, strategy_token_id: int, reasoning_token_id: int | None = None) -> list[int]:
     """Per-target loss mask for completion-only training (1 = train, 0 = ignore).
 
@@ -360,6 +394,7 @@ def build_masked_example(
     seq_len: int,
     pad_token_id: int,
     strategy_token_id: int,
+    reasoning_token_id: int | None = None,
 ) -> tuple[list[int], list[int], list[int]] | None:
     """Build a padded ``(input_ids, target_ids, loss_mask)`` triple for one example.
 
@@ -367,14 +402,15 @@ def build_masked_example(
     example is right-truncated to ``seq_len + 1`` tokens when too long (keeping the
     tail so the completion survives), then split into next-token ``input``/``target``
     of length ``seq_len`` and padded with ``pad_token_id``. The loss mask is the
-    completion-only mask with padding positions zeroed. Returns ``None`` for
-    sequences too short to form a single (input, target) pair.
+    completion-only mask (anchored on ``<|reasoning|>`` when ``reasoning_token_id`` is
+    given and present, else ``<|strategy|>``) with padding positions zeroed. Returns
+    ``None`` for sequences too short to form a single (input, target) pair.
     """
     if len(tokens) < 2:
         return None
     if len(tokens) > seq_len + 1:
         tokens = tokens[-(seq_len + 1) :]
-    mask = completion_loss_mask(tokens, strategy_token_id=strategy_token_id)
+    mask = completion_loss_mask(tokens, strategy_token_id=strategy_token_id, reasoning_token_id=reasoning_token_id)
     input_ids = tokens[:-1]
     target_ids = tokens[1:]
     pad = seq_len - len(input_ids)
@@ -411,22 +447,29 @@ class TrainingExample:
             reasoning=str(record.get("reasoning") or ""),
         )
 
-    def to_sequence(self, *, score_conditioned: bool = False, num_buckets: int = NUM_QUALITY_BUCKETS) -> str:
+    def to_sequence(
+        self, *, score_conditioned: bool = False, num_buckets: int = NUM_QUALITY_BUCKETS, include_reasoning: bool = False
+    ) -> str:
         """Lay the fields out as a token sequence.
 
         When ``score_conditioned`` is set, a quality control token derived from the
         record's score is emitted before the strategy so the model learns to map a
-        target quality onto a construction (Decision-Transformer / Quark style). When
-        the record carries ``reasoning``, a ``<|reasoning|>`` segment is emitted before
-        the strategy (teacher-reasoning distillation); an empty reasoning omits it, so
-        answer-only records stay byte-identical.
+        target quality onto a construction (Decision-Transformer / Quark style).
+
+        The ``<|reasoning|>`` segment is emitted only when ``include_reasoning`` is set
+        AND the record carries reasoning. It is OFF by default so the scratch BPE
+        corpus stays answer-only: that path's loss mask and generation prompt are not
+        reason-aware, and emitting reasoning there would train the model to condition on
+        a rationale that is absent at inference. The mlx-lm backend, which carries
+        reasoning through its own completion format, does not use this method.
         """
         quality = score_to_quality_bucket(self.score, num_buckets=num_buckets) if score_conditioned else None
+        reasoning = self.reasoning or None if include_reasoning else None
         return format_example(
             scenario=self.scenario,
             context=self.context,
             strategy_json=self.strategy_json,
             score=self.score,
             quality=quality,
-            reasoning=self.reasoning or None,
+            reasoning=reasoning,
         )

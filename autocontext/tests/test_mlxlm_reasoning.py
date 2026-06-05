@@ -51,3 +51,23 @@ def test_curation_preserves_reasoning_field() -> None:
     assert all("reasoning" in r for r in out)
     # highest-scoring representative of the duplicate group is retained with its reasoning
     assert out[0]["reasoning"] == "keep me"
+
+
+def test_extract_json_object_handles_reason_then_construct_output() -> None:
+    """Reviewer F2: a reason-trained model emits `rationale\n{...}`; the assessment
+    parser must recover the trailing JSON object (extract_strategy returns None on it)."""
+    from autocontext.training.autoresearch.sequence_format import extract_json_object
+
+    assert extract_json_object('use a wide spread\n{"points": [1, 2]}') == {"points": [1, 2]}
+    assert extract_json_object("reason\n```json\n{\"a\": 1}\n```") == {"a": 1}
+    # back-compat: still parses the strategy-token form and whole-text JSON
+    assert extract_json_object('<|strategy|>{"a": 1}<|score|>0.5') == {"a": 1}
+    assert extract_json_object('{"a": 1}') == {"a": 1}
+    assert extract_json_object("no json here") is None
+
+
+def test_extract_strategy_still_returns_none_on_reasoning_prefixed_json() -> None:
+    """Characterization: the old parser cannot handle reason-then-construct (why F2 existed)."""
+    from autocontext.training.autoresearch.sequence_format import extract_strategy
+
+    assert extract_strategy('rationale\n{"points": [1]}') is None

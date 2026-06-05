@@ -92,13 +92,35 @@ def test_completion_loss_mask_falls_back_to_strategy_when_no_reasoning_token() -
     assert mask == [0, 1, 1]
 
 
-def test_training_example_with_reasoning_emits_segment() -> None:
+def test_training_example_emits_reasoning_only_when_opted_in() -> None:
+    """to_sequence omits reasoning by DEFAULT so the scratch BPE corpus stays
+    answer-only (its loss mask + generation prompt are not reason-aware); reasoning is
+    emitted only when a consumer explicitly opts in."""
     from autocontext.training.autoresearch.sequence_format import TrainingExample
 
     ex = TrainingExample.from_record({"scenario": "s", "strategy": {"x": 1}, "score": 1.0, "reasoning": "because symmetry"})
     assert ex.reasoning == "because symmetry"
-    seq = ex.to_sequence()
-    assert "<|reasoning|>because symmetry<|strategy|>" in seq
+    assert "<|reasoning|>" not in ex.to_sequence()  # default: scratch path is answer-only
+    assert "<|reasoning|>because symmetry<|strategy|>" in ex.to_sequence(include_reasoning=True)
+
+
+def test_build_masked_example_reasoning_anchor_covers_reasoning_and_strategy() -> None:
+    """With reasoning in the sequence, build_masked_example anchors loss on
+    <|reasoning|> (train rationale + strategy), matching completion_loss_mask. This is
+    the mismatch the reviewer reproduced ([0,0,0,1] vs the correct [0,1,1,1])."""
+    from autocontext.training.autoresearch.sequence_format import build_masked_example
+
+    x, y, mask = build_masked_example([5, 88, 7, 99, 8], seq_len=4, pad_token_id=0, strategy_token_id=99, reasoning_token_id=88)
+    assert x == [5, 88, 7, 99]
+    assert y == [88, 7, 99, 8]
+    assert mask == [0, 1, 1, 1]
+
+
+def test_build_masked_example_without_reasoning_token_is_strategy_anchored() -> None:
+    from autocontext.training.autoresearch.sequence_format import build_masked_example
+
+    _, _, mask = build_masked_example([5, 99, 7, 8], seq_len=3, pad_token_id=0, strategy_token_id=99)
+    assert mask == [0, 1, 1]
 
 
 def test_training_example_without_reasoning_is_unchanged() -> None:

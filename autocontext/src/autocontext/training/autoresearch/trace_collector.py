@@ -121,8 +121,12 @@ def collect(
     system, user = build_teacher_prompt(scenario)
     context = teacher_task_prompt(scenario)
     name = resolve_scenario_name(scenario)
+    # Dual scenario interface (mirrors assess_strategy_quality): game scenarios score
+    # a strategy via execute_match; agent-task scenarios via evaluate_output. Without
+    # this, valid teacher JSON for the built-in execute_match scenarios is swallowed.
+    is_game = hasattr(scenario, "execute_match")
     records: list[dict[str, Any]] = []
-    for _ in range(max(0, n_traces)):
+    for i in range(max(0, n_traces)):
         try:
             result = provider.complete(system, user, model=model, temperature=temperature)
         except Exception:
@@ -132,7 +136,10 @@ def collect(
             continue
         reasoning, strategy = parsed
         try:
-            score = float(scenario.evaluate_output(output=json.dumps(strategy)).score)
+            if is_game:
+                score = float(scenario.execute_match(strategy, seed=i).score)
+            else:
+                score = float(scenario.evaluate_output(output=json.dumps(strategy)).score)
         except Exception:
             continue
         if score < score_threshold:

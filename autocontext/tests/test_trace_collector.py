@@ -99,3 +99,34 @@ def test_collect_skips_unparseable_teacher_output() -> None:
     provider = CallableProvider(lambda system, user: "I refuse to produce JSON")
     records = collect(_FakeScenario(), provider, n_traces=3, score_threshold=0.0)
     assert records == []
+
+
+class _FakeGameScenario:
+    """Game scenario (execute_match), like the built-in grid_ctf / othello."""
+
+    name = "toygame"
+    description = "toy game"
+
+    def initial_state(self, seed=None):
+        return {}
+
+    def get_task_prompt(self, state=None):
+        return "Play the game."
+
+    def execute_match(self, strategy, seed=0):
+        from autocontext.scenarios.base import Result
+
+        pts = strategy.get("points", []) if isinstance(strategy, dict) else []
+        return Result(score=min(1.0, len(pts) / 10.0), summary="match")
+
+
+def test_collect_supports_game_scenarios_via_execute_match() -> None:
+    """Reviewer F3: built-in scenarios are execute_match games; collect must score
+    them via execute_match, not silently drop them by assuming evaluate_output."""
+    from autocontext.training.autoresearch.trace_collector import collect
+
+    provider = CallableProvider(lambda system, user: 'spread out\n{"points": [1,2,3,4,5]}')
+    records = collect(_FakeGameScenario(), provider, n_traces=2, score_threshold=0.0)
+    assert len(records) == 2  # not dropped
+    assert all(r["score"] == 0.5 for r in records)  # scored via execute_match
+    assert all(r["reasoning"] == "spread out" for r in records)

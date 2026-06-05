@@ -8,8 +8,8 @@ starts from a strong prior over JSON / numbers / structure rather than learning 
 format from scratch.
 
 Reuses the shared record curation (``data_selection``), the scenario interface
-(``get_task_prompt`` / ``evaluate_output`` / ``execute_match``), the strategy parser
-(``extract_strategy``), and the quality bucketing (``score_to_quality_bucket``). It
+(``get_task_prompt`` / ``evaluate_output`` / ``execute_match``), the robust strategy
+parser (``extract_json_object``), and the quality bucketing (``score_to_quality_bucket``). It
 does NOT use the autoresearch ``<|...|>`` BPE token contract.
 
 Gated behind the ``mlxlm`` optional-dependency extra (``mlx-lm``).
@@ -27,7 +27,7 @@ from typing import Any
 
 from autocontext.training.autoresearch.sequence_format import (
     NUM_QUALITY_BUCKETS,
-    extract_strategy,
+    extract_json_object,
     resolve_scenario_context,
     score_to_quality_bucket,
 )
@@ -261,7 +261,9 @@ def _assess_mlxlm(
         try:
             text = generate(model, tokenizer, prompt=prompt, max_tokens=512, verbose=False, sampler=sampler)
             if is_game:
-                strategy = extract_strategy(text)
+                # Reason-trained models emit `rationale\n{...}`; extract the trailing
+                # JSON object robustly (a bare extract_strategy returns None on prose).
+                strategy = extract_json_object(text)
                 if strategy is None:
                     continue
                 valid += 1
