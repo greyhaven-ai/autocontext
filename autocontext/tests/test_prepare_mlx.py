@@ -2,6 +2,7 @@
 
 Tests involving MLX are skipped when MLX is not installed (CI-safe).
 """
+
 from __future__ import annotations
 
 import json
@@ -23,13 +24,15 @@ def test_jsonl_loading_and_split(tmp_path: Path) -> None:
     # Create sample JSONL
     records = []
     for i in range(20):
-        records.append({
-            "run_id": f"run_{i % 5}",
-            "scenario": "grid_ctf",
-            "strategy": {"aggression": 0.5, "defense": 0.3},
-            "score": 0.5 + i * 0.01,
-            "context": "some playbook text",
-        })
+        records.append(
+            {
+                "run_id": f"run_{i % 5}",
+                "scenario": "grid_ctf",
+                "strategy": {"aggression": 0.5, "defense": 0.3},
+                "score": 0.5 + i * 0.01,
+                "context": "some playbook text",
+            }
+        )
     jsonl_path = tmp_path / "data.jsonl"
     jsonl_path.write_text("\n".join(json.dumps(r) for r in records), encoding="utf-8")
 
@@ -103,10 +106,7 @@ def test_bpe_training(tmp_path: Path) -> None:
     from autocontext.training.autoresearch.prepare import train_tokenizer
 
     # Create sample text corpus
-    corpus = [
-        "<|scenario|>grid_ctf<|context|>playbook text<|strategy|>{}<|score|>1.0<|end|>"
-        for _ in range(50)
-    ]
+    corpus = ["<|scenario|>grid_ctf<|context|>playbook text<|strategy|>{}<|score|>1.0<|end|>" for _ in range(50)]
     corpus_path = tmp_path / "corpus.txt"
     corpus_path.write_text("\n".join(corpus), encoding="utf-8")
 
@@ -116,6 +116,20 @@ def test_bpe_training(tmp_path: Path) -> None:
     assert len(encoded) > 0
     decoded = tokenizer.decode(encoded)
     assert "grid_ctf" in decoded
+
+
+@pytest.mark.skipif(not HAS_MLX, reason="MLX not installed")
+def test_train_tokenizer_honors_vocab_size(tmp_path: Path) -> None:
+    """The vocab_size knob sizes the tokenizer (base vocab + special-token slots)."""
+    from autocontext.training.autoresearch.prepare import train_tokenizer
+    from autocontext.training.autoresearch.sequence_format import total_vocab_size
+
+    corpus_path = tmp_path / "corpus.txt"
+    corpus_path.write_text("\n".join("hello world strategy text" for _ in range(50)), encoding="utf-8")
+
+    tok = train_tokenizer(corpus_path, vocab_size=300)
+    assert tok.base_vocab_size == 300
+    assert tok.vocab_size == total_vocab_size(300)  # base + 5 structural special tokens
 
 
 @pytest.mark.skipif(not HAS_MLX, reason="MLX not installed")

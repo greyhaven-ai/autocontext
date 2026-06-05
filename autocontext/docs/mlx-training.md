@@ -100,6 +100,24 @@ backend too (score-conditioning is expressed as a natural-language quality direc
 in the prompt rather than the `<|quality|>` token). The fine-tuned adapters are written
 under the run's `adapters/` directory.
 
+### Tokenizer vocabulary size (optional)
+
+`--vocab-size` (default 8192) sets the BPE tokenizer's target vocab for the from-scratch
+`mlx` / `cuda` backends. The model head and embedding auto-size to the resulting
+tokenizer vocab (the base vocab plus the structural special-token slots), so this is a
+single knob that trades sequence length against subword sharing: a smaller vocab yields
+longer token sequences but more shared subwords (often better on small corpora), while a
+larger vocab shortens sequences. It must be `>= 256` (the byte-level BPE base). The
+`mlxlm` backend rejects a non-default value (it fine-tunes a pretrained model and uses
+that model's tokenizer); the chosen size is recorded in `data_stats`.
+
+```bash
+uv run autoctx train \
+  --scenario grid_ctf \
+  --data /absolute/path/to/training/grid_ctf.jsonl \
+  --vocab-size 4096
+```
+
 ### Record curation (optional)
 
 These flags curate the training records before tokenization (defaults are a no-op,

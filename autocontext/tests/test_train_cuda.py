@@ -94,6 +94,21 @@ def test_run_training_rejects_loss_weighting_on_mlxlm(tmp_path: Path) -> None:
         )
 
 
+def test_run_training_rejects_custom_vocab_size_on_mlxlm(tmp_path: Path) -> None:
+    # --vocab-size only applies to the from-scratch BPE backends; mlxlm uses the
+    # pretrained model's tokenizer. The guard fires before the mlx_lm import.
+    with pytest.raises(NotImplementedError, match="pretrained model's tokenizer"):
+        train_module.run_training(
+            scenario_name="grid_ctf",
+            data_path=tmp_path / "training.jsonl",
+            output_dir=tmp_path / "out",
+            time_budget=1,
+            memory_limit_mb=1024,
+            backend="mlxlm",
+            vocab_size=4096,
+        )
+
+
 @pytest.mark.parametrize(
     "kwargs, match",
     [

@@ -728,6 +728,34 @@ class TestTrainCLI:
             assert result.exit_code == 0, result.output
             assert mock_run.call_args[0][0].augmenter_spec == "pkg.mod:expand"
 
+    def test_vocab_size_option_reaches_config(self) -> None:
+        from autocontext.cli import app
+
+        runner = CliRunner()
+        with patch("autocontext.cli_train._run_training") as mock_run:
+            mock_run.return_value = TrainingResult(
+                scenario="grid_ctf",
+                total_experiments=1,
+                kept_count=1,
+                discarded_count=0,
+                best_score=0.5,
+                best_experiment_index=0,
+                checkpoint_path=Path("/tmp/best"),
+                results=[],
+            )
+            result = runner.invoke(app, ["train", "--scenario", "grid_ctf", "--vocab-size", "4096"])
+            assert result.exit_code == 0, result.output
+            assert mock_run.call_args[0][0].vocab_size == 4096
+
+    def test_too_small_vocab_size_rejected(self) -> None:
+        from autocontext.cli import app
+
+        runner = CliRunner()
+        with patch("autocontext.cli_train._run_training") as mock_run:
+            result = runner.invoke(app, ["train", "--scenario", "grid_ctf", "--vocab-size", "100"])
+        assert result.exit_code != 0
+        mock_run.assert_not_called()
+
     def test_softmax_zero_temperature_rejected(self) -> None:
         from autocontext.cli import app
 
@@ -832,6 +860,13 @@ class TestCurationSubprocess:
 
     def test_augmenter_spec_omitted_by_default(self, tmp_path: Path) -> None:
         assert "--augmenter" not in self._capture_command(tmp_path)
+
+    def test_vocab_size_appended_when_non_default(self, tmp_path: Path) -> None:
+        command = self._capture_command(tmp_path, vocab_size=4096)
+        assert command[command.index("--vocab-size") + 1] == "4096"
+
+    def test_vocab_size_omitted_at_default(self, tmp_path: Path) -> None:
+        assert "--vocab-size" not in self._capture_command(tmp_path)  # 8192 default stays off the command line
 
     def test_experiment_env_includes_invocation_cwd_for_consumer_augmenters(self, tmp_path: Path) -> None:
         """The subprocess PYTHONPATH must carry the invocation cwd so a consumer-repo

@@ -10,6 +10,7 @@ from typing import Any
 
 from autocontext.training.autoresearch.prepare import save_tokenizer_json
 from autocontext.training.autoresearch.sequence_format import (
+    BASE_VOCAB_SIZE,
     TrainingExample,
     build_generation_prompt,
     build_masked_example,
@@ -283,6 +284,7 @@ def run_cuda_training(
     loss_weight_mode: str = "uniform",
     loss_weight_temperature: float = 1.0,
     augmenter_spec: str = "",
+    vocab_size: int = BASE_VOCAB_SIZE,
 ) -> dict[str, float]:
     from autocontext.training.autoresearch.data_selection import prepare_training_records
     from autocontext.training.autoresearch.sequence_format import NUM_QUALITY_BUCKETS, score_loss_weights
@@ -313,7 +315,7 @@ def run_cuda_training(
     output_dir.mkdir(parents=True, exist_ok=True)
     corpus_path = output_dir / "corpus.txt"
     corpus_path.write_text(_build_corpus(records, score_conditioned=score_conditioned), encoding="utf-8")
-    tokenizer = train_tokenizer(corpus_path, score_conditioned=score_conditioned)
+    tokenizer = train_tokenizer(corpus_path, vocab_size=vocab_size, score_conditioned=score_conditioned)
 
     sequences = [
         tokenizer.encode(TrainingExample.from_record(record).to_sequence(score_conditioned=score_conditioned))
