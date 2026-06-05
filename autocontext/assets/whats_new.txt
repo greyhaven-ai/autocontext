@@ -1,4 +1,3 @@
-**Plain-language CLI continuity** lets Python and TypeScript callers use positional goals/scenarios, `--iterations`, and run-scoped exports while preserving the existing flag forms.
-**Hermes Agent integration** adds read-only Hermes v0.12 inspection plus an exportable CLI-first `autocontext` skill for Hermes agents.
-**Packaged CLI startup** no longer crashes when installed without banner assets.
-**Release alignment** bumps Python `autocontext` and npm `autoctx` to `0.5.0`, with `pi-autocontext` moving to `0.2.4` on its own lower-numbered line.
+**CLI contract parity** aligns the Python and TypeScript `autoctx` command surfaces around the shared canonical contract, including capabilities, mission lifecycle commands, queue commands, scenario creation, serve/MCP paths, show/watch, status behavior, and aliases.
+**Contract probes** add terminal, directory, service, artifact, cleanup, media, and distributed probe families, plus `autoctx probes check` and `autoctx probes extract` for harness verification.
+**Mission checkpoints** now share a cross-runtime checkpoint contract with collision-free filenames, camelCase/snake_case loader interop, atomic restore behavior, and async-boundary guards.

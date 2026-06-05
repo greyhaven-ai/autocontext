@@ -16,14 +16,13 @@ from pathlib import Path
 from xml.sax.saxutils import escape as xml_escape
 
 TAGLINE = (
-    "a recursive self-improving harness designed to help your agents "
-    "(and future iterations of those agents) succeed on any task"
+    "a recursive self-improving harness designed to help your agents (and future iterations of those agents) succeed on any task"
 )
 SYNC_BLOCK_START = "<!-- autocontext-readme-hero:start -->"
 SYNC_BLOCK_END = "<!-- autocontext-readme-hero:end -->"
 WHATS_NEW_BLOCK_START = "<!-- autocontext-whats-new:start -->"
 WHATS_NEW_BLOCK_END = "<!-- autocontext-whats-new:end -->"
-README_WHATS_NEW_HEADING = "What's New in 0.5.0"
+README_WHATS_NEW_HEADING = "What's New in 0.6.0"
 FALLBACK_BANNER_ART = "autocontext"
 README_BADGES = (
     (
@@ -75,12 +74,7 @@ def get_banner_svg_path() -> Path:
 
 def _read_packaged_asset(name: str) -> str | None:
     try:
-        return (
-            resources.files("autocontext")
-            .joinpath("assets")
-            .joinpath(name)
-            .read_text(encoding="utf-8")
-        )
+        return resources.files("autocontext").joinpath("assets").joinpath(name).read_text(encoding="utf-8")
     except (FileNotFoundError, ModuleNotFoundError, OSError):
         return None
 
@@ -105,11 +99,7 @@ def load_whats_new() -> tuple[str, ...]:
     content = _read_packaged_asset("whats_new.txt") or _read_source_asset("whats_new.txt")
     if content is None:
         return ()
-    return tuple(
-        line.strip()
-        for line in content.splitlines()
-        if line.strip()
-    )
+    return tuple(line.strip() for line in content.splitlines() if line.strip())
 
 
 def render_banner_svg() -> str:
@@ -127,15 +117,10 @@ def render_banner_svg() -> str:
     text_nodes = []
     for index, line in enumerate(lines):
         y = padding_y + font_size + index * line_height
-        text_nodes.append(
-            f'  <text x="{padding_x}" y="{y}" xml:space="preserve">{xml_escape(line)}</text>'
-        )
+        text_nodes.append(f'  <text x="{padding_x}" y="{y}" xml:space="preserve">{xml_escape(line)}</text>')
 
     joined = "\n".join(text_nodes)
-    font_family = (
-        "ui-monospace, SFMono-Regular, SF Mono, Menlo, Monaco, Consolas, "
-        "Liberation Mono, monospace"
-    )
+    font_family = "ui-monospace, SFMono-Regular, SF Mono, Menlo, Monaco, Consolas, Liberation Mono, monospace"
     return (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" '
@@ -211,19 +196,12 @@ def render_readme_banner_block() -> str:
 def render_readme_whats_new_block() -> str:
     """Render the synced README What's New section."""
     whats_new = "\n".join(f"- {item}" for item in load_whats_new())
-    return (
-        f"{WHATS_NEW_BLOCK_START}\n"
-        f"## {README_WHATS_NEW_HEADING}\n\n"
-        f"{whats_new}\n"
-        f"{WHATS_NEW_BLOCK_END}"
-    )
+    return f"{WHATS_NEW_BLOCK_START}\n## {README_WHATS_NEW_HEADING}\n\n{whats_new}\n{WHATS_NEW_BLOCK_END}"
 
 
 def render_dashboard_banner_block() -> str:
     """Render the synced dashboard hero block."""
-    whats_new = "\n".join(
-        f"          <li>{html_escape(item)}</li>" for item in load_whats_new()
-    )
+    whats_new = "\n".join(f"          <li>{html_escape(item)}</li>" for item in load_whats_new())
     return (
         f"{SYNC_BLOCK_START}\n"
         '    <section class="hero">\n'

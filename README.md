@@ -218,11 +218,11 @@ uv run autoctx train --scenario support_triage --data training/billing.jsonl --t
 - **CLI contract parity** aligns the Python and TypeScript `autoctx` command surfaces around the shared canonical contract, including capabilities, mission lifecycle commands, queue commands, scenario creation, serve/MCP paths, show/watch, status behavior, and aliases.
 - **Contract probes** add terminal, directory, service, artifact, cleanup, media, and distributed probe families, plus `autoctx probes check` and `autoctx probes extract` for harness verification.
 - **Mission checkpoints** now share a cross-runtime checkpoint contract with collision-free filenames, camelCase/snake_case loader interop, atomic restore behavior, and async-boundary guards.
+<!-- autocontext-whats-new:end -->
 
 ## On main (unreleased)
 
 - **Training pipeline work** adds opt-in teacher-reasoning distillation, sampling controls, MLX-LM fine-tuning, score-conditioned generation, reward-weighted loss, and self-improving local-training loops. These features are on `main` and in [CHANGELOG.md](CHANGELOG.md), but they are not included in the pinned `0.6.0` packages yet.
-<!-- autocontext-whats-new:end -->
 
 ## Choose Your Package
 
