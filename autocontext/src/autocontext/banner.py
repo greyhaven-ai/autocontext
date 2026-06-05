@@ -188,7 +188,8 @@ def render_readme_banner_block() -> str:
         "  <picture>\n"
         f'    <source media="(prefers-color-scheme: dark)" srcset="{README_WORDMARK_DARK_PATH}" />\n'
         f'    <source media="(prefers-color-scheme: light)" srcset="{README_WORDMARK_LIGHT_PATH}" />\n'
-        f'    <img src="{README_WORDMARK_LIGHT_PATH}" alt="autocontext logo" width="720" style="max-width: 100%; height: auto;" />\n'
+        f'    <img src="{README_WORDMARK_LIGHT_PATH}" alt="autocontext logo" '
+        'width="720" style="max-width: 100%; height: auto;" />\n'
         "  </picture>\n"
         "</p>\n\n"
         f'<p align="center"><strong>{TAGLINE}</strong></p>\n\n'
