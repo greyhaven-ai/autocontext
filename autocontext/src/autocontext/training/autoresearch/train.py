@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from autocontext.training import HAS_MLX
-from autocontext.training.autoresearch.data_selection import curate_records
+from autocontext.training.autoresearch.data_selection import prepare_training_records
 from autocontext.training.autoresearch.prepare import BASE_VOCAB_SIZE, save_tokenizer_json, total_vocab_size
 from autocontext.training.autoresearch.sequence_format import NUM_QUALITY_BUCKETS
 
@@ -30,9 +30,7 @@ if HAS_MLX:
     import mlx.nn as nn  # type: ignore[import-not-found]
 
 
-# ---------------------------------------------------------------------------
-# Model configuration
-# ---------------------------------------------------------------------------
+# === Model configuration ===
 
 
 @dataclass(slots=True)
@@ -55,9 +53,7 @@ class ModelConfig:
         return self.d_model // self.head_dim
 
 
-# ---------------------------------------------------------------------------
-# Model components (only defined when MLX is available)
-# ---------------------------------------------------------------------------
+# === Model components (only defined when MLX is available) ===
 
 if HAS_MLX:
 
@@ -353,9 +349,7 @@ def save_inference_bundle(
     save_checkpoint(model, output_dir / "model.safetensors")
 
 
-# ---------------------------------------------------------------------------
-# Summary formatting (always available)
-# ---------------------------------------------------------------------------
+# === Summary formatting (always available) ===
 
 
 def format_summary(
@@ -461,6 +455,7 @@ def _run_mlx_training(
     score_conditioned: bool = False,
     loss_weight_mode: str = "uniform",
     loss_weight_temperature: float = 1.0,
+    augmenter_spec: str = "",
     collect_samples_path: Path | None = None,
 ) -> dict[str, float]:
     _preflight_backend_deps("mlx")
@@ -505,9 +500,10 @@ def _run_mlx_training(
     if not train_records:
         raise ValueError(f"no training records found in {data_path}")
 
-    # Curate the TRAIN split only (val stays held out): dedupe + keep the elite fraction.
-    train_records = curate_records(
+    # Augment + curate the TRAIN split only (val stays held out): expand, then dedupe + elite-filter.
+    train_records = prepare_training_records(
         train_records,
+        augmenter_spec=augmenter_spec,
         elite_fraction=elite_fraction,
         dedupe=dedupe,
         near_threshold=dedupe_near_threshold,
@@ -657,6 +653,7 @@ def run_training(
     score_conditioned: bool = False,
     loss_weight_mode: str = "uniform",
     loss_weight_temperature: float = 1.0,
+    augmenter_spec: str = "",
     base_model: str = "",
     fine_tune_type: str = "lora",
     num_layers: int = 8,
@@ -688,6 +685,7 @@ def run_training(
         score_conditioned=score_conditioned,
         loss_weight_mode=loss_weight_mode,  # reward-weighted regression (mlx/cuda; mlxlm rejects non-uniform)
         loss_weight_temperature=loss_weight_temperature,
+        augmenter_spec=augmenter_spec,  # symmetry/transform augmentation seam (all backends)
     )
     if normalized_backend == "mlx":
         return _run_mlx_training(
@@ -739,6 +737,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--score-conditioned", action="store_true", help="emit quality token; generate conditioned on top bucket")
     parser.add_argument("--loss-weight-by-score", choices=("uniform", "linear", "softmax"), default="uniform")
     parser.add_argument("--loss-weight-temperature", type=float, default=1.0)
+    parser.add_argument("--augmenter", default="", help="record augmenter spec 'module:function' (empty = none)")
     parser.add_argument("--base-model", default="", help="mlxlm backend: pretrained base model (empty = default)")
     parser.add_argument("--fine-tune-type", choices=("lora", "dora", "full"), default="lora", help="mlxlm backend")
     parser.add_argument("--num-layers", type=int, default=8, help="mlxlm backend: layers to fine-tune")
@@ -769,6 +768,7 @@ def main(argv: list[str] | None = None) -> int:
             score_conditioned=args.score_conditioned,
             loss_weight_mode=args.loss_weight_by_score,
             loss_weight_temperature=args.loss_weight_temperature,
+            augmenter_spec=args.augmenter,
             base_model=args.base_model,
             fine_tune_type=args.fine_tune_type,
             num_layers=args.num_layers,

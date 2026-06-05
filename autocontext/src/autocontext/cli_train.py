@@ -65,6 +65,11 @@ def register_train_command(app: typer.Typer, console: Console) -> None:
         loss_weight_temperature: float = typer.Option(
             1.0, "--loss-weight-temperature", help="softmax loss-weight temperature (lower = sharper toward top scores)"
         ),
+        augmenter: str = typer.Option(
+            "",
+            "--augmenter",
+            help="Record augmenter spec 'package.module:function' for symmetry/transform expansion (empty = none)",
+        ),
         base_model: str = typer.Option("", "--base-model", help="mlxlm backend: pretrained base model (empty = default)"),
         fine_tune_type: str = typer.Option("lora", "--fine-tune-type", help="mlxlm backend: lora | dora | full"),
         num_layers: int = typer.Option(8, "--num-layers", help="mlxlm backend: layers to fine-tune"),
@@ -101,6 +106,7 @@ def register_train_command(app: typer.Typer, console: Console) -> None:
             score_conditioned=score_conditioned,
             loss_weight_mode=loss_weight_by_score,
             loss_weight_temperature=loss_weight_temperature,
+            augmenter_spec=augmenter,
             base_model=base_model,
             fine_tune_type=fine_tune_type,
             num_layers=num_layers,

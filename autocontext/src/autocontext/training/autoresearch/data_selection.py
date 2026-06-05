@@ -120,3 +120,24 @@ def curate_records(
         out = dedupe_records(out, near_threshold=near_threshold)
     out = select_top_fraction(out, elite_fraction)
     return out
+
+
+def prepare_training_records(
+    records: Sequence[dict[str, Any]],
+    *,
+    augmenter_spec: str = "",
+    elite_fraction: float = 1.0,
+    dedupe: bool = False,
+    near_threshold: float = 1.0,
+) -> list[dict[str, Any]]:
+    """Augment (optional) then curate the training records.
+
+    The augmentation seam expands the records by a domain symmetry/transform referenced
+    via an ``"module:function"`` spec (see ``augment.py``); curation then dedupes +
+    elite-filters the expanded set, so symmetry-equivalent duplicates are pruned and
+    the elite fraction is taken over the augmented pool. A no-op when all args default.
+    """
+    from autocontext.training.autoresearch.augment import apply_augmentation, resolve_augmenter
+
+    out = apply_augmentation(list(records), resolve_augmenter(augmenter_spec))
+    return curate_records(out, elite_fraction=elite_fraction, dedupe=dedupe, near_threshold=near_threshold)

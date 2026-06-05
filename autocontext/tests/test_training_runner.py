@@ -695,6 +695,25 @@ class TestTrainCLI:
         assert result.exit_code != 0
         mock_run.assert_not_called()
 
+    def test_augmenter_option_reaches_config(self) -> None:
+        from autocontext.cli import app
+
+        runner = CliRunner()
+        with patch("autocontext.cli_train._run_training") as mock_run:
+            mock_run.return_value = TrainingResult(
+                scenario="grid_ctf",
+                total_experiments=1,
+                kept_count=1,
+                discarded_count=0,
+                best_score=0.5,
+                best_experiment_index=0,
+                checkpoint_path=Path("/tmp/best"),
+                results=[],
+            )
+            result = runner.invoke(app, ["train", "--scenario", "grid_ctf", "--augmenter", "pkg.mod:expand"])
+            assert result.exit_code == 0, result.output
+            assert mock_run.call_args[0][0].augmenter_spec == "pkg.mod:expand"
+
     def test_softmax_zero_temperature_rejected(self) -> None:
         from autocontext.cli import app
 
@@ -792,6 +811,13 @@ class TestCurationSubprocess:
         assert "--dedupe" in command
         assert "--dedupe-near-threshold" in command
         assert command[command.index("--dedupe-near-threshold") + 1] == "0.8"
+
+    def test_augmenter_spec_appended(self, tmp_path: Path) -> None:
+        command = self._capture_command(tmp_path, augmenter_spec="pkg.mod:expand")
+        assert command[command.index("--augmenter") + 1] == "pkg.mod:expand"
+
+    def test_augmenter_spec_omitted_by_default(self, tmp_path: Path) -> None:
+        assert "--augmenter" not in self._capture_command(tmp_path)
 
 
 class TestDataStatsProvenance:

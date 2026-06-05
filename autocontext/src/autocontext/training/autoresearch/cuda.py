@@ -282,8 +282,9 @@ def run_cuda_training(
     score_conditioned: bool = False,
     loss_weight_mode: str = "uniform",
     loss_weight_temperature: float = 1.0,
+    augmenter_spec: str = "",
 ) -> dict[str, float]:
-    from autocontext.training.autoresearch.data_selection import curate_records
+    from autocontext.training.autoresearch.data_selection import prepare_training_records
     from autocontext.training.autoresearch.sequence_format import NUM_QUALITY_BUCKETS, score_loss_weights
     from autocontext.training.autoresearch.train import _preflight_backend_deps
 
@@ -302,8 +303,9 @@ def run_cuda_training(
     if scenario_name not in SCENARIO_REGISTRY:
         raise ValueError(f"unknown scenario: {scenario_name}")
 
-    records = curate_records(
+    records = prepare_training_records(
         _all_records(data_path),
+        augmenter_spec=augmenter_spec,
         elite_fraction=elite_fraction,
         dedupe=dedupe,
         near_threshold=dedupe_near_threshold,

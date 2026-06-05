@@ -150,10 +150,11 @@ def run_mlxlm_training(
     dedupe: bool = False,
     dedupe_near_threshold: float = 1.0,
     score_conditioned: bool = False,
+    augmenter_spec: str = "",
 ) -> dict[str, float]:
     """Fine-tune a pretrained mlx-lm model with LoRA/DoRA and assess it in-scenario."""
     from autocontext.scenarios import SCENARIO_REGISTRY
-    from autocontext.training.autoresearch.data_selection import curate_records
+    from autocontext.training.autoresearch.data_selection import prepare_training_records
     from autocontext.training.autoresearch.train import _all_records, _peak_memory_mb, _preflight_backend_deps
 
     _preflight_backend_deps("mlxlm")
@@ -161,8 +162,9 @@ def run_mlxlm_training(
         raise ValueError(f"unknown scenario: {scenario_name}")
     scenario = SCENARIO_REGISTRY[scenario_name]()
 
-    records = curate_records(
+    records = prepare_training_records(
         _all_records(data_path),
+        augmenter_spec=augmenter_spec,
         elite_fraction=elite_fraction,
         dedupe=dedupe,
         near_threshold=dedupe_near_threshold,

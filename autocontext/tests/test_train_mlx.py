@@ -343,6 +343,34 @@ def test_run_training_loss_weighted_end_to_end(tmp_path: str) -> None:
     assert (Path(tmp_path) / "out" / "model.safetensors").exists()
 
 
+def test_run_training_with_augmenter_end_to_end(tmp_path: str) -> None:
+    """An augmenter spec is resolved + applied in the data pipeline before training.
+
+    `copy:deepcopy` is a real importable stand-in augmenter (returns the records), so
+    this exercises the full run_training -> prepare_training_records -> resolve/apply
+    chain end to end on the mlx backend.
+    """
+    from pathlib import Path
+
+    from autocontext.training.autoresearch.train import run_training
+
+    metrics = run_training(
+        scenario_name="grid_ctf",
+        data_path=_write_grid_ctf_dataset(tmp_path),
+        output_dir=Path(tmp_path) / "out",
+        time_budget=30,
+        memory_limit_mb=4096,
+        train_steps=2,
+        batch_size=1,
+        seq_len=24,
+        assess_samples=1,
+        augmenter_spec="copy:deepcopy",
+        backend="mlx",
+    )
+    assert "avg_score" in metrics and "valid_rate" in metrics
+    assert (Path(tmp_path) / "out" / "model.safetensors").exists()
+
+
 def test_run_training_score_conditioned_end_to_end(tmp_path: str) -> None:
     """score_conditioned training + top-bucket-conditioned assessment runs end to end."""
     from pathlib import Path

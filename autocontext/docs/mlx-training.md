@@ -128,6 +128,30 @@ uv run autoctx train \
 The published model artifact records the curation settings plus the raw and
 curated record counts (`data_stats`) so a trained model's data split is reproducible.
 
+### Symmetry / transform augmentation (optional)
+
+`--augmenter` multiplies the training data through a domain transform: many research
+constructions have equivalent variants under a group action (e.g. affine maps over
+F_q for cap-sets), each with the same score, so emitting them as extra records is a
+cheap, high-leverage data multiplier. The transforms are domain-specific and live in
+the consumer repo, not in autocontext core; an augmenter is referenced by a
+`"package.module:function"` spec and resolved by dynamic import, keeping core
+domain-agnostic.
+
+The augmenter is a callable `list[record] -> list[record]` that returns the expanded
+training set (it may cap or pre-dedupe as it sees fit). It runs on the training records
+_before_ curation, so `--dedupe` / `--elite-fraction` then prune symmetry-equivalent
+duplicates and select the elite over the augmented pool. A malformed spec or an
+augmenter that returns a non-list/empty result fails fast. Applies to all backends;
+the chosen spec is recorded in `data_stats`.
+
+```bash
+uv run autoctx train \
+  --scenario cap_set \
+  --data /absolute/path/to/training/cap_set.jsonl \
+  --augmenter my_pkg.symmetry:affine_orbit --dedupe
+```
+
 ### Score-conditioned generation (optional)
 
 `--score-conditioned` trains the model to map a target quality onto a construction

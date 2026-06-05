@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import pytest
+
 from autocontext.training.autoresearch.data_selection import (
     curate_records,
     dedupe_records,
+    prepare_training_records,
     select_top_fraction,
 )
 
@@ -102,3 +105,29 @@ def test_curate_composes_dedupe_then_elite() -> None:
 def test_curate_default_is_noop() -> None:
     records = [_rec({"a": 1}, 0.1), _rec({"a": 1}, 0.2)]
     assert curate_records(records) == records
+
+
+def test_prepare_training_records_no_augmenter_equals_curate() -> None:
+    """Empty augmenter spec makes prepare_training_records delegate to curate_records."""
+    records = [_rec({"a": 1}, 0.1), _rec({"a": 2}, 0.9), _rec({"a": 1}, 0.1)]
+    assert prepare_training_records(records, elite_fraction=0.5, dedupe=True) == curate_records(
+        records, elite_fraction=0.5, dedupe=True
+    )
+
+
+def test_prepare_training_records_resolves_and_applies_augmenter_then_curates() -> None:
+    """A real 'module:function' spec is resolved, applied, then the result is curated.
+
+    `copy:deepcopy` is a stand-in augmenter: it returns the records (deep-copied), so
+    the resolve -> apply -> curate chain runs end-to-end with a real import. After the
+    augmenter, dedupe collapses the duplicate construction down to one representative.
+    """
+    records = [_rec({"a": 1}, 0.1), _rec({"a": 1}, 0.2)]
+    out = prepare_training_records(records, augmenter_spec="copy:deepcopy", dedupe=True)
+    assert len(out) == 1  # dedupe kept the single highest-scoring representative
+    assert out[0]["score"] == 0.2
+
+
+def test_prepare_training_records_propagates_bad_spec() -> None:
+    with pytest.raises(ValueError, match="package.module:function"):
+        prepare_training_records([_rec({"a": 1}, 0.1)], augmenter_spec="nocolon")
