@@ -66,6 +66,7 @@ class TrainingConfig:
     loss_weight_mode: str = "uniform"  # reward-weighted regression: uniform | linear | softmax (mlx/cuda)
     loss_weight_temperature: float = 1.0  # softmax loss-weight temperature (lower = sharper toward top scores)
     augmenter_spec: str = ""  # record augmenter 'package.module:function' for symmetry/transform expansion
+    vocab_size: int = 8192  # BPE tokenizer target vocab (mlx/cuda from-scratch backends); BASE_VOCAB_SIZE
     base_model: str = ""  # mlxlm backend: pretrained base model (empty = backend default)
     fine_tune_type: str = "lora"  # mlxlm backend: lora | dora | full
     num_layers: int = 8  # mlxlm backend: number of layers to fine-tune
@@ -417,6 +418,8 @@ class TrainingRunner:
             command += ["--loss-weight-temperature", str(self.config.loss_weight_temperature)]
         if self.config.augmenter_spec:
             command += ["--augmenter", self.config.augmenter_spec]
+        if self.config.vocab_size != 8192:
+            command += ["--vocab-size", str(self.config.vocab_size)]
         if self.config.base_model:
             command += ["--base-model", self.config.base_model]
         if self.config.fine_tune_type != "lora":
@@ -593,6 +596,7 @@ class TrainingRunner:
             "loss_weight_mode": self.config.loss_weight_mode,
             "loss_weight_temperature": float(self.config.loss_weight_temperature),
             "augmenter_spec": self.config.augmenter_spec,
+            "vocab_size": float(self.config.vocab_size),
         }
         try:
             line_count = sum(1 for _ in self.config.data_path.open(encoding="utf-8"))

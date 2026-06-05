@@ -94,6 +94,21 @@ def test_run_training_rejects_loss_weighting_on_mlxlm(tmp_path: Path) -> None:
         )
 
 
+def test_run_training_rejects_custom_vocab_size_on_mlxlm(tmp_path: Path) -> None:
+    # --vocab-size only applies to the from-scratch BPE backends; mlxlm uses the
+    # pretrained model's tokenizer. The guard fires before the mlx_lm import.
+    with pytest.raises(NotImplementedError, match="pretrained model's tokenizer"):
+        train_module.run_training(
+            scenario_name="grid_ctf",
+            data_path=tmp_path / "training.jsonl",
+            output_dir=tmp_path / "out",
+            time_budget=1,
+            memory_limit_mb=1024,
+            backend="mlxlm",
+            vocab_size=4096,
+        )
+
+
 @pytest.mark.parametrize(
     "kwargs, match",
     [
@@ -102,6 +117,10 @@ def test_run_training_rejects_loss_weighting_on_mlxlm(tmp_path: Path) -> None:
         ({"elite_fraction": -1.0}, "elite_fraction"),
         ({"dedupe_near_threshold": 0.0}, "dedupe_near_threshold"),
         ({"dedupe_near_threshold": 1.5}, "dedupe_near_threshold"),
+        # vocab_size lower bound is enforced in run_training (not just the Typer wrapper), so
+        # direct Python callers + `python train.py --vocab-size 100` are guarded too.
+        ({"vocab_size": 100}, "vocab_size must be >= 256"),
+        ({"vocab_size": 0}, "vocab_size must be >= 256"),
     ],
 )
 def test_run_training_rejects_out_of_range_curation(tmp_path: Path, kwargs: dict, match: str) -> None:

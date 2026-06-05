@@ -13,6 +13,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from autocontext.training.autoresearch.sequence_format import BASE_VOCAB_SIZE
 from autocontext.training.runner import TrainingConfig, TrainingResult
 
 logger = logging.getLogger(__name__)
@@ -70,6 +71,9 @@ def register_train_command(app: typer.Typer, console: Console) -> None:
             "--augmenter",
             help="Record augmenter spec 'package.module:function' for symmetry/transform expansion (empty = none)",
         ),
+        vocab_size: int = typer.Option(
+            BASE_VOCAB_SIZE, "--vocab-size", help="BPE tokenizer target vocab size (mlx/cuda from-scratch backends)"
+        ),
         base_model: str = typer.Option("", "--base-model", help="mlxlm backend: pretrained base model (empty = default)"),
         fine_tune_type: str = typer.Option("lora", "--fine-tune-type", help="mlxlm backend: lora | dora | full"),
         num_layers: int = typer.Option(8, "--num-layers", help="mlxlm backend: layers to fine-tune"),
@@ -87,6 +91,8 @@ def register_train_command(app: typer.Typer, console: Console) -> None:
             raise typer.BadParameter(f"--loss-weight-by-score must be uniform|linear|softmax, got {loss_weight_by_score!r}")
         if loss_weight_by_score == "softmax" and loss_weight_temperature <= 0:
             raise typer.BadParameter(f"--loss-weight-temperature must be > 0 for softmax, got {loss_weight_temperature}")
+        if vocab_size < 256:
+            raise typer.BadParameter(f"--vocab-size must be >= 256 (the byte-level BPE base), got {vocab_size}")
 
         logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -107,6 +113,7 @@ def register_train_command(app: typer.Typer, console: Console) -> None:
             loss_weight_mode=loss_weight_by_score,
             loss_weight_temperature=loss_weight_temperature,
             augmenter_spec=augmenter,
+            vocab_size=vocab_size,
             base_model=base_model,
             fine_tune_type=fine_tune_type,
             num_layers=num_layers,

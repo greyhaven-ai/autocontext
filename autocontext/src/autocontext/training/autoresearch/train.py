@@ -150,6 +150,7 @@ def _run_mlx_training(
     loss_weight_mode: str = "uniform",
     loss_weight_temperature: float = 1.0,
     augmenter_spec: str = "",
+    vocab_size: int = BASE_VOCAB_SIZE,
     collect_samples_path: Path | None = None,
 ) -> dict[str, float]:
     _preflight_backend_deps("mlx")
@@ -206,7 +207,7 @@ def _run_mlx_training(
     output_dir.mkdir(parents=True, exist_ok=True)
     corpus_path = output_dir / "corpus.txt"
     corpus_path.write_text(_build_corpus(train_records, score_conditioned=score_conditioned), encoding="utf-8")
-    tokenizer = train_tokenizer(corpus_path, score_conditioned=score_conditioned)
+    tokenizer = train_tokenizer(corpus_path, vocab_size=vocab_size, score_conditioned=score_conditioned)
 
     base_vocab = int(getattr(tokenizer, "base_vocab_size", BASE_VOCAB_SIZE))
     strategy_token_id = build_special_tokens(base_vocab)["<|strategy|>"]
@@ -356,6 +357,7 @@ def run_training(
     loss_weight_mode: str = "uniform",
     loss_weight_temperature: float = 1.0,
     augmenter_spec: str = "",
+    vocab_size: int = BASE_VOCAB_SIZE,
     base_model: str = "",
     fine_tune_type: str = "lora",
     num_layers: int = 8,
@@ -367,6 +369,11 @@ def run_training(
         raise ValueError(f"elite_fraction must be in (0, 1], got {elite_fraction}")
     if not 0.0 < dedupe_near_threshold <= 1.0:
         raise ValueError(f"dedupe_near_threshold must be in (0, 1], got {dedupe_near_threshold}")
+    # Enforce the BPE vocab lower bound here (the public API + subprocess entry), not only in the
+    # Typer wrapper, so direct callers and `python train.py --vocab-size N` can't flow a too-small
+    # base vocab into the tokenizer (special-token ids would collide with / fall below the byte base).
+    if vocab_size < 256:
+        raise ValueError(f"vocab_size must be >= 256 (the byte-level BPE base), got {vocab_size}")
 
     normalized_backend = backend.strip().lower()
     # Shared args; backend extras added per dispatch (each entry runs its own dep preflight).
@@ -388,6 +395,7 @@ def run_training(
         loss_weight_mode=loss_weight_mode,  # reward-weighted regression (mlx/cuda; mlxlm rejects non-uniform)
         loss_weight_temperature=loss_weight_temperature,
         augmenter_spec=augmenter_spec,  # symmetry/transform augmentation seam (all backends)
+        vocab_size=vocab_size,  # BPE tokenizer target vocab (mlx/cuda; mlxlm uses the pretrained tokenizer)
     )
     if normalized_backend == "mlx":
         return _run_mlx_training(
@@ -404,9 +412,13 @@ def run_training(
     if normalized_backend == "mlxlm":
         if loss_weight_mode != "uniform":
             raise NotImplementedError("loss-weighting (reward-weighted regression) is currently mlx/cuda-only")
+        if vocab_size != BASE_VOCAB_SIZE:
+            raise NotImplementedError(
+                "--vocab-size applies to the from-scratch mlx/cuda backends; mlxlm uses the pretrained model's tokenizer"
+            )
         from autocontext.training.autoresearch.mlxlm_backend import DEFAULT_BASE_MODEL, run_mlxlm_training
 
-        mlxlm_kwargs = {k: v for k, v in common.items() if not k.startswith("loss_weight")}
+        mlxlm_kwargs = {k: v for k, v in common.items() if not (k.startswith("loss_weight") or k == "vocab_size")}
         return run_mlxlm_training(
             **mlxlm_kwargs,
             assess_top_k=assess_top_k,
@@ -440,6 +452,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--loss-weight-by-score", choices=("uniform", "linear", "softmax"), default="uniform")
     parser.add_argument("--loss-weight-temperature", type=float, default=1.0)
     parser.add_argument("--augmenter", default="", help="record augmenter spec 'module:function' (empty = none)")
+    parser.add_argument("--vocab-size", type=int, default=BASE_VOCAB_SIZE, help="BPE tokenizer target vocab (mlx/cuda)")
     parser.add_argument("--base-model", default="", help="mlxlm backend: pretrained base model (empty = default)")
     parser.add_argument("--fine-tune-type", choices=("lora", "dora", "full"), default="lora", help="mlxlm backend")
     parser.add_argument("--num-layers", type=int, default=8, help="mlxlm backend: layers to fine-tune")
@@ -471,6 +484,7 @@ def main(argv: list[str] | None = None) -> int:
             loss_weight_mode=args.loss_weight_by_score,
             loss_weight_temperature=args.loss_weight_temperature,
             augmenter_spec=args.augmenter,
+            vocab_size=args.vocab_size,
             base_model=args.base_model,
             fine_tune_type=args.fine_tune_type,
             num_layers=args.num_layers,
