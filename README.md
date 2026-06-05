@@ -15,18 +15,20 @@
 
 <!-- autocontext-readme-hero:end -->
 
-Autocontext is a harness. You point it at a goal in plain language. It iterates against real evaluation, keeps what worked, throws out what didn't, and produces a structured trace of the work plus the artifacts, playbooks, datasets, and (optionally) a distilled local model that the next agent inherits. Repeated runs get better, not just different.
+autocontext is a harness. You point it at a goal in plain language. It iterates against real evaluation, keeps what worked, throws out what didn't, and produces a structured trace of the work plus the artifacts, playbooks, datasets, and (optionally) a distilled local model that the next agent inherits. Repeated runs get better, not just different.
+
+**Documentation:** [autocontext.ai/docs](https://autocontext.ai/docs) · [quickstart](https://autocontext.ai/docs/get-started/quickstart) · [CLI reference](https://autocontext.ai/docs/cli/reference) · [changelog](https://autocontext.ai/docs/changelog)
 
 ## Try It In 30 Seconds
 
 The fastest path uses our **Pi runtime**, a local coding agent that handles its own auth. No API key plumbing, no provider config: install Pi, install autocontext, point one at the other.
 
 ```bash
-uv tool install autocontext==0.5.0
+uv tool install autocontext==0.6.0
 
 AUTOCONTEXT_AGENT_PROVIDER=pi \
 AUTOCONTEXT_PI_COMMAND=pi \
-uv run autoctx solve \
+autoctx solve \
   "improve customer-support replies for billing disputes" \
   --iterations 3
 ```
@@ -36,7 +38,7 @@ Pi runs locally as a subprocess and emits live traces back into the harness. For
 Prefer TypeScript? Same surface, same command:
 
 ```bash
-bun add -g autoctx@0.5.0
+bun add -g autoctx@0.6.0
 AUTOCONTEXT_AGENT_PROVIDER=pi bunx autoctx solve \
   "improve customer-support replies for billing disputes" \
   --iterations 5 --json
@@ -47,10 +49,10 @@ Already on Anthropic, OpenAI, Gemini, Mistral, Groq, OpenRouter, Azure, Claude C
 ```bash
 AUTOCONTEXT_AGENT_PROVIDER=anthropic \
 ANTHROPIC_API_KEY=sk-ant-... \
-uv run autoctx solve "..." --iterations 3
+autoctx solve "..." --iterations 3
 ```
 
-See [`.env.example`](.env.example) for every provider's variables. Prefer to clone and run a starter? [`examples/README.md`](examples/README.md) has copy-paste recipes for Python CLI, Claude Code MCP, Python SDK, TypeScript library usage, and the experimental TypeScript agent handler surface.
+See [`.env.example`](.env.example) for every provider's variables, or use the live provider guide at [autocontext.ai/docs/providers](https://autocontext.ai/docs/providers). Prefer to clone and run a starter? [`examples/README.md`](examples/README.md) has copy-paste recipes for Python CLI, Claude Code MCP, Python SDK, TypeScript library usage, and the experimental TypeScript agent handler surface.
 
 ## Or Just Talk To Your Agent
 
@@ -59,7 +61,7 @@ If you already work inside a coding agent, you can wire autocontext in once and 
 **Pi** ships an autocontext skill out of the box. Install the published Pi package and Pi loads natural-language wrappers over live tools such as `autocontext_solve_scenario`, `autocontext_evaluate_output`, `autocontext_run_improvement_loop`, `autocontext_run_status`, and `autocontext_list_scenarios`.
 
 ```bash
-pi install npm:pi-autocontext
+pi install npm:pi-autocontext@0.2.5
 ```
 
 Then you just ask:
@@ -89,14 +91,14 @@ After that, Python MCP exposes prefixed tools such as `autocontext_solve_scenari
 ```bash
 cd autocontext
 uv run autoctx hermes export-skill --output ~/.hermes/skills/autocontext/SKILL.md --json
-# Add progressive-disclosure reference files alongside SKILL.md (AC-702)
+# Add progressive-disclosure reference files alongside SKILL.md
 uv run autoctx hermes export-skill \
     --output ~/.hermes/skills/autocontext/SKILL.md \
     --with-references --json
 uv run autoctx hermes inspect --json
 ```
 
-Full integration guide: [autocontext/docs/agent-integration.md](autocontext/docs/agent-integration.md).
+Full integration guide: [autocontext.ai/docs/agents](https://autocontext.ai/docs/agents) and [autocontext/docs/agent-integration.md](autocontext/docs/agent-integration.md).
 
 ## What You Get Back
 
@@ -171,11 +173,11 @@ Inside each run, five roles cooperate:
 
 Strategies are evaluated through scenario execution, staged validation, and gating. Weak changes are rolled back. Successful changes accumulate as reusable knowledge that future runs (and future agents) inherit automatically.
 
-The full vocabulary (Scenario, Task, Mission, Campaign, Run, Verifier, Knowledge, Artifact, Budget, Policy) lives in [docs/concept-model.md](docs/concept-model.md).
+The full vocabulary (Scenario, Task, Mission, Campaign, Run, Verifier, Knowledge, Artifact, Budget, Policy) lives in the [concept docs](https://autocontext.ai/docs/concepts) and [docs/concept-model.md](docs/concept-model.md).
 
 ## Capture What's Happening In Production
 
-Autocontext can sit alongside your live application and record what your agents do, then turn that into training data. Wrap your existing Anthropic or OpenAI client once:
+autocontext can sit alongside your live application and record what your agents do, then turn that into training data. Wrap your existing Anthropic or OpenAI client once:
 
 ```python
 from anthropic import Anthropic
@@ -209,12 +211,12 @@ uv run autoctx train --scenario support_triage --data training/billing.jsonl --t
 ```
 
 <!-- autocontext-whats-new:start -->
-## What's New in 0.5.0
+## What's New in 0.6.0
 
-- **Plain-language CLI continuity** lets Python and TypeScript callers use positional goals/scenarios, `--iterations`, and run-scoped exports while preserving the existing flag forms.
-- **Hermes Agent integration** adds read-only Hermes v0.12 inspection plus an exportable CLI-first `autocontext` skill for Hermes agents.
-- **Packaged CLI startup** no longer crashes when installed without banner assets.
-- **Release alignment** bumps Python `autocontext` and npm `autoctx` to `0.5.0`, with `pi-autocontext` moving to `0.2.4` on its own lower-numbered line.
+- **CLI contract parity** aligns the Python and TypeScript `autoctx` command surfaces around the shared canonical contract, including capabilities, mission lifecycle commands, queue commands, scenario creation, serve/MCP paths, show/watch, status behavior, and aliases.
+- **Contract probes** add terminal, directory, service, artifact, cleanup, media, and distributed probe families, plus `autoctx probes check` and `autoctx probes extract` for harness verification.
+- **Mission checkpoints** now share a cross-runtime checkpoint contract with collision-free filenames, camelCase/snake_case loader interop, atomic restore behavior, and async-boundary guards.
+- **Training pipeline work** on `main` adds opt-in teacher-reasoning distillation, sampling controls, MLX-LM fine-tuning, score-conditioned generation, reward-weighted loss, and self-improving local-training loops. See [CHANGELOG.md](CHANGELOG.md) and [autocontext.ai/docs/changelog](https://autocontext.ai/docs/changelog).
 <!-- autocontext-whats-new:end -->
 
 ## Choose Your Package
@@ -229,14 +231,14 @@ uv run autoctx train --scenario support_triage --data training/billing.jsonl --t
 
 ```bash
 # Python: library or CLI tool
-uv pip install autocontext==0.5.0
-uv tool install autocontext==0.5.0
+uv pip install autocontext==0.6.0
+uv tool install autocontext==0.6.0
 
 # TypeScript
-bun add -g autoctx@0.5.0
+bun add -g autoctx@0.6.0
 
 # Pi extension
-pi install npm:pi-autocontext
+pi install npm:pi-autocontext@0.2.5
 ```
 
 > The PyPI package is `autocontext`. The CLI entrypoint is `autoctx`. The npm packages are `autoctx` and `pi-autocontext` (note: an unrelated package on npm uses the name `autocontext`; that is not this project).
@@ -297,7 +299,7 @@ A deterministic offline provider exists for the test suite. Configuration matrix
 No. It's a harness for improving real agent behavior on real work. Benchmarks (the 11 scenario families) are one of many surfaces; you can also point it at production tasks, missions, or simulations.
 
 **How is this different from DSPy, Inspect, TextGrad, or a prompt optimizer?**
-Those tools optimize prompts. Autocontext takes a goal in plain language, generates the scenario, runs a multi-role loop with verifier-driven gating, and produces transferable artifacts (playbooks, datasets, distilled models) that the next run inherits. Prompt optimization is a special case.
+Those tools optimize prompts. autocontext takes a goal in plain language, generates the scenario, runs a multi-role loop with verifier-driven gating, and produces transferable artifacts (playbooks, datasets, distilled models) that the next run inherits. Prompt optimization is a special case.
 
 **Do I need API keys?**
 No. The Pi runtime runs locally and handles its own auth. Anthropic, OpenAI, Gemini, Mistral, Groq, OpenRouter, Azure, MLX, and Claude/Codex CLI are all opt-in via env vars.
@@ -310,13 +312,13 @@ Yes. Wire `autoctx mcp-serve` (or `bunx autoctx mcp-serve`) into Claude Code, Cu
 
 ## Where To Look Next
 
+- Live documentation: [autocontext.ai/docs](https://autocontext.ai/docs)
 - Canonical vocabulary and object model: [docs/concept-model.md](docs/concept-model.md)
-- Docs overview: [docs/README.md](docs/README.md)
 - Python package guide: [autocontext/README.md](autocontext/README.md)
 - TypeScript package guide: [ts/README.md](ts/README.md)
 - Copy-paste examples: [examples/README.md](examples/README.md)
 - External agent integration: [autocontext/docs/agent-integration.md](autocontext/docs/agent-integration.md)
-- Recent changes: [CHANGELOG.md](CHANGELOG.md)
+- Recent changes: [CHANGELOG.md](CHANGELOG.md) and [autocontext.ai/docs/changelog](https://autocontext.ai/docs/changelog)
 - Contributor setup: [CONTRIBUTING.md](CONTRIBUTING.md)
 - Repo layout for coding agents: [AGENTS.md](AGENTS.md)
 - Sandboxed agents that need to trigger MLX training on the host: [autocontext/docs/mlx-training.md](autocontext/docs/mlx-training.md)
