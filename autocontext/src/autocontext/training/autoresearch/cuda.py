@@ -44,14 +44,23 @@ def _create_torch_masked_dataloader(
     batch_size: int,
     pad_token_id: int,
     strategy_token_id: int,
-) -> list[tuple[Any, Any, Any]]:
+    weights: list[float] | None = None,
+) -> list[tuple[Any, Any, Any, Any]]:
     """Per-example, completion-masked torch batches (mirrors prepare.iter_masked_batches).
 
     No cross-example packing (document boundaries respected), no tail dropped, and a
-    completion-only loss mask (prompt + padding zeroed). Returns ``(x, y, mask)`` tuples.
+    completion-only loss mask (prompt + padding zeroed). Returns
+    ``(x, y, mask, example_weights)`` tuples.
+
+    ``weights`` (reward-weighted regression) is returned as a per-example weight
+    vector ``example_weights`` (shape ``(batch,)``), NOT folded into the per-token
+    mask, so the loss can weight each example's *mean* completion loss. It is ``None``
+    when ``weights`` is ``None`` or all ``1.0`` (byte-identical, unweighted).
     """
-    built: list[tuple[list[int], list[int], list[int]]] = []
-    for tokens in sequences:
+    do_weight = weights is not None and any(w != 1.0 for w in weights)
+    ws = weights if weights is not None else [1.0] * len(sequences)
+    built: list[tuple[list[int], list[int], list[int], float]] = []
+    for tokens, w in zip(sequences, ws, strict=True):
         example = build_masked_example(
             tokens,
             seq_len=seq_len,
@@ -59,15 +68,17 @@ def _create_torch_masked_dataloader(
             strategy_token_id=strategy_token_id,
         )
         if example is not None:
-            built.append(example)
+            inp, tgt, mask = example
+            built.append((inp, tgt, mask, w))
 
-    batches: list[tuple[Any, Any, Any]] = []
+    batches: list[tuple[Any, Any, Any, Any]] = []
     for start in range(0, len(built), batch_size):
         chunk = built[start : start + batch_size]
         x = torch_module.tensor([c[0] for c in chunk], dtype=torch_module.long, device=device)
         y = torch_module.tensor([c[1] for c in chunk], dtype=torch_module.long, device=device)
         mask = torch_module.tensor([c[2] for c in chunk], dtype=torch_module.float32, device=device)
-        batches.append((x, y, mask))
+        wv = torch_module.tensor([c[3] for c in chunk], dtype=torch_module.float32, device=device) if do_weight else None
+        batches.append((x, y, mask, wv))
     return batches
 
 
@@ -269,9 +280,11 @@ def run_cuda_training(
     dedupe: bool = False,
     dedupe_near_threshold: float = 1.0,
     score_conditioned: bool = False,
+    loss_weight_mode: str = "uniform",
+    loss_weight_temperature: float = 1.0,
 ) -> dict[str, float]:
     from autocontext.training.autoresearch.data_selection import curate_records
-    from autocontext.training.autoresearch.sequence_format import NUM_QUALITY_BUCKETS
+    from autocontext.training.autoresearch.sequence_format import NUM_QUALITY_BUCKETS, score_loss_weights
     from autocontext.training.autoresearch.train import _preflight_backend_deps
 
     _preflight_backend_deps("cuda")
@@ -307,6 +320,12 @@ def run_cuda_training(
     base_vocab = int(getattr(tokenizer, "base_vocab_size", 8192))
     strategy_token_id = build_special_tokens(base_vocab)["<|strategy|>"]
     pad_token_id = getattr(tokenizer, "end_token_id", 0) or 0
+    # Reward-weighted regression: scale each example's loss by its score-derived weight.
+    loss_weights = score_loss_weights(
+        [float(record.get("score", 0.0)) for record in records],
+        mode=loss_weight_mode,
+        temperature=loss_weight_temperature,
+    )
     batches = _create_torch_masked_dataloader(
         sequences,
         torch_module=torch_module,
@@ -315,6 +334,7 @@ def run_cuda_training(
         batch_size=batch_size,
         pad_token_id=pad_token_id,
         strategy_token_id=strategy_token_id,
+        weights=loss_weights,
     )
     if not batches:
         raise ValueError("not enough tokenized training data for a single batch")
@@ -334,16 +354,23 @@ def run_cuda_training(
     for step in range(train_steps):
         if time.perf_counter() >= deadline:
             break
-        x, y, loss_mask = batches[step % len(batches)]
+        x, y, loss_mask, ex_weights = batches[step % len(batches)]
         optimizer.zero_grad(set_to_none=True)
         logits = model(x)
+        batch_n, seq_n = y.shape
         per_token = torch_module.nn.functional.cross_entropy(
             logits.reshape(-1, cfg.vocab_size),
             y.reshape(-1),
             reduction="none",
         )
-        mask_flat = loss_mask.reshape(-1)
-        loss = (per_token * mask_flat).sum() / mask_flat.sum().clamp(min=1.0)
+        if ex_weights is None:
+            mask_flat = loss_mask.reshape(-1)
+            loss = (per_token * mask_flat).sum() / mask_flat.sum().clamp(min=1.0)
+        else:
+            # Per-example (RWR): weight each example's mean completion loss, then average.
+            pt = per_token.reshape(batch_n, seq_n)
+            per_example_loss = (pt * loss_mask).sum(dim=1) / loss_mask.sum(dim=1).clamp(min=1.0)
+            loss = (per_example_loss * ex_weights).sum() / ex_weights.sum().clamp(min=1.0)
         loss.backward()
         optimizer.step()
         steps_completed += 1

@@ -57,6 +57,14 @@ def register_train_command(app: typer.Typer, console: Console) -> None:
         score_conditioned: bool = typer.Option(
             False, "--score-conditioned", help="Emit a quality control token; generate conditioned on the top bucket"
         ),
+        loss_weight_by_score: str = typer.Option(
+            "uniform",
+            "--loss-weight-by-score",
+            help="Reward-weighted regression: scale each example's loss by its score (uniform | linear | softmax; mlx/cuda)",
+        ),
+        loss_weight_temperature: float = typer.Option(
+            1.0, "--loss-weight-temperature", help="softmax loss-weight temperature (lower = sharper toward top scores)"
+        ),
         base_model: str = typer.Option("", "--base-model", help="mlxlm backend: pretrained base model (empty = default)"),
         fine_tune_type: str = typer.Option("lora", "--fine-tune-type", help="mlxlm backend: lora | dora | full"),
         num_layers: int = typer.Option(8, "--num-layers", help="mlxlm backend: layers to fine-tune"),
@@ -70,6 +78,10 @@ def register_train_command(app: typer.Typer, console: Console) -> None:
             raise typer.BadParameter(f"--elite-fraction must be in (0, 1], got {elite_fraction}")
         if not 0.0 < dedupe_near_threshold <= 1.0:
             raise typer.BadParameter(f"--dedupe-near-threshold must be in (0, 1], got {dedupe_near_threshold}")
+        if loss_weight_by_score not in ("uniform", "linear", "softmax"):
+            raise typer.BadParameter(f"--loss-weight-by-score must be uniform|linear|softmax, got {loss_weight_by_score!r}")
+        if loss_weight_by_score == "softmax" and loss_weight_temperature <= 0:
+            raise typer.BadParameter(f"--loss-weight-temperature must be > 0 for softmax, got {loss_weight_temperature}")
 
         logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -87,6 +99,8 @@ def register_train_command(app: typer.Typer, console: Console) -> None:
             dedupe=dedupe,
             dedupe_near_threshold=dedupe_near_threshold,
             score_conditioned=score_conditioned,
+            loss_weight_mode=loss_weight_by_score,
+            loss_weight_temperature=loss_weight_temperature,
             base_model=base_model,
             fine_tune_type=fine_tune_type,
             num_layers=num_layers,

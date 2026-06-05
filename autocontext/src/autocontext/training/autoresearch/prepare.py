@@ -36,6 +36,7 @@ from autocontext.training.autoresearch.sequence_format import (  # noqa: F401
     decodable_vocab_size,
     format_example,
     generation_logit_mask_values,
+    score_loss_weights,
     total_vocab_size,
 )
 from autocontext.training.autoresearch.sequence_format import (
@@ -256,17 +257,28 @@ if HAS_MLX:
         batch_size: int,
         pad_token_id: int,
         strategy_token_id: int,
-    ) -> Iterator[tuple[Any, Any, Any]]:
-        """Yield ``(x, y, loss_mask)`` batches of per-example, completion-masked sequences.
+        weights: list[float] | None = None,
+    ) -> Iterator[tuple[Any, Any, Any, Any]]:
+        """Yield ``(x, y, loss_mask, example_weights)`` per-example, completion-masked batches.
 
         Each example is encoded independently (no cross-example packing, so the model
         never predicts across a document boundary), right-truncated to keep the
         completion when it exceeds ``seq_len + 1``, padded to ``seq_len``, and its loss
         mask zeroes both the prompt tokens (completion-only loss) and the padding.
         No batch is dropped: the final partial batch is yielded as-is.
+
+        ``weights`` (reward-weighted regression) is an optional per-sequence list,
+        aligned with ``sequences``. It is returned as a per-example weight vector
+        ``example_weights`` (shape ``(batch,)``), NOT folded into the per-token mask,
+        so ``compute_loss`` can weight each example's *mean* completion loss (a long
+        completion can't drown out a short high-reward one). ``example_weights`` is
+        ``None`` when ``weights`` is ``None`` or all ``1.0`` (byte-identical, unweighted).
+        Dropped sequences (too short to form a pair) drop their weight too.
         """
-        built: list[tuple[list[int], list[int], list[int]]] = []
-        for tokens in sequences:
+        do_weight = weights is not None and any(w != 1.0 for w in weights)
+        ws = weights if weights is not None else [1.0] * len(sequences)
+        built: list[tuple[list[int], list[int], list[int], float]] = []
+        for tokens, w in zip(sequences, ws, strict=True):
             example = build_masked_example(
                 tokens,
                 seq_len=seq_len,
@@ -274,14 +286,16 @@ if HAS_MLX:
                 strategy_token_id=strategy_token_id,
             )
             if example is not None:
-                built.append(example)
+                inp, tgt, mask = example
+                built.append((inp, tgt, mask, w))
 
         for start in range(0, len(built), batch_size):
             chunk = built[start : start + batch_size]
             xs = mx.array([c[0] for c in chunk], dtype=mx.int32)
             ys = mx.array([c[1] for c in chunk], dtype=mx.int32)
             ms = mx.array([c[2] for c in chunk], dtype=mx.float32)
-            yield xs, ys, ms
+            wv = mx.array([c[3] for c in chunk], dtype=mx.float32) if do_weight else None
+            yield xs, ys, ms, wv
 
     # -----------------------------------------------------------------------
     # 5. Assessment oracle

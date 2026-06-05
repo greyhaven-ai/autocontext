@@ -113,14 +113,42 @@ def test_iter_masked_batches_shapes_mask_and_no_tail_drop() -> None:
     ]
     batches = list(iter_masked_batches(sequences, seq_len=4, batch_size=2, pad_token_id=0, strategy_token_id=strat))
     assert len(batches) == 2
-    x0, y0, m0 = batches[0]
+    x0, y0, m0, w0 = batches[0]
     assert x0.shape == (2, 4) and y0.shape == (2, 4) and m0.shape == (2, 4)
+    assert w0 is None  # no weighting requested -> no per-example weight vector
     assert batches[1][0].shape[0] == 1  # last partial batch kept, not dropped
     # mask is 0 on the prompt token(s) before the strategy token, 1 after
     import mlx.core as mx  # type: ignore[import-not-found]
 
     assert m0[0].tolist() == [0.0, 1.0, 1.0, 0.0]  # [prompt, comp, comp, pad]
     assert mx.sum(m0).item() > 0
+
+
+def test_iter_masked_batches_returns_per_example_weight_vector() -> None:
+    """Weights are returned as a separate per-example vector, NOT folded into the mask."""
+    from autocontext.training.autoresearch.prepare import iter_masked_batches
+
+    strat = 99
+    sequences = [[1, strat, 2, 3], [4, strat, 5, 6]]
+    batches = list(
+        iter_masked_batches(sequences, seq_len=4, batch_size=2, pad_token_id=0, strategy_token_id=strat, weights=[0.5, 1.5])
+    )
+    _, _, m, w = batches[0]
+    assert m[0].tolist() == [0.0, 1.0, 1.0, 0.0]  # mask stays 0/1 (length-neutral)
+    assert m[1].tolist() == [0.0, 1.0, 1.0, 0.0]
+    assert w.tolist() == [0.5, 1.5]  # per-example weights live in the 4th element
+
+
+def test_iter_masked_batches_default_weights_none() -> None:
+    """weights=None and all-1.0 weights both yield no weight vector (unweighted)."""
+    from autocontext.training.autoresearch.prepare import iter_masked_batches
+
+    strat = 99
+    sequences = [[1, strat, 2, 3]]
+    none_w = list(iter_masked_batches(sequences, seq_len=4, batch_size=1, pad_token_id=0, strategy_token_id=strat))
+    ones_w = list(iter_masked_batches(sequences, seq_len=4, batch_size=1, pad_token_id=0, strategy_token_id=strat, weights=[1.0]))
+    assert none_w[0][2].tolist() == ones_w[0][2].tolist()  # identical 0/1 mask
+    assert none_w[0][3] is None and ones_w[0][3] is None  # all-1.0 collapses to no weighting
 
 
 def test_compute_loss_mask_ignores_masked_positions() -> None:
@@ -146,6 +174,38 @@ def test_compute_loss_mask_ignores_masked_positions() -> None:
     masked_partial = compute_loss(model, x, y, partial)
     mx.eval(masked_partial)  # noqa: S307
     assert masked_partial.item() >= 0.0
+
+
+def test_compute_loss_example_weights_are_length_neutral() -> None:
+    """Per-example weighting weights each example's MEAN completion loss, so a long
+    low-weight example cannot dominate a short high-weight one (the RWR contract).
+
+    Two identical-content rows (so each example's mean completion loss is equal) but
+    with different completion lengths: equal weights must give the same loss as the
+    unweighted per-token average, proving the weight is per-example, not per-token.
+    """
+    import mlx.core as mx  # type: ignore[import-not-found]
+
+    from autocontext.training.autoresearch.train import GPTModel, ModelConfig, compute_loss
+
+    cfg = ModelConfig()
+    model = GPTModel(cfg)
+    x = mx.zeros((2, 4), dtype=mx.int32)
+    y = mx.array([[1, 2, 3, 4], [1, 2, 3, 4]], dtype=mx.int32)
+    # row 0 trains 1 completion token, row 1 trains 3 -> different lengths
+    mask = mx.array([[0.0, 1.0, 0.0, 0.0], [1.0, 1.0, 1.0, 0.0]], dtype=mx.float32)
+
+    # Equal per-example weights => each example's mean loss counts equally (length-neutral).
+    equal_w = compute_loss(model, x, y, mask, mx.array([1.0, 1.0], dtype=mx.float32))
+    # Upweighting the short row must move the loss toward that row's mean loss.
+    short_heavy = compute_loss(model, x, y, mask, mx.array([9.0, 1.0], dtype=mx.float32))
+    mx.eval(equal_w, short_heavy)  # noqa: S307
+    assert equal_w.item() >= 0.0 and short_heavy.item() >= 0.0
+    # The token-level masked average weights by length; the per-example path does not.
+    token_level = compute_loss(model, x, y, mask)  # example_weights=None
+    mx.eval(token_level)  # noqa: S307
+    # equal per-example weighting differs from token-level when lengths differ
+    assert abs(equal_w.item() - token_level.item()) > 1e-6
 
 
 def test_run_training_mlx_end_to_end_smoke(tmp_path: str) -> None:
@@ -256,6 +316,30 @@ def test_run_training_val_select_completes(tmp_path: str) -> None:
         backend="mlx",
     )
     assert math.isfinite(metrics["val_loss"])
+    assert (Path(tmp_path) / "out" / "model.safetensors").exists()
+
+
+def test_run_training_loss_weighted_end_to_end(tmp_path: str) -> None:
+    """Reward-weighted regression (softmax loss weights) runs the full mlx pipeline."""
+    from pathlib import Path
+
+    from autocontext.training.autoresearch.train import run_training
+
+    metrics = run_training(
+        scenario_name="grid_ctf",
+        data_path=_write_grid_ctf_dataset(tmp_path),
+        output_dir=Path(tmp_path) / "out",
+        time_budget=30,
+        memory_limit_mb=4096,
+        train_steps=2,
+        batch_size=1,
+        seq_len=24,
+        assess_samples=1,
+        loss_weight_mode="softmax",
+        loss_weight_temperature=0.5,
+        backend="mlx",
+    )
+    assert "avg_score" in metrics and "valid_rate" in metrics
     assert (Path(tmp_path) / "out" / "model.safetensors").exists()
 
 

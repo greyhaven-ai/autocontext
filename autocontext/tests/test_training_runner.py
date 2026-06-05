@@ -275,6 +275,38 @@ class TestConstraints:
         backend_index = command.index("--backend")
         assert command[backend_index + 1] == "cuda"
 
+    def test_experiment_subprocess_passes_loss_weight_flags(self, tmp_path: Path) -> None:
+        cfg = TrainingConfig(
+            scenario="grid_ctf",
+            data_path=tmp_path / "data.jsonl",
+            loss_weight_mode="softmax",
+            loss_weight_temperature=0.5,
+        )
+        (tmp_path / "data.jsonl").write_text("{}\n")
+        runner = TrainingRunner(cfg, work_dir=tmp_path / "workspace")
+
+        completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+        with patch("autocontext.training.runner.subprocess.run", return_value=completed) as mock_run:
+            runner._run_experiment_subprocess(0)
+
+        command = mock_run.call_args.args[0]
+        mode_index = command.index("--loss-weight-by-score")
+        assert command[mode_index + 1] == "softmax"
+        temp_index = command.index("--loss-weight-temperature")
+        assert command[temp_index + 1] == "0.5"
+
+    def test_experiment_subprocess_omits_loss_weight_flags_when_uniform(self, tmp_path: Path) -> None:
+        cfg = TrainingConfig(scenario="grid_ctf", data_path=tmp_path / "data.jsonl")
+        (tmp_path / "data.jsonl").write_text("{}\n")
+        runner = TrainingRunner(cfg, work_dir=tmp_path / "workspace")
+
+        completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+        with patch("autocontext.training.runner.subprocess.run", return_value=completed) as mock_run:
+            runner._run_experiment_subprocess(0)
+
+        command = mock_run.call_args.args[0]
+        assert "--loss-weight-by-score" not in command  # uniform default stays off the command line
+
     def test_convergence_nudge_after_consecutive_discards(self, tmp_path: Path) -> None:
         cfg = TrainingConfig(scenario="grid_ctf", data_path=tmp_path / "data.jsonl")
         (tmp_path / "data.jsonl").write_text("{}\n")
@@ -629,6 +661,52 @@ class TestTrainCLI:
             assert call_cfg.agent_provider == "deterministic"
             assert call_cfg.agent_model == "custom-model"
 
+    def test_loss_weight_options_reach_config(self) -> None:
+        from autocontext.cli import app
+
+        runner = CliRunner()
+        with patch("autocontext.cli_train._run_training") as mock_run:
+            mock_run.return_value = TrainingResult(
+                scenario="grid_ctf",
+                total_experiments=1,
+                kept_count=1,
+                discarded_count=0,
+                best_score=0.5,
+                best_experiment_index=0,
+                checkpoint_path=Path("/tmp/best"),
+                results=[],
+            )
+            result = runner.invoke(
+                app,
+                ["train", "--scenario", "grid_ctf", "--loss-weight-by-score", "softmax", "--loss-weight-temperature", "0.5"],
+            )
+            assert result.exit_code == 0, result.output
+            call_cfg = mock_run.call_args[0][0]
+            assert call_cfg.loss_weight_mode == "softmax"
+            assert call_cfg.loss_weight_temperature == 0.5
+
+    def test_invalid_loss_weight_mode_rejected(self) -> None:
+        from autocontext.cli import app
+
+        runner = CliRunner()
+        # _run_training is patched so a non-zero exit can ONLY come from the BadParameter guard.
+        with patch("autocontext.cli_train._run_training") as mock_run:
+            result = runner.invoke(app, ["train", "--scenario", "grid_ctf", "--loss-weight-by-score", "bogus"])
+        assert result.exit_code != 0
+        mock_run.assert_not_called()
+
+    def test_softmax_zero_temperature_rejected(self) -> None:
+        from autocontext.cli import app
+
+        runner = CliRunner()
+        with patch("autocontext.cli_train._run_training") as mock_run:
+            result = runner.invoke(
+                app,
+                ["train", "--scenario", "grid_ctf", "--loss-weight-by-score", "softmax", "--loss-weight-temperature", "0"],
+            )
+        assert result.exit_code != 0
+        mock_run.assert_not_called()
+
     def test_missing_data_uses_default(self) -> None:
         from autocontext.cli import app
 
@@ -749,6 +827,7 @@ class TestDataStatsProvenance:
 
 def test_score_conditioned_flag_in_subprocess(tmp_path: Path) -> None:
     """--score-conditioned reaches the train.py subprocess only when enabled."""
+
     def capture(score_conditioned: bool) -> list[str]:
         cfg = TrainingConfig(
             scenario="grid_ctf",

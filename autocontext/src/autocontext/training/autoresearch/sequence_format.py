@@ -17,6 +17,7 @@ Transformer / Quark style) by editing exactly one place.
 from __future__ import annotations
 
 import json
+import math
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -90,6 +91,69 @@ def score_to_quality_bucket(score: float, *, num_buckets: int = NUM_QUALITY_BUCK
     frac = (score - lo) / (hi - lo)
     bucket = int(frac * num_buckets)
     return max(0, min(num_buckets - 1, bucket))
+
+
+# Loss-weighting modes for reward-weighted regression (PR3b). ``uniform`` is the
+# default and is byte-identical to unweighted training.
+LOSS_WEIGHT_MODES = ("uniform", "linear", "softmax")
+# Lowest relative weight the worst-scoring example gets in ``linear`` mode (before
+# mean-normalization), so no example is fully dropped (that is what curation is for).
+LOSS_WEIGHT_FLOOR = 0.1
+
+
+def _mean_normalize(weights: list[float]) -> list[float]:
+    """Scale weights so their mean is 1.0 (keeps the effective learning rate stable)."""
+    n = len(weights)
+    total = sum(weights)
+    if n == 0 or total <= 0.0:
+        return [1.0] * n
+    mean = total / n
+    return [w / mean for w in weights]
+
+
+def score_loss_weights(scores: list[float], *, mode: str = "uniform", temperature: float = 1.0) -> list[float]:
+    """Per-example loss weights from scores (reward-weighted regression / RWR).
+
+    Soft counterpart to elite filtering: instead of dropping low-scoring records
+    (curation) or tagging them (score-conditioning), every record is kept but its
+    per-example loss is scaled by a weight derived from its score, so the gradient
+    leans toward high-reward constructions. The weight is applied per training
+    example (each example's mean completion loss is weighted, then averaged), so a
+    long completion cannot drown out a short high-reward one.
+
+    Modes (all but ``uniform`` are mean-normalized to 1.0, so they change the
+    *relative* emphasis across examples, not the overall step size):
+
+    - ``uniform``: every weight is ``1.0`` (byte-identical to unweighted training).
+    - ``linear``: min-max maps scores onto ``[LOSS_WEIGHT_FLOOR, 1]`` then normalizes.
+      A mild, interpretable tilt toward better examples.
+    - ``softmax``: ``softmax(score / temperature)`` then normalized. ``temperature``
+      is a continuous knob: large flattens toward ``uniform``, small concentrates on
+      the top example (soft elite selection). It must be ``> 0``.
+
+    No score spread (all scores equal) falls back to ``uniform`` for every mode.
+    """
+    n = len(scores)
+    if n == 0:
+        return []
+    if mode == "uniform":
+        return [1.0] * n
+    if mode not in LOSS_WEIGHT_MODES:
+        raise ValueError(f"unknown loss-weight mode: {mode!r} (expected one of {LOSS_WEIGHT_MODES})")
+    if mode == "softmax" and temperature <= 0:
+        raise ValueError(f"softmax loss-weight temperature must be > 0, got {temperature}")
+
+    lo, hi = min(scores), max(scores)
+    if hi <= lo:  # no spread to weight by
+        return [1.0] * n
+
+    if mode == "linear":
+        raw = [LOSS_WEIGHT_FLOOR + (1.0 - LOSS_WEIGHT_FLOOR) * (s - lo) / (hi - lo) for s in scores]
+        return _mean_normalize(raw)
+
+    # softmax (subtract max for numerical stability; shift-invariant after normalization)
+    exps = [math.exp((s - hi) / temperature) for s in scores]
+    return _mean_normalize(exps)
 
 
 def decodable_vocab_size(tokenizer: Any) -> int:

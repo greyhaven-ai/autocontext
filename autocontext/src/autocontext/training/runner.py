@@ -63,6 +63,8 @@ class TrainingConfig:
     dedupe: bool = False  # drop duplicate constructions, keeping the highest-scoring representative
     dedupe_near_threshold: float = 1.0  # with dedupe, also drop near-dups at/above this similarity
     score_conditioned: bool = False  # emit a quality control token + generate conditioned on the top bucket
+    loss_weight_mode: str = "uniform"  # reward-weighted regression: uniform | linear | softmax (mlx/cuda)
+    loss_weight_temperature: float = 1.0  # softmax loss-weight temperature (lower = sharper toward top scores)
     base_model: str = ""  # mlxlm backend: pretrained base model (empty = backend default)
     fine_tune_type: str = "lora"  # mlxlm backend: lora | dora | full
     num_layers: int = 8  # mlxlm backend: number of layers to fine-tune
@@ -387,6 +389,10 @@ class TrainingRunner:
             command += ["--dedupe-near-threshold", str(self.config.dedupe_near_threshold)]
         if self.config.score_conditioned:
             command.append("--score-conditioned")
+        if self.config.loss_weight_mode != "uniform":
+            command += ["--loss-weight-by-score", self.config.loss_weight_mode]
+        if self.config.loss_weight_temperature != 1.0:
+            command += ["--loss-weight-temperature", str(self.config.loss_weight_temperature)]
         if self.config.base_model:
             command += ["--base-model", self.config.base_model]
         if self.config.fine_tune_type != "lora":
@@ -560,6 +566,8 @@ class TrainingRunner:
             "dedupe": 1.0 if self.config.dedupe else 0.0,
             "dedupe_near_threshold": float(self.config.dedupe_near_threshold),
             "score_conditioned": 1.0 if self.config.score_conditioned else 0.0,
+            "loss_weight_mode": self.config.loss_weight_mode,
+            "loss_weight_temperature": float(self.config.loss_weight_temperature),
         }
         try:
             line_count = sum(1 for _ in self.config.data_path.open(encoding="utf-8"))
