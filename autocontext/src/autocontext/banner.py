@@ -24,6 +24,7 @@ WHATS_NEW_BLOCK_START = "<!-- autocontext-whats-new:start -->"
 WHATS_NEW_BLOCK_END = "<!-- autocontext-whats-new:end -->"
 README_WHATS_NEW_HEADING = "What's New in 0.6.0"
 FALLBACK_BANNER_ART = "autocontext"
+README_WORDMARK_PATH = "autocontext/assets/autocontext-wordmark.svg"
 README_BADGES = (
     (
         "https://github.com/greyhaven-ai/autocontext/blob/main/LICENSE",
@@ -183,7 +184,7 @@ def render_readme_banner_block() -> str:
     return (
         f"{SYNC_BLOCK_START}\n"
         '<p align="center">\n'
-        '  <img src="autocontext/assets/banner.svg" alt="autocontext ASCII banner" style="max-width: 100%; height: auto;" />\n'
+        f'  <img src="{README_WORDMARK_PATH}" alt="autocontext logo" width="720" style="max-width: 100%; height: auto;" />\n'
         "</p>\n\n"
         f'<p align="center"><strong>{TAGLINE}</strong></p>\n\n'
         '<p align="center">\n'
