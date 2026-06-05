@@ -123,6 +123,32 @@ def test_iter_masked_batches_shapes_mask_and_no_tail_drop() -> None:
     assert mx.sum(m0).item() > 0
 
 
+def test_iter_masked_batches_scales_mask_by_weight() -> None:
+    """A per-sequence weight scales that example's completion mask (RWR seam)."""
+    from autocontext.training.autoresearch.prepare import iter_masked_batches
+
+    strat = 99
+    sequences = [[1, strat, 2, 3], [4, strat, 5, 6]]
+    # weight 1.0 reproduces the 0/1 mask; weight 2.0 doubles the trained positions
+    batches = list(
+        iter_masked_batches(sequences, seq_len=4, batch_size=2, pad_token_id=0, strategy_token_id=strat, weights=[1.0, 2.0])
+    )
+    _, _, m = batches[0]
+    assert m[0].tolist() == [0.0, 1.0, 1.0, 0.0]  # weight 1.0 == unweighted mask
+    assert m[1].tolist() == [0.0, 2.0, 2.0, 0.0]  # weight 2.0 scales the completion positions
+
+
+def test_iter_masked_batches_default_weights_unchanged() -> None:
+    """weights=None is byte-identical to the unweighted mask."""
+    from autocontext.training.autoresearch.prepare import iter_masked_batches
+
+    strat = 99
+    sequences = [[1, strat, 2, 3]]
+    none_w = list(iter_masked_batches(sequences, seq_len=4, batch_size=1, pad_token_id=0, strategy_token_id=strat))
+    ones_w = list(iter_masked_batches(sequences, seq_len=4, batch_size=1, pad_token_id=0, strategy_token_id=strat, weights=[1.0]))
+    assert none_w[0][2].tolist() == ones_w[0][2].tolist()
+
+
 def test_compute_loss_mask_ignores_masked_positions() -> None:
     """Masked compute_loss equals the loss over only the unmasked positions."""
     import mlx.core as mx  # type: ignore[import-not-found]
@@ -256,6 +282,30 @@ def test_run_training_val_select_completes(tmp_path: str) -> None:
         backend="mlx",
     )
     assert math.isfinite(metrics["val_loss"])
+    assert (Path(tmp_path) / "out" / "model.safetensors").exists()
+
+
+def test_run_training_loss_weighted_end_to_end(tmp_path: str) -> None:
+    """Reward-weighted regression (softmax loss weights) runs the full mlx pipeline."""
+    from pathlib import Path
+
+    from autocontext.training.autoresearch.train import run_training
+
+    metrics = run_training(
+        scenario_name="grid_ctf",
+        data_path=_write_grid_ctf_dataset(tmp_path),
+        output_dir=Path(tmp_path) / "out",
+        time_budget=30,
+        memory_limit_mb=4096,
+        train_steps=2,
+        batch_size=1,
+        seq_len=24,
+        assess_samples=1,
+        loss_weight_mode="softmax",
+        loss_weight_temperature=0.5,
+        backend="mlx",
+    )
+    assert "avg_score" in metrics and "valid_rate" in metrics
     assert (Path(tmp_path) / "out" / "model.safetensors").exists()
 
 

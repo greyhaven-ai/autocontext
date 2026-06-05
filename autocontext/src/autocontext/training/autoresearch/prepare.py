@@ -36,6 +36,7 @@ from autocontext.training.autoresearch.sequence_format import (  # noqa: F401
     decodable_vocab_size,
     format_example,
     generation_logit_mask_values,
+    score_loss_weights,
     total_vocab_size,
 )
 from autocontext.training.autoresearch.sequence_format import (
@@ -256,6 +257,7 @@ if HAS_MLX:
         batch_size: int,
         pad_token_id: int,
         strategy_token_id: int,
+        weights: list[float] | None = None,
     ) -> Iterator[tuple[Any, Any, Any]]:
         """Yield ``(x, y, loss_mask)`` batches of per-example, completion-masked sequences.
 
@@ -264,9 +266,16 @@ if HAS_MLX:
         completion when it exceeds ``seq_len + 1``, padded to ``seq_len``, and its loss
         mask zeroes both the prompt tokens (completion-only loss) and the padding.
         No batch is dropped: the final partial batch is yielded as-is.
+
+        ``weights`` (reward-weighted regression) is an optional per-sequence list,
+        aligned with ``sequences``; each example's completion mask is scaled by its
+        weight so higher-weight examples contribute more to the loss. ``None`` (or all
+        ``1.0``) is byte-identical to unweighted training. Dropped sequences (too short
+        to form a pair) drop their weight too, keeping the alignment.
         """
-        built: list[tuple[list[int], list[int], list[int]]] = []
-        for tokens in sequences:
+        ws = weights if weights is not None else [1.0] * len(sequences)
+        built: list[tuple[list[int], list[int], list[float]]] = []
+        for tokens, w in zip(sequences, ws, strict=True):
             example = build_masked_example(
                 tokens,
                 seq_len=seq_len,
@@ -274,7 +283,9 @@ if HAS_MLX:
                 strategy_token_id=strategy_token_id,
             )
             if example is not None:
-                built.append(example)
+                inp, tgt, mask = example
+                weighted: list[float] = [float(m) * w for m in mask]
+                built.append((inp, tgt, weighted))
 
         for start in range(0, len(built), batch_size):
             chunk = built[start : start + batch_size]

@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 # ---------------------------------------------------------------------------
 # Golden master: the format must remain byte-identical (imported via the public
 # prepare surface, which re-exports the contract for backward compatibility).
@@ -277,3 +279,66 @@ def test_cuda_uses_shared_contract_no_duplicate_definitions() -> None:
     assert "def _extract_strategy_json" not in src
     assert "def _resolve_scenario_name" not in src
     assert "def _resolve_scenario_context" not in src
+
+
+# ---------------------------------------------------------------------------
+# Reward-weighted regression: per-example loss weights from scores (PR3b)
+# ---------------------------------------------------------------------------
+
+
+def test_score_loss_weights_uniform_is_all_ones() -> None:
+    """Default mode is byte-identical to unweighted training (all 1.0)."""
+    from autocontext.training.autoresearch.sequence_format import score_loss_weights
+
+    assert score_loss_weights([0.1, 0.9, 0.5], mode="uniform") == [1.0, 1.0, 1.0]
+    assert score_loss_weights([], mode="uniform") == []
+
+
+def test_score_loss_weights_unknown_mode_raises() -> None:
+    from autocontext.training.autoresearch.sequence_format import score_loss_weights
+
+    with pytest.raises(ValueError, match="unknown loss-weight mode"):
+        score_loss_weights([0.1, 0.9], mode="bogus")
+
+
+def test_score_loss_weights_linear_orders_and_means_one() -> None:
+    """Linear mode is monotone in score and mean-normalized (preserves effective LR)."""
+    from autocontext.training.autoresearch.sequence_format import score_loss_weights
+
+    w = score_loss_weights([0.0, 0.5, 1.0], mode="linear")
+    assert w[0] < w[1] < w[2]  # higher score -> higher weight
+    assert abs(sum(w) / len(w) - 1.0) < 1e-9  # mean weight is 1.0
+
+
+def test_score_loss_weights_constant_scores_fall_back_to_uniform() -> None:
+    """No score spread -> nothing to weight -> uniform (no divide-by-zero)."""
+    from autocontext.training.autoresearch.sequence_format import score_loss_weights
+
+    assert score_loss_weights([0.7, 0.7, 0.7], mode="linear") == [1.0, 1.0, 1.0]
+    assert score_loss_weights([0.7, 0.7, 0.7], mode="softmax") == [1.0, 1.0, 1.0]
+
+
+def test_score_loss_weights_softmax_means_one_and_orders() -> None:
+    from autocontext.training.autoresearch.sequence_format import score_loss_weights
+
+    w = score_loss_weights([0.0, 1.0], mode="softmax", temperature=0.5)
+    assert w[1] > w[0]
+    assert abs(sum(w) / len(w) - 1.0) < 1e-9
+
+
+def test_score_loss_weights_softmax_high_temperature_approaches_uniform() -> None:
+    """Large temperature flattens the softmax toward uniform (continuous knob)."""
+    from autocontext.training.autoresearch.sequence_format import score_loss_weights
+
+    w = score_loss_weights([0.0, 0.5, 1.0], mode="softmax", temperature=1e6)
+    for wi in w:
+        assert abs(wi - 1.0) < 1e-3
+
+
+def test_score_loss_weights_softmax_low_temperature_concentrates_on_max() -> None:
+    """Small temperature concentrates weight on the top-scoring example (soft elite)."""
+    from autocontext.training.autoresearch.sequence_format import score_loss_weights
+
+    w = score_loss_weights([0.0, 0.5, 1.0], mode="softmax", temperature=0.01)
+    assert w[2] > w[0] and w[2] > w[1]
+    assert w[2] > 2.5  # near n=3 (all mass on the max)

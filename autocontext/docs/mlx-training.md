@@ -151,6 +151,33 @@ uv run autoctx train \
   --score-conditioned --elite-fraction 0.3
 ```
 
+### Reward-weighted loss (optional)
+
+`--loss-weight-by-score` is the soft counterpart to elite filtering (reward-weighted
+regression): instead of dropping low-scoring records (`--elite-fraction`) or tagging
+them (`--score-conditioned`), every record is kept but its loss is scaled by a weight
+derived from its score, so the gradient leans toward high-reward constructions. The
+weight becomes the per-example value of the completion loss mask, so the loss code is
+unchanged (it is still a masked average, now score-weighted). It applies to the `mlx`
+and `cuda` backends; the `mlxlm` backend rejects non-uniform modes.
+
+| Mode      | Meaning                                                                                                                                                                                    |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `uniform` | Default. Every weight is 1.0 (byte-identical to unweighted training).                                                                                                                      |
+| `linear`  | Min-max maps scores onto `[0.1, 1]` then mean-normalizes. A mild, interpretable tilt.                                                                                                      |
+| `softmax` | `softmax(score / temperature)` then mean-normalizes. `--loss-weight-temperature` is a continuous knob: large flattens toward uniform, small concentrates on the top examples (soft elite). |
+
+All non-uniform modes are mean-normalized to 1.0, so they change the _relative_
+emphasis across examples without changing the overall step size. No score spread (all
+scores equal) falls back to uniform.
+
+```bash
+uv run autoctx train \
+  --scenario grid_ctf \
+  --data /absolute/path/to/training/grid_ctf.jsonl \
+  --loss-weight-by-score softmax --loss-weight-temperature 0.5
+```
+
 ### Self-improving loop (ReST-EM / Expert Iteration)
 
 `autoctx self-improve` runs the outer loop that turns one-shot distillation into

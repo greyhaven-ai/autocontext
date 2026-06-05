@@ -79,6 +79,21 @@ def test_run_training_rejects_val_select_on_cuda(tmp_path: Path) -> None:
         )
 
 
+def test_run_training_rejects_loss_weighting_on_mlxlm(tmp_path: Path) -> None:
+    # Reward-weighted regression is mlx/cuda-only; the mlxlm guard fires before the
+    # mlx_lm import, so this holds without MLX/torch/mlx_lm installed.
+    with pytest.raises(NotImplementedError, match="mlx/cuda-only"):
+        train_module.run_training(
+            scenario_name="grid_ctf",
+            data_path=tmp_path / "training.jsonl",
+            output_dir=tmp_path / "out",
+            time_budget=1,
+            memory_limit_mb=1024,
+            backend="mlxlm",
+            loss_weight_mode="linear",
+        )
+
+
 @pytest.mark.parametrize(
     "kwargs, match",
     [

@@ -453,6 +453,8 @@ def _run_mlx_training(
     dedupe: bool = False,
     dedupe_near_threshold: float = 1.0,
     score_conditioned: bool = False,
+    loss_weight_mode: str = "uniform",
+    loss_weight_temperature: float = 1.0,
     collect_samples_path: Path | None = None,
 ) -> dict[str, float]:
     _preflight_backend_deps("mlx")
@@ -473,6 +475,7 @@ def _run_mlx_training(
             build_special_tokens,
             iter_masked_batches,
             load_jsonl,
+            score_loss_weights,
             train_tokenizer,
         )
     except ImportError:
@@ -482,6 +485,7 @@ def _run_mlx_training(
             build_special_tokens,
             iter_masked_batches,
             load_jsonl,
+            score_loss_weights,
             train_tokenizer,
         )
 
@@ -515,20 +519,15 @@ def _run_mlx_training(
     strategy_token_id = build_special_tokens(base_vocab)["<|strategy|>"]
     pad_token_id = getattr(tokenizer, "end_token_id", 0) or 0
 
-    # Per-example, completion-masked batches (no cross-document packing, no tail drop).
-    def _masked_batches(recs: list[dict[str, Any]]) -> list[Any]:
+    # Per-example completion-masked batches; ``weights`` (RWR) scales TRAIN loss by score (val stays unweighted).
+    def _masked_batches(recs: list[dict[str, Any]], *, weights: list[float] | None = None) -> list[Any]:
         seqs = [tokenizer.encode(TrainingExample.from_record(r).to_sequence(score_conditioned=score_conditioned)) for r in recs]
-        return list(
-            iter_masked_batches(
-                seqs,
-                seq_len=seq_len,
-                batch_size=batch_size,
-                pad_token_id=pad_token_id,
-                strategy_token_id=strategy_token_id,
-            )
-        )
+        kw = dict(seq_len=seq_len, batch_size=batch_size, pad_token_id=pad_token_id, strategy_token_id=strategy_token_id)
+        return list(iter_masked_batches(seqs, weights=weights, **kw))
 
-    batches = _masked_batches(train_records)
+    scores = [float(r.get("score", 0.0)) for r in train_records]
+    train_weights = score_loss_weights(scores, mode=loss_weight_mode, temperature=loss_weight_temperature)
+    batches = _masked_batches(train_records, weights=train_weights)
     if not batches:
         raise ValueError("not enough tokenized training data for a single batch")
     val_batches = _masked_batches(val_records)
@@ -654,6 +653,8 @@ def run_training(
     dedupe: bool = False,
     dedupe_near_threshold: float = 1.0,
     score_conditioned: bool = False,
+    loss_weight_mode: str = "uniform",
+    loss_weight_temperature: float = 1.0,
     base_model: str = "",
     fine_tune_type: str = "lora",
     num_layers: int = 8,
@@ -685,14 +686,12 @@ def run_training(
         dedupe=dedupe,
         dedupe_near_threshold=dedupe_near_threshold,
         score_conditioned=score_conditioned,
+        loss_weight_mode=loss_weight_mode,  # reward-weighted regression (mlx/cuda; mlxlm rejects non-uniform)
+        loss_weight_temperature=loss_weight_temperature,
     )
     if normalized_backend == "mlx":
         return _run_mlx_training(
-            **common,
-            seq_len=seq_len,
-            assess_top_k=assess_top_k,
-            val_select=val_select,
-            collect_samples_path=collect_samples_path,
+            **common, seq_len=seq_len, assess_top_k=assess_top_k, val_select=val_select, collect_samples_path=collect_samples_path
         )
     if collect_samples_path is not None:
         raise NotImplementedError("collect_samples_path (self-improving loop) is currently MLX-only")
@@ -703,10 +702,13 @@ def run_training(
 
         return run_cuda_training(**common, seq_len=seq_len, assess_top_k=assess_top_k)
     if normalized_backend == "mlxlm":
+        if loss_weight_mode != "uniform":
+            raise NotImplementedError("loss-weighting (reward-weighted regression) is currently mlx/cuda-only")
         from autocontext.training.autoresearch.mlxlm_backend import DEFAULT_BASE_MODEL, run_mlxlm_training
 
+        mlxlm_kwargs = {k: v for k, v in common.items() if not k.startswith("loss_weight")}
         return run_mlxlm_training(
-            **common,
+            **mlxlm_kwargs,
             assess_top_k=assess_top_k,
             base_model=base_model or DEFAULT_BASE_MODEL,
             fine_tune_type=fine_tune_type,
@@ -733,10 +735,10 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--val-select", action="store_true", help="keep best-by-val-loss checkpoint + early-stop (MLX)")
     parser.add_argument("--elite-fraction", type=float, default=1.0, help="train on only the top fraction by score")
     parser.add_argument("--dedupe", action="store_true", help="drop duplicate constructions (keep highest-scoring)")
-    parser.add_argument(
-        "--dedupe-near-threshold", type=float, default=1.0, help="with --dedupe, drop near-dups at/above this similarity"
-    )
+    parser.add_argument("--dedupe-near-threshold", type=float, default=1.0, help="with --dedupe, drop near-dups")
     parser.add_argument("--score-conditioned", action="store_true", help="emit quality token; generate conditioned on top bucket")
+    parser.add_argument("--loss-weight-by-score", choices=("uniform", "linear", "softmax"), default="uniform")
+    parser.add_argument("--loss-weight-temperature", type=float, default=1.0)
     parser.add_argument("--base-model", default="", help="mlxlm backend: pretrained base model (empty = default)")
     parser.add_argument("--fine-tune-type", choices=("lora", "dora", "full"), default="lora", help="mlxlm backend")
     parser.add_argument("--num-layers", type=int, default=8, help="mlxlm backend: layers to fine-tune")
@@ -765,6 +767,8 @@ def main(argv: list[str] | None = None) -> int:
             dedupe=args.dedupe,
             dedupe_near_threshold=args.dedupe_near_threshold,
             score_conditioned=args.score_conditioned,
+            loss_weight_mode=args.loss_weight_by_score,
+            loss_weight_temperature=args.loss_weight_temperature,
             base_model=args.base_model,
             fine_tune_type=args.fine_tune_type,
             num_layers=args.num_layers,

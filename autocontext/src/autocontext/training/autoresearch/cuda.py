@@ -44,14 +44,20 @@ def _create_torch_masked_dataloader(
     batch_size: int,
     pad_token_id: int,
     strategy_token_id: int,
+    weights: list[float] | None = None,
 ) -> list[tuple[Any, Any, Any]]:
     """Per-example, completion-masked torch batches (mirrors prepare.iter_masked_batches).
 
     No cross-example packing (document boundaries respected), no tail dropped, and a
     completion-only loss mask (prompt + padding zeroed). Returns ``(x, y, mask)`` tuples.
+
+    ``weights`` (reward-weighted regression) optionally scales each example's loss
+    mask by a per-sequence weight aligned with ``sequences``; ``None`` (or all ``1.0``)
+    is byte-identical to unweighted training.
     """
-    built: list[tuple[list[int], list[int], list[int]]] = []
-    for tokens in sequences:
+    ws = weights if weights is not None else [1.0] * len(sequences)
+    built: list[tuple[list[int], list[int], list[float]]] = []
+    for tokens, w in zip(sequences, ws, strict=True):
         example = build_masked_example(
             tokens,
             seq_len=seq_len,
@@ -59,7 +65,9 @@ def _create_torch_masked_dataloader(
             strategy_token_id=strategy_token_id,
         )
         if example is not None:
-            built.append(example)
+            inp, tgt, mask = example
+            weighted: list[float] = [float(m) * w for m in mask]
+            built.append((inp, tgt, weighted))
 
     batches: list[tuple[Any, Any, Any]] = []
     for start in range(0, len(built), batch_size):
@@ -269,9 +277,11 @@ def run_cuda_training(
     dedupe: bool = False,
     dedupe_near_threshold: float = 1.0,
     score_conditioned: bool = False,
+    loss_weight_mode: str = "uniform",
+    loss_weight_temperature: float = 1.0,
 ) -> dict[str, float]:
     from autocontext.training.autoresearch.data_selection import curate_records
-    from autocontext.training.autoresearch.sequence_format import NUM_QUALITY_BUCKETS
+    from autocontext.training.autoresearch.sequence_format import NUM_QUALITY_BUCKETS, score_loss_weights
     from autocontext.training.autoresearch.train import _preflight_backend_deps
 
     _preflight_backend_deps("cuda")
@@ -307,6 +317,12 @@ def run_cuda_training(
     base_vocab = int(getattr(tokenizer, "base_vocab_size", 8192))
     strategy_token_id = build_special_tokens(base_vocab)["<|strategy|>"]
     pad_token_id = getattr(tokenizer, "end_token_id", 0) or 0
+    # Reward-weighted regression: scale each example's loss by its score-derived weight.
+    loss_weights = score_loss_weights(
+        [float(record.get("score", 0.0)) for record in records],
+        mode=loss_weight_mode,
+        temperature=loss_weight_temperature,
+    )
     batches = _create_torch_masked_dataloader(
         sequences,
         torch_module=torch_module,
@@ -315,6 +331,7 @@ def run_cuda_training(
         batch_size=batch_size,
         pad_token_id=pad_token_id,
         strategy_token_id=strategy_token_id,
+        weights=loss_weights,
     )
     if not batches:
         raise ValueError("not enough tokenized training data for a single batch")
