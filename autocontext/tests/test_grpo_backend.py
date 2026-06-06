@@ -186,6 +186,31 @@ def test_render_reward_module_emits_compilable_registration() -> None:
     assert "capset_n4" in src
     assert "score_completions" in src
     assert "from capset_scenario import register; register(4)" in src
+    # **kwargs signature (not a fixed answers/types): mlx-lm-lora calls with answer=
+    # (singular) at runtime, so the reward must absorb arbitrary kwargs.
+    assert "**kwargs" in src
+
+
+def test_generated_reward_tolerates_trainer_kwargs() -> None:
+    """Reproduces the runtime call mlx-lm-lora actually makes: reward(prompts=, completions=,
+    answer=, types=). A fixed `answers` signature raised TypeError; this pins the fix."""
+    import importlib.util
+
+    if importlib.util.find_spec("mlx_lm_lora") is None:
+        import pytest
+
+        pytest.skip("mlx-lm-lora not installed")
+
+    from mlx_lm_lora.trainer.grpo_reward_functions import REWARD_REGISTRY
+
+    from autocontext.training.autoresearch.grpo_backend import render_reward_module
+
+    ns: dict = {}
+    exec(compile(render_reward_module("grid_ctf"), "<reward>", "exec"), ns)  # noqa: S102
+    fn = REWARD_REGISTRY["autocontext_verifier"]
+    # the exact runtime call shape (answer singular, types) must not raise
+    out = fn(prompts=["p"], completions=["not json"], answer=[""], types=None)
+    assert out == [0.0]
 
 
 def test_build_prompt_rows_shape() -> None:

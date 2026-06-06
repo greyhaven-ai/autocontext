@@ -176,8 +176,11 @@ def render_reward_module(scenario_name: str, *, reward_name: str = REWARD_NAME, 
         f"{registration}"
         f"_SCENARIO = SCENARIO_REGISTRY[{scenario_name!r}]()\n\n\n"
         f"@register_reward_function({reward_name!r})\n"
-        "def _autocontext_verifier_reward(prompts, completions, answers, types=None):\n"
-        "    return score_completions(_SCENARIO, completions)\n"
+        # **kwargs (not a fixed answers/types signature): mlx-lm-lora's trainer calls the
+        # reward with answer= (singular) at runtime, despite the documented `answers`
+        # type alias; only `completions` is needed, so absorb the rest defensively.
+        "def _autocontext_verifier_reward(prompts=None, completions=None, **kwargs):\n"
+        "    return score_completions(_SCENARIO, completions or [])\n"
     )
 
 
