@@ -22,14 +22,17 @@ class _AgentScenario:
     description = "toy"
 
     def initial_state(self, seed=None):
-        return {}
+        return {"seeded": True}
 
     def get_task_prompt(self, state=None):
         return "Build a set of integers as JSON."
 
-    def evaluate_output(self, output, state=None, **kwargs):
+    def evaluate_output(self, output, state, **kwargs):
+        # state is REQUIRED (no default), mirroring AgentTaskInterface; a caller that
+        # omits it raises TypeError. Compliant evaluators also use state.
         import json
 
+        assert state == {"seeded": True}, "scenario state must be passed through to evaluate_output"
         try:
             pts = json.loads(output).get("points", [])
         except Exception:
@@ -162,6 +165,7 @@ def test_grpo_cli_args_dapo_enables_clip_higher() -> None:
 
 def test_grpo_cli_args_rejects_unknown_variant() -> None:
     import pytest
+
     from autocontext.training.autoresearch.grpo_backend import grpo_cli_args
 
     with pytest.raises(ValueError, match="variant"):
@@ -204,3 +208,22 @@ def test_grpo_backend_registered() -> None:
     backend = default_backend_registry().get("grpo")
     assert backend is not None
     assert backend.name == "grpo"
+
+
+def test_grpo_metrics_has_all_summary_keys() -> None:
+    """Reviewer P1: train.py's format_summary always prints peak_memory_mb / num_steps /
+    num_params_m / depth, so the metrics dict must carry them or a successful run crashes
+    while printing the summary (TrainingRunner then treats the baseline as failed)."""
+    from autocontext.training.autoresearch.grpo_backend import _grpo_metrics
+
+    m = _grpo_metrics(
+        {"avg_score": 0.4, "valid_rate": 0.9},
+        iters=120,
+        training_seconds=12.3,
+        peak_memory_mb=512.0,
+        variant="gspo",
+    )
+    for key in ("avg_score", "valid_rate", "peak_memory_mb", "num_steps", "num_params_m", "depth", "training_seconds"):
+        assert key in m, f"missing summary key: {key}"
+    assert m["num_steps"] == 120.0
+    assert m["avg_score"] == 0.4

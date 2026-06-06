@@ -455,6 +455,7 @@ def run_training(
             assess_temperature=assess_temperature,
             assess_top_k=assess_top_k,
             time_budget=time_budget,
+            memory_limit_mb=memory_limit_mb,
         )
     raise ValueError("unsupported training backend: expected 'mlx', 'cuda', 'mlxlm', or 'grpo'")
 

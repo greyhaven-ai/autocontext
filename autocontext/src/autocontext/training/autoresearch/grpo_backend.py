@@ -56,6 +56,10 @@ def score_completions(scenario: Any, completions: list[str], *, seed: int = 0) -
     verifier scores 0.0 (never propagates, so one bad rollout can't kill training).
     """
     is_game = hasattr(scenario, "execute_match")
+    # AgentTaskInterface.evaluate_output requires `state` (no default), and compliant /
+    # generated tasks use it; resolve it once from the scenario so we don't silently
+    # score every agent-task rollout 0.0 by omitting it.
+    state = {} if is_game else _resolve_state(scenario, seed)
     scores: list[float] = []
     for completion in completions:
         strategy = extract_json_object(completion)
@@ -66,10 +70,25 @@ def score_completions(scenario: Any, completions: list[str], *, seed: int = 0) -
             if is_game:
                 scores.append(float(scenario.execute_match(strategy, seed=seed).score))
             else:
-                scores.append(float(scenario.evaluate_output(output=json.dumps(strategy)).score))
+                scores.append(float(scenario.evaluate_output(output=json.dumps(strategy), state=state).score))
         except Exception:
             scores.append(0.0)
     return scores
+
+
+def _resolve_state(scenario: Any, seed: int) -> dict:
+    """Best-effort initial state for an agent-task scenario's evaluate_output(state=...)."""
+    init = getattr(scenario, "initial_state", None)
+    if callable(init):
+        for call in (lambda: init(seed), lambda: init()):
+            try:
+                result = call()
+                return result if isinstance(result, dict) else {}
+            except TypeError:
+                continue
+            except Exception:
+                return {}
+    return {}
 
 
 # ---------------------------------------------------------------------------
@@ -183,6 +202,7 @@ def run_grpo_training(
     assess_temperature: float = 0.7,
     assess_top_k: int = 0,
     time_budget: int = 3600,
+    memory_limit_mb: int = 16384,
     **_ignored: Any,
 ) -> dict[str, float]:
     """Run a GRPO-family RLVR finetune via mlx-lm-lora, scoring with the scenario verifier."""
@@ -239,8 +259,9 @@ def run_grpo_training(
 
     # Assess the trained adapter in-scenario (reuse the mlx-lm assess path).
     from autocontext.training.autoresearch.mlxlm_backend import _assess_mlxlm
+    from autocontext.training.autoresearch.train import _peak_memory_mb
 
-    metrics = _assess_mlxlm(
+    assess = _assess_mlxlm(
         base_model=base_model,
         adapter_dir=adapter_dir,
         scenario=scenario,
@@ -250,6 +271,33 @@ def run_grpo_training(
         top_k=assess_top_k,
         score_conditioned=False,
     )
-    metrics["training_seconds"] = time.perf_counter() - started
-    metrics["variant"] = float(["grpo", "dr_grpo", "gspo", "dapo"].index(variant)) if variant in _VARIANT_FLAGS else -1.0
-    return metrics
+    return _grpo_metrics(
+        assess,
+        iters=iters,
+        training_seconds=time.perf_counter() - started,
+        peak_memory_mb=min(_peak_memory_mb(), float(memory_limit_mb)),
+        variant=variant,
+    )
+
+
+def _grpo_metrics(
+    assess: dict[str, float], *, iters: int, training_seconds: float, peak_memory_mb: float, variant: str
+) -> dict[str, float]:
+    """Assemble the full metrics dict train.py's format_summary requires.
+
+    The summary always prints peak_memory_mb / num_steps / num_params_m / depth, so a
+    GRPO run must carry them or it crashes while printing the summary (and TrainingRunner
+    then treats the run as failed). LoRA adapter params are small/model-dependent, and
+    there is no from-scratch model depth, so num_params_m/depth are reported as 0.
+    """
+    variants = ["grpo", "dr_grpo", "gspo", "dapo"]
+    return {
+        "avg_score": float(assess.get("avg_score", 0.0)),
+        "valid_rate": float(assess.get("valid_rate", 0.0)),
+        "training_seconds": float(training_seconds),
+        "peak_memory_mb": float(peak_memory_mb),
+        "num_steps": float(iters),
+        "num_params_m": 0.0,
+        "depth": 0.0,
+        "variant": float(variants.index(variant)) if variant in variants else -1.0,
+    }

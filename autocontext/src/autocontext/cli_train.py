@@ -40,7 +40,9 @@ def register_train_command(app: typer.Typer, console: Console) -> None:
         time_budget: int = typer.Option(300, "--time-budget", help="Training time budget in seconds"),
         max_experiments: int = typer.Option(0, "--max-experiments", help="Max iterations (0 = unlimited)"),
         memory_limit: int = typer.Option(16384, "--memory-limit", help="Peak memory cap in MB"),
-        backend: str = typer.Option("mlx", "--backend", help="Training backend (mlx, cuda, mlxlm)"),
+        backend: str = typer.Option(
+            "mlx", "--backend", help="Training backend (mlx, cuda, mlxlm, grpo). grpo = GSPO/GRPO RLVR (needs mlx-lm-lora)"
+        ),
         agent_provider: str = typer.Option("anthropic", "--agent-provider", help="LLM provider for training agent"),
         agent_model: str = typer.Option("", "--agent-model", help="Model for training agent (empty = provider default)"),
         val_select: bool = typer.Option(

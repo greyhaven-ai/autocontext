@@ -100,6 +100,44 @@ backend too (score-conditioning is expressed as a natural-language quality direc
 in the prompt rather than the `<|quality|>` token). The fine-tuned adapters are written
 under the run's `adapters/` directory.
 
+### GRPO / GSPO RLVR (`--backend grpo`)
+
+Where `mlx` / `cuda` / `mlxlm` use the scenario verifier OFFLINE (to filter / condition /
+weight a supervised dataset), the `grpo` backend uses it ONLINE as a reward. It wraps
+[`mlx-lm-lora`](https://github.com/Goekdeniz-Guelmez/mlx-lm-lora): for each prompt it
+samples a group of completions, scores each with the scenario (`execute_match` for game
+scenarios, `evaluate_output` for agent tasks), and takes a GRPO-family policy-gradient
+step. No labelled answers are needed; the verifier is the reward.
+
+Install the dependency directly (it is not yet a packaged extra):
+
+```bash
+uv pip install mlx-lm-lora
+```
+
+Run it:
+
+```bash
+uv run autoctx train --backend grpo \
+  --scenario grid_ctf \
+  --base-model mlx-community/Qwen2.5-1.5B-Instruct-4bit \
+  --fine-tune-type lora --num-layers 8 \
+  --train-steps 100
+```
+
+The variant defaults to **GSPO** (sequence-level importance sampling, the recommended
+stability fix over vanilla GRPO). The reward, prompt dataset, and a generated reward
+file (which delegates to the scenario verifier) are written under the run directory;
+LoRA/DoRA adapters land in `adapters/`.
+
+Notes:
+
+- Use a capable base and an in-reach scenario. Small / weak / over-specialized bases hit
+  a documented RLVR capability ceiling (no gain or collapse), so a `1.5B`+ instruct base
+  is a better starting point than a `0.5B` one.
+- The `--base-model`, `--fine-tune-type`, and `--num-layers` flags are shared with the
+  `mlxlm` backend; `--train-steps` maps to GRPO iterations.
+
 ### Tokenizer vocabulary size (optional)
 
 `--vocab-size` (default 8192) sets the BPE tokenizer's target vocab for the from-scratch
