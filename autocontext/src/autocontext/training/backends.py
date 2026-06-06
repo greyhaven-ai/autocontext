@@ -132,6 +132,31 @@ class MLXLMBackend(TrainingBackend):
         return ["checkpoint"]  # LoRA adapter bundle
 
 
+class GRPOBackend(TrainingBackend):
+    """Apple Silicon GRPO/GSPO RLVR backend (online RL from the scenario verifier, via mlx-lm-lora)."""
+
+    @property
+    def name(self) -> str:
+        return "grpo"
+
+    def is_available(self) -> bool:
+        if platform.system() != "Darwin":
+            return False
+        try:
+            import importlib.util
+
+            return importlib.util.find_spec("mlx_lm_lora") is not None
+        except Exception:
+            logger.debug("training.backends: caught Exception", exc_info=True)
+            return False
+
+    def default_checkpoint_dir(self, scenario: str) -> Path:
+        return Path("models") / scenario / "grpo"
+
+    def supported_runtime_types(self) -> list[str]:
+        return ["checkpoint"]  # LoRA adapter bundle
+
+
 class BackendRegistry:
     """Registry of training backends by name."""
 
@@ -157,4 +182,5 @@ def default_backend_registry() -> BackendRegistry:
     registry.register(MLXBackend())
     registry.register(CUDABackend())
     registry.register(MLXLMBackend())
+    registry.register(GRPOBackend())
     return registry

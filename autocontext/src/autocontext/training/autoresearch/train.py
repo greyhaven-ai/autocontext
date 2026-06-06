@@ -323,16 +323,25 @@ def _preflight_backend_deps(backend: str) -> None:
         "mlx": ["mlx", "rustbpe", "tiktoken", "numpy", "safetensors"],
         "cuda": ["torch", "numpy", "safetensors"],
         "mlxlm": ["mlx_lm"],
+        "grpo": ["mlx_lm_lora"],
     }.get(backend, [])
     missing = [m for m in required if importlib.util.find_spec(m) is None]
     if missing:
-        extra = {"mlx": "mlx", "cuda": "cuda", "mlxlm": "mlxlm"}.get(backend, backend)
         lead = {
             "mlx": "MLX is required for local training",
             "cuda": "CUDA (torch) is required for local training",
             "mlxlm": "mlx-lm is required for the pretrained-finetune backend",
+            "grpo": "mlx-lm-lora is required for the GRPO/GSPO RLVR backend",
         }.get(backend, f"missing dependencies for '{backend}' training backend")
-        raise RuntimeError(f"{lead}; missing: {', '.join(missing)}. Install with: uv sync --group dev --extra {extra}")
+        # grpo is not yet a declared extra (its lock bump is a separate maintainer step), so
+        # point at a direct install; the from-scratch/mlxlm backends use the packaged extras.
+        install = {
+            "mlx": "uv sync --group dev --extra mlx",
+            "cuda": "uv sync --group dev --extra cuda",
+            "mlxlm": "uv sync --group dev --extra mlxlm",
+            "grpo": "uv pip install mlx-lm-lora",
+        }.get(backend, f"uv sync --group dev --extra {backend}")
+        raise RuntimeError(f"{lead}; missing: {', '.join(missing)}. Install with: {install}")
 
 
 def run_training(
@@ -426,7 +435,28 @@ def run_training(
             fine_tune_type=fine_tune_type,
             num_layers=num_layers,
         )
-    raise ValueError("unsupported training backend: expected 'mlx', 'cuda', or 'mlxlm'")
+    if normalized_backend == "grpo":
+        if loss_weight_mode != "uniform" or vocab_size != BASE_VOCAB_SIZE:
+            raise NotImplementedError("loss-weighting / --vocab-size apply to the from-scratch backends, not grpo")
+        from autocontext.training.autoresearch.grpo_backend import DEFAULT_BASE_MODEL as GRPO_DEFAULT_BASE
+        from autocontext.training.autoresearch.grpo_backend import run_grpo_training
+
+        _preflight_backend_deps("grpo")
+        return run_grpo_training(
+            scenario_name=scenario_name,
+            output_dir=output_dir,
+            base_model=base_model or GRPO_DEFAULT_BASE,
+            iters=train_steps,
+            batch_size=batch_size,
+            learning_rate=learning_rate,
+            train_type=fine_tune_type,
+            num_layers=num_layers,
+            assess_samples=assess_samples,
+            assess_temperature=assess_temperature,
+            assess_top_k=assess_top_k,
+            time_budget=time_budget,
+        )
+    raise ValueError("unsupported training backend: expected 'mlx', 'cuda', 'mlxlm', or 'grpo'")
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -434,7 +464,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--scenario", required=True)
     parser.add_argument("--data", required=True)
     parser.add_argument("--output-dir", required=True)
-    parser.add_argument("--backend", choices=("mlx", "cuda", "mlxlm"), default="mlx")
+    parser.add_argument("--backend", choices=("mlx", "cuda", "mlxlm", "grpo"), default="mlx")
     parser.add_argument("--time-budget", type=int, default=300)
     parser.add_argument("--memory-limit", type=int, default=16384)
     parser.add_argument("--train-steps", type=int, default=8)
