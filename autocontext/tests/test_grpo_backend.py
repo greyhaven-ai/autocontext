@@ -316,3 +316,24 @@ def test_render_reward_module_forwards_answers() -> None:
 
     src = render_reward_module("grid_ctf")
     assert "answers=" in src  # the reward fn forwards per-completion answers to the verifier
+
+
+def test_build_prompt_rows_identical_prompts_get_consistent_state() -> None:
+    """Reviewer P2: when get_task_prompt ignores the varied state (identical prompt text),
+    every row for that prompt must carry the SAME answer/state -- otherwise the reward
+    (which scores against the answer state) gives GRPO contradictory rewards / hidden
+    labels for the same visible (prompt, completion) pair."""
+    from autocontext.training.autoresearch.grpo_backend import build_prompt_rows
+
+    class _FixedPromptVaryState:
+        name = "fixedprompt"
+
+        def initial_state(self, seed=None):
+            return {"target": seed or 0}  # state varies by seed...
+
+        def get_task_prompt(self, state=None):
+            return "FIXED PROMPT"  # ...but the prompt does NOT reflect it
+
+    rows = build_prompt_rows(_FixedPromptVaryState(), 4)
+    assert len({r["prompt"] for r in rows}) == 1  # identical prompts
+    assert len({r["answer"] for r in rows}) == 1, "identical prompts must map to one canonical state"

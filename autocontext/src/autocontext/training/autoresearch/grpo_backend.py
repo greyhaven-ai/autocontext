@@ -173,13 +173,20 @@ def build_prompt_rows(scenario: Any, n_prompts: int) -> list[dict[str, str]]:
     For each seed the scenario's ``initial_state(seed)`` produces an instance state and
     ``get_task_prompt(state)`` its prompt; the state is serialized into the ``answer``
     field so the reward can verify each completion against its own instance (see
-    ``score_completions``). A scenario whose prompt does not depend on the state simply
-    yields identical prompts (the prior single-prompt behavior), so this is a no-op for
-    fixed tasks and a real diversity source for parameterized ones.
+    ``score_completions``).
+
+    Invariant: a given prompt is always paired with ONE canonical state (the first one
+    seen for it). Otherwise a scenario whose prompt does not reflect the varied state
+    would emit identical prompts with differing states, and the reward would hand GRPO
+    contradictory rewards for the same visible (prompt, completion) -- a hidden label the
+    model cannot observe. So genuinely-diverse prompts (state reflected in the text) keep
+    their own states, while fixed prompts collapse to a single consistent state (the
+    prior single-prompt behavior).
     """
     from autocontext.training.autoresearch.mlxlm_backend import scenario_task_prompt
 
     get_task_prompt = getattr(scenario, "get_task_prompt", None)
+    canonical_state: dict[str, dict] = {}
     rows: list[dict[str, str]] = []
     for i in range(max(0, n_prompts)):
         state = _resolve_state(scenario, i)
@@ -190,6 +197,8 @@ def build_prompt_rows(scenario: Any, n_prompts: int) -> list[dict[str, str]]:
                 prompt = scenario_task_prompt(scenario)
         else:
             prompt = scenario_task_prompt(scenario)
+        # first state seen for a prompt wins, so identical prompts never carry conflicting state
+        state = canonical_state.setdefault(prompt, state)
         rows.append({"prompt": prompt, "answer": json.dumps(state, sort_keys=True)})
     return rows
 
