@@ -21,6 +21,10 @@ from typing import Any
 import mlx.core as mx
 import mlx.nn as nn
 
+# Re-exported from the pure (mlx-free) shared module so the cross-platform trl backend can
+# use it without importing this mlx-scoped module; kept importable here for back-compat.
+from autocontext.training.autoresearch.distill_common import assert_vocab_compatible
+
 _EPS = 1e-8
 
 # Both models must share a tokenizer, so default teacher/student are the same family
@@ -166,21 +170,6 @@ def on_policy_distill_step(
     )
     full_ids = mx.stop_gradient(full_ids)
     return distill_update_step(student_model, teacher_model, optimizer, full_ids, completion_mask, temperature=kl_temperature)
-
-
-def assert_vocab_compatible(student_vocab: int, teacher_vocab: int) -> None:
-    """Reject a teacher/student tokenizer mismatch up front with a clear message.
-
-    On-policy distillation compares per-token distributions, so the two models must share
-    a vocabulary; mismatched sizes otherwise surface as an opaque logit-shape error deep in
-    the loss after both (large) models have loaded.
-    """
-    if student_vocab != teacher_vocab:
-        raise ValueError(
-            "on-policy distillation requires a shared tokenizer: student vocab "
-            f"{student_vocab} != teacher vocab {teacher_vocab}. Use teacher and student "
-            "from the same model family."
-        )
 
 
 def distill_over_prompts(

@@ -61,6 +61,19 @@ def test_grpo_config_kwargs_have_generation_and_kl_fields() -> None:
     assert "max_completion_length" in cfg and "max_prompt_length" in cfg
 
 
+def test_config_kwargs_thread_max_steps_and_batch_size() -> None:
+    """--train-steps / --batch-size must reach TRL, not be silently dropped."""
+    from autocontext.training.autoresearch.trl_backend import build_gkd_config_kwargs, build_grpo_config_kwargs
+
+    gkd = build_gkd_config_kwargs(output_dir="/o", teacher_model="T", max_steps=42, per_device_train_batch_size=3)
+    assert gkd["max_steps"] == 42
+    assert gkd["per_device_train_batch_size"] == 3
+
+    grpo = build_grpo_config_kwargs(output_dir="/o", max_steps=7, per_device_train_batch_size=2)
+    assert grpo["max_steps"] == 7
+    assert grpo["per_device_train_batch_size"] == 2
+
+
 # ---------------------------------------------------------------------------
 # Dataset row builders
 # ---------------------------------------------------------------------------
@@ -113,6 +126,53 @@ def test_run_trl_training_rejects_unknown_mode() -> None:
 
     with pytest.raises(ValueError, match="mode"):
         run_trl_training(mode="bogus", scenario_name="trl_target", output_dir="/tmp/x")  # type: ignore[arg-type]
+
+
+# ---------------------------------------------------------------------------
+# Pure shared helpers (mlx-free): the cross-platform path must not require MLX
+# ---------------------------------------------------------------------------
+
+
+def test_vocab_helper_is_in_a_pure_mlx_free_module() -> None:
+    """assert_vocab_compatible lives in distill_common (no mlx import), so the trl backend's
+    vocab check does not drag in the Apple-only on_policy_distill module on a non-Mac host."""
+    import sys
+
+    # Block mlx the way a non-Mac host would: find_spec returns None / import raises.
+    blocked = {name: None for name in list(sys.modules) if name == "mlx" or name.startswith("mlx.")}
+    saved = {k: sys.modules.get(k) for k in blocked}
+    sys.modules.update(blocked)
+    try:
+        import importlib
+
+        mod = importlib.import_module("autocontext.training.autoresearch.distill_common")
+        importlib.reload(mod)
+        mod.assert_vocab_compatible(100, 100)  # equal: fine
+        with pytest.raises(ValueError, match="tokenizer"):
+            mod.assert_vocab_compatible(100, 200)
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                sys.modules.pop(k, None)
+            else:
+                sys.modules[k] = v
+
+
+def test_build_trl_metrics_gives_finite_keep_discard_score() -> None:
+    """A successful TRL run must report a FINITE avg_score, else the runner discards it
+    (NaN > best is always false -> no checkpoint published)."""
+    import math
+
+    from autocontext.training.autoresearch.distill_common import build_trl_metrics
+
+    m = build_trl_metrics(training_loss=0.5, num_steps=10.0, training_seconds=1.0, peak_memory_mb=100.0)
+    assert math.isfinite(m["avg_score"])
+    assert m["avg_score"] == -0.5  # negative training loss: lower loss -> higher score
+    assert m["valid_rate"] == 1.0
+
+    # A NaN training loss must not poison the keep/discard comparison.
+    m_nan = build_trl_metrics(training_loss=float("nan"), num_steps=0.0, training_seconds=0.0, peak_memory_mb=0.0)
+    assert math.isfinite(m_nan["avg_score"]) and m_nan["avg_score"] == 0.0
 
 
 # ---------------------------------------------------------------------------

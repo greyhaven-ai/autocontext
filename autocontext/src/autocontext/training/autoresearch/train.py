@@ -504,6 +504,8 @@ def run_training(
             student_model=base_model,
             teacher_model=teacher_model,
             learning_rate=learning_rate,
+            max_steps=train_steps if train_steps > 0 else -1,  # generic --train-steps -> TRL step cap
+            batch_size=batch_size,
             time_budget=time_budget,
             memory_limit_mb=memory_limit_mb,
         )

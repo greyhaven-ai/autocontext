@@ -55,12 +55,15 @@ def build_gkd_config_kwargs(
     temperature: float = 0.9,
     max_new_tokens: int = 256,
     num_train_epochs: float = 1.0,
+    max_steps: int = -1,
     per_device_train_batch_size: int = 1,
 ) -> dict[str, Any]:
     """Kwargs for ``trl.experimental.gkd.GKDConfig`` (on-policy distillation).
 
     Defaults encode the on-policy distillation recipe: ``lmbda=1.0`` (fully on-policy
     student rollouts) and ``beta=1.0`` (reverse KL, mode-seeking and unhackable).
+    ``max_steps`` (>0 caps total optimizer steps, overriding epochs) and
+    ``per_device_train_batch_size`` are threaded from the generic train controls.
     """
     return {
         "output_dir": output_dir,
@@ -71,6 +74,7 @@ def build_gkd_config_kwargs(
         "temperature": temperature,
         "max_new_tokens": max_new_tokens,
         "num_train_epochs": num_train_epochs,
+        "max_steps": max_steps,
         "per_device_train_batch_size": per_device_train_batch_size,
     }
 
@@ -85,9 +89,14 @@ def build_grpo_config_kwargs(
     beta: float = 0.0,
     temperature: float = 1.0,
     num_train_epochs: float = 1.0,
+    max_steps: int = -1,
     per_device_train_batch_size: int = 8,
 ) -> dict[str, Any]:
-    """Kwargs for ``trl.GRPOConfig`` (RLVR). ``beta=0.0`` follows TRL's KL-free default."""
+    """Kwargs for ``trl.GRPOConfig`` (RLVR). ``beta=0.0`` follows TRL's KL-free default.
+
+    ``max_steps`` (>0 caps total optimizer steps) and ``per_device_train_batch_size`` are
+    threaded from the generic train controls.
+    """
     return {
         "output_dir": output_dir,
         "learning_rate": learning_rate,
@@ -97,6 +106,7 @@ def build_grpo_config_kwargs(
         "beta": beta,
         "temperature": temperature,
         "num_train_epochs": num_train_epochs,
+        "max_steps": max_steps,
         "per_device_train_batch_size": per_device_train_batch_size,
     }
 
@@ -157,6 +167,8 @@ def run_trl_training(
     teacher_model: str = "",
     n_prompts: int = 64,
     learning_rate: float = 1e-5,
+    max_steps: int = -1,
+    batch_size: int = 0,
     register_import: str | None = None,
     time_budget: int = 3600,
     memory_limit_mb: int = 16384,  # noqa: ARG001 - backend-signature parity
@@ -165,8 +177,9 @@ def run_trl_training(
 
     Cross-platform (needs ``trl`` + ``torch`` + ``peft``); imports them lazily. ``student_model``
     / ``teacher_model`` empty fall back to same-family Qwen2.5 defaults; a tokenizer mismatch
-    is rejected by :func:`assert_vocab_compatible`. ``register_import`` registers a
-    consumer-repo scenario in this process before lookup.
+    is rejected by :func:`assert_vocab_compatible`. ``max_steps`` (>0 caps optimizer steps) and
+    ``batch_size`` (>0 sets per-device batch) are threaded from the generic train controls.
+    ``register_import`` registers a consumer-repo scenario in this process before lookup.
     """
     if mode not in SUPPORTED_MODES:
         raise ValueError(f"trl mode must be one of {SUPPORTED_MODES}, got {mode!r}")
@@ -176,7 +189,7 @@ def run_trl_training(
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
     from autocontext.scenarios import SCENARIO_REGISTRY
-    from autocontext.training.autoresearch.on_policy_distill import assert_vocab_compatible
+    from autocontext.training.autoresearch.distill_common import assert_vocab_compatible, build_trl_metrics
     from autocontext.training.autoresearch.train import _peak_memory_mb, _preflight_backend_deps
 
     _preflight_backend_deps("trl")
@@ -202,9 +215,12 @@ def run_trl_training(
         if isinstance(s_vocab, int) and isinstance(t_vocab, int):
             assert_vocab_compatible(s_vocab, t_vocab)
         dataset = Dataset.from_list(build_chat_dataset_rows(scenario, n_prompts))
-        args = GKDConfig(
-            **build_gkd_config_kwargs(output_dir=str(output_dir), teacher_model=teacher_model, learning_rate=learning_rate)
+        gkd_kwargs: dict[str, Any] = dict(
+            output_dir=str(output_dir), teacher_model=teacher_model, learning_rate=learning_rate, max_steps=max_steps
         )
+        if batch_size > 0:
+            gkd_kwargs["per_device_train_batch_size"] = batch_size
+        args = GKDConfig(**build_gkd_config_kwargs(**gkd_kwargs))
         trainer = GKDTrainer(
             model=AutoModelForCausalLM.from_pretrained(student_model),
             teacher_model=AutoModelForCausalLM.from_pretrained(teacher_model),
@@ -218,7 +234,10 @@ def run_trl_training(
         from trl import GRPOConfig, GRPOTrainer
 
         dataset = Dataset.from_list(build_prompt_dataset_rows(scenario, n_prompts))
-        args = GRPOConfig(**build_grpo_config_kwargs(output_dir=str(output_dir), learning_rate=learning_rate))
+        grpo_kwargs: dict[str, Any] = dict(output_dir=str(output_dir), learning_rate=learning_rate, max_steps=max_steps)
+        if batch_size > 0:
+            grpo_kwargs["per_device_train_batch_size"] = batch_size
+        args = GRPOConfig(**build_grpo_config_kwargs(**grpo_kwargs))
         trainer = GRPOTrainer(
             model=student_model,
             args=args,
@@ -233,16 +252,11 @@ def run_trl_training(
     trainer.save_model(str(output_dir))
     training_loss = float(getattr(train_output, "training_loss", float("nan")))
     num_steps = float(getattr(getattr(trainer, "state", None), "global_step", 0) or 0)
-    return {
-        # in-scenario assessment of the HF checkpoint is not wired here; the headline is
-        # the trainer's loss. avg_score/valid_rate are reported as NaN, not fabricated.
-        "avg_score": float("nan"),
-        "valid_rate": float("nan"),
-        "training_loss": training_loss,
-        "val_loss": float("nan"),
-        "training_seconds": time.monotonic() - started,
-        "peak_memory_mb": _peak_memory_mb(),
-        "num_steps": num_steps,
-        "num_params_m": 0.0,
-        "depth": 0.0,
-    }
+    # build_trl_metrics gives a FINITE avg_score (negative training loss) so the training
+    # runner's keep/discard comparison selects this checkpoint instead of discarding on NaN.
+    return build_trl_metrics(
+        training_loss=training_loss,
+        num_steps=num_steps,
+        training_seconds=time.monotonic() - started,
+        peak_memory_mb=_peak_memory_mb(),
+    )
