@@ -337,3 +337,16 @@ def test_build_prompt_rows_identical_prompts_get_consistent_state() -> None:
     rows = build_prompt_rows(_FixedPromptVaryState(), 4)
     assert len({r["prompt"] for r in rows}) == 1  # identical prompts
     assert len({r["answer"] for r in rows}) == 1, "identical prompts must map to one canonical state"
+
+
+def test_grpo_cli_args_resume_adapter_for_distill_then_rlvr() -> None:
+    """R1 recipe: RLVR must be able to RESUME from the distillation cold-start adapter
+    (mlx-lm-lora --resume-adapter-file), not restart from base."""
+    from autocontext.training.autoresearch.grpo_backend import grpo_cli_args
+
+    without = grpo_cli_args(variant="gspo", **_common_kwargs())
+    assert "--resume-adapter-file" not in without  # default: train from base
+
+    with_resume = grpo_cli_args(variant="gspo", resume_adapter_file="cold_start/adapters.safetensors", **_common_kwargs())
+    m = _arg_map(with_resume)
+    assert m["--resume-adapter-file"] == "cold_start/adapters.safetensors"

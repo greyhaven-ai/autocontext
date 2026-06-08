@@ -8,11 +8,13 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Any
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
+from autocontext.training.autoresearch.r1_pipeline import run_r1_pipeline
 from autocontext.training.autoresearch.sequence_format import BASE_VOCAB_SIZE
 from autocontext.training.runner import TrainingConfig, TrainingResult
 
@@ -30,6 +32,36 @@ def _run_training(config: TrainingConfig, console: Console, *, json_output: bool
             f"[dim]scenario={config.scenario} budget={config.time_budget}s max_experiments={config.max_experiments}[/dim]"
         )
     return runner.run()
+
+
+def _run_r1(
+    *,
+    scenario_name: str,
+    data_path: str,
+    output_dir: str,
+    base_model: str,
+    variant: str,
+    register_import: str,
+    num_layers: int = 8,
+    time_budget: int = 3600,
+    memory_limit_mb: int = 16384,
+) -> dict[str, Any]:
+    """Run the R1 recipe (distill cold-start -> RLVR). Extracted for testability.
+
+    ``variant`` is an RLVR-stage option (gspo/grpo/dr_grpo/dapo); ``register_import`` lets a
+    consumer-repo scenario register itself in the training subprocess (empty = none).
+    """
+    return run_r1_pipeline(
+        scenario_name=scenario_name,
+        data_path=data_path,
+        output_dir=output_dir,
+        base_model=base_model,
+        register_import=register_import or None,
+        num_layers=num_layers,
+        time_budget=time_budget,
+        memory_limit_mb=memory_limit_mb,
+        rlvr_kwargs={"variant": variant},
+    )
 
 
 def register_train_command(app: typer.Typer, console: Console) -> None:
@@ -159,3 +191,74 @@ def register_train_command(app: typer.Typer, console: Console) -> None:
         if result.published_model_id:
             table.add_row("Published model", result.published_model_id)
         console.print(table)
+
+    @app.command(name="train-r1")
+    def train_r1(
+        scenario: str = typer.Option(..., "--scenario", help="Scenario (agent task) to RLVR-train on"),
+        data: str = typer.Option(..., "--data", help="JSONL reasoning data for the distillation cold-start stage"),
+        output_dir: str = typer.Option("runs/r1", "--output-dir", help="Pipeline workspace (distill/ + rlvr/ subdirs)"),
+        base_model: str = typer.Option(
+            "mlx-community/Qwen2.5-3B-Instruct-4bit", "--base-model", help="Pretrained base model for both stages"
+        ),
+        variant: str = typer.Option("gspo", "--variant", help="RLVR variant: gspo | grpo | dr_grpo | dapo"),
+        register_import: str = typer.Option(
+            "", "--register-import", help="Python snippet to register a consumer-repo scenario in the RLVR subprocess"
+        ),
+        num_layers: int = typer.Option(8, "--num-layers", help="LoRA layers to fine-tune in both stages"),
+        time_budget: int = typer.Option(3600, "--time-budget", help="Per-stage time budget in seconds"),
+        memory_limit: int = typer.Option(16384, "--memory-limit", help="Peak memory cap in MB"),
+        json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
+    ) -> None:
+        """Run the R1 recipe end-to-end: distillation cold-start (mlx-lm) then RLVR (GRPO/GSPO).
+
+        The RLVR stage resumes from the distilled adapter, so reasoning cold-start and
+        verifiable-reward RL compose into one capability (needs mlx-lm + mlx-lm-lora).
+        """
+        from autocontext.cli import _write_json_stderr, _write_json_stdout
+
+        if variant not in ("gspo", "grpo", "dr_grpo", "dapo"):
+            raise typer.BadParameter(f"--variant must be gspo|grpo|dr_grpo|dapo, got {variant!r}")
+
+        logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+        if not json_output:
+            console.print(f"[green]R1 pipeline workspace:[/green] {output_dir}")
+            console.print(f"[dim]distill -> rlvr({variant}) on scenario={scenario} base={base_model}[/dim]")
+
+        try:
+            out = _run_r1(
+                scenario_name=scenario,
+                data_path=data,
+                output_dir=output_dir,
+                base_model=base_model,
+                variant=variant,
+                register_import=register_import,
+                num_layers=num_layers,
+                time_budget=time_budget,
+                memory_limit_mb=memory_limit,
+            )
+        except KeyboardInterrupt:
+            if not json_output:
+                console.print("\n[yellow]R1 pipeline interrupted.[/yellow]")
+            raise typer.Exit(code=1) from None
+        except Exception as exc:
+            logger.debug("cli: caught Exception", exc_info=True)
+            if json_output:
+                _write_json_stderr(str(exc))
+            else:
+                console.print(f"[red]R1 pipeline failed:[/red] {exc}")
+            raise typer.Exit(code=1) from exc
+
+        if json_output:
+            _write_json_stdout(out)
+            return
+        distill = out.get("distill") or {}
+        rlvr = out.get("rlvr") or {}
+        r1_table = Table(title="R1 Pipeline Summary")
+        r1_table.add_column("Stage")
+        r1_table.add_column("avg_score")
+        r1_table.add_column("valid_rate")
+        r1_table.add_row("distill", f"{distill.get('avg_score', 0.0):.4f}", f"{distill.get('valid_rate', 0.0):.4f}")
+        r1_table.add_row("rlvr", f"{rlvr.get('avg_score', 0.0):.4f}", f"{rlvr.get('valid_rate', 0.0):.4f}")
+        console.print(r1_table)
+        resume = out.get("resume_adapter_file")
+        console.print(f"[dim]RLVR resumed from: {resume or '(base model, no cold-start adapter found)'}[/dim]")

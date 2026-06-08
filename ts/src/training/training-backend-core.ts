@@ -21,7 +21,9 @@ export abstract class TrainingBackend {
 }
 
 export class MLXBackend extends TrainingBackend {
-  get name(): string { return "mlx"; }
+  get name(): string {
+    return "mlx";
+  }
 
   isAvailable(): boolean {
     try {
@@ -40,8 +42,63 @@ export class MLXBackend extends TrainingBackend {
   }
 }
 
+/**
+ * mlx-lm LoRA finetuning (SFT / reasoning-distillation cold-start). Apple Silicon only;
+ * shells out to the Python `mlxlm` backend. The distillation half of the R1 recipe.
+ */
+export class MLXLMBackend extends TrainingBackend {
+  get name(): string {
+    return "mlxlm";
+  }
+
+  isAvailable(): boolean {
+    try {
+      return process.platform === "darwin" && process.arch === "arm64";
+    } catch {
+      return false;
+    }
+  }
+
+  defaultCheckpointDir(scenario: string): string {
+    return join("models", scenario, "mlxlm");
+  }
+
+  supportedRuntimeTypes(): string[] {
+    return ["provider", "pi"];
+  }
+}
+
+/**
+ * GRPO/GSPO RLVR (online RL from verifiable rewards). Apple Silicon only; shells out to
+ * the Python `grpo` backend (mlx-lm-lora). The RLVR half of the R1 recipe; can resume
+ * from an MLXLM-distilled adapter for the full distill -> RLVR pipeline.
+ */
+export class GRPOBackend extends TrainingBackend {
+  get name(): string {
+    return "grpo";
+  }
+
+  isAvailable(): boolean {
+    try {
+      return process.platform === "darwin" && process.arch === "arm64";
+    } catch {
+      return false;
+    }
+  }
+
+  defaultCheckpointDir(scenario: string): string {
+    return join("models", scenario, "grpo");
+  }
+
+  supportedRuntimeTypes(): string[] {
+    return ["provider", "pi"];
+  }
+}
+
 export class CUDABackend extends TrainingBackend {
-  get name(): string { return "cuda"; }
+  get name(): string {
+    return "cuda";
+  }
 
   isAvailable(): boolean {
     try {
@@ -80,6 +137,8 @@ export class BackendRegistry {
 export function defaultBackendRegistry(): BackendRegistry {
   const registry = new BackendRegistry();
   registry.register(new MLXBackend());
+  registry.register(new MLXLMBackend());
+  registry.register(new GRPOBackend());
   registry.register(new CUDABackend());
   return registry;
 }

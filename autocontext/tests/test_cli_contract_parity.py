@@ -76,6 +76,7 @@ UNCONTRACTED_TOP_LEVEL_ALLOWLIST: frozenset[str] = frozenset(
         "self-improve",
         "simulate",
         "train",
+        "train-r1",
         "tui",
         "wait",
         "worker",

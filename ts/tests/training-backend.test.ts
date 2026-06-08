@@ -13,6 +13,8 @@ import { tmpdir } from "node:os";
 import {
   TrainingBackend,
   MLXBackend,
+  MLXLMBackend,
+  GRPOBackend,
   CUDABackend,
   BackendRegistry,
   defaultBackendRegistry,
@@ -96,6 +98,24 @@ describe("TrainingBackend interface", () => {
     expect(typeof mlx.isAvailable()).toBe("boolean");
     expect(typeof cuda.isAvailable()).toBe("boolean");
   });
+
+  it("MLXLMBackend (mlx-lm distillation) has correct name and Apple-Silicon availability", () => {
+    const mlxlm = new MLXLMBackend();
+    expect(mlxlm.name).toBe("mlxlm");
+    expect(mlxlm.metadata().name).toBe("mlxlm");
+    expect(mlxlm.supportedRuntimeTypes()).toContain("provider");
+    expect(mlxlm.defaultCheckpointDir("grid_ctf")).toContain("mlxlm");
+    expect(typeof mlxlm.isAvailable()).toBe("boolean");
+  });
+
+  it("GRPOBackend (RLVR) has correct name and Apple-Silicon availability", () => {
+    const grpo = new GRPOBackend();
+    expect(grpo.name).toBe("grpo");
+    expect(grpo.metadata().name).toBe("grpo");
+    expect(grpo.supportedRuntimeTypes()).toContain("provider");
+    expect(grpo.defaultCheckpointDir("grid_ctf")).toContain("grpo");
+    expect(typeof grpo.isAvailable()).toBe("boolean");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -103,10 +123,12 @@ describe("TrainingBackend interface", () => {
 // ---------------------------------------------------------------------------
 
 describe("BackendRegistry", () => {
-  it("default registry contains mlx and cuda", () => {
+  it("default registry contains mlx, cuda, mlxlm, and grpo", () => {
     const registry = defaultBackendRegistry();
     expect(registry.listNames()).toContain("mlx");
     expect(registry.listNames()).toContain("cuda");
+    expect(registry.listNames()).toContain("mlxlm");
+    expect(registry.listNames()).toContain("grpo");
   });
 
   it("gets backend by name", () => {
@@ -148,7 +170,11 @@ describe("TrainingRunner", () => {
     };
 
     // Seed a minimal dataset
-    writeFileSync(config.datasetPath, '{"conversations":[{"from":"human","value":"hi"}]}\n', "utf-8");
+    writeFileSync(
+      config.datasetPath,
+      '{"conversations":[{"from":"human","value":"hi"}]}\n',
+      "utf-8",
+    );
 
     const result = await runner.train(config);
 
@@ -172,7 +198,11 @@ describe("TrainingRunner", () => {
       baseModel: "Qwen/Qwen3-0.6B",
     };
 
-    writeFileSync(config.datasetPath, '{"conversations":[{"from":"human","value":"review"}]}\n', "utf-8");
+    writeFileSync(
+      config.datasetPath,
+      '{"conversations":[{"from":"human","value":"review"}]}\n',
+      "utf-8",
+    );
 
     const result = await runner.train(config);
     const artifact = result.artifact!;
@@ -220,7 +250,11 @@ describe("TrainingRunner", () => {
       trainingMode: "from_scratch",
     };
 
-    writeFileSync(config.datasetPath, '{"conversations":[{"from":"human","value":"sim"}]}\n', "utf-8");
+    writeFileSync(
+      config.datasetPath,
+      '{"conversations":[{"from":"human","value":"sim"}]}\n',
+      "utf-8",
+    );
 
     const result = await runner.train(config);
     const manifestPath = join(result.checkpointDir!, "training_manifest.json");
@@ -244,7 +278,11 @@ describe("TrainingRunner", () => {
       trainingMode: "from_scratch",
     };
 
-    writeFileSync(config.datasetPath, '{"conversations":[{"from":"human","value":"hi"}]}\n', "utf-8");
+    writeFileSync(
+      config.datasetPath,
+      '{"conversations":[{"from":"human","value":"hi"}]}\n',
+      "utf-8",
+    );
 
     const result = await runner.train(config);
     expect(result.status).toBe("failed");
@@ -264,7 +302,11 @@ describe("TrainingRunner", () => {
       trainingMode: "from_scratch",
     };
 
-    writeFileSync(config.datasetPath, '{"conversations":[{"from":"human","value":"hi"}]}\n', "utf-8");
+    writeFileSync(
+      config.datasetPath,
+      '{"conversations":[{"from":"human","value":"hi"}]}\n',
+      "utf-8",
+    );
 
     const result = await runner.train(config);
     expect(result.status).toBe("failed");
@@ -293,7 +335,11 @@ describe("TrainingRunner", () => {
       trainingMode: "adapter_finetune",
     };
 
-    writeFileSync(config.datasetPath, '{"conversations":[{"from":"human","value":"hi"}]}\n', "utf-8");
+    writeFileSync(
+      config.datasetPath,
+      '{"conversations":[{"from":"human","value":"hi"}]}\n',
+      "utf-8",
+    );
 
     const result = await runner.train(config);
     expect(result.status).toBe("completed");
@@ -314,7 +360,11 @@ describe("TrainingRunner", () => {
       trainingMode: "adapter_finetune",
     };
 
-    writeFileSync(config.datasetPath, '{"conversations":[{"from":"human","value":"hi"}]}\n', "utf-8");
+    writeFileSync(
+      config.datasetPath,
+      '{"conversations":[{"from":"human","value":"hi"}]}\n',
+      "utf-8",
+    );
 
     const result = await runner.train(config);
     expect(result.status).toBe("completed");
@@ -335,7 +385,11 @@ describe("TrainingRunner", () => {
       baseModel: "unknown/model",
     };
 
-    writeFileSync(config.datasetPath, '{"conversations":[{"from":"human","value":"hi"}]}\n', "utf-8");
+    writeFileSync(
+      config.datasetPath,
+      '{"conversations":[{"from":"human","value":"hi"}]}\n',
+      "utf-8",
+    );
 
     const result = await runner.train(config);
     expect(result.status).toBe("failed");
@@ -356,7 +410,11 @@ describe("TrainingRunner", () => {
       trainingMode: "adapter_finetune",
     };
 
-    writeFileSync(config.datasetPath, '{"conversations":[{"from":"human","value":"hi"}]}\n', "utf-8");
+    writeFileSync(
+      config.datasetPath,
+      '{"conversations":[{"from":"human","value":"hi"}]}\n',
+      "utf-8",
+    );
 
     const result = await runner.train(config);
     expect(result.status).toBe("completed");
@@ -393,7 +451,11 @@ describe("TrainingRunner", () => {
       trainingMode: "adapter_finetune",
     };
 
-    writeFileSync(config.datasetPath, '{"conversations":[{"from":"human","value":"hi"}]}\n', "utf-8");
+    writeFileSync(
+      config.datasetPath,
+      '{"conversations":[{"from":"human","value":"hi"}]}\n',
+      "utf-8",
+    );
 
     const result = await runner.train(config);
     expect(result.status).toBe("completed");
@@ -435,6 +497,8 @@ describe("public package surface", () => {
   it("exports the training backend APIs from the root entrypoint", () => {
     expect(pkg.TrainingBackend).toBeDefined();
     expect(pkg.MLXBackend).toBeDefined();
+    expect(pkg.MLXLMBackend).toBeDefined();
+    expect(pkg.GRPOBackend).toBeDefined();
     expect(pkg.CUDABackend).toBeDefined();
     expect(pkg.BackendRegistry).toBeDefined();
     expect(pkg.defaultBackendRegistry).toBeDefined();
@@ -460,6 +524,8 @@ describe("train CLI", () => {
     ]);
 
     expect(result.exitCode).toBe(1);
-    expect(`${result.stdout}\n${result.stderr}`).toContain("no real training executor is configured");
+    expect(`${result.stdout}\n${result.stderr}`).toContain(
+      "no real training executor is configured",
+    );
   });
 });

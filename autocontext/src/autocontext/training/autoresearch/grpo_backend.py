@@ -126,8 +126,14 @@ def grpo_cli_args(
     epsilon: float = 0.2,
     epsilon_high: float | None = None,
     num_layers: int = 8,
+    resume_adapter_file: str | None = None,
 ) -> list[str]:
-    """Build the ``mlx_lm_lora.train`` argument list for a GRPO-family run."""
+    """Build the ``mlx_lm_lora.train`` argument list for a GRPO-family run.
+
+    ``resume_adapter_file`` resumes from a prior adapter (the distillation cold-start),
+    so RLVR continues from it instead of restarting from the base model -- the chaining
+    that makes the R1 recipe (distill -> RLVR) end-to-end.
+    """
     if variant not in _VARIANT_FLAGS:
         raise ValueError(f"unknown GRPO variant {variant!r}; expected one of {sorted(_VARIANT_FLAGS)}")
     args = [
@@ -164,6 +170,8 @@ def grpo_cli_args(
     eps_high = epsilon_high if epsilon_high is not None else (_DAPO_EPSILON_HIGH if variant == "dapo" else None)
     if eps_high is not None:
         args += ["--epsilon-high", str(eps_high)]
+    if resume_adapter_file:
+        args += ["--resume-adapter-file", resume_adapter_file]
     return args
 
 
@@ -248,6 +256,7 @@ def run_grpo_training(
     num_layers: int = 8,
     n_prompts: int = 64,
     register_import: str | None = None,
+    resume_adapter_file: str | None = None,
     assess_samples: int = 8,
     assess_temperature: float = 0.7,
     assess_top_k: int = 0,
@@ -296,6 +305,7 @@ def run_grpo_training(
         learning_rate=learning_rate,
         train_type=train_type,
         num_layers=num_layers,
+        resume_adapter_file=resume_adapter_file,
     )
     started = time.perf_counter()
     result = subprocess.run(

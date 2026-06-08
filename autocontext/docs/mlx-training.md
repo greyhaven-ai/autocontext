@@ -138,6 +138,31 @@ Notes:
 - The `--base-model`, `--fine-tune-type`, and `--num-layers` flags are shared with the
   `mlxlm` backend; `--train-steps` maps to GRPO iterations.
 
+### R1 recipe: distillation cold-start then RLVR (`train-r1`)
+
+The `mlxlm` (reasoning distillation) and `grpo` (RLVR) backends compose into the R1-style
+recipe: SFT a reasoning cold-start, then run verifiable-reward RL _resuming that adapter_
+rather than restarting from the base model. `autoctx train-r1` runs both stages
+end-to-end as one command:
+
+```bash
+uv run autoctx train-r1 \
+  --scenario antichain_diverse \
+  --data reasoning_traces.jsonl \
+  --output-dir runs/r1 \
+  --base-model mlx-community/Qwen2.5-3B-Instruct-4bit \
+  --variant gspo
+```
+
+Stage 1 (distill) trains a LoRA adapter on `--data` under `runs/r1/distill/`; stage 2
+(RLVR) runs GRPO/GSPO under `runs/r1/rlvr/`, passing the distilled adapter as
+`--resume-adapter-file` so RL builds on the cold-start. If the distillation stage
+produces no adapter, RLVR falls back to training from the base model. The `--variant`
+flag selects the RLVR algorithm (`gspo` | `grpo` | `dr_grpo` | `dapo`); `--register-import`
+registers a consumer-repo scenario inside the RLVR subprocess (the distillation stage
+trains on the JSONL directly and needs no scenario). Both stages need `mlx-lm` and
+`mlx-lm-lora` installed.
+
 ### Tokenizer vocabulary size (optional)
 
 `--vocab-size` (default 8192) sets the BPE tokenizer's target vocab for the from-scratch

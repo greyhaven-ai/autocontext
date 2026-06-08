@@ -674,6 +674,8 @@ export type {
 export {
   TrainingBackend,
   MLXBackend,
+  MLXLMBackend,
+  GRPOBackend,
   CUDABackend,
   BackendRegistry,
   defaultBackendRegistry,

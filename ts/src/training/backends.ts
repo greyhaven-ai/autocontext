@@ -11,35 +11,27 @@ import {
   BackendRegistry,
   CUDABackend,
   defaultBackendRegistry,
+  GRPOBackend,
   MLXBackend,
+  MLXLMBackend,
   TrainingBackend,
 } from "./training-backend-core.js";
 import { defaultExecutor } from "./training-runner-workflow.js";
 import { executeTrainingRunWorkflow } from "./training-run-execution-workflow.js";
 import type { TrainingExecutor } from "./training-types.js";
-import {
-  ModelRegistry,
-  PromotionEngine,
-  type ModelRecord,
-} from "./promotion.js";
-import type {
-  PublishedArtifact,
-  TrainingConfig,
-  TrainingResult,
-} from "./training-types.js";
+import { ModelRegistry, PromotionEngine, type ModelRecord } from "./promotion.js";
+import type { PublishedArtifact, TrainingConfig, TrainingResult } from "./training-types.js";
 
 export {
   BackendRegistry,
   CUDABackend,
   defaultBackendRegistry,
+  GRPOBackend,
   MLXBackend,
+  MLXLMBackend,
   TrainingBackend,
 };
-export type {
-  PublishedArtifact,
-  TrainingConfig,
-  TrainingResult,
-} from "./training-types.js";
+export type { PublishedArtifact, TrainingConfig, TrainingResult } from "./training-types.js";
 export type { TrainingExecutor } from "./training-types.js";
 
 export class TrainingRunner {
