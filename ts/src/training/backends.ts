@@ -15,6 +15,7 @@ import {
   MLXBackend,
   MLXLMBackend,
   OnPolicyDistillBackend,
+  TRLBackend,
   TrainingBackend,
 } from "./training-backend-core.js";
 import { defaultExecutor } from "./training-runner-workflow.js";
@@ -31,6 +32,7 @@ export {
   MLXBackend,
   MLXLMBackend,
   OnPolicyDistillBackend,
+  TRLBackend,
   TrainingBackend,
 };
 export type { PublishedArtifact, TrainingConfig, TrainingResult } from "./training-types.js";

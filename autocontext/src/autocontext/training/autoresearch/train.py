@@ -325,6 +325,7 @@ def _preflight_backend_deps(backend: str) -> None:
         "mlxlm": ["mlx_lm"],
         "grpo": ["mlx_lm_lora"],
         "opd": ["mlx_lm"],
+        "trl": ["trl", "torch"],
     }.get(backend, [])
     missing = [m for m in required if importlib.util.find_spec(m) is None]
     if missing:
@@ -334,6 +335,7 @@ def _preflight_backend_deps(backend: str) -> None:
             "mlxlm": "mlx-lm is required for the pretrained-finetune backend",
             "grpo": "mlx-lm-lora is required for the GRPO/GSPO RLVR backend",
             "opd": "mlx-lm is required for the on-policy distillation backend",
+            "trl": "trl + torch are required for the cross-platform TRL backend",
         }.get(backend, f"missing dependencies for '{backend}' training backend")
         # grpo is not yet a declared extra (its lock bump is a separate maintainer step), so
         # point at a direct install; the from-scratch/mlxlm backends use the packaged extras.
@@ -343,6 +345,7 @@ def _preflight_backend_deps(backend: str) -> None:
             "mlxlm": "uv sync --group dev --extra mlxlm",
             "grpo": "uv pip install mlx-lm-lora",
             "opd": "uv sync --group dev --extra mlxlm",
+            "trl": "uv pip install trl peft",
         }.get(backend, f"uv sync --group dev --extra {backend}")
         raise RuntimeError(f"{lead}; missing: {', '.join(missing)}. Install with: {install}")
 
@@ -372,6 +375,7 @@ def run_training(
     vocab_size: int = BASE_VOCAB_SIZE,
     base_model: str = "",
     teacher_model: str = "",  # opd backend: distillation teacher (empty = backend default)
+    trl_mode: str = "gkd",  # trl backend: gkd (on-policy distillation) | grpo (RLVR)
     fine_tune_type: str = "lora",
     num_layers: int = 8,
     collect_samples_path: Path | None = None,
@@ -485,7 +489,25 @@ def run_training(
             time_budget=time_budget,
             memory_limit_mb=memory_limit_mb,
         )
-    raise ValueError("unsupported training backend: expected 'mlx', 'cuda', 'mlxlm', 'grpo', or 'opd'")
+    if normalized_backend == "trl":
+        if loss_weight_mode != "uniform" or vocab_size != BASE_VOCAB_SIZE:
+            raise NotImplementedError("loss-weighting / --vocab-size apply to the from-scratch backends, not trl")
+        # Preflight before importing (trl pulls torch); the module itself stays light.
+        _preflight_backend_deps("trl")
+        from autocontext.training.autoresearch.trl_backend import run_trl_training
+
+        # Cross-platform TRL: base_model -> student; trl_mode picks gkd (distillation) or grpo (RLVR).
+        return run_trl_training(
+            mode=trl_mode,
+            scenario_name=scenario_name,
+            output_dir=output_dir,
+            student_model=base_model,
+            teacher_model=teacher_model,
+            learning_rate=learning_rate,
+            time_budget=time_budget,
+            memory_limit_mb=memory_limit_mb,
+        )
+    raise ValueError("unsupported training backend: expected 'mlx', 'cuda', 'mlxlm', 'grpo', 'opd', or 'trl'")
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -493,7 +515,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--scenario", required=True)
     parser.add_argument("--data", required=True)
     parser.add_argument("--output-dir", required=True)
-    parser.add_argument("--backend", choices=("mlx", "cuda", "mlxlm", "grpo", "opd"), default="mlx")
+    parser.add_argument("--backend", choices=("mlx", "cuda", "mlxlm", "grpo", "opd", "trl"), default="mlx")
+    parser.add_argument("--trl-mode", choices=("gkd", "grpo"), default="gkd", help="trl backend: gkd | grpo")
     parser.add_argument("--time-budget", type=int, default=300)
     parser.add_argument("--memory-limit", type=int, default=16384)
     parser.add_argument("--train-steps", type=int, default=8)
@@ -547,6 +570,7 @@ def main(argv: list[str] | None = None) -> int:
             vocab_size=args.vocab_size,
             base_model=args.base_model,
             teacher_model=args.teacher_model,
+            trl_mode=args.trl_mode,
             fine_tune_type=args.fine_tune_type,
             num_layers=args.num_layers,
             backend=args.backend,

@@ -75,8 +75,9 @@ def register_train_command(app: typer.Typer, console: Console) -> None:
         backend: str = typer.Option(
             "mlx",
             "--backend",
-            help="Training backend: mlx, cuda, mlxlm, grpo (GSPO/GRPO RLVR), opd (on-policy distillation)",
+            help="Training backend: mlx, cuda, mlxlm, grpo, opd, trl (cross-platform GKD/GRPO via TRL)",
         ),
+        trl_mode: str = typer.Option("gkd", "--trl-mode", help="trl backend: gkd (on-policy distillation) | grpo (RLVR)"),
         agent_provider: str = typer.Option("anthropic", "--agent-provider", help="LLM provider for training agent"),
         agent_model: str = typer.Option("", "--agent-model", help="Model for training agent (empty = provider default)"),
         val_select: bool = typer.Option(
@@ -134,6 +135,8 @@ def register_train_command(app: typer.Typer, console: Console) -> None:
             raise typer.BadParameter(f"--loss-weight-temperature must be > 0 for softmax, got {loss_weight_temperature}")
         if vocab_size < 256:
             raise typer.BadParameter(f"--vocab-size must be >= 256 (the byte-level BPE base), got {vocab_size}")
+        if trl_mode not in ("gkd", "grpo"):
+            raise typer.BadParameter(f"--trl-mode must be gkd|grpo, got {trl_mode!r}")
 
         logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -157,6 +160,7 @@ def register_train_command(app: typer.Typer, console: Console) -> None:
             vocab_size=vocab_size,
             base_model=base_model,
             teacher_model=teacher_model,
+            trl_mode=trl_mode,
             fine_tune_type=fine_tune_type,
             num_layers=num_layers,
         )

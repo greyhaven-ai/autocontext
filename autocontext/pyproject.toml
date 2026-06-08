@@ -116,5 +116,5 @@ warn_unused_configs = true
 exclude = "(^tests/)|(^migrations/)"
 
 [[tool.mypy.overrides]]
-module = ["pydantic_monty", "mcp.*", "claude_agent_sdk", "mlx", "mlx.*", "mlx_lm", "mlx_lm.*", "rustbpe", "tiktoken", "safetensors", "safetensors.*", "numpy", "numpy.*", "torch", "torch.*"]
+module = ["pydantic_monty", "mcp.*", "claude_agent_sdk", "mlx", "mlx.*", "mlx_lm", "mlx_lm.*", "rustbpe", "tiktoken", "safetensors", "safetensors.*", "numpy", "numpy.*", "torch", "torch.*", "trl", "trl.*", "peft", "peft.*", "datasets", "datasets.*", "transformers", "transformers.*"]
 ignore_missing_imports = true

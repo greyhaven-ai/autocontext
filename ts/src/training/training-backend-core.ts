@@ -122,6 +122,30 @@ export class OnPolicyDistillBackend extends TrainingBackend {
   }
 }
 
+/**
+ * Cross-platform TRL backend: on-policy distillation (GKD) + RLVR (GRPO) via HuggingFace TRL.
+ * Unlike the MLX backends this is not Apple-Silicon-locked; it shells out to the Python `trl`
+ * backend (needs trl + torch), the path for larger / non-Mac runs. Availability is enforced
+ * Python-side at runtime, so this reports available as an orchestration option everywhere.
+ */
+export class TRLBackend extends TrainingBackend {
+  get name(): string {
+    return "trl";
+  }
+
+  isAvailable(): boolean {
+    return true;
+  }
+
+  defaultCheckpointDir(scenario: string): string {
+    return join("models", scenario, "trl");
+  }
+
+  supportedRuntimeTypes(): string[] {
+    return ["provider"];
+  }
+}
+
 export class CUDABackend extends TrainingBackend {
   get name(): string {
     return "cuda";
@@ -167,6 +191,7 @@ export function defaultBackendRegistry(): BackendRegistry {
   registry.register(new MLXLMBackend());
   registry.register(new GRPOBackend());
   registry.register(new OnPolicyDistillBackend());
+  registry.register(new TRLBackend());
   registry.register(new CUDABackend());
   return registry;
 }

@@ -16,6 +16,7 @@ import {
   MLXLMBackend,
   GRPOBackend,
   OnPolicyDistillBackend,
+  TRLBackend,
   CUDABackend,
   BackendRegistry,
   defaultBackendRegistry,
@@ -126,6 +127,15 @@ describe("TrainingBackend interface", () => {
     expect(opd.defaultCheckpointDir("grid_ctf")).toContain("opd");
     expect(typeof opd.isAvailable()).toBe("boolean");
   });
+
+  it("TRLBackend (cross-platform GKD/GRPO) has correct name and is not Apple-Silicon-locked", () => {
+    const trl = new TRLBackend();
+    expect(trl.name).toBe("trl");
+    expect(trl.metadata().name).toBe("trl");
+    expect(trl.supportedRuntimeTypes()).toContain("provider");
+    expect(trl.defaultCheckpointDir("grid_ctf")).toContain("trl");
+    expect(typeof trl.isAvailable()).toBe("boolean");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -140,6 +150,7 @@ describe("BackendRegistry", () => {
     expect(registry.listNames()).toContain("mlxlm");
     expect(registry.listNames()).toContain("grpo");
     expect(registry.listNames()).toContain("opd");
+    expect(registry.listNames()).toContain("trl");
   });
 
   it("gets backend by name", () => {
@@ -511,6 +522,7 @@ describe("public package surface", () => {
     expect(pkg.MLXLMBackend).toBeDefined();
     expect(pkg.GRPOBackend).toBeDefined();
     expect(pkg.OnPolicyDistillBackend).toBeDefined();
+    expect(pkg.TRLBackend).toBeDefined();
     expect(pkg.CUDABackend).toBeDefined();
     expect(pkg.BackendRegistry).toBeDefined();
     expect(pkg.defaultBackendRegistry).toBeDefined();

@@ -69,6 +69,7 @@ class TrainingConfig:
     vocab_size: int = 8192  # BPE tokenizer target vocab (mlx/cuda from-scratch backends); BASE_VOCAB_SIZE
     base_model: str = ""  # mlxlm backend: pretrained base model (empty = backend default)
     teacher_model: str = ""  # opd backend: distillation teacher (empty = backend default)
+    trl_mode: str = "gkd"  # trl backend: gkd (on-policy distillation) | grpo (RLVR)
     fine_tune_type: str = "lora"  # mlxlm backend: lora | dora | full
     num_layers: int = 8  # mlxlm backend: number of layers to fine-tune
 
@@ -425,6 +426,8 @@ class TrainingRunner:
             command += ["--base-model", self.config.base_model]
         if self.config.teacher_model:
             command += ["--teacher-model", self.config.teacher_model]
+        if self.config.trl_mode != "gkd":
+            command += ["--trl-mode", self.config.trl_mode]
         if self.config.fine_tune_type != "lora":
             command += ["--fine-tune-type", self.config.fine_tune_type]
         if self.config.num_layers != 8:

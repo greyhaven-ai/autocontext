@@ -677,6 +677,7 @@ export {
   MLXLMBackend,
   GRPOBackend,
   OnPolicyDistillBackend,
+  TRLBackend,
   CUDABackend,
   BackendRegistry,
   defaultBackendRegistry,

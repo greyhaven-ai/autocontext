@@ -182,6 +182,33 @@ class OnPolicyDistillBackend(TrainingBackend):
         return ["checkpoint"]  # LoRA adapter bundle
 
 
+class TRLBackend(TrainingBackend):
+    """Cross-platform TRL backend: on-policy distillation (GKD) + RLVR (GRPO) via HuggingFace TRL.
+
+    Unlike the MLX backends this is not Apple-Silicon-locked; it runs wherever ``trl`` +
+    ``torch`` are installed (Linux / NVIDIA / CPU), the path for larger / non-Mac runs.
+    """
+
+    @property
+    def name(self) -> str:
+        return "trl"
+
+    def is_available(self) -> bool:
+        try:
+            import importlib.util
+
+            return importlib.util.find_spec("trl") is not None
+        except Exception:
+            logger.debug("training.backends: caught Exception", exc_info=True)
+            return False
+
+    def default_checkpoint_dir(self, scenario: str) -> Path:
+        return Path("models") / scenario / "trl"
+
+    def supported_runtime_types(self) -> list[str]:
+        return ["checkpoint"]  # PEFT/LoRA adapter or saved HF model
+
+
 class BackendRegistry:
     """Registry of training backends by name."""
 
@@ -209,4 +236,5 @@ def default_backend_registry() -> BackendRegistry:
     registry.register(MLXLMBackend())
     registry.register(GRPOBackend())
     registry.register(OnPolicyDistillBackend())
+    registry.register(TRLBackend())
     return registry

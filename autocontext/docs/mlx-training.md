@@ -194,9 +194,40 @@ Notes:
 - The teacher only needs to be at least as capable as the student; it need not be huge.
 - The run stops at the next iteration boundary once `--time-budget` is reached (model
   loading counts against the budget), so it cannot overrun indefinitely.
-- For cross-platform / larger runs (Linux, NVIDIA, multi-GPU), the off-the-shelf counterpart
-  is TRL's `GKDTrainer` (`lmbda` = on-policy fraction, `beta=1.0` = reverse KL); this `opd`
-  backend is the local Apple-Silicon path.
+- For cross-platform / larger runs (Linux, NVIDIA, multi-GPU), use the `trl` backend below;
+  this `opd` backend is the local Apple-Silicon path.
+
+### Cross-platform RLVR + distillation (`--backend trl`, non-Apple)
+
+The MLX backends (`grpo`, `opd`) are Apple-Silicon only. The `trl` backend is the
+cross-platform counterpart for larger / non-Mac runs, wrapping HuggingFace TRL's validated
+trainers. It runs wherever `trl` + `torch` are installed (Linux, NVIDIA, CPU), not just on a
+Mac, and is where a real efficiency-validation run belongs.
+
+```bash
+uv pip install trl peft
+
+# on-policy distillation (GKD) -- the cross-platform counterpart of `opd`
+uv run autoctx train --backend trl --trl-mode gkd \
+  --scenario antichain_diverse \
+  --base-model Qwen/Qwen2.5-1.5B-Instruct \
+  --teacher-model Qwen/Qwen2.5-7B-Instruct
+
+# RLVR (GRPO) -- the cross-platform counterpart of `grpo`
+uv run autoctx train --backend trl --trl-mode grpo \
+  --scenario antichain_diverse \
+  --base-model Qwen/Qwen2.5-1.5B-Instruct
+```
+
+Notes:
+
+- `--trl-mode gkd` uses TRL's `GKDTrainer` (on-policy distillation; `lmbda=1.0` fully
+  on-policy, `beta=1.0` reverse KL). `--trl-mode grpo` uses `GRPOTrainer` and reuses the
+  **same** scenario-verifier reward as the MLX `grpo` backend (`score_completions`).
+- Models are HuggingFace repo ids (e.g. `Qwen/Qwen2.5-1.5B-Instruct`), not the MLX 4-bit
+  community repos. `--base-model` is the student; `--teacher-model` (gkd) must share the
+  student's tokenizer. LoRA (PEFT) is applied automatically.
+- `--time-budget` is enforced via a training callback that stops at the next step boundary.
 
 ### Tokenizer vocabulary size (optional)
 
