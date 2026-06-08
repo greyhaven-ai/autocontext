@@ -37,6 +37,18 @@
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
     },
+    "./server/protocol": {
+      "import": "./dist/server/protocol.js",
+      "types": "./dist/server/protocol.d.ts"
+    },
+    "./server/ws-server": {
+      "import": "./dist/server/ws-server.js",
+      "types": "./dist/server/ws-server.d.ts"
+    },
+    "./server/run-manager": {
+      "import": "./dist/server/run-manager.js",
+      "types": "./dist/server/run-manager.d.ts"
+    },
     "./control-plane/runtime": {
       "import": "./dist/control-plane/runtime/index.js",
       "types": "./dist/control-plane/runtime/index.d.ts"
