@@ -9,12 +9,13 @@ from __future__ import annotations
 
 import math
 
-import mlx.core as mx
-import mlx.nn as nn
-import mlx.optimizers as optim
 import pytest
 
-mlx = pytest.importorskip("mlx.core")
+# importorskip MUST run before any mlx import, so CI (no MLX) skips at collection rather
+# than erroring. Bind the mlx modules through it instead of a top-level `import mlx.*`.
+mx = pytest.importorskip("mlx.core")
+nn = pytest.importorskip("mlx.nn")
+optim = pytest.importorskip("mlx.optimizers")
 
 from autocontext.training.autoresearch.on_policy_distill import (  # noqa: E402
     distill_loss,
