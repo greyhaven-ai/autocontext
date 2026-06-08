@@ -27,10 +27,12 @@ from autocontext.training.autoresearch.distill_common import assert_vocab_compat
 
 _EPS = 1e-8
 
-# Both models must share a tokenizer, so default teacher/student are the same family
-# (Qwen2.5). The student is the capable RLVR-grade base; the teacher is larger.
+# Teacher and student must share the LOGIT vocab dimension (reverse_kl_per_token compares
+# logits over vocab). Qwen2.5 0.5B/1.5B/3B share vocab 151936, but 7B+ use 152064, so the
+# default teacher is 3B (NOT 7B) -- a 7B teacher with a 1.5B student fails on a vocab shape
+# mismatch. 3B still gives a real teacher>student capability gap for distillation.
 DEFAULT_STUDENT_MODEL = "mlx-community/Qwen2.5-1.5B-Instruct-4bit"
-DEFAULT_TEACHER_MODEL = "mlx-community/Qwen2.5-7B-Instruct-4bit"
+DEFAULT_TEACHER_MODEL = "mlx-community/Qwen2.5-3B-Instruct-4bit"
 _LORA_PARAMETERS = {"rank": 8, "dropout": 0.0, "scale": 20.0}
 
 __all__ = [

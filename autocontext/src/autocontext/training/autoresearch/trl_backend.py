@@ -26,7 +26,9 @@ from autocontext.training.autoresearch.grpo_backend import build_prompt_rows, sc
 # Cross-platform HF model ids (not the MLX 4-bit community repos). Teacher/student must
 # share a tokenizer; defaults are the same Qwen2.5 family.
 DEFAULT_STUDENT_MODEL = "Qwen/Qwen2.5-1.5B-Instruct"
-DEFAULT_TEACHER_MODEL = "Qwen/Qwen2.5-7B-Instruct"
+# Teacher must share the student's LOGIT vocab dim for GKD: Qwen2.5 0.5B/1.5B/3B = 151936,
+# but 7B+ = 152064, so 3B (not 7B) is the vocab-compatible teacher for the 1.5B student.
+DEFAULT_TEACHER_MODEL = "Qwen/Qwen2.5-3B-Instruct"
 SUPPORTED_MODES = ("gkd", "grpo")
 # PEFT LoRA config passed to the TRL trainers (kwargs for peft.LoraConfig).
 _LORA = {"r": 8, "lora_alpha": 16, "lora_dropout": 0.0, "task_type": "CAUSAL_LM"}
@@ -99,7 +101,6 @@ def build_grpo_config_kwargs(
     learning_rate: float = 1e-5,
     num_generations: int = 8,
     max_completion_length: int = 256,
-    max_prompt_length: int = 512,
     beta: float = 0.0,
     temperature: float = 1.0,
     num_train_epochs: float = 1.0,
@@ -108,15 +109,15 @@ def build_grpo_config_kwargs(
 ) -> dict[str, Any]:
     """Kwargs for ``trl.GRPOConfig`` (RLVR). ``beta=0.0`` follows TRL's KL-free default.
 
-    ``max_steps`` (>0 caps total optimizer steps) and ``per_device_train_batch_size`` are
-    threaded from the generic train controls.
+    Only widely-stable GRPOConfig fields are passed (e.g. ``max_prompt_length`` is omitted
+    -- some TRL versions reject it; the default prompt handling is fine). ``max_steps`` (>0
+    caps total optimizer steps) and ``per_device_train_batch_size`` thread the generic controls.
     """
     return {
         "output_dir": output_dir,
         "learning_rate": learning_rate,
         "num_generations": num_generations,
         "max_completion_length": max_completion_length,
-        "max_prompt_length": max_prompt_length,
         "beta": beta,
         "temperature": temperature,
         "num_train_epochs": num_train_epochs,
@@ -126,8 +127,23 @@ def build_grpo_config_kwargs(
 
 
 def build_chat_dataset_rows(scenario: Any, n_prompts: int) -> list[dict[str, Any]]:
-    """GKD dataset rows: ``{"messages": [{"role": "user", "content": prompt}]}`` per prompt."""
-    return [{"messages": [{"role": "user", "content": row["prompt"]}]} for row in build_prompt_rows(scenario, n_prompts)]
+    """GKD dataset rows: a user turn plus a placeholder assistant turn.
+
+    TRL's ``DataCollatorForChatML`` splits each row into prompt (``messages[:-1]``) and a
+    target turn (the last message), so a single user-only message makes ``messages[:-1]``
+    empty and the collator raises ``IndexError`` building the prompt. On-policy GKD
+    (``lmbda=1.0``) resamples the completion from the student, so the assistant content is a
+    throwaway placeholder; it only has to give the collator a prompt/target boundary.
+    """
+    return [
+        {
+            "messages": [
+                {"role": "user", "content": row["prompt"]},
+                {"role": "assistant", "content": "(on-policy: resampled from the student)"},
+            ]
+        }
+        for row in build_prompt_rows(scenario, n_prompts)
+    ]
 
 
 def build_prompt_dataset_rows(scenario: Any, n_prompts: int) -> list[dict[str, str]]:
@@ -224,8 +240,14 @@ def run_trl_training(
     if mode == "gkd":
         gkd_config_cls, gkd_trainer_cls = _import_gkd()
 
-        teacher_tok = AutoTokenizer.from_pretrained(teacher_model)
-        s_vocab, t_vocab = getattr(tokenizer, "vocab_size", None), getattr(teacher_tok, "vocab_size", None)
+        # Compare the MODELS' logit vocab (config.vocab_size), not the tokenizer's: GKD's
+        # per-token JSD compares logits, and same-family models can have different PADDED
+        # vocab (e.g. Qwen2.5 1.5B=151936 vs 7B=152064) while their tokenizers look equal.
+        # Catch it here with a clear message instead of a cryptic tensor-shape error in the loss.
+        student_lm = AutoModelForCausalLM.from_pretrained(student_model)
+        teacher_lm = AutoModelForCausalLM.from_pretrained(teacher_model)
+        s_vocab = getattr(student_lm.config, "vocab_size", None)
+        t_vocab = getattr(teacher_lm.config, "vocab_size", None)
         if isinstance(s_vocab, int) and isinstance(t_vocab, int):
             assert_vocab_compatible(s_vocab, t_vocab)
         dataset = Dataset.from_list(build_chat_dataset_rows(scenario, n_prompts))
@@ -236,8 +258,8 @@ def run_trl_training(
             gkd_kwargs["per_device_train_batch_size"] = batch_size
         args = gkd_config_cls(**build_gkd_config_kwargs(**gkd_kwargs))
         trainer = gkd_trainer_cls(
-            model=AutoModelForCausalLM.from_pretrained(student_model),
-            teacher_model=AutoModelForCausalLM.from_pretrained(teacher_model),
+            model=student_lm,
+            teacher_model=teacher_lm,
             args=args,
             processing_class=tokenizer,
             train_dataset=dataset,

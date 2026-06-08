@@ -181,14 +181,14 @@ the student roll out, and steps the student to match the teacher's per-token dis
 uv run autoctx train --backend opd \
   --scenario antichain_diverse \
   --base-model mlx-community/Qwen2.5-1.5B-Instruct-4bit \
-  --teacher-model mlx-community/Qwen2.5-7B-Instruct-4bit \
+  --teacher-model mlx-community/Qwen2.5-3B-Instruct-4bit \
   --num-layers 8
 ```
 
 Notes:
 
 - `--base-model` is the **student** and `--teacher-model` is the teacher (default:
-  `mlx-community/Qwen2.5-7B-Instruct-4bit`); both empty fall back to same-family Qwen2.5
+  `mlx-community/Qwen2.5-3B-Instruct-4bit`); both empty fall back to same-family Qwen2.5
   defaults. Teacher and student **must share a tokenizer** (the run aborts with a clear
   error on a vocab mismatch), so keep them in one model family.
 - The teacher only needs to be at least as capable as the student; it need not be huge.
@@ -211,7 +211,7 @@ uv pip install trl peft
 uv run autoctx train --backend trl --trl-mode gkd \
   --scenario antichain_diverse \
   --base-model Qwen/Qwen2.5-1.5B-Instruct \
-  --teacher-model Qwen/Qwen2.5-7B-Instruct
+  --teacher-model Qwen/Qwen2.5-3B-Instruct
 
 # RLVR (GRPO) -- the cross-platform counterpart of `grpo`
 uv run autoctx train --backend trl --trl-mode grpo \

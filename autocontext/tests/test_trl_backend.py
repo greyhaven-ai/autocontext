@@ -58,7 +58,9 @@ def test_grpo_config_kwargs_have_generation_and_kl_fields() -> None:
     cfg = build_grpo_config_kwargs(output_dir="/tmp/out", num_generations=6)
     assert cfg["num_generations"] == 6
     assert cfg["beta"] == 0.0  # TRL KL-free default
-    assert "max_completion_length" in cfg and "max_prompt_length" in cfg
+    assert "max_completion_length" in cfg
+    # max_prompt_length is intentionally NOT passed (some TRL versions reject it).
+    assert "max_prompt_length" not in cfg
 
 
 def test_config_kwargs_thread_max_steps_and_batch_size() -> None:
@@ -86,6 +88,10 @@ def test_chat_dataset_rows_are_messages_for_gkd() -> None:
     assert len(rows) == 3
     assert all(r["messages"][0]["role"] == "user" for r in rows)
     assert all(isinstance(r["messages"][0]["content"], str) and r["messages"][0]["content"] for r in rows)
+    # GKD's ChatML collator splits messages[:-1] as the prompt, so a target (assistant) turn
+    # is required or it raises IndexError on a user-only row.
+    assert all(r["messages"][-1]["role"] == "assistant" for r in rows)
+    assert all(len(r["messages"]) == 2 for r in rows)
 
 
 def test_prompt_dataset_rows_have_prompt_and_answer_for_grpo() -> None:
