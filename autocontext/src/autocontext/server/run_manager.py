@@ -39,10 +39,20 @@ class RunManager:
         for name in sorted(SCENARIO_REGISTRY.keys()):
             scenario_cls = SCENARIO_REGISTRY[name]
             instance = scenario_cls()
-            scenarios.append({
-                "name": name,
-                "description": instance.describe_rules(),
-            })
+            # Dual-interface registry: game scenarios expose describe_rules(),
+            # agent-task scenarios expose describe_task(). Guard for both.
+            if hasattr(instance, "describe_rules"):
+                description = instance.describe_rules()
+            elif hasattr(instance, "describe_task"):
+                description = instance.describe_task()
+            else:
+                description = name
+            scenarios.append(
+                {
+                    "name": name,
+                    "description": description,
+                }
+            )
 
         pi_configured = bool(self.settings.primeintellect_api_key)
         executors: list[dict[str, Any]] = [
