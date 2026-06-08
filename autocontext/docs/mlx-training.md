@@ -181,15 +181,19 @@ the student roll out, and steps the student to match the teacher's per-token dis
 uv run autoctx train --backend opd \
   --scenario antichain_diverse \
   --base-model mlx-community/Qwen2.5-1.5B-Instruct-4bit \
+  --teacher-model mlx-community/Qwen2.5-7B-Instruct-4bit \
   --num-layers 8
 ```
 
 Notes:
 
-- `--base-model` is the **student**; the teacher defaults to a larger same-family model
-  (`mlx-community/Qwen2.5-7B-Instruct-4bit`). Teacher and student **must share a tokenizer**,
-  so keep them in one model family. `--train-steps` maps to distillation iterations.
+- `--base-model` is the **student** and `--teacher-model` is the teacher (default:
+  `mlx-community/Qwen2.5-7B-Instruct-4bit`); both empty fall back to same-family Qwen2.5
+  defaults. Teacher and student **must share a tokenizer** (the run aborts with a clear
+  error on a vocab mismatch), so keep them in one model family.
 - The teacher only needs to be at least as capable as the student; it need not be huge.
+- The run stops at the next iteration boundary once `--time-budget` is reached (model
+  loading counts against the budget), so it cannot overrun indefinitely.
 - For cross-platform / larger runs (Linux, NVIDIA, multi-GPU), the off-the-shelf counterpart
   is TRL's `GKDTrainer` (`lmbda` = on-policy fraction, `beta=1.0` = reverse KL); this `opd`
   backend is the local Apple-Silicon path.

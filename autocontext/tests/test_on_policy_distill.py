@@ -18,6 +18,7 @@ nn = pytest.importorskip("mlx.nn")
 optim = pytest.importorskip("mlx.optimizers")
 
 from autocontext.training.autoresearch.on_policy_distill import (  # noqa: E402
+    assert_vocab_compatible,
     distill_loss,
     distill_over_prompts,
     distill_update_step,
@@ -236,3 +237,21 @@ def test_run_training_dispatches_opd(monkeypatch, tmp_path) -> None:
     assert captured["student_model"] == "student-x"
     assert captured["iters"] == 5
     assert out["avg_score"] == 0.4
+
+
+def test_distill_over_prompts_respects_time_budget() -> None:
+    """A spent time budget stops the loop early instead of running all iters."""
+    mx.random.seed(9)
+    student = _TinyLM(vocab=6, dim=4)
+    teacher = _TinyLM(vocab=6, dim=4)
+    prompts = [mx.array([[1, 2]])]
+    opt = optim.SGD(learning_rate=0.1)
+
+    out = distill_over_prompts(student, teacher, opt, prompts, iters=100, max_tokens=2, sample_temperature=0.0, time_budget=0.0)
+    assert out["num_steps"] < 100  # budget cut it short rather than running all 100
+
+
+def test_assert_vocab_compatible_guards_tokenizer_mismatch() -> None:
+    assert_vocab_compatible(151936, 151936)  # equal vocab: fine
+    with pytest.raises(ValueError, match="tokenizer"):
+        assert_vocab_compatible(151936, 32000)  # mismatched vocab -> clear error, not a shape crash

@@ -32,6 +32,7 @@ _LORA_PARAMETERS = {"rank": 8, "dropout": 0.0, "scale": 20.0}
 __all__ = [
     "DEFAULT_STUDENT_MODEL",
     "DEFAULT_TEACHER_MODEL",
+    "assert_vocab_compatible",
     "distill_loss",
     "distill_over_prompts",
     "distill_update_step",
@@ -167,6 +168,21 @@ def on_policy_distill_step(
     return distill_update_step(student_model, teacher_model, optimizer, full_ids, completion_mask, temperature=kl_temperature)
 
 
+def assert_vocab_compatible(student_vocab: int, teacher_vocab: int) -> None:
+    """Reject a teacher/student tokenizer mismatch up front with a clear message.
+
+    On-policy distillation compares per-token distributions, so the two models must share
+    a vocabulary; mismatched sizes otherwise surface as an opaque logit-shape error deep in
+    the loss after both (large) models have loaded.
+    """
+    if student_vocab != teacher_vocab:
+        raise ValueError(
+            "on-policy distillation requires a shared tokenizer: student vocab "
+            f"{student_vocab} != teacher vocab {teacher_vocab}. Use teacher and student "
+            "from the same model family."
+        )
+
+
 def distill_over_prompts(
     student_model: Any,
     teacher_model: Any,
@@ -177,16 +193,22 @@ def distill_over_prompts(
     max_tokens: int,
     sample_temperature: float = 1.0,
     kl_temperature: float = 1.0,
+    time_budget: float | None = None,
 ) -> dict[str, float]:
-    """Run ``iters`` on-policy distillation steps, cycling through ``prompts``.
+    """Run up to ``iters`` on-policy distillation steps, cycling through ``prompts``.
 
-    Each ``prompts`` entry is a ``[1, P]`` token array. Returns ``num_steps`` plus the
-    ``final_loss`` and ``mean_loss`` over the run (the training loop body of the backend).
+    Each ``prompts`` entry is a ``[1, P]`` token array. ``time_budget`` (seconds), if set,
+    stops the loop at the next iteration boundary once exceeded, so an in-process run cannot
+    overrun indefinitely on expensive rollouts. Returns ``num_steps`` plus the ``final_loss``
+    and ``mean_loss`` over the run (the training loop body of the backend).
     """
     if not prompts:
         return {"num_steps": 0.0, "final_loss": 0.0, "mean_loss": 0.0}
     losses: list[float] = []
+    started = time.monotonic()
     for step in range(iters):
+        if time_budget is not None and (time.monotonic() - started) >= time_budget:
+            break
         prompt_ids = prompts[step % len(prompts)]
         losses.append(
             on_policy_distill_step(
@@ -199,6 +221,8 @@ def distill_over_prompts(
                 kl_temperature=kl_temperature,
             )
         )
+    if not losses:
+        return {"num_steps": 0.0, "final_loss": 0.0, "mean_loss": 0.0}
     return {
         "num_steps": float(len(losses)),
         "final_loss": losses[-1],
@@ -231,7 +255,7 @@ def run_on_policy_distillation(
     assess_samples: int = 8,
     assess_temperature: float = 0.0,
     register_import: str | None = None,
-    time_budget: int = 3600,  # noqa: ARG001 - accepted for backend-signature parity
+    time_budget: int = 3600,
     memory_limit_mb: int = 16384,
 ) -> dict[str, float]:
     """Distill a teacher into a LoRA student IN-PROCESS via on-policy reverse-KL, then assess.
@@ -253,24 +277,33 @@ def run_on_policy_distillation(
     from autocontext.training.autoresearch.train import _peak_memory_mb, _preflight_backend_deps
 
     _preflight_backend_deps("mlxlm")  # needs mlx-lm (load + tuner)
+    teacher_model = teacher_model or DEFAULT_TEACHER_MODEL
+    student_model = student_model or DEFAULT_STUDENT_MODEL
     if register_import:
         exec(register_import, {})  # noqa: S102 - trusted operator-supplied registration hook
     if scenario_name not in SCENARIO_REGISTRY:
         raise ValueError(f"unknown scenario: {scenario_name}")
     scenario = SCENARIO_REGISTRY[scenario_name]()
 
-    teacher = load(teacher_model)[0]
+    started = time.monotonic()  # spans model loads + the loop, so loads count against time_budget
+    loaded_teacher = load(teacher_model)
+    teacher, teacher_tok = loaded_teacher[0], loaded_teacher[1]
     teacher.freeze()
     loaded_student = load(student_model)
     student, tokenizer = loaded_student[0], loaded_student[1]
     student.freeze()
+    # Reject a tokenizer mismatch before training (else an opaque logit-shape error later).
+    student_vocab = getattr(tokenizer, "vocab_size", None)
+    teacher_vocab = getattr(teacher_tok, "vocab_size", None)
+    if isinstance(student_vocab, int) and isinstance(teacher_vocab, int):
+        assert_vocab_compatible(student_vocab, teacher_vocab)
     linear_to_lora_layers(student, num_layers, _LORA_PARAMETERS)
 
     rows = build_prompt_rows(scenario, n_prompts)
     prompts = _tokenize_prompts(tokenizer, rows)
     optimizer = optim.Adam(learning_rate=learning_rate)
 
-    started = time.perf_counter()
+    loop_budget = max(0.0, float(time_budget) - (time.monotonic() - started))
     loop = distill_over_prompts(
         student,
         teacher,
@@ -280,6 +313,7 @@ def run_on_policy_distillation(
         max_tokens=max_tokens,
         sample_temperature=sample_temperature,
         kl_temperature=kl_temperature,
+        time_budget=loop_budget,
     )
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -306,7 +340,7 @@ def run_on_policy_distillation(
         "avg_score": metrics["avg_score"],
         "valid_rate": metrics["valid_rate"],
         "val_loss": float("nan"),
-        "training_seconds": time.perf_counter() - started,
+        "training_seconds": time.monotonic() - started,
         "peak_memory_mb": min(_peak_memory_mb(), float(memory_limit_mb)),
         "num_steps": loop["num_steps"],
         "final_loss": loop["final_loss"],
