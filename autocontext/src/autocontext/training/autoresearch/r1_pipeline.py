@@ -18,13 +18,28 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from autocontext.training.autoresearch.grpo_backend import run_grpo_training
+# The RLVR stage gates base capability (it needs a capable instruct base; weak bases hit a
+# documented RLVR ceiling), and both stages MUST share one base so RLVR can resume the
+# distilled adapter, so the pipeline default is the RLVR backend's default rather than the
+# distillation backend's smaller one.
+from autocontext.training.autoresearch.grpo_backend import DEFAULT_BASE_MODEL, run_grpo_training
 from autocontext.training.autoresearch.mlxlm_backend import run_mlxlm_training
 
 
 def distilled_adapter_path(output_dir: Any) -> Path:
     """Where the distillation stage writes its LoRA adapter (the RLVR cold-start)."""
     return Path(output_dir) / "distill" / "adapters" / "adapters.safetensors"
+
+
+def _apply_register_import(register_import: str | None) -> None:
+    """Execute a consumer's scenario-registration snippet IN THIS PROCESS.
+
+    The distillation stage (``run_mlxlm_training``) runs in-process and looks the scenario
+    up in ``SCENARIO_REGISTRY`` before reading data, so a consumer-only scenario must be
+    registered in the parent here, not only inside the RLVR subprocess's reward module.
+    """
+    if register_import:
+        exec(register_import, {})  # noqa: S102 - trusted operator-supplied registration hook
 
 
 def run_r1_pipeline(
@@ -42,11 +57,17 @@ def run_r1_pipeline(
 ) -> dict[str, Any]:
     """Run distillation cold-start then RLVR (resuming the cold-start adapter).
 
-    ``distill_kwargs`` / ``rlvr_kwargs`` pass stage-specific options to
-    ``run_mlxlm_training`` / ``run_grpo_training``. Returns ``{"distill", "rlvr"}`` plus
-    the headline (final RLVR) ``avg_score`` / ``valid_rate`` and the resumed adapter path.
+    ``register_import`` registers a consumer-repo scenario; it is applied both in this
+    parent process (for the in-process distill stage) and inside the RLVR subprocess.
+    Both stages share one ``base_model`` (default ``DEFAULT_BASE_MODEL``) so RLVR can
+    resume the distilled adapter. ``distill_kwargs`` / ``rlvr_kwargs`` pass stage-specific
+    options. Returns ``{"distill", "rlvr"}`` plus the headline (final RLVR)
+    ``avg_score`` / ``valid_rate`` and the resumed adapter path.
     """
     base = Path(output_dir)
+    base_model = base_model or DEFAULT_BASE_MODEL
+    # Register a consumer scenario before the in-process distill stage queries the registry.
+    _apply_register_import(register_import)
 
     distill_metrics = run_mlxlm_training(
         scenario_name=scenario_name,

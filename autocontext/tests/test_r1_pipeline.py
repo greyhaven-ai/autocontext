@@ -68,3 +68,57 @@ def test_run_r1_pipeline_skips_resume_if_distill_produced_no_adapter(monkeypatch
 
     r1.run_r1_pipeline(scenario_name="s", data_path=tmp_path / "d.jsonl", output_dir=tmp_path / "r1", base_model="m")
     assert captured["resume"] is None
+
+
+def test_run_r1_pipeline_applies_register_import_in_parent_before_distill(monkeypatch, tmp_path) -> None:
+    """A consumer-only scenario must be registered IN THE PARENT before the in-process
+    distill stage queries SCENARIO_REGISTRY, not just inside the RLVR subprocess."""
+    import autocontext.training.autoresearch.r1_pipeline as r1
+    from autocontext.scenarios import SCENARIO_REGISTRY
+
+    sentinel = "r1_register_sentinel_xyz"
+    seen: dict = {}
+
+    def fake_distill(**kw):
+        # The distill stage runs in-process; the consumer scenario must already be registered.
+        seen["registered_at_distill"] = sentinel in SCENARIO_REGISTRY
+        return {"avg_score": 0.0, "valid_rate": 0.0}
+
+    monkeypatch.setattr(r1, "run_mlxlm_training", fake_distill)
+    monkeypatch.setattr(r1, "run_grpo_training", lambda **kw: {"avg_score": 0.0, "valid_rate": 0.0})
+
+    snippet = f"from autocontext.scenarios import SCENARIO_REGISTRY as _R; _R[{sentinel!r}] = (lambda: None)"
+    try:
+        r1.run_r1_pipeline(
+            scenario_name=sentinel,
+            data_path=tmp_path / "d.jsonl",
+            output_dir=tmp_path / "r1",
+            base_model="m",
+            register_import=snippet,
+        )
+        assert seen["registered_at_distill"] is True
+    finally:
+        SCENARIO_REGISTRY.pop(sentinel, None)
+
+
+def test_run_r1_pipeline_coalesces_empty_base_model_to_a_concrete_default(monkeypatch, tmp_path) -> None:
+    """Direct Python callers that omit base_model must not get --model "" forwarded."""
+    import autocontext.training.autoresearch.r1_pipeline as r1
+
+    captured: dict = {}
+
+    def fake_distill(**kw):
+        captured["distill_base"] = kw.get("base_model")
+        return {"avg_score": 0.0, "valid_rate": 0.0}
+
+    def fake_rlvr(**kw):
+        captured["rlvr_base"] = kw.get("base_model")
+        return {"avg_score": 0.0, "valid_rate": 0.0}
+
+    monkeypatch.setattr(r1, "run_mlxlm_training", fake_distill)
+    monkeypatch.setattr(r1, "run_grpo_training", fake_rlvr)
+
+    r1.run_r1_pipeline(scenario_name="s", data_path=tmp_path / "d.jsonl", output_dir=tmp_path / "r1")
+    assert captured["distill_base"]  # non-empty
+    # Both stages share one base so the RLVR stage can resume the distilled adapter.
+    assert captured["distill_base"] == captured["rlvr_base"]
