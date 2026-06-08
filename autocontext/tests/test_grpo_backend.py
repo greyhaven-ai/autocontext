@@ -252,3 +252,88 @@ def test_grpo_metrics_has_all_summary_keys() -> None:
         assert key in m, f"missing summary key: {key}"
     assert m["num_steps"] == 120.0
     assert m["avg_score"] == 0.4
+
+
+# ---------------------------------------------------------------------------
+# Prompt diversity: GRPO must train over varied instances, not one repeated prompt
+# ---------------------------------------------------------------------------
+
+
+class _VaryScenario:
+    """Instance varies by seed: N = 30 + seed; prompt + verifier depend on the state."""
+
+    name = "vary"
+
+    def initial_state(self, seed=None):
+        return {"n": 30 + (seed or 0)}
+
+    def get_task_prompt(self, state=None):
+        return f"task N={state['n']}"
+
+
+def test_build_prompt_rows_varies_prompt_by_state() -> None:
+    """Each row is a distinct instance (varied prompt) with its state carried in `answer`,
+    so GRPO sees a diverse prompt set instead of one repeated prompt."""
+    import json
+
+    from autocontext.training.autoresearch.grpo_backend import build_prompt_rows
+
+    rows = build_prompt_rows(_VaryScenario(), 3)
+    assert [r["prompt"] for r in rows] == ["task N=30", "task N=31", "task N=32"]
+    assert json.loads(rows[2]["answer"]) == {"n": 32}
+
+
+def test_score_completions_uses_per_completion_state() -> None:
+    """With per-completion `answers` (the instance states), each completion is verified
+    against ITS OWN instance, not a single shared state."""
+    from autocontext.scenarios.agent_task import AgentTaskResult
+    from autocontext.training.autoresearch.grpo_backend import score_completions
+
+    class _TargetScenario:
+        name = "tgt"
+
+        def initial_state(self, seed=None):
+            return {}
+
+        def evaluate_output(self, output, state, **kwargs):
+            import json
+
+            try:
+                x = json.loads(output).get("x")
+            except Exception:
+                x = None
+            return AgentTaskResult(score=1.0 if x == state.get("target") else 0.0, reasoning="")
+
+    comps = ['{"x": 5}', '{"x": 9}']
+    answers = ['{"target": 5}', '{"target": 9}']
+    assert score_completions(_TargetScenario(), comps, answers=answers) == [1.0, 1.0]
+    # no per-completion answers -> shared (empty) state -> neither matches -> 0.0
+    assert score_completions(_TargetScenario(), comps) == [0.0, 0.0]
+
+
+def test_render_reward_module_forwards_answers() -> None:
+    from autocontext.training.autoresearch.grpo_backend import render_reward_module
+
+    src = render_reward_module("grid_ctf")
+    assert "answers=" in src  # the reward fn forwards per-completion answers to the verifier
+
+
+def test_build_prompt_rows_identical_prompts_get_consistent_state() -> None:
+    """Reviewer P2: when get_task_prompt ignores the varied state (identical prompt text),
+    every row for that prompt must carry the SAME answer/state -- otherwise the reward
+    (which scores against the answer state) gives GRPO contradictory rewards / hidden
+    labels for the same visible (prompt, completion) pair."""
+    from autocontext.training.autoresearch.grpo_backend import build_prompt_rows
+
+    class _FixedPromptVaryState:
+        name = "fixedprompt"
+
+        def initial_state(self, seed=None):
+            return {"target": seed or 0}  # state varies by seed...
+
+        def get_task_prompt(self, state=None):
+            return "FIXED PROMPT"  # ...but the prompt does NOT reflect it
+
+    rows = build_prompt_rows(_FixedPromptVaryState(), 4)
+    assert len({r["prompt"] for r in rows}) == 1  # identical prompts
+    assert len({r["answer"] for r in rows}) == 1, "identical prompts must map to one canonical state"

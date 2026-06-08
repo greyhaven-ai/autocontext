@@ -47,25 +47,28 @@ _DAPO_EPSILON_HIGH = 0.28  # DAPO clip-higher default
 # ---------------------------------------------------------------------------
 # Reward adapter (the core: model completions -> scalar verifier rewards)
 # ---------------------------------------------------------------------------
-def score_completions(scenario: Any, completions: list[str], *, seed: int = 0) -> list[float]:
+def score_completions(scenario: Any, completions: list[str], *, answers: list[str] | None = None, seed: int = 0) -> list[float]:
     """Score each completion with the scenario verifier; the GRPO reward function.
 
     Robust to reason-then-construct output (extracts the JSON construction via the
     shared ``extract_json_object``). Game scenarios are scored by ``execute_match``,
     agent-task scenarios by ``evaluate_output``. Unparseable output or a throwing
     verifier scores 0.0 (never propagates, so one bad rollout can't kill training).
+
+    When ``answers`` is given (aligned to ``completions``), each completion is verified
+    against ITS OWN instance state (decoded from the answer field that
+    :func:`build_prompt_rows` wrote), so prompt-diverse GRPO scores each rollout against
+    the instance it was sampled for. Without it, a single resolved state is used.
     """
     is_game = hasattr(scenario, "execute_match")
-    # AgentTaskInterface.evaluate_output requires `state` (no default), and compliant /
-    # generated tasks use it; resolve it once from the scenario so we don't silently
-    # score every agent-task rollout 0.0 by omitting it.
-    state = {} if is_game else _resolve_state(scenario, seed)
+    shared_state = {} if is_game else _resolve_state(scenario, seed)
     scores: list[float] = []
-    for completion in completions:
+    for i, completion in enumerate(completions):
         strategy = extract_json_object(completion)
         if not isinstance(strategy, dict):
             scores.append(0.0)
             continue
+        state = _decode_answer_state(answers[i]) if answers and i < len(answers) else shared_state
         try:
             if is_game:
                 scores.append(float(scenario.execute_match(strategy, seed=seed).score))
@@ -74,6 +77,19 @@ def score_completions(scenario: Any, completions: list[str], *, seed: int = 0) -
         except Exception:
             scores.append(0.0)
     return scores
+
+
+def _decode_answer_state(answer: Any) -> dict:
+    """Decode the per-instance state JSON written into a prompt row's ``answer`` field."""
+    if isinstance(answer, dict):
+        return answer
+    if isinstance(answer, str) and answer.strip():
+        try:
+            obj = json.loads(answer)
+            return obj if isinstance(obj, dict) else {}
+        except json.JSONDecodeError:
+            return {}
+    return {}
 
 
 def _resolve_state(scenario: Any, seed: int) -> dict:
@@ -152,11 +168,39 @@ def grpo_cli_args(
 
 
 def build_prompt_rows(scenario: Any, n_prompts: int) -> list[dict[str, str]]:
-    """Build the GRPO prompt dataset rows ({"prompt","answer"}); answer unused (verifier-scored)."""
+    """Build GRPO prompt rows, one per seed, so GRPO trains over DIVERSE instances.
+
+    For each seed the scenario's ``initial_state(seed)`` produces an instance state and
+    ``get_task_prompt(state)`` its prompt; the state is serialized into the ``answer``
+    field so the reward can verify each completion against its own instance (see
+    ``score_completions``).
+
+    Invariant: a given prompt is always paired with ONE canonical state (the first one
+    seen for it). Otherwise a scenario whose prompt does not reflect the varied state
+    would emit identical prompts with differing states, and the reward would hand GRPO
+    contradictory rewards for the same visible (prompt, completion) -- a hidden label the
+    model cannot observe. So genuinely-diverse prompts (state reflected in the text) keep
+    their own states, while fixed prompts collapse to a single consistent state (the
+    prior single-prompt behavior).
+    """
     from autocontext.training.autoresearch.mlxlm_backend import scenario_task_prompt
 
-    prompt = scenario_task_prompt(scenario)
-    return [{"prompt": prompt, "answer": ""} for _ in range(max(0, n_prompts))]
+    get_task_prompt = getattr(scenario, "get_task_prompt", None)
+    canonical_state: dict[str, dict] = {}
+    rows: list[dict[str, str]] = []
+    for i in range(max(0, n_prompts)):
+        state = _resolve_state(scenario, i)
+        if callable(get_task_prompt):
+            try:
+                prompt = str(get_task_prompt(state))
+            except Exception:
+                prompt = scenario_task_prompt(scenario)
+        else:
+            prompt = scenario_task_prompt(scenario)
+        # first state seen for a prompt wins, so identical prompts never carry conflicting state
+        state = canonical_state.setdefault(prompt, state)
+        rows.append({"prompt": prompt, "answer": json.dumps(state, sort_keys=True)})
+    return rows
 
 
 def render_reward_module(scenario_name: str, *, reward_name: str = REWARD_NAME, register_import: str | None = None) -> str:
@@ -180,7 +224,10 @@ def render_reward_module(scenario_name: str, *, reward_name: str = REWARD_NAME, 
         # reward with answer= (singular) at runtime, despite the documented `answers`
         # type alias; only `completions` is needed, so absorb the rest defensively.
         "def _autocontext_verifier_reward(prompts=None, completions=None, **kwargs):\n"
-        "    return score_completions(_SCENARIO, completions or [])\n"
+        # mlx-lm-lora passes the per-completion instance states as answer= (singular);
+        # forward them so each rollout is verified against its own diverse instance.
+        "    answers = kwargs.get('answer') or kwargs.get('answers')\n"
+        "    return score_completions(_SCENARIO, completions or [], answers=answers)\n"
     )
 
 
