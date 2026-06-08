@@ -163,6 +163,37 @@ registers a consumer-repo scenario inside the RLVR subprocess (the distillation 
 trains on the JSONL directly and needs no scenario). Both stages need `mlx-lm` and
 `mlx-lm-lora` installed.
 
+### On-policy distillation (`--backend opd`)
+
+Where `mlxlm` distills OFF-policy (SFT on a fixed teacher-written dataset) and `grpo` uses a
+sparse end-of-episode reward, **on-policy distillation** combines the two: the student
+samples completions on-policy, and the dense per-token signal is the reverse KL
+`KL(student || teacher)` against a frozen teacher on the student's _own_ trajectories
+(Agarwal et al. GKD; popularized by Thinking Machines, Oct 2025). Reverse KL is mode-seeking
+and cannot be reward-hacked, and the per-token signal is reported to reach the same
+reasoning quality as RL at roughly a tenth of the compute.
+
+This is the MLX-native build (mlx-lm-lora has no GKD/distillation mode), so it trains
+**in-process** rather than shelling out: it loads a frozen teacher and a LoRA student, has
+the student roll out, and steps the student to match the teacher's per-token distribution.
+
+```bash
+uv run autoctx train --backend opd \
+  --scenario antichain_diverse \
+  --base-model mlx-community/Qwen2.5-1.5B-Instruct-4bit \
+  --num-layers 8
+```
+
+Notes:
+
+- `--base-model` is the **student**; the teacher defaults to a larger same-family model
+  (`mlx-community/Qwen2.5-7B-Instruct-4bit`). Teacher and student **must share a tokenizer**,
+  so keep them in one model family. `--train-steps` maps to distillation iterations.
+- The teacher only needs to be at least as capable as the student; it need not be huge.
+- For cross-platform / larger runs (Linux, NVIDIA, multi-GPU), the off-the-shelf counterpart
+  is TRL's `GKDTrainer` (`lmbda` = on-policy fraction, `beta=1.0` = reverse KL); this `opd`
+  backend is the local Apple-Silicon path.
+
 ### Tokenizer vocabulary size (optional)
 
 `--vocab-size` (default 8192) sets the BPE tokenizer's target vocab for the from-scratch

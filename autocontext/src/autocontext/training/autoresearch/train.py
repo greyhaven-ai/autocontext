@@ -324,6 +324,7 @@ def _preflight_backend_deps(backend: str) -> None:
         "cuda": ["torch", "numpy", "safetensors"],
         "mlxlm": ["mlx_lm"],
         "grpo": ["mlx_lm_lora"],
+        "opd": ["mlx_lm"],
     }.get(backend, [])
     missing = [m for m in required if importlib.util.find_spec(m) is None]
     if missing:
@@ -332,6 +333,7 @@ def _preflight_backend_deps(backend: str) -> None:
             "cuda": "CUDA (torch) is required for local training",
             "mlxlm": "mlx-lm is required for the pretrained-finetune backend",
             "grpo": "mlx-lm-lora is required for the GRPO/GSPO RLVR backend",
+            "opd": "mlx-lm is required for the on-policy distillation backend",
         }.get(backend, f"missing dependencies for '{backend}' training backend")
         # grpo is not yet a declared extra (its lock bump is a separate maintainer step), so
         # point at a direct install; the from-scratch/mlxlm backends use the packaged extras.
@@ -340,6 +342,7 @@ def _preflight_backend_deps(backend: str) -> None:
             "cuda": "uv sync --group dev --extra cuda",
             "mlxlm": "uv sync --group dev --extra mlxlm",
             "grpo": "uv pip install mlx-lm-lora",
+            "opd": "uv sync --group dev --extra mlxlm",
         }.get(backend, f"uv sync --group dev --extra {backend}")
         raise RuntimeError(f"{lead}; missing: {', '.join(missing)}. Install with: {install}")
 
@@ -457,7 +460,30 @@ def run_training(
             time_budget=time_budget,
             memory_limit_mb=memory_limit_mb,
         )
-    raise ValueError("unsupported training backend: expected 'mlx', 'cuda', 'mlxlm', or 'grpo'")
+    if normalized_backend == "opd":
+        if loss_weight_mode != "uniform" or vocab_size != BASE_VOCAB_SIZE:
+            raise NotImplementedError("loss-weighting / --vocab-size apply to the from-scratch backends, not opd")
+        from autocontext.training.autoresearch.on_policy_distill import (
+            DEFAULT_STUDENT_MODEL,
+            run_on_policy_distillation,
+        )
+
+        _preflight_backend_deps("opd")
+        # On-policy distillation samples on-policy (no SFT dataset): generic train args map as
+        # base_model -> student, train_steps -> iters; the teacher + rollout knobs take defaults.
+        return run_on_policy_distillation(
+            scenario_name=scenario_name,
+            output_dir=output_dir,
+            student_model=base_model or DEFAULT_STUDENT_MODEL,
+            iters=train_steps,
+            learning_rate=learning_rate,
+            num_layers=num_layers,
+            assess_samples=assess_samples,
+            assess_temperature=assess_temperature,
+            time_budget=time_budget,
+            memory_limit_mb=memory_limit_mb,
+        )
+    raise ValueError("unsupported training backend: expected 'mlx', 'cuda', 'mlxlm', 'grpo', or 'opd'")
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -465,7 +491,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--scenario", required=True)
     parser.add_argument("--data", required=True)
     parser.add_argument("--output-dir", required=True)
-    parser.add_argument("--backend", choices=("mlx", "cuda", "mlxlm", "grpo"), default="mlx")
+    parser.add_argument("--backend", choices=("mlx", "cuda", "mlxlm", "grpo", "opd"), default="mlx")
     parser.add_argument("--time-budget", type=int, default=300)
     parser.add_argument("--memory-limit", type=int, default=16384)
     parser.add_argument("--train-steps", type=int, default=8)

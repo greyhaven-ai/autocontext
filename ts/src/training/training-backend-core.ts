@@ -95,6 +95,33 @@ export class GRPOBackend extends TrainingBackend {
   }
 }
 
+/**
+ * On-policy distillation (dense per-token reverse-KL from a teacher). Apple Silicon only;
+ * shells out to the Python `opd` backend (mlx-lm, in-process trainer). The MLX-native
+ * counterpart to TRL's GKDTrainer; a CUDA/TRL path is the cross-platform route for larger runs.
+ */
+export class OnPolicyDistillBackend extends TrainingBackend {
+  get name(): string {
+    return "opd";
+  }
+
+  isAvailable(): boolean {
+    try {
+      return process.platform === "darwin" && process.arch === "arm64";
+    } catch {
+      return false;
+    }
+  }
+
+  defaultCheckpointDir(scenario: string): string {
+    return join("models", scenario, "opd");
+  }
+
+  supportedRuntimeTypes(): string[] {
+    return ["provider", "pi"];
+  }
+}
+
 export class CUDABackend extends TrainingBackend {
   get name(): string {
     return "cuda";
@@ -139,6 +166,7 @@ export function defaultBackendRegistry(): BackendRegistry {
   registry.register(new MLXBackend());
   registry.register(new MLXLMBackend());
   registry.register(new GRPOBackend());
+  registry.register(new OnPolicyDistillBackend());
   registry.register(new CUDABackend());
   return registry;
 }

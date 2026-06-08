@@ -15,6 +15,7 @@ import {
   MLXBackend,
   MLXLMBackend,
   GRPOBackend,
+  OnPolicyDistillBackend,
   CUDABackend,
   BackendRegistry,
   defaultBackendRegistry,
@@ -116,6 +117,15 @@ describe("TrainingBackend interface", () => {
     expect(grpo.defaultCheckpointDir("grid_ctf")).toContain("grpo");
     expect(typeof grpo.isAvailable()).toBe("boolean");
   });
+
+  it("OnPolicyDistillBackend (opd) has correct name and Apple-Silicon availability", () => {
+    const opd = new OnPolicyDistillBackend();
+    expect(opd.name).toBe("opd");
+    expect(opd.metadata().name).toBe("opd");
+    expect(opd.supportedRuntimeTypes()).toContain("provider");
+    expect(opd.defaultCheckpointDir("grid_ctf")).toContain("opd");
+    expect(typeof opd.isAvailable()).toBe("boolean");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -129,6 +139,7 @@ describe("BackendRegistry", () => {
     expect(registry.listNames()).toContain("cuda");
     expect(registry.listNames()).toContain("mlxlm");
     expect(registry.listNames()).toContain("grpo");
+    expect(registry.listNames()).toContain("opd");
   });
 
   it("gets backend by name", () => {
@@ -499,6 +510,7 @@ describe("public package surface", () => {
     expect(pkg.MLXBackend).toBeDefined();
     expect(pkg.MLXLMBackend).toBeDefined();
     expect(pkg.GRPOBackend).toBeDefined();
+    expect(pkg.OnPolicyDistillBackend).toBeDefined();
     expect(pkg.CUDABackend).toBeDefined();
     expect(pkg.BackendRegistry).toBeDefined();
     expect(pkg.defaultBackendRegistry).toBeDefined();

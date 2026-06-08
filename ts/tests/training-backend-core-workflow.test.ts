@@ -42,6 +42,6 @@ describe("training backend core workflow", () => {
 
     expect(registry.get("stub")?.name).toBe("stub");
     expect(registry.listNames()).toEqual(["stub"]);
-    expect(defaultBackendRegistry().listNames()).toEqual(["cuda", "grpo", "mlx", "mlxlm"]);
+    expect(defaultBackendRegistry().listNames()).toEqual(["cuda", "grpo", "mlx", "mlxlm", "opd"]);
   });
 });

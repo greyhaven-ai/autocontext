@@ -157,6 +157,31 @@ class GRPOBackend(TrainingBackend):
         return ["checkpoint"]  # LoRA adapter bundle
 
 
+class OnPolicyDistillBackend(TrainingBackend):
+    """Apple Silicon on-policy distillation backend (dense per-token reverse-KL from a teacher, via mlx-lm)."""
+
+    @property
+    def name(self) -> str:
+        return "opd"
+
+    def is_available(self) -> bool:
+        if platform.system() != "Darwin":
+            return False
+        try:
+            import importlib.util
+
+            return importlib.util.find_spec("mlx_lm") is not None
+        except Exception:
+            logger.debug("training.backends: caught Exception", exc_info=True)
+            return False
+
+    def default_checkpoint_dir(self, scenario: str) -> Path:
+        return Path("models") / scenario / "opd"
+
+    def supported_runtime_types(self) -> list[str]:
+        return ["checkpoint"]  # LoRA adapter bundle
+
+
 class BackendRegistry:
     """Registry of training backends by name."""
 
@@ -183,4 +208,5 @@ def default_backend_registry() -> BackendRegistry:
     registry.register(CUDABackend())
     registry.register(MLXLMBackend())
     registry.register(GRPOBackend())
+    registry.register(OnPolicyDistillBackend())
     return registry
