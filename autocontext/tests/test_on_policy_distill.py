@@ -255,3 +255,15 @@ def test_assert_vocab_compatible_guards_tokenizer_mismatch() -> None:
     assert_vocab_compatible(151936, 151936)  # equal vocab: fine
     with pytest.raises(ValueError, match="tokenizer"):
         assert_vocab_compatible(151936, 32000)  # mismatched vocab -> clear error, not a shape crash
+
+
+def test_model_logit_vocab_reads_output_dim_not_tokenizer() -> None:
+    """The guard must compare the MODEL's logit vocab (what reverse_kl compares), so a
+    padded-vocab mismatch is caught up front rather than crashing in the loss."""
+    from autocontext.training.autoresearch.on_policy_distill import _model_logit_vocab
+
+    assert _model_logit_vocab(_TinyLM(vocab=151936, dim=4)) == 151936
+    # two models with different logit vocab -> the guard rejects the pair
+    s, t = _model_logit_vocab(_TinyLM(vocab=151936, dim=4)), _model_logit_vocab(_TinyLM(vocab=152064, dim=4))
+    with pytest.raises(ValueError, match="tokenizer"):
+        assert_vocab_compatible(s, t)

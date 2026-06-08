@@ -42,6 +42,7 @@ __all__ = [
     "distill_loss",
     "distill_over_prompts",
     "distill_update_step",
+    "_model_logit_vocab",
     "on_policy_distill_step",
     "reverse_kl_per_token",
     "run_on_policy_distillation",
@@ -51,6 +52,16 @@ __all__ = [
 
 def _log_softmax(logits: mx.array, axis: int = -1) -> mx.array:
     return logits - mx.logsumexp(logits, axis=axis, keepdims=True)
+
+
+def _model_logit_vocab(model: Any) -> int:
+    """The model's output logit vocab size, via a 1-token forward.
+
+    This is the exact dimension :func:`reverse_kl_per_token` compares, so it catches
+    padded-vocab mismatches (e.g. Qwen2.5 1.5B=151936 vs 7B=152064) that ``tokenizer.vocab_size``
+    misses; reading logits is also robust across mlx_lm architectures vs a config attr.
+    """
+    return int(model(mx.array([[0]])).shape[-1])
 
 
 def reverse_kl_per_token(
@@ -277,17 +288,16 @@ def run_on_policy_distillation(
     scenario = SCENARIO_REGISTRY[scenario_name]()
 
     started = time.monotonic()  # spans model loads + the loop, so loads count against time_budget
-    loaded_teacher = load(teacher_model)
-    teacher, teacher_tok = loaded_teacher[0], loaded_teacher[1]
+    teacher = load(teacher_model)[0]
     teacher.freeze()
     loaded_student = load(student_model)
     student, tokenizer = loaded_student[0], loaded_student[1]
     student.freeze()
-    # Reject a tokenizer mismatch before training (else an opaque logit-shape error later).
-    student_vocab = getattr(tokenizer, "vocab_size", None)
-    teacher_vocab = getattr(teacher_tok, "vocab_size", None)
-    if isinstance(student_vocab, int) and isinstance(teacher_vocab, int):
-        assert_vocab_compatible(student_vocab, teacher_vocab)
+    # Reject a vocab mismatch before training, comparing the MODELS' LOGIT vocab (what
+    # reverse_kl_per_token actually compares) -- NOT tokenizer.vocab_size, which can match
+    # while the padded logit dims differ (e.g. Qwen2.5 1.5B=151936 vs 7B=152064) and would
+    # otherwise crash deep in the loss with an opaque tensor-shape error.
+    assert_vocab_compatible(_model_logit_vocab(student), _model_logit_vocab(teacher))
     linear_to_lora_layers(student, num_layers, _LORA_PARAMETERS)
 
     rows = build_prompt_rows(scenario, n_prompts)
