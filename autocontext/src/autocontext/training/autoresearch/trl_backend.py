@@ -45,6 +45,20 @@ __all__ = [
 ]
 
 
+def _import_gkd() -> tuple[Any, Any]:
+    """Resolve ``(GKDConfig, GKDTrainer)`` across TRL layouts.
+
+    Recent TRL moved GKD under ``trl.experimental.gkd``; older releases expose it at the
+    top level. Try the experimental path first, fall back to the top level, so the GKD arm
+    works regardless of the resolved TRL version instead of failing on import mid-run.
+    """
+    try:
+        from trl.experimental.gkd import GKDConfig, GKDTrainer
+    except ImportError:
+        from trl import GKDConfig, GKDTrainer
+    return GKDConfig, GKDTrainer
+
+
 def build_gkd_config_kwargs(
     *,
     output_dir: str,
@@ -208,7 +222,7 @@ def run_trl_training(
     callbacks = [make_time_budget_callback(float(time_budget))]
 
     if mode == "gkd":
-        from trl.experimental.gkd import GKDConfig, GKDTrainer
+        gkd_config_cls, gkd_trainer_cls = _import_gkd()
 
         teacher_tok = AutoTokenizer.from_pretrained(teacher_model)
         s_vocab, t_vocab = getattr(tokenizer, "vocab_size", None), getattr(teacher_tok, "vocab_size", None)
@@ -220,8 +234,8 @@ def run_trl_training(
         )
         if batch_size > 0:
             gkd_kwargs["per_device_train_batch_size"] = batch_size
-        args = GKDConfig(**build_gkd_config_kwargs(**gkd_kwargs))
-        trainer = GKDTrainer(
+        args = gkd_config_cls(**build_gkd_config_kwargs(**gkd_kwargs))
+        trainer = gkd_trainer_cls(
             model=AutoModelForCausalLM.from_pretrained(student_model),
             teacher_model=AutoModelForCausalLM.from_pretrained(teacher_model),
             args=args,

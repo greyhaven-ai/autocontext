@@ -117,8 +117,37 @@ def test_reward_func_scores_against_per_instance_answer() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Mode validation (runs before any heavy import)
+# Mode validation + GKD import resolution (run before any heavy import)
 # ---------------------------------------------------------------------------
+
+
+def test_import_gkd_prefers_experimental_then_falls_back(monkeypatch) -> None:
+    """The GKD class resolver tries trl.experimental.gkd first, then top-level trl, so the
+    GKD arm survives TRL's cross-version layout differences (stubbed; no real trl)."""
+    import sys
+    import types
+
+    from autocontext.training.autoresearch import trl_backend
+
+    # Branch 1: experimental layout present -> use it.
+    trl = types.ModuleType("trl")
+    exp = types.ModuleType("trl.experimental")
+    gkd = types.ModuleType("trl.experimental.gkd")
+    gkd.GKDConfig, gkd.GKDTrainer = "EXP_CFG", "EXP_TR"  # type: ignore[attr-defined]
+    trl.experimental = exp  # type: ignore[attr-defined]
+    exp.gkd = gkd  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "trl", trl)
+    monkeypatch.setitem(sys.modules, "trl.experimental", exp)
+    monkeypatch.setitem(sys.modules, "trl.experimental.gkd", gkd)
+    assert trl_backend._import_gkd() == ("EXP_CFG", "EXP_TR")
+
+    # Branch 2: only top-level GKD (no experimental submodule) -> fall back.
+    trl_top = types.ModuleType("trl")
+    trl_top.GKDConfig, trl_top.GKDTrainer = "TOP_CFG", "TOP_TR"  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "trl", trl_top)
+    monkeypatch.delitem(sys.modules, "trl.experimental.gkd", raising=False)
+    monkeypatch.delitem(sys.modules, "trl.experimental", raising=False)
+    assert trl_backend._import_gkd() == ("TOP_CFG", "TOP_TR")
 
 
 def test_run_trl_training_rejects_unknown_mode() -> None:
