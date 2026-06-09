@@ -17,7 +17,9 @@ def test_opd_backend_metadata() -> None:
 
     backend = default_backend_registry().get("opd")
     assert backend is not None
-    assert backend.supported_runtime_types() == ["checkpoint"]  # LoRA adapter bundle
+    # LoRA adapter bundle that mlx-lm can also serve as an agent provider (base + adapter).
+    assert backend.supported_runtime_types() == ["provider", "checkpoint"]
+    assert backend.default_base_model()  # effective student/base recorded for serving
     assert "opd" in str(backend.default_checkpoint_dir("grid_ctf"))
 
 

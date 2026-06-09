@@ -24,6 +24,7 @@ import mlx.nn as nn
 # Re-exported from the pure (mlx-free) shared module so the cross-platform trl backend can
 # use it without importing this mlx-scoped module; kept importable here for back-compat.
 from autocontext.training.autoresearch.distill_common import assert_vocab_compatible
+from autocontext.training.model_defaults import OPD_DEFAULT_STUDENT_MODEL, OPD_DEFAULT_TEACHER_MODEL
 
 _EPS = 1e-8
 
@@ -31,8 +32,8 @@ _EPS = 1e-8
 # logits over vocab). Qwen2.5 0.5B/1.5B/3B share vocab 151936, but 7B+ use 152064, so the
 # default teacher is 3B (NOT 7B) -- a 7B teacher with a 1.5B student fails on a vocab shape
 # mismatch. 3B still gives a real teacher>student capability gap for distillation.
-DEFAULT_STUDENT_MODEL = "mlx-community/Qwen2.5-1.5B-Instruct-4bit"
-DEFAULT_TEACHER_MODEL = "mlx-community/Qwen2.5-3B-Instruct-4bit"
+DEFAULT_STUDENT_MODEL = OPD_DEFAULT_STUDENT_MODEL
+DEFAULT_TEACHER_MODEL = OPD_DEFAULT_TEACHER_MODEL
 _LORA_PARAMETERS = {"rank": 8, "dropout": 0.0, "scale": 20.0}
 
 __all__ = [

@@ -31,11 +31,13 @@ from autocontext.training.autoresearch.sequence_format import (
     resolve_scenario_context,
     score_to_quality_bucket,
 )
+from autocontext.training.model_defaults import MLXLM_DEFAULT_BASE_MODEL
 
 HAS_MLXLM = importlib.util.find_spec("mlx_lm") is not None
 
 # Small instruct base with a 4-bit MLX conversion (QLoRA-friendly). Overridable.
-DEFAULT_BASE_MODEL = "mlx-community/Qwen2.5-0.5B-Instruct-4bit"
+# Sourced from the mlx-free shared module so backends.py can report it without importing mlx.
+DEFAULT_BASE_MODEL = MLXLM_DEFAULT_BASE_MODEL
 
 
 # ---------------------------------------------------------------------------

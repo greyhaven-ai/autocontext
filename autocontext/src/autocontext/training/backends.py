@@ -51,6 +51,16 @@ class TrainingBackend(ABC):
         """Runtime types this backend can serve."""
         return ["provider"]
 
+    def default_base_model(self) -> str:
+        """Effective base/student model when no explicit ``--base-model`` is given.
+
+        From-scratch / standalone-checkpoint backends train no adapter and need no base, so
+        they return ``""``. Adapter backends (LoRA on a pretrained base) return the model the
+        subprocess actually defaults to, so the runner can persist the *effective* base on the
+        published record (an adapter is unservable without it). See ``_publish_best_model``.
+        """
+        return ""
+
 
 class MLXBackend(TrainingBackend):
     """Apple Silicon MLX backend."""
@@ -129,7 +139,13 @@ class MLXLMBackend(TrainingBackend):
         return Path("models") / scenario / "mlxlm"
 
     def supported_runtime_types(self) -> list[str]:
-        return ["checkpoint"]  # LoRA adapter bundle
+        # LoRA adapter bundle, but mlx-lm can serve it as an agent provider (base + adapter).
+        return ["provider", "checkpoint"]
+
+    def default_base_model(self) -> str:
+        from autocontext.training.model_defaults import MLXLM_DEFAULT_BASE_MODEL
+
+        return MLXLM_DEFAULT_BASE_MODEL
 
 
 class GRPOBackend(TrainingBackend):
@@ -154,7 +170,13 @@ class GRPOBackend(TrainingBackend):
         return Path("models") / scenario / "grpo"
 
     def supported_runtime_types(self) -> list[str]:
-        return ["checkpoint"]  # LoRA adapter bundle
+        # LoRA adapter bundle, but mlx-lm can serve it as an agent provider (base + adapter).
+        return ["provider", "checkpoint"]
+
+    def default_base_model(self) -> str:
+        from autocontext.training.model_defaults import GRPO_DEFAULT_BASE_MODEL
+
+        return GRPO_DEFAULT_BASE_MODEL
 
 
 class OnPolicyDistillBackend(TrainingBackend):
@@ -179,7 +201,13 @@ class OnPolicyDistillBackend(TrainingBackend):
         return Path("models") / scenario / "opd"
 
     def supported_runtime_types(self) -> list[str]:
-        return ["checkpoint"]  # LoRA adapter bundle
+        # LoRA adapter bundle, but mlx-lm can serve it as an agent provider (base + adapter).
+        return ["provider", "checkpoint"]
+
+    def default_base_model(self) -> str:
+        from autocontext.training.model_defaults import OPD_DEFAULT_STUDENT_MODEL
+
+        return OPD_DEFAULT_STUDENT_MODEL
 
 
 class TRLBackend(TrainingBackend):

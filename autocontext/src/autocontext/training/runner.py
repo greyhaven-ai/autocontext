@@ -650,6 +650,15 @@ class TrainingRunner:
                 "backend_metadata": self._backend.metadata(),
                 "experiment_index": best_result.experiment_index,
                 "work_dir": str(self.work_dir),
+                # Serving bridge: an adapter checkpoint (mlxlm/opd) is useless without
+                # the base model it was trained against, and a score-conditioned model
+                # must be prompted with the quality prefix at inference. Record both so
+                # the scenario-bound resolver can rebuild the right client (see
+                # scenario_bound_clients.plan_local_client). Fall back to the backend's
+                # effective default when no explicit --base-model was given, since the
+                # subprocess applies that same default (an empty value is unservable).
+                "base_model": self.config.base_model or self._backend.default_base_model(),
+                "score_conditioned": self.config.score_conditioned,
             },
         )
         record = publish_training_output(
