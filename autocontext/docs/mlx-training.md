@@ -389,10 +389,15 @@ an iterated one.
 Sampling uses a positive temperature so the collected constructions are diverse
 (greedy decoding would collect identical samples and stall the loop). The loop drives
 the SFT backends that collect assessment samples: `mlx` (from-scratch GPT) and `mlxlm`
-(LoRA on a pretrained base, via `--backend mlxlm`). It works for both game scenarios
-(JSON strategies) and agent-task scenarios (free-text outputs, scored via
-`evaluate_output` and retrained on verbatim). The online-RL / distillation backends
-(`grpo`/`opd`/`trl`) have no SFT sample stream and are rejected.
+(LoRA on a pretrained base, via `--backend mlxlm`). The online-RL / distillation
+backends (`grpo`/`opd`/`trl`) have no SFT sample stream and are rejected.
+
+Scenario coverage depends on the backend. Both backends handle game scenarios (JSON
+strategies). **Free-text agent-task scenarios** (whose `evaluate_output` scores prose)
+need a pretrained instruct model that emits natural language, so use **`--backend mlxlm`**:
+its assessment retrains on the generated text verbatim. The from-scratch `mlx` backend
+emits the structured `<|...|>` token contract, so on it agent tasks must be the
+structured (JSON-strategy) kind, not free text.
 
 Because each round trains _before_ appending its own elite, the loop runs one final
 training pass over the full accumulated dataset so the shipped model reflects every

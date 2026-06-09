@@ -202,3 +202,31 @@ def test_format_assess_prompt_falls_back_to_raw_without_chat_template() -> None:
             raise ValueError("no chat template")
 
     assert mb.format_assess_prompt(_Tok(), "raw text", score_conditioned=False) == "raw text"
+
+
+def test_scenario_task_prompt_and_state_resolves_agent_task_state() -> None:
+    """Agent-task scenarios must return the state the prompt was built from, so evaluate_output
+    gets that same state at scoring time (calling it without state raises and is swallowed)."""
+
+    class _Agent:
+        def initial_state(self, seed=None):
+            return {"n": 3}
+
+        def get_task_prompt(self, state):
+            return f"solve n={state['n']}"
+
+    prompt, state = mb.scenario_task_prompt_and_state(_Agent())
+    assert prompt == "solve n=3"
+    assert state == {"n": 3}
+
+
+def test_scenario_task_prompt_and_state_none_for_game_scenarios() -> None:
+    class _Game:
+        def describe_strategy_interface(self):
+            return "Return JSON."
+
+    prompt, state = mb.scenario_task_prompt_and_state(_Game())
+    assert state is None  # games score via execute_match, which takes no state
+    assert "Return JSON." in prompt
+    # the state-agnostic alias still returns just the prompt
+    assert mb.scenario_task_prompt(_Game()) == prompt
