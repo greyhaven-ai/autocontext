@@ -14,7 +14,7 @@ from autocontext.agents.architect import ArchitectRunner, parse_architect_harnes
 from autocontext.agents.coach import CoachRunner, parse_coach_sections
 from autocontext.agents.competitor import CompetitorRunner
 from autocontext.agents.curator import KnowledgeCurator
-from autocontext.agents.llm_client import LanguageModelClient, build_client_from_settings
+from autocontext.agents.llm_client import DeferredMLXClient, LanguageModelClient, build_client_from_settings
 from autocontext.agents.model_router import ModelRouter, TierConfig
 from autocontext.agents.parsers import parse_analyst_output, parse_architect_output, parse_coach_output, parse_competitor_output
 from autocontext.agents.role_router import ProviderClass, RoleRouter, RoutingContext
@@ -210,7 +210,16 @@ class AgentOrchestrator:
         sqlite: Any | None = None,
         hook_bus: HookBus | None = None,
     ) -> AgentOrchestrator:
-        client: LanguageModelClient = build_client_from_settings(settings)
+        try:
+            client: LanguageModelClient = build_client_from_settings(settings)
+        except ValueError:
+            # mlx agent provider with no explicit path: the model is resolved per-scenario at
+            # role execution (the recursive loop). Defer here so the scenario-agnostic
+            # orchestrator can be constructed; a genuine no-model misconfig still errors on use.
+            if settings.agent_provider == "mlx" and not settings.mlx_model_path:
+                client = DeferredMLXClient()
+            else:
+                raise
 
         orch = cls(client=client, settings=settings, artifacts=artifacts, sqlite=sqlite, hook_bus=hook_bus)
 
@@ -258,6 +267,23 @@ class AgentOrchestrator:
             return [candidate_path] if candidate_path and Path(candidate_path).exists() else []
         return [model_path] if Path(model_path).exists() else []
 
+    def _scenario_bound_mlx_client(self, role: str, *, scenario_name: str) -> LanguageModelClient | None:
+        """Build an MLX agent client resolved from the registry for this scenario (recursive
+        loop). Returns None when no active model is resolvable, so the caller falls back."""
+        key = ("mlx", None, scenario_name, role)
+        cached = self._routed_clients.get(key)
+        if cached is not None:
+            return cached
+        try:
+            # registry-aware: build_client_from_settings resolves the active MLX checkpoint
+            client = build_client_from_settings(self.settings, scenario_name=scenario_name)
+        except Exception:
+            logger.debug("agents.orchestrator: no active mlx model for scenario", exc_info=True)
+            return None
+        client = self._wrap_client(client, provider_name=f"mlx:{role}")
+        self._routed_clients[key] = client
+        return client
+
     def _scenario_bound_runtime_client(
         self,
         provider_type: str,
@@ -265,7 +291,11 @@ class AgentOrchestrator:
         *,
         scenario_name: str,
     ) -> LanguageModelClient | None:
-        if provider_type not in {"pi", "pi-rpc"} or not scenario_name:
+        if not scenario_name:
+            return None
+        if provider_type == "mlx":
+            return self._scenario_bound_mlx_client(role, scenario_name=scenario_name)
+        if provider_type not in {"pi", "pi-rpc"}:
             return None
 
         from autocontext.agents.provider_bridge import create_role_client

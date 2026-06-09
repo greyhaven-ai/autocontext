@@ -185,6 +185,32 @@ class MLXClient(LanguageModelClient):
         )
 
 
+class DeferredMLXClient(LanguageModelClient):
+    """Placeholder agent client for ``AUTOCONTEXT_AGENT_PROVIDER=mlx`` with no model path.
+
+    The real MLX model is resolved per-scenario from the registry at role-execution time (the
+    recursive loop, see ``AgentOrchestrator._scenario_bound_runtime_client``), so the
+    orchestrator can be constructed before a scenario is known without an explicit path. This
+    default is only invoked if a role runs with no scenario context and no active model, which
+    is a genuine misconfiguration, so it raises clearly rather than failing at construction.
+    """
+
+    def generate(
+        self,
+        *,
+        model: str,
+        prompt: str,
+        max_tokens: int,
+        temperature: float,
+        role: str = "",
+    ) -> ModelResponse:
+        del model, prompt, max_tokens, temperature, role
+        raise ValueError(
+            "AUTOCONTEXT_AGENT_PROVIDER=mlx but no model is available: set AUTOCONTEXT_MLX_MODEL_PATH, "
+            "or train and activate an MLX model for the scenario being run"
+        )
+
+
 class DeterministicDevClient(LanguageModelClient):
     """Offline client for CI and local deterministic tests."""
 

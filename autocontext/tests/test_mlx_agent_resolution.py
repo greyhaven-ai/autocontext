@@ -57,3 +57,27 @@ def test_raises_when_no_path_and_no_active_model(tmp_path) -> None:
     settings = AppSettings(agent_provider="mlx", mlx_model_path="", knowledge_root=tmp_path)
     with pytest.raises(ValueError, match="MLX_MODEL_PATH"):
         _resolve_mlx_model_path(settings, "grid_ctf")
+
+
+def test_deferred_mlx_client_raises_only_on_use() -> None:
+    """The deferred default client constructs fine (no MLX load) and errors only if invoked."""
+    from autocontext.agents.llm_client import DeferredMLXClient
+
+    client = DeferredMLXClient()  # construction must not raise
+    with pytest.raises(ValueError, match="MLX_MODEL_PATH"):
+        client.generate(model="m", prompt="p", max_tokens=1, temperature=0.0)
+
+
+def test_orchestrator_constructs_without_crash_for_mlx_without_path(tmp_path) -> None:
+    """The P1 fix: the scenario-agnostic orchestrator is built before the scenario is known,
+    so AUTOCONTEXT_AGENT_PROVIDER=mlx with no path must NOT crash at construction (it defers)."""
+    from autocontext.agents.orchestrator import AgentOrchestrator
+
+    settings = AppSettings(
+        agent_provider="mlx",
+        mlx_model_path="",
+        knowledge_root=tmp_path,
+        db_path=tmp_path / "runs.db",
+    )
+    orch = AgentOrchestrator.from_settings(settings)  # previously raised here
+    assert orch is not None
