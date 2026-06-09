@@ -45,13 +45,37 @@ published, and `plan_local_client(record)`, which routes an `mlxlm`/`opd` adapte
 That is why the registry record has to carry the base model the adapter was trained against —
 an adapter checkpoint is useless without it — and why the publish step records it.
 
+## Does it compound? Multi-generation self-improvement
+
+The single step above trains on a curated near-optimal elite (strategies sampled across the
+space and scored by the verifier), so it shows the ceiling the loop can reach with good data.
+The stronger claim is that the loop improves on its OWN output with no external data: each
+generation, the currently-served model proposes, the verifier scores, the best of everything
+proposed so far becomes the next adapter's training set, and the next generation is served by
+that adapter. Three generations bootstrapping from the base model's cold-start proposals:
+
+| Generation     | Mean   | Best   | Valid JSON |
+| -------------- | ------ | ------ | ---------- |
+| gen 0 (base)   | 0.5767 | 0.6885 | 13/20      |
+| gen 1 (served) | 0.5952 | 0.7254 | 20/20      |
+| gen 2 (served) | 0.5998 | 0.7351 | 20/20      |
+| gen 3 (served) | 0.6194 | 0.7369 | 20/20      |
+
+Mean and best both rise monotonically, valid-JSON rate goes 13 -> 20/20, and the whole 3-gen
+run takes 33s. The gain (+7.4%) is far smaller than the single-step +41.9%, and honestly so:
+bootstrapping from the base model's own weak, low-diversity cold-start distribution is slower
+than training on a globally-curated elite. The point is not the magnitude but the shape — the
+loop compounds on its own verifier-scored output, generation over generation, with no human and
+no external data. The only external signal is the verifier, which scores but never generates.
+
 ## Reproduce
 
 Requires Apple Silicon with the mlx extra plus mlx-lm (`uv pip install mlx mlx-lm`). The base
 model downloads once from the `mlx-community` Hugging Face repo.
 
 ```bash
-uv run python scripts/demo_recursive_loop.py
+uv run python scripts/demo_recursive_loop.py            # single step (train -> serve -> +41.9%)
+uv run python scripts/demo_recursive_loop_multigen.py    # multi-generation self-improvement
 ```
 
 The script is self-contained: it builds the elite training set from the scenario's verifier,
