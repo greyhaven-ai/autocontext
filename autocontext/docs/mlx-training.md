@@ -69,6 +69,21 @@ Use absolute paths for `--data`. The CLI resolves relative paths from the curren
 
 The training loop writes its workspace under `runs/train_<scenario>/` and produces a checkpoint bundle that `MLXProvider` can load for local inference.
 
+### Using a trained model as the agent (recursive loop)
+
+Training publishes its best checkpoint to the model registry and auto-activates it. To then
+run the loop with that model as the agent, set the MLX agent provider and leave the model
+path unset, the harness resolves the active MLX checkpoint for the scenario automatically:
+
+```bash
+AUTOCONTEXT_AGENT_PROVIDER=mlx uv run autoctx run --scenario grid_ctf --gens 1
+```
+
+So a run can use the local model a prior run produced (the "repeated runs get better"
+loop). An explicit `AUTOCONTEXT_MLX_MODEL_PATH` overrides the registry lookup; only
+`mlx`-backend full checkpoints are resolved this way (the `mlxlm` / `opd` / `trl` backends
+emit LoRA adapters, which `MLXProvider` does not yet load as a base+adapter pair).
+
 ### Pretrained fine-tuning (`--backend mlxlm`)
 
 The default `mlx` backend trains a small GPT from scratch. The `mlxlm` backend instead

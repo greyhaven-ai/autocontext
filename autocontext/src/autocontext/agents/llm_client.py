@@ -531,6 +531,38 @@ class DeterministicDevClient(LanguageModelClient):
         return json.dumps({"aggression": 0.58, "defense": 0.57, "path_bias": 0.54})
 
 
+def _resolve_mlx_model_path(settings: AppSettings, scenario_name: str) -> str:
+    """Resolve the MLX model path for the agent provider.
+
+    Precedence: an explicit ``AUTOCONTEXT_MLX_MODEL_PATH``, else the active MLX model the
+    harness trained and activated for this scenario, else a clear error. The registry lookup
+    closes the recursive loop: a run can use the local model a prior run produced and
+    auto-activated (mirrors how the ``pi`` provider already resolves a handoff model).
+    """
+    model_path = settings.mlx_model_path
+    if not model_path and scenario_name:
+        from autocontext.training.model_registry import ModelRegistry, resolve_model
+
+        try:
+            record = resolve_model(
+                ModelRegistry(settings.knowledge_root),
+                scenario=scenario_name,
+                backend="mlx",
+                runtime_type="provider",
+            )
+        except Exception:
+            logger.debug("agents.llm_client: caught Exception", exc_info=True)
+            record = None
+        if record is not None:
+            model_path = record.checkpoint_path
+    if not model_path:
+        raise ValueError(
+            "AUTOCONTEXT_MLX_MODEL_PATH is required when AUTOCONTEXT_AGENT_PROVIDER=mlx, "
+            "or train and activate an MLX model for this scenario first"
+        )
+    return model_path
+
+
 def build_client_from_settings(
     settings: AppSettings,
     *,
@@ -552,10 +584,8 @@ def build_client_from_settings(
         sdk_config = AgentSdkConfig(connect_mcp_server=settings.agent_sdk_connect_mcp)
         return AgentSdkClient(config=sdk_config)
     if settings.agent_provider == "mlx":
-        if not settings.mlx_model_path:
-            raise ValueError("AUTOCONTEXT_MLX_MODEL_PATH is required when AUTOCONTEXT_AGENT_PROVIDER=mlx")
         return MLXClient(
-            model_path=settings.mlx_model_path,
+            model_path=_resolve_mlx_model_path(settings, scenario_name),
             temperature=settings.mlx_temperature,
             max_tokens=settings.mlx_max_tokens,
         )
