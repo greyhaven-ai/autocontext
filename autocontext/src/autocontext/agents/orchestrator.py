@@ -267,23 +267,6 @@ class AgentOrchestrator:
             return [candidate_path] if candidate_path and Path(candidate_path).exists() else []
         return [model_path] if Path(model_path).exists() else []
 
-    def _scenario_bound_mlx_client(self, role: str, *, scenario_name: str) -> LanguageModelClient | None:
-        """Build an MLX agent client resolved from the registry for this scenario (recursive
-        loop). Returns None when no active model is resolvable, so the caller falls back."""
-        key = ("mlx", None, scenario_name, role)
-        cached = self._routed_clients.get(key)
-        if cached is not None:
-            return cached
-        try:
-            # registry-aware: build_client_from_settings resolves the active MLX checkpoint
-            client = build_client_from_settings(self.settings, scenario_name=scenario_name)
-        except Exception:
-            logger.debug("agents.orchestrator: no active mlx model for scenario", exc_info=True)
-            return None
-        client = self._wrap_client(client, provider_name=f"mlx:{role}")
-        self._routed_clients[key] = client
-        return client
-
     def _scenario_bound_runtime_client(
         self,
         provider_type: str,
@@ -291,40 +274,9 @@ class AgentOrchestrator:
         *,
         scenario_name: str,
     ) -> LanguageModelClient | None:
-        if not scenario_name:
-            return None
-        if provider_type == "mlx":
-            return self._scenario_bound_mlx_client(role, scenario_name=scenario_name)
-        if provider_type not in {"pi", "pi-rpc"}:
-            return None
+        from autocontext.agents.scenario_bound_clients import scenario_bound_runtime_client
 
-        from autocontext.agents.provider_bridge import create_role_client
-
-        call_settings, is_budgeted = settings_for_budgeted_role_call(
-            self.settings,
-            provider_type,
-            role,
-            self._active_generation_deadline,
-        )
-        key = (provider_type.lower(), None, scenario_name, role)
-        if not is_budgeted:
-            cached = self._routed_clients.get(key)
-            if cached is not None:
-                return cached
-
-        client = create_role_client(
-            provider_type,
-            call_settings,
-            scenario_name=scenario_name,
-            role=role,
-        )
-        if client is not None:
-            client = self._wrap_client(client, provider_name=f"{provider_type}:{role}")
-            if is_budgeted:
-                self._mark_disposable_client(client)
-            else:
-                self._routed_clients[key] = client
-        return client
+        return scenario_bound_runtime_client(self, provider_type, role, scenario_name=scenario_name)
 
     def _scenario_bound_override_client(
         self,
