@@ -7,7 +7,9 @@ one-shot distillation into PatternBoost / ReST-EM: the model generates new train
 data for itself, biased toward the best of what it can already produce.
 
 The pure helpers (elite selection, sample -> record conversion) are backend-agnostic.
-The loop currently drives the MLX backend (sample collection is MLX-only for now).
+The loop drives the SFT backends that collect assessment samples: ``mlx`` (from-scratch GPT)
+and ``mlxlm`` (LoRA on a pretrained base). It works for both game scenarios (JSON strategies)
+and agent-task scenarios (free-text outputs).
 """
 
 from __future__ import annotations
@@ -90,8 +92,13 @@ def run_self_improving_loop(
     memory_limit_mb: int = 16384,
     final_train: bool = True,
     generated_context: Any = None,
+    backend: str = "mlx",
+    base_model: str = "",
+    fine_tune_type: str = "lora",
+    num_layers: int = 8,
+    learning_rate: float = 0.0,
 ) -> dict[str, Any]:
-    """Run the ReST-EM self-improving loop on the MLX backend.
+    """Run the ReST-EM self-improving loop on an SFT backend (``mlx`` or ``mlxlm``).
 
     Each round trains on the current dataset, samples + scores constructions,
     keeps the top ``elite_fraction`` and appends them. Because a round trains
@@ -118,6 +125,11 @@ def run_self_improving_loop(
         raise ValueError(f"samples_per_round must be a positive integer, got {samples_per_round}")
     if train_steps < 1:
         raise ValueError(f"train_steps must be a positive integer, got {train_steps}")
+    # ReST-EM is iterative SFT on collected elite: only the SFT backends collect samples.
+    # mlx (from-scratch GPT) and mlxlm (LoRA on a pretrained base) qualify; the online-RL /
+    # distillation backends (grpo/opd/trl) do not produce an SFT sample stream to filter.
+    if backend not in ("mlx", "mlxlm"):
+        raise ValueError(f"self-improving loop supports backend 'mlx' or 'mlxlm', got {backend!r}")
 
     output_dir = Path(output_dir)
     # Diverse sampling is required for ReST-EM (greedy would collect identical samples).
@@ -141,6 +153,7 @@ def run_self_improving_loop(
             train_steps=train_steps,
             batch_size=batch_size,
             seq_len=seq_len,
+            learning_rate=learning_rate,
             assess_samples=samples_per_round,
             assess_temperature=temperature,
             assess_top_k=assess_top_k,
@@ -148,7 +161,10 @@ def run_self_improving_loop(
             dedupe=dedupe,
             dedupe_near_threshold=dedupe_near_threshold,
             collect_samples_path=collect,
-            backend="mlx",
+            backend=backend,
+            base_model=base_model,
+            fine_tune_type=fine_tune_type,
+            num_layers=num_layers,
         )
 
     for r in range(rounds):

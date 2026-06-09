@@ -22,10 +22,19 @@ def register_self_improve_command(app: typer.Typer, console: Console) -> None:
         samples_per_round: int = typer.Option(16, "--samples-per-round", help="Samples generated per round"),
         elite_fraction: float = typer.Option(0.25, "--elite-fraction", help="Top fraction of samples to keep"),
         train_steps: int = typer.Option(100, "--train-steps", help="Training steps per round"),
+        batch_size: int = typer.Option(
+            4, "--batch-size", help="Training batch size (mlxlm needs the validation split >= this; lower it for small seeds)"
+        ),
         score_conditioned: bool = typer.Option(False, "--score-conditioned", help="Score-conditioned generation"),
+        backend: str = typer.Option(
+            "mlx", "--backend", help="SFT backend: mlx (from-scratch GPT) | mlxlm (LoRA on a pretrained base)"
+        ),
+        base_model: str = typer.Option("", "--base-model", help="mlxlm: pretrained base model (empty = backend default)"),
+        fine_tune_type: str = typer.Option("lora", "--fine-tune-type", help="mlxlm: lora | dora | full"),
+        num_layers: int = typer.Option(8, "--num-layers", help="mlxlm: layers to fine-tune"),
         json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
     ) -> None:
-        """Run the ReST-EM loop: train, sample, keep the elite, append, retrain (MLX)."""
+        """Run the ReST-EM loop: train, sample, keep the elite, append, retrain (mlx or mlxlm)."""
         from autocontext.cli import _write_json_stderr, _write_json_stdout
         from autocontext.training.autoresearch.self_improve import run_self_improving_loop
 
@@ -37,6 +46,10 @@ def register_self_improve_command(app: typer.Typer, console: Console) -> None:
             raise typer.BadParameter(f"--samples-per-round must be a positive integer, got {samples_per_round}")
         if train_steps < 1:
             raise typer.BadParameter(f"--train-steps must be a positive integer, got {train_steps}")
+        if batch_size < 1:
+            raise typer.BadParameter(f"--batch-size must be a positive integer, got {batch_size}")
+        if backend not in ("mlx", "mlxlm"):
+            raise typer.BadParameter(f"--backend must be mlx|mlxlm (the SFT backends), got {backend!r}")
 
         logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
         try:
@@ -48,7 +61,12 @@ def register_self_improve_command(app: typer.Typer, console: Console) -> None:
                 samples_per_round=samples_per_round,
                 elite_fraction=elite_fraction,
                 train_steps=train_steps,
+                batch_size=batch_size,
                 score_conditioned=score_conditioned,
+                backend=backend,
+                base_model=base_model,
+                fine_tune_type=fine_tune_type,
+                num_layers=num_layers,
             )
         except Exception as exc:
             logger.debug("cli_self_improve: caught Exception", exc_info=True)

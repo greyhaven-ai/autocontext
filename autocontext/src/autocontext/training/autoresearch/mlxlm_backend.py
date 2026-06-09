@@ -102,10 +102,14 @@ def records_to_completions(
     out: list[dict[str, str]] = []
     for record in records:
         quality = score_to_quality_bucket(float(record.get("score", 0.0)), num_buckets=num_buckets) if score_conditioned else None
+        strategy = record["strategy"]
+        # Game scenarios carry a JSON strategy object; agent-task scenarios carry the raw text
+        # output. Use the text directly as the completion (json.dumps would quote/escape it).
+        strategy_text = strategy if isinstance(strategy, str) else json.dumps(strategy, sort_keys=True)
         out.append(
             build_completion_record(
                 task_prompt=task_prompt,
-                strategy_json=json.dumps(record["strategy"], sort_keys=True),
+                strategy_json=strategy_text,
                 quality=quality,
                 num_buckets=num_buckets,
                 reasoning=str(record.get("reasoning") or "") or None,
@@ -178,8 +182,13 @@ def run_mlxlm_training(
     dedupe_near_threshold: float = 1.0,
     score_conditioned: bool = False,
     augmenter_spec: str = "",
+    collect_samples_path: Path | None = None,
 ) -> dict[str, float]:
-    """Fine-tune a pretrained mlx-lm model with LoRA/DoRA and assess it in-scenario."""
+    """Fine-tune a pretrained mlx-lm model with LoRA/DoRA and assess it in-scenario.
+
+    When ``collect_samples_path`` is set, the in-scenario assessment also writes its
+    generated ``{strategy, score}`` samples there, so the ReST-EM self-improving loop can
+    keep the elite and retrain on them (the adapter analogue of the mlx collect path)."""
     from autocontext.scenarios import SCENARIO_REGISTRY
     from autocontext.training.autoresearch.data_selection import prepare_training_records
     from autocontext.training.autoresearch.train import _all_records, _peak_memory_mb, _preflight_backend_deps
@@ -240,6 +249,7 @@ def run_mlxlm_training(
         temperature=assess_temperature,
         top_k=assess_top_k,
         score_conditioned=score_conditioned,
+        collect_path=collect_samples_path,
     )
     return {
         "avg_score": metrics["avg_score"],
@@ -264,6 +274,7 @@ def _assess_mlxlm(
     temperature: float,
     top_k: int,
     score_conditioned: bool,
+    collect_path: Path | None = None,
 ) -> dict[str, float]:
     from mlx_lm import generate, load  # type: ignore[import-not-found]
     from mlx_lm.sample_utils import make_sampler  # type: ignore[import-not-found]
@@ -277,22 +288,31 @@ def _assess_mlxlm(
 
     scores: list[float] = []
     valid = 0
+    collected: list[dict[str, Any]] = []  # {strategy, score} for the ReST-EM self-improving loop
     for _ in range(max(1, n_samples)):
         try:
             text = generate(model, tokenizer, prompt=prompt, max_tokens=512, verbose=False, sampler=sampler)
             if is_game:
                 # Reason-trained models emit `rationale\n{...}`; extract the trailing
                 # JSON object robustly (a bare extract_strategy returns None on prose).
-                strategy = extract_json_object(text)
+                strategy: Any = extract_json_object(text)
                 if strategy is None:
                     continue
                 valid += 1
-                scores.append(scenario.execute_match(strategy, seed=0).score)
+                score = scenario.execute_match(strategy, seed=0).score
             else:
+                # Agent-task scenarios score the raw text; the text IS the sample to retrain on.
+                strategy = text
                 valid += 1
-                scores.append(scenario.evaluate_output(output=text).score)
+                score = scenario.evaluate_output(output=text).score
+            scores.append(score)
+            if collect_path is not None:
+                collected.append({"strategy": strategy, "score": float(score)})
         except Exception:
             continue
+    if collect_path is not None:
+        collect_path.parent.mkdir(parents=True, exist_ok=True)
+        collect_path.write_text("\n".join(json.dumps(s) for s in collected) + "\n", encoding="utf-8")
     return {
         "avg_score": sum(scores) / len(scores) if scores else 0.0,
         "valid_rate": valid / n_samples if n_samples > 0 else 0.0,

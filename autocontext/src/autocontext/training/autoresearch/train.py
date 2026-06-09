@@ -442,8 +442,10 @@ def run_training(
         return _run_mlx_training(
             **common, seq_len=seq_len, assess_top_k=assess_top_k, val_select=val_select, collect_samples_path=collect_samples_path
         )
-    if collect_samples_path is not None:
-        raise NotImplementedError("collect_samples_path (self-improving loop) is currently MLX-only")
+    if collect_samples_path is not None and normalized_backend != "mlxlm":
+        # mlx (above) and mlxlm (below) collect assessment samples for the ReST-EM loop; the
+        # online-RL / distillation backends (cuda/grpo/opd/trl) have no SFT-sample collection.
+        raise NotImplementedError("collect_samples_path (self-improving loop) supports the mlx and mlxlm backends")
     if normalized_backend == "cuda":
         if val_select:
             raise ValueError("val_select is currently MLX-only; omit it for the cuda backend")
@@ -466,6 +468,7 @@ def run_training(
             base_model=base_model or DEFAULT_BASE_MODEL,
             fine_tune_type=fine_tune_type,
             num_layers=num_layers,
+            collect_samples_path=collect_samples_path,
         )
     if normalized_backend == "grpo":
         if loss_weight_mode != "uniform" or vocab_size != BASE_VOCAB_SIZE:

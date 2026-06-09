@@ -387,8 +387,12 @@ self-training analogue of rejection-sampling fine-tuning, lifted from a single f
 an iterated one.
 
 Sampling uses a positive temperature so the collected constructions are diverse
-(greedy decoding would collect identical samples and stall the loop). Sample
-collection is MLX-only for now, so the loop drives the `mlx` backend.
+(greedy decoding would collect identical samples and stall the loop). The loop drives
+the SFT backends that collect assessment samples: `mlx` (from-scratch GPT) and `mlxlm`
+(LoRA on a pretrained base, via `--backend mlxlm`). It works for both game scenarios
+(JSON strategies) and agent-task scenarios (free-text outputs, scored via
+`evaluate_output` and retrained on verbatim). The online-RL / distillation backends
+(`grpo`/`opd`/`trl`) have no SFT sample stream and are rejected.
 
 Because each round trains _before_ appending its own elite, the loop runs one final
 training pass over the full accumulated dataset so the shipped model reflects every
@@ -398,13 +402,18 @@ records inherit the seed dataset's representative (most common) `context` so eve
 training example shares the same context prefix, rather than mixing the seed records'
 playbook/hints context with empty prefixes for generated examples.
 
-| Flag                  | Default | Meaning                                                 |
-| --------------------- | ------- | ------------------------------------------------------- |
-| `--rounds`            | `3`     | Number of generate -> filter -> retrain rounds.         |
-| `--samples-per-round` | `16`    | Constructions sampled and scored each round.            |
-| `--elite-fraction`    | `0.25`  | Top fraction of each round's samples kept and appended. |
-| `--train-steps`       | `100`   | Training steps per round.                               |
-| `--score-conditioned` | off     | Carry score-conditioning through every round.           |
+| Flag                  | Default   | Meaning                                                                                               |
+| --------------------- | --------- | ----------------------------------------------------------------------------------------------------- |
+| `--rounds`            | `3`       | Number of generate -> filter -> retrain rounds.                                                       |
+| `--samples-per-round` | `16`      | Constructions sampled and scored each round.                                                          |
+| `--elite-fraction`    | `0.25`    | Top fraction of each round's samples kept and appended.                                               |
+| `--train-steps`       | `100`     | Training steps per round.                                                                             |
+| `--batch-size`        | `4`       | Training batch size (lower for `mlxlm` on small seeds: the validation split must hold >= batch_size). |
+| `--score-conditioned` | off       | Carry score-conditioning through every round.                                                         |
+| `--backend`           | `mlx`     | SFT backend: `mlx` (from-scratch GPT) or `mlxlm` (LoRA on a pretrained base).                         |
+| `--base-model`        | (default) | `mlxlm`: pretrained base model to fine-tune.                                                          |
+| `--fine-tune-type`    | `lora`    | `mlxlm`: `lora`, `dora`, or `full`.                                                                   |
+| `--num-layers`        | `8`       | `mlxlm`: layers to fine-tune.                                                                         |
 
 ```bash
 uv run autoctx self-improve \

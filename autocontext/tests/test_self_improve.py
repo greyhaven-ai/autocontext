@@ -99,8 +99,8 @@ def test_run_self_improving_loop_rejects_non_positive_counts(tmp_path: str, kwar
         )
 
 
-def test_run_training_collect_samples_path_non_mlx_raises(tmp_path: str) -> None:
-    """The collect-samples plumbing is MLX-only; other backends reject it loudly."""
+def test_run_training_collect_samples_path_non_sft_raises(tmp_path: str) -> None:
+    """Collect-samples is for the SFT backends (mlx/mlxlm); the RL/distill backends reject it."""
     from autocontext.training.autoresearch.train import run_training
 
     records = [
@@ -110,7 +110,7 @@ def test_run_training_collect_samples_path_non_mlx_raises(tmp_path: str) -> None
     data_path = Path(tmp_path) / "data.jsonl"
     data_path.write_text("\n".join(json.dumps(r) for r in records), encoding="utf-8")
 
-    with pytest.raises(NotImplementedError, match="MLX-only"):
+    with pytest.raises(NotImplementedError, match="mlx and mlxlm"):
         run_training(
             scenario_name="grid_ctf",
             data_path=data_path,
@@ -123,6 +123,54 @@ def test_run_training_collect_samples_path_non_mlx_raises(tmp_path: str) -> None
             backend="cuda",
             collect_samples_path=Path(tmp_path) / "samples.jsonl",
         )
+
+
+def test_run_self_improving_loop_rejects_non_sft_backend(tmp_path: str) -> None:
+    """ReST-EM is iterative SFT; the online-RL / distillation backends have no SFT sample stream."""
+    data_path = Path(tmp_path) / "seed.jsonl"
+    data_path.write_text(
+        json.dumps({"run_id": "r0", "scenario": "grid_ctf", "context": {}, "strategy": {"a": 1}, "score": 0.5}) + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="backend 'mlx' or 'mlxlm'"):
+        run_self_improving_loop(scenario_name="grid_ctf", data_path=data_path, output_dir=Path(tmp_path) / "out", backend="grpo")
+
+
+def test_run_self_improving_loop_threads_backend_and_adapter_params(tmp_path: str, monkeypatch) -> None:
+    """backend + adapter params must reach run_training, so `--backend mlxlm` actually fine-tunes
+    the adapter rather than silently falling back to the from-scratch GPT. Mocks training (no mlx)."""
+    import autocontext.training.autoresearch.train as train_mod
+
+    data_path = Path(tmp_path) / "seed.jsonl"
+    data_path.write_text(
+        json.dumps({"run_id": "r0", "scenario": "grid_ctf", "context": {}, "strategy": {"a": 1}, "score": 0.5}) + "\n",
+        encoding="utf-8",
+    )
+    seen: list[dict] = []
+
+    def fake_run_training(**kwargs):
+        seen.append(kwargs)
+        return {"avg_score": 0.7, "valid_rate": 1.0}
+
+    # run_self_improving_loop imports run_training from this module at call time.
+    monkeypatch.setattr(train_mod, "run_training", fake_run_training)
+    run_self_improving_loop(
+        scenario_name="grid_ctf",
+        data_path=data_path,
+        output_dir=Path(tmp_path) / "out",
+        rounds=1,
+        final_train=False,
+        backend="mlxlm",
+        base_model="mlx-community/Qwen2.5-0.5B-Instruct-4bit",
+        fine_tune_type="dora",
+        num_layers=4,
+    )
+    assert seen, "training was never invoked"
+    call = seen[0]
+    assert call["backend"] == "mlxlm"
+    assert call["base_model"] == "mlx-community/Qwen2.5-0.5B-Instruct-4bit"
+    assert call["fine_tune_type"] == "dora"
+    assert call["num_layers"] == 4
 
 
 @pytest.mark.skipif(not HAS_MLX, reason="MLX not installed")
