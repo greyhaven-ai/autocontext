@@ -25,11 +25,13 @@ import json
 from typing import Any
 
 from autocontext.training.autoresearch.sequence_format import extract_json_object
+from autocontext.training.model_defaults import GRPO_DEFAULT_BASE_MODEL
 
 HAS_MLX_LM_LORA = importlib.util.find_spec("mlx_lm_lora") is not None
 
 # Capable instruct base by default (small bases hit the RLVR capability ceiling).
-DEFAULT_BASE_MODEL = "mlx-community/Qwen2.5-1.5B-Instruct-4bit"
+# Sourced from the mlx-free shared module so backends.py can report it without importing mlx.
+DEFAULT_BASE_MODEL = GRPO_DEFAULT_BASE_MODEL
 DEFAULT_VARIANT = "gspo"
 REWARD_NAME = "autocontext_verifier"
 

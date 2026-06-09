@@ -143,9 +143,9 @@ class MLXLMBackend(TrainingBackend):
         return ["provider", "checkpoint"]
 
     def default_base_model(self) -> str:
-        from autocontext.training.autoresearch.mlxlm_backend import DEFAULT_BASE_MODEL
+        from autocontext.training.model_defaults import MLXLM_DEFAULT_BASE_MODEL
 
-        return DEFAULT_BASE_MODEL
+        return MLXLM_DEFAULT_BASE_MODEL
 
 
 class GRPOBackend(TrainingBackend):
@@ -174,9 +174,9 @@ class GRPOBackend(TrainingBackend):
         return ["provider", "checkpoint"]
 
     def default_base_model(self) -> str:
-        from autocontext.training.autoresearch.grpo_backend import DEFAULT_BASE_MODEL
+        from autocontext.training.model_defaults import GRPO_DEFAULT_BASE_MODEL
 
-        return DEFAULT_BASE_MODEL
+        return GRPO_DEFAULT_BASE_MODEL
 
 
 class OnPolicyDistillBackend(TrainingBackend):
@@ -205,9 +205,9 @@ class OnPolicyDistillBackend(TrainingBackend):
         return ["provider", "checkpoint"]
 
     def default_base_model(self) -> str:
-        from autocontext.training.autoresearch.on_policy_distill import DEFAULT_STUDENT_MODEL
+        from autocontext.training.model_defaults import OPD_DEFAULT_STUDENT_MODEL
 
-        return DEFAULT_STUDENT_MODEL
+        return OPD_DEFAULT_STUDENT_MODEL
 
 
 class TRLBackend(TrainingBackend):
