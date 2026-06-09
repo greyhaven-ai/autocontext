@@ -160,3 +160,34 @@ def test_mlxlm_end_to_end_smoke(tmp_path: Path) -> None:
         backend="mlxlm",
     )
     assert "avg_score" in metrics and "num_records" in metrics
+
+
+def test_format_assess_prompt_applies_chat_template() -> None:
+    """Assessment must wrap the prompt in the instruct chat template (matching training + serving);
+    a raw prompt makes an instruct model emit prose, not verifier-scorable JSON (the ~0-metric bug)."""
+
+    class _Tok:
+        def apply_chat_template(self, messages, add_generation_prompt, tokenize):
+            assert add_generation_prompt is True and tokenize is False
+            return f"<|user|>{messages[0]['content']}<|assistant|>"
+
+    out = mb.format_assess_prompt(_Tok(), "do the task", score_conditioned=False)
+    assert out == "<|user|>do the task<|assistant|>"
+
+
+def test_format_assess_prompt_prefixes_quality_when_score_conditioned() -> None:
+    class _Tok:
+        def apply_chat_template(self, messages, add_generation_prompt, tokenize):
+            return messages[0]["content"]  # echo content so we can assert the prefix
+
+    out = mb.format_assess_prompt(_Tok(), "do the task", score_conditioned=True)
+    assert out.startswith("Target quality:")
+    assert out.endswith("do the task")
+
+
+def test_format_assess_prompt_falls_back_to_raw_without_chat_template() -> None:
+    class _Tok:
+        def apply_chat_template(self, *a, **k):
+            raise ValueError("no chat template")
+
+    assert mb.format_assess_prompt(_Tok(), "raw text", score_conditioned=False) == "raw text"

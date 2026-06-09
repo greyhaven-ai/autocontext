@@ -52,6 +52,25 @@ def _quality_prefix(quality: int | None, num_buckets: int) -> str:
     return f"Target quality: {quality} out of {num_buckets - 1} (higher is better).\n"
 
 
+def format_assess_prompt(tokenizer: Any, task_prompt: str, *, score_conditioned: bool) -> str:
+    """Render the assessment prompt through the model's chat template.
+
+    mlx-lm's LoRA trainer applies the instruct chat template to prompt/completion records, and
+    the serving path (``MLXLMProvider.format_mlxlm_prompt``) does the same. Assessment must match:
+    feeding an instruct model a RAW prompt yields prose, not the JSON the verifier can score, so
+    the in-training metric reads ~0. Falls back to the raw text if the tokenizer has no chat
+    template (a base, non-instruct model)."""
+    prefix = _quality_prefix(NUM_QUALITY_BUCKETS - 1, NUM_QUALITY_BUCKETS) if score_conditioned else ""
+    content = prefix + task_prompt
+    try:
+        rendered = tokenizer.apply_chat_template(
+            [{"role": "user", "content": content}], add_generation_prompt=True, tokenize=False
+        )
+        return str(rendered)
+    except Exception:
+        return content
+
+
 def build_completion_record(
     *,
     task_prompt: str,
@@ -251,8 +270,7 @@ def _assess_mlxlm(
 
     loaded = load(base_model, adapter_path=str(adapter_dir))
     model, tokenizer = loaded[0], loaded[1]
-    prefix = _quality_prefix(NUM_QUALITY_BUCKETS - 1, NUM_QUALITY_BUCKETS) if score_conditioned else ""
-    prompt = prefix + task_prompt
+    prompt = format_assess_prompt(tokenizer, task_prompt, score_conditioned=score_conditioned)
     is_game = hasattr(scenario, "execute_match")
     # Honor the requested assessment sampling (temp<=0 => greedy; top_k truncation).
     sampler = make_sampler(temp=max(float(temperature), 0.0), top_k=int(top_k))

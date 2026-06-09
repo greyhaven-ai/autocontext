@@ -245,9 +245,27 @@ def resolve_scenario_context(scenario: Any) -> str:
         if isinstance(prompt, str):
             return prompt
     description = getattr(scenario, "description", None)
-    if isinstance(description, str):
+    if isinstance(description, str) and description:
         return description
-    return ""
+    # Game scenarios (ScenarioInterface) expose no get_task_prompt/description but do
+    # describe their rules, strategy interface, and evaluation criteria -- compose those
+    # into a task instruction so the adapter backends train/serve on a real prompt rather
+    # than an empty string (otherwise every game scenario is untrainable on this path).
+    parts = []
+    for attr, label in (
+        ("describe_rules", "Rules"),
+        ("describe_strategy_interface", "Response format"),
+        ("describe_evaluation_criteria", "Evaluation"),
+    ):
+        fn = getattr(scenario, attr, None)
+        if callable(fn):
+            try:
+                text = fn()
+            except Exception:
+                text = None
+            if isinstance(text, str) and text:
+                parts.append(f"{label}: {text}")
+    return "\n".join(parts)
 
 
 # Backward-compatible private aliases (prepare/cuda historically used underscored names).
