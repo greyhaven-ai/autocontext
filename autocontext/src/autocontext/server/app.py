@@ -186,6 +186,31 @@ def create_app(
             "deadEnds": _read("dead_ends.md"),
         }
 
+    @application.put("/api/knowledge/{scenario}")
+    def update_knowledge(scenario: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """Overwrite a scenario's knowledge files (operator curation of what persists)."""
+        if not scenario or len(scenario) > 128 or not scenario.replace("_", "").replace("-", "").isalnum():
+            raise HTTPException(status_code=400, detail="invalid scenario id")
+        base = (app_settings.knowledge_root / scenario).resolve()
+        root = app_settings.knowledge_root.resolve()
+        if base != root and root not in base.parents:
+            raise HTTPException(status_code=400, detail="invalid scenario path")
+        base.mkdir(parents=True, exist_ok=True)
+        files = {"playbook": "playbook.md", "hints": "hints.md", "deadEnds": "dead_ends.md"}
+        written: list[str] = []
+        for key, fname in files.items():
+            value = payload.get(key)
+            if isinstance(value, str):
+                (base / fname).write_text(value, encoding="utf-8")
+                written.append(fname)
+        if "hints.md" in written:
+            # ArtifactStore.read_hints prefers structured hint_state.json over
+            # flat hints.md. The operator's edit overwrites hint state, so drop
+            # the structured snapshot; readers fall back to the flat file and
+            # read_hint_manager lazily rebuilds structure from it.
+            (base / "hint_state.json").unlink(missing_ok=True)
+        return {"scenario": scenario, "written": written}
+
     @application.get("/api/runs/{run_id}/replay/{generation}")
     def replay(run_id: str, generation: int) -> dict[str, Any]:
         replay_path = _read_replay_file(run_id, generation)
