@@ -28,6 +28,7 @@ from autocontext.storage.sqlite_store import SQLiteStore
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 class _MockProvider(LLMProvider):
     """Provider that returns configurable responses."""
 
@@ -63,6 +64,7 @@ def store(tmp_path):
 # TaskConfig
 # ---------------------------------------------------------------------------
 
+
 class TestTaskConfig:
     def test_from_none(self):
         cfg = TaskConfig.from_json(None)
@@ -71,13 +73,15 @@ class TestTaskConfig:
         assert cfg.quality_threshold == 0.9
 
     def test_from_json(self):
-        data = json.dumps({
-            "generations": 3,
-            "max_rounds": 3,
-            "quality_threshold": 0.8,
-            "reference_context": "ref",
-            "browser_url": "https://example.com",
-        })
+        data = json.dumps(
+            {
+                "generations": 3,
+                "max_rounds": 3,
+                "quality_threshold": 0.8,
+                "reference_context": "ref",
+                "browser_url": "https://example.com",
+            }
+        )
         cfg = TaskConfig.from_json(data)
         assert cfg.generations == 3
         assert cfg.max_rounds == 3
@@ -93,6 +97,7 @@ class TestTaskConfig:
 # ---------------------------------------------------------------------------
 # Task Queue CRUD
 # ---------------------------------------------------------------------------
+
 
 class TestTaskQueue:
     def test_enqueue_and_get(self, store):
@@ -181,6 +186,7 @@ class TestTaskQueue:
 # SimpleAgentTask
 # ---------------------------------------------------------------------------
 
+
 class TestSimpleAgentTask:
     def test_generate_output(self):
         provider = _MockProvider(["Generated content"])
@@ -192,10 +198,12 @@ class TestSimpleAgentTask:
         provider = _MockProvider(["Generated content"])
         task = SimpleAgentTask(task_prompt="Write something", rubric="Quality", provider=provider)
 
-        output = task.generate_output({
-            "reference_context": "Trusted facts only",
-            "required_concepts": ["safety", "latency"],
-        })
+        output = task.generate_output(
+            {
+                "reference_context": "Trusted facts only",
+                "required_concepts": ["safety", "latency"],
+            }
+        )
 
         assert output == "Generated content"
         prompt = provider.calls[0]["user"]
@@ -212,12 +220,14 @@ class TestSimpleAgentTask:
         assert result.score == 0.85
 
     def test_evaluate_output_penalizes_dual_section_escape_for_contradictory_rubric(self):
-        provider = _MockProvider([
-            '<!-- JUDGE_RESULT_START -->\n'
-            '{"score": 0.96, "reasoning": "Both sections satisfy their target audience.", '
-            '"dimensions": {"technical_depth": 0.97, "child_accessibility": 0.95}}\n'
-            '<!-- JUDGE_RESULT_END -->'
-        ])
+        provider = _MockProvider(
+            [
+                "<!-- JUDGE_RESULT_START -->\n"
+                '{"score": 0.96, "reasoning": "Both sections satisfy their target audience.", '
+                '"dimensions": {"technical_depth": 0.97, "child_accessibility": 0.95}}\n'
+                "<!-- JUDGE_RESULT_END -->"
+            ]
+        )
         task = SimpleAgentTask(
             task_prompt="Explain quantum entanglement",
             rubric=(
@@ -267,6 +277,7 @@ class TestSimpleAgentTask:
 # TaskRunner
 # ---------------------------------------------------------------------------
 
+
 class TestTaskRunner:
     def test_sqlite_store_satisfies_task_queue_store_contract(self, store):
         assert isinstance(store, TaskQueueStore)
@@ -280,10 +291,12 @@ class TestTaskRunner:
 
     def test_run_once_processes_task(self, store):
         # Provider responses: generate, judge (score 0.95 to meet threshold)
-        provider = _MockProvider([
-            "Initial output",  # generate_output
-            _judge_response(0.95, "excellent"),  # evaluate round 1
-        ])
+        provider = _MockProvider(
+            [
+                "Initial output",  # generate_output
+                _judge_response(0.95, "excellent"),  # evaluate round 1
+            ]
+        )
         config = {"task_prompt": "Write a haiku", "rubric": "Quality and form", "quality_threshold": 0.9}
         store.enqueue_task("t1", "haiku", config=config)
 
@@ -297,12 +310,14 @@ class TestTaskRunner:
 
     def test_run_once_with_revision(self, store):
         # Round 1: score 0.5 (below threshold), Round 2: revise then score 0.95
-        provider = _MockProvider([
-            "Initial output",                    # generate_output
-            _judge_response(0.50, "needs work"),  # evaluate round 1
-            "Revised output",                     # revise_output
-            _judge_response(0.95, "excellent"),   # evaluate round 2
-        ])
+        provider = _MockProvider(
+            [
+                "Initial output",  # generate_output
+                _judge_response(0.50, "needs work"),  # evaluate round 1
+                "Revised output",  # revise_output
+                _judge_response(0.95, "excellent"),  # evaluate round 2
+            ]
+        )
         config = {
             "task_prompt": "Write a poem",
             "rubric": "Quality",
@@ -323,6 +338,7 @@ class TestTaskRunner:
         class FailProvider(LLMProvider):
             def complete(self, *args, **kwargs):
                 raise RuntimeError("API down")
+
             def default_model(self):
                 return "fail"
 
@@ -335,10 +351,14 @@ class TestTaskRunner:
         assert "API down" in result["error"]
 
     def test_run_processes_multiple_then_stops(self, store):
-        provider = _MockProvider([
-            "Output 1", _judge_response(0.95),
-            "Output 2", _judge_response(0.95),
-        ])
+        provider = _MockProvider(
+            [
+                "Output 1",
+                _judge_response(0.95),
+                "Output 2",
+                _judge_response(0.95),
+            ]
+        )
         store.enqueue_task("t1", "spec", config={"task_prompt": "task 1", "rubric": "r"})
         store.enqueue_task("t2", "spec", config={"task_prompt": "task 2", "rubric": "r"})
 
@@ -357,11 +377,16 @@ class TestTaskRunner:
 
     def test_run_batch_processes_multiple(self, store):
         """AC-54: run_batch processes multiple tasks concurrently."""
-        provider = _MockProvider([
-            "Output 1", _judge_response(0.95),
-            "Output 2", _judge_response(0.95),
-            "Output 3", _judge_response(0.95),
-        ])
+        provider = _MockProvider(
+            [
+                "Output 1",
+                _judge_response(0.95),
+                "Output 2",
+                _judge_response(0.95),
+                "Output 3",
+                _judge_response(0.95),
+            ]
+        )
         store.enqueue_task("t1", "spec", config={"task_prompt": "task 1", "rubric": "r"})
         store.enqueue_task("t2", "spec", config={"task_prompt": "task 2", "rubric": "r"})
         store.enqueue_task("t3", "spec", config={"task_prompt": "task 3", "rubric": "r"})
@@ -381,11 +406,16 @@ class TestTaskRunner:
         assert runner.run_batch() == 0
 
     def test_run_batch_respects_limit(self, store):
-        provider = _MockProvider([
-            "Output", _judge_response(0.95),
-            "Output", _judge_response(0.95),
-            "Output", _judge_response(0.95),
-        ])
+        provider = _MockProvider(
+            [
+                "Output",
+                _judge_response(0.95),
+                "Output",
+                _judge_response(0.95),
+                "Output",
+                _judge_response(0.95),
+            ]
+        )
         store.enqueue_task("t1", "spec", config={"task_prompt": "t", "rubric": "r"})
         store.enqueue_task("t2", "spec", config={"task_prompt": "t", "rubric": "r"})
         store.enqueue_task("t3", "spec", config={"task_prompt": "t", "rubric": "r"})
@@ -411,10 +441,12 @@ class TestTaskRunner:
         assert r3["id"] == "low"
 
     def test_run_once_merges_browser_context_into_reference_context(self, store):
-        provider = _MockProvider([
-            "Initial output",
-            _judge_response(0.95, "excellent"),
-        ])
+        provider = _MockProvider(
+            [
+                "Initial output",
+                _judge_response(0.95, "excellent"),
+            ]
+        )
         store.enqueue_task(
             "t-browser",
             "browser-spec",
@@ -437,11 +469,13 @@ class TestTaskRunner:
                 browser_url: str,
                 reference_context: str | None,
             ) -> str:
-                self.calls.append({
-                    "task_id": task_id,
-                    "browser_url": browser_url,
-                    "reference_context": reference_context,
-                })
+                self.calls.append(
+                    {
+                        "task_id": task_id,
+                        "browser_url": browser_url,
+                        "reference_context": reference_context,
+                    }
+                )
                 return (
                     "Saved context\n\n"
                     "Live browser context:\n"
@@ -461,11 +495,13 @@ class TestTaskRunner:
 
         assert result is not None
         assert result["status"] == "completed"
-        assert browser_context_service.calls == [{
-            "task_id": "t-browser",
-            "browser_url": "https://status.example.com",
-            "reference_context": "Saved context",
-        }]
+        assert browser_context_service.calls == [
+            {
+                "task_id": "t-browser",
+                "browser_url": "https://status.example.com",
+                "reference_context": "Saved context",
+            }
+        ]
         prompt = provider.calls[0]["user"]
         assert "Saved context" in prompt
         assert "Live browser context:" in prompt
@@ -475,6 +511,7 @@ class TestTaskRunner:
 # ---------------------------------------------------------------------------
 # Enqueue convenience function
 # ---------------------------------------------------------------------------
+
 
 class TestEnqueueFunction:
     def test_enqueue_returns_id(self, store):
@@ -486,7 +523,8 @@ class TestEnqueueFunction:
 
     def test_enqueue_with_all_options(self, store):
         task_id = enqueue_task(
-            store, "spec",
+            store,
+            "spec",
             task_prompt="Write a post",
             rubric="Accuracy and voice",
             reference_context="RLM = Recursive Language Model",
@@ -526,14 +564,16 @@ class TestEnqueueFunction:
         assert config["objective_verification"]["ground_truth"][0]["item_id"] == "warfarin-aspirin"
 
     def test_run_once_multi_generation_persists_trajectory(self, store):
-        provider = _MockProvider([
-            "Initial output",
-            _judge_response(0.40, "needs examples"),
-            "Generation 2 improved output",
-            _judge_response(0.82, "better evidence"),
-            "Generation 3 final output",
-            _judge_response(0.93, "excellent"),
-        ])
+        provider = _MockProvider(
+            [
+                "Initial output",
+                _judge_response(0.40, "needs examples"),
+                "Generation 2 improved output",
+                _judge_response(0.82, "better evidence"),
+                "Generation 3 final output",
+                _judge_response(0.93, "excellent"),
+            ]
+        )
         config = {
             "task_prompt": "Write a haiku",
             "rubric": "Quality and form",
@@ -559,11 +599,13 @@ class TestEnqueueFunction:
         assert payload["generations"][0]["actionable_side_info"]
 
     def test_run_once_persists_objective_verification(self, store):
-        provider = _MockProvider([
-            "1. Warfarin + Aspirin: high severity bleeding interaction.\n"
-            "2. Vitamin C + Magnesium: benign supplement pairing.",
-            _judge_response(0.82, "good recall, some unsupported claims"),
-        ])
+        provider = _MockProvider(
+            [
+                "1. Warfarin + Aspirin: high severity bleeding interaction.\n"
+                "2. Vitamin C + Magnesium: benign supplement pairing.",
+                _judge_response(0.82, "good recall, some unsupported claims"),
+            ]
+        )
         config = {
             "task_prompt": "Find clinically relevant drug interactions.",
             "rubric": "Quality and clinical accuracy",
@@ -591,10 +633,12 @@ class TestEnqueueFunction:
         assert payload["objective_verification"]["comparison"]["rubric_score"] == 0.82
 
     def test_run_once_enforces_objective_guardrail_before_threshold(self, store):
-        provider = _MockProvider([
-            "1. Vitamin C + Magnesium: benign supplement pairing.",
-            _judge_response(0.95, "judge liked it despite missing the key interaction"),
-        ])
+        provider = _MockProvider(
+            [
+                "1. Vitamin C + Magnesium: benign supplement pairing.",
+                _judge_response(0.95, "judge liked it despite missing the key interaction"),
+            ]
+        )
         config = {
             "task_prompt": "Find clinically relevant drug interactions.",
             "rubric": "Quality and clinical accuracy",
@@ -625,13 +669,15 @@ class TestEnqueueFunction:
         assert any("recall" in v.lower() for v in payload["objective_guardrail"]["violations"])
 
     def test_run_once_enforces_evaluator_guardrail_before_threshold(self, store):
-        provider = _MockProvider([
-            "Confident answer.",
-            _judge_response(1.0, "first sample loves it"),
-            _judge_response(0.8, "second sample is much less convinced"),
-            _judge_response(1.0, "guardrail sample one"),
-            _judge_response(0.8, "guardrail sample two"),
-        ])
+        provider = _MockProvider(
+            [
+                "Confident answer.",
+                _judge_response(1.0, "first sample loves it"),
+                _judge_response(0.8, "second sample is much less convinced"),
+                _judge_response(1.0, "guardrail sample one"),
+                _judge_response(0.8, "guardrail sample two"),
+            ]
+        )
         config = {
             "task_prompt": "Write a brief memo.",
             "rubric": "Quality and correctness",
@@ -654,10 +700,12 @@ class TestEnqueueFunction:
         assert payload["evaluator_guardrail"]["disagreement"]["is_high_disagreement"] is True
 
     def test_run_once_persists_dataset_provenance_for_objective_verification(self, store):
-        provider = _MockProvider([
-            "1. Warfarin + Aspirin: high severity bleeding interaction.",
-            _judge_response(0.84, "good"),
-        ])
+        provider = _MockProvider(
+            [
+                "1. Warfarin + Aspirin: high severity bleeding interaction.",
+                _judge_response(0.84, "good"),
+            ]
+        )
         config = {
             "task_prompt": "Find clinically relevant drug interactions.",
             "rubric": "Quality and clinical accuracy",
@@ -693,13 +741,14 @@ class TestEnqueueFunction:
         assert record["metadata"]["dataset_provenance"]["source"] == "fda"
 
     def test_run_once_feeds_oracle_misses_into_revision_prompt(self, store):
-        provider = _MockProvider([
-            "1. Warfarin + Aspirin: high severity bleeding interaction.",
-            _judge_response(0.55, "missed important interactions"),
-            "1. Warfarin + Aspirin: high severity bleeding interaction.\n"
-            "2. Metformin + Lisinopril: hypotension risk.",
-            _judge_response(0.93, "complete and accurate"),
-        ])
+        provider = _MockProvider(
+            [
+                "1. Warfarin + Aspirin: high severity bleeding interaction.",
+                _judge_response(0.55, "missed important interactions"),
+                "1. Warfarin + Aspirin: high severity bleeding interaction.\n2. Metformin + Lisinopril: hypotension risk.",
+                _judge_response(0.93, "complete and accurate"),
+            ]
+        )
         config = {
             "task_prompt": "Find clinically relevant drug interactions.",
             "rubric": "Quality and clinical accuracy",
@@ -747,10 +796,12 @@ class TestEnqueueFunction:
             human_notes="Correct interaction with clear severity explanation.",
         )
 
-        provider = _MockProvider([
-            "1. Warfarin + Aspirin: high severity bleeding interaction.",
-            *[_judge_response(0.84, "aligned with anchors")] * 8,
-        ])
+        provider = _MockProvider(
+            [
+                "1. Warfarin + Aspirin: high severity bleeding interaction.",
+                *[_judge_response(0.84, "aligned with anchors")] * 8,
+            ]
+        )
         config = {
             "task_prompt": "Find clinically relevant drug interactions.",
             "rubric": "Clinical accuracy and recall",
@@ -770,6 +821,7 @@ class TestEnqueueFunction:
 # ---------------------------------------------------------------------------
 # Serialization
 # ---------------------------------------------------------------------------
+
 
 class TestSerialization:
     def test_serialize_result(self):
@@ -879,6 +931,7 @@ class TestSerialization:
 # AC-53: min_rounds wiring
 # ---------------------------------------------------------------------------
 
+
 class TestMinRoundsWiring:
     def test_task_config_parses_min_rounds(self):
         cfg = TaskConfig.from_json(json.dumps({"min_rounds": 3}))
@@ -902,12 +955,14 @@ class TestMinRoundsWiring:
 
     def test_process_task_uses_min_rounds(self, store):
         """Task with min_rounds=2 should run at least 2 rounds even if threshold met on round 1."""
-        provider = _MockProvider([
-            "Initial output",
-            _judge_response(0.95, "excellent"),  # round 1 — above threshold but min_rounds=2
-            "Revised output",
-            _judge_response(0.96, "even better"),  # round 2
-        ])
+        provider = _MockProvider(
+            [
+                "Initial output",
+                _judge_response(0.95, "excellent"),  # round 1 — above threshold but min_rounds=2
+                "Revised output",
+                _judge_response(0.96, "even better"),  # round 2
+            ]
+        )
         config = {
             "task_prompt": "Write a haiku",
             "rubric": "Quality",
@@ -928,21 +983,30 @@ class TestMinRoundsWiring:
 # AC-54: run_batch in run() loop
 # ---------------------------------------------------------------------------
 
+
 class TestRunUsesRunBatch:
     def test_run_with_concurrency_processes_all(self, store):
         """run() with concurrency>1 should process all queued tasks."""
-        provider = _MockProvider([
-            "Output", _judge_response(0.95),
-            "Output", _judge_response(0.95),
-            "Output", _judge_response(0.95),
-        ])
+        provider = _MockProvider(
+            [
+                "Output",
+                _judge_response(0.95),
+                "Output",
+                _judge_response(0.95),
+                "Output",
+                _judge_response(0.95),
+            ]
+        )
         store.enqueue_task("t1", "spec", config={"task_prompt": "t", "rubric": "r"})
         store.enqueue_task("t2", "spec", config={"task_prompt": "t", "rubric": "r"})
         store.enqueue_task("t3", "spec", config={"task_prompt": "t", "rubric": "r"})
 
         runner = TaskRunner(
-            store=store, provider=provider,
-            concurrency=3, max_consecutive_empty=1, poll_interval=0.01,
+            store=store,
+            provider=provider,
+            concurrency=3,
+            max_consecutive_empty=1,
+            poll_interval=0.01,
         )
         count = runner.run()
         assert count == 3
@@ -952,6 +1016,7 @@ class TestRunUsesRunBatch:
 # ---------------------------------------------------------------------------
 # AC-41: Dimension-aware revision
 # ---------------------------------------------------------------------------
+
 
 class TestDimensionAwareRevision:
     def test_revision_includes_dimension_scores(self):
@@ -965,20 +1030,29 @@ class TestDimensionAwareRevision:
             def __init__(self):
                 self._eval_count = 0
 
-            def get_task_prompt(self, state): return "test"
-            def get_rubric(self): return "test"
-            def initial_state(self, seed=None): return {}
-            def describe_task(self): return "test"
+            def get_task_prompt(self, state):
+                return "test"
+
+            def get_rubric(self):
+                return "test"
+
+            def initial_state(self, seed=None):
+                return {}
+
+            def describe_task(self):
+                return "test"
 
             def evaluate_output(self, output, state, **kwargs):
                 self._eval_count += 1
                 if self._eval_count == 1:
                     return AgentTaskResult(
-                        score=0.6, reasoning="needs work",
+                        score=0.6,
+                        reasoning="needs work",
                         dimension_scores={"accuracy": 0.8, "creativity": 0.4},
                     )
                 return AgentTaskResult(
-                    score=0.95, reasoning="great",
+                    score=0.95,
+                    reasoning="great",
                     dimension_scores={"accuracy": 0.7, "creativity": 0.9},
                 )
 
@@ -996,22 +1070,31 @@ class TestDimensionAwareRevision:
             assert "accuracy" in revision_calls[1]
             assert "REGRESSION" in revision_calls[1]
 
-    def test_revision_first_round_no_annotation(self):
-        """Round 1 has no previous dims, so no annotation needed."""
+    def test_revision_first_round_includes_dimension_feedback(self):
+        """The first revision now includes the round-1 evaluation's dimension feedback
+        (the fix: dimension scores guide the very first revision, not only later rounds)."""
         from autocontext.execution.improvement_loop import ImprovementLoop
         from autocontext.scenarios.agent_task import AgentTaskResult
 
         revision_calls = []
 
         class FirstRoundTask(AgentTaskInterface):
-            def get_task_prompt(self, state): return "test"
-            def get_rubric(self): return "test"
-            def initial_state(self, seed=None): return {}
-            def describe_task(self): return "test"
+            def get_task_prompt(self, state):
+                return "test"
+
+            def get_rubric(self):
+                return "test"
+
+            def initial_state(self, seed=None):
+                return {}
+
+            def describe_task(self):
+                return "test"
 
             def evaluate_output(self, output, state, **kwargs):
                 return AgentTaskResult(
-                    score=0.5, reasoning="needs work",
+                    score=0.5,
+                    reasoning="needs work",
                     dimension_scores={"quality": 0.5},
                 )
 
@@ -1023,18 +1106,20 @@ class TestDimensionAwareRevision:
         loop = ImprovementLoop(task, max_rounds=2, quality_threshold=0.9)
         loop.run("initial", {})
 
-        # First revision (after round 1) should not have dimension annotation
+        # First revision (after round 1) now carries the round-1 dimension annotation
         assert len(revision_calls) >= 1
-        assert "Dimension Scores:" not in revision_calls[0]
+        assert "Dimension Scores:" in revision_calls[0]
 
 
 class TestTaskRunnerTiming:
     def test_completed_task_includes_duration(self, store):
         """Completed tasks should have duration_ms in result_json."""
-        provider = _MockProvider([
-            "Initial output",
-            _judge_response(0.95, "excellent"),
-        ])
+        provider = _MockProvider(
+            [
+                "Initial output",
+                _judge_response(0.95, "excellent"),
+            ]
+        )
         config = {"task_prompt": "Write a haiku", "rubric": "Quality and form", "quality_threshold": 0.9}
         store.enqueue_task("t1", "haiku", config=config)
 
@@ -1074,11 +1159,13 @@ class TestTaskRunnerFactory:
                 browser_url: str,
                 reference_context: str | None,
             ) -> str:
-                self.calls.append({
-                    "task_id": task_id,
-                    "browser_url": browser_url,
-                    "reference_context": reference_context,
-                })
+                self.calls.append(
+                    {
+                        "task_id": task_id,
+                        "browser_url": browser_url,
+                        "reference_context": reference_context,
+                    }
+                )
                 return "Saved context\n\nLive browser context:\nVisible text: All systems operational"
 
         browser_context_service = _FactoryBrowserContextService()
@@ -1098,11 +1185,13 @@ class TestTaskRunnerFactory:
 
         assert result is not None
         assert result["status"] == "completed"
-        assert browser_context_service.calls == [{
-            "task_id": result["id"],
-            "browser_url": "https://status.example.com",
-            "reference_context": "Saved context",
-        }]
+        assert browser_context_service.calls == [
+            {
+                "task_id": result["id"],
+                "browser_url": "https://status.example.com",
+                "reference_context": "Saved context",
+            }
+        ]
         mock_create.assert_called_once_with(settings)
 
     def test_create_task_runner_from_settings_preserves_fail_closed_behavior_when_disabled(self, store):
