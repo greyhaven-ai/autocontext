@@ -68,33 +68,43 @@ Each null was diagnostic, which is why the lift at scale is credible.
 
 ## Reproduce
 
-The result runs on autocontext's public training surface. On a GPU host with `trl`, `torch`,
-and `peft` installed:
+The matched-compute experiment (1000 / 2000 steps, 384 training prompts, seeded repeats,
+held-out GSM8K assessment) was driven by a companion harness that calls the `trl` backend's
+public training function, `run_trl_training`, which exposes the step / prompt / seed knobs
+the experiment needs. On a GPU host with `trl`, `torch`, and `peft` installed:
 
-```bash
-# on-policy distillation (teacher distilled into the student via dense per-token reverse KL)
-uv run autoctx train --backend trl --trl-mode gkd \
-  --scenario <your-scenario> \
-  --base-model Qwen/Qwen2.5-1.5B-Instruct \
-  --teacher-model Qwen/Qwen2.5-3B-Instruct \
-  --seed 0
+```python
+from pathlib import Path
 
-# RLVR baseline for comparison (same scenario verifier as the reward)
-uv run autoctx train --backend trl --trl-mode grpo \
-  --scenario <your-scenario> \
-  --base-model Qwen/Qwen2.5-1.5B-Instruct \
-  --seed 0
+from autocontext.training.autoresearch.trl_backend import run_trl_training
+
+# on-policy distillation arm (teacher distilled into the student via dense per-token reverse KL)
+gkd = run_trl_training(
+    mode="gkd",  # "grpo" for the matched RLVR baseline (same scenario verifier as the reward)
+    scenario_name="<your-scenario>",  # any registered agent task with a programmatic verifier
+    output_dir=Path("out/gkd"),
+    student_model="Qwen/Qwen2.5-1.5B-Instruct",
+    teacher_model="Qwen/Qwen2.5-3B-Instruct",
+    n_prompts=384,
+    max_steps=1000,  # 2000 for the trajectory point
+    seed=0,  # vary (0 / 1 / 2) for error bars
+)
 ```
 
+The companion harness wraps this with the baseline probe (student and teacher), the
+teacher-beats-student headroom gate, and greedy held-out scoring of the saved adapter. The
+exact GSM8K scenario, the Modal GPU harness, and the raw result JSON live in the companion
+research repository, so the domain-specific experiment code stays out of autocontext core.
+
 `<your-scenario>` is any autocontext agent task with a programmatic verifier (see
-[mlx-training.md](mlx-training.md) for the backend details and
-[the scenario docs](https://autocontext.ai/docs/concepts) for the interface). The teacher and
+[mlx-training.md](mlx-training.md) for backend details and
+[the scenario docs](https://autocontext.ai/docs/concepts) for the interface). Teacher and
 student must share a tokenizer / logit vocabulary (the backend rejects a mismatch up front);
 within Qwen2.5, the 0.5B / 1.5B / 3B models share vocab while 7B and larger do not.
 
-The exact GSM8K scenario, the Modal GPU harness (baseline probe, matched-compute arms,
-held-out assessment, seeded sweep), and the raw result JSON live in the companion research
-repository, so the domain-specific experiment code stays out of autocontext core.
+> The convenience CLI `autoctx train --backend trl --trl-mode gkd|grpo` invokes the same
+> backend, but it uses the default (short) training length and does not expose a step count,
+> so it is an entry point / smoke check, not the matched-compute run above.
 
 ## Takeaway
 
