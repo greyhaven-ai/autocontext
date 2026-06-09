@@ -314,6 +314,17 @@ class SQLiteStore:
             ).fetchall()
             return [dict(r) for r in rows]
 
+    def get_latest_agent_outputs(self, run_id: str) -> dict[str, Any]:
+        """Return every agent's output text for the most recent generation of a run.
+
+        Delegates to ``agent_output_queries.latest_agent_outputs`` (extracted to keep this
+        module under its size cap). Used by the cowork GUI to show the live candidate.
+        """
+        from autocontext.storage.agent_output_queries import latest_agent_outputs
+
+        with self.connect() as conn:
+            return latest_agent_outputs(conn, run_id)
+
     def append_agent_role_metric(
         self,
         run_id: str,

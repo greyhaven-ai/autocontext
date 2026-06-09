@@ -154,6 +154,11 @@ def create_app(
     def run_status(run_id: str) -> list[dict[str, Any]]:
         return store.run_status(run_id)
 
+    @application.get("/api/runs/{run_id}/candidate")
+    def candidate(run_id: str) -> dict[str, Any]:
+        """The latest generation's agent outputs — the live candidate the loop is producing."""
+        return store.get_latest_agent_outputs(run_id)
+
     @application.get("/api/runs/{run_id}/replay/{generation}")
     def replay(run_id: str, generation: int) -> dict[str, Any]:
         replay_path = _read_replay_file(run_id, generation)
