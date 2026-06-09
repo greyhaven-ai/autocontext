@@ -57,6 +57,7 @@ class TrainingConfig:
     memory_limit_mb: int = 16384
     backend: str = "mlx"
     train_steps: int = 0  # 0 = backend default (8 from-scratch mlx/cuda, 100 pretrained-adapter backends)
+    learning_rate: float = 0.0  # 0 = backend default (1e-3 from-scratch, 1e-4 mlxlm, 1e-5 opd/grpo/trl)
     agent_provider: str = "anthropic"
     agent_model: str = ""
     val_select: bool = False  # keep best-by-validation-loss checkpoint + early stop (MLX only)
@@ -408,6 +409,8 @@ class TrainingRunner:
         ]
         if self.config.train_steps > 0:
             command += ["--train-steps", str(self.config.train_steps)]
+        if self.config.learning_rate > 0:
+            command += ["--learning-rate", str(self.config.learning_rate)]
         if self.config.val_select:
             command.append("--val-select")
         if self.config.elite_fraction != 1.0:

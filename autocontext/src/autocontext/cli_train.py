@@ -80,6 +80,11 @@ def register_train_command(app: typer.Typer, console: Console) -> None:
         train_steps: int = typer.Option(
             0, "--train-steps", help="Training steps (0 = backend default: 8 from-scratch mlx/cuda, 100 adapter backends)"
         ),
+        learning_rate: float = typer.Option(
+            0.0,
+            "--learning-rate",
+            help="Learning rate (0 = backend default: 1e-3 from-scratch, 1e-4 mlxlm, 1e-5 opd/grpo/trl)",
+        ),
         trl_mode: str = typer.Option("gkd", "--trl-mode", help="trl backend: gkd (on-policy distillation) | grpo (RLVR)"),
         seed: int = typer.Option(0, "--seed", help="trl backend: training seed (for seeded repeats / error bars)"),
         agent_provider: str = typer.Option("anthropic", "--agent-provider", help="LLM provider for training agent"),
@@ -145,6 +150,8 @@ def register_train_command(app: typer.Typer, console: Console) -> None:
             raise typer.BadParameter(f"--backend must be mlx|cuda|mlxlm|grpo|opd|trl, got {backend!r}")
         if train_steps < 0:
             raise typer.BadParameter(f"--train-steps must be >= 0 (0 = backend default), got {train_steps}")
+        if learning_rate < 0:
+            raise typer.BadParameter(f"--learning-rate must be >= 0 (0 = backend default), got {learning_rate}")
 
         logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -156,6 +163,7 @@ def register_train_command(app: typer.Typer, console: Console) -> None:
             memory_limit_mb=memory_limit,
             backend=backend,
             train_steps=train_steps,
+            learning_rate=learning_rate,
             agent_provider=agent_provider,
             agent_model=agent_model,
             val_select=val_select,
