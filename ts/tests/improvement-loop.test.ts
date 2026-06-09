@@ -243,6 +243,34 @@ describe("ImprovementLoop", () => {
     expect(result.metThreshold).toBe(false);
     expect(result.terminationReason).toBe("max_rounds");
   });
+
+  it("includes dimension feedback on the first revision (round 1)", async () => {
+    const revisionFeedback: string[] = [];
+    const task: AgentTaskInterface = {
+      getTaskPrompt: () => "test",
+      getRubric: () => "test rubric",
+      initialState: () => ({}),
+      describeTask: () => "test task",
+      evaluateOutput: async () => ({
+        score: 0.5,
+        reasoning: "needs work",
+        dimensionScores: { clarity: 0.4, accuracy: 0.6 },
+      }),
+      reviseOutput: async (out, res) => {
+        revisionFeedback.push(res.reasoning);
+        return `${out} [revised]`;
+      },
+    };
+    const loop = new ImprovementLoop({ task, maxRounds: 3, qualityThreshold: 0.9 });
+    await loop.run({ initialOutput: "test", state: {} });
+    // The very first revision (after round 1) must carry the dimension scores,
+    // not just rounds 2+. Regression guard for the dropped `roundNum > 1` gate.
+    expect(revisionFeedback[0]).toContain("Dimension Scores:");
+    expect(revisionFeedback[0]).toContain("clarity");
+    expect(revisionFeedback[0]).toContain("accuracy");
+    // Round 1 has no prior dimensions, so no false regression should be reported.
+    expect(revisionFeedback[0]).not.toContain("REGRESSION");
+  });
 });
 
 describe("Plateau detection", () => {

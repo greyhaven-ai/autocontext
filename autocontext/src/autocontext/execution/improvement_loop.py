@@ -584,7 +584,7 @@ class ImprovementLoop:
             if round_num < self.max_rounds:
                 # Enrich feedback with dimension scores + regression warnings (AC-41)
                 revision_result = result
-                if result.dimension_scores and round_num > 1:
+                if result.dimension_scores:
                     prev_valid = [r for r in rounds[:-1] if not r.judge_failed]
                     prev_dims = prev_valid[-1].dimension_scores if prev_valid else {}
                     dim_lines = []

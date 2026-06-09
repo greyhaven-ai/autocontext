@@ -213,13 +213,10 @@ export class ImprovementLoop {
       }
 
       if (roundNum < this.#maxRounds && this.#task.reviseOutput) {
-        const revisionFeedback =
-          roundNum > 1
-            ? buildRevisionFeedbackResult({
-                result,
-                previousValidRound: previousValidRound ?? undefined,
-              })
-            : result;
+        const revisionFeedback = buildRevisionFeedbackResult({
+          result,
+          previousValidRound: previousValidRound ?? undefined,
+        });
         this.#timeBudget?.check(`round ${roundNum} revision`);
         const revised = await this.#task.reviseOutput(currentOutput, revisionFeedback, opts.state);
         this.#timeBudget?.check(`round ${roundNum} revision`);

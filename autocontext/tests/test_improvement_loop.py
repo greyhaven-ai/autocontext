@@ -477,6 +477,41 @@ class ProgrammableTask(AgentTaskInterface):
         return f"{output} [revised]"
 
 
+class CapturingReviseTask(ProgrammableTask):
+    """ProgrammableTask that records the judge_result handed to each revise_output call."""
+
+    def __init__(self, results: list[AgentTaskResult]) -> None:
+        super().__init__(results)
+        self.revise_feedback: list[str] = []
+
+    def revise_output(self, output: str, judge_result: AgentTaskResult, state: dict) -> str:
+        self.revise_feedback.append(judge_result.reasoning)
+        return f"{output} [revised]"
+
+
+class TestDimensionFeedbackFirstRevision:
+    def test_first_revision_includes_dimension_scores(self):
+        # Round 1 scores below threshold with dimensions present, so a revision
+        # is requested. The feedback for that first revision must carry the
+        # dimension scores (regression guard for the dropped `round_num > 1`
+        # gate that skipped dimensions on the very first revise_output call).
+        task = CapturingReviseTask(
+            [
+                AgentTaskResult(score=0.5, reasoning="needs work", dimension_scores={"clarity": 0.4, "accuracy": 0.6}),
+                AgentTaskResult(score=0.95, reasoning="great", dimension_scores={"clarity": 0.9, "accuracy": 0.95}),
+            ]
+        )
+        loop = ImprovementLoop(task, max_rounds=3, quality_threshold=0.9)
+        loop.run("seed", {})
+        assert task.revise_feedback, "expected at least one revise_output call"
+        first = task.revise_feedback[0]
+        assert "Dimension Scores:" in first
+        assert "clarity" in first
+        assert "accuracy" in first
+        # No prior dimensions on round 1, so no false regression annotation.
+        assert "REGRESSION" not in first
+
+
 # -- terminationReason tests --
 
 
