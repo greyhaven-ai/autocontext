@@ -23,6 +23,7 @@ This directory is the maintainer-facing landing page for repository docs. Use it
 - [Sandbox and executor notes](../autocontext/docs/sandbox.md)
 - [Persistent host worker](../autocontext/docs/persistent-host.md)
 - [MLX host training notes](../autocontext/docs/mlx-training.md)
+- [Case study: recursive loop closed on local MLX](../autocontext/docs/case-study-recursive-loop.md)
 
 ## Contributing And Support
 
