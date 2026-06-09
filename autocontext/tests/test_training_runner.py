@@ -336,6 +336,32 @@ class TestConstraints:
         command = mock_run.call_args.args[0]
         assert "--loss-weight-by-score" not in command  # uniform default stays off the command line
 
+    def test_experiment_subprocess_passes_train_steps_when_set(self, tmp_path: Path) -> None:
+        """--train-steps must flow CLI -> TrainingConfig -> subprocess, else `autoctx train
+        --backend mlxlm --train-steps 80` silently trains the adapter for the 8-step default."""
+        cfg = TrainingConfig(scenario="grid_ctf", data_path=tmp_path / "data.jsonl", backend="mlxlm", train_steps=80)
+        (tmp_path / "data.jsonl").write_text("{}\n")
+        runner = TrainingRunner(cfg, work_dir=tmp_path / "workspace")
+
+        completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+        with patch("autocontext.training.runner.subprocess.run", return_value=completed) as mock_run:
+            runner._run_experiment_subprocess(0)
+
+        command = mock_run.call_args.args[0]
+        assert command[command.index("--train-steps") + 1] == "80"
+
+    def test_experiment_subprocess_omits_train_steps_when_unset(self, tmp_path: Path) -> None:
+        cfg = TrainingConfig(scenario="grid_ctf", data_path=tmp_path / "data.jsonl")  # train_steps=0
+        (tmp_path / "data.jsonl").write_text("{}\n")
+        runner = TrainingRunner(cfg, work_dir=tmp_path / "workspace")
+
+        completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+        with patch("autocontext.training.runner.subprocess.run", return_value=completed) as mock_run:
+            runner._run_experiment_subprocess(0)
+
+        # Unset stays off the command line so train.py applies its per-backend default.
+        assert "--train-steps" not in mock_run.call_args.args[0]
+
     def test_convergence_nudge_after_consecutive_discards(self, tmp_path: Path) -> None:
         cfg = TrainingConfig(scenario="grid_ctf", data_path=tmp_path / "data.jsonl")
         (tmp_path / "data.jsonl").write_text("{}\n")

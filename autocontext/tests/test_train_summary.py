@@ -59,3 +59,26 @@ def test_parse_summary_picks_up_val_loss() -> None:
     parsed = TrainingRunner.parse_summary(runner, block)
     assert parsed is not None
     assert parsed["val_loss"] == 0.789
+
+
+def test_default_train_steps_distinguishes_from_scratch_vs_adapter() -> None:
+    """A from-scratch GPT converges in a few steps; pretrained-adapter backends need far more,
+    so the unset (<=0) sentinel must resolve to different defaults per backend family."""
+    from autocontext.training.autoresearch.train import _default_train_steps
+
+    assert _default_train_steps("mlx") == 8
+    assert _default_train_steps("cuda") == 8
+    for adapter in ("mlxlm", "opd", "grpo", "trl"):
+        assert _default_train_steps(adapter) == 100, adapter
+
+
+def test_default_learning_rate_per_backend() -> None:
+    """A from-scratch LR (1e-3) diverges a LoRA adapter; each adapter backend resolves to the
+    rate its own entry point is tuned for when --learning-rate is left unset."""
+    from autocontext.training.autoresearch.train import _default_learning_rate
+
+    assert _default_learning_rate("mlx") == 1e-3
+    assert _default_learning_rate("cuda") == 1e-3
+    assert _default_learning_rate("mlxlm") == 1e-4
+    for rlvr in ("opd", "grpo", "trl"):
+        assert _default_learning_rate(rlvr) == 1e-5, rlvr

@@ -350,6 +350,25 @@ def _preflight_backend_deps(backend: str) -> None:
         raise RuntimeError(f"{lead}; missing: {', '.join(missing)}. Install with: {install}")
 
 
+def _default_train_steps(backend: str) -> int:
+    """Resolve ``--train-steps`` when left unset (<= 0).
+
+    The from-scratch GPT backends (mlx/cuda) converge in a handful of steps; the
+    pretrained-adapter backends (mlxlm LoRA / opd distillation / grpo+trl RLVR) need far more
+    to move a strong prior, so the old global default of 8 silently undertrained them (an
+    8-step LoRA learns almost nothing). Users still override explicitly with --train-steps."""
+    return 8 if backend in ("mlx", "cuda") else 100
+
+
+def _default_learning_rate(backend: str) -> float:
+    """Resolve ``--learning-rate`` when left unset (<= 0).
+
+    The from-scratch GPT backends train at 1e-3; that rate is ~10x too high for a LoRA adapter
+    and diverges it to garbage tokens, so each pretrained-adapter backend gets the rate its own
+    entry point is tuned for (mlxlm LoRA 1e-4; opd/grpo/trl RLVR+distillation 1e-5)."""
+    return {"mlx": 1e-3, "cuda": 1e-3, "mlxlm": 1e-4}.get(backend, 1e-5)
+
+
 def run_training(
     *,
     scenario_name: str,
@@ -357,9 +376,9 @@ def run_training(
     output_dir: Path,
     time_budget: int,
     memory_limit_mb: int,
-    train_steps: int = 8,
+    train_steps: int = 0,  # 0 = backend default (see _default_train_steps)
     batch_size: int = 4,
-    learning_rate: float = 1e-3,
+    learning_rate: float = 0.0,  # 0 = backend default (see _default_learning_rate)
     seq_len: int = 128,
     assess_samples: int = 8,
     assess_temperature: float = 0.0,
@@ -394,6 +413,10 @@ def run_training(
         raise ValueError(f"vocab_size must be >= 256 (the byte-level BPE base), got {vocab_size}")
 
     normalized_backend = backend.strip().lower()
+    if train_steps <= 0:  # resolve the unset sentinel to a backend-appropriate step count
+        train_steps = _default_train_steps(normalized_backend)
+    if learning_rate <= 0:  # likewise: a from-scratch LR diverges a LoRA adapter
+        learning_rate = _default_learning_rate(normalized_backend)
     # Shared args; backend extras added per dispatch (each entry runs its own dep preflight).
     common: dict[str, Any] = dict(
         scenario_name=scenario_name,
@@ -524,9 +547,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", type=int, default=0, help="trl backend: training seed (seeded repeats)")
     parser.add_argument("--time-budget", type=int, default=300)
     parser.add_argument("--memory-limit", type=int, default=16384)
-    parser.add_argument("--train-steps", type=int, default=8)
+    parser.add_argument("--train-steps", type=int, default=0, help="0 = backend default (8 from-scratch, 100 adapters)")
     parser.add_argument("--batch-size", type=int, default=4)
-    parser.add_argument("--learning-rate", type=float, default=1e-3)
+    parser.add_argument(
+        "--learning-rate", type=float, default=0.0, help="0 = backend default (1e-3 from-scratch, 1e-4 mlxlm, 1e-5 opd/grpo/trl)"
+    )
     parser.add_argument("--seq-len", type=int, default=128)
     parser.add_argument("--assess-samples", type=int, default=8)
     parser.add_argument("--assess-temperature", type=float, default=0.0, help="assessment sampling temp (<=0 greedy)")

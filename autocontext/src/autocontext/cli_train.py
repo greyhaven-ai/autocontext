@@ -77,6 +77,9 @@ def register_train_command(app: typer.Typer, console: Console) -> None:
             "--backend",
             help="Training backend: mlx, cuda, mlxlm, grpo, opd, trl (cross-platform GKD/GRPO via TRL)",
         ),
+        train_steps: int = typer.Option(
+            0, "--train-steps", help="Training steps (0 = backend default: 8 from-scratch mlx/cuda, 100 adapter backends)"
+        ),
         trl_mode: str = typer.Option("gkd", "--trl-mode", help="trl backend: gkd (on-policy distillation) | grpo (RLVR)"),
         seed: int = typer.Option(0, "--seed", help="trl backend: training seed (for seeded repeats / error bars)"),
         agent_provider: str = typer.Option("anthropic", "--agent-provider", help="LLM provider for training agent"),
@@ -138,6 +141,10 @@ def register_train_command(app: typer.Typer, console: Console) -> None:
             raise typer.BadParameter(f"--vocab-size must be >= 256 (the byte-level BPE base), got {vocab_size}")
         if trl_mode not in ("gkd", "grpo"):
             raise typer.BadParameter(f"--trl-mode must be gkd|grpo, got {trl_mode!r}")
+        if backend not in ("mlx", "cuda", "mlxlm", "grpo", "opd", "trl"):
+            raise typer.BadParameter(f"--backend must be mlx|cuda|mlxlm|grpo|opd|trl, got {backend!r}")
+        if train_steps < 0:
+            raise typer.BadParameter(f"--train-steps must be >= 0 (0 = backend default), got {train_steps}")
 
         logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -148,6 +155,7 @@ def register_train_command(app: typer.Typer, console: Console) -> None:
             max_experiments=max_experiments,
             memory_limit_mb=memory_limit,
             backend=backend,
+            train_steps=train_steps,
             agent_provider=agent_provider,
             agent_model=agent_model,
             val_select=val_select,

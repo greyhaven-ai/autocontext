@@ -95,12 +95,14 @@ tokenizer with a natural-language prompt/completion and completion-only loss
 
 Install the extra: `uv sync --group dev --extra mlxlm`.
 
-| Flag               | Default                                    | Effect                                                           |
-| ------------------ | ------------------------------------------ | ---------------------------------------------------------------- |
-| `--backend mlxlm`  | `mlx`                                      | Select the pretrained-finetune backend.                          |
-| `--base-model`     | `mlx-community/Qwen2.5-0.5B-Instruct-4bit` | Pretrained mlx-lm model (HF repo or local path).                 |
-| `--fine-tune-type` | `lora`                                     | `lora`, `dora` (weight-decomposed, usually stronger), or `full`. |
-| `--num-layers`     | `8`                                        | Number of layers to fine-tune (fewer = less memory).             |
+| Flag               | Default                                    | Effect                                                                              |
+| ------------------ | ------------------------------------------ | ----------------------------------------------------------------------------------- |
+| `--backend mlxlm`  | `mlx`                                      | Select the pretrained-finetune backend.                                             |
+| `--base-model`     | `mlx-community/Qwen2.5-0.5B-Instruct-4bit` | Pretrained mlx-lm model (HF repo or local path).                                    |
+| `--fine-tune-type` | `lora`                                     | `lora`, `dora` (weight-decomposed, usually stronger), or `full`.                    |
+| `--num-layers`     | `8`                                        | Number of layers to fine-tune (fewer = less memory).                                |
+| `--train-steps`    | `0` (= 100 for adapter backends)           | Training steps. `0` resolves per backend: 8 from-scratch, 100 adapters.             |
+| `--learning-rate`  | `0` (= 1e-4 for `mlxlm`)                   | `0` resolves per backend: 1e-3 from-scratch, 1e-4 `mlxlm`, 1e-5 `opd`/`grpo`/`trl`. |
 
 ```bash
 uv run autoctx train --backend mlxlm \
