@@ -76,6 +76,14 @@ def test_config_kwargs_thread_max_steps_and_batch_size() -> None:
     assert grpo["per_device_train_batch_size"] == 2
 
 
+def test_config_kwargs_thread_seed_for_reproducible_repeats() -> None:
+    """A seed must reach TrainingArguments so seeded repeats actually differ (error bars)."""
+    from autocontext.training.autoresearch.trl_backend import build_gkd_config_kwargs, build_grpo_config_kwargs
+
+    assert build_gkd_config_kwargs(output_dir="/o", teacher_model="T", seed=3)["seed"] == 3
+    assert build_grpo_config_kwargs(output_dir="/o", seed=5)["seed"] == 5
+
+
 # ---------------------------------------------------------------------------
 # Dataset row builders
 # ---------------------------------------------------------------------------

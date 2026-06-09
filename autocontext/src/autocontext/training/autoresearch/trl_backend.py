@@ -73,6 +73,7 @@ def build_gkd_config_kwargs(
     num_train_epochs: float = 1.0,
     max_steps: int = -1,
     per_device_train_batch_size: int = 1,
+    seed: int = 0,
 ) -> dict[str, Any]:
     """Kwargs for ``trl.experimental.gkd.GKDConfig`` (on-policy distillation).
 
@@ -92,6 +93,7 @@ def build_gkd_config_kwargs(
         "num_train_epochs": num_train_epochs,
         "max_steps": max_steps,
         "per_device_train_batch_size": per_device_train_batch_size,
+        "seed": seed,
     }
 
 
@@ -106,6 +108,7 @@ def build_grpo_config_kwargs(
     num_train_epochs: float = 1.0,
     max_steps: int = -1,
     per_device_train_batch_size: int = 8,
+    seed: int = 0,
 ) -> dict[str, Any]:
     """Kwargs for ``trl.GRPOConfig`` (RLVR). ``beta=0.0`` follows TRL's KL-free default.
 
@@ -123,6 +126,7 @@ def build_grpo_config_kwargs(
         "num_train_epochs": num_train_epochs,
         "max_steps": max_steps,
         "per_device_train_batch_size": per_device_train_batch_size,
+        "seed": seed,
     }
 
 
@@ -199,6 +203,7 @@ def run_trl_training(
     learning_rate: float = 1e-5,
     max_steps: int = -1,
     batch_size: int = 0,
+    seed: int = 0,
     register_import: str | None = None,
     time_budget: int = 3600,
     memory_limit_mb: int = 16384,  # noqa: ARG001 - backend-signature parity
@@ -252,7 +257,11 @@ def run_trl_training(
             assert_vocab_compatible(s_vocab, t_vocab)
         dataset = Dataset.from_list(build_chat_dataset_rows(scenario, n_prompts))
         gkd_kwargs: dict[str, Any] = dict(
-            output_dir=str(output_dir), teacher_model=teacher_model, learning_rate=learning_rate, max_steps=max_steps
+            output_dir=str(output_dir),
+            teacher_model=teacher_model,
+            learning_rate=learning_rate,
+            max_steps=max_steps,
+            seed=seed,
         )
         if batch_size > 0:
             gkd_kwargs["per_device_train_batch_size"] = batch_size
@@ -270,7 +279,9 @@ def run_trl_training(
         from trl import GRPOConfig, GRPOTrainer
 
         dataset = Dataset.from_list(build_prompt_dataset_rows(scenario, n_prompts))
-        grpo_kwargs: dict[str, Any] = dict(output_dir=str(output_dir), learning_rate=learning_rate, max_steps=max_steps)
+        grpo_kwargs: dict[str, Any] = dict(
+            output_dir=str(output_dir), learning_rate=learning_rate, max_steps=max_steps, seed=seed
+        )
         if batch_size > 0:
             grpo_kwargs["per_device_train_batch_size"] = batch_size
         args = GRPOConfig(**build_grpo_config_kwargs(**grpo_kwargs))
