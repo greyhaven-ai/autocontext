@@ -13,6 +13,7 @@ from autocontext.agents.scenario_bound_clients import (
     plan_local_client,
 )
 from autocontext.config.settings import AppSettings
+from autocontext.training.backends import default_backend_registry
 from autocontext.training.model_registry import (
     DistilledModelRecord,
     ModelRegistry,
@@ -36,7 +37,19 @@ def _record(*, backend: str, checkpoint: str = "/ckpt", metadata: dict | None = 
     )
 
 
-def _register_active(root, *, artifact_id: str, backend: str, checkpoint: str, metadata: dict | None = None) -> None:
+def _register_active(
+    root,
+    *,
+    artifact_id: str,
+    backend: str,
+    checkpoint: str,
+    metadata: dict | None = None,
+    runtime_types: list[str] | None = None,
+) -> None:
+    # Default to the *real* runtime slots the backend advertises, so the test exercises the
+    # actual runner publish shape rather than a hand-picked ["provider"] that masks slot bugs.
+    if runtime_types is None:
+        runtime_types = default_backend_registry().get(backend).supported_runtime_types()
     reg = ModelRegistry(root)
     reg.register(
         DistilledModelRecord(
@@ -45,7 +58,7 @@ def _register_active(root, *, artifact_id: str, backend: str, checkpoint: str, m
             scenario_family="game",
             backend=backend,
             checkpoint_path=checkpoint,
-            runtime_types=["provider"],
+            runtime_types=runtime_types,
             activation_state="candidate",
             training_metrics={},
             provenance={},
@@ -131,7 +144,8 @@ def test_published_adapter_record_routes_to_mlxlm(tmp_path) -> None:
         backend="opd",
         scenario="grid_ctf",
         scenario_family="game",
-        runtime_types=["provider"],
+        # Real runner shape: the backend's advertised slots, not a hand-picked ["provider"].
+        runtime_types=default_backend_registry().get("opd").supported_runtime_types(),
         metadata={"base_model": "Qwen/Qwen2.5-3B", "score_conditioned": True},
     )
     record = publish_training_output(completion, registry, artifacts_root=None, auto_activate=True)
@@ -145,3 +159,49 @@ def test_published_adapter_record_routes_to_mlxlm(tmp_path) -> None:
     assert plan.model == "Qwen/Qwen2.5-3B"
     assert plan.adapter_path == "/adapters/lora"
     assert plan.score_conditioned is True
+
+
+# --- regression: the two ways the runner path was unservable --------------------------------
+
+
+def test_adapter_backends_advertise_provider_serving() -> None:
+    """[P1] An adapter published with the backend's own runtime slots must be resolvable as a
+    provider. Adapter backends advertised only ["checkpoint"], so resolve_model(provider) missed
+    every real runner record while ["provider"]-only tests passed."""
+    registry = default_backend_registry()
+    for name in ("mlxlm", "opd", "grpo"):
+        assert "provider" in registry.get(name).supported_runtime_types(), name
+
+
+def test_adapter_backends_expose_effective_default_base_model() -> None:
+    """[P2] A default `autoctx train --backend opd/mlxlm` leaves config.base_model empty and the
+    subprocess applies the backend default; that effective base must be recordable, else the
+    published adapter is unservable even with the runtime-slot fixed."""
+    registry = default_backend_registry()
+    for name in ("mlxlm", "opd", "grpo"):
+        assert registry.get(name).default_base_model(), name
+    # From-scratch backends train no adapter and need no base.
+    assert default_backend_registry().get("mlx").default_base_model() == ""
+
+
+def test_default_train_publish_is_servable(tmp_path) -> None:
+    """[P1+P2] End-to-end of the *default* CLI path: no --base-model override, backend-advertised
+    runtime slots, effective default base recorded -> the record resolves and routes to MLXLMClient."""
+    backend = default_backend_registry().get("opd")
+    effective_base = backend.default_base_model()  # what runner records when config.base_model == ""
+    _register_active(
+        tmp_path,
+        artifact_id="m1",
+        backend="opd",
+        checkpoint="/adapters/lora",
+        metadata={"base_model": effective_base, "score_conditioned": False},
+        # runtime_types defaults to backend.supported_runtime_types() inside the helper
+    )
+    settings = AppSettings(agent_provider="mlx", mlx_model_path="", knowledge_root=tmp_path)
+
+    record = _resolve_local_record(settings, "grid_ctf")
+    assert record is not None, "default-trained adapter must resolve as a provider"
+    plan = plan_local_client(record)
+    assert plan is not None and plan.kind == "mlxlm"
+    assert plan.model == effective_base and plan.model != ""
+    assert plan.adapter_path == "/adapters/lora"

@@ -31,7 +31,8 @@ logger = logging.getLogger(__name__)
 # (from-scratch GPT / full fine-tunes), vs. backends whose checkpoint is a LoRA
 # adapter that must be loaded on top of its base model via MLXLMClient.
 _FULL_CHECKPOINT_BACKENDS = {"mlx"}
-_ADAPTER_BACKENDS = {"mlxlm", "opd"}
+# mlx-lm LoRA adapter backends served as base + adapter via MLXLMClient.
+_ADAPTER_BACKENDS = {"mlxlm", "opd", "grpo"}
 
 
 @dataclass(frozen=True)
@@ -87,7 +88,7 @@ def _resolve_local_record(settings: AppSettings, scenario_name: str) -> Distille
     except Exception:
         logger.debug("agents.scenario_bound_clients: could not open model registry", exc_info=True)
         return None
-    for backend in ("opd", "mlxlm", "mlx"):
+    for backend in ("opd", "mlxlm", "grpo", "mlx"):
         try:
             record = resolve_model(registry, scenario=scenario_name, backend=backend, runtime_type="provider")
         except Exception:
