@@ -376,6 +376,7 @@ def run_training(
     base_model: str = "",
     teacher_model: str = "",  # opd backend: distillation teacher (empty = backend default)
     trl_mode: str = "gkd",  # trl backend: gkd (on-policy distillation) | grpo (RLVR)
+    seed: int = 0,  # trl backend: training seed (for seeded repeats / error bars)
     fine_tune_type: str = "lora",
     num_layers: int = 8,
     collect_samples_path: Path | None = None,
@@ -506,6 +507,7 @@ def run_training(
             learning_rate=learning_rate,
             max_steps=train_steps if train_steps > 0 else -1,  # generic --train-steps -> TRL step cap
             batch_size=batch_size,
+            seed=seed,
             time_budget=time_budget,
             memory_limit_mb=memory_limit_mb,
         )
@@ -519,6 +521,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--backend", choices=("mlx", "cuda", "mlxlm", "grpo", "opd", "trl"), default="mlx")
     parser.add_argument("--trl-mode", choices=("gkd", "grpo"), default="gkd", help="trl backend: gkd | grpo")
+    parser.add_argument("--seed", type=int, default=0, help="trl backend: training seed (seeded repeats)")
     parser.add_argument("--time-budget", type=int, default=300)
     parser.add_argument("--memory-limit", type=int, default=16384)
     parser.add_argument("--train-steps", type=int, default=8)
@@ -573,6 +576,7 @@ def main(argv: list[str] | None = None) -> int:
             base_model=args.base_model,
             teacher_model=args.teacher_model,
             trl_mode=args.trl_mode,
+            seed=args.seed,
             fine_tune_type=args.fine_tune_type,
             num_layers=args.num_layers,
             backend=args.backend,

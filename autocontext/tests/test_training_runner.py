@@ -309,6 +309,21 @@ class TestConstraints:
         temp_index = command.index("--loss-weight-temperature")
         assert command[temp_index + 1] == "0.5"
 
+    def test_experiment_subprocess_passes_seed_flag(self, tmp_path: Path) -> None:
+        """The trl seed must flow CLI -> TrainingConfig -> subprocess command (else seeded
+        repeats via `autoctx train` can't differ)."""
+        cfg = TrainingConfig(scenario="grid_ctf", data_path=tmp_path / "data.jsonl", backend="trl", seed=7)
+        (tmp_path / "data.jsonl").write_text("{}\n")
+        runner = TrainingRunner(cfg, work_dir=tmp_path / "workspace")
+
+        completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+        with patch("autocontext.training.runner.subprocess.run", return_value=completed) as mock_run:
+            runner._run_experiment_subprocess(0)
+
+        command = mock_run.call_args.args[0]
+        seed_index = command.index("--seed")
+        assert command[seed_index + 1] == "7"
+
     def test_experiment_subprocess_omits_loss_weight_flags_when_uniform(self, tmp_path: Path) -> None:
         cfg = TrainingConfig(scenario="grid_ctf", data_path=tmp_path / "data.jsonl")
         (tmp_path / "data.jsonl").write_text("{}\n")

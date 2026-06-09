@@ -70,6 +70,7 @@ class TrainingConfig:
     base_model: str = ""  # mlxlm backend: pretrained base model (empty = backend default)
     teacher_model: str = ""  # opd backend: distillation teacher (empty = backend default)
     trl_mode: str = "gkd"  # trl backend: gkd (on-policy distillation) | grpo (RLVR)
+    seed: int = 0  # trl backend: training seed (for seeded repeats)
     fine_tune_type: str = "lora"  # mlxlm backend: lora | dora | full
     num_layers: int = 8  # mlxlm backend: number of layers to fine-tune
 
@@ -428,6 +429,8 @@ class TrainingRunner:
             command += ["--teacher-model", self.config.teacher_model]
         if self.config.trl_mode != "gkd":
             command += ["--trl-mode", self.config.trl_mode]
+        if self.config.seed != 0:
+            command += ["--seed", str(self.config.seed)]
         if self.config.fine_tune_type != "lora":
             command += ["--fine-tune-type", self.config.fine_tune_type]
         if self.config.num_layers != 8:

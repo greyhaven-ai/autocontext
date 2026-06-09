@@ -84,6 +84,32 @@ def test_config_kwargs_thread_seed_for_reproducible_repeats() -> None:
     assert build_grpo_config_kwargs(output_dir="/o", seed=5)["seed"] == 5
 
 
+def test_run_training_forwards_seed_to_trl_backend(monkeypatch, tmp_path) -> None:
+    """The PUBLIC runner path must forward seed: run_training(backend='trl', seed=N) -> run_trl_training(seed=N).
+    (CI-safe: preflight + the trl runner are patched, so no torch/trl needed.)"""
+    import autocontext.training.autoresearch.train as train_mod
+    import autocontext.training.autoresearch.trl_backend as trl_mod
+
+    captured: dict = {}
+    monkeypatch.setattr(train_mod, "_preflight_backend_deps", lambda backend: None)
+    monkeypatch.setattr(
+        trl_mod,
+        "run_trl_training",
+        lambda **kw: captured.update(kw) or {"avg_score": 0.0, "valid_rate": 1.0},
+    )
+
+    train_mod.run_training(
+        scenario_name="grid_ctf",
+        data_path=tmp_path / "d.jsonl",
+        output_dir=tmp_path / "o",
+        time_budget=10,
+        memory_limit_mb=1024,
+        backend="trl",
+        seed=7,
+    )
+    assert captured["seed"] == 7
+
+
 # ---------------------------------------------------------------------------
 # Dataset row builders
 # ---------------------------------------------------------------------------
