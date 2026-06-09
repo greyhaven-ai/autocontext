@@ -49,12 +49,17 @@ class MLXLMProvider(LLMProvider):
         adapter_path: str | None = None,
         temperature: float = 0.8,
         max_tokens: int = 512,
+        score_conditioned: bool = False,
         _loaded: tuple[Any, Any] | None = None,
     ) -> None:
         self._model_id = model
         self._adapter_path = adapter_path
         self._temperature = temperature
         self._max_tokens = max_tokens
+        # Score-conditioned mlxlm adapters were trained + assessed with a top-bucket quality
+        # directive in the prompt (registry data_stats records the flag); reapply it at serving
+        # time so the served prompt matches the contract the adapter passed assessment under.
+        self._score_conditioned = score_conditioned
         if _loaded is not None:  # test/injection seam: skip the mlx-lm load
             self._model, self._tokenizer = _loaded
             return
@@ -80,7 +85,7 @@ class MLXLMProvider(LLMProvider):
 
         effective_temp = temperature if temperature > 0 else self._temperature
         effective_max = min(max_tokens, self._max_tokens) if max_tokens != 4096 else self._max_tokens
-        prompt = format_mlxlm_prompt(self._tokenizer, system_prompt, user_prompt)
+        prompt = format_mlxlm_prompt(self._tokenizer, system_prompt, self._quality_prefixed(user_prompt))
         try:
             text = generate(
                 self._model,
@@ -94,6 +99,18 @@ class MLXLMProvider(LLMProvider):
             logger.debug("providers.mlx_lm_provider: caught Exception", exc_info=True)
             raise ProviderError(f"MLX-LM generation error: {exc}") from exc
         return CompletionResult(text=text, model=model or self._model_id)
+
+    def _quality_prefixed(self, user_prompt: str) -> str:
+        """Prepend the top-bucket quality directive for score-conditioned adapters.
+
+        Reuses the training backend's exact ``_quality_prefix`` text (the same prefix
+        ``_assess_mlxlm`` applied), so the served prompt matches the assessed one.
+        """
+        if not self._score_conditioned:
+            return user_prompt
+        from autocontext.training.autoresearch.mlxlm_backend import NUM_QUALITY_BUCKETS, _quality_prefix
+
+        return _quality_prefix(NUM_QUALITY_BUCKETS - 1, NUM_QUALITY_BUCKETS) + user_prompt
 
     def default_model(self) -> str:
         return self._model_id

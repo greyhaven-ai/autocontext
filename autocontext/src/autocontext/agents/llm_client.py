@@ -199,10 +199,17 @@ class MLXLMClient(LanguageModelClient):
         adapter_path: str | None = None,
         temperature: float = 0.8,
         max_tokens: int = 512,
+        score_conditioned: bool = False,
     ) -> None:
         from autocontext.providers.mlx_lm_provider import MLXLMProvider
 
-        self._provider = MLXLMProvider(model, adapter_path=adapter_path, temperature=temperature, max_tokens=max_tokens)
+        self._provider = MLXLMProvider(
+            model,
+            adapter_path=adapter_path,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            score_conditioned=score_conditioned,
+        )
 
     def generate(
         self,

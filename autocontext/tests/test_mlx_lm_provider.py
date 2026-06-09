@@ -44,3 +44,15 @@ def test_missing_adapter_path_raises_before_any_mlx_load() -> None:
 def test_injection_seam_skips_load_and_exposes_model_id() -> None:
     provider = MLXLMProvider("Org/Model-1.5B", adapter_path=None, _loaded=(object(), _StubTokenizer()))
     assert provider.default_model() == "Org/Model-1.5B"
+
+
+def test_score_conditioned_reapplies_top_bucket_quality_directive() -> None:
+    """A score-conditioned adapter must be served with the same top-bucket quality prefix it
+    was assessed under, else the prompt contract differs and generation can regress."""
+    conditioned = MLXLMProvider("M", score_conditioned=True, _loaded=(object(), _StubTokenizer()))
+    prefixed = conditioned._quality_prefixed("do the task")
+    assert prefixed.startswith("Target quality:")
+    assert prefixed.endswith("do the task")
+
+    plain = MLXLMProvider("M", score_conditioned=False, _loaded=(object(), _StubTokenizer()))
+    assert plain._quality_prefixed("do the task") == "do the task"
