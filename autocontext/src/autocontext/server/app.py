@@ -159,6 +159,33 @@ def create_app(
         """The latest generation's agent outputs — the live candidate the loop is producing."""
         return store.get_latest_agent_outputs(run_id)
 
+    @application.get("/api/knowledge/{scenario}")
+    def knowledge(scenario: str) -> dict[str, Any]:
+        """Knowledge the loop has accumulated for a scenario: playbook, hints, dead ends."""
+        if not scenario or len(scenario) > 128 or not scenario.replace("_", "").replace("-", "").isalnum():
+            raise HTTPException(status_code=400, detail="invalid scenario id")
+        base = (app_settings.knowledge_root / scenario).resolve()
+        root = app_settings.knowledge_root.resolve()
+        if base != root and root not in base.parents:
+            raise HTTPException(status_code=400, detail="invalid scenario path")
+
+        def _read(name: str) -> str:
+            path = base / name
+            try:
+                return path.read_text(encoding="utf-8") if path.exists() else ""
+            except OSError:
+                return ""
+
+        playbook = _read("playbook.md").strip()
+        if playbook.startswith("No playbook yet"):
+            playbook = ""
+        return {
+            "scenario": scenario,
+            "playbook": playbook,
+            "hints": _read("hints.md"),
+            "deadEnds": _read("dead_ends.md"),
+        }
+
     @application.get("/api/runs/{run_id}/replay/{generation}")
     def replay(run_id: str, generation: int) -> dict[str, Any]:
         replay_path = _read_replay_file(run_id, generation)
