@@ -106,9 +106,13 @@ def records_to_completions(
         # Game scenarios carry a JSON strategy object; agent-task scenarios carry the raw text
         # output. Use the text directly as the completion (json.dumps would quote/escape it).
         strategy_text = strategy if isinstance(strategy, str) else json.dumps(strategy, sort_keys=True)
+        # Dataset-style agent tasks (e.g. GSM8K) carry a per-record prompt -- the specific problem
+        # this solution solves -- so each completion trains on its own instruction. Single-task
+        # scenarios omit it and share the one scenario-level task_prompt.
+        record_prompt = record.get("prompt") or task_prompt
         out.append(
             build_completion_record(
-                task_prompt=task_prompt,
+                task_prompt=record_prompt,
                 strategy_json=strategy_text,
                 quality=quality,
                 num_buckets=num_buckets,
