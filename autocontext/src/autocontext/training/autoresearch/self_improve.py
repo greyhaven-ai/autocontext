@@ -29,7 +29,12 @@ def select_elite_samples(samples: list[dict[str, Any]], *, fraction: float) -> l
 def samples_to_records(
     samples: list[dict[str, Any]], *, scenario_name: str, run_id: str, context: Any = None
 ) -> list[dict[str, Any]]:
-    """Convert collected ``{strategy, score}`` samples into training records."""
+    """Convert collected ``{prompt?, strategy, score}`` samples into training records.
+
+    A sample's ``prompt`` (the specific problem it was scored on, for dataset-style agent tasks
+    like GSM8K) is preserved so the next round trains the answer against its own problem rather
+    than the fallback scenario prompt. Single-task samples carry no prompt and are unaffected.
+    """
     return [
         {
             "run_id": run_id,
@@ -37,6 +42,7 @@ def samples_to_records(
             "context": context if context is not None else {},
             "strategy": s["strategy"],
             "score": float(s.get("score", 0.0)),
+            **({"prompt": s["prompt"]} if s.get("prompt") else {}),
         }
         for s in samples
         if "strategy" in s

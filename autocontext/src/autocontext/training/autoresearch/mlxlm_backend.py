@@ -295,17 +295,31 @@ def _assess_mlxlm(
 
     loaded = load(base_model, adapter_path=str(adapter_dir))
     model, tokenizer = loaded[0], loaded[1]
-    prompt = format_assess_prompt(tokenizer, task_prompt, score_conditioned=score_conditioned)
+    base_prompt = format_assess_prompt(tokenizer, task_prompt, score_conditioned=score_conditioned)
     is_game = hasattr(scenario, "execute_match")
+    has_task_prompt = callable(getattr(scenario, "get_task_prompt", None))
     # Honor the requested assessment sampling (temp<=0 => greedy; top_k truncation).
     sampler = make_sampler(temp=max(float(temperature), 0.0), top_k=int(top_k))
 
     scores: list[float] = []
     valid = 0
-    collected: list[dict[str, Any]] = []  # {strategy, score} for the ReST-EM self-improving loop
-    for _ in range(max(1, n_samples)):
+    collected: list[dict[str, Any]] = []  # {prompt, strategy, score} for the ReST-EM self-improving loop
+    for i in range(max(1, n_samples)):
         try:
-            text = generate(model, tokenizer, prompt=prompt, max_tokens=512, verbose=False, sampler=sampler)
+            if is_game:
+                chat_prompt, sample_instr, state_i = base_prompt, task_prompt, None
+            else:
+                # Dataset-style agent tasks (e.g. GSM8K) draw a possibly-different problem per
+                # sample so the loop explores the distribution; resolve state + prompt TOGETHER so
+                # evaluate_output scores against -- and the collected sample carries -- the exact
+                # problem it was generated for (fixed single-task scenarios just reuse one problem).
+                try:
+                    state_i = scenario.initial_state(seed=i)
+                except Exception:
+                    state_i = eval_state
+                sample_instr = scenario.get_task_prompt(state_i) if has_task_prompt else task_prompt
+                chat_prompt = format_assess_prompt(tokenizer, sample_instr, score_conditioned=score_conditioned)
+            text = generate(model, tokenizer, prompt=chat_prompt, max_tokens=512, verbose=False, sampler=sampler)
             if is_game:
                 # Reason-trained models emit `rationale\n{...}`; extract the trailing
                 # JSON object robustly (a bare extract_strategy returns None on prose).
@@ -315,15 +329,16 @@ def _assess_mlxlm(
                 score = scenario.execute_match(strategy, seed=0).score
             else:
                 # Agent-task scenarios score the raw text; the text IS the sample to retrain on.
-                # evaluate_output requires the same state the task prompt was built from.
                 strategy = text
-                score = scenario.evaluate_output(output=text, state=eval_state).score
+                score = scenario.evaluate_output(output=text, state=state_i).score
             # Count valid only after scoring succeeds, so a scoring error (caught below) can't
             # inflate valid_rate while no sample was actually collected.
             valid += 1
             scores.append(score)
             if collect_path is not None:
-                collected.append({"strategy": strategy, "score": float(score)})
+                # Carry the per-sample prompt so a later ReST-EM round retrains the answer against
+                # the problem it was scored on, not the fallback scenario prompt.
+                collected.append({"prompt": sample_instr, "strategy": strategy, "score": float(score)})
         except Exception:
             continue
     if collect_path is not None:
