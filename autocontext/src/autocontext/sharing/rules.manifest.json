@@ -1,0 +1,259 @@
+{
+  "ruleset_version": "trace-exchange-rules.v1",
+  "rules": [
+    {
+      "order": 0,
+      "id": "aws-access-key",
+      "scanner": "secrets",
+      "severity": "redact",
+      "dynamic": false
+    },
+    {
+      "order": 1,
+      "id": "provider-api-key",
+      "scanner": "secrets",
+      "severity": "redact",
+      "dynamic": false
+    },
+    {
+      "order": 2,
+      "id": "github-token",
+      "scanner": "secrets",
+      "severity": "redact",
+      "dynamic": false
+    },
+    {
+      "order": 3,
+      "id": "slack-token",
+      "scanner": "secrets",
+      "severity": "redact",
+      "dynamic": false
+    },
+    {
+      "order": 4,
+      "id": "google-api-key",
+      "scanner": "secrets",
+      "severity": "redact",
+      "dynamic": false
+    },
+    {
+      "order": 5,
+      "id": "doppler-token",
+      "scanner": "secrets",
+      "severity": "redact",
+      "dynamic": false
+    },
+    {
+      "order": 6,
+      "id": "npm-token",
+      "scanner": "secrets",
+      "severity": "redact",
+      "dynamic": false
+    },
+    {
+      "order": 7,
+      "id": "pypi-token",
+      "scanner": "secrets",
+      "severity": "redact",
+      "dynamic": false
+    },
+    {
+      "order": 8,
+      "id": "database-dsn",
+      "scanner": "secrets",
+      "severity": "redact",
+      "dynamic": false
+    },
+    {
+      "order": 9,
+      "id": "gcp-service-account",
+      "scanner": "secrets",
+      "severity": "review",
+      "dynamic": false
+    },
+    {
+      "order": 10,
+      "id": "jwt",
+      "scanner": "secrets",
+      "severity": "redact",
+      "dynamic": false
+    },
+    {
+      "order": 11,
+      "id": "credential-assignment",
+      "scanner": "secrets",
+      "severity": "redact",
+      "dynamic": false
+    },
+    {
+      "order": 12,
+      "id": "env-assignment",
+      "scanner": "secrets",
+      "severity": "review",
+      "dynamic": false
+    },
+    {
+      "order": 13,
+      "id": "groq-key",
+      "scanner": "secrets",
+      "severity": "redact",
+      "dynamic": false
+    },
+    {
+      "order": 14,
+      "id": "stripe-key",
+      "scanner": "secrets",
+      "severity": "redact",
+      "dynamic": false
+    },
+    {
+      "order": 15,
+      "id": "bearer-auth",
+      "scanner": "secrets",
+      "severity": "redact",
+      "dynamic": false
+    },
+    {
+      "order": 16,
+      "id": "email-address",
+      "scanner": "pii",
+      "severity": "redact",
+      "dynamic": false
+    },
+    {
+      "order": 17,
+      "id": "phone-number",
+      "scanner": "pii",
+      "severity": "redact",
+      "dynamic": false
+    },
+    {
+      "order": 18,
+      "id": "payment-card",
+      "scanner": "pii",
+      "severity": "redact",
+      "dynamic": false
+    },
+    {
+      "order": 19,
+      "id": "home-path",
+      "scanner": "pii",
+      "severity": "redact",
+      "dynamic": false
+    },
+    {
+      "order": 20,
+      "id": "ipv4-address",
+      "scanner": "pii",
+      "severity": "review",
+      "dynamic": false
+    },
+    {
+      "order": 21,
+      "id": "base64-span",
+      "scanner": "encoded",
+      "severity": "reject",
+      "dynamic": false
+    },
+    {
+      "order": 22,
+      "id": "data-url",
+      "scanner": "encoded",
+      "severity": "reject",
+      "dynamic": false
+    },
+    {
+      "order": 23,
+      "id": "pem-block",
+      "scanner": "encoded",
+      "severity": "reject",
+      "dynamic": false
+    },
+    {
+      "order": 24,
+      "id": "gzip-base64",
+      "scanner": "encoded",
+      "severity": "reject",
+      "dynamic": false
+    },
+    {
+      "order": 25,
+      "id": "hex-blob",
+      "scanner": "encoded",
+      "severity": "reject",
+      "dynamic": false
+    },
+    {
+      "order": 26,
+      "id": "pipe-to-shell",
+      "scanner": "malicious",
+      "severity": "reject",
+      "dynamic": false
+    },
+    {
+      "order": 27,
+      "id": "destructive-rm",
+      "scanner": "malicious",
+      "severity": "reject",
+      "dynamic": false
+    },
+    {
+      "order": 28,
+      "id": "reverse-shell",
+      "scanner": "malicious",
+      "severity": "reject",
+      "dynamic": false
+    },
+    {
+      "order": 29,
+      "id": "eval-decode",
+      "scanner": "malicious",
+      "severity": "reject",
+      "dynamic": false
+    },
+    {
+      "order": 30,
+      "id": "powershell-encoded",
+      "scanner": "malicious",
+      "severity": "reject",
+      "dynamic": false
+    },
+    {
+      "order": 31,
+      "id": "credential-file-access",
+      "scanner": "malicious",
+      "severity": "review",
+      "dynamic": false
+    },
+    {
+      "order": 32,
+      "id": "prompt-injection",
+      "scanner": "malicious",
+      "severity": "review",
+      "dynamic": false
+    },
+    {
+      "order": 33,
+      "id": "high-entropy-span",
+      "scanner": "encoded",
+      "severity": "review",
+      "dynamic": true
+    },
+    {
+      "order": 34,
+      "id": "invalid-jsonl-line",
+      "scanner": "encoded",
+      "severity": "review",
+      "dynamic": true
+    }
+  ],
+  "fixtures": {
+    "clean/playbook.md": "c19bdd188f08bc2386fa473dc03d3b83fddad77eca25aba70ec3dd7fae63f8a0",
+    "clean/report.md": "16e6672938170351215ff9d42c6124836ef9767e3912bde8b439d274e845daaf",
+    "clean/trace.jsonl": "1e2c8ec9cb27dba41e834c72499c9c9a5b53a107174d730aa9b8846bb2244e57",
+    "toxic/encoded.trace.jsonl": "0985e15ade45a922ab38d33db9a1291c96c80000f710d97eda6202e405572537",
+    "toxic/malicious.tool.py": "fdf5699ddd5cc2d16ce8a9673918bb3b35deea418b89f2cdcbbf673742e45712",
+    "toxic/pii.report.md": "94ff325a74cb2dd13c5e50f4454718525fd74896bb32b92a041e4eb1cc2a6245",
+    "toxic/secrets.env.txt": "8128bd73edfac6afa1c04313905bd666028271cbcb96d8680dbc38951265a993"
+  }
+}
