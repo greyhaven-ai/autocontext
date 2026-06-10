@@ -49,6 +49,21 @@ def test_records_to_completions_uses_text_strategy_verbatim_for_agent_tasks() ->
     assert game[0]["completion"] == '{"a": 1}'
 
 
+def test_records_to_completions_uses_per_record_prompt_for_dataset_tasks() -> None:
+    """Dataset-style agent tasks (GSM8K) carry their own per-problem prompt; each completion must
+    train on its own instruction, not the single scenario-level task_prompt."""
+    records = [
+        {"prompt": "What is 2+2?", "strategy": "Answer: 4", "score": 1.0},
+        {"prompt": "What is 3+5?", "strategy": "Answer: 8", "score": 1.0},
+    ]
+    comps = mb.records_to_completions(records, task_prompt="UNUSED FALLBACK")
+    assert comps[0]["prompt"] == "What is 2+2?" and comps[0]["completion"] == "Answer: 4"
+    assert comps[1]["prompt"] == "What is 3+5?" and comps[1]["completion"] == "Answer: 8"
+    # a record without its own prompt falls back to the scenario task_prompt
+    fallback = mb.records_to_completions([{"strategy": "x", "score": 1.0}], task_prompt="THE TASK")
+    assert fallback[0]["prompt"] == "THE TASK"
+
+
 def test_write_completion_dataset_writes_train_and_valid(tmp_path: Path) -> None:
     records = [{"strategy": {"a": i}, "score": i / 10} for i in range(10)]
     data_dir = tmp_path / "data"
@@ -67,6 +82,24 @@ def test_write_completion_dataset_single_record_reuses_for_valid(tmp_path: Path)
     data_dir = tmp_path / "data"
     n_train, n_val = mb.write_completion_dataset([{"strategy": {"a": 1}, "score": 1.0}], data_dir, task_prompt="T")
     assert n_train == 1 and n_val == 1  # valid reuses the single example
+
+
+def test_write_completion_dataset_threads_per_record_prompts(tmp_path: Path) -> None:
+    """End-to-end through the public writer: dataset-style agent tasks (GSM8K) keep each record's
+    own problem as the prompt, so an SFT example pairs the right problem with the right solution."""
+    records = [
+        {"prompt": "Q1: 2+2?", "strategy": "Answer: 4", "score": 1.0},
+        {"prompt": "Q2: 3+5?", "strategy": "Answer: 8", "score": 1.0},
+    ]
+    data_dir = tmp_path / "data"
+    mb.write_completion_dataset(records, data_dir, task_prompt="UNUSED", val_fraction=0.5)
+    written = {
+        json.loads(line)["prompt"]: json.loads(line)["completion"]
+        for path in ("train.jsonl", "valid.jsonl")
+        for line in (data_dir / path).read_text(encoding="utf-8").splitlines()
+        if line
+    }
+    assert written == {"Q1: 2+2?": "Answer: 4", "Q2: 3+5?": "Answer: 8"}
 
 
 def test_mlxlm_registered_in_backend_registry() -> None:

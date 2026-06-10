@@ -62,6 +62,18 @@ def test_samples_to_records_carries_context() -> None:
     assert records[0]["context"] == ctx
 
 
+def test_samples_to_records_preserves_per_sample_prompt() -> None:
+    """A collected sample's prompt (the problem it was scored on, dataset-style agent tasks) must
+    survive into the training record, so the next ReST-EM round trains against the right problem."""
+    samples = [
+        {"prompt": "Q: 2+2?", "strategy": "Answer: 4", "score": 1.0},
+        {"strategy": {"a": 1}, "score": 0.5},  # single-task sample: no prompt
+    ]
+    records = samples_to_records(samples, scenario_name="gsm8k", run_id="gen_0")
+    assert records[0]["prompt"] == "Q: 2+2?"
+    assert "prompt" not in records[1]  # absent when the sample had none
+
+
 def test_representative_context_picks_modal_seed_context() -> None:
     records = [
         {"context": {"playbook": "A"}},

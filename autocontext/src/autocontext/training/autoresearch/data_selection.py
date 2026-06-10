@@ -23,8 +23,16 @@ from typing import Any
 
 
 def _strategy_key(record: dict[str, Any]) -> str:
-    """Canonical, order-insensitive string for a record's strategy."""
-    return json.dumps(record.get("strategy"), sort_keys=True)
+    """Canonical, order-insensitive dedupe identity for a record.
+
+    Includes the record's ``prompt`` when present: for dataset-style agent tasks (e.g. GSM8K)
+    the example is (problem, answer), so two DIFFERENT problems that share a completion/answer
+    must not collapse into one. Records without a prompt (games / single-task scenarios) key on
+    the strategy alone, preserving prior behavior.
+    """
+    strategy = json.dumps(record.get("strategy"), sort_keys=True)
+    prompt = record.get("prompt")
+    return f"{prompt}\x00{strategy}" if prompt else strategy
 
 
 def _score(record: dict[str, Any]) -> float:
