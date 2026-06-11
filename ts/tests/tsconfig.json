@@ -1,0 +1,17 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "..",
+    "allowImportingTsExtensions": true
+  },
+  "include": [
+    "background-session-*.test.ts",
+    "../src/session/background-session-*.ts",
+    "../src/server/background-session-api.ts",
+    "../src/server/*.ts",
+    "../src/session/runtime-events.ts",
+    "../src/storage/index.ts",
+    "../src/storage/storage-contracts.ts"
+  ]
+}

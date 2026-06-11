@@ -2,9 +2,12 @@
  * Interactive WebSocket server for the TS control plane (AC-347 Task 25).
  */
 
-import { createServer, type IncomingMessage, type Server as HttpServer, type ServerResponse } from "node:http";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import {
+  createServer,
+  type IncomingMessage,
+  type Server as HttpServer,
+  type ServerResponse,
+} from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
 import type { AddressInfo } from "node:net";
 import { URL } from "node:url";
@@ -22,7 +25,10 @@ import {
 } from "./mission-progress-workflow.js";
 import { executeMissionActionRequest } from "./mission-action-workflow.js";
 import { executeMissionReadRequest } from "./mission-read-workflow.js";
-import { executeRunSimulationReadRequest, loadReplayArtifactResponse } from "./run-simulation-read-workflow.js";
+import {
+  executeRunSimulationReadRequest,
+  loadReplayArtifactResponse,
+} from "./run-simulation-read-workflow.js";
 import { buildCampaignApiRoutes } from "./campaign-api.js";
 import { executeCampaignRouteRequest } from "./campaign-route-workflow.js";
 import { buildClientErrorMessage } from "./client-error-workflow.js";
@@ -38,13 +44,14 @@ import { buildMonitorApiRoutes } from "./monitor-api.js";
 import { MonitorEngine } from "./monitor-engine.js";
 import { buildNotebookApiRoutes } from "./notebook-api.js";
 import { buildOpenClawApiRoutes } from "./openclaw-api.js";
+import { buildBackgroundSessionApiRoutes } from "./background-session-api.js";
 import { buildRuntimeSessionApiRoutes } from "./runtime-session-api.js";
 import { buildSimulationApiRoutes } from "./simulation-api.js";
 import { renderDashboardHtml } from "./simulation-dashboard.js";
 import { buildSessionBootstrapMessages, buildStateMessage } from "./websocket-session-bootstrap.js";
-import { MissionProgressMsgSchema, parseClientMessage } from "./protocol.js";
+import { parseClientMessage } from "./protocol.js";
 import type { ClientMessage, ServerMessage } from "./protocol.js";
-import { RunManager } from "./run-manager.js";
+import type { RunManager } from "./run-manager.js";
 import type { RunManagerState } from "./run-manager.js";
 import type { EventCallback } from "../loop/events.js";
 import { loadSettings, type AppSettings } from "../config/index.js";
@@ -66,7 +73,7 @@ export class PortInUseError extends Error {
   constructor(port: number) {
     super(
       `Port ${port} is already in use. ` +
-      `Try a different port with --port <N>, or use port 0 for auto-assignment.`,
+        `Try a different port with --port <N>, or use port 0 for auto-assignment.`,
     );
     this.name = "PortInUseError";
     this.port = port;
@@ -139,10 +146,8 @@ export class InteractiveServer {
         });
         return;
       }
-      {
-        socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
-        socket.destroy();
-      }
+      socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
+      socket.destroy();
     });
 
     await new Promise<void>((resolve, reject) => {
@@ -208,6 +213,10 @@ export class InteractiveServer {
       runsRoot: this.#runManager.getRunsRoot(),
       knowledgeRoot: this.#runManager.getKnowledgeRoot(),
     });
+    const backgroundSessionApi = buildBackgroundSessionApiRoutes({
+      openStore: () => new RuntimeSessionEventStore(this.#runManager.getDbPath()),
+      openSourceStore: () => this.#openStore(),
+    });
     const runtimeSessionApi = buildRuntimeSessionApiRoutes({
       openStore: () => new RuntimeSessionEventStore(this.#runManager.getDbPath()),
     });
@@ -230,8 +239,12 @@ export class InteractiveServer {
     });
     const simulationApi = buildSimulationApiRoutes(this.#runManager.getKnowledgeRoot());
 
-    // CORS headers for dashboard
-    res.setHeader("Access-Control-Allow-Origin", "*");
+    // CORS headers for dashboard/API clients. Keep this local by default instead of using '*'.
+    res.setHeader(
+      "Access-Control-Allow-Origin",
+      resolveCorsOrigin(req.headers.origin, this.#host, this.#boundPort || this.#requestedPort),
+    );
+    res.setHeader("Vary", "Origin");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
@@ -280,6 +293,10 @@ export class InteractiveServer {
           openclaw: "/api/openclaw",
           cockpit: "/api/cockpit",
           context_selection: "/api/cockpit/runs/:run_id/context-selection",
+          background_sessions: {
+            list: "/api/cockpit/background-sessions",
+            show: "/api/cockpit/background-sessions/:session_id",
+          },
           runtime_sessions: {
             list: "/api/cockpit/runtime-sessions",
             show: "/api/cockpit/runtime-sessions/:session_id",
@@ -368,7 +385,10 @@ export class InteractiveServer {
     const monitorWaitMatch = url.match(/^\/api\/monitors\/([^/]+)\/wait$/);
     if (method === "POST" && monitorWaitMatch) {
       const [, rawConditionId] = monitorWaitMatch;
-      const response = await monitorApi.wait(decodeURIComponent(rawConditionId!), requestUrl.searchParams);
+      const response = await monitorApi.wait(
+        decodeURIComponent(rawConditionId!),
+        requestUrl.searchParams,
+      );
       json(response.status, response.body);
       return;
     }
@@ -499,7 +519,10 @@ export class InteractiveServer {
     }
 
     // Cockpit notebook context routes
-    if (method === "GET" && (url === "/api/cockpit/notebooks" || url === "/api/cockpit/notebooks/")) {
+    if (
+      method === "GET" &&
+      (url === "/api/cockpit/notebooks" || url === "/api/cockpit/notebooks/")
+    ) {
       const response = cockpitApi.listNotebooks();
       json(response.status, response.body);
       return;
@@ -543,8 +566,31 @@ export class InteractiveServer {
       return;
     }
 
+    // Cockpit background-session routes
+    if (
+      method === "GET" &&
+      (url === "/api/cockpit/background-sessions" || url === "/api/cockpit/background-sessions/")
+    ) {
+      const response = backgroundSessionApi.list(requestUrl.searchParams);
+      json(response.status, response.body);
+      return;
+    }
+
+    const cockpitBackgroundSessionMatch = url.match(
+      /^\/api\/cockpit\/background-sessions\/([^/]+)$/,
+    );
+    if (method === "GET" && cockpitBackgroundSessionMatch) {
+      const [, rawSessionId] = cockpitBackgroundSessionMatch;
+      const response = backgroundSessionApi.getBySessionId(decodeURIComponent(rawSessionId!));
+      json(response.status, response.body);
+      return;
+    }
+
     // Cockpit runtime-session routes
-    if (method === "GET" && (url === "/api/cockpit/runtime-sessions" || url === "/api/cockpit/runtime-sessions/")) {
+    if (
+      method === "GET" &&
+      (url === "/api/cockpit/runtime-sessions" || url === "/api/cockpit/runtime-sessions/")
+    ) {
       const response = runtimeSessionApi.list(requestUrl.searchParams);
       json(response.status, response.body);
       return;
@@ -598,9 +644,7 @@ export class InteractiveServer {
       return;
     }
 
-    const cockpitCompareMatch = url.match(
-      /^\/api\/cockpit\/runs\/([^/]+)\/compare\/(\d+)\/(\d+)$/,
-    );
+    const cockpitCompareMatch = url.match(/^\/api\/cockpit\/runs\/([^/]+)\/compare\/(\d+)\/(\d+)$/);
     if (method === "GET" && cockpitCompareMatch) {
       const [, rawRunId, rawGenA, rawGenB] = cockpitCompareMatch;
       const response = cockpitApi.compareGenerations(
@@ -618,13 +662,14 @@ export class InteractiveServer {
     if (method === "GET" && cockpitRunResourceMatch) {
       const [, rawRunId, resource] = cockpitRunResourceMatch;
       const runId = decodeURIComponent(rawRunId!);
-      const response = resource === "status"
-        ? cockpitApi.runStatus(runId)
-        : resource === "changelog"
-          ? cockpitApi.changelog(runId)
-          : resource === "resume"
-            ? cockpitApi.resumeInfo(runId)
-            : cockpitApi.listConsultations(runId);
+      const response =
+        resource === "status"
+          ? cockpitApi.runStatus(runId)
+          : resource === "changelog"
+            ? cockpitApi.changelog(runId)
+            : resource === "resume"
+              ? cockpitApi.resumeInfo(runId)
+              : cockpitApi.listConsultations(runId);
       json(response.status, response.body);
       return;
     }
@@ -933,9 +978,7 @@ export class InteractiveServer {
     }
 
     // GET /api/simulations/:name/dashboard
-    const simulationDashboardMatch = url.match(
-      /^\/api\/simulations\/([^/]+)\/dashboard$/,
-    );
+    const simulationDashboardMatch = url.match(/^\/api\/simulations\/([^/]+)\/dashboard$/);
     if (method === "GET" && simulationDashboardMatch) {
       const [, rawName] = simulationDashboardMatch;
       const response = executeRunSimulationReadRequest({
@@ -1142,15 +1185,6 @@ export class InteractiveServer {
     return store;
   }
 
-  #withStore(fn: (store: SQLiteStore) => void): void {
-    const store = this.#openStore();
-    try {
-      fn(store);
-    } finally {
-      store.close();
-    }
-  }
-
   #getSolveManager(): SolveManager {
     if (!this.#solveManager) {
       this.#solveStore = this.#openStore();
@@ -1190,7 +1224,10 @@ export class InteractiveServer {
     return JSON.parse(Buffer.concat(chunks).toString("utf-8")) as Record<string, unknown>;
   }
 
-  #buildMissionProgress(missionId: string, latestStep?: string): Extract<ServerMessage, { type: "mission_progress" }> | null {
+  #buildMissionProgress(
+    missionId: string,
+    latestStep?: string,
+  ): Extract<ServerMessage, { type: "mission_progress" }> | null {
     return buildMissionProgressMessage({
       missionId,
       latestStep,
@@ -1257,7 +1294,8 @@ export class InteractiveServer {
 
     const unsubscribeMissionProgress = subscribeToMissionProgressEvents({
       missionEvents: this.#missionEvents,
-      buildMissionProgress: (missionId, latestStep) => this.#buildMissionProgress(missionId, latestStep),
+      buildMissionProgress: (missionId, latestStep) =>
+        this.#buildMissionProgress(missionId, latestStep),
       onProgress: (progress) => {
         this.#send(ws, progress);
       },
@@ -1295,20 +1333,25 @@ export class InteractiveServer {
       if (ws.readyState !== WebSocket.OPEN) {
         return;
       }
-      ws.send(JSON.stringify(buildEventStreamEnvelope({
-        channel: record?.channel ?? "generation",
-        event,
-        payload,
-        seq: nextSequence(),
-        timestamp: record?.ts,
-      })));
+      ws.send(
+        JSON.stringify(
+          buildEventStreamEnvelope({
+            channel: record?.channel ?? "generation",
+            event,
+            payload,
+            seq: nextSequence(),
+            timestamp: record?.ts,
+          }),
+        ),
+      );
     };
 
     this.#runManager.subscribeEvents(eventCallback);
 
     const unsubscribeMissionProgress = subscribeToMissionProgressEvents({
       missionEvents: this.#missionEvents,
-      buildMissionProgress: (missionId, latestStep) => this.#buildMissionProgress(missionId, latestStep),
+      buildMissionProgress: (missionId, latestStep) =>
+        this.#buildMissionProgress(missionId, latestStep),
       onProgress: (progress) => {
         if (ws.readyState !== WebSocket.OPEN) {
           return;
@@ -1364,10 +1407,13 @@ export class InteractiveServer {
       case "logout":
       case "switch_provider":
       case "whoami": {
-        this.#send(ws, await executeAuthCommand({
-          command: msg,
-          runManager: this.#runManager,
-        }));
+        this.#send(
+          ws,
+          await executeAuthCommand({
+            command: msg,
+            runManager: this.#runManager,
+          }),
+        );
         return;
       }
     }
@@ -1387,5 +1433,28 @@ export class InteractiveServer {
   #parseMessage(raw: string): ClientMessage {
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     return parseClientMessage(parsed);
+  }
+}
+
+function resolveCorsOrigin(
+  origin: string | string[] | undefined,
+  host: string,
+  port: number,
+): string {
+  const requestedOrigin = Array.isArray(origin) ? origin[0] : origin;
+  if (requestedOrigin && isTrustedLocalOrigin(requestedOrigin, host)) {
+    return requestedOrigin;
+  }
+  const displayHost = host === "0.0.0.0" || host === "::" ? "127.0.0.1" : host;
+  return `http://${displayHost}:${port}`;
+}
+
+function isTrustedLocalOrigin(origin: string, host: string): boolean {
+  try {
+    const parsed = new URL(origin);
+    const allowedHosts = new Set(["localhost", "127.0.0.1", "::1", host]);
+    return parsed.protocol === "http:" && allowedHosts.has(parsed.hostname);
+  } catch {
+    return false;
   }
 }

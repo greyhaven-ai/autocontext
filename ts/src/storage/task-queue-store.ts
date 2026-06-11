@@ -89,3 +89,24 @@ export function countPendingTaskRecords(db: Database.Database): number {
 export function getTaskRecord<T>(db: Database.Database, taskId: string): T | null {
   return ((db.prepare("SELECT * FROM task_queue WHERE id = ?").get(taskId) as T | undefined) ?? null);
 }
+
+export function listTaskRecords<T>(
+  db: Database.Database,
+  opts: { status?: string; specName?: string; limit?: number } = {},
+): T[] {
+  const clauses: string[] = ["1=1"];
+  const params: unknown[] = [];
+  if (opts.status) {
+    clauses.push("status = ?");
+    params.push(opts.status);
+  }
+  if (opts.specName) {
+    clauses.push("spec_name = ?");
+    params.push(opts.specName);
+  }
+  const limit = Number.isInteger(opts.limit) && (opts.limit ?? 0) > 0 ? opts.limit! : 50;
+  params.push(limit);
+  return db.prepare(
+    `SELECT * FROM task_queue WHERE ${clauses.join(" AND ")} ORDER BY created_at DESC LIMIT ?`,
+  ).all(...params) as T[];
+}

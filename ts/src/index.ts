@@ -329,6 +329,24 @@ export {
   summarizeRuntimeSession,
 } from "./session/runtime-session-read-model.js";
 export {
+  backgroundSessionUrl,
+  buildBackgroundSessionDetail,
+  buildBackgroundSessionSummary,
+  runtimeSessionUrl,
+} from "./session/background-session-read-model.js";
+export {
+  buildArtifactCreatedSessionEvent,
+  buildLifecycleSessionEvent,
+  buildSessionStatusEvent,
+  normalizeBackgroundSessionTimeline,
+  normalizeRuntimeSessionEvent,
+} from "./session/background-session-events.js";
+export {
+  buildLifecycleHookEnv,
+  executeBackgroundSessionLifecycleHooks,
+  executeLifecycleHook,
+} from "./session/background-session-lifecycle-hooks.js";
+export {
   RUNTIME_CONTEXT_LAYER_KEYS,
   RUNTIME_CONTEXT_LAYERS,
   RuntimeContextAssemblyRequest,
@@ -370,6 +388,38 @@ export type {
   RuntimeSessionReadStore,
   RuntimeSessionSummary,
 } from "./session/runtime-session-read-model.js";
+export type {
+  BackgroundSessionArtifact,
+  BackgroundSessionArtifactInput,
+  BackgroundSessionDetail,
+  BackgroundSessionSource,
+  BackgroundSessionStatus,
+  BackgroundSessionSummary,
+} from "./session/background-session-read-model.js";
+export type {
+  ArtifactCreatedSessionEventInput,
+  LifecycleSessionEventInput,
+  NormalizedSessionEvent,
+  NormalizedSessionEventName,
+  NormalizedSessionEventStatus,
+  NormalizedSessionEventSummaryValue,
+  SessionStatusEventInput,
+} from "./session/background-session-events.js";
+export type {
+  BackgroundSessionLifecycleHooksResult,
+  ExecuteBackgroundSessionLifecycleHooksOptions,
+  ExecuteLifecycleHookOptions,
+  LifecycleHookContext,
+  LifecycleHookDefinition,
+  LifecycleHookExecutionResult,
+  LifecycleHookFailurePolicy,
+  LifecycleHookInvocation,
+  LifecycleHookName,
+  LifecycleHookOutcome,
+  LifecycleHookPhase,
+  LifecycleHookRunner,
+  LifecycleHookRunnerResult,
+} from "./session/background-session-lifecycle-hooks.js";
 export type {
   RuntimeSessionChildTaskTimelineItem,
   RuntimeSessionGenericTimelineItem,

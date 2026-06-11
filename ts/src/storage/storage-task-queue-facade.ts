@@ -8,6 +8,7 @@ import {
   enqueueTaskRecord,
   failTaskRecord,
   getTaskRecord,
+  listTaskRecords,
 } from "./task-queue-store.js";
 
 export function enqueueStoreTask(
@@ -66,4 +67,11 @@ export function getStoreTask(
   taskId: string,
 ): TaskQueueRow | null {
   return getTaskRecord<TaskQueueRow>(db, taskId);
+}
+
+export function listStoreTasks(
+  db: Database.Database,
+  opts: { status?: string; specName?: string; limit?: number } = {},
+): TaskQueueRow[] {
+  return listTaskRecords<TaskQueueRow>(db, opts);
 }

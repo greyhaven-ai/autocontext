@@ -34,6 +34,7 @@ import {
   enqueueStoreTask,
   failStoreTask,
   getStoreTask,
+  listStoreTasks,
 } from "./storage-task-queue-facade.js";
 import {
   appendStoreAgentOutput,
@@ -156,6 +157,10 @@ export class SQLiteStore {
 
   getTask(taskId: string): TaskQueueRow | null {
     return getStoreTask(this.#db, taskId);
+  }
+
+  listTasks(opts: { status?: string; specName?: string; limit?: number } = {}): TaskQueueRow[] {
+    return listStoreTasks(this.#db, opts);
   }
 
   insertHumanFeedback(
