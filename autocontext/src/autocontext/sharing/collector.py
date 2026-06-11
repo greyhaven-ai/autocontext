@@ -18,6 +18,10 @@ class SessionArtifact:
     path: Path
     size_bytes: int
     category: str  # "trace", "session", "report", "playbook", "output"
+    # Run-relative, namespaced bundle path (e.g. ``runs/<run_id>/gen_1/out.txt``,
+    # ``knowledge/<scenario>/playbook.md``). Unique even when nested artifacts
+    # share a basename, so files don't collide/overwrite in the bundle.
+    bundle_path: str
 
 
 # Files worth including in a share bundle, by category
@@ -76,7 +80,16 @@ def _scan_run_dir(run_dir: Path) -> list[SessionArtifact]:
             size = path.stat().st_size
         except OSError:
             continue
-        artifacts.append(SessionArtifact(name=path.name, path=path, size_bytes=size, category=category))
+        bundle_path = f"runs/{run_dir.name}/{path.relative_to(run_dir).as_posix()}"
+        artifacts.append(
+            SessionArtifact(
+                name=path.name,
+                path=path,
+                size_bytes=size,
+                category=category,
+                bundle_path=bundle_path,
+            )
+        )
     return artifacts
 
 
@@ -90,5 +103,14 @@ def _scan_knowledge_dir(k_dir: Path) -> list[SessionArtifact]:
                 size = path.stat().st_size
             except OSError:
                 continue
-            artifacts.append(SessionArtifact(name=fname, path=path, size_bytes=size, category=category))
+            bundle_path = f"knowledge/{k_dir.name}/{fname}"
+            artifacts.append(
+                SessionArtifact(
+                    name=fname,
+                    path=path,
+                    size_bytes=size,
+                    category=category,
+                    bundle_path=bundle_path,
+                )
+            )
     return artifacts

@@ -1,0 +1,7 @@
+{"gen": 1, "role": "competitor", "event": "response_proposed", "detail": "drafted reminder without evidence"}
+{"gen": 1, "role": "analyst", "event": "dispute_eval", "detail": "resolution slow, reopen high", "score": 0.41}
+{"gen": 1, "role": "coach", "event": "playbook_update", "detail": "cite clause, attach quote"}
+{"gen": 1, "role": "curator", "event": "gate", "detail": "advance", "gate": "advance"}
+{"gen": 2, "role": "competitor", "event": "response_proposed", "detail": "adds clause reference"}
+{"gen": 2, "role": "analyst", "event": "dispute_eval", "detail": "improved markedly", "score": 0.88}
+{"gen": 2, "role": "curator", "event": "gate", "detail": "accept", "gate": "accept"}

@@ -101,6 +101,10 @@ markers = [
 [tool.ruff]
 line-length = 130
 target-version = "py311"
+# Toxic detector fixtures are intentionally malformed inert text (unused/unsorted
+# imports, hostile snippets) — they are data, not code. Keep ruff off them.
+extend-exclude = ["tests/fixtures"]
+force-exclude = true
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "ANN204"]
