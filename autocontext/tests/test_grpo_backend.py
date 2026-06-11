@@ -90,6 +90,40 @@ def test_score_completions_is_robust_to_verifier_errors() -> None:
     assert score_completions(_Boom(), ['{"points": [1]}']) == [0.0]
 
 
+class _FreeTextScenario:
+    """Free-text agent task (GSM8K-style): scores the RAW completion, no JSON. The old
+    extract-JSON-or-zero path scored every correct free-text answer 0 -> GRPO got no reward."""
+
+    name = "freetext"
+    description = "free text"
+
+    def initial_state(self, seed=None):
+        return {"gold": 42}
+
+    def get_task_prompt(self, state=None):
+        return "What is the answer?"
+
+    def evaluate_output(self, output, state, **kwargs):
+        return AgentTaskResult(score=1.0 if "Answer: 42" in output else 0.0, reasoning="")
+
+
+def test_score_completions_scores_free_text_agent_task_without_json() -> None:
+    """GSM8K-style: the raw free-text completion must reach evaluate_output (no JSON extraction),
+    else every correct reasoning answer scores 0 and GRPO never learns."""
+    from autocontext.training.autoresearch.grpo_backend import score_completions
+
+    comps = ["Let me think step by step... so the total is 42.\nAnswer: 42", "I think it is 7.\nAnswer: 7"]
+    assert score_completions(_FreeTextScenario(), comps, answers=['{"gold": 42}', '{"gold": 42}']) == [1.0, 0.0]
+
+
+def test_score_completions_accepts_conversational_completions() -> None:
+    """TRL conversational prompts yield message-list completions; the reward must read their text."""
+    from autocontext.training.autoresearch.grpo_backend import score_completions
+
+    comps = [[{"role": "assistant", "content": "work...\nAnswer: 42"}]]
+    assert score_completions(_FreeTextScenario(), comps, answers=['{"gold": 42}']) == [1.0]
+
+
 # ---------------------------------------------------------------------------
 # grpo_cli_args: variant -> mlx-lm-lora flag mapping
 # ---------------------------------------------------------------------------

@@ -49,33 +49,50 @@ _DAPO_EPSILON_HIGH = 0.28  # DAPO clip-higher default
 # ---------------------------------------------------------------------------
 # Reward adapter (the core: model completions -> scalar verifier rewards)
 # ---------------------------------------------------------------------------
-def score_completions(scenario: Any, completions: list[str], *, answers: list[str] | None = None, seed: int = 0) -> list[float]:
+def _completion_text(completion: Any) -> str:
+    """Normalize a TRL completion to text. Conversational prompts yield message-list completions
+    (``[{"role": "assistant", "content": ...}]``); plain prompts yield strings."""
+    if isinstance(completion, str):
+        return completion
+    if isinstance(completion, list) and completion:
+        last = completion[-1]
+        return str(last.get("content", "")) if isinstance(last, dict) else str(last)
+    return str(completion)
+
+
+def score_completions(scenario: Any, completions: list[Any], *, answers: list[str] | None = None, seed: int = 0) -> list[float]:
     """Score each completion with the scenario verifier; the GRPO reward function.
 
-    Robust to reason-then-construct output (extracts the JSON construction via the
-    shared ``extract_json_object``). Game scenarios are scored by ``execute_match``,
-    agent-task scenarios by ``evaluate_output``. Unparseable output or a throwing
-    verifier scores 0.0 (never propagates, so one bad rollout can't kill training).
+    Game scenarios (``execute_match``) expect a JSON construction, so the completion's trailing
+    JSON object is extracted (reason-then-construct robust) and a non-dict scores 0.0.
 
-    When ``answers`` is given (aligned to ``completions``), each completion is verified
-    against ITS OWN instance state (decoded from the answer field that
-    :func:`build_prompt_rows` wrote), so prompt-diverse GRPO scores each rollout against
-    the instance it was sampled for. Without it, a single resolved state is used.
+    Agent-task scenarios (``evaluate_output``) are scored hybrid: if the completion contains a JSON
+    construction it is passed as canonical JSON (back-compat for JSON-construction agent tasks), but
+    if there is NO JSON the RAW text is passed -- GSM8K-style answers are free text, and the old
+    extract-JSON-or-zero path silently scored every correct free-text answer 0 (the bug that zeroed
+    GRPO reward on reasoning tasks). A throwing verifier scores 0.0.
+
+    Accepts string OR conversational (message-list) completions. When ``answers`` is given (aligned
+    to ``completions``), each is verified against ITS OWN instance state (decoded from the answer
+    field :func:`build_prompt_rows` wrote); otherwise a single resolved state is used.
     """
     is_game = hasattr(scenario, "execute_match")
     shared_state = {} if is_game else _resolve_state(scenario, seed)
     scores: list[float] = []
     for i, completion in enumerate(completions):
-        strategy = extract_json_object(completion)
-        if not isinstance(strategy, dict):
-            scores.append(0.0)
-            continue
+        text = _completion_text(completion)
         state = _decode_answer_state(answers[i]) if answers and i < len(answers) else shared_state
         try:
             if is_game:
+                strategy = extract_json_object(text)
+                if not isinstance(strategy, dict):
+                    scores.append(0.0)
+                    continue
                 scores.append(float(scenario.execute_match(strategy, seed=seed).score))
             else:
-                scores.append(float(scenario.evaluate_output(output=json.dumps(strategy), state=state).score))
+                strategy = extract_json_object(text)
+                output = json.dumps(strategy) if isinstance(strategy, dict) else text  # JSON if present, else raw text
+                scores.append(float(scenario.evaluate_output(output=output, state=state).score))
         except Exception:
             scores.append(0.0)
     return scores

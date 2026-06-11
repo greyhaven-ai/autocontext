@@ -144,6 +144,12 @@ def test_prompt_dataset_rows_have_prompt_and_answer_for_grpo() -> None:
     rows = build_prompt_dataset_rows(_TargetScenario(), 3)
     assert len(rows) == 3
     assert all("prompt" in r and "answer" in r for r in rows)
+    # prompts are CONVERSATIONAL (message list), so TRL applies the chat template before
+    # generation -> the instruct model answers in chat mode and stops at EOS (a raw-string
+    # prompt skips the template, the model never stops, and every completion truncates).
+    for r in rows:
+        assert isinstance(r["prompt"], list)
+        assert r["prompt"][0]["role"] == "user" and isinstance(r["prompt"][0]["content"], str)
 
 
 # ---------------------------------------------------------------------------

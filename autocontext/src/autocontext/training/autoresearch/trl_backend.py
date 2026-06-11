@@ -153,10 +153,19 @@ def build_chat_dataset_rows(scenario: Any, n_prompts: int) -> list[dict[str, Any
     ]
 
 
-def build_prompt_dataset_rows(scenario: Any, n_prompts: int) -> list[dict[str, str]]:
-    """GRPO dataset rows: ``{"prompt", "answer"}`` (TRL passes the extra ``answer`` column
-    to the reward function as a kwarg). This is exactly what :func:`build_prompt_rows` emits."""
-    return build_prompt_rows(scenario, n_prompts)
+def build_prompt_dataset_rows(scenario: Any, n_prompts: int) -> list[dict[str, Any]]:
+    """GRPO dataset rows: ``{"prompt": [chat messages], "answer"}``.
+
+    The prompt is **conversational** (a one-message user turn), NOT a raw string: TRL applies
+    the model's chat template to conversational prompts before generation, so an instruct model
+    answers in chat mode and emits EOS after its answer. A raw-string prompt skips the template,
+    the instruct model never stops, and every completion runs to ``max_completion_length``
+    (``clipped_ratio=1``) without a parseable answer -> reward 0 -> no gradient. ``answer`` carries
+    the per-instance state for the reward (TRL passes extra columns through as kwargs)."""
+    return [
+        {"prompt": [{"role": "user", "content": row["prompt"]}], "answer": row["answer"]}
+        for row in build_prompt_rows(scenario, n_prompts)
+    ]
 
 
 def make_reward_func(scenario: Any) -> Any:
