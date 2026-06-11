@@ -342,6 +342,13 @@ export {
   normalizeRuntimeSessionEvent,
 } from "./session/background-session-events.js";
 export {
+  AUTOMATION_UNTRUSTED_PAYLOAD_WARNING,
+  evaluateAutomationGuardrail,
+  recordAutomationRunOutcome,
+  renderAutomationPayloadContext,
+  resumeAutomationPolicyState,
+} from "./session/background-session-automation-guardrails.js";
+export {
   buildLifecycleHookEnv,
   executeBackgroundSessionLifecycleHooks,
   executeLifecycleHook,
@@ -411,6 +418,24 @@ export type {
   NormalizedSessionEventSummaryValue,
   SessionStatusEventInput,
 } from "./session/background-session-events.js";
+export type {
+  AutomationDecisionKind,
+  AutomationDecisionReason,
+  AutomationFilter,
+  AutomationFilterOp,
+  AutomationFilterResult,
+  AutomationGuardrailDecision,
+  AutomationGuardrailState,
+  AutomationHistoryEvent,
+  AutomationPayloadContext,
+  AutomationPolicy,
+  AutomationRunOutcomeInput,
+  AutomationRunOutcomeStatus,
+  AutomationScalar,
+  AutomationTrigger,
+  AutomationTriggerContext,
+  AutomationTriggerKind,
+} from "./session/background-session-automation-guardrails.js";
 export type {
   BackgroundSessionLifecycleHooksResult,
   ExecuteBackgroundSessionLifecycleHooksOptions,
