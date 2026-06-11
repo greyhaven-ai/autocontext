@@ -87,6 +87,9 @@ def register_train_command(app: typer.Typer, console: Console) -> None:
         ),
         trl_mode: str = typer.Option("gkd", "--trl-mode", help="trl backend: gkd (on-policy distillation) | grpo (RLVR)"),
         seed: int = typer.Option(0, "--seed", help="trl backend: training seed (for seeded repeats / error bars)"),
+        max_completion_length: int = typer.Option(
+            512, "--max-completion-length", help="trl grpo: generation cap (256 truncates reasoning -> 0 reward / no gradient)"
+        ),
         agent_provider: str = typer.Option("anthropic", "--agent-provider", help="LLM provider for training agent"),
         agent_model: str = typer.Option("", "--agent-model", help="Model for training agent (empty = provider default)"),
         val_select: bool = typer.Option(
@@ -150,6 +153,8 @@ def register_train_command(app: typer.Typer, console: Console) -> None:
             raise typer.BadParameter(f"--backend must be mlx|cuda|mlxlm|grpo|opd|trl, got {backend!r}")
         if train_steps < 0:
             raise typer.BadParameter(f"--train-steps must be >= 0 (0 = backend default), got {train_steps}")
+        if max_completion_length < 1:
+            raise typer.BadParameter(f"--max-completion-length must be a positive integer, got {max_completion_length}")
         if learning_rate < 0:
             raise typer.BadParameter(f"--learning-rate must be >= 0 (0 = backend default), got {learning_rate}")
 
@@ -179,6 +184,7 @@ def register_train_command(app: typer.Typer, console: Console) -> None:
             teacher_model=teacher_model,
             trl_mode=trl_mode,
             seed=seed,
+            max_completion_length=max_completion_length,
             fine_tune_type=fine_tune_type,
             num_layers=num_layers,
         )

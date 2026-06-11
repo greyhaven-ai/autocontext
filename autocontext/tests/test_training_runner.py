@@ -324,6 +324,26 @@ class TestConstraints:
         seed_index = command.index("--seed")
         assert command[seed_index + 1] == "7"
 
+    def test_experiment_subprocess_passes_max_completion_length_when_overridden(self, tmp_path: Path) -> None:
+        """A GRPO completion-length override must reach the subprocess (so the public `autoctx train`
+        path can avoid the 256-token truncation that zeroes GSM8K-style rewards); the default 512 is
+        omitted to keep the command minimal."""
+        cfg = TrainingConfig(scenario="grid_ctf", data_path=tmp_path / "data.jsonl", backend="trl", max_completion_length=768)
+        (tmp_path / "data.jsonl").write_text("{}\n")
+        runner = TrainingRunner(cfg, work_dir=tmp_path / "workspace")
+        completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+        with patch("autocontext.training.runner.subprocess.run", return_value=completed) as mock_run:
+            runner._run_experiment_subprocess(0)
+        command = mock_run.call_args.args[0]
+        assert command[command.index("--max-completion-length") + 1] == "768"
+
+        # default (512) stays off the command line
+        cfg2 = TrainingConfig(scenario="grid_ctf", data_path=tmp_path / "data.jsonl", backend="trl")
+        runner2 = TrainingRunner(cfg2, work_dir=tmp_path / "ws2")
+        with patch("autocontext.training.runner.subprocess.run", return_value=completed) as mock_run2:
+            runner2._run_experiment_subprocess(0)
+        assert "--max-completion-length" not in mock_run2.call_args.args[0]
+
     def test_experiment_subprocess_omits_loss_weight_flags_when_uniform(self, tmp_path: Path) -> None:
         cfg = TrainingConfig(scenario="grid_ctf", data_path=tmp_path / "data.jsonl")
         (tmp_path / "data.jsonl").write_text("{}\n")

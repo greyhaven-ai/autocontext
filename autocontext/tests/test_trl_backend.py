@@ -63,6 +63,16 @@ def test_grpo_config_kwargs_have_generation_and_kl_fields() -> None:
     assert "max_prompt_length" not in cfg
 
 
+def test_grpo_completion_length_defaults_long_enough_for_reasoning() -> None:
+    """Regression: a 256-token cap truncates GSM8K completions before the answer, so every
+    verifier reward is 0 and GRPO gets no gradient (RLVR silently learns nothing). The default
+    must leave room for step-by-step reasoning + the final answer, and stay overridable."""
+    from autocontext.training.autoresearch.trl_backend import build_grpo_config_kwargs
+
+    assert build_grpo_config_kwargs(output_dir="/o")["max_completion_length"] >= 512
+    assert build_grpo_config_kwargs(output_dir="/o", max_completion_length=1024)["max_completion_length"] == 1024
+
+
 def test_config_kwargs_thread_max_steps_and_batch_size() -> None:
     """--train-steps / --batch-size must reach TRL, not be silently dropped."""
     from autocontext.training.autoresearch.trl_backend import build_gkd_config_kwargs, build_grpo_config_kwargs
