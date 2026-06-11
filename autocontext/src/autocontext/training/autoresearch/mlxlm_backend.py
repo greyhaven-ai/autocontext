@@ -52,6 +52,25 @@ def _quality_prefix(quality: int | None, num_buckets: int) -> str:
     return f"Target quality: {quality} out of {num_buckets - 1} (higher is better).\n"
 
 
+def format_assess_prompt(tokenizer: Any, task_prompt: str, *, score_conditioned: bool) -> str:
+    """Render the assessment prompt through the model's chat template.
+
+    mlx-lm's LoRA trainer applies the instruct chat template to prompt/completion records, and
+    the serving path (``MLXLMProvider.format_mlxlm_prompt``) does the same. Assessment must match:
+    feeding an instruct model a RAW prompt yields prose, not the JSON the verifier can score, so
+    the in-training metric reads ~0. Falls back to the raw text if the tokenizer has no chat
+    template (a base, non-instruct model)."""
+    prefix = _quality_prefix(NUM_QUALITY_BUCKETS - 1, NUM_QUALITY_BUCKETS) if score_conditioned else ""
+    content = prefix + task_prompt
+    try:
+        rendered = tokenizer.apply_chat_template(
+            [{"role": "user", "content": content}], add_generation_prompt=True, tokenize=False
+        )
+        return str(rendered)
+    except Exception:
+        return content
+
+
 def build_completion_record(
     *,
     task_prompt: str,
@@ -83,10 +102,18 @@ def records_to_completions(
     out: list[dict[str, str]] = []
     for record in records:
         quality = score_to_quality_bucket(float(record.get("score", 0.0)), num_buckets=num_buckets) if score_conditioned else None
+        strategy = record["strategy"]
+        # Game scenarios carry a JSON strategy object; agent-task scenarios carry the raw text
+        # output. Use the text directly as the completion (json.dumps would quote/escape it).
+        strategy_text = strategy if isinstance(strategy, str) else json.dumps(strategy, sort_keys=True)
+        # Dataset-style agent tasks (e.g. GSM8K) carry a per-record prompt -- the specific problem
+        # this solution solves -- so each completion trains on its own instruction. Single-task
+        # scenarios omit it and share the one scenario-level task_prompt.
+        record_prompt = record.get("prompt") or task_prompt
         out.append(
             build_completion_record(
-                task_prompt=task_prompt,
-                strategy_json=json.dumps(record["strategy"], sort_keys=True),
+                task_prompt=record_prompt,
+                strategy_json=strategy_text,
                 quality=quality,
                 num_buckets=num_buckets,
                 reasoning=str(record.get("reasoning") or "") or None,
@@ -117,20 +144,28 @@ def write_completion_dataset(
     return len(train), len(val)
 
 
-def scenario_task_prompt(scenario: Any) -> str:
-    """Resolve the natural-language task instruction for a scenario.
+def scenario_task_prompt_and_state(scenario: Any) -> tuple[str, Any]:
+    """Resolve the task instruction and, for agent-task scenarios, the state it was built from.
 
-    Prefers ``get_task_prompt(initial_state())`` (agent-task scenarios); falls back to
-    the shared context resolver (task prompt / description).
+    Agent-task scenarios (``get_task_prompt`` + ``initial_state``) must pass that SAME state back
+    into ``evaluate_output(output, state)`` at scoring time, so the state is resolved once and
+    returned alongside the prompt. Returns ``(prompt, None)`` for scenarios without an agent-task
+    interface (e.g. games scored via ``execute_match``, which take no state).
     """
     get_task_prompt = getattr(scenario, "get_task_prompt", None)
     initial_state = getattr(scenario, "initial_state", None)
     if callable(get_task_prompt) and callable(initial_state):
         try:
-            return str(get_task_prompt(initial_state()))
+            state = initial_state()
+            return str(get_task_prompt(state)), state
         except Exception:
             pass
-    return resolve_scenario_context(scenario)
+    return resolve_scenario_context(scenario), None
+
+
+def scenario_task_prompt(scenario: Any) -> str:
+    """Resolve the natural-language task instruction for a scenario (state-agnostic)."""
+    return scenario_task_prompt_and_state(scenario)[0]
 
 
 # ---------------------------------------------------------------------------
@@ -159,8 +194,13 @@ def run_mlxlm_training(
     dedupe_near_threshold: float = 1.0,
     score_conditioned: bool = False,
     augmenter_spec: str = "",
+    collect_samples_path: Path | None = None,
 ) -> dict[str, float]:
-    """Fine-tune a pretrained mlx-lm model with LoRA/DoRA and assess it in-scenario."""
+    """Fine-tune a pretrained mlx-lm model with LoRA/DoRA and assess it in-scenario.
+
+    When ``collect_samples_path`` is set, the in-scenario assessment also writes its
+    generated ``{strategy, score}`` samples there, so the ReST-EM self-improving loop can
+    keep the elite and retrain on them (the adapter analogue of the mlx collect path)."""
     from autocontext.scenarios import SCENARIO_REGISTRY
     from autocontext.training.autoresearch.data_selection import prepare_training_records
     from autocontext.training.autoresearch.train import _all_records, _peak_memory_mb, _preflight_backend_deps
@@ -177,7 +217,7 @@ def run_mlxlm_training(
         dedupe=dedupe,
         near_threshold=dedupe_near_threshold,
     )
-    task_prompt = scenario_task_prompt(scenario)
+    task_prompt, eval_state = scenario_task_prompt_and_state(scenario)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     data_dir = output_dir / "data"
@@ -217,10 +257,12 @@ def run_mlxlm_training(
         adapter_dir=adapter_dir,
         scenario=scenario,
         task_prompt=task_prompt,
+        eval_state=eval_state,
         n_samples=assess_samples,
         temperature=assess_temperature,
         top_k=assess_top_k,
         score_conditioned=score_conditioned,
+        collect_path=collect_samples_path,
     )
     return {
         "avg_score": metrics["avg_score"],
@@ -245,36 +287,63 @@ def _assess_mlxlm(
     temperature: float,
     top_k: int,
     score_conditioned: bool,
+    eval_state: Any = None,
+    collect_path: Path | None = None,
 ) -> dict[str, float]:
     from mlx_lm import generate, load  # type: ignore[import-not-found]
     from mlx_lm.sample_utils import make_sampler  # type: ignore[import-not-found]
 
     loaded = load(base_model, adapter_path=str(adapter_dir))
     model, tokenizer = loaded[0], loaded[1]
-    prefix = _quality_prefix(NUM_QUALITY_BUCKETS - 1, NUM_QUALITY_BUCKETS) if score_conditioned else ""
-    prompt = prefix + task_prompt
+    base_prompt = format_assess_prompt(tokenizer, task_prompt, score_conditioned=score_conditioned)
     is_game = hasattr(scenario, "execute_match")
+    has_task_prompt = callable(getattr(scenario, "get_task_prompt", None))
     # Honor the requested assessment sampling (temp<=0 => greedy; top_k truncation).
     sampler = make_sampler(temp=max(float(temperature), 0.0), top_k=int(top_k))
 
     scores: list[float] = []
     valid = 0
-    for _ in range(max(1, n_samples)):
+    collected: list[dict[str, Any]] = []  # {prompt, strategy, score} for the ReST-EM self-improving loop
+    for i in range(max(1, n_samples)):
         try:
-            text = generate(model, tokenizer, prompt=prompt, max_tokens=512, verbose=False, sampler=sampler)
+            if is_game:
+                chat_prompt, sample_instr, state_i = base_prompt, task_prompt, None
+            else:
+                # Dataset-style agent tasks (e.g. GSM8K) draw a possibly-different problem per
+                # sample so the loop explores the distribution; resolve state + prompt TOGETHER so
+                # evaluate_output scores against -- and the collected sample carries -- the exact
+                # problem it was generated for (fixed single-task scenarios just reuse one problem).
+                try:
+                    state_i = scenario.initial_state(seed=i)
+                except Exception:
+                    state_i = eval_state
+                sample_instr = scenario.get_task_prompt(state_i) if has_task_prompt else task_prompt
+                chat_prompt = format_assess_prompt(tokenizer, sample_instr, score_conditioned=score_conditioned)
+            text = generate(model, tokenizer, prompt=chat_prompt, max_tokens=512, verbose=False, sampler=sampler)
             if is_game:
                 # Reason-trained models emit `rationale\n{...}`; extract the trailing
                 # JSON object robustly (a bare extract_strategy returns None on prose).
-                strategy = extract_json_object(text)
+                strategy: Any = extract_json_object(text)
                 if strategy is None:
                     continue
-                valid += 1
-                scores.append(scenario.execute_match(strategy, seed=0).score)
+                score = scenario.execute_match(strategy, seed=0).score
             else:
-                valid += 1
-                scores.append(scenario.evaluate_output(output=text).score)
+                # Agent-task scenarios score the raw text; the text IS the sample to retrain on.
+                strategy = text
+                score = scenario.evaluate_output(output=text, state=state_i).score
+            # Count valid only after scoring succeeds, so a scoring error (caught below) can't
+            # inflate valid_rate while no sample was actually collected.
+            valid += 1
+            scores.append(score)
+            if collect_path is not None:
+                # Carry the per-sample prompt so a later ReST-EM round retrains the answer against
+                # the problem it was scored on, not the fallback scenario prompt.
+                collected.append({"prompt": sample_instr, "strategy": strategy, "score": float(score)})
         except Exception:
             continue
+    if collect_path is not None:
+        collect_path.parent.mkdir(parents=True, exist_ok=True)
+        collect_path.write_text("\n".join(json.dumps(s) for s in collected) + "\n", encoding="utf-8")
     return {
         "avg_score": sum(scores) / len(scores) if scores else 0.0,
         "valid_rate": valid / n_samples if n_samples > 0 else 0.0,

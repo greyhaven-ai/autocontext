@@ -71,6 +71,22 @@ def test_dedupe_key_is_order_insensitive_for_json() -> None:
     assert len(dedupe_records(records)) == 1
 
 
+def test_dedupe_is_prompt_aware_for_dataset_records() -> None:
+    """Dataset-style agent tasks (GSM8K) key on (problem, answer): two DIFFERENT problems that
+    share a completion must NOT collapse, or the loop loses distinct training examples."""
+    records = [
+        {"prompt": "Q1: 2+2?", "strategy": "Answer: 4", "score": 1.0},
+        {"prompt": "Q2: 1+3?", "strategy": "Answer: 4", "score": 1.0},  # same answer, different problem
+    ]
+    assert len(dedupe_records(records)) == 2
+    # but the SAME problem with the same answer still dedupes
+    dup = [
+        {"prompt": "Q1: 2+2?", "strategy": "Answer: 4", "score": 0.9},
+        {"prompt": "Q1: 2+2?", "strategy": "Answer: 4", "score": 0.5},
+    ]
+    assert len(dedupe_records(dup)) == 1
+
+
 def test_dedupe_near_threshold_removes_near_duplicates() -> None:
     # two nearly-identical strategies (differ in the last word) + one distinct
     base = {"plan": "the quick brown fox jumps over the lazy dog near the river bank"}

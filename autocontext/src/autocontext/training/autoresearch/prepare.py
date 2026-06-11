@@ -348,6 +348,15 @@ if HAS_MLX:
         collected: list[dict[str, Any]] = []  # (strategy, score) for the self-improving loop
 
         is_game = hasattr(scenario, "execute_match")
+        # Agent-task scenarios require the task state passed back into evaluate_output(); resolve
+        # it once (this from-scratch backend emits JSON strategies, so agent tasks here are the
+        # structured kind -- free-text agent tasks use the mlxlm backend).
+        eval_state = None
+        if not is_game:
+            try:
+                eval_state = scenario.initial_state()
+            except Exception:
+                eval_state = {}
 
         for i in range(n_samples):
             try:
@@ -363,11 +372,12 @@ if HAS_MLX:
                 strategy = _extract_strategy_json(raw_output)
 
                 if strategy is not None:
-                    valid_count += 1
                     if is_game:
                         result = scenario.execute_match(strategy, seed=i)
                     else:
-                        result = scenario.evaluate_output(output=json.dumps(strategy))
+                        result = scenario.evaluate_output(output=json.dumps(strategy), state=eval_state)
+                    # Count valid only after scoring succeeds (a scoring error must not inflate it).
+                    valid_count += 1
                     scores.append(result.score)
                     if collect_path is not None:
                         collected.append({"strategy": strategy, "score": float(result.score)})

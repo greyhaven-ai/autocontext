@@ -353,3 +353,44 @@ def test_score_loss_weights_softmax_low_temperature_concentrates_on_max() -> Non
     w = score_loss_weights([0.0, 0.5, 1.0], mode="softmax", temperature=0.01)
     assert w[2] > w[0] and w[2] > w[1]
     assert w[2] > 2.5  # near n=3 (all mass on the max)
+
+
+def test_resolve_scenario_context_prefers_get_task_prompt() -> None:
+    from autocontext.training.autoresearch.sequence_format import resolve_scenario_context
+
+    class _Scn:
+        def get_task_prompt(self) -> str:
+            return "explicit task prompt"
+
+        def describe_rules(self) -> str:  # must NOT be used when get_task_prompt exists
+            return "rules"
+
+    assert resolve_scenario_context(_Scn()) == "explicit task prompt"
+
+
+def test_resolve_scenario_context_composes_describe_methods_for_game_scenarios() -> None:
+    """Game scenarios (ScenarioInterface) have no get_task_prompt/description; the resolver must
+    compose their describe_* methods so the adapter backends get a real prompt, not an empty one."""
+    from autocontext.training.autoresearch.sequence_format import resolve_scenario_context
+
+    class _GameScn:
+        def describe_rules(self) -> str:
+            return "20x20 CTF map."
+
+        def describe_strategy_interface(self) -> str:
+            return "Return JSON with aggression, defense, path_bias."
+
+        def describe_evaluation_criteria(self) -> str:
+            return "Maximize capture progress."
+
+    out = resolve_scenario_context(_GameScn())
+    assert out  # not empty (the bug)
+    assert "Rules: 20x20 CTF map." in out
+    assert "Response format: Return JSON with aggression, defense, path_bias." in out
+    assert "Evaluation: Maximize capture progress." in out
+
+
+def test_resolve_scenario_context_empty_when_nothing_available() -> None:
+    from autocontext.training.autoresearch.sequence_format import resolve_scenario_context
+
+    assert resolve_scenario_context(object()) == ""

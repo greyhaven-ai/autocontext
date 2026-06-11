@@ -56,6 +56,8 @@ class TrainingConfig:
     max_experiments: int = 0
     memory_limit_mb: int = 16384
     backend: str = "mlx"
+    train_steps: int = 0  # 0 = backend default (8 from-scratch mlx/cuda, 100 pretrained-adapter backends)
+    learning_rate: float = 0.0  # 0 = backend default (1e-3 from-scratch, 1e-4 mlxlm, 1e-5 opd/grpo/trl)
     agent_provider: str = "anthropic"
     agent_model: str = ""
     val_select: bool = False  # keep best-by-validation-loss checkpoint + early stop (MLX only)
@@ -71,6 +73,7 @@ class TrainingConfig:
     teacher_model: str = ""  # opd backend: distillation teacher (empty = backend default)
     trl_mode: str = "gkd"  # trl backend: gkd (on-policy distillation) | grpo (RLVR)
     seed: int = 0  # trl backend: training seed (for seeded repeats)
+    max_completion_length: int = 512  # trl grpo: generation cap (256 truncates reasoning -> 0 reward / no gradient)
     fine_tune_type: str = "lora"  # mlxlm backend: lora | dora | full
     num_layers: int = 8  # mlxlm backend: number of layers to fine-tune
 
@@ -405,6 +408,10 @@ class TrainingRunner:
             "--backend",
             self.config.backend,
         ]
+        if self.config.train_steps > 0:
+            command += ["--train-steps", str(self.config.train_steps)]
+        if self.config.learning_rate > 0:
+            command += ["--learning-rate", str(self.config.learning_rate)]
         if self.config.val_select:
             command.append("--val-select")
         if self.config.elite_fraction != 1.0:
@@ -431,6 +438,8 @@ class TrainingRunner:
             command += ["--trl-mode", self.config.trl_mode]
         if self.config.seed != 0:
             command += ["--seed", str(self.config.seed)]
+        if self.config.max_completion_length != 512:
+            command += ["--max-completion-length", str(self.config.max_completion_length)]
         if self.config.fine_tune_type != "lora":
             command += ["--fine-tune-type", self.config.fine_tune_type]
         if self.config.num_layers != 8:

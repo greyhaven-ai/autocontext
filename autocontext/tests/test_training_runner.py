@@ -324,6 +324,26 @@ class TestConstraints:
         seed_index = command.index("--seed")
         assert command[seed_index + 1] == "7"
 
+    def test_experiment_subprocess_passes_max_completion_length_when_overridden(self, tmp_path: Path) -> None:
+        """A GRPO completion-length override must reach the subprocess (so the public `autoctx train`
+        path can avoid the 256-token truncation that zeroes GSM8K-style rewards); the default 512 is
+        omitted to keep the command minimal."""
+        cfg = TrainingConfig(scenario="grid_ctf", data_path=tmp_path / "data.jsonl", backend="trl", max_completion_length=768)
+        (tmp_path / "data.jsonl").write_text("{}\n")
+        runner = TrainingRunner(cfg, work_dir=tmp_path / "workspace")
+        completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+        with patch("autocontext.training.runner.subprocess.run", return_value=completed) as mock_run:
+            runner._run_experiment_subprocess(0)
+        command = mock_run.call_args.args[0]
+        assert command[command.index("--max-completion-length") + 1] == "768"
+
+        # default (512) stays off the command line
+        cfg2 = TrainingConfig(scenario="grid_ctf", data_path=tmp_path / "data.jsonl", backend="trl")
+        runner2 = TrainingRunner(cfg2, work_dir=tmp_path / "ws2")
+        with patch("autocontext.training.runner.subprocess.run", return_value=completed) as mock_run2:
+            runner2._run_experiment_subprocess(0)
+        assert "--max-completion-length" not in mock_run2.call_args.args[0]
+
     def test_experiment_subprocess_omits_loss_weight_flags_when_uniform(self, tmp_path: Path) -> None:
         cfg = TrainingConfig(scenario="grid_ctf", data_path=tmp_path / "data.jsonl")
         (tmp_path / "data.jsonl").write_text("{}\n")
@@ -335,6 +355,57 @@ class TestConstraints:
 
         command = mock_run.call_args.args[0]
         assert "--loss-weight-by-score" not in command  # uniform default stays off the command line
+
+    def test_experiment_subprocess_passes_train_steps_when_set(self, tmp_path: Path) -> None:
+        """--train-steps must flow CLI -> TrainingConfig -> subprocess, else `autoctx train
+        --backend mlxlm --train-steps 80` silently trains the adapter for the 8-step default."""
+        cfg = TrainingConfig(scenario="grid_ctf", data_path=tmp_path / "data.jsonl", backend="mlxlm", train_steps=80)
+        (tmp_path / "data.jsonl").write_text("{}\n")
+        runner = TrainingRunner(cfg, work_dir=tmp_path / "workspace")
+
+        completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+        with patch("autocontext.training.runner.subprocess.run", return_value=completed) as mock_run:
+            runner._run_experiment_subprocess(0)
+
+        command = mock_run.call_args.args[0]
+        assert command[command.index("--train-steps") + 1] == "80"
+
+    def test_experiment_subprocess_omits_train_steps_when_unset(self, tmp_path: Path) -> None:
+        cfg = TrainingConfig(scenario="grid_ctf", data_path=tmp_path / "data.jsonl")  # train_steps=0
+        (tmp_path / "data.jsonl").write_text("{}\n")
+        runner = TrainingRunner(cfg, work_dir=tmp_path / "workspace")
+
+        completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+        with patch("autocontext.training.runner.subprocess.run", return_value=completed) as mock_run:
+            runner._run_experiment_subprocess(0)
+
+        # Unset stays off the command line so train.py applies its per-backend default.
+        assert "--train-steps" not in mock_run.call_args.args[0]
+
+    def test_experiment_subprocess_passes_learning_rate_when_set(self, tmp_path: Path) -> None:
+        """--learning-rate must flow CLI -> TrainingConfig -> subprocess (the documented flag);
+        else `autoctx train --backend mlxlm --learning-rate 1e-4` can't override the default."""
+        cfg = TrainingConfig(scenario="grid_ctf", data_path=tmp_path / "data.jsonl", backend="mlxlm", learning_rate=1e-4)
+        (tmp_path / "data.jsonl").write_text("{}\n")
+        runner = TrainingRunner(cfg, work_dir=tmp_path / "workspace")
+
+        completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+        with patch("autocontext.training.runner.subprocess.run", return_value=completed) as mock_run:
+            runner._run_experiment_subprocess(0)
+
+        command = mock_run.call_args.args[0]
+        assert command[command.index("--learning-rate") + 1] == "0.0001"
+
+    def test_experiment_subprocess_omits_learning_rate_when_unset(self, tmp_path: Path) -> None:
+        cfg = TrainingConfig(scenario="grid_ctf", data_path=tmp_path / "data.jsonl")  # learning_rate=0.0
+        (tmp_path / "data.jsonl").write_text("{}\n")
+        runner = TrainingRunner(cfg, work_dir=tmp_path / "workspace")
+
+        completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+        with patch("autocontext.training.runner.subprocess.run", return_value=completed) as mock_run:
+            runner._run_experiment_subprocess(0)
+
+        assert "--learning-rate" not in mock_run.call_args.args[0]
 
     def test_convergence_nudge_after_consecutive_discards(self, tmp_path: Path) -> None:
         cfg = TrainingConfig(scenario="grid_ctf", data_path=tmp_path / "data.jsonl")

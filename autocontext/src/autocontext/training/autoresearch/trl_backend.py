@@ -102,7 +102,10 @@ def build_grpo_config_kwargs(
     output_dir: str,
     learning_rate: float = 1e-5,
     num_generations: int = 8,
-    max_completion_length: int = 256,
+    # 512, not 256: reasoning tasks (e.g. GSM8K) need room for step-by-step work + the final
+    # answer. At 256 every completion truncates before the answer, the verifier scores them all
+    # 0, reward variance is 0, and GRPO gets no gradient -- RLVR silently learns nothing.
+    max_completion_length: int = 512,
     beta: float = 0.0,
     temperature: float = 1.0,
     num_train_epochs: float = 1.0,
@@ -204,6 +207,7 @@ def run_trl_training(
     max_steps: int = -1,
     batch_size: int = 0,
     seed: int = 0,
+    max_completion_length: int = 512,  # grpo: generation cap (>= task answer length; see build_grpo_config_kwargs)
     register_import: str | None = None,
     time_budget: int = 3600,
     memory_limit_mb: int = 16384,  # noqa: ARG001 - backend-signature parity
@@ -280,7 +284,11 @@ def run_trl_training(
 
         dataset = Dataset.from_list(build_prompt_dataset_rows(scenario, n_prompts))
         grpo_kwargs: dict[str, Any] = dict(
-            output_dir=str(output_dir), learning_rate=learning_rate, max_steps=max_steps, seed=seed
+            output_dir=str(output_dir),
+            learning_rate=learning_rate,
+            max_steps=max_steps,
+            seed=seed,
+            max_completion_length=max_completion_length,
         )
         if batch_size > 0:
             grpo_kwargs["per_device_train_batch_size"] = batch_size

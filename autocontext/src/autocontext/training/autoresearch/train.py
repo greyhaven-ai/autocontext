@@ -350,6 +350,25 @@ def _preflight_backend_deps(backend: str) -> None:
         raise RuntimeError(f"{lead}; missing: {', '.join(missing)}. Install with: {install}")
 
 
+def _default_train_steps(backend: str) -> int:
+    """Resolve ``--train-steps`` when left unset (<= 0).
+
+    The from-scratch GPT backends (mlx/cuda) converge in a handful of steps; the
+    pretrained-adapter backends (mlxlm LoRA / opd distillation / grpo+trl RLVR) need far more
+    to move a strong prior, so the old global default of 8 silently undertrained them (an
+    8-step LoRA learns almost nothing). Users still override explicitly with --train-steps."""
+    return 8 if backend in ("mlx", "cuda") else 100
+
+
+def _default_learning_rate(backend: str) -> float:
+    """Resolve ``--learning-rate`` when left unset (<= 0).
+
+    The from-scratch GPT backends train at 1e-3; that rate is ~10x too high for a LoRA adapter
+    and diverges it to garbage tokens, so each pretrained-adapter backend gets the rate its own
+    entry point is tuned for (mlxlm LoRA 1e-4; opd/grpo/trl RLVR+distillation 1e-5)."""
+    return {"mlx": 1e-3, "cuda": 1e-3, "mlxlm": 1e-4}.get(backend, 1e-5)
+
+
 def run_training(
     *,
     scenario_name: str,
@@ -357,9 +376,9 @@ def run_training(
     output_dir: Path,
     time_budget: int,
     memory_limit_mb: int,
-    train_steps: int = 8,
+    train_steps: int = 0,  # 0 = backend default (see _default_train_steps)
     batch_size: int = 4,
-    learning_rate: float = 1e-3,
+    learning_rate: float = 0.0,  # 0 = backend default (see _default_learning_rate)
     seq_len: int = 128,
     assess_samples: int = 8,
     assess_temperature: float = 0.0,
@@ -377,6 +396,7 @@ def run_training(
     teacher_model: str = "",  # opd backend: distillation teacher (empty = backend default)
     trl_mode: str = "gkd",  # trl backend: gkd (on-policy distillation) | grpo (RLVR)
     seed: int = 0,  # trl backend: training seed (for seeded repeats / error bars)
+    max_completion_length: int = 512,  # trl grpo: generation cap (>= task answer length; 256 truncates reasoning)
     fine_tune_type: str = "lora",
     num_layers: int = 8,
     collect_samples_path: Path | None = None,
@@ -394,6 +414,10 @@ def run_training(
         raise ValueError(f"vocab_size must be >= 256 (the byte-level BPE base), got {vocab_size}")
 
     normalized_backend = backend.strip().lower()
+    if train_steps <= 0:  # resolve the unset sentinel to a backend-appropriate step count
+        train_steps = _default_train_steps(normalized_backend)
+    if learning_rate <= 0:  # likewise: a from-scratch LR diverges a LoRA adapter
+        learning_rate = _default_learning_rate(normalized_backend)
     # Shared args; backend extras added per dispatch (each entry runs its own dep preflight).
     common: dict[str, Any] = dict(
         scenario_name=scenario_name,
@@ -419,8 +443,10 @@ def run_training(
         return _run_mlx_training(
             **common, seq_len=seq_len, assess_top_k=assess_top_k, val_select=val_select, collect_samples_path=collect_samples_path
         )
-    if collect_samples_path is not None:
-        raise NotImplementedError("collect_samples_path (self-improving loop) is currently MLX-only")
+    if collect_samples_path is not None and normalized_backend != "mlxlm":
+        # mlx (above) and mlxlm (below) collect assessment samples for the ReST-EM loop; the
+        # online-RL / distillation backends (cuda/grpo/opd/trl) have no SFT-sample collection.
+        raise NotImplementedError("collect_samples_path (self-improving loop) supports the mlx and mlxlm backends")
     if normalized_backend == "cuda":
         if val_select:
             raise ValueError("val_select is currently MLX-only; omit it for the cuda backend")
@@ -443,6 +469,7 @@ def run_training(
             base_model=base_model or DEFAULT_BASE_MODEL,
             fine_tune_type=fine_tune_type,
             num_layers=num_layers,
+            collect_samples_path=collect_samples_path,
         )
     if normalized_backend == "grpo":
         if loss_weight_mode != "uniform" or vocab_size != BASE_VOCAB_SIZE:
@@ -508,6 +535,7 @@ def run_training(
             max_steps=train_steps if train_steps > 0 else -1,  # generic --train-steps -> TRL step cap
             batch_size=batch_size,
             seed=seed,
+            max_completion_length=max_completion_length,
             time_budget=time_budget,
             memory_limit_mb=memory_limit_mb,
         )
@@ -522,11 +550,16 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--backend", choices=("mlx", "cuda", "mlxlm", "grpo", "opd", "trl"), default="mlx")
     parser.add_argument("--trl-mode", choices=("gkd", "grpo"), default="gkd", help="trl backend: gkd | grpo")
     parser.add_argument("--seed", type=int, default=0, help="trl backend: training seed (seeded repeats)")
+    parser.add_argument(
+        "--max-completion-length", type=int, default=512, help="trl grpo: generation cap (256 truncates reasoning -> 0 reward)"
+    )
     parser.add_argument("--time-budget", type=int, default=300)
     parser.add_argument("--memory-limit", type=int, default=16384)
-    parser.add_argument("--train-steps", type=int, default=8)
+    parser.add_argument("--train-steps", type=int, default=0, help="0 = backend default (8 from-scratch, 100 adapters)")
     parser.add_argument("--batch-size", type=int, default=4)
-    parser.add_argument("--learning-rate", type=float, default=1e-3)
+    parser.add_argument(
+        "--learning-rate", type=float, default=0.0, help="0 = backend default (1e-3 from-scratch, 1e-4 mlxlm, 1e-5 opd/grpo/trl)"
+    )
     parser.add_argument("--seq-len", type=int, default=128)
     parser.add_argument("--assess-samples", type=int, default=8)
     parser.add_argument("--assess-temperature", type=float, default=0.0, help="assessment sampling temp (<=0 greedy)")
@@ -577,6 +610,7 @@ def main(argv: list[str] | None = None) -> int:
             teacher_model=args.teacher_model,
             trl_mode=args.trl_mode,
             seed=args.seed,
+            max_completion_length=args.max_completion_length,
             fine_tune_type=args.fine_tune_type,
             num_layers=args.num_layers,
             backend=args.backend,

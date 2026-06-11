@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import ValidationError
 
 from autocontext.config import load_settings
@@ -101,6 +103,23 @@ def create_app(
 ) -> FastAPI:
     """Factory that creates the FastAPI app, optionally wired to a LoopController."""
     application = FastAPI(title="autocontext API", version="0.1.0")
+    # Local GUI clients (cowork desktop webview, browser dev servers) call the
+    # HTTP API cross-origin. The engine binds to localhost, so allowing
+    # explicit local-app origins is safe; override via AUTOCONTEXT_CORS_ORIGINS.
+    cors_origins = [
+        origin.strip()
+        for origin in os.environ.get(
+            "AUTOCONTEXT_CORS_ORIGINS",
+            "http://localhost:1420,http://localhost:4173,http://localhost:3000,tauri://localhost",
+        ).split(",")
+        if origin.strip()
+    ]
+    application.add_middleware(
+        CORSMiddleware,
+        allow_origins=cors_origins,
+        allow_methods=["GET", "PUT", "POST"],
+        allow_headers=["content-type"],
+    )
     application.include_router(cockpit_router)
     application.include_router(hub_router)
     application.include_router(knowledge_router)

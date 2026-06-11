@@ -332,6 +332,7 @@ Yes. Wire `autoctx mcp-serve` (or `bunx autoctx mcp-serve`) into Claude Code, Cu
 - Repo layout for coding agents: [AGENTS.md](AGENTS.md)
 - Local + cross-platform model training (MLX and TRL backends): [autocontext/docs/mlx-training.md](autocontext/docs/mlx-training.md)
 - Validated training result (on-policy distillation vs RLVR on GSM8K): [autocontext/docs/case-study-on-policy-distillation.md](autocontext/docs/case-study-on-policy-distillation.md)
+- Recursive loop closed end to end on local MLX (train -> auto-serve -> improve): [autocontext/docs/case-study-recursive-loop.md](autocontext/docs/case-study-recursive-loop.md)
 - Sandbox and executor notes: [autocontext/docs/sandbox.md](autocontext/docs/sandbox.md)
 - Persistent host worker: [autocontext/docs/persistent-host.md](autocontext/docs/persistent-host.md)
 - License: [LICENSE](LICENSE)

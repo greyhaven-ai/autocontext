@@ -38,6 +38,32 @@ def test_records_to_completions_buckets_by_score() -> None:
     assert all("Target quality" not in c["prompt"] for c in plain)
 
 
+def test_records_to_completions_uses_text_strategy_verbatim_for_agent_tasks() -> None:
+    """Agent-task scenarios carry the raw text output as the strategy; it must be the completion
+    verbatim, not json.dumps'd (which would wrap/escape it and break the self-improving loop)."""
+    text = "The answer is 42.\n#### 42"
+    comps = mb.records_to_completions([{"strategy": text, "score": 1.0}], task_prompt="Solve it.")
+    assert comps[0]["completion"] == text  # verbatim, not '"The answer is 42...."'
+    # a dict strategy (game scenario) still serializes to JSON
+    game = mb.records_to_completions([{"strategy": {"a": 1}, "score": 1.0}], task_prompt="T")
+    assert game[0]["completion"] == '{"a": 1}'
+
+
+def test_records_to_completions_uses_per_record_prompt_for_dataset_tasks() -> None:
+    """Dataset-style agent tasks (GSM8K) carry their own per-problem prompt; each completion must
+    train on its own instruction, not the single scenario-level task_prompt."""
+    records = [
+        {"prompt": "What is 2+2?", "strategy": "Answer: 4", "score": 1.0},
+        {"prompt": "What is 3+5?", "strategy": "Answer: 8", "score": 1.0},
+    ]
+    comps = mb.records_to_completions(records, task_prompt="UNUSED FALLBACK")
+    assert comps[0]["prompt"] == "What is 2+2?" and comps[0]["completion"] == "Answer: 4"
+    assert comps[1]["prompt"] == "What is 3+5?" and comps[1]["completion"] == "Answer: 8"
+    # a record without its own prompt falls back to the scenario task_prompt
+    fallback = mb.records_to_completions([{"strategy": "x", "score": 1.0}], task_prompt="THE TASK")
+    assert fallback[0]["prompt"] == "THE TASK"
+
+
 def test_write_completion_dataset_writes_train_and_valid(tmp_path: Path) -> None:
     records = [{"strategy": {"a": i}, "score": i / 10} for i in range(10)]
     data_dir = tmp_path / "data"
@@ -56,6 +82,24 @@ def test_write_completion_dataset_single_record_reuses_for_valid(tmp_path: Path)
     data_dir = tmp_path / "data"
     n_train, n_val = mb.write_completion_dataset([{"strategy": {"a": 1}, "score": 1.0}], data_dir, task_prompt="T")
     assert n_train == 1 and n_val == 1  # valid reuses the single example
+
+
+def test_write_completion_dataset_threads_per_record_prompts(tmp_path: Path) -> None:
+    """End-to-end through the public writer: dataset-style agent tasks (GSM8K) keep each record's
+    own problem as the prompt, so an SFT example pairs the right problem with the right solution."""
+    records = [
+        {"prompt": "Q1: 2+2?", "strategy": "Answer: 4", "score": 1.0},
+        {"prompt": "Q2: 3+5?", "strategy": "Answer: 8", "score": 1.0},
+    ]
+    data_dir = tmp_path / "data"
+    mb.write_completion_dataset(records, data_dir, task_prompt="UNUSED", val_fraction=0.5)
+    written = {
+        json.loads(line)["prompt"]: json.loads(line)["completion"]
+        for path in ("train.jsonl", "valid.jsonl")
+        for line in (data_dir / path).read_text(encoding="utf-8").splitlines()
+        if line
+    }
+    assert written == {"Q1: 2+2?": "Answer: 4", "Q2: 3+5?": "Answer: 8"}
 
 
 def test_mlxlm_registered_in_backend_registry() -> None:
@@ -160,3 +204,62 @@ def test_mlxlm_end_to_end_smoke(tmp_path: Path) -> None:
         backend="mlxlm",
     )
     assert "avg_score" in metrics and "num_records" in metrics
+
+
+def test_format_assess_prompt_applies_chat_template() -> None:
+    """Assessment must wrap the prompt in the instruct chat template (matching training + serving);
+    a raw prompt makes an instruct model emit prose, not verifier-scorable JSON (the ~0-metric bug)."""
+
+    class _Tok:
+        def apply_chat_template(self, messages, add_generation_prompt, tokenize):
+            assert add_generation_prompt is True and tokenize is False
+            return f"<|user|>{messages[0]['content']}<|assistant|>"
+
+    out = mb.format_assess_prompt(_Tok(), "do the task", score_conditioned=False)
+    assert out == "<|user|>do the task<|assistant|>"
+
+
+def test_format_assess_prompt_prefixes_quality_when_score_conditioned() -> None:
+    class _Tok:
+        def apply_chat_template(self, messages, add_generation_prompt, tokenize):
+            return messages[0]["content"]  # echo content so we can assert the prefix
+
+    out = mb.format_assess_prompt(_Tok(), "do the task", score_conditioned=True)
+    assert out.startswith("Target quality:")
+    assert out.endswith("do the task")
+
+
+def test_format_assess_prompt_falls_back_to_raw_without_chat_template() -> None:
+    class _Tok:
+        def apply_chat_template(self, *a, **k):
+            raise ValueError("no chat template")
+
+    assert mb.format_assess_prompt(_Tok(), "raw text", score_conditioned=False) == "raw text"
+
+
+def test_scenario_task_prompt_and_state_resolves_agent_task_state() -> None:
+    """Agent-task scenarios must return the state the prompt was built from, so evaluate_output
+    gets that same state at scoring time (calling it without state raises and is swallowed)."""
+
+    class _Agent:
+        def initial_state(self, seed=None):
+            return {"n": 3}
+
+        def get_task_prompt(self, state):
+            return f"solve n={state['n']}"
+
+    prompt, state = mb.scenario_task_prompt_and_state(_Agent())
+    assert prompt == "solve n=3"
+    assert state == {"n": 3}
+
+
+def test_scenario_task_prompt_and_state_none_for_game_scenarios() -> None:
+    class _Game:
+        def describe_strategy_interface(self):
+            return "Return JSON."
+
+    prompt, state = mb.scenario_task_prompt_and_state(_Game())
+    assert state is None  # games score via execute_match, which takes no state
+    assert "Return JSON." in prompt
+    # the state-agnostic alias still returns just the prompt
+    assert mb.scenario_task_prompt(_Game()) == prompt
