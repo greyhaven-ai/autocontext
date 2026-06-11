@@ -1,9 +1,7 @@
+import type { TraceGateOperatorView } from "../analytics/trace-gate-operator-view.js";
 import type { RunManager } from "../server/run-manager.js";
 import type { TuiActivitySettings } from "./activity-summary.js";
-import {
-  resetTuiActivitySettings,
-  saveTuiActivitySettings,
-} from "./activity-settings-store.js";
+import { resetTuiActivitySettings, saveTuiActivitySettings } from "./activity-settings-store.js";
 import {
   handleTuiLogin,
   handleTuiLogout,
@@ -87,9 +85,8 @@ async function loadTuiRuntimeSessionTimeline(
 ): Promise<string[]> {
   const { RuntimeSessionEventStore } = await import("../session/runtime-events.js");
   const { runtimeSessionIdForRun } = await import("../session/runtime-session-ids.js");
-  const { executeRuntimeSessionsCommandWorkflow } = await import(
-    "../cli/runtime-session-command-workflow.js"
-  );
+  const { executeRuntimeSessionsCommandWorkflow } =
+    await import("../cli/runtime-session-command-workflow.js");
   const store = new RuntimeSessionEventStore(manager.getDbPath());
   try {
     return executeRuntimeSessionsCommandWorkflow({
@@ -105,6 +102,24 @@ async function loadTuiRuntimeSessionTimeline(
   }
 }
 
+async function renderTuiTraceGates(manager: RunManager, runId: string): Promise<string[]> {
+  const { buildTraceGateReviewApiRoutes } = await import("../server/trace-gate-review-api.js");
+  const { renderTraceGateOperatorViewLines } =
+    await import("../analytics/trace-gate-operator-view.js");
+  const response = buildTraceGateReviewApiRoutes({
+    runsRoot: manager.getRunsRoot(),
+  }).getByRunId(runId);
+  if (response.status >= 400) {
+    const body = response.body as { detail?: unknown };
+    return [
+      typeof body.detail === "string"
+        ? body.detail
+        : `trace gate review failed: ${response.status}`,
+    ];
+  }
+  return renderTraceGateOperatorViewLines(response.body as TraceGateOperatorView);
+}
+
 export function formatCommandHelp(): string[] {
   return formatTuiCommandHelp();
 }
@@ -117,83 +132,89 @@ export async function handleInteractiveTuiCommand(args: {
   activitySettings?: TuiActivitySettings;
 }): Promise<HandleInteractiveTuiCommandResult> {
   const { manager, configDir, pendingLogin } = args;
-  return executeTuiInteractiveCommandWorkflow({
-    raw: args.raw,
-    pendingLogin,
-    activitySettings: args.activitySettings,
-  }, {
-    pendingLogin: {
-      login(provider, apiKey, model, baseUrl) {
-        return handleTuiLogin(configDir, provider, apiKey, model, baseUrl);
+  return executeTuiInteractiveCommandWorkflow(
+    {
+      raw: args.raw,
+      pendingLogin,
+      activitySettings: args.activitySettings,
+    },
+    {
+      pendingLogin: {
+        login(provider, apiKey, model, baseUrl) {
+          return handleTuiLogin(configDir, provider, apiKey, model, baseUrl);
+        },
+        selectProvider(provider) {
+          return applyProviderSelection(manager, configDir, provider);
+        },
       },
-      selectProvider(provider) {
-        return applyProviderSelection(manager, configDir, provider);
+      activity: {
+        reset() {
+          return resetTuiActivitySettings(configDir);
+        },
+        save(settings) {
+          saveTuiActivitySettings(configDir, settings);
+        },
+      },
+      operator: manager,
+      solve: manager,
+      startRun: manager,
+      readActiveRunId() {
+        return manager.getState().runId;
+      },
+      runInspection: {
+        renderStatus(runId) {
+          return renderTuiRunStatus(manager, runId);
+        },
+        renderShow(runId, best) {
+          return renderTuiRunShow(manager, runId, best);
+        },
+        renderTimeline(runId) {
+          return loadTuiRuntimeSessionTimeline(manager, runId);
+        },
+        renderTraceGates(runId) {
+          return renderTuiTraceGates(manager, runId);
+        },
+      },
+      chat: manager,
+      authStatus: {
+        selectProvider(provider) {
+          return applyProviderSelection(manager, configDir, provider);
+        },
+        readWhoami(preferredProvider) {
+          return handleTuiWhoami(configDir, preferredProvider);
+        },
+        getActiveProvider() {
+          return manager.getActiveProviderType() ?? undefined;
+        },
+      },
+      authLogout: {
+        logout(provider) {
+          handleTuiLogout(configDir, provider);
+        },
+        clearActiveProvider() {
+          manager.clearActiveProvider();
+        },
+        getActiveProvider() {
+          return manager.getActiveProviderType() ?? undefined;
+        },
+        selectProvider(preferredProvider) {
+          return applyProviderSelection(manager, configDir, preferredProvider);
+        },
+        readWhoami(preferredProvider) {
+          return handleTuiWhoami(configDir, preferredProvider);
+        },
+      },
+      authLogin: {
+        providerRequiresKey(provider) {
+          return getKnownProvider(provider)?.requiresKey ?? true;
+        },
+        login(provider, apiKey, model, baseUrl) {
+          return handleTuiLogin(configDir, provider, apiKey, model, baseUrl);
+        },
+        selectProvider(provider) {
+          return applyProviderSelection(manager, configDir, provider);
+        },
       },
     },
-    activity: {
-      reset() {
-        return resetTuiActivitySettings(configDir);
-      },
-      save(settings) {
-        saveTuiActivitySettings(configDir, settings);
-      },
-    },
-    operator: manager,
-    solve: manager,
-    startRun: manager,
-    readActiveRunId() {
-      return manager.getState().runId;
-    },
-    runInspection: {
-      renderStatus(runId) {
-        return renderTuiRunStatus(manager, runId);
-      },
-      renderShow(runId, best) {
-        return renderTuiRunShow(manager, runId, best);
-      },
-      renderTimeline(runId) {
-        return loadTuiRuntimeSessionTimeline(manager, runId);
-      },
-    },
-    chat: manager,
-    authStatus: {
-      selectProvider(provider) {
-        return applyProviderSelection(manager, configDir, provider);
-      },
-      readWhoami(preferredProvider) {
-        return handleTuiWhoami(configDir, preferredProvider);
-      },
-      getActiveProvider() {
-        return manager.getActiveProviderType() ?? undefined;
-      },
-    },
-    authLogout: {
-      logout(provider) {
-        handleTuiLogout(configDir, provider);
-      },
-      clearActiveProvider() {
-        manager.clearActiveProvider();
-      },
-      getActiveProvider() {
-        return manager.getActiveProviderType() ?? undefined;
-      },
-      selectProvider(preferredProvider) {
-        return applyProviderSelection(manager, configDir, preferredProvider);
-      },
-      readWhoami(preferredProvider) {
-        return handleTuiWhoami(configDir, preferredProvider);
-      },
-    },
-    authLogin: {
-      providerRequiresKey(provider) {
-        return getKnownProvider(provider)?.requiresKey ?? true;
-      },
-      login(provider, apiKey, model, baseUrl) {
-        return handleTuiLogin(configDir, provider, apiKey, model, baseUrl);
-      },
-      selectProvider(provider) {
-        return applyProviderSelection(manager, configDir, provider);
-      },
-    },
-  });
+  );
 }

@@ -47,6 +47,7 @@ import { buildOpenClawApiRoutes } from "./openclaw-api.js";
 import { buildBackgroundSessionApiRoutes } from "./background-session-api.js";
 import { buildRuntimeSessionApiRoutes } from "./runtime-session-api.js";
 import { buildSimulationApiRoutes } from "./simulation-api.js";
+import { buildTraceGateReviewApiRoutes } from "./trace-gate-review-api.js";
 import { renderDashboardHtml } from "./simulation-dashboard.js";
 import { buildSessionBootstrapMessages, buildStateMessage } from "./websocket-session-bootstrap.js";
 import { parseClientMessage } from "./protocol.js";
@@ -220,6 +221,9 @@ export class InteractiveServer {
     const runtimeSessionApi = buildRuntimeSessionApiRoutes({
       openStore: () => new RuntimeSessionEventStore(this.#runManager.getDbPath()),
     });
+    const traceGateReviewApi = buildTraceGateReviewApiRoutes({
+      runsRoot: this.#runManager.getRunsRoot(),
+    });
     const hubApi = buildHubApiRoutes({
       runsRoot: this.#runManager.getRunsRoot(),
       knowledgeRoot: this.#runManager.getKnowledgeRoot(),
@@ -293,6 +297,7 @@ export class InteractiveServer {
           openclaw: "/api/openclaw",
           cockpit: "/api/cockpit",
           context_selection: "/api/cockpit/runs/:run_id/context-selection",
+          trace_gates: "/api/cockpit/runs/:run_id/trace-gates",
           background_sessions: {
             list: "/api/cockpit/background-sessions",
             show: "/api/cockpit/background-sessions/:session_id",
@@ -630,6 +635,14 @@ export class InteractiveServer {
     if (method === "GET" && cockpitRunRuntimeSessionMatch) {
       const [, rawRunId] = cockpitRunRuntimeSessionMatch;
       const response = runtimeSessionApi.getByRunId(decodeURIComponent(rawRunId!));
+      json(response.status, response.body);
+      return;
+    }
+
+    const cockpitTraceGateReviewMatch = url.match(/^\/api\/cockpit\/runs\/([^/]+)\/trace-gates$/);
+    if (method === "GET" && cockpitTraceGateReviewMatch) {
+      const [, rawRunId] = cockpitTraceGateReviewMatch;
+      const response = traceGateReviewApi.getByRunId(decodeURIComponent(rawRunId!));
       json(response.status, response.body);
       return;
     }

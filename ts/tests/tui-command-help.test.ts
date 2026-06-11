@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -27,7 +27,9 @@ describe("TUI command help", () => {
     expect(help).toContain("/show <run-id> --best");
     expect(help).toContain("/watch <run-id>");
     expect(help).toContain("/timeline <run-id>");
-    expect(help).toContain("/activity [status|reset|<all|runtime|prompts|commands|children|errors> [quiet|normal|verbose]]");
+    expect(help).toContain(
+      "/activity [status|reset|<all|runtime|prompts|commands|children|errors> [quiet|normal|verbose]]",
+    );
   });
 
   it("turns /solve plain language into scenario creation and a run", async () => {
@@ -107,6 +109,52 @@ describe("TUI command help", () => {
     );
   });
 
+  it("renders the active run trace findings and gate decisions", async () => {
+    const runsRoot = mkdtempSync(join(tmpdir(), "tui-trace-gates-"));
+    const reportDir = join(runsRoot, "run-123", "trace-findings");
+    mkdirSync(reportDir, { recursive: true });
+    writeFileSync(
+      join(reportDir, "latest.json"),
+      JSON.stringify({
+        reportId: "report-run-123",
+        traceId: "trace-run-123",
+        sourceHarness: "autocontext",
+        createdAt: "2026-06-01T12:00:00.000Z",
+        summary: "1 finding(s) across 1 category.",
+        metadata: {},
+        findings: [
+          {
+            findingId: "finding-tool-1",
+            category: "tool_call_failure",
+            severity: "high",
+            title: "Patch tool failed twice",
+            description: "patch hunk did not apply",
+            evidenceMessageIndexes: [1, 3],
+          },
+        ],
+        failureMotifs: [],
+      }),
+    );
+    const manager = {
+      getState: vi.fn(() => ({ runId: "run-123" })),
+      getRunsRoot: vi.fn(() => runsRoot),
+    };
+
+    const result = await handleInteractiveTuiCommand({
+      manager: manager as never,
+      configDir: ".",
+      raw: "/findings",
+      pendingLogin: null,
+    });
+
+    expect(result.logLines).toEqual(
+      expect.arrayContaining([
+        "Trace gates for run-123 — ready",
+        "- [high/tool_call_failure] Patch tool failed twice evidence=msg #1, msg #3 proposals=none",
+      ]),
+    );
+  });
+
   it("updates live activity feed focus and verbosity", async () => {
     const manager = {};
     const configDir = mkdtempSync(join(tmpdir(), "tui-activity-command-"));
@@ -153,13 +201,17 @@ describe("TUI command help", () => {
     const settingsPath = join(configDir, TUI_SETTINGS_FILE);
     writeFileSync(
       settingsPath,
-      `${JSON.stringify({
-        activity: {
-          filter: "commands",
-          verbosity: "quiet",
+      `${JSON.stringify(
+        {
+          activity: {
+            filter: "commands",
+            verbosity: "quiet",
+          },
+          updatedAt: "2026-04-10T00:00:00.000Z",
         },
-        updatedAt: "2026-04-10T00:00:00.000Z",
-      }, null, 2)}\n`,
+        null,
+        2,
+      )}\n`,
       "utf-8",
     );
     const before = readFileSync(settingsPath, "utf-8");
@@ -183,13 +235,17 @@ describe("TUI command help", () => {
     const settingsPath = join(configDir, TUI_SETTINGS_FILE);
     writeFileSync(
       settingsPath,
-      `${JSON.stringify({
-        activity: {
-          filter: "runtime",
-          verbosity: "verbose",
+      `${JSON.stringify(
+        {
+          activity: {
+            filter: "runtime",
+            verbosity: "verbose",
+          },
+          updatedAt: "2026-04-10T00:00:00.000Z",
         },
-        updatedAt: "2026-04-10T00:00:00.000Z",
-      }, null, 2)}\n`,
+        null,
+        2,
+      )}\n`,
       "utf-8",
     );
     const before = readFileSync(settingsPath, "utf-8");

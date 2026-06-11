@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import logging
+from json import JSONDecodeError
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from autocontext.analytics.artifact_rendering import render_scenario_curation_html, scenario_curation_view_from_artifacts
 from autocontext.consultation.runner import ConsultationRunner
@@ -20,6 +21,7 @@ from autocontext.providers.registry import create_provider
 from autocontext.providers.retry import RetryProvider
 from autocontext.server.background_session_api import background_session_router
 from autocontext.server.changelog import build_changelog
+from autocontext.server.trace_gate_review_api import build_run_trace_gate_review
 from autocontext.server.writeup import generate_writeup, generate_writeup_html
 from autocontext.session.runtime_events import RuntimeSessionEventStore
 from autocontext.session.runtime_session_ids import runtime_session_id_for_run
@@ -98,8 +100,6 @@ def _runtime_session_discovery(
 
 def _runtime_session_not_found(message: str, session_id: str) -> HTTPException:
     return HTTPException(status_code=404, detail={"detail": message, "session_id": session_id})
-
-
 
 
 class NotebookUpdateBody(BaseModel):
@@ -226,7 +226,6 @@ def cockpit_delete_notebook(session_id: str, request: Request) -> dict[str, str]
     return {"status": "deleted", "session_id": session_id}
 
 
-
 # ---------------------------------------------------------------------------
 # Runtime-session endpoints (provider runtime observability)
 # ---------------------------------------------------------------------------
@@ -321,10 +320,23 @@ def get_run_runtime_session(run_id: str, request: Request) -> dict[str, Any]:
     finally:
         runtime_store.close()
 
-
 # ---------------------------------------------------------------------------
 # Run endpoints (read-only)
 # ---------------------------------------------------------------------------
+
+
+@cockpit_router.get("/runs/{run_id}/trace-gates")
+def get_run_trace_gate_review(run_id: str, request: Request) -> dict[str, Any]:
+    """Read trace findings, proposals, and gate decisions for operator review."""
+    settings = getattr(request.app.state, "app_settings", None)
+    if settings is None:
+        raise HTTPException(status_code=500, detail="Application settings are not configured")
+    try:
+        return build_run_trace_gate_review(runs_root=settings.runs_root, run_id=run_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except (OSError, JSONDecodeError, ValidationError) as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @cockpit_router.get("/runs")
