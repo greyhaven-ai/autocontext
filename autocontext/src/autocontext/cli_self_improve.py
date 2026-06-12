@@ -92,8 +92,15 @@ def register_self_improve_command(app: typer.Typer, console: Console) -> None:
             )
         console.print(table)
         console.print(f"[green]Best avg_score:[/green] {result['best_avg_score']:.4f} | final dataset: {result['final_dataset']}")
-        if result.get("final_model_dir"):
+        # The model to ship is the best-scoring pass, not blindly the final one (the loop can
+        # peak early and decay). Highlight it; show the final all-data model only as a footnote.
+        if result.get("best_model_dir"):
             console.print(
-                f"[green]Final model:[/green] {result['final_model_dir']} "
+                f"[bold green]Best model (ship this):[/bold green] {result['best_model_dir']} "
+                f"(avg_score {result['best_avg_score']:.4f}, from {result.get('best_round')})"
+            )
+        if result.get("final_model_dir") and result.get("best_round") != "final":
+            console.print(
+                f"[dim]Final all-data model:[/dim] {result['final_model_dir']} "
                 f"(avg_score {result['final_avg_score']:.4f}, trained on all {result['final_dataset_size']} records)"
             )

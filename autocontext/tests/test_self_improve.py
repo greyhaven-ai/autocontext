@@ -185,6 +185,32 @@ def test_run_self_improving_loop_threads_backend_and_adapter_params(tmp_path: st
     assert call["num_layers"] == 4
 
 
+def test_run_self_improving_loop_selects_best_round_not_last(tmp_path: str, monkeypatch) -> None:
+    """The loop can peak early and decay (the GSM8K STaR finding: round 1 best, then down). The
+    shipped model (best_model_dir/best_round) must be the highest-scoring pass, not blindly the
+    last/final one. Mocks training (no mlx)."""
+    import autocontext.training.autoresearch.train as train_mod
+
+    data_path = Path(tmp_path) / "seed.jsonl"
+    data_path.write_text(
+        json.dumps({"run_id": "r0", "scenario": "grid_ctf", "context": {}, "strategy": {"a": 1}, "score": 0.5}) + "\n",
+        encoding="utf-8",
+    )
+    # round_0=0.50, round_1=0.80 (peak), round_2=0.60, final=0.55 -> best is round_1
+    scores = iter([0.50, 0.80, 0.60, 0.55])
+    monkeypatch.setattr(train_mod, "run_training", lambda **kw: {"avg_score": next(scores), "valid_rate": 1.0})
+
+    out = Path(tmp_path) / "out"
+    result = run_self_improving_loop(scenario_name="grid_ctf", data_path=data_path, output_dir=out, rounds=3, final_train=True)
+
+    assert result["best_round"] == "round_1"
+    assert result["best_avg_score"] == 0.80
+    assert result["best_model_dir"] == str(out / "round_1")
+    # the final all-data pass scored lower (0.55) and must NOT be the shipped model
+    assert result["final_model_dir"] == str(out / "final")
+    assert result["best_model_dir"] != result["final_model_dir"]
+
+
 @pytest.mark.skipif(not HAS_MLX, reason="MLX not installed")
 def test_self_improving_loop_two_rounds_grows_dataset(tmp_path: str) -> None:
     """Two ReST-EM rounds: the loop trains, collects+filters samples, and the

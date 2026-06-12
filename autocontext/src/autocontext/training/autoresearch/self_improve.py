@@ -120,8 +120,11 @@ def run_self_improving_loop(
 
     Returns a dict with the per-round ``history`` (avg_score, sample/elite counts,
     growing dataset size), the final dataset path and size, the final model dir +
-    ``final_avg_score`` (``None`` when ``final_train`` is off), and the best
-    avg_score seen across all training passes.
+    ``final_avg_score`` (``None`` when ``final_train`` is off), the best avg_score
+    seen across all training passes, and -- the model to actually ship --
+    ``best_model_dir`` + ``best_round`` (``"round_N"`` or ``"final"``): the
+    highest-scoring pass, not blindly the last one. The loop can peak early and
+    decay (overfitting), so the last/final model is often not the best.
     """
     from autocontext.training.autoresearch.train import run_training
 
@@ -148,6 +151,8 @@ def run_self_improving_loop(
     carry_context = generated_context if generated_context is not None else representative_context(accumulated)
     history: list[dict[str, Any]] = []
     best_avg = float("-inf")
+    best_model_dir: str | None = None  # the model dir that scored best (NOT necessarily the last)
+    best_round: str | None = None  # which pass produced it: "round_N" or "final"
 
     def _train(dataset_path: Path, run_dir: Path, *, collect: Path | None) -> dict[str, float]:
         return run_training(
@@ -186,11 +191,13 @@ def run_self_improving_loop(
         new_records = samples_to_records(elite, scenario_name=scenario_name, run_id=f"gen_{r}", context=carry_context)
         accumulated = accumulated + new_records
 
-        best_avg = max(best_avg, float(metrics.get("avg_score", 0.0)))
+        round_avg = float(metrics.get("avg_score", 0.0))
+        if round_avg > best_avg:  # the loop can peak early and decay (overfitting); keep the BEST model, not the last
+            best_avg, best_model_dir, best_round = round_avg, str(round_dir), f"round_{r}"
         history.append(
             {
                 "round": r,
-                "avg_score": float(metrics.get("avg_score", 0.0)),
+                "avg_score": round_avg,
                 "valid_rate": float(metrics.get("valid_rate", 0.0)),
                 "num_samples": len(samples),
                 "num_elite": len(elite),
@@ -208,8 +215,9 @@ def run_self_improving_loop(
         final_dir = output_dir / "final"
         final_metrics = _train(final_path, final_dir, collect=None)
         final_avg_score = float(final_metrics.get("avg_score", 0.0))
-        best_avg = max(best_avg, final_avg_score)
         final_model_dir = str(final_dir)
+        if final_avg_score > best_avg:  # the final all-data pass can overfit; only prefer it when it actually scores best
+            best_avg, best_model_dir, best_round = final_avg_score, final_model_dir, "final"
 
     return {
         "scenario": scenario_name,
@@ -220,4 +228,7 @@ def run_self_improving_loop(
         "final_model_dir": final_model_dir,
         "final_avg_score": final_avg_score,
         "best_avg_score": best_avg if best_avg != float("-inf") else 0.0,
+        # The model to actually ship: the highest-scoring pass, not blindly the last/final one.
+        "best_model_dir": best_model_dir,
+        "best_round": best_round,
     }
