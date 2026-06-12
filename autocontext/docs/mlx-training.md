@@ -400,12 +400,17 @@ emits the structured `<|...|>` token contract, so on it agent tasks must be the
 structured (JSON-strategy) kind, not free text.
 
 Because each round trains _before_ appending its own elite, the loop runs one final
-training pass over the full accumulated dataset so the shipped model reflects every
-collected sample (including the last round's elite). That model lands in
-`<output-dir>/final` and its score is reported as `final_avg_score`. Generated elite
-records inherit the seed dataset's representative (most common) `context` so every
-training example shares the same context prefix, rather than mixing the seed records'
-playbook/hints context with empty prefixes for generated examples.
+training pass over the full accumulated dataset (it lands in `<output-dir>/final`, scored
+as `final_avg_score`) so a model that has seen every collected sample exists. **That final
+pass is not automatically the one to deploy:** training on the full accumulated dataset can
+overfit and regress below an earlier round, so the loop tracks the highest-scoring pass
+across all rounds _and_ the final pass and reports it as **`best_model_dir`** (with
+`best_round` = `"round_N"` or `"final"` and `best_avg_score`). **Ship `best_model_dir`** —
+it is the deployable artifact; `final_model_dir` is retained only for compatibility and
+inspection (the final pass is preferred as best only when it actually scores highest).
+Generated elite records inherit the seed dataset's representative (most common) `context`
+so every training example shares the same context prefix, rather than mixing the seed
+records' playbook/hints context with empty prefixes for generated examples.
 
 | Flag                  | Default   | Meaning                                                                                               |
 | --------------------- | --------- | ----------------------------------------------------------------------------------------------------- |
@@ -429,9 +434,12 @@ uv run autoctx self-improve \
 ```
 
 The command prints a per-round table (avg_score, samples generated, elite kept,
-growing dataset size), the final model directory + its `final_avg_score`, and writes
-the full accumulated dataset to `<output-dir>/final_dataset.jsonl`. Pass `--json` for
-the structured `history` plus `final_model_dir` / `final_avg_score` / `best_avg_score`.
+growing dataset size), then highlights **`best_model_dir`** (the pass to ship, with its
+`best_avg_score` and originating `best_round`) and lists the final all-data model only as
+a footnote when it is not itself the best. It writes the full accumulated dataset to
+`<output-dir>/final_dataset.jsonl`. Pass `--json` for the structured `history` plus
+`best_model_dir` / `best_round` / `best_avg_score` (the deployable result) and
+`final_model_dir` / `final_avg_score` (retained for compatibility/inspection).
 
 ## Automating Host Training for Sandboxed Agents
 
