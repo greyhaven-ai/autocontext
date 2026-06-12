@@ -58,11 +58,39 @@ function createChildLog(): RuntimeSessionEventLog {
     parentSessionId: "run:run-123:runtime",
     taskId: "child-1",
     workerId: "worker-child",
-    metadata: { goal: "Inspect failing test", runId: "run-123", status: "completed" },
+    metadata: {
+      goal: "Inspect failing test",
+      runId: "run-123",
+      status: "completed",
+      artifacts: [
+        {
+          artifact_id: "child-report",
+          kind: "report",
+          label: "Child report",
+          path: "runs/run-123/child-report.md",
+          token: "SECRET_VALUE",
+        },
+      ],
+    },
     createdAt: "2026-06-01T00:00:30.000Z",
     updatedAt: "2026-06-01T00:00:45.000Z",
     events: [],
   });
+}
+
+function childStatusCounts(
+  overrides: Partial<Record<string, number>> = {},
+): Record<string, number> {
+  return {
+    queued: 0,
+    running: 0,
+    completed: 0,
+    failed: 0,
+    canceled: 0,
+    skipped: 0,
+    unknown: 0,
+    ...overrides,
+  };
 }
 
 function createTask(overrides: Partial<TaskQueueRow> = {}): TaskQueueRow {
@@ -120,6 +148,7 @@ describe("background session read model", () => {
       event_count: 2,
       artifact_count: 2,
       child_session_count: 1,
+      child_status_counts: childStatusCounts({ completed: 1 }),
       created_at: "2026-06-01T00:00:00.000Z",
       updated_at: "2026-06-01T00:01:00.000Z",
       result_url: "/api/cockpit/background-sessions/run%3Arun-123%3Aruntime",
@@ -149,6 +178,7 @@ describe("background session read model", () => {
       event_count: 0,
       artifact_count: 0,
       child_session_count: 0,
+      child_status_counts: childStatusCounts(),
       created_at: "2026-06-01T00:00:00.000Z",
       updated_at: "2026-06-01T00:00:10.000Z",
       result_url: "/api/cockpit/background-sessions/task%3Aqueued-1",
@@ -172,7 +202,11 @@ describe("background session read model", () => {
       childSessions: [createChildLog()],
     });
 
-    expect(detail.summary.session_id).toBe("run:run-123:runtime");
+    expect(detail.summary).toMatchObject({
+      session_id: "run:run-123:runtime",
+      artifact_count: 2,
+      child_status_counts: childStatusCounts({ completed: 1 }),
+    });
     expect(detail.artifacts).toEqual([
       {
         artifact_id: "pr-1",
@@ -181,12 +215,20 @@ describe("background session read model", () => {
         path: "",
         url: "https://github.example/pr/1",
       },
+      {
+        artifact_id: "child-report",
+        kind: "report",
+        label: "Child report",
+        path: "runs/run-123/child-report.md",
+        url: "",
+      },
     ]);
     expect(detail.child_sessions).toEqual([
       expect.objectContaining({
         session_id: "task:run:run-123:runtime:child-1",
         parent_session_id: "run:run-123:runtime",
         status: "completed",
+        artifact_count: 1,
       }),
     ]);
     expect(detail.trigger).toEqual({ type: "manual", actor: "operator" });

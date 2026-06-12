@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -10,6 +9,19 @@ from typing import Any, Protocol, Self
 
 from autocontext.runtimes.workspace_env import RuntimeCommandGrant, RuntimeWorkspaceEnv
 from autocontext.session.coordinator import Coordinator
+from autocontext.session.runtime_child_session_controls import (
+    DEFAULT_CHILD_TASK_MAX_CONCURRENT,
+    RuntimeChildSessionCancellation,
+    active_child_session_ids,
+    cancel_child_session_for_parent,
+    canceled_child_reason,
+    child_task_coordinator_lineage,
+    json_safe_record,
+    load_canceled_child_log,
+    normalize_depth,
+    normalize_positive_int,
+    observe_runtime_session_log,
+)
 from autocontext.session.runtime_events import (
     RuntimeSessionEvent,
     RuntimeSessionEventLog,
@@ -128,6 +140,7 @@ class RuntimeSession:
         event_sink: RuntimeSessionEventSink | None = None,
         depth: int = 0,
         max_depth: int = DEFAULT_CHILD_TASK_MAX_DEPTH,
+        max_concurrent_child_tasks: int = DEFAULT_CHILD_TASK_MAX_CONCURRENT,
     ) -> None:
         self.goal = goal
         self.log = log
@@ -135,9 +148,13 @@ class RuntimeSession:
         self.workspace = workspace
         self._event_store = event_store
         self._event_sink = event_sink
-        self._depth = _normalize_depth(depth, "depth")
-        self._max_depth = _normalize_depth(max_depth, "max_depth")
-        _observe_runtime_session_log(self.log, self._event_store, self._event_sink)
+        self._depth = normalize_depth(depth, "depth")
+        self._max_depth = normalize_depth(max_depth, "max_depth")
+        self._max_concurrent_child_tasks = normalize_positive_int(
+            max_concurrent_child_tasks,
+            "max_concurrent_child_tasks",
+        )
+        observe_runtime_session_log(self.log, self._event_store, self._event_sink)
 
     @classmethod
     def create(
@@ -151,11 +168,12 @@ class RuntimeSession:
         workspace: RuntimeWorkspaceEnv | None = None,
         depth: int = 0,
         max_depth: int = DEFAULT_CHILD_TASK_MAX_DEPTH,
+        max_concurrent_child_tasks: int = DEFAULT_CHILD_TASK_MAX_CONCURRENT,
     ) -> Self:
         clean_session_id = session_id or f"runtime:{uuid.uuid4().hex[:12]}"
         log = RuntimeSessionEventLog.create(
             session_id=clean_session_id,
-            metadata={**_json_safe_record(metadata), "goal": goal},
+            metadata={**json_safe_record(metadata), "goal": goal},
         )
         return cls(
             goal=goal,
@@ -166,6 +184,7 @@ class RuntimeSession:
             event_sink=event_sink,
             depth=depth,
             max_depth=max_depth,
+            max_concurrent_child_tasks=max_concurrent_child_tasks,
         )
 
     @classmethod
@@ -178,6 +197,7 @@ class RuntimeSession:
         workspace: RuntimeWorkspaceEnv | None = None,
         depth: int = 0,
         max_depth: int = DEFAULT_CHILD_TASK_MAX_DEPTH,
+        max_concurrent_child_tasks: int = DEFAULT_CHILD_TASK_MAX_CONCURRENT,
     ) -> Self | None:
         log = event_store.load(session_id)
         if log is None:
@@ -192,6 +212,7 @@ class RuntimeSession:
             event_sink=event_sink,
             depth=depth,
             max_depth=max_depth,
+            max_concurrent_child_tasks=max_concurrent_child_tasks,
         )
 
     @property
@@ -252,7 +273,7 @@ class RuntimeSession:
                     "requestId": request_id,
                     "promptEventId": prompt_event.event_id,
                     "text": output.text,
-                    "metadata": _json_safe_record(output.metadata),
+                    "metadata": json_safe_record(output.metadata),
                     "role": role,
                     "cwd": resolved_cwd,
                 },
@@ -296,10 +317,27 @@ class RuntimeSession:
             event_sink=self._event_sink,
             depth=self._depth,
             max_depth=self._max_depth,
+            max_concurrent_child_tasks=self._max_concurrent_child_tasks,
         ).run(prompt=prompt, role=role, handler=handler, task_id=task_id, cwd=cwd, commands=commands)
 
     def list_child_logs(self) -> list[RuntimeSessionEventLog]:
         return self._event_store.list_children(self.session_id) if self._event_store is not None else []
+
+    def cancel_child_session(
+        self,
+        *,
+        child_session_id: str,
+        reason: str = "canceled",
+    ) -> RuntimeChildSessionCancellation:
+        if self._event_store is None:
+            msg = "event_store is required to cancel child sessions"
+            raise ValueError(msg)
+        return cancel_child_session_for_parent(
+            parent_log=self.log,
+            event_store=self._event_store,
+            child_session_id=child_session_id,
+            reason=reason,
+        )
 
     def record_compaction(self, compaction: RuntimeSessionCompactionInput) -> None:
         if not compaction.entries:
@@ -344,14 +382,19 @@ class RuntimeChildTaskRunner:
         event_sink: RuntimeSessionEventSink | None = None,
         depth: int = 0,
         max_depth: int = DEFAULT_CHILD_TASK_MAX_DEPTH,
+        max_concurrent_child_tasks: int = DEFAULT_CHILD_TASK_MAX_CONCURRENT,
     ) -> None:
         self._coordinator = coordinator
         self._parent_log = parent_log
         self._workspace = workspace
         self._event_store = event_store
         self._event_sink = event_sink
-        self._depth = _normalize_depth(depth, "depth")
-        self._max_depth = _normalize_depth(max_depth, "max_depth")
+        self._depth = normalize_depth(depth, "depth")
+        self._max_depth = normalize_depth(max_depth, "max_depth")
+        self._max_concurrent_child_tasks = normalize_positive_int(
+            max_concurrent_child_tasks,
+            "max_concurrent_child_tasks",
+        )
 
     def run(
         self,
@@ -366,8 +409,10 @@ class RuntimeChildTaskRunner:
         clean_task_id = task_id or uuid.uuid4().hex[:12]
         worker = self._coordinator.delegate(prompt, role)
         child_depth = self._depth + 1
-        child_cwd = self._workspace.resolve_path(cwd) if self._workspace is not None and cwd else (
-            self._workspace.cwd if self._workspace is not None else cwd
+        child_cwd = (
+            self._workspace.resolve_path(cwd)
+            if self._workspace is not None and cwd
+            else (self._workspace.cwd if self._workspace is not None else cwd)
         )
         child_session_id = f"task:{self._parent_log.session_id}:{clean_task_id}:{worker.worker_id}"
         child_log = RuntimeSessionEventLog.create(
@@ -380,9 +425,11 @@ class RuntimeChildTaskRunner:
                 "cwd": child_cwd,
                 "depth": child_depth,
                 "maxDepth": self._max_depth,
+                "status": "running",
             },
         )
-        _observe_runtime_session_log(child_log, self._event_store, self._event_sink)
+        observe_runtime_session_log(child_log, self._event_store, self._event_sink)
+        active_child_count = len(active_child_session_ids(self._parent_log))
         child_workspace = (
             self._workspace.scope(
                 cwd=cwd or None,
@@ -401,7 +448,7 @@ class RuntimeChildTaskRunner:
             else None
         )
         child_cwd = child_workspace.cwd if child_workspace is not None else child_cwd
-        coordinator_lineage = _child_task_coordinator_lineage(
+        coordinator_lineage = child_task_coordinator_lineage(
             task_id=clean_task_id,
             child_session_id=child_session_id,
             parent_session_id=self._parent_log.session_id,
@@ -446,6 +493,17 @@ class RuntimeChildTaskRunner:
                 child_log=child_log,
                 message=f"Maximum child task depth ({self._max_depth}) exceeded",
             )
+        if active_child_count >= self._max_concurrent_child_tasks:
+            return self._fail_child_task(
+                task_id=clean_task_id,
+                child_session_id=child_session_id,
+                worker_id=worker.worker_id,
+                role=role,
+                cwd=child_cwd,
+                depth=child_depth,
+                child_log=child_log,
+                message=f"Maximum concurrent child sessions ({self._max_concurrent_child_tasks}) exceeded",
+            )
 
         try:
             output = _normalize_child_output(
@@ -465,11 +523,23 @@ class RuntimeChildTaskRunner:
                     )
                 )
             )
+            canceled_child_log = load_canceled_child_log(self._event_store, child_log)
+            if canceled_child_log is not None:
+                return self._canceled_result(
+                    task_id=clean_task_id,
+                    child_session_id=child_session_id,
+                    worker_id=worker.worker_id,
+                    role=role,
+                    cwd=child_cwd,
+                    depth=child_depth,
+                    child_log=canceled_child_log,
+                )
+            child_log.metadata["status"] = "completed"
             child_log.append(
                 RuntimeSessionEventType.ASSISTANT_MESSAGE,
                 {
                     "text": output.text,
-                    "metadata": _json_safe_record(output.metadata),
+                    "metadata": json_safe_record(output.metadata),
                     "depth": child_depth,
                     "maxDepth": self._max_depth,
                 },
@@ -508,6 +578,17 @@ class RuntimeChildTaskRunner:
             self._persist(child_log)
             return result
         except Exception as exc:
+            canceled_child_log = load_canceled_child_log(self._event_store, child_log)
+            if canceled_child_log is not None:
+                return self._canceled_result(
+                    task_id=clean_task_id,
+                    child_session_id=child_session_id,
+                    worker_id=worker.worker_id,
+                    role=role,
+                    cwd=child_cwd,
+                    depth=child_depth,
+                    child_log=canceled_child_log,
+                )
             return self._fail_child_task(
                 task_id=clean_task_id,
                 child_session_id=child_session_id,
@@ -531,11 +612,12 @@ class RuntimeChildTaskRunner:
         child_log: RuntimeSessionEventLog,
         message: str,
     ) -> RuntimeChildTaskResult:
+        child_log.metadata["status"] = "failed"
         self._coordinator.fail_worker(
             worker_id,
             message,
             {
-                **_child_task_coordinator_lineage(
+                **child_task_coordinator_lineage(
                     task_id=task_id,
                     child_session_id=child_session_id,
                     parent_session_id=self._parent_log.session_id,
@@ -587,6 +669,41 @@ class RuntimeChildTaskRunner:
         self._persist(child_log)
         return result
 
+    def _canceled_result(
+        self,
+        *,
+        task_id: str,
+        child_session_id: str,
+        worker_id: str,
+        role: str,
+        cwd: str,
+        depth: int,
+        child_log: RuntimeSessionEventLog,
+    ) -> RuntimeChildTaskResult:
+        reason = canceled_child_reason(child_log)
+        details = child_task_coordinator_lineage(
+            task_id=task_id,
+            child_session_id=child_session_id,
+            parent_session_id=self._parent_log.session_id,
+            role=role,
+            cwd=cwd,
+            depth=depth,
+            max_depth=self._max_depth,
+        ) | {"isError": True, "phase": "canceled", "status": "canceled"}
+        self._coordinator.fail_worker(worker_id, reason, details)
+        return self._result(
+            task_id=task_id,
+            child_session_id=child_session_id,
+            worker_id=worker_id,
+            role=role,
+            cwd=cwd,
+            text="",
+            is_error=True,
+            error=reason,
+            depth=depth,
+            child_log=child_log,
+        )
+
     def _result(
         self,
         *,
@@ -623,26 +740,6 @@ class RuntimeChildTaskRunner:
         self._event_store.save(child_log)
 
 
-def _observe_runtime_session_log(
-    log: RuntimeSessionEventLog,
-    event_store: RuntimeSessionEventStore | None,
-    event_sink: RuntimeSessionEventSink | None,
-) -> None:
-    if event_store is None and event_sink is None:
-        return
-
-    def on_event(event: RuntimeSessionEvent, current_log: RuntimeSessionEventLog) -> None:
-        if event_store is not None:
-            event_store.save(current_log)
-        if event_sink is not None:
-            try:
-                event_sink.on_runtime_session_event(event, current_log)
-            except Exception:
-                pass
-
-    log.subscribe(on_event)
-
-
 def _normalize_prompt_output(output: RuntimeSessionPromptHandlerOutput | str) -> RuntimeSessionPromptHandlerOutput:
     if isinstance(output, RuntimeSessionPromptHandlerOutput):
         return output
@@ -655,50 +752,8 @@ def _normalize_child_output(output: RuntimeChildTaskHandlerOutput | str) -> Runt
     return RuntimeChildTaskHandlerOutput(text=output)
 
 
-def _child_task_coordinator_lineage(
-    *,
-    task_id: str,
-    child_session_id: str,
-    parent_session_id: str,
-    role: str,
-    cwd: str,
-    depth: int,
-    max_depth: int,
-) -> dict[str, Any]:
-    return {
-        "taskId": task_id,
-        "childSessionId": child_session_id,
-        "parentSessionId": parent_session_id,
-        "role": role,
-        "cwd": cwd,
-        "depth": depth,
-        "maxDepth": max_depth,
-    }
-
-
-def _json_safe_record(value: Mapping[str, Any] | None) -> dict[str, Any]:
-    if value is None:
-        return {}
-    return {str(key): _json_safe_value(item) for key, item in value.items()}
-
-
-def _json_safe_value(value: Any) -> Any:
-    try:
-        return json.loads(json.dumps(value, allow_nan=False))
-    except (TypeError, ValueError):
-        if isinstance(value, Mapping):
-            return {str(key): _json_safe_value(item) for key, item in value.items()}
-        if isinstance(value, list | tuple):
-            return [_json_safe_value(item) for item in value]
-        return str(value)
-
-
 def _compaction_payload(compaction: RuntimeSessionCompactionInput) -> dict[str, Any]:
-    entry_ids = [
-        entry_id
-        for entry in compaction.entries
-        if (entry_id := _read_str(entry.get("id")))
-    ]
+    entry_ids = [entry_id for entry in compaction.entries if (entry_id := _read_str(entry.get("id")))]
     components = sorted(
         {
             component
@@ -726,19 +781,12 @@ def _compaction_payload(compaction: RuntimeSessionCompactionInput) -> dict[str, 
         payload["generation"] = compaction.generation
     if compaction.promoted_knowledge_id:
         payload["promotedKnowledgeId"] = compaction.promoted_knowledge_id
-    return _json_safe_record(payload)
+    return json_safe_record(payload)
 
 
 def _preview_text(value: str, max_length: int = 500) -> str:
     normalized = " ".join(value.split()).strip()
     return f"{normalized[: max_length - 3]}..." if len(normalized) > max_length else normalized
-
-
-def _normalize_depth(value: int, name: str) -> int:
-    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
-        msg = f"{name} must be a non-negative integer"
-        raise ValueError(msg)
-    return value
 
 
 def _read_str(value: Any) -> str:

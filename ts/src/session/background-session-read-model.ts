@@ -50,6 +50,7 @@ export interface BackgroundSessionSummary {
   readonly event_count: number;
   readonly artifact_count: number;
   readonly child_session_count: number;
+  readonly child_status_counts: Record<BackgroundSessionStatus, number>;
   readonly created_at: string;
   readonly updated_at: string;
   readonly result_url: string;
@@ -79,6 +80,15 @@ type NormalizedBackgroundSessionSource = {
   childSessions: RuntimeSessionEventLog[];
 };
 
+const CHILD_STATUS_KEYS: readonly BackgroundSessionStatus[] = [
+  "queued",
+  "running",
+  "completed",
+  "failed",
+  "canceled",
+  "skipped",
+  "unknown",
+];
 const REDACTED_TRIGGER_VALUE = "[redacted]";
 const SENSITIVE_TRIGGER_KEY_WORDS = new Set([
   "auth",
@@ -117,7 +127,10 @@ export function buildBackgroundSessionSummary(
   return {
     session_id: sessionId,
     runtime_session_id: runtimeSessionId,
-    run_id: readMetadataString(normalized.runtimeSession?.metadata, "runId") || normalized.run?.run_id || "",
+    run_id:
+      readMetadataString(normalized.runtimeSession?.metadata, "runId") ||
+      normalized.run?.run_id ||
+      "",
     task_id: readTaskId(normalized),
     parent_session_id: normalized.runtimeSession?.parentSessionId ?? "",
     status: readBackgroundSessionStatus(normalized),
@@ -125,6 +138,7 @@ export function buildBackgroundSessionSummary(
     event_count: normalized.runtimeSession?.events.length ?? 0,
     artifact_count: normalized.artifacts.length,
     child_session_count: normalized.childSessions.length,
+    child_status_counts: childStatusCounts(normalized.childSessions),
     created_at: readCreatedAt(normalized),
     updated_at: readUpdatedAt(normalized),
     result_url: backgroundSessionUrl(sessionId),
@@ -135,13 +149,18 @@ export function buildBackgroundSessionSummary(
 export function buildBackgroundSessionDetail(
   source: BackgroundSessionSource,
 ): BackgroundSessionDetail {
+  const normalized = normalizeSource(source);
+  const detailArtifacts = [
+    ...normalized.artifacts,
+    ...normalized.childSessions.flatMap(runtimeSessionArtifacts),
+  ];
   return {
-    summary: buildBackgroundSessionSummary(source),
-    artifacts: (source.artifacts ?? []).map(sanitizeArtifact),
-    child_sessions: (source.childSessions ?? []).map((runtimeSession) =>
+    summary: buildBackgroundSessionSummary({ ...source, artifacts: detailArtifacts }),
+    artifacts: detailArtifacts.map(sanitizeArtifact),
+    child_sessions: normalized.childSessions.map((runtimeSession) =>
       buildBackgroundSessionSummary({ runtimeSession }),
     ),
-    trigger: readTrigger(source.task),
+    trigger: readTrigger(normalized.task),
   };
 }
 
@@ -164,7 +183,7 @@ function normalizeSource(source: BackgroundSessionSource): NormalizedBackgroundS
     runtimeSession: source.runtimeSession ?? null,
     task: source.task ?? null,
     run: source.run ?? null,
-    artifacts: source.artifacts ?? [],
+    artifacts: source.artifacts ?? runtimeSessionArtifacts(source.runtimeSession ?? null),
     childSessions: source.childSessions ?? [],
   };
 }
@@ -180,13 +199,16 @@ function readTaskId(source: NormalizedBackgroundSessionSource): string {
 function readBackgroundSessionStatus(
   source: NormalizedBackgroundSessionSource,
 ): BackgroundSessionStatus {
-  return normalizeStatus(
+  const rawStatus =
     readMetadataString(source.runtimeSession?.metadata, "status") ||
-      source.task?.status ||
-      source.run?.status ||
-      "",
-    Boolean(source.runtimeSession),
-  );
+    source.task?.status ||
+    source.run?.status ||
+    "";
+  const status = normalizeStatus(rawStatus, Boolean(source.runtimeSession));
+  if (source.runtimeSession?.parentSessionId && status === "running" && !rawStatus) {
+    return inferChildRuntimeSessionStatus(source.runtimeSession);
+  }
+  return status;
 }
 
 function readGoal(source: NormalizedBackgroundSessionSource): string {
@@ -199,7 +221,9 @@ function readGoal(source: NormalizedBackgroundSessionSource): string {
 }
 
 function readCreatedAt(source: NormalizedBackgroundSessionSource): string {
-  return source.runtimeSession?.createdAt || source.task?.created_at || source.run?.created_at || "";
+  return (
+    source.runtimeSession?.createdAt || source.task?.created_at || source.run?.created_at || ""
+  );
 }
 
 function readUpdatedAt(source: NormalizedBackgroundSessionSource): string {
@@ -220,6 +244,65 @@ function sanitizeArtifact(artifact: BackgroundSessionArtifactInput): BackgroundS
     path: artifact.path ?? "",
     url: artifact.url ?? "",
   };
+}
+
+function runtimeSessionArtifacts(
+  runtimeSession: RuntimeSessionEventLog | null | undefined,
+): BackgroundSessionArtifactInput[] {
+  if (!runtimeSession) return [];
+  const artifacts = [...artifactRecords(runtimeSession.metadata.artifacts)];
+  for (const event of runtimeSession.events) {
+    const metadata = event.payload.metadata;
+    if (isRecord(metadata)) {
+      artifacts.push(...artifactRecords(metadata.artifacts));
+    }
+  }
+  return artifacts;
+}
+
+function artifactRecords(value: unknown): BackgroundSessionArtifactInput[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(isRecord).map((record) => ({
+    artifact_id: readString(record.artifact_id),
+    kind: readString(record.kind) || "file",
+    label: readString(record.label),
+    path: readString(record.path),
+    url: readString(record.url),
+  }));
+}
+
+function childStatusCounts(
+  childSessions: RuntimeSessionEventLog[],
+): Record<BackgroundSessionStatus, number> {
+  const counts = Object.fromEntries(CHILD_STATUS_KEYS.map((status) => [status, 0])) as Record<
+    BackgroundSessionStatus,
+    number
+  >;
+  for (const child of childSessions) {
+    counts[readBackgroundSessionStatus(normalizeSource({ runtimeSession: child }))] += 1;
+  }
+  return counts;
+}
+
+function inferChildRuntimeSessionStatus(
+  runtimeSession: RuntimeSessionEventLog,
+): BackgroundSessionStatus {
+  const events = [...runtimeSession.events].sort((left, right) => right.sequence - left.sequence);
+  for (const event of events) {
+    if (event.eventType !== "assistant_message") continue;
+    const phase = readString(event.payload.phase).toLowerCase().replace(/-/g, "_");
+    const status = readString(event.payload.status).toLowerCase().replace(/-/g, "_");
+    if (
+      phase === "canceled" ||
+      phase === "cancelled" ||
+      status === "canceled" ||
+      status === "cancelled"
+    ) {
+      return "canceled";
+    }
+    return event.payload.isError === true ? "failed" : "completed";
+  }
+  return "running";
 }
 
 function readTrigger(task: TaskQueueRow | null | undefined): Record<string, unknown> | null {
@@ -273,7 +356,9 @@ function isSensitiveTriggerKey(key: string): boolean {
   if (words.some((word) => SENSITIVE_TRIGGER_KEY_WORDS.has(word))) {
     return true;
   }
-  return COMPOUND_SENSITIVE_TRIGGER_KEY_WORDS.some((sequence) => containsWordSequence(words, sequence));
+  return COMPOUND_SENSITIVE_TRIGGER_KEY_WORDS.some((sequence) =>
+    containsWordSequence(words, sequence),
+  );
 }
 
 function triggerKeyWords(key: string): string[] {
@@ -306,6 +391,10 @@ function containsWordSequence(words: readonly string[], sequence: readonly strin
 
 function looksLikeSecretValue(value: string): boolean {
   return SECRET_VALUE_PATTERNS.some((pattern) => pattern.test(value));
+}
+
+function readString(value: unknown): string {
+  return typeof value === "string" ? value : "";
 }
 
 function readMetadataString(

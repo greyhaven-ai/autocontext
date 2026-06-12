@@ -133,6 +133,71 @@ def test_background_session_events_match_typescript_contract_without_raw_payload
     assert "SECRET_VALUE" not in str(events)
 
 
+def test_parent_background_session_timeline_includes_child_session_events() -> None:
+    child = RuntimeSessionEventLog.from_dict(
+        {
+            "sessionId": "task:run:run-123:runtime:child-1",
+            "parentSessionId": "run:run-123:runtime",
+            "taskId": "child-1",
+            "workerId": "worker-child",
+            "metadata": {"goal": "Inspect failing test", "status": "failed"},
+            "createdAt": "2026-06-01T00:00:31.000Z",
+            "updatedAt": "2026-06-01T00:00:36.000Z",
+            "events": [
+                {
+                    "eventId": "child-prompt",
+                    "sessionId": "task:run:run-123:runtime:child-1",
+                    "sequence": 0,
+                    "eventType": RuntimeSessionEventType.PROMPT_SUBMITTED.value,
+                    "timestamp": "2026-06-01T00:00:35.000Z",
+                    "payload": {"role": "analyst", "prompt": "SECRET_VALUE"},
+                    "parentSessionId": "run:run-123:runtime",
+                    "taskId": "child-1",
+                    "workerId": "worker-child",
+                },
+                {
+                    "eventId": "child-answer",
+                    "sessionId": "task:run:run-123:runtime:child-1",
+                    "sequence": 1,
+                    "eventType": RuntimeSessionEventType.ASSISTANT_MESSAGE.value,
+                    "timestamp": "2026-06-01T00:00:36.000Z",
+                    "payload": {"role": "analyst", "isError": True, "error": "SECRET_VALUE"},
+                    "parentSessionId": "run:run-123:runtime",
+                    "taskId": "child-1",
+                    "workerId": "worker-child",
+                },
+            ],
+        }
+    )
+
+    events = normalize_background_session_timeline(_runtime_log(), child_logs=[child])
+
+    assert [event["event_id"] for event in events] == [
+        "event-1",
+        "event-2",
+        "event-3",
+        "child-prompt",
+        "child-answer",
+        "event-4",
+    ]
+    assert events[3]["payload_summary"] == {
+        "role": "analyst",
+        "child_session_id": "task:run:run-123:runtime:child-1",
+        "parent_session_id": "run:run-123:runtime",
+        "task_id": "child-1",
+        "worker_id": "worker-child",
+    }
+    assert events[4]["status"] == "failed"
+    assert events[4]["payload_summary"] == {
+        "role": "analyst",
+        "child_session_id": "task:run:run-123:runtime:child-1",
+        "parent_session_id": "run:run-123:runtime",
+        "task_id": "child-1",
+        "worker_id": "worker-child",
+    }
+    assert "SECRET_VALUE" not in str(events)
+
+
 def test_failed_runtime_payloads_from_assistants_and_grants_are_marked_failed() -> None:
     log = RuntimeSessionEventLog.from_dict(
         {
@@ -161,9 +226,20 @@ def test_failed_runtime_payloads_from_assistants_and_grants_are_marked_failed() 
                     "workerId": "worker-1",
                 },
                 {
-                    "eventId": "tool-failed",
+                    "eventId": "assistant-canceled",
                     "sessionId": "run:failed-runtime:runtime",
                     "sequence": 1,
+                    "eventType": RuntimeSessionEventType.ASSISTANT_MESSAGE.value,
+                    "timestamp": "2026-06-01T01:00:01.500Z",
+                    "payload": {"phase": "canceled", "isError": True, "error": "SECRET_VALUE"},
+                    "parentSessionId": "",
+                    "taskId": "task-failed",
+                    "workerId": "worker-1",
+                },
+                {
+                    "eventId": "tool-failed",
+                    "sessionId": "run:failed-runtime:runtime",
+                    "sequence": 2,
                     "eventType": RuntimeSessionEventType.TOOL_CALL.value,
                     "timestamp": "2026-06-01T01:00:02.000Z",
                     "payload": {"tool": "workspace.write", "phase": "error", "error": "SECRET_VALUE"},
@@ -174,7 +250,7 @@ def test_failed_runtime_payloads_from_assistants_and_grants_are_marked_failed() 
                 {
                     "eventId": "shell-failed",
                     "sessionId": "run:failed-runtime:runtime",
-                    "sequence": 2,
+                    "sequence": 3,
                     "eventType": RuntimeSessionEventType.SHELL_COMMAND.value,
                     "timestamp": "2026-06-01T01:00:03.000Z",
                     "payload": {
@@ -187,6 +263,17 @@ def test_failed_runtime_payloads_from_assistants_and_grants_are_marked_failed() 
                     "taskId": "task-failed",
                     "workerId": "worker-1",
                 },
+                {
+                    "eventId": "child-canceled",
+                    "sessionId": "run:failed-runtime:runtime",
+                    "sequence": 4,
+                    "eventType": RuntimeSessionEventType.CHILD_TASK_COMPLETED.value,
+                    "timestamp": "2026-06-01T01:00:04.000Z",
+                    "payload": {"taskId": "child-1", "phase": "canceled", "isError": True, "error": "SECRET_VALUE"},
+                    "parentSessionId": "",
+                    "taskId": "task-failed",
+                    "workerId": "worker-1",
+                },
             ],
         }
     )
@@ -195,8 +282,10 @@ def test_failed_runtime_payloads_from_assistants_and_grants_are_marked_failed() 
 
     assert [(event["event_id"], event["status"], event["payload_summary"]) for event in events] == [
         ("assistant-failed", "failed", {"request_id": "req-failed", "role": "competitor"}),
+        ("assistant-canceled", "canceled", {}),
         ("tool-failed", "failed", {"tool": "workspace.write"}),
         ("shell-failed", "failed", {"command": "npm test", "cwd": "/workspace"}),
+        ("child-canceled", "canceled", {"task_id": "child-1"}),
     ]
     assert "SECRET_VALUE" not in str(events)
 

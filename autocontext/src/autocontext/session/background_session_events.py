@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any, Literal, TypeAlias
 
 from autocontext.session.runtime_events import RuntimeSessionEvent, RuntimeSessionEventLog
@@ -23,8 +23,18 @@ NormalizedSessionEventSummaryValue: TypeAlias = str | int | float | bool
 NormalizedSessionEvent: TypeAlias = dict[str, Any]
 
 
-def normalize_background_session_timeline(log: RuntimeSessionEventLog) -> list[NormalizedSessionEvent]:
-    return [normalize_runtime_session_event(event) for event in sorted(log.events, key=lambda event: event.sequence)]
+def normalize_background_session_timeline(
+    log: RuntimeSessionEventLog,
+    *,
+    child_logs: Sequence[RuntimeSessionEventLog] | None = None,
+) -> list[NormalizedSessionEvent]:
+    events = [normalize_runtime_session_event(event) for event in sorted(log.events, key=lambda event: event.sequence)]
+    for child_log in child_logs or []:
+        events.extend(
+            _with_child_lineage(normalize_runtime_session_event(event), child_log)
+            for event in sorted(child_log.events, key=lambda event: event.sequence)
+        )
+    return sorted(events, key=lambda event: (str(event["ts"]), str(event["session_id"]), int(event["sequence"])))
 
 
 def normalize_runtime_session_event(event: RuntimeSessionEvent) -> NormalizedSessionEvent:
@@ -40,7 +50,7 @@ def normalize_runtime_session_event(event: RuntimeSessionEvent) -> NormalizedSes
         return _base_event(
             event,
             normalized_event="runtime_event",
-            status="failed" if _has_failure_payload(event.payload) else "completed",
+            status=_runtime_action_status(event.payload, "completed"),
             title="Assistant message",
             payload_summary=_pick_payload(event.payload, {"request_id": "requestId", "role": "role"}),
         )
@@ -72,12 +82,15 @@ def normalize_runtime_session_event(event: RuntimeSessionEvent) -> NormalizedSes
             ),
         )
     if event.event_type == "child_task_completed":
+        canceled = _is_canceled_payload(event.payload)
         failed = event.payload.get("isError") is True
+        status: NormalizedSessionEventStatus = "canceled" if canceled else "failed" if failed else "completed"
+        title = "Child session canceled" if canceled else "Child session failed" if failed else "Child session completed"
         return _base_event(
             event,
             normalized_event="session_status",
-            status="failed" if failed else "completed",
-            title="Child session failed" if failed else "Child session completed",
+            status=status,
+            title=title,
             payload_summary=_pick_payload(event.payload, {"task_id": "taskId"}),
         )
     return _base_event(
@@ -189,6 +202,24 @@ def _base_event(
     }
 
 
+def _with_child_lineage(
+    event: NormalizedSessionEvent,
+    child_log: RuntimeSessionEventLog,
+) -> NormalizedSessionEvent:
+    payload_summary = dict(event["payload_summary"])
+    payload_summary.update(
+        _sanitize_summary(
+            {
+                "child_session_id": child_log.session_id,
+                "parent_session_id": child_log.parent_session_id,
+                "task_id": child_log.task_id,
+                "worker_id": child_log.worker_id,
+            }
+        )
+    )
+    return {**event, "payload_summary": payload_summary}
+
+
 def _pick_payload(
     payload: Mapping[str, Any],
     mapping: Mapping[str, str],
@@ -213,11 +244,17 @@ def _runtime_action_status(
     payload: Mapping[str, Any],
     default_status: NormalizedSessionEventStatus,
 ) -> NormalizedSessionEventStatus:
+    if _is_canceled_payload(payload):
+        return "canceled"
     if _has_failure_payload(payload):
         return "failed"
     if _has_completed_payload(payload):
         return "completed"
     return default_status
+
+
+def _is_canceled_payload(payload: Mapping[str, Any]) -> bool:
+    return _read_phase(payload) in {"canceled", "cancelled"} or _read_status(payload) in {"canceled", "cancelled"}
 
 
 def _has_failure_payload(payload: Mapping[str, Any]) -> bool:
@@ -237,6 +274,10 @@ def _has_completed_payload(payload: Mapping[str, Any]) -> bool:
 
 def _read_phase(payload: Mapping[str, Any]) -> str:
     return _read_non_empty_string(payload.get("phase")).lower().replace("-", "_")
+
+
+def _read_status(payload: Mapping[str, Any]) -> str:
+    return _read_non_empty_string(payload.get("status")).lower().replace("-", "_")
 
 
 def _read_non_empty_string(value: Any) -> str:

@@ -2,10 +2,10 @@ import { randomUUID } from "node:crypto";
 import { agentOutputMetadata } from "../runtimes/agent-output-metadata.js";
 import type { AgentRuntime } from "../runtimes/base.js";
 import type { RuntimeCommandGrant, RuntimeWorkspaceEnv } from "../runtimes/workspace-env.js";
-import { Coordinator } from "./coordinator.js";
+import type { Coordinator } from "./coordinator.js";
 import {
   RuntimeSessionEventLog,
-  RuntimeSessionEventStore,
+  type RuntimeSessionEventStore,
   RuntimeSessionEventType,
 } from "./runtime-events.js";
 import { createRuntimeSessionGrantEventSink } from "./runtime-grant-events.js";
@@ -13,6 +13,7 @@ import { jsonSafeRecord } from "./runtime-json.js";
 import type { RuntimeSessionEventSink } from "./runtime-session-notifications.js";
 
 export const DEFAULT_CHILD_TASK_MAX_DEPTH = 4;
+export const DEFAULT_CHILD_TASK_MAX_CONCURRENT = 8;
 
 export interface RuntimeChildTaskHandlerInput {
   taskId: string;
@@ -45,6 +46,7 @@ export interface RuntimeChildTaskRunnerOpts {
   eventSink?: RuntimeSessionEventSink;
   depth?: number;
   maxDepth?: number;
+  maxConcurrentChildTasks?: number;
 }
 
 export interface RuntimeChildTaskRunOpts {
@@ -101,6 +103,7 @@ export class RuntimeChildTaskRunner {
   private readonly eventSink?: RuntimeSessionEventSink;
   private readonly depth: number;
   private readonly maxDepth: number;
+  private readonly maxConcurrentChildTasks: number;
 
   constructor(opts: RuntimeChildTaskRunnerOpts) {
     this.coordinator = opts.coordinator;
@@ -110,10 +113,15 @@ export class RuntimeChildTaskRunner {
     this.eventSink = opts.eventSink;
     this.depth = normalizeDepth(opts.depth ?? 0, "depth");
     this.maxDepth = normalizeDepth(opts.maxDepth ?? DEFAULT_CHILD_TASK_MAX_DEPTH, "maxDepth");
+    this.maxConcurrentChildTasks = normalizePositiveInteger(
+      opts.maxConcurrentChildTasks ?? DEFAULT_CHILD_TASK_MAX_CONCURRENT,
+      "maxConcurrentChildTasks",
+    );
   }
 
   async run(opts: RuntimeChildTaskRunOpts): Promise<RuntimeChildTaskResult> {
     const taskId = opts.taskId ?? randomUUID().slice(0, 12);
+    const activeChildCount = activeChildSessionIds(this.parentLog).size;
     const worker = this.coordinator.delegate(opts.prompt, opts.role);
     const childDepth = this.depth + 1;
     const childCwd = opts.cwd ? this.workspace.resolvePath(opts.cwd) : this.workspace.cwd;
@@ -128,30 +136,48 @@ export class RuntimeChildTaskRunner {
         cwd: childCwd,
         depth: childDepth,
         maxDepth: this.maxDepth,
+        status: "running",
       },
     });
     this.observeChildLog(childLog);
-    const childWorkspace = await this.workspace.scope({
-      cwd: opts.cwd,
-      commands: opts.commands,
-      grantInheritance: "child_task",
-      grantEventSink: createRuntimeSessionGrantEventSink(childLog, {
-        taskId,
-        childSessionId,
-        workerId: worker.workerId,
-      }),
-    });
     const coordinatorLineage = childTaskCoordinatorLineage({
       taskId,
       childSessionId,
       parentSessionId: this.parentLog.sessionId,
       role: opts.role,
-      cwd: childWorkspace.cwd,
+      cwd: childCwd,
       depth: childDepth,
       maxDepth: this.maxDepth,
     });
-    this.coordinator.startWorker(worker.workerId, coordinatorLineage);
 
+    if (this.depth >= this.maxDepth) {
+      this.coordinator.startWorker(worker.workerId, coordinatorLineage);
+      return this.failChildTask({
+        taskId,
+        childSessionId,
+        workerId: worker.workerId,
+        role: opts.role,
+        cwd: childCwd,
+        depth: childDepth,
+        childLog,
+        message: `Maximum child task depth (${this.maxDepth}) exceeded`,
+      });
+    }
+    if (activeChildCount >= this.maxConcurrentChildTasks) {
+      this.coordinator.startWorker(worker.workerId, coordinatorLineage);
+      return this.failChildTask({
+        taskId,
+        childSessionId,
+        workerId: worker.workerId,
+        role: opts.role,
+        cwd: childCwd,
+        depth: childDepth,
+        childLog,
+        message: `Maximum concurrent child sessions (${this.maxConcurrentChildTasks}) exceeded`,
+      });
+    }
+
+    this.coordinator.startWorker(worker.workerId, coordinatorLineage);
     this.parentLog.append(RuntimeSessionEventType.CHILD_TASK_STARTED, {
       taskId,
       childSessionId,
@@ -161,6 +187,45 @@ export class RuntimeChildTaskRunner {
       depth: childDepth,
       maxDepth: this.maxDepth,
     });
+    this.persist(childLog);
+
+    let childWorkspace: RuntimeWorkspaceEnv;
+    try {
+      childWorkspace = await this.workspace.scope({
+        cwd: opts.cwd,
+        commands: opts.commands,
+        grantInheritance: "child_task",
+        grantEventSink: createRuntimeSessionGrantEventSink(childLog, {
+          taskId,
+          childSessionId,
+          workerId: worker.workerId,
+        }),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return this.failChildTask({
+        taskId,
+        childSessionId,
+        workerId: worker.workerId,
+        role: opts.role,
+        cwd: childCwd,
+        depth: childDepth,
+        childLog,
+        message,
+      });
+    }
+    const canceledAfterScope = this.canceledChildLog(childLog);
+    if (canceledAfterScope) {
+      return this.canceledResult({
+        taskId,
+        childSessionId,
+        workerId: worker.workerId,
+        role: opts.role,
+        cwd: childWorkspace.cwd,
+        depth: childDepth,
+        childLog: canceledAfterScope,
+      });
+    }
     childLog.append(RuntimeSessionEventType.PROMPT_SUBMITTED, {
       prompt: opts.prompt,
       role: opts.role,
@@ -168,19 +233,6 @@ export class RuntimeChildTaskRunner {
       depth: childDepth,
       maxDepth: this.maxDepth,
     });
-
-    if (this.depth >= this.maxDepth) {
-      return this.failChildTask({
-        taskId,
-        childSessionId,
-        workerId: worker.workerId,
-        role: opts.role,
-        cwd: childWorkspace.cwd,
-        depth: childDepth,
-        childLog,
-        message: `Maximum child task depth (${this.maxDepth}) exceeded`,
-      });
-    }
 
     try {
       const output = await opts.handler({
@@ -196,7 +248,20 @@ export class RuntimeChildTaskRunner {
         workspace: childWorkspace,
         sessionLog: childLog,
       });
+      const canceledAfterHandler = this.canceledChildLog(childLog);
+      if (canceledAfterHandler) {
+        return this.canceledResult({
+          taskId,
+          childSessionId,
+          workerId: worker.workerId,
+          role: opts.role,
+          cwd: childWorkspace.cwd,
+          depth: childDepth,
+          childLog: canceledAfterHandler,
+        });
+      }
       const text = output.text;
+      childLog.metadata.status = "completed";
       childLog.append(RuntimeSessionEventType.ASSISTANT_MESSAGE, {
         text,
         metadata: jsonSafeRecord(output.metadata),
@@ -234,6 +299,18 @@ export class RuntimeChildTaskRunner {
       this.persist(childLog);
       return result;
     } catch (error) {
+      const canceledAfterError = this.canceledChildLog(childLog);
+      if (canceledAfterError) {
+        return this.canceledResult({
+          taskId,
+          childSessionId,
+          workerId: worker.workerId,
+          role: opts.role,
+          cwd: childWorkspace.cwd,
+          depth: childDepth,
+          childLog: canceledAfterError,
+        });
+      }
       const message = error instanceof Error ? error.message : String(error);
       return this.failChildTask({
         taskId,
@@ -258,6 +335,7 @@ export class RuntimeChildTaskRunner {
     childLog: RuntimeSessionEventLog;
     message: string;
   }): RuntimeChildTaskResult {
+    opts.childLog.metadata.status = "failed";
     this.coordinator.failWorker(opts.workerId, opts.message, {
       ...childTaskCoordinatorLineage({
         taskId: opts.taskId,
@@ -303,6 +381,52 @@ export class RuntimeChildTaskRunner {
     });
     this.persist(opts.childLog);
     return result;
+  }
+
+  private canceledResult(opts: {
+    taskId: string;
+    childSessionId: string;
+    workerId: string;
+    role: string;
+    cwd: string;
+    depth: number;
+    childLog: RuntimeSessionEventLog;
+  }): RuntimeChildTaskResult {
+    const reason = canceledChildReason(opts.childLog);
+    this.coordinator.failWorker(opts.workerId, reason, {
+      ...childTaskCoordinatorLineage({
+        taskId: opts.taskId,
+        childSessionId: opts.childSessionId,
+        parentSessionId: this.parentLog.sessionId,
+        role: opts.role,
+        cwd: opts.cwd,
+        depth: opts.depth,
+        maxDepth: this.maxDepth,
+      }),
+      isError: true,
+      phase: "canceled",
+      status: "canceled",
+    });
+    return this.result({
+      taskId: opts.taskId,
+      childSessionId: opts.childSessionId,
+      workerId: opts.workerId,
+      role: opts.role,
+      cwd: opts.cwd,
+      text: "",
+      isError: true,
+      error: reason,
+      depth: opts.depth,
+      childLog: opts.childLog,
+    });
+  }
+
+  private canceledChildLog(childLog: RuntimeSessionEventLog): RuntimeSessionEventLog | null {
+    const persisted = this.eventStore?.load(childLog.sessionId) ?? null;
+    for (const candidate of [persisted, childLog]) {
+      if (candidate && isCanceledChildLog(candidate)) return candidate;
+    }
+    return null;
   }
 
   private result(opts: {
@@ -383,4 +507,52 @@ function normalizeDepth(value: number, name: string): number {
     throw new Error(`${name} must be a non-negative integer`);
   }
   return value;
+}
+
+function normalizePositiveInteger(value: number, name: string): number {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`${name} must be a positive integer`);
+  }
+  return value;
+}
+
+function activeChildSessionIds(log: RuntimeSessionEventLog): Set<string> {
+  const active = new Set<string>();
+  for (const event of log.events) {
+    if (event.eventType === RuntimeSessionEventType.CHILD_TASK_STARTED) {
+      const childSessionId = readString(event.payload.childSessionId);
+      if (childSessionId) active.add(childSessionId);
+    } else if (event.eventType === RuntimeSessionEventType.CHILD_TASK_COMPLETED) {
+      const childSessionId = readString(event.payload.childSessionId);
+      if (childSessionId) active.delete(childSessionId);
+    }
+  }
+  return active;
+}
+
+function isCanceledChildLog(log: RuntimeSessionEventLog): boolean {
+  if (isCanceledValue(log.metadata.status)) return true;
+  return log.events.some(
+    (event) =>
+      event.eventType === RuntimeSessionEventType.ASSISTANT_MESSAGE &&
+      (isCanceledValue(event.payload.phase) || isCanceledValue(event.payload.status)),
+  );
+}
+
+function canceledChildReason(log: RuntimeSessionEventLog): string {
+  for (const event of [...log.events].reverse()) {
+    if (event.eventType !== RuntimeSessionEventType.ASSISTANT_MESSAGE) continue;
+    if (!isCanceledValue(event.payload.phase) && !isCanceledValue(event.payload.status)) continue;
+    return readString(event.payload.error) || "canceled";
+  }
+  return "canceled";
+}
+
+function isCanceledValue(value: unknown): boolean {
+  const normalized = readString(value).toLowerCase().replace(/-/g, "_");
+  return normalized === "canceled" || normalized === "cancelled";
+}
+
+function readString(value: unknown): string {
+  return typeof value === "string" ? value : "";
 }

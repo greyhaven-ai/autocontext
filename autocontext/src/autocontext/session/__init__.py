@@ -90,7 +90,9 @@ from autocontext.session.runtime_events import (
 )
 from autocontext.session.runtime_grant_events import create_runtime_session_grant_event_sink
 from autocontext.session.runtime_session import (
+    DEFAULT_CHILD_TASK_MAX_CONCURRENT,
     DEFAULT_CHILD_TASK_MAX_DEPTH,
+    RuntimeChildSessionCancellation,
     RuntimeChildTaskHandlerInput,
     RuntimeChildTaskHandlerOutput,
     RuntimeChildTaskResult,
@@ -154,6 +156,7 @@ __all__ = [
     "NormalizedSessionEvent",
     "NormalizedSessionEventName",
     "NormalizedSessionEventStatus",
+    "DEFAULT_CHILD_TASK_MAX_CONCURRENT",
     "DEFAULT_CHILD_TASK_MAX_DEPTH",
     "RUNTIME_CONTEXT_LAYER_KEYS",
     "RUNTIME_CONTEXT_LAYERS",
@@ -162,6 +165,7 @@ __all__ = [
     "SessionOutcomeKind",
     "SessionOutcomeMetadataValue",
     "SessionOutcomeStatus",
+    "RuntimeChildSessionCancellation",
     "RuntimeChildTaskHandlerInput",
     "RuntimeChildTaskHandlerOutput",
     "RuntimeChildTaskResult",

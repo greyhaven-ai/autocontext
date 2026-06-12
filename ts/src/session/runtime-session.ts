@@ -6,13 +6,14 @@ import type {
 } from "../runtimes/workspace-env.js";
 import { Coordinator } from "./coordinator.js";
 import {
+  DEFAULT_CHILD_TASK_MAX_CONCURRENT,
   RuntimeChildTaskRunner,
   type RuntimeChildTaskResult,
   type RuntimeChildTaskRunOpts,
 } from "./runtime-child-tasks.js";
 import {
   RuntimeSessionEventLog,
-  RuntimeSessionEventStore,
+  type RuntimeSessionEventStore,
   RuntimeSessionEventType,
 } from "./runtime-events.js";
 import { jsonSafeRecord } from "./runtime-json.js";
@@ -28,6 +29,7 @@ export interface RuntimeSessionCreateOpts {
   metadata?: Record<string, unknown>;
   depth?: number;
   maxDepth?: number;
+  maxConcurrentChildTasks?: number;
 }
 
 export interface RuntimeSessionLoadOpts {
@@ -37,6 +39,22 @@ export interface RuntimeSessionLoadOpts {
   eventSink?: RuntimeSessionEventSink;
   depth?: number;
   maxDepth?: number;
+  maxConcurrentChildTasks?: number;
+}
+
+export interface RuntimeChildSessionCancellation {
+  childSessionId: string;
+  parentSessionId: string;
+  taskId: string;
+  workerId: string;
+  status: "canceled";
+  reason: string;
+  childSessionLog: RuntimeSessionEventLog;
+}
+
+export interface RuntimeSessionCancelChildSessionOpts {
+  childSessionId: string;
+  reason?: string;
 }
 
 export interface RuntimeSessionPromptHandlerInput {
@@ -104,6 +122,7 @@ interface RuntimeSessionConstructorOpts {
   eventSink?: RuntimeSessionEventSink;
   depth?: number;
   maxDepth?: number;
+  maxConcurrentChildTasks?: number;
 }
 
 export class RuntimeSession {
@@ -116,6 +135,7 @@ export class RuntimeSession {
   private readonly eventSink?: RuntimeSessionEventSink;
   private readonly depth?: number;
   private readonly maxDepth?: number;
+  private readonly maxConcurrentChildTasks: number;
 
   private constructor(opts: RuntimeSessionConstructorOpts) {
     this.goal = opts.goal;
@@ -126,6 +146,10 @@ export class RuntimeSession {
     this.eventSink = opts.eventSink;
     this.depth = opts.depth;
     this.maxDepth = opts.maxDepth;
+    this.maxConcurrentChildTasks = normalizePositiveInteger(
+      opts.maxConcurrentChildTasks ?? DEFAULT_CHILD_TASK_MAX_CONCURRENT,
+      "maxConcurrentChildTasks",
+    );
     observeRuntimeSessionLog(this.log, this.eventStore, this.eventSink);
   }
 
@@ -142,6 +166,7 @@ export class RuntimeSession {
       eventSink: opts.eventSink,
       depth: opts.depth,
       maxDepth: opts.maxDepth,
+      maxConcurrentChildTasks: opts.maxConcurrentChildTasks,
     });
   }
 
@@ -158,6 +183,7 @@ export class RuntimeSession {
       eventSink: opts.eventSink,
       depth: opts.depth,
       maxDepth: opts.maxDepth,
+      maxConcurrentChildTasks: opts.maxConcurrentChildTasks,
     });
   }
 
@@ -243,6 +269,53 @@ export class RuntimeSession {
     return this.eventStore?.listChildren(this.sessionId) ?? [];
   }
 
+  cancelChildSession(opts: RuntimeSessionCancelChildSessionOpts): RuntimeChildSessionCancellation {
+    if (!this.eventStore) {
+      throw new Error("eventStore is required to cancel child sessions");
+    }
+    const childSessionId = opts.childSessionId.trim();
+    if (!childSessionId) {
+      throw new Error("childSessionId is required");
+    }
+    const childLog = this.eventStore.load(childSessionId);
+    if (!childLog) {
+      throw new Error(`Child session '${childSessionId}' not found`);
+    }
+    if (childLog.parentSessionId !== this.sessionId) {
+      throw new Error(`Child session '${childSessionId}' does not belong to parent '${this.sessionId}'`);
+    }
+    const reason = opts.reason?.trim() || "canceled";
+    childLog.metadata.status = "canceled";
+    childLog.append(RuntimeSessionEventType.ASSISTANT_MESSAGE, {
+      text: "",
+      error: reason,
+      isError: true,
+      phase: "canceled",
+      status: "canceled",
+    });
+    this.log.append(RuntimeSessionEventType.CHILD_TASK_COMPLETED, {
+      taskId: childLog.taskId,
+      childSessionId: childLog.sessionId,
+      workerId: childLog.workerId,
+      result: "",
+      error: reason,
+      isError: true,
+      phase: "canceled",
+      status: "canceled",
+    });
+    this.save();
+    this.eventStore.save(childLog);
+    return {
+      childSessionId: childLog.sessionId,
+      parentSessionId: this.sessionId,
+      taskId: childLog.taskId,
+      workerId: childLog.workerId,
+      status: "canceled",
+      reason,
+      childSessionLog: childLog,
+    };
+  }
+
   recordCompaction(opts: RuntimeSessionRecordCompactionOpts): void {
     if (opts.entries.length === 0) return;
     this.log.append(RuntimeSessionEventType.COMPACTION, compactionPayload(opts));
@@ -262,6 +335,7 @@ export class RuntimeSession {
       eventSink: this.eventSink,
       depth: this.depth,
       maxDepth: this.maxDepth,
+      maxConcurrentChildTasks: this.maxConcurrentChildTasks,
     });
   }
 
@@ -290,6 +364,13 @@ function readString(value: unknown): string {
 
 function readNumber(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function normalizePositiveInteger(value: number, name: string): number {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`${name} must be a positive integer`);
+  }
+  return value;
 }
 
 function compactionPayload(opts: RuntimeSessionRecordCompactionOpts): Record<string, unknown> {

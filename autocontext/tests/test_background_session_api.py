@@ -17,6 +17,20 @@ from autocontext.storage.sqlite_store import SQLiteStore  # type: ignore[import-
 MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "migrations"
 
 
+def _child_status_counts(**overrides: int) -> dict[str, int]:
+    counts = {
+        "queued": 0,
+        "running": 0,
+        "completed": 0,
+        "failed": 0,
+        "canceled": 0,
+        "skipped": 0,
+        "unknown": 0,
+    }
+    counts.update(overrides)
+    return counts
+
+
 def _make_store(tmp_path: Path) -> SQLiteStore:
     store = SQLiteStore(tmp_path / "test.db")
     store.migrate(MIGRATIONS_DIR)
@@ -75,10 +89,46 @@ def _persist_background_sessions(db_path: Path) -> None:
             "parentSessionId": "run:test-run-1:runtime",
             "taskId": "child-1",
             "workerId": "worker-child",
-            "metadata": {"goal": "Inspect failing test", "runId": "test-run-1", "status": "completed"},
+            "metadata": {
+                "goal": "Inspect failing test",
+                "runId": "test-run-1",
+                "status": "completed",
+                "artifacts": [
+                    {
+                        "artifact_id": "child-report",
+                        "kind": "report",
+                        "label": "Child report",
+                        "path": "runs/test-run-1/child-report.md",
+                        "token": "SECRET_VALUE",
+                    }
+                ],
+            },
             "createdAt": "2026-06-01T00:00:03.000Z",
             "updatedAt": "2026-06-01T00:00:04.000Z",
-            "events": [],
+            "events": [
+                {
+                    "eventId": "child-prompt",
+                    "sessionId": "task:run:test-run-1:runtime:child-1",
+                    "sequence": 0,
+                    "eventType": RuntimeSessionEventType.PROMPT_SUBMITTED.value,
+                    "timestamp": "2026-06-01T00:00:03.500Z",
+                    "payload": {"role": "analyst", "prompt": "SECRET_VALUE"},
+                    "parentSessionId": "run:test-run-1:runtime",
+                    "taskId": "child-1",
+                    "workerId": "worker-child",
+                },
+                {
+                    "eventId": "child-answer",
+                    "sessionId": "task:run:test-run-1:runtime:child-1",
+                    "sequence": 1,
+                    "eventType": RuntimeSessionEventType.ASSISTANT_MESSAGE.value,
+                    "timestamp": "2026-06-01T00:00:04.000Z",
+                    "payload": {"role": "analyst", "text": "SECRET_VALUE"},
+                    "parentSessionId": "run:test-run-1:runtime",
+                    "taskId": "child-1",
+                    "workerId": "worker-child",
+                },
+            ],
         }
     )
     store = RuntimeSessionEventStore(db_path)
@@ -123,9 +173,10 @@ def test_cockpit_lists_background_sessions(cockpit_env: dict[str, Any]) -> None:
         "parent_session_id": "run:test-run-1:runtime",
         "status": "completed",
         "goal": "Inspect failing test",
-        "event_count": 0,
-        "artifact_count": 0,
+        "event_count": 2,
+        "artifact_count": 1,
         "child_session_count": 0,
+        "child_status_counts": _child_status_counts(),
         "created_at": "2026-06-01T00:00:03.000Z",
         "updated_at": "2026-06-01T00:00:04.000Z",
         "result_url": "/api/cockpit/background-sessions/task%3Arun%3Atest-run-1%3Aruntime%3Achild-1",
@@ -142,6 +193,7 @@ def test_cockpit_lists_background_sessions(cockpit_env: dict[str, Any]) -> None:
         "event_count": 1,
         "artifact_count": 0,
         "child_session_count": 1,
+        "child_status_counts": _child_status_counts(completed=1),
         "created_at": "2026-06-01T00:00:00.000Z",
         "updated_at": "2026-06-01T00:00:02.000Z",
         "result_url": "/api/cockpit/background-sessions/run%3Atest-run-1%3Aruntime",
@@ -158,6 +210,7 @@ def test_cockpit_lists_background_sessions(cockpit_env: dict[str, Any]) -> None:
         "event_count": 0,
         "artifact_count": 0,
         "child_session_count": 0,
+        "child_status_counts": _child_status_counts(),
         "created_at": "",
         "updated_at": "",
         "result_url": "/api/cockpit/background-sessions/task%3Aqueued-1",
@@ -176,6 +229,16 @@ def test_cockpit_reads_background_session_detail(cockpit_env: dict[str, Any]) ->
     assert body["summary"]["session_id"] == "run:test-run-1:runtime"
     assert body["summary"]["status"] == "completed"
     assert body["child_sessions"][0]["session_id"] == "task:run:test-run-1:runtime:child-1"
+    assert body["summary"]["child_status_counts"] == _child_status_counts(completed=1)
+    assert body["artifacts"] == [
+        {
+            "artifact_id": "child-report",
+            "kind": "report",
+            "label": "Child report",
+            "path": "runs/test-run-1/child-report.md",
+            "url": "",
+        }
+    ]
     assert body["trigger"] == {
         "type": "github_webhook",
         "actor": "octocat",
@@ -193,7 +256,41 @@ def test_cockpit_reads_background_session_detail(cockpit_env: dict[str, Any]) ->
             "status": "running",
             "title": "Prompt started",
             "payload_summary": {"request_id": "req-1", "role": "competitor"},
-        }
+        },
+        {
+            "event_id": "child-prompt",
+            "session_id": "task:run:test-run-1:runtime:child-1",
+            "sequence": 0,
+            "ts": "2026-06-01T00:00:03.500Z",
+            "event": "prompt_started",
+            "source_event_type": "prompt_submitted",
+            "status": "running",
+            "title": "Prompt started",
+            "payload_summary": {
+                "role": "analyst",
+                "child_session_id": "task:run:test-run-1:runtime:child-1",
+                "parent_session_id": "run:test-run-1:runtime",
+                "task_id": "child-1",
+                "worker_id": "worker-child",
+            },
+        },
+        {
+            "event_id": "child-answer",
+            "session_id": "task:run:test-run-1:runtime:child-1",
+            "sequence": 1,
+            "ts": "2026-06-01T00:00:04.000Z",
+            "event": "runtime_event",
+            "source_event_type": "assistant_message",
+            "status": "completed",
+            "title": "Assistant message",
+            "payload_summary": {
+                "role": "analyst",
+                "child_session_id": "task:run:test-run-1:runtime:child-1",
+                "parent_session_id": "run:test-run-1:runtime",
+                "task_id": "child-1",
+                "worker_id": "worker-child",
+            },
+        },
     ]
     assert "SECRET_VALUE" not in str(body)
 

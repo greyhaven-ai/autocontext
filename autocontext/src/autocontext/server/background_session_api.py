@@ -118,8 +118,7 @@ def list_background_sessions(request: Request, limit: int = 50) -> dict[str, Any
         task_index = {str(task["id"]): task for task in tasks if isinstance(task.get("id"), str)}
         runtime_task_ids = {runtime_session.task_id for runtime_session in runtime_sessions if runtime_session.task_id}
         summaries = [
-            _background_session_summary(runtime_store, runtime_session, store, task_index)
-            for runtime_session in runtime_sessions
+            _background_session_summary(runtime_store, runtime_session, store, task_index) for runtime_session in runtime_sessions
         ]
         summaries.extend(
             build_background_session_summary(task=task)
@@ -143,14 +142,15 @@ def get_background_session(session_id: str, request: Request) -> dict[str, Any]:
         log = read_runtime_session_by_id(runtime_store, clean_session_id)
         if log is not None:
             task = _task_for_runtime_session(store, log)
+            child_sessions = runtime_store.list_children(log.session_id)
             return {
                 **build_background_session_detail(
                     runtime_session=log,
                     task=task,
                     run=_run_for_runtime_session(store, log, task),
-                    child_sessions=runtime_store.list_children(log.session_id),
+                    child_sessions=child_sessions,
                 ),
-                "normalized_events": normalize_background_session_timeline(log),
+                "normalized_events": normalize_background_session_timeline(log, child_logs=child_sessions),
             }
         task_id = _task_id_from_background_session_id(clean_session_id)
         task = store.get_task(task_id) if task_id else None

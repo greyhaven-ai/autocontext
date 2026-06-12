@@ -8,13 +8,22 @@ from urllib.parse import quote
 from autocontext.session.runtime_events import RuntimeSessionEventLog
 
 BackgroundSessionStatus: TypeAlias = Literal["queued", "running", "completed", "failed", "canceled", "skipped", "unknown"]
-BackgroundSessionSummary: TypeAlias = dict[str, str | int]
+BackgroundSessionSummary: TypeAlias = dict[str, Any]
 BackgroundSessionArtifact: TypeAlias = dict[str, str]
 BackgroundSessionDetail: TypeAlias = dict[str, Any]
 TaskQueueRowLike: TypeAlias = Mapping[str, Any]
 RunRowLike: TypeAlias = Mapping[str, Any]
 ArtifactLike: TypeAlias = Mapping[str, Any]
 
+_CHILD_STATUS_KEYS: tuple[BackgroundSessionStatus, ...] = (
+    "queued",
+    "running",
+    "completed",
+    "failed",
+    "canceled",
+    "skipped",
+    "unknown",
+)
 REDACTED_TRIGGER_VALUE = "[redacted]"
 _SENSITIVE_TRIGGER_KEY_WORDS = frozenset(
     {
@@ -57,17 +66,12 @@ def build_background_session_summary(
     artifacts: Sequence[ArtifactLike] | None = None,
     child_sessions: Sequence[RuntimeSessionEventLog] | None = None,
 ) -> BackgroundSessionSummary:
-    artifacts = artifacts or []
-    child_sessions = child_sessions or []
+    artifacts = list(artifacts) if artifacts is not None else _runtime_session_artifacts(runtime_session)
+    child_sessions = list(child_sessions or [])
     session_id = runtime_session.session_id if runtime_session else _task_session_id(task)
-    created_at = (
-        runtime_session.created_at if runtime_session else _task_str(task, "created_at") or _run_str(run, "created_at")
-    )
+    created_at = runtime_session.created_at if runtime_session else _task_str(task, "created_at") or _run_str(run, "created_at")
     updated_at = _updated_at(runtime_session, task, run)
-    status = _normalize_status(
-        _metadata_str(runtime_session, "status") or _task_str(task, "status") or _run_str(run, "status"),
-        has_runtime_session=runtime_session is not None,
-    )
+    status = _read_background_session_status(runtime_session, task, run)
 
     return {
         "session_id": session_id,
@@ -80,6 +84,7 @@ def build_background_session_summary(
         "event_count": len(runtime_session.events) if runtime_session else 0,
         "artifact_count": len(artifacts),
         "child_session_count": len(child_sessions),
+        "child_status_counts": _child_status_counts(child_sessions),
         "created_at": created_at,
         "updated_at": updated_at,
         "result_url": background_session_url(session_id),
@@ -95,16 +100,19 @@ def build_background_session_detail(
     artifacts: Sequence[ArtifactLike] | None = None,
     child_sessions: Sequence[RuntimeSessionEventLog] | None = None,
 ) -> BackgroundSessionDetail:
+    child_sessions = list(child_sessions or [])
+    own_artifacts = list(artifacts) if artifacts is not None else _runtime_session_artifacts(runtime_session)
+    detail_artifacts = [*own_artifacts, *_child_runtime_session_artifacts(child_sessions)]
     return {
         "summary": build_background_session_summary(
             runtime_session=runtime_session,
             task=task,
             run=run,
-            artifacts=artifacts,
+            artifacts=detail_artifacts,
             child_sessions=child_sessions,
         ),
-        "artifacts": [_sanitize_artifact(artifact) for artifact in (artifacts or [])],
-        "child_sessions": [build_background_session_summary(runtime_session=child) for child in (child_sessions or [])],
+        "artifacts": [_sanitize_artifact(artifact) for artifact in detail_artifacts],
+        "child_sessions": [build_background_session_summary(runtime_session=child) for child in child_sessions],
         "trigger": _read_trigger(task),
     }
 
@@ -125,6 +133,30 @@ def _sanitize_artifact(artifact: ArtifactLike) -> BackgroundSessionArtifact:
         "path": _read_str(artifact.get("path")),
         "url": _read_str(artifact.get("url")),
     }
+
+
+def _runtime_session_artifacts(runtime_session: RuntimeSessionEventLog | None) -> list[ArtifactLike]:
+    if runtime_session is None:
+        return []
+    artifacts = [*_artifact_records(runtime_session.metadata.get("artifacts"))]
+    for event in runtime_session.events:
+        metadata = event.payload.get("metadata")
+        if isinstance(metadata, Mapping):
+            artifacts.extend(_artifact_records(metadata.get("artifacts")))
+    return artifacts
+
+
+def _child_runtime_session_artifacts(child_sessions: Sequence[RuntimeSessionEventLog]) -> list[ArtifactLike]:
+    artifacts: list[ArtifactLike] = []
+    for child in child_sessions:
+        artifacts.extend(_runtime_session_artifacts(child))
+    return artifacts
+
+
+def _artifact_records(value: Any) -> list[ArtifactLike]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, Mapping)]
 
 
 def _read_trigger(task: TaskQueueRowLike | None) -> dict[str, str | int | bool] | None:
@@ -200,6 +232,38 @@ def _looks_like_secret_value(value: str) -> bool:
     return any(marker in lower_value for marker in _SECRET_VALUE_MARKERS) or (
         "-----begin " in lower_value and "private key-----" in lower_value
     )
+
+
+def _read_background_session_status(
+    runtime_session: RuntimeSessionEventLog | None,
+    task: TaskQueueRowLike | None,
+    run: RunRowLike | None,
+) -> BackgroundSessionStatus:
+    raw_status = _metadata_str(runtime_session, "status") or _task_str(task, "status") or _run_str(run, "status")
+    status = _normalize_status(raw_status, has_runtime_session=runtime_session is not None)
+    if runtime_session is not None and runtime_session.parent_session_id and status == "running" and not raw_status:
+        return _infer_child_runtime_session_status(runtime_session)
+    return status
+
+
+def _child_status_counts(child_sessions: Sequence[RuntimeSessionEventLog]) -> dict[BackgroundSessionStatus, int]:
+    counts: dict[BackgroundSessionStatus, int] = {}
+    for status in _CHILD_STATUS_KEYS:
+        counts[status] = 0
+    for child in child_sessions:
+        counts[_read_background_session_status(child, None, None)] += 1
+    return counts
+
+
+def _infer_child_runtime_session_status(runtime_session: RuntimeSessionEventLog) -> BackgroundSessionStatus:
+    for event in sorted(runtime_session.events, key=lambda item: item.sequence, reverse=True):
+        if event.event_type == "assistant_message":
+            phase = _read_str(event.payload.get("phase")).lower().replace("-", "_")
+            status = _read_str(event.payload.get("status")).lower().replace("-", "_")
+            if phase in {"canceled", "cancelled"} or status in {"canceled", "cancelled"}:
+                return "canceled"
+            return "failed" if event.payload.get("isError") is True else "completed"
+    return "running"
 
 
 def _normalize_status(raw: str, *, has_runtime_session: bool) -> BackgroundSessionStatus:

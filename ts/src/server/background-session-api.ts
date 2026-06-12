@@ -46,7 +46,12 @@ export function buildBackgroundSessionApiRoutes(opts: {
         const runtimeTaskIds = new Set(runtimeSessions.map((log) => log.taskId).filter(Boolean));
         const summaries = [
           ...runtimeSessions.map((runtimeSession) =>
-            summarizeBackgroundSessionFromStore(runtimeStore, sourceStore, taskIndex, runtimeSession),
+            summarizeBackgroundSessionFromStore(
+              runtimeStore,
+              sourceStore,
+              taskIndex,
+              runtimeSession,
+            ),
           ),
           ...[...taskIndex.values()]
             .filter((task) => !runtimeTaskIds.has(task.id))
@@ -73,12 +78,14 @@ export function buildBackgroundSessionApiRoutes(opts: {
             status: 200,
             body: {
               ...buildBackgroundSessionDetail({ runtimeSession, task, run, childSessions }),
-              normalized_events: normalizeBackgroundSessionTimeline(runtimeSession),
+              normalized_events: normalizeBackgroundSessionTimeline(runtimeSession, {
+                childLogs: childSessions,
+              }),
             },
           };
         }
         const taskId = taskIdFromSessionId(cleanSessionId);
-        const task = taskId ? sourceStore?.getTask?.(taskId) ?? null : null;
+        const task = taskId ? (sourceStore?.getTask?.(taskId) ?? null) : null;
         if (task) {
           return {
             status: 200,
@@ -123,7 +130,9 @@ function taskForRuntimeSession(
   if (!runtimeSession.taskId) {
     return null;
   }
-  return taskIndex?.get(runtimeSession.taskId) ?? sourceStore?.getTask?.(runtimeSession.taskId) ?? null;
+  return (
+    taskIndex?.get(runtimeSession.taskId) ?? sourceStore?.getTask?.(runtimeSession.taskId) ?? null
+  );
 }
 
 function runForRuntimeSession(
@@ -132,7 +141,7 @@ function runForRuntimeSession(
   task: TaskQueueRow | null,
 ): RunRow | null {
   const runId = readString(runtimeSession.metadata.runId) || readRunIdFromTask(task);
-  return runId ? sourceStore?.getRun?.(runId) ?? null : null;
+  return runId ? (sourceStore?.getRun?.(runId) ?? null) : null;
 }
 
 function readRunIdFromTask(task: TaskQueueRow | null): string {

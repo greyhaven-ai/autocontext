@@ -387,6 +387,8 @@ export {
   readRuntimeSessionTimelineByRunId,
 } from "./session/runtime-session-timeline.js";
 export type {
+  RuntimeChildSessionCancellation,
+  RuntimeSessionCancelChildSessionOpts,
   RuntimeSessionCreateOpts,
   RuntimeSessionCompactionEntry,
   RuntimeSessionLoadOpts,
@@ -472,6 +474,7 @@ export type {
   RuntimeSessionEventSink,
 } from "./session/runtime-session-notifications.js";
 export {
+  DEFAULT_CHILD_TASK_MAX_CONCURRENT,
   DEFAULT_CHILD_TASK_MAX_DEPTH,
   RuntimeChildTaskRunner,
   createAgentRuntimeChildTaskHandler,

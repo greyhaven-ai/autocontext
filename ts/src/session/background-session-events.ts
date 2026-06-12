@@ -73,10 +73,23 @@ export interface SessionStatusEventInput {
 
 export function normalizeBackgroundSessionTimeline(
   log: RuntimeSessionEventLog,
+  opts: { childLogs?: readonly RuntimeSessionEventLog[] } = {},
 ): NormalizedSessionEvent[] {
-  return [...log.events]
+  const events = [...log.events]
     .sort((left, right) => left.sequence - right.sequence)
     .map(normalizeRuntimeSessionEvent);
+  for (const childLog of opts.childLogs ?? []) {
+    events.push(
+      ...[...childLog.events]
+        .sort((left, right) => left.sequence - right.sequence)
+        .map((event) => withChildLineage(normalizeRuntimeSessionEvent(event), childLog)),
+    );
+  }
+  return events.sort((left, right) =>
+    `${left.ts}\u0000${left.session_id}\u0000${left.sequence}`.localeCompare(
+      `${right.ts}\u0000${right.session_id}\u0000${right.sequence}`,
+    ),
+  );
 }
 
 export function normalizeRuntimeSessionEvent(event: RuntimeSessionEvent): NormalizedSessionEvent {
@@ -94,7 +107,7 @@ export function normalizeRuntimeSessionEvent(event: RuntimeSessionEvent): Normal
     case "assistant_message":
       return baseEvent(event, {
         normalizedEvent: "runtime_event",
-        status: hasFailurePayload(event.payload) ? "failed" : "completed",
+        status: runtimeActionStatus(event.payload, "completed"),
         title: "Assistant message",
         payloadSummary: pickPayload(event.payload, {
           request_id: "requestId",
@@ -134,11 +147,12 @@ export function normalizeRuntimeSessionEvent(event: RuntimeSessionEvent): Normal
         }),
       });
     case "child_task_completed": {
+      const canceled = isCanceledPayload(event.payload);
       const failed = readBoolean(event.payload.isError);
       return baseEvent(event, {
         normalizedEvent: "session_status",
-        status: failed ? "failed" : "completed",
-        title: failed ? "Child session failed" : "Child session completed",
+        status: canceled ? "canceled" : failed ? "failed" : "completed",
+        title: canceled ? "Child session canceled" : failed ? "Child session failed" : "Child session completed",
         payloadSummary: pickPayload(event.payload, {
           task_id: "taskId",
         }),
@@ -245,6 +259,24 @@ function baseEvent(
   };
 }
 
+function withChildLineage(
+  event: NormalizedSessionEvent,
+  childLog: RuntimeSessionEventLog,
+): NormalizedSessionEvent {
+  return {
+    ...event,
+    payload_summary: {
+      ...event.payload_summary,
+      ...sanitizeSummary({
+        child_session_id: childLog.sessionId,
+        parent_session_id: childLog.parentSessionId,
+        task_id: childLog.taskId,
+        worker_id: childLog.workerId,
+      }),
+    },
+  };
+}
+
 function pickPayload(
   payload: Record<string, unknown>,
   mapping: Record<string, string>,
@@ -275,6 +307,9 @@ function runtimeActionStatus(
   payload: Record<string, unknown>,
   defaultStatus: NormalizedSessionEventStatus,
 ): NormalizedSessionEventStatus {
+  if (isCanceledPayload(payload)) {
+    return "canceled";
+  }
   if (hasFailurePayload(payload)) {
     return "failed";
   }
@@ -282,6 +317,12 @@ function runtimeActionStatus(
     return "completed";
   }
   return defaultStatus;
+}
+
+function isCanceledPayload(payload: Record<string, unknown>): boolean {
+  return [readPhase(payload), readStatus(payload)].some(
+    (value) => value === "canceled" || value === "cancelled",
+  );
 }
 
 function hasFailurePayload(payload: Record<string, unknown>): boolean {
@@ -304,6 +345,10 @@ function hasCompletedPayload(payload: Record<string, unknown>): boolean {
 
 function readPhase(payload: Record<string, unknown>): string {
   return readNonEmptyString(payload.phase).toLowerCase().replace(/-/g, "_");
+}
+
+function readStatus(payload: Record<string, unknown>): string {
+  return readNonEmptyString(payload.status).toLowerCase().replace(/-/g, "_");
 }
 
 function readNonEmptyString(value: unknown): string {

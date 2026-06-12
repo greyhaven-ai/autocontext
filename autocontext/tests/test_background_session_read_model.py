@@ -64,12 +64,39 @@ def _child_log() -> RuntimeSessionEventLog:
             "parentSessionId": "run:run-123:runtime",
             "taskId": "child-1",
             "workerId": "worker-child",
-            "metadata": {"goal": "Inspect failing test", "runId": "run-123", "status": "completed"},
+            "metadata": {
+                "goal": "Inspect failing test",
+                "runId": "run-123",
+                "status": "completed",
+                "artifacts": [
+                    {
+                        "artifact_id": "child-report",
+                        "kind": "report",
+                        "label": "Child report",
+                        "path": "runs/run-123/child-report.md",
+                        "token": "SECRET_VALUE",
+                    }
+                ],
+            },
             "createdAt": "2026-06-01T00:00:30.000Z",
             "updatedAt": "2026-06-01T00:00:45.000Z",
             "events": [],
         }
     )
+
+
+def _child_status_counts(**overrides: int) -> dict[str, int]:
+    counts = {
+        "queued": 0,
+        "running": 0,
+        "completed": 0,
+        "failed": 0,
+        "canceled": 0,
+        "skipped": 0,
+        "unknown": 0,
+    }
+    counts.update(overrides)
+    return counts
 
 
 def _task(**overrides: Any) -> dict[str, Any]:
@@ -117,6 +144,7 @@ def test_background_session_summary_matches_typescript_contract_without_raw_payl
         "event_count": 2,
         "artifact_count": 2,
         "child_session_count": 1,
+        "child_status_counts": _child_status_counts(completed=1),
         "created_at": "2026-06-01T00:00:00.000Z",
         "updated_at": "2026-06-01T00:01:00.000Z",
         "result_url": "/api/cockpit/background-sessions/run%3Arun-123%3Aruntime",
@@ -141,6 +169,7 @@ def test_background_session_summary_represents_queued_work_without_runtime_sessi
         "event_count": 0,
         "artifact_count": 0,
         "child_session_count": 0,
+        "child_status_counts": _child_status_counts(),
         "created_at": "2026-06-01T00:00:00.000Z",
         "updated_at": "2026-06-01T00:00:10.000Z",
         "result_url": "/api/cockpit/background-sessions/task%3Aqueued-1",
@@ -165,6 +194,8 @@ def test_background_session_detail_sanitizes_artifacts_and_child_summaries() -> 
     )
 
     assert detail["summary"]["session_id"] == "run:run-123:runtime"
+    assert detail["summary"]["artifact_count"] == 2
+    assert detail["summary"]["child_status_counts"] == _child_status_counts(completed=1)
     assert detail["artifacts"] == [
         {
             "artifact_id": "pr-1",
@@ -172,11 +203,19 @@ def test_background_session_detail_sanitizes_artifacts_and_child_summaries() -> 
             "label": "Review changes",
             "path": "",
             "url": "https://github.example/pr/1",
-        }
+        },
+        {
+            "artifact_id": "child-report",
+            "kind": "report",
+            "label": "Child report",
+            "path": "runs/run-123/child-report.md",
+            "url": "",
+        },
     ]
     assert detail["child_sessions"][0]["session_id"] == "task:run:run-123:runtime:child-1"
     assert detail["child_sessions"][0]["parent_session_id"] == "run:run-123:runtime"
     assert detail["child_sessions"][0]["status"] == "completed"
+    assert detail["child_sessions"][0]["artifact_count"] == 1
     assert detail["trigger"] == {"type": "manual", "actor": "operator"}
     assert "SECRET_VALUE" not in str(detail)
 

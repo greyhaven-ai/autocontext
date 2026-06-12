@@ -36,7 +36,11 @@ function createLog(
   });
 }
 
-function createTask(id: string, status: string, specName = "autoctx run support_triage"): TaskQueueRow {
+function createTask(
+  id: string,
+  status: string,
+  specName = "autoctx run support_triage",
+): TaskQueueRow {
   return {
     id,
     spec_name: specName,
@@ -54,6 +58,21 @@ function createTask(id: string, status: string, specName = "autoctx run support_
     error: null,
     created_at: `2026-04-10T00:00:${id === "queued-1" ? "03" : "01"}.000Z`,
     updated_at: `2026-04-10T00:00:${id === "queued-1" ? "03" : "04"}.000Z`,
+  };
+}
+
+function childStatusCounts(
+  overrides: Partial<Record<string, number>> = {},
+): Record<string, number> {
+  return {
+    queued: 0,
+    running: 0,
+    completed: 0,
+    failed: 0,
+    canceled: 0,
+    skipped: 0,
+    unknown: 0,
+    ...overrides,
   };
 }
 
@@ -76,10 +95,46 @@ function createChildLog(): RuntimeSessionEventLog {
     parentSessionId: "run:abc:runtime",
     taskId: "child-1",
     workerId: "worker-child",
-    metadata: { goal: "Inspect failing test", runId: "abc", status: "completed" },
+    metadata: {
+      goal: "Inspect failing test",
+      runId: "abc",
+      status: "completed",
+      artifacts: [
+        {
+          artifact_id: "child-report",
+          kind: "report",
+          label: "Child report",
+          path: "runs/abc/child-report.md",
+          token: "SECRET_VALUE",
+        },
+      ],
+    },
     createdAt: "2026-04-10T00:00:03.000Z",
     updatedAt: "2026-04-10T00:00:04.000Z",
-    events: [],
+    events: [
+      {
+        eventId: "child-prompt",
+        sessionId: "task:run:abc:runtime:child-1",
+        sequence: 0,
+        eventType: RuntimeSessionEventType.PROMPT_SUBMITTED,
+        timestamp: "2026-04-10T00:00:03.500Z",
+        payload: { role: "analyst", prompt: "SECRET_VALUE" },
+        parentSessionId: "run:abc:runtime",
+        taskId: "child-1",
+        workerId: "worker-child",
+      },
+      {
+        eventId: "child-answer",
+        sessionId: "task:run:abc:runtime:child-1",
+        sequence: 1,
+        eventType: RuntimeSessionEventType.ASSISTANT_MESSAGE,
+        timestamp: "2026-04-10T00:00:04.000Z",
+        payload: { role: "analyst", text: "SECRET_VALUE" },
+        parentSessionId: "run:abc:runtime",
+        taskId: "child-1",
+        workerId: "worker-child",
+      },
+    ],
   });
 }
 
@@ -108,6 +163,7 @@ describe("background session HTTP API routes", () => {
           status: "running",
           event_count: 1,
           child_session_count: 1,
+          child_status_counts: childStatusCounts({ completed: 1 }),
         }),
       ],
     });
@@ -181,12 +237,26 @@ describe("background session HTTP API routes", () => {
 
     expect(response.status).toBe(200);
     expect(load).toHaveBeenCalledWith("run:abc:runtime");
-    expect(body.summary).toMatchObject({ session_id: "run:abc:runtime" });
+    expect(body.summary).toMatchObject({
+      session_id: "run:abc:runtime",
+      child_status_counts: childStatusCounts({ completed: 1 }),
+      artifact_count: 1,
+    });
     expect(body.child_sessions).toEqual([
       expect.objectContaining({
         session_id: "task:run:abc:runtime:child-1",
         status: "completed",
+        artifact_count: 1,
       }),
+    ]);
+    expect(body.artifacts).toEqual([
+      {
+        artifact_id: "child-report",
+        kind: "report",
+        label: "Child report",
+        path: "runs/abc/child-report.md",
+        url: "",
+      },
     ]);
     expect(body.trigger).toEqual({
       type: "github_webhook",
@@ -196,6 +266,31 @@ describe("background session HTTP API routes", () => {
     });
     expect(body.normalized_events).toEqual([
       expect.objectContaining({ event: "prompt_started", source_event_type: "prompt_submitted" }),
+      expect.objectContaining({
+        event_id: "child-prompt",
+        session_id: "task:run:abc:runtime:child-1",
+        event: "prompt_started",
+        payload_summary: {
+          role: "analyst",
+          child_session_id: "task:run:abc:runtime:child-1",
+          parent_session_id: "run:abc:runtime",
+          task_id: "child-1",
+          worker_id: "worker-child",
+        },
+      }),
+      expect.objectContaining({
+        event_id: "child-answer",
+        session_id: "task:run:abc:runtime:child-1",
+        event: "runtime_event",
+        status: "completed",
+        payload_summary: {
+          role: "analyst",
+          child_session_id: "task:run:abc:runtime:child-1",
+          parent_session_id: "run:abc:runtime",
+          task_id: "child-1",
+          worker_id: "worker-child",
+        },
+      }),
     ]);
     expect(JSON.stringify(body)).not.toContain("SECRET_VALUE");
   });
