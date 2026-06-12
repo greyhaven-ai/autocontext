@@ -1,5 +1,5 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { isAbsolute, join, relative, resolve } from "node:path";
 
 import {
   buildTraceGateOperatorView,
@@ -90,10 +90,23 @@ function resolveRunRoot(runsRoot: string, runId: string): string {
   }
   const root = resolve(runsRoot);
   const candidate = resolve(root, cleanRunId);
-  if (candidate === root || !candidate.startsWith(`${root}/`)) {
+  if (!isContainedSubpath(root, candidate)) {
     throw new Error(`run_id escapes runs root: '${runId}'`);
   }
+  if (existsSync(root) && existsSync(candidate)) {
+    const realRoot = realpathSync(root);
+    const realCandidate = realpathSync(candidate);
+    if (!isContainedSubpath(realRoot, realCandidate)) {
+      throw new Error(`run_id escapes runs root: '${runId}'`);
+    }
+    return realCandidate;
+  }
   return candidate;
+}
+
+function isContainedSubpath(root: string, candidate: string): boolean {
+  const relativePath = relative(root, candidate);
+  return relativePath !== "" && !relativePath.startsWith("..") && !isAbsolute(relativePath);
 }
 
 function readHarnessChangeProposal(path: string): HarnessChangeProposal {

@@ -6,6 +6,10 @@ from typing import Any
 
 from autocontext.analytics.cross_runtime_trace_findings import CrossRuntimeTraceFindingReport
 from autocontext.analytics.trace_gate_operator_view import build_trace_gate_operator_view
+from autocontext.control_plane.harness_change_proposal import (
+    InvalidHarnessChangeProposalError,
+    validate_harness_change_proposal,
+)
 from autocontext.storage.run_paths import resolve_run_root
 
 
@@ -38,8 +42,12 @@ def _load_harness_change_proposals(run_root: Path) -> list[dict[str, Any]]:
     proposals: list[dict[str, Any]] = []
     for path in [*_json_files(run_root / "harness-proposals"), *_json_files(run_root / "harness_proposals")]:
         payload = json.loads(path.read_text(encoding="utf-8"))
-        if isinstance(payload, dict):
-            proposals.append(payload)
+        if not isinstance(payload, dict):
+            raise InvalidHarnessChangeProposalError(f"Invalid HarnessChangeProposal at {path}: expected object")
+        try:
+            proposals.append(validate_harness_change_proposal(payload))
+        except InvalidHarnessChangeProposalError as exc:
+            raise InvalidHarnessChangeProposalError(f"Invalid HarnessChangeProposal at {path}: {exc}") from exc
     return proposals
 
 

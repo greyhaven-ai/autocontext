@@ -80,6 +80,42 @@ def _proposal(suffix: str, status: str, reason: str = "") -> dict[str, object]:
                         "suiteId": "heldout-suite",
                         "evidenceRefs": [] if status == "inconclusive" else [f"runs/run-123/{status}.json"],
                     },
+                    "promotionDecision": {
+                        "schemaVersion": "1.0",
+                        "pass": status == "accepted",
+                        "recommendedTargetState": "canary" if status == "accepted" else "disabled",
+                        "deltas": {
+                            "quality": {"baseline": 0.6, "candidate": 0.72, "delta": 0.12, "passed": True},
+                            "cost": {
+                                "baseline": {"tokensIn": 100, "tokensOut": 50},
+                                "candidate": {"tokensIn": 110, "tokensOut": 55},
+                                "delta": {"tokensIn": 10, "tokensOut": 5},
+                                "passed": True,
+                            },
+                            "latency": {
+                                "baseline": {"p50Ms": 10, "p95Ms": 20, "p99Ms": 30},
+                                "candidate": {"p50Ms": 11, "p95Ms": 21, "p99Ms": 31},
+                                "delta": {"p50Ms": 1, "p95Ms": 1, "p99Ms": 1},
+                                "passed": True,
+                            },
+                            "safety": {"regressions": [], "passed": True},
+                        },
+                        "confidence": 0.9,
+                        "thresholds": {
+                            "qualityMinDelta": 0.05,
+                            "costMaxRelativeIncrease": 0.2,
+                            "latencyMaxRelativeIncrease": 0.2,
+                            "strongConfidenceMin": 0.9,
+                            "moderateConfidenceMin": 0.7,
+                            "strongQualityMultiplier": 2,
+                        },
+                        "reasoning": reason,
+                        "evaluatedAt": "2026-06-01T12:10:00.000Z",
+                    },
+                    "candidateArtifactId": "01HX0000000000000000000001",
+                    "candidateEvalRunId": f"candidate-{status}",
+                    "baselineArtifactId": "01HX0000000000000000000002",
+                    "baselineEvalRunId": f"baseline-{status}",
                     "decidedAt": "2026-06-01T12:10:00.000Z",
                 }
             }

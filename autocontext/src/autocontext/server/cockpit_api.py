@@ -21,7 +21,7 @@ from autocontext.providers.registry import create_provider
 from autocontext.providers.retry import RetryProvider
 from autocontext.server.background_session_api import background_session_router
 from autocontext.server.changelog import build_changelog
-from autocontext.server.trace_gate_review_api import build_run_trace_gate_review
+from autocontext.server.trace_gate_review_api import InvalidHarnessChangeProposalError, build_run_trace_gate_review
 from autocontext.server.writeup import generate_writeup, generate_writeup_html
 from autocontext.session.runtime_events import RuntimeSessionEventStore
 from autocontext.session.runtime_session_ids import runtime_session_id_for_run
@@ -335,7 +335,7 @@ def get_run_trace_gate_review(run_id: str, request: Request) -> dict[str, Any]:
         return build_run_trace_gate_review(runs_root=settings.runs_root, run_id=run_id)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except (OSError, JSONDecodeError, ValidationError) as exc:
+    except (OSError, JSONDecodeError, ValidationError, InvalidHarnessChangeProposalError) as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
