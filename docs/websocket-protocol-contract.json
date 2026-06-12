@@ -98,6 +98,10 @@
     {
       "type": "whoami",
       "reason": "TypeScript TUI provider-auth workflow"
+    },
+    {
+      "type": "authenticate",
+      "reason": "TypeScript desktop token-based auth handshake"
     }
   ],
   "python_only_server_messages": [],

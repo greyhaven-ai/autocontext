@@ -25,10 +25,7 @@ export const PYTHON_SHARED_SERVER_MESSAGE_TYPES = [
   "monitor_alert",
 ] as const;
 
-export const TYPESCRIPT_ONLY_SERVER_MESSAGE_TYPES = [
-  "auth_status",
-  "mission_progress",
-] as const;
+export const TYPESCRIPT_ONLY_SERVER_MESSAGE_TYPES = ["auth_status", "mission_progress"] as const;
 
 export const SERVER_MESSAGE_TYPES = [
   ...PYTHON_SHARED_SERVER_MESSAGE_TYPES,
@@ -54,6 +51,7 @@ export const TYPESCRIPT_ONLY_CLIENT_MESSAGE_TYPES = [
   "logout",
   "switch_provider",
   "whoami",
+  "authenticate",
 ] as const;
 
 export const CLIENT_MESSAGE_TYPES = [
@@ -205,10 +203,14 @@ export const AuthStatusMsgSchema = protocolObject({
   provider: z.string(),
   authenticated: z.boolean(),
   model: z.string().optional(),
-  configuredProviders: z.array(protocolObject({
-    provider: z.string(),
-    hasApiKey: z.boolean(),
-  })).optional(),
+  configuredProviders: z
+    .array(
+      protocolObject({
+        provider: z.string(),
+        hasApiKey: z.boolean(),
+      }),
+    )
+    .optional(),
 });
 
 // ---------------------------------------------------------------------------
@@ -285,6 +287,11 @@ export const WhoamiCmdSchema = protocolObject({
   type: z.literal("whoami"),
 });
 
+export const AuthenticateCmdSchema = protocolObject({
+  type: z.literal("authenticate"),
+  token: z.string().min(1),
+});
+
 // ---------------------------------------------------------------------------
 // Discriminated unions
 // ---------------------------------------------------------------------------
@@ -323,6 +330,7 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   LogoutCmdSchema,
   SwitchProviderCmdSchema,
   WhoamiCmdSchema,
+  AuthenticateCmdSchema,
 ]);
 
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
