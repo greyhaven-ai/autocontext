@@ -45,10 +45,10 @@
         "owner": "@autocontext/control-plane",
         "runtime": "load local agent handlers through autoctx/agent-runtime until the surface is extracted into @autocontext/core"
       },
-      "cloudflare": {
+      "edge": {
         "phase": "spike",
         "owner": "@autocontext/control-plane",
-        "runtime": "prototype Worker and Durable Object session persistence after Node target contracts stabilize"
+        "runtime": "inventory generic Fetch/ESM runtime portability gaps before any provider-specific build target is added"
       }
     }
   },

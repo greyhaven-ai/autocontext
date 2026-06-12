@@ -68,9 +68,11 @@ level while remaining Apache-2.0 in this repo.
 
 ## Agent App Build Targets
 
-autocontext should treat `build --target node|cloudflare` deployment targets as
-control-plane packaging around stable runtime contracts, not as new runtime
-contracts themselves. The machine-readable target boundary lives in
+autocontext should treat generated agent app targets as control-plane packaging
+around stable runtime contracts, not as new runtime contracts themselves. The
+only current CLI build target is `node`; generic edge-runtime compatibility is a
+spike until the Node target proves which seams are reusable. The
+machine-readable target boundary lives in
 [`packages/package-topology.json`](../packages/package-topology.json) under
 `agentApps`.
 
@@ -88,9 +90,9 @@ Ownership:
   interfaces, runtime-session event contracts, and the dependencies needed by
   those contracts.
 - Build and deploy workflows belong in the Apache control-plane artifact. This
-  includes target selection, bundle planning, generated server/worker templates,
-  target-specific adapters, packaging checks, and operator-facing CLI/API
-  commands.
+  includes target selection, bundle planning, generated server or Fetch adapter
+  templates, target-specific adapters, packaging checks, and operator-facing
+  CLI/API commands.
 - The umbrella `autoctx` CLI may dispatch build commands while package splitting
   is in progress, but it should delegate to the control-plane implementation.
 - Hosted fleet orchestration is out of scope for this Apache repo. Multi-tenant
@@ -126,24 +128,27 @@ contracts:
 - keep deployment, service hosting, process supervision, and remote secret
   management out of scope.
 
-### Cloudflare Target Spike
+### Generic Edge Runtime Compatibility Spike
 
-The Cloudflare target should stay a spike until the Node target proves the
-handler/server boundary. The spike can explore Workers for request routing and
-Durable Objects for session/event persistence, but it should report contract
-gaps before adding a production build path.
+The edge-runtime question should stay a spike until the Node target proves the
+handler/server boundary. Cloudflare Workers/Durable Objects may be reference
+environments, but the spike must report generic portability constraints before
+any provider-specific build path is added. The detailed spike lives in
+[`edge-runtime-compatibility.md`](./edge-runtime-compatibility.md).
 
 The spike should answer:
 
-- how a Worker bundle loads or embeds agent handlers without depending on
-  Node-only dynamic import behavior;
-- how Durable Objects map onto runtime-session ids, append/replay semantics, and
-  child-session links;
+- whether the Node `GET /manifest` and `POST /agents/<agent>/invoke` wire shape
+  can be reused through a standards-based Fetch handler;
+- how edge bundles load or embed agent handlers without depending on Node-only
+  dynamic import or runtime filesystem discovery behavior;
+- how edge-native storage maps onto runtime-session ids, append/replay
+  semantics, and child-session links;
 - how tool grants are represented when local process execution and filesystem
   access are unavailable;
-- which runtime workspace adapters are valid in an edge environment;
-- which pieces must remain target adapters in the control-plane package instead
-  of leaking into core.
+- which runtime workspace adapters are valid in constrained edge environments;
+- which pieces must remain generic target adapters in the control-plane package
+  instead of leaking into core or becoming provider-specific OSS commitments.
 
 ### Risks
 
@@ -153,12 +158,13 @@ The spike should answer:
 - Environment variables: build targets must preserve explicit env loading and
   redaction semantics. They must not capture the full host environment or bake
   secrets into generated artifacts.
-- Session persistence: Node can start with local SQLite/file stores, while
-  Cloudflare needs a Durable Object or other edge-native event store. Replay
+- Session persistence: Node can start with local SQLite/file stores, while edge
+  runtimes need an adapter around a runtime-native or remote event store. Replay
   semantics must stay compatible before sessions move between targets.
 - Sandbox providers: local shell grants, filesystem adapters, and subprocess
-  runtimes do not automatically exist in Workers. Target adapters must degrade
-  explicitly or require remote tools rather than silently broadening authority.
+  runtimes do not automatically exist in constrained edge runtimes. Target
+  adapters must degrade explicitly or require remote tools rather than silently
+  broadening authority.
 - Product boundary: hosted scheduling, policy rollout, tenant isolation,
   observability cockpit features, and managed deployment are not open-source
   build-target responsibilities.

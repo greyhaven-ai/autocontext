@@ -129,7 +129,7 @@ describe("package topology", () => {
           phase: "mvp",
           owner: "@autocontext/control-plane",
         },
-        cloudflare: {
+        edge: {
           phase: "spike",
           owner: "@autocontext/control-plane",
         },
@@ -164,7 +164,9 @@ describe("package topology", () => {
     expect(doc).toContain("autoctx/agent-runtime");
     expect(doc).toContain("importing missing core package");
     expect(doc).toContain("Node Target MVP");
-    expect(doc).toContain("Cloudflare Target Spike");
+    expect(doc).toContain("Generic Edge Runtime Compatibility Spike");
+    expect(doc).toContain("Cloudflare Workers/Durable Objects may be reference");
+    expect(doc).toContain("provider-specific build path");
     expect(doc).toContain("Hosted fleet orchestration");
     expect(doc).toContain("Bundling");
     expect(doc).toContain("Environment variables");

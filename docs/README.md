@@ -35,6 +35,7 @@ This directory is the maintainer-facing landing page for repository docs. Use it
 ## Architecture And Parity
 
 - [Core/control package split](core-control-package-split.md)
+- [Generic edge runtime compatibility spike](edge-runtime-compatibility.md)
 - [Flue-inspired runtime decisions](flue-influences.md)
 - [Scenario parity matrix — Python & TypeScript](scenario-parity-matrix.md)
 - [Browser exploration contract](browser-exploration-contract.md)
