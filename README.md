@@ -333,6 +333,7 @@ Yes. Wire `autoctx mcp-serve` (or `bunx autoctx mcp-serve`) into Claude Code, Cu
 - Local + cross-platform model training (MLX and TRL backends): [autocontext/docs/mlx-training.md](autocontext/docs/mlx-training.md)
 - Validated training result (on-policy distillation vs RLVR on GSM8K): [autocontext/docs/case-study-on-policy-distillation.md](autocontext/docs/case-study-on-policy-distillation.md)
 - Recursive loop closed end to end on local MLX (train -> auto-serve -> improve): [autocontext/docs/case-study-recursive-loop.md](autocontext/docs/case-study-recursive-loop.md)
+- Verifier-driven self-improvement on GSM8K, an honest negative (STaR + GRPO, with the engineering story): [autocontext/docs/case-study-self-improvement-gsm8k.md](autocontext/docs/case-study-self-improvement-gsm8k.md)
 - Sandbox and executor notes: [autocontext/docs/sandbox.md](autocontext/docs/sandbox.md)
 - Persistent host worker: [autocontext/docs/persistent-host.md](autocontext/docs/persistent-host.md)
 - License: [LICENSE](LICENSE)

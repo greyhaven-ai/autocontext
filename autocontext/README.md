@@ -700,6 +700,7 @@ For the TypeScript equivalent, see `ts/src/integrations/anthropic/STABILITY.md`.
 - [Persistent host worker](docs/persistent-host.md)
 - [MLX host training](docs/mlx-training.md)
 - [Case study: recursive loop closed on local MLX](docs/case-study-recursive-loop.md)
+- [Case study: verifier-driven self-improvement on GSM8K (honest negative)](docs/case-study-self-improvement-gsm8k.md)
 - [TypeScript package guide](../ts/README.md) — `analyze`, mission control, and interactive TUI surfaces
 - [Demo data notes](demo_data/README.md)
 - [Copy-paste examples](../examples/README.md)

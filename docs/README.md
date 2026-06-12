@@ -24,6 +24,7 @@ This directory is the maintainer-facing landing page for repository docs. Use it
 - [Persistent host worker](../autocontext/docs/persistent-host.md)
 - [MLX host training notes](../autocontext/docs/mlx-training.md)
 - [Case study: recursive loop closed on local MLX](../autocontext/docs/case-study-recursive-loop.md)
+- [Case study: verifier-driven self-improvement on GSM8K (honest negative)](../autocontext/docs/case-study-self-improvement-gsm8k.md)
 
 ## Contributing And Support
 
