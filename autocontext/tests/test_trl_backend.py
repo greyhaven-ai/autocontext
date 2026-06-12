@@ -57,7 +57,7 @@ def test_grpo_config_kwargs_have_generation_and_kl_fields() -> None:
 
     cfg = build_grpo_config_kwargs(output_dir="/tmp/out", num_generations=6)
     assert cfg["num_generations"] == 6
-    assert cfg["beta"] == 0.0  # TRL KL-free default
+    assert cfg["beta"] > 0  # KL penalty on by default (not TRL's KL-free 0.0; see overfitting regression)
     assert "max_completion_length" in cfg
     # max_prompt_length is intentionally NOT passed (some TRL versions reject it).
     assert "max_prompt_length" not in cfg
@@ -71,6 +71,29 @@ def test_grpo_completion_length_defaults_long_enough_for_reasoning() -> None:
 
     assert build_grpo_config_kwargs(output_dir="/o")["max_completion_length"] >= 512
     assert build_grpo_config_kwargs(output_dir="/o", max_completion_length=1024)["max_completion_length"] == 1024
+
+
+def test_grpo_beta_defaults_nonzero_to_prevent_overfitting() -> None:
+    """Regression: beta=0 (no KL penalty) lets small-model RLVR drift off the base distribution
+    and overfit the train prompts (train reward up, held-out down). The default must apply a KL
+    anchor, stay overridable, and still allow the KL-free regime (beta=0)."""
+    from autocontext.training.autoresearch.trl_backend import build_grpo_config_kwargs
+
+    assert build_grpo_config_kwargs(output_dir="/o")["beta"] > 0  # KL anchor on by default
+    assert build_grpo_config_kwargs(output_dir="/o", beta=0.1)["beta"] == 0.1
+    assert build_grpo_config_kwargs(output_dir="/o", beta=0.0)["beta"] == 0.0  # KL-free still possible
+
+
+def test_grpo_beta_rejects_negative_in_lower_level_api() -> None:
+    """beta is a KL *penalty*; a negative value rewards drift off the reference -- the opposite
+    of regularization. The CLI guards this, but harnesses call run_trl_training / run_training
+    (which route through build_grpo_config_kwargs) directly, so the invariant lives here too."""
+    import pytest
+
+    from autocontext.training.autoresearch.trl_backend import build_grpo_config_kwargs
+
+    with pytest.raises(ValueError, match="must be >= 0"):
+        build_grpo_config_kwargs(output_dir="/tmp/out", beta=-0.1)
 
 
 def test_config_kwargs_thread_max_steps_and_batch_size() -> None:

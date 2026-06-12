@@ -106,19 +106,31 @@ def build_grpo_config_kwargs(
     # answer. At 256 every completion truncates before the answer, the verifier scores them all
     # 0, reward variance is 0, and GRPO gets no gradient -- RLVR silently learns nothing.
     max_completion_length: int = 512,
-    beta: float = 0.0,
+    # KL penalty toward the reference policy. TRL's default is 0.0 (no KL), which lets a
+    # small-model / short-run RLVR job drift off the base distribution and OVERFIT the train
+    # prompts -- observed directly: train reward climbed while held-out accuracy fell. 0.04
+    # (the DeepSeekMath GRPO value) anchors the policy and is the safer default for the typical
+    # autocontext loop; set 0.0 for the KL-free / R1-Zero-style regime at scale.
+    beta: float = 0.04,
     temperature: float = 1.0,
     num_train_epochs: float = 1.0,
     max_steps: int = -1,
     per_device_train_batch_size: int = 8,
     seed: int = 0,
 ) -> dict[str, Any]:
-    """Kwargs for ``trl.GRPOConfig`` (RLVR). ``beta=0.0`` follows TRL's KL-free default.
+    """Kwargs for ``trl.GRPOConfig`` (RLVR). ``beta`` is the reference-policy KL penalty.
 
     Only widely-stable GRPOConfig fields are passed (e.g. ``max_prompt_length`` is omitted
     -- some TRL versions reject it; the default prompt handling is fine). ``max_steps`` (>0
     caps total optimizer steps) and ``per_device_train_batch_size`` thread the generic controls.
+
+    ``beta`` must be ``>= 0``: it is a KL *penalty*, so a negative value would reward the policy
+    for drifting off the reference -- the opposite of regularization. The CLI guards this, but so
+    does this lower-level entrypoint because harnesses call ``run_trl_training`` / ``run_training``
+    (which route here) directly. ``beta == 0`` is the valid KL-free / R1-Zero-style opt-out.
     """
+    if beta < 0:
+        raise ValueError(f"GRPO beta (reference-policy KL penalty) must be >= 0; got {beta!r}")
     return {
         "output_dir": output_dir,
         "learning_rate": learning_rate,
@@ -217,6 +229,7 @@ def run_trl_training(
     batch_size: int = 0,
     seed: int = 0,
     max_completion_length: int = 512,  # grpo: generation cap (>= task answer length; see build_grpo_config_kwargs)
+    grpo_beta: float = 0.04,  # grpo: KL penalty toward the base policy (0.0 = KL-free; nonzero prevents overfitting)
     register_import: str | None = None,
     time_budget: int = 3600,
     memory_limit_mb: int = 16384,  # noqa: ARG001 - backend-signature parity
@@ -298,6 +311,7 @@ def run_trl_training(
             max_steps=max_steps,
             seed=seed,
             max_completion_length=max_completion_length,
+            beta=grpo_beta,
         )
         if batch_size > 0:
             grpo_kwargs["per_device_train_batch_size"] = batch_size

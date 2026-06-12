@@ -344,6 +344,25 @@ class TestConstraints:
             runner2._run_experiment_subprocess(0)
         assert "--max-completion-length" not in mock_run2.call_args.args[0]
 
+    def test_experiment_subprocess_passes_grpo_beta_when_overridden(self, tmp_path: Path) -> None:
+        """The GRPO KL penalty must reach the subprocess so `autoctx train` can avoid the beta=0
+        overfitting; the default 0.04 is omitted to keep the command minimal."""
+        cfg = TrainingConfig(scenario="grid_ctf", data_path=tmp_path / "data.jsonl", backend="trl", grpo_beta=0.0)
+        (tmp_path / "data.jsonl").write_text("{}\n")
+        runner = TrainingRunner(cfg, work_dir=tmp_path / "workspace")
+        completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+        with patch("autocontext.training.runner.subprocess.run", return_value=completed) as mock_run:
+            runner._run_experiment_subprocess(0)
+        command = mock_run.call_args.args[0]
+        assert command[command.index("--grpo-beta") + 1] == "0.0"
+
+        # default (0.04) stays off the command line
+        cfg2 = TrainingConfig(scenario="grid_ctf", data_path=tmp_path / "data.jsonl", backend="trl")
+        runner2 = TrainingRunner(cfg2, work_dir=tmp_path / "ws2g")
+        with patch("autocontext.training.runner.subprocess.run", return_value=completed) as mock_run2:
+            runner2._run_experiment_subprocess(0)
+        assert "--grpo-beta" not in mock_run2.call_args.args[0]
+
     def test_experiment_subprocess_omits_loss_weight_flags_when_uniform(self, tmp_path: Path) -> None:
         cfg = TrainingConfig(scenario="grid_ctf", data_path=tmp_path / "data.jsonl")
         (tmp_path / "data.jsonl").write_text("{}\n")

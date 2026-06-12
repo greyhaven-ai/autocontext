@@ -397,6 +397,7 @@ def run_training(
     trl_mode: str = "gkd",  # trl backend: gkd (on-policy distillation) | grpo (RLVR)
     seed: int = 0,  # trl backend: training seed (for seeded repeats / error bars)
     max_completion_length: int = 512,  # trl grpo: generation cap (>= task answer length; 256 truncates reasoning)
+    grpo_beta: float = 0.04,  # trl grpo: KL penalty toward base policy (0.0 = KL-free; nonzero prevents overfitting)
     fine_tune_type: str = "lora",
     num_layers: int = 8,
     collect_samples_path: Path | None = None,
@@ -536,6 +537,7 @@ def run_training(
             batch_size=batch_size,
             seed=seed,
             max_completion_length=max_completion_length,
+            grpo_beta=grpo_beta,
             time_budget=time_budget,
             memory_limit_mb=memory_limit_mb,
         )
@@ -552,6 +554,12 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", type=int, default=0, help="trl backend: training seed (seeded repeats)")
     parser.add_argument(
         "--max-completion-length", type=int, default=512, help="trl grpo: generation cap (256 truncates reasoning -> 0 reward)"
+    )
+    parser.add_argument(
+        "--grpo-beta",
+        type=float,
+        default=0.04,
+        help="trl grpo: KL penalty toward base policy (0.0 = KL-free; nonzero prevents overfitting)",
     )
     parser.add_argument("--time-budget", type=int, default=300)
     parser.add_argument("--memory-limit", type=int, default=16384)
@@ -611,6 +619,7 @@ def main(argv: list[str] | None = None) -> int:
             trl_mode=args.trl_mode,
             seed=args.seed,
             max_completion_length=args.max_completion_length,
+            grpo_beta=args.grpo_beta,
             fine_tune_type=args.fine_tune_type,
             num_layers=args.num_layers,
             backend=args.backend,

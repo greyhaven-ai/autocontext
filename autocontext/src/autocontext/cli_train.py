@@ -90,6 +90,9 @@ def register_train_command(app: typer.Typer, console: Console) -> None:
         max_completion_length: int = typer.Option(
             512, "--max-completion-length", help="trl grpo: generation cap (256 truncates reasoning -> 0 reward / no gradient)"
         ),
+        grpo_beta: float = typer.Option(
+            0.04, "--grpo-beta", help="trl grpo: KL penalty toward base policy (0.0 = KL-free; nonzero prevents overfitting)"
+        ),
         agent_provider: str = typer.Option("anthropic", "--agent-provider", help="LLM provider for training agent"),
         agent_model: str = typer.Option("", "--agent-model", help="Model for training agent (empty = provider default)"),
         val_select: bool = typer.Option(
@@ -155,6 +158,8 @@ def register_train_command(app: typer.Typer, console: Console) -> None:
             raise typer.BadParameter(f"--train-steps must be >= 0 (0 = backend default), got {train_steps}")
         if max_completion_length < 1:
             raise typer.BadParameter(f"--max-completion-length must be a positive integer, got {max_completion_length}")
+        if grpo_beta < 0:
+            raise typer.BadParameter(f"--grpo-beta must be >= 0 (0 = KL-free), got {grpo_beta}")
         if learning_rate < 0:
             raise typer.BadParameter(f"--learning-rate must be >= 0 (0 = backend default), got {learning_rate}")
 
@@ -185,6 +190,7 @@ def register_train_command(app: typer.Typer, console: Console) -> None:
             trl_mode=trl_mode,
             seed=seed,
             max_completion_length=max_completion_length,
+            grpo_beta=grpo_beta,
             fine_tune_type=fine_tune_type,
             num_layers=num_layers,
         )

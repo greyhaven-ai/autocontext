@@ -74,6 +74,7 @@ class TrainingConfig:
     trl_mode: str = "gkd"  # trl backend: gkd (on-policy distillation) | grpo (RLVR)
     seed: int = 0  # trl backend: training seed (for seeded repeats)
     max_completion_length: int = 512  # trl grpo: generation cap (256 truncates reasoning -> 0 reward / no gradient)
+    grpo_beta: float = 0.04  # trl grpo: KL penalty toward base policy (0.0 = KL-free; nonzero prevents overfitting)
     fine_tune_type: str = "lora"  # mlxlm backend: lora | dora | full
     num_layers: int = 8  # mlxlm backend: number of layers to fine-tune
 
@@ -440,6 +441,8 @@ class TrainingRunner:
             command += ["--seed", str(self.config.seed)]
         if self.config.max_completion_length != 512:
             command += ["--max-completion-length", str(self.config.max_completion_length)]
+        if self.config.grpo_beta != 0.04:
+            command += ["--grpo-beta", str(self.config.grpo_beta)]
         if self.config.fine_tune_type != "lora":
             command += ["--fine-tune-type", self.config.fine_tune_type]
         if self.config.num_layers != 8:
