@@ -235,9 +235,16 @@ uv run autoctx train --backend trl --trl-mode gkd \
   --teacher-model Qwen/Qwen2.5-3B-Instruct
 
 # RLVR (GRPO) -- the cross-platform counterpart of `grpo`
+# Applies a reference-policy KL penalty of --grpo-beta 0.04 by default (see notes).
 uv run autoctx train --backend trl --trl-mode grpo \
   --scenario antichain_diverse \
   --base-model Qwen/Qwen2.5-1.5B-Instruct
+
+# KL-free / R1-Zero-style GRPO (reproduces the original "GRPO stayed flat" baseline)
+uv run autoctx train --backend trl --trl-mode grpo \
+  --scenario antichain_diverse \
+  --base-model Qwen/Qwen2.5-1.5B-Instruct \
+  --grpo-beta 0.0
 ```
 
 Notes:
@@ -245,6 +252,13 @@ Notes:
 - `--trl-mode gkd` uses TRL's `GKDTrainer` (on-policy distillation; `lmbda=1.0` fully
   on-policy, `beta=1.0` reverse KL). `--trl-mode grpo` uses `GRPOTrainer` and reuses the
   **same** scenario-verifier reward as the MLX `grpo` backend (`score_completions`).
+- `--grpo-beta` sets the GRPO reference-policy KL penalty and **defaults to `0.04`** (the
+  DeepSeekMath GRPO value), not TRL's `0.0`. A small-model / short-run RLVR job with no KL
+  penalty drifts off the base distribution and overfits the train prompts (observed directly:
+  train reward climbed while held-out accuracy fell), so a nonzero anchor is the safer default
+  for the typical autocontext loop. Pass `--grpo-beta 0.0` for the KL-free / R1-Zero-style
+  regime at scale -- this reproduces the original KL-free run behind the "GRPO stayed flat"
+  result above (that case study predates this default). Negative values are rejected.
 - Models are HuggingFace repo ids (e.g. `Qwen/Qwen2.5-1.5B-Instruct`), not the MLX 4-bit
   community repos. `--base-model` is the student; `--teacher-model` (gkd) must share the
   student's tokenizer. LoRA (PEFT) is applied automatically.

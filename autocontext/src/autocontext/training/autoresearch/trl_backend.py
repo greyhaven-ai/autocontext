@@ -123,7 +123,14 @@ def build_grpo_config_kwargs(
     Only widely-stable GRPOConfig fields are passed (e.g. ``max_prompt_length`` is omitted
     -- some TRL versions reject it; the default prompt handling is fine). ``max_steps`` (>0
     caps total optimizer steps) and ``per_device_train_batch_size`` thread the generic controls.
+
+    ``beta`` must be ``>= 0``: it is a KL *penalty*, so a negative value would reward the policy
+    for drifting off the reference -- the opposite of regularization. The CLI guards this, but so
+    does this lower-level entrypoint because harnesses call ``run_trl_training`` / ``run_training``
+    (which route here) directly. ``beta == 0`` is the valid KL-free / R1-Zero-style opt-out.
     """
+    if beta < 0:
+        raise ValueError(f"GRPO beta (reference-policy KL penalty) must be >= 0; got {beta!r}")
     return {
         "output_dir": output_dir,
         "learning_rate": learning_rate,

@@ -84,6 +84,18 @@ def test_grpo_beta_defaults_nonzero_to_prevent_overfitting() -> None:
     assert build_grpo_config_kwargs(output_dir="/o", beta=0.0)["beta"] == 0.0  # KL-free still possible
 
 
+def test_grpo_beta_rejects_negative_in_lower_level_api() -> None:
+    """beta is a KL *penalty*; a negative value rewards drift off the reference -- the opposite
+    of regularization. The CLI guards this, but harnesses call run_trl_training / run_training
+    (which route through build_grpo_config_kwargs) directly, so the invariant lives here too."""
+    import pytest
+
+    from autocontext.training.autoresearch.trl_backend import build_grpo_config_kwargs
+
+    with pytest.raises(ValueError, match="must be >= 0"):
+        build_grpo_config_kwargs(output_dir="/tmp/out", beta=-0.1)
+
+
 def test_config_kwargs_thread_max_steps_and_batch_size() -> None:
     """--train-steps / --batch-size must reach TRL, not be silently dropped."""
     from autocontext.training.autoresearch.trl_backend import build_gkd_config_kwargs, build_grpo_config_kwargs
