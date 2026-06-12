@@ -107,6 +107,9 @@ runtime-session recording through the same umbrella-owned event contracts used
 by local execution until those contracts are extracted into `@autocontext/core`.
 It may generate a minimal server entrypoint and package manifest, but should not
 invent a second handler API or bypass the runtime workspace/session contracts.
+The umbrella CLI dispatch is `autoctx agent build --target node`, which
+materializes a self-hosted Node package exposing `GET /manifest` and
+`POST /agents/<agent>/invoke` with the same wire shape as `autoctx agent dev`.
 
 The MVP is approved only as a packaging/control-plane layer around existing
 contracts:

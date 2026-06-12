@@ -69,6 +69,10 @@
       "import": "./dist/control-plane/external-evals/index.js",
       "types": "./dist/control-plane/external-evals/index.d.ts"
     },
+    "./control-plane/agent-app-node": {
+      "import": "./dist/control-plane/agent-app-node/index.js",
+      "types": "./dist/control-plane/agent-app-node/index.d.ts"
+    },
     "./production-traces": {
       "types": "./dist/production-traces/sdk/index.d.ts",
       "import": "./dist/production-traces/sdk/index.js",

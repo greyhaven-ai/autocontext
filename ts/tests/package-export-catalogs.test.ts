@@ -127,4 +127,15 @@ describe("package root exports", () => {
       types: "./dist/agent-runtime/index.d.ts",
     });
   });
+
+  it("publishes the Node agent app control-plane build target subpath", () => {
+    const packageJson = JSON.parse(
+      readFileSync(join(import.meta.dirname, "..", "package.json"), "utf-8"),
+    ) as { exports?: Record<string, { import?: string; types?: string }> };
+
+    expect(packageJson.exports?.["./control-plane/agent-app-node"]).toEqual({
+      import: "./dist/control-plane/agent-app-node/index.js",
+      types: "./dist/control-plane/agent-app-node/index.d.ts",
+    });
+  });
 });

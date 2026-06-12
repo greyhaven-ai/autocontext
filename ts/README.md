@@ -95,9 +95,15 @@ const result = await invokeAutoctxAgent(agent, {
 });
 ```
 
-For local iteration, the npm CLI can invoke the same handlers by name or expose
-a tiny dev server. Env file loading is explicit: pass `--env FILE`; values
-already set in the shell win over values in that file.
+For local iteration, the npm CLI can invoke the same handlers by name, expose
+a tiny dev server, or materialize the approved self-hosted Node build target.
+Env file loading is explicit: pass `--env FILE` to local run/dev, or set
+`AUTOCTX_ENV_FILE` for a generated Node server; values already set in the shell
+win over values in that file. Generated packages use a local `file:` dependency
+on the currently installed `autoctx`, so source builds do not reinstall an older
+npm release that lacks the Node-target subpath. Runtime-backed generated servers
+accept `AUTOCTX_RUNTIME_MODULE` as a bare package specifier, relative/absolute
+file path, or URL.
 
 ```bash
 autoctx agent run support \
@@ -107,6 +113,9 @@ autoctx agent run support \
   --json
 
 autoctx agent dev --port 3583 --env .env.local
+
+autoctx agent build --target node --out .autoctx/build/node
+cd .autoctx/build/node && npm install && AUTOCTX_ENV_FILE=.env.local npm start
 
 curl http://127.0.0.1:3583/manifest
 curl -X POST http://127.0.0.1:3583/agents/support/invoke \

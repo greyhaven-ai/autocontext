@@ -16,6 +16,7 @@ export const AGENT_COMMAND_HELP_TEXT = `autoctx agent — Run local programmable
 Usage:
   autoctx agent run <agent> --id <id> [--payload JSON] [--env FILE] [--json]
   autoctx agent dev [--port 3583] [--host 127.0.0.1] [--env FILE] [--json]
+  autoctx agent build --target node [--out .autoctx/build/node] [--json]
 
 Options:
   --id <id>             Invocation/session id for agent run
@@ -28,15 +29,18 @@ Options:
   --base-url <url>      Base URL override for compatible providers
   --port <port>         Dev server port (default: 3583)
   --host <host>         Dev server host (default: 127.0.0.1)
+  --target <target>     Agent app build target (MVP: node)
+  --out <dir>           Output directory for agent app build artifacts
   --json                Output machine-readable JSON
 
-Dev server routes:
+Dev/build server routes:
   GET  /manifest
   POST /agents/<agent>/invoke
 
 Examples:
   autoctx agent run support --id ticket-123 --payload '{"message":"Please triage this."}' --env .env.local --json
-  autoctx agent dev --port 3583 --env .env.local`;
+  autoctx agent dev --port 3583 --env .env.local
+  autoctx agent build --target node --out .autoctx/build/node`;
 
 export interface AutoctxAgentCommandValues {
   id?: string;
@@ -50,6 +54,8 @@ export interface AutoctxAgentCommandValues {
   model?: string;
   "api-key"?: string;
   "base-url"?: string;
+  target?: string;
+  out?: string;
 }
 
 export interface AutoctxAgentRunCommandPlan {
@@ -79,9 +85,18 @@ export interface AutoctxAgentDevCommandPlan {
   baseUrl?: string;
 }
 
+export interface AutoctxAgentBuildCommandPlan {
+  action: "build";
+  target: "node";
+  outDir?: string;
+  cwd?: string;
+  json: boolean;
+}
+
 export type AutoctxAgentCommandPlan =
   | AutoctxAgentRunCommandPlan
-  | AutoctxAgentDevCommandPlan;
+  | AutoctxAgentDevCommandPlan
+  | AutoctxAgentBuildCommandPlan;
 
 export interface AutoctxAgentCommandResult {
   stdout: string;
@@ -123,6 +138,11 @@ export interface ExecuteAutoctxAgentRunCommandWorkflowOptions {
   cwd: string;
   processEnv?: Record<string, string | undefined>;
   createRuntime?: AutoctxAgentRuntimeFactory;
+}
+
+export interface ExecuteAutoctxAgentBuildCommandWorkflowOptions {
+  plan: AutoctxAgentBuildCommandPlan;
+  cwd: string;
 }
 
 export interface AutoctxAgentDevServerOptions {
@@ -179,7 +199,23 @@ export function planAutoctxAgentCommand(
       baseUrl: normalizeOptionalString(values["base-url"]),
     };
   }
-  throw new Error("agent requires a subcommand: run or dev");
+  if (action === "build") {
+    if (name || extra.length > 0) {
+      throw new Error(`Unexpected agent build arguments: ${[name, ...extra].filter(Boolean).join(" ")}`);
+    }
+    const target = normalizeOptionalString(values.target) ?? "node";
+    if (target !== "node") {
+      throw new Error("agent build currently only supports --target node");
+    }
+    return {
+      action: "build",
+      target,
+      outDir: normalizeOptionalString(values.out),
+      cwd: normalizeOptionalString(values.cwd),
+      json: !!values.json,
+    };
+  }
+  throw new Error("agent requires a subcommand: run, dev, or build");
 }
 
 export function loadAutoctxAgentEnvFile(
@@ -237,6 +273,41 @@ export async function executeAutoctxAgentRunCommandWorkflow(
     await closeRuntimeHandle(runtimeHandle);
     await workspace.cleanup();
   }
+}
+
+export async function executeAutoctxAgentBuildCommandWorkflow(
+  options: ExecuteAutoctxAgentBuildCommandWorkflowOptions,
+): Promise<AutoctxAgentCommandResult> {
+  const { buildNodeAgentAppTarget } = await import("../control-plane/agent-app-node/index.js");
+  const root = path.resolve(options.cwd, options.plan.cwd ?? ".");
+  const result = await buildNodeAgentAppTarget({
+    cwd: root,
+    outDir: options.plan.outDir,
+  });
+  if (options.plan.json) {
+    return {
+      stdout: JSON.stringify({
+        ok: true,
+        target: result.target,
+        outputDir: result.outputDir,
+        files: result.files.map((file) => file.relativePath),
+        routes: result.routes,
+      }, null, 2),
+      stderr: "",
+      exitCode: 0,
+    };
+  }
+  return {
+    stdout: [
+      `Generated AutoContext Node agent app at ${result.outputDir}`,
+      "Routes:",
+      ...result.routes.map((route) => `  ${route}`),
+      "Files:",
+      ...result.files.map((file) => `  ${file.relativePath}`),
+    ].join("\n"),
+    stderr: "",
+    exitCode: 0,
+  };
 }
 
 export function renderAutoctxAgentCommandError(

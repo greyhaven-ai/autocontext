@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   AGENT_COMMAND_HELP_TEXT,
   createAutoctxAgentDevServer,
+  executeAutoctxAgentBuildCommandWorkflow,
   executeAutoctxAgentRunCommandWorkflow,
   loadAutoctxAgentEnvFile,
   planAutoctxAgentCommand,
@@ -24,11 +25,13 @@ describe("agent command workflow", () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  it("exposes stable help text for run and dev", () => {
+  it("exposes stable help text for run, dev, and build", () => {
     expect(AGENT_COMMAND_HELP_TEXT).toContain("autoctx agent run <agent>");
     expect(AGENT_COMMAND_HELP_TEXT).toContain("autoctx agent dev");
+    expect(AGENT_COMMAND_HELP_TEXT).toContain("autoctx agent build --target node");
     expect(AGENT_COMMAND_HELP_TEXT).toContain("--payload");
     expect(AGENT_COMMAND_HELP_TEXT).toContain("--env");
+    expect(AGENT_COMMAND_HELP_TEXT).toContain("--out");
     expect(AGENT_COMMAND_HELP_TEXT).toContain("--json");
   });
 
@@ -82,6 +85,30 @@ describe("agent command workflow", () => {
     });
   });
 
+  it("plans the Node build target without accepting hosted targets", () => {
+    expect(
+      planAutoctxAgentCommand(
+        {
+          target: "node",
+          out: "dist-agent",
+          cwd: "apps/support",
+          json: true,
+        },
+        ["build"],
+      ),
+    ).toEqual({
+      action: "build",
+      target: "node",
+      outDir: "dist-agent",
+      cwd: "apps/support",
+      json: true,
+    });
+
+    expect(() => planAutoctxAgentCommand({ target: "cloudflare" }, ["build"])).toThrow(
+      "only supports --target node",
+    );
+  });
+
   it("rejects malformed JSON payloads with an actionable message", () => {
     expect(() =>
       planAutoctxAgentCommand({ payload: "{bad" }, ["run", "support"]),
@@ -107,6 +134,26 @@ describe("agent command workflow", () => {
       SUPPORT_TOKEN: "shell-token",
       QUOTED: "file value",
       EMPTY: "",
+    });
+  });
+
+  it("executes the Node build workflow and reports generated files", async () => {
+    const result = await executeAutoctxAgentBuildCommandWorkflow({
+      cwd: root,
+      plan: {
+        action: "build",
+        target: "node",
+        outDir: "dist-agent",
+        json: true,
+      },
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      ok: true,
+      target: "node",
+      files: ["package.json", "server.mjs", "README.md", ".gitignore"],
+      routes: ["GET /manifest", "POST /agents/:agent/invoke"],
     });
   });
 
