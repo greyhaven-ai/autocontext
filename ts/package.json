@@ -73,6 +73,10 @@
       "import": "./dist/control-plane/agent-app-node/index.js",
       "types": "./dist/control-plane/agent-app-node/index.d.ts"
     },
+    "./control-plane/agent-app-fetch": {
+      "import": "./dist/control-plane/agent-app-fetch/index.js",
+      "types": "./dist/control-plane/agent-app-fetch/index.d.ts"
+    },
     "./production-traces": {
       "types": "./dist/production-traces/sdk/index.d.ts",
       "import": "./dist/production-traces/sdk/index.js",

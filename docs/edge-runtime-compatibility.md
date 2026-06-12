@@ -21,15 +21,19 @@ handler discovery is moved to a build-time manifest or explicit module map.
 The current Node target should remain the only emitted build target until those
 generic adapter seams are proven.
 
-Recommended OSS follow-up, if this spike is accepted:
+The first OSS adapter seam is the TypeScript control-plane Fetch helper at
+`autoctx/control-plane/agent-app-fetch`. It handles `Request` -> `Response` for
+the existing `GET /manifest` and `POST /agents/:agent/invoke` shape using a
+static handler catalog or module map. This helper is not a deployment target and
+does not add provider-specific build output.
 
-1. Add a TypeScript control-plane helper that handles `Request` -> `Response`
-   for the existing `GET /manifest` and `POST /agents/:agent/invoke` shape.
-2. Add a build-time handler manifest/module-map contract so edge bundles do not
-   need runtime filesystem discovery.
-3. Add or document edge-safe workspace and session event-store adapters behind
+Recommended follow-up after the generic adapter seam:
+
+1. Add a build-time handler manifest/module-map planner so generated edge
+   bundles do not need runtime filesystem discovery.
+2. Add or document edge-safe workspace and session event-store adapters behind
    the existing runtime/session contracts.
-4. Keep provider-specific deployment templates and hosted orchestration in a
+3. Keep provider-specific deployment templates and hosted orchestration in a
    separate product/repository unless they are deliberately opened later.
 
 ## Reusable Invocation Shape
@@ -179,10 +183,11 @@ they should not create provider-specific OSS deployment workflows by default.
 
 ### TypeScript Control-Plane / OSS Adapter Work
 
-- Add a Fetch request adapter that reuses the Node manifest/invoke envelope.
+- Maintain the generic Fetch request adapter that reuses the Node
+  manifest/invoke envelope without advertising a provider deployment target.
 - Add a build-time handler manifest/module-map planner.
-- Add tests proving pure local handlers can run through the Fetch adapter with
-  in-memory workspace/env and without Node-only globals.
+- Add tests proving pure local handlers can run through generated catalogs with
+  in-memory workspace/env and without Node-only server globals.
 - Document unsupported shell/filesystem capability behavior.
 
 ### Provider-Specific Or Proprietary Work
@@ -197,8 +202,7 @@ they should not create provider-specific OSS deployment workflows by default.
 ## Decision
 
 Do not add `autoctx agent build --target cloudflare` or any provider-specific
-edge target from this spike. The next OSS implementation slice, if prioritized,
-should be a generic Fetch adapter and static handler catalog in the TypeScript
-control-plane boundary. Provider-specific deployment can depend on that adapter
-from outside the OSS repo or from a future explicitly approved open provider
-package.
+edge target from this spike. The OSS implementation surface is a generic Fetch
+adapter and static handler catalog in the TypeScript control-plane boundary.
+Provider-specific deployment can depend on that adapter from outside the OSS
+repo or from a future explicitly approved open provider package.
