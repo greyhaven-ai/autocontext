@@ -277,6 +277,50 @@ def run_mlxlm_training(
     }
 
 
+def _mlxlm_generate_texts(
+    model: Any,
+    tokenizer: Any,
+    prompts: list[str],
+    *,
+    sampler: Any,
+    max_tokens: int,
+) -> list[str]:
+    """Generate one completion per prompt, batched when possible.
+
+    Assessment draws many samples per round; generating them one at a time is the
+    minutes-vs-hours bottleneck for real ``autoctx self-improve`` runs. When mlx-lm exposes
+    ``batch_generate`` and there is more than one prompt, decode the whole batch in a single
+    forward pipeline (each prompt tokenized to ids via the tokenizer's chat-formatted string).
+    Any failure -- an mlx-lm without ``batch_generate``, an API change, or a returned count that
+    doesn't line up with the inputs -- falls back to a resilient per-prompt ``generate`` loop, so
+    the path degrades to correct-but-slower and never regresses or drops the one-text-per-prompt
+    contract callers rely on (a failed generation yields ``""`` -> scored as a bad sample).
+    """
+    n = len(prompts)
+    if n == 0:
+        return []
+    if n > 1:
+        try:
+            from mlx_lm import batch_generate  # type: ignore[import-not-found]
+
+            token_ids = [tokenizer.encode(p) for p in prompts]
+            resp = batch_generate(model, tokenizer, token_ids, max_tokens=max_tokens, sampler=sampler, verbose=False)
+            texts = list(resp.texts)
+            if len(texts) == n:
+                return texts
+        except Exception:
+            pass  # version-robust: fall through to the sequential path
+    from mlx_lm import generate  # type: ignore[import-not-found]
+
+    out: list[str] = []
+    for p in prompts:
+        try:
+            out.append(generate(model, tokenizer, prompt=p, max_tokens=max_tokens, verbose=False, sampler=sampler))
+        except Exception:
+            out.append("")
+    return out
+
+
 def _assess_mlxlm(
     *,
     base_model: str,
@@ -290,7 +334,7 @@ def _assess_mlxlm(
     eval_state: Any = None,
     collect_path: Path | None = None,
 ) -> dict[str, float]:
-    from mlx_lm import generate, load  # type: ignore[import-not-found]
+    from mlx_lm import load  # type: ignore[import-not-found]
     from mlx_lm.sample_utils import make_sampler  # type: ignore[import-not-found]
 
     loaded = load(base_model, adapter_path=str(adapter_dir))
@@ -301,25 +345,34 @@ def _assess_mlxlm(
     # Honor the requested assessment sampling (temp<=0 => greedy; top_k truncation).
     sampler = make_sampler(temp=max(float(temperature), 0.0), top_k=int(top_k))
 
+    # Resolve every sample's (instruction, state, chat prompt) up front so generation can run as a
+    # single batch -- the assessment bottleneck -- instead of one forward pass at a time. Game
+    # scenarios reuse one prompt; dataset-style agent tasks (e.g. GSM8K) draw a possibly-different
+    # problem per sample so the loop explores the distribution; resolve state + prompt TOGETHER so
+    # evaluate_output scores against -- and the collected sample carries -- the exact problem it was
+    # generated for (fixed single-task scenarios just reuse one problem).
+    specs: list[tuple[str, Any, str]] = []  # (sample_instr, state_i, chat_prompt)
+    for i in range(max(1, n_samples)):
+        if is_game:
+            specs.append((task_prompt, None, base_prompt))
+        else:
+            try:
+                state_i = scenario.initial_state(seed=i)
+            except Exception:
+                state_i = eval_state
+            sample_instr = scenario.get_task_prompt(state_i) if has_task_prompt else task_prompt
+            chat_prompt = format_assess_prompt(tokenizer, sample_instr, score_conditioned=score_conditioned)
+            specs.append((sample_instr, state_i, chat_prompt))
+
+    texts = _mlxlm_generate_texts(
+        model, tokenizer, [chat_prompt for _instr, _state, chat_prompt in specs], sampler=sampler, max_tokens=512
+    )
+
     scores: list[float] = []
     valid = 0
     collected: list[dict[str, Any]] = []  # {prompt, strategy, score} for the ReST-EM self-improving loop
-    for i in range(max(1, n_samples)):
+    for (sample_instr, state_i, _chat_prompt), text in zip(specs, texts, strict=True):
         try:
-            if is_game:
-                chat_prompt, sample_instr, state_i = base_prompt, task_prompt, None
-            else:
-                # Dataset-style agent tasks (e.g. GSM8K) draw a possibly-different problem per
-                # sample so the loop explores the distribution; resolve state + prompt TOGETHER so
-                # evaluate_output scores against -- and the collected sample carries -- the exact
-                # problem it was generated for (fixed single-task scenarios just reuse one problem).
-                try:
-                    state_i = scenario.initial_state(seed=i)
-                except Exception:
-                    state_i = eval_state
-                sample_instr = scenario.get_task_prompt(state_i) if has_task_prompt else task_prompt
-                chat_prompt = format_assess_prompt(tokenizer, sample_instr, score_conditioned=score_conditioned)
-            text = generate(model, tokenizer, prompt=chat_prompt, max_tokens=512, verbose=False, sampler=sampler)
             if is_game:
                 # Reason-trained models emit `rationale\n{...}`; extract the trailing
                 # JSON object robustly (a bare extract_strategy returns None on prose).
