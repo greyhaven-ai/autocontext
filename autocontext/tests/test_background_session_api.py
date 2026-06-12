@@ -26,7 +26,18 @@ def _make_store(tmp_path: Path) -> SQLiteStore:
 def _persist_background_sessions(db_path: Path) -> None:
     app_store = SQLiteStore(db_path)
     app_store.create_run("test-run-1", "grid_ctf", 1, "local")
-    app_store.enqueue_task("task-1", "autoctx run grid_ctf")
+    app_store.enqueue_task(
+        "task-1",
+        "autoctx run grid_ctf",
+        config={
+            "trigger": {
+                "type": "github_webhook",
+                "actor": "octocat",
+                "token": "ghp_SECRET_VALUE",
+                "apiKey": "sk-SECRET_VALUE",
+            }
+        },
+    )
     app_store.complete_task("task-1", 1.0, "ok", 1, True)
     app_store.enqueue_task("queued-1", "autoctx run queued")
 
@@ -165,6 +176,12 @@ def test_cockpit_reads_background_session_detail(cockpit_env: dict[str, Any]) ->
     assert body["summary"]["session_id"] == "run:test-run-1:runtime"
     assert body["summary"]["status"] == "completed"
     assert body["child_sessions"][0]["session_id"] == "task:run:test-run-1:runtime:child-1"
+    assert body["trigger"] == {
+        "type": "github_webhook",
+        "actor": "octocat",
+        "token": "[redacted]",
+        "apiKey": "[redacted]",
+    }
     assert body["normalized_events"] == [
         {
             "event_id": body["normalized_events"][0]["event_id"],

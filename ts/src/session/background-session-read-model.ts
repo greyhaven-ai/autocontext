@@ -79,6 +79,34 @@ type NormalizedBackgroundSessionSource = {
   childSessions: RuntimeSessionEventLog[];
 };
 
+const REDACTED_TRIGGER_VALUE = "[redacted]";
+const SENSITIVE_TRIGGER_KEY_WORDS = new Set([
+  "auth",
+  "authorization",
+  "bearer",
+  "credential",
+  "credentials",
+  "password",
+  "passwd",
+  "secret",
+  "token",
+]);
+const COMPOUND_SENSITIVE_TRIGGER_KEY_WORDS = [
+  ["api", "key"],
+  ["private", "key"],
+  ["access", "token"],
+  ["refresh", "token"],
+] as const;
+const SECRET_VALUE_PATTERNS = [
+  /gh[pousr]_[A-Za-z0-9_]+/,
+  /github_pat_[A-Za-z0-9_]+/,
+  /\bsk-[A-Za-z0-9_-]{6,}\b/,
+  /\bbearer\s+[A-Za-z0-9._~+/=-]+/i,
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----/,
+] as const;
+const CAMEL_CASE_BOUNDARY_PATTERN = /([a-z0-9])([A-Z])/g;
+const TRIGGER_KEY_WORD_PATTERN = /[^A-Za-z0-9]+/;
+
 export function buildBackgroundSessionSummary(
   source: BackgroundSessionSource,
 ): BackgroundSessionSummary {
@@ -225,11 +253,59 @@ function parseRecordJson(json: string): Record<string, unknown> {
 function sanitizeRecord(record: Record<string, unknown>): Record<string, unknown> {
   const clean: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(record)) {
-    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-      clean[key] = value;
+    if (isScalarTriggerValue(value)) {
+      clean[key] = isSensitiveTriggerEntry(key, value) ? REDACTED_TRIGGER_VALUE : value;
     }
   }
   return clean;
+}
+
+function isScalarTriggerValue(value: unknown): value is string | number | boolean {
+  return typeof value === "string" || typeof value === "number" || typeof value === "boolean";
+}
+
+function isSensitiveTriggerEntry(key: string, value: string | number | boolean): boolean {
+  return isSensitiveTriggerKey(key) || (typeof value === "string" && looksLikeSecretValue(value));
+}
+
+function isSensitiveTriggerKey(key: string): boolean {
+  const words = triggerKeyWords(key);
+  if (words.some((word) => SENSITIVE_TRIGGER_KEY_WORDS.has(word))) {
+    return true;
+  }
+  return COMPOUND_SENSITIVE_TRIGGER_KEY_WORDS.some((sequence) => containsWordSequence(words, sequence));
+}
+
+function triggerKeyWords(key: string): string[] {
+  return key
+    .replace(CAMEL_CASE_BOUNDARY_PATTERN, "$1 $2")
+    .split(TRIGGER_KEY_WORD_PATTERN)
+    .filter(Boolean)
+    .map((word) => word.toLowerCase());
+}
+
+function containsWordSequence(words: readonly string[], sequence: readonly string[]): boolean {
+  if (sequence.length > words.length) {
+    return false;
+  }
+  const lastStart = words.length - sequence.length;
+  for (let index = 0; index <= lastStart; index += 1) {
+    let matches = true;
+    for (let offset = 0; offset < sequence.length; offset += 1) {
+      if (words[index + offset] !== sequence[offset]) {
+        matches = false;
+        break;
+      }
+    }
+    if (matches) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function looksLikeSecretValue(value: string): boolean {
+  return SECRET_VALUE_PATTERNS.some((pattern) => pattern.test(value));
 }
 
 function readMetadataString(

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
-from autocontext.session.background_session_read_model import (
+from autocontext.session.background_session_read_model import (  # type: ignore[import-untyped]
     background_session_url,
     build_background_session_detail,
     build_background_session_summary,
@@ -177,6 +178,46 @@ def test_background_session_detail_sanitizes_artifacts_and_child_summaries() -> 
     assert detail["child_sessions"][0]["parent_session_id"] == "run:run-123:runtime"
     assert detail["child_sessions"][0]["status"] == "completed"
     assert detail["trigger"] == {"type": "manual", "actor": "operator"}
+    assert "SECRET_VALUE" not in str(detail)
+
+
+def test_background_session_detail_redacts_sensitive_trigger_metadata() -> None:
+    detail = build_background_session_detail(
+        task=_task(
+            config_json=json.dumps(
+                {
+                    "trigger": {
+                        "type": "github_webhook",
+                        "actor": "octocat",
+                        "retry": 2,
+                        "dry_run": False,
+                        "token": "ghp_SECRET_VALUE",
+                        "github_token": "ghp_SECRET_VALUE",
+                        "apiKey": "sk-SECRET_VALUE",
+                        "clientSecret": "SECRET_VALUE",
+                        "Authorization": "Bearer SECRET_VALUE",
+                        "password": "SECRET_VALUE",
+                        "private_key": "-----BEGIN PRIVATE KEY-----SECRET_VALUE",
+                        "headers": {"authorization": "Bearer SECRET_VALUE"},
+                    }
+                }
+            )
+        )
+    )
+
+    assert detail["trigger"] == {
+        "type": "github_webhook",
+        "actor": "octocat",
+        "retry": 2,
+        "dry_run": False,
+        "token": "[redacted]",
+        "github_token": "[redacted]",
+        "apiKey": "[redacted]",
+        "clientSecret": "[redacted]",
+        "Authorization": "[redacted]",
+        "password": "[redacted]",
+        "private_key": "[redacted]",
+    }
     assert "SECRET_VALUE" not in str(detail)
 
 

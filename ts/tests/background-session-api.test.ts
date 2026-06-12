@@ -162,8 +162,18 @@ describe("background session HTTP API routes", () => {
   it("reads a detail view with child summaries and normalized events", () => {
     const load = vi.fn((sessionId: string) => createLog(sessionId));
     const listChildren = vi.fn(() => [createChildLog()]);
+    const task = createTask("task-abc", "running", "autoctx run support_triage");
+    task.config_json = JSON.stringify({
+      trigger: {
+        type: "github_webhook",
+        actor: "octocat",
+        token: "ghp_SECRET_VALUE",
+        apiKey: "sk-SECRET_VALUE",
+      },
+    });
     const api = buildBackgroundSessionApiRoutes({
       openStore: () => ({ list: vi.fn(), load, listChildren }),
+      openSourceStore: () => ({ getTask: vi.fn(() => task) }),
     });
 
     const response = api.getBySessionId("run:abc:runtime");
@@ -178,6 +188,12 @@ describe("background session HTTP API routes", () => {
         status: "completed",
       }),
     ]);
+    expect(body.trigger).toEqual({
+      type: "github_webhook",
+      actor: "octocat",
+      token: "[redacted]",
+      apiKey: "[redacted]",
+    });
     expect(body.normalized_events).toEqual([
       expect.objectContaining({ event: "prompt_started", source_event_type: "prompt_submitted" }),
     ]);

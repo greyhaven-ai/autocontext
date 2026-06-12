@@ -15,6 +15,39 @@ TaskQueueRowLike: TypeAlias = Mapping[str, Any]
 RunRowLike: TypeAlias = Mapping[str, Any]
 ArtifactLike: TypeAlias = Mapping[str, Any]
 
+REDACTED_TRIGGER_VALUE = "[redacted]"
+_SENSITIVE_TRIGGER_KEY_WORDS = frozenset(
+    {
+        "auth",
+        "apikey",
+        "authorization",
+        "bearer",
+        "credential",
+        "credentials",
+        "password",
+        "passwd",
+        "privatekey",
+        "secret",
+        "token",
+    }
+)
+_COMPOUND_SENSITIVE_TRIGGER_KEY_WORDS = (
+    ("api", "key"),
+    ("private", "key"),
+    ("access", "token"),
+    ("refresh", "token"),
+)
+_SECRET_VALUE_MARKERS = (
+    "ghp_",
+    "gho_",
+    "ghu_",
+    "ghs_",
+    "ghr_",
+    "github_pat_",
+    "sk-",
+    "bearer ",
+)
+
 
 def build_background_session_summary(
     *,
@@ -114,8 +147,59 @@ def _sanitize_record(record: Mapping[str, Any]) -> dict[str, str | int | bool]:
     clean: dict[str, str | int | bool] = {}
     for key, value in record.items():
         if isinstance(key, str) and isinstance(value, str | int | bool):
-            clean[key] = value
+            clean[key] = REDACTED_TRIGGER_VALUE if _is_sensitive_trigger_entry(key, value) else value
     return clean
+
+
+def _is_sensitive_trigger_entry(key: str, value: str | int | bool) -> bool:
+    return _is_sensitive_trigger_key(key) or (isinstance(value, str) and _looks_like_secret_value(value))
+
+
+def _is_sensitive_trigger_key(key: str) -> bool:
+    words = _trigger_key_words(key)
+    if any(word in _SENSITIVE_TRIGGER_KEY_WORDS for word in words):
+        return True
+    return any(_contains_word_sequence(words, sequence) for sequence in _COMPOUND_SENSITIVE_TRIGGER_KEY_WORDS)
+
+
+def _trigger_key_words(key: str) -> list[str]:
+    words: list[str] = []
+    current: list[str] = []
+    previous = ""
+    for character in key:
+        if not character.isalnum():
+            _append_trigger_key_word(words, current)
+        elif current and character.isupper() and (previous.islower() or previous.isdigit()):
+            _append_trigger_key_word(words, current)
+            current.append(character)
+        else:
+            current.append(character)
+        previous = character
+    _append_trigger_key_word(words, current)
+    return words
+
+
+def _append_trigger_key_word(words: list[str], current: list[str]) -> None:
+    if current:
+        words.append("".join(current).lower())
+        current.clear()
+
+
+def _contains_word_sequence(words: Sequence[str], sequence: Sequence[str]) -> bool:
+    if len(sequence) > len(words):
+        return False
+    end = len(words) - len(sequence) + 1
+    for index in range(end):
+        if list(words[index : index + len(sequence)]) == list(sequence):
+            return True
+    return False
+
+
+def _looks_like_secret_value(value: str) -> bool:
+    lower_value = value.lower()
+    return any(marker in lower_value for marker in _SECRET_VALUE_MARKERS) or (
+        "-----begin " in lower_value and "private key-----" in lower_value
+    )
 
 
 def _normalize_status(raw: str, *, has_runtime_session: bool) -> BackgroundSessionStatus:

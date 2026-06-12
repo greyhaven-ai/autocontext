@@ -193,6 +193,44 @@ describe("background session read model", () => {
     expect(JSON.stringify(detail)).not.toContain("SECRET_VALUE");
   });
 
+  it("redacts sensitive trigger metadata from detail views", () => {
+    const detail = buildBackgroundSessionDetail({
+      task: createTask({
+        config_json: JSON.stringify({
+          trigger: {
+            type: "github_webhook",
+            actor: "octocat",
+            retry: 2,
+            dry_run: false,
+            token: "ghp_SECRET_VALUE",
+            github_token: "ghp_SECRET_VALUE",
+            apiKey: "sk-SECRET_VALUE",
+            clientSecret: "SECRET_VALUE",
+            Authorization: "Bearer SECRET_VALUE",
+            password: "SECRET_VALUE",
+            private_key: "-----BEGIN PRIVATE KEY-----SECRET_VALUE",
+            headers: { authorization: "Bearer SECRET_VALUE" },
+          },
+        }),
+      }),
+    });
+
+    expect(detail.trigger).toEqual({
+      type: "github_webhook",
+      actor: "octocat",
+      retry: 2,
+      dry_run: false,
+      token: "[redacted]",
+      github_token: "[redacted]",
+      apiKey: "[redacted]",
+      clientSecret: "[redacted]",
+      Authorization: "[redacted]",
+      password: "[redacted]",
+      private_key: "[redacted]",
+    });
+    expect(JSON.stringify(detail)).not.toContain("SECRET_VALUE");
+  });
+
   it("uses shared URL helpers for encoded background and runtime session links", () => {
     expect(backgroundSessionUrl("run:run-123:runtime")).toBe(
       "/api/cockpit/background-sessions/run%3Arun-123%3Aruntime",
