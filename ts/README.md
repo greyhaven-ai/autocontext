@@ -320,7 +320,7 @@ autoctx worker --poll-interval 5 --concurrency 2
 autoctx status <run-id>
 ```
 
-Stateful persistent providers, including persistent Pi RPC, run with effective worker concurrency `1` to keep long-lived runtime sessions isolated.
+Stateful persistent providers, including persistent Pi RPC, run with effective worker concurrency `1` to keep long-lived runtime sessions isolated. The worker/API shape is single-tenant or trusted-org infrastructure, not a hosted multi-tenant control plane; review the repo-level [background execution trust boundaries](../docs/background-execution-trust-boundaries.md) before exposing it beyond a trusted network or adding SCM/sandbox credentials.
 
 ## Contract Probes
 
@@ -766,7 +766,7 @@ record under `.autocontext/harness-proposals/`.
 import { createProvider, LLMJudge, ImprovementLoop, SimpleAgentTask } from "autoctx";
 
 // One-shot evaluation
-const provider = createProvider({ providerType: "anthropic", apiKey: "sk-ant-..." });
+const provider = createProvider({ providerType: "anthropic", apiKey: process.env.ANTHROPIC_API_KEY ?? "" });
 const judge = new LLMJudge({ provider, rubric: "Score clarity and correctness." });
 const result = await judge.evaluate({
   taskPrompt: "Explain binary search.",

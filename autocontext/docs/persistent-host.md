@@ -24,6 +24,14 @@ autoctx worker --poll-interval 5 --concurrency 2
 
 If the selected provider/runtime is stateful and persistent, for example persistent Pi RPC, worker concurrency is forced to `1`. Use non-persistent provider instances or a hosted storage/runtime adapter when you need true parallel task execution.
 
+## Trust and Credential Boundary
+
+This persistent-host shape is single-tenant or trusted-org infrastructure. Treat the API process, worker process, SQLite DB, runs root, knowledge root, mounted repository, service account, and environment file as one trust boundary. It is suitable for a developer machine, a CI worker, or one trusted organization; it is not a hosted multi-tenant SaaS control plane.
+
+If `autoctx serve` binds beyond loopback, put it behind TLS, authentication, and authorization before exposing it to other users. Provider keys, SCM credentials, sandbox API keys, and webhook secrets may be supplied through the host environment for this single-tenant shape, but they must not be baked into images or written into prompts, runtime-session timelines, background-session summaries, lifecycle hook payloads, or outcome metadata.
+
+Shared GitHub App credentials or bot tokens for branch/PR workflows are acceptable only inside one tenant or trusted organization with explicit admin consent. Cross-customer hosted PR creation requires a product adapter with per-tenant GitHub App installations or user OAuth tokens, scoped credential brokering, audit, and revocation. See [Background execution trust boundaries and credential model](../../docs/background-execution-trust-boundaries.md) before claiming hosted or multi-tenant safety.
+
 ## Durable State
 
 Keep these paths on persistent storage:
@@ -121,7 +129,7 @@ volumes:
   autoctx-state:
 ```
 
-The image build, reverse proxy, auth, TLS, and secret distribution are deployment-specific. Do not bake provider API keys into images.
+The image build, reverse proxy, auth, TLS, and secret distribution are deployment-specific. Do not bake provider API keys, SCM tokens, GitHub App private keys, webhook secrets, or sandbox API keys into images.
 
 ## Storage Adapter Contract
 

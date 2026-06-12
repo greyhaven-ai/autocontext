@@ -6,6 +6,8 @@ This document is the Layer-0 domain model for the Open-Inspect-inspired backgrou
 
 Autocontext should borrow background-execution primitives only where they make recursive harness runs unattended, inspectable, replayable, and portable. The open repository owns stable contracts, local/self-hosted behavior, and read models. A separate proprietary product may own hosted scheduling, tenant isolation, credential brokering, billing, managed sandbox fleets, and hosted cockpit UX.
 
+The detailed security model lives in [Background execution trust boundaries and credential model](background-execution-trust-boundaries.md). In short: OSS background-session contracts are single-tenant/trusted-org building blocks, not a hosted multi-tenant safety claim.
+
 ## Bounded contexts
 
 | Context                       | Open-source responsibility                                                                                              | Proprietary/hosted responsibility                                                      |
@@ -91,6 +93,13 @@ The OSS lifecycle slice defines adapter-neutral setup/start hooks only:
 | `start` | `fail_session`         | Required runtime-start boundary when configured. Failures/timeouts are strict and should fail the session unless explicitly configured otherwise.   |
 
 Hook definitions are pure contracts: command argv, optional cwd, timeout, failure policy, and explicit env. Executors receive deterministic `AUTOCTX_*` context variables (`AUTOCTX_BACKGROUND_SESSION_ID`, `AUTOCTX_SESSION_ID`, `AUTOCTX_RUN_ID`, `AUTOCTX_TASK_ID`, `AUTOCTX_WORKER_ID`, `AUTOCTX_HOOK_NAME`) plus hook-provided env. Implementations must not copy ambient process secrets into hook env or normalized lifecycle events. Hosted secret brokering, repo image prebuilds, warming fleets, and sandbox routing remain proprietary/product concerns.
+
+## Trust-boundary invariants
+
+- `BackgroundSessionSummary`, `BackgroundSessionDetail`, normalized timelines, lifecycle events, and outcome metadata must carry ids, refs, counts, status, timestamps, and sanitized scalar metadata rather than secret values.
+- Hosted credential brokering for SCM, GitHub App/OAuth PR creation, sandbox auth, and websocket/session auth is a product/adapter concern, not a core OSS default.
+- Shared GitHub App credentials or bot tokens are acceptable only inside one tenant or trusted organization with explicit admin consent; they are not safe across mutually untrusted tenants.
+- Multi-tenant support claims are blocked until tenant-aware auth, storage isolation, credential brokering, sandbox isolation, SCM policy, webhook verification, audit, retention, and abuse controls are implemented by the hosting layer.
 
 ## Current open API surface
 

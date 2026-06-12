@@ -155,7 +155,7 @@ Run a persistent queue worker beside the API server:
 uv run autoctx worker --poll-interval 5 --concurrency 2
 ```
 
-Stateful persistent providers, such as persistent Pi RPC, run with effective concurrency `1` so one long-lived runtime cannot mix events across tasks.
+Stateful persistent providers, such as persistent Pi RPC, run with effective concurrency `1` so one long-lived runtime cannot mix events across tasks. The persistent-host worker is a single-tenant/trusted-org deployment shape; review [persistent-host trust guidance](docs/persistent-host.md#trust-and-credential-boundary) and the repo-level [background execution trust boundaries](../docs/background-execution-trust-boundaries.md) before exposing it beyond a trusted network or adding SCM/sandbox credentials.
 
 Start the MCP server:
 

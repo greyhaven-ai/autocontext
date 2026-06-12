@@ -25,13 +25,13 @@ The public OSS contract for a future Gondolin adapter is intentionally narrow:
 - Python: implement `GondolinBackend` from `autocontext.execution.executors.gondolin_contract` behind the existing `ExecutionEngine` boundary.
 - TypeScript: implement `GondolinBackend` from `autoctx` and start from `createDefaultGondolinSandboxPolicy()`.
 
-The contract carries policy and secret references, not secret values. Hosted fleet orchestration, tenant scheduling, policy UI, billing, and managed audit retention remain deployment concerns outside this OSS boundary.
+The contract carries policy and secret references, not secret values. Hosted fleet orchestration, tenant scheduling, policy UI, billing, and managed audit retention remain deployment concerns outside this OSS boundary. A deployment is not multi-tenant safe merely because it uses a remote sandbox; it also needs tenant-aware credential brokering, per-tenant filesystem/network isolation, egress policy, audit, retention, and abuse controls. See [Background execution trust boundaries and credential model](../../docs/background-execution-trust-boundaries.md).
 
 ## Relevant Environment Variables
 
 - `AUTOCONTEXT_EXECUTOR_MODE` (`local`, `primeintellect`, `monty`, `ssh`; `gondolin` is reserved/fail-closed)
 - `AUTOCONTEXT_PRIMEINTELLECT_API_BASE`
-- `AUTOCONTEXT_PRIMEINTELLECT_API_KEY`
+- `AUTOCONTEXT_PRIMEINTELLECT_API_KEY` (deployment secret; never store in prompts, traces, runtime-session events, background-session summaries, lifecycle hook payloads, or artifact metadata)
 - `AUTOCONTEXT_PRIMEINTELLECT_DOCKER_IMAGE`
 - `AUTOCONTEXT_PRIMEINTELLECT_CPU_CORES`
 - `AUTOCONTEXT_PRIMEINTELLECT_MEMORY_GB`

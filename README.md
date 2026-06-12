@@ -335,6 +335,7 @@ Yes. Wire `autoctx mcp-serve` (or `bunx autoctx mcp-serve`) into Claude Code, Cu
 - Recursive loop closed end to end on local MLX (train -> auto-serve -> improve): [autocontext/docs/case-study-recursive-loop.md](autocontext/docs/case-study-recursive-loop.md)
 - Sandbox and executor notes: [autocontext/docs/sandbox.md](autocontext/docs/sandbox.md)
 - Persistent host worker: [autocontext/docs/persistent-host.md](autocontext/docs/persistent-host.md)
+- Background execution trust boundaries: [docs/background-execution-trust-boundaries.md](docs/background-execution-trust-boundaries.md)
 - License: [LICENSE](LICENSE)
 
 ## Acknowledgments
