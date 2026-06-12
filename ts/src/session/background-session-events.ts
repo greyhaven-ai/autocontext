@@ -28,6 +28,16 @@ export type NormalizedSessionEventStatus =
 
 export type NormalizedSessionEventSummaryValue = string | number | boolean;
 
+const SAFE_SANDBOX_CAPABILITY_REASONS = new Set([
+  "adapter_error",
+  "missing_snapshot_ref",
+  "unsupported_prebuild_repo_image",
+  "unsupported_resolve_tunnel_ports",
+  "unsupported_restore",
+  "unsupported_snapshot",
+  "unsupported_warm",
+]);
+
 export interface NormalizedSessionEvent {
   readonly event_id: string;
   readonly session_id: string;
@@ -38,6 +48,7 @@ export interface NormalizedSessionEvent {
     | RuntimeSessionEventType
     | "artifact"
     | "lifecycle_hook"
+    | "sandbox_capability"
     | "session_status";
   readonly status: NormalizedSessionEventStatus;
   readonly title: string;
@@ -50,6 +61,20 @@ export interface LifecycleSessionEventInput {
   readonly timestamp: string;
   readonly hook: "setup" | "start" | string;
   readonly phase: "started" | "completed" | "failed" | "timeout" | string;
+}
+
+export interface SandboxCapabilitySessionEventInput {
+  readonly sessionId: string;
+  readonly sequence: number;
+  readonly timestamp: string;
+  readonly capability: string;
+  readonly phase: string;
+  readonly bootMode: string;
+  readonly provider?: string;
+  readonly unsupportedPolicy?: string;
+  readonly reason?: string;
+  readonly degraded?: boolean;
+  readonly error?: string;
 }
 
 export interface ArtifactCreatedSessionEventInput {
@@ -152,7 +177,11 @@ export function normalizeRuntimeSessionEvent(event: RuntimeSessionEvent): Normal
       return baseEvent(event, {
         normalizedEvent: "session_status",
         status: canceled ? "canceled" : failed ? "failed" : "completed",
-        title: canceled ? "Child session canceled" : failed ? "Child session failed" : "Child session completed",
+        title: canceled
+          ? "Child session canceled"
+          : failed
+            ? "Child session failed"
+            : "Child session completed",
         payloadSummary: pickPayload(event.payload, {
           task_id: "taskId",
         }),
@@ -192,6 +221,48 @@ export function buildLifecycleSessionEvent(
     status: skipped ? "skipped" : failed ? "failed" : completed ? "completed" : "running",
     title: `Lifecycle hook ${input.hook} ${input.phase}`,
     payload_summary: { hook: input.hook, phase: input.phase },
+  };
+}
+
+export function buildSandboxCapabilitySessionEvent(
+  input: SandboxCapabilitySessionEventInput,
+): NormalizedSessionEvent {
+  void input.error;
+  const failed = input.phase === "failed" || input.phase === "timeout";
+  const completed = input.phase === "completed";
+  const skipped =
+    input.phase === "unsupported" || input.phase === "skipped" || input.phase === "degraded";
+  const event: NormalizedSessionEventName =
+    input.phase === "started"
+      ? "executor_starting"
+      : completed
+        ? "executor_ready"
+        : "session_status";
+  const status: NormalizedSessionEventStatus = failed
+    ? "failed"
+    : completed
+      ? "completed"
+      : skipped
+        ? "skipped"
+        : "running";
+  return {
+    event_id: `sandbox:${input.sessionId}:${input.capability}:${input.phase}:${input.sequence}`,
+    session_id: input.sessionId,
+    sequence: input.sequence,
+    ts: input.timestamp,
+    event,
+    source_event_type: "sandbox_capability",
+    status,
+    title: `Sandbox ${input.capability.replaceAll("_", " ")} ${input.phase}`,
+    payload_summary: sanitizeSummary({
+      capability: input.capability,
+      phase: input.phase,
+      boot_mode: input.bootMode,
+      provider: input.provider,
+      unsupported_policy: input.unsupportedPolicy,
+      reason: safeSandboxCapabilityReason(input.reason),
+      degraded: input.degraded ?? false,
+    }),
   };
 }
 
@@ -301,6 +372,10 @@ function sanitizeSummary(
     }
   }
   return summary;
+}
+
+function safeSandboxCapabilityReason(reason: string | undefined): string | undefined {
+  return reason && SAFE_SANDBOX_CAPABILITY_REASONS.has(reason) ? reason : undefined;
 }
 
 function runtimeActionStatus(

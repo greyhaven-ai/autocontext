@@ -226,6 +226,28 @@ export type {
   GondolinSandboxPolicy,
   GondolinSecretRef,
 } from "./execution/gondolin-contract.js";
+export {
+  SANDBOX_CAPABILITY_NAMES,
+  lifecycleHooksForBootMode,
+  normalizeSandboxAdapterCapabilities,
+  planSandboxStartup,
+} from "./execution/sandbox-adapter-contracts.js";
+export type {
+  PlanSandboxStartupOptions,
+  SandboxBootMode,
+  SandboxCapabilityName,
+  SandboxCapabilityRecord,
+  SandboxCapabilityRequest,
+  SandboxCapabilityResult,
+  SandboxRepoImageAdapter,
+  SandboxRequestedBootMode,
+  SandboxRestoreAdapter,
+  SandboxSnapshotAdapter,
+  SandboxStartupPlan,
+  SandboxTunnelPortAdapter,
+  SandboxWarmAdapter,
+  UnsupportedSandboxCapabilityPolicy,
+} from "./execution/sandbox-adapter-contracts.js";
 export { JudgeExecutor } from "./execution/judge-executor.js";
 export { ActionFilterHarness, ActionDictSchema } from "./execution/action-filter.js";
 export type { ActionDict, ScenarioLike, HarnessLoaderLike } from "./execution/action-filter.js";
@@ -337,6 +359,7 @@ export {
 export {
   buildArtifactCreatedSessionEvent,
   buildLifecycleSessionEvent,
+  buildSandboxCapabilitySessionEvent,
   buildSessionStatusEvent,
   normalizeBackgroundSessionTimeline,
   normalizeRuntimeSessionEvent,
@@ -418,6 +441,7 @@ export type {
   NormalizedSessionEventName,
   NormalizedSessionEventStatus,
   NormalizedSessionEventSummaryValue,
+  SandboxCapabilitySessionEventInput,
   SessionStatusEventInput,
 } from "./session/background-session-events.js";
 export type {

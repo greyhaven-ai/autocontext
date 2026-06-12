@@ -7,6 +7,8 @@
   },
   "include": [
     "background-session-*.test.ts",
+    "sandbox-adapter-contracts.test.ts",
+    "../src/execution/sandbox-adapter-contracts.ts",
     "../src/session/background-session-*.ts",
     "../src/server/background-session-api.ts",
     "../src/server/*.ts",

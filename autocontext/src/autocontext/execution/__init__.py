@@ -7,6 +7,22 @@ from .phased_execution import (
     PhaseResult,
     split_budget,
 )
+from .sandbox_adapter_contracts import (
+    SANDBOX_CAPABILITY_NAMES,
+    SandboxBootMode,
+    SandboxCapabilityName,
+    SandboxRepoImageAdapter,
+    SandboxRequestedBootMode,
+    SandboxRestoreAdapter,
+    SandboxSnapshotAdapter,
+    SandboxStartupPlan,
+    SandboxTunnelPortAdapter,
+    SandboxWarmAdapter,
+    UnsupportedSandboxCapabilityPolicy,
+    lifecycle_hooks_for_boot_mode,
+    normalize_sandbox_adapter_capabilities,
+    plan_sandbox_startup,
+)
 from .supervisor import ExecutionInput, ExecutionOutput, ExecutionSupervisor
 from .task_queue_store import TaskQueueEnqueueStore, TaskQueueStore
 
@@ -15,6 +31,17 @@ __all__ = [
     "ExecutionSupervisor",
     "ExecutionInput",
     "ExecutionOutput",
+    "SANDBOX_CAPABILITY_NAMES",
+    "SandboxBootMode",
+    "SandboxCapabilityName",
+    "SandboxRepoImageAdapter",
+    "SandboxRequestedBootMode",
+    "SandboxRestoreAdapter",
+    "SandboxSnapshotAdapter",
+    "SandboxStartupPlan",
+    "SandboxTunnelPortAdapter",
+    "SandboxWarmAdapter",
+    "UnsupportedSandboxCapabilityPolicy",
     "TaskQueueEnqueueStore",
     "TaskQueueStore",
     "PhaseBudget",
@@ -22,5 +49,8 @@ __all__ = [
     "PhasedExecutionPlan",
     "PhasedExecutionResult",
     "PhasedRunner",
+    "lifecycle_hooks_for_boot_mode",
+    "normalize_sandbox_adapter_capabilities",
+    "plan_sandbox_startup",
     "split_budget",
 ]

@@ -22,6 +22,16 @@ NormalizedSessionEventStatus: TypeAlias = Literal["queued", "running", "complete
 NormalizedSessionEventSummaryValue: TypeAlias = str | int | float | bool
 NormalizedSessionEvent: TypeAlias = dict[str, Any]
 
+_SAFE_SANDBOX_CAPABILITY_REASONS = {
+    "adapter_error",
+    "missing_snapshot_ref",
+    "unsupported_prebuild_repo_image",
+    "unsupported_resolve_tunnel_ports",
+    "unsupported_restore",
+    "unsupported_snapshot",
+    "unsupported_warm",
+}
+
 
 def normalize_background_session_timeline(
     log: RuntimeSessionEventLog,
@@ -133,6 +143,55 @@ def build_lifecycle_session_event(
     }
 
 
+def build_sandbox_capability_session_event(
+    *,
+    session_id: str,
+    sequence: int,
+    timestamp: str,
+    capability: str,
+    phase: str,
+    boot_mode: str,
+    provider: str | None = None,
+    unsupported_policy: str | None = None,
+    reason: str | None = None,
+    degraded: bool = False,
+    error: str | None = None,
+) -> NormalizedSessionEvent:
+    """Build a sanitized timeline event for optional sandbox capabilities."""
+
+    del error
+    failed = phase in {"failed", "timeout"}
+    completed = phase == "completed"
+    skipped = phase in {"unsupported", "skipped", "degraded"}
+    normalized_event: NormalizedSessionEventName = (
+        "executor_starting" if phase == "started" else "executor_ready" if completed else "session_status"
+    )
+    status: NormalizedSessionEventStatus = (
+        "failed" if failed else "completed" if completed else "skipped" if skipped else "running"
+    )
+    return {
+        "event_id": f"sandbox:{session_id}:{capability}:{phase}:{sequence}",
+        "session_id": session_id,
+        "sequence": sequence,
+        "ts": timestamp,
+        "event": normalized_event,
+        "source_event_type": "sandbox_capability",
+        "status": status,
+        "title": f"Sandbox {capability.replace('_', ' ')} {phase}",
+        "payload_summary": _sanitize_summary(
+            {
+                "capability": capability,
+                "phase": phase,
+                "boot_mode": boot_mode,
+                "provider": provider,
+                "unsupported_policy": unsupported_policy,
+                "reason": _safe_sandbox_capability_reason(reason),
+                "degraded": degraded,
+            }
+        ),
+    }
+
+
 def build_artifact_created_session_event(
     *,
     session_id: str,
@@ -238,6 +297,12 @@ def _sanitize_summary(value: Mapping[str, Any]) -> dict[str, NormalizedSessionEv
         if isinstance(key, str) and isinstance(item, str | int | float | bool):
             summary[key] = item
     return summary
+
+
+def _safe_sandbox_capability_reason(reason: str | None) -> str | None:
+    if isinstance(reason, str) and reason in _SAFE_SANDBOX_CAPABILITY_REASONS:
+        return reason
+    return None
 
 
 def _runtime_action_status(
