@@ -623,6 +623,23 @@ export type { TraceEventInit } from "./analytics/run-trace.js";
 export { runtimeSessionLogToRunTrace } from "./analytics/runtime-session-run-trace.js";
 export type { RuntimeSessionRunTraceOpts } from "./analytics/runtime-session-run-trace.js";
 export {
+  buildTraceGateOperatorView,
+  renderTraceGateOperatorViewLines,
+} from "./analytics/trace-gate-operator-view.js";
+export type {
+  BuildTraceGateOperatorViewInput,
+  TraceEvidenceLink,
+  TraceEvidenceLinkKind,
+  TraceGateAnalysisState,
+  TraceGateDecisionView,
+  TraceGateFailureModeView,
+  TraceGateFindingView,
+  TraceGateOperatorState,
+  TraceGateOperatorView,
+  TraceGateProposalView,
+  TraceGateReportSummary,
+} from "./analytics/trace-gate-operator-view.js";
+export {
   TRACE_FINDING_CATEGORIES,
   TraceFindingCategorySchema,
   TraceFindingSchema,

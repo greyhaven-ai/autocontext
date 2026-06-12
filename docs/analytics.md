@@ -72,6 +72,12 @@ autoctx trace-findings --help                        # Usage
 `PublicTraceSchema`. Loading by stored trace id (`--trace-id <id>` against
 the ProductionTrace store) is a follow-up slice.
 
+### Operator trace-gate review (AC-683)
+
+Cockpit and the terminal UI consume the same trace-finding report and harness-change proposal contracts instead of a TUI-only shape. The read model is available at `GET /api/cockpit/runs/:run_id/trace-gates` in both runtimes and in the TUI via `/findings <run-id>` or `/trace-gates <run-id>`.
+
+The view surfaces findings with trace-message evidence refs, recurring failure modes with occurrence counts, proposed harness/context changes with target surfaces, gate decisions (`accepted`, `rejected`, `inconclusive`) with reasons, evidence artifact refs, and graceful `missing_report`, `incomplete_analysis`, and `no_findings` states.
+
 ## Repository Traffic
 
 For GitHub-hosted repo traffic, use the repository Traffic view:

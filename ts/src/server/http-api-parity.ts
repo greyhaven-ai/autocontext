@@ -51,25 +51,6 @@ function both(
   };
 }
 
-function pythonOnly(
-  domain: string,
-  method: HttpApiMethod,
-  path: string,
-  source: string,
-  notes: string,
-): HttpApiParityEntry {
-  return {
-    domain,
-    method,
-    path,
-    python: { support: "supported", source },
-    typescript: { support: "unsupported" },
-    status: "typescript_gap",
-    issue: "AC-627",
-    notes,
-  };
-}
-
 function typescriptOnly(
   domain: string,
   method: HttpApiMethod,
@@ -311,6 +292,7 @@ export const HTTP_API_PARITY_ROUTES: readonly HttpApiParityEntry[] = [
   both("cockpit", "GET", "/api/cockpit/runs/:run_id/status", PY_COCKPIT_API),
   both("cockpit", "GET", "/api/cockpit/runs/:run_id/changelog", PY_COCKPIT_API),
   both("cockpit", "GET", "/api/cockpit/runs/:run_id/context-selection", PY_COCKPIT_API),
+  both("cockpit", "GET", "/api/cockpit/runs/:run_id/trace-gates", PY_COCKPIT_API),
   both("cockpit", "GET", "/api/cockpit/runs/:run_id/compare/:gen_a/:gen_b", PY_COCKPIT_API),
   both("cockpit", "GET", "/api/cockpit/runs/:run_id/resume", PY_COCKPIT_API),
   both("cockpit", "GET", "/api/cockpit/writeup/:run_id", PY_COCKPIT_API),
@@ -382,22 +364,6 @@ export const HTTP_API_PARITY_ROUTES: readonly HttpApiParityEntry[] = [
   ),
   both("openclaw", "GET", "/api/openclaw/skill/manifest", PY_OPENCLAW_API),
 ];
-
-function pythonOnlyRoutes(
-  domain: string,
-  source: string,
-  routes: Array<[HttpApiMethod, string]>,
-): HttpApiParityEntry[] {
-  return routes.map(([method, path]) =>
-    pythonOnly(
-      domain,
-      method,
-      path,
-      source,
-      `${domain} HTTP routes are mounted by the Python FastAPI app and are not yet ported to TypeScript.`,
-    ),
-  );
-}
 
 export function buildHttpApiParityMatrix(): HttpApiParityMatrix {
   const summary: Record<HttpApiParityStatus, number> = {
