@@ -395,6 +395,8 @@ async function cmdAgent(): Promise<void> {
       model: { type: "string" },
       "api-key": { type: "string" },
       "base-url": { type: "string" },
+      target: { type: "string" },
+      out: { type: "string" },
       help: { type: "boolean", short: "h" },
     },
   });
@@ -402,6 +404,7 @@ async function cmdAgent(): Promise<void> {
   const {
     AGENT_COMMAND_HELP_TEXT,
     createAutoctxAgentDevServer,
+    executeAutoctxAgentBuildCommandWorkflow,
     executeAutoctxAgentRunCommandWorkflow,
     planAutoctxAgentCommand,
     renderAutoctxAgentCommandError,
@@ -427,6 +430,21 @@ async function cmdAgent(): Promise<void> {
         cwd: process.cwd(),
         processEnv: process.env,
         createRuntime: createAutoctxAgentCliRuntime,
+      });
+      if (result.stderr) process.stderr.write(result.stderr + "\n");
+      if (result.stdout) process.stdout.write(result.stdout + "\n");
+      process.exit(result.exitCode);
+    } catch (error) {
+      console.error(renderAutoctxAgentCommandError(error, plan.json));
+      process.exit(1);
+    }
+  }
+
+  if (plan.action === "build") {
+    try {
+      const result = await executeAutoctxAgentBuildCommandWorkflow({
+        plan,
+        cwd: process.cwd(),
       });
       if (result.stderr) process.stderr.write(result.stderr + "\n");
       if (result.stdout) process.stdout.write(result.stdout + "\n");
