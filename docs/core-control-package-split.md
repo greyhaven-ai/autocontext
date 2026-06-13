@@ -136,6 +136,8 @@ handler/server boundary. The TypeScript control-plane Fetch adapter lives at
 wire shape without becoming a provider-specific deployment target. Its
 build-time catalog planner turns explicit `.autoctx/agents` entries into static
 module maps so edge-compatible bundles do not scan a filesystem at request time.
+Its session event-store contract gives Fetch hosts a provider-neutral append/replay
+seam for explicit runtime-session capabilities.
 Cloudflare Workers/Durable Objects may be reference environments. The spike
 must report generic portability constraints before adding any provider-specific build path.
 The detailed spike lives in

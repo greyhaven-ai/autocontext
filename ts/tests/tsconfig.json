@@ -8,6 +8,7 @@
   "include": [
     "agent-app-fetch-adapter.test.ts",
     "agent-app-fetch-catalog-planner.test.ts",
+    "agent-app-fetch-session-event-store.test.ts",
     "background-session-*.test.ts",
     "sandbox-adapter-contracts.test.ts",
     "../src/control-plane/agent-app-fetch/index.ts",

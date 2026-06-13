@@ -183,6 +183,24 @@ const catalog = createAgentAppFetchCatalogFromModuleMap(plan, {
 export default { fetch: createAgentAppFetchHandler({ catalog }) };
 ```
 
+Runtime-backed Fetch handlers can receive an explicit edge-safe session event
+store. The store appends idempotently by `eventId`, replays by per-session
+sequence, and is host-owned; provider-specific storage adapters belong outside
+this generic package:
+
+```ts
+import {
+  createAgentAppFetchHandler,
+  createInMemoryAgentAppFetchSessionEventStore,
+} from "autoctx/control-plane/agent-app-fetch";
+
+const sessionEventStore = createInMemoryAgentAppFetchSessionEventStore();
+
+export default {
+  fetch: createAgentAppFetchHandler({ catalog, runtime, sessionEventStore }),
+};
+```
+
 See [`docs/edge-runtime-compatibility.md`](../docs/edge-runtime-compatibility.md)
 and [`docs/core-control-package-split.md#agent-app-build-targets`](../docs/core-control-package-split.md#agent-app-build-targets)
 for the OSS/proprietary boundary: provider deployment manifests, hosted secrets,
