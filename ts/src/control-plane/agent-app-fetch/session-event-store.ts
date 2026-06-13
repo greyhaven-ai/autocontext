@@ -48,11 +48,29 @@ export interface AgentAppFetchRuntimeSessionEventLogLike {
   toJSON(): AgentAppFetchSessionEventLogSnapshot | Record<string, unknown>;
 }
 
+export type AgentAppFetchRuntimeSessionEventLogSubscriber = (
+  event: AgentAppFetchSessionEventRecord,
+  log: AgentAppFetchRuntimeSessionReadableEventLog,
+) => void;
+
+export interface AgentAppFetchRuntimeSessionReadableEventLog extends AgentAppFetchRuntimeSessionEventLogLike {
+  readonly sessionId: string;
+  readonly parentSessionId: string;
+  readonly taskId: string;
+  readonly workerId: string;
+  readonly events: AgentAppFetchSessionEventRecord[];
+  readonly createdAt: string;
+  updatedAt: string;
+  metadata: Record<string, unknown>;
+  append(eventType: string, payload?: Record<string, unknown>): AgentAppFetchSessionEventRecord;
+  subscribe(callback: AgentAppFetchRuntimeSessionEventLogSubscriber): () => void;
+}
+
 export interface AgentAppFetchRuntimeSessionEventStoreAdapter {
   save(log: AgentAppFetchRuntimeSessionEventLogLike): void;
-  load(sessionId: string): null;
-  list(options?: { limit?: number }): [];
-  listChildren(parentSessionId: string): [];
+  load(sessionId: string): AgentAppFetchRuntimeSessionReadableEventLog | null;
+  list(options?: { limit?: number }): AgentAppFetchRuntimeSessionReadableEventLog[];
+  listChildren(parentSessionId: string): AgentAppFetchRuntimeSessionReadableEventLog[];
   close(): void;
 }
 
@@ -72,29 +90,45 @@ const AGENT_APP_FETCH_SESSION_EVENT_STORE_CAPABILITIES = {
 export function createAgentAppFetchSessionEventStoreBridge(
   store: AgentAppFetchSessionEventStore,
 ): AgentAppFetchSessionEventStoreBridge {
+  const snapshots = new Map<string, AgentAppFetchSessionEventLogSnapshot>();
   const pending = new Map<string, AgentAppFetchSessionEventLogSnapshot>();
+  const updateSnapshot = (snapshot: AgentAppFetchSessionEventLogSnapshot) => {
+    const normalized = normalizeSnapshot(snapshot);
+    snapshots.set(normalized.sessionId, normalized);
+    pending.set(normalized.sessionId, normalized);
+  };
+  const readSnapshot = (sessionId: string) => snapshots.get(sessionId);
+  const toBridgeLog = (snapshot: AgentAppFetchSessionEventLogSnapshot | undefined) =>
+    snapshot ? new BridgeRuntimeSessionEventLog(snapshot, updateSnapshot) : null;
+
   return {
     eventStore: {
       save(log) {
-        const snapshot = normalizeSnapshot(log.toJSON());
-        pending.set(snapshot.sessionId, snapshot);
+        updateSnapshot(normalizeSnapshot(log.toJSON()));
       },
-      load() {
-        return null;
+      load(sessionId) {
+        return toBridgeLog(readSnapshot(sessionId));
       },
-      list() {
-        return [];
+      list(options = {}) {
+        const limit = positiveLimit(options.limit);
+        return [...snapshots.values()]
+          .sort((left, right) => compareSessionsForList(left, right))
+          .slice(0, limit)
+          .map((snapshot) => new BridgeRuntimeSessionEventLog(snapshot, updateSnapshot));
       },
-      listChildren() {
-        return [];
+      listChildren(parentSessionId) {
+        return [...snapshots.values()]
+          .filter((snapshot) => snapshot.parentSessionId === parentSessionId)
+          .sort(compareChildSessionsForList)
+          .map((snapshot) => new BridgeRuntimeSessionEventLog(snapshot, updateSnapshot));
       },
       close() {},
     },
     async flush() {
-      const snapshots = [...pending.values()].sort((left, right) =>
+      const flushSnapshots = [...pending.values()].sort((left, right) =>
         left.sessionId.localeCompare(right.sessionId),
       );
-      for (const snapshot of snapshots) {
+      for (const snapshot of flushSnapshots) {
         await store.append(snapshot);
         pending.delete(snapshot.sessionId);
       }
@@ -104,6 +138,80 @@ export function createAgentAppFetchSessionEventStoreBridge(
 
 export function createInMemoryAgentAppFetchSessionEventStore(): AgentAppFetchSessionEventStore {
   return new InMemoryAgentAppFetchSessionEventStore();
+}
+
+class BridgeRuntimeSessionEventLog implements AgentAppFetchRuntimeSessionReadableEventLog {
+  readonly sessionId: string;
+  readonly parentSessionId: string;
+  readonly taskId: string;
+  readonly workerId: string;
+  readonly events: AgentAppFetchSessionEventRecord[];
+  readonly createdAt: string;
+  updatedAt: string;
+  metadata: Record<string, unknown>;
+  readonly #onChange: (snapshot: AgentAppFetchSessionEventLogSnapshot) => void;
+  readonly #subscribers: AgentAppFetchRuntimeSessionEventLogSubscriber[] = [];
+
+  constructor(
+    snapshot: AgentAppFetchSessionEventLogSnapshot,
+    onChange: (snapshot: AgentAppFetchSessionEventLogSnapshot) => void,
+  ) {
+    const clone = cloneSnapshot(snapshot);
+    this.sessionId = clone.sessionId;
+    this.parentSessionId = clone.parentSessionId;
+    this.taskId = clone.taskId;
+    this.workerId = clone.workerId;
+    this.metadata = clone.metadata;
+    this.events = clone.events;
+    this.createdAt = clone.createdAt;
+    this.updatedAt = clone.updatedAt;
+    this.#onChange = onChange;
+  }
+
+  append(
+    eventType: string,
+    payload: Record<string, unknown> = {},
+  ): AgentAppFetchSessionEventRecord {
+    const event: AgentAppFetchSessionEventRecord = {
+      eventId: createEdgeSafeEventId(),
+      sessionId: this.sessionId,
+      sequence: this.events.length,
+      eventType,
+      timestamp: new Date().toISOString(),
+      payload: cloneJsonRecord(payload),
+      parentSessionId: this.parentSessionId,
+      taskId: this.taskId,
+      workerId: this.workerId,
+    };
+    this.events.push(event);
+    this.updatedAt = event.timestamp;
+    this.#onChange(this.toJSON());
+    for (const subscriber of [...this.#subscribers]) {
+      subscriber(event, this);
+    }
+    return event;
+  }
+
+  subscribe(callback: AgentAppFetchRuntimeSessionEventLogSubscriber): () => void {
+    this.#subscribers.push(callback);
+    return () => {
+      const index = this.#subscribers.indexOf(callback);
+      if (index !== -1) this.#subscribers.splice(index, 1);
+    };
+  }
+
+  toJSON(): AgentAppFetchSessionEventLogSnapshot {
+    return cloneSnapshot({
+      sessionId: this.sessionId,
+      parentSessionId: this.parentSessionId,
+      taskId: this.taskId,
+      workerId: this.workerId,
+      metadata: this.metadata,
+      events: this.events,
+      createdAt: this.createdAt,
+      updatedAt: this.updatedAt,
+    });
+  }
 }
 
 class InMemoryAgentAppFetchSessionEventStore implements AgentAppFetchSessionEventStore {
@@ -162,11 +270,7 @@ class InMemoryAgentAppFetchSessionEventStore implements AgentAppFetchSessionEven
   async listChildren(parentSessionId: string): Promise<AgentAppFetchSessionEventLogSnapshot[]> {
     return [...this.#snapshots.values()]
       .filter((snapshot) => snapshot.parentSessionId === parentSessionId)
-      .sort(
-        (left, right) =>
-          left.createdAt.localeCompare(right.createdAt) ||
-          left.sessionId.localeCompare(right.sessionId),
-      )
+      .sort(compareChildSessionsForList)
       .map(cloneSnapshot);
   }
 
@@ -193,7 +297,7 @@ function normalizeSnapshot(
     parentSessionId,
     taskId,
     workerId,
-    metadata: cloneRecord(value.metadata),
+    metadata: cloneJsonRecord(value.metadata),
     events: events.sort(compareEvents),
     createdAt,
     updatedAt,
@@ -209,7 +313,7 @@ function mergeSnapshot(
     parentSessionId: incoming.parentSessionId || existing.parentSessionId,
     taskId: incoming.taskId || existing.taskId,
     workerId: incoming.workerId || existing.workerId,
-    metadata: { ...existing.metadata, ...incoming.metadata },
+    metadata: cloneJsonRecord({ ...existing.metadata, ...incoming.metadata }),
     events: existing.events.map(cloneEvent),
     createdAt: existing.createdAt || incoming.createdAt,
     updatedAt: maxTimestamp(existing.updatedAt, incoming.updatedAt),
@@ -228,7 +332,7 @@ function normalizeEvent(
     sequence: readNumber(value.sequence),
     eventType: readString(value.eventType),
     timestamp: readString(value.timestamp),
-    payload: cloneRecord(value.payload),
+    payload: cloneJsonRecord(value.payload),
     parentSessionId: readString(value.parentSessionId),
     taskId: readString(value.taskId),
     workerId: readString(value.workerId),
@@ -240,7 +344,7 @@ function cloneSnapshot(
 ): AgentAppFetchSessionEventLogSnapshot {
   return {
     ...snapshot,
-    metadata: { ...snapshot.metadata },
+    metadata: cloneJsonRecord(snapshot.metadata),
     events: snapshot.events.map(cloneEvent),
   };
 }
@@ -248,12 +352,34 @@ function cloneSnapshot(
 function cloneEvent(event: AgentAppFetchSessionEventRecord): AgentAppFetchSessionEventRecord {
   return {
     ...event,
-    payload: { ...event.payload },
+    payload: cloneJsonRecord(event.payload),
   };
 }
 
-function cloneRecord(value: unknown): Record<string, unknown> {
-  return isRecord(value) ? { ...value } : {};
+function cloneJsonRecord(value: unknown): Record<string, unknown> {
+  if (!isRecord(value)) return {};
+  return cloneJsonValue(value) as Record<string, unknown>;
+}
+
+function cloneJsonValue(value: unknown): unknown {
+  if (value === null) return null;
+  if (typeof value === "string" || typeof value === "boolean") return value;
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (Array.isArray(value)) {
+    return value.map((item) => {
+      const cloned = cloneJsonValue(item);
+      return cloned === undefined ? null : cloned;
+    });
+  }
+  if (isRecord(value)) {
+    const record: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value)) {
+      const cloned = cloneJsonValue(entry);
+      if (cloned !== undefined) record[key] = cloned;
+    }
+    return record;
+  }
+  return undefined;
 }
 
 function readString(value: unknown): string {
@@ -293,6 +419,15 @@ function compareEvents(
   );
 }
 
+function compareChildSessionsForList(
+  left: AgentAppFetchSessionEventLogSnapshot,
+  right: AgentAppFetchSessionEventLogSnapshot,
+): number {
+  return (
+    left.createdAt.localeCompare(right.createdAt) || left.sessionId.localeCompare(right.sessionId)
+  );
+}
+
 function compareSessionsForList(
   left: AgentAppFetchSessionEventLogSnapshot,
   right: AgentAppFetchSessionEventLogSnapshot,
@@ -312,4 +447,10 @@ function nextOpenSequence(usedSequences: ReadonlySet<number>, start = 0): number
     sequence += 1;
   }
   return sequence;
+}
+
+function createEdgeSafeEventId(): string {
+  const randomUUID = globalThis.crypto?.randomUUID?.();
+  if (randomUUID) return randomUUID.slice(0, 12);
+  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 }
