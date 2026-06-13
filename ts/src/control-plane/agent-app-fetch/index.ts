@@ -84,6 +84,22 @@ export interface AgentAppFetchManifest {
   }>;
 }
 
+export {
+  createAgentAppFetchCatalogFromModuleMap,
+  planAgentAppFetchCatalog,
+  renderAgentAppFetchModuleMapEntrypoint,
+} from "./catalog-planner.js";
+export type {
+  AgentAppFetchCatalogPlan,
+  AgentAppFetchCatalogPlanEntry,
+  AgentAppFetchCatalogPlanOptions,
+  AgentAppFetchCatalogSourceEntry,
+  AgentAppFetchModuleLoader,
+  AgentAppFetchModuleMap,
+  AgentAppFetchRoute,
+  RenderAgentAppFetchModuleMapEntrypointOptions,
+} from "./catalog-planner.js";
+
 type EdgeMemoryState = {
   files: Map<string, EdgeMemoryFile>;
   dirs: Map<string, Date>;

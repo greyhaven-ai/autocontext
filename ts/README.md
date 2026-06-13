@@ -153,6 +153,36 @@ const fetchAgentApp = createAgentAppFetchHandler({
 export default { fetch: fetchAgentApp };
 ```
 
+Build tooling can also precompute a bundler-visible module map and turn it into
+the same Fetch catalog. The planner accepts explicit `.autoctx/agents` entries
+from a build step; it does not discover files from the request path:
+
+```ts
+import {
+  createAgentAppFetchCatalogFromModuleMap,
+  createAgentAppFetchHandler,
+  planAgentAppFetchCatalog,
+} from "autoctx/control-plane/agent-app-fetch";
+
+const plan = planAgentAppFetchCatalog({
+  entries: [
+    {
+      name: "support",
+      relativePath: ".autoctx/agents/support.ts",
+      extension: ".ts",
+      triggers: { webhook: true },
+    },
+  ],
+  moduleSpecifier: (entry) => `./${entry.relativePath}`,
+});
+
+const catalog = createAgentAppFetchCatalogFromModuleMap(plan, {
+  support: () => import("./.autoctx/agents/support.ts"),
+});
+
+export default { fetch: createAgentAppFetchHandler({ catalog }) };
+```
+
 See [`docs/edge-runtime-compatibility.md`](../docs/edge-runtime-compatibility.md)
 and [`docs/core-control-package-split.md#agent-app-build-targets`](../docs/core-control-package-split.md#agent-app-build-targets)
 for the OSS/proprietary boundary: provider deployment manifests, hosted secrets,

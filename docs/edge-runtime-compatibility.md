@@ -24,16 +24,17 @@ generic adapter seams are proven.
 The first OSS adapter seam is the TypeScript control-plane Fetch helper at
 `autoctx/control-plane/agent-app-fetch`. It handles `Request` -> `Response` for
 the existing `GET /manifest` and `POST /agents/:agent/invoke` shape using a
-static handler catalog or module map. This helper is not a deployment target and
-does not add provider-specific build output.
+static handler catalog or module map. It also includes a build-time catalog
+planner that turns explicit `.autoctx/agents` entries into bundler-visible
+module maps, so generated bundles do not need runtime filesystem discovery.
+This helper is not a deployment target and does not add provider-specific build
+output.
 
 Recommended follow-up after the generic adapter seam:
 
-1. Add a build-time handler manifest/module-map planner so generated edge
-   bundles do not need runtime filesystem discovery.
-2. Add or document edge-safe workspace and session event-store adapters behind
+1. Add or document edge-safe workspace and session event-store adapters behind
    the existing runtime/session contracts.
-3. Keep provider-specific deployment templates and hosted orchestration in a
+2. Keep provider-specific deployment templates and hosted orchestration in a
    separate product/repository unless they are deliberately opened later.
 
 ## Reusable Invocation Shape
@@ -116,9 +117,11 @@ interface EdgeAgentCatalogEntry {
 ```
 
 The catalog can be generated from `.autoctx/agents` by the control-plane build
-workflow, but the runtime adapter receives a static list or module map. This
-keeps source-project scanning out of the edge request path and lets bundlers see
-which handler modules must be included.
+workflow, but the runtime adapter receives a static list or module map. The
+provider-neutral `planAgentAppFetchCatalog()` and
+`createAgentAppFetchCatalogFromModuleMap()` helpers keep source-project
+scanning out of the edge request path and let bundlers see which handler modules
+must be included.
 
 ### Explicit Environment And Runtime Capabilities
 
@@ -185,7 +188,7 @@ they should not create provider-specific OSS deployment workflows by default.
 
 - Maintain the generic Fetch request adapter that reuses the Node
   manifest/invoke envelope without advertising a provider deployment target.
-- Add a build-time handler manifest/module-map planner.
+- Maintain the build-time handler manifest/module-map planner.
 - Add tests proving pure local handlers can run through generated catalogs with
   in-memory workspace/env and without Node-only server globals.
 - Document unsupported shell/filesystem capability behavior.
