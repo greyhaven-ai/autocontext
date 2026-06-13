@@ -123,6 +123,42 @@ curl -X POST http://127.0.0.1:3583/agents/support/invoke \
   -d '{"id":"ticket-123","payload":{"message":"Please triage this ticket."}}'
 ```
 
+Generic Fetch/ESM hosts can reuse the same manifest/invoke wire shape through
+the control-plane adapter at `autoctx/control-plane/agent-app-fetch`. The
+adapter takes an explicit static catalog or module map; it does not scan the
+filesystem at request time and does not imply a Cloudflare, Vercel, or Deno
+build target.
+
+```ts
+import {
+  createAgentAppFetchHandler,
+  createStaticAgentAppCatalog,
+} from "autoctx/control-plane/agent-app-fetch";
+
+const hostProvidedEnv = { SUPPORT_TOKEN: "host-injected-token" };
+
+const fetchAgentApp = createAgentAppFetchHandler({
+  env: { SUPPORT_TOKEN: hostProvidedEnv.SUPPORT_TOKEN },
+  catalog: createStaticAgentAppCatalog([
+    {
+      name: "support",
+      relativePath: ".autoctx/agents/support.ts",
+      extension: ".ts",
+      triggers: { webhook: true },
+      handler: async (ctx) => ({ id: ctx.id, payload: ctx.payload }),
+    },
+  ]),
+});
+
+export default { fetch: fetchAgentApp };
+```
+
+See [`docs/edge-runtime-compatibility.md`](../docs/edge-runtime-compatibility.md)
+and [`docs/core-control-package-split.md#agent-app-build-targets`](../docs/core-control-package-split.md#agent-app-build-targets)
+for the OSS/proprietary boundary: provider deployment manifests, hosted secrets,
+fleet scheduling, billing, and tenant orchestration stay outside this OSS
+adapter.
+
 The TypeScript package includes mirrored deterministic semantic prompt
 compaction for long-lived playbooks, trajectories, and session reports.
 Standalone npm runs compact prompt context before the coarse budget fallback,

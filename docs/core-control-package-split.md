@@ -130,10 +130,12 @@ contracts:
 
 ### Generic Edge Runtime Compatibility Spike
 
-The edge-runtime question should stay a spike until the Node target proves the
-handler/server boundary. Cloudflare Workers/Durable Objects may be reference
-environments, but the spike must report generic portability constraints before
-any provider-specific build path is added. The detailed spike lives in
+The edge-runtime question should stay generic until the Node target proves the
+handler/server boundary. The TypeScript control-plane Fetch adapter lives at
+`autoctx/control-plane/agent-app-fetch` and reuses the Node manifest/invoke
+wire shape without becoming a provider-specific deployment target. Cloudflare Workers/Durable Objects may be reference environments, but the spike must report
+generic portability constraints before any provider-specific build path is
+added. The detailed spike lives in
 [`edge-runtime-compatibility.md`](./edge-runtime-compatibility.md).
 
 The spike should answer:

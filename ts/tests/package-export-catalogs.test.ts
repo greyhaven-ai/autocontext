@@ -138,4 +138,15 @@ describe("package root exports", () => {
       types: "./dist/control-plane/agent-app-node/index.d.ts",
     });
   });
+
+  it("publishes the generic agent app Fetch adapter subpath", () => {
+    const packageJson = JSON.parse(
+      readFileSync(join(import.meta.dirname, "..", "package.json"), "utf-8"),
+    ) as { exports?: Record<string, { import?: string; types?: string }> };
+
+    expect(packageJson.exports?.["./control-plane/agent-app-fetch"]).toEqual({
+      import: "./dist/control-plane/agent-app-fetch/index.js",
+      types: "./dist/control-plane/agent-app-fetch/index.d.ts",
+    });
+  });
 });
