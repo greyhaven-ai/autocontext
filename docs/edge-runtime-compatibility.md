@@ -149,19 +149,33 @@ when a handler asks for local filesystem or shell authority that does not exist.
 
 ### Runtime-Session Event Log
 
-The existing runtime-session store shape is append/replay oriented and can be
-mapped to edge storage if an adapter provides:
+The TypeScript Fetch adapter exposes a provider-neutral
+`AgentAppFetchSessionEventStore` contract for runtime-backed generated agent
+apps. The contract accepts append batches keyed by runtime-session id and replays
+a JSON snapshot with session metadata plus a per-session ordered timeline. The
+in-memory reference implementation is useful for tests and pure handlers; host
+code owns any durable storage binding.
 
-- append event by runtime-session id;
+The generic contract requires:
+
+- append batches by runtime-session id;
 - read session metadata and timeline by id;
-- list or query sessions where the runtime supports it;
+- optional list/query methods where the runtime supports them;
 - deterministic child-session linkage fields;
-- idempotent writes or retry-safe event ids;
-- documented consistency/concurrency behavior.
+- idempotent writes by `eventId`;
+- replay ordered by per-session `sequence`;
+- read-your-writes behavior after an append resolves.
+
+Concurrency remains a storage-adapter responsibility. Generic Fetch hosts should
+prefer one writer per runtime-session id or a storage primitive that serializes
+append batches. If an implementation accepts concurrent appends, it must either
+preserve supplied sequence numbers without collision or deterministically assign
+the next open per-session sequence while keeping `eventId` idempotency.
 
 Durable Objects, Deno KV, Vercel KV, S3/R2-like object stores, and hosted event
-logs are possible storage implementations, but OSS should define only the
-adapter contract unless a provider-neutral implementation is added.
+logs are possible storage implementations, but OSS defines only the generic
+adapter contract plus an in-memory reference. Provider bindings and deployment
+manifests remain outside this OSS adapter.
 
 ## Reference Runtime Findings
 
@@ -189,6 +203,8 @@ they should not create provider-specific OSS deployment workflows by default.
 - Maintain the generic Fetch request adapter that reuses the Node
   manifest/invoke envelope without advertising a provider deployment target.
 - Maintain the build-time handler manifest/module-map planner.
+- Maintain the provider-neutral session event-store contract for explicit
+  host-supplied Fetch runtime capabilities.
 - Add tests proving pure local handlers can run through generated catalogs with
   in-memory workspace/env and without Node-only server globals.
 - Document unsupported shell/filesystem capability behavior.

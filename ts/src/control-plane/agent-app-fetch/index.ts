@@ -25,6 +25,8 @@ import type {
 import type { RuntimeSession, RuntimeSessionPromptResult } from "../../session/runtime-session.js";
 import type { RuntimeSessionEventStore } from "../../session/runtime-events.js";
 import type { RuntimeSessionEventSink } from "../../session/runtime-session-notifications.js";
+import { createAgentAppFetchSessionEventStoreBridge } from "./session-event-store.js";
+import type { AgentAppFetchSessionEventStore } from "./session-event-store.js";
 
 export type AgentAppFetchTarget = "fetch";
 export type AgentAppFetchAgentExtension = ".ts" | ".tsx" | ".mts" | ".js" | ".mjs";
@@ -54,6 +56,7 @@ export interface AgentAppFetchHandlerOptions<Payload = unknown, Result = unknown
   commands?: RuntimeCommandGrant[];
   tools?: RuntimeToolGrant[];
   eventStore?: RuntimeSessionEventStore;
+  sessionEventStore?: AgentAppFetchSessionEventStore;
   eventSink?: RuntimeSessionEventSink;
   maxBodyBytes?: number;
 }
@@ -84,21 +87,8 @@ export interface AgentAppFetchManifest {
   }>;
 }
 
-export {
-  createAgentAppFetchCatalogFromModuleMap,
-  planAgentAppFetchCatalog,
-  renderAgentAppFetchModuleMapEntrypoint,
-} from "./catalog-planner.js";
-export type {
-  AgentAppFetchCatalogPlan,
-  AgentAppFetchCatalogPlanEntry,
-  AgentAppFetchCatalogPlanOptions,
-  AgentAppFetchCatalogSourceEntry,
-  AgentAppFetchModuleLoader,
-  AgentAppFetchModuleMap,
-  AgentAppFetchRoute,
-  RenderAgentAppFetchModuleMapEntrypointOptions,
-} from "./catalog-planner.js";
+export * from "./catalog-planner.js";
+export * from "./session-event-store.js";
 
 type EdgeMemoryState = {
   files: Map<string, EdgeMemoryFile>;
@@ -148,32 +138,46 @@ export async function handleAgentAppFetchRequest<Payload = unknown, Result = unk
     workspace: RuntimeWorkspaceEnv;
   },
 ): Promise<Response> {
+  const sessionEventBridge = options.sessionEventStore
+    ? createAgentAppFetchSessionEventStoreBridge(options.sessionEventStore)
+    : undefined;
+  const effectiveEventStore = (options.eventStore ?? sessionEventBridge?.eventStore) as
+    | RuntimeSessionEventStore
+    | undefined;
+  const effectiveOptions = {
+    ...options,
+    eventStore: effectiveEventStore,
+  };
+
   try {
     const url = new URL(request.url);
     if (request.method === "GET" && (url.pathname === "/manifest" || url.pathname === "/agents")) {
-      return jsonResponse(200, buildManifest(options.catalog));
+      return jsonResponse(200, buildManifest(effectiveOptions.catalog));
     }
 
     const match = /^\/agents\/([^/]+)\/invoke$/.exec(url.pathname);
     if (request.method === "POST" && match) {
       const agentName = decodeURIComponent(match[1]!);
-      const entry = resolveCatalogEntry(options.catalog, agentName);
-      if (!entry) return jsonResponse(404, renderAgentNotFound(agentName, options.catalog));
+      const entry = resolveCatalogEntry(effectiveOptions.catalog, agentName);
+      if (!entry) {
+        return jsonResponse(404, renderAgentNotFound(agentName, effectiveOptions.catalog));
+      }
       const body = await readJsonRequestBody(
         request,
-        options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES,
+        effectiveOptions.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES,
       );
       const loaded = await loadCatalogEntry(entry);
       const id = readOptionalString(body.id) ?? "default";
       const payload = ("payload" in body ? body.payload : {}) as Payload;
       const result = await loaded.handler(
         createFetchAgentContext({
-          ...options,
+          ...effectiveOptions,
           agent: loaded,
           id,
           payload,
         }),
       );
+      await sessionEventBridge?.flush();
       return jsonResponse(200, {
         ok: true,
         agent: loaded.name,
@@ -190,6 +194,17 @@ export async function handleAgentAppFetchRequest<Payload = unknown, Result = unk
       },
     } satisfies AgentAppFetchErrorEnvelope);
   } catch (error) {
+    try {
+      await sessionEventBridge?.flush();
+    } catch (flushError) {
+      return jsonResponse(500, {
+        ok: false,
+        error: {
+          code: "AUTOCTX_AGENT_APP_SESSION_EVENT_STORE_ERROR",
+          message: flushError instanceof Error ? flushError.message : String(flushError),
+        },
+      } satisfies AgentAppFetchErrorEnvelope);
+    }
     if (error instanceof AgentAppFetchRequestError) {
       return jsonResponse(error.statusCode, {
         ok: false,
