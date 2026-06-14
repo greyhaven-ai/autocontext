@@ -153,6 +153,27 @@ const fetchAgentApp = createAgentAppFetchHandler({
 export default { fetch: fetchAgentApp };
 ```
 
+Fetch hosts can pass an explicit workspace store when handler artifacts should
+survive beyond a single invocation. The default Fetch workspace is request-local
+memory; the store seam is provider-neutral and keeps shell execution unavailable
+unless a separate host-created capability is supplied:
+
+```ts
+import {
+  createAgentAppFetchHandler,
+  createInMemoryAgentAppFetchWorkspaceStore,
+} from "autoctx/control-plane/agent-app-fetch";
+
+const workspaceStore = createInMemoryAgentAppFetchWorkspaceStore();
+
+export default {
+  fetch: createAgentAppFetchHandler({
+    catalog, // a static or module-map catalog supplied by host build code
+    workspaceStore,
+  }),
+};
+```
+
 Build tooling can also precompute a bundler-visible module map and turn it into
 the same Fetch catalog. The planner accepts explicit `.autoctx/agents` entries
 from a build step; it does not discover files from the request path:
@@ -859,7 +880,10 @@ record under `.autocontext/harness-proposals/`.
 import { createProvider, LLMJudge, ImprovementLoop, SimpleAgentTask } from "autoctx";
 
 // One-shot evaluation
-const provider = createProvider({ providerType: "anthropic", apiKey: process.env.ANTHROPIC_API_KEY ?? "" });
+const provider = createProvider({
+  providerType: "anthropic",
+  apiKey: process.env.ANTHROPIC_API_KEY ?? "",
+});
 const judge = new LLMJudge({ provider, rubric: "Score clarity and correctness." });
 const result = await judge.evaluate({
   taskPrompt: "Explain binary search.",

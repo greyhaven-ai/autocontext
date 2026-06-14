@@ -136,8 +136,10 @@ handler/server boundary. The TypeScript control-plane Fetch adapter lives at
 wire shape without becoming a provider-specific deployment target. Its
 build-time catalog planner turns explicit `.autoctx/agents` entries into static
 module maps so edge-compatible bundles do not scan a filesystem at request time.
-Its session event-store contract gives Fetch hosts a provider-neutral append/replay
-seam for explicit runtime-session capabilities.
+Its workspace-store contract gives Fetch hosts a provider-neutral artifact
+persistence seam behind the existing runtime workspace API, while its session
+event-store contract gives hosts a provider-neutral append/replay seam for
+explicit runtime-session capabilities.
 Cloudflare Workers/Durable Objects may be reference environments. The spike
 must report generic portability constraints before adding any provider-specific build path.
 The detailed spike lives in
@@ -165,6 +167,9 @@ The spike should answer:
 - Environment variables: build targets must preserve explicit env loading and
   redaction semantics. They must not capture the full host environment or bake
   secrets into generated artifacts.
+- Workspace persistence: Node can start with a local filesystem, while edge
+  runtimes need in-memory or host-created remote workspace stores. Shell
+  execution remains unavailable unless a separate explicit grant is supplied.
 - Session persistence: Node can start with local SQLite/file stores, while edge
   runtimes need an adapter around a runtime-native or remote event store. Replay
   semantics must stay compatible before sessions move between targets.

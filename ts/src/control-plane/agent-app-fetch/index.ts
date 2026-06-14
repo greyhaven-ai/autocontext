@@ -15,10 +15,6 @@ import type {
 } from "../../agent-runtime/index.js";
 import type {
   RuntimeCommandGrant,
-  RuntimeExecOptions,
-  RuntimeExecResult,
-  RuntimeFileStat,
-  RuntimeScopeOptions,
   RuntimeToolGrant,
   RuntimeWorkspaceEnv,
 } from "../../runtimes/workspace-env.js";
@@ -27,6 +23,11 @@ import type { RuntimeSessionEventStore } from "../../session/runtime-events.js";
 import type { RuntimeSessionEventSink } from "../../session/runtime-session-notifications.js";
 import { createAgentAppFetchSessionEventStoreBridge } from "./session-event-store.js";
 import type { AgentAppFetchSessionEventStore } from "./session-event-store.js";
+import {
+  createAgentAppFetchWorkspaceEnv,
+  createInMemoryAgentAppFetchWorkspaceStore,
+} from "./workspace-store.js";
+import type { AgentAppFetchWorkspaceStore } from "./workspace-store.js";
 
 export type AgentAppFetchTarget = "fetch";
 export type AgentAppFetchAgentExtension = ".ts" | ".tsx" | ".mts" | ".js" | ".mjs";
@@ -52,6 +53,7 @@ export interface AgentAppFetchHandlerOptions<Payload = unknown, Result = unknown
   catalog: readonly AgentAppFetchCatalogEntry<Payload, Result>[];
   env?: Record<string, string | undefined>;
   workspace?: RuntimeWorkspaceEnv;
+  workspaceStore?: AgentAppFetchWorkspaceStore;
   runtime?: AgentRuntime;
   commands?: RuntimeCommandGrant[];
   tools?: RuntimeToolGrant[];
@@ -89,16 +91,7 @@ export interface AgentAppFetchManifest {
 
 export * from "./catalog-planner.js";
 export * from "./session-event-store.js";
-
-type EdgeMemoryState = {
-  files: Map<string, EdgeMemoryFile>;
-  dirs: Map<string, Date>;
-};
-
-type EdgeMemoryFile = {
-  content: Uint8Array;
-  mtime: Date;
-};
+export * from "./workspace-store.js";
 
 type FetchAgentContextOptions<Payload> = AgentAppFetchHandlerOptions<Payload> & {
   agent: AutoctxLoadedAgent<Payload>;
@@ -127,7 +120,11 @@ export function createAgentAppFetchHandler<Payload = unknown, Result = unknown>(
       ...options,
       catalog,
       env,
-      workspace: options.workspace ?? createEdgeInMemoryWorkspaceEnv(),
+      workspace:
+        options.workspace ??
+        createAgentAppFetchWorkspaceEnv({
+          store: options.workspaceStore ?? createInMemoryAgentAppFetchWorkspaceStore(),
+        }),
     });
 }
 
@@ -222,15 +219,6 @@ export async function handleAgentAppFetchRequest<Payload = unknown, Result = unk
       },
     } satisfies AgentAppFetchErrorEnvelope);
   }
-}
-
-export function createEdgeInMemoryWorkspaceEnv(
-  options: { cwd?: string } = {},
-): RuntimeWorkspaceEnv {
-  return new EdgeInMemoryWorkspaceEnv(
-    createEdgeMemoryState(),
-    normalizeVirtualPath(options.cwd ?? "/", "/"),
-  );
 }
 
 function buildManifest<Payload, Result>(
@@ -450,161 +438,6 @@ class FetchRuntimeBackedAutoctxAgentSession implements AutoctxAgentSession {
   }
 }
 
-class EdgeInMemoryWorkspaceEnv implements RuntimeWorkspaceEnv {
-  readonly #state: EdgeMemoryState;
-  readonly cwd: string;
-  readonly tools?: readonly RuntimeToolGrant[];
-
-  constructor(state: EdgeMemoryState, cwd: string, tools?: readonly RuntimeToolGrant[]) {
-    this.#state = state;
-    this.cwd = normalizeVirtualPath(cwd, "/");
-    ensureDir(this.#state, this.cwd);
-    this.tools = tools;
-  }
-
-  exec(_command: string, _options: RuntimeExecOptions = {}): Promise<RuntimeExecResult> {
-    return Promise.reject(
-      new Error(
-        "Runtime command execution is unavailable in the generic Fetch agent app workspace",
-      ),
-    );
-  }
-
-  scope(options: RuntimeScopeOptions = {}): Promise<RuntimeWorkspaceEnv> {
-    try {
-      return Promise.resolve(
-        new EdgeInMemoryWorkspaceEnv(
-          this.#state,
-          normalizeVirtualPath(options.cwd ?? this.cwd, this.cwd),
-          options.tools ?? this.tools,
-        ),
-      );
-    } catch (error) {
-      return Promise.reject(error);
-    }
-  }
-
-  async readFile(filePath: string): Promise<string> {
-    return new TextDecoder().decode(await this.readFileBytes(filePath));
-  }
-
-  readFileBytes(filePath: string): Promise<Uint8Array> {
-    const file = this.#state.files.get(this.resolvePath(filePath));
-    if (!file) return Promise.reject(new Error(`File not found: ${filePath}`));
-    return Promise.resolve(file.content.slice());
-  }
-
-  writeFile(filePath: string, content: string | Uint8Array): Promise<void> {
-    try {
-      writeEdgeMemoryFile(this.#state, this.resolvePath(filePath), content);
-      return Promise.resolve();
-    } catch (error) {
-      return Promise.reject(error);
-    }
-  }
-
-  stat(filePath: string): Promise<RuntimeFileStat> {
-    const resolved = this.resolvePath(filePath);
-    const file = this.#state.files.get(resolved);
-    if (file) {
-      return Promise.resolve({
-        isFile: true,
-        isDirectory: false,
-        isSymbolicLink: false,
-        size: file.content.byteLength,
-        mtime: file.mtime,
-      });
-    }
-    const dirMtime = this.#state.dirs.get(resolved);
-    if (dirMtime) {
-      return Promise.resolve({
-        isFile: false,
-        isDirectory: true,
-        isSymbolicLink: false,
-        size: 0,
-        mtime: dirMtime,
-      });
-    }
-    return Promise.reject(new Error(`Path not found: ${filePath}`));
-  }
-
-  readdir(dirPath: string): Promise<string[]> {
-    const dir = this.resolvePath(dirPath);
-    if (!this.#state.dirs.has(dir)) {
-      return Promise.reject(new Error(`Directory not found: ${dirPath}`));
-    }
-    const names = new Set<string>();
-    for (const path of this.#state.files.keys()) {
-      if (parentDir(path) === dir) names.add(baseName(path));
-    }
-    for (const path of this.#state.dirs.keys()) {
-      if (path !== dir && parentDir(path) === dir) names.add(baseName(path));
-    }
-    return Promise.resolve([...names].sort((left, right) => left.localeCompare(right)));
-  }
-
-  exists(filePath: string): Promise<boolean> {
-    const resolved = this.resolvePath(filePath);
-    return Promise.resolve(this.#state.files.has(resolved) || this.#state.dirs.has(resolved));
-  }
-
-  mkdir(dirPath: string, options: { recursive?: boolean } = {}): Promise<void> {
-    const resolved = this.resolvePath(dirPath);
-    const parent = parentDir(resolved);
-    if (this.#state.files.has(resolved)) {
-      return Promise.reject(new Error(`File exists: ${resolved}`));
-    }
-    if (this.#state.dirs.has(resolved)) {
-      return options.recursive
-        ? Promise.resolve()
-        : Promise.reject(new Error(`Directory exists: ${resolved}`));
-    }
-    if (!options.recursive && !this.#state.dirs.has(parent)) {
-      return Promise.reject(new Error(`Parent directory not found: ${parent}`));
-    }
-    try {
-      ensureDir(this.#state, options.recursive ? resolved : parent);
-      this.#state.dirs.set(resolved, new Date());
-      return Promise.resolve();
-    } catch (error) {
-      return Promise.reject(error);
-    }
-  }
-
-  rm(filePath: string, options: { recursive?: boolean; force?: boolean } = {}): Promise<void> {
-    const resolved = this.resolvePath(filePath);
-    if (this.#state.files.delete(resolved)) return Promise.resolve();
-    if (this.#state.dirs.has(resolved)) {
-      const hasChildren = [...this.#state.files.keys(), ...this.#state.dirs.keys()].some(
-        (path) => path !== resolved && path.startsWith(`${resolved}/`),
-      );
-      if (hasChildren && !options.recursive) {
-        return Promise.reject(new Error(`Directory not empty: ${filePath}`));
-      }
-      for (const path of [...this.#state.files.keys()]) {
-        if (path.startsWith(`${resolved}/`)) this.#state.files.delete(path);
-      }
-      for (const path of [...this.#state.dirs.keys()]) {
-        if (path !== "/" && (path === resolved || path.startsWith(`${resolved}/`))) {
-          this.#state.dirs.delete(path);
-        }
-      }
-      return Promise.resolve();
-    }
-    return options.force
-      ? Promise.resolve()
-      : Promise.reject(new Error(`Path not found: ${filePath}`));
-  }
-
-  resolvePath(filePath: string): string {
-    return normalizeVirtualPath(filePath, this.cwd);
-  }
-
-  async cleanup(): Promise<void> {
-    // Caller owns the request lifecycle; the in-memory workspace has no ambient resources.
-  }
-}
-
 class AgentAppFetchRequestError extends Error {
   readonly statusCode: number;
   readonly code: string;
@@ -665,9 +498,7 @@ async function readLimitedRequestText(request: Request, maxBodyBytes: number): P
   return decodeRequestChunks(chunks, totalBytes);
 }
 
-async function cancelRequestReader(
-  reader: ReadableStreamDefaultReader<Uint8Array>,
-): Promise<void> {
+async function cancelRequestReader(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<void> {
   try {
     await reader.cancel("Request body is too large");
   } catch {
@@ -721,63 +552,6 @@ function cloneRecord(
   value: Record<string, unknown> | undefined,
 ): Record<string, unknown> | undefined {
   return value ? { ...value } : undefined;
-}
-
-function createEdgeMemoryState(): EdgeMemoryState {
-  return { files: new Map(), dirs: new Map([["/", new Date()]]) };
-}
-
-function writeEdgeMemoryFile(
-  state: EdgeMemoryState,
-  resolved: string,
-  content: string | Uint8Array,
-): void {
-  if (state.dirs.has(resolved)) {
-    throw new Error(`Is a directory: ${resolved}`);
-  }
-  ensureDir(state, parentDir(resolved));
-  state.files.set(resolved, {
-    content: typeof content === "string" ? new TextEncoder().encode(content) : content.slice(),
-    mtime: new Date(),
-  });
-}
-
-function ensureDir(state: EdgeMemoryState, dirPath: string): void {
-  let current = "/";
-  state.dirs.set(current, state.dirs.get(current) ?? new Date());
-  for (const segment of dirPath.split("/")) {
-    if (!segment) continue;
-    current = current === "/" ? `/${segment}` : `${current}/${segment}`;
-    if (state.files.has(current)) {
-      throw new Error(`Not a directory: ${current}`);
-    }
-    state.dirs.set(current, state.dirs.get(current) ?? new Date());
-  }
-}
-
-function normalizeVirtualPath(filePath: string, cwd: string): string {
-  const base = filePath.startsWith("/") ? filePath : `${cwd.replace(/\/$/, "")}/${filePath}`;
-  const parts: string[] = [];
-  for (const segment of base.split("/")) {
-    if (!segment || segment === ".") continue;
-    if (segment === "..") {
-      parts.pop();
-      continue;
-    }
-    parts.push(segment);
-  }
-  return `/${parts.join("/")}`;
-}
-
-function parentDir(filePath: string): string {
-  if (filePath === "/") return "/";
-  const index = filePath.lastIndexOf("/");
-  return index <= 0 ? "/" : filePath.slice(0, index);
-}
-
-function baseName(filePath: string): string {
-  const index = filePath.lastIndexOf("/");
-  return index === -1 ? filePath : filePath.slice(index + 1);
 }
 
 function readOptionalString(value: unknown): string | undefined {

@@ -27,13 +27,15 @@ the existing `GET /manifest` and `POST /agents/:agent/invoke` shape using a
 static handler catalog or module map. It also includes a build-time catalog
 planner that turns explicit `.autoctx/agents` entries into bundler-visible
 module maps, so generated bundles do not need runtime filesystem discovery.
-This helper is not a deployment target and does not add provider-specific build
-output.
+The same subpath now exposes provider-neutral workspace-store and
+runtime-session event-store contracts for explicit host-created storage
+capabilities. These helpers are not deployment targets and do not add
+provider-specific build output.
 
-Recommended follow-up after the generic adapter seam:
+Recommended follow-up after the generic adapter seams:
 
-1. Add or document edge-safe workspace and session event-store adapters behind
-   the existing runtime/session contracts.
+1. Add durable workspace/session storage implementations only in host-owned or
+   separately approved provider packages that depend on the generic contracts.
 2. Keep provider-specific deployment templates and hosted orchestration in a
    separate product/repository unless they are deliberately opened later.
 
@@ -64,17 +66,17 @@ runtime, event store/sink, command grants, and tool grants.
 
 ## Node Assumptions That Do Not Hold At The Edge
 
-| Area | AC-762 Node target assumption | Edge compatibility concern |
-| --- | --- | --- |
-| HTTP | Uses `node:http` `IncomingMessage`/`ServerResponse` and a long-lived `Server`. | Edge runtimes expose `fetch(request, env, ctx)` or equivalent `Request`/`Response` APIs. |
-| Handler discovery | Reads `.autoctx/agents` with `node:fs` at runtime. | Edge bundles usually cannot scan a deployment filesystem; discovery needs a manifest produced at build time. |
-| Handler loading | Dynamically imports file paths and bare modules from local disk. | Edge bundlers require static or bundler-known dynamic imports; native Node resolution is unavailable. |
-| Workspace | Defaults to `createLocalWorkspaceEnv()`, which can read/write files and run local command grants. | Edge workspaces must be in-memory, remote object-backed, or explicitly unavailable; shell execution must not be emulated. |
-| Session persistence | Can lazy-import the local SQLite runtime-session store when `AUTOCTX_SESSION_DB` is set. | Edge persistence needs an append/replay event-log adapter backed by runtime storage, not native SQLite. |
-| Environment | Reads selected process env values and optional `.env` files from the source project root. | Edge env must be explicit bindings/config passed by the host; the adapter must not capture deployment-wide ambient env. |
-| Runtime factory | Loads `AUTOCTX_RUNTIME_MODULE` as URL, file path, or bare package from `node_modules`. | Runtime factories must be bundled or passed as explicit host-created capabilities; provider SDKs must be edge-compatible. |
-| Dependencies | The generated package can install `autoctx` and Node dependencies. | Edge bundles must avoid native addons, Node-only modules, and optional dependencies that bundlers cannot tree-shake. |
-| Lifecycle | A Node process owns server startup/shutdown and resource cleanup. | Edge invocations may be short-lived; cleanup must be scoped to requests or runtime-provided wait hooks. |
+| Area                | AC-762 Node target assumption                                                                     | Edge compatibility concern                                                                                                |
+| ------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| HTTP                | Uses `node:http` `IncomingMessage`/`ServerResponse` and a long-lived `Server`.                    | Edge runtimes expose `fetch(request, env, ctx)` or equivalent `Request`/`Response` APIs.                                  |
+| Handler discovery   | Reads `.autoctx/agents` with `node:fs` at runtime.                                                | Edge bundles usually cannot scan a deployment filesystem; discovery needs a manifest produced at build time.              |
+| Handler loading     | Dynamically imports file paths and bare modules from local disk.                                  | Edge bundlers require static or bundler-known dynamic imports; native Node resolution is unavailable.                     |
+| Workspace           | Defaults to `createLocalWorkspaceEnv()`, which can read/write files and run local command grants. | Edge workspaces must be in-memory, remote object-backed, or explicitly unavailable; shell execution must not be emulated. |
+| Session persistence | Can lazy-import the local SQLite runtime-session store when `AUTOCTX_SESSION_DB` is set.          | Edge persistence needs an append/replay event-log adapter backed by runtime storage, not native SQLite.                   |
+| Environment         | Reads selected process env values and optional `.env` files from the source project root.         | Edge env must be explicit bindings/config passed by the host; the adapter must not capture deployment-wide ambient env.   |
+| Runtime factory     | Loads `AUTOCTX_RUNTIME_MODULE` as URL, file path, or bare package from `node_modules`.            | Runtime factories must be bundled or passed as explicit host-created capabilities; provider SDKs must be edge-compatible. |
+| Dependencies        | The generated package can install `autoctx` and Node dependencies.                                | Edge bundles must avoid native addons, Node-only modules, and optional dependencies that bundlers cannot tree-shake.      |
+| Lifecycle           | A Node process owns server startup/shutdown and resource cleanup.                                 | Edge invocations may be short-lived; cleanup must be scoped to requests or runtime-provided wait hooks.                   |
 
 ## Minimum Generic Edge Adapter Contract
 
@@ -147,6 +149,24 @@ capability choices:
 The adapter must fail closed or return an explicit unsupported-capability error
 when a handler asks for local filesystem or shell authority that does not exist.
 
+### Fetch Workspace Store
+
+The TypeScript Fetch adapter exposes a provider-neutral
+`AgentAppFetchWorkspaceStore` contract and an in-memory reference
+implementation. `createAgentAppFetchWorkspaceEnv()` adapts that store to the
+existing `RuntimeWorkspaceEnv` surface, preserving virtual absolute paths,
+file/directory collision semantics, byte cloning on read/write, lexicographic
+listings, recursive `mkdir`/`rm`, and fail-closed shell execution.
+
+Fetch hosts can pass `workspaceStore` to `createAgentAppFetchHandler()` when
+handler artifacts should survive beyond one request. Without an explicit store,
+the adapter keeps the existing request-local in-memory workspace behavior for
+pure handlers. Host-created stores must provide read-your-writes behavior after
+a write resolves and should serialize writes that target the same virtual path
+or document stronger host-specific atomicity. Remote object stores, key/value
+stores, and other durable backends are implementation choices outside this
+provider-neutral package.
+
 ### Runtime-Session Event Log
 
 The TypeScript Fetch adapter exposes a provider-neutral
@@ -179,12 +199,12 @@ manifests remain outside this OSS adapter.
 
 ## Reference Runtime Findings
 
-| Runtime family | Useful reference | Main constraints |
-| --- | --- | --- |
-| Cloudflare Workers + Durable Objects | Fetch routing and per-object session/event coordination. | No Node server, no local filesystem, bundler restrictions, Durable Object namespace provisioning is provider deployment code. |
-| Deno Deploy | Standards-first Fetch/ESM runtime. | Different module resolution, explicit permissions model, no Node native addons. |
-| Vercel Edge | Fetch-like function surface integrated with a deployment platform. | Limited Node API support, platform-specific env and storage adapters. |
-| Generic Fetch/ESM | Lowest common denominator for an OSS adapter contract. | Requires static/bundler-known handler modules and explicit capabilities. |
+| Runtime family                       | Useful reference                                                   | Main constraints                                                                                                              |
+| ------------------------------------ | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| Cloudflare Workers + Durable Objects | Fetch routing and per-object session/event coordination.           | No Node server, no local filesystem, bundler restrictions, Durable Object namespace provisioning is provider deployment code. |
+| Deno Deploy                          | Standards-first Fetch/ESM runtime.                                 | Different module resolution, explicit permissions model, no Node native addons.                                               |
+| Vercel Edge                          | Fetch-like function surface integrated with a deployment platform. | Limited Node API support, platform-specific env and storage adapters.                                                         |
+| Generic Fetch/ESM                    | Lowest common denominator for an OSS adapter contract.             | Requires static/bundler-known handler modules and explicit capabilities.                                                      |
 
 Provider-specific details should feed constraints back into the generic adapter;
 they should not create provider-specific OSS deployment workflows by default.
@@ -203,6 +223,8 @@ they should not create provider-specific OSS deployment workflows by default.
 - Maintain the generic Fetch request adapter that reuses the Node
   manifest/invoke envelope without advertising a provider deployment target.
 - Maintain the build-time handler manifest/module-map planner.
+- Maintain the provider-neutral workspace-store contract for explicit
+  host-supplied Fetch artifact capabilities.
 - Maintain the provider-neutral session event-store contract for explicit
   host-supplied Fetch runtime capabilities.
 - Add tests proving pure local handlers can run through generated catalogs with
