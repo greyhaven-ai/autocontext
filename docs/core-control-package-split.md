@@ -135,8 +135,10 @@ handler/server boundary. The TypeScript control-plane Fetch adapter lives at
 `autoctx/control-plane/agent-app-fetch` and reuses the Node manifest/invoke
 wire shape without becoming a provider-specific deployment target. Its
 build-time catalog planner turns explicit `.autoctx/agents` entries into static
-module maps so edge-compatible bundles do not scan a filesystem at request time.
-Its workspace-store contract gives Fetch hosts a provider-neutral artifact
+module maps so edge-compatible bundles do not scan a filesystem at request time,
+and its generic entrypoint template wires those maps into a Fetch factory for
+host-created capabilities. Its workspace-store contract gives Fetch hosts a
+provider-neutral artifact
 persistence seam behind the existing runtime workspace API, while its session
 event-store contract gives hosts a provider-neutral append/replay seam for
 explicit runtime-session capabilities.

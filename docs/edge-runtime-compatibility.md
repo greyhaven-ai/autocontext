@@ -27,10 +27,10 @@ the existing `GET /manifest` and `POST /agents/:agent/invoke` shape using a
 static handler catalog or module map. It also includes a build-time catalog
 planner that turns explicit `.autoctx/agents` entries into bundler-visible
 module maps, so generated bundles do not need runtime filesystem discovery.
-The same subpath now exposes provider-neutral workspace-store and
-runtime-session event-store contracts for explicit host-created storage
-capabilities. These helpers are not deployment targets and do not add
-provider-specific build output.
+The same subpath now exposes a generated Fetch entrypoint template plus
+provider-neutral workspace-store and runtime-session event-store contracts for
+explicit host-created capabilities. These helpers are not deployment targets and
+do not add provider-specific build output.
 
 Recommended follow-up after the generic adapter seams:
 
@@ -123,7 +123,10 @@ workflow, but the runtime adapter receives a static list or module map. The
 provider-neutral `planAgentAppFetchCatalog()` and
 `createAgentAppFetchCatalogFromModuleMap()` helpers keep source-project
 scanning out of the edge request path and let bundlers see which handler modules
-must be included.
+must be included. `renderAgentAppFetchEntrypointTemplate()` can then emit a
+generic ESM entrypoint with a static module map and a
+`createAgentAppFetchEntrypoint()` factory that accepts explicit host
+capabilities. Provider wrappers remain external to that generated source.
 
 ### Explicit Environment And Runtime Capabilities
 
@@ -222,7 +225,8 @@ they should not create provider-specific OSS deployment workflows by default.
 
 - Maintain the generic Fetch request adapter that reuses the Node
   manifest/invoke envelope without advertising a provider deployment target.
-- Maintain the build-time handler manifest/module-map planner.
+- Maintain the build-time handler manifest/module-map planner and generic
+  generated Fetch entrypoint template.
 - Maintain the provider-neutral workspace-store contract for explicit
   host-supplied Fetch artifact capabilities.
 - Maintain the provider-neutral session event-store contract for explicit
