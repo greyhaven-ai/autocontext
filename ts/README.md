@@ -249,6 +249,33 @@ export default {
 };
 ```
 
+Host-owned workspace/session store adapters can run the framework-agnostic Fetch
+store conformance helpers from `autoctx/control-plane/agent-app-fetch`. Each
+case expects a fresh isolated store from `createStore`; the workspace root
+removal case is destructive for that store instance.
+
+```ts
+import {
+  createAgentAppFetchSessionEventStoreConformanceCases,
+  createAgentAppFetchWorkspaceStoreConformanceCases,
+} from "autoctx/control-plane/agent-app-fetch";
+import { describe, it } from "vitest";
+
+describe("host Fetch stores", () => {
+  for (const testCase of createAgentAppFetchWorkspaceStoreConformanceCases({
+    createStore: createHostWorkspaceStore,
+  })) {
+    it(testCase.name, testCase.run);
+  }
+
+  for (const testCase of createAgentAppFetchSessionEventStoreConformanceCases({
+    createStore: createHostSessionEventStore,
+  })) {
+    it(testCase.name, testCase.run);
+  }
+});
+```
+
 See [`docs/edge-runtime-compatibility.md`](../docs/edge-runtime-compatibility.md)
 and [`docs/core-control-package-split.md#agent-app-build-targets`](../docs/core-control-package-split.md#agent-app-build-targets)
 for the OSS/proprietary boundary: provider deployment manifests, hosted secrets,

@@ -211,6 +211,21 @@ logs are possible storage implementations, but OSS defines only the generic
 adapter contract plus an in-memory reference. Provider bindings and deployment
 manifests remain outside this OSS adapter.
 
+### Fetch Store Conformance
+
+The `autoctx/control-plane/agent-app-fetch` subpath also exports
+framework-agnostic conformance helpers for host-owned workspace/session store
+adapters. `createAgentAppFetchWorkspaceStoreConformanceCases()` and
+`createAgentAppFetchSessionEventStoreConformanceCases()` return named async
+cases that Vitest, Jest, or another runner can execute. Each case calls
+`createStore` for a fresh isolated store; the workspace root-removal case is
+destructive for that store instance.
+
+The suite covers read-your-writes behavior, byte cloning, deterministic
+workspace listings, recursive root removal, fail-closed shell execution,
+session append idempotency by `eventId`, replay ordering by per-session
+`sequence`, metadata/payload cloning, and child-session linkage visibility.
+
 ## Reference Runtime Findings
 
 | Runtime family                       | Useful reference                                                   | Main constraints                                                                                                              |
