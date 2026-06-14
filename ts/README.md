@@ -175,8 +175,9 @@ export default {
 ```
 
 Build tooling can also precompute a bundler-visible module map and turn it into
-the same Fetch catalog. The planner accepts explicit `.autoctx/agents` entries
-from a build step; it does not discover files from the request path:
+the same Fetch catalog or a generic generated Fetch entrypoint. The planner
+accepts explicit `.autoctx/agents` entries from a build step; it does not
+discover files from the request path:
 
 ```ts
 import {
@@ -202,6 +203,22 @@ const catalog = createAgentAppFetchCatalogFromModuleMap(plan, {
 });
 
 export default { fetch: createAgentAppFetchHandler({ catalog }) };
+```
+
+For generated Fetch bundles, `renderAgentAppFetchEntrypointTemplate()` emits an
+ESM entrypoint with a static module map plus a `createAgentAppFetchEntrypoint()`
+factory. Host code can pass explicit capabilities such as `env`, `runtime`,
+`workspaceStore`, or `sessionEventStore`; the generated source does not read
+ambient env or add provider deployment wrappers:
+
+```ts
+import {
+  planAgentAppFetchCatalog,
+  renderAgentAppFetchEntrypointTemplate,
+} from "autoctx/control-plane/agent-app-fetch";
+
+const plan = planAgentAppFetchCatalog({ entries });
+const source = renderAgentAppFetchEntrypointTemplate(plan);
 ```
 
 Runtime-backed Fetch handlers can receive an explicit edge-safe session event

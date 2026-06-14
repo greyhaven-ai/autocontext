@@ -90,6 +90,7 @@ export interface AgentAppFetchManifest {
 }
 
 export * from "./catalog-planner.js";
+export * from "./entrypoint-template.js";
 export * from "./session-event-store.js";
 export * from "./workspace-store.js";
 
