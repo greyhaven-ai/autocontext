@@ -276,6 +276,26 @@ describe("host Fetch stores", () => {
 });
 ```
 
+Fetch wrappers can also run invocation conformance cases against any factory that
+accepts generic Fetch handler options. The suite verifies the manifest aliases,
+agent invocation envelope, error envelopes, body limits, and explicit
+env/workspace/runtime capability wiring without depending on a provider runtime.
+
+```ts
+import {
+  createAgentAppFetchInvocationConformanceCases,
+} from "autoctx/control-plane/agent-app-fetch";
+import { describe, it } from "vitest";
+
+describe("host Fetch invocation", () => {
+  for (const testCase of createAgentAppFetchInvocationConformanceCases({
+    createHandler: createHostFetchHandler,
+  })) {
+    it(testCase.name, testCase.run);
+  }
+});
+```
+
 See [`docs/edge-runtime-compatibility.md`](../docs/edge-runtime-compatibility.md)
 and [`docs/core-control-package-split.md#agent-app-build-targets`](../docs/core-control-package-split.md#agent-app-build-targets)
 for the OSS/proprietary boundary: provider deployment manifests, hosted secrets,

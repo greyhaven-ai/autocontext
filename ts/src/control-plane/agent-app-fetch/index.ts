@@ -92,6 +92,7 @@ export interface AgentAppFetchManifest {
 export * from "./capability-manifest.js";
 export * from "./catalog-planner.js";
 export * from "./entrypoint-template.js";
+export * from "./invocation-conformance.js";
 export * from "./session-event-store.js";
 export * from "./store-conformance.js";
 export * from "./workspace-store.js";

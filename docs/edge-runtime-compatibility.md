@@ -226,6 +226,16 @@ workspace listings, recursive root removal, fail-closed shell execution,
 session append idempotency by `eventId`, replay ordering by per-session
 `sequence`, metadata/payload cloning, and child-session linkage visibility.
 
+### Fetch Invocation Conformance
+
+`createAgentAppFetchInvocationConformanceCases()` returns named async cases for
+host-owned Fetch wrappers that accept the generic handler options shape. The
+suite validates `GET /manifest`, `GET /agents`, `POST /agents/:agent/invoke`,
+stable success/error envelopes, missing-agent behavior, invalid JSON, body-size
+limits, no handler loading during manifest reads, and explicit env/workspace /
+runtime capability wiring. The helper is runner-agnostic and does not add any
+provider deployment or storage binding.
+
 ## Reference Runtime Findings
 
 | Runtime family                       | Useful reference                                                   | Main constraints                                                                                                              |
