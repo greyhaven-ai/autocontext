@@ -30,7 +30,7 @@ describe("agent app Fetch host capability manifest", () => {
 
     expect(createAgentAppFetchHostCapabilityManifest(plan)).toEqual({
       target: "fetch",
-      routes: ["GET /manifest", "POST /agents/:agent/invoke"],
+      routes: ["GET /manifest", "GET /agents", "POST /agents/:agent/invoke"],
       agents: [
         {
           name: "audit",
@@ -116,6 +116,7 @@ describe("agent app Fetch host capability manifest", () => {
     const source = renderAgentAppFetchEntrypointTemplate(plan);
 
     expect(source).toContain("export const agentAppFetchHostCapabilityManifest = {");
+    expect(source).toContain('"GET /agents"');
     expect(source).toContain('"acceptedHostCapabilities"');
     expect(source).toContain('"unsupportedDefaults"');
     expect(source).toContain('"runtime_filesystem_discovery"');

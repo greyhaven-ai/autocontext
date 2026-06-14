@@ -224,10 +224,12 @@ const source = renderAgentAppFetchEntrypointTemplate(plan);
 const manifestJson = renderAgentAppFetchHostCapabilityManifest(plan);
 ```
 
-The manifest lists routes, generated agents, accepted host capability keys, and
-unsupported defaults such as runtime filesystem discovery, ambient environment
-capture, and local shell execution. Provider wrappers can consume it when wiring
-host capabilities, but provider-specific deployment remains outside this package.
+The manifest lists the supported Fetch routes (`GET /manifest`, `GET /agents`,
+and `POST /agents/:agent/invoke`), generated agents, accepted host capability
+keys, and unsupported defaults such as runtime filesystem discovery, ambient
+environment capture, and local shell execution. Provider wrappers can consume it
+when wiring host capabilities, but provider-specific deployment remains outside
+this package.
 
 Runtime-backed Fetch handlers can receive an explicit edge-safe session event
 store. The store appends idempotently by `eventId`, replays by per-session

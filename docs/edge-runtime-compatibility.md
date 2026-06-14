@@ -23,8 +23,8 @@ generic adapter seams are proven.
 
 The first OSS adapter seam is the TypeScript control-plane Fetch helper at
 `autoctx/control-plane/agent-app-fetch`. It handles `Request` -> `Response` for
-the existing `GET /manifest` and `POST /agents/:agent/invoke` shape using a
-static handler catalog or module map. It also includes a build-time catalog
+the existing `GET /manifest` / `GET /agents` manifest aliases and
+`POST /agents/:agent/invoke` shape using a static handler catalog or module map. It also includes a build-time catalog
 planner that turns explicit `.autoctx/agents` entries into bundler-visible
 module maps, so generated bundles do not need runtime filesystem discovery.
 The same subpath now exposes a generated Fetch entrypoint template, a host
@@ -137,8 +137,9 @@ not read `process.env`, parse `.env` files, or bake secrets into generated
 artifacts. Runtime factories should be host-created capabilities, not ambient
 module lookups, unless a bundler-safe module map is supplied explicitly.
 
-The Fetch host capability manifest is machine-readable and lists the accepted
-host capability keys (`env`, `runtime`, `workspace`, `workspaceStore`,
+The Fetch host capability manifest is machine-readable and lists the supported
+routes (`GET /manifest`, `GET /agents`, and `POST /agents/:agent/invoke`), the
+accepted host capability keys (`env`, `runtime`, `workspace`, `workspaceStore`,
 `commands`, `tools`, `eventStore`, `sessionEventStore`, `eventSink`, and
 `maxBodyBytes`) plus unsupported defaults: runtime filesystem discovery,
 ambient environment capture, local shell execution, provider deployment config,

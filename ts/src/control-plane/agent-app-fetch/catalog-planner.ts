@@ -1,4 +1,8 @@
-import type { AutoctxAgentHandler, AutoctxLoadedAgent, MaybePromise } from "../../agent-runtime/index.js";
+import type {
+  AutoctxAgentHandler,
+  AutoctxLoadedAgent,
+  MaybePromise,
+} from "../../agent-runtime/index.js";
 import type {
   AgentAppFetchAgentExtension,
   AgentAppFetchCatalogEntry,
@@ -30,7 +34,7 @@ export interface AgentAppFetchCatalogPlan {
   entries: AgentAppFetchCatalogPlanEntry[];
 }
 
-export type AgentAppFetchRoute = "GET /manifest" | "POST /agents/:agent/invoke";
+export type AgentAppFetchRoute = "GET /manifest" | "GET /agents" | "POST /agents/:agent/invoke";
 export type AgentAppFetchModuleLoader = () => MaybePromise<unknown>;
 export type AgentAppFetchModuleMap = Record<string, AgentAppFetchModuleLoader>;
 
@@ -41,6 +45,7 @@ export interface RenderAgentAppFetchModuleMapEntrypointOptions {
 const DEFAULT_AGENT_APP_FETCH_HANDLER_DIR = ".autoctx/agents";
 const AGENT_APP_FETCH_ROUTES: AgentAppFetchRoute[] = [
   "GET /manifest",
+  "GET /agents",
   "POST /agents/:agent/invoke",
 ];
 

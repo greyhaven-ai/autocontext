@@ -41,7 +41,7 @@ describe("agent app Fetch catalog planner", () => {
     expect(plan).toEqual({
       target: "fetch",
       handlerDir: ".autoctx/agents",
-      routes: ["GET /manifest", "POST /agents/:agent/invoke"],
+      routes: ["GET /manifest", "GET /agents", "POST /agents/:agent/invoke"],
       entries: [
         {
           name: "audit",
