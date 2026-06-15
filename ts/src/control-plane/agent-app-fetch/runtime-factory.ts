@@ -24,7 +24,12 @@ export interface AgentAppFetchRuntimeFactoryPlan {
   entries: AgentAppFetchRuntimeFactoryPlanEntry[];
 }
 
-export type AgentAppFetchRuntimeFactory = () => MaybePromise<AgentRuntime>;
+export interface AgentAppFetchRuntimeFactoryMetadata {
+  readonly runtimeFactoryName?: string;
+}
+
+export type AgentAppFetchRuntimeFactory = (() => MaybePromise<AgentRuntime>) &
+  AgentAppFetchRuntimeFactoryMetadata;
 export type AgentAppFetchRuntimeFactoryModuleLoader = () => MaybePromise<unknown>;
 export type AgentAppFetchRuntimeFactoryModuleMap = Record<
   string,
@@ -94,7 +99,7 @@ export function createAgentAppFetchRuntimeFactoryFromModuleMap(
     ? planOrEntries.entries
     : planOrEntries;
   const entry = resolveRuntimeFactoryEntry(entries, name);
-  return async () => {
+  const factory = async () => {
     const loadModule = moduleMap[entry.name];
     if (!loadModule) {
       throw new Error(`Missing runtime factory module loader: ${entry.name}`);
@@ -106,6 +111,7 @@ export function createAgentAppFetchRuntimeFactoryFromModuleMap(
     }
     return runtime;
   };
+  return withRuntimeFactoryName(factory, entry.name);
 }
 
 export function createAgentAppFetchLazyRuntime(
@@ -113,18 +119,39 @@ export function createAgentAppFetchLazyRuntime(
   options: AgentAppFetchLazyRuntimeOptions = {},
 ): AgentRuntime {
   let runtimePromise: Promise<AgentRuntime> | undefined;
+  let loadedRuntimeName: string | undefined;
   const loadRuntime = async () => {
-    runtimePromise ??= Promise.resolve(factory());
+    runtimePromise ??= Promise.resolve(factory()).then((runtime) => {
+      loadedRuntimeName = runtime.name;
+      return runtime;
+    });
     return await runtimePromise;
   };
   return {
-    name: options.name ?? "agent-app-fetch-runtime-factory",
+    get name() {
+      return (
+        loadedRuntimeName ??
+        options.name ??
+        factory.runtimeFactoryName ??
+        "agent-app-fetch-runtime-factory"
+      );
+    },
     generate: async (generateOptions) => (await loadRuntime()).generate(generateOptions),
     revise: async (reviseOptions) => (await loadRuntime()).revise(reviseOptions),
     close: () => {
       if (runtimePromise) void runtimePromise.then((runtime) => runtime.close?.());
     },
   };
+}
+
+function withRuntimeFactoryName(
+  factory: () => MaybePromise<AgentRuntime>,
+  runtimeFactoryName: string,
+): AgentAppFetchRuntimeFactory {
+  return Object.defineProperty(factory, "runtimeFactoryName", {
+    value: runtimeFactoryName,
+    enumerable: false,
+  }) as AgentAppFetchRuntimeFactory;
 }
 
 function isRuntimeFactoryPlan(

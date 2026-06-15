@@ -101,6 +101,35 @@ describe("agent app Fetch runtime factory bundling seam", () => {
     expect(factoryCalls).toBe(1);
   });
 
+  it("uses selected factory names before load and forwards loaded runtime names", async () => {
+    const runtime: AgentRuntime = {
+      name: "fast-runtime",
+      generate: async ({ prompt }) => ({ text: `fast:${prompt}` }),
+      revise: async ({ prompt }) => ({ text: `revise:${prompt}` }),
+    };
+    const plan = planAgentAppFetchRuntimeFactories({
+      entries: [
+        {
+          name: "fast",
+          relativePath: ".autoctx/runtimes/fast.mjs",
+          extension: ".mjs",
+        },
+      ],
+    });
+    const runtimeFactory = createAgentAppFetchRuntimeFactoryFromModuleMap(
+      plan,
+      { fast: () => ({ default: () => runtime }) },
+      "fast",
+    );
+    const lazyRuntime = createAgentAppFetchLazyRuntime(runtimeFactory);
+
+    expect(lazyRuntime.name).toBe("fast");
+    await expect(lazyRuntime.generate({ prompt: "hello" })).resolves.toEqual({
+      text: "fast:hello",
+    });
+    expect(lazyRuntime.name).toBe("fast-runtime");
+  });
+
   it("renders generated Fetch entrypoints with explicit runtime factory hooks", () => {
     const catalogPlan = planAgentAppFetchCatalog({
       entries: [
@@ -131,6 +160,55 @@ describe("agent app Fetch runtime factory bundling seam", () => {
     expect(source).toContain("hostCapabilities.runtimeFactory");
     expect(source).toContain("hostCapabilities.runtimeFactoryName");
     expect(source).toContain("runtime: hostCapabilities.runtime ??");
+  });
+
+  it("does not resolve bundled runtime factories before direct host capabilities", () => {
+    const catalogPlan = planAgentAppFetchCatalog({
+      entries: [
+        {
+          name: "support",
+          relativePath: ".autoctx/agents/support.mjs",
+          extension: ".mjs",
+        },
+      ],
+    });
+    const runtimeFactoryPlan = planAgentAppFetchRuntimeFactories({
+      entries: [
+        {
+          name: "fast",
+          relativePath: ".autoctx/runtimes/fast.mjs",
+          extension: ".mjs",
+        },
+      ],
+    });
+    const source = renderAgentAppFetchEntrypointTemplate(catalogPlan, { runtimeFactoryPlan });
+    let bundledLookups = 0;
+    const directRuntime: AgentRuntime = {
+      name: "direct-runtime",
+      generate: async ({ prompt }) => ({ text: prompt }),
+      revise: async ({ prompt }) => ({ text: prompt }),
+    };
+    const directRuntimeFactory = () => directRuntime;
+    const createEntrypoint = evaluateGeneratedEntrypoint(source, {
+      createAgentAppFetchRuntimeFactoryFromModuleMap: () => {
+        bundledLookups += 1;
+        throw new Error("stale bundled runtime factory should not resolve");
+      },
+    });
+
+    const directRuntimeOptions = createEntrypoint({
+      runtime: directRuntime,
+      runtimeFactoryName: "stale",
+    });
+    const directFactoryOptions = createEntrypoint({
+      runtimeFactory: directRuntimeFactory,
+      runtimeFactoryName: "stale",
+    });
+
+    expect(directRuntimeOptions.runtime).toBe(directRuntime);
+    expect(directFactoryOptions.runtime).toMatchObject({ lazyRuntime: true });
+    expect(directFactoryOptions.lazyFactories).toEqual([directRuntimeFactory]);
+    expect(bundledLookups).toBe(0);
   });
 
   it("rejects duplicate, non-runtime, and declaration-file runtime factory entries", () => {
@@ -205,3 +283,45 @@ describe("agent app Fetch runtime factory bundling seam", () => {
     }
   });
 });
+
+type GeneratedHostCapabilities = Record<string, unknown>;
+
+type GeneratedEntrypoint = (hostCapabilities?: GeneratedHostCapabilities) => GeneratedHandlerOptions;
+
+interface GeneratedHandlerOptions extends Record<string, unknown> {
+  runtime?: unknown;
+  lazyFactories?: unknown[];
+}
+
+interface GeneratedEntrypointStubs {
+  createAgentAppFetchRuntimeFactoryFromModuleMap?: (...args: unknown[]) => unknown;
+}
+
+function evaluateGeneratedEntrypoint(
+  source: string,
+  stubs: GeneratedEntrypointStubs = {},
+): GeneratedEntrypoint {
+  const lazyFactories: unknown[] = [];
+  const rewrittenSource = source
+    .replace(/^import \{[^}]+\} from "[^"]+";\n/u, "")
+    .replace(/export const /gu, "const ")
+    .replace(/export function /gu, "function ")
+    .replace(/\nexport default \{ fetch \};\n?/u, "\n");
+  const moduleFactory = new Function(
+    "createAgentAppFetchCatalogFromModuleMap",
+    "createAgentAppFetchHandler",
+    "createAgentAppFetchLazyRuntime",
+    "createAgentAppFetchRuntimeFactoryFromModuleMap",
+    `${rewrittenSource}\nreturn { createAgentAppFetchEntrypoint };`,
+  ) as (...args: unknown[]) => { createAgentAppFetchEntrypoint: GeneratedEntrypoint };
+  const generatedModule = moduleFactory(
+    () => ({}),
+    (options: GeneratedHandlerOptions) => ({ ...options, lazyFactories }),
+    (factory: unknown) => {
+      lazyFactories.push(factory);
+      return { lazyRuntime: true, factory };
+    },
+    stubs.createAgentAppFetchRuntimeFactoryFromModuleMap ?? (() => undefined),
+  );
+  return generatedModule.createAgentAppFetchEntrypoint;
+}

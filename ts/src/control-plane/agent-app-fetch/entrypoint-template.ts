@@ -43,7 +43,9 @@ export function renderAgentAppFetchEntrypointTemplate(
     : [];
   const bundledRuntimeFactoryLines = runtimeFactoryPlan
     ? [
-        "  const bundledRuntimeFactory = hostCapabilities.runtimeFactoryName",
+        "  const bundledRuntimeFactory = !hostCapabilities.runtime &&",
+        "    !hostCapabilities.runtimeFactory &&",
+        "    hostCapabilities.runtimeFactoryName",
         "    ? createAgentAppFetchRuntimeFactoryFromModuleMap(",
         "        agentAppFetchRuntimeFactoryPlan,",
         "        agentAppFetchRuntimeFactoryModuleMap,",
