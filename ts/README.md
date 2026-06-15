@@ -243,7 +243,9 @@ host-supplied `runtimeFactory` directly or resolve `runtimeFactoryName` through
 the bundled, static runtime factory module map. Provider wrappers can consume the
 manifest JSON and `agentAppFetchHostCapabilityManifestSchema` when validating
 host capability wiring, but provider-specific deployment remains outside this
-package.
+package. See [`docs/generated-fetch-packaging.md`](../docs/generated-fetch-packaging.md)
+and [`examples/generated-fetch-packaging.ts`](examples/generated-fetch-packaging.ts)
+for a generic Fetch/ESM packaging example.
 
 Runtime-backed Fetch handlers can receive an explicit edge-safe session event
 store. The store appends idempotently by `eventId`, replays by per-session

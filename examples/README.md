@@ -9,6 +9,7 @@ These are copy-paste starting points for people evaluating the repo, integrating
 - Want to wire Claude Code or another MCP client? Use the MCP config snippet.
 - Want a typed Python integration? Use the Python SDK example.
 - Want a Node/TypeScript integration? Use the TypeScript library example.
+- Want to package generic Fetch/ESM agent app artifacts? Use the generated Fetch packaging example.
 - Want to prototype a reusable TypeScript agent handler? Use the experimental agent-runtime example.
 - Want always-on queued work? Use the persistent host worker recipe.
 
@@ -171,6 +172,18 @@ Example provider setup:
 export AUTOCONTEXT_PROVIDER=anthropic
 export ANTHROPIC_API_KEY=sk-ant-...
 ```
+
+## Generated Fetch Packaging
+
+The TypeScript package exposes a generic `autoctx/control-plane/agent-app-fetch`
+subpath for generated Fetch/ESM entrypoints. The example in
+[`../ts/examples/generated-fetch-packaging.ts`](../ts/examples/generated-fetch-packaging.ts)
+shows how a build step can emit an entrypoint, host capability manifest, and
+manifest schema from explicit `.autoctx/agents` plus optional `.autoctx/runtimes`
+entries. It does not include deployment descriptors or platform policy.
+
+For the full walkthrough, see
+[`../docs/generated-fetch-packaging.md`](../docs/generated-fetch-packaging.md).
 
 ## Experimental TypeScript Agent Handler
 

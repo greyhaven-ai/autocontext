@@ -134,7 +134,9 @@ capabilities. `renderAgentAppFetchHostCapabilityManifest()` can also emit that
 manifest as standalone JSON for external/provider hosts, while
 `agentAppFetchHostCapabilityManifestSchema` and
 `renderAgentAppFetchHostCapabilityManifestSchema()` expose the matching
-provider-neutral validation schema. Provider wrappers remain external to that
+provider-neutral validation schema. See
+[`generated-fetch-packaging.md`](generated-fetch-packaging.md) for a generic
+Fetch/ESM packaging walkthrough. Provider wrappers remain external to that
 generated source.
 
 ### Explicit Environment And Runtime Capabilities
