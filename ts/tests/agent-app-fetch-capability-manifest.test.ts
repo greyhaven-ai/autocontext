@@ -1,13 +1,16 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import Ajv, { type ValidateFunction } from "ajv";
 import { describe, expect, it } from "vitest";
 
 import {
+  agentAppFetchHostCapabilityManifestSchema,
   createAgentAppFetchHostCapabilityManifest,
   planAgentAppFetchCatalog,
   renderAgentAppFetchEntrypointTemplate,
   renderAgentAppFetchHostCapabilityManifest,
+  renderAgentAppFetchHostCapabilityManifestSchema,
 } from "../src/control-plane/agent-app-fetch/index.js";
 
 describe("agent app Fetch host capability manifest", () => {
@@ -106,6 +109,73 @@ describe("agent app Fetch host capability manifest", () => {
     });
   });
 
+  it("validates rendered manifests against a provider-neutral JSON schema", () => {
+    const plan = planAgentAppFetchCatalog({
+      entries: [
+        {
+          name: "support",
+          relativePath: ".autoctx/agents/support.mjs",
+          extension: ".mjs",
+          triggers: { webhook: true },
+        },
+      ],
+    });
+    const validate = compileManifestSchema();
+    const renderedManifest = JSON.parse(renderAgentAppFetchHostCapabilityManifest(plan));
+    const renderedSchema = JSON.parse(renderAgentAppFetchHostCapabilityManifestSchema());
+
+    expect(validate(renderedManifest)).toBe(true);
+    expect(renderedSchema).toEqual(agentAppFetchHostCapabilityManifestSchema);
+  });
+
+  it("rejects Fetch manifest drift through the JSON schema", () => {
+    const plan = planAgentAppFetchCatalog({
+      entries: [
+        {
+          name: "support",
+          relativePath: ".autoctx/agents/support.mjs",
+          extension: ".mjs",
+        },
+      ],
+    });
+    const manifest = createAgentAppFetchHostCapabilityManifest(plan);
+    const validate = compileManifestSchema();
+
+    expect(
+      validate({
+        ...manifest,
+        acceptedHostCapabilities: [...manifest.acceptedHostCapabilities, "providerBinding"],
+      }),
+    ).toBe(false);
+    expect(
+      validate({
+        ...manifest,
+        routes: [...manifest.routes, "POST /deploy"],
+      }),
+    ).toBe(false);
+    expect(
+      validate({
+        ...manifest,
+        routes: manifest.routes.slice(1),
+      }),
+    ).toBe(false);
+    expect(
+      validate({
+        ...manifest,
+        agents: [{ ...manifest.agents[0], relativePath: "/absolute/agent.mjs" }],
+      }),
+    ).toBe(false);
+    const { unsupportedDefaults, ...missingRequiredSection } = manifest;
+    void unsupportedDefaults;
+    expect(validate(missingRequiredSection)).toBe(false);
+    expect(
+      validate({
+        ...manifest,
+        hostedDeployment: true,
+      }),
+    ).toBe(false);
+  });
+
   it("exports the manifest from generated Fetch entrypoints", () => {
     const plan = planAgentAppFetchCatalog({
       entries: [
@@ -164,3 +234,8 @@ describe("agent app Fetch host capability manifest", () => {
     }
   });
 });
+
+function compileManifestSchema(): ValidateFunction {
+  const ajv = new Ajv({ allErrors: true, strict: true });
+  return ajv.compile(agentAppFetchHostCapabilityManifestSchema);
+}

@@ -216,8 +216,10 @@ source does not read ambient env or add provider deployment wrappers:
 import {
   planAgentAppFetchCatalog,
   planAgentAppFetchRuntimeFactories,
+  agentAppFetchHostCapabilityManifestSchema,
   renderAgentAppFetchEntrypointTemplate,
   renderAgentAppFetchHostCapabilityManifest,
+  renderAgentAppFetchHostCapabilityManifestSchema,
 } from "autoctx/control-plane/agent-app-fetch";
 
 const plan = planAgentAppFetchCatalog({ entries });
@@ -228,6 +230,9 @@ const source = renderAgentAppFetchEntrypointTemplate(plan, {
   runtimeFactoryPlan,
 });
 const manifestJson = renderAgentAppFetchHostCapabilityManifest(plan);
+const manifestSchemaJson = renderAgentAppFetchHostCapabilityManifestSchema();
+// or import agentAppFetchHostCapabilityManifestSchema directly for validators.
+void agentAppFetchHostCapabilityManifestSchema;
 ```
 
 The manifest lists the supported Fetch routes (`GET /manifest`, `GET /agents`,
@@ -236,8 +241,9 @@ keys, and unsupported defaults such as runtime filesystem discovery, ambient
 environment capture, and local shell execution. A generated entrypoint can use a
 host-supplied `runtimeFactory` directly or resolve `runtimeFactoryName` through
 the bundled, static runtime factory module map. Provider wrappers can consume the
-manifest when wiring host capabilities, but provider-specific deployment remains
-outside this package.
+manifest JSON and `agentAppFetchHostCapabilityManifestSchema` when validating
+host capability wiring, but provider-specific deployment remains outside this
+package.
 
 Runtime-backed Fetch handlers can receive an explicit edge-safe session event
 store. The store appends idempotently by `eventId`, replays by per-session

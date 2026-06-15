@@ -131,8 +131,11 @@ resolves a named factory from a static module map without ambient module lookup.
 with static handler/runtime module maps, an embedded host capability manifest,
 and a `createAgentAppFetchEntrypoint()` factory that accepts explicit host
 capabilities. `renderAgentAppFetchHostCapabilityManifest()` can also emit that
-manifest as standalone JSON for external/provider hosts. Provider wrappers remain
-external to that generated source.
+manifest as standalone JSON for external/provider hosts, while
+`agentAppFetchHostCapabilityManifestSchema` and
+`renderAgentAppFetchHostCapabilityManifestSchema()` expose the matching
+provider-neutral validation schema. Provider wrappers remain external to that
+generated source.
 
 ### Explicit Environment And Runtime Capabilities
 
@@ -151,8 +154,8 @@ accepted host capability keys (`env`, `runtime`, `runtimeFactory`,
 `eventStore`, `sessionEventStore`, `eventSink`, and `maxBodyBytes`) plus
 unsupported defaults: runtime filesystem discovery, ambient environment capture,
 local shell execution, provider deployment config, and hosted orchestration.
-Provider hosts can use the manifest to validate their wrapper wiring without
-adding provider code to the generic adapter.
+Provider hosts can use the manifest plus its JSON Schema to validate their
+wrapper wiring without adding provider code to the generic adapter.
 
 ### Workspace And Grants
 

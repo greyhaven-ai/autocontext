@@ -43,7 +43,7 @@ export interface RenderAgentAppFetchModuleMapEntrypointOptions {
 }
 
 const DEFAULT_AGENT_APP_FETCH_HANDLER_DIR = ".autoctx/agents";
-const AGENT_APP_FETCH_ROUTES: AgentAppFetchRoute[] = [
+export const AGENT_APP_FETCH_ROUTES: readonly AgentAppFetchRoute[] = [
   "GET /manifest",
   "GET /agents",
   "POST /agents/:agent/invoke",
