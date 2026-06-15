@@ -6,6 +6,8 @@ export type AgentAppFetchHostCapabilityName =
   | "runtime"
   | "runtimeFactory"
   | "runtimeFactoryName"
+  | "runtimeFactoryPlan"
+  | "runtimeFactoryModuleMap"
   | "workspace"
   | "workspaceStore"
   | "commands"
@@ -43,6 +45,8 @@ export const AGENT_APP_FETCH_ACCEPTED_HOST_CAPABILITIES = [
   "runtime",
   "runtimeFactory",
   "runtimeFactoryName",
+  "runtimeFactoryPlan",
+  "runtimeFactoryModuleMap",
   "workspace",
   "workspaceStore",
   "commands",

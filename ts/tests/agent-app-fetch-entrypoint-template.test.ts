@@ -39,6 +39,8 @@ describe("agent app Fetch entrypoint template", () => {
     expect(source).toContain("export function createAgentAppFetchEntrypoint");
     expect(source).toContain("hostCapabilities.env");
     expect(source).toContain("hostCapabilities.runtime");
+    expect(source).toContain("runtimeFactoryPlan: hostCapabilities.runtimeFactoryPlan");
+    expect(source).toContain("runtimeFactoryModuleMap: hostCapabilities.runtimeFactoryModuleMap");
     expect(source).toContain("hostCapabilities.workspaceStore");
     expect(source).toContain("hostCapabilities.sessionEventStore");
     expect(source).toContain("hostCapabilities.commands");

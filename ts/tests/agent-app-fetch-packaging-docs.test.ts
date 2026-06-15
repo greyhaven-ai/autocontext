@@ -23,6 +23,8 @@ describe("generated Fetch packaging docs and example", () => {
     expect(docs).toContain("renderAgentAppFetchHostCapabilityManifest");
     expect(docs).toContain("renderAgentAppFetchHostCapabilityManifestSchema");
     expect(docs).toContain("host-created capabilities");
+    expect(docs).toContain("runtimeFactoryPlan");
+    expect(docs).toContain("runtimeFactoryModuleMap");
     expect(docs).toContain("No request-time filesystem discovery");
     expect(docs).toContain("No provider deployment configuration");
     expect(docs).toContain("ts/examples/generated-fetch-packaging.ts");
