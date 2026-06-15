@@ -208,28 +208,36 @@ export default { fetch: createAgentAppFetchHandler({ catalog }) };
 For generated Fetch bundles, `renderAgentAppFetchEntrypointTemplate()` emits an
 ESM entrypoint with a static module map, a machine-readable host capability
 manifest, and a `createAgentAppFetchEntrypoint()` factory. Host code can pass
-explicit capabilities such as `env`, `runtime`, `workspaceStore`, or
-`sessionEventStore`; the generated source does not read ambient env or add
-provider deployment wrappers:
+explicit capabilities such as `env`, `runtime`, `runtimeFactory`,
+`runtimeFactoryName`, `workspaceStore`, or `sessionEventStore`; the generated
+source does not read ambient env or add provider deployment wrappers:
 
 ```ts
 import {
   planAgentAppFetchCatalog,
+  planAgentAppFetchRuntimeFactories,
   renderAgentAppFetchEntrypointTemplate,
   renderAgentAppFetchHostCapabilityManifest,
 } from "autoctx/control-plane/agent-app-fetch";
 
 const plan = planAgentAppFetchCatalog({ entries });
-const source = renderAgentAppFetchEntrypointTemplate(plan);
+const runtimeFactoryPlan = planAgentAppFetchRuntimeFactories({
+  entries: runtimeEntries,
+});
+const source = renderAgentAppFetchEntrypointTemplate(plan, {
+  runtimeFactoryPlan,
+});
 const manifestJson = renderAgentAppFetchHostCapabilityManifest(plan);
 ```
 
 The manifest lists the supported Fetch routes (`GET /manifest`, `GET /agents`,
 and `POST /agents/:agent/invoke`), generated agents, accepted host capability
 keys, and unsupported defaults such as runtime filesystem discovery, ambient
-environment capture, and local shell execution. Provider wrappers can consume it
-when wiring host capabilities, but provider-specific deployment remains outside
-this package.
+environment capture, and local shell execution. A generated entrypoint can use a
+host-supplied `runtimeFactory` directly or resolve `runtimeFactoryName` through
+the bundled, static runtime factory module map. Provider wrappers can consume the
+manifest when wiring host capabilities, but provider-specific deployment remains
+outside this package.
 
 Runtime-backed Fetch handlers can receive an explicit edge-safe session event
 store. The store appends idempotently by `eventId`, replays by per-session

@@ -123,28 +123,36 @@ workflow, but the runtime adapter receives a static list or module map. The
 provider-neutral `planAgentAppFetchCatalog()` and
 `createAgentAppFetchCatalogFromModuleMap()` helpers keep source-project
 scanning out of the edge request path and let bundlers see which handler modules
-must be included. `renderAgentAppFetchEntrypointTemplate()` can then emit a
-generic ESM entrypoint with a static module map, an embedded host capability
-manifest, and a `createAgentAppFetchEntrypoint()` factory that accepts explicit
-host capabilities. `renderAgentAppFetchHostCapabilityManifest()` can also emit
-that manifest as standalone JSON for external/provider hosts. Provider wrappers
-remain external to that generated source.
+must be included. Runtime factory bundling follows the same explicit pattern:
+`planAgentAppFetchRuntimeFactories()` accepts build-discovered
+`.autoctx/runtimes` entries, and `createAgentAppFetchRuntimeFactoryFromModuleMap()`
+resolves a named factory from a static module map without ambient module lookup.
+`renderAgentAppFetchEntrypointTemplate()` can then emit a generic ESM entrypoint
+with static handler/runtime module maps, an embedded host capability manifest,
+and a `createAgentAppFetchEntrypoint()` factory that accepts explicit host
+capabilities. `renderAgentAppFetchHostCapabilityManifest()` can also emit that
+manifest as standalone JSON for external/provider hosts. Provider wrappers remain
+external to that generated source.
 
 ### Explicit Environment And Runtime Capabilities
 
 The adapter should receive env as a plain object from trusted host code. It must
 not read `process.env`, parse `.env` files, or bake secrets into generated
 artifacts. Runtime factories should be host-created capabilities, not ambient
-module lookups, unless a bundler-safe module map is supplied explicitly.
+module lookups, unless a bundler-safe module map is supplied explicitly. When a
+generated entrypoint includes a runtime factory plan, the host can either pass a
+`runtimeFactory` capability directly or pass `runtimeFactoryName` to select one
+of the statically bundled factories.
 
 The Fetch host capability manifest is machine-readable and lists the supported
 routes (`GET /manifest`, `GET /agents`, and `POST /agents/:agent/invoke`), the
-accepted host capability keys (`env`, `runtime`, `workspace`, `workspaceStore`,
-`commands`, `tools`, `eventStore`, `sessionEventStore`, `eventSink`, and
-`maxBodyBytes`) plus unsupported defaults: runtime filesystem discovery,
-ambient environment capture, local shell execution, provider deployment config,
-and hosted orchestration. Provider hosts can use the manifest to validate their
-wrapper wiring without adding provider code to the generic adapter.
+accepted host capability keys (`env`, `runtime`, `runtimeFactory`,
+`runtimeFactoryName`, `workspace`, `workspaceStore`, `commands`, `tools`,
+`eventStore`, `sessionEventStore`, `eventSink`, and `maxBodyBytes`) plus
+unsupported defaults: runtime filesystem discovery, ambient environment capture,
+local shell execution, provider deployment config, and hosted orchestration.
+Provider hosts can use the manifest to validate their wrapper wiring without
+adding provider code to the generic adapter.
 
 ### Workspace And Grants
 
