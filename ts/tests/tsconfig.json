@@ -11,6 +11,7 @@
     "agent-app-fetch-catalog-planner.test.ts",
     "agent-app-fetch-conformance-docs.test.ts",
     "agent-app-fetch-entrypoint-template.test.ts",
+    "agent-app-fetch-generated-entrypoint-runtime-factory.test.ts",
     "agent-app-fetch-invocation-conformance.test.ts",
     "agent-app-fetch-packaging-docs.test.ts",
     "agent-app-fetch-runtime-factory.test.ts",
