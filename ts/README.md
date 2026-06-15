@@ -294,8 +294,9 @@ describe("host Fetch stores", () => {
 
 Fetch wrappers can also run invocation conformance cases against any factory that
 accepts generic Fetch handler options. The suite verifies the manifest aliases,
-agent invocation envelope, error envelopes, body limits, and explicit
-env/workspace/runtime capability wiring without depending on a provider runtime.
+agent invocation envelope, error envelopes, body limits, explicit
+env/workspace/runtime capability wiring, and runtime factory precedence/laziness
+without depending on a provider runtime.
 
 ```ts
 import {

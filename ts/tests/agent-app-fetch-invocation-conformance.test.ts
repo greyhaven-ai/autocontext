@@ -19,6 +19,10 @@ describe("agent app Fetch invocation conformance suite", () => {
       "Fetch invocation manifests advertise agents without loading handlers",
       "Fetch invocation posts payloads with explicit env and workspace",
       "Fetch invocation wires explicit runtime capability",
+      "Fetch invocation wires explicit runtime factory capability",
+      "Fetch invocation prefers explicit runtime over runtime factories",
+      "Fetch invocation prefers explicit runtime factory over named runtime factories",
+      "Fetch invocation selects named runtime factories lazily",
       "Fetch invocation returns stable error envelopes",
     ]);
     await expect(
@@ -38,6 +42,27 @@ describe("agent app Fetch invocation conformance suite", () => {
         },
       }),
     ).rejects.toThrow("expected supplied workspaceStore to be used");
+  });
+
+  it("fails when a host wrapper drops runtime factory capabilities", async () => {
+    await expect(
+      runAgentAppFetchInvocationConformance({
+        createHandler: (options) => {
+          const {
+            runtimeFactory,
+            runtimeFactoryName,
+            runtimeFactoryPlan,
+            runtimeFactoryModuleMap,
+            ...delegatedOptions
+          } = options;
+          void runtimeFactory;
+          void runtimeFactoryName;
+          void runtimeFactoryPlan;
+          void runtimeFactoryModuleMap;
+          return createAgentAppFetchHandler(delegatedOptions);
+        },
+      }),
+    ).rejects.toThrow("expected explicit runtimeFactory to be used");
   });
 
   it("keeps invocation conformance helpers provider-neutral and test-runner agnostic", () => {

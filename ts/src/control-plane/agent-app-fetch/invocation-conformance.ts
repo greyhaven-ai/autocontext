@@ -1,6 +1,8 @@
 import type { AutoctxAgentContext } from "../../agent-runtime/index.js";
 import type { AgentRuntime } from "../../runtimes/base.js";
 import type { AgentAppFetchHandlerOptions } from "./index.js";
+import type { AgentAppFetchRuntimeFactory } from "./runtime-factory.js";
+import { planAgentAppFetchRuntimeFactories } from "./runtime-factory.js";
 import type { AgentAppFetchWorkspaceStore } from "./workspace-store.js";
 import { createInMemoryAgentAppFetchWorkspaceStore } from "./workspace-store.js";
 
@@ -36,6 +38,22 @@ export function createAgentAppFetchInvocationConformanceCases(
     {
       name: "Fetch invocation wires explicit runtime capability",
       run: () => assertInvokeWiresRuntime(options),
+    },
+    {
+      name: "Fetch invocation wires explicit runtime factory capability",
+      run: () => assertInvokeWiresRuntimeFactory(options),
+    },
+    {
+      name: "Fetch invocation prefers explicit runtime over runtime factories",
+      run: () => assertRuntimePrecedenceOverRuntimeFactory(options),
+    },
+    {
+      name: "Fetch invocation prefers explicit runtime factory over named runtime factories",
+      run: () => assertRuntimeFactoryPrecedenceOverRuntimeFactoryName(options),
+    },
+    {
+      name: "Fetch invocation selects named runtime factories lazily",
+      run: () => assertNamedRuntimeFactoryLaziness(options),
     },
     {
       name: "Fetch invocation returns stable error envelopes",
@@ -168,51 +186,145 @@ async function assertInvokeWiresEnvAndWorkspace(
 async function assertInvokeWiresRuntime(
   options: AgentAppFetchInvocationConformanceOptions,
 ): Promise<void> {
-  const runtime: AgentRuntime = {
-    name: "conformance-runtime",
-    generate: async ({ prompt }) => ({ text: `runtime:${prompt}` }),
-    revise: async () => ({ text: "unused" }),
-  };
+  const runtime = createConformanceRuntime("runtime");
   const handler = await options.createHandler({
     runtime,
-    catalog: [
-      {
-        name: "prompted",
-        relativePath: ".autoctx/agents/prompted.mjs",
-        extension: ".mjs",
-        handler: async (ctx: AutoctxAgentContext<Record<string, unknown>>) => {
-          const agentRuntime = await ctx.init();
-          const session = await agentRuntime.session("default");
-          const reply = await session.prompt(readString(ctx.payload.prompt));
-          return { text: reply.text, sessionId: reply.sessionId };
-        },
-      },
-    ],
+    catalog: createRuntimePromptCatalog(),
   });
 
-  await assertJsonResponse(
-    await handler(
-      request("/agents/prompted/invoke", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          id: "runtime-run-1",
-          payload: { prompt: "hello" },
-        }),
-      }),
-    ),
-    200,
-    {
-      ok: true,
-      agent: "prompted",
-      id: "runtime-run-1",
-      result: {
-        text: "runtime:hello",
-        sessionId: "agent:prompted:default",
-      },
-    },
+  await assertPromptResponse(
+    handler,
+    "runtime-run-1",
+    "runtime:hello",
+    "runtime-runtime",
     "expected invocation to wire the explicit runtime capability",
   );
+}
+
+async function assertInvokeWiresRuntimeFactory(
+  options: AgentAppFetchInvocationConformanceOptions,
+): Promise<void> {
+  const calls: { factory: number } = { factory: 0 };
+  const runtimeFactory: AgentAppFetchRuntimeFactory = () => {
+    calls.factory += 1;
+    return createConformanceRuntime("factory");
+  };
+  const handler = await options.createHandler({
+    runtimeFactory,
+    catalog: createRuntimePromptCatalog(),
+  });
+
+  assert(calls.factory === 0, "expected runtimeFactory not to run at handler creation");
+  await assertPromptResponse(
+    handler,
+    "runtime-factory-run-1",
+    "factory:hello",
+    "factory-runtime",
+    "expected explicit runtimeFactory to be used",
+  );
+  assertCount(calls.factory, 1, "expected runtimeFactory to load lazily during invocation");
+}
+
+async function assertRuntimePrecedenceOverRuntimeFactory(
+  options: AgentAppFetchInvocationConformanceOptions,
+): Promise<void> {
+  const calls: { factory: number } = { factory: 0 };
+  const runtimeFactory: AgentAppFetchRuntimeFactory = () => {
+    calls.factory += 1;
+    return createConformanceRuntime("factory");
+  };
+  const handler = await options.createHandler({
+    runtime: createConformanceRuntime("runtime"),
+    runtimeFactory,
+    catalog: createRuntimePromptCatalog(),
+  });
+
+  await assertPromptResponse(
+    handler,
+    "runtime-precedence-run-1",
+    "runtime:hello",
+    "runtime-runtime",
+    "expected explicit runtime to take precedence over runtimeFactory",
+  );
+  assert(calls.factory === 0, "expected runtimeFactory not to run when runtime is provided");
+}
+
+async function assertRuntimeFactoryPrecedenceOverRuntimeFactoryName(
+  options: AgentAppFetchInvocationConformanceOptions,
+): Promise<void> {
+  const calls: { factory: number; namedRuntimeLoads: number } = {
+    factory: 0,
+    namedRuntimeLoads: 0,
+  };
+  const runtimeFactory: AgentAppFetchRuntimeFactory = () => {
+    calls.factory += 1;
+    return createConformanceRuntime("factory");
+  };
+  const handler = await options.createHandler({
+    runtimeFactory,
+    runtimeFactoryName: "named",
+    runtimeFactoryPlan: createNamedRuntimeFactoryPlan(),
+    runtimeFactoryModuleMap: {
+      named: () => {
+        calls.namedRuntimeLoads += 1;
+        return { default: () => createConformanceRuntime("named") };
+      },
+    },
+    catalog: createRuntimePromptCatalog(),
+  });
+
+  await assertPromptResponse(
+    handler,
+    "runtime-factory-precedence-run-1",
+    "factory:hello",
+    "factory-runtime",
+    "expected explicit runtimeFactory to take precedence over runtimeFactoryName",
+  );
+  assertCount(calls.factory, 1, "expected explicit runtimeFactory to load during invocation");
+  assert(calls.namedRuntimeLoads === 0, "expected named runtimeFactory not to load");
+}
+
+async function assertNamedRuntimeFactoryLaziness(
+  options: AgentAppFetchInvocationConformanceOptions,
+): Promise<void> {
+  const calls: { namedRuntimeLoads: number; namedFactoryCalls: number } = {
+    namedRuntimeLoads: 0,
+    namedFactoryCalls: 0,
+  };
+  const handler = await options.createHandler({
+    runtimeFactoryName: "named",
+    runtimeFactoryPlan: createNamedRuntimeFactoryPlan(),
+    runtimeFactoryModuleMap: {
+      named: () => {
+        calls.namedRuntimeLoads += 1;
+        return {
+          default: () => {
+            calls.namedFactoryCalls += 1;
+            return createConformanceRuntime("named");
+          },
+        };
+      },
+    },
+    catalog: createRuntimePromptCatalog(),
+  });
+
+  assert(
+    calls.namedRuntimeLoads === 0,
+    "expected named runtimeFactory module not to load at handler creation",
+  );
+  assert(
+    calls.namedFactoryCalls === 0,
+    "expected named runtimeFactory not to run at handler creation",
+  );
+  await assertPromptResponse(
+    handler,
+    "named-runtime-factory-run-1",
+    "named:hello",
+    "named-runtime",
+    "expected runtimeFactoryName to select a bundled runtime factory lazily",
+  );
+  assertCount(calls.namedRuntimeLoads, 1, "expected named runtimeFactory module to load once");
+  assertCount(calls.namedFactoryCalls, 1, "expected named runtimeFactory to run once");
 }
 
 async function assertStableErrorEnvelopes(
@@ -314,6 +426,94 @@ async function assertStableErrorEnvelopes(
   );
 }
 
+async function assertPromptResponse(
+  handler: AgentAppFetchInvocationConformanceHandler,
+  id: string,
+  expectedText: string,
+  expectedRuntimeMetadata: string,
+  message: string,
+): Promise<void> {
+  await assertJsonResponse(
+    await handler(
+      request("/agents/prompted/invoke", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          id,
+          payload: { prompt: "hello" },
+        }),
+      }),
+    ),
+    200,
+    {
+      ok: true,
+      agent: "prompted",
+      id,
+      result: {
+        text: expectedText,
+        sessionId: "agent:prompted:default",
+        runtimeMetadata: expectedRuntimeMetadata,
+      },
+    },
+    message,
+  );
+}
+
+function createRuntimePromptCatalog(): AgentAppFetchHandlerOptions<
+  Record<string, unknown>,
+  unknown
+>["catalog"] {
+  return [
+    {
+      name: "prompted",
+      relativePath: ".autoctx/agents/prompted.mjs",
+      extension: ".mjs",
+      handler: async (ctx: AutoctxAgentContext<Record<string, unknown>>) => {
+        const agentRuntime = await ctx.init();
+        const session = await agentRuntime.session("default");
+        const reply = await session.prompt(readString(ctx.payload.prompt));
+        return {
+          text: reply.text,
+          sessionId: reply.sessionId,
+          runtimeMetadata: readAssistantRuntimeMetadata(reply.sessionLog.events),
+        };
+      },
+    },
+  ];
+}
+
+function createConformanceRuntime(name: string): AgentRuntime {
+  return {
+    name: `${name}-runtime`,
+    generate: async ({ prompt }) => ({ text: `${name}:${prompt}` }),
+    revise: async ({ prompt }) => ({ text: `${name}:revise:${prompt}` }),
+  };
+}
+
+function createNamedRuntimeFactoryPlan() {
+  return planAgentAppFetchRuntimeFactories({
+    entries: [
+      {
+        name: "named",
+        relativePath: ".autoctx/runtimes/named.mjs",
+        extension: ".mjs",
+      },
+    ],
+  });
+}
+
+function readAssistantRuntimeMetadata(
+  events: readonly { eventType: string; payload: Record<string, unknown> }[],
+): unknown {
+  const assistantEvent = [...events]
+    .reverse()
+    .find((event) => event.eventType === "assistant_message");
+  const metadata = isRecord(assistantEvent?.payload.metadata)
+    ? assistantEvent.payload.metadata
+    : {};
+  return metadata.runtime;
+}
+
 async function assertJsonResponse(
   response: Response,
   expectedStatus: number,
@@ -405,6 +605,10 @@ function assertDeepEqual(actual: unknown, expected: unknown, message: string): v
     renderedActual === renderedExpected,
     `${message}: expected ${renderedExpected}, received ${renderedActual}`,
   );
+}
+
+function assertCount(actual: number, expected: number, message: string): void {
+  assert(actual === expected, `${message}: expected ${expected}, received ${actual}`);
 }
 
 function assert(condition: unknown, message: string): asserts condition {

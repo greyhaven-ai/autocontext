@@ -49,6 +49,16 @@ describe("Fetch conformance documentation", () => {
     expect(doc).toContain("createHandler: createHostFetchHandler");
   });
 
+  it("documents runtime factory invocation precedence and laziness", () => {
+    const doc = readFileSync(conformanceDocPath, "utf-8");
+
+    expect(doc).toContain("runtimeFactory");
+    expect(doc).toContain("runtimeFactoryName");
+    expect(doc).toContain("`runtime` takes precedence over `runtimeFactory`");
+    expect(doc).toContain("`runtimeFactory` takes precedence over `runtimeFactoryName`");
+    expect(doc).toContain("named runtime factories load lazily");
+  });
+
   it("links the conformance guide from related Fetch docs", () => {
     for (const path of [edgeDocPath, packagingDocPath, tsReadmePath]) {
       expect(readFileSync(path, "utf-8")).toContain("fetch-conformance.md");

@@ -52,6 +52,8 @@ describe("agent app Fetch host capability manifest", () => {
         "runtime",
         "runtimeFactory",
         "runtimeFactoryName",
+        "runtimeFactoryPlan",
+        "runtimeFactoryModuleMap",
         "workspace",
         "workspaceStore",
         "commands",
@@ -95,6 +97,8 @@ describe("agent app Fetch host capability manifest", () => {
         "runtime",
         "runtimeFactory",
         "runtimeFactoryName",
+        "runtimeFactoryPlan",
+        "runtimeFactoryModuleMap",
         "workspaceStore",
         "sessionEventStore",
         "commands",
@@ -141,6 +145,9 @@ describe("agent app Fetch host capability manifest", () => {
     const manifest = createAgentAppFetchHostCapabilityManifest(plan);
     const validate = compileManifestSchema();
 
+    expect(manifest.acceptedHostCapabilities).toEqual(
+      expect.arrayContaining(["runtimeFactoryPlan", "runtimeFactoryModuleMap"]),
+    );
     expect(
       validate({
         ...manifest,

@@ -108,8 +108,11 @@ The invocation cases verify:
 - `GET /manifest` and `GET /agents` return the static catalog without loading
   handler modules;
 - `POST /agents/:agent/invoke` preserves the success envelope and request id;
-- explicit `env`, `workspaceStore`, and `runtime` capabilities are wired into
-  the agent context;
+- explicit `env`, `workspaceStore`, `runtime`, `runtimeFactory`, and
+  `runtimeFactoryName` capabilities are wired into the agent context;
+- `runtime` takes precedence over `runtimeFactory`;
+- `runtimeFactory` takes precedence over `runtimeFactoryName`;
+- named runtime factories load lazily from the explicit static module map;
 - missing agents, invalid JSON, and over-limit bodies return stable error
   envelopes;
 - the supplied workspace store is used rather than a hidden request-local store.
@@ -123,7 +126,10 @@ entrypoint or wrapper:
 - pass plain `env` data from trusted host code instead of reading ambient
   deployment state inside the generated handler;
 - pass `runtime`, `runtimeFactory`, or `runtimeFactoryName` as host-created
-  capabilities;
+  capabilities, preserving that precedence order;
+- when a wrapper resolves `runtimeFactoryName` itself, pair it with
+  `runtimeFactoryPlan` and `runtimeFactoryModuleMap` so named factories resolve
+  from an explicit static module map; generated entrypoints embed that map;
 - pass `workspaceStore` and `sessionEventStore` when persistence is required;
 - keep handler and runtime catalogs static and bundler-visible;
 - keep command and tool grants absent unless the host deliberately supplies safe
@@ -142,6 +148,8 @@ Common conformance failures usually indicate a contract mismatch:
 | Invocation ignores sentinel workspace calls. | Wrapper replaced the supplied `workspaceStore`. | Thread host-created stores through to the agent context. |
 | Session replay duplicates events. | Store appends without `eventId` idempotency. | Treat duplicate event ids as already persisted. |
 | Runtime prompts fail in invocation cases. | Wrapper did not pass the explicit runtime capability. | Forward the provided runtime or selected runtime factory. |
+| Named factory loads before invocation. | Wrapper eagerly called the factory module map. | Wrap factories with lazy runtime creation. |
+| Named factory overrides direct capabilities. | Wrapper ignored runtime precedence. | Prefer `runtime`, then `runtimeFactory`, then `runtimeFactoryName`. |
 
 These helpers intentionally stop at the generic Fetch/ESM seam. Durable storage
 adapters, deployment descriptors, scheduling policy, secrets handling, and

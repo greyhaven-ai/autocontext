@@ -88,10 +88,11 @@ export default {
 ```
 
 Accepted host-created capabilities include `env`, `runtime`, `runtimeFactory`,
-`runtimeFactoryName`, `workspace`, `workspaceStore`, `commands`, `tools`,
-`eventStore`, `sessionEventStore`, `eventSink`, and `maxBodyBytes`. Direct
-`runtime` and `runtimeFactory` capabilities take precedence over bundled runtime
-factory selection.
+`runtimeFactoryName`, `runtimeFactoryPlan`, `runtimeFactoryModuleMap`,
+`workspace`, `workspaceStore`, `commands`, `tools`, `eventStore`,
+`sessionEventStore`, `eventSink`, and `maxBodyBytes`. Direct `runtime` and
+`runtimeFactory` capabilities take precedence over bundled runtime factory
+selection.
 
 ## Boundaries
 

@@ -248,9 +248,10 @@ one-shot runner examples.
 host-owned Fetch wrappers that accept the generic handler options shape. The
 suite validates `GET /manifest`, `GET /agents`, `POST /agents/:agent/invoke`,
 stable success/error envelopes, missing-agent behavior, invalid JSON, body-size
-limits, no handler loading during manifest reads, and explicit env/workspace /
-runtime capability wiring. The helper is runner-agnostic and does not add any
-provider deployment or storage binding. See
+limits, no handler loading during manifest reads, explicit env/workspace /
+runtime capability wiring, and runtime factory precedence/laziness. The helper
+is runner-agnostic and does not add any provider deployment or storage binding.
+See
 [`fetch-conformance.md`](fetch-conformance.md) for wrapper setup guidance and
 common failure modes.
 

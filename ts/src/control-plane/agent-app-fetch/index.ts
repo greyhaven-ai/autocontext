@@ -21,6 +21,15 @@ import type {
 import type { RuntimeSession, RuntimeSessionPromptResult } from "../../session/runtime-session.js";
 import type { RuntimeSessionEventStore } from "../../session/runtime-events.js";
 import type { RuntimeSessionEventSink } from "../../session/runtime-session-notifications.js";
+import {
+  createAgentAppFetchLazyRuntime,
+  createAgentAppFetchRuntimeFactoryFromModuleMap,
+} from "./runtime-factory.js";
+import type {
+  AgentAppFetchRuntimeFactory,
+  AgentAppFetchRuntimeFactoryModuleMap,
+  AgentAppFetchRuntimeFactoryPlan,
+} from "./runtime-factory.js";
 import { createAgentAppFetchSessionEventStoreBridge } from "./session-event-store.js";
 import type { AgentAppFetchSessionEventStore } from "./session-event-store.js";
 import {
@@ -55,6 +64,10 @@ export interface AgentAppFetchHandlerOptions<Payload = unknown, Result = unknown
   workspace?: RuntimeWorkspaceEnv;
   workspaceStore?: AgentAppFetchWorkspaceStore;
   runtime?: AgentRuntime;
+  runtimeFactory?: AgentAppFetchRuntimeFactory;
+  runtimeFactoryName?: string;
+  runtimeFactoryPlan?: AgentAppFetchRuntimeFactoryPlan;
+  runtimeFactoryModuleMap?: AgentAppFetchRuntimeFactoryModuleMap;
   commands?: RuntimeCommandGrant[];
   tools?: RuntimeToolGrant[];
   eventStore?: RuntimeSessionEventStore;
@@ -120,11 +133,13 @@ export function createAgentAppFetchHandler<Payload = unknown, Result = unknown>(
 ): (request: Request) => Promise<Response> {
   const catalog = [...options.catalog];
   const env = definedStringRecord(options.env ?? {});
+  const runtime = resolveAgentAppFetchRuntime(options);
   return async (request) =>
     handleAgentAppFetchRequest(request, {
       ...options,
       catalog,
       env,
+      runtime,
       workspace:
         options.workspace ??
         createAgentAppFetchWorkspaceEnv({
@@ -224,6 +239,30 @@ export async function handleAgentAppFetchRequest<Payload = unknown, Result = unk
       },
     } satisfies AgentAppFetchErrorEnvelope);
   }
+}
+
+function resolveAgentAppFetchRuntime<Payload, Result>(
+  options: AgentAppFetchHandlerOptions<Payload, Result>,
+): AgentRuntime | undefined {
+  if (options.runtime) return options.runtime;
+  const runtimeFactory = options.runtimeFactory ?? resolveNamedAgentAppFetchRuntimeFactory(options);
+  return runtimeFactory ? createAgentAppFetchLazyRuntime(runtimeFactory) : undefined;
+}
+
+function resolveNamedAgentAppFetchRuntimeFactory<Payload, Result>(
+  options: AgentAppFetchHandlerOptions<Payload, Result>,
+): AgentAppFetchRuntimeFactory | undefined {
+  if (!options.runtimeFactoryName) return undefined;
+  if (!options.runtimeFactoryPlan || !options.runtimeFactoryModuleMap) {
+    throw new Error(
+      "runtimeFactoryName requires runtimeFactoryPlan and runtimeFactoryModuleMap host capabilities",
+    );
+  }
+  return createAgentAppFetchRuntimeFactoryFromModuleMap(
+    options.runtimeFactoryPlan,
+    options.runtimeFactoryModuleMap,
+    options.runtimeFactoryName,
+  );
 }
 
 function buildManifest<Payload, Result>(
