@@ -47,6 +47,8 @@ describe("agent app Fetch host capability manifest", () => {
       acceptedHostCapabilities: [
         "env",
         "runtime",
+        "runtimeFactory",
+        "runtimeFactoryName",
         "workspace",
         "workspaceStore",
         "commands",
@@ -88,6 +90,8 @@ describe("agent app Fetch host capability manifest", () => {
       acceptedHostCapabilities: expect.arrayContaining([
         "env",
         "runtime",
+        "runtimeFactory",
+        "runtimeFactoryName",
         "workspaceStore",
         "sessionEventStore",
         "commands",

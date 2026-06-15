@@ -3,6 +3,8 @@ import type { AgentAppFetchCatalogPlan, AgentAppFetchRoute } from "./catalog-pla
 export type AgentAppFetchHostCapabilityName =
   | "env"
   | "runtime"
+  | "runtimeFactory"
+  | "runtimeFactoryName"
   | "workspace"
   | "workspaceStore"
   | "commands"
@@ -38,6 +40,8 @@ export interface AgentAppFetchHostCapabilityManifest {
 const ACCEPTED_HOST_CAPABILITIES: readonly AgentAppFetchHostCapabilityName[] = [
   "env",
   "runtime",
+  "runtimeFactory",
+  "runtimeFactoryName",
   "workspace",
   "workspaceStore",
   "commands",
