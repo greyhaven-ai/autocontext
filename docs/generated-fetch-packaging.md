@@ -12,7 +12,8 @@ shown in `ts/examples/generated-fetch-runtime-factory-packaging.ts`. See the
 surface and [`Fetch host capability manifest examples`](fetch-host-capability-manifest.md)
 for manifest validation. After packaging, use the
 [`Fetch conformance guide`](fetch-conformance.md) to verify host-owned wrappers
-and stores before exposing the generated handler.
+and stores before exposing the generated handler. If host wiring fails, see
+[`Fetch adapter troubleshooting`](fetch-troubleshooting.md).
 
 ## Inputs
 
@@ -113,4 +114,5 @@ host wiring before exposing the generated `fetch` handler. See
 [`fetch-host-capability-manifest.md`](fetch-host-capability-manifest.md) for a
 provider-neutral validation example, then use [`fetch-conformance.md`](fetch-conformance.md)
 to run the workspace store, session event-store, and invocation checks against
-host-created capabilities.
+host-created capabilities. Use [`fetch-troubleshooting.md`](fetch-troubleshooting.md)
+for common runtime-factory, manifest, and wrapper wiring failures.

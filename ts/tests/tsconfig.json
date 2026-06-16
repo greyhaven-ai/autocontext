@@ -21,6 +21,7 @@
     "agent-app-fetch-runtime-factory-packaging-example.test.ts",
     "agent-app-fetch-session-event-store.test.ts",
     "agent-app-fetch-store-conformance.test.ts",
+    "agent-app-fetch-troubleshooting-docs.test.ts",
     "agent-app-fetch-workspace-store.test.ts",
     "background-session-*.test.ts",
     "sandbox-adapter-contracts.test.ts",

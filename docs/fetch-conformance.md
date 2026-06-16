@@ -7,7 +7,9 @@ a generated `fetch` handler. See the
 surface. The helpers are framework-agnostic: each case is an async function with
 a stable name, and each one-shot runner executes the same cases without assuming
 a test framework. See `ts/examples/fetch-conformance-host-wrapper.ts` for a
-minimal executable host-wrapper example.
+minimal executable host-wrapper example and
+[`fetch-troubleshooting.md`](fetch-troubleshooting.md) for common host wiring
+failures.
 
 ## Runner-Agnostic Usage
 
@@ -140,7 +142,9 @@ entrypoint or wrapper:
 
 ## Failure Modes
 
-Common conformance failures usually indicate a contract mismatch:
+Common conformance failures usually indicate a contract mismatch. For a shorter
+symptom-to-fix checklist, see
+[`fetch-troubleshooting.md`](fetch-troubleshooting.md).
 
 | Failure                                            | Likely cause                                            | Expected fix                                                        |
 | -------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------- |

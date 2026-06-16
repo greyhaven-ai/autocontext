@@ -142,9 +142,10 @@ cases; one-shot runners execute the same cases without assuming a test runner.
 | `runAgentAppFetchInvocationConformance`                | One-shot invocation wrapper runner.  |
 
 See [`fetch-conformance.md`](fetch-conformance.md) for case details, failure
-modes, and runner examples, and
-`ts/examples/fetch-conformance-host-wrapper.ts` for a typed executable wrapper
-example.
+modes, and runner examples,
+[`fetch-troubleshooting.md`](fetch-troubleshooting.md) for common host wiring
+failures, and `ts/examples/fetch-conformance-host-wrapper.ts` for a typed
+executable wrapper example.
 
 ## Generated Entrypoint Contract
 
@@ -183,4 +184,6 @@ The Fetch adapter remains a generic OSS seam:
 
 For packaging guidance, see
 [`generated-fetch-packaging.md`](generated-fetch-packaging.md). For wrapper and
-store verification, see [`fetch-conformance.md`](fetch-conformance.md).
+store verification, see [`fetch-conformance.md`](fetch-conformance.md). For
+common host wiring failures, see
+[`fetch-troubleshooting.md`](fetch-troubleshooting.md).

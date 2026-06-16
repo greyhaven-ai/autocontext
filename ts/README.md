@@ -248,9 +248,10 @@ the exported API surface,
 [`docs/fetch-host-capability-manifest.md`](../docs/fetch-host-capability-manifest.md)
 for manifest validation examples,
 [`docs/generated-fetch-packaging.md`](../docs/generated-fetch-packaging.md),
+[`docs/fetch-troubleshooting.md`](../docs/fetch-troubleshooting.md),
 [`examples/generated-fetch-packaging.ts`](examples/generated-fetch-packaging.ts),
 and [`examples/generated-fetch-runtime-factory-packaging.ts`](examples/generated-fetch-runtime-factory-packaging.ts)
-for generic Fetch/ESM packaging examples.
+for generic Fetch/ESM packaging examples and common host wiring fixes.
 
 Runtime-backed Fetch handlers can receive an explicit edge-safe session event
 store. The store appends idempotently by `eventId`, replays by per-session
@@ -317,7 +318,9 @@ describe("host Fetch invocation", () => {
 ```
 
 See [`docs/fetch-conformance.md`](../docs/fetch-conformance.md) for the full
-runner-agnostic conformance guide and
+runner-agnostic conformance guide,
+[`docs/fetch-troubleshooting.md`](../docs/fetch-troubleshooting.md) for common
+host wiring failures, and
 [`examples/fetch-conformance-host-wrapper.ts`](examples/fetch-conformance-host-wrapper.ts)
 for a typed executable wrapper example. See
 [`docs/edge-runtime-compatibility.md`](../docs/edge-runtime-compatibility.md) and
