@@ -8,8 +8,10 @@ capabilities explicitly.
 The same pattern is implemented as a typed repository example in
 `ts/examples/generated-fetch-packaging.ts`. See the
 [`Fetch adapter API reference`](fetch-api-reference.md) for the exported helper
-surface. After packaging, use the [`Fetch conformance guide`](fetch-conformance.md)
-to verify host-owned wrappers and stores before exposing the generated handler.
+surface and [`Fetch host capability manifest examples`](fetch-host-capability-manifest.md)
+for manifest validation. After packaging, use the
+[`Fetch conformance guide`](fetch-conformance.md) to verify host-owned wrappers
+and stores before exposing the generated handler.
 
 ## Inputs
 
@@ -106,6 +108,8 @@ selection.
   explicitly supplies safe command grants.
 
 Use the manifest plus `agentAppFetchHostCapabilityManifestSchema` to validate
-host wiring before exposing the generated `fetch` handler. Use
-[`fetch-conformance.md`](fetch-conformance.md) to run the workspace store,
-session event-store, and invocation checks against host-created capabilities.
+host wiring before exposing the generated `fetch` handler. See
+[`fetch-host-capability-manifest.md`](fetch-host-capability-manifest.md) for a
+provider-neutral validation example, then use [`fetch-conformance.md`](fetch-conformance.md)
+to run the workspace store, session event-store, and invocation checks against
+host-created capabilities.

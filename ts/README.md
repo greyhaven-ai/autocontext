@@ -244,8 +244,11 @@ the bundled, static runtime factory module map. Provider wrappers can consume th
 manifest JSON and `agentAppFetchHostCapabilityManifestSchema` when validating
 host capability wiring, but provider-specific deployment remains outside this
 package. See [`docs/fetch-api-reference.md`](../docs/fetch-api-reference.md) for
-the exported API surface, [`docs/generated-fetch-packaging.md`](../docs/generated-fetch-packaging.md)
-and [`examples/generated-fetch-packaging.ts`](examples/generated-fetch-packaging.ts)
+the exported API surface,
+[`docs/fetch-host-capability-manifest.md`](../docs/fetch-host-capability-manifest.md)
+for manifest validation examples,
+[`docs/generated-fetch-packaging.md`](../docs/generated-fetch-packaging.md), and
+[`examples/generated-fetch-packaging.ts`](examples/generated-fetch-packaging.ts)
 for a generic Fetch/ESM packaging example.
 
 Runtime-backed Fetch handlers can receive an explicit edge-safe session event
@@ -300,9 +303,7 @@ env/workspace/runtime capability wiring, and runtime factory precedence/laziness
 without depending on a provider runtime.
 
 ```ts
-import {
-  createAgentAppFetchInvocationConformanceCases,
-} from "autoctx/control-plane/agent-app-fetch";
+import { createAgentAppFetchInvocationConformanceCases } from "autoctx/control-plane/agent-app-fetch";
 import { describe, it } from "vitest";
 
 describe("host Fetch invocation", () => {
