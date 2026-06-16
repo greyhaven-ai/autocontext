@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-06-16
+
 ### Added
 
 - Recursive loop: the MLX agent provider auto-resolves the model the harness trained. When `AUTOCONTEXT_AGENT_PROVIDER=mlx` and no explicit `AUTOCONTEXT_MLX_MODEL_PATH` is set, `build_client_from_settings` now looks up the active MLX model in the model registry for the scenario (training auto-activates published models), so a run uses the local model a prior run produced and activated. Mirrors the existing `pi` handoff resolution. An explicit `AUTOCONTEXT_MLX_MODEL_PATH` still takes precedence; only `mlx`-backend full checkpoints (servable by `MLXProvider`) are resolved; a clear error is raised when neither a path nor an active model is available.
@@ -512,7 +514,9 @@ A new cross-runtime parity audit (`test_cli_contract_parity.py` + `cli-contract-
 - FastAPI dashboard with WebSocket events.
 - CLI via Typer (Python) and `parseArgs` (TypeScript).
 
-[Unreleased]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.5.0...HEAD
+[Unreleased]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.7.0...HEAD
+[0.7.0]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.6.0...py-v0.7.0
+[0.6.0]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.5.0...py-v0.6.0
 [0.5.0]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.9...py-v0.5.0
 [0.4.9]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.8...py-v0.4.9
 [0.4.8]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.7...py-v0.4.8

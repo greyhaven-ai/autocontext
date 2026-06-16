@@ -28,7 +28,7 @@ autocontext is a harness. You point it at a goal in plain language. It iterates 
 The fastest path uses our **Pi runtime**, a local coding agent that handles its own auth. No API key plumbing, no provider config: install Pi, install autocontext, point one at the other.
 
 ```bash
-uv tool install autocontext==0.6.0
+uv tool install autocontext==0.7.0
 
 AUTOCONTEXT_AGENT_PROVIDER=pi \
 AUTOCONTEXT_PI_COMMAND=pi \
@@ -42,7 +42,7 @@ Pi runs locally as a subprocess and emits live traces back into the harness. For
 Prefer TypeScript? Same surface, same command:
 
 ```bash
-bun add -g autoctx@0.6.0
+bun add -g autoctx@0.7.0
 AUTOCONTEXT_AGENT_PROVIDER=pi bunx autoctx solve \
   "improve customer-support replies for billing disputes" \
   --iterations 5 --json
@@ -68,7 +68,7 @@ If you already work inside a coding agent, you can wire autocontext in once and 
 pi install npm:pi-autocontext@0.2.5
 ```
 
-Pi is on a separate package line: `pi-autocontext@0.2.5` currently depends on `autoctx@^0.5.1`. Use it for the current Pi tools/skills, and use `autocontext==0.6.0` or `autoctx@0.6.0` directly when you need the 0.6 runtime features until the next Pi extension release updates its bundled TypeScript dependency.
+Pi is on a separate package line: `pi-autocontext@0.2.5` currently depends on `autoctx@^0.5.1`. Use it for the current Pi tools/skills, and use `autocontext==0.7.0` or `autoctx@0.7.0` directly when you need the 0.7 runtime features until the next Pi extension release updates its bundled TypeScript dependency.
 
 Then you just ask:
 
@@ -217,16 +217,13 @@ uv run autoctx train --scenario support_triage --data training/billing.jsonl --t
 ```
 
 <!-- autocontext-whats-new:start -->
-## What's New in 0.6.0
+## What's New in 0.7.0
 
-- **CLI contract parity** aligns the Python and TypeScript `autoctx` command surfaces around the shared canonical contract, including capabilities, mission lifecycle commands, queue commands, scenario creation, serve/MCP paths, show/watch, status behavior, and aliases.
-- **Contract probes** add terminal, directory, service, artifact, cleanup, media, and distributed probe families, plus `autoctx probes check` and `autoctx probes extract` for harness verification.
-- **Mission checkpoints** now share a cross-runtime checkpoint contract with collision-free filenames, camelCase/snake_case loader interop, atomic restore behavior, and async-boundary guards.
+- **Agent app/runtime foundations** add OSS contracts for child background sessions, sandbox adapters, session outcomes, and trust boundaries while keeping hosted orchestration out of the public package.
+- **TypeScript agent app packaging** adds Node and Fetch/edge build targets, capability manifests, runtime factories, conformance checks, examples, and troubleshooting docs.
+- **Training/runtime improvements** include TRL/OPD/R1 backend work, GRPO fixes, MLX serving handoff improvements, trace-gate review fixes, and local server read/write endpoints.
+- **Experimental simplicity mode** adds opt-in guide-only minimal-output prompt guidance across Python CLI solve/improve and shared app settings.
 <!-- autocontext-whats-new:end -->
-
-## On main (unreleased)
-
-- **Training pipeline work** adds opt-in teacher-reasoning distillation, sampling controls, MLX-LM fine-tuning, score-conditioned generation, reward-weighted loss, and self-improving local-training loops. These features are on `main` and in [CHANGELOG.md](CHANGELOG.md), but they are not included in the pinned `0.6.0` packages yet.
 
 ## Choose Your Package
 
@@ -240,17 +237,17 @@ uv run autoctx train --scenario support_triage --data training/billing.jsonl --t
 
 ```bash
 # Python: library or CLI tool
-uv pip install autocontext==0.6.0
-uv tool install autocontext==0.6.0
+uv pip install autocontext==0.7.0
+uv tool install autocontext==0.7.0
 
 # TypeScript
-bun add -g autoctx@0.6.0
+bun add -g autoctx@0.7.0
 
 # Pi extension
 pi install npm:pi-autocontext@0.2.5
 ```
 
-> The PyPI package is `autocontext`. The CLI entrypoint is `autoctx`. The npm packages are `autoctx` and `pi-autocontext` (note: an unrelated package on npm uses the name `autocontext`; that is not this project). `pi-autocontext@0.2.5` currently depends on `autoctx@^0.5.1`; it remains the current Pi extension package, but it does not bundle `autoctx@0.6.0` until the next Pi package release.
+> The PyPI package is `autocontext`. The CLI entrypoint is `autoctx`. The npm packages are `autoctx` and `pi-autocontext` (note: an unrelated package on npm uses the name `autocontext`; that is not this project). `pi-autocontext@0.2.5` currently depends on `autoctx@^0.5.1`; it remains the current Pi extension package, but it does not bundle `autoctx@0.7.0` until the next Pi package release.
 
 ## Surfaces
 

@@ -1,3 +1,4 @@
-**CLI contract parity** aligns the Python and TypeScript `autoctx` command surfaces around the shared canonical contract, including capabilities, mission lifecycle commands, queue commands, scenario creation, serve/MCP paths, show/watch, status behavior, and aliases.
-**Contract probes** add terminal, directory, service, artifact, cleanup, media, and distributed probe families, plus `autoctx probes check` and `autoctx probes extract` for harness verification.
-**Mission checkpoints** now share a cross-runtime checkpoint contract with collision-free filenames, camelCase/snake_case loader interop, atomic restore behavior, and async-boundary guards.
+**Agent app/runtime foundations** add OSS contracts for child background sessions, sandbox adapters, session outcomes, and trust boundaries while keeping hosted orchestration out of the public package.
+**TypeScript agent app packaging** adds Node and Fetch/edge build targets, capability manifests, runtime factories, conformance checks, examples, and troubleshooting docs.
+**Training/runtime improvements** include TRL/OPD/R1 backend work, GRPO fixes, MLX serving handoff improvements, trace-gate review fixes, and local server read/write endpoints.
+**Experimental simplicity mode** adds opt-in guide-only minimal-output prompt guidance across Python CLI solve/improve and shared app settings.

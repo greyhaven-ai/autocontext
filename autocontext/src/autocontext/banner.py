@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from html import escape as html_escape
-from importlib import resources
+from importlib import import_module, resources
 from pathlib import Path
 from xml.sax.saxutils import escape as xml_escape
 
@@ -22,7 +22,7 @@ SYNC_BLOCK_START = "<!-- autocontext-readme-hero:start -->"
 SYNC_BLOCK_END = "<!-- autocontext-readme-hero:end -->"
 WHATS_NEW_BLOCK_START = "<!-- autocontext-whats-new:start -->"
 WHATS_NEW_BLOCK_END = "<!-- autocontext-whats-new:end -->"
-README_WHATS_NEW_HEADING = "What's New in 0.6.0"
+README_WHATS_NEW_HEADING = "What's New in 0.7.0"
 FALLBACK_BANNER_ART = "autocontext"
 README_WORDMARK_DARK_PATH = "autocontext/assets/autocontext-wordmark-dark.svg"
 README_WORDMARK_LIGHT_PATH = "autocontext/assets/autocontext-wordmark.svg"
@@ -143,12 +143,15 @@ def banner_plain() -> str:
 
 def print_banner_rich() -> None:
     """Print the banner with Rich styling to the terminal."""
-    from rich.console import Console
-    from rich.panel import Panel
-    from rich.text import Text
+    try:
+        Console = import_module("rich.console").Console
+        Panel = import_module("rich.panel").Panel
+        Text = import_module("rich.text").Text
+    except ImportError:
+        print(banner_plain())
+        return
 
-    from autocontext import __version__
-
+    version = getattr(import_module("autocontext"), "__version__", "unknown")
     console = Console(stderr=True)
 
     art = Text(load_banner_art())
@@ -170,7 +173,7 @@ def print_banner_rich() -> None:
 
         panel = Panel(
             lines,
-            title=f"[bold]What's new in v{__version__}[/bold]",
+            title=f"[bold]What's new in v{version}[/bold]",
             title_align="left",
             border_style="dim",
             padding=(0, 1),
