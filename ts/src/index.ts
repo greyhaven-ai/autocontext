@@ -530,6 +530,10 @@ export type {
   ExecutionLimits,
   ScoringDimension,
   LegalAction,
+  ScenarioEnvironmentContract,
+  ScenarioEnvironmentHook,
+  ScenarioEnvironmentHookKind,
+  ScenarioEnvironmentHooks,
 } from "./scenarios/index.js";
 export {
   AgentTaskSpecSchema,
@@ -555,6 +559,10 @@ export {
   ReplayEnvelopeSchema,
   ExecutionLimitsSchema,
   GridCtfScenario,
+  SCENARIO_ENVIRONMENT_HOOK_KINDS,
+  ScenarioEnvironmentContractSchema,
+  agentTaskTemplateEnvironmentContract,
+  scenarioEnvironmentContractForGame,
   SCENARIO_REGISTRY,
   isGameScenario,
   isAgentTask,

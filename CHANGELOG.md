@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- AC-820 scenario environment contracts now document and expose reset, rollout, verification, scoring, replay, evidence, and cleanup hooks across Python and TypeScript.
+
 ## [pi-v0.2.6] - 2026-06-16
 
 ### Changed

@@ -60,6 +60,18 @@ export type { WorkflowCreatorOpts, WorkflowScenarioHandle } from "./workflow-cre
 export type { WorkflowSpec, WorkflowStepSpec } from "./workflow-spec.js";
 export { WorkflowSpecSchema, WorkflowStepSpecSchema, parseRawWorkflowSpec } from "./workflow-spec.js";
 export { getScenarioTypeMarker, SCENARIO_TYPE_MARKERS } from "./families.js";
+export {
+  SCENARIO_ENVIRONMENT_HOOK_KINDS,
+  ScenarioEnvironmentContractSchema,
+  agentTaskTemplateEnvironmentContract,
+  scenarioEnvironmentContractForGame,
+} from "./environment-contract.js";
+export type {
+  ScenarioEnvironmentContract,
+  ScenarioEnvironmentHook,
+  ScenarioEnvironmentHookKind,
+  ScenarioEnvironmentHooks,
+} from "./environment-contract.js";
 
 // Game scenario interface + Grid CTF (AC-343)
 export type {
