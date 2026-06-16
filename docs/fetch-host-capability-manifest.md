@@ -140,7 +140,9 @@ map. Host code can still choose the runtime explicitly:
 
 Wrappers that validate capability names should allow all four runtime-factory
 keys: `runtimeFactory`, `runtimeFactoryName`, `runtimeFactoryPlan`, and
-`runtimeFactoryModuleMap`.
+`runtimeFactoryModuleMap`. See
+`ts/examples/generated-fetch-runtime-factory-packaging.ts` for a typed example
+that emits a generated entrypoint with bundled named runtime factories.
 
 ## Boundary Guarantees
 

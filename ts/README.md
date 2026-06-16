@@ -247,9 +247,10 @@ package. See [`docs/fetch-api-reference.md`](../docs/fetch-api-reference.md) for
 the exported API surface,
 [`docs/fetch-host-capability-manifest.md`](../docs/fetch-host-capability-manifest.md)
 for manifest validation examples,
-[`docs/generated-fetch-packaging.md`](../docs/generated-fetch-packaging.md), and
-[`examples/generated-fetch-packaging.ts`](examples/generated-fetch-packaging.ts)
-for a generic Fetch/ESM packaging example.
+[`docs/generated-fetch-packaging.md`](../docs/generated-fetch-packaging.md),
+[`examples/generated-fetch-packaging.ts`](examples/generated-fetch-packaging.ts),
+and [`examples/generated-fetch-runtime-factory-packaging.ts`](examples/generated-fetch-runtime-factory-packaging.ts)
+for generic Fetch/ESM packaging examples.
 
 Runtime-backed Fetch handlers can receive an explicit edge-safe session event
 store. The store appends idempotently by `eventId`, replays by per-session

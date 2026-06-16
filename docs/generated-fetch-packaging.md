@@ -6,7 +6,8 @@ host still creates and passes runtime, workspace, storage, and grant
 capabilities explicitly.
 
 The same pattern is implemented as a typed repository example in
-`ts/examples/generated-fetch-packaging.ts`. See the
+`ts/examples/generated-fetch-packaging.ts`; bundled runtime-factory packaging is
+shown in `ts/examples/generated-fetch-runtime-factory-packaging.ts`. See the
 [`Fetch adapter API reference`](fetch-api-reference.md) for the exported helper
 surface and [`Fetch host capability manifest examples`](fetch-host-capability-manifest.md)
 for manifest validation. After packaging, use the

@@ -84,7 +84,9 @@ factory modules while preserving explicit host capability precedence.
 Precedence is fixed: direct `runtime` wins over `runtimeFactory`, and direct
 `runtimeFactory` wins over `runtimeFactoryName`. Named factories should be
 selected from `runtimeFactoryPlan` plus `runtimeFactoryModuleMap`, never from an
-ambient module lookup.
+ambient module lookup. See
+`ts/examples/generated-fetch-runtime-factory-packaging.ts` for a typed generated
+Fetch packaging example with bundled named runtime factories.
 
 ## Host Capability Manifest
 
