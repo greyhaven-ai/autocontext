@@ -103,6 +103,8 @@ which capabilities the generic Fetch handler accepts.
 The unsupported-default list documents that the generated handler does not add
 runtime filesystem discovery, ambient environment capture, local shell
 execution, host deployment configuration, or commercial orchestration behavior.
+See [`fetch-host-capability-manifest.md`](fetch-host-capability-manifest.md) for
+manifest JSON and schema validation examples.
 
 ## Workspace And Session Stores
 
