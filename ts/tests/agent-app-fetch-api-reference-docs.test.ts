@@ -104,6 +104,14 @@ describe("Fetch adapter API reference documentation", () => {
     }
   });
 
+  it("keeps the linked edge capability list in sync with accepted host keys", () => {
+    const edgeDoc = readFileSync(edgeDocPath, "utf-8");
+
+    for (const capability of REQUIRED_HOST_CAPABILITY_NAMES) {
+      expect(edgeDoc).toContain(`\`${capability}\``);
+    }
+  });
+
   it("links the API reference from related Fetch docs", () => {
     for (const path of [
       docsIndexPath,
