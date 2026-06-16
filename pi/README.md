@@ -5,16 +5,16 @@ autocontext extension for [Pi coding agent](https://github.com/earendil-works/pi
 ## Install
 
 ```bash
-pi install npm:pi-autocontext@0.2.5
+pi install npm:pi-autocontext@0.2.6
 ```
 
-Current package note: `pi-autocontext@0.2.5` is on a separate Pi extension line and currently depends on `autoctx@^0.5.1`. Use it for Pi tools/skills, and install `autocontext==0.6.0` or `autoctx@0.6.0` directly when you need 0.6 runtime features until the next Pi extension release updates its bundled TypeScript dependency.
+Current package note: `pi-autocontext@0.2.6` is on a separate Pi extension line and depends on `autoctx@^0.7.0`, matching the current Python and TypeScript 0.7 runtime line.
 
 Or add to your project's `.pi/settings.json`:
 
 ```json
 {
-  "packages": ["npm:pi-autocontext@0.2.5"]
+  "packages": ["npm:pi-autocontext@0.2.6"]
 }
 ```
 

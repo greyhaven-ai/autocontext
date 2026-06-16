@@ -1,6 +1,6 @@
 {
   "name": "pi-autocontext",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "autocontext extension for Pi coding agent — iterative strategy generation, LLM judging, and evaluation tools",
   "type": "module",
   "keywords": [
@@ -27,7 +27,7 @@
     "typebox": "*"
   },
   "dependencies": {
-    "autoctx": "^0.5.1"
+    "autoctx": "^0.7.0"
   },
   "devDependencies": {
     "@earendil-works/pi-ai": "^0.74.0",

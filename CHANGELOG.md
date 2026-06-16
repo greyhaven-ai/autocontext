@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [pi-v0.2.6] - 2026-06-16
+
+### Changed
+
+- Pi `pi-autocontext` package metadata is bumped to `0.2.6`, and its `autoctx` dependency now requires the published `^0.7.0` line.
+
 ## [0.7.0] - 2026-06-16
 
 ### Added
@@ -514,7 +520,8 @@ A new cross-runtime parity audit (`test_cli_contract_parity.py` + `cli-contract-
 - FastAPI dashboard with WebSocket events.
 - CLI via Typer (Python) and `parseArgs` (TypeScript).
 
-[Unreleased]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.7.0...HEAD
+[Unreleased]: https://github.com/greyhaven-ai/autocontext/compare/pi-v0.2.6...HEAD
+[pi-v0.2.6]: https://github.com/greyhaven-ai/autocontext/compare/v0.7.0...pi-v0.2.6
 [0.7.0]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.6.0...py-v0.7.0
 [0.6.0]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.5.0...py-v0.6.0
 [0.5.0]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.9...py-v0.5.0
