@@ -245,7 +245,6 @@ class StartRunCmd(BaseModel):
     type: Literal["start_run"] = "start_run"
     scenario: str
     generations: int = Field(gt=0)
-    curator_approval_mode: Literal["auto", "review", "approve"] = "auto"
 
 
 class ListScenariosCmd(BaseModel):

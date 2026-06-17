@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import uuid
 from typing import TYPE_CHECKING, Any
 
 from autocontext.agents.feedback_loops import AnalystRating
@@ -14,8 +13,6 @@ from autocontext.analytics.credit_assignment import (
     compute_change_vector,
 )
 from autocontext.knowledge.dead_end_manager import DeadEndEntry, consolidate_dead_ends
-from autocontext.knowledge.lessons import ApplicabilityMeta, Lesson
-from autocontext.knowledge.pending_lessons import PendingLessonStore
 from autocontext.knowledge.progress import build_progress_snapshot
 from autocontext.loop.stage_helpers.context_loaders import _current_tool_names
 from autocontext.loop.stage_types import GenerationContext
@@ -225,46 +222,6 @@ def _persist_skill_note(
             score=tournament.best_score,
         )
         artifacts.append_dead_end(ctx.scenario_name, entry.to_markdown())
-
-
-def _sync_structured_lessons(ctx: GenerationContext, *, artifacts: ArtifactStore) -> None:
-    """Structure this generation's proposed lessons into lessons.json (Cowork 2c).
-
-    Routed by ctx.curator_approval_mode: auto -> active; review -> active + pending;
-    approve -> pending only. Only runs on an advancing generation. Idempotent across
-    generations: a lesson already present (by text) in either store is skipped.
-    """
-    if ctx.gate_decision != "advance" or ctx.outputs is None:
-        return
-    raw_block = getattr(ctx.outputs, "coach_lessons", None) or ""
-    proposed = [line for line in raw_block.splitlines() if line.strip()]
-    if not proposed:
-        return
-
-    scenario = ctx.scenario_name
-    mode = ctx.curator_approval_mode
-    store = artifacts.lesson_store
-    pending = PendingLessonStore(artifacts.knowledge_root)
-    seen_active = {les.text for les in store.read_lessons(scenario)}
-    seen_pending = {les.text for les in pending.read(scenario)}
-
-    for raw in proposed:
-        stripped = raw.strip()
-        text = stripped[2:].strip() if stripped.startswith("- ") else stripped
-        if not text or text in seen_active or text in seen_pending:
-            continue
-        meta = ApplicabilityMeta(created_at="", generation=ctx.generation, best_score=ctx.previous_best)
-        if mode == "approve":
-            pending.add(scenario, Lesson(id=f"lesson_{uuid.uuid4().hex[:8]}", text=text, meta=meta))
-            seen_pending.add(text)
-        elif mode == "review":
-            added = store.add_lesson(scenario, text, meta)
-            pending.add(scenario, added)
-            seen_active.add(text)
-            seen_pending.add(text)
-        else:  # auto
-            store.add_lesson(scenario, text, meta)
-            seen_active.add(text)
 
 
 def _run_curator_consolidation(

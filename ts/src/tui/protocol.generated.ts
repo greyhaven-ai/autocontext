@@ -158,7 +158,6 @@ export const StartRunCmdSchema = z.object({
   type: z.literal("start_run"),
   scenario: z.string(),
   generations: z.number().int().gt(0),
-  curator_approval_mode: z.enum(["auto", "review", "approve"]).optional(),
 });
 
 export const ListScenariosCmdSchema = z.object({

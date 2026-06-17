@@ -5,7 +5,6 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from autocontext.knowledge.lessons import ApplicabilityMeta, Lesson
-from autocontext.knowledge.pending_lessons import PendingLessonStore
 
 
 @pytest.fixture
@@ -28,10 +27,15 @@ def _seed(client: TestClient) -> None:
 
     ctx = api._get_ctx()
     ctx.artifacts.lesson_store.write_lessons(
-        "scn", [Lesson(id="a", text="fresh", meta=ApplicabilityMeta(created_at="", generation=1, best_score=0.5))]
-    )
-    PendingLessonStore(ctx.artifacts.knowledge_root).add(
-        "scn", Lesson(id="p", text="held", meta=ApplicabilityMeta(created_at="", generation=1, best_score=0.5))
+        "scn",
+        [
+            Lesson(id="a", text="fresh", meta=ApplicabilityMeta(created_at="", generation=1, best_score=0.5)),
+            Lesson(
+                id="p",
+                text="held",
+                meta=ApplicabilityMeta(created_at="", generation=1, best_score=0.5, approval_status="pending"),
+            ),
+        ],
     )
 
 

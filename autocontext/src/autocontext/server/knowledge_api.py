@@ -149,13 +149,9 @@ def _validate_scenario(scenario_name: str) -> str:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
-def _lesson_stores() -> tuple[Any, Any, Any]:
-    from autocontext.knowledge.pending_lessons import PendingLessonStore
-
+def _lesson_stores() -> tuple[Any, Any]:
     ctx = _get_ctx()
-    store = ctx.artifacts.lesson_store
-    pending = PendingLessonStore(ctx.artifacts.knowledge_root)
-    return ctx.artifacts, store, pending
+    return ctx.artifacts, ctx.artifacts.lesson_store
 
 
 @router.get("/{scenario_name}/lifecycle")
@@ -164,11 +160,10 @@ def lesson_lifecycle(scenario_name: str) -> dict[str, Any]:
     from autocontext.knowledge.lifecycle import build_lifecycle
 
     scenario_name = _validate_scenario(scenario_name)
-    artifacts, store, pending = _lesson_stores()
+    artifacts, store = _lesson_stores()
     return build_lifecycle(
         artifacts=artifacts,
         lesson_store=store,
-        pending_store=pending,
         scenario=scenario_name,
         current_generation=store.current_generation(scenario_name),
     )
@@ -180,10 +175,9 @@ def approve_lesson_route(scenario_name: str, lesson_id: str) -> dict[str, Any]:
     from autocontext.knowledge.lifecycle import approve_lesson
 
     scenario_name = _validate_scenario(scenario_name)
-    _artifacts, store, pending = _lesson_stores()
+    _artifacts, store = _lesson_stores()
     status = approve_lesson(
         lesson_store=store,
-        pending_store=pending,
         scenario=scenario_name,
         lesson_id=lesson_id,
         current_generation=store.current_generation(scenario_name),
@@ -199,8 +193,8 @@ def reject_lesson_route(scenario_name: str, lesson_id: str) -> dict[str, Any]:
     from autocontext.knowledge.lifecycle import reject_lesson
 
     scenario_name = _validate_scenario(scenario_name)
-    _artifacts, store, pending = _lesson_stores()
-    ok = reject_lesson(lesson_store=store, pending_store=pending, scenario=scenario_name, lesson_id=lesson_id)
+    _artifacts, store = _lesson_stores()
+    ok = reject_lesson(lesson_store=store, scenario=scenario_name, lesson_id=lesson_id)
     if not ok:
         raise HTTPException(status_code=404, detail="lesson not found")
     return {"ok": True}
@@ -212,7 +206,7 @@ def curate_lesson_route(scenario_name: str, lesson_id: str, body: CurateRequest)
     from autocontext.knowledge.lifecycle import curate_lesson
 
     scenario_name = _validate_scenario(scenario_name)
-    artifacts, store, _pending = _lesson_stores()
+    artifacts, store = _lesson_stores()
     status = curate_lesson(
         artifacts=artifacts,
         lesson_store=store,

@@ -101,7 +101,6 @@ from autocontext.loop.stage_helpers.persistence_helpers import (
     _persist_skill_note,
     _revise_strategy_for_validity_failure,
     _run_curator_consolidation,
-    _sync_structured_lessons,
 )
 from autocontext.loop.stage_helpers.semantic_benchmark import (
     materialize_evidence_manifests,
@@ -1310,7 +1309,6 @@ def stage_persistence(
 
     # 5. Write skill note + dead-end tracking
     _persist_skill_note(ctx, artifacts=artifacts)
-    _sync_structured_lessons(ctx, artifacts=artifacts)
 
     # 6. Curator lesson consolidation
     existing_lessons_check = artifacts.read_skill_lessons_raw(scenario_name)

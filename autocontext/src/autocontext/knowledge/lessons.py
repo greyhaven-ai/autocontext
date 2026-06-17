@@ -31,6 +31,7 @@ class ApplicabilityMeta(BaseModel):
     operation_type: str = "advance"
     superseded_by: str = ""
     last_validated_gen: int = _UNSET_GEN
+    approval_status: str = "active"  # "active" (applied) | "pending" (awaiting human approval)
 
     def model_post_init(self, __context: Any) -> None:
         if self.last_validated_gen == _UNSET_GEN:
@@ -59,6 +60,9 @@ class Lesson(BaseModel):
 
     def is_superseded(self) -> bool:
         return bool(self.meta.superseded_by)
+
+    def is_pending(self) -> bool:
+        return self.meta.approval_status == "pending"
 
     def is_applicable(self, current_generation: int, staleness_window: int = 10) -> bool:
         return not self.is_stale(current_generation, staleness_window) and not self.is_superseded()

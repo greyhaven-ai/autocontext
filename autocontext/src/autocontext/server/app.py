@@ -331,16 +331,14 @@ def create_app(
                                 response = await asyncio.to_thread(controller.submit_chat, role, message)
                                 await websocket.send_json(ChatResponseMsg(role=role, text=response).model_dump())
 
-                        case StartRunCmd(scenario=scenario, generations=generations, curator_approval_mode=curator_approval_mode):
+                        case StartRunCmd(scenario=scenario, generations=generations):
                             if run_manager is None:
                                 await websocket.send_json(ErrorMsg(message="Run manager not available.").model_dump())
                             elif run_manager.is_active:
                                 await websocket.send_json(ErrorMsg(message="A run is already active.").model_dump())
                             else:
                                 try:
-                                    rid = run_manager.start_run(
-                                        scenario, generations, curator_approval_mode=curator_approval_mode
-                                    )
+                                    rid = run_manager.start_run(scenario, generations)
                                     await websocket.send_json(
                                         RunAcceptedMsg(run_id=rid, scenario=scenario, generations=generations).model_dump()
                                     )

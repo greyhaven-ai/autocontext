@@ -212,7 +212,6 @@ class AppSettings(BaseModel):
     curator_enabled: bool = Field(default=True)
     curator_consolidate_every_n_gens: int = Field(default=3, ge=1)
     skill_max_lessons: int = Field(default=30, ge=1)
-    curator_approval_mode: str = Field(default="auto", pattern="^(auto|review|approve)$")
     # Skeptic agent (AC-324)
     skeptic_enabled: bool = Field(default=False, description="Enable skeptic/red-team review before persistence")
     model_skeptic: str = Field(default="claude-opus-4-6")
