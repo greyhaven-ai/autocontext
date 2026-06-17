@@ -96,7 +96,9 @@ def approve_lesson(
     if target is None:
         return None
     target.meta.approval_status = "active"
-    target.meta.last_validated_gen = current_generation
+    # Never lower the validation generation: approving must not make a lesson stale
+    # (current_generation can be 0 when derived from an otherwise-empty store).
+    target.meta.last_validated_gen = max(current_generation, target.meta.generation, target.meta.last_validated_gen)
     lesson_store.write_lessons(scenario, lessons)
     return "active"
 
