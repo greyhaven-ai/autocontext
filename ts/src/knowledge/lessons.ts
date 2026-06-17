@@ -1,6 +1,7 @@
 /** Structured lessons with applicability metadata (Cowork 2c, mirrors Python LessonStore). */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { randomUUID } from "node:crypto";
 
 const UNSET_GEN = -999_999;
 
@@ -99,7 +100,6 @@ export function isApplicable(
 }
 
 function randomId(): string {
-  const { randomUUID } = require("node:crypto") as { randomUUID: () => string };
   return `lesson_${randomUUID().replace(/-/g, "").slice(0, 8)}`;
 }
 
