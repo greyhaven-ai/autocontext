@@ -55,3 +55,80 @@ rubric_dimensions:
   - name: keyword_integration
     description: Are target keywords naturally integrated?
     weight: 0.15
+environment_contract:
+  schema_version: 1
+  scenario_name: content-generation
+  scenario_family: agent_task
+  hooks:
+    setup:
+      - kind: setup
+        label: template task load
+        description: >-
+          Load prompt, rubric, optional sample input, and reference context.
+        required: true
+        inputs: []
+        emits: [task_prompt, judge_rubric]
+        evidence_refs: []
+    reset:
+      - kind: reset
+        label: seeded task state
+        description: >-
+          initial_state(seed) creates a clean task state for another attempt.
+        required: true
+        inputs: [seed]
+        emits: [state]
+        evidence_refs: []
+    rollout:
+      - kind: rollout
+        label: agent output attempt
+        description: >-
+          The candidate model produces one output for the task prompt.
+        required: true
+        inputs: [task_prompt]
+        emits: [agent_output]
+        evidence_refs: []
+    verification:
+      - kind: verification
+        label: judge rubric check
+        description: >-
+          LLM judge evaluates the output against the rubric and guardrails.
+        required: true
+        inputs: [agent_output, judge_rubric]
+        emits: [judge_result]
+        evidence_refs: [AgentTaskResult.reasoning]
+    scoring:
+      - kind: scoring
+        label: judge scalar score
+        description: AgentTaskResult.score is the scalar quality score.
+        required: true
+        inputs: [judge_result]
+        emits: [scalar_score]
+        evidence_refs: []
+    replay:
+      - kind: replay
+        label: attempt transcript
+        description: >-
+          Prompt, output, and judge feedback are enough to replay the attempt.
+        required: true
+        inputs: [task_prompt, agent_output, judge_result]
+        emits: [attempt_transcript]
+        evidence_refs: []
+    evidence:
+      - kind: evidence
+        label: judge feedback evidence
+        description: >-
+          Judge reasoning and dimension scores explain why the output passed or
+          failed.
+        required: true
+        inputs: [judge_result]
+        emits: [judge_reasoning, dimension_scores]
+        evidence_refs: []
+    cleanup:
+      - kind: cleanup
+        label: stateless template cleanup
+        description: >-
+          Template-backed tasks keep no external mutable state by default.
+        required: true
+        inputs: []
+        emits: [no_external_state]
+        evidence_refs: []

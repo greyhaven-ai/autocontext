@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/greyhaven-ai/autocontext/docs/scenario-environment-contract.json",
+  "title": "ScenarioEnvironmentContract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "scenario_name", "scenario_family", "hooks"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "scenario_name": { "type": "string", "minLength": 1 },
+    "scenario_family": { "type": "string", "minLength": 1 },
+    "hooks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "setup",
+        "reset",
+        "rollout",
+        "verification",
+        "scoring",
+        "replay",
+        "evidence",
+        "cleanup"
+      ],
+      "properties": {
+        "setup": { "$ref": "#/$defs/setupHookList" },
+        "reset": { "$ref": "#/$defs/resetHookList" },
+        "rollout": { "$ref": "#/$defs/rolloutHookList" },
+        "verification": { "$ref": "#/$defs/verificationHookList" },
+        "scoring": { "$ref": "#/$defs/scoringHookList" },
+        "replay": { "$ref": "#/$defs/replayHookList" },
+        "evidence": { "$ref": "#/$defs/evidenceHookList" },
+        "cleanup": { "$ref": "#/$defs/cleanupHookList" }
+      }
+    }
+  },
+  "$defs": {
+    "hookKind": {
+      "type": "string",
+      "enum": [
+        "setup",
+        "reset",
+        "rollout",
+        "verification",
+        "scoring",
+        "replay",
+        "evidence",
+        "cleanup"
+      ]
+    },
+    "stringList": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "hookBase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "label", "description", "required", "inputs", "emits", "evidence_refs"],
+      "properties": {
+        "kind": { "$ref": "#/$defs/hookKind" },
+        "label": { "type": "string", "minLength": 1 },
+        "description": { "type": "string", "minLength": 1 },
+        "required": { "type": "boolean" },
+        "inputs": { "$ref": "#/$defs/stringList" },
+        "emits": { "$ref": "#/$defs/stringList" },
+        "evidence_refs": { "$ref": "#/$defs/stringList" }
+      }
+    },
+    "setupHookList": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/setupHook" } },
+    "setupHook": {
+      "allOf": [
+        { "$ref": "#/$defs/hookBase" },
+        { "type": "object", "properties": { "kind": { "const": "setup" } } }
+      ]
+    },
+    "resetHookList": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/resetHook" } },
+    "resetHook": {
+      "allOf": [
+        { "$ref": "#/$defs/hookBase" },
+        { "type": "object", "properties": { "kind": { "const": "reset" } } }
+      ]
+    },
+    "rolloutHookList": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/rolloutHook" } },
+    "rolloutHook": {
+      "allOf": [
+        { "$ref": "#/$defs/hookBase" },
+        { "type": "object", "properties": { "kind": { "const": "rollout" } } }
+      ]
+    },
+    "verificationHookList": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/verificationHook" } },
+    "verificationHook": {
+      "allOf": [
+        { "$ref": "#/$defs/hookBase" },
+        { "type": "object", "properties": { "kind": { "const": "verification" } } }
+      ]
+    },
+    "scoringHookList": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/scoringHook" } },
+    "scoringHook": {
+      "allOf": [
+        { "$ref": "#/$defs/hookBase" },
+        { "type": "object", "properties": { "kind": { "const": "scoring" } } }
+      ]
+    },
+    "replayHookList": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/replayHook" } },
+    "replayHook": {
+      "allOf": [
+        { "$ref": "#/$defs/hookBase" },
+        { "type": "object", "properties": { "kind": { "const": "replay" } } }
+      ]
+    },
+    "evidenceHookList": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/evidenceHook" } },
+    "evidenceHook": {
+      "allOf": [
+        { "$ref": "#/$defs/hookBase" },
+        { "type": "object", "properties": { "kind": { "const": "evidence" } } }
+      ]
+    },
+    "cleanupHookList": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/cleanupHook" } },
+    "cleanupHook": {
+      "allOf": [
+        { "$ref": "#/$defs/hookBase" },
+        { "type": "object", "properties": { "kind": { "const": "cleanup" } } }
+      ]
+    }
+  }
+}

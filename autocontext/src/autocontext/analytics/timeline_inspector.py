@@ -19,6 +19,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from autocontext.analytics.progress_report import RunProgressReport, progress_report_reference
 from autocontext.analytics.run_trace import RunTrace, TraceEvent
 
 # Severity ordering for filtering
@@ -69,6 +70,7 @@ class RunInspection(BaseModel):
     recovery_count: int
     retry_count: int
     causal_depth: int
+    progress_report: dict[str, Any] | None = None
 
 
 class GenerationInspection(BaseModel):
@@ -175,7 +177,7 @@ class TimelineBuilder:
 class StateInspector:
     """Main inspection API for run and generation state."""
 
-    def inspect_run(self, trace: RunTrace) -> RunInspection:
+    def inspect_run(self, trace: RunTrace, progress_report: RunProgressReport | None = None) -> RunInspection:
         events = trace.events
         cat_counts: Counter[str] = Counter(e.category for e in events)
         stage_counts: Counter[str] = Counter(e.stage for e in events)
@@ -195,6 +197,7 @@ class StateInspector:
             recovery_count=recovery_count,
             retry_count=retry_count,
             causal_depth=causal_depth,
+            progress_report=progress_report_reference(progress_report) if progress_report is not None else None,
         )
 
     def inspect_generation(

@@ -1052,41 +1052,41 @@ class ArtifactStore(ArtifactWriteMethods):
 
     def read_progress_report(self, scenario_name: str, run_id: str) -> object | None:
         """Read a RunProgressReport, or None if missing."""
-        from autocontext.knowledge.normalized_metrics import RunProgressReport
-
         path = self._progress_report_dir(scenario_name) / f"{run_id}.json"
         if not path.exists():
             return None
-        data = read_json(path)
-        return RunProgressReport.from_dict(data)
+        return self._load_progress_report(read_json(path))
+
+    def _load_progress_report(self, data: dict[str, Any]) -> object:
+        if data.get("schema_version") == 1 and "progress_points" in data:
+            from autocontext.analytics.progress_report import RunProgressReport as CurveReport
+            return CurveReport.from_dict(data)
+        from autocontext.knowledge.normalized_metrics import RunProgressReport as NormalizedReport
+        return NormalizedReport.from_dict(data)
 
     def read_latest_progress_reports(
         self, scenario_name: str, max_reports: int = 2,
     ) -> list[object]:
         """Read most recent progress reports for a scenario."""
-        from autocontext.knowledge.normalized_metrics import RunProgressReport
-
         pr_dir = self._progress_report_dir(scenario_name)
         if not pr_dir.exists():
             return []
         files = sorted(pr_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
         reports: list[object] = []
         for path in files[:max_reports]:
-            data = read_json(path)
-            reports.append(RunProgressReport.from_dict(data))
+            reports.append(self._load_progress_report(read_json(path)))
         return reports
 
     def read_latest_progress_reports_markdown(self, scenario_name: str, max_reports: int = 2) -> str:
         """Read recent progress reports and concatenate them as markdown."""
-        from autocontext.knowledge.normalized_metrics import RunProgressReport
-
         reports = self.read_latest_progress_reports(scenario_name, max_reports=max_reports)
         if not reports:
             return ""
         parts: list[str] = []
         for report in reports:
-            if isinstance(report, RunProgressReport):
-                parts.append(report.to_markdown())
+            to_markdown = getattr(report, "to_markdown", None)
+            if callable(to_markdown) and isinstance(markdown := to_markdown(), str):
+                parts.append(markdown)
         return "\n\n".join(parts)
 
     # --- Weakness reports (AC-196) -------------------------------------------
@@ -1131,8 +1131,8 @@ class ArtifactStore(ArtifactWriteMethods):
         markdown_parts: list[str] = []
         for report in reports:
             to_markdown = getattr(report, "to_markdown", None)
-            if callable(to_markdown):
-                markdown_parts.append(to_markdown())
+            if callable(to_markdown) and isinstance(markdown := to_markdown(), str):
+                markdown_parts.append(markdown)
         return "\n\n".join(markdown_parts)
 
     def _deserialize_weakness_report(self, data: dict[str, Any]) -> object:

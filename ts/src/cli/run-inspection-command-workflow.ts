@@ -1,3 +1,4 @@
+import { progressReportReference, type RunProgressReport } from "../analytics/progress-report.js";
 import type { RuntimeSessionSummary } from "../session/runtime-session-read-model.js";
 
 export const RUN_STATUS_HELP_TEXT = `autoctx status — show queue status or a run status
@@ -92,9 +93,10 @@ export function renderRunStatus(
   generations: RunInspectionGeneration[],
   json: boolean,
   runtimeSession?: RuntimeSessionSummary | null,
+  progressReport?: RunProgressReport | null,
 ): string {
   if (json) {
-    return JSON.stringify(runStatusPayload(run, generations, runtimeSession), null, 2);
+    return JSON.stringify(runStatusPayload(run, generations, runtimeSession, progressReport), null, 2);
   }
 
   const latest = latestGeneration(generations);
@@ -105,6 +107,7 @@ export function renderRunStatus(
     `  Generations: ${generations.length}/${run.target_generations}`,
     latest ? `  Latest best score: ${formatScore(latest.best_score)} (generation ${latest.generation_index})` : null,
     latest ? `  Latest gate: ${latest.gate_decision}` : null,
+    progressReport ? `  ${renderProgressReportReference(progressReport)}` : null,
     runtimeSession ? `  Runtime session: ${runtimeSession.session_id}` : null,
   ].filter((line): line is string => line !== null).join("\n");
 }
@@ -113,8 +116,9 @@ export function renderRunStatusJsonLine(
   run: RunInspectionRun,
   generations: RunInspectionGeneration[],
   runtimeSession?: RuntimeSessionSummary | null,
+  progressReport?: RunProgressReport | null,
 ): string {
-  return JSON.stringify(runStatusPayload(run, generations, runtimeSession));
+  return JSON.stringify(runStatusPayload(run, generations, runtimeSession, progressReport));
 }
 
 export function renderRunShow(
@@ -172,15 +176,18 @@ function runStatusPayload(
   run: RunInspectionRun,
   generations: RunInspectionGeneration[],
   runtimeSession?: RuntimeSessionSummary | null,
+  progressReport?: RunProgressReport | null,
 ): {
   run: RunInspectionRun;
   latest_generation: RunInspectionGeneration | null;
   runtime_session: RuntimeSessionSummary | null;
+  progress_report: ReturnType<typeof progressReportReference> | null;
 } {
   return {
     run,
     latest_generation: latestGeneration(generations),
     runtime_session: runtimeSession ?? null,
+    progress_report: progressReport ? progressReportReference(progressReport) : null,
   };
 }
 
@@ -190,6 +197,20 @@ function bestGeneration(generations: RunInspectionGeneration[]): RunInspectionGe
       !best || generation.best_score > best.best_score ? generation : best,
     null,
   );
+}
+
+function renderProgressReportReference(report: RunProgressReport): string {
+  const reference = progressReportReference(report);
+  const latestPassAtK = reference.pass_at_k.at(-1);
+  return [
+    `Progress best score: ${formatNullableScore(reference.best_score)}`,
+    `(threshold ${formatScore(reference.threshold)},`,
+    latestPassAtK ? `pass@${latestPassAtK.k}: ${latestPassAtK.passed ? "pass" : "miss"})` : "pass@k: n/a)",
+  ].join(" ");
+}
+
+function formatNullableScore(score: number | null): string {
+  return score === null ? "n/a" : formatScore(score);
 }
 
 function formatScore(score: number): string {

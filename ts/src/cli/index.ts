@@ -1271,7 +1271,10 @@ async function cmdStatus(dbPath: string): Promise<void> {
     process.exit(1);
   }
   const runtimeSession = await loadRuntimeSessionSummaryForRun(dbPath, runId);
-  console.log(renderRunStatus(run, store.getGenerations(runId), !!values.json, runtimeSession));
+  const progressReport = await loadProgressReportForRun(run);
+  console.log(
+    renderRunStatus(run, store.getGenerations(runId), !!values.json, runtimeSession, progressReport),
+  );
   store.close();
 }
 
@@ -1622,10 +1625,11 @@ async function cmdWatch(dbPath: string): Promise<void> {
       }
       const generations = store.getGenerations(runId);
       const runtimeSession = await loadRuntimeSessionSummaryForRun(dbPath, runId);
+      const progressReport = await loadProgressReportForRun(run);
       console.log(
         values.json
-          ? renderRunStatusJsonLine(run, generations, runtimeSession)
-          : renderRunStatus(run, generations, false, runtimeSession),
+          ? renderRunStatusJsonLine(run, generations, runtimeSession, progressReport)
+          : renderRunStatus(run, generations, false, runtimeSession, progressReport),
       );
       if (run.status !== "running") {
         return;
@@ -1650,6 +1654,20 @@ async function loadRuntimeSessionSummaryForRun(dbPath: string, runId: string) {
     return log ? summarizeRuntimeSession(log) : null;
   } finally {
     eventStore.close();
+  }
+}
+
+async function loadProgressReportForRun(run: { run_id: string; scenario: string }) {
+  const { existsSync, readFileSync } = await import("node:fs");
+  const { loadSettings } = await import("../config/index.js");
+  const { parseRunProgressReport } = await import("../analytics/progress-report.js");
+  const settings = loadSettings();
+  const path = join(resolve(settings.knowledgeRoot), run.scenario, "progress_reports", `${run.run_id}.json`);
+  if (!existsSync(path)) return null;
+  try {
+    return parseRunProgressReport(JSON.parse(readFileSync(path, "utf-8")) as unknown);
+  } catch {
+    return null;
   }
 }
 

@@ -6,13 +6,14 @@ from pathlib import Path
 from typing import Any
 
 import yaml  # type: ignore[import-untyped]
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from autocontext.config import load_settings
 from autocontext.execution.judge import LLMJudge
 from autocontext.providers.registry import get_provider
 from autocontext.scenarios.agent_task import AgentTaskInterface, AgentTaskResult
 from autocontext.scenarios.custom.agent_task_spec import AgentTaskSpec
+from autocontext.scenarios.environment_contract import ScenarioEnvironmentContract
 from autocontext.scenarios.families import get_family_marker
 
 TEMPLATE_DIR = Path(__file__).parent
@@ -50,6 +51,16 @@ class TemplateSpec(BaseModel):
     revision_prompt: str | None = None
     sample_input: str | None = None
     rubric_dimensions: list[RubricDimension] | None = None
+    environment_contract: ScenarioEnvironmentContract | None = None
+
+    @field_validator("environment_contract", mode="before")
+    @classmethod
+    def _validate_environment_contract(cls, value: Any) -> ScenarioEnvironmentContract | None:
+        if value is None or isinstance(value, ScenarioEnvironmentContract):
+            return value
+        if not isinstance(value, dict):
+            raise TypeError("environment_contract must be an object")
+        return ScenarioEnvironmentContract.model_validate(value)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> TemplateSpec:

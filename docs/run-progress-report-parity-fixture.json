@@ -1,0 +1,203 @@
+{
+  "schema_version": 1,
+  "run_id": "run-progress-1",
+  "threshold": 0.8,
+  "generated_at": "2026-01-01T00:02:00Z",
+  "pass_at_k_values": [1, 2, 4],
+  "events": [
+    {
+      "event_id": "run-started",
+      "event_type": "run_started",
+      "timestamp": "2026-01-01T00:00:00Z"
+    },
+    {
+      "event_id": "candidate-1",
+      "event_type": "candidate_scored",
+      "timestamp": "2026-01-01T00:00:20Z",
+      "generation_index": 1,
+      "hypothesis_node_id": "h-root",
+      "candidate_id": "c-1",
+      "score": 0.45,
+      "verifier_passed": false
+    },
+    {
+      "event_id": "candidate-2",
+      "event_type": "candidate_scored",
+      "timestamp": "2026-01-01T00:00:40Z",
+      "generation_index": 2,
+      "hypothesis_node_id": "h-child-a",
+      "parent_hypothesis_node_id": "h-root",
+      "candidate_id": "c-2",
+      "score": 0.72,
+      "verifier_passed": true
+    },
+    {
+      "event_id": "candidate-2b",
+      "event_type": "candidate_scored",
+      "timestamp": "2026-01-01T00:00:50Z",
+      "generation_index": 2,
+      "hypothesis_node_id": "h-child-a",
+      "parent_hypothesis_node_id": "h-root",
+      "candidate_id": "c-2b",
+      "score": 0.6,
+      "verifier_passed": false
+    },
+    {
+      "event_id": "candidate-3",
+      "event_type": "candidate_scored",
+      "timestamp": "2026-01-01T00:01:10Z",
+      "generation_index": 3,
+      "hypothesis_node_id": "h-child-b",
+      "parent_hypothesis_node_id": "h-child-a",
+      "candidate_id": "c-3",
+      "score": 0.83,
+      "verifier_passed": true
+    },
+    {
+      "event_id": "gate-3",
+      "event_type": "gate_decided",
+      "timestamp": "2026-01-01T00:01:15Z",
+      "generation_index": 3,
+      "hypothesis_node_id": "h-child-b",
+      "gate_decision": "advance"
+    }
+  ],
+  "expected_report": {
+    "schema_version": 1,
+    "run_id": "run-progress-1",
+    "generated_at": "2026-01-01T00:02:00Z",
+    "threshold": 0.8,
+    "progress_points": [
+      {
+        "event_id": "candidate-1",
+        "timestamp": "2026-01-01T00:00:20Z",
+        "elapsed_seconds": 20.0,
+        "generation_index": 1,
+        "hypothesis_node_id": "h-root",
+        "candidate_id": "c-1",
+        "score": 0.45,
+        "best_score": 0.45,
+        "improved": true,
+        "milestone_names": ["first_valid_candidate"]
+      },
+      {
+        "event_id": "candidate-2",
+        "timestamp": "2026-01-01T00:00:40Z",
+        "elapsed_seconds": 40.0,
+        "generation_index": 2,
+        "hypothesis_node_id": "h-child-a",
+        "candidate_id": "c-2",
+        "score": 0.72,
+        "best_score": 0.72,
+        "improved": true,
+        "milestone_names": ["first_passing_verifier"]
+      },
+      {
+        "event_id": "candidate-2b",
+        "timestamp": "2026-01-01T00:00:50Z",
+        "elapsed_seconds": 50.0,
+        "generation_index": 2,
+        "hypothesis_node_id": "h-child-a",
+        "candidate_id": "c-2b",
+        "score": 0.6,
+        "best_score": 0.72,
+        "improved": false,
+        "milestone_names": []
+      },
+      {
+        "event_id": "candidate-3",
+        "timestamp": "2026-01-01T00:01:10Z",
+        "elapsed_seconds": 70.0,
+        "generation_index": 3,
+        "hypothesis_node_id": "h-child-b",
+        "candidate_id": "c-3",
+        "score": 0.83,
+        "best_score": 0.83,
+        "improved": true,
+        "milestone_names": ["threshold_success"]
+      }
+    ],
+    "milestones": [
+      {
+        "name": "first_valid_candidate",
+        "reached": true,
+        "event_id": "candidate-1",
+        "timestamp": "2026-01-01T00:00:20Z",
+        "elapsed_seconds": 20.0,
+        "generation_index": 1,
+        "hypothesis_node_id": "h-root",
+        "score": 0.45
+      },
+      {
+        "name": "first_passing_verifier",
+        "reached": true,
+        "event_id": "candidate-2",
+        "timestamp": "2026-01-01T00:00:40Z",
+        "elapsed_seconds": 40.0,
+        "generation_index": 2,
+        "hypothesis_node_id": "h-child-a",
+        "score": 0.72
+      },
+      {
+        "name": "first_advancement",
+        "reached": true,
+        "event_id": "gate-3",
+        "timestamp": "2026-01-01T00:01:15Z",
+        "elapsed_seconds": 75.0,
+        "generation_index": 3,
+        "hypothesis_node_id": "h-child-b",
+        "score": null
+      },
+      {
+        "name": "threshold_success",
+        "reached": true,
+        "event_id": "candidate-3",
+        "timestamp": "2026-01-01T00:01:10Z",
+        "elapsed_seconds": 70.0,
+        "generation_index": 3,
+        "hypothesis_node_id": "h-child-b",
+        "score": 0.83
+      }
+    ],
+    "pass_at_k": [
+      {
+        "k": 1,
+        "trials_considered": 1,
+        "successes": 0,
+        "passed": false,
+        "best_score": 0.45,
+        "threshold": 0.8
+      },
+      {
+        "k": 2,
+        "trials_considered": 2,
+        "successes": 0,
+        "passed": false,
+        "best_score": 0.72,
+        "threshold": 0.8
+      },
+      {
+        "k": 4,
+        "trials_considered": 4,
+        "successes": 1,
+        "passed": true,
+        "best_score": 0.83,
+        "threshold": 0.8
+      }
+    ],
+    "branch_lineage": [
+      {
+        "parent_hypothesis_node_id": "h-root",
+        "child_hypothesis_node_id": "h-child-a",
+        "event_id": "candidate-2",
+        "generation_index": 2
+      },
+      {
+        "parent_hypothesis_node_id": "h-child-a",
+        "child_hypothesis_node_id": "h-child-b",
+        "event_id": "candidate-3",
+        "generation_index": 3
+      }
+    ]
+  }
+}

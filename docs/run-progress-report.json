@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/greyhaven-ai/autocontext/docs/run-progress-report.json",
+  "title": "RunProgressReport",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "generated_at",
+    "threshold",
+    "progress_points",
+    "milestones",
+    "pass_at_k",
+    "branch_lineage"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "run_id": { "type": "string", "minLength": 1 },
+    "generated_at": { "type": "string", "minLength": 1 },
+    "threshold": { "type": "number" },
+    "progress_points": { "type": "array", "items": { "$ref": "#/$defs/progressPoint" } },
+    "milestones": { "type": "array", "items": { "$ref": "#/$defs/milestoneTiming" } },
+    "pass_at_k": { "type": "array", "items": { "$ref": "#/$defs/passAtKSummary" } },
+    "branch_lineage": { "type": "array", "items": { "$ref": "#/$defs/branchLineageEdge" } }
+  },
+  "$defs": {
+    "milestoneName": {
+      "type": "string",
+      "enum": [
+        "first_valid_candidate",
+        "first_passing_verifier",
+        "first_advancement",
+        "threshold_success"
+      ]
+    },
+    "nullableString": { "type": ["string", "null"] },
+    "nullableNumber": { "type": ["number", "null"] },
+    "nullableInteger": { "type": ["integer", "null"] },
+    "progressPoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "event_id",
+        "timestamp",
+        "elapsed_seconds",
+        "generation_index",
+        "hypothesis_node_id",
+        "candidate_id",
+        "score",
+        "best_score",
+        "improved",
+        "milestone_names"
+      ],
+      "properties": {
+        "event_id": { "type": "string", "minLength": 1 },
+        "timestamp": { "type": "string", "minLength": 1 },
+        "elapsed_seconds": { "type": "number" },
+        "generation_index": { "$ref": "#/$defs/nullableInteger" },
+        "hypothesis_node_id": { "$ref": "#/$defs/nullableString" },
+        "candidate_id": { "$ref": "#/$defs/nullableString" },
+        "score": { "type": "number" },
+        "best_score": { "type": "number" },
+        "improved": { "type": "boolean" },
+        "milestone_names": { "type": "array", "items": { "$ref": "#/$defs/milestoneName" } }
+      }
+    },
+    "milestoneTiming": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "reached",
+        "event_id",
+        "timestamp",
+        "elapsed_seconds",
+        "generation_index",
+        "hypothesis_node_id",
+        "score"
+      ],
+      "properties": {
+        "name": { "$ref": "#/$defs/milestoneName" },
+        "reached": { "type": "boolean" },
+        "event_id": { "$ref": "#/$defs/nullableString" },
+        "timestamp": { "$ref": "#/$defs/nullableString" },
+        "elapsed_seconds": { "$ref": "#/$defs/nullableNumber" },
+        "generation_index": { "$ref": "#/$defs/nullableInteger" },
+        "hypothesis_node_id": { "$ref": "#/$defs/nullableString" },
+        "score": { "$ref": "#/$defs/nullableNumber" }
+      }
+    },
+    "passAtKSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["k", "trials_considered", "successes", "passed", "best_score", "threshold"],
+      "properties": {
+        "k": { "type": "integer", "minimum": 1 },
+        "trials_considered": { "type": "integer", "minimum": 0 },
+        "successes": { "type": "integer", "minimum": 0 },
+        "passed": { "type": "boolean" },
+        "best_score": { "$ref": "#/$defs/nullableNumber" },
+        "threshold": { "type": "number" }
+      }
+    },
+    "branchLineageEdge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "parent_hypothesis_node_id",
+        "child_hypothesis_node_id",
+        "event_id",
+        "generation_index"
+      ],
+      "properties": {
+        "parent_hypothesis_node_id": { "type": "string", "minLength": 1 },
+        "child_hypothesis_node_id": { "type": "string", "minLength": 1 },
+        "event_id": { "type": "string", "minLength": 1 },
+        "generation_index": { "$ref": "#/$defs/nullableInteger" }
+      }
+    }
+  }
+}

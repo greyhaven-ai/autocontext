@@ -9,6 +9,9 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { agentTaskTemplateEnvironmentContract } from "../environment-contract.js";
+import type { ScenarioEnvironmentContract } from "../environment-contract.js";
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -33,6 +36,7 @@ export interface TemplateSpec {
   referenceContext?: string;
   requiredConcepts?: string[];
   rubricDimensions?: RubricDimension[];
+  environmentContract?: ScenarioEnvironmentContract;
 }
 
 // ---------------------------------------------------------------------------
@@ -53,6 +57,7 @@ const BUILTIN_TEMPLATES: readonly TemplateSpec[] = [
     qualityThreshold: 0.85,
     revisionPrompt:
       "Review the judge feedback and improve your article. Focus on the lowest-scoring dimensions. Strengthen factual claims with specific examples, improve transitions between sections, and ensure keywords are naturally integrated.",
+    environmentContract: agentTaskTemplateEnvironmentContract("content-generation"),
     rubricDimensions: [
       { name: "readability", description: "Is the content clear and accessible to the target audience?", weight: 0.25 },
       { name: "engagement", description: "Does the content capture and maintain reader interest?", weight: 0.2 },
@@ -112,6 +117,9 @@ function cloneTemplateSpec(spec: TemplateSpec): TemplateSpec {
     rubricDimensions: spec.rubricDimensions
       ? spec.rubricDimensions.map((dimension) => ({ ...dimension }))
       : undefined,
+    environmentContract: spec.environmentContract
+      ? JSON.parse(JSON.stringify(spec.environmentContract)) as ScenarioEnvironmentContract
+      : undefined,
   };
 }
 
@@ -130,7 +138,7 @@ export class TemplateLoader {
     if (templateDir) {
       this.templates = new Map<string, TemplateSpec>();
       try {
-        const files = readdirSync(templateDir).filter((f) => f.endsWith(".json")).sort();
+        const files = readdirSync(templateDir).filter((f: string) => f.endsWith(".json")).sort();
         for (const file of files) {
           try {
             const raw = readFileSync(join(templateDir, file), "utf-8");

@@ -697,6 +697,71 @@ describe("runtime session run inspection", () => {
     }
   });
 
+  it("status and watch include the latest persisted progress report", async () => {
+    const dir = makeTempDir();
+    try {
+      const dbPath = join(dir, "runs", "autocontext.sqlite3");
+      const knowledgeRoot = join(dir, "knowledge");
+      mkdirSync(join(dir, "runs"), { recursive: true });
+      mkdirSync(join(knowledgeRoot, "grid_ctf", "progress_reports"), { recursive: true });
+
+      const { SQLiteStore } = await import("../src/storage/index.js");
+      const { buildRunProgressReport } = await import("../src/analytics/progress-report.js");
+
+      const store = new SQLiteStore(dbPath);
+      store.migrate(join(import.meta.dirname, "..", "migrations"));
+      store.createRun("run-123", "grid_ctf", 1, "local", "codex");
+      store.upsertGeneration("run-123", 1, {
+        meanScore: 0.5,
+        bestScore: 0.83,
+        elo: 1010,
+        wins: 2,
+        losses: 1,
+        gateDecision: "advance",
+        status: "completed",
+      });
+      store.updateRunStatus("run-123", "completed");
+      store.close();
+
+      const progressReport = buildRunProgressReport({
+        runId: "run-123",
+        threshold: 0.8,
+        generatedAt: "2026-01-01T00:00:30Z",
+        passAtKValues: [1],
+        events: [
+          {
+            event_id: "candidate-1",
+            event_type: "candidate_scored",
+            timestamp: "2026-01-01T00:00:10Z",
+            generation_index: 1,
+            hypothesis_node_id: "h-1",
+            score: 0.83,
+            verifier_passed: true,
+          },
+        ],
+      });
+      writeFileSync(
+        join(knowledgeRoot, "grid_ctf", "progress_reports", "run-123.json"),
+        JSON.stringify(progressReport, null, 2),
+        "utf-8",
+      );
+
+      for (const command of ["status", "watch"] as const) {
+        const { stdout, exitCode } = runCli([command, "run-123", "--json"], {
+          env: { AUTOCONTEXT_DB_PATH: dbPath, AUTOCONTEXT_KNOWLEDGE_ROOT: knowledgeRoot },
+        });
+        expect(exitCode).toBe(0);
+        expect(JSON.parse(stdout).progress_report).toMatchObject({
+          run_id: "run-123",
+          best_score: 0.83,
+          milestones_reached: 3,
+        });
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("runtime-sessions show can resolve the run-scoped session by run id", async () => {
     const dir = makeTempDir();
     try {
