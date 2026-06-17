@@ -2,6 +2,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
+import { resolveScenarioRoot } from "./scenario-paths.js";
 
 const UNSET_GEN = -999_999;
 
@@ -121,7 +122,7 @@ export class LessonStore {
   constructor(private readonly knowledgeRoot: string) {}
 
   private path(scenario: string): string {
-    return join(this.knowledgeRoot, scenario, "lessons.json");
+    return join(resolveScenarioRoot(this.knowledgeRoot, scenario), "lessons.json");
   }
 
   readLessons(scenario: string): Lesson[] {

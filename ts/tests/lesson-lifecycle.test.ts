@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { ArtifactStore } from "../src/knowledge/artifact-store.js";
 
 let dir: string;
 beforeEach(() => {
@@ -18,13 +19,12 @@ async function mods() {
   };
 }
 
-function writeDeadEnds(scenario: string, body: string): void {
-  mkdirSync(join(dir, scenario), { recursive: true });
-  writeFileSync(join(dir, scenario, "dead_ends.md"), body, "utf-8");
+function seedDeadEnd(scenario: string, entry: string): void {
+  new ArtifactStore({ runsRoot: dir, knowledgeRoot: dir }).appendDeadEnd(scenario, entry);
 }
 
 describe("lesson lifecycle (single store)", () => {
-  it("buildLifecycle buckets active/stale/pending/deadEnd from one store", async () => {
+  it("buildLifecycle buckets active/stale/pending and reads ### Dead End sections", async () => {
     const { buildLifecycle, LessonStore, makeMeta } = await mods();
     const store = new LessonStore(dir);
     store.writeLessons("scn", [
@@ -44,10 +44,7 @@ describe("lesson lifecycle (single store)", () => {
         meta: makeMeta({ generation: 20, bestScore: 0, approvalStatus: "pending" }),
       },
     ]);
-    writeDeadEnds(
-      "scn",
-      "# Dead-End Registry\n\n- **Gen 3**: tried Y (score=0.1000) — regressed\n",
-    );
+    seedDeadEnd("scn", "tried Y, lost");
 
     const view = buildLifecycle({ knowledgeRoot: dir, scenario: "scn", currentGeneration: 20 });
     expect(view.active.map((l: { text: string }) => l.text)).toEqual(["fresh"]);
@@ -72,14 +69,12 @@ describe("lesson lifecycle (single store)", () => {
         }),
       },
     ]);
-    // current_generation 0 (e.g. derived from an otherwise-empty store) must not lower it.
     expect(
       approveLesson({ knowledgeRoot: dir, scenario: "scn", lessonId: "p", currentGeneration: 0 }),
     ).toBe("active");
     const lesson = store.readLessons("scn")[0];
     expect(lesson.meta.approvalStatus).toBe("active");
     expect(lesson.meta.lastValidatedGen).toBe(20);
-    // now active, not pending -> null
     expect(
       approveLesson({ knowledgeRoot: dir, scenario: "scn", lessonId: "p", currentGeneration: 9 }),
     ).toBeNull();
@@ -101,7 +96,27 @@ describe("lesson lifecycle (single store)", () => {
     expect(store.readLessons("scn").map((l) => l.text)).toEqual(["active one"]);
   });
 
-  it("curate marks stale / moves to deadEnd / deletes; 404-equivalent on missing", async () => {
+  it("curate deadEnd uses the shared registry format and is read back by buildLifecycle", async () => {
+    const { curateLesson, buildLifecycle, LessonStore, makeMeta } = await mods();
+    const store = new LessonStore(dir);
+    store.writeLessons("scn", [
+      { id: "d", text: "dead me", meta: makeMeta({ generation: 5, bestScore: 0 }) },
+    ]);
+    expect(
+      curateLesson({
+        knowledgeRoot: dir,
+        scenario: "scn",
+        lessonId: "d",
+        action: "deadEnd",
+        currentGeneration: 9,
+      }),
+    ).toBe("deadEnd");
+    expect(store.readLessons("scn")).toEqual([]);
+    const view = buildLifecycle({ knowledgeRoot: dir, scenario: "scn", currentGeneration: 9 });
+    expect(view.deadEnd.some((v: { text: string }) => v.text.includes("dead me"))).toBe(true);
+  });
+
+  it("curate marks stale / deletes; null on missing", async () => {
     const { curateLesson, LessonStore, makeMeta } = await mods();
     const store = new LessonStore(dir);
     store.writeLessons("scn", [
@@ -117,20 +132,6 @@ describe("lesson lifecycle (single store)", () => {
       }),
     ).toBe("stale");
     expect(store.readLessons("scn")[0].meta.lastValidatedGen).toBe(-1);
-
-    store.writeLessons("scn", [
-      { id: "d", text: "dead me", meta: makeMeta({ generation: 5, bestScore: 0 }) },
-    ]);
-    expect(
-      curateLesson({
-        knowledgeRoot: dir,
-        scenario: "scn",
-        lessonId: "d",
-        action: "deadEnd",
-        currentGeneration: 9,
-      }),
-    ).toBe("deadEnd");
-    expect(store.readLessons("scn")).toEqual([]);
 
     store.writeLessons("scn", [
       { id: "z", text: "gone", meta: makeMeta({ generation: 5, bestScore: 0 }) },
@@ -157,10 +158,9 @@ describe("lesson lifecycle (single store)", () => {
     ).toBeNull();
   });
 
-  it("pending lessons are excluded from getApplicableLessons", async () => {
-    const { LessonStore, makeMeta } = await mods();
+  it("pending lessons are excluded from applicability", async () => {
+    const { makeMeta } = await mods();
     const { isApplicable } = await import("../src/knowledge/lessons.js");
-    const store = new LessonStore(dir);
     const pending = {
       id: "p",
       text: "UNAPPROVED",
@@ -171,8 +171,18 @@ describe("lesson lifecycle (single store)", () => {
       text: "approved",
       meta: makeMeta({ generation: 20, bestScore: 0, lastValidatedGen: 20 }),
     };
-    store.writeLessons("scn", [pending, active]);
     expect(isApplicable(pending, 20, 10)).toBe(false);
     expect(isApplicable(active, 20, 10)).toBe(true);
+  });
+
+  it("rejects path-traversal scenario names and writes nothing outside the root", async () => {
+    const { LessonStore, makeMeta } = await mods();
+    const store = new LessonStore(join(dir, "knowledge"));
+    expect(() =>
+      store.writeLessons("../outside", [
+        { id: "x", text: "escape", meta: makeMeta({ generation: 1, bestScore: 0 }) },
+      ]),
+    ).toThrow();
+    expect(existsSync(join(dir, "outside"))).toBe(false);
   });
 });
