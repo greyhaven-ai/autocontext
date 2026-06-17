@@ -133,3 +133,76 @@ def solve_status(job_id: str) -> dict[str, Any]:
     if result is not None:
         status["result"] = result.to_dict()
     return status
+
+
+class CurateRequest(BaseModel):
+    action: str = Field(pattern="^(stale|deadEnd|delete)$")
+
+
+def _lesson_stores() -> tuple[Any, Any, Any]:
+    from autocontext.knowledge.pending_lessons import PendingLessonStore
+
+    ctx = _get_ctx()
+    store = ctx.artifacts.lesson_store
+    pending = PendingLessonStore(ctx.artifacts.knowledge_root)
+    return ctx.artifacts, store, pending
+
+
+@router.get("/{scenario_name}/lifecycle")
+def lesson_lifecycle(scenario_name: str) -> dict[str, Any]:
+    """List a scenario's lessons grouped by lifecycle state."""
+    from autocontext.knowledge.lifecycle import build_lifecycle
+
+    artifacts, store, pending = _lesson_stores()
+    return build_lifecycle(
+        artifacts=artifacts,
+        lesson_store=store,
+        pending_store=pending,
+        scenario=scenario_name,
+        current_generation=store.current_generation(scenario_name),
+    )
+
+
+@router.post("/{scenario_name}/lessons/{lesson_id}/approve")
+def approve_lesson_route(scenario_name: str, lesson_id: str) -> dict[str, Any]:
+    """Approve a pending lesson (move it to active). Idempotent."""
+    from autocontext.knowledge.lifecycle import approve_lesson
+
+    _artifacts, store, pending = _lesson_stores()
+    status = approve_lesson(
+        lesson_store=store,
+        pending_store=pending,
+        scenario=scenario_name,
+        lesson_id=lesson_id,
+        current_generation=store.current_generation(scenario_name),
+    )
+    return {"ok": True, "status": status}
+
+
+@router.post("/{scenario_name}/lessons/{lesson_id}/reject")
+def reject_lesson_route(scenario_name: str, lesson_id: str) -> dict[str, Any]:
+    """Reject a lesson (remove from pending and from active if present)."""
+    from autocontext.knowledge.lifecycle import reject_lesson
+
+    _artifacts, store, pending = _lesson_stores()
+    ok = reject_lesson(lesson_store=store, pending_store=pending, scenario=scenario_name, lesson_id=lesson_id)
+    return {"ok": ok}
+
+
+@router.post("/{scenario_name}/lessons/{lesson_id}/curate")
+def curate_lesson_route(scenario_name: str, lesson_id: str, body: CurateRequest) -> dict[str, Any]:
+    """Manually mark an active lesson stale, move it to dead-end, or delete it."""
+    from autocontext.knowledge.lifecycle import curate_lesson
+
+    artifacts, store, _pending = _lesson_stores()
+    status = curate_lesson(
+        artifacts=artifacts,
+        lesson_store=store,
+        scenario=scenario_name,
+        lesson_id=lesson_id,
+        action=body.action,
+        current_generation=store.current_generation(scenario_name),
+    )
+    if status is None:
+        raise HTTPException(status_code=404, detail="lesson not found")
+    return {"ok": True, "status": status}
