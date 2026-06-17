@@ -792,6 +792,16 @@
             "exclusiveMinimum": 0,
             "title": "Generations",
             "type": "integer"
+          },
+          "curator_approval_mode": {
+            "default": "auto",
+            "enum": [
+              "auto",
+              "review",
+              "approve"
+            ],
+            "title": "Curator Approval Mode",
+            "type": "string"
           }
         },
         "required": [
