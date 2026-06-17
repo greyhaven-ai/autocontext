@@ -238,7 +238,8 @@ def _sync_structured_lessons(ctx: GenerationContext, *, artifacts: ArtifactStore
     """
     if ctx.gate_decision != "advance" or ctx.outputs is None:
         return
-    proposed = getattr(ctx.outputs, "coach_lessons", None) or []
+    raw_block = getattr(ctx.outputs, "coach_lessons", None) or ""
+    proposed = [line for line in raw_block.splitlines() if line.strip()]
     if not proposed:
         return
 
@@ -250,7 +251,8 @@ def _sync_structured_lessons(ctx: GenerationContext, *, artifacts: ArtifactStore
     seen_pending = {les.text for les in pending.read(scenario)}
 
     for raw in proposed:
-        text = raw[2:].strip() if raw.startswith("- ") else raw.strip()
+        stripped = raw.strip()
+        text = stripped[2:].strip() if stripped.startswith("- ") else stripped
         if not text or text in seen_active or text in seen_pending:
             continue
         meta = ApplicabilityMeta(
