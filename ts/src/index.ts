@@ -654,6 +654,31 @@ export type {
 
 // Analytics / Traces
 export { ActorRef, TraceEvent, RunTrace } from "./analytics/run-trace.js";
+export {
+  FAILURE_KINDS,
+  NEGATIVE_RESULT_DISPOSITIONS,
+  buildNegativeResultLedger,
+  negativeResultLedgerToMarkdown,
+  parseNegativeResultLedger,
+  renderNegativeResultLessons,
+} from "./analytics/negative-result-ledger.js";
+export type {
+  BuildNegativeResultLedgerInput,
+  FailureKind,
+  FailureModeSummary,
+  NegativeBranchLineageEdge,
+  NegativeEvidenceReference,
+  NegativeResultDisposition,
+  NegativeResultEntry,
+  NegativeResultEventInput,
+  NegativeResultLedger,
+} from "./analytics/negative-result-ledger.js";
+export {
+  negativeResultLedgerPath,
+  readLatestNegativeResultLedgersMarkdown,
+  readNegativeResultLedger,
+  writeNegativeResultLedger,
+} from "./knowledge/negative-result-ledger-store.js";
 export type { TraceEventInit } from "./analytics/run-trace.js";
 export {
   PROGRESS_MILESTONE_NAMES,
@@ -674,6 +699,20 @@ export type {
   RunProgressEventStreamRow,
   RunProgressReport,
 } from "./analytics/progress-report.js";
+export {
+  buildRunUtilizationReport,
+  parseRunUtilizationReport,
+} from "./analytics/run-utilization-report.js";
+export type {
+  BranchUtilization,
+  BuildRunUtilizationReportInput,
+  EvaluationUtilization,
+  RunUtilizationEventInput,
+  RunUtilizationReport,
+  RunUtilizationRoleUsageInput,
+  TokenUtilization,
+  UtilizationWindow,
+} from "./analytics/run-utilization-report.js";
 export { runtimeSessionLogToRunTrace } from "./analytics/runtime-session-run-trace.js";
 export type { RuntimeSessionRunTraceOpts } from "./analytics/runtime-session-run-trace.js";
 export {

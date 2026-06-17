@@ -1,0 +1,330 @@
+{
+  "cases": [
+    {
+      "name": "missing-telemetry",
+      "run_id": "run-utilization-missing",
+      "generated_at": "2026-01-01T00:10:00Z",
+      "events": [],
+      "role_usage": [],
+      "expected_report": {
+        "schema_version": 1,
+        "run_id": "run-utilization-missing",
+        "generated_at": "2026-01-01T00:10:00Z",
+        "window": {
+          "started_at": null,
+          "completed_at": null,
+          "duration_seconds": null
+        },
+        "branch_utilization": {
+          "branch_count": null,
+          "max_parallel_branches": null,
+          "runner_capacity_seconds": null,
+          "active_runner_seconds": null,
+          "idle_runner_seconds": null,
+          "mean_runner_utilization": null
+        },
+        "token_utilization": {
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "total_tokens": 0,
+          "model_active_seconds": null,
+          "model_wait_seconds": null,
+          "mean_token_utilization": null,
+          "token_throughput_per_second": null,
+          "tokens_to_success": null
+        },
+        "evaluation_utilization": {
+          "eval_count": 0,
+          "eval_active_seconds": null,
+          "verifier_active_seconds": null,
+          "verifier_idle_seconds": null,
+          "eval_throughput_per_second": null
+        }
+      }
+    },
+    {
+      "name": "single-branch",
+      "run_id": "run-utilization-single",
+      "generated_at": "2026-01-01T00:03:00Z",
+      "events": [
+        {
+          "event_id": "b1-start",
+          "event_type": "branch_started",
+          "timestamp": "2026-01-01T00:00:00Z",
+          "branch_id": "branch-1"
+        },
+        {
+          "event_id": "b1-active",
+          "event_type": "runner_active",
+          "timestamp": "2026-01-01T00:00:10Z",
+          "branch_id": "branch-1",
+          "duration_seconds": 40.0
+        },
+        {
+          "event_id": "b1-eval",
+          "event_type": "evaluation_finished",
+          "timestamp": "2026-01-01T00:00:40Z",
+          "branch_id": "branch-1",
+          "duration_seconds": 30.0
+        },
+        {
+          "event_id": "b1-verifier",
+          "event_type": "verifier_finished",
+          "timestamp": "2026-01-01T00:00:50Z",
+          "branch_id": "branch-1",
+          "duration_seconds": 10.0
+        },
+        {
+          "event_id": "b1-success",
+          "event_type": "candidate_scored",
+          "timestamp": "2026-01-01T00:01:00Z",
+          "branch_id": "branch-1",
+          "score": 0.82,
+          "verifier_passed": true
+        },
+        {
+          "event_id": "b1-finish",
+          "event_type": "branch_finished",
+          "timestamp": "2026-01-01T00:02:00Z",
+          "branch_id": "branch-1"
+        }
+      ],
+      "role_usage": [
+        {
+          "timestamp": "2026-01-01T00:00:20Z",
+          "branch_id": "branch-1",
+          "input_tokens": 100,
+          "output_tokens": 50,
+          "latency_ms": 10000,
+          "model_wait_seconds": 3.0
+        },
+        {
+          "timestamp": "2026-01-01T00:00:55Z",
+          "branch_id": "branch-1",
+          "input_tokens": 150,
+          "output_tokens": 70,
+          "latency_ms": 20000,
+          "model_wait_seconds": 7.0
+        }
+      ],
+      "expected_report": {
+        "schema_version": 1,
+        "run_id": "run-utilization-single",
+        "generated_at": "2026-01-01T00:03:00Z",
+        "window": {
+          "started_at": "2026-01-01T00:00:00Z",
+          "completed_at": "2026-01-01T00:02:00Z",
+          "duration_seconds": 120.0
+        },
+        "branch_utilization": {
+          "branch_count": 1,
+          "max_parallel_branches": 1,
+          "runner_capacity_seconds": 120.0,
+          "active_runner_seconds": 40.0,
+          "idle_runner_seconds": 80.0,
+          "mean_runner_utilization": 0.333333
+        },
+        "token_utilization": {
+          "input_tokens": 250,
+          "output_tokens": 120,
+          "total_tokens": 370,
+          "model_active_seconds": 30.0,
+          "model_wait_seconds": 10.0,
+          "mean_token_utilization": 0.25,
+          "token_throughput_per_second": 12.333333,
+          "tokens_to_success": 370
+        },
+        "evaluation_utilization": {
+          "eval_count": 1,
+          "eval_active_seconds": 30.0,
+          "verifier_active_seconds": 10.0,
+          "verifier_idle_seconds": 110.0,
+          "eval_throughput_per_second": 0.008333
+        }
+      }
+    },
+    {
+      "name": "multi-branch",
+      "run_id": "run-utilization-multi",
+      "generated_at": "2026-01-01T00:03:00Z",
+      "events": [
+        {
+          "event_id": "a-start",
+          "event_type": "branch_started",
+          "timestamp": "2026-01-01T00:00:00Z",
+          "branch_id": "branch-a"
+        },
+        {
+          "event_id": "b-start",
+          "event_type": "branch_started",
+          "timestamp": "2026-01-01T00:00:00Z",
+          "branch_id": "branch-b"
+        },
+        {
+          "event_id": "c-start",
+          "event_type": "branch_started",
+          "timestamp": "2026-01-01T00:00:30Z",
+          "branch_id": "branch-c"
+        },
+        {
+          "event_id": "a-active",
+          "event_type": "runner_active",
+          "timestamp": "2026-01-01T00:00:10Z",
+          "branch_id": "branch-a",
+          "duration_seconds": 60.0
+        },
+        {
+          "event_id": "b-active",
+          "event_type": "runner_active",
+          "timestamp": "2026-01-01T00:00:20Z",
+          "branch_id": "branch-b",
+          "duration_seconds": 50.0
+        },
+        {
+          "event_id": "c-active",
+          "event_type": "runner_active",
+          "timestamp": "2026-01-01T00:00:50Z",
+          "branch_id": "branch-c",
+          "duration_seconds": 40.0
+        },
+        {
+          "event_id": "a-eval",
+          "event_type": "evaluation_finished",
+          "timestamp": "2026-01-01T00:00:50Z",
+          "branch_id": "branch-a",
+          "duration_seconds": 40.0
+        },
+        {
+          "event_id": "b-eval",
+          "event_type": "evaluation_finished",
+          "timestamp": "2026-01-01T00:01:00Z",
+          "branch_id": "branch-b",
+          "duration_seconds": 30.0
+        },
+        {
+          "event_id": "c-eval",
+          "event_type": "evaluation_finished",
+          "timestamp": "2026-01-01T00:01:20Z",
+          "branch_id": "branch-c",
+          "duration_seconds": 20.0
+        },
+        {
+          "event_id": "a-verifier",
+          "event_type": "verifier_finished",
+          "timestamp": "2026-01-01T00:01:00Z",
+          "branch_id": "branch-a",
+          "duration_seconds": 10.0
+        },
+        {
+          "event_id": "b-verifier",
+          "event_type": "verifier_finished",
+          "timestamp": "2026-01-01T00:01:10Z",
+          "branch_id": "branch-b",
+          "duration_seconds": 10.0
+        },
+        {
+          "event_id": "c-verifier",
+          "event_type": "verifier_finished",
+          "timestamp": "2026-01-01T00:01:25Z",
+          "branch_id": "branch-c",
+          "duration_seconds": 5.0
+        },
+        {
+          "event_id": "b-success",
+          "event_type": "candidate_scored",
+          "timestamp": "2026-01-01T00:01:10Z",
+          "branch_id": "branch-b",
+          "score": 0.85,
+          "verifier_passed": true
+        },
+        {
+          "event_id": "a-finish",
+          "event_type": "branch_finished",
+          "timestamp": "2026-01-01T00:02:00Z",
+          "branch_id": "branch-a"
+        },
+        {
+          "event_id": "b-finish",
+          "event_type": "branch_finished",
+          "timestamp": "2026-01-01T00:02:00Z",
+          "branch_id": "branch-b"
+        },
+        {
+          "event_id": "c-finish",
+          "event_type": "branch_finished",
+          "timestamp": "2026-01-01T00:02:00Z",
+          "branch_id": "branch-c"
+        }
+      ],
+      "role_usage": [
+        {
+          "timestamp": "2026-01-01T00:00:20Z",
+          "branch_id": "branch-a",
+          "input_tokens": 200,
+          "output_tokens": 100,
+          "latency_ms": 20000,
+          "model_wait_seconds": 8.0
+        },
+        {
+          "timestamp": "2026-01-01T00:00:50Z",
+          "branch_id": "branch-b",
+          "input_tokens": 120,
+          "output_tokens": 80,
+          "latency_ms": 10000,
+          "model_wait_seconds": 5.0
+        },
+        {
+          "timestamp": "2026-01-01T00:01:05Z",
+          "branch_id": "branch-b",
+          "input_tokens": 180,
+          "output_tokens": 120,
+          "latency_ms": 20000,
+          "model_wait_seconds": 4.0
+        },
+        {
+          "timestamp": "2026-01-01T00:01:30Z",
+          "branch_id": "branch-c",
+          "input_tokens": 100,
+          "output_tokens": 50,
+          "latency_ms": 10000,
+          "model_wait_seconds": 2.0
+        }
+      ],
+      "expected_report": {
+        "schema_version": 1,
+        "run_id": "run-utilization-multi",
+        "generated_at": "2026-01-01T00:03:00Z",
+        "window": {
+          "started_at": "2026-01-01T00:00:00Z",
+          "completed_at": "2026-01-01T00:02:00Z",
+          "duration_seconds": 120.0
+        },
+        "branch_utilization": {
+          "branch_count": 3,
+          "max_parallel_branches": 3,
+          "runner_capacity_seconds": 360.0,
+          "active_runner_seconds": 150.0,
+          "idle_runner_seconds": 210.0,
+          "mean_runner_utilization": 0.416667
+        },
+        "token_utilization": {
+          "input_tokens": 600,
+          "output_tokens": 350,
+          "total_tokens": 950,
+          "model_active_seconds": 60.0,
+          "model_wait_seconds": 19.0,
+          "mean_token_utilization": 0.166667,
+          "token_throughput_per_second": 15.833333,
+          "tokens_to_success": 800
+        },
+        "evaluation_utilization": {
+          "eval_count": 3,
+          "eval_active_seconds": 90.0,
+          "verifier_active_seconds": 25.0,
+          "verifier_idle_seconds": 335.0,
+          "eval_throughput_per_second": 0.025
+        }
+      }
+    }
+  ]
+}
