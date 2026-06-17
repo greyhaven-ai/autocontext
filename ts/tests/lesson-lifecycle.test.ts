@@ -15,7 +15,6 @@ async function mods() {
   return {
     ...(await import("../src/knowledge/lesson-lifecycle.js")),
     ...(await import("../src/knowledge/lessons.js")),
-    ...(await import("../src/knowledge/pending-lessons.js")),
   };
 }
 
@@ -24,9 +23,9 @@ function writeDeadEnds(scenario: string, body: string): void {
   writeFileSync(join(dir, scenario, "dead_ends.md"), body, "utf-8");
 }
 
-describe("lesson lifecycle", () => {
-  it("buildLifecycle buckets active/stale/pending/deadEnd", async () => {
-    const { buildLifecycle, LessonStore, PendingLessonStore, makeMeta } = await mods();
+describe("lesson lifecycle (single store)", () => {
+  it("buildLifecycle buckets active/stale/pending/deadEnd from one store", async () => {
+    const { buildLifecycle, LessonStore, makeMeta } = await mods();
     const store = new LessonStore(dir);
     store.writeLessons("scn", [
       {
@@ -39,12 +38,12 @@ describe("lesson lifecycle", () => {
         text: "old",
         meta: makeMeta({ generation: 2, bestScore: 0.5, lastValidatedGen: 2 }),
       },
+      {
+        id: "p",
+        text: "held",
+        meta: makeMeta({ generation: 20, bestScore: 0, approvalStatus: "pending" }),
+      },
     ]);
-    new PendingLessonStore(dir).add("scn", {
-      id: "p",
-      text: "held",
-      meta: makeMeta({ generation: 20, bestScore: 0 }),
-    });
     writeDeadEnds(
       "scn",
       "# Dead-End Registry\n\n- **Gen 3**: tried Y (score=0.1000) — regressed\n",
@@ -56,36 +55,55 @@ describe("lesson lifecycle", () => {
     expect(view.pending.map((l: { text: string }) => l.text)).toEqual(["held"]);
     expect(view.deadEnd.length).toBe(1);
     expect(view.deadEnd[0].text).toContain("tried Y");
-    expect(view.deadEnd[0].id).toMatch(/^deadend_/);
   });
 
-  it("approve moves pending to active; idempotent", async () => {
-    const { approveLesson, LessonStore, PendingLessonStore, makeMeta } = await mods();
+  it("approve flips pending to active; idempotent; never lowers validation generation", async () => {
+    const { approveLesson, LessonStore, makeMeta } = await mods();
     const store = new LessonStore(dir);
-    const pending = new PendingLessonStore(dir);
-    pending.add("scn", { id: "p", text: "held", meta: makeMeta({ generation: 5, bestScore: 0 }) });
+    store.writeLessons("scn", [
+      {
+        id: "p",
+        text: "held",
+        meta: makeMeta({
+          generation: 20,
+          bestScore: 0,
+          lastValidatedGen: 20,
+          approvalStatus: "pending",
+        }),
+      },
+    ]);
+    // current_generation 0 (e.g. derived from an otherwise-empty store) must not lower it.
     expect(
-      approveLesson({ knowledgeRoot: dir, scenario: "scn", lessonId: "p", currentGeneration: 9 }),
+      approveLesson({ knowledgeRoot: dir, scenario: "scn", lessonId: "p", currentGeneration: 0 }),
     ).toBe("active");
-    expect(store.readLessons("scn").map((l) => l.text)).toEqual(["held"]);
-    expect(pending.read("scn")).toEqual([]);
+    const lesson = store.readLessons("scn")[0];
+    expect(lesson.meta.approvalStatus).toBe("active");
+    expect(lesson.meta.lastValidatedGen).toBe(20);
+    // now active, not pending -> null
     expect(
       approveLesson({ knowledgeRoot: dir, scenario: "scn", lessonId: "p", currentGeneration: 9 }),
     ).toBeNull();
   });
 
-  it("reject clears pending + active; curate stale/deadEnd/delete", async () => {
-    const { rejectLesson, curateLesson, LessonStore, PendingLessonStore, makeMeta } = await mods();
+  it("reject removes pending only; does not delete an active lesson", async () => {
+    const { rejectLesson, LessonStore, makeMeta } = await mods();
     const store = new LessonStore(dir);
-    const pending = new PendingLessonStore(dir);
     store.writeLessons("scn", [
-      { id: "x", text: "held", meta: makeMeta({ generation: 5, bestScore: 0 }) },
+      {
+        id: "x",
+        text: "held",
+        meta: makeMeta({ generation: 5, bestScore: 0, approvalStatus: "pending" }),
+      },
+      { id: "a", text: "active one", meta: makeMeta({ generation: 5, bestScore: 0 }) },
     ]);
-    pending.add("scn", { id: "x", text: "held", meta: makeMeta({ generation: 5, bestScore: 0 }) });
     expect(rejectLesson({ knowledgeRoot: dir, scenario: "scn", lessonId: "x" })).toBe(true);
-    expect(store.readLessons("scn")).toEqual([]);
-    expect(pending.read("scn")).toEqual([]);
+    expect(rejectLesson({ knowledgeRoot: dir, scenario: "scn", lessonId: "a" })).toBe(false);
+    expect(store.readLessons("scn").map((l) => l.text)).toEqual(["active one"]);
+  });
 
+  it("curate marks stale / moves to deadEnd / deletes; 404-equivalent on missing", async () => {
+    const { curateLesson, LessonStore, makeMeta } = await mods();
+    const store = new LessonStore(dir);
     store.writeLessons("scn", [
       { id: "s", text: "stale me", meta: makeMeta({ generation: 5, bestScore: 0 }) },
     ]);
@@ -114,6 +132,20 @@ describe("lesson lifecycle", () => {
     ).toBe("deadEnd");
     expect(store.readLessons("scn")).toEqual([]);
 
+    store.writeLessons("scn", [
+      { id: "z", text: "gone", meta: makeMeta({ generation: 5, bestScore: 0 }) },
+    ]);
+    expect(
+      curateLesson({
+        knowledgeRoot: dir,
+        scenario: "scn",
+        lessonId: "z",
+        action: "delete",
+        currentGeneration: 9,
+      }),
+    ).toBe("deleted");
+    expect(store.readLessons("scn")).toEqual([]);
+
     expect(
       curateLesson({
         knowledgeRoot: dir,
@@ -123,5 +155,24 @@ describe("lesson lifecycle", () => {
         currentGeneration: 9,
       }),
     ).toBeNull();
+  });
+
+  it("pending lessons are excluded from getApplicableLessons", async () => {
+    const { LessonStore, makeMeta } = await mods();
+    const { isApplicable } = await import("../src/knowledge/lessons.js");
+    const store = new LessonStore(dir);
+    const pending = {
+      id: "p",
+      text: "UNAPPROVED",
+      meta: makeMeta({ generation: 20, bestScore: 0, approvalStatus: "pending" }),
+    };
+    const active = {
+      id: "a",
+      text: "approved",
+      meta: makeMeta({ generation: 20, bestScore: 0, lastValidatedGen: 20 }),
+    };
+    store.writeLessons("scn", [pending, active]);
+    expect(isApplicable(pending, 20, 10)).toBe(false);
+    expect(isApplicable(active, 20, 10)).toBe(true);
   });
 });

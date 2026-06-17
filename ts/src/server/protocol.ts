@@ -239,7 +239,6 @@ export const StartRunCmdSchema = protocolObject({
   type: z.literal("start_run"),
   scenario: z.string(),
   generations: z.number().int().positive(),
-  curator_approval_mode: z.enum(["auto", "review", "approve"]).default("auto"),
 });
 
 export const ListScenariosCmdSchema = protocolObject({

@@ -1,9 +1,13 @@
-/** Pure lesson-lifecycle assembly + curation ops (Cowork 2c, mirrors Python). */
+/** Pure lesson-lifecycle assembly + curation ops (Cowork 2c, mirrors Python).
+ *
+ * Backed by the structured LessonStore (lessons.json) and the dead_ends.md
+ * registry. "pending" is a status on the lesson itself (meta.approvalStatus),
+ * not a separate store, so the whole lifecycle reads one store.
+ */
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { type Lesson, LessonStore, isStale, isSuperseded } from "./lessons.js";
-import { PendingLessonStore } from "./pending-lessons.js";
+import { type Lesson, LessonStore, isPending, isStale, isSuperseded } from "./lessons.js";
 
 export const STALENESS_WINDOW = 10;
 
@@ -77,17 +81,21 @@ export function buildLifecycle(opts: {
 }): LifecycleView {
   const window = opts.stalenessWindow ?? STALENESS_WINDOW;
   const store = new LessonStore(opts.knowledgeRoot);
-  const pending = new PendingLessonStore(opts.knowledgeRoot);
+  const pending: LessonView[] = [];
   const active: LessonView[] = [];
   const stale: LessonView[] = [];
   for (const l of store.readLessons(opts.scenario)) {
+    if (isPending(l)) {
+      pending.push(lessonView(l, "pending"));
+      continue;
+    }
     if (isSuperseded(l)) continue;
     if (isStale(l, opts.currentGeneration, window)) stale.push(lessonView(l, "stale"));
     else active.push(lessonView(l, "active"));
   }
   return {
     scenario: opts.scenario,
-    pending: pending.read(opts.scenario).map((l) => lessonView(l, "pending")),
+    pending,
     active,
     stale,
     deadEnd: deadEndViews(readDeadEnds(opts.knowledgeRoot, opts.scenario)),
@@ -101,14 +109,17 @@ export function approveLesson(opts: {
   currentGeneration: number;
 }): string | null {
   const store = new LessonStore(opts.knowledgeRoot);
-  const pending = new PendingLessonStore(opts.knowledgeRoot);
-  const moved = pending.remove(opts.scenario, opts.lessonId);
-  if (moved === null) return null;
-  const existing = store.readLessons(opts.scenario);
-  if (!existing.some((l) => l.id === moved.id || l.text === moved.text)) {
-    moved.meta.lastValidatedGen = opts.currentGeneration;
-    store.writeLessons(opts.scenario, [...existing, moved]);
-  }
+  const lessons = store.readLessons(opts.scenario);
+  const target = lessons.find((l) => l.id === opts.lessonId && isPending(l));
+  if (!target) return null;
+  target.meta.approvalStatus = "active";
+  // Never lower the validation generation: approving must not make a lesson stale.
+  target.meta.lastValidatedGen = Math.max(
+    opts.currentGeneration,
+    target.meta.generation,
+    target.meta.lastValidatedGen,
+  );
+  store.writeLessons(opts.scenario, lessons);
   return "active";
 }
 
@@ -117,14 +128,17 @@ export function rejectLesson(opts: {
   scenario: string;
   lessonId: string;
 }): boolean {
+  // Reject only removes pending lessons; deleting an active lesson is the explicit
+  // curate "delete" action.
   const store = new LessonStore(opts.knowledgeRoot);
-  const pending = new PendingLessonStore(opts.knowledgeRoot);
-  const removedPending = pending.remove(opts.scenario, opts.lessonId);
-  const existing = store.readLessons(opts.scenario);
-  const kept = existing.filter((l) => l.id !== opts.lessonId);
-  const removedActive = kept.length !== existing.length;
-  if (removedActive) store.writeLessons(opts.scenario, kept);
-  return removedPending !== null || removedActive;
+  const lessons = store.readLessons(opts.scenario);
+  const target = lessons.find((l) => l.id === opts.lessonId && isPending(l));
+  if (!target) return false;
+  store.writeLessons(
+    opts.scenario,
+    lessons.filter((l) => l.id !== opts.lessonId),
+  );
+  return true;
 }
 
 export function curateLesson(opts: {
@@ -167,4 +181,3 @@ export function curateLesson(opts: {
 }
 
 export { LessonStore, makeMeta } from "./lessons.js";
-export { PendingLessonStore } from "./pending-lessons.js";

@@ -14,6 +14,7 @@ export interface ApplicabilityMeta {
   operationType: string;
   supersededBy: string;
   lastValidatedGen: number;
+  approvalStatus: string; // "active" (applied) | "pending" (awaiting human approval)
 }
 
 export interface Lesson {
@@ -28,6 +29,7 @@ export function makeMeta(opts: {
   createdAt?: string;
   lastValidatedGen?: number;
   operationType?: string;
+  approvalStatus?: string;
 }): ApplicabilityMeta {
   return {
     createdAt: opts.createdAt ?? "",
@@ -38,6 +40,7 @@ export function makeMeta(opts: {
     operationType: opts.operationType ?? "advance",
     supersededBy: "",
     lastValidatedGen: opts.lastValidatedGen ?? opts.generation,
+    approvalStatus: opts.approvalStatus ?? "active",
   };
 }
 
@@ -51,6 +54,7 @@ function metaToDict(m: ApplicabilityMeta): Record<string, unknown> {
     operation_type: m.operationType,
     superseded_by: m.supersededBy,
     last_validated_gen: m.lastValidatedGen,
+    approval_status: m.approvalStatus,
   };
 }
 
@@ -67,6 +71,7 @@ function metaFromDict(d: Record<string, unknown>): ApplicabilityMeta {
     supersededBy: String(d.superseded_by ?? ""),
     lastValidatedGen:
       lastRaw === undefined || Number(lastRaw) === UNSET_GEN ? generation : Number(lastRaw),
+    approvalStatus: String(d.approval_status ?? "active"),
   };
 }
 
@@ -91,12 +96,21 @@ export function isSuperseded(lesson: Lesson): boolean {
   return Boolean(lesson.meta.supersededBy);
 }
 
+export function isPending(lesson: Lesson): boolean {
+  return lesson.meta.approvalStatus === "pending";
+}
+
 export function isApplicable(
   lesson: Lesson,
   currentGeneration: number,
   stalenessWindow = 10,
 ): boolean {
-  return !isStale(lesson, currentGeneration, stalenessWindow) && !isSuperseded(lesson);
+  // Pending lessons await human approval and must never enter prompts.
+  return (
+    !isPending(lesson) &&
+    !isStale(lesson, currentGeneration, stalenessWindow) &&
+    !isSuperseded(lesson)
+  );
 }
 
 function randomId(): string {
