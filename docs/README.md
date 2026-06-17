@@ -47,6 +47,7 @@ This directory is the maintainer-facing landing page for repository docs. Use it
 - [Run progress report](run-progress-report.md)
 - [Run utilization report](run-utilization-report.md)
 - [Negative result ledger](negative-result-ledger.md)
+- [Campaign mode report](campaign-mode-report.md)
 - [Browser exploration contract](browser-exploration-contract.md)
 - [OpenTelemetry bridge](opentelemetry-bridge.md)
 - [Background session domain and parity contract](background-session-domain.md)

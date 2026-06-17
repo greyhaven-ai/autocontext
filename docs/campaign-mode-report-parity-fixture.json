@@ -1,0 +1,415 @@
+{
+  "cases": [
+    {
+      "name": "single-branch-completed",
+      "campaign_id": "campaign-single",
+      "run_id": "run-campaign-single",
+      "scenario_name": "grid_ctf",
+      "generated_at": "2026-06-16T14:00:00Z",
+      "terminal_state": "completed",
+      "branch_budget_defaults": {
+        "max_tokens": 1000,
+        "max_seconds": 120,
+        "max_evaluations": 3
+      },
+      "eval_lanes": [
+        {
+          "lane_id": "lane-smoke",
+          "label": "smoke verifier",
+          "verifier_contract_ref": "scenario://grid_ctf/verifier",
+          "seeds": ["seed-1"],
+          "holdout_refs": [],
+          "weight": 1
+        }
+      ],
+      "branches": [
+        {
+          "branch_id": "branch-main",
+          "parent_branch_id": null,
+          "hypothesis_node_id": "node-main",
+          "objective": "Solve with baseline strategy",
+          "budget": {
+            "max_tokens": 1000,
+            "max_seconds": 120,
+            "max_evaluations": 3
+          },
+          "usage": {
+            "input_tokens": 300,
+            "output_tokens": 120,
+            "total_tokens": 420,
+            "evaluations": 1,
+            "runner_seconds": 45
+          },
+          "terminal_state": "succeeded",
+          "score": 0.82,
+          "verifier_passed": true,
+          "terminal_reason": "Passed smoke verifier."
+        }
+      ],
+      "shared_evidence": [],
+      "linked_reports": {
+        "progress_report_uri": "knowledge/grid_ctf/progress_reports/run-campaign-single.json",
+        "utilization_report_uri": "knowledge/grid_ctf/utilization_reports/run-campaign-single.json",
+        "negative_result_ledger_uri": null
+      },
+      "expected_report": {
+        "schema_version": 1,
+        "campaign_id": "campaign-single",
+        "run_id": "run-campaign-single",
+        "scenario_name": "grid_ctf",
+        "generated_at": "2026-06-16T14:00:00Z",
+        "terminal_state": "completed",
+        "branch_budget_defaults": {
+          "max_tokens": 1000,
+          "max_seconds": 120,
+          "max_evaluations": 3
+        },
+        "eval_lanes": [
+          {
+            "lane_id": "lane-smoke",
+            "label": "smoke verifier",
+            "verifier_contract_ref": "scenario://grid_ctf/verifier",
+            "seeds": ["seed-1"],
+            "holdout_refs": [],
+            "weight": 1
+          }
+        ],
+        "branches": [
+          {
+            "branch_id": "branch-main",
+            "parent_branch_id": null,
+            "hypothesis_node_id": "node-main",
+            "objective": "Solve with baseline strategy",
+            "budget": {
+              "max_tokens": 1000,
+              "max_seconds": 120,
+              "max_evaluations": 3
+            },
+            "usage": {
+              "input_tokens": 300,
+              "output_tokens": 120,
+              "total_tokens": 420,
+              "evaluations": 1,
+              "runner_seconds": 45
+            },
+            "terminal_state": "succeeded",
+            "score": 0.82,
+            "verifier_passed": true,
+            "terminal_reason": "Passed smoke verifier."
+          }
+        ],
+        "branch_lineage": [],
+        "evidence_sharing": {
+          "policy": {
+            "max_shared_items": 2,
+            "max_summary_chars": 240
+          },
+          "items": []
+        },
+        "branch_summary": {
+          "branch_count": 1,
+          "succeeded": 1,
+          "failed": 0,
+          "pruned": 0,
+          "budget_exhausted": 0,
+          "running": 0
+        },
+        "final_recommendation": {
+          "branch_id": "branch-main",
+          "score": 0.82,
+          "reason": "Passed smoke verifier."
+        },
+        "linked_reports": {
+          "progress_report_uri": "knowledge/grid_ctf/progress_reports/run-campaign-single.json",
+          "utilization_report_uri": "knowledge/grid_ctf/utilization_reports/run-campaign-single.json",
+          "negative_result_ledger_uri": null
+        }
+      }
+    },
+    {
+      "name": "multi-branch-budgeted",
+      "campaign_id": "campaign-multi",
+      "run_id": "run-campaign-multi",
+      "scenario_name": "grid_ctf",
+      "generated_at": "2026-06-16T14:30:00Z",
+      "terminal_state": "completed",
+      "branch_budget_defaults": {
+        "max_tokens": 800,
+        "max_seconds": 90,
+        "max_evaluations": 2
+      },
+      "evidence_policy": {
+        "max_shared_items": 1,
+        "max_summary_chars": 72
+      },
+      "eval_lanes": [
+        {
+          "lane_id": "lane-seed",
+          "label": "seed replay",
+          "verifier_contract_ref": "scenario://grid_ctf/replay",
+          "seeds": ["seed-1", "seed-2"],
+          "holdout_refs": [],
+          "weight": 0.6
+        },
+        {
+          "lane_id": "lane-holdout",
+          "label": "holdout probe",
+          "verifier_contract_ref": "scenario://grid_ctf/holdout",
+          "seeds": [],
+          "holdout_refs": ["holdout-a"],
+          "weight": 0.4
+        }
+      ],
+      "branches": [
+        {
+          "branch_id": "branch-root",
+          "parent_branch_id": null,
+          "hypothesis_node_id": "node-root",
+          "objective": "Baseline capture-first plan",
+          "usage": {
+            "input_tokens": 260,
+            "output_tokens": 140,
+            "total_tokens": 400,
+            "evaluations": 2,
+            "runner_seconds": 50
+          },
+          "terminal_state": "pruned",
+          "score": 0.51,
+          "verifier_passed": false,
+          "terminal_reason": "Holdout probe regressed."
+        },
+        {
+          "branch_id": "branch-safe",
+          "parent_branch_id": "branch-root",
+          "hypothesis_node_id": "node-safe",
+          "objective": "Preserve defense while probing",
+          "budget": {
+            "max_tokens": 900,
+            "max_seconds": 90,
+            "max_evaluations": 2
+          },
+          "usage": {
+            "input_tokens": 380,
+            "output_tokens": 170,
+            "total_tokens": 550,
+            "evaluations": 2,
+            "runner_seconds": 62
+          },
+          "terminal_state": "succeeded",
+          "score": 0.88,
+          "verifier_passed": true,
+          "terminal_reason": "Best holdout score with verifier pass."
+        },
+        {
+          "branch_id": "branch-risky",
+          "parent_branch_id": "branch-root",
+          "hypothesis_node_id": "node-risky",
+          "objective": "Aggressive rush",
+          "usage": {
+            "input_tokens": 420,
+            "output_tokens": 240,
+            "total_tokens": 660,
+            "evaluations": 2,
+            "runner_seconds": 88
+          },
+          "terminal_state": "budget_exhausted",
+          "score": 0.42,
+          "verifier_passed": false,
+          "terminal_reason": "Token budget exhausted before verifier recovery."
+        }
+      ],
+      "shared_evidence": [
+        {
+          "share_id": "share-safe-1",
+          "from_branch_id": "branch-safe",
+          "to_branch_ids": ["branch-root", "branch-risky"],
+          "summary": "Defense-preserving probes recovered flag control and should seed retries.",
+          "evidence_refs": [
+            {
+              "uri": "runs/run-campaign-multi/evidence/safe.json",
+              "summary": "Safe branch passed both eval lanes."
+            }
+          ]
+        },
+        {
+          "share_id": "share-risky-1",
+          "from_branch_id": "branch-risky",
+          "to_branch_ids": ["branch-root"],
+          "summary": "Aggressive rush repeatedly overran the token budget.",
+          "evidence_refs": [
+            {
+              "uri": "runs/run-campaign-multi/evidence/risky.json",
+              "summary": "Risky branch exhausted budget."
+            }
+          ]
+        }
+      ],
+      "linked_reports": {
+        "progress_report_uri": "knowledge/grid_ctf/progress_reports/run-campaign-multi.json",
+        "utilization_report_uri": "knowledge/grid_ctf/utilization_reports/run-campaign-multi.json",
+        "negative_result_ledger_uri": "knowledge/grid_ctf/negative_result_ledgers/run-campaign-multi.json"
+      },
+      "expected_report": {
+        "schema_version": 1,
+        "campaign_id": "campaign-multi",
+        "run_id": "run-campaign-multi",
+        "scenario_name": "grid_ctf",
+        "generated_at": "2026-06-16T14:30:00Z",
+        "terminal_state": "completed",
+        "branch_budget_defaults": {
+          "max_tokens": 800,
+          "max_seconds": 90,
+          "max_evaluations": 2
+        },
+        "eval_lanes": [
+          {
+            "lane_id": "lane-seed",
+            "label": "seed replay",
+            "verifier_contract_ref": "scenario://grid_ctf/replay",
+            "seeds": ["seed-1", "seed-2"],
+            "holdout_refs": [],
+            "weight": 0.6
+          },
+          {
+            "lane_id": "lane-holdout",
+            "label": "holdout probe",
+            "verifier_contract_ref": "scenario://grid_ctf/holdout",
+            "seeds": [],
+            "holdout_refs": ["holdout-a"],
+            "weight": 0.4
+          }
+        ],
+        "branches": [
+          {
+            "branch_id": "branch-root",
+            "parent_branch_id": null,
+            "hypothesis_node_id": "node-root",
+            "objective": "Baseline capture-first plan",
+            "budget": {
+              "max_tokens": 800,
+              "max_seconds": 90,
+              "max_evaluations": 2
+            },
+            "usage": {
+              "input_tokens": 260,
+              "output_tokens": 140,
+              "total_tokens": 400,
+              "evaluations": 2,
+              "runner_seconds": 50
+            },
+            "terminal_state": "pruned",
+            "score": 0.51,
+            "verifier_passed": false,
+            "terminal_reason": "Holdout probe regressed."
+          },
+          {
+            "branch_id": "branch-safe",
+            "parent_branch_id": "branch-root",
+            "hypothesis_node_id": "node-safe",
+            "objective": "Preserve defense while probing",
+            "budget": {
+              "max_tokens": 900,
+              "max_seconds": 90,
+              "max_evaluations": 2
+            },
+            "usage": {
+              "input_tokens": 380,
+              "output_tokens": 170,
+              "total_tokens": 550,
+              "evaluations": 2,
+              "runner_seconds": 62
+            },
+            "terminal_state": "succeeded",
+            "score": 0.88,
+            "verifier_passed": true,
+            "terminal_reason": "Best holdout score with verifier pass."
+          },
+          {
+            "branch_id": "branch-risky",
+            "parent_branch_id": "branch-root",
+            "hypothesis_node_id": "node-risky",
+            "objective": "Aggressive rush",
+            "budget": {
+              "max_tokens": 800,
+              "max_seconds": 90,
+              "max_evaluations": 2
+            },
+            "usage": {
+              "input_tokens": 420,
+              "output_tokens": 240,
+              "total_tokens": 660,
+              "evaluations": 2,
+              "runner_seconds": 88
+            },
+            "terminal_state": "budget_exhausted",
+            "score": 0.42,
+            "verifier_passed": false,
+            "terminal_reason": "Token budget exhausted before verifier recovery."
+          }
+        ],
+        "branch_lineage": [
+          {
+            "parent_branch_id": "branch-root",
+            "child_branch_id": "branch-safe"
+          },
+          {
+            "parent_branch_id": "branch-root",
+            "child_branch_id": "branch-risky"
+          }
+        ],
+        "evidence_sharing": {
+          "policy": {
+            "max_shared_items": 1,
+            "max_summary_chars": 72
+          },
+          "items": [
+            {
+              "share_id": "share-safe-1",
+              "from_branch_id": "branch-safe",
+              "to_branch_ids": ["branch-root", "branch-risky"],
+              "summary": "Defense-preserving probes recovered flag control and should seed retrie…",
+              "included": true,
+              "evidence_refs": [
+                {
+                  "uri": "runs/run-campaign-multi/evidence/safe.json",
+                  "summary": "Safe branch passed both eval lanes."
+                }
+              ]
+            },
+            {
+              "share_id": "share-risky-1",
+              "from_branch_id": "branch-risky",
+              "to_branch_ids": ["branch-root"],
+              "summary": "Aggressive rush repeatedly overran the token budget.",
+              "included": false,
+              "evidence_refs": [
+                {
+                  "uri": "runs/run-campaign-multi/evidence/risky.json",
+                  "summary": "Risky branch exhausted budget."
+                }
+              ]
+            }
+          ]
+        },
+        "branch_summary": {
+          "branch_count": 3,
+          "succeeded": 1,
+          "failed": 0,
+          "pruned": 1,
+          "budget_exhausted": 1,
+          "running": 0
+        },
+        "final_recommendation": {
+          "branch_id": "branch-safe",
+          "score": 0.88,
+          "reason": "Best holdout score with verifier pass."
+        },
+        "linked_reports": {
+          "progress_report_uri": "knowledge/grid_ctf/progress_reports/run-campaign-multi.json",
+          "utilization_report_uri": "knowledge/grid_ctf/utilization_reports/run-campaign-multi.json",
+          "negative_result_ledger_uri": "knowledge/grid_ctf/negative_result_ledgers/run-campaign-multi.json"
+        }
+      }
+    }
+  ]
+}

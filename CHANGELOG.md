@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 - AC-821 run progress reports add Python/TypeScript parity for best-score-over-time curves, milestone timing, pass@k summaries, and branch lineage inspection references.
 - AC-822 run utilization reports add shared Python/TypeScript runner, token, verifier idle, model wait, and eval-throughput telemetry for single- and multi-branch runs.
 - AC-823 negative result ledgers preserve failed/pruned/rejected branch evidence, branch lineage, score deltas, and caution-vs-hard-ban prompt lessons across Python and TypeScript.
+- AC-824 campaign mode reports define shared Python/TypeScript multi-branch campaign identity, branch budgets, eval lanes, evidence sharing, terminal states, and recommendations.
 
 ## [pi-v0.2.6] - 2026-06-16
 

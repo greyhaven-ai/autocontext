@@ -1,0 +1,194 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/greyhaven-ai/autocontext/docs/campaign-mode-report.json",
+  "title": "CampaignModeReport",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "campaign_id",
+    "run_id",
+    "scenario_name",
+    "generated_at",
+    "terminal_state",
+    "branch_budget_defaults",
+    "eval_lanes",
+    "branches",
+    "branch_lineage",
+    "evidence_sharing",
+    "branch_summary",
+    "final_recommendation",
+    "linked_reports"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "campaign_id": { "type": "string", "minLength": 1 },
+    "run_id": { "type": "string", "minLength": 1 },
+    "scenario_name": { "type": "string", "minLength": 1 },
+    "generated_at": { "type": "string", "minLength": 1 },
+    "terminal_state": { "$ref": "#/$defs/campaignTerminalState" },
+    "branch_budget_defaults": { "$ref": "#/$defs/branchBudget" },
+    "eval_lanes": { "type": "array", "items": { "$ref": "#/$defs/evalLane" } },
+    "branches": { "type": "array", "items": { "$ref": "#/$defs/branch" } },
+    "branch_lineage": { "type": "array", "items": { "$ref": "#/$defs/lineageEdge" } },
+    "evidence_sharing": { "$ref": "#/$defs/evidenceSharing" },
+    "branch_summary": { "$ref": "#/$defs/branchSummary" },
+    "final_recommendation": { "oneOf": [{ "$ref": "#/$defs/recommendation" }, { "type": "null" }] },
+    "linked_reports": { "$ref": "#/$defs/linkedReports" }
+  },
+  "$defs": {
+    "campaignTerminalState": { "enum": ["active", "completed", "failed", "budget_exhausted", "canceled"] },
+    "branchTerminalState": {
+      "enum": ["pending", "running", "continued", "pruned", "succeeded", "failed", "budget_exhausted", "canceled"]
+    },
+    "nullableString": { "type": ["string", "null"] },
+    "nullableNumber": { "type": ["number", "null"] },
+    "nullableNonNegativeInteger": { "type": ["integer", "null"], "minimum": 0 },
+    "nullableNonNegativeNumber": { "type": ["number", "null"], "minimum": 0 },
+    "branchBudget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_tokens", "max_seconds", "max_evaluations"],
+      "properties": {
+        "max_tokens": { "$ref": "#/$defs/nullableNonNegativeInteger" },
+        "max_seconds": { "$ref": "#/$defs/nullableNonNegativeNumber" },
+        "max_evaluations": { "$ref": "#/$defs/nullableNonNegativeInteger" }
+      }
+    },
+    "branchUsage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input_tokens", "output_tokens", "total_tokens", "evaluations", "runner_seconds"],
+      "properties": {
+        "input_tokens": { "type": "integer", "minimum": 0 },
+        "output_tokens": { "type": "integer", "minimum": 0 },
+        "total_tokens": { "type": "integer", "minimum": 0 },
+        "evaluations": { "type": "integer", "minimum": 0 },
+        "runner_seconds": { "type": "number", "minimum": 0 }
+      }
+    },
+    "evalLane": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lane_id", "label", "verifier_contract_ref", "seeds", "holdout_refs", "weight"],
+      "properties": {
+        "lane_id": { "type": "string", "minLength": 1 },
+        "label": { "type": "string", "minLength": 1 },
+        "verifier_contract_ref": { "type": "string", "minLength": 1 },
+        "seeds": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "holdout_refs": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "weight": { "type": "number", "minimum": 0 }
+      }
+    },
+    "branch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "branch_id",
+        "parent_branch_id",
+        "hypothesis_node_id",
+        "objective",
+        "budget",
+        "usage",
+        "terminal_state",
+        "score",
+        "verifier_passed",
+        "terminal_reason"
+      ],
+      "properties": {
+        "branch_id": { "type": "string", "minLength": 1 },
+        "parent_branch_id": { "$ref": "#/$defs/nullableString" },
+        "hypothesis_node_id": { "$ref": "#/$defs/nullableString" },
+        "objective": { "type": "string", "minLength": 1 },
+        "budget": { "$ref": "#/$defs/branchBudget" },
+        "usage": { "$ref": "#/$defs/branchUsage" },
+        "terminal_state": { "$ref": "#/$defs/branchTerminalState" },
+        "score": { "$ref": "#/$defs/nullableNumber" },
+        "verifier_passed": { "type": ["boolean", "null"] },
+        "terminal_reason": { "type": "string", "minLength": 1 }
+      }
+    },
+    "lineageEdge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["parent_branch_id", "child_branch_id"],
+      "properties": {
+        "parent_branch_id": { "type": "string", "minLength": 1 },
+        "child_branch_id": { "type": "string", "minLength": 1 }
+      }
+    },
+    "evidenceRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uri", "summary"],
+      "properties": {
+        "uri": { "type": "string", "minLength": 1 },
+        "summary": { "type": "string", "minLength": 1 }
+      }
+    },
+    "evidenceShareItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["share_id", "from_branch_id", "to_branch_ids", "summary", "included", "evidence_refs"],
+      "properties": {
+        "share_id": { "type": "string", "minLength": 1 },
+        "from_branch_id": { "type": "string", "minLength": 1 },
+        "to_branch_ids": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "summary": { "type": "string", "minLength": 1 },
+        "included": { "type": "boolean" },
+        "evidence_refs": { "type": "array", "items": { "$ref": "#/$defs/evidenceRef" } }
+      }
+    },
+    "evidencePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_shared_items", "max_summary_chars"],
+      "properties": {
+        "max_shared_items": { "type": "integer", "minimum": 0 },
+        "max_summary_chars": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "evidenceSharing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policy", "items"],
+      "properties": {
+        "policy": { "$ref": "#/$defs/evidencePolicy" },
+        "items": { "type": "array", "items": { "$ref": "#/$defs/evidenceShareItem" } }
+      }
+    },
+    "branchSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["branch_count", "succeeded", "failed", "pruned", "budget_exhausted", "running"],
+      "properties": {
+        "branch_count": { "type": "integer", "minimum": 0 },
+        "succeeded": { "type": "integer", "minimum": 0 },
+        "failed": { "type": "integer", "minimum": 0 },
+        "pruned": { "type": "integer", "minimum": 0 },
+        "budget_exhausted": { "type": "integer", "minimum": 0 },
+        "running": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "recommendation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["branch_id", "score", "reason"],
+      "properties": {
+        "branch_id": { "type": "string", "minLength": 1 },
+        "score": { "$ref": "#/$defs/nullableNumber" },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
+    "linkedReports": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["progress_report_uri", "utilization_report_uri", "negative_result_ledger_uri"],
+      "properties": {
+        "progress_report_uri": { "$ref": "#/$defs/nullableString" },
+        "utilization_report_uri": { "$ref": "#/$defs/nullableString" },
+        "negative_result_ledger_uri": { "$ref": "#/$defs/nullableString" }
+      }
+    }
+  }
+}
