@@ -72,3 +72,23 @@ def test_curate_missing_is_404(client: TestClient) -> None:
     _seed(client)
     resp = client.post("/api/knowledge/scn/lessons/nope/curate", json={"action": "delete"})
     assert resp.status_code == 404
+
+
+def test_path_traversal_rejected(client: TestClient, tmp_path: Path) -> None:
+    # %2E%2E decodes to ".." — must be rejected, not write files above knowledge_root.
+    resp = client.post("/api/knowledge/%2E%2E/lessons/p/approve")
+    assert resp.status_code != 200
+    assert not (tmp_path / "pending_lessons.json").exists()
+    assert not (tmp_path / "lessons.json").exists()
+
+
+def test_approve_missing_is_404(client: TestClient) -> None:
+    _seed(client)
+    resp = client.post("/api/knowledge/scn/lessons/nope/approve")
+    assert resp.status_code == 404
+
+
+def test_reject_missing_is_404(client: TestClient) -> None:
+    _seed(client)
+    resp = client.post("/api/knowledge/scn/lessons/nope/reject")
+    assert resp.status_code == 404

@@ -19,7 +19,9 @@ class PendingLessonStore:
         self.knowledge_root = knowledge_root
 
     def _path(self, scenario: str) -> Path:
-        return self.knowledge_root / scenario / "pending_lessons.json"
+        from autocontext.storage.scenario_paths import resolve_scenario_root
+
+        return resolve_scenario_root(self.knowledge_root, scenario) / "pending_lessons.json"
 
     def read(self, scenario: str) -> list[Lesson]:
         path = self._path(scenario)
