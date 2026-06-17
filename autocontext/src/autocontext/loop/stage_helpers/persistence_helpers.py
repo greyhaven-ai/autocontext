@@ -169,17 +169,15 @@ def _maybe_rate_analyst_output(
             ("curator_analyst_rating", json.dumps(rating.to_dict(), sort_keys=True)),
             ("curator_analyst_feedback", exec_result.content),
         ],
-        role_metrics=[
-            (
-                exec_result.role,
-                exec_result.usage.model,
-                exec_result.usage.input_tokens,
-                exec_result.usage.output_tokens,
-                exec_result.usage.latency_ms,
-                exec_result.subagent_id,
-                exec_result.status,
-            )
-        ],
+        role_metrics=[(
+            exec_result.role,
+            exec_result.usage.model,
+            exec_result.usage.input_tokens,
+            exec_result.usage.output_tokens,
+            exec_result.usage.latency_ms,
+            exec_result.subagent_id,
+            exec_result.status,
+        )],
     )
     return rating
 
@@ -255,11 +253,7 @@ def _sync_structured_lessons(ctx: GenerationContext, *, artifacts: ArtifactStore
         text = stripped[2:].strip() if stripped.startswith("- ") else stripped
         if not text or text in seen_active or text in seen_pending:
             continue
-        meta = ApplicabilityMeta(
-            created_at="",
-            generation=ctx.generation,
-            best_score=ctx.previous_best,
-        )
+        meta = ApplicabilityMeta(created_at="", generation=ctx.generation, best_score=ctx.previous_best)
         if mode == "approve":
             pending.add(scenario, Lesson(id=f"lesson_{uuid.uuid4().hex[:8]}", text=text, meta=meta))
             seen_pending.add(text)
@@ -291,9 +285,7 @@ def _run_curator_consolidation(
 
     consolidation_trajectory = trajectory_builder.build_trajectory(ctx.run_id)
     lesson_result, lesson_exec = curator.consolidate_lessons(
-        existing_lessons,
-        settings.skill_max_lessons,
-        consolidation_trajectory,
+        existing_lessons, settings.skill_max_lessons, consolidation_trajectory,
         constraint_mode=settings.constraint_prompts_enabled,
     )
     artifacts.replace_skill_lessons(scenario_name, lesson_result.consolidated_lessons)
@@ -301,17 +293,15 @@ def _run_curator_consolidation(
         ctx.run_id,
         ctx.generation,
         outputs=[("curator_consolidation", lesson_exec.content)],
-        role_metrics=[
-            (
-                lesson_exec.role,
-                lesson_exec.usage.model,
-                lesson_exec.usage.input_tokens,
-                lesson_exec.usage.output_tokens,
-                lesson_exec.usage.latency_ms,
-                lesson_exec.subagent_id,
-                lesson_exec.status,
-            )
-        ],
+        role_metrics=[(
+            lesson_exec.role,
+            lesson_exec.usage.model,
+            lesson_exec.usage.input_tokens,
+            lesson_exec.usage.output_tokens,
+            lesson_exec.usage.latency_ms,
+            lesson_exec.subagent_id,
+            lesson_exec.status,
+        )],
     )
 
     # Dead-end consolidation

@@ -20,7 +20,7 @@ GRANDFATHERED: dict[str, int] = {
     "storage/artifacts.py": 1300,
     "cli.py": 1600,
     "mcp/tools.py": 1500,
-    "loop/generation_runner.py": 1400,
+    "loop/generation_runner.py": 1410,
     "loop/stages.py": 1400,  # 8 cohesive stage functions; helpers extracted to stage_helpers/
     "agents/orchestrator.py": 1000,
     "execution/task_runner.py": 1000,

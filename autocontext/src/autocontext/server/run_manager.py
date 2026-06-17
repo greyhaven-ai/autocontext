@@ -82,13 +82,7 @@ class RunManager:
             "agent_provider": self.settings.agent_provider,
         }
 
-    def start_run(
-        self,
-        scenario: str,
-        generations: int,
-        run_id: str | None = None,
-        curator_approval_mode: str = "auto",
-    ) -> str:
+    def start_run(self, scenario: str, generations: int, run_id: str | None = None, curator_approval_mode: str = "auto") -> str:
         if self._active:
             raise RuntimeError("A run is already active. Wait for it to finish or stop it.")
         if scenario not in SCENARIO_REGISTRY:

@@ -52,8 +52,6 @@ from autocontext.storage import SQLiteStore
 from autocontext.util.json_io import read_json
 
 logger = logging.getLogger(__name__)
-
-
 def _build_scenario_creator(app_settings: object) -> object | None:
     try:
         from autocontext.agents.llm_client import build_client_from_settings
@@ -333,11 +331,7 @@ def create_app(
                                 response = await asyncio.to_thread(controller.submit_chat, role, message)
                                 await websocket.send_json(ChatResponseMsg(role=role, text=response).model_dump())
 
-                        case StartRunCmd(
-                            scenario=scenario,
-                            generations=generations,
-                            curator_approval_mode=curator_approval_mode,
-                        ):
+                        case StartRunCmd(scenario=scenario, generations=generations, curator_approval_mode=curator_approval_mode):
                             if run_manager is None:
                                 await websocket.send_json(ErrorMsg(message="Run manager not available.").model_dump())
                             elif run_manager.is_active:
@@ -345,9 +339,7 @@ def create_app(
                             else:
                                 try:
                                     rid = run_manager.start_run(
-                                        scenario,
-                                        generations,
-                                        curator_approval_mode=curator_approval_mode,
+                                        scenario, generations, curator_approval_mode=curator_approval_mode
                                     )
                                     await websocket.send_json(
                                         RunAcceptedMsg(run_id=rid, scenario=scenario, generations=generations).model_dump()
@@ -381,7 +373,6 @@ def create_app(
                                 continue
 
                             from autocontext.scenarios.custom.creator import ScenarioCreator
-
                             creator: ScenarioCreator = scenario_creator  # type: ignore[assignment]
                             name = creator.derive_name(description)
                             await websocket.send_json(ScenarioGeneratingMsg(name=name).model_dump())
@@ -392,19 +383,22 @@ def create_app(
                                 await websocket.send_json(_build_scenario_preview_msg(spec).model_dump())
                             except Exception as exc:
                                 logger.warning("scenario generation failed", exc_info=True)
-                                await websocket.send_json(ScenarioErrorMsg(message=str(exc), stage="generation").model_dump())
+                                await websocket.send_json(
+                                    ScenarioErrorMsg(message=str(exc), stage="generation").model_dump()
+                                )
 
                         case ConfirmScenarioCmd():
                             current_spec = pending_spec.get("current")
                             if current_spec is None:
                                 await websocket.send_json(
-                                    ScenarioErrorMsg(message="No pending scenario to confirm.", stage="validation").model_dump()
+                                    ScenarioErrorMsg(
+                                        message="No pending scenario to confirm.", stage="validation"
+                                    ).model_dump()
                                 )
                                 continue
 
                             from autocontext.scenarios import SCENARIO_REGISTRY
                             from autocontext.scenarios.custom.creator import ScenarioCreator
-
                             creator = scenario_creator  # type: ignore[assignment]
 
                             try:
@@ -421,13 +415,17 @@ def create_app(
                                     await websocket.send_json(_build_environments_msg(env_info).model_dump())
                             except Exception as exc:
                                 logger.warning("scenario build/validate failed", exc_info=True)
-                                await websocket.send_json(ScenarioErrorMsg(message=str(exc), stage="validation").model_dump())
+                                await websocket.send_json(
+                                    ScenarioErrorMsg(message=str(exc), stage="validation").model_dump()
+                                )
 
                         case ReviseScenarioCmd(feedback=feedback):
                             current_spec = pending_spec.get("current")
                             if current_spec is None:
                                 await websocket.send_json(
-                                    ScenarioErrorMsg(message="No pending scenario to revise.", stage="generation").model_dump()
+                                    ScenarioErrorMsg(
+                                        message="No pending scenario to revise.", stage="generation"
+                                    ).model_dump()
                                 )
                                 continue
 
@@ -435,7 +433,6 @@ def create_app(
                                 continue
 
                             from autocontext.scenarios.custom.creator import ScenarioCreator
-
                             creator = scenario_creator  # type: ignore[assignment]
 
                             try:
@@ -444,7 +441,9 @@ def create_app(
                                 await websocket.send_json(_build_scenario_preview_msg(revised).model_dump())
                             except Exception as exc:
                                 logger.warning("scenario revision failed", exc_info=True)
-                                await websocket.send_json(ScenarioErrorMsg(message=str(exc), stage="generation").model_dump())
+                                await websocket.send_json(
+                                    ScenarioErrorMsg(message=str(exc), stage="generation").model_dump()
+                                )
 
                         case CancelScenarioCmd():
                             pending_spec.clear()
