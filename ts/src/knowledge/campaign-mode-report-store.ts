@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import {
   campaignModeReportToMarkdown,
   parseCampaignModeReport,
@@ -11,7 +11,27 @@ export function campaignModeReportPath(
   scenarioName: string,
   runId: string,
 ): string {
-  return join(knowledgeRoot, scenarioName, "campaign_mode_reports", `${runId}.json`);
+  return join(
+    knowledgeRoot,
+    pathSegment(scenarioName, "scenarioName"),
+    "campaign_mode_reports",
+    `${pathSegment(runId, "runId")}.json`,
+  );
+}
+
+function pathSegment(value: string, label: string): string {
+  const normalized = value.trim();
+  if (!normalized) throw new Error(`${label} is required`);
+  if (
+    normalized === "." ||
+    normalized === ".." ||
+    normalized.includes("/") ||
+    normalized.includes("\\") ||
+    basename(normalized) !== normalized
+  ) {
+    throw new Error(`${label} must be a single path segment`);
+  }
+  return normalized;
 }
 
 export function writeCampaignModeReport(
@@ -42,7 +62,7 @@ export function readLatestCampaignModeReportsMarkdown(
   scenarioName: string,
   opts: { maxReports?: number } = {},
 ): string {
-  const dir = join(knowledgeRoot, scenarioName, "campaign_mode_reports");
+  const dir = join(knowledgeRoot, pathSegment(scenarioName, "scenarioName"), "campaign_mode_reports");
   if (!existsSync(dir)) return "";
   return readdirSync(dir)
     .filter((name: string) => name.endsWith(".json"))

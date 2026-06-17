@@ -23,9 +23,9 @@ class _StrictModel(BaseModel):
 
 
 class CampaignBranchBudget(_StrictModel):
-    max_tokens: int | None = Field(default=None, ge=0)
-    max_seconds: float | None = Field(default=None, ge=0)
-    max_evaluations: int | None = Field(default=None, ge=0)
+    max_tokens: int | None = Field(ge=0)
+    max_seconds: float | None = Field(ge=0)
+    max_evaluations: int | None = Field(ge=0)
 
 
 class CampaignBranchUsage(_StrictModel):
@@ -78,8 +78,8 @@ class CampaignEvidenceShareItem(_StrictModel):
 
 
 class CampaignEvidencePolicy(_StrictModel):
-    max_shared_items: int = Field(default=2, ge=0)
-    max_summary_chars: int = Field(default=240, ge=1)
+    max_shared_items: int = Field(ge=0)
+    max_summary_chars: int = Field(ge=1)
 
 
 class CampaignEvidenceSharing(_StrictModel):
@@ -109,7 +109,7 @@ class CampaignLinkedReports(_StrictModel):
 
 
 class CampaignModeReport(_StrictModel):
-    schema_version: Literal[1] = 1
+    schema_version: Literal[1]
     campaign_id: str = Field(min_length=1)
     run_id: str = Field(min_length=1)
     scenario_name: str = Field(min_length=1)
@@ -163,8 +163,9 @@ def build_campaign_mode_report(
 ) -> CampaignModeReport:
     defaults = CampaignBranchBudget.from_dict(branch_budget_defaults).to_dict()
     branch_models = [_branch_from_dict(branch, defaults) for branch in branches]
-    policy = CampaignEvidencePolicy.from_dict(evidence_policy or {}).to_dict()
+    policy = _evidence_policy_from_builder_input(evidence_policy)
     return CampaignModeReport(
+        schema_version=1,
         campaign_id=campaign_id,
         run_id=run_id,
         scenario_name=scenario_name,
@@ -175,8 +176,8 @@ def build_campaign_mode_report(
         branches=branch_models,
         branch_lineage=_branch_lineage(branch_models),
         evidence_sharing=CampaignEvidenceSharing(
-            policy=CampaignEvidencePolicy.from_dict(policy),
-            items=_evidence_items(shared_evidence, CampaignEvidencePolicy.from_dict(policy)),
+            policy=policy,
+            items=_evidence_items(shared_evidence, policy),
         ),
         branch_summary=_branch_summary(branch_models),
         final_recommendation=_recommendation(branch_models),
@@ -198,6 +199,12 @@ def render_campaign_evidence_share(report: CampaignModeReport) -> str:
 def _branch_from_dict(data: dict[str, Any], defaults: dict[str, Any]) -> CampaignBranch:
     merged = {**data, "budget": data.get("budget") or defaults}
     return CampaignBranch.from_dict(merged)
+
+
+def _evidence_policy_from_builder_input(data: dict[str, Any] | None) -> CampaignEvidencePolicy:
+    if data is None:
+        return CampaignEvidencePolicy(max_shared_items=2, max_summary_chars=240)
+    return CampaignEvidencePolicy.from_dict(data)
 
 
 def _branch_lineage(branches: list[CampaignBranch]) -> list[CampaignBranchLineageEdge]:
@@ -235,8 +242,11 @@ def _evidence_items(
     policy: CampaignEvidencePolicy,
 ) -> list[CampaignEvidenceShareItem]:
     result: list[CampaignEvidenceShareItem] = []
-    for index, item in enumerate(items):
-        included = bool(item.get("evidence_refs")) and index < policy.max_shared_items
+    included_count = 0
+    for item in items:
+        included = bool(item.get("evidence_refs")) and included_count < policy.max_shared_items
+        if included:
+            included_count += 1
         result.append(
             CampaignEvidenceShareItem.from_dict(
                 {

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Protocol
 
 from autocontext.analytics.campaign_mode_report import CampaignModeReport
@@ -15,7 +15,25 @@ class DictSerializable(Protocol):
 
 
 def campaign_mode_report_path(knowledge_root: Path, scenario_name: str, run_id: str) -> Path:
-    return knowledge_root / normalize_scenario_name_segment(scenario_name) / "campaign_mode_reports" / f"{run_id}.json"
+    return (
+        knowledge_root
+        / normalize_scenario_name_segment(scenario_name)
+        / "campaign_mode_reports"
+        / f"{_normalize_path_segment(run_id, 'run_id')}.json"
+    )
+
+
+def _normalize_path_segment(value: str, label: str) -> str:
+    normalized = value.strip()
+    if not normalized:
+        raise ValueError(f"{label} is required")
+    if "/" in normalized or "\\" in normalized:
+        raise ValueError(f"{label} must be a single path segment: {value!r}")
+    for path_cls in (PurePosixPath, PureWindowsPath):
+        candidate = path_cls(normalized)
+        if candidate.is_absolute() or len(candidate.parts) != 1 or candidate.parts[0] in {".", ".."}:
+            raise ValueError(f"{label} must be a single path segment: {value!r}")
+    return normalized
 
 
 def write_campaign_mode_report(knowledge_root: Path, scenario_name: str, run_id: str, report: DictSerializable) -> Path:

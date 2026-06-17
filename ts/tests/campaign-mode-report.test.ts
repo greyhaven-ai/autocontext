@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -43,7 +43,9 @@ describe("campaign mode report", () => {
     const { budget: _budget, ...missingBudget } = branch;
 
     expect(parseCampaignModeReport(report)).toEqual(report);
-    expect(() => parseCampaignModeReport({ ...report, surprise: true })).toThrow(/unexpected field/);
+    expect(() => parseCampaignModeReport({ ...report, surprise: true })).toThrow(
+      /unexpected field/,
+    );
     expect(() => parseCampaignModeReport({ ...report, campaign_id: "" })).toThrow(/campaign_id/);
     expect(() =>
       parseCampaignModeReport({ ...report, branches: [{ ...branch, terminal_state: "unknown" }] }),
@@ -69,6 +71,35 @@ describe("campaign mode report", () => {
     expect(rendered).toContain("Safe branch passed both eval lanes");
   });
 
+  it("counts only evidence-backed items against the share budget", () => {
+    const item = fixture.cases[0]!;
+    const report = buildCampaignModeReport({
+      ...item,
+      shared_evidence: [
+        {
+          share_id: "without-evidence",
+          from_branch_id: "branch-1",
+          to_branch_ids: [],
+          summary: "No artifact reference yet.",
+          evidence_refs: [],
+        },
+        {
+          share_id: "with-evidence",
+          from_branch_id: "branch-1",
+          to_branch_ids: [],
+          summary: "This one should fit the prompt budget.",
+          evidence_refs: [{ uri: "artifact://runs/run-1/eval.json", summary: "passed" }],
+        },
+      ],
+      evidence_policy: { max_shared_items: 1, max_summary_chars: 240 },
+    });
+
+    expect(report.evidence_sharing.items.map((evidence) => evidence.included)).toEqual([
+      false,
+      true,
+    ]);
+  });
+
   it("persists campaign mode reports through file helpers", () => {
     const root = mkdtempSync(join(tmpdir(), "campaign-mode-"));
     try {
@@ -81,6 +112,24 @@ describe("campaign mode report", () => {
       expect(readLatestCampaignModeReportsMarkdown(knowledgeRoot, "grid_ctf")).toContain(
         "Campaign Mode Report",
       );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects path traversal through file helper identifiers", () => {
+    const root = mkdtempSync(join(tmpdir(), "campaign-mode-"));
+    try {
+      const knowledgeRoot = join(root, "knowledge");
+      const report = parseCampaignModeReport(fixture.cases[0]!.expected_report);
+
+      expect(() =>
+        writeCampaignModeReport(knowledgeRoot, "grid_ctf", "../../../outside", report),
+      ).toThrow(/runId/);
+      expect(() =>
+        writeCampaignModeReport(knowledgeRoot, "../outside", report.run_id, report),
+      ).toThrow(/scenarioName/);
+      expect(existsSync(join(root, "outside.json"))).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

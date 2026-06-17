@@ -401,11 +401,16 @@ function evidenceItems(
   items: CampaignEvidenceShareItemInput[],
   policy: CampaignEvidencePolicy,
 ): CampaignEvidenceShareItem[] {
-  return items.map((item, index) => parseEvidenceItem({
-    ...item,
-    summary: truncate(item.summary, policy.max_summary_chars),
-    included: item.evidence_refs.length > 0 && index < policy.max_shared_items,
-  }));
+  let includedCount = 0;
+  return items.map((item) => {
+    const included = item.evidence_refs.length > 0 && includedCount < policy.max_shared_items;
+    if (included) includedCount += 1;
+    return parseEvidenceItem({
+      ...item,
+      summary: truncate(item.summary, policy.max_summary_chars),
+      included,
+    });
+  });
 }
 
 function truncate(value: string, maxChars: number): string {

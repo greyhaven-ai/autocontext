@@ -4,7 +4,7 @@ AC-824 defines campaign mode as a shared Python/TypeScript artifact for multi-br
 
 ## Contract
 
-Schema: [`campaign-mode-report.json`](campaign-mode-report.json)  
+Schema: [`campaign-mode-report.json`](campaign-mode-report.json)
 Parity fixture: [`campaign-mode-report-parity-fixture.json`](campaign-mode-report-parity-fixture.json)
 
 A report captures:
