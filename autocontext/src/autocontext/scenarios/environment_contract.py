@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Literal, get_args
+from typing import Any, Literal, cast, get_args
 
 ScenarioEnvironmentHookKind = Literal[
     "setup",
@@ -15,6 +15,7 @@ ScenarioEnvironmentHookKind = Literal[
 ]
 
 HOOK_KINDS = tuple(get_args(ScenarioEnvironmentHookKind))
+HOOK_FIELDS = {"kind", "label", "description", "required", "inputs", "emits", "evidence_refs"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,16 +35,27 @@ class ScenarioEnvironmentHook:
             raise ValueError(f"unknown scenario environment hook kind: {self.kind}")
 
     @classmethod
-    def model_validate(cls, data: dict[str, Any]) -> ScenarioEnvironmentHook:
-        _reject_extra(data, {"kind", "label", "description", "required", "inputs", "emits", "evidence_refs"})
+    def model_validate(
+        cls,
+        data: dict[str, Any],
+        *,
+        expected_kind: ScenarioEnvironmentHookKind | None = None,
+    ) -> ScenarioEnvironmentHook:
+        if not isinstance(data, dict):
+            raise TypeError("hook must be an object")
+        _require_fields(data, HOOK_FIELDS, "scenario environment hook")
+        _reject_extra(data, HOOK_FIELDS)
+        required = data["required"]
+        if not isinstance(required, bool):
+            raise TypeError("required must be boolean")
         return cls(
-            kind=data["kind"],
-            label=str(data["label"]),
-            description=str(data["description"]),
-            required=bool(data.get("required", True)),
-            inputs=_list_of_str(data.get("inputs", [])),
-            emits=_list_of_str(data.get("emits", [])),
-            evidence_refs=_list_of_str(data.get("evidence_refs", [])),
+            kind=_hook_kind(data["kind"], expected_kind),
+            label=_non_empty_str(data["label"], "label"),
+            description=_non_empty_str(data["description"], "description"),
+            required=required,
+            inputs=_list_of_str(data["inputs"], "inputs"),
+            emits=_list_of_str(data["emits"], "emits"),
+            evidence_refs=_list_of_str(data["evidence_refs"], "evidence_refs"),
         )
 
     def model_dump(self, mode: str = "python") -> dict[str, Any]:
@@ -73,8 +85,11 @@ class ScenarioEnvironmentHooks:
 
     @classmethod
     def model_validate(cls, data: dict[str, Any]) -> ScenarioEnvironmentHooks:
+        if not isinstance(data, dict):
+            raise TypeError("hooks must be an object")
+        _require_fields(data, set(HOOK_KINDS), "scenario environment hooks")
         _reject_extra(data, set(HOOK_KINDS))
-        return cls(**{kind: _hooks(data[kind]) for kind in HOOK_KINDS})
+        return cls(**{kind: _hooks(data[kind], kind) for kind in HOOK_KINDS})
 
     def model_dump(self, mode: str = "python") -> dict[str, Any]:
         return {kind: [hook.model_dump(mode=mode) for hook in getattr(self, kind)] for kind in HOOK_KINDS}
@@ -91,16 +106,16 @@ class ScenarioEnvironmentContract:
 
     @classmethod
     def model_validate(cls, data: dict[str, Any]) -> ScenarioEnvironmentContract:
+        if not isinstance(data, dict):
+            raise TypeError("scenario environment contract must be an object")
+        _require_fields(data, {"schema_version", "scenario_name", "scenario_family", "hooks"}, "scenario environment contract")
         _reject_extra(data, {"schema_version", "scenario_name", "scenario_family", "hooks"})
-        if data.get("schema_version") != 1:
+        if data["schema_version"] != 1 or isinstance(data["schema_version"], bool):
             raise ValueError("scenario environment contract schema_version must be 1")
-        hooks = data["hooks"]
-        if not isinstance(hooks, dict):
-            raise TypeError("hooks must be an object")
         return cls(
-            scenario_name=str(data["scenario_name"]),
-            scenario_family=str(data["scenario_family"]),
-            hooks=ScenarioEnvironmentHooks.model_validate(hooks),
+            scenario_name=_non_empty_str(data["scenario_name"], "scenario_name"),
+            scenario_family=_non_empty_str(data["scenario_family"], "scenario_family"),
+            hooks=ScenarioEnvironmentHooks.model_validate(data["hooks"]),
             schema_version=1,
         )
 
@@ -113,22 +128,45 @@ class ScenarioEnvironmentContract:
         }
 
 
+def _require_fields(data: dict[str, Any], required: set[str], label: str) -> None:
+    missing = required - set(data)
+    if missing:
+        raise ValueError(f"missing {label} field(s): {', '.join(sorted(missing))}")
+
+
 def _reject_extra(data: dict[str, Any], allowed: set[str]) -> None:
     extra = set(data) - allowed
     if extra:
         raise ValueError(f"unexpected scenario environment contract field(s): {', '.join(sorted(extra))}")
 
 
-def _list_of_str(value: Any) -> list[str]:
-    if not isinstance(value, list):
-        raise TypeError("expected list")
-    return [str(item) for item in value]
+def _non_empty_str(value: Any, label: str) -> str:
+    if not isinstance(value, str) or value == "":
+        raise TypeError(f"{label} must be a non-empty string")
+    return value
 
 
-def _hooks(value: Any) -> list[ScenarioEnvironmentHook]:
+def _hook_kind(value: Any, expected_kind: ScenarioEnvironmentHookKind | None) -> ScenarioEnvironmentHookKind:
+    if value not in HOOK_KINDS:
+        raise ValueError(f"unknown scenario environment hook kind: {value}")
+    kind = cast(ScenarioEnvironmentHookKind, value)
+    if expected_kind is not None and kind != expected_kind:
+        raise ValueError(f"expected {expected_kind} hook")
+    return kind
+
+
+def _list_of_str(value: Any, label: str) -> list[str]:
+    if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+        raise TypeError(f"{label} must be a string list")
+    return list(value)
+
+
+def _hooks(value: Any, expected_kind: ScenarioEnvironmentHookKind) -> list[ScenarioEnvironmentHook]:
     if not isinstance(value, list):
         raise TypeError("hook group must be a list")
-    return [ScenarioEnvironmentHook.model_validate(item) for item in value]
+    if not value:
+        raise ValueError("hook group must be non-empty")
+    return [ScenarioEnvironmentHook.model_validate(item, expected_kind=expected_kind) for item in value]
 
 
 def _hook(

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import importlib
 import importlib.util
 import json
 import sys
+from copy import deepcopy
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, get_args
@@ -37,6 +39,9 @@ def test_docs_schema_matches_python_hook_vocabulary() -> None:
     assert schema["required"] == ["schema_version", "scenario_name", "scenario_family", "hooks"]
     assert schema["properties"]["hooks"]["required"] == HOOK_KINDS
     assert schema["$defs"]["hookKind"]["enum"] == list(get_args(module.ScenarioEnvironmentHookKind))
+    for kind in HOOK_KINDS:
+        assert schema["properties"]["hooks"]["properties"][kind]["$ref"] == f"#/$defs/{kind}HookList"
+        assert schema["$defs"][f"{kind}Hook"]["allOf"][1]["properties"]["kind"]["const"] == kind
 
 
 def test_game_scenario_reports_uniform_environment_contract() -> None:
@@ -57,19 +62,39 @@ def test_game_scenario_reports_uniform_environment_contract() -> None:
 
 
 def test_template_exposes_environment_contract() -> None:
-    spec_yaml = (
-        ROOT
-        / "autocontext"
-        / "src"
-        / "autocontext"
-        / "scenarios"
-        / "templates"
-        / "content-generation"
-        / "spec.yaml"
-    ).read_text()
+    templates = importlib.import_module("autocontext.scenarios.templates")
+    spec = templates.TemplateLoader().get_template("content-generation")
 
-    assert "environment_contract:" in spec_yaml
-    assert "scenario_family: agent_task" in spec_yaml
-    assert "kind: verification" in spec_yaml
-    assert "judge_reasoning" in spec_yaml
-    assert "dimension_scores" in spec_yaml
+    assert spec.environment_contract is not None
+    assert spec.environment_contract.scenario_family == "agent_task"
+    assert spec.environment_contract.hooks.verification[0].kind == "verification"
+    assert spec.environment_contract.hooks.evidence[0].emits == ["judge_reasoning", "dimension_scores"]
+
+
+def test_python_contract_rejects_schema_invalid_data() -> None:
+    module = _contract_module()
+    valid = module.agent_task_template_environment_contract("content-generation").model_dump(mode="json")
+    invalid_contracts = []
+
+    missing_required = deepcopy(valid)
+    del missing_required["hooks"]["setup"][0]["required"]
+    invalid_contracts.append(missing_required)
+
+    empty_group = deepcopy(valid)
+    empty_group["hooks"]["setup"] = []
+    invalid_contracts.append(empty_group)
+
+    wrong_kind = deepcopy(valid)
+    wrong_kind["hooks"]["setup"][0]["kind"] = "cleanup"
+    invalid_contracts.append(wrong_kind)
+
+    coerced_list_item = deepcopy(valid)
+    coerced_list_item["hooks"]["setup"][0]["emits"] = [123]
+    invalid_contracts.append(coerced_list_item)
+
+    for contract in invalid_contracts:
+        try:
+            module.ScenarioEnvironmentContract.model_validate(contract)
+        except (KeyError, TypeError, ValueError):
+            continue
+        raise AssertionError("schema-invalid environment contract was accepted")
