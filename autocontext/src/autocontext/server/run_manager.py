@@ -82,7 +82,13 @@ class RunManager:
             "agent_provider": self.settings.agent_provider,
         }
 
-    def start_run(self, scenario: str, generations: int, run_id: str | None = None) -> str:
+    def start_run(
+        self,
+        scenario: str,
+        generations: int,
+        run_id: str | None = None,
+        curator_approval_mode: str = "auto",
+    ) -> str:
         if self._active:
             raise RuntimeError("A run is already active. Wait for it to finish or stop it.")
         if scenario not in SCENARIO_REGISTRY:
@@ -99,7 +105,12 @@ class RunManager:
 
         def _target() -> None:
             try:
-                summary = runner.run(scenario_name=scenario, generations=generations, run_id=actual_run_id)
+                summary = runner.run(
+                    scenario_name=scenario,
+                    generations=generations,
+                    run_id=actual_run_id,
+                    curator_approval_mode=curator_approval_mode,
+                )
                 logger.info("Run %s completed: best_score=%.4f", summary.run_id, summary.best_score)
             except Exception:
                 logger.exception("Run %s failed", actual_run_id)

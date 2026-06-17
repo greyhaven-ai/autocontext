@@ -89,6 +89,7 @@ class GenerationContext:
     skeptic_review: SkepticReview | None = None
     applied_competitor_hints: str = ""
     challenger_uncertainty: float | None = None
+    curator_approval_mode: str = "auto"
 
 
 @dataclass(slots=True)

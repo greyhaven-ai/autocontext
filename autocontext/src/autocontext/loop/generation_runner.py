@@ -70,11 +70,13 @@ from autocontext.storage.run_paths import resolve_run_root
 
 logger = logging.getLogger(__name__)
 
+
 def _current_release_version() -> str:
     try:
         return package_version("autoctx")
     except PackageNotFoundError:
         return package_fallback_version
+
 
 @dataclass(slots=True)
 class RunSummary:
@@ -138,6 +140,7 @@ class GenerationRunner:
             # MontyExecutor: sandboxed execution via pydantic-monty interpreter.
             # Scenario methods run on host; eval script runs in Monty sandbox.
             from autocontext.execution.executors.monty import MontyExecutor
+
             self.executor = ExecutionSupervisor(
                 executor=MontyExecutor(
                     max_execution_time_seconds=settings.monty_max_execution_time_seconds,
@@ -242,7 +245,11 @@ class GenerationRunner:
         return content.count("### Dead End")
 
     def _generate_session_report(
-        self, run_id: str, scenario_name: str, duration_seconds: float, dead_ends_found: int,
+        self,
+        run_id: str,
+        scenario_name: str,
+        duration_seconds: float,
+        dead_ends_found: int,
     ) -> str:
         """Generate and persist a session report for a completed run."""
         trajectory_rows = self.sqlite.get_generation_trajectory(run_id)
@@ -260,9 +267,7 @@ class GenerationRunner:
                     current_generation=current_generation,
                 )
             )
-            superseded_lessons_count = sum(
-                1 for lesson in structured_lessons if lesson.is_superseded()
-            )
+            superseded_lessons_count = sum(1 for lesson in structured_lessons if lesson.is_superseded())
         report = generate_session_report(
             run_id=run_id,
             scenario=scenario_name,
@@ -346,14 +351,16 @@ class GenerationRunner:
         consultations = self.sqlite.get_consultations_for_run(run_id)
         recovery = self.sqlite.get_recovery_markers_for_run(run_id)
 
-        facet = FacetExtractor().extract({
-            "run": run_payload,
-            "generations": generation_rows,
-            "role_metrics": role_metrics,
-            "staged_validations": staged_validations,
-            "consultations": consultations,
-            "recovery": recovery,
-        })
+        facet = FacetExtractor().extract(
+            {
+                "run": run_payload,
+                "generations": generation_rows,
+                "role_metrics": role_metrics,
+                "staged_validations": staged_validations,
+                "consultations": consultations,
+                "recovery": recovery,
+            }
+        )
 
         facet_store = FacetStore(self.settings.knowledge_root)
         facet_store.persist(facet)
@@ -425,7 +432,8 @@ class GenerationRunner:
         current_release = _current_release_version()
         current_provider = self.settings.agent_provider
         relevant_facets = [
-            facet for facet in facets
+            facet
+            for facet in facets
             if getattr(facet, "scenario_family", "") == scenario_family
             and getattr(facet, "agent_provider", "") == current_provider
             and getattr(facet, "metadata", {}).get("release", "") == current_release
@@ -502,7 +510,8 @@ class GenerationRunner:
         agent_provider: str,
     ) -> RubricSnapshot | None:
         candidates = [
-            snapshot for snapshot in snapshots
+            snapshot
+            for snapshot in snapshots
             if snapshot.scenario_family == scenario_family
             and snapshot.agent_provider == agent_provider
             and snapshot.release
@@ -589,11 +598,7 @@ class GenerationRunner:
     ) -> RunTrace:
         """Build a canonical per-run trace from persisted runtime artifacts."""
         family = detect_family(scenario)
-        generation_map = {
-            self._int_value(row.get("generation_index"))
-            : row
-            for row in generation_rows
-        }
+        generation_map = {self._int_value(row.get("generation_index")): row for row in generation_rows}
         roles_by_generation: dict[int, list[dict[str, Any]]] = defaultdict(list)
         validations_by_generation: dict[int, list[dict[str, Any]]] = defaultdict(list)
         consultations_by_generation: dict[int, list[dict[str, Any]]] = defaultdict(list)
@@ -608,13 +613,15 @@ class GenerationRunner:
         for row in recovery_markers:
             recovery_by_generation[self._int_value(row.get("generation_index"))].append(row)
 
-        generation_indices = sorted({
-            *generation_map.keys(),
-            *roles_by_generation.keys(),
-            *validations_by_generation.keys(),
-            *consultations_by_generation.keys(),
-            *recovery_by_generation.keys(),
-        })
+        generation_indices = sorted(
+            {
+                *generation_map.keys(),
+                *roles_by_generation.keys(),
+                *validations_by_generation.keys(),
+                *consultations_by_generation.keys(),
+                *recovery_by_generation.keys(),
+            }
+        )
 
         sequence_number = 1
         events: list[TraceEvent] = []
@@ -648,11 +655,10 @@ class GenerationRunner:
                             resource_name=str(metric.get("model", "")),
                             resource_path="",
                         )
-                    ] if metric.get("model") else [],
-                    summary=(
-                        f"{metric.get('role', 'agent')} executed with "
-                        f"{metric.get('status', 'unknown')} status"
-                    ),
+                    ]
+                    if metric.get("model")
+                    else [],
+                    summary=(f"{metric.get('role', 'agent')} executed with {metric.get('status', 'unknown')} status"),
                     detail={
                         "model": metric.get("model"),
                         "input_tokens": metric.get("input_tokens"),
@@ -699,10 +705,7 @@ class GenerationRunner:
                         actor_name="Validator",
                     ),
                     resources=[],
-                    summary=(
-                        f"Validation stage {validation.get('stage_name', 'unknown')} "
-                        f"finished with {status}"
-                    ),
+                    summary=(f"Validation stage {validation.get('stage_name', 'unknown')} finished with {status}"),
                     detail={
                         "stage_name": validation.get("stage_name"),
                         "stage_order": validation.get("stage_order"),
@@ -755,7 +758,9 @@ class GenerationRunner:
                             resource_name=str(consultation.get("model_used", "")),
                             resource_path="",
                         )
-                    ] if consultation.get("model_used") else [],
+                    ]
+                    if consultation.get("model_used")
+                    else [],
                     summary=f"Consultation triggered by {consultation.get('trigger', 'unknown')}",
                     detail={
                         "trigger": consultation.get("trigger"),
@@ -973,9 +978,7 @@ class GenerationRunner:
 
         generation_rows = self.sqlite.get_generation_metrics(run_id)
         running_generations = [
-            self._int_value(row.get("generation_index"))
-            for row in generation_rows
-            if str(row.get("status") or "") == "running"
+            self._int_value(row.get("generation_index")) for row in generation_rows if str(row.get("status") or "") == "running"
         ]
         if running_generations:
             recovery_markers = self.sqlite.get_recovery_markers_for_run(run_id)
@@ -1004,9 +1007,7 @@ class GenerationRunner:
             )
             return
 
-        completed_generations = sum(
-            1 for row in generation_rows if str(row.get("status") or "") == "completed"
-        )
+        completed_generations = sum(1 for row in generation_rows if str(row.get("status") or "") == "completed")
         target_generations = self._int_value(run_row.get("target_generations"), 0)
         if target_generations > 0 and completed_generations >= target_generations:
             self.sqlite.mark_run_completed(run_id)
@@ -1033,9 +1034,7 @@ class GenerationRunner:
             get_backend(self.settings.scoring_backend).default_uncertainty,
         )
         generation_rows = self.sqlite.get_generation_metrics(run_id)
-        completed_rows = [
-            row for row in generation_rows if str(row.get("status") or "") == "completed"
-        ]
+        completed_rows = [row for row in generation_rows if str(row.get("status") or "") == "completed"]
         if not completed_rows:
             return 0.0, 1000.0, default_uncertainty, [], []
 
@@ -1046,12 +1045,8 @@ class GenerationRunner:
             latest.get("rating_uncertainty"),
             default_uncertainty,
         )
-        score_history = [
-            self._float_value(row.get("best_score"), 0.0) for row in completed_rows
-        ]
-        gate_decision_history = [
-            str(row.get("gate_decision") or "") for row in completed_rows if row.get("gate_decision")
-        ]
+        score_history = [self._float_value(row.get("best_score"), 0.0) for row in completed_rows]
+        gate_decision_history = [str(row.get("gate_decision") or "") for row in completed_rows if row.get("gate_decision")]
         return (
             previous_best,
             challenger_elo,
@@ -1060,7 +1055,10 @@ class GenerationRunner:
             gate_decision_history,
         )
 
-    def run(self, scenario_name: str, generations: int, run_id: str | None = None) -> RunSummary:
+    def run(
+        self, scenario_name: str, generations: int, run_id: str | None = None, curator_approval_mode: str | None = None
+    ) -> RunSummary:
+        effective_curator_mode = curator_approval_mode or self.settings.curator_approval_mode
         scenario = self._scenario(scenario_name)
         active_run_id = run_id or f"run_{uuid.uuid4().hex[:12]}"
         run_start_time = time.monotonic()
@@ -1068,7 +1066,10 @@ class GenerationRunner:
         existing_run = self.sqlite.get_run(active_run_id)
         if existing_run is None:
             self.sqlite.create_run(
-                active_run_id, scenario_name, generations, self.settings.executor_mode,
+                active_run_id,
+                scenario_name,
+                generations,
+                self.settings.executor_mode,
                 agent_provider=self.settings.agent_provider,
             )
         else:
@@ -1107,17 +1108,12 @@ class GenerationRunner:
         coach_competitor_hints = self.artifacts.read_hints(scenario_name)
 
         # Cross-run knowledge inheritance: restore from best prior run if no playbook exists
-        if (
-            self.settings.cross_run_inheritance
-            and not self.settings.ablation_no_feedback
-        ):
+        if self.settings.cross_run_inheritance and not self.settings.ablation_no_feedback:
             playbook_path = self.artifacts.knowledge_root / scenario_name / "playbook.md"
             if not playbook_path.exists():
                 best_snapshot = self.sqlite.get_best_knowledge_snapshot(scenario_name)
                 if best_snapshot:
-                    restored = self.artifacts.restore_knowledge_snapshot(
-                        scenario_name, best_snapshot["run_id"]
-                    )
+                    restored = self.artifacts.restore_knowledge_snapshot(scenario_name, best_snapshot["run_id"])
                     if restored:
                         logger.info(
                             "restored knowledge from run %s (score=%.4f) for scenario %s",
@@ -1127,15 +1123,14 @@ class GenerationRunner:
                         )
 
         # Harness inheritance: log existing harness files at run start
-        if (
-            self.settings.harness_validators_enabled
-            and self.settings.harness_inheritance_enabled
-        ):
+        if self.settings.harness_validators_enabled and self.settings.harness_inheritance_enabled:
             existing_harness = self.artifacts.list_harness(scenario_name)
             if existing_harness:
                 logger.info(
                     "inheriting %d harness file(s) for scenario %s: %s",
-                    len(existing_harness), scenario_name, ", ".join(existing_harness),
+                    len(existing_harness),
+                    scenario_name,
+                    ", ".join(existing_harness),
                 )
 
         try:
@@ -1181,6 +1176,7 @@ class GenerationRunner:
 
                     warm_fn = None
                     if self.settings.executor_mode == "primeintellect" and self.remote is not None:
+
                         def _warm(ctx_arg: object, _gen: int = generation) -> dict:
                             assert self.remote is not None
                             return self.remote.warm_provision(
@@ -1188,6 +1184,7 @@ class GenerationRunner:
                                 max_retries=self.settings.primeintellect_max_retries,
                                 backoff_seconds=self.settings.primeintellect_backoff_seconds,
                             )
+
                         warm_fn = _warm
 
                     pipeline = GenerationPipeline(
@@ -1210,6 +1207,7 @@ class GenerationRunner:
                         scenario=scenario,
                         generation=generation,
                         settings=self.settings,
+                        curator_approval_mode=effective_curator_mode,
                         hook_bus=self.hook_bus,
                         previous_best=previous_best,
                         challenger_elo=challenger_elo,
@@ -1290,7 +1288,8 @@ class GenerationRunner:
                         if gen_row and gen_row.get("status") == "running":
                             logger.warning(
                                 "generation %d for run %s still in 'running' state after pipeline exit; marking as stalled",
-                                generation, active_run_id,
+                                generation,
+                                active_run_id,
                             )
                             self.sqlite.update_generation_status(
                                 active_run_id,
