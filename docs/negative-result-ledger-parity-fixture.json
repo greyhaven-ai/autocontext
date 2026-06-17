@@ -1,0 +1,253 @@
+{
+  "cases": [
+    {
+      "name": "failed-branch-caution",
+      "run_id": "run-negative-failed",
+      "generated_at": "2026-06-16T13:00:00Z",
+      "events": [
+        {
+          "event": "branch_pruned",
+          "ts": "2026-06-16T12:05:00Z",
+          "seq": 4,
+          "payload": {
+            "result_id": "neg-1",
+            "branch_id": "branch-beta",
+            "parent_branch_id": "branch-root",
+            "hypothesis_node_id": "node-beta",
+            "failure_kind": "verification_failed",
+            "disposition": "caution",
+            "reason": "Replay verifier rejected the branch after a state mismatch.",
+            "score_delta": -0.18,
+            "evaluated_seeds": ["seed-7"],
+            "evaluated_probes": ["replay-grid-ctf"],
+            "evidence_refs": [
+              {
+                "uri": "runs/run-negative-failed/evidence/replay.json",
+                "summary": "Replay diverged at turn 6."
+              }
+            ]
+          }
+        }
+      ],
+      "expected_ledger": {
+        "schema_version": 1,
+        "run_id": "run-negative-failed",
+        "generated_at": "2026-06-16T13:00:00Z",
+        "entries": [
+          {
+            "result_id": "neg-1",
+            "branch_id": "branch-beta",
+            "hypothesis_node_id": "node-beta",
+            "generation_index": null,
+            "occurred_at": "2026-06-16T12:05:00Z",
+            "failure_kind": "verification_failed",
+            "disposition": "caution",
+            "reason": "Replay verifier rejected the branch after a state mismatch.",
+            "score_delta": -0.18,
+            "evaluated_seeds": ["seed-7"],
+            "evaluated_probes": ["replay-grid-ctf"],
+            "branch_lineage": [
+              {
+                "parent_branch_id": "branch-root",
+                "child_branch_id": "branch-beta",
+                "event_id": "seq-4"
+              }
+            ],
+            "evidence_refs": [
+              {
+                "uri": "runs/run-negative-failed/evidence/replay.json",
+                "summary": "Replay diverged at turn 6."
+              }
+            ]
+          }
+        ],
+        "failure_mode_summary": [
+          {
+            "failure_kind": "verification_failed",
+            "disposition": "caution",
+            "count": 1,
+            "result_ids": ["neg-1"]
+          }
+        ]
+      }
+    },
+    {
+      "name": "one-off-noise",
+      "run_id": "run-negative-noise",
+      "generated_at": "2026-06-16T13:10:00Z",
+      "events": [
+        {
+          "event_type": "branch_failed",
+          "timestamp": "2026-06-16T13:06:00Z",
+          "event_id": "evt-noise",
+          "branch_id": "branch-flaky",
+          "payload": {
+            "failure_kind": "timeout",
+            "disposition": "noise",
+            "reason": "One runner timed out while the replay succeeded on retry.",
+            "evidence_refs": [
+              {
+                "uri": "runs/run-negative-noise/logs/timeout.txt",
+                "summary": "Transient worker timeout."
+              }
+            ]
+          }
+        }
+      ],
+      "expected_ledger": {
+        "schema_version": 1,
+        "run_id": "run-negative-noise",
+        "generated_at": "2026-06-16T13:10:00Z",
+        "entries": [
+          {
+            "result_id": "evt-noise",
+            "branch_id": "branch-flaky",
+            "hypothesis_node_id": null,
+            "generation_index": null,
+            "occurred_at": "2026-06-16T13:06:00Z",
+            "failure_kind": "timeout",
+            "disposition": "noise",
+            "reason": "One runner timed out while the replay succeeded on retry.",
+            "score_delta": null,
+            "evaluated_seeds": [],
+            "evaluated_probes": [],
+            "branch_lineage": [],
+            "evidence_refs": [
+              {
+                "uri": "runs/run-negative-noise/logs/timeout.txt",
+                "summary": "Transient worker timeout."
+              }
+            ]
+          }
+        ],
+        "failure_mode_summary": [
+          {
+            "failure_kind": "timeout",
+            "disposition": "noise",
+            "count": 1,
+            "result_ids": ["evt-noise"]
+          }
+        ]
+      }
+    },
+    {
+      "name": "reproducible-hard-contraindication",
+      "run_id": "run-negative-hard-ban",
+      "generated_at": "2026-06-16T13:20:00Z",
+      "events": [
+        {
+          "event_id": "evt-hard-1",
+          "event_type": "branch_rejected",
+          "timestamp": "2026-06-16T13:15:00Z",
+          "branch_id": "branch-red",
+          "parent_branch_id": "branch-root",
+          "payload": {
+            "hypothesis_node_id": "node-red",
+            "failure_kind": "unsafe_action",
+            "disposition": "hard_ban",
+            "reason": "The branch requires an action outside the scenario contract.",
+            "score": 0.12,
+            "baseline_score": 0.64,
+            "evaluated_seeds": ["seed-1", "seed-2"],
+            "evaluated_probes": ["contract-probe"],
+            "evidence_refs": [
+              {
+                "uri": "runs/run-negative-hard-ban/evidence/contract-probe.json",
+                "summary": "Contract probe rejected the action."
+              }
+            ]
+          }
+        },
+        {
+          "event_id": "evt-hard-2",
+          "event_type": "branch_rejected",
+          "timestamp": "2026-06-16T13:18:00Z",
+          "branch_id": "branch-red-retry",
+          "parent_branch_id": "branch-red",
+          "payload": {
+            "hypothesis_node_id": "node-red-retry",
+            "failure_kind": "unsafe_action",
+            "disposition": "hard_ban",
+            "reason": "Retry reproduced the same contract violation.",
+            "score_delta": -0.49,
+            "evaluated_seeds": ["seed-3"],
+            "evaluated_probes": ["contract-probe"],
+            "evidence_refs": [
+              {
+                "uri": "runs/run-negative-hard-ban/evidence/retry.json",
+                "summary": "Retry reproduced the violation."
+              }
+            ]
+          }
+        }
+      ],
+      "expected_ledger": {
+        "schema_version": 1,
+        "run_id": "run-negative-hard-ban",
+        "generated_at": "2026-06-16T13:20:00Z",
+        "entries": [
+          {
+            "result_id": "evt-hard-1",
+            "branch_id": "branch-red",
+            "hypothesis_node_id": "node-red",
+            "generation_index": null,
+            "occurred_at": "2026-06-16T13:15:00Z",
+            "failure_kind": "unsafe_action",
+            "disposition": "hard_ban",
+            "reason": "The branch requires an action outside the scenario contract.",
+            "score_delta": -0.52,
+            "evaluated_seeds": ["seed-1", "seed-2"],
+            "evaluated_probes": ["contract-probe"],
+            "branch_lineage": [
+              {
+                "parent_branch_id": "branch-root",
+                "child_branch_id": "branch-red",
+                "event_id": "evt-hard-1"
+              }
+            ],
+            "evidence_refs": [
+              {
+                "uri": "runs/run-negative-hard-ban/evidence/contract-probe.json",
+                "summary": "Contract probe rejected the action."
+              }
+            ]
+          },
+          {
+            "result_id": "evt-hard-2",
+            "branch_id": "branch-red-retry",
+            "hypothesis_node_id": "node-red-retry",
+            "generation_index": null,
+            "occurred_at": "2026-06-16T13:18:00Z",
+            "failure_kind": "unsafe_action",
+            "disposition": "hard_ban",
+            "reason": "Retry reproduced the same contract violation.",
+            "score_delta": -0.49,
+            "evaluated_seeds": ["seed-3"],
+            "evaluated_probes": ["contract-probe"],
+            "branch_lineage": [
+              {
+                "parent_branch_id": "branch-red",
+                "child_branch_id": "branch-red-retry",
+                "event_id": "evt-hard-2"
+              }
+            ],
+            "evidence_refs": [
+              {
+                "uri": "runs/run-negative-hard-ban/evidence/retry.json",
+                "summary": "Retry reproduced the violation."
+              }
+            ]
+          }
+        ],
+        "failure_mode_summary": [
+          {
+            "failure_kind": "unsafe_action",
+            "disposition": "hard_ban",
+            "count": 2,
+            "result_ids": ["evt-hard-1", "evt-hard-2"]
+          }
+        ]
+      }
+    }
+  ]
+}

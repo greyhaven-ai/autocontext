@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/greyhaven-ai/autocontext/docs/negative-result-ledger.json",
+  "title": "NegativeResultLedger",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "generated_at", "entries", "failure_mode_summary"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "run_id": { "type": "string", "minLength": 1 },
+    "generated_at": { "type": "string", "minLength": 1 },
+    "entries": { "type": "array", "items": { "$ref": "#/$defs/entry" } },
+    "failure_mode_summary": { "type": "array", "items": { "$ref": "#/$defs/failureModeSummary" } }
+  },
+  "$defs": {
+    "failureKind": {
+      "enum": [
+        "verification_failed",
+        "score_regression",
+        "pruned",
+        "refused",
+        "dead_end",
+        "timeout",
+        "harness_error",
+        "unsafe_action"
+      ]
+    },
+    "disposition": { "enum": ["caution", "hard_ban", "noise"] },
+    "nullableString": { "type": ["string", "null"] },
+    "nullableNumber": { "type": ["number", "null"] },
+    "nullableNonNegativeInteger": { "type": ["integer", "null"], "minimum": 0 },
+    "evidenceRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uri", "summary"],
+      "properties": {
+        "uri": { "type": "string", "minLength": 1 },
+        "summary": { "type": "string", "minLength": 1 }
+      }
+    },
+    "branchLineageEdge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["parent_branch_id", "child_branch_id", "event_id"],
+      "properties": {
+        "parent_branch_id": { "type": "string", "minLength": 1 },
+        "child_branch_id": { "type": "string", "minLength": 1 },
+        "event_id": { "$ref": "#/$defs/nullableString" }
+      }
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "result_id",
+        "branch_id",
+        "hypothesis_node_id",
+        "generation_index",
+        "occurred_at",
+        "failure_kind",
+        "disposition",
+        "reason",
+        "score_delta",
+        "evaluated_seeds",
+        "evaluated_probes",
+        "branch_lineage",
+        "evidence_refs"
+      ],
+      "properties": {
+        "result_id": { "type": "string", "minLength": 1 },
+        "branch_id": { "type": "string", "minLength": 1 },
+        "hypothesis_node_id": { "$ref": "#/$defs/nullableString" },
+        "generation_index": { "$ref": "#/$defs/nullableNonNegativeInteger" },
+        "occurred_at": { "type": "string", "minLength": 1 },
+        "failure_kind": { "$ref": "#/$defs/failureKind" },
+        "disposition": { "$ref": "#/$defs/disposition" },
+        "reason": { "type": "string", "minLength": 1 },
+        "score_delta": { "$ref": "#/$defs/nullableNumber" },
+        "evaluated_seeds": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "evaluated_probes": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "branch_lineage": { "type": "array", "items": { "$ref": "#/$defs/branchLineageEdge" } },
+        "evidence_refs": { "type": "array", "items": { "$ref": "#/$defs/evidenceRef" } }
+      }
+    },
+    "failureModeSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["failure_kind", "disposition", "count", "result_ids"],
+      "properties": {
+        "failure_kind": { "$ref": "#/$defs/failureKind" },
+        "disposition": { "$ref": "#/$defs/disposition" },
+        "count": { "type": "integer", "minimum": 0 },
+        "result_ids": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      }
+    }
+  }
+}
