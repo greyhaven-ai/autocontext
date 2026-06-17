@@ -43,23 +43,26 @@ def _load_fresh_skill_context(
 
     records: list[tuple[str, EvidenceFreshness]] = []
     for lesson in lessons:
-        records.append((
-            lesson.text.strip(),
-            EvidenceFreshness(
-                item_id=lesson.id or lesson.text.strip(),
-                support_count=1,
-                last_validated_gen=max(lesson.meta.last_validated_gen, 0),
-                confidence=max(0.0, min(1.0, lesson.meta.best_score)),
-                created_at_gen=max(lesson.meta.generation, 0),
-            ),
-        ))
+        if lesson.is_pending():
+            # Pending lessons await human approval and must never enter prompts.
+            continue
+        records.append(
+            (
+                lesson.text.strip(),
+                EvidenceFreshness(
+                    item_id=lesson.id or lesson.text.strip(),
+                    support_count=1,
+                    last_validated_gen=max(lesson.meta.last_validated_gen, 0),
+                    confidence=max(0.0, min(1.0, lesson.meta.best_score)),
+                    created_at_gen=max(lesson.meta.generation, 0),
+                ),
+            )
+        )
 
     items = [item for _, item in records]
     active, _ = apply_freshness_decay(items, ctx.generation, _freshness_policy(ctx))
     active_ids = {item.item_id for item in active}
-    active_text = "\n".join(
-        text for text, item in records if item.item_id in active_ids
-    ).strip()
+    active_text = "\n".join(text for text, item in records if item.item_id in active_ids).strip()
     warnings = detect_stale_context(items, ctx.generation, _freshness_policy(ctx))
     return active_text, _format_freshness_warning_block("Lesson", warnings)
 
@@ -86,23 +89,23 @@ def _load_fresh_hint_context(
 
     records: list[tuple[str, EvidenceFreshness]] = []
     for hint in ranked_hints:
-        records.append((
-            hint.text,
-            EvidenceFreshness(
-                item_id=hint.text,
-                support_count=1,
-                last_validated_gen=max(hint.generation_added, 0),
-                confidence=max(0.0, min(1.0, hint.impact_score)),
-                created_at_gen=max(hint.generation_added, 0),
-            ),
-        ))
+        records.append(
+            (
+                hint.text,
+                EvidenceFreshness(
+                    item_id=hint.text,
+                    support_count=1,
+                    last_validated_gen=max(hint.generation_added, 0),
+                    confidence=max(0.0, min(1.0, hint.impact_score)),
+                    created_at_gen=max(hint.generation_added, 0),
+                ),
+            )
+        )
 
     items = [item for _, item in records]
     active, _ = apply_freshness_decay(items, ctx.generation, _freshness_policy(ctx))
     active_ids = {item.item_id for item in active}
-    fresh_hints = "\n".join(
-        f"- {text}" for text, item in records if item.item_id in active_ids
-    ).strip()
+    fresh_hints = "\n".join(f"- {text}" for text, item in records if item.item_id in active_ids).strip()
     warnings = detect_stale_context(items, ctx.generation, _freshness_policy(ctx))
     return fresh_hints, _format_freshness_warning_block("Hint", warnings)
 
@@ -125,16 +128,18 @@ def _filter_notebook_by_freshness(
         value = getattr(notebook, field_name)
         if not value:
             continue
-        records.append((
-            field_name,
-            EvidenceFreshness(
-                item_id=f"notebook:{field_name}",
-                support_count=1,
-                last_validated_gen=max(last_validated_gen, 0),
-                confidence=max(0.0, min(1.0, confidence)),
-                created_at_gen=max(last_validated_gen, 0),
-            ),
-        ))
+        records.append(
+            (
+                field_name,
+                EvidenceFreshness(
+                    item_id=f"notebook:{field_name}",
+                    support_count=1,
+                    last_validated_gen=max(last_validated_gen, 0),
+                    confidence=max(0.0, min(1.0, confidence)),
+                    created_at_gen=max(last_validated_gen, 0),
+                ),
+            )
+        )
 
     if not records:
         return notebook, ""
@@ -142,32 +147,14 @@ def _filter_notebook_by_freshness(
     items = [item for _, item in records]
     active, _ = apply_freshness_decay(items, ctx.generation, _freshness_policy(ctx))
     active_ids = {item.item_id for item in active}
-    filtered = notebook.model_copy(update={
-        "current_objective": (
-            notebook.current_objective
-            if "notebook:current_objective" in active_ids
-            else ""
-        ),
-        "current_hypotheses": (
-            notebook.current_hypotheses
-            if "notebook:current_hypotheses" in active_ids
-            else []
-        ),
-        "unresolved_questions": (
-            notebook.unresolved_questions
-            if "notebook:unresolved_questions" in active_ids
-            else []
-        ),
-        "operator_observations": (
-            notebook.operator_observations
-            if "notebook:operator_observations" in active_ids
-            else []
-        ),
-        "follow_ups": (
-            notebook.follow_ups
-            if "notebook:follow_ups" in active_ids
-            else []
-        ),
-    })
+    filtered = notebook.model_copy(
+        update={
+            "current_objective": (notebook.current_objective if "notebook:current_objective" in active_ids else ""),
+            "current_hypotheses": (notebook.current_hypotheses if "notebook:current_hypotheses" in active_ids else []),
+            "unresolved_questions": (notebook.unresolved_questions if "notebook:unresolved_questions" in active_ids else []),
+            "operator_observations": (notebook.operator_observations if "notebook:operator_observations" in active_ids else []),
+            "follow_ups": (notebook.follow_ups if "notebook:follow_ups" in active_ids else []),
+        }
+    )
     warnings = detect_stale_context(items, ctx.generation, _freshness_policy(ctx))
     return filtered, _format_freshness_warning_block("Notebook", warnings)

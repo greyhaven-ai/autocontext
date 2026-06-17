@@ -104,12 +104,14 @@ def approve_lesson(
 
 
 def reject_lesson(*, lesson_store: LessonStore, scenario: str, lesson_id: str) -> bool:
-    """Reject a lesson: remove it from the store. Returns whether it was found."""
+    """Reject a PENDING lesson: remove it from the store. Returns False if the id is
+    not a pending lesson. Deleting an already-active lesson is a separate, explicit
+    action (curate "delete")."""
     lessons = lesson_store.read_lessons(scenario)
-    kept = [les for les in lessons if les.id != lesson_id]
-    if len(kept) == len(lessons):
+    target = next((les for les in lessons if les.id == lesson_id and les.is_pending()), None)
+    if target is None:
         return False
-    lesson_store.write_lessons(scenario, kept)
+    lesson_store.write_lessons(scenario, [les for les in lessons if les.id != lesson_id])
     return True
 
 

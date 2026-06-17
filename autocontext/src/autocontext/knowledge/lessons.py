@@ -65,7 +65,8 @@ class Lesson(BaseModel):
         return self.meta.approval_status == "pending"
 
     def is_applicable(self, current_generation: int, staleness_window: int = 10) -> bool:
-        return not self.is_stale(current_generation, staleness_window) and not self.is_superseded()
+        # Pending lessons await human approval and must never enter prompts.
+        return not self.is_pending() and not self.is_stale(current_generation, staleness_window) and not self.is_superseded()
 
     def to_dict(self) -> dict[str, Any]:
         return self.model_dump()

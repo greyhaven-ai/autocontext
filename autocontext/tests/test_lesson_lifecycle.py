@@ -75,12 +75,21 @@ def test_approve_does_not_lower_validation_generation(tmp_path: Path) -> None:
     assert view["stale"] == []
 
 
-def test_reject_removes(tmp_path: Path) -> None:
+def test_reject_removes_pending_only(tmp_path: Path) -> None:
     _artifacts, store = _stores(tmp_path)
     store.write_lessons("scn", [Lesson(id="x", text="held", meta=_meta(5, approval_status="pending"))])
     assert reject_lesson(lesson_store=store, scenario="scn", lesson_id="x") is True
     assert store.read_lessons("scn") == []
     assert reject_lesson(lesson_store=store, scenario="scn", lesson_id="x") is False
+
+
+def test_reject_does_not_delete_active(tmp_path: Path) -> None:
+    # reject only removes pending lessons; deleting an active lesson must go through
+    # the explicit curate "delete" action.
+    _artifacts, store = _stores(tmp_path)
+    store.write_lessons("scn", [Lesson(id="a", text="active one", meta=_meta(5))])
+    assert reject_lesson(lesson_store=store, scenario="scn", lesson_id="a") is False
+    assert [v.text for v in store.read_lessons("scn")] == ["active one"]
 
 
 def test_curate_actions(tmp_path: Path) -> None:
@@ -119,3 +128,21 @@ def test_curate_actions(tmp_path: Path) -> None:
         )
         is None
     )
+
+
+def test_pending_excluded_from_prompt_skills(tmp_path: Path) -> None:
+    # Unapproved (pending) lessons must never enter prompt/skill loading, even though
+    # /lifecycle surfaces them under "pending".
+    artifacts, store = _stores(tmp_path)
+    store.write_lessons(
+        "scn",
+        [
+            Lesson(id="a", text="approved lesson", meta=_meta(20)),
+            Lesson(id="p", text="UNAPPROVED secret", meta=_meta(20, approval_status="pending")),
+        ],
+    )
+    applicable = store.get_applicable_lessons("scn", current_generation=20)
+    assert [v.text for v in applicable] == ["approved lesson"]
+    skills_text = artifacts.read_skills("scn")
+    assert "approved lesson" in skills_text
+    assert "UNAPPROVED secret" not in skills_text
