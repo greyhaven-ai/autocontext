@@ -101,6 +101,7 @@ from autocontext.loop.stage_helpers.persistence_helpers import (
     _persist_skill_note,
     _revise_strategy_for_validity_failure,
     _run_curator_consolidation,
+    _sync_structured_lessons,
 )
 from autocontext.loop.stage_helpers.semantic_benchmark import (
     materialize_evidence_manifests,
@@ -171,10 +172,13 @@ def stage_policy_refinement(
 
     initial_code = ctx.current_strategy["__code__"]
 
-    events.emit("policy_refinement_started", {
-        "run_id": ctx.run_id,
-        "generation": ctx.generation,
-    })
+    events.emit(
+        "policy_refinement_started",
+        {
+            "run_id": ctx.run_id,
+            "generation": ctx.generation,
+        },
+    )
 
     try:
         effective_model = settings.policy_refinement_model or model or ""
@@ -211,21 +215,27 @@ def stage_policy_refinement(
             json.dumps(ctx.current_strategy, sort_keys=True),
         )
 
-        events.emit("policy_refinement_completed", {
-            "run_id": ctx.run_id,
-            "generation": ctx.generation,
-            "iterations": result.iterations,
-            "best_heuristic": result.best_heuristic,
-            "converged": result.converged,
-            "total_matches_run": result.total_matches_run,
-        })
+        events.emit(
+            "policy_refinement_completed",
+            {
+                "run_id": ctx.run_id,
+                "generation": ctx.generation,
+                "iterations": result.iterations,
+                "best_heuristic": result.best_heuristic,
+                "converged": result.converged,
+                "total_matches_run": result.total_matches_run,
+            },
+        )
     except Exception:
         logger.warning("policy refinement failed, using original strategy", exc_info=True)
-        events.emit("policy_refinement_failed", {
-            "run_id": ctx.run_id,
-            "generation": ctx.generation,
-            "error": "refinement exception",
-        })
+        events.emit(
+            "policy_refinement_failed",
+            {
+                "run_id": ctx.run_id,
+                "generation": ctx.generation,
+                "error": "refinement exception",
+            },
+        )
 
     return ctx
 
@@ -248,29 +258,39 @@ def stage_knowledge_setup(
     skills_context = "" if ablation else artifacts.read_skills(ctx.scenario_name)
     recent_analysis = "" if ablation else artifacts.read_latest_advance_analysis(ctx.scenario_name, ctx.generation)
     analyst_feedback = "" if ablation else _load_analyst_feedback_section(ctx, artifacts=artifacts)
-    analyst_attribution = "" if ablation else _load_credit_attribution_section(
-        ctx,
-        artifacts=artifacts,
-        role="analyst",
+    analyst_attribution = (
+        ""
+        if ablation
+        else _load_credit_attribution_section(
+            ctx,
+            artifacts=artifacts,
+            role="analyst",
+        )
     )
-    coach_attribution = "" if ablation else _load_credit_attribution_section(
-        ctx,
-        artifacts=artifacts,
-        role="coach",
+    coach_attribution = (
+        ""
+        if ablation
+        else _load_credit_attribution_section(
+            ctx,
+            artifacts=artifacts,
+            role="coach",
+        )
     )
-    architect_attribution = "" if ablation else _load_credit_attribution_section(
-        ctx,
-        artifacts=artifacts,
-        role="architect",
+    architect_attribution = (
+        ""
+        if ablation
+        else _load_credit_attribution_section(
+            ctx,
+            artifacts=artifacts,
+            role="architect",
+        )
     )
     coach_hint_feedback = "" if ablation else _load_hint_feedback_section(ctx, artifacts=artifacts)
     tool_usage_report = "" if ablation else _load_architect_tool_usage_report(ctx, artifacts=artifacts)
     weakness_reports = "" if ablation else artifacts.read_latest_weakness_reports_markdown(ctx.scenario_name)
     progress_reports = "" if ablation else artifacts.read_latest_progress_reports_markdown(ctx.scenario_name)
     session_reports = (
-        ""
-        if ablation or not ctx.settings.session_reports_enabled
-        else artifacts.read_latest_session_reports(ctx.scenario_name)
+        "" if ablation or not ctx.settings.session_reports_enabled else artifacts.read_latest_session_reports(ctx.scenario_name)
     )
     dead_ends = "" if ablation else artifacts.read_dead_ends(ctx.scenario_name)
     if not isinstance(dead_ends, str):
@@ -332,11 +352,7 @@ def stage_knowledge_setup(
     if not isinstance(mutation_replay, str):
         mutation_replay = ""
     if mutation_replay:
-        experiment_log = (
-            f"{experiment_log}\n\n{mutation_replay}".strip()
-            if experiment_log
-            else mutation_replay
-        )
+        experiment_log = f"{experiment_log}\n\n{mutation_replay}".strip() if experiment_log else mutation_replay
     if weakness_reports:
         experiment_log = (
             f"{experiment_log}\n\nRecent weakness reports:\n{weakness_reports}".strip()
@@ -375,11 +391,7 @@ def stage_knowledge_setup(
     if freshness_notes:
         freshness_block = "\n\n".join(note for note in freshness_notes if note).strip()
         if freshness_block:
-            experiment_log = (
-                f"{experiment_log}\n\n{freshness_block}".strip()
-                if experiment_log
-                else freshness_block
-            )
+            experiment_log = f"{experiment_log}\n\n{freshness_block}".strip() if experiment_log else freshness_block
     tool_instruction_block = render_tool_instruction_block(active_harness_mutations)
     if tool_instruction_block:
         tool_context = f"{tool_context}\n\n{tool_instruction_block}".strip() if tool_context else tool_instruction_block
@@ -465,9 +477,14 @@ def stage_agent_generation(
         roles = ["competitor", "analyst", "coach", "architect"]
         if orchestrator.curator is not None:
             roles.append("curator")
-        events.emit("agents_started", {
-            "run_id": ctx.run_id, "generation": ctx.generation, "roles": roles,
-        })
+        events.emit(
+            "agents_started",
+            {
+                "run_id": ctx.run_id,
+                "generation": ctx.generation,
+                "roles": roles,
+            },
+        )
 
     generation_started_at = ctx.generation_start_time or time.monotonic()
     generation_deadline = (
@@ -533,13 +550,16 @@ def stage_agent_generation(
     )
     if events is not None:
         for role_execution in outputs.role_executions:
-            events.emit("role_completed", {
-                "run_id": ctx.run_id,
-                "generation": ctx.generation,
-                "role": role_execution.role,
-                "latency_ms": role_execution.usage.latency_ms,
-                "tokens": role_execution.usage.input_tokens + role_execution.usage.output_tokens,
-            })
+            events.emit(
+                "role_completed",
+                {
+                    "run_id": ctx.run_id,
+                    "generation": ctx.generation,
+                    "role": role_execution.role,
+                    "latency_ms": role_execution.usage.latency_ms,
+                    "tokens": role_execution.usage.input_tokens + role_execution.usage.output_tokens,
+                },
+            )
     created_tools = artifacts.persist_tools(ctx.scenario_name, ctx.generation, outputs.architect_tools)
 
     # Persist harness validators if enabled
@@ -607,12 +627,15 @@ def stage_tournament(
         if validity_gate is not None:
             validity_result = validity_gate.check(current_strategy)
             if not validity_result.passed:
-                events.emit("validity_check_failed", {
-                    "run_id": ctx.run_id,
-                    "generation": ctx.generation,
-                    "errors": validity_result.errors,
-                    "retry_budget_remaining": validity_result.retry_budget_remaining,
-                })
+                events.emit(
+                    "validity_check_failed",
+                    {
+                        "run_id": ctx.run_id,
+                        "generation": ctx.generation,
+                        "errors": validity_result.errors,
+                        "retry_budget_remaining": validity_result.retry_budget_remaining,
+                    },
+                )
                 can_retry = validity_gate.consume_retry()
                 if can_retry:
                     validity_retry_attempt += 1
@@ -639,13 +662,16 @@ def stage_tournament(
                 )
                 gate_decision = rollback["gate_decision"]
                 gate_delta = rollback["gate_delta"]
-                events.emit("gate_decided", {
-                    "run_id": ctx.run_id,
-                    "generation": ctx.generation,
-                    "decision": gate_decision,
-                    "delta": gate_delta,
-                    "tier": "validity",
-                })
+                events.emit(
+                    "gate_decided",
+                    {
+                        "run_id": ctx.run_id,
+                        "generation": ctx.generation,
+                        "decision": gate_decision,
+                        "delta": gate_delta,
+                        "tier": "validity",
+                    },
+                )
                 ctx.score_history[:] = rollback["score_history"]
                 ctx.gate_decision_history[:] = rollback["gate_decision_history"]
                 ctx.gate_decision = gate_decision
@@ -655,30 +681,41 @@ def stage_tournament(
                 ctx.tournament = rollback["tournament"]
                 return ctx
 
-            events.emit("validity_check_passed", {
-                "run_id": ctx.run_id,
-                "generation": ctx.generation,
-            })
+            events.emit(
+                "validity_check_passed",
+                {
+                    "run_id": ctx.run_id,
+                    "generation": ctx.generation,
+                },
+            )
 
         self_play_pool, opponent_pool, planned_self_play_matches = _build_live_opponent_pool(
             ctx,
             sqlite=sqlite,
         )
 
-        events.emit("tournament_started", {
-            "run_id": ctx.run_id,
-            "generation": ctx.generation,
-            "matches": settings.matches_per_generation,
-            "scoring_backend": settings.scoring_backend,
-            "self_play_pool_size": self_play_pool.size,
-            "self_play_matches_planned": planned_self_play_matches,
-        })
+        events.emit(
+            "tournament_started",
+            {
+                "run_id": ctx.run_id,
+                "generation": ctx.generation,
+                "matches": settings.matches_per_generation,
+                "scoring_backend": settings.scoring_backend,
+                "self_play_pool_size": self_play_pool.size,
+                "self_play_matches_planned": planned_self_play_matches,
+            },
+        )
 
         def _on_match(match_index: int, score: float, _gen: int = ctx.generation) -> None:
-            events.emit("match_completed", {
-                "run_id": ctx.run_id, "generation": _gen,
-                "match_index": match_index, "score": score,
-            })
+            events.emit(
+                "match_completed",
+                {
+                    "run_id": ctx.run_id,
+                    "generation": _gen,
+                    "match_index": match_index,
+                    "score": score,
+                },
+            )
 
         try:
             evaluator = ScenarioEvaluator(scenario, supervisor, hook_bus=ctx.hook_bus)
@@ -739,12 +776,14 @@ def stage_tournament(
                 ),
             )
             custom_metrics = dict(custom_metrics or {})
-            custom_metrics.update({
-                "search_proxy_score": gate_best_score,
-                "novelty_score": novelty_score,
-                "raw_best_score": tournament.best_score,
-                "novelty_adjusted_best_score": gate_best_score,
-            })
+            custom_metrics.update(
+                {
+                    "search_proxy_score": gate_best_score,
+                    "novelty_score": novelty_score,
+                    "raw_best_score": tournament.best_score,
+                    "novelty_adjusted_best_score": gate_best_score,
+                }
+            )
             ctx.exploration_metadata = {
                 **ctx.exploration_metadata,
                 "novelty": {
@@ -811,11 +850,14 @@ def stage_tournament(
                 limits=harness_limits,
             )
             if holdout_result is not None:
-                events.emit("holdout_evaluated", {
-                    "run_id": ctx.run_id,
-                    "generation": ctx.generation,
-                    "holdout": holdout_result.to_dict(),
-                })
+                events.emit(
+                    "holdout_evaluated",
+                    {
+                        "run_id": ctx.run_id,
+                        "generation": ctx.generation,
+                        "holdout": holdout_result.to_dict(),
+                    },
+                )
                 if not holdout_result.passed:
                     gate_reason = f"Holdout blocked advance: {holdout_result.reason}"
                     if not use_rapid and attempt < settings.max_retries:
@@ -894,19 +936,23 @@ def stage_tournament(
     dimension_summary = _build_dimension_summary_payload(tournament)
     self_play_summary = _build_self_play_summary_payload(tournament)
 
-    events.emit("tournament_completed", {
-        "run_id": ctx.run_id, "generation": ctx.generation,
-        "mean_score": tournament.mean_score, "best_score": tournament.best_score,
-        "wins": tournament.wins, "losses": tournament.losses,
-        "scoring_backend": tournament.scoring_backend,
-        "rating_uncertainty": tournament.uncertainty_after,
-        "dimension_means": dimension_summary["dimension_means"] if dimension_summary is not None else {},
-        "best_dimensions": dimension_summary["best_dimensions"] if dimension_summary is not None else {},
-        "dimension_regressions": (
-            dimension_summary["dimension_regressions"] if dimension_summary is not None else []
-        ),
-        "self_play": self_play_summary or {},
-    })
+    events.emit(
+        "tournament_completed",
+        {
+            "run_id": ctx.run_id,
+            "generation": ctx.generation,
+            "mean_score": tournament.mean_score,
+            "best_score": tournament.best_score,
+            "wins": tournament.wins,
+            "losses": tournament.losses,
+            "scoring_backend": tournament.scoring_backend,
+            "rating_uncertainty": tournament.uncertainty_after,
+            "dimension_means": dimension_summary["dimension_means"] if dimension_summary is not None else {},
+            "best_dimensions": dimension_summary["best_dimensions"] if dimension_summary is not None else {},
+            "dimension_regressions": (dimension_summary["dimension_regressions"] if dimension_summary is not None else []),
+            "self_play": self_play_summary or {},
+        },
+    )
 
     outcome = apply_tournament_outcome(
         gate_decision=gate_decision,
@@ -918,12 +964,12 @@ def stage_tournament(
     )
     gate_delta = outcome["gate_delta"]
     gate_event = {
-        "run_id": ctx.run_id, "generation": ctx.generation,
-        "decision": gate_decision, "delta": gate_delta,
+        "run_id": ctx.run_id,
+        "generation": ctx.generation,
+        "decision": gate_decision,
+        "delta": gate_delta,
         "best_dimensions": dimension_summary["best_dimensions"] if dimension_summary is not None else {},
-        "dimension_regressions": (
-            dimension_summary["dimension_regressions"] if dimension_summary is not None else []
-        ),
+        "dimension_regressions": (dimension_summary["dimension_regressions"] if dimension_summary is not None else []),
         "self_play": self_play_summary or {},
         "reason": gate_reason,
         "holdout": holdout_result.to_dict() if holdout_result is not None else None,
@@ -999,12 +1045,15 @@ def stage_stagnation_check(
     ctx.coach_competitor_hints = hint
     ctx.fresh_start_triggered = True
 
-    events.emit("fresh_start", {
-        "run_id": ctx.run_id,
-        "generation": ctx.generation,
-        "trigger": report.trigger,
-        "detail": report.detail,
-    })
+    events.emit(
+        "fresh_start",
+        {
+            "run_id": ctx.run_id,
+            "generation": ctx.generation,
+            "trigger": report.trigger,
+            "detail": report.detail,
+        },
+    )
 
     return ctx
 
@@ -1027,9 +1076,13 @@ def stage_skeptic_review(
     if not ctx.outputs or not ctx.outputs.coach_playbook:
         return ctx
 
-    events.emit("skeptic_started", {
-        "run_id": ctx.run_id, "generation": ctx.generation,
-    })
+    events.emit(
+        "skeptic_started",
+        {
+            "run_id": ctx.run_id,
+            "generation": ctx.generation,
+        },
+    )
 
     trajectory = trajectory_builder.build_trajectory(ctx.run_id)
     analysis = artifacts.read_latest_advance_analysis(ctx.scenario_name, ctx.generation)
@@ -1055,28 +1108,34 @@ def stage_skeptic_review(
         ctx.run_id,
         ctx.generation,
         outputs=[("skeptic", exec_result.content)],
-        role_metrics=[(
-            exec_result.role,
-            exec_result.usage.model,
-            exec_result.usage.input_tokens,
-            exec_result.usage.output_tokens,
-            exec_result.usage.latency_ms,
-            exec_result.subagent_id,
-            exec_result.status,
-        )],
+        role_metrics=[
+            (
+                exec_result.role,
+                exec_result.usage.model,
+                exec_result.usage.input_tokens,
+                exec_result.usage.output_tokens,
+                exec_result.usage.latency_ms,
+                exec_result.subagent_id,
+                exec_result.status,
+            )
+        ],
     )
 
     # If skeptic blocks and blocking is enabled, clear the playbook (like curator reject)
     if review.recommendation == "block" and ctx.settings.skeptic_can_block:
         ctx.outputs = dataclasses.replace(ctx.outputs, coach_playbook="")
 
-    events.emit("skeptic_completed", {
-        "run_id": ctx.run_id, "generation": ctx.generation,
-        "risk_level": review.risk_level,
-        "recommendation": review.recommendation,
-        "concerns_count": len(review.concerns),
-        "confidence": review.confidence,
-    })
+    events.emit(
+        "skeptic_completed",
+        {
+            "run_id": ctx.run_id,
+            "generation": ctx.generation,
+            "risk_level": review.risk_level,
+            "recommendation": review.recommendation,
+            "concerns_count": len(review.concerns),
+            "confidence": review.confidence,
+        },
+    )
 
     return ctx
 
@@ -1103,14 +1162,17 @@ def stage_curator_gate(
         sqlite=sqlite,
     )
     if analyst_rating is not None:
-        events.emit("analyst_feedback_rated", {
-            "run_id": ctx.run_id,
-            "generation": ctx.generation,
-            "overall": analyst_rating.overall,
-            "actionability": analyst_rating.actionability,
-            "specificity": analyst_rating.specificity,
-            "correctness": analyst_rating.correctness,
-        })
+        events.emit(
+            "analyst_feedback_rated",
+            {
+                "run_id": ctx.run_id,
+                "generation": ctx.generation,
+                "overall": analyst_rating.overall,
+                "actionability": analyst_rating.actionability,
+                "specificity": analyst_rating.specificity,
+                "correctness": analyst_rating.correctness,
+            },
+        )
 
     if ctx.gate_decision != "advance":
         return ctx
@@ -1121,9 +1183,13 @@ def stage_curator_gate(
     if not current_pb or current_pb == EMPTY_PLAYBOOK_SENTINEL:
         return ctx
 
-    events.emit("curator_started", {
-        "run_id": ctx.run_id, "generation": ctx.generation,
-    })
+    events.emit(
+        "curator_started",
+        {
+            "run_id": ctx.run_id,
+            "generation": ctx.generation,
+        },
+    )
 
     curator_trajectory = trajectory_builder.build_trajectory(ctx.run_id)
     curator_analysis = artifacts.read_latest_advance_analysis(ctx.scenario_name, ctx.generation)
@@ -1149,15 +1215,17 @@ def stage_curator_gate(
         ctx.run_id,
         ctx.generation,
         outputs=[("curator", curator_exec.content)],
-        role_metrics=[(
-            curator_exec.role,
-            curator_exec.usage.model,
-            curator_exec.usage.input_tokens,
-            curator_exec.usage.output_tokens,
-            curator_exec.usage.latency_ms,
-            curator_exec.subagent_id,
-            curator_exec.status,
-        )],
+        role_metrics=[
+            (
+                curator_exec.role,
+                curator_exec.usage.model,
+                curator_exec.usage.input_tokens,
+                curator_exec.usage.output_tokens,
+                curator_exec.usage.latency_ms,
+                curator_exec.subagent_id,
+                curator_exec.status,
+            )
+        ],
     )
 
     if curator_decision.decision == "reject":
@@ -1170,14 +1238,16 @@ def stage_curator_gate(
         ctx.outputs = dataclasses.replace(ctx.outputs, coach_playbook=curator_decision.playbook)
     # "accept" -> no change to outputs
 
-    events.emit("curator_completed", {
-        "run_id": ctx.run_id, "generation": ctx.generation,
-        "decision": curator_decision.decision,
-        "analyst_rating": analyst_rating.to_dict() if analyst_rating is not None else None,
-        "skeptic_recommendation": (
-            ctx.skeptic_review.recommendation if ctx.skeptic_review is not None else None
-        ),
-    })
+    events.emit(
+        "curator_completed",
+        {
+            "run_id": ctx.run_id,
+            "generation": ctx.generation,
+            "decision": curator_decision.decision,
+            "analyst_rating": analyst_rating.to_dict() if analyst_rating is not None else None,
+            "skeptic_recommendation": (ctx.skeptic_review.recommendation if ctx.skeptic_review is not None else None),
+        },
+    )
 
     return ctx
 
@@ -1246,7 +1316,8 @@ def stage_persistence(
         match_output = eval_result.metadata["execution_output"]
         replay_json = _build_match_replay_json(match_output)
         sqlite.insert_match(
-            run_id, generation,
+            run_id,
+            generation,
             settings.seed_base + (generation * 100) + idx,
             match_output.result.score,
             match_output.result.passed_validation,
@@ -1258,7 +1329,8 @@ def stage_persistence(
 
     # 3. Upsert generation
     sqlite.upsert_generation(
-        run_id, generation,
+        run_id,
+        generation,
         mean_score=tournament.mean_score,
         best_score=ctx.previous_best,
         elo=ctx.challenger_elo,
@@ -1266,11 +1338,7 @@ def stage_persistence(
         losses=tournament.losses,
         gate_decision=gate_decision,
         status="completed",
-        dimension_summary_json=(
-            json.dumps(dimension_summary, sort_keys=True)
-            if dimension_summary is not None
-            else None
-        ),
+        dimension_summary_json=(json.dumps(dimension_summary, sort_keys=True) if dimension_summary is not None else None),
         scoring_backend=tournament.scoring_backend,
         rating_uncertainty=ctx.challenger_uncertainty,
     )
@@ -1309,6 +1377,7 @@ def stage_persistence(
 
     # 5. Write skill note + dead-end tracking
     _persist_skill_note(ctx, artifacts=artifacts)
+    _sync_structured_lessons(ctx, artifacts=artifacts)
 
     # 6. Curator lesson consolidation
     existing_lessons_check = artifacts.read_skill_lessons_raw(scenario_name)
@@ -1320,8 +1389,11 @@ def stage_persistence(
         and not settings.ablation_no_feedback
     ):
         _run_curator_consolidation(
-            ctx, curator=curator, artifacts=artifacts,
-            trajectory_builder=trajectory_builder, sqlite=sqlite,
+            ctx,
+            curator=curator,
+            artifacts=artifacts,
+            trajectory_builder=trajectory_builder,
+            sqlite=sqlite,
         )
 
     # 7. Persist competitor feedback on the hints it actually used this generation.
@@ -1362,32 +1434,29 @@ def stage_persistence(
         _persist_progress_snapshot(ctx, artifacts=artifacts)
 
     # 9. Persist tuning proposal on advance
-    if (
-        ctx.tuning_proposal is not None
-        and settings.config_adaptive_enabled
-        and gate_decision == "advance"
-    ):
+    if ctx.tuning_proposal is not None and settings.config_adaptive_enabled and gate_decision == "advance":
         artifacts.write_tuning(scenario_name, ctx.tuning_proposal.to_json())
 
     # 10. Emit generation_completed event
-    events.emit("generation_completed", {
-        "run_id": run_id,
-        "generation": generation,
-        "mean_score": tournament.mean_score,
-        "best_score": ctx.previous_best,
-        "elo": ctx.challenger_elo,
-        "gate_decision": gate_decision,
-        "gate_delta": gate_delta,
-        "best_dimensions": dimension_summary["best_dimensions"] if dimension_summary is not None else {},
-        "dimension_regressions": (
-            dimension_summary["dimension_regressions"] if dimension_summary is not None else []
-        ),
-        "self_play": self_play_summary or {},
-        "holdout": ctx.holdout_result.to_dict() if ctx.holdout_result is not None else None,
-        "exploration": ctx.exploration_metadata or {},
-        "cost_control": ctx.cost_control_metadata or {},
-        "credit_assignment": credit_assignment.to_dict() if credit_assignment is not None else None,
-        "created_tools": ctx.created_tools,
-    })
+    events.emit(
+        "generation_completed",
+        {
+            "run_id": run_id,
+            "generation": generation,
+            "mean_score": tournament.mean_score,
+            "best_score": ctx.previous_best,
+            "elo": ctx.challenger_elo,
+            "gate_decision": gate_decision,
+            "gate_delta": gate_delta,
+            "best_dimensions": dimension_summary["best_dimensions"] if dimension_summary is not None else {},
+            "dimension_regressions": (dimension_summary["dimension_regressions"] if dimension_summary is not None else []),
+            "self_play": self_play_summary or {},
+            "holdout": ctx.holdout_result.to_dict() if ctx.holdout_result is not None else None,
+            "exploration": ctx.exploration_metadata or {},
+            "cost_control": ctx.cost_control_metadata or {},
+            "credit_assignment": credit_assignment.to_dict() if credit_assignment is not None else None,
+            "created_tools": ctx.created_tools,
+        },
+    )
 
     return ctx

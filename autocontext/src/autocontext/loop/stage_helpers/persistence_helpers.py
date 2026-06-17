@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import uuid
 from typing import TYPE_CHECKING, Any
 
 from autocontext.agents.feedback_loops import AnalystRating
@@ -13,6 +14,8 @@ from autocontext.analytics.credit_assignment import (
     compute_change_vector,
 )
 from autocontext.knowledge.dead_end_manager import DeadEndEntry, consolidate_dead_ends
+from autocontext.knowledge.lessons import ApplicabilityMeta, Lesson
+from autocontext.knowledge.pending_lessons import PendingLessonStore
 from autocontext.knowledge.progress import build_progress_snapshot
 from autocontext.loop.stage_helpers.context_loaders import _current_tool_names
 from autocontext.loop.stage_types import GenerationContext
@@ -166,15 +169,17 @@ def _maybe_rate_analyst_output(
             ("curator_analyst_rating", json.dumps(rating.to_dict(), sort_keys=True)),
             ("curator_analyst_feedback", exec_result.content),
         ],
-        role_metrics=[(
-            exec_result.role,
-            exec_result.usage.model,
-            exec_result.usage.input_tokens,
-            exec_result.usage.output_tokens,
-            exec_result.usage.latency_ms,
-            exec_result.subagent_id,
-            exec_result.status,
-        )],
+        role_metrics=[
+            (
+                exec_result.role,
+                exec_result.usage.model,
+                exec_result.usage.input_tokens,
+                exec_result.usage.output_tokens,
+                exec_result.usage.latency_ms,
+                exec_result.subagent_id,
+                exec_result.status,
+            )
+        ],
     )
     return rating
 
@@ -224,6 +229,48 @@ def _persist_skill_note(
         artifacts.append_dead_end(ctx.scenario_name, entry.to_markdown())
 
 
+def _sync_structured_lessons(ctx: GenerationContext, *, artifacts: ArtifactStore) -> None:
+    """Structure this generation's proposed lessons into lessons.json (Cowork 2c).
+
+    Routed by ctx.curator_approval_mode: auto -> active; review -> active + pending;
+    approve -> pending only. Only runs on an advancing generation. Idempotent across
+    generations: a lesson already present (by text) in either store is skipped.
+    """
+    if ctx.gate_decision != "advance" or ctx.outputs is None:
+        return
+    proposed = getattr(ctx.outputs, "coach_lessons", None) or []
+    if not proposed:
+        return
+
+    scenario = ctx.scenario_name
+    mode = ctx.curator_approval_mode
+    store = artifacts.lesson_store
+    pending = PendingLessonStore(artifacts.knowledge_root)
+    seen_active = {les.text for les in store.read_lessons(scenario)}
+    seen_pending = {les.text for les in pending.read(scenario)}
+
+    for raw in proposed:
+        text = raw[2:].strip() if raw.startswith("- ") else raw.strip()
+        if not text or text in seen_active or text in seen_pending:
+            continue
+        meta = ApplicabilityMeta(
+            created_at="",
+            generation=ctx.generation,
+            best_score=ctx.previous_best,
+        )
+        if mode == "approve":
+            pending.add(scenario, Lesson(id=f"lesson_{uuid.uuid4().hex[:8]}", text=text, meta=meta))
+            seen_pending.add(text)
+        elif mode == "review":
+            added = store.add_lesson(scenario, text, meta)
+            pending.add(scenario, added)
+            seen_active.add(text)
+            seen_pending.add(text)
+        else:  # auto
+            store.add_lesson(scenario, text, meta)
+            seen_active.add(text)
+
+
 def _run_curator_consolidation(
     ctx: GenerationContext,
     *,
@@ -242,7 +289,9 @@ def _run_curator_consolidation(
 
     consolidation_trajectory = trajectory_builder.build_trajectory(ctx.run_id)
     lesson_result, lesson_exec = curator.consolidate_lessons(
-        existing_lessons, settings.skill_max_lessons, consolidation_trajectory,
+        existing_lessons,
+        settings.skill_max_lessons,
+        consolidation_trajectory,
         constraint_mode=settings.constraint_prompts_enabled,
     )
     artifacts.replace_skill_lessons(scenario_name, lesson_result.consolidated_lessons)
@@ -250,15 +299,17 @@ def _run_curator_consolidation(
         ctx.run_id,
         ctx.generation,
         outputs=[("curator_consolidation", lesson_exec.content)],
-        role_metrics=[(
-            lesson_exec.role,
-            lesson_exec.usage.model,
-            lesson_exec.usage.input_tokens,
-            lesson_exec.usage.output_tokens,
-            lesson_exec.usage.latency_ms,
-            lesson_exec.subagent_id,
-            lesson_exec.status,
-        )],
+        role_metrics=[
+            (
+                lesson_exec.role,
+                lesson_exec.usage.model,
+                lesson_exec.usage.input_tokens,
+                lesson_exec.usage.output_tokens,
+                lesson_exec.usage.latency_ms,
+                lesson_exec.subagent_id,
+                lesson_exec.status,
+            )
+        ],
     )
 
     # Dead-end consolidation
