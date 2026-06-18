@@ -42,6 +42,20 @@ def test_playbook_approval_default_off_writes_live(tmp_path: Path) -> None:
     assert store.read_pending_playbook("grid_ctf")["has_pending"] is False
 
 
+def test_auto_mode_supersedes_stale_pending_approval(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    store.write_playbook("grid_ctf", "approved playbook")
+    store.persist_generation(**_persist_args(), require_playbook_approval=True)
+    args = _persist_args() | {"generation_index": 3, "coach_playbook": "auto new"}
+
+    assert store.persist_generation(**args) == "live"
+
+    assert store.read_playbook("grid_ctf") == "auto new\n"
+    assert store.read_pending_playbook("grid_ctf")["has_pending"] is False
+    assert store.approve_pending_playbook("grid_ctf") == {"ok": False, "status": "missing"}
+    assert store.read_playbook("grid_ctf") == "auto new\n"
+
+
 def test_playbook_approval_stages_pending_without_touching_live(tmp_path: Path) -> None:
     store = _store(tmp_path)
     store.write_playbook("grid_ctf", "approved playbook")

@@ -2,7 +2,7 @@
 
 AC-826 makes the optional human hold gate operate on the artifact that drives the next prompt: `playbook.md`.
 
-When `require_playbook_approval` is false, curator-approved playbooks are written live as before. When it is true, the engine writes:
+When `require_playbook_approval` is false, curator-approved playbooks are written live as before and any stale `playbook.pending.*` proposal is cleared. When it is true, the engine writes:
 
 - `knowledge/<scenario>/playbook.pending.md`
 - `knowledge/<scenario>/playbook.pending.json`

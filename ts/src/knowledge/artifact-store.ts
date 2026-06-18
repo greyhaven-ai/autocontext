@@ -213,6 +213,9 @@ export class ArtifactStore {
   ): "live" | "pending" | "awaiting_approval" {
     if (!opts.requireApproval) {
       this.writePlaybook(scenarioName, content);
+      if (this.readPendingPlaybook(scenarioName).hasPending) {
+        rejectPendingPlaybook(this.knowledgeRoot, scenarioName);
+      }
       return "live";
     }
     if (this.readPendingPlaybook(scenarioName).hasPending) return "awaiting_approval";

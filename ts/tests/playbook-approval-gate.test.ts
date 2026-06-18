@@ -56,6 +56,36 @@ describe("playbook approval gate", () => {
     }
   });
 
+  it("auto mode supersedes stale pending approvals", () => {
+    const dir = root();
+    try {
+      const artifacts = store(dir);
+      artifacts.writePlaybook("grid_ctf", "approved playbook");
+      artifacts.writeOrStagePlaybook("grid_ctf", "pending old", {
+        requireApproval: true,
+        sourceRunId: "run-approval",
+        generation: 2,
+        curatorDecision: "advance",
+      });
+
+      expect(
+        artifacts.writeOrStagePlaybook("grid_ctf", "auto new", {
+          requireApproval: false,
+          sourceRunId: "run-auto",
+          generation: 3,
+          curatorDecision: "advance",
+        }),
+      ).toBe("live");
+
+      expect(artifacts.readPlaybook("grid_ctf")).toBe("auto new\n");
+      expect(artifacts.readPendingPlaybook("grid_ctf").hasPending).toBe(false);
+      expect(artifacts.approvePendingPlaybook("grid_ctf")).toEqual({ ok: false, status: "missing" });
+      expect(artifacts.readPlaybook("grid_ctf")).toBe("auto new\n");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("skips new staging while an unresolved pending playbook exists", () => {
     const dir = root();
     try {

@@ -50,6 +50,14 @@ class PlaybookApprovalMethods:
     ) -> str:
         if not require_playbook_approval:
             self.write_playbook(scenario_name, content)
+            if read_pending_playbook(self.knowledge_root, scenario_name)["has_pending"]:
+                reject_pending_playbook(self.knowledge_root, scenario_name)
+                self._append_mutation(
+                    scenario_name,
+                    mutation_type="playbook_pending_superseded",
+                    payload={"generation": generation, "source_run_id": source_run_id},
+                    description="Pending playbook cleared by live auto-mode update",
+                )
             return "live"
         if read_pending_playbook(self.knowledge_root, scenario_name)["has_pending"]:
             self._append_mutation(
