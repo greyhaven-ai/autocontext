@@ -655,6 +655,39 @@ export type {
 // Analytics / Traces
 export { ActorRef, TraceEvent, RunTrace } from "./analytics/run-trace.js";
 export {
+  BRANCH_TERMINAL_STATES,
+  CAMPAIGN_TERMINAL_STATES,
+  buildCampaignModeReport,
+  campaignModeReportToMarkdown,
+  parseCampaignModeReport,
+  renderCampaignEvidenceShare,
+} from "./analytics/campaign-mode-report.js";
+export type {
+  BranchTerminalState,
+  BuildCampaignModeReportInput,
+  CampaignBranch,
+  CampaignBranchBudget,
+  CampaignBranchLineageEdge,
+  CampaignBranchSummary,
+  CampaignBranchUsage,
+  CampaignEvalLane,
+  CampaignEvidencePolicy,
+  CampaignEvidenceReference,
+  CampaignEvidenceShareItem,
+  CampaignEvidenceShareItemInput,
+  CampaignEvidenceSharing,
+  CampaignLinkedReports,
+  CampaignModeReport,
+  CampaignRecommendation,
+  CampaignTerminalState,
+} from "./analytics/campaign-mode-report.js";
+export {
+  campaignModeReportPath,
+  readCampaignModeReport,
+  readLatestCampaignModeReportsMarkdown,
+  writeCampaignModeReport,
+} from "./knowledge/campaign-mode-report-store.js";
+export {
   FAILURE_KINDS,
   NEGATIVE_RESULT_DISPOSITIONS,
   buildNegativeResultLedger,
