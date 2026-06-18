@@ -89,6 +89,8 @@ class GenerationContext:
     skeptic_review: SkepticReview | None = None
     applied_competitor_hints: str = ""
     challenger_uncertainty: float | None = None
+    # Opt-in per-run gate: stage newly proposed lessons as pending instead of applying them.
+    require_lesson_approval: bool = False
 
 
 @dataclass(slots=True)

@@ -13,6 +13,7 @@ from autocontext.analytics.credit_assignment import (
     compute_change_vector,
 )
 from autocontext.knowledge.dead_end_manager import DeadEndEntry, consolidate_dead_ends
+from autocontext.knowledge.lessons import ApplicabilityMeta
 from autocontext.knowledge.progress import build_progress_snapshot
 from autocontext.loop.stage_helpers.context_loaders import _current_tool_names
 from autocontext.loop.stage_types import GenerationContext
@@ -222,6 +223,39 @@ def _persist_skill_note(
             score=tournament.best_score,
         )
         artifacts.append_dead_end(ctx.scenario_name, entry.to_markdown())
+
+
+def _stage_pending_lessons(ctx: GenerationContext, *, artifacts: ArtifactStore) -> None:
+    """When require_lesson_approval is set, stage this generation's proposed lessons
+    into lessons.json as ``pending`` (held for human approval, excluded from prompts).
+
+    Opt-in and inert by default: a no-op unless ``ctx.require_lesson_approval`` is True,
+    so behavior is unchanged for every run that does not request it.
+    """
+    if not getattr(ctx, "require_lesson_approval", False):
+        return
+    if ctx.gate_decision != "advance" or ctx.outputs is None:
+        return
+    raw_block = getattr(ctx.outputs, "coach_lessons", None) or ""
+    proposed = [line for line in raw_block.splitlines() if line.strip()]
+    if not proposed:
+        return
+
+    store = artifacts.lesson_store
+    seen = {les.text for les in store.read_lessons(ctx.scenario_name)}
+    for raw in proposed:
+        stripped = raw.strip()
+        text = stripped[2:].strip() if stripped.startswith("- ") else stripped
+        if not text or text in seen:
+            continue
+        meta = ApplicabilityMeta(
+            created_at="",
+            generation=ctx.generation,
+            best_score=ctx.previous_best,
+            approval_status="pending",
+        )
+        store.add_lesson(ctx.scenario_name, text, meta)
+        seen.add(text)
 
 
 def _run_curator_consolidation(

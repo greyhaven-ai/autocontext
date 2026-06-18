@@ -1060,7 +1060,9 @@ class GenerationRunner:
             gate_decision_history,
         )
 
-    def run(self, scenario_name: str, generations: int, run_id: str | None = None) -> RunSummary:
+    def run(
+        self, scenario_name: str, generations: int, run_id: str | None = None, require_lesson_approval: bool = False
+    ) -> RunSummary:
         scenario = self._scenario(scenario_name)
         active_run_id = run_id or f"run_{uuid.uuid4().hex[:12]}"
         run_start_time = time.monotonic()
@@ -1210,6 +1212,7 @@ class GenerationRunner:
                         scenario=scenario,
                         generation=generation,
                         settings=self.settings,
+                        require_lesson_approval=require_lesson_approval,
                         hook_bus=self.hook_bus,
                         previous_best=previous_best,
                         challenger_elo=challenger_elo,

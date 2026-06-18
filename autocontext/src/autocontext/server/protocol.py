@@ -245,6 +245,9 @@ class StartRunCmd(BaseModel):
     type: Literal["start_run"] = "start_run"
     scenario: str
     generations: int = Field(gt=0)
+    # Opt-in (default off): stage newly proposed lessons as pending (held for human
+    # approval, excluded from prompts) instead of applying them. Inert unless set.
+    require_lesson_approval: bool = False
 
 
 class ListScenariosCmd(BaseModel):
