@@ -799,6 +799,24 @@
       ]
     },
     {
+      "python": "exploration_collapse_auto_mitigation",
+      "typescript": "explorationCollapseAutoMitigation",
+      "type": "boolean",
+      "default": false,
+      "env": [
+        "AUTOCONTEXT_EXPLORATION_COLLAPSE_AUTO_MITIGATION"
+      ]
+    },
+    {
+      "python": "exploration_collapse_guard",
+      "typescript": "explorationCollapseGuard",
+      "type": "boolean",
+      "default": false,
+      "env": [
+        "AUTOCONTEXT_EXPLORATION_COLLAPSE_GUARD"
+      ]
+    },
+    {
       "python": "exploration_mode",
       "typescript": "explorationMode",
       "type": "enum",

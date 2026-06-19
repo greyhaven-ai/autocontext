@@ -18,6 +18,7 @@ All notable changes to this project will be documented in this file.
 - AC-796 soft structural hints add opt-in `AUTOCONTEXT_SOFT_HINTS_ENABLED` / `hint_style` routing, structural prompt guidance, hint metadata, and A/B reporting helpers across Python and TypeScript.
 - AC-797 span-level credit attribution adds opt-in context span IDs, correlative span credit metadata, prompt summaries, and Python/TypeScript ranking helpers while keeping component attribution as the default.
 - AC-798 OPD/GKD + GRPO mixture experiments add a matched-compute protocol, checked-in planning script, required metric schema, and conservative held-out/collapse promotion gate.
+- AC-799 exploration collapse guard detects advisory regretful-teacher/hint collapse signals across response length, diversity, entropy, route repetition, rollback, and score movement with opt-in mitigation.
 
 ## [pi-v0.2.6] - 2026-06-16
 

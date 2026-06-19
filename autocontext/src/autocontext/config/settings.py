@@ -442,6 +442,8 @@ class AppSettings(BaseModel):
         default="linear",
         description="Exploration mode: linear, rapid, or tree",
     )
+    exploration_collapse_guard: bool = Field(default=False, description="Warn when guidance reduces exploration quality")
+    exploration_collapse_auto_mitigation: bool = Field(default=False, description="Allow opt-in guidance demotion")
     rapid_gens: int = Field(
         default=0,
         ge=0,

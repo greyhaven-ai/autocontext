@@ -669,6 +669,20 @@ export type {
 // Analytics / Traces
 export { ActorRef, TraceEvent, RunTrace } from "./analytics/run-trace.js";
 export {
+  detectExplorationCollapse,
+  renderExplorationCollapseReport,
+} from "./analytics/exploration-collapse-guard.js";
+export type {
+  CollapseMetric,
+  ExplorationCollapseEvent,
+  ExplorationCollapseReport,
+  ExplorationCollapseSignal,
+  ExplorationSnapshot,
+  GuidanceChange,
+  GuidanceKind,
+  MitigationAction,
+} from "./analytics/exploration-collapse-guard.js";
+export {
   BRANCH_TERMINAL_STATES,
   CAMPAIGN_TERMINAL_STATES,
   buildCampaignModeReport,

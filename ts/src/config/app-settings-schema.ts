@@ -228,6 +228,8 @@ export const AppSettingsSchema = z.object({
 
   // Exploration
   explorationMode: z.enum(["linear", "rapid", "tree"]).default("linear"),
+  explorationCollapseGuard: z.boolean().default(false),
+  explorationCollapseAutoMitigation: z.boolean().default(false),
   rapidGens: z.number().int().min(0).default(0),
   noveltyEnabled: z.boolean().default(true),
   noveltyWeight: z.number().min(0).max(1).default(0.1),
