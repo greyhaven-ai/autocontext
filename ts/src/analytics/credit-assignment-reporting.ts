@@ -28,7 +28,11 @@ const ROLE_GUIDANCE: Record<string, string> = {
 };
 
 export function formatAttributionForAgent(result: AttributionResult, role: string): string {
-  if (Object.keys(result.credits).length === 0 || result.totalDelta <= 0) {
+  const spanReport = spanReportFromMetadata(result.metadata);
+  if (Object.keys(result.credits).length === 0 && spanReport === undefined) {
+    return "";
+  }
+  if (result.totalDelta <= 0 && spanReport === undefined) {
     return "";
   }
 
@@ -58,34 +62,55 @@ export function formatAttributionForAgent(result: AttributionResult, role: strin
     }
   }
 
-  const lines = [`## ${title} (Gen ${result.generation})`, `Total score improvement: +${result.totalDelta.toFixed(4)}`];
-  if (guidance) {
-    lines.push(guidance);
+  const positiveDelta = result.totalDelta > 0;
+  const lines = [`## ${title} (Gen ${result.generation})`];
+  if (positiveDelta) {
+    lines.push(`Total score improvement: +${result.totalDelta.toFixed(4)}`);
+    if (guidance) {
+      lines.push(guidance);
+    }
+  } else {
+    lines.push(`Total score delta: ${formatSigned(result.totalDelta)}`);
+    lines.push("Use low/negative span credits as demotion candidates before preserving guidance.");
   }
   lines.push("");
 
   for (const component of orderedComponents) {
     const credit = result.credits[component] ?? 0;
-    const share = result.totalDelta > 0 ? (credit / result.totalDelta) * 100 : 0;
-    lines.push(`- ${component}: +${credit.toFixed(4)} (${Math.round(share)}% of improvement)`);
+    if (positiveDelta) {
+      const share = (credit / result.totalDelta) * 100;
+      lines.push(`- ${component}: +${credit.toFixed(4)} (${Math.round(share)}% of improvement)`);
+    } else {
+      lines.push(`- ${component}: ${formatSigned(credit)} (non-positive run)`);
+    }
   }
 
-  const spanReport = result.metadata.spanAttribution;
-  if (isSpanReport(spanReport)) {
+  if (spanReport !== undefined) {
     const preferredSources = new Set(preferred.length > 0 ? preferred : Object.keys(result.credits));
     const spans = [...spanReport.spans]
       .filter((span) => preferredSources.has(String(span.source)))
-      .sort((left, right) => Number(right.credit) - Number(left.credit))
+      .sort((left, right) => positiveDelta ? Number(right.credit) - Number(left.credit) : Number(left.credit) - Number(right.credit))
       .slice(0, 5);
     if (spans.length > 0) {
       lines.push("", "Span attribution (component-correlated, noisy):");
       for (const span of spans) {
-        lines.push(`- ${span.text}: ${Number(span.credit).toFixed(4)}`);
+        lines.push(`- ${span.text}: ${formatSigned(Number(span.credit))}`);
       }
     }
   }
 
   return lines.join("\n");
+}
+
+function formatSigned(value: number): string {
+  return `${value >= 0 ? "+" : ""}${value.toFixed(4)}`;
+}
+
+function spanReportFromMetadata(
+  metadata: Record<string, unknown>,
+): { spans: Array<{ source: string; text: string; credit: number }> } | undefined {
+  const value = metadata["spanAttribution"] ?? metadata["span_attribution"];
+  return isSpanReport(value) ? value : undefined;
 }
 
 function isSpanReport(value: unknown): value is { spans: Array<{ source: string; text: string; credit: number }> } {

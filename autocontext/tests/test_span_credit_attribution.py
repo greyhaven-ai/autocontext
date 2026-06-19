@@ -77,3 +77,31 @@ def test_format_attribution_includes_span_context_when_present() -> None:
 
     assert "Span attribution (component-correlated, noisy)" in formatted
     assert "Check invariant" in formatted
+
+
+def test_regression_span_attribution_reaches_prompt_summary() -> None:
+    credit = _credit()
+    vector = credit.GenerationChangeVector(
+        generation=5,
+        score_delta=-0.2,
+        changes=[credit.ComponentChange(component="hints", magnitude=1.0, description="Hints changed")],
+    )
+    attribution = credit.attribute_credit(vector)
+    report = credit.build_span_attribution(
+        vector,
+        attribution,
+        current_state={"hints": "Regressed hint"},
+    )
+    result = credit.AttributionResult(
+        generation=5,
+        total_delta=-0.2,
+        credits=attribution.credits,
+        metadata={"context_attribution": "span", "span_attribution": report},
+    )
+
+    formatted = credit.format_attribution_for_agent(result, "coach")
+
+    assert "Total score delta: -0.2000" in formatted
+    assert "demotion candidates" in formatted
+    assert "Regressed hint" in formatted
+    assert "-0.2000" in formatted

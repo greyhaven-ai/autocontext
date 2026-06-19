@@ -309,7 +309,12 @@ def format_attribution_for_agent(
     role: str,
 ) -> str:
     """Format attribution as prompt context for a specific agent role."""
-    if not result.credits or result.total_delta <= 0:
+    span_report = result.metadata.get("span_attribution")
+    spans = span_report.get("spans") if isinstance(span_report, dict) else None
+    has_spans = isinstance(spans, list) and bool(spans)
+    if not result.credits and not has_spans:
+        return ""
+    if result.total_delta <= 0 and not has_spans:
         return ""
 
     normalized_role = role.strip().lower()
@@ -325,32 +330,42 @@ def format_attribution_for_agent(
         if component not in ordered_components:
             ordered_components.append(component)
 
+    positive_delta = result.total_delta > 0
     lines = [f"## {title} (Gen {result.generation})"]
-    lines.append(f"Total score improvement: +{result.total_delta:.4f}")
-    if guidance:
-        lines.append(guidance)
+    if positive_delta:
+        lines.append(f"Total score improvement: +{result.total_delta:.4f}")
+        if guidance:
+            lines.append(guidance)
+    else:
+        lines.append(f"Total score delta: {result.total_delta:+.4f}")
+        lines.append("Use low/negative span credits as demotion candidates before preserving guidance.")
     lines.append("")
 
     for component in ordered_components:
         credit = result.credits.get(component, 0.0)
-        pct = credit / result.total_delta * 100 if result.total_delta > 0 else 0
-        lines.append(f"- {component}: +{credit:.4f} ({pct:.0f}% of improvement)")
+        if positive_delta:
+            pct = credit / result.total_delta * 100
+            lines.append(f"- {component}: +{credit:.4f} ({pct:.0f}% of improvement)")
+        else:
+            lines.append(f"- {component}: {credit:+.4f} (non-positive run)")
 
-    span_report = result.metadata.get("span_attribution")
-    if isinstance(span_report, dict):
-        spans = span_report.get("spans")
-        if isinstance(spans, list) and spans:
-            lines.append("")
-            lines.append("Span attribution (component-correlated, noisy):")
-            preferred_sources = set(preferred) if preferred else set(result.credits)
-            shown = 0
-            for span in sorted(spans, key=lambda item: -float(item.get("credit", 0.0)) if isinstance(item, dict) else 0.0):
-                if not isinstance(span, dict) or str(span.get("source", "")) not in preferred_sources:
-                    continue
-                lines.append(f"- {span.get('text', '')}: {float(span.get('credit', 0.0)):+.4f}")
-                shown += 1
-                if shown >= 5:
-                    break
+    if isinstance(spans, list) and spans:
+        lines.append("")
+        lines.append("Span attribution (component-correlated, noisy):")
+        preferred_sources = set(preferred) if preferred else set(result.credits)
+        shown = 0
+        sorted_spans = sorted(
+            spans,
+            key=lambda item: float(item.get("credit", 0.0)) if isinstance(item, dict) else 0.0,
+            reverse=positive_delta,
+        )
+        for span in sorted_spans:
+            if not isinstance(span, dict) or str(span.get("source", "")) not in preferred_sources:
+                continue
+            lines.append(f"- {span.get('text', '')}: {float(span.get('credit', 0.0)):+.4f}")
+            shown += 1
+            if shown >= 5:
+                break
 
     return "\n".join(lines)
 

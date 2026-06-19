@@ -24,6 +24,34 @@ describe("credit assignment reporting workflow", () => {
     expect(formatted.indexOf("playbook")).toBeLessThan(formatted.indexOf("analysis"));
   });
 
+  it("accepts Python snake_case span attribution metadata", () => {
+    const result = new AttributionResult(4, 0.2, { hints: 0.2 }, {
+      span_attribution: {
+        schema_version: 1,
+        mode: "span",
+        spans: [{ source: "hints", text: "Python span", credit: 0.2 }],
+      },
+    });
+
+    expect(formatAttributionForAgent(result, "coach")).toContain("Python span");
+  });
+
+  it("surfaces regression span credits as demotion candidates", () => {
+    const result = new AttributionResult(5, -0.2, { hints: 0 }, {
+      spanAttribution: {
+        schemaVersion: 1,
+        mode: "span",
+        spans: [{ source: "hints", text: "Regressed hint", credit: -0.2 }],
+      },
+    });
+
+    const formatted = formatAttributionForAgent(result, "coach");
+    expect(formatted).toContain("Total score delta: -0.2000");
+    expect(formatted).toContain("demotion candidates");
+    expect(formatted).toContain("Regressed hint");
+    expect(formatted).toContain("-0.2000");
+  });
+
   it("summarizes credit patterns across records and sorts by total credit", () => {
     const records = [
       new CreditAssignmentRecord(
