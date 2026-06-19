@@ -896,6 +896,29 @@
       ]
     },
     {
+      "python": "hint_style",
+      "typescript": "hintStyle",
+      "type": "enum",
+      "default": "default",
+      "env": [
+        "AUTOCONTEXT_HINT_STYLE"
+      ],
+      "values": [
+        "default",
+        "structural",
+        "solution_like"
+      ]
+    },
+    {
+      "python": "soft_hints_enabled",
+      "typescript": "softHintsEnabled",
+      "type": "boolean",
+      "default": false,
+      "env": [
+        "AUTOCONTEXT_SOFT_HINTS_ENABLED"
+      ]
+    },
+    {
       "python": "holdout_enabled",
       "typescript": "holdoutEnabled",
       "type": "boolean",

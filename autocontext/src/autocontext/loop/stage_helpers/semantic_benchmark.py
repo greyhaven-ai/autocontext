@@ -11,6 +11,7 @@ from autocontext.knowledge.context_selection import build_prompt_context_selecti
 from autocontext.knowledge.semantic_compaction_benchmark import (
     build_semantic_compaction_benchmark_report,
 )
+from autocontext.loop.stage_helpers.context_loaders import _hint_style
 from autocontext.prompts.templates import PromptBundle, build_prompt_bundle
 from autocontext.storage.context_selection_store import persist_context_selection_decision
 from autocontext.util.json_io import write_json
@@ -300,6 +301,7 @@ def prepare_generation_prompts(
         "constraint_mode": constraint_mode,
         "context_budget_tokens": context_budget_tokens,
         "simplicity_mode": ctx.settings.simplicity_mode,
+        "hint_style": _hint_style(ctx),
         "notebook_contexts": notebook_contexts,
         "environment_snapshot": environment_snapshot,
         "evidence_manifest": evidence_manifest,

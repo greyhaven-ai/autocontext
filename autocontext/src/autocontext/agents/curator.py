@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from importlib import import_module
 from typing import Any
 
 from autocontext.agents.feedback_loops import AnalystRating
@@ -91,6 +92,10 @@ _CURATOR_CONSOLIDATION_CONSTRAINT = (
     "- Do NOT keep lessons that directly contradict each other without resolution\n\n"
 )
 
+def _structural_hint_prompt(hint_style: str) -> str:
+    return str(import_module("autocontext.knowledge.soft_hints").structural_hint_prompt(hint_style))
+
+
 _CURATOR_ANALYST_RATING_CONSTRAINT = (
     "Constraints:\n"
     "- Do NOT give high scores without citing concrete evidence from the analyst report\n"
@@ -113,11 +118,15 @@ class KnowledgeCurator:
         constraint_mode: bool = False,
         harness_quality_section: str = "",
         skeptic_review_section: str = "",
+        hint_style: str = "default",
     ) -> tuple[CuratorPlaybookDecision, RoleExecution]:
         """Compare current vs proposed playbook. Return accept/reject/merge decision."""
         constraint_preamble = _CURATOR_ASSESSMENT_CONSTRAINT if constraint_mode else ""
+        hint_policy = _structural_hint_prompt(hint_style)
+        hint_policy_block = f"{hint_policy}\n\n" if hint_policy else ""
         prompt = (
             constraint_preamble
+            + hint_policy_block
             + "You are a curator assessing playbook quality. Compare the CURRENT and PROPOSED playbooks.\n\n"
             "Score both on: coverage, specificity, actionability (1-10 each).\n"
             "Decide: accept (proposed is better), reject (current is better), or merge (combine best parts).\n\n"

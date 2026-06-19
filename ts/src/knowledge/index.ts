@@ -45,6 +45,14 @@ export type {
   ContextSelectionStageSummary,
   ContextSelectionTelemetryCard,
 } from "./context-selection-report.js";
+export {
+  STRUCTURAL_HINT_POLICY,
+  buildHintAbReport,
+  buildHintMetadata,
+  effectiveHintStyle,
+  structuralHintPrompt,
+} from "./soft-hints.js";
+export type { HintAbReportRow, HintAbStyleSummary, HintStyle } from "./soft-hints.js";
 export { ScoreTrajectoryBuilder } from "./trajectory.js";
 export type { TrajectoryRow } from "./trajectory.js";
 export { exportStrategyPackage, importStrategyPackage } from "./package.js";

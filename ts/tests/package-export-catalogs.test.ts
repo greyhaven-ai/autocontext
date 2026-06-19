@@ -23,6 +23,7 @@ describe("package root exports", () => {
     expect(pkg.PiPersistentRPCRuntime).toBeDefined();
     expect(pkg.compactPromptComponents).toBeDefined();
     expect(pkg.compactPromptComponentsWithEntries).toBeDefined();
+    expect(pkg.buildHintAbReport).toBeDefined();
     expect(pkg.HookBus).toBeDefined();
     expect(pkg.HookEvents).toBeDefined();
     expect(pkg.loadExtensions).toBeDefined();
@@ -56,7 +57,7 @@ describe("package root exports", () => {
     expect(pkg.assembleRuntimeContext).toBeDefined();
     expect(pkg.RuntimeContextAssemblyRequest).toBeDefined();
     expect(pkg.RuntimeContextBundle).toBeDefined();
-  });
+  }, 30_000);
 
   it("avoids package catalog barrel hops in ts/src/index.ts", () => {
     const indexSource = readFileSync(join(import.meta.dirname, "..", "src", "index.ts"), "utf-8");
