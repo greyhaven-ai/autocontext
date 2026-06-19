@@ -3,6 +3,12 @@ import { isAbsolute, join, relative, resolve } from "node:path";
 
 import { ArtifactStore } from "../knowledge/artifact-store.js";
 import {
+  approveLesson as approveLessonLifecycle,
+  buildLifecycle,
+  curateLesson as curateLessonLifecycle,
+  rejectLesson as rejectLessonLifecycle,
+} from "../knowledge/lesson-lifecycle.js";
+import {
   exportStrategyPackage,
   importStrategyPackage,
   type ConflictPolicy,
@@ -32,6 +38,14 @@ export interface KnowledgeApiRoutes {
   pendingPlaybook(scenarioName: string): KnowledgeApiResponse;
   approvePendingPlaybook(scenarioName: string): KnowledgeApiResponse;
   rejectPendingPlaybook(scenarioName: string): KnowledgeApiResponse;
+  lessonLifecycle(scenarioName: string): KnowledgeApiResponse;
+  approveLesson(scenarioName: string, lessonId: string): KnowledgeApiResponse;
+  rejectLesson(scenarioName: string, lessonId: string): KnowledgeApiResponse;
+  curateLesson(
+    scenarioName: string,
+    lessonId: string,
+    body: Record<string, unknown>,
+  ): KnowledgeApiResponse;
 }
 
 export function buildKnowledgeApiRoutes(opts: {
@@ -150,7 +164,74 @@ export function buildKnowledgeApiRoutes(opts: {
           ? { status: 200, body: result }
           : { status: 404, body: { detail: "pending playbook not found" } };
       }),
+    lessonLifecycle: (scenarioName) => {
+      if (!resolveKnowledgeScenarioDir(opts.knowledgeRoot, scenarioName)) {
+        return invalidScenario(scenarioName);
+      }
+      return {
+        status: 200,
+        body: buildLifecycle({
+          knowledgeRoot: opts.knowledgeRoot,
+          skillsRoot: opts.skillsRoot,
+          scenario: scenarioName,
+          currentGeneration: 0,
+        }),
+      };
+    },
+    approveLesson: (scenarioName, lessonId) => {
+      if (!resolveKnowledgeScenarioDir(opts.knowledgeRoot, scenarioName)) {
+        return invalidScenario(scenarioName);
+      }
+      const status = approveLessonLifecycle({
+        knowledgeRoot: opts.knowledgeRoot,
+        skillsRoot: opts.skillsRoot,
+        scenario: scenarioName,
+        lessonId,
+        currentGeneration: 0,
+      });
+      return status === null
+        ? { status: 404, body: { detail: "lesson not found" } }
+        : { status: 200, body: { ok: true, status } };
+    },
+    rejectLesson: (scenarioName, lessonId) => {
+      if (!resolveKnowledgeScenarioDir(opts.knowledgeRoot, scenarioName)) {
+        return invalidScenario(scenarioName);
+      }
+      const ok = rejectLessonLifecycle({
+        knowledgeRoot: opts.knowledgeRoot,
+        skillsRoot: opts.skillsRoot,
+        scenario: scenarioName,
+        lessonId,
+      });
+      return ok
+        ? { status: 200, body: { ok: true } }
+        : { status: 404, body: { detail: "lesson not found" } };
+    },
+    curateLesson: (scenarioName, lessonId, body) => {
+      if (!resolveKnowledgeScenarioDir(opts.knowledgeRoot, scenarioName)) {
+        return invalidScenario(scenarioName);
+      }
+      const action = typeof body.action === "string" ? body.action : "";
+      if (action !== "stale" && action !== "deadEnd" && action !== "delete") {
+        return { status: 422, body: { detail: "action must be one of stale, deadEnd, delete" } };
+      }
+      const status = curateLessonLifecycle({
+        knowledgeRoot: opts.knowledgeRoot,
+        skillsRoot: opts.skillsRoot,
+        scenario: scenarioName,
+        lessonId,
+        action,
+        currentGeneration: 0,
+      });
+      return status === null
+        ? { status: 404, body: { detail: "lesson not found" } }
+        : { status: 200, body: { ok: true, status } };
+    },
   };
+}
+
+function invalidScenario(scenarioName: string): KnowledgeApiResponse {
+  return { status: 422, body: { error: `Invalid scenario '${scenarioName}'` } };
 }
 
 function withPlaybookApproval(

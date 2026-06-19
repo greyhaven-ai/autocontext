@@ -4,6 +4,8 @@ runner imports them lazily)."""
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import pytest
 
 from autocontext.scenarios.agent_task import AgentTaskInterface, AgentTaskResult
@@ -21,14 +23,22 @@ class _TargetScenario(AgentTaskInterface):
     def get_task_prompt(self, state: dict | None = None) -> str:
         return f'return JSON {{"x": N}} with N={(state or {}).get("target")}'
 
-    def evaluate_output(self, output: str, state: dict | None = None, **kwargs: object) -> AgentTaskResult:
+    def evaluate_output(
+        self,
+        output: str,
+        state: dict,
+        reference_context: str | None = None,
+        required_concepts: list[str] | None = None,
+        calibration_examples: list[dict] | None = None,
+        pinned_dimensions: list[str] | None = None,
+    ) -> AgentTaskResult:
         import json
 
         try:
             x = json.loads(output).get("x")
         except Exception:
             x = None
-        return AgentTaskResult(score=1.0 if x == (state or {}).get("target") else 0.0, reasoning="")
+        return AgentTaskResult(score=1.0 if x == state.get("target") else 0.0, reasoning="")
 
     def get_rubric(self) -> str:
         return "1 if x == target else 0"
@@ -161,6 +171,29 @@ def test_chat_dataset_rows_are_messages_for_gkd() -> None:
     assert all(len(r["messages"]) == 2 for r in rows)
 
 
+def test_gkd_diagnostics_use_chat_template_prompt_surface() -> None:
+    from autocontext.training.autoresearch.trl_backend import _gkd_diagnostic_prompt_text
+
+    class Tokenizer:
+        def __init__(self) -> None:
+            self.calls: list[tuple[list[dict[str, str]], bool, bool]] = []
+
+        def apply_chat_template(
+            self,
+            messages: list[dict[str, str]],
+            *,
+            tokenize: bool,
+            add_generation_prompt: bool,
+        ) -> str:
+            self.calls.append((messages, tokenize, add_generation_prompt))
+            return "CHAT:" + messages[0]["content"]
+
+    tokenizer = Tokenizer()
+
+    assert _gkd_diagnostic_prompt_text(tokenizer, {"prompt": "solve it"}) == "CHAT:solve it"
+    assert tokenizer.calls == [([{"role": "user", "content": "solve it"}], False, True)]
+
+
 def test_prompt_dataset_rows_have_prompt_and_answer_for_grpo() -> None:
     from autocontext.training.autoresearch.trl_backend import build_prompt_dataset_rows
 
@@ -249,7 +282,8 @@ def test_vocab_helper_is_in_a_pure_mlx_free_module() -> None:
     # Block mlx the way a non-Mac host would: find_spec returns None / import raises.
     blocked = {name: None for name in list(sys.modules) if name == "mlx" or name.startswith("mlx.")}
     saved = {k: sys.modules.get(k) for k in blocked}
-    sys.modules.update(blocked)
+    modules = cast(dict[str, Any], sys.modules)
+    modules.update(blocked)
     try:
         import importlib
 
@@ -261,9 +295,9 @@ def test_vocab_helper_is_in_a_pure_mlx_free_module() -> None:
     finally:
         for k, v in saved.items():
             if v is None:
-                sys.modules.pop(k, None)
+                modules.pop(k, None)
             else:
-                sys.modules[k] = v
+                modules[k] = v
 
 
 def test_build_trl_metrics_gives_finite_keep_discard_score() -> None:
@@ -289,13 +323,11 @@ def test_build_trl_metrics_gives_finite_keep_discard_score() -> None:
 
 
 def test_time_budget_callback_stops_when_exceeded() -> None:
-    pytest.importorskip("transformers")
-    from transformers import TrainerControl
-
+    transformers = pytest.importorskip("transformers")
     from autocontext.training.autoresearch.trl_backend import make_time_budget_callback
 
     cb = make_time_budget_callback(0.0)  # already exhausted
-    control = TrainerControl()
+    control = transformers.TrainerControl()
     cb.on_step_end(args=None, state=None, control=control)
     assert control.should_training_stop is True
 

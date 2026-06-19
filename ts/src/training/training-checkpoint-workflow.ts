@@ -58,6 +58,8 @@ export function writeTrainingManifest(
       maxEpochs: config.maxEpochs ?? 3,
       batchSize: config.batchSize ?? 4,
       learningRate: config.learningRate ?? 5e-5,
+      opdDiagnostics: config.opdDiagnostics ?? false,
+      opdDiagnosticsDebugTokens: config.opdDiagnosticsDebugTokens ?? false,
       startedAt: new Date().toISOString(),
     }, null, 2),
     "utf-8",

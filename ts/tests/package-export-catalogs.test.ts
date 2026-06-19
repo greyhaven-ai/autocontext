@@ -48,6 +48,7 @@ describe("package root exports", () => {
     expect(pkg.buildNegativeResultLedger).toBeDefined();
     expect(pkg.buildCampaignModeReport).toBeDefined();
     expect(pkg.buildGoalRunReport).toBeDefined();
+    expect(pkg.buildTokenPressureReport).toBeDefined();
     expect(pkg.stagePendingPlaybook).toBeDefined();
     expect(pkg.buildOperationalMemoryPackFromDiagnostics).toBeDefined();
     expect(pkg.resolveBrowserSessionConfig).toBeDefined();

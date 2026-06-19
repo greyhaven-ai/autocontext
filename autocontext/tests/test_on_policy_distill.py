@@ -8,6 +8,7 @@ with hand-computed values and the frozen-teacher gradient contract (pure mlx, no
 from __future__ import annotations
 
 import math
+from typing import Any
 
 import pytest
 
@@ -19,6 +20,7 @@ optim = pytest.importorskip("mlx.optimizers")
 
 from autocontext.training.autoresearch.on_policy_distill import (  # noqa: E402
     assert_vocab_compatible,
+    collect_token_pressure_for_prompts,
     distill_loss,
     distill_over_prompts,
     distill_update_step,
@@ -36,7 +38,7 @@ class _TinyLM(nn.Module):
         self.embed = nn.Embedding(vocab, dim)
         self.out = nn.Linear(dim, vocab)
 
-    def __call__(self, ids: mx.array) -> mx.array:
+    def __call__(self, ids: Any) -> Any:
         return self.out(self.embed(ids))
 
 
@@ -47,7 +49,7 @@ class _ConstLM:
         self.vocab = vocab
         self.hot = hot
 
-    def __call__(self, ids: mx.array) -> mx.array:
+    def __call__(self, ids: Any) -> Any:
         b, t = ids.shape
         onehot = (mx.arange(self.vocab) == self.hot).astype(mx.float32) * 10.0
         return mx.broadcast_to(onehot, (b, t, self.vocab))
@@ -181,6 +183,25 @@ def test_on_policy_distill_step_runs_and_changes_student() -> None:
 
     assert math.isfinite(loss)
     assert before != after  # the step updated the student's parameters
+
+
+def test_collect_token_pressure_does_not_update_student_weights() -> None:
+    mx.random.seed(17)
+    student = _TinyLM(vocab=6, dim=4)
+    teacher = _TinyLM(vocab=6, dim=4)
+    prompts = [mx.array([[1, 2]])]
+    before = float(mx.sum(mx.abs(student.out.weight)))
+
+    report = collect_token_pressure_for_prompts(
+        student,
+        teacher,
+        prompts,
+        max_tokens=2,
+        sample_temperature=0.0,
+    )
+
+    assert report["token_count"] == 2
+    assert float(mx.sum(mx.abs(student.out.weight))) == before
 
 
 def test_distill_over_prompts_runs_all_iters_and_trains() -> None:

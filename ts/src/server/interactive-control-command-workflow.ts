@@ -57,8 +57,7 @@ export async function executeInteractiveControlCommand(opts: {
         opts.command.scenario,
         opts.command.generations,
         {
-          requirePlaybookApproval:
-            opts.command.require_playbook_approval || opts.command.require_lesson_approval,
+          requirePlaybookApproval: opts.command.require_playbook_approval,
         },
       );
       return [
