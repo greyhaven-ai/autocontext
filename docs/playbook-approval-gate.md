@@ -17,4 +17,4 @@ When `require_playbook_approval` is false, curator-approved playbooks are writte
 
 The lesson lifecycle `pending` bucket is now always empty; lesson curation is derived from approved playbook/SKILL markdown, not a structured pending lesson store.
 
-The wire flag `require_lesson_approval` is accepted as a deprecated alias for one compatibility window; new clients should send `require_playbook_approval`.
+Clients enable the hold gate with the wire flag `require_playbook_approval`. (An earlier `require_lesson_approval` alias was removed; `start_run` now rejects it.)
