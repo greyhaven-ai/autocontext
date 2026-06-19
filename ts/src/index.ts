@@ -951,6 +951,16 @@ export {
   TrainingRunner,
 } from "./training/backends.js";
 export type { TrainingConfig, TrainingResult, PublishedArtifact } from "./training/backends.js";
+export {
+  buildTokenPressureReport,
+  compareTokenPressureReports,
+} from "./training/token-pressure-diagnostics.js";
+export type {
+  TokenPressureObservation,
+  TokenPressurePositionSummary,
+  TokenPressureReport,
+  TokenPressureSpike,
+} from "./training/token-pressure-diagnostics.js";
 export { ACTIVATION_STATES, ModelRegistry, PromotionEngine } from "./training/promotion.js";
 export type {
   ActivationState,

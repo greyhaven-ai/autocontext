@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file.
 - AC-825 goal run reports define a shared Python/TypeScript outer supervisor artifact for continue-until-verified execution, resume tokens, budgets, action cadence, verifier state, and durable stop/continuation decisions.
 - AC-826 playbook approval gates stage curator playbook updates as pending artifacts, expose approve/reject/read APIs, and keep approved playbooks in prompts until human approval.
 - AC-827 lesson lifecycle curation now derives from live playbook/SKILL markdown, mutates markdown for delete/stale/dead-end actions, and retires `lessons.json` as a prompt or curation source of truth.
+- AC-795 OPD/GKD training adds opt-in token-pressure diagnostics with parity helpers, summary metrics, and no raw token text unless debug persistence is explicitly enabled.
 
 ## [pi-v0.2.6] - 2026-06-16
 

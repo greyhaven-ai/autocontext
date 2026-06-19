@@ -47,6 +47,7 @@ describe("training checkpoint workflow", () => {
       backend: "cuda",
       trainingMode: "adapter_finetune",
       baseModel: "Qwen/Qwen3-0.6B",
+      opdDiagnostics: true,
     };
 
     const checkpointDir = ensureCheckpointDir(config.outputDir, new StubBackend("cuda"), config.scenario);
@@ -57,6 +58,7 @@ describe("training checkpoint workflow", () => {
       scenario: "grid_ctf",
       datasetSize: 2,
       heldOutSize: 1,
+      opdDiagnostics: true,
     });
 
     const executorResult = await defaultExecutor(config, checkpointDir);

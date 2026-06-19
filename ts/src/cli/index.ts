@@ -183,13 +183,6 @@ interface SavedAgentTaskScenario {
   qualityThreshold?: number;
 }
 
-function mergeUniqueStrings(primary?: string[], secondary?: string[]): string[] | undefined {
-  const merged = [...(primary ?? []), ...(secondary ?? [])]
-    .map((value) => value.trim())
-    .filter(Boolean);
-  return merged.length > 0 ? [...new Set(merged)] : undefined;
-}
-
 async function loadSavedAgentTaskScenario(name: string): Promise<SavedAgentTaskScenario | null> {
   const { loadSettings } = await import("../config/index.js");
   const { resolveCustomJudgeScenario, renderAgentTaskPrompt } =
@@ -3346,6 +3339,8 @@ async function cmdTrain(): Promise<void> {
       mode: { type: "string", default: "from_scratch" },
       "base-model": { type: "string" },
       output: { type: "string", short: "o" },
+      "opd-diagnostics": { type: "boolean" },
+      "opd-diagnostics-debug-tokens": { type: "boolean" },
       json: { type: "boolean" },
       help: { type: "boolean", short: "h" },
     },

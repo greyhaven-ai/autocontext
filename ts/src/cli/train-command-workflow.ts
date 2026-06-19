@@ -11,6 +11,8 @@ Options:
   --mode <mode>            from_scratch, adapter_finetune, full_finetune
   --base-model <id>        Base model for adapter/full fine-tune
   -o, --output <dir>       Output directory
+  --opd-diagnostics        Write OPD/GKD token-pressure diagnostics
+  --opd-diagnostics-debug-tokens  Include raw sampled token text in diagnostics
   --json                   Output as JSON
   -h, --help               Show this help
 
@@ -27,6 +29,8 @@ export interface TrainCommandValues {
   mode?: string;
   "base-model"?: string;
   output?: string;
+  "opd-diagnostics"?: boolean;
+  "opd-diagnostics-debug-tokens"?: boolean;
   json?: boolean;
 }
 
@@ -39,6 +43,8 @@ export interface TrainCommandPlan {
   backend: string;
   trainingMode: "from_scratch" | "adapter_finetune" | "full_finetune";
   baseModel?: string;
+  opdDiagnostics: boolean;
+  opdDiagnosticsDebugTokens: boolean;
   json: boolean;
 }
 
@@ -63,6 +69,8 @@ export function planTrainCommand(
       | "adapter_finetune"
       | "full_finetune",
     baseModel: values["base-model"],
+    opdDiagnostics: !!values["opd-diagnostics"],
+    opdDiagnosticsDebugTokens: !!values["opd-diagnostics-debug-tokens"],
     json: !!values.json,
   };
 }
@@ -80,6 +88,8 @@ export async function executeTrainCommandWorkflow<TResult extends { status?: str
       backend: string;
       trainingMode: "from_scratch" | "adapter_finetune" | "full_finetune";
       baseModel?: string;
+      opdDiagnostics?: boolean;
+      opdDiagnosticsDebugTokens?: boolean;
     }): Promise<TResult>;
   };
 }): Promise<TResult> {
@@ -98,6 +108,8 @@ export async function executeTrainCommandWorkflow<TResult extends { status?: str
     backend: opts.plan.backend,
     trainingMode: opts.plan.trainingMode,
     baseModel: opts.plan.baseModel,
+    opdDiagnostics: opts.plan.opdDiagnostics,
+    opdDiagnosticsDebugTokens: opts.plan.opdDiagnosticsDebugTokens,
   });
 }
 

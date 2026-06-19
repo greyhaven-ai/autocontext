@@ -75,6 +75,8 @@ class TrainingConfig:
     seed: int = 0  # trl backend: training seed (for seeded repeats)
     max_completion_length: int = 512  # trl grpo: generation cap (256 truncates reasoning -> 0 reward / no gradient)
     grpo_beta: float = 0.04  # trl grpo: KL penalty toward base policy (0.0 = KL-free; nonzero prevents overfitting)
+    opd_diagnostics: bool = False  # OPD/GKD token-pressure report; no training-update changes
+    opd_diagnostics_debug_tokens: bool = False  # include sampled token text in diagnostics (off by default)
     fine_tune_type: str = "lora"  # mlxlm backend: lora | dora | full
     num_layers: int = 8  # mlxlm backend: number of layers to fine-tune
 
@@ -443,6 +445,10 @@ class TrainingRunner:
             command += ["--max-completion-length", str(self.config.max_completion_length)]
         if self.config.grpo_beta != 0.04:
             command += ["--grpo-beta", str(self.config.grpo_beta)]
+        if self.config.opd_diagnostics:
+            command.append("--opd-diagnostics")
+        if self.config.opd_diagnostics_debug_tokens:
+            command.append("--opd-diagnostics-debug-tokens")
         if self.config.fine_tune_type != "lora":
             command += ["--fine-tune-type", self.config.fine_tune_type]
         if self.config.num_layers != 8:
@@ -639,6 +645,24 @@ class TrainingRunner:
 
         settings = load_settings()
         registry = ModelRegistry(settings.knowledge_root)
+        training_metrics = {
+            "avg_score": best_result.avg_score,
+            "valid_rate": best_result.valid_rate,
+            "val_loss": best_result.summary_metrics.get("val_loss", float("nan")),
+            "peak_memory_mb": best_result.peak_memory_mb,
+            "training_seconds": best_result.training_seconds,
+            "num_steps": best_result.summary_metrics.get("num_steps", 0.0),
+            "depth": best_result.summary_metrics.get("depth", 0.0),
+        }
+        for key in (
+            "token_pressure_positive_ratio",
+            "token_pressure_negative_ratio",
+            "token_pressure_shock_spike_count",
+        ):
+            if key in best_result.summary_metrics:
+                training_metrics[key] = best_result.summary_metrics[key]
+
+        diagnostics_written = "token_pressure_positive_ratio" in best_result.summary_metrics
         completion = TrainingCompletionOutput(
             run_id=self._training_run_id(),
             checkpoint_path=str(best_result.checkpoint_path),
@@ -647,15 +671,7 @@ class TrainingRunner:
             scenario_family=self._scenario_family_name(),
             parameter_count=max(int(num_params_m * 1_000_000), 1),
             architecture="autoresearch_gpt",
-            training_metrics={
-                "avg_score": best_result.avg_score,
-                "valid_rate": best_result.valid_rate,
-                "val_loss": best_result.summary_metrics.get("val_loss", float("nan")),
-                "peak_memory_mb": best_result.peak_memory_mb,
-                "training_seconds": best_result.training_seconds,
-                "num_steps": best_result.summary_metrics.get("num_steps", 0.0),
-                "depth": best_result.summary_metrics.get("depth", 0.0),
-            },
+            training_metrics=training_metrics,
             data_stats=self._data_stats(best_result),
             runtime_types=self._backend.supported_runtime_types(),
             metadata={
@@ -671,6 +687,12 @@ class TrainingRunner:
                 # subprocess applies that same default (an empty value is unservable).
                 "base_model": self.config.base_model or self._backend.default_base_model(),
                 "score_conditioned": self.config.score_conditioned,
+                "opd_diagnostics": diagnostics_written,
+                "opd_diagnostics_path": (
+                    str(best_result.checkpoint_path / "token_pressure_diagnostics.json")
+                    if diagnostics_written and best_result.checkpoint_path is not None
+                    else ""
+                ),
             },
         )
         record = publish_training_output(
