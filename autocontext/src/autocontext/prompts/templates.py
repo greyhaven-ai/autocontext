@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from importlib import import_module
 from typing import Any
 
 from autocontext.extensions import HookBus, HookEvents
@@ -14,6 +15,10 @@ from autocontext.prompts.context_budget import ContextBudget, ContextBudgetTelem
 from autocontext.scenarios.base import Observation
 from autocontext.simplicity import append_simplicity_guidance
 from autocontext.strategy_interface import is_action_plan_interface
+
+
+def _structural_hint_prompt(hint_style: str) -> str:
+    return str(import_module("autocontext.knowledge.soft_hints").structural_hint_prompt(hint_style))
 
 
 @dataclass(frozen=True)
@@ -128,6 +133,7 @@ def build_prompt_bundle(
     context_component_sink: Callable[[dict[str, str]], None] | None = None,
     context_budget_telemetry_sink: Callable[[ContextBudgetTelemetry], None] | None = None,
     simplicity_mode: str = "off",
+    hint_style: str = "default",
 ) -> PromptBundle:
     _nb = dict(notebook_contexts or {})
     _evidence = dict(evidence_manifests or {})
@@ -287,6 +293,8 @@ def build_prompt_bundle(
     competitor_constraint = _COMPETITOR_CONSTRAINT_SUFFIX if constraint_mode else ""
     analyst_constraint = _ANALYST_CONSTRAINT_SUFFIX if constraint_mode else ""
     coach_constraint = _COACH_CONSTRAINT_SUFFIX if constraint_mode else ""
+    hint_policy = _structural_hint_prompt(hint_style)
+    hint_policy_block = f"{hint_policy}\n\n" if hint_policy else ""
     architect_constraint = _ARCHITECT_CONSTRAINT_SUFFIX if constraint_mode else ""
     competitor_nb = f"Session notebook context:\n{_nb['competitor']}\n\n" if _nb.get("competitor") else ""
     analyst_nb = f"Session notebook context:\n{_nb['analyst']}\n\n" if _nb.get("analyst") else ""
@@ -313,6 +321,7 @@ def build_prompt_bundle(
         + coach_hint_feedback_block
         + coach_nb
         + coach_constraint
+        + hint_policy_block
         + (
             "You are the playbook coach. Produce THREE structured sections:\n\n"
             "1. A COMPLETE replacement playbook between markers. Consolidate all prior guidance, "
@@ -326,10 +335,10 @@ def build_prompt_bundle(
             "<!-- LESSONS_START -->\n"
             "(e.g. '- When aggression > 0.8 with defense < 0.4, scores drop.')\n"
             "<!-- LESSONS_END -->\n\n"
-            "3. Concrete competitor hints between markers. Specific parameter ranges or "
-            "strategies the competitor should try next.\n\n"
+            "3. Competitor hints between markers. In structural mode, prefer constraints, "
+            "invariants, verification checks, and repair directions over exact routes.\n\n"
             "<!-- COMPETITOR_HINTS_START -->\n"
-            "(Specific parameter ranges or strategies the competitor should try next)\n"
+            "(Hints for what the competitor should inspect, verify, or repair next)\n"
             "<!-- COMPETITOR_HINTS_END -->"
         ),
         architect=base_context

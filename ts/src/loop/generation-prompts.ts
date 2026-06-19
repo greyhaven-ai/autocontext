@@ -1,3 +1,5 @@
+import { structuralHintPrompt } from "../knowledge/soft-hints.js";
+
 export interface CompetitorPromptParts {
   scenarioName: string;
   scenarioRules: string;
@@ -21,6 +23,7 @@ export interface SupportPromptParts {
   playbook: string;
   trajectory?: string;
   deadEnds?: string;
+  hintStyle?: string;
 }
 
 export interface CuratorPromptParts {
@@ -28,6 +31,7 @@ export interface CuratorPromptParts {
   currentPlaybook: string;
   proposedPlaybook: string;
   trajectory?: string;
+  hintStyle?: string;
 }
 
 export interface CuratorConsolidationPromptParts {
@@ -79,6 +83,10 @@ export function buildSupportPrompt(parts: SupportPromptParts): string {
     `Current Playbook:\n${parts.playbook}`,
   ];
 
+  if (parts.role === "coach") {
+    const policy = structuralHintPrompt(parts.hintStyle ?? "default");
+    if (policy) sections.push(policy);
+  }
   if (parts.trajectory) {
     sections.push(`Recent Score Trajectory:\n${parts.trajectory}`);
   }
@@ -90,8 +98,10 @@ export function buildSupportPrompt(parts: SupportPromptParts): string {
 }
 
 export function buildCuratorPrompt(parts: CuratorPromptParts): string {
+  const hintPolicy = structuralHintPrompt(parts.hintStyle ?? "default");
   const sections = [
     "You are a curator assessing playbook quality. Compare the CURRENT and PROPOSED playbooks.",
+    ...(hintPolicy ? [hintPolicy] : []),
     "Respond with reasoning, then include the following markers:",
     "<!-- CURATOR_DECISION: accept|reject|merge -->",
     "<!-- CURATOR_SCORE: 0-10 -->",
