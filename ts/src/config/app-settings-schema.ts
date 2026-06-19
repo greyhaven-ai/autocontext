@@ -143,6 +143,7 @@ export const AppSettingsSchema = z.object({
 
   // Feature flags
   ablationNoFeedback: z.boolean().default(false),
+  contextAttribution: z.enum(["component", "span"]).default("component"),
   rlmEnabled: z.boolean().default(false),
   rlmMaxTurns: z.number().int().min(1).max(50).default(25),
   rlmMaxStdoutChars: z.number().int().min(1024).default(8192),

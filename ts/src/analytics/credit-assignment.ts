@@ -28,6 +28,8 @@ import type {
   GenerationChangeVectorDict,
 } from "./credit-assignment-contracts.js";
 import { computeGenerationChangeVector } from "./credit-assignment-vector-workflow.js";
+export { buildSpanAttribution, extractKnowledgeSpans, rankSpansByCredit } from "./credit-assignment-spans.js";
+export type { KnowledgeSpan, SpanAttributionReport, SpanCreditRow } from "./credit-assignment-spans.js";
 
 export type {
   AttributionResultDict,

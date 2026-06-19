@@ -16,6 +16,8 @@ Key types:
 
 from __future__ import annotations
 
+import hashlib
+import re
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -89,6 +91,91 @@ class CreditAssignmentRecord(BaseModel):
     def from_dict(cls, data: dict[str, Any]) -> CreditAssignmentRecord:
         return cls.model_validate(data)
 
+
+
+class KnowledgeSpan(BaseModel):
+    """Stable line/span identity for prompt context attribution."""
+
+    span_id: str
+    source: str
+    text: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump()
+
+
+def _normalize_span_text(text: str) -> str:
+    stripped = re.sub(r"^(?:[-*]\s+|\d+\.\s+)", "", text.strip())
+    return " ".join(stripped.split())
+
+
+def _span_id(source: str, text: str) -> str:
+    digest = hashlib.sha1(f"{source}:{_normalize_span_text(text).lower()}".encode()).hexdigest()[:12]
+    return f"{source}:{digest}"
+
+
+def extract_knowledge_spans(source: str, content: str) -> list[KnowledgeSpan]:
+    """Extract stable non-empty line spans from a knowledge component."""
+    spans: list[KnowledgeSpan] = []
+    ordinal = 0
+    for line_number, raw_line in enumerate(content.splitlines(), start=1):
+        normalized = _normalize_span_text(raw_line)
+        if not normalized:
+            continue
+        ordinal += 1
+        spans.append(KnowledgeSpan(
+            span_id=_span_id(source, normalized),
+            source=source,
+            text=normalized,
+            metadata={"source": source, "line_number": line_number, "ordinal": ordinal},
+        ))
+    return spans
+
+
+def build_span_attribution(
+    vector: GenerationChangeVector,
+    attribution: AttributionResult,
+    *,
+    current_state: dict[str, Any],
+) -> dict[str, Any]:
+    """Distribute component credit onto individual current-state spans."""
+    total_mag = vector.total_change_magnitude
+    rows: list[dict[str, Any]] = []
+    for change in vector.changes:
+        spans = extract_knowledge_spans(change.component, str(current_state.get(change.component, "")))
+        if not spans:
+            continue
+        component_credit = float(attribution.credits.get(change.component, 0.0))
+        if component_credit == 0.0 and vector.score_delta < 0 and total_mag > 0:
+            component_credit = round(vector.score_delta * (change.magnitude / total_mag), 6)
+        per_span = round(component_credit / len(spans), 6)
+        for span in spans:
+            rows.append({
+                "span_id": span.span_id,
+                "source": span.source,
+                "text": span.text,
+                "credit": per_span,
+                "evidence_level": "component_correlated",
+                "metadata": span.metadata,
+            })
+    return {"schema_version": 1, "mode": "span", "spans": rows}
+
+
+def rank_spans_by_credit(spans: list[KnowledgeSpan], credits: dict[str, float]) -> list[dict[str, Any]]:
+    """Rank spans by credit while marking demotion candidates instead of deleting them."""
+    rows = []
+    for span in spans:
+        credit = float(credits.get(span.span_id, 0.0))
+        rows.append({
+            "span_id": span.span_id,
+            "source": span.source,
+            "text": span.text,
+            "credit": credit,
+            "demoted": credit <= 0,
+            "metadata": span.metadata,
+        })
+    return sorted(rows, key=lambda row: (-float(row["credit"]), str(row["span_id"])))
 
 def _text_change_magnitude(old: str, new: str) -> float:
     """Compute normalized change magnitude between two text strings."""
@@ -222,7 +309,12 @@ def format_attribution_for_agent(
     role: str,
 ) -> str:
     """Format attribution as prompt context for a specific agent role."""
-    if not result.credits or result.total_delta <= 0:
+    span_report = result.metadata.get("span_attribution")
+    spans = span_report.get("spans") if isinstance(span_report, dict) else None
+    has_spans = isinstance(spans, list) and bool(spans)
+    if not result.credits and not has_spans:
+        return ""
+    if result.total_delta <= 0 and not has_spans:
         return ""
 
     normalized_role = role.strip().lower()
@@ -238,16 +330,42 @@ def format_attribution_for_agent(
         if component not in ordered_components:
             ordered_components.append(component)
 
+    positive_delta = result.total_delta > 0
     lines = [f"## {title} (Gen {result.generation})"]
-    lines.append(f"Total score improvement: +{result.total_delta:.4f}")
-    if guidance:
-        lines.append(guidance)
+    if positive_delta:
+        lines.append(f"Total score improvement: +{result.total_delta:.4f}")
+        if guidance:
+            lines.append(guidance)
+    else:
+        lines.append(f"Total score delta: {result.total_delta:+.4f}")
+        lines.append("Use low/negative span credits as demotion candidates before preserving guidance.")
     lines.append("")
 
     for component in ordered_components:
         credit = result.credits.get(component, 0.0)
-        pct = credit / result.total_delta * 100 if result.total_delta > 0 else 0
-        lines.append(f"- {component}: +{credit:.4f} ({pct:.0f}% of improvement)")
+        if positive_delta:
+            pct = credit / result.total_delta * 100
+            lines.append(f"- {component}: +{credit:.4f} ({pct:.0f}% of improvement)")
+        else:
+            lines.append(f"- {component}: {credit:+.4f} (non-positive run)")
+
+    if isinstance(spans, list) and spans:
+        lines.append("")
+        lines.append("Span attribution (component-correlated, noisy):")
+        preferred_sources = set(preferred) if preferred else set(result.credits)
+        shown = 0
+        sorted_spans = sorted(
+            spans,
+            key=lambda item: float(item.get("credit", 0.0)) if isinstance(item, dict) else 0.0,
+            reverse=positive_delta,
+        )
+        for span in sorted_spans:
+            if not isinstance(span, dict) or str(span.get("source", "")) not in preferred_sources:
+                continue
+            lines.append(f"- {span.get('text', '')}: {float(span.get('credit', 0.0)):+.4f}")
+            shown += 1
+            if shown >= 5:
+                break
 
     return "\n".join(lines)
 

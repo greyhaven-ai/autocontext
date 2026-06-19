@@ -14,6 +14,19 @@
       ]
     },
     {
+      "python": "context_attribution",
+      "typescript": "contextAttribution",
+      "type": "enum",
+      "default": "component",
+      "env": [
+        "AUTOCONTEXT_CONTEXT_ATTRIBUTION"
+      ],
+      "values": [
+        "component",
+        "span"
+      ]
+    },
+    {
       "python": "agent_provider",
       "typescript": "agentProvider",
       "type": "string",

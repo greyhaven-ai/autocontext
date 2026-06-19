@@ -201,6 +201,7 @@ class AppSettings(BaseModel):
     allow_primeintellect_fallback: bool = Field(default=True)
     local_sandbox_hardened: bool = Field(default=True)
     ablation_no_feedback: bool = Field(default=False)
+    context_attribution: Literal["component", "span"] = "component"
     rlm_enabled: bool = Field(default=False)
     rlm_max_turns: int = Field(default=25, ge=1, le=50)
     rlm_max_stdout_chars: int = Field(default=8192, ge=1024)
@@ -750,7 +751,6 @@ class AppSettings(BaseModel):
         validate_default=True,
         description="Keyword confidence >= this skips LLM classification; ambiguous descriptions call LLM",
     )
-
     @field_validator("cost_budget_limit", mode="before")
     @classmethod
     def _coerce_budget_limit(cls, v: object) -> float | None:
