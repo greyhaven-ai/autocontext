@@ -27,6 +27,7 @@ from autocontext.knowledge.harness_quality import compute_harness_quality
 from autocontext.knowledge.hint_volume import HintManager
 from autocontext.knowledge.protocol import parse_research_protocol, validate_tuning_overrides
 from autocontext.knowledge.rapid_gate import rapid_gate, should_transition_to_linear
+from autocontext.knowledge.soft_hints import build_hint_metadata
 from autocontext.knowledge.stagnation import StagnationDetector
 from autocontext.knowledge.tuning import TuningConfig, parse_tuning_proposal
 from autocontext.loop.cost_control import CostPolicy, evaluate_cost_effectiveness
@@ -61,6 +62,7 @@ if TYPE_CHECKING:
 from autocontext.loop.stage_helpers.context_loaders import (
     _apply_hint_feedback_to_manager,
     _collect_hint_feedback,
+    _hint_style,
     _hint_volume_policy,
     _load_analyst_feedback_section,
     _load_architect_tool_usage_report,
@@ -1143,6 +1145,7 @@ def stage_curator_gate(
         constraint_mode=ctx.settings.constraint_prompts_enabled,
         harness_quality_section=harness_quality_section,
         skeptic_review_section=skeptic_review_section,
+        hint_style=_hint_style(ctx),
     )
 
     sqlite.append_generation_agent_activity(
@@ -1341,6 +1344,11 @@ def stage_persistence(
 
     # 8. Carry forward coach hints.
     coach_competitor_hints = outputs.coach_competitor_hints
+    hint_metadata = build_hint_metadata(
+        coach_competitor_hints,
+        hint_style=_hint_style(ctx),
+        support_evidence=f"generation={generation}; gate_decision={gate_decision}",
+    )
     if settings.hint_volume_enabled and not settings.ablation_no_feedback:
         raw_manager = artifacts.read_hint_manager(
             scenario_name,
@@ -1354,14 +1362,14 @@ def stage_persistence(
                 generation=max(0, generation - 1),
             )
         _apply_hint_feedback_to_manager(manager, hint_feedback)
-        manager.merge_hint_text(coach_competitor_hints, generation=generation)
+        manager.merge_hint_text(coach_competitor_hints, generation=generation, metadata=hint_metadata)
         ctx.coach_competitor_hints = manager.format_for_competitor()
         if ctx.coach_competitor_hints or manager.archived_hints():
             artifacts.write_hint_manager(scenario_name, manager)
     else:
         ctx.coach_competitor_hints = coach_competitor_hints
         if gate_decision == "advance" and coach_competitor_hints:
-            artifacts.write_hints(scenario_name, coach_competitor_hints)
+            artifacts.write_hints(scenario_name, coach_competitor_hints, metadata=hint_metadata)
 
     # 8b. Write progress snapshot
     if settings.progress_json_enabled and not settings.ablation_no_feedback:

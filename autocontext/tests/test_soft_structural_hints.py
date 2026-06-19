@@ -28,6 +28,8 @@ def test_structural_hint_prompt_is_opt_in() -> None:
     structural_prompt = _prompt_bundle("structural").coach
 
     assert "avoid full target solutions" not in default_prompt
+    assert "Specific parameter ranges or strategies the competitor should try next" in default_prompt
+    assert "prefer constraints, invariants, verification checks" not in default_prompt
     assert "prefer constraints, invariants, verification checks" in structural_prompt
     assert "avoid full target solutions" in structural_prompt
 

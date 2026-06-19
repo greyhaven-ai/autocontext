@@ -295,6 +295,19 @@ def build_prompt_bundle(
     coach_constraint = _COACH_CONSTRAINT_SUFFIX if constraint_mode else ""
     hint_policy = _structural_hint_prompt(hint_style)
     hint_policy_block = f"{hint_policy}\n\n" if hint_policy else ""
+    coach_hint_instruction = (
+        "3. Competitor hints between markers. In structural mode, prefer constraints, "
+        "invariants, verification checks, and repair directions over exact routes.\n\n"
+        "<!-- COMPETITOR_HINTS_START -->\n"
+        "(Hints for what the competitor should inspect, verify, or repair next)\n"
+        "<!-- COMPETITOR_HINTS_END -->"
+        if hint_style == "structural"
+        else "3. Concrete competitor hints between markers. Specific parameter ranges or "
+        "strategies the competitor should try next.\n\n"
+        "<!-- COMPETITOR_HINTS_START -->\n"
+        "(Specific parameter ranges or strategies the competitor should try next)\n"
+        "<!-- COMPETITOR_HINTS_END -->"
+    )
     architect_constraint = _ARCHITECT_CONSTRAINT_SUFFIX if constraint_mode else ""
     competitor_nb = f"Session notebook context:\n{_nb['competitor']}\n\n" if _nb.get("competitor") else ""
     analyst_nb = f"Session notebook context:\n{_nb['analyst']}\n\n" if _nb.get("analyst") else ""
@@ -334,12 +347,7 @@ def build_prompt_bundle(
             "prescriptive rule derived from what worked or failed.\n\n"
             "<!-- LESSONS_START -->\n"
             "(e.g. '- When aggression > 0.8 with defense < 0.4, scores drop.')\n"
-            "<!-- LESSONS_END -->\n\n"
-            "3. Competitor hints between markers. In structural mode, prefer constraints, "
-            "invariants, verification checks, and repair directions over exact routes.\n\n"
-            "<!-- COMPETITOR_HINTS_START -->\n"
-            "(Hints for what the competitor should inspect, verify, or repair next)\n"
-            "<!-- COMPETITOR_HINTS_END -->"
+            "<!-- LESSONS_END -->\n\n" + coach_hint_instruction
         ),
         architect=base_context
         + architect_evidence_block
