@@ -6,6 +6,7 @@ import logging
 import os
 import re
 from collections.abc import Callable
+from importlib import import_module
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
@@ -245,9 +246,15 @@ class ArtifactStore(PlaybookApprovalMethods, ArtifactGenerationPersistenceMethod
         ]
         return "\n".join(active_lines).strip()
 
-    def write_hints(self, scenario_name: str, content: str) -> None:
+    def write_hints(self, scenario_name: str, content: str, metadata: dict[str, Any] | None = None) -> None:
         """Persist coach hints so they survive run restarts."""
         self.write_markdown(self._scenario_dir(scenario_name) / "hints.md", content)
+        if metadata is None:
+            enabled = os.getenv("AUTOCONTEXT_SOFT_HINTS_ENABLED", "").lower() in {"1", "true", "yes"}
+            style = "structural" if enabled else os.getenv("AUTOCONTEXT_HINT_STYLE", "default")
+            metadata = dict(import_module("autocontext.knowledge.soft_hints").build_hint_metadata(content, hint_style=style))
+        if metadata:
+            self.write_json(self._scenario_dir(scenario_name) / "hints.meta.json", metadata)
 
     def _hint_state_path(self, scenario_name: str) -> Path:
         return self._scenario_dir(scenario_name) / "hint_state.json"

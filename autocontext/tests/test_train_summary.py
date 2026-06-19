@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import importlib
-from typing import Any
 
 
-def _train() -> Any:
+def _train_module():
     return importlib.import_module("autocontext.training.autoresearch.train")
+
+
+def _runner_module():
+    return importlib.import_module("autocontext.training.runner")
 
 
 def test_format_summary_no_mlx() -> None:
     """format_summary works even without MLX installed."""
-    result = _train().format_summary(
+    result = _train_module().format_summary(
         avg_score=0.85,
         valid_rate=0.99,
         training_seconds=60.0,
@@ -24,13 +27,11 @@ def test_format_summary_no_mlx() -> None:
     assert "avg_score: 0.8500" in result
     assert "valid_rate: 0.9900" in result
     assert "depth: 4" in result
-    # val_loss omitted when not provided (keeps existing callers unchanged)
     assert "val_loss" not in result
 
 
 def test_format_summary_includes_val_loss_when_provided() -> None:
-    """When val_loss is provided it is emitted so the runner/CLI can surface it."""
-    result = _train().format_summary(
+    result = _train_module().format_summary(
         avg_score=0.85,
         valid_rate=0.99,
         training_seconds=60.0,
@@ -44,10 +45,9 @@ def test_format_summary_includes_val_loss_when_provided() -> None:
 
 
 def test_parse_summary_picks_up_val_loss() -> None:
-    """TrainingRunner.parse_summary surfaces the val_loss line from the block."""
-    TrainingRunner = importlib.import_module("autocontext.training.runner").TrainingRunner
-
-    block = _train().format_summary(
+    train = _train_module()
+    runner_mod = _runner_module()
+    block = train.format_summary(
         avg_score=0.5,
         valid_rate=1.0,
         training_seconds=1.0,
@@ -57,16 +57,33 @@ def test_parse_summary_picks_up_val_loss() -> None:
         depth=4,
         val_loss=0.789,
     )
-    runner = TrainingRunner.__new__(TrainingRunner)  # parse_summary is pure; skip __init__
-    parsed = TrainingRunner.parse_summary(runner, block)
+    runner = runner_mod.TrainingRunner.__new__(runner_mod.TrainingRunner)
+    parsed = runner_mod.TrainingRunner.parse_summary(runner, block)
     assert parsed is not None
     assert parsed["val_loss"] == 0.789
 
 
+def test_format_summary_includes_token_pressure_metrics_when_provided() -> None:
+    result = _train_module().format_summary(
+        avg_score=0.5,
+        valid_rate=1.0,
+        training_seconds=1.0,
+        peak_memory_mb=10.0,
+        num_steps=3,
+        num_params_m=0.1,
+        depth=4,
+        token_pressure_positive_ratio=0.75,
+        token_pressure_negative_ratio=0.25,
+        token_pressure_shock_spike_count=2,
+    )
+
+    assert "token_pressure_positive_ratio: 0.7500" in result
+    assert "token_pressure_negative_ratio: 0.2500" in result
+    assert "token_pressure_shock_spike_count: 2" in result
+
+
 def test_default_train_steps_distinguishes_from_scratch_vs_adapter() -> None:
-    """A from-scratch GPT converges in a few steps; pretrained-adapter backends need far more,
-    so the unset (<=0) sentinel must resolve to different defaults per backend family."""
-    train = _train()
+    train = _train_module()
     assert train._default_train_steps("mlx") == 8
     assert train._default_train_steps("cuda") == 8
     for adapter in ("mlxlm", "opd", "grpo", "trl"):
@@ -74,28 +91,32 @@ def test_default_train_steps_distinguishes_from_scratch_vs_adapter() -> None:
 
 
 def test_train_parser_accepts_trl_prompt_count() -> None:
-    args = _train()._build_parser().parse_args(
-        [
-            "--scenario",
-            "gsm8k",
-            "--data",
-            "data/gsm8k.jsonl",
-            "--output-dir",
-            "runs/out",
-            "--backend",
-            "trl",
-            "--trl-mode",
-            "gkd",
-            "--n-prompts",
-            "384",
-        ]
+    args = (
+        _train_module()
+        ._build_parser()
+        .parse_args(
+            [
+                "--scenario",
+                "gsm8k",
+                "--data",
+                "data/gsm8k.jsonl",
+                "--output-dir",
+                "runs/out",
+                "--backend",
+                "trl",
+                "--trl-mode",
+                "gkd",
+                "--n-prompts",
+                "384",
+            ]
+        )
     )
 
     assert args.n_prompts == 384
 
 
 def test_trl_backend_receives_prompt_count(monkeypatch, tmp_path) -> None:
-    train = _train()
+    train = _train_module()
     trl_backend = importlib.import_module("autocontext.training.autoresearch.trl_backend")
     captured = {}
 
@@ -128,9 +149,7 @@ def test_trl_backend_receives_prompt_count(monkeypatch, tmp_path) -> None:
 
 
 def test_default_learning_rate_per_backend() -> None:
-    """A from-scratch LR (1e-3) diverges a LoRA adapter; each adapter backend resolves to the
-    rate its own entry point is tuned for when --learning-rate is left unset."""
-    train = _train()
+    train = _train_module()
     assert train._default_learning_rate("mlx") == 1e-3
     assert train._default_learning_rate("cuda") == 1e-3
     assert train._default_learning_rate("mlxlm") == 1e-4

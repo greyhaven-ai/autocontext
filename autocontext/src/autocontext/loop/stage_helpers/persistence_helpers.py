@@ -10,6 +10,7 @@ from autocontext.agents.feedback_loops import AnalystRating
 from autocontext.analytics.credit_assignment import (
     CreditAssignmentRecord,
     attribute_credit,
+    build_span_attribution,
     compute_change_vector,
 )
 from autocontext.knowledge.dead_end_manager import DeadEndEntry, consolidate_dead_ends
@@ -116,15 +117,24 @@ def _build_credit_assignment_record(
         current_state=current_state,
     )
     attribution = attribute_credit(vector)
+    metadata = {
+        "gate_decision": ctx.gate_decision,
+        "scenario_name": ctx.scenario_name,
+        "context_attribution": ctx.settings.context_attribution,
+    }
+    if ctx.settings.context_attribution == "span":
+        attribution.metadata["context_attribution"] = "span"
+        attribution.metadata["span_attribution"] = build_span_attribution(
+            vector,
+            attribution,
+            current_state=current_state,
+        )
     return CreditAssignmentRecord(
         run_id=ctx.run_id,
         generation=ctx.generation,
         vector=vector,
         attribution=attribution,
-        metadata={
-            "gate_decision": ctx.gate_decision,
-            "scenario_name": ctx.scenario_name,
-        },
+        metadata=metadata,
     )
 
 

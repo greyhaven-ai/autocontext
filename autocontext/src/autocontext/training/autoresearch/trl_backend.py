@@ -18,6 +18,7 @@ pure config / dataset / reward seams). The trainer-instantiating runner imports
 from __future__ import annotations
 
 import time
+from importlib import import_module
 from pathlib import Path
 from typing import Any
 
@@ -43,6 +44,7 @@ __all__ = [
     "build_prompt_dataset_rows",
     "make_reward_func",
     "make_time_budget_callback",
+    "collect_hf_token_pressure",
     "run_trl_training",
 ]
 
@@ -55,9 +57,9 @@ def _import_gkd() -> tuple[Any, Any]:
     works regardless of the resolved TRL version instead of failing on import mid-run.
     """
     try:
-        from trl.experimental.gkd import GKDConfig, GKDTrainer
+        from trl.experimental.gkd import GKDConfig, GKDTrainer  # type: ignore[import-not-found]
     except ImportError:
-        from trl import GKDConfig, GKDTrainer
+        from trl import GKDConfig, GKDTrainer  # type: ignore[import-not-found]
     return GKDConfig, GKDTrainer
 
 
@@ -195,13 +197,83 @@ def make_reward_func(scenario: Any) -> Any:
     return _reward
 
 
+def _gkd_diagnostic_prompt_text(tokenizer: Any, row: dict[str, str]) -> str:
+    messages = [{"role": "user", "content": row["prompt"]}]
+    apply_chat_template = getattr(tokenizer, "apply_chat_template", None)
+    if callable(apply_chat_template):
+        return str(apply_chat_template(messages, tokenize=False, add_generation_prompt=True))
+    return row["prompt"]
+
+
+def collect_hf_token_pressure(
+    *,
+    student_lm: Any,
+    teacher_lm: Any,
+    tokenizer: Any,
+    prompt_rows: list[dict[str, str]],
+    max_new_tokens: int,
+    include_token_text: bool = False,
+    seed: int = 0,
+) -> dict[str, Any]:
+    """Collect GKD sampled-token pressure without running optimizer steps."""
+    import torch  # type: ignore[import-not-found]
+
+    token_pressure = import_module("autocontext.training.autoresearch.token_pressure")
+    torch.manual_seed(seed)
+    observations: list[Any] = []
+    response_lengths: list[int] = []
+    device = getattr(student_lm, "device", None)
+    teacher_device = getattr(teacher_lm, "device", device)
+    for row in prompt_rows:
+        encoded = tokenizer(_gkd_diagnostic_prompt_text(tokenizer, row), return_tensors="pt")
+        if device is not None:
+            encoded = encoded.to(device)
+        with torch.no_grad():
+            generated = student_lm.generate(
+                **encoded,
+                max_new_tokens=max_new_tokens,
+                do_sample=False,
+                pad_token_id=getattr(tokenizer, "eos_token_id", None),
+            )
+            student_logits = student_lm(generated).logits
+            teacher_logits = teacher_lm(generated.to(teacher_device)).logits.to(student_logits.device)
+            student_logp = torch.log_softmax(student_logits, dim=-1)
+            teacher_logp = torch.log_softmax(teacher_logits, dim=-1)
+            entropy = -(student_logp.exp() * student_logp).sum(dim=-1)
+        prompt_len = int(encoded["input_ids"].shape[1])
+        total_len = int(generated.shape[1])
+        response_lengths.append(max(total_len - prompt_len, 0))
+        for position in range(max(prompt_len - 1, 0), max(total_len - 1, 0)):
+            token_id = int(generated[0, position + 1].item())
+            token_text = tokenizer.decode([token_id]) if include_token_text else None
+            observations.append(
+                token_pressure.TokenPressureObservation(
+                    position=position,
+                    student_logprob=float(student_logp[0, position, token_id].item()),
+                    teacher_logprob=float(teacher_logp[0, position, token_id].item()),
+                    student_entropy=float(entropy[0, position].item()),
+                    token_text=token_text,
+                )
+            )
+    return dict(
+        token_pressure.build_token_pressure_report(
+            observations,
+            backend="trl",
+            mode="gkd",
+            seed=seed,
+            response_lengths=response_lengths,
+            include_token_text=include_token_text,
+        )
+    )
+
+
 def make_time_budget_callback(time_budget: float) -> Any:
     """A ``transformers.TrainerCallback`` that stops training once ``time_budget`` (s) elapses.
 
     TRL/transformers loops run to ``num_train_epochs``/``max_steps`` with no wall-clock cap,
     so this enforces the budget at step boundaries (transformers imported lazily so the
     module stays importable without it)."""
-    from transformers import TrainerCallback
+    from transformers import TrainerCallback  # type: ignore[import-not-found]
 
     class _TimeBudgetCallback(TrainerCallback):  # type: ignore[misc, valid-type]
         def __init__(self, budget: float) -> None:
@@ -230,6 +302,8 @@ def run_trl_training(
     seed: int = 0,
     max_completion_length: int = 512,  # grpo: generation cap (>= task answer length; see build_grpo_config_kwargs)
     grpo_beta: float = 0.04,  # grpo: KL penalty toward the base policy (0.0 = KL-free; nonzero prevents overfitting)
+    opd_diagnostics: bool = False,
+    opd_diagnostics_debug_tokens: bool = False,
     register_import: str | None = None,
     time_budget: int = 3600,
     memory_limit_mb: int = 16384,  # noqa: ARG001 - backend-signature parity
@@ -245,9 +319,9 @@ def run_trl_training(
     if mode not in SUPPORTED_MODES:
         raise ValueError(f"trl mode must be one of {SUPPORTED_MODES}, got {mode!r}")
 
-    from datasets import Dataset
-    from peft import LoraConfig
-    from transformers import AutoModelForCausalLM, AutoTokenizer
+    from datasets import Dataset  # type: ignore[import-not-found]
+    from peft import LoraConfig  # type: ignore[import-not-found]
+    from transformers import AutoModelForCausalLM, AutoTokenizer  # type: ignore[import-not-found]
 
     from autocontext.scenarios import SCENARIO_REGISTRY
     from autocontext.training.autoresearch.distill_common import assert_vocab_compatible, build_trl_metrics
@@ -268,6 +342,10 @@ def run_trl_training(
     started = time.monotonic()
     callbacks = [make_time_budget_callback(float(time_budget))]
 
+    pressure_report: dict[str, Any] | None = None
+    student_lm: Any = None
+    teacher_lm: Any = None
+    prompt_rows: list[dict[str, str]] = []
     if mode == "gkd":
         gkd_config_cls, gkd_trainer_cls = _import_gkd()
 
@@ -281,6 +359,7 @@ def run_trl_training(
         t_vocab = getattr(teacher_lm.config, "vocab_size", None)
         if isinstance(s_vocab, int) and isinstance(t_vocab, int):
             assert_vocab_compatible(s_vocab, t_vocab)
+        prompt_rows = build_prompt_rows(scenario, n_prompts)
         dataset = Dataset.from_list(build_chat_dataset_rows(scenario, n_prompts))
         gkd_kwargs: dict[str, Any] = dict(
             output_dir=str(output_dir),
@@ -302,7 +381,7 @@ def run_trl_training(
             callbacks=callbacks,
         )
     else:  # grpo
-        from trl import GRPOConfig, GRPOTrainer
+        from trl import GRPOConfig, GRPOTrainer  # type: ignore[import-not-found]
 
         dataset = Dataset.from_list(build_prompt_dataset_rows(scenario, n_prompts))
         grpo_kwargs: dict[str, Any] = dict(
@@ -328,13 +407,40 @@ def run_trl_training(
 
     train_output = trainer.train()
     trainer.save_model(str(output_dir))
+    if mode == "gkd" and opd_diagnostics:
+        token_pressure = import_module("autocontext.training.autoresearch.token_pressure")
+        diag_rows, diag_tokens = token_pressure.bounded_diagnostic_inputs(
+            prompt_rows,
+            max_completion_length,
+            remaining_seconds=float(time_budget) - (time.monotonic() - started),
+        )
+        if diag_rows:
+            pressure_report = collect_hf_token_pressure(
+                student_lm=student_lm,
+                teacher_lm=teacher_lm,
+                tokenizer=tokenizer,
+                prompt_rows=diag_rows,
+                max_new_tokens=diag_tokens,
+                include_token_text=opd_diagnostics_debug_tokens,
+                seed=seed,
+            )
+            token_pressure.write_token_pressure_report(output_dir / "token_pressure_diagnostics.json", pressure_report)
     training_loss = float(getattr(train_output, "training_loss", float("nan")))
     num_steps = float(getattr(getattr(trainer, "state", None), "global_step", 0) or 0)
     # build_trl_metrics gives a FINITE avg_score (negative training loss) so the training
     # runner's keep/discard comparison selects this checkpoint instead of discarding on NaN.
-    return build_trl_metrics(
+    result = build_trl_metrics(
         training_loss=training_loss,
         num_steps=num_steps,
         training_seconds=time.monotonic() - started,
         peak_memory_mb=_peak_memory_mb(),
     )
+    if pressure_report is not None:
+        result.update(
+            {
+                "token_pressure_positive_ratio": float(pressure_report["positive_pressure_ratio"]),
+                "token_pressure_negative_ratio": float(pressure_report["negative_pressure_ratio"]),
+                "token_pressure_shock_spike_count": float(pressure_report["shock_spike_count"]),
+            }
+        )
+    return result

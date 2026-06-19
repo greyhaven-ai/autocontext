@@ -79,6 +79,7 @@ class HintManager:
         text: str,
         generation: int,
         impact_score: float = 0.5,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         """Add a hint, rotating out the lowest-ranked if at capacity."""
         normalized = _normalize_hint_text(text)
@@ -89,6 +90,8 @@ class HintManager:
         if existing is not None:
             existing.generation_added = generation
             existing.impact_score = max(existing.impact_score, impact_score)
+            if metadata:
+                existing.metadata.update(metadata)
             self._reassign_ranks()
             return
 
@@ -97,6 +100,8 @@ class HintManager:
             self._archived.remove(archived)
             archived.generation_added = generation
             archived.impact_score = max(archived.impact_score, impact_score)
+            if metadata:
+                archived.metadata.update(metadata)
             self._active.append(archived)
             self._reassign_ranks()
             self._enforce_cap()
@@ -107,6 +112,7 @@ class HintManager:
             rank=len(self._active) + 1,
             generation_added=generation,
             impact_score=impact_score,
+            metadata=dict(metadata or {}),
         )
         self._active.append(hint)
         self._reassign_ranks()
@@ -118,9 +124,10 @@ class HintManager:
         *,
         generation: int,
         impact_score: float = 0.5,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         for text in texts:
-            self.add(text, generation=generation, impact_score=impact_score)
+            self.add(text, generation=generation, impact_score=impact_score, metadata=metadata)
 
     def merge_hint_text(
         self,
@@ -128,8 +135,9 @@ class HintManager:
         *,
         generation: int,
         impact_score: float = 0.5,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
-        self.add_many(split_hint_text(hints), generation=generation, impact_score=impact_score)
+        self.add_many(split_hint_text(hints), generation=generation, impact_score=impact_score, metadata=metadata)
 
     def update_impact(self, text: str, new_score: float) -> None:
         """Update a hint's impact score."""

@@ -10,9 +10,9 @@ import logging
 from pathlib import Path
 from typing import Any
 
-import typer
-from rich.console import Console
-from rich.table import Table
+import typer  # type: ignore[import-not-found]
+from rich.console import Console  # type: ignore[import-not-found]
+from rich.table import Table  # type: ignore[import-not-found]
 
 from autocontext.training.autoresearch.r1_pipeline import run_r1_pipeline
 from autocontext.training.autoresearch.sequence_format import BASE_VOCAB_SIZE
@@ -92,6 +92,17 @@ def register_train_command(app: typer.Typer, console: Console) -> None:
         ),
         grpo_beta: float = typer.Option(
             0.04, "--grpo-beta", help="trl grpo: KL penalty toward base policy (0.0 = KL-free; nonzero prevents overfitting)"
+        ),
+        opd_diagnostics: bool = typer.Option(
+            False,
+            "--opd-diagnostics",
+            envvar="AUTOCONTEXT_OPD_DIAGNOSTICS",
+            help="write OPD/GKD token-pressure diagnostics",
+        ),
+        opd_diagnostics_debug_tokens: bool = typer.Option(
+            False,
+            "--opd-diagnostics-debug-tokens",
+            help="include raw sampled token text in diagnostics (off by default)",
         ),
         agent_provider: str = typer.Option("anthropic", "--agent-provider", help="LLM provider for training agent"),
         agent_model: str = typer.Option("", "--agent-model", help="Model for training agent (empty = provider default)"),
@@ -191,6 +202,8 @@ def register_train_command(app: typer.Typer, console: Console) -> None:
             seed=seed,
             max_completion_length=max_completion_length,
             grpo_beta=grpo_beta,
+            opd_diagnostics=opd_diagnostics,
+            opd_diagnostics_debug_tokens=opd_diagnostics_debug_tokens,
             fine_tune_type=fine_tune_type,
             num_layers=num_layers,
         )
@@ -210,6 +223,14 @@ def register_train_command(app: typer.Typer, console: Console) -> None:
             raise typer.Exit(code=1) from exc
 
         if json_output:
+            best_metrics = next(
+                (
+                    item.summary_metrics
+                    for item in result.results
+                    if item.experiment_index == result.best_experiment_index
+                ),
+                {},
+            )
             _write_json_stdout(
                 {
                     "scenario": result.scenario,
@@ -219,6 +240,7 @@ def register_train_command(app: typer.Typer, console: Console) -> None:
                     "best_score": result.best_score,
                     "checkpoint_path": str(result.checkpoint_path) if result.checkpoint_path else None,
                     "published_model_id": result.published_model_id,
+                    "training_metrics": best_metrics,
                 }
             )
             return

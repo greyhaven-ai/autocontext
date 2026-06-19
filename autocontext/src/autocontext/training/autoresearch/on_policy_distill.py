@@ -15,11 +15,12 @@ from __future__ import annotations
 
 import json
 import time
+from importlib import import_module
 from pathlib import Path
 from typing import Any
 
-import mlx.core as mx
-import mlx.nn as nn
+import mlx.core as mx  # type: ignore[import-not-found]
+import mlx.nn as nn  # type: ignore[import-not-found]
 
 # Re-exported from the pure (mlx-free) shared module so the cross-platform trl backend can
 # use it without importing this mlx-scoped module; kept importable here for back-compat.
@@ -41,6 +42,7 @@ __all__ = [
     "DEFAULT_TEACHER_MODEL",
     "assert_vocab_compatible",
     "distill_loss",
+    "collect_token_pressure_for_prompts",
     "distill_over_prompts",
     "distill_update_step",
     "_model_logit_vocab",
@@ -186,6 +188,65 @@ def on_policy_distill_step(
     return distill_update_step(student_model, teacher_model, optimizer, full_ids, completion_mask, temperature=kl_temperature)
 
 
+def collect_token_pressure_for_prompts(
+    student_model: Any,
+    teacher_model: Any,
+    prompts: list[mx.array],
+    *,
+    max_tokens: int,
+    sample_temperature: float = 1.0,
+    include_token_text: bool = False,
+    tokenizer: Any | None = None,
+    backend: str = "opd",
+    mode: str = "opd",
+    seed: int = 0,
+) -> dict[str, Any]:
+    """Collect teacher-vs-student sampled-token pressure without updating weights."""
+    token_pressure = import_module("autocontext.training.autoresearch.token_pressure")
+    mx.random.seed(seed)
+    observations: list[Any] = []
+    response_lengths: list[int] = []
+    for prompt_ids in prompts:
+        full_ids, completion_mask = sample_completion(
+            student_model,
+            prompt_ids,
+            max_tokens=max_tokens,
+            temperature=sample_temperature,
+        )
+        full_ids = mx.stop_gradient(full_ids)
+        student_logp = _log_softmax(student_model(full_ids), axis=-1)
+        teacher_logp = _log_softmax(mx.stop_gradient(teacher_model(full_ids)), axis=-1)
+        student_entropy = -mx.sum(mx.exp(student_logp) * student_logp, axis=-1)
+        for row in range(int(full_ids.shape[0])):
+            ids = [int(token) for token in full_ids[row].tolist()]
+            mask = [float(value) for value in completion_mask[row].tolist()]
+            response_lengths.append(sum(1 for value in mask if value > 0))
+            for position, active in enumerate(mask):
+                if active <= 0 or position + 1 >= len(ids):
+                    continue
+                token_id = ids[position + 1]
+                token_text = tokenizer.decode([token_id]) if include_token_text and tokenizer is not None else None
+                observations.append(
+                    token_pressure.TokenPressureObservation(
+                        position=position,
+                        student_logprob=float(student_logp[row, position, token_id]),
+                        teacher_logprob=float(teacher_logp[row, position, token_id]),
+                        student_entropy=float(student_entropy[row, position]),
+                        token_text=token_text,
+                    )
+                )
+    return dict(
+        token_pressure.build_token_pressure_report(
+            observations,
+            backend=backend,
+            mode=mode,
+            seed=seed,
+            response_lengths=response_lengths,
+            include_token_text=include_token_text,
+        )
+    )
+
+
 def distill_over_prompts(
     student_model: Any,
     teacher_model: Any,
@@ -260,6 +321,9 @@ def run_on_policy_distillation(
     register_import: str | None = None,
     time_budget: int = 3600,
     memory_limit_mb: int = 16384,
+    seed: int = 0,
+    opd_diagnostics: bool = False,
+    opd_diagnostics_debug_tokens: bool = False,
 ) -> dict[str, float]:
     """Distill a teacher into a LoRA student IN-PROCESS via on-policy reverse-KL, then assess.
 
@@ -269,10 +333,10 @@ def run_on_policy_distillation(
     tokenizer (default: same Qwen2.5 family). ``register_import`` registers a consumer-repo
     scenario in this process before lookup. Returns backend-standard summary metrics.
     """
-    import mlx.optimizers as optim
-    from mlx.utils import tree_flatten
-    from mlx_lm import load
-    from mlx_lm.tuner.utils import linear_to_lora_layers
+    import mlx.optimizers as optim  # type: ignore[import-not-found]
+    from mlx.utils import tree_flatten  # type: ignore[import-not-found]
+    from mlx_lm import load  # type: ignore[import-not-found]
+    from mlx_lm.tuner.utils import linear_to_lora_layers  # type: ignore[import-not-found]
 
     from autocontext.scenarios import SCENARIO_REGISTRY
     from autocontext.training.autoresearch.grpo_backend import build_prompt_rows
@@ -305,6 +369,8 @@ def run_on_policy_distillation(
     prompts = _tokenize_prompts(tokenizer, rows)
     optimizer = optim.Adam(learning_rate=learning_rate)
 
+    output_dir.mkdir(parents=True, exist_ok=True)
+    pressure_report: dict[str, Any] | None = None
     loop_budget = max(0.0, float(time_budget) - (time.monotonic() - started))
     loop = distill_over_prompts(
         student,
@@ -318,7 +384,28 @@ def run_on_policy_distillation(
         time_budget=loop_budget,
     )
 
-    output_dir.mkdir(parents=True, exist_ok=True)
+    if opd_diagnostics:
+        token_pressure = import_module("autocontext.training.autoresearch.token_pressure")
+        diag_prompts, diag_tokens = token_pressure.bounded_diagnostic_inputs(
+            prompts,
+            max_tokens,
+            remaining_seconds=float(time_budget) - (time.monotonic() - started),
+        )
+        if diag_prompts:
+            pressure_report = collect_token_pressure_for_prompts(
+                student,
+                teacher,
+                diag_prompts,
+                max_tokens=diag_tokens,
+                sample_temperature=sample_temperature,
+                include_token_text=opd_diagnostics_debug_tokens,
+                tokenizer=tokenizer,
+                backend="opd",
+                mode="opd",
+                seed=seed,
+            )
+            token_pressure.write_token_pressure_report(output_dir / "token_pressure_diagnostics.json", pressure_report)
+
     adapter_dir = output_dir / "adapters"
     adapter_dir.mkdir(parents=True, exist_ok=True)
     adapter_weights = dict(tree_flatten(student.trainable_parameters()))
@@ -338,7 +425,7 @@ def run_on_policy_distillation(
         top_k=0,
         score_conditioned=False,
     )
-    return {
+    result = {
         "avg_score": metrics["avg_score"],
         "valid_rate": metrics["valid_rate"],
         "val_loss": float("nan"),
@@ -351,3 +438,12 @@ def run_on_policy_distillation(
         "num_params_m": 0.0,
         "depth": 0.0,
     }
+    if pressure_report is not None:
+        result.update(
+            {
+                "token_pressure_positive_ratio": float(pressure_report["positive_pressure_ratio"]),
+                "token_pressure_negative_ratio": float(pressure_report["negative_pressure_ratio"]),
+                "token_pressure_shock_spike_count": float(pressure_report["shock_spike_count"]),
+            }
+        )
+    return result

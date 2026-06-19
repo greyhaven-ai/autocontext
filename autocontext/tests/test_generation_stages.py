@@ -1832,6 +1832,36 @@ class TestStageCuratorGate:
         assert "Recommendation: caution" in kwargs["skeptic_review_section"]
         assert "Overfit to a narrow opponent slice" in kwargs["skeptic_review_section"]
 
+    def test_curator_receives_effective_hint_style(self) -> None:
+        curator = MagicMock()
+        curator.assess_playbook_quality.return_value = (
+            MagicMock(decision="accept", playbook="", score=7, reasoning="ok"),
+            RoleExecution(
+                role="curator",
+                content="ok",
+                usage=RoleUsage(input_tokens=10, output_tokens=5, latency_ms=1, model="test"),
+                subagent_id="curator-test",
+                status="completed",
+            ),
+        )
+        ctx = _make_curator_ctx(gate_decision="advance", coach_playbook="new playbook")
+        ctx.settings = AppSettings(agent_provider="deterministic", soft_hints_enabled=True)
+        artifacts = MagicMock()
+        artifacts.read_playbook.return_value = "current playbook"
+        trajectory_builder = MagicMock()
+        trajectory_builder.build_trajectory.return_value = "Gen1: 0.5"
+
+        stage_curator_gate(
+            ctx,
+            curator=curator,
+            artifacts=artifacts,
+            trajectory_builder=trajectory_builder,
+            sqlite=MagicMock(),
+            events=MagicMock(),
+        )
+
+        assert curator.assess_playbook_quality.call_args.kwargs["hint_style"] == "structural"
+
     def test_persists_analyst_rating_feedback(self) -> None:
         curator = MagicMock()
         curator.rate_analyst_output.return_value = (
@@ -2322,6 +2352,7 @@ class TestStagePersistence:
             agent_provider="deterministic",
             hint_volume_enabled=True,
             hint_volume_max_hints=2,
+            soft_hints_enabled=True,
         )
         ctx = _make_persistence_ctx(
             gate_decision="advance",
@@ -2358,6 +2389,9 @@ class TestStagePersistence:
         active_texts = [hint.text for hint in persisted_manager.active_hints()]
         archived_texts = [hint.text for hint in persisted_manager.archived_hints()]
         assert active_texts == ["old strong hint", "fresh high-value hint"]
+        fresh_hint = next(hint for hint in persisted_manager.active_hints() if hint.text == "fresh high-value hint")
+        assert fresh_hint.metadata["hint_style"] == "structural"
+        assert fresh_hint.metadata["is_structural"] is True
         assert "old weak hint" in archived_texts
         assert "old weak hint" not in result.coach_competitor_hints
 

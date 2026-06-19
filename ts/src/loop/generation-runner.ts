@@ -17,6 +17,7 @@ import { TournamentRunner } from "../execution/tournament.js";
 import { BackpressureGate } from "./backpressure.js";
 import { ArtifactStore, EMPTY_PLAYBOOK_SENTINEL } from "../knowledge/artifact-store.js";
 import { PlaybookGuard, PLAYBOOK_MARKERS } from "../knowledge/playbook.js";
+import { effectiveHintStyle } from "../knowledge/soft-hints.js";
 import { ScoreTrajectoryBuilder } from "../knowledge/trajectory.js";
 import {
   compactPromptComponents,
@@ -84,6 +85,8 @@ export interface GenerationRunnerOpts {
   contextBudgetTokens?: number;
   curatorEnabled?: boolean;
   curatorConsolidateEveryNGens?: number;
+  softHintsEnabled?: boolean;
+  hintStyle?: string;
   skillMaxLessons?: number;
   deadEndTrackingEnabled?: boolean;
   deadEndMaxEntries?: number;
@@ -129,6 +132,7 @@ export class GenerationRunner {
   #contextBudget: ContextBudget;
   #curatorEnabled: boolean;
   #curatorConsolidateEveryNGens: number;
+  #hintStyle: string;
   #skillMaxLessons: number;
   #deadEndTrackingEnabled: boolean;
   #deadEndMaxEntries: number;
@@ -172,6 +176,7 @@ export class GenerationRunner {
     this.#contextBudget = new ContextBudget(opts.contextBudgetTokens ?? 100_000);
     this.#curatorEnabled = opts.curatorEnabled ?? false;
     this.#curatorConsolidateEveryNGens = opts.curatorConsolidateEveryNGens ?? 3;
+    this.#hintStyle = effectiveHintStyle(opts.softHintsEnabled ?? false, opts.hintStyle ?? "default");
     this.#skillMaxLessons = opts.skillMaxLessons ?? 30;
     this.#deadEndTrackingEnabled = opts.deadEndTrackingEnabled ?? false;
     this.#deadEndMaxEntries = opts.deadEndMaxEntries ?? 20;
@@ -501,6 +506,7 @@ export class GenerationRunner {
       playbook: trimmed.playbook,
       trajectory: trimmed.trajectory,
       deadEnds: trimmed.dead_ends,
+      hintStyle: this.#hintStyle,
     });
     return this.applyContextHook(runId, generation, { [role]: prompt })[role] ?? prompt;
   }
@@ -519,6 +525,7 @@ export class GenerationRunner {
       currentPlaybook,
       proposedPlaybook,
       trajectory,
+      hintStyle: this.#hintStyle,
     });
   }
 

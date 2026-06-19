@@ -289,6 +289,7 @@ export class InteractiveServer {
             search: "/api/knowledge/search",
             solve: "/api/knowledge/solve",
             playbook: "/api/knowledge/playbook/:scenario",
+            lifecycle: "/api/knowledge/:scenario/lifecycle",
           },
           campaigns: "/api/campaigns",
           missions: "/api/missions",
@@ -948,6 +949,33 @@ export class InteractiveServer {
     if (method === "POST" && rejectPlaybookMatch) {
       const [, rawScenario] = rejectPlaybookMatch;
       const response = knowledgeApi.rejectPendingPlaybook(decodeURIComponent(rawScenario!));
+      json(response.status, response.body);
+      return;
+    }
+
+    // GET /api/knowledge/:scenario/lifecycle
+    const lessonLifecycleMatch = url.match(/^\/api\/knowledge\/([^/]+)\/lifecycle$/);
+    if (method === "GET" && lessonLifecycleMatch) {
+      const [, rawScenario] = lessonLifecycleMatch;
+      const response = knowledgeApi.lessonLifecycle(decodeURIComponent(rawScenario!));
+      json(response.status, response.body);
+      return;
+    }
+
+    // POST /api/knowledge/:scenario/lessons/:lessonId/(approve|reject|curate)
+    const lessonActionMatch = url.match(
+      /^\/api\/knowledge\/([^/]+)\/lessons\/([^/]+)\/(approve|reject|curate)$/,
+    );
+    if (method === "POST" && lessonActionMatch) {
+      const [, rawScenario, rawLessonId, action] = lessonActionMatch;
+      const scenario = decodeURIComponent(rawScenario!);
+      const lessonId = decodeURIComponent(rawLessonId!);
+      const response =
+        action === "approve"
+          ? knowledgeApi.approveLesson(scenario, lessonId)
+          : action === "reject"
+            ? knowledgeApi.rejectLesson(scenario, lessonId)
+            : knowledgeApi.curateLesson(scenario, lessonId, await this.#readJsonBody(req));
       json(response.status, response.body);
       return;
     }
