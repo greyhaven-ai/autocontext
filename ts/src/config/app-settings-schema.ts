@@ -54,6 +54,8 @@ export const AppSettingsSchema = z.object({
   hintVolumeEnabled: z.boolean().default(true),
   hintVolumeMaxHints: z.number().int().min(1).default(7),
   hintVolumeArchiveRotated: z.boolean().default(true),
+  softHintsEnabled: z.boolean().default(false),
+  hintStyle: z.enum(["default", "structural", "solution_like"]).default("default"),
 
   // Evidence freshness
   evidenceFreshnessEnabled: z.boolean().default(true),

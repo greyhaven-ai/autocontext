@@ -14,6 +14,8 @@ export interface TrainingConfig {
   maxEpochs?: number;
   batchSize?: number;
   learningRate?: number;
+  opdDiagnostics?: boolean;
+  opdDiagnosticsDebugTokens?: boolean;
 }
 
 export interface PublishedArtifact {

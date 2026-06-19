@@ -797,11 +797,6 @@
             "default": false,
             "title": "Require Playbook Approval",
             "type": "boolean"
-          },
-          "require_lesson_approval": {
-            "default": false,
-            "title": "Require Lesson Approval",
-            "type": "boolean"
           }
         },
         "required": [

@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import logging
+import os
 import sys
 import time
 from pathlib import Path
@@ -57,6 +58,9 @@ def format_summary(
     depth: int,
     val_loss: float | None = None,
     num_records: float | None = None,
+    token_pressure_positive_ratio: float | None = None,
+    token_pressure_negative_ratio: float | None = None,
+    token_pressure_shock_spike_count: float | None = None,
 ) -> str:
     """Format the training results summary block.
 
@@ -66,12 +70,33 @@ def format_summary(
     """
     val_loss_line = f"val_loss: {val_loss:.4f}\n" if val_loss is not None else ""
     num_records_line = f"num_records: {int(num_records)}\n" if num_records is not None else ""
+    pressure_lines = "".join(
+        line
+        for line in (
+            (
+                f"token_pressure_positive_ratio: {token_pressure_positive_ratio:.4f}\n"
+                if token_pressure_positive_ratio is not None
+                else ""
+            ),
+            (
+                f"token_pressure_negative_ratio: {token_pressure_negative_ratio:.4f}\n"
+                if token_pressure_negative_ratio is not None
+                else ""
+            ),
+            (
+                f"token_pressure_shock_spike_count: {int(token_pressure_shock_spike_count)}\n"
+                if token_pressure_shock_spike_count is not None
+                else ""
+            ),
+        )
+    )
     return (
         "=== TRAINING SUMMARY ===\n"
         f"avg_score: {avg_score:.4f}\n"
         f"valid_rate: {valid_rate:.4f}\n"
         f"{val_loss_line}"
         f"{num_records_line}"
+        f"{pressure_lines}"
         f"training_seconds: {training_seconds:.1f}\n"
         f"peak_memory_mb: {peak_memory_mb:.1f}\n"
         f"num_steps: {num_steps}\n"
@@ -236,7 +261,7 @@ def _run_mlx_training(
         seq_len=seq_len,
         vocab_size=int(tokenizer.vocab_size),
     )
-    model = GPTModel(cfg)
+    model: Any = GPTModel(cfg)
     optimizer = optim.AdamW(learning_rate=learning_rate)
     loss_and_grad = nn.value_and_grad(model, compute_loss)
 
@@ -369,6 +394,10 @@ def _default_learning_rate(backend: str) -> float:
     return {"mlx": 1e-3, "cuda": 1e-3, "mlxlm": 1e-4}.get(backend, 1e-5)
 
 
+def _env_truthy(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def run_training(
     *,
     scenario_name: str,
@@ -398,6 +427,8 @@ def run_training(
     seed: int = 0,  # trl backend: training seed (for seeded repeats / error bars)
     max_completion_length: int = 512,  # trl grpo: generation cap (>= task answer length; 256 truncates reasoning)
     grpo_beta: float = 0.04,  # trl grpo: KL penalty toward base policy (0.0 = KL-free; nonzero prevents overfitting)
+    opd_diagnostics: bool | None = None,
+    opd_diagnostics_debug_tokens: bool = False,
     fine_tune_type: str = "lora",
     num_layers: int = 8,
     collect_samples_path: Path | None = None,
@@ -415,6 +446,8 @@ def run_training(
         raise ValueError(f"vocab_size must be >= 256 (the byte-level BPE base), got {vocab_size}")
 
     normalized_backend = backend.strip().lower()
+    if opd_diagnostics is None:
+        opd_diagnostics = _env_truthy("AUTOCONTEXT_OPD_DIAGNOSTICS")
     if train_steps <= 0:  # resolve the unset sentinel to a backend-appropriate step count
         train_steps = _default_train_steps(normalized_backend)
     if learning_rate <= 0:  # likewise: a from-scratch LR diverges a LoRA adapter
@@ -515,8 +548,11 @@ def run_training(
             num_layers=num_layers,
             assess_samples=assess_samples,
             assess_temperature=assess_temperature,
+            seed=seed,
             time_budget=time_budget,
             memory_limit_mb=memory_limit_mb,
+            opd_diagnostics=opd_diagnostics,
+            opd_diagnostics_debug_tokens=opd_diagnostics_debug_tokens,
         )
     if normalized_backend == "trl":
         if loss_weight_mode != "uniform" or vocab_size != BASE_VOCAB_SIZE:
@@ -540,6 +576,8 @@ def run_training(
             grpo_beta=grpo_beta,
             time_budget=time_budget,
             memory_limit_mb=memory_limit_mb,
+            opd_diagnostics=opd_diagnostics,
+            opd_diagnostics_debug_tokens=opd_diagnostics_debug_tokens,
         )
     raise ValueError("unsupported training backend: expected 'mlx', 'cuda', 'mlxlm', 'grpo', 'opd', or 'trl'")
 
@@ -560,6 +598,17 @@ def _build_parser() -> argparse.ArgumentParser:
         type=float,
         default=0.04,
         help="trl grpo: KL penalty toward base policy (0.0 = KL-free; nonzero prevents overfitting)",
+    )
+    parser.add_argument(
+        "--opd-diagnostics",
+        action="store_true",
+        default=None,
+        help="write OPD/GKD token-pressure diagnostics (or set AUTOCONTEXT_OPD_DIAGNOSTICS=1)",
+    )
+    parser.add_argument(
+        "--opd-diagnostics-debug-tokens",
+        action="store_true",
+        help="include raw sampled token text in diagnostics (off by default)",
     )
     parser.add_argument("--time-budget", type=int, default=300)
     parser.add_argument("--memory-limit", type=int, default=16384)
@@ -620,6 +669,8 @@ def main(argv: list[str] | None = None) -> int:
             seed=args.seed,
             max_completion_length=args.max_completion_length,
             grpo_beta=args.grpo_beta,
+            opd_diagnostics=args.opd_diagnostics,
+            opd_diagnostics_debug_tokens=args.opd_diagnostics_debug_tokens,
             fine_tune_type=args.fine_tune_type,
             num_layers=args.num_layers,
             backend=args.backend,
@@ -640,6 +691,9 @@ def main(argv: list[str] | None = None) -> int:
             depth=int(metrics["depth"]),
             val_loss=metrics.get("val_loss"),
             num_records=metrics.get("num_records"),
+            token_pressure_positive_ratio=metrics.get("token_pressure_positive_ratio"),
+            token_pressure_negative_ratio=metrics.get("token_pressure_negative_ratio"),
+            token_pressure_shock_spike_count=metrics.get("token_pressure_shock_spike_count"),
         )
     )
     return 0

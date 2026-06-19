@@ -15,6 +15,8 @@ describe("train command workflow", () => {
     expect(TRAIN_HELP_TEXT).toContain("--scenario");
     expect(TRAIN_HELP_TEXT).toContain("--dataset");
     expect(TRAIN_HELP_TEXT).toContain("--backend");
+    expect(TRAIN_HELP_TEXT).toContain("--opd-diagnostics");
+    expect(TRAIN_HELP_TEXT).toContain("--opd-diagnostics-debug-tokens");
   });
 
   it("requires scenario and dataset", () => {
@@ -49,6 +51,8 @@ describe("train command workflow", () => {
           mode: "adapter_finetune",
           "base-model": "qwen",
           output: "artifacts",
+          "opd-diagnostics": true,
+          "opd-diagnostics-debug-tokens": true,
           json: true,
         },
         "/tmp/runs",
@@ -63,6 +67,8 @@ describe("train command workflow", () => {
       backend: "mlx",
       trainingMode: "adapter_finetune",
       baseModel: "qwen",
+      opdDiagnostics: true,
+      opdDiagnosticsDebugTokens: true,
       json: true,
     });
   });
@@ -79,6 +85,8 @@ describe("train command workflow", () => {
           backend: "cuda",
           trainingMode: "from_scratch",
           baseModel: undefined,
+          opdDiagnostics: false,
+          opdDiagnosticsDebugTokens: false,
           json: false,
         },
         createRunner: () => ({
@@ -110,6 +118,8 @@ describe("train command workflow", () => {
         backend: "cuda",
         trainingMode: "from_scratch",
         baseModel: undefined,
+        opdDiagnostics: true,
+        opdDiagnosticsDebugTokens: true,
         json: false,
       },
       createRunner: () => ({
@@ -127,6 +137,8 @@ describe("train command workflow", () => {
       backend: "cuda",
       trainingMode: "from_scratch",
       baseModel: undefined,
+      opdDiagnostics: true,
+      opdDiagnosticsDebugTokens: true,
     });
     expect(result).toMatchObject({ status: "completed", backend: "cuda" });
   });
@@ -139,11 +151,13 @@ describe("train command workflow", () => {
         checkpointDir: "/tmp/checkpoint",
         durationMs: 1234,
       }),
-    ).toEqual([
-      "Training completed: artifact-1",
-      "  Backend: cuda",
-      "  Checkpoint: /tmp/checkpoint",
-      "  Duration: 1.2s",
-    ].join("\n"));
+    ).toEqual(
+      [
+        "Training completed: artifact-1",
+        "  Backend: cuda",
+        "  Checkpoint: /tmp/checkpoint",
+        "  Duration: 1.2s",
+      ].join("\n"),
+    );
   });
 });

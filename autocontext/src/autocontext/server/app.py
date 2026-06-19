@@ -341,7 +341,7 @@ def create_app(
                                     rid = run_manager.start_run(
                                         scenario,
                                         generations,
-                                        require_playbook_approval=start_cmd.effective_require_playbook_approval,
+                                        require_playbook_approval=start_cmd.require_playbook_approval,
                                     )
                                     await websocket.send_json(
                                         RunAcceptedMsg(run_id=rid, scenario=scenario, generations=generations).model_dump()

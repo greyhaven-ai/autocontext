@@ -130,6 +130,30 @@ export const HTTP_API_PARITY_ROUTES: readonly HttpApiParityEntry[] = [
     "/api/knowledge/:scenario/playbook/reject",
     "autocontext/src/autocontext/server/knowledge_api.py",
   ),
+  both(
+    "knowledge",
+    "GET",
+    "/api/knowledge/:scenario/lifecycle",
+    "autocontext/src/autocontext/server/knowledge_api.py",
+  ),
+  both(
+    "knowledge",
+    "POST",
+    "/api/knowledge/:scenario/lessons/:lesson_id/approve",
+    "autocontext/src/autocontext/server/knowledge_api.py",
+  ),
+  both(
+    "knowledge",
+    "POST",
+    "/api/knowledge/:scenario/lessons/:lesson_id/reject",
+    "autocontext/src/autocontext/server/knowledge_api.py",
+  ),
+  both(
+    "knowledge",
+    "POST",
+    "/api/knowledge/:scenario/lessons/:lesson_id/curate",
+    "autocontext/src/autocontext/server/knowledge_api.py",
+  ),
   typescriptOnly(
     "knowledge",
     "GET",

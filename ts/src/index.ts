@@ -590,6 +590,11 @@ export {
   clearPromptCompactionCache,
   extractPromotableLines,
   promptCompactionCacheStats,
+  STRUCTURAL_HINT_POLICY,
+  buildHintAbReport,
+  buildHintMetadata,
+  effectiveHintStyle,
+  structuralHintPrompt,
   ScoreTrajectoryBuilder,
   EMPTY_PLAYBOOK_SENTINEL,
   PLAYBOOK_MARKERS,
@@ -609,6 +614,9 @@ export type {
   CompactionEntry,
   PromptCompactionOptions,
   PromptCompactionResult,
+  HintAbReportRow,
+  HintAbStyleSummary,
+  HintStyle,
   TrajectoryRow as KnowledgeTrajectoryRow,
   StrategyPackageData,
   ImportStrategyPackageResult,
@@ -951,6 +959,16 @@ export {
   TrainingRunner,
 } from "./training/backends.js";
 export type { TrainingConfig, TrainingResult, PublishedArtifact } from "./training/backends.js";
+export {
+  buildTokenPressureReport,
+  compareTokenPressureReports,
+} from "./training/token-pressure-diagnostics.js";
+export type {
+  TokenPressureObservation,
+  TokenPressurePositionSummary,
+  TokenPressureReport,
+  TokenPressureSpike,
+} from "./training/token-pressure-diagnostics.js";
 export { ACTIVATION_STATES, ModelRegistry, PromotionEngine } from "./training/promotion.js";
 export type {
   ActivationState,

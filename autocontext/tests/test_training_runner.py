@@ -6,6 +6,7 @@ import json
 import subprocess
 import textwrap
 from pathlib import Path
+from typing import Any, cast
 from unittest.mock import patch
 
 import pytest
@@ -344,6 +345,23 @@ class TestConstraints:
             runner2._run_experiment_subprocess(0)
         assert "--max-completion-length" not in mock_run2.call_args.args[0]
 
+    def test_experiment_subprocess_passes_opd_diagnostics_flags(self, tmp_path: Path) -> None:
+        cfg = TrainingConfig(
+            scenario="grid_ctf",
+            data_path=tmp_path / "data.jsonl",
+            backend="opd",
+            opd_diagnostics=True,
+            opd_diagnostics_debug_tokens=True,
+        )
+        (tmp_path / "data.jsonl").write_text("{}\n")
+        runner = TrainingRunner(cfg, work_dir=tmp_path / "workspace")
+        completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+        with patch("autocontext.training.runner.subprocess.run", return_value=completed) as mock_run:
+            runner._run_experiment_subprocess(0)
+        command = mock_run.call_args.args[0]
+        assert "--opd-diagnostics" in command
+        assert "--opd-diagnostics-debug-tokens" in command
+
     def test_experiment_subprocess_passes_grpo_beta_when_overridden(self, tmp_path: Path) -> None:
         """The GRPO KL penalty must reach the subprocess so `autoctx train` can avoid the beta=0
         overfitting; the default 0.04 is omitted to keep the command minimal."""
@@ -614,7 +632,12 @@ class TestTrainingLoop:
             training_seconds=12.0,
             outcome=ExperimentOutcome.KEPT,
             checkpoint_path=checkpoint_path,
-            summary_metrics={"num_params_M": 1.25, "num_steps": 8.0, "depth": 4.0},
+            summary_metrics={
+                "num_params_M": 1.25,
+                "num_steps": 8.0,
+                "depth": 4.0,
+                "token_pressure_positive_ratio": 0.75,
+            },
         )
 
         with patch("autocontext.training.runner.load_settings", return_value=settings):
@@ -630,11 +653,50 @@ class TestTrainingLoop:
         registry_record = json.loads(registry_path.read_text(encoding="utf-8"))
         assert registry_record["backend"] == "mlx"
         assert registry_record["runtime_types"] == ["provider", "pi"]
+        assert registry_record["training_metrics"]["token_pressure_positive_ratio"] == 0.75
+        assert registry_record["metadata"]["opd_diagnostics"] is True
+        assert registry_record["metadata"]["opd_diagnostics_path"] == str(checkpoint_path / "token_pressure_diagnostics.json")
 
         artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
         assert artifact["artifact_type"] == "distilled_model"
         assert artifact["scenario"] == "grid_ctf"
         assert artifact["checkpoint_path"] == str(checkpoint_path)
+
+    def test_build_training_result_does_not_publish_missing_diagnostics_path(self, tmp_path: Path) -> None:
+        cfg = TrainingConfig(
+            scenario="grid_ctf",
+            data_path=tmp_path / "data.jsonl",
+            max_experiments=1,
+            opd_diagnostics=True,
+        )
+        (tmp_path / "data.jsonl").write_text("{}\n", encoding="utf-8")
+        checkpoint_path = tmp_path / "workspace" / "checkpoints" / "exp_0"
+        checkpoint_path.mkdir(parents=True, exist_ok=True)
+        runner = TrainingRunner(cfg, work_dir=tmp_path / "workspace")
+        settings = AppSettings(
+            knowledge_root=tmp_path / "knowledge",
+            runs_root=tmp_path / "runs",
+            skills_root=tmp_path / "skills",
+            claude_skills_path=tmp_path / ".claude" / "skills",
+        )
+        best = ExperimentResult(
+            experiment_index=0,
+            avg_score=0.75,
+            valid_rate=1.0,
+            peak_memory_mb=1024.0,
+            training_seconds=12.0,
+            outcome=ExperimentOutcome.KEPT,
+            checkpoint_path=checkpoint_path,
+            summary_metrics={"num_params_M": 1.25},
+        )
+
+        with patch("autocontext.training.runner.load_settings", return_value=settings):
+            result = runner.build_training_result([best])
+
+        registry_path = settings.knowledge_root / "model_registry" / f"{result.published_model_id}.json"
+        registry_record = json.loads(registry_path.read_text(encoding="utf-8"))
+        assert registry_record["metadata"]["opd_diagnostics"] is False
+        assert registry_record["metadata"]["opd_diagnostics_path"] == ""
 
     def test_build_training_result_respects_selected_backend(self, tmp_path: Path) -> None:
         cfg = TrainingConfig(
@@ -719,7 +781,7 @@ class TestTrainingLoop:
             "autocontext.training.runner.load_settings",
             return_value=AppSettings(model_competitor="fallback-competitor"),
         ):
-            updated = runner._propose_train_py(client, experiment_index=1, consecutive_discards=0)
+            updated = runner._propose_train_py(cast(Any, client), experiment_index=1, consecutive_discards=0)
 
         assert client.model == "fallback-competitor"
         assert "updated" in updated
@@ -930,7 +992,7 @@ class TestValSelectSubprocess:
 class TestCurationSubprocess:
     """Elite/dedup curation flags must reach the train.py subprocess."""
 
-    def _capture_command(self, tmp_path: Path, **config_kwargs: object) -> list[str]:
+    def _capture_command(self, tmp_path: Path, **config_kwargs: Any) -> list[str]:
         cfg = TrainingConfig(
             scenario="grid_ctf",
             data_path=tmp_path / "data.jsonl",

@@ -95,6 +95,8 @@ class AppSettings(BaseModel):
         default=True,
         description="Keep rotated-out competitor hints in archived state for later recall or analysis",
     )
+    soft_hints_enabled: bool = False
+    hint_style: Literal["default", "structural", "solution_like"] = "default"
     evidence_freshness_enabled: bool = Field(
         default=True,
         description="Demote stale hints, lessons, and notebook context during prompt assembly",

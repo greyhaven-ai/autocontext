@@ -51,6 +51,7 @@ This directory is the maintainer-facing landing page for repository docs. Use it
 - [Goal run report](goal-run-report.md)
 - [Playbook approval gate](playbook-approval-gate.md)
 - [Derived lesson curation](derived-lesson-curation.md)
+- [Soft structural hints](soft-structural-hints.md)
 - [Span-level credit attribution](span-credit-attribution.md)
 - [Browser exploration contract](browser-exploration-contract.md)
 - [OpenTelemetry bridge](opentelemetry-bridge.md)

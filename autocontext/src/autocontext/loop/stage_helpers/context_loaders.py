@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from importlib import import_module
 from typing import TYPE_CHECKING, Any
 
 from autocontext.agents.feedback_loops import AnalystRating, ToolUsageTracker, format_analyst_feedback
@@ -274,6 +275,25 @@ def _collect_hint_feedback(
         },
     )
     return feedback
+
+
+def _hint_style(ctx: GenerationContext) -> str:
+    return str(
+        import_module("autocontext.knowledge.soft_hints").effective_hint_style(
+            soft_hints_enabled=ctx.settings.soft_hints_enabled,
+            hint_style=ctx.settings.hint_style,
+        )
+    )
+
+
+def _hint_metadata(ctx: GenerationContext, text: str, *, gate_decision: str) -> dict[str, Any]:
+    return dict(
+        import_module("autocontext.knowledge.soft_hints").build_hint_metadata(
+            text,
+            hint_style=_hint_style(ctx),
+            support_evidence=f"generation={ctx.generation}; gate_decision={gate_decision}",
+        )
+    )
 
 
 def _hint_volume_policy(ctx: GenerationContext) -> HintVolumePolicy:

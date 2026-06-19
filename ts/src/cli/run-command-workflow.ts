@@ -55,6 +55,8 @@ export interface RunExecutionSettings {
   contextBudgetTokens: number;
   curatorEnabled: boolean;
   curatorConsolidateEveryNGens: number;
+  softHintsEnabled: boolean;
+  hintStyle: string;
   skillMaxLessons: number;
   deadEndTrackingEnabled: boolean;
   deadEndMaxEntries: number;
@@ -270,6 +272,8 @@ export async function executeRunCommandWorkflow<
     contextBudgetTokens: number;
     curatorEnabled: boolean;
     curatorConsolidateEveryNGens: number;
+    softHintsEnabled: boolean;
+    hintStyle: string;
     skillMaxLessons: number;
     deadEndTrackingEnabled: boolean;
     deadEndMaxEntries: number;
@@ -305,6 +309,8 @@ export async function executeRunCommandWorkflow<
       contextBudgetTokens: opts.settings.contextBudgetTokens,
       curatorEnabled: opts.settings.curatorEnabled,
       curatorConsolidateEveryNGens: opts.settings.curatorConsolidateEveryNGens,
+      softHintsEnabled: opts.settings.softHintsEnabled,
+      hintStyle: opts.settings.hintStyle,
       skillMaxLessons: opts.settings.skillMaxLessons,
       deadEndTrackingEnabled: opts.settings.deadEndTrackingEnabled,
       deadEndMaxEntries: opts.settings.deadEndMaxEntries,
