@@ -286,6 +286,16 @@ def _hint_style(ctx: GenerationContext) -> str:
     )
 
 
+def _hint_metadata(ctx: GenerationContext, text: str, *, gate_decision: str) -> dict[str, Any]:
+    return dict(
+        import_module("autocontext.knowledge.soft_hints").build_hint_metadata(
+            text,
+            hint_style=_hint_style(ctx),
+            support_evidence=f"generation={ctx.generation}; gate_decision={gate_decision}",
+        )
+    )
+
+
 def _hint_volume_policy(ctx: GenerationContext) -> HintVolumePolicy:
     return HintVolumePolicy(
         max_hints=ctx.settings.hint_volume_max_hints,

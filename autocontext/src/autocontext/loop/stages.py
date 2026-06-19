@@ -27,7 +27,6 @@ from autocontext.knowledge.harness_quality import compute_harness_quality
 from autocontext.knowledge.hint_volume import HintManager
 from autocontext.knowledge.protocol import parse_research_protocol, validate_tuning_overrides
 from autocontext.knowledge.rapid_gate import rapid_gate, should_transition_to_linear
-from autocontext.knowledge.soft_hints import build_hint_metadata
 from autocontext.knowledge.stagnation import StagnationDetector
 from autocontext.knowledge.tuning import TuningConfig, parse_tuning_proposal
 from autocontext.loop.cost_control import CostPolicy, evaluate_cost_effectiveness
@@ -62,6 +61,7 @@ if TYPE_CHECKING:
 from autocontext.loop.stage_helpers.context_loaders import (
     _apply_hint_feedback_to_manager,
     _collect_hint_feedback,
+    _hint_metadata,
     _hint_style,
     _hint_volume_policy,
     _load_analyst_feedback_section,
@@ -1344,16 +1344,9 @@ def stage_persistence(
 
     # 8. Carry forward coach hints.
     coach_competitor_hints = outputs.coach_competitor_hints
-    hint_metadata = build_hint_metadata(
-        coach_competitor_hints,
-        hint_style=_hint_style(ctx),
-        support_evidence=f"generation={generation}; gate_decision={gate_decision}",
-    )
+    hint_metadata = _hint_metadata(ctx, coach_competitor_hints, gate_decision=gate_decision)
     if settings.hint_volume_enabled and not settings.ablation_no_feedback:
-        raw_manager = artifacts.read_hint_manager(
-            scenario_name,
-            policy=_hint_volume_policy(ctx),
-        )
+        raw_manager = artifacts.read_hint_manager(scenario_name, policy=_hint_volume_policy(ctx))
         manager = raw_manager if isinstance(raw_manager, HintManager) else HintManager(_hint_volume_policy(ctx))
         if not manager.active_hints() and ctx.applied_competitor_hints.strip():
             manager = HintManager.from_hint_text(
