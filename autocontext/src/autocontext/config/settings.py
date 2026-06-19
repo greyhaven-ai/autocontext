@@ -751,7 +751,6 @@ class AppSettings(BaseModel):
         validate_default=True,
         description="Keyword confidence >= this skips LLM classification; ambiguous descriptions call LLM",
     )
-
     @field_validator("cost_budget_limit", mode="before")
     @classmethod
     def _coerce_budget_limit(cls, v: object) -> float | None:
