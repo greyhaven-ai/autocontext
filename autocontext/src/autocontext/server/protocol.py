@@ -246,11 +246,6 @@ class StartRunCmd(BaseModel):
     scenario: str
     generations: int = Field(gt=0)
     require_playbook_approval: bool = False
-    require_lesson_approval: bool = False
-
-    @property
-    def effective_require_playbook_approval(self) -> bool:
-        return self.require_playbook_approval or self.require_lesson_approval
 
 
 class ListScenariosCmd(BaseModel):

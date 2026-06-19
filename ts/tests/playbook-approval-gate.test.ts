@@ -16,7 +16,7 @@ function store(dir: string): ArtifactStore {
 }
 
 describe("playbook approval gate", () => {
-  it("accepts playbook approval flag and deprecated lesson alias", () => {
+  it("accepts the playbook approval flag and rejects the removed lesson alias", () => {
     expect(
       StartRunCmdSchema.parse({
         type: "start_run",
@@ -25,14 +25,15 @@ describe("playbook approval gate", () => {
         require_playbook_approval: true,
       }).require_playbook_approval,
     ).toBe(true);
-    expect(
+    // The deprecated require_lesson_approval alias was removed; the strict schema rejects it.
+    expect(() =>
       StartRunCmdSchema.parse({
         type: "start_run",
         scenario: "grid_ctf",
         generations: 1,
         require_lesson_approval: true,
-      }).require_lesson_approval,
-    ).toBe(true);
+      }),
+    ).toThrow();
   });
 
   it("defaults off and writes playbooks live", () => {
@@ -79,7 +80,10 @@ describe("playbook approval gate", () => {
 
       expect(artifacts.readPlaybook("grid_ctf")).toBe("auto new\n");
       expect(artifacts.readPendingPlaybook("grid_ctf").hasPending).toBe(false);
-      expect(artifacts.approvePendingPlaybook("grid_ctf")).toEqual({ ok: false, status: "missing" });
+      expect(artifacts.approvePendingPlaybook("grid_ctf")).toEqual({
+        ok: false,
+        status: "missing",
+      });
       expect(artifacts.readPlaybook("grid_ctf")).toBe("auto new\n");
     } finally {
       rmSync(dir, { recursive: true, force: true });
