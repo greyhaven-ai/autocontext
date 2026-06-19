@@ -117,7 +117,10 @@ def _json_schema_to_zod_type(prop: dict[str, Any], defs: dict[str, Any]) -> str:
         if "properties" in prop:
             # Inline object
             inner = _build_object_fields(prop, defs)
-            return "z.object({" + ", ".join(f"{k}: {v}" for k, v in inner.items()) + "})"
+            obj = "z.object({" + ", ".join(f"{k}: {v}" for k, v in inner.items()) + "})"
+            # Honor additionalProperties: false (Pydantic extra="forbid") so the
+            # generated schema rejects unknown keys, matching the server schema.
+            return obj + ".strict()" if additional is False else obj
         return "z.record(z.unknown())"
 
     return "z.unknown()"
@@ -167,7 +170,9 @@ def _generate_zod_schema(
     lines = [f"export const {model_name}Schema = z.object({{"]
     for field_name, zod_type in fields.items():
         lines.append(f"  {field_name}: {zod_type},")
-    lines.append("});")
+    # Honor additionalProperties: false (Pydantic extra="forbid") so the generated
+    # schema rejects unknown keys, matching the server schema (which uses .strict()).
+    lines.append("}).strict();" if model_schema.get("additionalProperties") is False else "});")
     return "\n".join(lines)
 
 
