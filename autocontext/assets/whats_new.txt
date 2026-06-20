@@ -1,4 +1,4 @@
-**Agent app/runtime foundations** add OSS contracts for child background sessions, sandbox adapters, session outcomes, and trust boundaries while keeping hosted orchestration out of the public package.
-**TypeScript agent app packaging** adds Node and Fetch/edge build targets, capability manifests, runtime factories, conformance checks, examples, and troubleshooting docs.
-**Training/runtime improvements** include TRL/OPD/R1 backend work, GRPO fixes, MLX serving handoff improvements, trace-gate review fixes, and local server read/write endpoints.
-**Experimental simplicity mode** adds opt-in guide-only minimal-output prompt guidance across Python CLI solve/improve and shared app settings.
+**Scenario contracts and run reports** add shared Python/TypeScript environment hooks plus progress, utilization, campaign, goal-run, and negative-result artifacts.
+**Knowledge governance** adds approval-gated playbooks, markdown-backed lesson lifecycle curation, soft structural hints, and span-level credit attribution.
+**Training research controls** add token-pressure diagnostics and a matched-compute OPD/GKD + GRPO mixture experiment protocol with conservative promotion gates.
+**Public package polish** keeps the open-source runtime contracts, docs, and parity checks aligned for the 0.8.0 Python and TypeScript release line.
