@@ -353,6 +353,167 @@
       "output_contract": "text"
     },
     {
+      "id": "train.r1",
+      "path": ["train-r1"],
+      "summary": "Run the R1-style pipeline: reasoning distillation cold-start followed by verifier-reward RL.",
+      "audience": "advanced",
+      "maturity": "experimental",
+      "domain_concept": "Artifact",
+      "aliases": [],
+      "runtime_support": {
+        "python": {
+          "status": "yes"
+        },
+        "typescript": {
+          "status": "intentional_gap",
+          "reason": "The TypeScript runtime exposes backend orchestration metadata, but the end-to-end train-r1 command is Python-only."
+        }
+      },
+      "flags": [
+        {
+          "name": "scenario",
+          "type": "string",
+          "aliases": [],
+          "required": false,
+          "description": "Scenario used by the RLVR stage."
+        },
+        {
+          "name": "data",
+          "type": "path",
+          "aliases": [],
+          "required": false,
+          "description": "Reasoning-trace JSONL used for the distillation cold start."
+        },
+        {
+          "name": "output-dir",
+          "type": "path",
+          "aliases": [],
+          "required": false,
+          "description": "Directory that receives the distill and RLVR stage outputs."
+        },
+        {
+          "name": "variant",
+          "type": "string",
+          "aliases": [],
+          "required": false,
+          "description": "RLVR variant: gspo, grpo, dr_grpo, or dapo."
+        }
+      ],
+      "output_contract": "json"
+    },
+    {
+      "id": "train.self_improve",
+      "path": ["self-improve"],
+      "summary": "Iteratively train, sample, score, keep elite samples, and report the best deployable model.",
+      "audience": "advanced",
+      "maturity": "experimental",
+      "domain_concept": "Artifact",
+      "aliases": [],
+      "runtime_support": {
+        "python": {
+          "status": "yes"
+        },
+        "typescript": {
+          "status": "intentional_gap",
+          "reason": "The self-improving training loop is implemented by the Python training stack only."
+        }
+      },
+      "flags": [
+        {
+          "name": "scenario",
+          "type": "string",
+          "aliases": [],
+          "required": false,
+          "description": "Scenario whose verifier scores generated samples."
+        },
+        {
+          "name": "data",
+          "type": "path",
+          "aliases": [],
+          "required": false,
+          "description": "Seed JSONL training records."
+        },
+        {
+          "name": "output-dir",
+          "type": "path",
+          "aliases": [],
+          "required": false,
+          "description": "Directory for round outputs and the final accumulated dataset."
+        },
+        {
+          "name": "rounds",
+          "type": "int",
+          "aliases": [],
+          "required": false,
+          "description": "Number of generate-filter-retrain rounds."
+        },
+        {
+          "name": "json",
+          "type": "bool",
+          "aliases": [],
+          "required": false,
+          "description": "Emit the structured history and best-model metadata."
+        }
+      ],
+      "output_contract": "json"
+    },
+    {
+      "id": "share.prepare",
+      "path": ["share", "prepare"],
+      "summary": "Locally scan a run and prepare a redacted bundle plus prepare-report before sharing.",
+      "audience": "advanced",
+      "maturity": "beta",
+      "domain_concept": "Artifact",
+      "aliases": [],
+      "runtime_support": {
+        "python": {
+          "status": "yes"
+        },
+        "typescript": {
+          "status": "intentional_gap",
+          "reason": "Share preparation uses the Python deterministic safeguards and has no TypeScript CLI command."
+        }
+      },
+      "flags": [
+        {
+          "name": "scenario",
+          "type": "string",
+          "aliases": [],
+          "required": false,
+          "description": "Scenario name used to include knowledge files from knowledge/<scenario>."
+        },
+        {
+          "name": "output",
+          "type": "path",
+          "aliases": [],
+          "required": false,
+          "description": "Directory for the prepared bundle and prepare-report.json."
+        },
+        {
+          "name": "dry-run",
+          "type": "bool",
+          "aliases": [],
+          "required": false,
+          "description": "Scan and write the report without writing a bundle."
+        },
+        {
+          "name": "license",
+          "type": "string",
+          "aliases": [],
+          "required": false,
+          "description": "SPDX license id asserted for the share bundle."
+        },
+        {
+          "name": "json",
+          "type": "bool",
+          "aliases": [],
+          "required": false,
+          "description": "Print the prepare report as JSON."
+        }
+      ],
+      "output_contract": "json"
+    },
+    {
       "id": "capabilities",
       "path": ["capabilities"],
       "summary": "Enumerate canonical commands, aliases, and per-runtime support. Operator-facing surface for the AC-697 contract.",
