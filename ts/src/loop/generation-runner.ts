@@ -67,6 +67,11 @@ import {
 import { join } from "node:path";
 import type { GenerationRole } from "../providers/index.js";
 import type { RuntimeSession } from "../session/runtime-session.js";
+import {
+  detectExplorationCollapse,
+  type ExplorationSnapshot,
+  type GuidanceChange,
+} from "../analytics/exploration-collapse-guard.js";
 
 export interface GenerationRunnerOpts {
   provider: LLMProvider;
@@ -96,6 +101,8 @@ export interface GenerationRunnerOpts {
   stagnationPlateauEpsilon?: number;
   stagnationDistillTopLessons?: number;
   explorationMode?: string;
+  explorationCollapseGuard?: boolean;
+  explorationCollapseAutoMitigation?: boolean;
   notifyWebhookUrl?: string | null;
   notifyOn?: string;
   notifier?: Notifier | null;
@@ -140,6 +147,8 @@ export class GenerationRunner {
   #stagnationDistillTopLessons: number;
   #stagnationDetector: StagnationDetector;
   #explorationMode: string;
+  #explorationCollapseGuard: boolean;
+  #explorationCollapseAutoMitigation: boolean;
   #notifier: Notifier | null;
   #notifyOn: Set<EventType>;
   #controller: LoopController | null;
@@ -197,6 +206,8 @@ export class GenerationRunner {
       stagnationDetector: this.#stagnationDetector,
     });
     this.#explorationMode = opts.explorationMode ?? "linear";
+    this.#explorationCollapseGuard = opts.explorationCollapseGuard ?? false;
+    this.#explorationCollapseAutoMitigation = opts.explorationCollapseAutoMitigation ?? false;
     this.#notifyOn = parseNotificationFilter(opts.notifyOn);
     this.#notifier =
       opts.notifier
@@ -738,8 +749,34 @@ export class GenerationRunner {
     if (outcome.freshStartHint) {
       this.#runState = queueFreshStartHint(this.#runState!, outcome.freshStartHint);
     }
+    this.persistExplorationCollapseGuard(runId, gen);
   }
 
+  private persistExplorationCollapseGuard(runId: string, gen: number): void {
+    if (!this.#explorationCollapseGuard) return;
+    const playbook = this.#artifactStore.readPlaybook(this.#scenario.name).trim();
+    if (!playbook || playbook === EMPTY_PLAYBOOK_SENTINEL) return;
+    const snapshots = explorationSnapshots(this.#store.getScoreTrajectory(runId));
+    if (snapshots.length < 2) return;
+    const changes: GuidanceChange[] = [
+      {
+        changeId: `playbook-gen-${gen}`,
+        generationIndex: gen,
+        kind: "playbook_update",
+        sourceComponent: "playbook",
+        sourceSpan: "playbook.md",
+      },
+    ];
+    const report = detectExplorationCollapse(snapshots, changes, {
+      advisoryOnly: !this.#explorationCollapseAutoMitigation,
+      autoMitigation: this.#explorationCollapseAutoMitigation,
+    });
+    if (report.events.length === 0) return;
+    this.#artifactStore.writeJson(
+      join(this.#artifactStore.generationDir(runId, gen), "exploration_collapse_guard.json"),
+      { schema_version: report.schemaVersion, advisory_only: report.advisoryOnly, events: report.records },
+    );
+  }
 
   private async notify(
     type: EventType,
@@ -811,6 +848,27 @@ export class GenerationRunner {
       ),
     );
   }
+}
+
+function explorationSnapshots(rows: unknown[]): ExplorationSnapshot[] {
+  return rows.flatMap((row): ExplorationSnapshot[] => {
+    if (!isRecord(row)) return [];
+    const generation = finiteNumber(row.generation_index);
+    const score = finiteNumber(row.best_score);
+    if (generation === undefined || score === undefined) return [];
+    const gate = typeof row.gate_decision === "string" ? row.gate_decision : "";
+    return [{
+      generationIndex: generation,
+      responseLength: 1,
+      routeSignature: gate || undefined,
+      rollbackRate: gate === "rollback" ? 1 : 0,
+      score,
+    }];
+  });
+}
+
+function finiteNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function parseNotificationFilter(spec?: string): Set<EventType> {

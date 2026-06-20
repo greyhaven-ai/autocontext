@@ -66,6 +66,8 @@ export interface RunExecutionSettings {
   stagnationPlateauEpsilon: number;
   stagnationDistillTopLessons: number;
   explorationMode: unknown;
+  explorationCollapseGuard?: boolean;
+  explorationCollapseAutoMitigation?: boolean;
   notifyWebhookUrl: unknown;
   notifyOn: unknown;
 }
@@ -283,6 +285,8 @@ export async function executeRunCommandWorkflow<
     stagnationPlateauEpsilon: number;
     stagnationDistillTopLessons: number;
     explorationMode: unknown;
+    explorationCollapseGuard?: boolean;
+    explorationCollapseAutoMitigation?: boolean;
     notifyWebhookUrl: unknown;
     notifyOn: unknown;
     runtimeSession?: TProviderBundle["runtimeSession"];
@@ -320,6 +324,8 @@ export async function executeRunCommandWorkflow<
       stagnationPlateauEpsilon: opts.settings.stagnationPlateauEpsilon,
       stagnationDistillTopLessons: opts.settings.stagnationDistillTopLessons,
       explorationMode: opts.settings.explorationMode,
+      explorationCollapseGuard: opts.settings.explorationCollapseGuard ?? false,
+      explorationCollapseAutoMitigation: opts.settings.explorationCollapseAutoMitigation ?? false,
       notifyWebhookUrl: opts.settings.notifyWebhookUrl,
       notifyOn: opts.settings.notifyOn,
       runtimeSession: opts.providerBundle.runtimeSession,

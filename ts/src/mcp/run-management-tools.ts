@@ -38,6 +38,8 @@ interface RunControlSettings {
   stagnationPlateauEpsilon: number;
   stagnationDistillTopLessons: number;
   explorationMode: string;
+  explorationCollapseGuard?: boolean;
+  explorationCollapseAutoMitigation?: boolean;
   notifyWebhookUrl?: string | null;
   notifyOn?: string;
 }
@@ -89,6 +91,8 @@ const defaultInternals: RunManagementInternals = {
       stagnationPlateauEpsilon: args.settings.stagnationPlateauEpsilon,
       stagnationDistillTopLessons: args.settings.stagnationDistillTopLessons,
       explorationMode: args.settings.explorationMode,
+      explorationCollapseGuard: args.settings.explorationCollapseGuard ?? false,
+      explorationCollapseAutoMitigation: args.settings.explorationCollapseAutoMitigation ?? false,
       notifyWebhookUrl: args.settings.notifyWebhookUrl,
       notifyOn: args.settings.notifyOn,
     }),

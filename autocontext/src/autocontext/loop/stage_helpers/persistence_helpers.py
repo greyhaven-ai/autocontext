@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from math import isfinite
 from typing import TYPE_CHECKING, Any
 
 from autocontext.agents.feedback_loops import AnalystRating
@@ -12,6 +13,11 @@ from autocontext.analytics.credit_assignment import (
     attribute_credit,
     build_span_attribution,
     compute_change_vector,
+)
+from autocontext.analytics.exploration_collapse_guard import (
+    ExplorationSnapshot,
+    GuidanceChange,
+    detect_exploration_collapse,
 )
 from autocontext.knowledge.dead_end_manager import DeadEndEntry, consolidate_dead_ends
 from autocontext.knowledge.progress import build_progress_snapshot
@@ -225,6 +231,7 @@ def _persist_skill_note(
         decision=gate_decision,
         lessons=skill_lessons,
     )
+    _maybe_persist_exploration_collapse_report(ctx, artifacts=artifacts)
 
     # Dead-end registry: record rollback as dead end
     if gate_decision == "rollback" and settings.dead_end_tracking_enabled:
@@ -235,6 +242,77 @@ def _persist_skill_note(
             score=tournament.best_score,
         )
         artifacts.append_dead_end(ctx.scenario_name, entry.to_markdown())
+
+
+def _maybe_persist_exploration_collapse_report(
+    ctx: GenerationContext,
+    *,
+    artifacts: ArtifactStore,
+) -> None:
+    settings = ctx.settings
+    if not settings.exploration_collapse_guard or settings.ablation_no_feedback:
+        return
+    changes = _exploration_guidance_changes(ctx)
+    snapshots = _exploration_snapshots(ctx)
+    if not changes or len(snapshots) < 2:
+        return
+    try:
+        report = detect_exploration_collapse(
+            snapshots,
+            changes,
+            advisory_only=not settings.exploration_collapse_auto_mitigation,
+            auto_mitigation=settings.exploration_collapse_auto_mitigation,
+        )
+        if report.events:
+            artifacts.write_json(
+                artifacts.generation_dir(ctx.run_id, ctx.generation) / "exploration_collapse_guard.json",
+                {"schema_version": report.schema_version, "advisory_only": report.advisory_only, "events": report.records},
+            )
+    except Exception:
+        logger.warning("failed to persist exploration collapse guard report", exc_info=True)
+
+
+def _exploration_guidance_changes(ctx: GenerationContext) -> list[GuidanceChange]:
+    changes: list[GuidanceChange] = []
+    if ctx.applied_competitor_hints.strip():
+        changes.append(
+            GuidanceChange(
+                change_id=f"competitor-hints-gen-{ctx.generation}",
+                generation_index=ctx.generation,
+                kind="hint",
+                source_component="competitor_hints",
+                source_span="hints.md",
+            )
+        )
+    if ctx.base_playbook.strip() and "No playbook yet" not in ctx.base_playbook:
+        changes.append(
+            GuidanceChange(
+                change_id=f"playbook-gen-{ctx.generation}",
+                generation_index=ctx.generation,
+                kind="playbook_update",
+                source_component="playbook",
+                source_span="playbook.md",
+            )
+        )
+    return changes
+
+
+def _exploration_snapshots(ctx: GenerationContext) -> list[ExplorationSnapshot]:
+    scores = [float(score) for score in ctx.score_history if isinstance(score, int | float) and isfinite(float(score))]
+    start = ctx.generation - len(scores) + 1
+    snapshots: list[ExplorationSnapshot] = []
+    for index, score in enumerate(scores):
+        gate = ctx.gate_decision_history[index] if index < len(ctx.gate_decision_history) else ""
+        snapshots.append(
+            ExplorationSnapshot(
+                generation_index=max(0, start + index),
+                response_length=1.0,
+                route_signature=gate or None,
+                rollback_rate=1.0 if gate == "rollback" else 0.0,
+                score=score,
+            )
+        )
+    return snapshots
 
 
 def _run_curator_consolidation(

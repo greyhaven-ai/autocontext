@@ -433,15 +433,14 @@ class AppSettings(BaseModel):
         description="Max dead-end entries before oldest are pruned",
     )
     # Research protocol (AR-3)
-    protocol_enabled: bool = Field(
-        default=False,
-        description="Enable research protocol meta-document for architect steering",
-    )
+    protocol_enabled: bool = Field(default=False, description="Enable research protocol meta-document for architect steering")
     # Exploration mode (AR-4)
     exploration_mode: Literal["linear", "rapid", "tree"] = Field(
         default="linear",
         description="Exploration mode: linear, rapid, or tree",
     )
+    exploration_collapse_guard: bool = Field(default=False, description="Warn when guidance reduces exploration quality")
+    exploration_collapse_auto_mitigation: bool = Field(default=False, description="Allow opt-in guidance demotion")
     rapid_gens: int = Field(
         default=0,
         ge=0,
@@ -751,6 +750,7 @@ class AppSettings(BaseModel):
         validate_default=True,
         description="Keyword confidence >= this skips LLM classification; ambiguous descriptions call LLM",
     )
+
     @field_validator("cost_budget_limit", mode="before")
     @classmethod
     def _coerce_budget_limit(cls, v: object) -> float | None:

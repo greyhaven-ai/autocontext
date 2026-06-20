@@ -7,7 +7,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import type { LLMProvider } from "../types/index.js";
 import { SandboxManager } from "../execution/sandbox.js";
-import { SQLiteStore } from "../storage/index.js";
+import type { SQLiteStore } from "../storage/index.js";
 import { loadSettings } from "../config/index.js";
 import { SolveManager } from "../knowledge/solver.js";
 import { registerCampaignTools } from "./campaign-tools.js";
@@ -95,6 +95,8 @@ export function createMcpServer(opts: MtsServerOpts): McpServer {
       stagnationPlateauEpsilon: settings.stagnationPlateauEpsilon,
       stagnationDistillTopLessons: settings.stagnationDistillTopLessons,
       explorationMode: settings.explorationMode,
+      explorationCollapseGuard: settings.explorationCollapseGuard,
+      explorationCollapseAutoMitigation: settings.explorationCollapseAutoMitigation,
       notifyWebhookUrl: settings.notifyWebhookUrl,
       notifyOn: settings.notifyOn,
     },

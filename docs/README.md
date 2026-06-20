@@ -54,6 +54,7 @@ This directory is the maintainer-facing landing page for repository docs. Use it
 - [Soft structural hints](soft-structural-hints.md)
 - [Span-level credit attribution](span-credit-attribution.md)
 - [OPD/GKD + GRPO mixture experiment protocol](opd-grpo-mixture-experiment.md)
+- [Exploration collapse guard](exploration-collapse-guard.md)
 - [Browser exploration contract](browser-exploration-contract.md)
 - [OpenTelemetry bridge](opentelemetry-bridge.md)
 - [Background session domain and parity contract](background-session-domain.md)
