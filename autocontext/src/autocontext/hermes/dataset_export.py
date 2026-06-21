@@ -52,9 +52,9 @@ Each JSONL row:
       }
     }
 
-The schema is intentionally flat and feature-engineered so it can
-feed `autoctx train --backend mlx|cuda` via a one-step adapter (the
-adapter is a follow-up; this slice ships the dataset shape).
+The schema is intentionally flat and feature-engineered so it can feed
+`autoctx hermes train-advisor --baseline|--logistic|--mlx|--cuda`
+without a bespoke adapter.
 """
 
 from __future__ import annotations

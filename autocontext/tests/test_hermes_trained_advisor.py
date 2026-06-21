@@ -273,6 +273,7 @@ def test_load_advisor_accepts_mlx_kind(tmp_path: Path) -> None:
     loaded = load_advisor(path)
     assert isinstance(loaded, LogisticRegressionAdvisor)
     assert loaded.labels == ("consolidated", "pruned")
+    assert loaded.checkpoint_kind == "mlx_logistic_regression"
 
 
 def test_load_advisor_rejects_missing_file(tmp_path: Path) -> None:
@@ -470,9 +471,64 @@ def test_cli_recommend_consumes_trained_checkpoint(tmp_path: Path) -> None:
     assert rows[0]["predicted_action"] == "consolidated"
 
 
-def test_cli_train_advisor_requires_one_of_baseline_or_logistic(tmp_path: Path) -> None:
-    """Passing neither --baseline nor --logistic must fail loudly so
-    the operator picks a backend deliberately."""
+def test_cli_recommend_reports_loaded_checkpoint_kind(tmp_path: Path) -> None:
+    """Recommendation summaries should preserve MLX/CUDA checkpoint provenance."""
+    from typer.testing import CliRunner
+
+    from autocontext.cli import app
+
+    advisor = train_logistic(_separable_dataset())
+    checkpoint = tmp_path / "mlx-advisor.json"
+    save_advisor(advisor, checkpoint)
+    payload = json.loads(checkpoint.read_text(encoding="utf-8"))
+    payload["kind"] = "mlx_logistic_regression"
+    payload["backend"] = "mlx"
+    checkpoint.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+
+    home = tmp_path / "hermes"
+    skills_dir = home / "skills"
+    skills_dir.mkdir(parents=True)
+    (skills_dir / "hot-skill").mkdir()
+    (skills_dir / "hot-skill" / "SKILL.md").write_text(
+        "---\nname: hot-skill\ndescription: test\n---\n# hot-skill\n",
+        encoding="utf-8",
+    )
+    (skills_dir / ".usage.json").write_text(
+        json.dumps(
+            {
+                "hot-skill": {
+                    "state": "active",
+                    "pinned": False,
+                    "use_count": 25,
+                    "view_count": 0,
+                    "patch_count": 0,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    recs_out = tmp_path / "recs.jsonl"
+    result = CliRunner().invoke(
+        app,
+        [
+            "hermes",
+            "recommend",
+            "--home",
+            str(home),
+            "--advisor",
+            str(checkpoint),
+            "--output",
+            str(recs_out),
+            "--json",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["advisor_kind"] == "mlx_logistic_regression"
+
+
+def test_cli_train_advisor_requires_one_backend_flag(tmp_path: Path) -> None:
+    """Passing neither backend flag must fail loudly so the operator picks one."""
     from typer.testing import CliRunner
 
     from autocontext.cli import app

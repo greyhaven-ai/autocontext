@@ -118,6 +118,7 @@ class LogisticRegressionAdvisor:
     seed: int = 0
     epochs: int = 0
     learning_rate: float = 0.0
+    checkpoint_kind: str = _CHECKPOINT_KIND
     label_counts: dict[str, int] = field(default_factory=dict)
 
     def predict(self, features: SkillFeatures) -> str:
@@ -302,6 +303,7 @@ def load_advisor(path: Path) -> LogisticRegressionAdvisor:
         seed=int(payload.get("seed", 0)),
         epochs=int(payload.get("epochs", 0)),
         learning_rate=float(payload.get("learning_rate", 0.0)),
+        checkpoint_kind=str(kind),
         label_counts=dict(payload.get("label_counts", {})),
     )
 
