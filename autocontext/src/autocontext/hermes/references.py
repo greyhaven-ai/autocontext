@@ -220,18 +220,19 @@ How autocontext-exported datasets feed local MLX or CUDA training. Use
 this when the user asks "can I train a model from my Hermes data" or
 when an agent needs to scope training expectations.
 
-> **Command availability.** `autoctx hermes export-dataset` (AC-705)
-> ships on a follow-up PR in the Hermes-integration cluster.
-> `autoctx train` is shipped today. Run `autoctx hermes --help` and
-> `autoctx train --help` to confirm what is installed locally before
-> recommending the end-to-end flow below.
+> **Command availability.** `autoctx hermes export-dataset`,
+> `autoctx hermes train-advisor`, and `autoctx hermes recommend` ship
+> together in the Hermes-integration path. Run `autoctx hermes --help`
+> to confirm what is installed locally before recommending the flow
+> below. `autoctx train` is for Autocontext scenario datasets, not
+> Hermes curator-advisor checkpoints.
 
 ## Scope (read this first)
 
-`autoctx train` produces **narrow advisor classifiers**, not full
-agent replacements. The expected use is: should this curator decision
-have been made? Should this skill be active vs archived? Was this
-consolidation good?
+`autoctx hermes train-advisor` produces **narrow advisor classifiers**,
+not full agent replacements. The expected use is: should this Curator
+decision have been made? Should this skill be archived, consolidated,
+pruned, or left alone?
 
 **Small personal Hermes homes will not produce frontier-quality
 models.** The size and diversity of the dataset matter more than the
@@ -243,9 +244,9 @@ shadow-evaluation loop instead of training.
 1. Export a labeled dataset:
 
    ```bash
-   autoctx hermes export-dataset \
-       --kind curator-decisions \
-       --home ~/.hermes \
+   autoctx hermes export-dataset \\
+       --kind curator-decisions \\
+       --home ~/.hermes \\
        --output training/hermes-curator-decisions.jsonl
    ```
 
@@ -258,42 +259,52 @@ shadow-evaluation loop instead of training.
    Each row is a flat feature vector + label + confidence. See the
    AC-705 module docstring for the canonical schema.
 
-3. (Future) Train an advisor model:
+3. Train an advisor model:
 
    ```bash
-   autoctx train --backend mlx --dataset training/hermes-curator-decisions.jsonl
-   autoctx train --backend cuda --dataset training/hermes-curator-decisions.jsonl
+   autoctx hermes train-advisor \\
+       --data training/hermes-curator-decisions.jsonl \\
+       --logistic \\
+       --checkpoint training/hermes-advisor.json \\
+       --json
    ```
 
-   The training pipeline adapter for this dataset shape is a follow-up
-   (AC-708); for now the dataset shape ships and an external trainer
-   can consume the JSONL directly.
+   Use `--baseline` first for a floor. Use `--mlx` on Apple Silicon or
+   `--cuda` on PyTorch/CUDA hosts when the optional extra is installed.
 
-4. (Future) Surface advisor predictions back to Hermes Curator as
-   **read-only recommendations** (AC-709). Curator stays the mutation
-   owner.
+4. Surface advisor predictions back to Hermes Curator as **read-only**
+   recommendations. Curator stays the mutation owner.
+
+   ```bash
+   autoctx hermes recommend \\
+       --home ~/.hermes \\
+       --advisor training/hermes-advisor.json \\
+       --output training/hermes-recommendations.jsonl \\
+       --json
+   ```
 
 ## Backend selection
 
+- **baseline**: majority-class floor; no checkpoint needed.
+- **logistic**: pure-Python fallback; works in plain CI and small homes.
 - **MLX**: Apple Silicon laptops with plenty of RAM. Quick iteration.
-- **CUDA**: x86 + NVIDIA. Faster wall-clock for the same dataset.
+- **CUDA**: NVIDIA hosts with PyTorch; falls back to CPU torch when CUDA
+  is unavailable.
 
-Both backends produce models in the same on-disk format that the
-advisor surface (AC-709) will consume.
+All trained backends produce JSON checkpoints that `autoctx hermes
+recommend --advisor` can consume.
 
 ## What the advisor predicts
 
-Per the AC-708 design, the initial advisor tasks are:
+Per the shipped AC-708/AC-709 path, the initial advisor predicts Curator
+actions from exported decision rows:
 
-- classify whether a skill is `active` / `stale` / `prunable` /
-  `pinned` / `patch-worthy`,
-- recommend likely umbrella consolidation targets,
-- rank candidate skills for a task/session summary,
-- detect low-confidence Curator actions (so an operator can review
-  before the decision is durable).
+- `added`, `archived`, `consolidated`, or `pruned` labels,
+- confidence and per-label metrics from the local training run,
+- protected-skill status for pinned, bundled, and hub-owned skills.
 
-None of these mutate Hermes state. They are evidence + scores;
-Curator decides what to do with them.
+None of these mutate Hermes state. They are evidence + scores; Curator
+and the operator decide what to do with them.
 """
 
 _REFERENCES: dict[str, str] = {

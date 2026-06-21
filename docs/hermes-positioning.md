@@ -24,7 +24,7 @@ training pipelines can consume.
 | Session and trajectory data               | Hermes writes        | autocontext imports (with explicit redaction)                                               |
 | Evaluation against a rubric               | Out of scope         | `autoctx judge` / `autoctx improve`                                                         |
 | Replay / artifact storage                 | Per-Hermes-run logs  | Durable `Run` / `Artifact` / `Knowledge` model (see [concept-model.md](./concept-model.md)) |
-| Local MLX / CUDA training                 | Out of scope         | `autoctx train` (advisory, narrow)                                                          |
+| Local MLX / CUDA training                 | Out of scope         | `autoctx hermes train-advisor` (advisory, narrow)                                           |
 | Exporting reusable skills                 | Out of scope         | `autoctx hermes export-skill`                                                               |
 
 ## Default operator flow
@@ -141,9 +141,9 @@ operator commands with their own consent surfaces.
 
 ## Local MLX / CUDA training
 
-`autoctx train` produces narrow advisor models from local datasets
-(see [agent-integration.md](../autocontext/docs/agent-integration.md)
-for the command flags). The training path is intentionally scoped:
+`autoctx hermes train-advisor` produces narrow advisor models from
+`autoctx hermes export-dataset --kind curator-decisions` JSONL. The
+training path is intentionally scoped:
 
 - Datasets are derived from curator decisions, traces, and rubric
   outcomes that the operator already has on disk.
@@ -155,10 +155,8 @@ for the command flags). The training path is intentionally scoped:
   operator's actual workflow, not to claim benchmark performance
   improvements.
 
-The advisor output is exposed as **read-only recommendations** to
-Hermes Curator: Curator still owns the mutation. (See AC-708 / AC-709
-for the in-flight training and recommendation surface; not yet
-shipped.)
+The advisor output is exposed as **read-only recommendations** via
+`autoctx hermes recommend --advisor`: Curator still owns the mutation.
 
 ## Why autocontext does not replace Curator
 
@@ -186,26 +184,23 @@ export-dataset --kind curator-decisions` (AC-705), `autoctx hermes
 ingest-trajectories --redact standard|strict|off` (AC-706 slice 1),
   `autoctx hermes ingest-sessions --redact standard|strict|off`
   (AC-706 slice 2, read-only SQLite + schema drift + WAL/SHM
-  independence), `autoctx hermes train-advisor --baseline` (AC-708
-  slice 1, data + evaluation contract with majority-class baseline
-  and insufficient-data floor), `autoctx hermes recommend
---baseline-from <jsonl>` (AC-709, read-only recommendation surface
-  with protected-skill filter and audit mode), `autoctx hermes
-validate-skill --json` (AC-711, static content rubric over the
-  rendered SKILL.md with six behaviors and three negative
-  regression tests; see
-  [hermes-skill-validation.md](./hermes-skill-validation.md)),
-  the rendered Hermes-format SKILL.md, the committed
-  `skills/autocontext/` distribution snapshot with CI sync
-  invariant (AC-712, see
-  [hermes-skill-distribution.md](./hermes-skill-distribution.md)
-  for install / update / versioning), the integration surface
-  order decision (CLI-first / MCP-optional / native runtime /
-  plugin / gateway).
-- In flight: AC-708 slice 2 (logistic-regression / MLX / CUDA
-  trained advisor), AC-707 follow-up implementation (only if
-  revisited per spike doc), upstream Hermes / agentskills.io
-  submission (AC-712 follow-up).
+  independence), `autoctx hermes train-advisor --baseline|--logistic|--mlx|--cuda`
+  (AC-708, baseline plus trained logistic/MLX/CUDA advisor checkpoints),
+  `autoctx hermes recommend --baseline-from <jsonl>|--advisor <checkpoint>`
+  (AC-709, read-only recommendation surface with protected-skill filter
+  and audit mode), `autoctx hermes validate-skill --json` (AC-711,
+  static content rubric over the rendered SKILL.md with six behaviors
+  and three negative regression tests; see
+  [hermes-skill-validation.md](./hermes-skill-validation.md)), the
+  rendered Hermes-format SKILL.md, the committed `skills/autocontext/`
+  distribution snapshot with CI sync invariant (AC-712, see
+  [hermes-skill-distribution.md](./hermes-skill-distribution.md) for
+  install / update / versioning), the integration surface order
+  decision (CLI-first / MCP-optional / native runtime / plugin /
+  gateway).
+- In flight: AC-707 follow-up implementation (only if revisited per
+  spike doc), upstream Hermes / agentskills.io submission (AC-712
+  follow-up).
 - Out of scope (today): autocontext writing to `~/.hermes/skills/`,
   autocontext replacing Curator's pruning / consolidation /
   gating workflow, frontier-scale training from a single operator's

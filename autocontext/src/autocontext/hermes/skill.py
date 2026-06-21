@@ -159,7 +159,15 @@ uv run autoctx train --scenario grid_ctf --data training/grid_ctf.jsonl --backen
 
 Use MLX on Apple Silicon hosts. Use CUDA on Linux GPU hosts with a CUDA-enabled PyTorch install. Do not run host-GPU training inside a sandbox unless the user has already provided a host bridge or direct GPU access.
 
-For Hermes Curator artifacts, start with read-only inspection and dataset design before training. Curator reports are decision traces; they are best suited for advisor/ranker/classifier training, not full autonomous skill mutation.
+For Hermes Curator artifacts, train a narrow read-only advisor from exported decision rows:
+
+```bash
+uv run autoctx hermes export-dataset --kind curator-decisions --home ~/.hermes --output training/hermes-curator-decisions.jsonl --json
+uv run autoctx hermes train-advisor --data training/hermes-curator-decisions.jsonl --logistic --checkpoint training/hermes-advisor.json --json
+uv run autoctx hermes recommend --home ~/.hermes --advisor training/hermes-advisor.json --output training/hermes-recommendations.jsonl --json
+```
+
+Use `--baseline` first for the majority-class floor. Use `--mlx` on Apple Silicon or `--cuda` on PyTorch/CUDA hosts when the optional extra is installed. Curator reports are decision traces; they are best suited for advisor/ranker/classifier training, not full autonomous skill mutation.
 
 ## MCP Workflow When Configured
 

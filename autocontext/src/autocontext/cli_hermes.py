@@ -369,7 +369,7 @@ def register_hermes_command(
             Path | None,
             typer.Option(
                 "--advisor",
-                help="Trained advisor checkpoint (AC-708 slice 2a; produced by train-advisor --logistic --checkpoint)",
+                help="Trained advisor checkpoint produced by train-advisor --logistic/--mlx/--cuda --checkpoint",
             ),
         ] = None,
         output: Annotated[

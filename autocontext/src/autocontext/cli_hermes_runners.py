@@ -513,6 +513,7 @@ def run_hermes_train_advisor_command(
         # `training_device` and thread it into save_cuda_advisor;
         # PR #996 review (P2): the device must come from training,
         # not from torch.cuda.is_available() at save time.
+        training_device: str | None = None
         if logistic:
             trained = train_logistic(examples)
             advisor_kind = "logistic_regression"
@@ -541,7 +542,7 @@ def run_hermes_train_advisor_command(
         }
         if backend_label is not None:
             payload["backend"] = backend_label
-        if cuda:
+        if training_device is not None:
             payload["device"] = training_device
         if checkpoint is not None:
             saver(trained, checkpoint)
@@ -582,12 +583,11 @@ def run_hermes_recommend_command(
 ) -> None:
     """Emit read-only recommendations from an advisor (AC-709).
 
-    Backend selection (AC-708 slice 2a):
+    Backend selection (AC-708):
     * ``--baseline-from <jsonl>``: train a majority-class baseline
       on the fly from AC-705 export data.
-    * ``--advisor <checkpoint>``: load a trained advisor (e.g. the
-      logistic-regression checkpoint produced by
-      ``autoctx hermes train-advisor --logistic --checkpoint ...``).
+    * ``--advisor <checkpoint>``: load a trained advisor produced by
+      ``autoctx hermes train-advisor --logistic|--mlx|--cuda --checkpoint ...``.
     Exactly one must be passed.
     """
 
@@ -657,7 +657,7 @@ def run_hermes_recommend_command(
                 console.print(f"[red]{err}[/red]")
             raise typer.Exit(code=1) from err
         advisor = trained
-        advisor_kind = "logistic_regression"
+        advisor_kind = trained.checkpoint_kind
         summary_extra = {"labels": list(trained.labels)}
 
     resolved_home = _resolve_hermes_home(home)

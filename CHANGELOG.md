@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- AC-708 Hermes advisor checkpoints preserve MLX/CUDA provenance through `autoctx hermes recommend --advisor`, and local-training docs now point at the shipped `train-advisor` / `recommend` flow.
+
 ## [pi-v0.8.0] - 2026-06-20
 
 ### Changed
