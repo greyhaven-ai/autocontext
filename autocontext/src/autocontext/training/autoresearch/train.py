@@ -29,6 +29,7 @@ from autocontext.training.autoresearch.model import (  # noqa: F401
     save_checkpoint,
     save_inference_bundle,
 )
+from autocontext.training.autoresearch.opd_pressure import OPD_PRESSURE_MODE_CODES, normalize_opd_pressure_mode
 from autocontext.training.autoresearch.prepare import BASE_VOCAB_SIZE
 from autocontext.training.autoresearch.sequence_format import NUM_QUALITY_BUCKETS
 
@@ -61,6 +62,10 @@ def format_summary(
     token_pressure_positive_ratio: float | None = None,
     token_pressure_negative_ratio: float | None = None,
     token_pressure_shock_spike_count: float | None = None,
+    opd_pressure_mode: str | None = None,
+    opd_positive_token_fraction: float | None = None,
+    opd_negative_token_fraction: float | None = None,
+    opd_mean_masked_loss: float | None = None,
 ) -> str:
     """Format the training results summary block.
 
@@ -88,6 +93,18 @@ def format_summary(
                 if token_pressure_shock_spike_count is not None
                 else ""
             ),
+            f"opd_pressure_mode: {opd_pressure_mode}\n" if opd_pressure_mode is not None else "",
+            (
+                f"opd_positive_token_fraction: {opd_positive_token_fraction:.4f}\n"
+                if opd_positive_token_fraction is not None
+                else ""
+            ),
+            (
+                f"opd_negative_token_fraction: {opd_negative_token_fraction:.4f}\n"
+                if opd_negative_token_fraction is not None
+                else ""
+            ),
+            f"opd_mean_masked_loss: {opd_mean_masked_loss:.4f}\n" if opd_mean_masked_loss is not None else "",
         )
     )
     return (
@@ -438,11 +455,12 @@ def run_training(
     grpo_beta: float = 0.04,  # trl grpo: KL penalty toward base policy (0.0 = KL-free; nonzero prevents overfitting)
     opd_diagnostics: bool | None = None,
     opd_diagnostics_debug_tokens: bool = False,
+    opd_pressure_mode: str = "full_kl",
     fine_tune_type: str = "lora",
     num_layers: int = 8,
     collect_samples_path: Path | None = None,
     backend: str = "mlx",
-) -> dict[str, float]:
+) -> dict[str, Any]:
     # Reject out-of-range curation before any work (select_top_fraction would clamp to one record).
     if not 0.0 < elite_fraction <= 1.0:
         raise ValueError(f"elite_fraction must be in (0, 1], got {elite_fraction}")
@@ -455,6 +473,9 @@ def run_training(
         raise ValueError(f"vocab_size must be >= 256 (the byte-level BPE base), got {vocab_size}")
 
     normalized_backend = backend.strip().lower()
+    opd_pressure_mode = normalize_opd_pressure_mode(opd_pressure_mode)
+    if normalized_backend != "opd" and opd_pressure_mode != "full_kl":
+        raise NotImplementedError("--opd-pressure-mode only supports the opd backend")
     if opd_diagnostics is None:
         opd_diagnostics = _env_truthy("AUTOCONTEXT_OPD_DIAGNOSTICS")
     if train_steps <= 0:  # resolve the unset sentinel to a backend-appropriate step count
@@ -562,6 +583,7 @@ def run_training(
             memory_limit_mb=memory_limit_mb,
             opd_diagnostics=opd_diagnostics,
             opd_diagnostics_debug_tokens=opd_diagnostics_debug_tokens,
+            opd_pressure_mode=opd_pressure_mode,
         )
     if normalized_backend == "trl":
         if loss_weight_mode != "uniform" or vocab_size != BASE_VOCAB_SIZE:
@@ -619,6 +641,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "--opd-diagnostics-debug-tokens",
         action="store_true",
         help="include raw sampled token text in diagnostics (off by default)",
+    )
+    parser.add_argument(
+        "--opd-pressure-mode",
+        choices=tuple(OPD_PRESSURE_MODE_CODES),
+        default="full_kl",
+        help="experimental opd backend pressure mode (default: full_kl)",
     )
     parser.add_argument("--time-budget", type=int, default=300)
     parser.add_argument("--memory-limit", type=int, default=16384)
@@ -683,6 +711,7 @@ def main(argv: list[str] | None = None) -> int:
             grpo_beta=args.grpo_beta,
             opd_diagnostics=args.opd_diagnostics,
             opd_diagnostics_debug_tokens=args.opd_diagnostics_debug_tokens,
+            opd_pressure_mode=args.opd_pressure_mode,
             fine_tune_type=args.fine_tune_type,
             num_layers=args.num_layers,
             backend=args.backend,
@@ -706,6 +735,10 @@ def main(argv: list[str] | None = None) -> int:
             token_pressure_positive_ratio=metrics.get("token_pressure_positive_ratio"),
             token_pressure_negative_ratio=metrics.get("token_pressure_negative_ratio"),
             token_pressure_shock_spike_count=metrics.get("token_pressure_shock_spike_count"),
+            opd_pressure_mode=str(metrics.get("opd_pressure_mode")) if "opd_pressure_mode" in metrics else None,
+            opd_positive_token_fraction=metrics.get("opd_positive_token_fraction"),
+            opd_negative_token_fraction=metrics.get("opd_negative_token_fraction"),
+            opd_mean_masked_loss=metrics.get("opd_mean_masked_loss"),
         )
     )
     return 0

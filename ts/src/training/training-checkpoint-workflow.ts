@@ -2,24 +2,25 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type { ModelRecord } from "./promotion.js";
-import type {
-  PublishedArtifact,
-  TrainingConfig,
-  TrainingExecutor,
-} from "./training-types.js";
+import type { PublishedArtifact, TrainingConfig, TrainingExecutor } from "./training-types.js";
 import type { TrainingBackend } from "./training-backend-core.js";
 
 export const defaultExecutor: TrainingExecutor = async (config, checkpointDir) => {
   writeFileSync(
     join(checkpointDir, "checkpoint_info.json"),
-    JSON.stringify({
-      backend: config.backend,
-      trainingMode: config.trainingMode,
-      baseModel: config.baseModel,
-      status: "trained",
-      note: "Default executor — replace with real PyTorch/MLX training for production use",
-      timestamp: new Date().toISOString(),
-    }, null, 2),
+    JSON.stringify(
+      {
+        backend: config.backend,
+        trainingMode: config.trainingMode,
+        baseModel: config.baseModel,
+        opdPressureMode: config.opdPressureMode ?? "full_kl",
+        status: "trained",
+        note: "Default executor — replace with real PyTorch/MLX training for production use",
+        timestamp: new Date().toISOString(),
+      },
+      null,
+      2,
+    ),
     "utf-8",
   );
   return { success: true, metrics: { epochs: config.maxEpochs ?? 3 } };
@@ -45,23 +46,28 @@ export function writeTrainingManifest(
 ): void {
   writeFileSync(
     join(checkpointDir, "training_manifest.json"),
-    JSON.stringify({
-      scenario: config.scenario,
-      family: config.family,
-      backend: config.backend,
-      trainingMode: config.trainingMode,
-      baseModel: config.baseModel ?? null,
-      adapterType: config.adapterType ?? null,
-      datasetPath: config.datasetPath,
-      datasetSize,
-      heldOutSize,
-      maxEpochs: config.maxEpochs ?? 3,
-      batchSize: config.batchSize ?? 4,
-      learningRate: config.learningRate ?? 5e-5,
-      opdDiagnostics: config.opdDiagnostics ?? false,
-      opdDiagnosticsDebugTokens: config.opdDiagnosticsDebugTokens ?? false,
-      startedAt: new Date().toISOString(),
-    }, null, 2),
+    JSON.stringify(
+      {
+        scenario: config.scenario,
+        family: config.family,
+        backend: config.backend,
+        trainingMode: config.trainingMode,
+        baseModel: config.baseModel ?? null,
+        adapterType: config.adapterType ?? null,
+        datasetPath: config.datasetPath,
+        datasetSize,
+        heldOutSize,
+        maxEpochs: config.maxEpochs ?? 3,
+        batchSize: config.batchSize ?? 4,
+        learningRate: config.learningRate ?? 5e-5,
+        opdDiagnostics: config.opdDiagnostics ?? false,
+        opdDiagnosticsDebugTokens: config.opdDiagnosticsDebugTokens ?? false,
+        opdPressureMode: config.opdPressureMode ?? "full_kl",
+        startedAt: new Date().toISOString(),
+      },
+      null,
+      2,
+    ),
     "utf-8",
   );
 }
@@ -88,11 +94,20 @@ export function publishTrainingArtifact(opts: {
     heldOutSize: opts.heldOutSize,
     trainedAt: new Date().toISOString(),
     metrics: opts.metrics,
+    opdPressureMode: opts.config.opdPressureMode ?? "full_kl",
     activationState: opts.record.activationState,
     promotionHistory: [...opts.record.promotionHistory],
   };
 
-  writeFileSync(join(opts.checkpointDir, "artifact.json"), JSON.stringify(artifact, null, 2), "utf-8");
-  writeFileSync(join(opts.checkpointDir, "promotion_state.json"), JSON.stringify(opts.record, null, 2), "utf-8");
+  writeFileSync(
+    join(opts.checkpointDir, "artifact.json"),
+    JSON.stringify(artifact, null, 2),
+    "utf-8",
+  );
+  writeFileSync(
+    join(opts.checkpointDir, "promotion_state.json"),
+    JSON.stringify(opts.record, null, 2),
+    "utf-8",
+  );
   return artifact;
 }

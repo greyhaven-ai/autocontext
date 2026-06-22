@@ -362,6 +362,30 @@ class TestConstraints:
         assert "--opd-diagnostics" in command
         assert "--opd-diagnostics-debug-tokens" in command
 
+    def test_experiment_subprocess_passes_opd_pressure_mode_when_overridden(self, tmp_path: Path) -> None:
+        cfg = TrainingConfig(
+            scenario="grid_ctf",
+            data_path=tmp_path / "data.jsonl",
+            backend="opd",
+            opd_pressure_mode="sample_positive",
+        )
+        (tmp_path / "data.jsonl").write_text("{}\n")
+        runner = TrainingRunner(cfg, work_dir=tmp_path / "workspace")
+        completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+        with patch("autocontext.training.runner.subprocess.run", return_value=completed) as mock_run:
+            runner._run_experiment_subprocess(0)
+        command = mock_run.call_args.args[0]
+        assert command[command.index("--opd-pressure-mode") + 1] == "sample_positive"
+
+    def test_experiment_subprocess_omits_default_opd_pressure_mode(self, tmp_path: Path) -> None:
+        cfg = TrainingConfig(scenario="grid_ctf", data_path=tmp_path / "data.jsonl", backend="opd")
+        (tmp_path / "data.jsonl").write_text("{}\n")
+        runner = TrainingRunner(cfg, work_dir=tmp_path / "workspace")
+        completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+        with patch("autocontext.training.runner.subprocess.run", return_value=completed) as mock_run:
+            runner._run_experiment_subprocess(0)
+        assert "--opd-pressure-mode" not in mock_run.call_args.args[0]
+
     def test_experiment_subprocess_passes_grpo_beta_when_overridden(self, tmp_path: Path) -> None:
         """The GRPO KL penalty must reach the subprocess so `autoctx train` can avoid the beta=0
         overfitting; the default 0.04 is omitted to keep the command minimal."""
@@ -913,6 +937,37 @@ class TestTrainCLI:
             result = runner.invoke(app, ["train", "--scenario", "grid_ctf", "--vocab-size", "4096"])
             assert result.exit_code == 0, result.output
             assert mock_run.call_args[0][0].vocab_size == 4096
+
+    def test_opd_pressure_mode_option_reaches_config(self) -> None:
+        from autocontext.cli import app
+
+        runner = CliRunner()
+        with patch("autocontext.cli_train._run_training") as mock_run:
+            mock_run.return_value = TrainingResult(
+                scenario="grid_ctf",
+                total_experiments=1,
+                kept_count=1,
+                discarded_count=0,
+                best_score=0.5,
+                best_experiment_index=0,
+                checkpoint_path=Path("/tmp/best"),
+                results=[],
+            )
+            result = runner.invoke(
+                app,
+                ["train", "--scenario", "grid_ctf", "--backend", "opd", "--opd-pressure-mode", "sample_positive"],
+            )
+            assert result.exit_code == 0, result.output
+            assert mock_run.call_args[0][0].opd_pressure_mode == "sample_positive"
+
+    def test_opd_pressure_mode_rejects_non_opd_backend(self) -> None:
+        from autocontext.cli import app
+
+        runner = CliRunner()
+        with patch("autocontext.cli_train._run_training") as mock_run:
+            result = runner.invoke(app, ["train", "--backend", "mlx", "--opd-pressure-mode", "sample_positive"])
+        assert result.exit_code != 0
+        mock_run.assert_not_called()
 
     def test_too_small_vocab_size_rejected(self) -> None:
         from autocontext.cli import app

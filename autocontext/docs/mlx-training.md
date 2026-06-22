@@ -211,6 +211,10 @@ Notes:
 - The teacher only needs to be at least as capable as the student; it need not be huge.
 - The run stops at the next iteration boundary once `--time-budget` is reached (model
   loading counts against the budget), so it cannot overrun indefinitely.
+- `--opd-pressure-mode` defaults to `full_kl` (existing full-distribution reverse KL).
+  Experimental modes `sample_positive` and `sample_positive_reverse_negative` are OPD-only:
+  the former trains only on sampled tokens where the teacher is more confident than the
+  student, while the latter also pushes down student-overconfident sampled tokens.
 - For cross-platform / larger runs (Linux, NVIDIA, multi-GPU), use the `trl` backend below;
   this `opd` backend is the local Apple-Silicon path.
 
@@ -278,7 +282,9 @@ than the teacher on its own sampled token. High shock-spike counts mark large di
 Raw token text is omitted by default. Pass `--opd-diagnostics-debug-tokens` only for local
 debugging when the sampled text is safe to persist. The runner summary also includes
 `token_pressure_positive_ratio`, `token_pressure_negative_ratio`, and
-`token_pressure_shock_spike_count` when diagnostics are enabled.
+`token_pressure_shock_spike_count` when diagnostics are enabled. OPD runs also report the
+selected `opd_pressure_mode`, `opd_positive_token_fraction`, `opd_negative_token_fraction`,
+and `opd_mean_masked_loss`.
 
 ### Tokenizer vocabulary size (optional)
 

@@ -3341,6 +3341,7 @@ async function cmdTrain(): Promise<void> {
       output: { type: "string", short: "o" },
       "opd-diagnostics": { type: "boolean" },
       "opd-diagnostics-debug-tokens": { type: "boolean" },
+      "opd-pressure-mode": { type: "string" },
       json: { type: "boolean" },
       help: { type: "boolean", short: "h" },
     },

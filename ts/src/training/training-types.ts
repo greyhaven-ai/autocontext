@@ -1,6 +1,8 @@
 import type { ActivationState, PromotionEvent } from "./promotion.js";
 import type { TrainingMode } from "./model-strategy.js";
 
+export type OpdPressureMode = "full_kl" | "sample_positive" | "sample_positive_reverse_negative";
+
 export interface TrainingConfig {
   scenario: string;
   family: string;
@@ -16,6 +18,7 @@ export interface TrainingConfig {
   learningRate?: number;
   opdDiagnostics?: boolean;
   opdDiagnosticsDebugTokens?: boolean;
+  opdPressureMode?: OpdPressureMode;
 }
 
 export interface PublishedArtifact {
@@ -31,6 +34,7 @@ export interface PublishedArtifact {
   heldOutSize: number;
   trainedAt: string;
   metrics?: Record<string, number>;
+  opdPressureMode?: OpdPressureMode;
   activationState: ActivationState;
   promotionHistory: PromotionEvent[];
 }

@@ -44,13 +44,14 @@ describe("training checkpoint workflow", () => {
       family: "agent_task",
       datasetPath: join(dir, "train.jsonl"),
       outputDir: join(dir, "output"),
-      backend: "cuda",
+      backend: "opd",
       trainingMode: "adapter_finetune",
       baseModel: "Qwen/Qwen3-0.6B",
       opdDiagnostics: true,
+      opdPressureMode: "sample_positive",
     };
 
-    const checkpointDir = ensureCheckpointDir(config.outputDir, new StubBackend("cuda"), config.scenario);
+    const checkpointDir = ensureCheckpointDir(config.outputDir, new StubBackend("opd"), config.scenario);
     expect(existsSync(checkpointDir)).toBe(true);
 
     writeTrainingManifest(checkpointDir, config, 2, 1);
@@ -59,6 +60,7 @@ describe("training checkpoint workflow", () => {
       datasetSize: 2,
       heldOutSize: 1,
       opdDiagnostics: true,
+      opdPressureMode: "sample_positive",
     });
 
     const executorResult = await defaultExecutor(config, checkpointDir);
@@ -88,6 +90,7 @@ describe("training checkpoint workflow", () => {
       activationState: "candidate",
       datasetSize: 2,
       heldOutSize: 1,
+      opdPressureMode: "sample_positive",
     });
     expect(existsSync(join(checkpointDir, "artifact.json"))).toBe(true);
     expect(existsSync(join(checkpointDir, "promotion_state.json"))).toBe(true);

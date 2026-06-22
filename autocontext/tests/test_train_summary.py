@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import importlib
+from pathlib import Path
+from types import ModuleType
+from typing import Any
 
 
-def _train_module():
+def _train_module() -> ModuleType:
     return importlib.import_module("autocontext.training.autoresearch.train")
 
 
-def _runner_module():
+def _runner_module() -> ModuleType:
     return importlib.import_module("autocontext.training.runner")
 
 
@@ -82,6 +85,27 @@ def test_format_summary_includes_token_pressure_metrics_when_provided() -> None:
     assert "token_pressure_shock_spike_count: 2" in result
 
 
+def test_format_summary_includes_opd_pressure_mode_metrics_when_provided() -> None:
+    result = _train_module().format_summary(
+        avg_score=0.5,
+        valid_rate=1.0,
+        training_seconds=1.0,
+        peak_memory_mb=10.0,
+        num_steps=3,
+        num_params_m=0.1,
+        depth=4,
+        opd_pressure_mode="sample_positive",
+        opd_positive_token_fraction=0.75,
+        opd_negative_token_fraction=0.25,
+        opd_mean_masked_loss=0.125,
+    )
+
+    assert "opd_pressure_mode: sample_positive" in result
+    assert "opd_positive_token_fraction: 0.7500" in result
+    assert "opd_negative_token_fraction: 0.2500" in result
+    assert "opd_mean_masked_loss: 0.1250" in result
+
+
 def test_default_train_steps_distinguishes_from_scratch_vs_adapter() -> None:
     train = _train_module()
     assert train._default_train_steps("mlx") == 8
@@ -115,12 +139,12 @@ def test_train_parser_accepts_trl_prompt_count() -> None:
     assert args.n_prompts == 384
 
 
-def test_trl_backend_receives_prompt_count(monkeypatch, tmp_path) -> None:
+def test_trl_backend_receives_prompt_count(monkeypatch: Any, tmp_path: Path) -> None:
     train = _train_module()
     trl_backend = importlib.import_module("autocontext.training.autoresearch.trl_backend")
-    captured = {}
+    captured: dict[str, Any] = {}
 
-    def fake_run_trl_training(**kwargs):
+    def fake_run_trl_training(**kwargs: Any) -> dict[str, float]:
         captured.update(kwargs)
         return {
             "avg_score": 0.0,

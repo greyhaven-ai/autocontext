@@ -972,7 +972,7 @@ export {
   defaultBackendRegistry,
   TrainingRunner,
 } from "./training/backends.js";
-export type { TrainingConfig, TrainingResult, PublishedArtifact } from "./training/backends.js";
+export type { OpdPressureMode, TrainingConfig, TrainingResult, PublishedArtifact } from "./training/backends.js";
 export {
   buildTokenPressureReport,
   compareTokenPressureReports,

@@ -14,6 +14,7 @@ import typer  # type: ignore[import-not-found]
 from rich.console import Console  # type: ignore[import-not-found]
 from rich.table import Table  # type: ignore[import-not-found]
 
+from autocontext.training.autoresearch.opd_pressure import normalize_opd_pressure_mode
 from autocontext.training.autoresearch.r1_pipeline import run_r1_pipeline
 from autocontext.training.autoresearch.sequence_format import BASE_VOCAB_SIZE
 from autocontext.training.runner import TrainingConfig, TrainingResult
@@ -104,6 +105,11 @@ def register_train_command(app: typer.Typer, console: Console) -> None:
             "--opd-diagnostics-debug-tokens",
             help="include raw sampled token text in diagnostics (off by default)",
         ),
+        opd_pressure_mode: str = typer.Option(
+            "full_kl",
+            "--opd-pressure-mode",
+            help="opd backend pressure mode: full_kl, sample_positive, sample_positive_reverse_negative",
+        ),
         agent_provider: str = typer.Option("anthropic", "--agent-provider", help="LLM provider for training agent"),
         agent_model: str = typer.Option("", "--agent-model", help="Model for training agent (empty = provider default)"),
         val_select: bool = typer.Option(
@@ -165,6 +171,12 @@ def register_train_command(app: typer.Typer, console: Console) -> None:
             raise typer.BadParameter(f"--trl-mode must be gkd|grpo, got {trl_mode!r}")
         if backend not in ("mlx", "cuda", "mlxlm", "grpo", "opd", "trl"):
             raise typer.BadParameter(f"--backend must be mlx|cuda|mlxlm|grpo|opd|trl, got {backend!r}")
+        try:
+            opd_pressure_mode = normalize_opd_pressure_mode(opd_pressure_mode)
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+        if backend != "opd" and opd_pressure_mode != "full_kl":
+            raise typer.BadParameter("--opd-pressure-mode only supports --backend opd")
         if train_steps < 0:
             raise typer.BadParameter(f"--train-steps must be >= 0 (0 = backend default), got {train_steps}")
         if max_completion_length < 1:
@@ -204,6 +216,7 @@ def register_train_command(app: typer.Typer, console: Console) -> None:
             grpo_beta=grpo_beta,
             opd_diagnostics=opd_diagnostics,
             opd_diagnostics_debug_tokens=opd_diagnostics_debug_tokens,
+            opd_pressure_mode=opd_pressure_mode,
             fine_tune_type=fine_tune_type,
             num_layers=num_layers,
         )
@@ -224,11 +237,7 @@ def register_train_command(app: typer.Typer, console: Console) -> None:
 
         if json_output:
             best_metrics = next(
-                (
-                    item.summary_metrics
-                    for item in result.results
-                    if item.experiment_index == result.best_experiment_index
-                ),
+                (item.summary_metrics for item in result.results if item.experiment_index == result.best_experiment_index),
                 {},
             )
             _write_json_stdout(

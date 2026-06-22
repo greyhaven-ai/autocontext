@@ -25,6 +25,7 @@ import mlx.nn as nn  # type: ignore[import-not-found]
 # Re-exported from the pure (mlx-free) shared module so the cross-platform trl backend can
 # use it without importing this mlx-scoped module; kept importable here for back-compat.
 from autocontext.training.autoresearch.distill_common import assert_vocab_compatible
+from autocontext.training.autoresearch.opd_pressure import normalize_opd_pressure_mode
 from autocontext.training.model_defaults import OPD_DEFAULT_STUDENT_MODEL, OPD_DEFAULT_TEACHER_MODEL
 
 _EPS = 1e-8
@@ -95,6 +96,79 @@ def reverse_kl_per_token(
     return mx.sum(masked) / mx.maximum(denom, _EPS)
 
 
+def _sampled_token_logprobs(logp: mx.array, full_ids: mx.array) -> mx.array:
+    targets = full_ids[:, 1:]
+    return mx.squeeze(mx.take_along_axis(logp[:, :-1, :], targets[:, :, None], axis=-1), axis=-1)
+
+
+def _sampled_token_pressure_loss(
+    student_logits: mx.array,
+    teacher_logits: mx.array,
+    full_ids: mx.array,
+    completion_mask: mx.array,
+    *,
+    mode: str,
+    temperature: float = 1.0,
+) -> mx.array:
+    teacher_logits = mx.stop_gradient(teacher_logits)
+    inv_t = 1.0 / temperature
+    student_logp = _log_softmax(student_logits * inv_t, axis=-1)
+    teacher_logp = _log_softmax(teacher_logits * inv_t, axis=-1)
+    margin = _sampled_token_logprobs(teacher_logp, full_ids) - _sampled_token_logprobs(student_logp, full_ids)
+    mask = completion_mask[:, :-1]
+    if mode == "sample_positive":
+        selected = (margin > 0.0).astype(mx.float32) * mask
+        per_token = mx.maximum(margin, 0.0)
+    else:
+        selected = ((margin > 0.0) | (margin < 0.0)).astype(mx.float32) * mask
+        per_token = mx.abs(margin)
+    return mx.sum(per_token * selected) / mx.maximum(mx.sum(selected), _EPS)
+
+
+def _sampled_token_pressure_metrics(
+    student_logits: mx.array,
+    teacher_logits: mx.array,
+    full_ids: mx.array,
+    completion_mask: mx.array,
+    *,
+    mode: str,
+    masked_loss: float | None = None,
+) -> dict[str, float]:
+    student_logp = _log_softmax(student_logits, axis=-1)
+    teacher_logp = _log_softmax(mx.stop_gradient(teacher_logits), axis=-1)
+    margin = _sampled_token_logprobs(teacher_logp, full_ids) - _sampled_token_logprobs(student_logp, full_ids)
+    mask = completion_mask[:, :-1]
+    total = float(mx.sum(mask))
+    if total <= 0.0:
+        return {
+            "opd_positive_token_fraction": 0.0,
+            "opd_negative_token_fraction": 0.0,
+            "opd_mean_masked_loss": float(masked_loss or 0.0),
+        }
+    positive_fraction = float(mx.sum((margin > 0.0).astype(mx.float32) * mask)) / total
+    negative_fraction = float(mx.sum((margin < 0.0).astype(mx.float32) * mask)) / total
+    if mode == "full_kl":
+        return {
+            "opd_positive_token_fraction": positive_fraction,
+            "opd_negative_token_fraction": negative_fraction,
+            "opd_mean_masked_loss": float(masked_loss or 0.0),
+        }
+    if mode == "sample_positive":
+        selected = (margin > 0.0).astype(mx.float32) * mask
+        per_token = mx.maximum(margin, 0.0)
+    else:
+        selected = ((margin > 0.0) | (margin < 0.0)).astype(mx.float32) * mask
+        per_token = mx.abs(margin)
+    selected_count = float(mx.sum(selected))
+    return {
+        "opd_positive_token_fraction": positive_fraction,
+        "opd_negative_token_fraction": negative_fraction,
+        "opd_mean_masked_loss": (
+            float(mx.sum(per_token * selected) / mx.maximum(mx.sum(selected), _EPS)) if selected_count > 0.0 else 0.0
+        ),
+    }
+
+
 def distill_loss(
     student_model: Any,
     teacher_model: Any,
@@ -102,6 +176,7 @@ def distill_loss(
     completion_mask: mx.array,
     *,
     temperature: float = 1.0,
+    opd_pressure_mode: str = "full_kl",
 ) -> mx.array:
     """Reverse-KL distillation loss over ``full_ids`` (one forward per model).
 
@@ -109,9 +184,19 @@ def distill_loss(
     positions whose next-token distribution should match the teacher's. Differentiable in
     the student; the teacher is frozen inside :func:`reverse_kl_per_token`.
     """
+    opd_pressure_mode = normalize_opd_pressure_mode(opd_pressure_mode)
     student_logits = student_model(full_ids)
     teacher_logits = teacher_model(full_ids)
-    return reverse_kl_per_token(student_logits, teacher_logits, completion_mask, temperature=temperature)
+    if opd_pressure_mode == "full_kl":
+        return reverse_kl_per_token(student_logits, teacher_logits, completion_mask, temperature=temperature)
+    return _sampled_token_pressure_loss(
+        student_logits,
+        teacher_logits,
+        full_ids,
+        completion_mask,
+        mode=opd_pressure_mode,
+        temperature=temperature,
+    )
 
 
 def distill_update_step(
@@ -122,11 +207,19 @@ def distill_update_step(
     completion_mask: mx.array,
     *,
     temperature: float = 1.0,
+    opd_pressure_mode: str = "full_kl",
 ) -> float:
     """One gradient step minimizing the reverse-KL distillation loss on a FIXED batch."""
 
     def loss_fn(model: Any) -> mx.array:
-        return distill_loss(model, teacher_model, full_ids, completion_mask, temperature=temperature)
+        return distill_loss(
+            model,
+            teacher_model,
+            full_ids,
+            completion_mask,
+            temperature=temperature,
+            opd_pressure_mode=opd_pressure_mode,
+        )
 
     loss, grads = nn.value_and_grad(student_model, loss_fn)(student_model)
     optimizer.update(student_model, grads)
@@ -175,6 +268,7 @@ def on_policy_distill_step(
     max_tokens: int,
     sample_temperature: float = 1.0,
     kl_temperature: float = 1.0,
+    opd_pressure_mode: str = "full_kl",
 ) -> float:
     """One on-policy distillation step: student rolls out, then a reverse-KL update.
 
@@ -185,7 +279,53 @@ def on_policy_distill_step(
         student_model, prompt_ids, max_tokens=max_tokens, temperature=sample_temperature
     )
     full_ids = mx.stop_gradient(full_ids)
-    return distill_update_step(student_model, teacher_model, optimizer, full_ids, completion_mask, temperature=kl_temperature)
+    return distill_update_step(
+        student_model,
+        teacher_model,
+        optimizer,
+        full_ids,
+        completion_mask,
+        temperature=kl_temperature,
+        opd_pressure_mode=opd_pressure_mode,
+    )
+
+
+def _on_policy_distill_step_with_metrics(
+    student_model: Any,
+    teacher_model: Any,
+    optimizer: Any,
+    prompt_ids: mx.array,
+    *,
+    max_tokens: int,
+    sample_temperature: float = 1.0,
+    kl_temperature: float = 1.0,
+    opd_pressure_mode: str = "full_kl",
+) -> tuple[float, dict[str, float]]:
+    full_ids, completion_mask = sample_completion(
+        student_model,
+        prompt_ids,
+        max_tokens=max_tokens,
+        temperature=sample_temperature,
+    )
+    full_ids = mx.stop_gradient(full_ids)
+    loss = distill_update_step(
+        student_model,
+        teacher_model,
+        optimizer,
+        full_ids,
+        completion_mask,
+        temperature=kl_temperature,
+        opd_pressure_mode=opd_pressure_mode,
+    )
+    stats = _sampled_token_pressure_metrics(
+        student_model(full_ids),
+        teacher_model(full_ids),
+        full_ids,
+        completion_mask,
+        mode=opd_pressure_mode,
+        masked_loss=loss,
+    )
+    return loss, stats
 
 
 def collect_token_pressure_for_prompts(
@@ -258,7 +398,8 @@ def distill_over_prompts(
     sample_temperature: float = 1.0,
     kl_temperature: float = 1.0,
     time_budget: float | None = None,
-) -> dict[str, float]:
+    opd_pressure_mode: str = "full_kl",
+) -> dict[str, Any]:
     """Run up to ``iters`` on-policy distillation steps, cycling through ``prompts``.
 
     Each ``prompts`` entry is a ``[1, P]`` token array. ``time_budget`` (seconds), if set,
@@ -266,31 +407,51 @@ def distill_over_prompts(
     overrun indefinitely on expensive rollouts. Returns ``num_steps`` plus the ``final_loss``
     and ``mean_loss`` over the run (the training loop body of the backend).
     """
+    opd_pressure_mode = normalize_opd_pressure_mode(opd_pressure_mode)
+    empty_result: dict[str, Any] = {
+        "num_steps": 0.0,
+        "final_loss": 0.0,
+        "mean_loss": 0.0,
+        "opd_pressure_mode": opd_pressure_mode,
+        "opd_positive_token_fraction": 0.0,
+        "opd_negative_token_fraction": 0.0,
+        "opd_mean_masked_loss": 0.0,
+    }
     if not prompts:
-        return {"num_steps": 0.0, "final_loss": 0.0, "mean_loss": 0.0}
+        return empty_result
     losses: list[float] = []
+    pressure_totals = {
+        "opd_positive_token_fraction": 0.0,
+        "opd_negative_token_fraction": 0.0,
+        "opd_mean_masked_loss": 0.0,
+    }
     started = time.monotonic()
     for step in range(iters):
         if time_budget is not None and (time.monotonic() - started) >= time_budget:
             break
         prompt_ids = prompts[step % len(prompts)]
-        losses.append(
-            on_policy_distill_step(
-                student_model,
-                teacher_model,
-                optimizer,
-                prompt_ids,
-                max_tokens=max_tokens,
-                sample_temperature=sample_temperature,
-                kl_temperature=kl_temperature,
-            )
+        loss, pressure_stats = _on_policy_distill_step_with_metrics(
+            student_model,
+            teacher_model,
+            optimizer,
+            prompt_ids,
+            max_tokens=max_tokens,
+            sample_temperature=sample_temperature,
+            kl_temperature=kl_temperature,
+            opd_pressure_mode=opd_pressure_mode,
         )
+        losses.append(loss)
+        for key in pressure_totals:
+            pressure_totals[key] += pressure_stats[key]
     if not losses:
-        return {"num_steps": 0.0, "final_loss": 0.0, "mean_loss": 0.0}
+        return empty_result
+    steps = float(len(losses))
     return {
-        "num_steps": float(len(losses)),
+        "num_steps": steps,
         "final_loss": losses[-1],
         "mean_loss": sum(losses) / len(losses),
+        "opd_pressure_mode": opd_pressure_mode,
+        **{key: value / steps for key, value in pressure_totals.items()},
     }
 
 
@@ -324,7 +485,8 @@ def run_on_policy_distillation(
     seed: int = 0,
     opd_diagnostics: bool = False,
     opd_diagnostics_debug_tokens: bool = False,
-) -> dict[str, float]:
+    opd_pressure_mode: str = "full_kl",
+) -> dict[str, Any]:
     """Distill a teacher into a LoRA student IN-PROCESS via on-policy reverse-KL, then assess.
 
     There is no distillation CLI to shell out to (mlx-lm-lora has no GKD mode), so this runs
@@ -344,6 +506,7 @@ def run_on_policy_distillation(
     from autocontext.training.autoresearch.train import _peak_memory_mb, _preflight_backend_deps
 
     _preflight_backend_deps("mlxlm")  # needs mlx-lm (load + tuner)
+    opd_pressure_mode = normalize_opd_pressure_mode(opd_pressure_mode)
     teacher_model = teacher_model or DEFAULT_TEACHER_MODEL
     student_model = student_model or DEFAULT_STUDENT_MODEL
     if register_import:
@@ -382,6 +545,7 @@ def run_on_policy_distillation(
         sample_temperature=sample_temperature,
         kl_temperature=kl_temperature,
         time_budget=loop_budget,
+        opd_pressure_mode=opd_pressure_mode,
     )
 
     if opd_diagnostics:
@@ -434,6 +598,10 @@ def run_on_policy_distillation(
         "num_steps": loop["num_steps"],
         "final_loss": loop["final_loss"],
         "mean_loss": loop["mean_loss"],
+        "opd_pressure_mode": loop["opd_pressure_mode"],
+        "opd_positive_token_fraction": loop["opd_positive_token_fraction"],
+        "opd_negative_token_fraction": loop["opd_negative_token_fraction"],
+        "opd_mean_masked_loss": loop["opd_mean_masked_loss"],
         "num_records": float(len(prompts)),
         "num_params_m": 0.0,
         "depth": 0.0,

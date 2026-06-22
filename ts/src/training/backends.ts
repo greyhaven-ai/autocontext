@@ -22,7 +22,7 @@ import { defaultExecutor } from "./training-runner-workflow.js";
 import { executeTrainingRunWorkflow } from "./training-run-execution-workflow.js";
 import type { TrainingExecutor } from "./training-types.js";
 import { ModelRegistry, PromotionEngine, type ModelRecord } from "./promotion.js";
-import type { PublishedArtifact, TrainingConfig, TrainingResult } from "./training-types.js";
+import type { TrainingConfig, TrainingResult } from "./training-types.js";
 
 export {
   BackendRegistry,
@@ -35,7 +35,7 @@ export {
   TRLBackend,
   TrainingBackend,
 };
-export type { PublishedArtifact, TrainingConfig, TrainingResult } from "./training-types.js";
+export type { OpdPressureMode, PublishedArtifact, TrainingConfig, TrainingResult } from "./training-types.js";
 export type { TrainingExecutor } from "./training-types.js";
 
 export class TrainingRunner {

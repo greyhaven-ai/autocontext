@@ -24,9 +24,18 @@ export function resolveTrainingConfig(config: TrainingConfig): {
   }
 
   const datasetSize = countJsonlRecords(config.datasetPath);
-  const heldOutSize = config.heldOutPath && existsSync(config.heldOutPath)
-    ? countJsonlRecords(config.heldOutPath)
-    : 0;
+  const heldOutSize =
+    config.heldOutPath && existsSync(config.heldOutPath)
+      ? countJsonlRecords(config.heldOutPath)
+      : 0;
+  if (config.backend !== "opd" && config.opdPressureMode && config.opdPressureMode !== "full_kl") {
+    return {
+      resolvedConfig: config,
+      datasetSize,
+      heldOutSize,
+      error: "--opd-pressure-mode only supports the opd backend",
+    };
+  }
 
   const selector = new ModelStrategySelector();
   const strategy = selector.select({
@@ -41,6 +50,7 @@ export function resolveTrainingConfig(config: TrainingConfig): {
     trainingMode: strategy.trainingMode,
     baseModel: strategy.baseModel,
     adapterType: config.adapterType ?? strategy.adapterType,
+    opdPressureMode: config.opdPressureMode ?? "full_kl",
   };
 
   if (resolvedConfig.trainingMode !== "from_scratch" && !resolvedConfig.baseModel) {

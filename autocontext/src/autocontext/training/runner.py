@@ -77,6 +77,7 @@ class TrainingConfig:
     grpo_beta: float = 0.04  # trl grpo: KL penalty toward base policy (0.0 = KL-free; nonzero prevents overfitting)
     opd_diagnostics: bool = False  # OPD/GKD token-pressure report; no training-update changes
     opd_diagnostics_debug_tokens: bool = False  # include sampled token text in diagnostics (off by default)
+    opd_pressure_mode: str = "full_kl"  # opd backend: full_kl | sample_positive | sample_positive_reverse_negative
     fine_tune_type: str = "lora"  # mlxlm backend: lora | dora | full
     num_layers: int = 8  # mlxlm backend: number of layers to fine-tune
 
@@ -449,6 +450,8 @@ class TrainingRunner:
             command.append("--opd-diagnostics")
         if self.config.opd_diagnostics_debug_tokens:
             command.append("--opd-diagnostics-debug-tokens")
+        if self.config.opd_pressure_mode != "full_kl":
+            command += ["--opd-pressure-mode", self.config.opd_pressure_mode]
         if self.config.fine_tune_type != "lora":
             command += ["--fine-tune-type", self.config.fine_tune_type]
         if self.config.num_layers != 8:
@@ -658,6 +661,9 @@ class TrainingRunner:
             "token_pressure_positive_ratio",
             "token_pressure_negative_ratio",
             "token_pressure_shock_spike_count",
+            "opd_positive_token_fraction",
+            "opd_negative_token_fraction",
+            "opd_mean_masked_loss",
         ):
             if key in best_result.summary_metrics:
                 training_metrics[key] = best_result.summary_metrics[key]
@@ -688,6 +694,7 @@ class TrainingRunner:
                 "base_model": self.config.base_model or self._backend.default_base_model(),
                 "score_conditioned": self.config.score_conditioned,
                 "opd_diagnostics": diagnostics_written,
+                "opd_pressure_mode": self.config.opd_pressure_mode,
                 "opd_diagnostics_path": (
                     str(best_result.checkpoint_path / "token_pressure_diagnostics.json")
                     if diagnostics_written and best_result.checkpoint_path is not None

@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- AC-794 OPD training adds an experimental `--opd-pressure-mode` flag (`full_kl`, `sample_positive`, `sample_positive_reverse_negative`) with Python/TypeScript CLI parity, pressure-mode summaries, masked-loss metrics, and OPD-only validation.
+
 ### Fixed
 
 - AC-637 TypeScript role routing now matches Python `role_routing=auto` semantics for role aliases, tier model selection, explicit provider overrides, and local-route unsupported capability reporting.

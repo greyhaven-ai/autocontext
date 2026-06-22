@@ -17,6 +17,7 @@ describe("train command workflow", () => {
     expect(TRAIN_HELP_TEXT).toContain("--backend");
     expect(TRAIN_HELP_TEXT).toContain("--opd-diagnostics");
     expect(TRAIN_HELP_TEXT).toContain("--opd-diagnostics-debug-tokens");
+    expect(TRAIN_HELP_TEXT).toContain("--opd-pressure-mode");
   });
 
   it("requires scenario and dataset", () => {
@@ -47,12 +48,13 @@ describe("train command workflow", () => {
           family: "agent_task",
           dataset: "train.jsonl",
           "held-out": "heldout.jsonl",
-          backend: "mlx",
+          backend: "opd",
           mode: "adapter_finetune",
           "base-model": "qwen",
           output: "artifacts",
           "opd-diagnostics": true,
           "opd-diagnostics-debug-tokens": true,
+          "opd-pressure-mode": "sample_positive",
           json: true,
         },
         "/tmp/runs",
@@ -64,13 +66,29 @@ describe("train command workflow", () => {
       datasetPath: "/abs/train.jsonl",
       heldOutPath: "/abs/heldout.jsonl",
       outputDir: "/abs/artifacts",
-      backend: "mlx",
+      backend: "opd",
       trainingMode: "adapter_finetune",
       baseModel: "qwen",
       opdDiagnostics: true,
       opdDiagnosticsDebugTokens: true,
+      opdPressureMode: "sample_positive",
       json: true,
     });
+  });
+
+  it("rejects non-default OPD pressure modes for non-OPD backends", () => {
+    expect(() =>
+      planTrainCommand(
+        {
+          scenario: "grid_ctf",
+          dataset: "train.jsonl",
+          backend: "cuda",
+          "opd-pressure-mode": "sample_positive",
+        },
+        "/tmp/runs",
+        (value: string) => `/abs/${value}`,
+      ),
+    ).toThrow("--opd-pressure-mode only supports --backend opd");
   });
 
   it("fails clearly when only the synthetic executor is available", async () => {
@@ -87,6 +105,7 @@ describe("train command workflow", () => {
           baseModel: undefined,
           opdDiagnostics: false,
           opdDiagnosticsDebugTokens: false,
+          opdPressureMode: "full_kl",
           json: false,
         },
         createRunner: () => ({
@@ -115,11 +134,12 @@ describe("train command workflow", () => {
         datasetPath: "/abs/train.jsonl",
         heldOutPath: "/abs/heldout.jsonl",
         outputDir: "/tmp/runs",
-        backend: "cuda",
+        backend: "opd",
         trainingMode: "from_scratch",
         baseModel: undefined,
         opdDiagnostics: true,
         opdDiagnosticsDebugTokens: true,
+        opdPressureMode: "sample_positive_reverse_negative",
         json: false,
       },
       createRunner: () => ({
@@ -134,11 +154,12 @@ describe("train command workflow", () => {
       datasetPath: "/abs/train.jsonl",
       heldOutPath: "/abs/heldout.jsonl",
       outputDir: "/tmp/runs",
-      backend: "cuda",
+      backend: "opd",
       trainingMode: "from_scratch",
       baseModel: undefined,
       opdDiagnostics: true,
       opdDiagnosticsDebugTokens: true,
+      opdPressureMode: "sample_positive_reverse_negative",
     });
     expect(result).toMatchObject({ status: "completed", backend: "cuda" });
   });

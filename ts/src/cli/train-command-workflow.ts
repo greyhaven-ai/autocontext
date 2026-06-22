@@ -13,12 +13,31 @@ Options:
   -o, --output <dir>       Output directory
   --opd-diagnostics        Write OPD/GKD token-pressure diagnostics
   --opd-diagnostics-debug-tokens  Include raw sampled token text in diagnostics
+  --opd-pressure-mode <mode>  OPD pressure mode: full_kl, sample_positive, sample_positive_reverse_negative
   --json                   Output as JSON
   -h, --help               Show this help
 
 Notes:
   The TypeScript package requires an injected training executor for real MLX/CUDA training.
   For end-to-end local training, prefer the Python package's \`autoctx train\` command.`;
+
+export type OpdPressureMode = "full_kl" | "sample_positive" | "sample_positive_reverse_negative";
+
+const OPD_PRESSURE_MODES = [
+  "full_kl",
+  "sample_positive",
+  "sample_positive_reverse_negative",
+] as const;
+
+function normalizeOpdPressureMode(value: string | undefined): OpdPressureMode {
+  const mode = value ?? "full_kl";
+  if (!OPD_PRESSURE_MODES.includes(mode as OpdPressureMode)) {
+    throw new Error(
+      "--opd-pressure-mode must be full_kl|sample_positive|sample_positive_reverse_negative",
+    );
+  }
+  return mode as OpdPressureMode;
+}
 
 export interface TrainCommandValues {
   scenario?: string;
@@ -31,6 +50,7 @@ export interface TrainCommandValues {
   output?: string;
   "opd-diagnostics"?: boolean;
   "opd-diagnostics-debug-tokens"?: boolean;
+  "opd-pressure-mode"?: string;
   json?: boolean;
 }
 
@@ -45,6 +65,7 @@ export interface TrainCommandPlan {
   baseModel?: string;
   opdDiagnostics: boolean;
   opdDiagnosticsDebugTokens: boolean;
+  opdPressureMode: OpdPressureMode;
   json: boolean;
 }
 
@@ -57,13 +78,19 @@ export function planTrainCommand(
     throw new Error("Error: --scenario and --dataset are required. Run 'autoctx train --help'.");
   }
 
+  const backend = values.backend ?? "cuda";
+  const opdPressureMode = normalizeOpdPressureMode(values["opd-pressure-mode"]);
+  if (backend !== "opd" && opdPressureMode !== "full_kl") {
+    throw new Error("--opd-pressure-mode only supports --backend opd");
+  }
+
   return {
     scenario: values.scenario,
     family: values.family ?? "agent_task",
     datasetPath: resolvePath(values.dataset),
     heldOutPath: values["held-out"] ? resolvePath(values["held-out"]) : undefined,
     outputDir: values.output ? resolvePath(values.output) : resolvePath(runsRoot),
-    backend: values.backend ?? "cuda",
+    backend,
     trainingMode: (values.mode ?? "from_scratch") as
       | "from_scratch"
       | "adapter_finetune"
@@ -71,6 +98,7 @@ export function planTrainCommand(
     baseModel: values["base-model"],
     opdDiagnostics: !!values["opd-diagnostics"],
     opdDiagnosticsDebugTokens: !!values["opd-diagnostics-debug-tokens"],
+    opdPressureMode,
     json: !!values.json,
   };
 }
@@ -90,6 +118,7 @@ export async function executeTrainCommandWorkflow<TResult extends { status?: str
       baseModel?: string;
       opdDiagnostics?: boolean;
       opdDiagnosticsDebugTokens?: boolean;
+      opdPressureMode?: OpdPressureMode;
     }): Promise<TResult>;
   };
 }): Promise<TResult> {
@@ -110,6 +139,7 @@ export async function executeTrainCommandWorkflow<TResult extends { status?: str
     baseModel: opts.plan.baseModel,
     opdDiagnostics: opts.plan.opdDiagnostics,
     opdDiagnosticsDebugTokens: opts.plan.opdDiagnosticsDebugTokens,
+    opdPressureMode: opts.plan.opdPressureMode,
   });
 }
 
