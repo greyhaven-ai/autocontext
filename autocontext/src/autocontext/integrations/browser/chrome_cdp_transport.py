@@ -5,9 +5,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+from importlib import import_module
 from typing import Any, cast
-
-from websockets.asyncio.client import connect
 
 
 class ChromeCdpTransportError(RuntimeError):
@@ -40,7 +39,7 @@ class ChromeCdpWebSocketTransport:
             if self._websocket is not None:
                 return
             self._closing = False
-            self._websocket = await connect(
+            self._websocket = await _connect_websocket(
                 self.websocket_url,
                 open_timeout=self.connect_timeout,
                 max_size=None,
@@ -130,6 +129,18 @@ class ChromeCdpWebSocketTransport:
         except json.JSONDecodeError:
             return None
         return None
+
+
+async def _connect_websocket(websocket_url: str, *, open_timeout: float, max_size: int | None) -> Any:
+    try:
+        websockets_client = import_module("websockets.asyncio.client")
+    except ImportError as exc:
+        raise ChromeCdpTransportError(
+            "Chrome CDP websocket transport requires the optional websockets dependency. "
+            "Install it with `pip install 'autocontext[browser]'`."
+        ) from exc
+    connect = cast(Any, websockets_client).connect
+    return await connect(websocket_url, open_timeout=open_timeout, max_size=max_size)
 
 
 def _error_message(error: dict[str, Any]) -> str:

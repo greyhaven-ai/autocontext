@@ -40,13 +40,12 @@ from autocontext.analytics.taxonomy import FacetTaxonomy
 from autocontext.analytics.trace_reporter import ReportStore, TraceReporter
 from autocontext.config import AppSettings
 from autocontext.execution import ExecutionSupervisor
-from autocontext.execution.executors import LocalExecutor, PrimeIntellectExecutor
+from autocontext.execution.executors import LocalExecutor
 from autocontext.extensions import HookBus
 from autocontext.harness.meta_optimizer import MetaOptimizer
 from autocontext.harness.pipeline.gate import BackpressureGate
 from autocontext.harness.pipeline.trend_gate import TrendAwareGate
 from autocontext.harness.scoring.backends import get_backend
-from autocontext.integrations.primeintellect import PrimeIntellectClient
 from autocontext.knowledge.mutation_log import MutationEntry
 from autocontext.knowledge.normalized_metrics import generate_run_progress_report
 from autocontext.knowledge.report import generate_session_report
@@ -113,8 +112,11 @@ class GenerationRunner:
             )
         else:
             self.gate = BackpressureGate(min_delta=settings.backpressure_min_delta)
-        self.remote: PrimeIntellectClient | None = None
+        self.remote: Any | None = None
         if settings.executor_mode == "primeintellect":
+            from autocontext.execution.executors.primeintellect import PrimeIntellectExecutor
+            from autocontext.integrations.primeintellect.client import PrimeIntellectClient
+
             if not settings.primeintellect_api_key:
                 raise ValueError("AUTOCONTEXT_PRIMEINTELLECT_API_KEY is required for primeintellect executor mode")
             self.remote = PrimeIntellectClient(
@@ -1188,7 +1190,7 @@ class GenerationRunner:
 
                     warm_fn = None
                     if self.settings.executor_mode == "primeintellect" and self.remote is not None:
-                        def _warm(ctx_arg: object, _gen: int = generation) -> dict:
+                        def _warm(ctx_arg: object, _gen: int = generation) -> Any:
                             assert self.remote is not None
                             return self.remote.warm_provision(
                                 environment_name=f"{scenario_name}-gen-{_gen}",

@@ -12,6 +12,7 @@ pip install autocontext
 
 The current PyPI release line is `autocontext==0.8.0`.
 The PyPI package name is now `autocontext`. The CLI entrypoint remains `autoctx`.
+Optional integrations use extras: `autocontext[browser]` for Chrome CDP capture and `autocontext[primeintellect]` for PrimeIntellect sandboxes.
 
 ## Working Directory
 
@@ -411,7 +412,7 @@ Common settings:
 - `AUTOCONTEXT_BROWSER_ALLOW_DOWNLOADS` and `AUTOCONTEXT_BROWSER_DOWNLOADS_ROOT`
 
 Browser exploration defaults to a secure disabled posture and uses the shared contract described in [../docs/browser-exploration-contract.md](../docs/browser-exploration-contract.md).
-The Python package includes a thin Chrome CDP backend that attaches to an existing debugger endpoint, enforces the browser allowlist, and stores browser evidence under run-local roots.
+Install `autocontext[browser]` before using the thin Chrome CDP backend; it attaches to an existing debugger endpoint, enforces the browser allowlist, and stores browser evidence under run-local roots.
 
 `AUTOCONTEXT_HARNESS_PROFILE=lean` resolves a Pi-shaped runtime profile: prompt context is capped by `AUTOCONTEXT_LEAN_CONTEXT_BUDGET_TOKENS`, hidden/implicit context defaults to zero, and generated tool context is replaced by the lean allowlist before agent execution. `AUTOCONTEXT_PI_RPC_PERSISTENT=true` opts Pi RPC into a long-lived subprocess; one-shot Pi RPC remains the default.
 

@@ -5,9 +5,8 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Protocol, TypeAlias, runtime_checkable
-
-import httpx
+from importlib import import_module
+from typing import Any, Protocol, TypeAlias, cast, runtime_checkable
 
 from autocontext.integrations.browser.contract.models import BrowserSessionConfig
 from autocontext.integrations.browser.policy import evaluate_browser_action_policy
@@ -102,7 +101,15 @@ def select_chrome_cdp_target(
 
 
 async def _fetch_json(url: str) -> object:
-    async with httpx.AsyncClient() as client:
+    try:
+        httpx = import_module("httpx")
+    except ImportError as exc:
+        raise ChromeCdpDiscoveryError(
+            "Chrome CDP target discovery requires the optional httpx dependency. "
+            "Install it with `pip install 'autocontext[browser]'`."
+        ) from exc
+    async_client = cast(Any, httpx).AsyncClient
+    async with async_client() as client:
         response = await client.get(url)
     response.raise_for_status()
     return response.json()
