@@ -17,7 +17,7 @@ Use the current modes this way:
 
 - Use `monty` when you want interpreter-level containment for Python evaluation with low operational overhead.
 - Use `local` for trusted local development and fast iteration.
-- Use `primeintellect` or `ssh` when you want execution off the current host.
+- Use `primeintellect` or `ssh` when you want execution off the current host; PrimeIntellect requires `pip install 'autocontext[primeintellect]'`.
 - Use Gondolin only after the adapter is wired for VM lifecycle, mounted artifacts, secret injection, and network/egress policy.
 
 The public OSS contract for a future Gondolin adapter is intentionally narrow:

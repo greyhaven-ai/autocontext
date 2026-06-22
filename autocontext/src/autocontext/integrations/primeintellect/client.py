@@ -8,9 +8,33 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from prime_sandboxes import AsyncSandboxClient, CreateSandboxRequest
-
 logger = logging.getLogger(__name__)
+
+AsyncSandboxClient: Any | None = None
+CreateSandboxRequest: Any | None = None
+
+
+class MissingPrimeIntellectExtraError(RuntimeError):
+    """Raised when the PrimeIntellect optional extra is not installed."""
+
+
+class _CreateSandboxRequestFallback:
+    def __init__(self, **kwargs: Any) -> None:
+        self.__dict__.update(kwargs)
+
+
+def _prime_sandboxes_sdk() -> tuple[Any, Any]:
+    if AsyncSandboxClient is not None:
+        return AsyncSandboxClient, CreateSandboxRequest or _CreateSandboxRequestFallback
+    try:
+        from prime_sandboxes import AsyncSandboxClient as client_cls
+        from prime_sandboxes import CreateSandboxRequest as request_cls
+    except ImportError as exc:
+        raise MissingPrimeIntellectExtraError(
+            "PrimeIntellect execution requires the optional prime-sandboxes SDK. "
+            "Install it with `pip install 'autocontext[primeintellect]'`."
+        ) from exc
+    return client_cls, request_cls
 
 
 @dataclass(slots=True)
@@ -61,6 +85,8 @@ class PrimeIntellectClient:
                         network_access=network_access,
                     )
                 )
+            except MissingPrimeIntellectExtraError:
+                raise
             except Exception:
                 logger.debug("integrations.primeintellect.client: caught Exception", exc_info=True)
                 attempt += 1
@@ -71,7 +97,8 @@ class PrimeIntellectClient:
                 time.sleep(backoff_seconds * attempt)
 
     async def _probe(self) -> None:
-        async with AsyncSandboxClient(api_key=self.api_key) as client:
+        sandbox_client_cls, _ = _prime_sandboxes_sdk()
+        async with sandbox_client_cls(api_key=self.api_key) as client:
             await client.list(per_page=1, exclude_terminated=True)
 
     async def _execute_strategy_once(
@@ -84,9 +111,10 @@ class PrimeIntellectClient:
         max_memory_mb: int,
         network_access: bool,
     ) -> dict[str, Any]:
+        sandbox_client_cls, create_sandbox_request = _prime_sandboxes_sdk()
         sandbox_id: str | None = None
-        async with AsyncSandboxClient(api_key=self.api_key) as client:
-            request = CreateSandboxRequest(
+        async with sandbox_client_cls(api_key=self.api_key) as client:
+            request = create_sandbox_request(
                 name=f"autocontext-{scenario_name}-{seed}",
                 docker_image=self.docker_image,
                 cpu_cores=self.cpu_cores,
