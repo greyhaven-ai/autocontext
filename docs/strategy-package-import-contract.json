@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "contract": "strategy package module imports are pure",
+  "modules": [
+    {
+      "runtime": "python",
+      "module": "autocontext.knowledge",
+      "import_time_filesystem_writes": false,
+      "runtime_setup": "Call package import/export services explicitly."
+    },
+    {
+      "runtime": "python",
+      "module": "autocontext.knowledge.package",
+      "import_time_filesystem_writes": false,
+      "runtime_setup": "Call import_strategy_package(...) or export_strategy_package(...) with explicit stores."
+    },
+    {
+      "runtime": "typescript",
+      "module": "src/knowledge/index.js",
+      "import_time_filesystem_writes": false,
+      "runtime_setup": "Call package import/export services explicitly."
+    },
+    {
+      "runtime": "typescript",
+      "module": "src/knowledge/package.js",
+      "import_time_filesystem_writes": false,
+      "runtime_setup": "Call importStrategyPackage(...) or exportStrategyPackage(...) with explicit stores."
+    }
+  ]
+}

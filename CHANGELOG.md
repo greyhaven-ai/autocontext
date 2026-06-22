@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 
 - AC-708 Hermes advisor checkpoints preserve MLX/CUDA provenance through `autoctx hermes recommend --advisor`, and local-training docs now point at the shipped `train-advisor` / `recommend` flow.
+- AC-638 strategy package imports now have a shared Python/TypeScript side-effect contract and smoke tests proving module imports do not create runtime files.
 
 ## [pi-v0.8.0] - 2026-06-20
 

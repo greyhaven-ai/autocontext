@@ -35,6 +35,7 @@ This directory is the maintainer-facing landing page for repository docs. Use it
 ## Architecture And Parity
 
 - [Core/control package split](core-control-package-split.md)
+- [Strategy package import side-effect contract](strategy-package-import-contract.json)
 - [Generic edge runtime compatibility spike](edge-runtime-compatibility.md)
 - [Fetch adapter API reference](fetch-api-reference.md)
 - [Fetch host capability manifest examples](fetch-host-capability-manifest.md)
