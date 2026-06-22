@@ -158,6 +158,19 @@ function withRuntimeSession(
   };
 }
 
+function withRoutedRuntimeModel(
+  config: ProviderConfig,
+  opts: CreateProviderOpts,
+): CreateProviderOpts {
+  if (config.providerType === "claude-cli") {
+    return { ...opts, claudeModel: config.model };
+  }
+  if (config.providerType === "codex") {
+    return { ...opts, codexModel: config.model };
+  }
+  return opts;
+}
+
 interface RoleConfigInput {
   providerType?: string;
   model?: string;
@@ -358,7 +371,12 @@ export function buildRoleProviderBundle(
   const roleProviders = Object.fromEntries(
     ROUTED_GENERATION_ROLES.map((role) => [
       role,
-      createProvider(withRuntimeSession(roleConfigs[role], settings, runtimeSession, role)),
+      createProvider(
+        withRoutedRuntimeModel(
+          roleConfigs[role],
+          withRuntimeSession(roleConfigs[role], settings, runtimeSession, role),
+        ),
+      ),
     ]),
   ) as Partial<Record<GenerationRole, LLMProvider>>;
   const roleModels = Object.fromEntries(

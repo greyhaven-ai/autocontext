@@ -12,7 +12,7 @@ import {
   buildRoleProviderBundle,
   estimateRoleRoutingCost,
   routeRoleProvider,
-  type RoleRoutingSettings,
+  type RoleProviderSettings,
 } from "../src/providers/index.js";
 
 type RoleRoutingContract = {
@@ -31,7 +31,7 @@ const CONTRACT = JSON.parse(
   ),
 ) as RoleRoutingContract;
 
-function baseSettings(overrides: Partial<RoleRoutingSettings> = {}): RoleRoutingSettings {
+function baseSettings(overrides: Partial<RoleProviderSettings> = {}): RoleProviderSettings {
   return {
     agentProvider: "deterministic",
     roleRouting: "auto",
@@ -166,6 +166,26 @@ describe("role-routed provider bundles", () => {
       providerClass: "fast",
     });
     bundle.close?.();
+  });
+
+  it("uses routed tier models as CLI runtime defaults for role providers", () => {
+    const claudeBundle = buildRoleProviderBundle(baseSettings({
+      agentProvider: "claude-cli",
+      claudeModel: "sonnet-cli",
+    }));
+    expect(claudeBundle.defaultProvider.defaultModel()).toBe("sonnet-cli");
+    expect(claudeBundle.roleModels.competitor).toBe("opus-tier-model");
+    expect(claudeBundle.roleProviders.competitor?.defaultModel()).toBe("opus-tier-model");
+    claudeBundle.close?.();
+
+    const codexBundle = buildRoleProviderBundle(baseSettings({
+      agentProvider: "codex",
+      codexModel: "codex-global",
+    }));
+    expect(codexBundle.defaultProvider.defaultModel()).toBe("codex-global");
+    expect(codexBundle.roleModels.analyst).toBe("sonnet-tier-model");
+    expect(codexBundle.roleProviders.analyst?.defaultModel()).toBe("sonnet-tier-model");
+    codexBundle.close?.();
   });
 
   it("surfaces Python-local routes explicitly when TypeScript cannot execute them", () => {
