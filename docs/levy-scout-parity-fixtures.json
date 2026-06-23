@@ -1,0 +1,39 @@
+{
+  "algorithm": "fnv1a-32-pareto",
+  "alpha": 1.5,
+  "scale": 0.2,
+  "cases": [
+    {
+      "seed_base": 0,
+      "generation": 14,
+      "attempt": 0,
+      "random_value": 0.27425051340833306,
+      "step_size": 0.24765028806102532,
+      "intensity": "local"
+    },
+    {
+      "seed_base": 1000,
+      "generation": 2,
+      "attempt": 0,
+      "random_value": 0.4796911422163248,
+      "step_size": 0.30916418871710133,
+      "intensity": "local"
+    },
+    {
+      "seed_base": 42,
+      "generation": 7,
+      "attempt": 3,
+      "random_value": 0.5636373201850802,
+      "step_size": 0.3476414842975511,
+      "intensity": "scout"
+    },
+    {
+      "seed_base": 0,
+      "generation": 10,
+      "attempt": 0,
+      "random_value": 0.8814763254486024,
+      "step_size": 0.828883047534505,
+      "intensity": "jump"
+    }
+  ]
+}

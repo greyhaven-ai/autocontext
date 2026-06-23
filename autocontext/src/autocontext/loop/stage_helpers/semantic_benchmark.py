@@ -11,6 +11,7 @@ from autocontext.knowledge.context_selection import build_prompt_context_selecti
 from autocontext.knowledge.semantic_compaction_benchmark import (
     build_semantic_compaction_benchmark_report,
 )
+from autocontext.loop.levy_scout import LevyScoutConfig, render_levy_scout_guidance
 from autocontext.loop.stage_helpers.context_loaders import _hint_style
 from autocontext.prompts.templates import PromptBundle, build_prompt_bundle
 from autocontext.storage.context_selection_store import persist_context_selection_decision
@@ -306,6 +307,15 @@ def prepare_generation_prompts(
         "environment_snapshot": environment_snapshot,
         "evidence_manifest": evidence_manifest,
         "evidence_manifests": evidence_manifests,
+        "scout_mutation_guidance": render_levy_scout_guidance(
+            LevyScoutConfig(
+                enabled=ctx.settings.experimental_levy_scout_enabled,
+                alpha=ctx.settings.levy_scout_alpha,
+                scale=ctx.settings.levy_scout_scale,
+            ),
+            seed_base=ctx.settings.seed_base,
+            generation=ctx.generation,
+        ),
     }
     hook_bus = ctx.hook_bus
     if hook_bus is not None:

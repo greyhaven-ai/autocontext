@@ -66,7 +66,11 @@ export interface RunExecutionSettings {
   stagnationPlateauEpsilon: number;
   stagnationDistillTopLessons: number;
   explorationMode: unknown;
+  seedBase?: number;
   experimentalAnnealingEnabled?: boolean;
+  experimentalLevyScoutEnabled?: boolean;
+  levyScoutAlpha?: number;
+  levyScoutScale?: number;
   explorationCollapseGuard?: boolean;
   explorationCollapseAutoMitigation?: boolean;
   notifyWebhookUrl: unknown;
@@ -286,7 +290,11 @@ export async function executeRunCommandWorkflow<
     stagnationPlateauEpsilon: number;
     stagnationDistillTopLessons: number;
     explorationMode: unknown;
+    seedBase?: number;
     experimentalAnnealingEnabled?: boolean;
+    experimentalLevyScoutEnabled?: boolean;
+    levyScoutAlpha?: number;
+    levyScoutScale?: number;
     explorationCollapseGuard?: boolean;
     explorationCollapseAutoMitigation?: boolean;
     notifyWebhookUrl: unknown;
@@ -326,7 +334,11 @@ export async function executeRunCommandWorkflow<
       stagnationPlateauEpsilon: opts.settings.stagnationPlateauEpsilon,
       stagnationDistillTopLessons: opts.settings.stagnationDistillTopLessons,
       explorationMode: opts.settings.explorationMode,
+      seedBase: opts.settings.seedBase ?? 1000,
       experimentalAnnealingEnabled: opts.settings.experimentalAnnealingEnabled ?? false,
+      experimentalLevyScoutEnabled: opts.settings.experimentalLevyScoutEnabled ?? false,
+      levyScoutAlpha: opts.settings.levyScoutAlpha ?? 1.5,
+      levyScoutScale: opts.settings.levyScoutScale ?? 0.2,
       explorationCollapseGuard: opts.settings.explorationCollapseGuard ?? false,
       explorationCollapseAutoMitigation: opts.settings.explorationCollapseAutoMitigation ?? false,
       notifyWebhookUrl: opts.settings.notifyWebhookUrl,

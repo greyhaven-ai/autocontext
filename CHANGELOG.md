@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file.
   compile/lint parity, criterion-bound judge results, shared parity fixtures, and
   experimental human-anchor rubric patch proposals.
 - AC-374 adds an opt-in experimental annealing gate that can accept small regressions early, tightens over generations, and reports annealing metadata on gate decisions.
+- AC-371 adds an opt-in experimental Lévy scout prompt mutation with Python/TypeScript parity fixtures, heavy-tailed step guidance, and default-off settings.
 
 ### Fixed
 

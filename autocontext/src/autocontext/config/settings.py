@@ -446,6 +446,9 @@ class AppSettings(BaseModel):
     exploration_collapse_auto_mitigation: bool = Field(default=False, description="Allow opt-in guidance demotion")
     rapid_gens: int = Field(default=0, ge=0, description="Auto-transition from rapid to linear after N gens (0=manual)")
     experimental_annealing_enabled: bool = Field(default=False, description="Experimental annealing gate")
+    experimental_levy_scout_enabled: bool = Field(default=False, description="Experimental Lévy scout prompt mutation")
+    levy_scout_alpha: float = Field(default=1.5, gt=0.0, description="Lévy scout tail-heaviness parameter")
+    levy_scout_scale: float = Field(default=0.2, ge=0.0, description="Lévy scout prompt mutation scale")
     novelty_enabled: bool = Field(
         default=True,
         description="Apply a small novelty bonus to gate-time score comparisons",
@@ -755,7 +758,7 @@ class AppSettings(BaseModel):
         """Treat 0 or empty string as None (no budget limit)."""
         if v is None or v == "":
             return None
-        f = float(v)  # type: ignore[arg-type]
+        f = float(v) if isinstance(v, (int, float, str)) else 0.0
         return f if f > 0 else None
 
 

@@ -840,6 +840,33 @@
       ]
     },
     {
+      "python": "experimental_levy_scout_enabled",
+      "typescript": "experimentalLevyScoutEnabled",
+      "type": "boolean",
+      "default": false,
+      "env": [
+        "AUTOCONTEXT_EXPERIMENTAL_LEVY_SCOUT_ENABLED"
+      ]
+    },
+    {
+      "python": "levy_scout_alpha",
+      "typescript": "levyScoutAlpha",
+      "type": "number",
+      "default": 1.5,
+      "env": [
+        "AUTOCONTEXT_LEVY_SCOUT_ALPHA"
+      ]
+    },
+    {
+      "python": "levy_scout_scale",
+      "typescript": "levyScoutScale",
+      "type": "number",
+      "default": 0.2,
+      "env": [
+        "AUTOCONTEXT_LEVY_SCOUT_SCALE"
+      ]
+    },
+    {
       "python": "generation_phase_budget_rollover_enabled",
       "typescript": "generationPhaseBudgetRolloverEnabled",
       "type": "boolean",

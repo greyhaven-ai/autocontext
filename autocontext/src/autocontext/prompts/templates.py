@@ -134,6 +134,7 @@ def build_prompt_bundle(
     context_budget_telemetry_sink: Callable[[ContextBudgetTelemetry], None] | None = None,
     simplicity_mode: str = "off",
     hint_style: str = "default",
+    scout_mutation_guidance: str = "",
 ) -> PromptBundle:
     _nb = dict(notebook_contexts or {})
     _evidence = dict(evidence_manifests or {})
@@ -290,6 +291,7 @@ def build_prompt_bundle(
         f"{session_reports_block}"
     )
     hints_block = f"Coach hints for competitor:\n{coach_competitor_hints}\n\n" if coach_competitor_hints else ""
+    scout_block = f"{scout_mutation_guidance.strip()}\n\n" if scout_mutation_guidance else ""
     competitor_constraint = _COMPETITOR_CONSTRAINT_SUFFIX if constraint_mode else ""
     analyst_constraint = _ANALYST_CONSTRAINT_SUFFIX if constraint_mode else ""
     coach_constraint = _COACH_CONSTRAINT_SUFFIX if constraint_mode else ""
@@ -321,7 +323,7 @@ def build_prompt_bundle(
     )
 
     bundle = PromptBundle(
-        competitor=base_context + hints_block + competitor_nb + competitor_constraint + competitor_task,
+        competitor=base_context + hints_block + scout_block + competitor_nb + competitor_constraint + competitor_task,
         analyst=base_context
         + analyst_evidence_block
         + analyst_feedback_block

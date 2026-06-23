@@ -19,6 +19,14 @@ export {
   evaluateAnnealing,
 } from "./annealing.js";
 export type { AnnealingOptions, AnnealingOutcome } from "./annealing.js";
+export {
+  deterministicLevyScoutRandomValue,
+  evaluateLevyScout,
+  levyScoutIntensity,
+  levyScoutStepSize,
+  renderLevyScoutGuidance,
+} from "./levy-scout.js";
+export type { LevyScoutIntensity, LevyScoutMutation, LevyScoutOptions } from "./levy-scout.js";
 
 export { GenerationRunner } from "./generation-runner.js";
 export type { GenerationRunnerOpts, RunResult } from "./generation-runner.js";

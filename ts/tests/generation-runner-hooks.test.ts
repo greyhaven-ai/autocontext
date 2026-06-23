@@ -66,9 +66,11 @@ describe("GenerationRunner extension hooks", () => {
     const seenEvents: string[] = [];
     bus.on(HookEvents.GENERATION_START, () => {
       seenEvents.push("generation_start");
+      return undefined;
     });
     bus.on(HookEvents.GENERATION_END, () => {
       seenEvents.push("generation_end");
+      return undefined;
     });
     bus.on(HookEvents.CONTEXT_COMPONENTS, (event) => {
       seenEvents.push("context_components");
@@ -82,9 +84,11 @@ describe("GenerationRunner extension hooks", () => {
     });
     bus.on(HookEvents.BEFORE_COMPACTION, () => {
       seenEvents.push("before_compaction");
+      return undefined;
     });
     bus.on(HookEvents.AFTER_COMPACTION, () => {
       seenEvents.push("after_compaction");
+      return undefined;
     });
     bus.on(HookEvents.CONTEXT, (event) => {
       seenEvents.push("context");
@@ -148,6 +152,87 @@ describe("GenerationRunner extension hooks", () => {
       "before_provider:competitor",
       "after_provider:competitor",
     ]));
+
+    store.close();
+  });
+
+  it("exposes levy scout guidance to context component hooks before prompt assembly", async () => {
+    const { GenerationRunner } = await import("../src/loop/generation-runner.js");
+    const { GridCtfScenario } = await import("../src/scenarios/grid-ctf.js");
+    const { SQLiteStore } = await import("../src/storage/index.js");
+
+    class RecordingProvider {
+      readonly name = "recording";
+      prompts: string[] = [];
+
+      defaultModel(): string {
+        return "recording-model";
+      }
+
+      async complete(opts: { userPrompt: string }): Promise<{ text: string; model: string; usage: Record<string, number> }> {
+        this.prompts.push(opts.userPrompt);
+        if (opts.userPrompt.includes("Describe your strategy")) {
+          return {
+            text: JSON.stringify({ aggression: 0.60, defense: 0.55, path_bias: 0.50 }),
+            model: "recording-model",
+            usage: {},
+          };
+        }
+        if (opts.userPrompt.includes("Analyze strengths/failures")) {
+          return { text: "## Findings\n\n- Scout hook was visible.", model: "recording-model", usage: {} };
+        }
+        return {
+          text:
+            "<!-- PLAYBOOK_START -->\nScout hook playbook\n<!-- PLAYBOOK_END -->\n\n" +
+            "<!-- LESSONS_START -->\n- Scout hook visible.\n<!-- LESSONS_END -->\n\n" +
+            "<!-- COMPETITOR_HINTS_START -->\n- Keep testing.\n<!-- COMPETITOR_HINTS_END -->",
+          model: "recording-model",
+          usage: {},
+        };
+      }
+    }
+
+    const root = makeRoot();
+    roots.push(root);
+    const provider = new RecordingProvider();
+    const seenScoutGuidance: string[] = [];
+    const bus = new HookBus();
+    bus.on(HookEvents.CONTEXT_COMPONENTS, (event) => {
+      const components = readStringRecord(event.payload.components);
+      if (components.scout_mutation_guidance) {
+        seenScoutGuidance.push(components.scout_mutation_guidance);
+        return {
+          components: {
+            ...components,
+            scout_mutation_guidance: "redacted scout guidance",
+          },
+        };
+      }
+      return undefined;
+    });
+
+    const store = new SQLiteStore(join(root, "test.db"));
+    store.migrate(join(import.meta.dirname, "..", "migrations"));
+    const runner = new GenerationRunner({
+      provider,
+      scenario: new GridCtfScenario(),
+      store,
+      runsRoot: join(root, "runs"),
+      knowledgeRoot: join(root, "knowledge"),
+      matchesPerGeneration: 1,
+      maxRetries: 0,
+      minDelta: 0.0,
+      seedBase: 0,
+      experimentalLevyScoutEnabled: true,
+      hookBus: bus,
+    });
+
+    await runner.run("scout-hook-run", 1);
+
+    const competitorPrompt = provider.prompts.find((prompt) => prompt.includes("Describe your strategy"));
+    expect(seenScoutGuidance[0]).toContain("Lévy scout mutation guidance");
+    expect(competitorPrompt).toContain("redacted scout guidance");
+    expect(competitorPrompt).not.toContain("Lévy scout mutation guidance");
 
     store.close();
   });
