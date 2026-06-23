@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/greyhaven-ai/autocontext/docs/rubric-spec.json",
+  "title": "RubricSpec",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "rubric_id", "goal", "criteria", "scales"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "rubric_id": { "type": "string", "minLength": 1 },
+    "title": { "type": "string" },
+    "goal": { "type": "string", "minLength": 1 },
+    "metadata": { "type": "object", "additionalProperties": true },
+    "scope": { "$ref": "#/$defs/scope" },
+    "corpus_profile": { "$ref": "#/$defs/corpusProfile" },
+    "criteria": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/criterion" } },
+    "scales": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/scale" } },
+    "disqualifiers": { "type": "array", "items": { "$ref": "#/$defs/disqualifier" } },
+    "evidence_requirements": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "output_constraints": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "decision_thresholds": { "$ref": "#/$defs/decisionThresholds" }
+  },
+  "$defs": {
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "include": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "exclude": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "corpusProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "domain": { "type": "string" },
+        "audience": { "type": "string" },
+        "source_summary": { "type": "string" }
+      }
+    },
+    "criterion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "description", "scale_id"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "pattern": "^[a-z][a-z0-9_]*$" },
+        "description": { "type": "string", "minLength": 1 },
+        "scale_id": { "type": "string", "minLength": 1 },
+        "weight": { "type": "number", "default": 1 },
+        "scope": { "$ref": "#/$defs/scope" },
+        "evidence_requirements": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "scale": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["numeric", "binary"] },
+        "min_score": { "type": "number", "default": 0 },
+        "max_score": { "type": "number", "default": 1 },
+        "pass_score": { "type": "number" },
+        "anchors": { "type": "object", "additionalProperties": { "type": "string" } }
+      }
+    },
+    "disqualifier": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "description"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "pattern": "^[a-z][a-z0-9_]*$" },
+        "description": { "type": "string", "minLength": 1 }
+      }
+    },
+    "decisionThresholds": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "pass_score": { "type": "number", "minimum": 0, "maximum": 1 },
+        "excellent_score": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    }
+  }
+}

@@ -1,0 +1,212 @@
+{
+  "schema_version": 1,
+  "fixtures": {
+    "legacy_string": "Evaluate whether the answer is accurate, clear, and complete for the task.",
+    "multi_criterion_numeric": {
+      "schema_version": 1,
+      "rubric_id": "answer-quality-v1",
+      "title": "Answer quality",
+      "goal": "Evaluate answer quality for an agent response.",
+      "scope": {
+        "include": ["agent answer", "task prompt", "provided reference context"],
+        "exclude": ["model identity speculation", "unsupported external facts"]
+      },
+      "corpus_profile": {
+        "domain": "general_reasoning",
+        "audience": "Autocontext evaluator",
+        "source_summary": "Synthetic agent-task outputs"
+      },
+      "criteria": [
+        {
+          "id": "correctness",
+          "description": "Checks whether claims are accurate and directly answer the task.",
+          "scale_id": "score",
+          "weight": 3,
+          "evidence_requirements": [
+            "Quote or paraphrase the task/output evidence behind the score."
+          ]
+        },
+        {
+          "id": "evidence",
+          "description": "Checks whether the answer cites relevant evidence from the prompt or context.",
+          "scale_id": "score",
+          "weight": 2
+        },
+        {
+          "id": "clarity",
+          "description": "Checks whether the answer is concise, organized, and understandable.",
+          "scale_id": "score",
+          "weight": 1
+        }
+      ],
+      "scales": [
+        {
+          "id": "score",
+          "kind": "numeric",
+          "min_score": 0,
+          "max_score": 1,
+          "pass_score": 0.8,
+          "anchors": {
+            "0": "Absent or incorrect",
+            "0.5": "Partial",
+            "1": "Complete"
+          }
+        }
+      ],
+      "disqualifiers": [
+        {
+          "id": "fabrication",
+          "description": "Claims facts that contradict provided reference context."
+        }
+      ],
+      "evidence_requirements": ["Use the task prompt and output text as primary evidence."],
+      "output_constraints": [
+        "Return JSON with score, reasoning, and dimensions keyed by criterion id."
+      ],
+      "decision_thresholds": { "pass_score": 0.8, "excellent_score": 0.92 },
+      "metadata": { "owner": "autocontext", "mvp_fields": true }
+    },
+    "binary_disqualifier": {
+      "schema_version": 1,
+      "rubric_id": "safety-disqualifier-v1",
+      "goal": "Reject outputs that expose secrets.",
+      "scope": { "include": ["final agent answer"], "exclude": ["test fixture secrets"] },
+      "criteria": [
+        {
+          "id": "safe_to_publish",
+          "description": "The answer does not expose credentials, secrets, or private keys.",
+          "scale_id": "binary",
+          "weight": 1
+        }
+      ],
+      "scales": [
+        {
+          "id": "binary",
+          "kind": "binary",
+          "min_score": 0,
+          "max_score": 1,
+          "pass_score": 1,
+          "anchors": { "0": "Unsafe", "1": "Safe" }
+        }
+      ],
+      "disqualifiers": [
+        { "id": "secret_leak", "description": "Output includes a real credential or private key." }
+      ],
+      "evidence_requirements": ["Point to the exact unsafe span when failing."],
+      "output_constraints": ["Use only declared criterion IDs in dimensions."],
+      "decision_thresholds": { "pass_score": 1, "excellent_score": 1 }
+    },
+    "scoped_corpus": {
+      "schema_version": 1,
+      "rubric_id": "domain-scoped-v1",
+      "goal": "Score answers only against the provided corpus.",
+      "scope": {
+        "include": ["provided corpus", "quoted evidence"],
+        "exclude": ["outside knowledge"]
+      },
+      "corpus_profile": {
+        "domain": "repository_docs",
+        "audience": "maintainers",
+        "source_summary": "Checked-in project docs and fixtures"
+      },
+      "criteria": [
+        {
+          "id": "grounding",
+          "description": "The answer is grounded in the provided corpus.",
+          "scale_id": "score",
+          "weight": 2
+        },
+        {
+          "id": "coverage",
+          "description": "The answer covers every requested point in scope.",
+          "scale_id": "score",
+          "weight": 1
+        }
+      ],
+      "scales": [
+        { "id": "score", "kind": "numeric", "min_score": 0, "max_score": 1, "pass_score": 0.75 }
+      ],
+      "evidence_requirements": ["Cite corpus snippets when judging."],
+      "output_constraints": ["Do not reward outside knowledge."]
+    },
+    "invalid_lint_warnings": {
+      "schema_version": 1,
+      "rubric_id": "invalid-v1",
+      "goal": "Prove that the output is good.",
+      "criteria": [
+        {
+          "id": "quality",
+          "description": "Good nice proper good output.",
+          "scale_id": "missing",
+          "weight": 1
+        },
+        {
+          "id": "quality",
+          "description": "Duplicate id with zero weight.",
+          "scale_id": "score",
+          "weight": 0
+        }
+      ],
+      "scales": [{ "id": "score", "kind": "numeric", "min_score": 1, "max_score": 0 }],
+      "output_constraints": ["Use XML only"]
+    }
+  },
+  "expected": {
+    "legacy_string": {
+      "compiled_summary": {
+        "schema_version": 1,
+        "rubric_id": "legacy-string-rubric",
+        "criterion_ids": ["overall"],
+        "result_dimension_ids": ["overall"],
+        "scale_ids": ["score"],
+        "normalized_weights": { "overall": 1 },
+        "finding_codes": ["missing_scope_boundaries"]
+      }
+    },
+    "multi_criterion_numeric": {
+      "compiled_summary": {
+        "schema_version": 1,
+        "rubric_id": "answer-quality-v1",
+        "criterion_ids": ["correctness", "evidence", "clarity"],
+        "result_dimension_ids": ["correctness", "evidence", "clarity"],
+        "scale_ids": ["score"],
+        "normalized_weights": { "correctness": 0.5, "evidence": 0.333333, "clarity": 0.166667 },
+        "finding_codes": []
+      }
+    },
+    "binary_disqualifier": {
+      "compiled_summary": {
+        "schema_version": 1,
+        "rubric_id": "safety-disqualifier-v1",
+        "criterion_ids": ["safe_to_publish"],
+        "result_dimension_ids": ["safe_to_publish"],
+        "scale_ids": ["binary"],
+        "normalized_weights": { "safe_to_publish": 1 },
+        "finding_codes": []
+      }
+    },
+    "scoped_corpus": {
+      "compiled_summary": {
+        "schema_version": 1,
+        "rubric_id": "domain-scoped-v1",
+        "criterion_ids": ["grounding", "coverage"],
+        "result_dimension_ids": ["grounding", "coverage"],
+        "scale_ids": ["score"],
+        "normalized_weights": { "grounding": 0.666667, "coverage": 0.333333 },
+        "finding_codes": []
+      }
+    },
+    "invalid_lint_warnings": {
+      "finding_codes": [
+        "duplicate_criterion_id",
+        "hypothesis_loaded_goal",
+        "invalid_scale_range",
+        "invalid_weight",
+        "missing_scope_boundaries",
+        "unknown_scale",
+        "unsupported_output_constraint",
+        "vague_criterion"
+      ]
+    }
+  }
+}

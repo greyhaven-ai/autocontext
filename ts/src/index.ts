@@ -57,15 +57,25 @@ export {
   DelegatedJudge,
   CallbackJudge,
   SequentialDelegatedJudge,
+  RubricSpecSchema,
+  compileRubricSpec,
+  legacyRubricSpec,
+  lintRubricSpec,
   parseJudgeResponse,
+  proposeRubricPatches,
 } from "./judge/index.js";
 export type {
   LLMJudgeOpts,
   ParsedJudge,
+  CompiledRubric,
   DelegatedResult,
   CallbackEvaluateFn,
   DelegatedEvaluateOpts,
   JudgeInterface,
+  RubricFinding,
+  RubricPatch,
+  RubricPatchProposal,
+  RubricSpec,
 } from "./judge/index.js";
 
 // Storage

@@ -3,13 +3,14 @@ import { HookEvents, type HookBus } from "../extensions/index.js";
 import { parseJudgeResponse } from "./parse.js";
 import type { ParseMethod } from "./parse.js";
 import { checkRubricCoherence } from "./rubric-coherence.js";
+import { compileRubricSpec, type RubricSpec } from "./rubric-spec.js";
 
 export const DEFAULT_FACTUAL_CONFIDENCE = 0.5;
 
 export interface LLMJudgeOpts {
   provider: LLMProvider;
   model: string;
-  rubric: string;
+  rubric: string | RubricSpec;
   samples?: number;
   temperature?: number;
   checkCoherence?: boolean;
@@ -42,17 +43,25 @@ export class LLMJudge {
   #temperature: number;
   #rubricWarnings: string[];
   #hookBus: HookBus | null;
+  #typedDimensionIds: string[];
 
   constructor(opts: LLMJudgeOpts) {
     this.#provider = opts.provider;
     this.model = opts.model || opts.provider.defaultModel();
-    this.rubric = opts.rubric;
+    if (typeof opts.rubric === "string") {
+      this.rubric = opts.rubric;
+      this.#typedDimensionIds = [];
+    } else {
+      const compiledRubric = compileRubricSpec(opts.rubric);
+      this.rubric = compiledRubric.prompt_contract;
+      this.#typedDimensionIds = [...compiledRubric.result_dimension_ids];
+    }
     this.#samples = Math.max(1, opts.samples ?? 1);
     this.#temperature = opts.temperature ?? 0;
     this.#hookBus = opts.hookBus ?? null;
 
     if (opts.checkCoherence) {
-      const result = checkRubricCoherence(opts.rubric);
+      const result = checkRubricCoherence(this.rubric);
       this.#rubricWarnings = result.warnings;
     } else {
       this.#rubricWarnings = [];
@@ -90,7 +99,10 @@ export class LLMJudge {
       "Output your evaluation between <!-- JUDGE_RESULT_START --> and <!-- JUDGE_RESULT_END --> markers " +
       'containing JSON: {"score": 0.0-1.0, "reasoning": "...", "dimensions": {"dim1": 0.0-1.0, ...}}';
 
-    const userPrompt = this.buildJudgePrompt(opts);
+    const effectivePinnedDimensions = opts.pinnedDimensions?.length
+      ? opts.pinnedDimensions
+      : this.#typedDimensionIds;
+    const userPrompt = this.buildJudgePrompt({ ...opts, pinnedDimensions: effectivePinnedDimensions });
 
     const scores: number[] = [];
     const reasonings: string[] = [];
@@ -121,7 +133,7 @@ export class LLMJudge {
           reference_context: opts.referenceContext,
           required_concepts: opts.requiredConcepts,
           calibration_examples: opts.calibrationExamples,
-          pinned_dimensions: opts.pinnedDimensions,
+          pinned_dimensions: effectivePinnedDimensions,
         });
         const finalSystemPrompt = readString(before.payload.systemPrompt) ?? systemPrompt;
         const finalUserPrompt = readString(before.payload.userPrompt) ?? userPrompt;
@@ -173,14 +185,14 @@ export class LLMJudge {
 
     const avgScore = scores.reduce((a, b) => a + b, 0) / scores.length;
 
-    const avgDims: Record<string, number> = {};
+    let avgDims: Record<string, number> = {};
     const allKeys = new Set(allDims.flatMap((d) => Object.keys(d)));
     for (const key of allKeys) {
       const vals = allDims.filter((d) => key in d).map((d) => d[key]);
       avgDims[key] = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
     }
 
-    if (opts.referenceContext && !opts.pinnedDimensions) {
+    if (opts.referenceContext && !effectivePinnedDimensions.length) {
       if (!("factual_accuracy" in avgDims)) {
         avgDims["factual_accuracy"] = avgScore;
       }
@@ -189,10 +201,17 @@ export class LLMJudge {
       }
     }
 
-    const dimensionsWereGenerated = detectGeneratedDimensions(
-      Object.keys(avgDims),
-      this.rubric,
-    );
+    let dimensionsWereGenerated = false;
+    if (effectivePinnedDimensions.length) {
+      avgDims = Object.fromEntries(
+        effectivePinnedDimensions.map((dimensionId) => [dimensionId, avgDims[dimensionId] ?? 0]),
+      );
+    } else {
+      dimensionsWereGenerated = detectGeneratedDimensions(
+        Object.keys(avgDims),
+        this.rubric,
+      );
+    }
 
     return {
       score: avgScore,

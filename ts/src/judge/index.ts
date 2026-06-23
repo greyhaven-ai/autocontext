@@ -7,6 +7,20 @@ export { parseJudgeResponse } from "./parse.js";
 export type { ParsedJudge, ParseMethod } from "./parse.js";
 export { checkRubricCoherence } from "./rubric-coherence.js";
 export type { RubricCoherenceResult } from "./rubric-coherence.js";
+export {
+  RubricSpecSchema,
+  compileRubricSpec,
+  legacyRubricSpec,
+  lintRubricSpec,
+  proposeRubricPatches,
+} from "./rubric-spec.js";
+export type {
+  CompiledRubric,
+  RubricFinding,
+  RubricPatch,
+  RubricPatchProposal,
+  RubricSpec,
+} from "./rubric-spec.js";
 export { DelegatedJudge, CallbackJudge, SequentialDelegatedJudge } from "./delegated.js";
 export type {
   DelegatedResult,
@@ -14,9 +28,5 @@ export type {
   EvaluateOpts as DelegatedEvaluateOpts,
   JudgeInterface,
 } from "./delegated.js";
-export {
-  DEFAULT_FACTUAL_CONFIDENCE,
-  detectGeneratedDimensions,
-  LLMJudge,
-} from "./llm-judge.js";
+export { DEFAULT_FACTUAL_CONFIDENCE, detectGeneratedDimensions, LLMJudge } from "./llm-judge.js";
 export type { LLMJudgeOpts } from "./llm-judge.js";

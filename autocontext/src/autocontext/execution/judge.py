@@ -8,10 +8,9 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
-
 from autocontext.agents.types import LlmFn
 from autocontext.execution.rubric_coherence import check_rubric_coherence
+from autocontext.execution.rubric_spec import RubricSpec, compile_rubric_spec
 from autocontext.extensions import HookBus, HookEvents, get_current_hook_bus
 from autocontext.providers.base import LLMProvider
 from autocontext.providers.callable_wrapper import CallableProvider
@@ -22,15 +21,26 @@ logger = logging.getLogger(__name__)
 ParseMethod = Literal["raw_json", "code_block", "markers", "plaintext", "none"]
 
 
-class DisagreementMetrics(BaseModel):
+@dataclass(slots=True)
+class DisagreementMetrics:
     """Evaluator disagreement statistics from multi-sample judge evaluation."""
 
     score_std_dev: float = 0.0
     score_range: tuple[float, float] = (0.0, 0.0)
-    sample_scores: list[float] = Field(default_factory=list)
-    dimension_std_devs: dict[str, float] = Field(default_factory=dict)
+    sample_scores: list[float] = field(default_factory=list)
+    dimension_std_devs: dict[str, float] = field(default_factory=dict)
     is_high_disagreement: bool = False
     sample_count: int = 1
+
+    def model_dump(self) -> dict[str, Any]:
+        return {
+            "score_std_dev": self.score_std_dev,
+            "score_range": self.score_range,
+            "sample_scores": list(self.sample_scores),
+            "dimension_std_devs": dict(self.dimension_std_devs),
+            "is_high_disagreement": self.is_high_disagreement,
+            "sample_count": self.sample_count,
+        }
 
     def to_dict(self) -> dict[str, Any]:
         return self.model_dump()
@@ -158,7 +168,7 @@ class LLMJudge:
     def __init__(
         self,
         model: str,
-        rubric: str,
+        rubric: str | RubricSpec | dict[str, Any],
         llm_fn: LlmFn | None = None,
         provider: LLMProvider | None = None,
         samples: int = 1,
@@ -175,7 +185,13 @@ class LLMJudge:
             raise ValueError("Either 'provider' or 'llm_fn' must be provided")
 
         self.model = model
-        self.rubric = rubric
+        self._typed_dimension_ids: list[str] = []
+        if isinstance(rubric, str):
+            self.rubric = rubric
+        else:
+            compiled_rubric = compile_rubric_spec(rubric)
+            self.rubric = compiled_rubric.prompt_contract
+            self._typed_dimension_ids = list(compiled_rubric.result_dimension_ids)
         self.samples = max(1, samples)
         self.temperature = temperature
         self.hook_bus = hook_bus
@@ -189,7 +205,7 @@ class LLMJudge:
         # Optional rubric coherence pre-check
         self._rubric_warnings: list[str] = []
         if check_coherence:
-            coherence = check_rubric_coherence(rubric)
+            coherence = check_rubric_coherence(self.rubric)
             self._rubric_warnings = coherence.warnings
 
     @property
@@ -224,13 +240,14 @@ class LLMJudge:
             "Output your evaluation between <!-- JUDGE_RESULT_START --> and <!-- JUDGE_RESULT_END --> markers "
             'containing JSON: {"score": 0.0-1.0, "reasoning": "...", "dimensions": {"dim1": 0.0-1.0, ...}}'
         )
+        effective_pinned_dimensions = list(pinned_dimensions or self._typed_dimension_ids)
         user_prompt = self._build_judge_prompt(
             task_prompt,
             agent_output,
             reference_context,
             required_concepts,
             calibration_examples,
-            pinned_dimensions,
+            effective_pinned_dimensions,
         )
 
         scores: list[float] = []
@@ -253,7 +270,7 @@ class LLMJudge:
                     "reference_context": reference_context,
                     "required_concepts": list(required_concepts or ()),
                     "calibration_examples": list(calibration_examples or ()),
-                    "pinned_dimensions": list(pinned_dimensions or ()),
+                    "pinned_dimensions": list(effective_pinned_dimensions),
                     "system_prompt": system_prompt,
                     "user_prompt": user_prompt,
                     "model": self.model,
@@ -334,7 +351,7 @@ class LLMJudge:
 
         # Ensure factual dimensions exist when reference context provided.
         # Skip when pinned_dimensions is set — respect the explicit constraint.
-        if reference_context and not pinned_dimensions:
+        if reference_context and not effective_pinned_dimensions:
             if "factual_accuracy" not in avg_dims:
                 avg_dims["factual_accuracy"] = avg_score
             if "factual_confidence" not in avg_dims:
@@ -352,10 +369,14 @@ class LLMJudge:
             avg_dims,
         )
 
-        dimensions_were_generated = _detect_generated_dimensions(
-            list(avg_dims.keys()),
-            self.rubric,
-        )
+        if effective_pinned_dimensions:
+            avg_dims = {key: avg_dims.get(key, 0.0) for key in effective_pinned_dimensions}
+            dimensions_were_generated = False
+        else:
+            dimensions_were_generated = _detect_generated_dimensions(
+                list(avg_dims.keys()),
+                self.rubric,
+            )
 
         return JudgeResult(
             score=avg_score,

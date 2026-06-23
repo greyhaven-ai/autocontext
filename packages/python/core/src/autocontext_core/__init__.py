@@ -10,6 +10,7 @@ _templates = import_module("autocontext.prompts.templates")
 _providers_base = import_module("autocontext.providers.base")
 _execution_judge = import_module("autocontext.execution.judge")
 _rubric_coherence = import_module("autocontext.execution.rubric_coherence")
+_rubric_spec = import_module("autocontext.execution.rubric_spec")
 _scenarios_agent_task = import_module("autocontext.scenarios.agent_task")
 _scenarios_artifact_editing = import_module("autocontext.scenarios.artifact_editing")
 _scenarios_base = import_module("autocontext.scenarios.base")
@@ -95,6 +96,12 @@ DisagreementMetrics: Any = _execution_judge.DisagreementMetrics
 JudgeResult: Any = _execution_judge.JudgeResult
 RubricCoherenceResult: Any = _rubric_coherence.RubricCoherenceResult
 check_rubric_coherence = _rubric_coherence.check_rubric_coherence
+CompiledRubric: Any = _rubric_spec.CompiledRubric
+RubricSpec: Any = _rubric_spec.RubricSpec
+compile_rubric_spec = _rubric_spec.compile_rubric_spec
+legacy_rubric_spec = _rubric_spec.legacy_rubric_spec
+lint_rubric_spec = _rubric_spec.lint_rubric_spec
+propose_rubric_patches = _rubric_spec.propose_rubric_patches
 RunRow: Any = _storage_row_types.RunRow
 GenerationMetricsRow: Any = _storage_row_types.GenerationMetricsRow
 MatchRow: Any = _storage_row_types.MatchRow
@@ -125,6 +132,7 @@ __all__ = [
     "ArtifactValidationResult",
     "ClarificationRequest",
     "CompensationAction",
+    "CompiledRubric",
     "CompletionResult",
     "ContextValidity",
     "ContextBudget",
@@ -164,6 +172,7 @@ __all__ = [
     "ReplayEnvelope",
     "Result",
     "RubricCoherenceResult",
+    "RubricSpec",
     "RunRow",
     "ScenarioInterface",
     "SchemaEvolutionInterface",
@@ -188,9 +197,13 @@ __all__ = [
     "build_prompt_bundle",
     "build_context_selection_report",
     "check_rubric_coherence",
+    "compile_rubric_spec",
     "estimate_tokens",
     "expected_score",
+    "legacy_rubric_spec",
+    "lint_rubric_spec",
     "package_role",
     "package_topology_version",
+    "propose_rubric_patches",
     "update_elo",
 ]

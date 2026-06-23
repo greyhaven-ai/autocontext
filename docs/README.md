@@ -46,6 +46,7 @@ This directory is the maintainer-facing landing page for repository docs. Use it
 - [Scenario parity matrix — Python & TypeScript](scenario-parity-matrix.md)
 - [Scenario environment contract](scenario-environment-contract.md)
 - [Role routing contract](role-routing-contract.json)
+- [Typed rubric contract](rubric-spec.md)
 - [Run progress report](run-progress-report.md)
 - [Run utilization report](run-utilization-report.md)
 - [Negative result ledger](negative-result-ledger.md)

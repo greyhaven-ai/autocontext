@@ -8,6 +8,9 @@ All notable changes to this project will be documented in this file.
 
 - AC-794 OPD training adds an experimental `--opd-pressure-mode` flag (`full_kl`, `sample_positive`, `sample_positive_reverse_negative`) with Python/TypeScript CLI parity, pressure-mode summaries, masked-loss metrics, and OPD-only validation.
 - AC-793 experimental panel/fusion role runtime adds opt-in per-role fan-out, participant/synthesizer metadata, benchmark deltas, and Python/TypeScript config parity.
+- AC-829 through AC-834 add a typed `RubricSpec` contract, Python/TypeScript
+  compile/lint parity, criterion-bound judge results, shared parity fixtures, and
+  experimental human-anchor rubric patch proposals.
 
 ### Fixed
 

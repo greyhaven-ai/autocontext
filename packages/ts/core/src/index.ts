@@ -27,6 +27,20 @@ export type {
 export { parseJudgeResponse } from "../../../../ts/src/judge/parse.js";
 export type { RubricCoherenceResult } from "../../../../ts/src/judge/rubric-coherence.js";
 export { checkRubricCoherence } from "../../../../ts/src/judge/rubric-coherence.js";
+export {
+	RubricSpecSchema,
+	compileRubricSpec,
+	legacyRubricSpec,
+	lintRubricSpec,
+	proposeRubricPatches,
+} from "../../../../ts/src/judge/rubric-spec.js";
+export type {
+	CompiledRubric,
+	RubricFinding,
+	RubricPatch,
+	RubricPatchProposal,
+	RubricSpec,
+} from "../../../../ts/src/judge/rubric-spec.js";
 export type {
 	AppId,
 	ContentHash,
