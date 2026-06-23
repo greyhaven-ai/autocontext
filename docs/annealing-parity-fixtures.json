@@ -1,0 +1,29 @@
+{
+  "algorithm": "fnv1a-32",
+  "cases": [
+    {
+      "seed_base": 0,
+      "generation": 14,
+      "attempt": 0,
+      "random_value": 0.22066642343997955
+    },
+    {
+      "seed_base": 1000,
+      "generation": 1,
+      "attempt": 0,
+      "random_value": 0.5142337351571769
+    },
+    {
+      "seed_base": 1000,
+      "generation": 2,
+      "attempt": 1,
+      "random_value": 0.2804089311975986
+    },
+    {
+      "seed_base": 42,
+      "generation": 7,
+      "attempt": 3,
+      "random_value": 0.18124877917580307
+    }
+  ]
+}

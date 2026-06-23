@@ -6,7 +6,11 @@ build_validity_rollback.
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
+
+ANNEALING_FIXTURE_PATH = Path(__file__).resolve().parents[2] / "docs" / "annealing-parity-fixtures.json"
 
 # ---------------------------------------------------------------------------
 # Lightweight test doubles for tournament results
@@ -55,6 +59,42 @@ def _make_tournament(
 # ===========================================================================
 # resolve_gate_decision
 # ===========================================================================
+
+
+class TestAnnealingParity:
+    def test_random_value_matches_shared_fixtures(self) -> None:
+        from autocontext.loop.annealing import annealing_random_value
+
+        fixtures = json.loads(ANNEALING_FIXTURE_PATH.read_text(encoding="utf-8"))
+        for case in fixtures["cases"]:
+            actual = annealing_random_value(case["seed_base"], case["generation"], case["attempt"])
+            assert abs(actual - case["random_value"]) < 1e-15
+
+    def test_reviewer_seed_case_advances(self) -> None:
+        from autocontext.harness.pipeline.gate import BackpressureGate
+        from autocontext.loop.annealing import AnnealingSchedule
+        from autocontext.loop.tournament_helpers import resolve_gate_decision
+
+        result = resolve_gate_decision(
+            tournament_best_score=0.995,
+            tournament_mean_score=0.995,
+            tournament_results=[_make_eval_result(0.995)],
+            previous_best=1.0,
+            gate=BackpressureGate(min_delta=0.005),
+            score_history=[1.0],
+            gate_decision_history=["advance"],
+            retry_count=0,
+            max_retries=3,
+            use_rapid=False,
+            custom_metrics=None,
+            annealing=AnnealingSchedule(enabled=True),
+            annealing_seed=0,
+            generation=14,
+        )
+
+        assert result.decision == "advance"
+        assert result.metadata["annealing"]["accepted"] is True
+        assert abs(result.metadata["annealing"]["random_value"] - 0.22066642343997955) < 1e-15
 
 
 class TestResolveGateDecision:

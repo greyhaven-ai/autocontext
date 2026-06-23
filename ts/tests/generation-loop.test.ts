@@ -136,6 +136,38 @@ describe("BackpressureGate", () => {
 });
 
 describe("Annealing exploration", () => {
+  it("matches shared random roll parity fixtures", async () => {
+    const { deterministicAnnealingRandomValue } = await import("../src/loop/index.js");
+    const fixtures = JSON.parse(
+      readFileSync(join(__dirname, "..", "..", "docs", "annealing-parity-fixtures.json"), "utf-8"),
+    ) as { cases: Array<{ seed_base: number; generation: number; attempt: number; random_value: number }> };
+
+    for (const item of fixtures.cases) {
+      const actual = deterministicAnnealingRandomValue(item.seed_base, item.generation, item.attempt);
+      expect(Math.abs(actual - item.random_value)).toBeLessThan(1e-15);
+    }
+  });
+
+  it("advances for the reviewed seed parity case", async () => {
+    const { applyAnnealingToGateDecision, deterministicAnnealingRandomValue } = await import(
+      "../src/loop/index.js"
+    );
+    const randomValue = deterministicAnnealingRandomValue(0, 14, 0);
+    const decision = applyAnnealingToGateDecision(
+      {
+        decision: "retry" as const,
+        delta: -0.005,
+        threshold: 0.005,
+        reason: "insufficient improvement; retry permitted",
+        metadata: {},
+      },
+      { enabled: true, generation: 14, randomValue },
+    );
+
+    expect(decision.decision).toBe("advance");
+    expect((decision.metadata.annealing as { accepted: boolean }).accepted).toBe(true);
+  });
+
   it("accepts small regressions early and tightens later", async () => {
     const { applyAnnealingToGateDecision } = await import("../src/loop/index.js");
     const baseDecision = {

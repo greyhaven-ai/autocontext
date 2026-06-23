@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import math
-import random
 from dataclasses import dataclass
 from typing import Any
 
@@ -39,7 +38,10 @@ def annealing_temperature(schedule: AnnealingSchedule, generation: int) -> float
 
 
 def annealing_random_value(seed_base: int, generation: int, attempt: int) -> float:
-    return random.Random(seed_base + generation * 10_000 + attempt).random()
+    value = 2_166_136_261
+    for byte in f"{seed_base}:{generation}:{attempt}".encode():
+        value = ((value ^ byte) * 16_777_619) & 0xFFFFFFFF
+    return value / 0x1_0000_0000
 
 
 def evaluate_annealing(delta: float, schedule: AnnealingSchedule, generation: int, random_value: float) -> AnnealingOutcome:

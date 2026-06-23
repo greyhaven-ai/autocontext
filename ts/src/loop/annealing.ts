@@ -31,8 +31,12 @@ export function deterministicAnnealingRandomValue(
   generation: number,
   attempt: number,
 ): number {
-  const x = Math.sin(seedBase + generation * 10_000 + attempt) * 10_000;
-  return x - Math.floor(x);
+  let hash = 0x811c9dc5;
+  const key = `${seedBase}:${generation}:${attempt}`;
+  for (let index = 0; index < key.length; index += 1) {
+    hash = Math.imul(hash ^ key.charCodeAt(index), 0x01000193) >>> 0;
+  }
+  return hash / 0x100000000;
 }
 
 export function evaluateAnnealing(delta: number, opts: AnnealingOptions): AnnealingOutcome {
