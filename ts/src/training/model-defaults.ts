@@ -1,5 +1,6 @@
 export type ModelScaleProfile = {
   backend: "trl";
+  trainingMode: "adapter_finetune";
   trlMode: "gkd" | "grpo";
   baseModel: string;
   teacherModel: string;
@@ -15,6 +16,7 @@ export type ModelScaleProfile = {
 export const MODEL_SCALE_PROFILES: Record<string, ModelScaleProfile> = {
   cuda_qlora_7b_rlvr: {
     backend: "trl",
+    trainingMode: "adapter_finetune",
     trlMode: "grpo",
     baseModel: "Qwen/Qwen2.5-7B-Instruct",
     teacherModel: "Qwen/Qwen2.5-14B-Instruct",
@@ -28,6 +30,7 @@ export const MODEL_SCALE_PROFILES: Record<string, ModelScaleProfile> = {
   },
   cuda_sharded_32b_distill: {
     backend: "trl",
+    trainingMode: "adapter_finetune",
     trlMode: "gkd",
     baseModel: "Qwen/Qwen2.5-32B-Instruct",
     teacherModel: "Qwen/Qwen2.5-72B-Instruct",

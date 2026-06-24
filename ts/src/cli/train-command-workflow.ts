@@ -21,6 +21,10 @@ Options:
   --opd-pressure-mode <mode>  OPD pressure mode: full_kl, sample_positive, sample_positive_reverse_negative
   --device-count <n>       Planned accelerator count for scaled training
   --sharding-strategy <s>  Sharding strategy: none, fsdp, deepspeed_zero3
+  --per-device-memory-limit <mb>  Per-device memory cap for scaled training
+  --base-model-parameters <n>  Base/student parameter count for registry metadata
+  --base-model-quantization <q>  Base/student quantization label, e.g. nf4
+  --deployment-target-vram <mb>  Deployment target VRAM cap for registry gating
   --json                   Output as JSON
   -h, --help               Show this help
 
@@ -30,6 +34,31 @@ Notes:
 
 export type OpdPressureMode = "full_kl" | "sample_positive" | "sample_positive_reverse_negative";
 export type TrainingShardingStrategy = "none" | "fsdp" | "deepspeed_zero3";
+
+export const TRAIN_COMMAND_PARSE_OPTIONS = {
+  scenario: { type: "string", short: "s" },
+  family: { type: "string" },
+  dataset: { type: "string", short: "d" },
+  "held-out": { type: "string" },
+  backend: { type: "string" },
+  mode: { type: "string" },
+  "base-model": { type: "string" },
+  "teacher-model": { type: "string" },
+  "scale-profile": { type: "string" },
+  "memory-limit": { type: "string" },
+  output: { type: "string", short: "o" },
+  "opd-diagnostics": { type: "boolean" },
+  "opd-diagnostics-debug-tokens": { type: "boolean" },
+  "opd-pressure-mode": { type: "string" },
+  "device-count": { type: "string" },
+  "sharding-strategy": { type: "string" },
+  "per-device-memory-limit": { type: "string" },
+  "base-model-parameters": { type: "string" },
+  "base-model-quantization": { type: "string" },
+  "deployment-target-vram": { type: "string" },
+  json: { type: "boolean" },
+  help: { type: "boolean", short: "h" },
+} as const;
 
 const OPD_PRESSURE_MODES = [
   "full_kl",
@@ -144,7 +173,7 @@ export function planTrainCommand(
     heldOutPath: values["held-out"] ? resolvePath(values["held-out"]) : undefined,
     outputDir: values.output ? resolvePath(values.output) : resolvePath(runsRoot),
     backend,
-    trainingMode: (values.mode ?? "from_scratch") as
+    trainingMode: (values.mode ?? profile?.trainingMode ?? "from_scratch") as
       | "from_scratch"
       | "adapter_finetune"
       | "full_finetune",

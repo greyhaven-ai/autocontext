@@ -77,6 +77,8 @@ export const DEFAULT_RECOMMENDATIONS: Record<string, FamilyRecommendation> = {
 
 export const KNOWN_BASE_MODELS: Record<string, { parameterCount: number; supportedBackends: string[] }> = {
   "Qwen/Qwen3-0.6B": { parameterCount: 600_000_000, supportedBackends: ["cuda", "mlx"] },
+  "Qwen/Qwen2.5-7B-Instruct": { parameterCount: 7_000_000_000, supportedBackends: ["trl"] },
+  "Qwen/Qwen2.5-32B-Instruct": { parameterCount: 32_000_000_000, supportedBackends: ["trl"] },
   "meta-llama/Llama-3.2-1B": { parameterCount: 1_000_000_000, supportedBackends: ["cuda"] },
   "microsoft/phi-4-mini": { parameterCount: 3_800_000_000, supportedBackends: ["cuda"] },
 };

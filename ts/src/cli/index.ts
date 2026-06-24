@@ -3339,36 +3339,17 @@ async function cmdContextSelection(): Promise<void> {
 
 async function cmdTrain(): Promise<void> {
   const { parseArgs } = await import("node:util");
+  const {
+    executeTrainCommandWorkflow,
+    planTrainCommand,
+    renderTrainSuccess,
+    TRAIN_COMMAND_PARSE_OPTIONS,
+    TRAIN_HELP_TEXT,
+  } = await import("./train-command-workflow.js");
   const { values } = parseArgs({
     args: process.argv.slice(3),
-    options: {
-      scenario: { type: "string", short: "s" },
-      family: { type: "string" },
-      dataset: { type: "string", short: "d" },
-      "held-out": { type: "string" },
-      backend: { type: "string", default: "cuda" },
-      mode: { type: "string", default: "from_scratch" },
-      "base-model": { type: "string" },
-      "teacher-model": { type: "string" },
-      "scale-profile": { type: "string" },
-      "memory-limit": { type: "string" },
-      output: { type: "string", short: "o" },
-      "opd-diagnostics": { type: "boolean" },
-      "opd-diagnostics-debug-tokens": { type: "boolean" },
-      "opd-pressure-mode": { type: "string" },
-      "device-count": { type: "string" },
-      "sharding-strategy": { type: "string" },
-      "per-device-memory-limit": { type: "string" },
-      "base-model-parameters": { type: "string" },
-      "base-model-quantization": { type: "string" },
-      "deployment-target-vram": { type: "string" },
-      json: { type: "boolean" },
-      help: { type: "boolean", short: "h" },
-    },
+    options: TRAIN_COMMAND_PARSE_OPTIONS,
   });
-
-  const { executeTrainCommandWorkflow, planTrainCommand, renderTrainSuccess, TRAIN_HELP_TEXT } =
-    await import("./train-command-workflow.js");
 
   if (values.help) {
     console.log(TRAIN_HELP_TEXT);

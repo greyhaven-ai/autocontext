@@ -1,7 +1,9 @@
+import { parseArgs } from "node:util";
 import { describe, expect, it, vi } from "vitest";
 
 import {
   executeTrainCommandWorkflow,
+  TRAIN_COMMAND_PARSE_OPTIONS,
   TRAIN_HELP_TEXT,
   planTrainCommand,
   renderTrainSuccess,
@@ -20,6 +22,10 @@ describe("train command workflow", () => {
     expect(TRAIN_HELP_TEXT).toContain("--opd-pressure-mode");
     expect(TRAIN_HELP_TEXT).toContain("--device-count");
     expect(TRAIN_HELP_TEXT).toContain("--sharding-strategy");
+    expect(TRAIN_HELP_TEXT).toContain("--per-device-memory-limit");
+    expect(TRAIN_HELP_TEXT).toContain("--base-model-parameters");
+    expect(TRAIN_HELP_TEXT).toContain("--base-model-quantization");
+    expect(TRAIN_HELP_TEXT).toContain("--deployment-target-vram");
     expect(TRAIN_HELP_TEXT).toContain("--scale-profile");
   });
 
@@ -105,6 +111,7 @@ describe("train command workflow", () => {
       ),
     ).toMatchObject({
       backend: "trl",
+      trainingMode: "adapter_finetune",
       baseModel: "Qwen/Qwen2.5-32B-Instruct",
       teacherModel: "Qwen/Qwen2.5-72B-Instruct",
       trlMode: "gkd",
@@ -113,6 +120,24 @@ describe("train command workflow", () => {
       baseModelQuantization: "nf4",
       memoryLimitMb: 98_304,
       deploymentTargetVramMb: 24_576,
+    });
+  });
+
+  it("keeps scale-profile defaults through the real parseArgs path", () => {
+    const { values } = parseArgs({
+      args: ["--scenario", "grid_ctf", "--dataset", "train.jsonl", "--scale-profile", "cuda_qlora_7b_rlvr"],
+      options: TRAIN_COMMAND_PARSE_OPTIONS,
+    });
+
+    const plan = planTrainCommand(values, "/tmp/runs", (value: string) => `/abs/${value}`);
+
+    expect(values.backend).toBeUndefined();
+    expect(values.mode).toBeUndefined();
+    expect(plan).toMatchObject({
+      backend: "trl",
+      trainingMode: "adapter_finetune",
+      baseModel: "Qwen/Qwen2.5-7B-Instruct",
+      trlMode: "grpo",
     });
   });
 

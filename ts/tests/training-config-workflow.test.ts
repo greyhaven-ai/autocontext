@@ -49,6 +49,25 @@ describe("training config workflow", () => {
     });
   });
 
+  it("preserves profile base models when resolving adapter training", () => {
+    const config: TrainingConfig = {
+      scenario: "grid_ctf",
+      family: "agent_task",
+      datasetPath: join(dir, "train.jsonl"),
+      outputDir: join(dir, "output"),
+      backend: "trl",
+      trainingMode: "adapter_finetune",
+      baseModel: "Qwen/Qwen2.5-7B-Instruct",
+    };
+    writeFileSync(config.datasetPath, '{"a":1}\n', "utf-8");
+
+    const resolution = resolveTrainingConfig(config);
+
+    expect(resolution.error).toBeUndefined();
+    expect(resolution.resolvedConfig.trainingMode).toBe("adapter_finetune");
+    expect(resolution.resolvedConfig.baseModel).toBe("Qwen/Qwen2.5-7B-Instruct");
+  });
+
   it("rejects invalid training scale fields", () => {
     const config: TrainingConfig = {
       scenario: "bad-scale",
