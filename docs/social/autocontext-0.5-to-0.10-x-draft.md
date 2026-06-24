@@ -91,6 +91,8 @@ The training pipeline now has opt-in CUDA/TRL scale profiles for:
 
 This does not replace the fast MLX path. It gives the project a path from “iterate locally” to “train seriously on NVIDIA/cloud hardware” without changing the scenario/verifier contract.
 
+It also makes bigger open-weight models more practical to target, but not magically turnkey. A model like GLM-5.2 still needs Transformers/PEFT compatibility, working tokenization/chat templates, and enough GPU memory. Hosted/API teachers can help collect verified traces; token-level GKD/OPD still needs local or open-weights teacher logits.
+
 The same harness should be able to run a small local experiment, collect traces, distill behavior, and then plan a larger training job when the bottleneck is model capacity.
 
 ### What changed overall
@@ -184,6 +186,8 @@ Less accidental drift between runtimes.
 9/ `0.10.0` adds larger-model training plans.
 
 Opt-in CUDA/TRL profiles for 7B QLoRA RLVR and sharded 32B/72B distillation, plus multi-device sharding, memory budgets, quantization metadata, and deployment VRAM gating.
+
+Not every large model is turnkey: GLM-5.2-style targets still need Transformers/PEFT compatibility and enough GPU memory. API teachers can collect traces; token-level distill needs local logits.
 
 Local iteration → serious training path.
 
