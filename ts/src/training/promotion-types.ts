@@ -1,3 +1,5 @@
+import type { TrainingScaleMetadata } from "./training-scale-types.js";
+
 export type ActivationState = "candidate" | "shadow" | "active" | "disabled" | "deprecated";
 
 export const ACTIVATION_STATES: readonly ActivationState[] = [
@@ -22,6 +24,7 @@ export interface ModelRecord {
   family: string;
   backend: string;
   checkpointDir: string;
+  trainingScale?: TrainingScaleMetadata;
   activationState: ActivationState;
   promotionHistory: PromotionEvent[];
   registeredAt: string;
@@ -56,7 +59,10 @@ export interface PromotionThresholds {
   regressionThreshold: number;
 }
 
-export type ShadowExecutor = (artifactId: string, scenario: string) => Promise<{
+export type ShadowExecutor = (
+  artifactId: string,
+  scenario: string,
+) => Promise<{
   score: number;
   parseFailureRate: number;
   validationFailureRate: number;

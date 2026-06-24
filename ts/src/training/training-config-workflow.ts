@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 
 import { ModelStrategySelector } from "./model-strategy.js";
+import { resolveTrainingScaleMetadata, validateTrainingScaleMetadata } from "./training-scale.js";
 import type { TrainingConfig } from "./training-types.js";
 
 export function countJsonlRecords(path: string): number {
@@ -28,6 +29,16 @@ export function resolveTrainingConfig(config: TrainingConfig): {
     config.heldOutPath && existsSync(config.heldOutPath)
       ? countJsonlRecords(config.heldOutPath)
       : 0;
+  const scaleError = validateTrainingScaleMetadata(resolveTrainingScaleMetadata(config));
+  if (scaleError) {
+    return {
+      resolvedConfig: config,
+      datasetSize,
+      heldOutSize,
+      error: scaleError,
+    };
+  }
+
   if (config.backend !== "opd" && config.opdPressureMode && config.opdPressureMode !== "full_kl") {
     return {
       resolvedConfig: config,

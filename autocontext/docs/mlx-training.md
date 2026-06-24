@@ -249,6 +249,16 @@ uv run autoctx train --backend trl --trl-mode grpo \
   --scenario antichain_diverse \
   --base-model Qwen/Qwen2.5-1.5B-Instruct \
   --grpo-beta 0.0
+
+# Larger CUDA/QLoRA RLVR profile (defaults stay small; this is opt-in)
+uv run autoctx train --scale-profile cuda_qlora_7b_rlvr \
+  --scenario antichain_diverse \
+  --data /absolute/path/to/training/antichain.jsonl
+
+# Sharded GKD/distillation profile for larger student/base runs
+uv run autoctx train --scale-profile cuda_sharded_32b_distill \
+  --scenario antichain_diverse \
+  --data /absolute/path/to/training/antichain.jsonl
 ```
 
 Notes:
@@ -265,7 +275,17 @@ Notes:
   result above (that case study predates this default). Negative values are rejected.
 - Models are HuggingFace repo ids (e.g. `Qwen/Qwen2.5-1.5B-Instruct`), not the MLX 4-bit
   community repos. `--base-model` is the student; `--teacher-model` (gkd) must share the
-  student's tokenizer. LoRA (PEFT) is applied automatically.
+  student's tokenizer. LoRA (PEFT) is applied automatically. API/hosted teachers are supported
+  for build-time trace collection via `trace_collector.collect()`; token-level GKD/OPD still
+  requires local/open-weights teacher logits.
+- `--scale-profile cuda_qlora_7b_rlvr` selects TRL GRPO with `Qwen/Qwen2.5-7B-Instruct`,
+  NF4 QLoRA loading, and 24 GB target VRAM metadata. `cuda_sharded_32b_distill` selects
+  TRL GKD with a 32B student, 72B teacher, NF4 loading, and a generated DeepSpeed ZeRO-3
+  config for multi-GPU runs. Override individual knobs (`--base-model`, `--device-count`,
+  `--sharding-strategy`, etc.) when your host differs.
+- `--base-model-quantization nf4` enables 4-bit QLoRA model loading for TRL. `--device-count`
+  above 1 sets `device_map=auto`; `--sharding-strategy fsdp` passes `fsdp=full_shard`, and
+  `--sharding-strategy deepspeed_zero3` writes a `deepspeed_zero3.json` config in the output dir.
 - `--time-budget` is enforced via a training callback that stops at the next step boundary.
 
 ### Token-pressure diagnostics (optional)

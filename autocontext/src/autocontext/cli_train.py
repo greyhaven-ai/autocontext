@@ -17,6 +17,7 @@ from rich.table import Table  # type: ignore[import-not-found]
 from autocontext.training.autoresearch.opd_pressure import normalize_opd_pressure_mode
 from autocontext.training.autoresearch.r1_pipeline import run_r1_pipeline
 from autocontext.training.autoresearch.sequence_format import BASE_VOCAB_SIZE
+from autocontext.training.model_defaults import get_model_scale_profile, list_model_scale_profiles
 from autocontext.training.runner import TrainingConfig, TrainingResult
 
 logger = logging.getLogger(__name__)
@@ -72,7 +73,28 @@ def register_train_command(app: typer.Typer, console: Console) -> None:
         data: str = typer.Option("training_data.jsonl", "--data", help="Path to JSONL training data"),
         time_budget: int = typer.Option(300, "--time-budget", help="Training time budget in seconds"),
         max_experiments: int = typer.Option(0, "--max-experiments", help="Max iterations (0 = unlimited)"),
-        memory_limit: int = typer.Option(16384, "--memory-limit", help="Peak memory cap in MB"),
+        memory_limit: int = typer.Option(16384, "--memory-limit", help="Global peak memory cap in MB"),
+        scale_profile: str = typer.Option(
+            "",
+            "--scale-profile",
+            help=f"Opt-in larger-model profile: {', '.join(list_model_scale_profiles())}",
+        ),
+        device_count: int = typer.Option(1, "--device-count", help="Planned accelerator count for scaled training"),
+        sharding_strategy: str = typer.Option(
+            "none", "--sharding-strategy", help="Scaled training sharding: none | fsdp | deepspeed_zero3"
+        ),
+        per_device_memory_limit: int = typer.Option(
+            0, "--per-device-memory-limit", help="Per-device memory cap in MB (0 = global cap)"
+        ),
+        base_model_parameters: int = typer.Option(
+            0, "--base-model-parameters", help="Base/student parameter count for registry metadata"
+        ),
+        base_model_quantization: str = typer.Option(
+            "", "--base-model-quantization", help="Base/student quantization label, e.g. nf4, int4, bf16"
+        ),
+        deployment_target_vram: int = typer.Option(
+            0, "--deployment-target-vram", help="Deployment target VRAM cap in MB for registry gating"
+        ),
         backend: str = typer.Option(
             "mlx",
             "--backend",
@@ -169,8 +191,52 @@ def register_train_command(app: typer.Typer, console: Console) -> None:
             raise typer.BadParameter(f"--vocab-size must be >= 256 (the byte-level BPE base), got {vocab_size}")
         if trl_mode not in ("gkd", "grpo"):
             raise typer.BadParameter(f"--trl-mode must be gkd|grpo, got {trl_mode!r}")
+        if scale_profile:
+            try:
+                profile = get_model_scale_profile(scale_profile)
+            except ValueError as exc:
+                raise typer.BadParameter(str(exc)) from exc
+            backend = profile.get("backend", backend) if backend == "mlx" else backend
+            trl_mode = profile.get("trl_mode", trl_mode) if trl_mode == "gkd" else trl_mode
+            memory_limit = profile.get("memory_limit_mb", memory_limit) if memory_limit == 16384 else memory_limit
+            base_model = profile.get("base_model", base_model) if not base_model else base_model
+            teacher_model = profile.get("teacher_model", teacher_model) if not teacher_model else teacher_model
+            device_count = profile.get("device_count", device_count) if device_count == 1 else device_count
+            if sharding_strategy == "none":
+                sharding_strategy = profile.get("sharding_strategy", sharding_strategy)
+            per_device_memory_limit = (
+                profile.get("per_device_memory_limit_mb", per_device_memory_limit)
+                if per_device_memory_limit == 0
+                else per_device_memory_limit
+            )
+            base_model_parameters = (
+                profile.get("base_model_parameter_count", base_model_parameters)
+                if base_model_parameters == 0
+                else base_model_parameters
+            )
+            base_model_quantization = (
+                profile.get("base_model_quantization", base_model_quantization)
+                if not base_model_quantization
+                else base_model_quantization
+            )
+            deployment_target_vram = (
+                profile.get("deployment_target_vram_mb", deployment_target_vram)
+                if deployment_target_vram == 0
+                else deployment_target_vram
+            )
+
         if backend not in ("mlx", "cuda", "mlxlm", "grpo", "opd", "trl"):
             raise typer.BadParameter(f"--backend must be mlx|cuda|mlxlm|grpo|opd|trl, got {backend!r}")
+        if device_count < 1:
+            raise typer.BadParameter(f"--device-count must be >= 1, got {device_count}")
+        if sharding_strategy not in ("none", "fsdp", "deepspeed_zero3"):
+            raise typer.BadParameter("--sharding-strategy must be none|fsdp|deepspeed_zero3")
+        if per_device_memory_limit < 0:
+            raise typer.BadParameter("--per-device-memory-limit must be >= 0")
+        if base_model_parameters < 0:
+            raise typer.BadParameter("--base-model-parameters must be >= 0")
+        if deployment_target_vram < 0:
+            raise typer.BadParameter("--deployment-target-vram must be >= 0")
         try:
             opd_pressure_mode = normalize_opd_pressure_mode(opd_pressure_mode)
         except ValueError as exc:
@@ -194,6 +260,12 @@ def register_train_command(app: typer.Typer, console: Console) -> None:
             time_budget=time_budget,
             max_experiments=max_experiments,
             memory_limit_mb=memory_limit,
+            device_count=device_count,
+            sharding_strategy=sharding_strategy,
+            per_device_memory_limit_mb=per_device_memory_limit,
+            base_model_parameter_count=base_model_parameters,
+            base_model_quantization=base_model_quantization,
+            deployment_target_vram_mb=deployment_target_vram,
             backend=backend,
             train_steps=train_steps,
             learning_rate=learning_rate,

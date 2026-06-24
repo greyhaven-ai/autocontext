@@ -32,6 +32,7 @@ from autocontext.training.autoresearch.model import (  # noqa: F401
 from autocontext.training.autoresearch.opd_pressure import OPD_PRESSURE_MODE_CODES, normalize_opd_pressure_mode
 from autocontext.training.autoresearch.prepare import BASE_VOCAB_SIZE
 from autocontext.training.autoresearch.sequence_format import NUM_QUALITY_BUCKETS
+from autocontext.training.model_defaults import get_model_scale_profile
 
 logger = logging.getLogger(__name__)
 
@@ -430,6 +431,12 @@ def run_training(
     output_dir: Path,
     time_budget: int,
     memory_limit_mb: int,
+    scale_profile: str = "",
+    device_count: int = 1,
+    sharding_strategy: str = "none",
+    per_device_memory_limit_mb: int = 0,
+    base_model_quantization: str = "",
+    deployment_target_vram_mb: int = 0,
     train_steps: int = 0,  # 0 = backend default (see _default_train_steps)
     batch_size: int = 4,
     learning_rate: float = 0.0,  # 0 = backend default (see _default_learning_rate)
@@ -461,6 +468,23 @@ def run_training(
     collect_samples_path: Path | None = None,
     backend: str = "mlx",
 ) -> dict[str, Any]:
+    if scale_profile:
+        profile = get_model_scale_profile(scale_profile)
+        backend = profile.get("backend", backend) if backend == "mlx" else backend
+        trl_mode = profile.get("trl_mode", trl_mode) if trl_mode == "gkd" else trl_mode
+        memory_limit_mb = profile.get("memory_limit_mb", memory_limit_mb) if memory_limit_mb == 16384 else memory_limit_mb
+        base_model = profile.get("base_model", base_model) if not base_model else base_model
+        teacher_model = profile.get("teacher_model", teacher_model) if not teacher_model else teacher_model
+        device_count = profile.get("device_count", device_count) if device_count == 1 else device_count
+        if sharding_strategy == "none":
+            sharding_strategy = profile.get("sharding_strategy", sharding_strategy)
+        if per_device_memory_limit_mb == 0:
+            per_device_memory_limit_mb = profile.get("per_device_memory_limit_mb", per_device_memory_limit_mb)
+        if base_model_quantization == "":
+            base_model_quantization = profile.get("base_model_quantization", base_model_quantization)
+        if deployment_target_vram_mb == 0:
+            deployment_target_vram_mb = profile.get("deployment_target_vram_mb", deployment_target_vram_mb)
+
     # Reject out-of-range curation before any work (select_top_fraction would clamp to one record).
     if not 0.0 < elite_fraction <= 1.0:
         raise ValueError(f"elite_fraction must be in (0, 1], got {elite_fraction}")
@@ -471,6 +495,12 @@ def run_training(
     # base vocab into the tokenizer (special-token ids would collide with / fall below the byte base).
     if vocab_size < 256:
         raise ValueError(f"vocab_size must be >= 256 (the byte-level BPE base), got {vocab_size}")
+    if device_count < 1:
+        raise ValueError(f"device_count must be >= 1, got {device_count}")
+    if sharding_strategy not in ("none", "fsdp", "deepspeed_zero3"):
+        raise ValueError("sharding_strategy must be none|fsdp|deepspeed_zero3")
+    if per_device_memory_limit_mb < 0 or deployment_target_vram_mb < 0:
+        raise ValueError("memory limits must be >= 0")
 
     normalized_backend = backend.strip().lower()
     opd_pressure_mode = normalize_opd_pressure_mode(opd_pressure_mode)
@@ -608,6 +638,11 @@ def run_training(
             grpo_beta=grpo_beta,
             time_budget=time_budget,
             memory_limit_mb=memory_limit_mb,
+            device_count=device_count,
+            sharding_strategy=sharding_strategy,
+            per_device_memory_limit_mb=per_device_memory_limit_mb,
+            base_model_quantization=base_model_quantization,
+            deployment_target_vram_mb=deployment_target_vram_mb,
             opd_diagnostics=opd_diagnostics,
             opd_diagnostics_debug_tokens=opd_diagnostics_debug_tokens,
         )
@@ -650,6 +685,14 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--time-budget", type=int, default=300)
     parser.add_argument("--memory-limit", type=int, default=16384)
+    parser.add_argument("--scale-profile", default="", help="opt-in larger-model profile")
+    parser.add_argument("--device-count", type=int, default=1, help="trl backend: planned accelerator count")
+    parser.add_argument(
+        "--sharding-strategy", choices=("none", "fsdp", "deepspeed_zero3"), default="none", help="trl backend sharding"
+    )
+    parser.add_argument("--per-device-memory-limit", type=int, default=0, help="trl backend: per-device memory cap in MB")
+    parser.add_argument("--base-model-quantization", default="", help="trl backend: QLoRA quantization (nf4/int4/4bit)")
+    parser.add_argument("--deployment-target-vram", type=int, default=0, help="artifact metadata: deployment VRAM cap in MB")
     parser.add_argument("--train-steps", type=int, default=0, help="0 = backend default (8 from-scratch, 100 adapters)")
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument(
@@ -686,6 +729,12 @@ def main(argv: list[str] | None = None) -> int:
             output_dir=Path(args.output_dir),
             time_budget=args.time_budget,
             memory_limit_mb=args.memory_limit,
+            scale_profile=args.scale_profile,
+            device_count=args.device_count,
+            sharding_strategy=args.sharding_strategy,
+            per_device_memory_limit_mb=args.per_device_memory_limit,
+            base_model_quantization=args.base_model_quantization,
+            deployment_target_vram_mb=args.deployment_target_vram,
             train_steps=args.train_steps,
             batch_size=args.batch_size,
             learning_rate=args.learning_rate,

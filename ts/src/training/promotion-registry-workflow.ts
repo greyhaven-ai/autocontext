@@ -1,8 +1,5 @@
-import type {
-  ActivationState,
-  ModelRecord,
-  PromotionEvent,
-} from "./promotion-types.js";
+import type { TrainingScaleMetadata } from "./training-scale-types.js";
+import type { ActivationState, ModelRecord, PromotionEvent } from "./promotion-types.js";
 
 export function generateModelId(): string {
   return `model_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -14,6 +11,7 @@ export function createModelRecord(opts: {
   family: string;
   backend: string;
   checkpointDir: string;
+  trainingScale?: TrainingScaleMetadata;
   activationState?: ActivationState;
 }): ModelRecord {
   return {
@@ -22,6 +20,7 @@ export function createModelRecord(opts: {
     family: opts.family,
     backend: opts.backend,
     checkpointDir: opts.checkpointDir,
+    trainingScale: opts.trainingScale,
     activationState: opts.activationState ?? "candidate",
     promotionHistory: [],
     registeredAt: new Date().toISOString(),
@@ -50,13 +49,26 @@ export function listModelRecordsForScenario(
   return [...records].filter((record) => record.scenario === scenario);
 }
 
+function fitsDeploymentTarget(record: ModelRecord, deploymentTargetVramMb?: number): boolean {
+  if (!deploymentTargetVramMb || deploymentTargetVramMb <= 0) {
+    return true;
+  }
+  const required = record.trainingScale?.deploymentTargetVramMb ?? 0;
+  return required <= 0 || required <= deploymentTargetVramMb;
+}
+
 export function resolveActiveModelRecord(
   records: Iterable<ModelRecord>,
   scenario: string,
+  opts?: { deploymentTargetVramMb?: number },
 ): ModelRecord | null {
-  return listModelRecordsForScenario(records, scenario).find(
-    (record) => record.activationState === "active",
-  ) ?? null;
+  return (
+    listModelRecordsForScenario(records, scenario).find(
+      (record) =>
+        record.activationState === "active" &&
+        fitsDeploymentTarget(record, opts?.deploymentTargetVramMb),
+    ) ?? null
+  );
 }
 
 export function applyModelStateTransition(opts: {
@@ -75,25 +87,29 @@ export function applyModelStateTransition(opts: {
   if (opts.targetState === "active") {
     for (const candidate of opts.records.values()) {
       if (
-        candidate.scenario === record.scenario
-        && candidate.activationState === "active"
-        && candidate.artifactId !== opts.artifactId
+        candidate.scenario === record.scenario &&
+        candidate.activationState === "active" &&
+        candidate.artifactId !== opts.artifactId
       ) {
         candidate.activationState = "disabled";
-        candidate.promotionHistory.push(buildPromotionEvent({
-          from: "active",
-          to: "disabled",
-          reason: `Displaced by ${opts.artifactId}`,
-        }));
+        candidate.promotionHistory.push(
+          buildPromotionEvent({
+            from: "active",
+            to: "disabled",
+            reason: `Displaced by ${opts.artifactId}`,
+          }),
+        );
       }
     }
   }
 
   record.activationState = opts.targetState;
-  record.promotionHistory.push(buildPromotionEvent({
-    from: fromState,
-    to: opts.targetState,
-    reason: opts.reason ?? `State changed to ${opts.targetState}`,
-    evidence: opts.evidence,
-  }));
+  record.promotionHistory.push(
+    buildPromotionEvent({
+      from: fromState,
+      to: opts.targetState,
+      reason: opts.reason ?? `State changed to ${opts.targetState}`,
+      evidence: opts.evidence,
+    }),
+  );
 }

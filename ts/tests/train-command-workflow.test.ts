@@ -1,7 +1,9 @@
+import { parseArgs } from "node:util";
 import { describe, expect, it, vi } from "vitest";
 
 import {
   executeTrainCommandWorkflow,
+  TRAIN_COMMAND_PARSE_OPTIONS,
   TRAIN_HELP_TEXT,
   planTrainCommand,
   renderTrainSuccess,
@@ -18,6 +20,13 @@ describe("train command workflow", () => {
     expect(TRAIN_HELP_TEXT).toContain("--opd-diagnostics");
     expect(TRAIN_HELP_TEXT).toContain("--opd-diagnostics-debug-tokens");
     expect(TRAIN_HELP_TEXT).toContain("--opd-pressure-mode");
+    expect(TRAIN_HELP_TEXT).toContain("--device-count");
+    expect(TRAIN_HELP_TEXT).toContain("--sharding-strategy");
+    expect(TRAIN_HELP_TEXT).toContain("--per-device-memory-limit");
+    expect(TRAIN_HELP_TEXT).toContain("--base-model-parameters");
+    expect(TRAIN_HELP_TEXT).toContain("--base-model-quantization");
+    expect(TRAIN_HELP_TEXT).toContain("--deployment-target-vram");
+    expect(TRAIN_HELP_TEXT).toContain("--scale-profile");
   });
 
   it("requires scenario and dataset", () => {
@@ -55,6 +64,12 @@ describe("train command workflow", () => {
           "opd-diagnostics": true,
           "opd-diagnostics-debug-tokens": true,
           "opd-pressure-mode": "sample_positive",
+          "device-count": 4,
+          "sharding-strategy": "fsdp",
+          "per-device-memory-limit": 16_384,
+          "base-model-parameters": 32_000_000_000,
+          "base-model-quantization": "nf4",
+          "deployment-target-vram": 16_384,
           json: true,
         },
         "/tmp/runs",
@@ -72,7 +87,57 @@ describe("train command workflow", () => {
       opdDiagnostics: true,
       opdDiagnosticsDebugTokens: true,
       opdPressureMode: "sample_positive",
+      memoryLimitMb: undefined,
+      deviceCount: 4,
+      shardingStrategy: "fsdp",
+      perDeviceMemoryLimitMb: 16_384,
+      baseModelParameterCount: 32_000_000_000,
+      baseModelQuantization: "nf4",
+      deploymentTargetVramMb: 16_384,
       json: true,
+    });
+  });
+
+  it("applies larger-model scale profiles", () => {
+    expect(
+      planTrainCommand(
+        {
+          scenario: "grid_ctf",
+          dataset: "train.jsonl",
+          "scale-profile": "cuda_sharded_32b_distill",
+        },
+        "/tmp/runs",
+        (value: string) => `/abs/${value}`,
+      ),
+    ).toMatchObject({
+      backend: "trl",
+      trainingMode: "adapter_finetune",
+      baseModel: "Qwen/Qwen2.5-32B-Instruct",
+      teacherModel: "Qwen/Qwen2.5-72B-Instruct",
+      trlMode: "gkd",
+      deviceCount: 4,
+      shardingStrategy: "deepspeed_zero3",
+      baseModelQuantization: "nf4",
+      memoryLimitMb: 98_304,
+      deploymentTargetVramMb: 24_576,
+    });
+  });
+
+  it("keeps scale-profile defaults through the real parseArgs path", () => {
+    const { values } = parseArgs({
+      args: ["--scenario", "grid_ctf", "--dataset", "train.jsonl", "--scale-profile", "cuda_qlora_7b_rlvr"],
+      options: TRAIN_COMMAND_PARSE_OPTIONS,
+    });
+
+    const plan = planTrainCommand(values, "/tmp/runs", (value: string) => `/abs/${value}`);
+
+    expect(values.backend).toBeUndefined();
+    expect(values.mode).toBeUndefined();
+    expect(plan).toMatchObject({
+      backend: "trl",
+      trainingMode: "adapter_finetune",
+      baseModel: "Qwen/Qwen2.5-7B-Instruct",
+      trlMode: "grpo",
     });
   });
 
@@ -137,9 +202,14 @@ describe("train command workflow", () => {
         backend: "opd",
         trainingMode: "from_scratch",
         baseModel: undefined,
+        teacherModel: "Qwen/Qwen2.5-14B-Instruct",
+        trlMode: "grpo",
         opdDiagnostics: true,
         opdDiagnosticsDebugTokens: true,
         opdPressureMode: "sample_positive_reverse_negative",
+        deviceCount: 2,
+        shardingStrategy: "deepspeed_zero3",
+        deploymentTargetVramMb: 24_576,
         json: false,
       },
       createRunner: () => ({
@@ -157,9 +227,15 @@ describe("train command workflow", () => {
       backend: "opd",
       trainingMode: "from_scratch",
       baseModel: undefined,
+      teacherModel: "Qwen/Qwen2.5-14B-Instruct",
+      trlMode: "grpo",
       opdDiagnostics: true,
       opdDiagnosticsDebugTokens: true,
       opdPressureMode: "sample_positive_reverse_negative",
+      memoryLimitMb: undefined,
+      deviceCount: 2,
+      shardingStrategy: "deepspeed_zero3",
+      deploymentTargetVramMb: 24_576,
     });
     expect(result).toMatchObject({ status: "completed", backend: "cuda" });
   });

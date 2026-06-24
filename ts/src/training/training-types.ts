@@ -1,7 +1,9 @@
-import type { ActivationState, PromotionEvent } from "./promotion.js";
+import type { ActivationState, PromotionEvent } from "./promotion-types.js";
 import type { TrainingMode } from "./model-strategy.js";
+import type { TrainingScaleMetadata, TrainingShardingStrategy } from "./training-scale-types.js";
 
 export type OpdPressureMode = "full_kl" | "sample_positive" | "sample_positive_reverse_negative";
+export type { TrainingScaleMetadata, TrainingShardingStrategy } from "./training-scale-types.js";
 
 export interface TrainingConfig {
   scenario: string;
@@ -12,7 +14,16 @@ export interface TrainingConfig {
   backend: string;
   trainingMode: TrainingMode;
   baseModel?: string;
+  teacherModel?: string;
+  trlMode?: "gkd" | "grpo";
   adapterType?: string;
+  deviceCount?: number;
+  shardingStrategy?: TrainingShardingStrategy;
+  memoryLimitMb?: number;
+  perDeviceMemoryLimitMb?: number;
+  baseModelParameterCount?: number;
+  baseModelQuantization?: string;
+  deploymentTargetVramMb?: number;
   maxEpochs?: number;
   batchSize?: number;
   learningRate?: number;
@@ -28,6 +39,8 @@ export interface PublishedArtifact {
   backend: string;
   trainingMode: TrainingMode;
   baseModel?: string;
+  teacherModel?: string;
+  trlMode?: "gkd" | "grpo";
   adapterType?: string;
   checkpointDir: string;
   datasetSize: number;
@@ -35,6 +48,7 @@ export interface PublishedArtifact {
   trainedAt: string;
   metrics?: Record<string, number>;
   opdPressureMode?: OpdPressureMode;
+  trainingScale?: TrainingScaleMetadata;
   activationState: ActivationState;
   promotionHistory: PromotionEvent[];
 }

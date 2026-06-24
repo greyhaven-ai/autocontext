@@ -46,14 +46,28 @@ describe("training run execution workflow", () => {
       outputDir: join(dir, "output"),
       backend: "cuda",
       trainingMode: "adapter_finetune",
+      memoryLimitMb: 65_536,
+      deviceCount: 4,
+      shardingStrategy: "fsdp",
+      perDeviceMemoryLimitMb: 16_384,
+      baseModelParameterCount: 32_000_000_000,
+      baseModelQuantization: "nf4",
+      deploymentTargetVramMb: 16_384,
     };
-    writeFileSync(config.datasetPath, '{"conversations":[{"from":"human","value":"hi"}]}\n', "utf-8");
+    writeFileSync(
+      config.datasetPath,
+      '{"conversations":[{"from":"human","value":"hi"}]}\n',
+      "utf-8",
+    );
 
     const result = await executeTrainingRunWorkflow({
       start: 0,
       config,
       registry,
-      executor: async () => ({ success: true, metrics: { heldOutScore: 0.95, incumbentScore: 1.0 } }),
+      executor: async () => ({
+        success: true,
+        metrics: { heldOutScore: 0.95, incumbentScore: 1.0 },
+      }),
       promotionRegistry: new ModelRegistry(),
       promotionEngine: new PromotionEngine(),
     });
@@ -61,9 +75,72 @@ describe("training run execution workflow", () => {
     expect(result.status).toBe("completed");
     expect(result.artifact?.activationState).toBe("shadow");
     expect(existsSync(join(result.checkpointDir!, "training_manifest.json"))).toBe(true);
-    expect(JSON.parse(readFileSync(join(result.checkpointDir!, "artifact.json"), "utf-8"))).toMatchObject({
+    const manifest = JSON.parse(
+      readFileSync(join(result.checkpointDir!, "training_manifest.json"), "utf-8"),
+    );
+    expect(manifest.trainingScale).toMatchObject({
+      deviceCount: 4,
+      shardingStrategy: "fsdp",
+      perDeviceMemoryLimitMb: 16_384,
+      baseModelParameterCount: 32_000_000_000,
+      baseModelQuantization: "nf4",
+      deploymentTargetVramMb: 16_384,
+    });
+
+    const artifact = JSON.parse(
+      readFileSync(join(result.checkpointDir!, "artifact.json"), "utf-8"),
+    );
+    expect(artifact).toMatchObject({
       scenario: "workflow_success",
       backend: "cuda",
+      trainingScale: {
+        deviceCount: 4,
+        shardingStrategy: "fsdp",
+      },
+    });
+    expect(result.artifact?.trainingScale?.deploymentTargetVramMb).toBe(16_384);
+    expect(result.artifact?.trainingScale?.baseModelQuantization).toBe("nf4");
+  });
+
+  it("stores training scale metadata on promotion records", async () => {
+    const registry = new BackendRegistry();
+    registry.register(new StubBackend("cuda", true));
+    const promotionRegistry = new ModelRegistry();
+    const config: TrainingConfig = {
+      scenario: "scale_record",
+      family: "agent_task",
+      datasetPath: join(dir, "train.jsonl"),
+      outputDir: join(dir, "output"),
+      backend: "cuda",
+      trainingMode: "adapter_finetune",
+      deviceCount: 2,
+      shardingStrategy: "deepspeed_zero3",
+      deploymentTargetVramMb: 24_576,
+    };
+    writeFileSync(
+      config.datasetPath,
+      '{"conversations":[{"from":"human","value":"hi"}]}\n',
+      "utf-8",
+    );
+
+    const result = await executeTrainingRunWorkflow({
+      start: 0,
+      config,
+      registry,
+      executor: async () => ({
+        success: true,
+        metrics: { heldOutScore: 0.95, incumbentScore: 1.0 },
+      }),
+      promotionRegistry,
+      promotionEngine: new PromotionEngine(),
+    });
+
+    expect(result.status).toBe("completed");
+    const record = promotionRegistry.get(result.artifact!.artifactId);
+    expect(record?.trainingScale).toMatchObject({
+      deviceCount: 2,
+      shardingStrategy: "deepspeed_zero3",
+      deploymentTargetVramMb: 24_576,
     });
   });
 
@@ -98,7 +175,11 @@ describe("training run execution workflow", () => {
       backend: "cuda",
       trainingMode: "adapter_finetune",
     };
-    writeFileSync(config.datasetPath, '{"conversations":[{"from":"human","value":"hi"}]}\n', "utf-8");
+    writeFileSync(
+      config.datasetPath,
+      '{"conversations":[{"from":"human","value":"hi"}]}\n',
+      "utf-8",
+    );
 
     const executorFailure = await executeTrainingRunWorkflow({
       start: 0,

@@ -35,7 +35,14 @@ export {
   TRLBackend,
   TrainingBackend,
 };
-export type { OpdPressureMode, PublishedArtifact, TrainingConfig, TrainingResult } from "./training-types.js";
+export type {
+  OpdPressureMode,
+  PublishedArtifact,
+  TrainingConfig,
+  TrainingResult,
+  TrainingScaleMetadata,
+  TrainingShardingStrategy,
+} from "./training-types.js";
 export type { TrainingExecutor } from "./training-types.js";
 
 export class TrainingRunner {

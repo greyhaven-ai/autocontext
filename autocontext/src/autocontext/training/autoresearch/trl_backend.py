@@ -17,6 +17,7 @@ pure config / dataset / reward seams). The trainer-instantiating runner imports
 
 from __future__ import annotations
 
+import json
 import time
 from importlib import import_module
 from pathlib import Path
@@ -41,6 +42,8 @@ __all__ = [
     "build_chat_dataset_rows",
     "build_gkd_config_kwargs",
     "build_grpo_config_kwargs",
+    "build_model_load_kwargs",
+    "build_parallel_training_kwargs",
     "build_prompt_dataset_rows",
     "make_reward_func",
     "make_time_budget_callback",
@@ -63,6 +66,80 @@ def _import_gkd() -> tuple[Any, Any]:
     return GKDConfig, GKDTrainer
 
 
+def build_model_load_kwargs(
+    *,
+    base_model_quantization: str = "",
+    device_count: int = 1,
+    bitsandbytes_config_cls: Any | None = None,
+) -> dict[str, Any]:
+    """Kwargs for loading larger HF models, including QLoRA 4-bit bases."""
+    quantization = base_model_quantization.strip().lower()
+    kwargs: dict[str, Any] = {}
+    if device_count > 1:
+        kwargs["device_map"] = "auto"
+    if quantization in {"", "none"}:
+        return kwargs
+    if quantization not in {"nf4", "int4", "4bit"}:
+        raise ValueError("base_model_quantization must be empty|none|nf4|int4|4bit")
+    config_cls = bitsandbytes_config_cls
+    if config_cls is None:
+        config_cls = import_module("transformers").BitsAndBytesConfig
+    kwargs["device_map"] = "auto"
+    kwargs["quantization_config"] = config_cls(
+        load_in_4bit=True,
+        bnb_4bit_quant_type="nf4" if quantization == "nf4" else "fp4",
+        bnb_4bit_use_double_quant=True,
+        bnb_4bit_compute_dtype="bfloat16",
+    )
+    return kwargs
+
+
+def build_parallel_training_kwargs(
+    *,
+    output_dir: Path,
+    device_count: int = 1,
+    sharding_strategy: str = "none",
+    per_device_memory_limit_mb: int = 0,
+) -> dict[str, Any]:
+    """Kwargs for HuggingFace/TRL sharded training arguments."""
+    strategy = sharding_strategy.strip().lower()
+    if device_count < 1:
+        raise ValueError("device_count must be >= 1")
+    if strategy == "none":
+        return {}
+    if strategy == "fsdp":
+        return {"fsdp": "full_shard"}
+    if strategy == "deepspeed_zero3":
+        config_path = output_dir / "deepspeed_zero3.json"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(
+            json.dumps(
+                {
+                    "bf16": {"enabled": "auto"},
+                    "fp16": {"enabled": "auto"},
+                    "train_micro_batch_size_per_gpu": "auto",
+                    "gradient_accumulation_steps": "auto",
+                    "zero_optimization": {
+                        "stage": 3,
+                        "overlap_comm": True,
+                        "contiguous_gradients": True,
+                        "reduce_bucket_size": "auto",
+                        "stage3_prefetch_bucket_size": "auto",
+                        "stage3_param_persistence_threshold": "auto",
+                    },
+                    "autocontext": {
+                        "device_count": device_count,
+                        "per_device_memory_limit_mb": per_device_memory_limit_mb,
+                    },
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        return {"deepspeed": str(config_path)}
+    raise ValueError("sharding_strategy must be none|fsdp|deepspeed_zero3")
+
+
 def build_gkd_config_kwargs(
     *,
     output_dir: str,
@@ -76,6 +153,7 @@ def build_gkd_config_kwargs(
     max_steps: int = -1,
     per_device_train_batch_size: int = 1,
     seed: int = 0,
+    **parallel_kwargs: Any,
 ) -> dict[str, Any]:
     """Kwargs for ``trl.experimental.gkd.GKDConfig`` (on-policy distillation).
 
@@ -96,6 +174,7 @@ def build_gkd_config_kwargs(
         "max_steps": max_steps,
         "per_device_train_batch_size": per_device_train_batch_size,
         "seed": seed,
+        **parallel_kwargs,
     }
 
 
@@ -119,6 +198,7 @@ def build_grpo_config_kwargs(
     max_steps: int = -1,
     per_device_train_batch_size: int = 8,
     seed: int = 0,
+    **parallel_kwargs: Any,
 ) -> dict[str, Any]:
     """Kwargs for ``trl.GRPOConfig`` (RLVR). ``beta`` is the reference-policy KL penalty.
 
@@ -144,6 +224,7 @@ def build_grpo_config_kwargs(
         "max_steps": max_steps,
         "per_device_train_batch_size": per_device_train_batch_size,
         "seed": seed,
+        **parallel_kwargs,
     }
 
 
@@ -307,6 +388,11 @@ def run_trl_training(
     register_import: str | None = None,
     time_budget: int = 3600,
     memory_limit_mb: int = 16384,  # noqa: ARG001 - backend-signature parity
+    device_count: int = 1,
+    sharding_strategy: str = "none",
+    per_device_memory_limit_mb: int = 0,
+    base_model_quantization: str = "",
+    deployment_target_vram_mb: int = 0,  # noqa: ARG001 - recorded by runner/registry; serving gate uses metadata
 ) -> dict[str, float]:
     """Run TRL ``gkd`` (on-policy distillation) or ``grpo`` (RLVR) and return summary metrics.
 
@@ -338,6 +424,17 @@ def run_trl_training(
 
     output_dir.mkdir(parents=True, exist_ok=True)
     peft_config = LoraConfig(**_LORA)
+    model_load_kwargs = build_model_load_kwargs(
+        base_model_quantization=base_model_quantization,
+        device_count=device_count,
+    )
+    teacher_load_kwargs = {"device_map": "auto"} if device_count > 1 else {}
+    parallel_kwargs = build_parallel_training_kwargs(
+        output_dir=output_dir,
+        device_count=device_count,
+        sharding_strategy=sharding_strategy,
+        per_device_memory_limit_mb=per_device_memory_limit_mb,
+    )
     tokenizer = AutoTokenizer.from_pretrained(student_model)
     started = time.monotonic()
     callbacks = [make_time_budget_callback(float(time_budget))]
@@ -353,8 +450,8 @@ def run_trl_training(
         # per-token JSD compares logits, and same-family models can have different PADDED
         # vocab (e.g. Qwen2.5 1.5B=151936 vs 7B=152064) while their tokenizers look equal.
         # Catch it here with a clear message instead of a cryptic tensor-shape error in the loss.
-        student_lm = AutoModelForCausalLM.from_pretrained(student_model)
-        teacher_lm = AutoModelForCausalLM.from_pretrained(teacher_model)
+        student_lm = AutoModelForCausalLM.from_pretrained(student_model, **model_load_kwargs)
+        teacher_lm = AutoModelForCausalLM.from_pretrained(teacher_model, **teacher_load_kwargs)
         s_vocab = getattr(student_lm.config, "vocab_size", None)
         t_vocab = getattr(teacher_lm.config, "vocab_size", None)
         if isinstance(s_vocab, int) and isinstance(t_vocab, int):
@@ -367,6 +464,7 @@ def run_trl_training(
             learning_rate=learning_rate,
             max_steps=max_steps,
             seed=seed,
+            **parallel_kwargs,
         )
         if batch_size > 0:
             gkd_kwargs["per_device_train_batch_size"] = batch_size
@@ -391,12 +489,14 @@ def run_trl_training(
             seed=seed,
             max_completion_length=max_completion_length,
             beta=grpo_beta,
+            **parallel_kwargs,
         )
         if batch_size > 0:
             grpo_kwargs["per_device_train_batch_size"] = batch_size
         args = GRPOConfig(**build_grpo_config_kwargs(**grpo_kwargs))
+        student_lm = AutoModelForCausalLM.from_pretrained(student_model, **model_load_kwargs)
         trainer = GRPOTrainer(
-            model=student_model,
+            model=student_lm,
             args=args,
             reward_funcs=make_reward_func(scenario),
             train_dataset=dataset,

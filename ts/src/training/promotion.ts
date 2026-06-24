@@ -23,6 +23,7 @@ import {
   evaluatePromotionCheck,
   normalizePromotionThresholds,
 } from "./promotion-engine-workflow.js";
+import type { TrainingScaleMetadata } from "./training-scale-types.js";
 import type {
   ActivationState,
   ModelRecord,
@@ -33,9 +34,7 @@ import type {
   ShadowRunOpts,
 } from "./promotion-types.js";
 
-export {
-  ACTIVATION_STATES,
-} from "./promotion-types.js";
+export { ACTIVATION_STATES } from "./promotion-types.js";
 export type {
   ActivationState,
   ModelRecord,
@@ -55,6 +54,7 @@ export class ModelRegistry {
     family: string;
     backend: string;
     checkpointDir: string;
+    trainingScale?: TrainingScaleMetadata;
     activationState?: ActivationState;
   }): string {
     const record = createModelRecord(opts);
@@ -70,8 +70,8 @@ export class ModelRegistry {
     return listModelRecordsForScenario(this.records.values(), scenario);
   }
 
-  resolveActive(scenario: string): ModelRecord | null {
-    return resolveActiveModelRecord(this.records.values(), scenario);
+  resolveActive(scenario: string, opts?: { deploymentTargetVramMb?: number }): ModelRecord | null {
+    return resolveActiveModelRecord(this.records.values(), scenario, opts);
   }
 
   setState(
@@ -97,7 +97,10 @@ export class PromotionEngine {
   private thresholds: PromotionThresholds;
   private shadowExecutor?: ShadowExecutor;
 
-  constructor(opts?: { thresholds?: Partial<PromotionThresholds>; shadowExecutor?: ShadowExecutor }) {
+  constructor(opts?: {
+    thresholds?: Partial<PromotionThresholds>;
+    shadowExecutor?: ShadowExecutor;
+  }) {
     this.thresholds = normalizePromotionThresholds(opts?.thresholds);
     this.shadowExecutor = opts?.shadowExecutor;
   }

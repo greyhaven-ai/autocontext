@@ -989,7 +989,24 @@ export {
   defaultBackendRegistry,
   TrainingRunner,
 } from "./training/backends.js";
-export type { OpdPressureMode, TrainingConfig, TrainingResult, PublishedArtifact } from "./training/backends.js";
+export {
+  getModelScaleProfile,
+  listModelScaleProfiles,
+  MODEL_SCALE_PROFILES,
+} from "./training/model-defaults.js";
+export {
+  resolveTrainingScaleMetadata,
+  validateTrainingScaleMetadata,
+} from "./training/training-scale.js";
+export type {
+  OpdPressureMode,
+  PublishedArtifact,
+  TrainingConfig,
+  TrainingResult,
+  TrainingScaleMetadata,
+  TrainingShardingStrategy,
+} from "./training/backends.js";
+export type { ModelScaleProfile } from "./training/model-defaults.js";
 export {
   buildTokenPressureReport,
   compareTokenPressureReports,

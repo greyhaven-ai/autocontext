@@ -1,9 +1,6 @@
-import {
-  type ModelRecord,
-  ModelRegistry,
-  PromotionEngine,
-} from "./promotion.js";
+import type { ModelRecord, ModelRegistry, PromotionEngine } from "./promotion.js";
 import { readMetric } from "./training-metric-utils.js";
+import { resolveTrainingScaleMetadata } from "./training-scale.js";
 import type { TrainingConfig } from "./training-types.js";
 
 export function registerPromotionCandidate(
@@ -16,6 +13,7 @@ export function registerPromotionCandidate(
     family: config.family,
     backend: config.backend,
     checkpointDir,
+    trainingScale: resolveTrainingScaleMetadata(config),
     activationState: "candidate",
   });
 
@@ -40,7 +38,8 @@ export function evaluatePromotionState(
       heldOutScore,
       incumbentScore,
       parseFailureRate: readMetric(metrics, "parseFailureRate", "parse_failure_rate") ?? 0,
-      validationFailureRate: readMetric(metrics, "validationFailureRate", "validation_failure_rate") ?? 0,
+      validationFailureRate:
+        readMetric(metrics, "validationFailureRate", "validation_failure_rate") ?? 0,
     });
     if (decision.targetState !== "candidate") {
       promotionRegistry.setState(artifactId, decision.targetState, {

@@ -127,8 +127,80 @@ def test_config_kwargs_thread_seed_for_reproducible_repeats() -> None:
     assert build_grpo_config_kwargs(output_dir="/o", seed=5)["seed"] == 5
 
 
-def test_run_training_forwards_seed_to_trl_backend(monkeypatch, tmp_path) -> None:
-    """The PUBLIC runner path must forward seed: run_training(backend='trl', seed=N) -> run_trl_training(seed=N).
+def test_quantized_model_load_kwargs_enable_qlora_without_importing_transformers() -> None:
+    from autocontext.training.autoresearch.trl_backend import build_model_load_kwargs
+
+    class BitsAndBytesConfig:
+        def __init__(self, **kwargs: Any) -> None:
+            self.kwargs = kwargs
+
+    kwargs = build_model_load_kwargs(
+        base_model_quantization="nf4",
+        device_count=4,
+        bitsandbytes_config_cls=BitsAndBytesConfig,
+    )
+
+    assert kwargs["device_map"] == "auto"
+    assert kwargs["quantization_config"].kwargs == {
+        "load_in_4bit": True,
+        "bnb_4bit_quant_type": "nf4",
+        "bnb_4bit_use_double_quant": True,
+        "bnb_4bit_compute_dtype": "bfloat16",
+    }
+
+
+def test_parallel_training_kwargs_write_sharded_training_configs(tmp_path: Any) -> None:
+    import json
+
+    from autocontext.training.autoresearch.trl_backend import build_parallel_training_kwargs
+
+    fsdp = build_parallel_training_kwargs(output_dir=tmp_path, device_count=4, sharding_strategy="fsdp")
+    assert fsdp == {"fsdp": "full_shard"}
+
+    deepspeed = build_parallel_training_kwargs(
+        output_dir=tmp_path,
+        device_count=8,
+        sharding_strategy="deepspeed_zero3",
+        per_device_memory_limit_mb=24_576,
+    )
+    path = tmp_path / "deepspeed_zero3.json"
+    assert deepspeed == {"deepspeed": str(path)}
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["zero_optimization"]["stage"] == 3
+    assert data["autocontext"]["device_count"] == 8
+    assert data["autocontext"]["per_device_memory_limit_mb"] == 24_576
+
+
+def test_run_training_scale_profile_reaches_trl_backend(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> None:
+    import autocontext.training.autoresearch.train as train_mod
+    import autocontext.training.autoresearch.trl_backend as trl_mod
+
+    captured: dict = {}
+    monkeypatch.setattr(train_mod, "_preflight_backend_deps", lambda backend: None)
+    monkeypatch.setattr(
+        trl_mod,
+        "run_trl_training",
+        lambda **kw: captured.update(kw) or {"avg_score": 0.0, "valid_rate": 1.0},
+    )
+
+    train_mod.run_training(
+        scenario_name="grid_ctf",
+        data_path=tmp_path / "d.jsonl",
+        output_dir=tmp_path / "o",
+        time_budget=10,
+        memory_limit_mb=1024,
+        scale_profile="cuda_sharded_32b_distill",
+    )
+
+    assert captured["mode"] == "gkd"
+    assert captured["student_model"] == "Qwen/Qwen2.5-32B-Instruct"
+    assert captured["base_model_quantization"] == "nf4"
+    assert captured["device_count"] == 4
+    assert captured["sharding_strategy"] == "deepspeed_zero3"
+
+
+def test_run_training_forwards_scale_plan_to_trl_backend(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> None:
+    """The PUBLIC runner path must forward seed + larger-model knobs to TRL.
     (CI-safe: preflight + the trl runner are patched, so no torch/trl needed.)"""
     import autocontext.training.autoresearch.train as train_mod
     import autocontext.training.autoresearch.trl_backend as trl_mod
@@ -149,8 +221,18 @@ def test_run_training_forwards_seed_to_trl_backend(monkeypatch, tmp_path) -> Non
         memory_limit_mb=1024,
         backend="trl",
         seed=7,
+        device_count=4,
+        sharding_strategy="fsdp",
+        per_device_memory_limit_mb=16_384,
+        base_model_quantization="nf4",
+        deployment_target_vram_mb=16_384,
     )
     assert captured["seed"] == 7
+    assert captured["device_count"] == 4
+    assert captured["sharding_strategy"] == "fsdp"
+    assert captured["per_device_memory_limit_mb"] == 16_384
+    assert captured["base_model_quantization"] == "nf4"
+    assert captured["deployment_target_vram_mb"] == 16_384
 
 
 # ---------------------------------------------------------------------------
@@ -233,7 +315,7 @@ def test_reward_func_scores_against_per_instance_answer() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_import_gkd_prefers_experimental_then_falls_back(monkeypatch) -> None:
+def test_import_gkd_prefers_experimental_then_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
     """The GKD class resolver tries trl.experimental.gkd first, then top-level trl, so the
     GKD arm survives TRL's cross-version layout differences (stubbed; no real trl)."""
     import sys

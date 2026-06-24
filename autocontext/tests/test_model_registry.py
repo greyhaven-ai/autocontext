@@ -195,7 +195,9 @@ class TestResolveModel:
         registry.register(_record(artifact_id="a1", scenario="grid_ctf", activation_state="active"))
 
         result = resolve_model(
-            registry, scenario="grid_ctf", backend="mlx",
+            registry,
+            scenario="grid_ctf",
+            backend="mlx",
             manual_override="a-override",
         )
         assert result is not None
@@ -220,6 +222,38 @@ class TestResolveModel:
         result = resolve_model(registry, scenario="grid_ctf", backend="cuda")
         assert result is not None
         assert result.artifact_id == "cuda-1"
+
+    def test_filters_by_deployment_target_vram(self, tmp_path: Path) -> None:
+        from autocontext.training.model_registry import ModelRegistry, resolve_model
+
+        registry = ModelRegistry(tmp_path)
+        registry.register(
+            _record(
+                artifact_id="a-large",
+                scenario="grid_ctf",
+                backend="cuda",
+                activation_state="active",
+                metadata={"training_scale": {"deployment_target_vram_mb": 24_576}},
+            )
+        )
+        registry.register(
+            _record(
+                artifact_id="b-small",
+                scenario="grid_ctf",
+                backend="cuda",
+                activation_state="active",
+                metadata={"training_scale": {"deployment_target_vram_mb": 16_384}},
+            )
+        )
+
+        result = resolve_model(
+            registry,
+            scenario="grid_ctf",
+            backend="cuda",
+            deployment_target_vram_mb=16_384,
+        )
+        assert result is not None
+        assert result.artifact_id == "b-small"
 
 
 # ===========================================================================

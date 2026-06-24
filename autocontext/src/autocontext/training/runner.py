@@ -29,6 +29,7 @@ from autocontext.training.model_registry import (
     TrainingCompletionOutput,
     publish_training_output,
 )
+from autocontext.training.scale import training_scale_metadata_from_config
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,12 @@ class TrainingConfig:
     time_budget: int = 300
     max_experiments: int = 0
     memory_limit_mb: int = 16384
+    device_count: int = 1
+    sharding_strategy: str = "none"
+    per_device_memory_limit_mb: int = 0
+    base_model_parameter_count: int = 0
+    base_model_quantization: str = ""
+    deployment_target_vram_mb: int = 0
     backend: str = "mlx"
     train_steps: int = 0  # 0 = backend default (8 from-scratch mlx/cuda, 100 pretrained-adapter backends)
     learning_rate: float = 0.0  # 0 = backend default (1e-3 from-scratch, 1e-4 mlxlm, 1e-5 opd/grpo/trl)
@@ -416,6 +423,14 @@ class TrainingRunner:
             command += ["--train-steps", str(self.config.train_steps)]
         if self.config.learning_rate > 0:
             command += ["--learning-rate", str(self.config.learning_rate)]
+        if self.config.device_count != 1:
+            command += ["--device-count", str(self.config.device_count)]
+        if self.config.sharding_strategy != "none":
+            command += ["--sharding-strategy", self.config.sharding_strategy]
+        if self.config.per_device_memory_limit_mb != 0:
+            command += ["--per-device-memory-limit", str(self.config.per_device_memory_limit_mb)]
+        if self.config.deployment_target_vram_mb != 0:
+            command += ["--deployment-target-vram", str(self.config.deployment_target_vram_mb)]
         if self.config.val_select:
             command.append("--val-select")
         if self.config.elite_fraction != 1.0:
@@ -436,6 +451,8 @@ class TrainingRunner:
             command += ["--vocab-size", str(self.config.vocab_size)]
         if self.config.base_model:
             command += ["--base-model", self.config.base_model]
+        if self.config.base_model_quantization:
+            command += ["--base-model-quantization", self.config.base_model_quantization]
         if self.config.teacher_model:
             command += ["--teacher-model", self.config.teacher_model]
         if self.config.trl_mode != "gkd":
@@ -692,6 +709,7 @@ class TrainingRunner:
                 # effective default when no explicit --base-model was given, since the
                 # subprocess applies that same default (an empty value is unservable).
                 "base_model": self.config.base_model or self._backend.default_base_model(),
+                "training_scale": training_scale_metadata_from_config(self.config),
                 "score_conditioned": self.config.score_conditioned,
                 "opd_diagnostics": diagnostics_written,
                 "opd_pressure_mode": self.config.opd_pressure_mode,

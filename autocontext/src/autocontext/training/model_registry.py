@@ -133,10 +133,7 @@ class ModelRegistry:
         return DistilledModelRecord.from_dict(read_json(path))
 
     def list_all(self) -> list[DistilledModelRecord]:
-        return [
-            DistilledModelRecord.from_dict(read_json(p))
-            for p in sorted(self._dir.glob("*.json"))
-        ]
+        return [DistilledModelRecord.from_dict(read_json(p)) for p in sorted(self._dir.glob("*.json"))]
 
     def list_for_scenario(self, scenario: str) -> list[DistilledModelRecord]:
         return [r for r in self.list_all() if r.scenario == scenario]
@@ -170,12 +167,25 @@ class ModelRegistry:
         self.register(rec)
 
 
+def _fits_deployment_target(record: DistilledModelRecord, deployment_target_vram_mb: int) -> bool:
+    if deployment_target_vram_mb <= 0:
+        return True
+    scale = record.metadata.get("training_scale") if isinstance(record.metadata, dict) else None
+    required = scale.get("deployment_target_vram_mb", 0) if isinstance(scale, dict) else 0
+    try:
+        required_vram = int(required or 0)
+    except (TypeError, ValueError):
+        return False
+    return required_vram <= 0 or required_vram <= deployment_target_vram_mb
+
+
 def resolve_model(
     registry: ModelRegistry,
     scenario: str,
     backend: str,
     runtime_type: str = "provider",
     manual_override: str | None = None,
+    deployment_target_vram_mb: int = 0,
 ) -> DistilledModelRecord | None:
     """Resolve the active model for a scenario/backend/runtime combination.
 
@@ -199,6 +209,7 @@ def resolve_model(
             rec.backend == backend
             and rec.activation_state == "active"
             and (not rec.runtime_types or runtime_type in rec.runtime_types)
+            and _fits_deployment_target(rec, deployment_target_vram_mb)
         ):
             return rec
 
@@ -227,7 +238,7 @@ def publish_training_output(
         version=1,
         scenario=completion.scenario,
         compatible_scenarios=[completion.scenario],
-        tags=[completion.backend, *( [completion.scenario_family] if completion.scenario_family else [] )],
+        tags=[completion.backend, *([completion.scenario_family] if completion.scenario_family else [])],
         provenance=ArtifactProvenance(
             run_id=completion.run_id,
             generation=0,

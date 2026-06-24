@@ -13,6 +13,7 @@ import pytest
 from typer.testing import CliRunner
 
 from autocontext.config.settings import AppSettings
+from autocontext.training.model_defaults import get_model_scale_profile, list_model_scale_profiles
 from autocontext.training.runner import (
     ExperimentOutcome,
     ExperimentResult,
@@ -20,6 +21,7 @@ from autocontext.training.runner import (
     TrainingResult,
     TrainingRunner,
 )
+from autocontext.training.scale import training_scale_metadata_from_config
 
 # ---------------------------------------------------------------------------
 # TrainingConfig
@@ -35,6 +37,12 @@ class TestTrainingConfig:
         assert cfg.max_experiments == 0
         assert cfg.memory_limit_mb == 16384
         assert cfg.backend == "mlx"
+        assert cfg.device_count == 1
+        assert cfg.sharding_strategy == "none"
+        assert cfg.per_device_memory_limit_mb == 0
+        assert cfg.base_model_parameter_count == 0
+        assert cfg.base_model_quantization == ""
+        assert cfg.deployment_target_vram_mb == 0
         assert cfg.agent_provider == "anthropic"
         assert cfg.agent_model == ""
         assert cfg.val_select is False
@@ -55,6 +63,39 @@ class TestTrainingConfig:
         assert cfg.max_experiments == 50
         assert cfg.memory_limit_mb == 8192
         assert cfg.backend == "cuda"
+
+    def test_known_large_model_profiles_are_opt_in(self) -> None:
+        assert "cuda_qlora_7b_rlvr" in list_model_scale_profiles()
+        profile = get_model_scale_profile("cuda_sharded_32b_distill")
+        assert profile["backend"] == "trl"
+        assert profile["trl_mode"] == "gkd"
+        assert profile["base_model_parameter_count"] == 32_000_000_000
+        assert profile["base_model_quantization"] == "nf4"
+        assert profile["memory_limit_mb"] == 98_304
+        assert profile["sharding_strategy"] == "deepspeed_zero3"
+
+    def test_training_scale_metadata_records_larger_model_hardware_plan(self) -> None:
+        cfg = TrainingConfig(
+            scenario="arc_agi_3",
+            data_path=Path("train.jsonl"),
+            memory_limit_mb=65_536,
+            device_count=4,
+            sharding_strategy="fsdp",
+            per_device_memory_limit_mb=16_384,
+            base_model_parameter_count=32_000_000_000,
+            base_model_quantization="nf4",
+            deployment_target_vram_mb=16_384,
+        )
+
+        assert training_scale_metadata_from_config(cfg) == {
+            "device_count": 4,
+            "sharding_strategy": "fsdp",
+            "memory_limit_mb": 65_536,
+            "per_device_memory_limit_mb": 16_384,
+            "base_model_parameter_count": 32_000_000_000,
+            "base_model_quantization": "nf4",
+            "deployment_target_vram_mb": 16_384,
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -324,6 +365,30 @@ class TestConstraints:
         command = mock_run.call_args.args[0]
         seed_index = command.index("--seed")
         assert command[seed_index + 1] == "7"
+
+    def test_experiment_subprocess_passes_scale_plan_flags(self, tmp_path: Path) -> None:
+        cfg = TrainingConfig(
+            scenario="grid_ctf",
+            data_path=tmp_path / "data.jsonl",
+            backend="trl",
+            device_count=4,
+            sharding_strategy="fsdp",
+            per_device_memory_limit_mb=16_384,
+            base_model_quantization="nf4",
+            deployment_target_vram_mb=16_384,
+        )
+        (tmp_path / "data.jsonl").write_text("{}\n")
+        runner = TrainingRunner(cfg, work_dir=tmp_path / "workspace")
+        completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+        with patch("autocontext.training.runner.subprocess.run", return_value=completed) as mock_run:
+            runner._run_experiment_subprocess(0)
+
+        command = mock_run.call_args.args[0]
+        assert command[command.index("--device-count") + 1] == "4"
+        assert command[command.index("--sharding-strategy") + 1] == "fsdp"
+        assert command[command.index("--per-device-memory-limit") + 1] == "16384"
+        assert command[command.index("--base-model-quantization") + 1] == "nf4"
+        assert command[command.index("--deployment-target-vram") + 1] == "16384"
 
     def test_experiment_subprocess_passes_max_completion_length_when_overridden(self, tmp_path: Path) -> None:
         """A GRPO completion-length override must reach the subprocess (so the public `autoctx train`
@@ -678,6 +743,8 @@ class TestTrainingLoop:
         assert registry_record["backend"] == "mlx"
         assert registry_record["runtime_types"] == ["provider", "pi"]
         assert registry_record["training_metrics"]["token_pressure_positive_ratio"] == 0.75
+        assert registry_record["metadata"]["training_scale"]["device_count"] == 1
+        assert registry_record["metadata"]["training_scale"]["memory_limit_mb"] == 16384
         assert registry_record["metadata"]["opd_diagnostics"] is True
         assert registry_record["metadata"]["opd_diagnostics_path"] == str(checkpoint_path / "token_pressure_diagnostics.json")
 
@@ -846,6 +913,18 @@ class TestTrainCLI:
                     "50",
                     "--memory-limit",
                     "8192",
+                    "--device-count",
+                    "4",
+                    "--sharding-strategy",
+                    "fsdp",
+                    "--per-device-memory-limit",
+                    "2048",
+                    "--base-model-parameters",
+                    "7000000000",
+                    "--base-model-quantization",
+                    "nf4",
+                    "--deployment-target-vram",
+                    "16384",
                     "--backend",
                     "cuda",
                     "--agent-provider",
@@ -862,9 +941,40 @@ class TestTrainCLI:
             assert call_cfg.time_budget == 600
             assert call_cfg.max_experiments == 50
             assert call_cfg.memory_limit_mb == 8192
+            assert call_cfg.device_count == 4
+            assert call_cfg.sharding_strategy == "fsdp"
+            assert call_cfg.per_device_memory_limit_mb == 2048
+            assert call_cfg.base_model_parameter_count == 7_000_000_000
+            assert call_cfg.base_model_quantization == "nf4"
+            assert call_cfg.deployment_target_vram_mb == 16384
             assert call_cfg.backend == "cuda"
             assert call_cfg.agent_provider == "deterministic"
             assert call_cfg.agent_model == "custom-model"
+
+    def test_scale_profile_reaches_config(self) -> None:
+        from autocontext.cli import app
+
+        runner = CliRunner()
+        with patch("autocontext.cli_train._run_training") as mock_run:
+            mock_run.return_value = TrainingResult(
+                scenario="grid_ctf",
+                total_experiments=1,
+                kept_count=1,
+                discarded_count=0,
+                best_score=0.5,
+                best_experiment_index=0,
+                checkpoint_path=Path("/tmp/best"),
+                results=[],
+            )
+            result = runner.invoke(app, ["train", "--scenario", "grid_ctf", "--scale-profile", "cuda_qlora_7b_rlvr"])
+            assert result.exit_code == 0, result.output
+            call_cfg = mock_run.call_args[0][0]
+            assert call_cfg.backend == "trl"
+            assert call_cfg.trl_mode == "grpo"
+            assert call_cfg.base_model == "Qwen/Qwen2.5-7B-Instruct"
+            assert call_cfg.memory_limit_mb == 24_576
+            assert call_cfg.base_model_quantization == "nf4"
+            assert call_cfg.deployment_target_vram_mb == 24_576
 
     def test_loss_weight_options_reach_config(self) -> None:
         from autocontext.cli import app

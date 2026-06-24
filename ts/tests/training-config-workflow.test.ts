@@ -7,6 +7,7 @@ import {
   countJsonlRecords,
   resolveTrainingConfig,
 } from "../src/training/training-config-workflow.js";
+import { resolveTrainingScaleMetadata } from "../src/training/training-scale.js";
 import type { TrainingConfig } from "../src/training/training-types.js";
 
 describe("training config workflow", () => {
@@ -41,6 +42,45 @@ describe("training config workflow", () => {
     expect(resolution.heldOutSize).toBe(1);
     expect(resolution.resolvedConfig.baseModel).toBeTruthy();
     expect(resolution.resolvedConfig.adapterType).toBeTruthy();
+    expect(resolveTrainingScaleMetadata(resolution.resolvedConfig)).toMatchObject({
+      deviceCount: 1,
+      shardingStrategy: "none",
+      memoryLimitMb: 16_384,
+    });
+  });
+
+  it("preserves profile base models when resolving adapter training", () => {
+    const config: TrainingConfig = {
+      scenario: "grid_ctf",
+      family: "agent_task",
+      datasetPath: join(dir, "train.jsonl"),
+      outputDir: join(dir, "output"),
+      backend: "trl",
+      trainingMode: "adapter_finetune",
+      baseModel: "Qwen/Qwen2.5-7B-Instruct",
+    };
+    writeFileSync(config.datasetPath, '{"a":1}\n', "utf-8");
+
+    const resolution = resolveTrainingConfig(config);
+
+    expect(resolution.error).toBeUndefined();
+    expect(resolution.resolvedConfig.trainingMode).toBe("adapter_finetune");
+    expect(resolution.resolvedConfig.baseModel).toBe("Qwen/Qwen2.5-7B-Instruct");
+  });
+
+  it("rejects invalid training scale fields", () => {
+    const config: TrainingConfig = {
+      scenario: "bad-scale",
+      family: "agent_task",
+      datasetPath: join(dir, "train.jsonl"),
+      outputDir: join(dir, "output"),
+      backend: "cuda",
+      trainingMode: "adapter_finetune",
+      deviceCount: 0,
+    };
+    writeFileSync(config.datasetPath, '{"a":1}\n', "utf-8");
+
+    expect(resolveTrainingConfig(config).error).toBe("deviceCount must be >= 1");
   });
 
   it("returns stable errors for missing datasets and invalid base models", () => {

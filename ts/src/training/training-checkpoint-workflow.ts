@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type { ModelRecord } from "./promotion.js";
+import { resolveTrainingScaleMetadata } from "./training-scale.js";
 import type { PublishedArtifact, TrainingConfig, TrainingExecutor } from "./training-types.js";
 import type { TrainingBackend } from "./training-backend-core.js";
 
@@ -13,7 +14,10 @@ export const defaultExecutor: TrainingExecutor = async (config, checkpointDir) =
         backend: config.backend,
         trainingMode: config.trainingMode,
         baseModel: config.baseModel,
+        teacherModel: config.teacherModel,
+        trlMode: config.trlMode,
         opdPressureMode: config.opdPressureMode ?? "full_kl",
+        trainingScale: resolveTrainingScaleMetadata(config),
         status: "trained",
         note: "Default executor — replace with real PyTorch/MLX training for production use",
         timestamp: new Date().toISOString(),
@@ -53,6 +57,8 @@ export function writeTrainingManifest(
         backend: config.backend,
         trainingMode: config.trainingMode,
         baseModel: config.baseModel ?? null,
+        teacherModel: config.teacherModel ?? null,
+        trlMode: config.trlMode ?? null,
         adapterType: config.adapterType ?? null,
         datasetPath: config.datasetPath,
         datasetSize,
@@ -63,6 +69,7 @@ export function writeTrainingManifest(
         opdDiagnostics: config.opdDiagnostics ?? false,
         opdDiagnosticsDebugTokens: config.opdDiagnosticsDebugTokens ?? false,
         opdPressureMode: config.opdPressureMode ?? "full_kl",
+        trainingScale: resolveTrainingScaleMetadata(config),
         startedAt: new Date().toISOString(),
       },
       null,
@@ -88,6 +95,8 @@ export function publishTrainingArtifact(opts: {
     backend: opts.config.backend,
     trainingMode: opts.config.trainingMode,
     baseModel: opts.config.baseModel,
+    teacherModel: opts.config.teacherModel,
+    trlMode: opts.config.trlMode,
     adapterType: opts.config.adapterType,
     checkpointDir: opts.checkpointDir,
     datasetSize: opts.datasetSize,
@@ -95,6 +104,7 @@ export function publishTrainingArtifact(opts: {
     trainedAt: new Date().toISOString(),
     metrics: opts.metrics,
     opdPressureMode: opts.config.opdPressureMode ?? "full_kl",
+    trainingScale: resolveTrainingScaleMetadata(opts.config),
     activationState: opts.record.activationState,
     promotionHistory: [...opts.record.promotionHistory],
   };
