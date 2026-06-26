@@ -9,7 +9,7 @@ import re
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = REPO_ROOT / "docs" / "release-manifest.json"
@@ -49,7 +49,9 @@ def render_readme_whats_new_block(manifest: ReleaseManifest) -> str:
     return f"{WHATS_NEW_BLOCK_START}\n## {render_whats_new_heading(manifest)}\n\n{items}\n{WHATS_NEW_BLOCK_END}"
 
 
-def render_pi_release_note(manifest: ReleaseManifest, prefix: str = "Pi is on a separate package line") -> str:
+def render_pi_release_note(
+    manifest: ReleaseManifest, prefix: str = "Pi is on a separate package line"
+) -> str:
     return (
         f"{prefix}: `pi-autocontext@{manifest.pi_version}` depends on "
         f"`autoctx@{manifest.pi_autoctx_dependency}`. A follow-up Pi release can move it to a newer "
@@ -65,8 +67,13 @@ def _replace_block(text: str, start: str, end: str, replacement: str) -> str:
 
 
 def _replace_versions(text: str, manifest: ReleaseManifest) -> str:
-    text = re.sub(rf"autocontext=={_VERSION_RE}", f"autocontext=={manifest.core_version}", text)
-    return re.sub(rf"autoctx@{_VERSION_RE}", f"autoctx@{manifest.core_version}", text)
+    text = re.sub(
+        rf"autocontext=={_VERSION_RE}", f"autocontext=={manifest.core_version}", text
+    )
+    text = re.sub(rf"autoctx@{_VERSION_RE}", f"autoctx@{manifest.core_version}", text)
+    return re.sub(
+        rf"pi-autocontext@{_VERSION_RE}", f"pi-autocontext@{manifest.pi_version}", text
+    )
 
 
 def _replace_root_pi_notes(text: str, manifest: ReleaseManifest) -> str:
@@ -89,11 +96,18 @@ def _replace_root_pi_notes(text: str, manifest: ReleaseManifest) -> str:
 def sync_root_readme(text: str, manifest: ReleaseManifest) -> str:
     text = _replace_versions(text, manifest)
     text = _replace_root_pi_notes(text, manifest)
-    return _replace_block(text, WHATS_NEW_BLOCK_START, WHATS_NEW_BLOCK_END, render_readme_whats_new_block(manifest))
+    return _replace_block(
+        text,
+        WHATS_NEW_BLOCK_START,
+        WHATS_NEW_BLOCK_END,
+        render_readme_whats_new_block(manifest),
+    )
 
 
 def sync_python_readme(text: str, manifest: ReleaseManifest) -> str:
-    return re.sub(rf"autocontext=={_VERSION_RE}", f"autocontext=={manifest.core_version}", text)
+    return re.sub(
+        rf"autocontext=={_VERSION_RE}", f"autocontext=={manifest.core_version}", text
+    )
 
 
 def sync_ts_readme(text: str, manifest: ReleaseManifest) -> str:
@@ -114,7 +128,7 @@ def sync_pi_readme(text: str, manifest: ReleaseManifest) -> str:
         r"depends on `autoctx@[^`]+`\. A follow-up Pi release can move it to a newer `autoctx` line "
         r"after the core npm package is live\."
     )
-    return note.sub(render_pi_package_note(manifest), text)
+    return note.sub(render_pi_package_note(manifest), _replace_versions(text, manifest))
 
 
 def sync_banner_py(text: str, manifest: ReleaseManifest) -> str:
@@ -126,39 +140,85 @@ def sync_banner_py(text: str, manifest: ReleaseManifest) -> str:
 
 
 def _read_json(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text(encoding="utf-8"))
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError(f"{path} must contain a JSON object")
+    return cast(dict[str, Any], data)
 
 
 def _read_toml(path: Path) -> dict[str, Any]:
-    return tomllib.loads(path.read_text(encoding="utf-8"))
+    return cast(dict[str, Any], tomllib.loads(path.read_text(encoding="utf-8")))
+
+
+def _read_python_init_version(path: Path) -> str:
+    match = re.search(r'^__version__ = "([^"]+)"$', path.read_text(encoding="utf-8"), re.MULTILINE)
+    if match is None:
+        raise ValueError(f"{path} does not define __version__")
+    return match.group(1)
 
 
 def planned_release_surface_updates(manifest: ReleaseManifest) -> dict[Path, str]:
     return {
-        REPO_ROOT / "README.md": sync_root_readme((REPO_ROOT / "README.md").read_text(encoding="utf-8"), manifest),
-        REPO_ROOT / "autocontext" / "README.md": sync_python_readme(
-            (REPO_ROOT / "autocontext" / "README.md").read_text(encoding="utf-8"), manifest
+        REPO_ROOT / "README.md": sync_root_readme(
+            (REPO_ROOT / "README.md").read_text(encoding="utf-8"), manifest
         ),
-        REPO_ROOT / "ts" / "README.md": sync_ts_readme((REPO_ROOT / "ts" / "README.md").read_text(encoding="utf-8"), manifest),
-        REPO_ROOT / "pi" / "README.md": sync_pi_readme((REPO_ROOT / "pi" / "README.md").read_text(encoding="utf-8"), manifest),
-        REPO_ROOT / "autocontext" / "assets" / "whats_new.txt": render_whats_new_asset(manifest),
+        REPO_ROOT / "autocontext" / "README.md": sync_python_readme(
+            (REPO_ROOT / "autocontext" / "README.md").read_text(encoding="utf-8"),
+            manifest,
+        ),
+        REPO_ROOT / "ts" / "README.md": sync_ts_readme(
+            (REPO_ROOT / "ts" / "README.md").read_text(encoding="utf-8"), manifest
+        ),
+        REPO_ROOT / "pi" / "README.md": sync_pi_readme(
+            (REPO_ROOT / "pi" / "README.md").read_text(encoding="utf-8"), manifest
+        ),
+        REPO_ROOT / "autocontext" / "assets" / "whats_new.txt": render_whats_new_asset(
+            manifest
+        ),
         REPO_ROOT / "autocontext" / "src" / "autocontext" / "banner.py": sync_banner_py(
-            (REPO_ROOT / "autocontext" / "src" / "autocontext" / "banner.py").read_text(encoding="utf-8"), manifest
+            (REPO_ROOT / "autocontext" / "src" / "autocontext" / "banner.py").read_text(
+                encoding="utf-8"
+            ),
+            manifest,
         ),
     }
 
 
 def check_release_surfaces(manifest: ReleaseManifest) -> list[str]:
     issues: list[str] = []
-    pyproject_version = _read_toml(REPO_ROOT / "autocontext" / "pyproject.toml")["project"]["version"]
-    package_version = _read_json(REPO_ROOT / "ts" / "package.json")["version"]
+    pyproject = _read_toml(REPO_ROOT / "autocontext" / "pyproject.toml")
+    pyproject_version = str(cast(dict[str, Any], pyproject["project"])["version"])
+    python_init_version = _read_python_init_version(
+        REPO_ROOT / "autocontext" / "src" / "autocontext" / "__init__.py"
+    )
+    package_version = str(_read_json(REPO_ROOT / "ts" / "package.json")["version"])
+    pi_package = _read_json(REPO_ROOT / "pi" / "package.json")
+    pi_version = str(pi_package["version"])
+    pi_dependencies = cast(dict[str, Any], pi_package["dependencies"])
+    pi_autoctx_dependency = str(pi_dependencies["autoctx"])
     if pyproject_version != manifest.core_version:
-        issues.append(f"autocontext/pyproject.toml version {pyproject_version} != manifest {manifest.core_version}")
+        issues.append(
+            f"autocontext/pyproject.toml version {pyproject_version} != manifest {manifest.core_version}"
+        )
+    if python_init_version != manifest.core_version:
+        issues.append(
+            f"autocontext/src/autocontext/__init__.py version {python_init_version} != manifest {manifest.core_version}"
+        )
     if package_version != manifest.core_version:
-        issues.append(f"ts/package.json version {package_version} != manifest {manifest.core_version}")
+        issues.append(
+            f"ts/package.json version {package_version} != manifest {manifest.core_version}"
+        )
+    if pi_version != manifest.pi_version:
+        issues.append(f"pi/package.json version {pi_version} != manifest {manifest.pi_version}")
+    if pi_autoctx_dependency != manifest.pi_autoctx_dependency:
+        issues.append(
+            f"pi/package.json autoctx dependency {pi_autoctx_dependency} != manifest {manifest.pi_autoctx_dependency}"
+        )
     for path, expected in planned_release_surface_updates(manifest).items():
         if path.read_text(encoding="utf-8") != expected:
-            issues.append(f"{path.relative_to(REPO_ROOT)} is not synced with docs/release-manifest.json")
+            issues.append(
+                f"{path.relative_to(REPO_ROOT)} is not synced with docs/release-manifest.json"
+            )
     return issues
 
 
@@ -170,7 +230,9 @@ def write_release_surfaces(manifest: ReleaseManifest) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--check", action="store_true", help="fail if public release surfaces are stale")
+    parser.add_argument(
+        "--check", action="store_true", help="fail if public release surfaces are stale"
+    )
     args = parser.parse_args()
     manifest = load_release_manifest()
     if args.check:
