@@ -5,6 +5,7 @@
 
 ## Surfaces Touched
 
+- [ ] Parity decision: cross-runtime parity is user-visible and required now, or explicitly deferred below
 - [ ] Python package
 - [ ] TypeScript package
 - [ ] TUI

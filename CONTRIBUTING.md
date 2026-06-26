@@ -64,6 +64,7 @@ npm test
 - The Python package name and CLI are `autocontext` / `autoctx`.
 - Environment variables use the `AUTOCONTEXT_` prefix.
 - Prefer targeted tests for touched modules before running full suites.
+- Use parity-last changes: implement one runtime first unless cross-runtime parity is user-visible in the same release. Note deferred parity in the PR.
 - Keep protocol changes in sync with `scripts/generate_protocol.py`.
 - Avoid rewriting historical plan docs unless the change is user-facing or release-facing.
 

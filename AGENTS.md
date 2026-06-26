@@ -35,6 +35,10 @@ cd ts
 npm install
 ```
 
+## Parity-Last Changes
+
+Implement one runtime first unless cross-runtime parity is user-visible in the same release. If parity is deferred, say where and why in the PR.
+
 ## Common Checks
 
 Python:
