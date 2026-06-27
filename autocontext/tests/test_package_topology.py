@@ -2,121 +2,66 @@ from __future__ import annotations
 
 import json
 import tomllib
-from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-TOPOLOGY_PATH = REPO_ROOT / "packages" / "package-topology.json"
+PACKAGES_DIR = REPO_ROOT / "packages"
+PACKAGE_README = PACKAGES_DIR / "README.md"
+SPLIT_MANIFESTS = [
+    PACKAGES_DIR / "package-topology.json",
+    PACKAGES_DIR / "package-boundaries.json",
+]
+SPLIT_PACKAGE_DIRS = [
+    PACKAGES_DIR / "python" / "core",
+    PACKAGES_DIR / "python" / "control",
+    PACKAGES_DIR / "ts" / "core",
+    PACKAGES_DIR / "ts" / "control-plane",
+]
 
 
-@dataclass(frozen=True, slots=True)
-class PythonPackageShell:
-    role: str
-    name: str
-    path: Path
-    module: str
+def _json(path: Path) -> dict[str, object]:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert isinstance(data, dict)
+    return cast(dict[str, object], data)
 
 
-def _load_topology() -> dict[str, object]:
-    return json.loads(TOPOLOGY_PATH.read_text(encoding="utf-8"))
+def test_package_split_manifests_are_deferred() -> None:
+    for path in SPLIT_MANIFESTS:
+        assert not path.exists(), path
 
 
-def _load_pyproject(path: Path) -> dict[str, object]:
-    return tomllib.loads(path.read_text(encoding="utf-8"))
+def test_placeholder_split_packages_are_absent() -> None:
+    for path in SPLIT_PACKAGE_DIRS:
+        assert not path.exists(), path
 
 
-def _python_shells() -> list[PythonPackageShell]:
-    topology = _load_topology()
-    python_topology = topology["python"]
-    assert isinstance(python_topology, dict)
-    shells: list[PythonPackageShell] = []
-    for role in ("core", "control"):
-        entry = python_topology[role]
-        assert isinstance(entry, dict)
-        shells.append(
-            PythonPackageShell(
-                role=role,
-                name=str(entry["name"]),
-                path=REPO_ROOT / str(entry["path"]),
-                module=str(entry["module"]),
-            )
-        )
-    return shells
+def test_packages_directory_points_to_deferred_policy() -> None:
+    readme = PACKAGE_README.read_text(encoding="utf-8")
+
+    assert "Core/control split packages are deferred" in readme
+    assert "Do not add `packages/python/*`, `packages/ts/*`" in readme
+    assert "autocontext" in readme
+    assert "autoctx" in readme
+    assert "pi-autocontext" in readme
 
 
-def test_package_topology_manifest_exists() -> None:
-    assert TOPOLOGY_PATH.exists()
+def test_deferred_split_doc_keeps_active_package_surfaces() -> None:
+    doc = (REPO_ROOT / "docs" / "core-control-package-split.md").read_text(encoding="utf-8")
+
+    assert "Status: **deferred**" in doc
+    assert "## Agent App Build Targets" in doc
+    assert "`autoctx/agent-runtime`" in doc
+    assert "future packages uncreated" in doc
 
 
-def test_package_topology_declares_expected_domain_terms() -> None:
-    topology = _load_topology()
-    terms = topology["terms"]
-    assert isinstance(terms, dict)
-    assert set(terms) == {
-        "umbrellaPackage",
-        "corePackage",
-        "controlPackage",
-        "compatibilityShell",
-        "packageTopology",
-    }
+def test_shipping_package_names_stay_unchanged() -> None:
+    pyproject = tomllib.loads((REPO_ROOT / "autocontext" / "pyproject.toml").read_text(encoding="utf-8"))
+    ts_package = _json(REPO_ROOT / "ts" / "package.json")
+    pi_package = _json(REPO_ROOT / "pi" / "package.json")
 
-
-def test_package_topology_declares_apache_boundary_wrap_up_guardrails() -> None:
-    topology = _load_topology()
-    assert topology["status"] == "apache-boundary-wrap-up"
-    guardrails = topology["guardrails"]
-    assert isinstance(guardrails, dict)
-
-    assert guardrails["repoWideLicenseFlip"] == (
-        "out-of-scope-existing-code-remains-apache-2.0"
-    )
-    assert guardrails["dualLicenseMetadata"] == "do-not-publish-for-existing-repo"
-    assert guardrails["historicalRelicensing"] == "out-of-scope"
-    assert guardrails["futureProprietaryWork"] == "separate-repository"
-    assert guardrails["defaultInstallCompatibility"] == (
-        "preserve-autocontext-autoctx-and-autoctx-cli"
-    )
-
-
-def test_agent_app_runtime_contracts_remain_umbrella_owned_until_extracted() -> None:
-    topology = _load_topology()
-    agent_apps = topology["agentApps"]
-    assert isinstance(agent_apps, dict)
-
-    assert agent_apps["runtimeContractsStatus"] == "umbrella-owned-until-core-extraction"
-    assert agent_apps["currentRuntimeContractsPackage"] == "autoctx/agent-runtime"
-    assert agent_apps["plannedRuntimeContractsPackage"] == "@autocontext/core"
-    assert agent_apps["unextractedCoreContracts"] == [
-        "ts/src/agent-runtime/index.ts",
-        "ts/src/session/runtime-session.ts",
-        "ts/src/session/runtime-session-notifications.ts",
-        "tsx dependency for TypeScript handler loading",
-    ]
-
-
-def test_python_package_shells_exist() -> None:
-    for shell in _python_shells():
-        assert shell.path.exists(), shell.path
-        assert (shell.path / "pyproject.toml").exists(), shell.path / "pyproject.toml"
-        assert (shell.path / "src" / shell.module / "__init__.py").exists()
-
-
-def test_python_package_shell_metadata_matches_topology() -> None:
-    for shell in _python_shells():
-        pyproject = _load_pyproject(shell.path / "pyproject.toml")
-        project = pyproject["project"]
-        assert isinstance(project, dict)
-        assert project["name"] == shell.name
-        assert project["version"] == "0.0.0"
-        assert project["requires-python"] == ">=3.11"
-
-
-def test_python_umbrella_package_keeps_existing_cli_entrypoint() -> None:
-    topology = _load_topology()
-    python_topology = topology["python"]
-    assert isinstance(python_topology, dict)
-    umbrella = python_topology["umbrella"]
-    assert isinstance(umbrella, dict)
-    assert umbrella["name"] == "autocontext"
-    assert umbrella["path"] == "autocontext"
-    assert umbrella["entrypoint"] == "autocontext.cli:app"
+    project = pyproject["project"]
+    assert isinstance(project, dict)
+    assert project["name"] == "autocontext"
+    assert ts_package["name"] == "autoctx"
+    assert pi_package["name"] == "pi-autocontext"

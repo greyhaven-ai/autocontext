@@ -2,10 +2,8 @@
 
 This is the AC-646 rights-audit historical snapshot that was created during the
 abandoned dual-license investigation. It now supports provenance context for the
-package-boundary work in
-[`core-control-package-split.md`](./core-control-package-split.md) and the
-machine-readable boundary guardrails in
-[`packages/package-boundaries.json`](../packages/package-boundaries.json).
+deferred package-boundary notes in
+[`core-control-package-split.md`](./core-control-package-split.md).
 
 This document is an engineering audit, not legal advice. It records what git
 history could prove at the time of the audit. It is no longer a go/no-go gate
@@ -27,25 +25,24 @@ license.
   license files. No CLA, DCO, copyright assignment, or contributor license
   agreement was found in-repo.
 - The controlled-identity confirmation and empty current path-specific block
-  list are preserved in `packages/package-boundaries.json` under
-  `licensing.rightsAudit` as historical context.
+  list are preserved here as historical context.
 
 ## Historical Summary
 
-| Area                               | Current evidence                                                                                                                                                                 | Current treatment                                                                                                                |
-| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| Grey Haven-controlled affected paths | Git history/blame show Jay Scambler identities and `cirdan-greyhaven` identities confirmed as Grey Haven-controlled in the current source lines for previously audited candidate path groups. | Historical provenance context only; existing code remains Apache-2.0. |
-| Path-specific third-party blockers | No current non-Grey-Haven-controlled source-line blockers were found in the audited path groups after recording the Cirdan identity confirmation. | No blocker for boundary wrap-up; re-run only if historical relicensing is reconsidered. |
-| Gingiris contribution              | Git history shows one contribution touching `README.md` and `autocontext/src/autocontext/banner.py`. | Keep the touched files Apache-2.0 with the rest of the existing repo. |
-| AC-645 license metadata            | Guarded by tests and `packages/package-boundaries.json`. | Superseded unless re-scoped to Apache metadata hygiene. |
+| Area                                 | Current evidence                                                                                                                                                                              | Current treatment                                                                       |
+| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Grey Haven-controlled affected paths | Git history/blame show Jay Scambler identities and `cirdan-greyhaven` identities confirmed as Grey Haven-controlled in the current source lines for previously audited candidate path groups. | Historical provenance context only; existing code remains Apache-2.0.                   |
+| Path-specific third-party blockers   | No current non-Grey-Haven-controlled source-line blockers were found in the audited path groups after recording the Cirdan identity confirmation.                                             | No blocker for boundary wrap-up; re-run only if historical relicensing is reconsidered. |
+| Gingiris contribution                | Git history shows one contribution touching `README.md` and `autocontext/src/autocontext/banner.py`.                                                                                          | Keep the touched files Apache-2.0 with the rest of the existing repo.                   |
+| AC-645 license metadata              | Superseded by the deferred split policy.                                                                                                                                                      | Re-scope only if Apache metadata hygiene needs it.                                      |
 
 ## Contributor Identities Seen in Affected Areas
 
-| Canonical audit identity | Git author identities observed                                                      | Audit treatment                                 | Required authority evidence                                                                                  |
-| ------------------------ | ------------------------------------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `jay-scambler`           | `Jay Scambler <jayscambler@gmail.com>`, `Jay Scambler <jay@greyhaven.ai>` | Grey Haven contributor identity. | Historical context only while existing code remains Apache-2.0. |
-| `cirdan-greyhaven`       | `Cirdan <cirdan@greyhaven.ai>`, `Cirdan Shipwright <cirdan@greyhaven.ai>` | Grey Haven-controlled contributor identity. | Preserve the 2026-04-28 confirmation in AC-646 records. |
-| `gingiris`               | `Gingiris <iris103195@gmail.com>`                                         | Outside contributor identity.        | Keep existing contributions Apache-2.0.       |
+| Canonical audit identity | Git author identities observed                                            | Audit treatment                             | Required authority evidence                                     |
+| ------------------------ | ------------------------------------------------------------------------- | ------------------------------------------- | --------------------------------------------------------------- |
+| `jay-scambler`           | `Jay Scambler <jayscambler@gmail.com>`, `Jay Scambler <jay@greyhaven.ai>` | Grey Haven contributor identity.            | Historical context only while existing code remains Apache-2.0. |
+| `cirdan-greyhaven`       | `Cirdan <cirdan@greyhaven.ai>`, `Cirdan Shipwright <cirdan@greyhaven.ai>` | Grey Haven-controlled contributor identity. | Preserve the 2026-04-28 confirmation in AC-646 records.         |
+| `gingiris`               | `Gingiris <iris103195@gmail.com>`                                         | Outside contributor identity.               | Keep existing contributions Apache-2.0.                         |
 
 ## Affected Path Groups Audited
 
@@ -71,17 +68,17 @@ Audited paths:
 
 Evidence summary:
 
-| Contributor        | Direct path-log commits in group | Current blamed lines in group | Status                                                                                                  |
-| ------------------ | -------------------------------: | ----------------------------: | ------------------------------------------------------------------------------------------------------- |
-| `jay-scambler`     |                               75 |                        12,016 | Historical provenance context; existing code remains Apache-2.0.                                    |
+| Contributor        | Direct path-log commits in group | Current blamed lines in group | Status                                                                        |
+| ------------------ | -------------------------------: | ----------------------------: | ----------------------------------------------------------------------------- |
+| `jay-scambler`     |                               75 |                        12,016 | Historical provenance context; existing code remains Apache-2.0.              |
 | `cirdan-greyhaven` |                                1 |                           117 | Treated as Grey Haven-controlled contributor identity for historical context. |
 
 Current files with Cirdan-identity lines:
 
 | Path                                        | Cirdan-identity lines | Representative blamed commits                                                                                                           |
-| ------------------------------------------- | -----------------: | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `autocontext/src/autocontext/mcp/server.py` |                107 | `909e0779` MCP server hardening; `0f2329e3` agent-task human feedback; `4a4135b2` MCP tool gaps; `2a38bb91` multi-step improvement loop |
-| `autocontext/src/autocontext/mcp/tools.py`  |                 10 | `909e0779` MCP server hardening; `9b193391` agent task foundation; `0f2329e3` human feedback loop; `4a4135b2` MCP tool gaps             |
+| ------------------------------------------- | --------------------: | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `autocontext/src/autocontext/mcp/server.py` |                   107 | `909e0779` MCP server hardening; `0f2329e3` agent-task human feedback; `4a4135b2` MCP tool gaps; `2a38bb91` multi-step improvement loop |
+| `autocontext/src/autocontext/mcp/tools.py`  |                    10 | `909e0779` MCP server hardening; `9b193391` agent task foundation; `0f2329e3` human feedback loop; `4a4135b2` MCP tool gaps             |
 
 ### Python knowledge control candidates
 
@@ -96,17 +93,17 @@ Audited paths:
 
 Evidence summary:
 
-| Contributor        | Direct path-log commits in group | Current blamed lines in group | Status                                                                                                  |
-| ------------------ | -------------------------------: | ----------------------------: | ------------------------------------------------------------------------------------------------------- |
-| `jay-scambler`     |                               28 |                         2,399 | Historical provenance context; existing code remains Apache-2.0.                                    |
+| Contributor        | Direct path-log commits in group | Current blamed lines in group | Status                                                                        |
+| ------------------ | -------------------------------: | ----------------------------: | ----------------------------------------------------------------------------- |
+| `jay-scambler`     |                               28 |                         2,399 | Historical provenance context; existing code remains Apache-2.0.              |
 | `cirdan-greyhaven` |         See blamed commits below |                           170 | Treated as Grey Haven-controlled contributor identity for historical context. |
 
 Current files with Cirdan-identity lines:
 
 | Path                                              | Cirdan-identity lines | Representative blamed commits                                                                                                                              |
-| ------------------------------------------------- | -----------------: | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `autocontext/src/autocontext/knowledge/export.py` |                160 | `9b193391` agent task foundation; `93d8e4d3` reference context + judge enhancement; `4fdc79b0` context preparation; `2a38bb91` multi-step improvement loop |
-| `autocontext/src/autocontext/knowledge/search.py` |                 10 | `9b193391` agent task foundation                                                                                                                           |
+| ------------------------------------------------- | --------------------: | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `autocontext/src/autocontext/knowledge/export.py` |                   160 | `9b193391` agent task foundation; `93d8e4d3` reference context + judge enhancement; `4fdc79b0` context preparation; `2a38bb91` multi-step improvement loop |
+| `autocontext/src/autocontext/knowledge/search.py` |                    10 | `9b193391` agent task foundation                                                                                                                           |
 
 ### TypeScript control-plane directories
 
@@ -123,8 +120,8 @@ Audited paths:
 
 Evidence summary:
 
-| Contributor    | Direct path-log commits in group | Current blamed lines in group | Status                                                               |
-| -------------- | -------------------------------: | ----------------------------: | -------------------------------------------------------------------- |
+| Contributor    | Direct path-log commits in group | Current blamed lines in group | Status                                                           |
+| -------------- | -------------------------------: | ----------------------------: | ---------------------------------------------------------------- |
 | `jay-scambler` |                              146 |                        32,004 | Historical provenance context; existing code remains Apache-2.0. |
 
 No non-Grey-Haven-controlled current source lines were found in this path group.
@@ -140,8 +137,8 @@ Audited paths:
 
 Evidence summary:
 
-| Contributor    | Direct path-log commits in group | Current blamed lines in group | Status                                                               |
-| -------------- | -------------------------------: | ----------------------------: | -------------------------------------------------------------------- |
+| Contributor    | Direct path-log commits in group | Current blamed lines in group | Status                                                           |
+| -------------- | -------------------------------: | ----------------------------: | ---------------------------------------------------------------- |
 | `jay-scambler` |                                4 |                         5,014 | Historical provenance context; existing code remains Apache-2.0. |
 
 No non-Grey-Haven-controlled current source lines were found in this path group.
@@ -154,8 +151,8 @@ public schema files were excluded from the historical candidate set.
 
 Evidence summary:
 
-| Contributor    | Direct path-log commits in group | Current blamed lines in group | Status                                                               |
-| -------------- | -------------------------------: | ----------------------------: | -------------------------------------------------------------------- |
+| Contributor    | Direct path-log commits in group | Current blamed lines in group | Status                                                           |
+| -------------- | -------------------------------: | ----------------------------: | ---------------------------------------------------------------- |
 | `jay-scambler` |                               16 |                         2,756 | Historical provenance context; existing code remains Apache-2.0. |
 
 No non-Grey-Haven-controlled current source lines were found in this path group.
@@ -170,16 +167,16 @@ excluded from this historical audit slice.
 
 Evidence summary:
 
-| Contributor        | Direct path-log commits in group | Current blamed lines in group | Status                                                                                                  |
-| ------------------ | -------------------------------: | ----------------------------: | ------------------------------------------------------------------------------------------------------- |
-| `jay-scambler`     |                               22 |                         2,836 | Historical provenance context; existing code remains Apache-2.0.                                    |
+| Contributor        | Direct path-log commits in group | Current blamed lines in group | Status                                                                        |
+| ------------------ | -------------------------------: | ----------------------------: | ----------------------------------------------------------------------------- |
+| `jay-scambler`     |                               22 |                         2,836 | Historical provenance context; existing code remains Apache-2.0.              |
 | `cirdan-greyhaven` |                                1 |                            70 | Treated as Grey Haven-controlled contributor identity for historical context. |
 
 Current files with Cirdan-identity lines:
 
 | Path                                | Cirdan-identity lines | Representative blamed commits                           |
-| ----------------------------------- | -----------------: | ------------------------------------------------------- |
-| `ts/src/knowledge/skill-package.ts` |                 70 | `27d79071` skill export + agent task markdown rendering |
+| ----------------------------------- | --------------------: | ------------------------------------------------------- |
+| `ts/src/knowledge/skill-package.ts` |                    70 | `27d79071` skill export + agent task markdown rendering |
 
 ## Current Path-Specific Blockers
 
