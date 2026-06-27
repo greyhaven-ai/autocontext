@@ -180,58 +180,49 @@ def _make_ctx(settings: AppSettings | None = None, scenario: MagicMock | None = 
     )
 
 
+def _make_knowledge_stage_mocks(**artifact_reads: object) -> tuple[MagicMock, MagicMock]:
+    artifacts = MagicMock()
+    defaults: dict[str, object] = {
+        "read_playbook": "",
+        "read_tool_context": "",
+        "read_skills": "",
+        "read_mutation_replay": "",
+        "read_latest_weakness_reports_markdown": "",
+        "read_latest_progress_reports_markdown": "",
+        "read_latest_session_reports": "",
+        "read_latest_advance_analysis": "",
+        "read_progress": None,
+    }
+    defaults.update(artifact_reads)
+    for reader, value in defaults.items():
+        getattr(artifacts, reader).return_value = value
+
+    trajectory = MagicMock()
+    trajectory.build_trajectory.return_value = ""
+    trajectory.build_strategy_registry.return_value = ""
+    trajectory.build_experiment_log.return_value = ""
+    return artifacts, trajectory
+
+
 # ---------- TestStageKnowledgeSetup ----------
 
 
 class TestStageKnowledgeSetup:
     def test_populates_prompts(self) -> None:
-        artifacts = MagicMock()
-        artifacts.read_playbook.return_value = "Playbook content"
-        artifacts.read_tool_context.return_value = ""
-        artifacts.read_skills.return_value = ""
-        artifacts.read_mutation_replay.return_value = ""
-        artifacts.read_latest_weakness_reports_markdown.return_value = ""
-        artifacts.read_latest_progress_reports_markdown.return_value = ""
-        artifacts.read_latest_advance_analysis.return_value = ""
-        artifacts.read_progress.return_value = None
-        trajectory = MagicMock()
-        trajectory.build_trajectory.return_value = ""
-        trajectory.build_strategy_registry.return_value = ""
+        artifacts, trajectory = _make_knowledge_stage_mocks(read_playbook="Playbook content")
         ctx = _make_ctx()
         result = stage_knowledge_setup(ctx, artifacts=artifacts, trajectory_builder=trajectory)
         assert result.prompts is not None
         assert result.prompts.competitor  # non-empty
 
     def test_sets_strategy_interface(self) -> None:
-        artifacts = MagicMock()
-        artifacts.read_playbook.return_value = ""
-        artifacts.read_tool_context.return_value = ""
-        artifacts.read_skills.return_value = ""
-        artifacts.read_mutation_replay.return_value = ""
-        artifacts.read_latest_weakness_reports_markdown.return_value = ""
-        artifacts.read_latest_progress_reports_markdown.return_value = ""
-        artifacts.read_latest_advance_analysis.return_value = ""
-        artifacts.read_progress.return_value = None
-        trajectory = MagicMock()
-        trajectory.build_trajectory.return_value = ""
-        trajectory.build_strategy_registry.return_value = ""
+        artifacts, trajectory = _make_knowledge_stage_mocks()
         ctx = _make_ctx()
         result = stage_knowledge_setup(ctx, artifacts=artifacts, trajectory_builder=trajectory)
         assert result.strategy_interface == '{"aggression": float}'
 
     def test_lean_harness_profile_caps_prompt_budget(self) -> None:
-        artifacts = MagicMock()
-        artifacts.read_playbook.return_value = ""
-        artifacts.read_tool_context.return_value = ""
-        artifacts.read_skills.return_value = ""
-        artifacts.read_mutation_replay.return_value = ""
-        artifacts.read_latest_weakness_reports_markdown.return_value = ""
-        artifacts.read_latest_progress_reports_markdown.return_value = ""
-        artifacts.read_latest_advance_analysis.return_value = ""
-        artifacts.read_progress.return_value = None
-        trajectory = MagicMock()
-        trajectory.build_trajectory.return_value = ""
-        trajectory.build_strategy_registry.return_value = ""
+        artifacts, trajectory = _make_knowledge_stage_mocks()
         trajectory.build_experiment_log.return_value = ""
         settings = AppSettings(
             agent_provider="deterministic",
@@ -262,19 +253,7 @@ class TestStageKnowledgeSetup:
         assert captured["context_budget_tokens"] == 16_000
 
     def test_lean_harness_profile_enforces_tool_allowlist(self) -> None:
-        artifacts = MagicMock()
-        artifacts.read_playbook.return_value = ""
-        artifacts.read_tool_context.return_value = "Generated helper source"
-        artifacts.read_skills.return_value = ""
-        artifacts.read_mutation_replay.return_value = ""
-        artifacts.read_latest_weakness_reports_markdown.return_value = ""
-        artifacts.read_latest_progress_reports_markdown.return_value = ""
-        artifacts.read_latest_advance_analysis.return_value = ""
-        artifacts.read_progress.return_value = None
-        trajectory = MagicMock()
-        trajectory.build_trajectory.return_value = ""
-        trajectory.build_strategy_registry.return_value = ""
-        trajectory.build_experiment_log.return_value = ""
+        artifacts, trajectory = _make_knowledge_stage_mocks(read_tool_context="Generated helper source")
         settings = AppSettings(
             agent_provider="deterministic",
             harness_profile=HarnessProfile.LEAN,
@@ -304,19 +283,9 @@ class TestStageKnowledgeSetup:
         artifacts.read_tool_context.assert_not_called()
 
     def test_includes_mutation_replay_in_prompt_context(self) -> None:
-        artifacts = MagicMock()
-        artifacts.read_playbook.return_value = ""
-        artifacts.read_tool_context.return_value = ""
-        artifacts.read_skills.return_value = ""
-        artifacts.read_mutation_replay.return_value = "Context mutations since last checkpoint:\n- gen 2: playbook_updated"
-        artifacts.read_latest_weakness_reports_markdown.return_value = ""
-        artifacts.read_latest_progress_reports_markdown.return_value = ""
-        artifacts.read_latest_advance_analysis.return_value = ""
-        artifacts.read_progress.return_value = None
-        trajectory = MagicMock()
-        trajectory.build_trajectory.return_value = ""
-        trajectory.build_strategy_registry.return_value = ""
-        trajectory.build_experiment_log.return_value = ""
+        artifacts, trajectory = _make_knowledge_stage_mocks(
+            read_mutation_replay="Context mutations since last checkpoint:\n- gen 2: playbook_updated"
+        )
         ctx = _make_ctx()
 
         result = stage_knowledge_setup(ctx, artifacts=artifacts, trajectory_builder=trajectory)
@@ -325,21 +294,11 @@ class TestStageKnowledgeSetup:
         assert "Context mutations since last checkpoint" in result.prompts.competitor
 
     def test_includes_recent_weakness_reports_in_prompt_context(self) -> None:
-        artifacts = MagicMock()
-        artifacts.read_playbook.return_value = ""
-        artifacts.read_tool_context.return_value = ""
-        artifacts.read_skills.return_value = ""
-        artifacts.read_mutation_replay.return_value = ""
-        artifacts.read_latest_weakness_reports_markdown.return_value = (
-            "# Weakness Report: run_1\n## [HIGH] dead_end_pattern\nRepeated rollbacks detected"
+        artifacts, trajectory = _make_knowledge_stage_mocks(
+            read_latest_weakness_reports_markdown=(
+                "# Weakness Report: run_1\n## [HIGH] dead_end_pattern\nRepeated rollbacks detected"
+            )
         )
-        artifacts.read_latest_progress_reports_markdown.return_value = ""
-        artifacts.read_latest_advance_analysis.return_value = ""
-        artifacts.read_progress.return_value = None
-        trajectory = MagicMock()
-        trajectory.build_trajectory.return_value = ""
-        trajectory.build_strategy_registry.return_value = ""
-        trajectory.build_experiment_log.return_value = ""
         ctx = _make_ctx()
 
         result = stage_knowledge_setup(ctx, artifacts=artifacts, trajectory_builder=trajectory)
@@ -349,21 +308,9 @@ class TestStageKnowledgeSetup:
         assert "dead_end_pattern" in result.prompts.competitor
 
     def test_includes_recent_progress_reports_in_prompt_context(self) -> None:
-        artifacts = MagicMock()
-        artifacts.read_playbook.return_value = ""
-        artifacts.read_tool_context.return_value = ""
-        artifacts.read_skills.return_value = ""
-        artifacts.read_mutation_replay.return_value = ""
-        artifacts.read_latest_weakness_reports_markdown.return_value = ""
-        artifacts.read_latest_progress_reports_markdown.return_value = (
-            "# Progress Report: run_2\n- Total cost: $0.0240\n- Tokens per advance: 3,400"
+        artifacts, trajectory = _make_knowledge_stage_mocks(
+            read_latest_progress_reports_markdown=("# Progress Report: run_2\n- Total cost: $0.0240\n- Tokens per advance: 3,400")
         )
-        artifacts.read_latest_advance_analysis.return_value = ""
-        artifacts.read_progress.return_value = None
-        trajectory = MagicMock()
-        trajectory.build_trajectory.return_value = ""
-        trajectory.build_strategy_registry.return_value = ""
-        trajectory.build_experiment_log.return_value = ""
         ctx = _make_ctx()
 
         result = stage_knowledge_setup(ctx, artifacts=artifacts, trajectory_builder=trajectory)
@@ -399,18 +346,7 @@ class TestStageKnowledgeSetup:
 
     def test_skips_session_reports_when_disabled(self) -> None:
         settings = AppSettings(agent_provider="deterministic", session_reports_enabled=False)
-        artifacts = MagicMock()
-        artifacts.read_playbook.return_value = ""
-        artifacts.read_tool_context.return_value = ""
-        artifacts.read_skills.return_value = ""
-        artifacts.read_mutation_replay.return_value = ""
-        artifacts.read_latest_weakness_reports_markdown.return_value = ""
-        artifacts.read_latest_progress_reports_markdown.return_value = ""
-        artifacts.read_latest_advance_analysis.return_value = ""
-        artifacts.read_progress.return_value = None
-        trajectory = MagicMock()
-        trajectory.build_trajectory.return_value = ""
-        trajectory.build_strategy_registry.return_value = ""
+        artifacts, trajectory = _make_knowledge_stage_mocks()
         trajectory.build_experiment_log.return_value = ""
         ctx = _make_ctx(settings=settings)
 
@@ -505,18 +441,7 @@ class TestStageKnowledgeSetup:
         assert "Try aggression <= 0.4 next generation" not in result.prompts.analyst
 
     def test_includes_environment_snapshot_in_prompt_context(self) -> None:
-        artifacts = MagicMock()
-        artifacts.read_playbook.return_value = ""
-        artifacts.read_tool_context.return_value = ""
-        artifacts.read_skills.return_value = ""
-        artifacts.read_mutation_replay.return_value = ""
-        artifacts.read_latest_weakness_reports_markdown.return_value = ""
-        artifacts.read_latest_progress_reports_markdown.return_value = ""
-        artifacts.read_latest_advance_analysis.return_value = ""
-        artifacts.read_progress.return_value = None
-        trajectory = MagicMock()
-        trajectory.build_trajectory.return_value = ""
-        trajectory.build_strategy_registry.return_value = ""
+        artifacts, trajectory = _make_knowledge_stage_mocks()
         trajectory.build_experiment_log.return_value = ""
         ctx = _make_ctx()
         ctx.environment_snapshot = "## Environment\nPython 3.13 | macOS"
@@ -625,12 +550,7 @@ class TestStageKnowledgeSetup:
             >= result.semantic_compaction_benchmark["budget_only_variant"]["signal_lines_preserved"]
         )
         assert result.semantic_compaction_benchmark["evidence_cache_lookups"] == 1
-        report_path = (
-            artifacts.knowledge_root
-            / "test_scenario"
-            / "semantic_compaction_reports"
-            / "run_test_gen_1.json"
-        )
+        report_path = artifacts.knowledge_root / "test_scenario" / "semantic_compaction_reports" / "run_test_gen_1.json"
         assert report_path.exists()
         persisted = json.loads(report_path.read_text(encoding="utf-8"))
         assert persisted["context_budget_tokens"] == 180

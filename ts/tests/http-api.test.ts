@@ -241,6 +241,24 @@ async function createTestServer(dir: string) {
   return { server, mgr, baseUrl: `http://localhost:${server.port}` };
 }
 
+let dir: string;
+let server: Awaited<ReturnType<typeof createTestServer>>["server"] | undefined;
+let mgr: Awaited<ReturnType<typeof createTestServer>>["mgr"];
+let baseUrl: string;
+
+beforeEach(async () => {
+  dir = makeTempDir();
+  const testServer = await createTestServer(dir);
+  server = testServer.server;
+  mgr = testServer.mgr;
+  baseUrl = testServer.baseUrl;
+});
+
+afterEach(async () => {
+  await server?.stop();
+  rmSync(dir, { recursive: true, force: true });
+});
+
 async function persistRuntimeSession(dir: string): Promise<void> {
   const {
     RuntimeSessionEventLog,
@@ -327,22 +345,6 @@ function persistContextSelectionDecision(dir: string): void {
 // ---------------------------------------------------------------------------
 
 describe("HTTP API — health", () => {
-  let dir: string;
-  let server: Awaited<ReturnType<typeof createTestServer>>["server"];
-  let baseUrl: string;
-
-  beforeEach(async () => {
-    dir = makeTempDir();
-    const s = await createTestServer(dir);
-    server = s.server;
-    baseUrl = s.baseUrl;
-  });
-
-  afterEach(async () => {
-    await server.stop();
-    rmSync(dir, { recursive: true, force: true });
-  });
-
   it("GET /health returns ok", async () => {
     const { status, body } = await fetchJson(`${baseUrl}/health`);
     expect(status).toBe(200);
@@ -471,22 +473,6 @@ describe("HTTP API — health", () => {
 // ---------------------------------------------------------------------------
 
 describe("HTTP API — runs", () => {
-  let dir: string;
-  let server: Awaited<ReturnType<typeof createTestServer>>["server"];
-  let baseUrl: string;
-
-  beforeEach(async () => {
-    dir = makeTempDir();
-    const s = await createTestServer(dir);
-    server = s.server;
-    baseUrl = s.baseUrl;
-  });
-
-  afterEach(async () => {
-    await server.stop();
-    rmSync(dir, { recursive: true, force: true });
-  });
-
   it("GET /api/runs returns run list", async () => {
     const { status, body } = await fetchJson(`${baseUrl}/api/runs`);
     expect(status).toBe(200);
@@ -528,22 +514,6 @@ describe("HTTP API — runs", () => {
 // ---------------------------------------------------------------------------
 
 describe("HTTP API — notebooks", () => {
-  let dir: string;
-  let server: Awaited<ReturnType<typeof createTestServer>>["server"];
-  let baseUrl: string;
-
-  beforeEach(async () => {
-    dir = makeTempDir();
-    const s = await createTestServer(dir);
-    server = s.server;
-    baseUrl = s.baseUrl;
-  });
-
-  afterEach(async () => {
-    await server.stop();
-    rmSync(dir, { recursive: true, force: true });
-  });
-
   it("GET /api/notebooks lists notebooks", async () => {
     const { status, body } = await fetchJson(`${baseUrl}/api/notebooks`);
     expect(status).toBe(200);
@@ -657,24 +627,6 @@ describe("HTTP API — notebooks", () => {
 // ---------------------------------------------------------------------------
 
 describe("HTTP API — monitors", () => {
-  let dir: string;
-  let server: Awaited<ReturnType<typeof createTestServer>>["server"];
-  let mgr: Awaited<ReturnType<typeof createTestServer>>["mgr"];
-  let baseUrl: string;
-
-  beforeEach(async () => {
-    dir = makeTempDir();
-    const s = await createTestServer(dir);
-    server = s.server;
-    mgr = s.mgr;
-    baseUrl = s.baseUrl;
-  });
-
-  afterEach(async () => {
-    await server.stop();
-    rmSync(dir, { recursive: true, force: true });
-  });
-
   it("POST /api/monitors creates a monitor condition", async () => {
     const { status, body } = await postJson(`${baseUrl}/api/monitors`, {
       name: "Score floor",
@@ -833,22 +785,6 @@ describe("HTTP API — monitors", () => {
 // ---------------------------------------------------------------------------
 
 describe("HTTP API — cockpit", () => {
-  let dir: string;
-  let server: Awaited<ReturnType<typeof createTestServer>>["server"];
-  let baseUrl: string;
-
-  beforeEach(async () => {
-    dir = makeTempDir();
-    const s = await createTestServer(dir);
-    server = s.server;
-    baseUrl = s.baseUrl;
-  });
-
-  afterEach(async () => {
-    await server.stop();
-    rmSync(dir, { recursive: true, force: true });
-  });
-
   it("mirrors notebook CRUD under /api/cockpit/notebooks", async () => {
     const created = await putJson(`${baseUrl}/api/cockpit/notebooks/test-run-1`, {
       scenario_name: "grid_ctf",
@@ -1259,22 +1195,6 @@ describe("HTTP API — cockpit", () => {
 // ---------------------------------------------------------------------------
 
 describe("HTTP API — research hub", () => {
-  let dir: string;
-  let server: Awaited<ReturnType<typeof createTestServer>>["server"];
-  let baseUrl: string;
-
-  beforeEach(async () => {
-    dir = makeTempDir();
-    const s = await createTestServer(dir);
-    server = s.server;
-    baseUrl = s.baseUrl;
-  });
-
-  afterEach(async () => {
-    await server.stop();
-    rmSync(dir, { recursive: true, force: true });
-  });
-
   it("upserts, lists, fetches, and heartbeats hub sessions", async () => {
     const created = await putJson(`${baseUrl}/api/hub/sessions/session-1`, {
       scenario_name: "grid_ctf",
@@ -1441,22 +1361,6 @@ describe("HTTP API — research hub", () => {
 // ---------------------------------------------------------------------------
 
 describe("HTTP API — OpenClaw", () => {
-  let dir: string;
-  let server: Awaited<ReturnType<typeof createTestServer>>["server"];
-  let baseUrl: string;
-
-  beforeEach(async () => {
-    dir = makeTempDir();
-    const s = await createTestServer(dir);
-    server = s.server;
-    baseUrl = s.baseUrl;
-  });
-
-  afterEach(async () => {
-    await server.stop();
-    rmSync(dir, { recursive: true, force: true });
-  });
-
   it("POST /api/openclaw/evaluate scores a built-in game strategy", async () => {
     const { status, body } = await postJson(`${baseUrl}/api/openclaw/evaluate`, {
       scenario_name: "grid_ctf",
@@ -1709,22 +1613,6 @@ describe("HTTP API — OpenClaw", () => {
 // ---------------------------------------------------------------------------
 
 describe("HTTP API — knowledge", () => {
-  let dir: string;
-  let server: Awaited<ReturnType<typeof createTestServer>>["server"];
-  let baseUrl: string;
-
-  beforeEach(async () => {
-    dir = makeTempDir();
-    const s = await createTestServer(dir);
-    server = s.server;
-    baseUrl = s.baseUrl;
-  });
-
-  afterEach(async () => {
-    await server.stop();
-    rmSync(dir, { recursive: true, force: true });
-  });
-
   it("GET /api/knowledge/playbook/:scenario returns playbook", async () => {
     const { status, body } = await fetchJson(`${baseUrl}/api/knowledge/playbook/grid_ctf`);
     expect(status).toBe(200);
@@ -1856,24 +1744,6 @@ describe("HTTP API — knowledge", () => {
 // ---------------------------------------------------------------------------
 
 describe("HTTP API — dashboard event stream", () => {
-  let dir: string;
-  let server: Awaited<ReturnType<typeof createTestServer>>["server"];
-  let mgr: Awaited<ReturnType<typeof createTestServer>>["mgr"];
-  let baseUrl: string;
-
-  beforeEach(async () => {
-    dir = makeTempDir();
-    const s = await createTestServer(dir);
-    server = s.server;
-    mgr = s.mgr;
-    baseUrl = s.baseUrl;
-  });
-
-  afterEach(async () => {
-    await server.stop();
-    rmSync(dir, { recursive: true, force: true });
-  });
-
   it("streams live events over /ws/events for the dashboard", async () => {
     const { WebSocket } = await import("ws");
     const wsUrl = baseUrl.replace(/^http/, "ws") + "/ws/events";

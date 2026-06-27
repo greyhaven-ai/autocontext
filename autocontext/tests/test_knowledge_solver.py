@@ -89,6 +89,15 @@ class _StubProvider:
         return "test-model"
 
 
+def _solve_settings(tmp_path: Path, **overrides: object) -> AppSettings:
+    values: dict[str, object] = {
+        "knowledge_root": tmp_path / "knowledge",
+        "db_path": tmp_path / "runs.sqlite3",
+    }
+    values.update(overrides)
+    return AppSettings(**values)
+
+
 class _SolveAgentTask(AgentTaskInterface):
     name = "solve_agent_task_fixture"
 
@@ -873,9 +882,8 @@ class TestSolveLLMFn:
             SolveScenarioExecutor,
         )
 
-        settings = AppSettings(
-            knowledge_root=tmp_path / "knowledge",
-            db_path=tmp_path / "runs.sqlite3",
+        settings = _solve_settings(
+            tmp_path,
             agent_provider="pi",
             pi_timeout=300.0,
         )
@@ -917,9 +925,8 @@ class TestSolveLLMFn:
     ) -> None:
         from autocontext.knowledge.solver import SolveScenarioExecutor
 
-        settings = AppSettings(
-            knowledge_root=tmp_path / "knowledge",
-            db_path=tmp_path / "runs.sqlite3",
+        settings = _solve_settings(
+            tmp_path,
             agent_provider="pi",
             pi_timeout=900.0,
             generation_time_budget_seconds=420,
@@ -962,9 +969,8 @@ class TestSolveLLMFn:
     ) -> None:
         from autocontext.knowledge.solver import SolveScenarioExecutor
 
-        settings = AppSettings(
-            knowledge_root=tmp_path / "knowledge",
-            db_path=tmp_path / "runs.sqlite3",
+        settings = _solve_settings(
+            tmp_path,
             agent_provider="deterministic",
             competitor_provider="pi-rpc",
             pi_timeout=900.0,
@@ -1015,9 +1021,8 @@ class TestSolveLLMFn:
             SolveScenarioExecutor,
         )
 
-        settings = AppSettings(
-            knowledge_root=tmp_path / "knowledge",
-            db_path=tmp_path / "runs.sqlite3",
+        settings = _solve_settings(
+            tmp_path,
             agent_provider="pi",
             pi_timeout=300.0,
         )
@@ -1073,9 +1078,8 @@ class TestSolveLLMFn:
     ) -> None:
         from autocontext.knowledge.solver import SolveScenarioExecutor
 
-        settings = AppSettings(
-            knowledge_root=tmp_path / "knowledge",
-            db_path=tmp_path / "runs.sqlite3",
+        settings = _solve_settings(
+            tmp_path,
             agent_provider="pi",
             pi_timeout=900.0,
             generation_time_budget_seconds=420,
@@ -1129,9 +1133,8 @@ class TestSolveScenarioExecutor:
     def test_runs_agent_task_scenarios_through_task_loop(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         from autocontext.knowledge.solver import SolveScenarioExecutor
 
-        settings = AppSettings(
-            knowledge_root=tmp_path / "knowledge",
-            db_path=tmp_path / "runs.sqlite3",
+        settings = _solve_settings(
+            tmp_path,
         )
         scenario_name = "solve_agent_task_execution"
         previous = SCENARIO_REGISTRY.get(scenario_name)
@@ -1172,9 +1175,8 @@ class TestSolveScenarioExecutor:
         from autocontext.extensions import HookBus, HookEvents
         from autocontext.knowledge.solver import SolveScenarioExecutor
 
-        settings = AppSettings(
-            knowledge_root=tmp_path / "knowledge",
-            db_path=tmp_path / "runs.sqlite3",
+        settings = _solve_settings(
+            tmp_path,
         )
         scenario_name = "solve_agent_task_run_end_rounds"
         previous = SCENARIO_REGISTRY.get(scenario_name)
@@ -1234,9 +1236,8 @@ class TestSolveScenarioExecutor:
     def test_runs_artifact_editing_scenarios_through_task_loop(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         from autocontext.knowledge.solver import SolveScenarioExecutor
 
-        settings = AppSettings(
-            knowledge_root=tmp_path / "knowledge",
-            db_path=tmp_path / "runs.sqlite3",
+        settings = _solve_settings(
+            tmp_path,
         )
         scenario_name = "solve_artifact_editing_execution"
         previous = SCENARIO_REGISTRY.get(scenario_name)
@@ -1289,9 +1290,8 @@ class TestSolveScenarioExecutor:
         from autocontext.knowledge.solver import SolveScenarioExecutor
 
         clock = {"now": 0.0}
-        settings = AppSettings(
-            knowledge_root=tmp_path / "knowledge",
-            db_path=tmp_path / "runs.sqlite3",
+        settings = _solve_settings(
+            tmp_path,
             generation_time_budget_seconds=1,
         )
         scenario_name = "solve_budget_exhausting_execution"
@@ -1360,9 +1360,8 @@ def register(api):
         )
         monkeypatch.setenv("SOLVE_HOOK_EVENTS", str(events_path))
 
-        settings = AppSettings(
-            knowledge_root=tmp_path / "knowledge",
-            db_path=tmp_path / "runs.sqlite3",
+        settings = _solve_settings(
+            tmp_path,
             extensions=str(extension_path),
             extension_fail_fast=True,
         )
@@ -1424,10 +1423,7 @@ def register(api):
             else:
                 SCENARIO_REGISTRY[scenario_name] = previous
 
-        event_names = [
-            json.loads(line)["name"]
-            for line in events_path.read_text(encoding="utf-8").splitlines()
-        ]
+        event_names = [json.loads(line)["name"] for line in events_path.read_text(encoding="utf-8").splitlines()]
 
         assert job.status == "completed"
         assert job.family_name == "agent_task"
@@ -1449,9 +1445,8 @@ def register(api):
             SolveScenarioBuildResult,
         )
 
-        settings = AppSettings(
-            knowledge_root=tmp_path / "knowledge",
-            db_path=tmp_path / "runs.sqlite3",
+        settings = _solve_settings(
+            tmp_path,
         )
         manager = SolveManager(settings)
         created = SolveScenarioBuildResult(
