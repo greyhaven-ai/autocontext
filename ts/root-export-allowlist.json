@@ -1,0 +1,169 @@
+{
+  "modules": [
+    "./types/index.js",
+    "./providers/index.js",
+    "./judge/index.js",
+    "./storage/index.js",
+    "./prompts/context-budget.js",
+    "./prompts/templates.js",
+    "./knowledge/context-selection-report.js",
+    "./config/index.js",
+    "./config/credentials.js",
+    "./extensions/index.js",
+    "./integrations/browser/types.js",
+    "./integrations/browser/contract/index.js",
+    "./integrations/browser/policy.js",
+    "./execution/improvement-loop.js",
+    "./execution/output-cleaner.js",
+    "./execution/agent-task-evolution.js",
+    "./execution/task-runner.js",
+    "./execution/task-queue-store.js",
+    "./execution/gondolin-contract.js",
+    "./execution/sandbox-adapter-contracts.js",
+    "./execution/judge-executor.js",
+    "./execution/action-filter.js",
+    "./execution/strategy-validator.js",
+    "./execution/elo.js",
+    "./execution/supervisor.js",
+    "./execution/tournament.js",
+    "./runtimes/index.js",
+    "./session/types.js",
+    "./session/store.js",
+    "./session/runtime-events.js",
+    "./session/runtime-session.js",
+    "./session/runtime-session-ids.js",
+    "./session/runtime-session-notifications.js",
+    "./session/runtime-session-read-model.js",
+    "./session/background-session-read-model.js",
+    "./session/background-session-events.js",
+    "./session/background-session-automation-guardrails.js",
+    "./session/background-session-lifecycle-hooks.js",
+    "./session/background-session-outcomes.js",
+    "./session/runtime-context.js",
+    "./session/runtime-session-timeline.js",
+    "./session/runtime-child-tasks.js",
+    "./scenarios/index.js",
+    "./knowledge/index.js",
+    "./agents/roles.js",
+    "./agents/provider-bridge.js",
+    "./agents/model-router.js",
+    "./agents/orchestrator.js",
+    "./loop/index.js",
+    "./analytics/run-trace.js",
+    "./analytics/exploration-collapse-guard.js",
+    "./analytics/campaign-mode-report.js",
+    "./knowledge/campaign-mode-report-store.js",
+    "./analytics/goal-run-report.js",
+    "./knowledge/goal-run-report-store.js",
+    "./analytics/negative-result-ledger.js",
+    "./knowledge/negative-result-ledger-store.js",
+    "./analytics/progress-report.js",
+    "./analytics/run-utilization-report.js",
+    "./analytics/runtime-session-run-trace.js",
+    "./analytics/trace-gate-operator-view.js",
+    "./analytics/trace-findings.js",
+    "./traces/public-schema.js",
+    "./traces/otel-bridge.js",
+    "./traces/redaction.js",
+    "./traces/export-workflow.js",
+    "./traces/publishers.js",
+    "./traces/data-plane.js",
+    "./traces/dataset-discovery.js",
+    "./traces/distillation-pipeline.js",
+    "./training/model-strategy.js",
+    "./training/backends.js",
+    "./training/model-defaults.js",
+    "./training/training-scale.js",
+    "./training/token-pressure-diagnostics.js",
+    "./training/promotion.js",
+    "./training/prompt-alignment.js",
+    "./mcp/server.js",
+    "./server/index.js",
+    "./rlm/index.js",
+    "./mission/index.js",
+    "./control-plane/runtime/index.js",
+    "./control-plane/eval-ledger/index.js",
+    "./control-plane/contract-probes/index.js",
+    "./control-plane/memory-packs/index.js",
+    "./control-plane/external-evals/index.js"
+  ],
+  "resolutions": [
+    {
+      "kind": "type",
+      "name": "ValidationResult",
+      "from": "./execution/strategy-validator.js"
+    },
+    {
+      "kind": "type",
+      "name": "MatchResult",
+      "from": "./execution/strategy-validator.js"
+    },
+    {
+      "kind": "type",
+      "name": "JudgeResult",
+      "from": "./types/index.js"
+    },
+    {
+      "kind": "type",
+      "name": "TrajectoryRow",
+      "from": "./storage/index.js"
+    },
+    {
+      "kind": "value",
+      "name": "RedactionPolicy",
+      "from": "./traces/redaction.js"
+    }
+  ],
+  "aliases": [
+    {
+      "name": "ValidationResult",
+      "as": "ApiKeyValidationResult",
+      "from": "./config/credentials.js"
+    },
+    {
+      "name": "MatchResult",
+      "as": "StrategyMatchResult",
+      "from": "./execution/strategy-validator.js"
+    },
+    {
+      "name": "MatchResult",
+      "as": "TournamentMatchResult",
+      "from": "./execution/tournament.js"
+    },
+    {
+      "name": "Result",
+      "as": "ScenarioResult",
+      "from": "./scenarios/index.js"
+    },
+    {
+      "name": "TrajectoryRow",
+      "as": "KnowledgeTrajectoryRow",
+      "from": "./knowledge/index.js"
+    },
+    {
+      "name": "RedactionPolicy",
+      "as": "TraceRedactionPolicy",
+      "from": "./traces/public-schema.js"
+    },
+    {
+      "name": "ValidationResult",
+      "as": "PublicTraceValidationResult",
+      "from": "./traces/public-schema.js"
+    },
+    {
+      "name": "RedactionSummary",
+      "as": "TraceExportRedactionSummary",
+      "from": "./traces/export-workflow.js"
+    },
+    {
+      "name": "ExportResult",
+      "as": "TraceExportResult",
+      "from": "./traces/export-workflow.js"
+    },
+    {
+      "name": "ValidationResult",
+      "as": "PromptValidationResult",
+      "from": "./training/prompt-alignment.js"
+    }
+  ]
+}
