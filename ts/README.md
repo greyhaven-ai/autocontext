@@ -1,372 +1,18 @@
-# autoctx — autocontext TypeScript Package
+# autoctx — TypeScript package
 
-`autoctx` is the Node/TypeScript package for autocontext. It provides the operator-facing CLI, simulation, investigation, analysis, mission, and trace surfaces for Node environments:
+`autoctx` is the Node/TypeScript package for autocontext. It ships the operator-facing CLI, TUI, simulations, investigations, analysis, missions, MCP server, runtime/session primitives, production-trace SDK, and experimental agent-handler surface.
 
-The intended use is to point the harness at a real task, simulation, investigation, or mission, let it produce a rich execution history, and then use the returned traces, reports, datasets, packages, and artifacts to improve or operationalize that workflow.
-
-Need the canonical product/runtime vocabulary first? Start with [docs/concept-model.md](../docs/concept-model.md).
-
-- **Scenario execution**: run generation loops with tournament scoring and Elo progression
-- **Simulation surface**: plain-language simulations with sweeps, replay, compare, and export
-- **Investigation surface**: evidence-driven diagnosis with hypotheses and confidence scoring
-- **Analysis surface**: interpret and compare runs, simulations, investigations, and missions
-- **Mission surface**: adaptive execution, mission artifacts, and verifier-driven control plane
-- **Knowledge system**: versioned playbooks, score trajectories, session reports, dead-end tracking
-- **Interactive server**: HTTP API, WebSocket control plane, bundled Ink TUI
-- **MCP control plane**: 40+ tools covering scenarios, runs, knowledge, evaluation, feedback, solve, sandbox, and export
-- **Provider routing**: Anthropic, OpenAI-compatible, Gemini, Mistral, Groq, OpenRouter, Azure OpenAI, Ollama, vLLM, Hermes, Pi, Pi-RPC, deterministic
-- **Evaluation**: one-shot judging, multi-round improvement loops, REPL-loop sessions
-- **Package management**: strategy package export/import, training data export
-- **Training hook surface**: dataset validation and executor-backed `train` entry point
-- **Runtime workspace/session primitives**: workspace-scoped filesystem/shell contracts, scoped command/tool grants with redacted lifecycle events, runtime session event logs, child-task lineage helpers, a runtime-session facade, and AgentRuntime session recording
-- **Experimental agent handler surface** at `autoctx/agent-runtime`: discover and invoke `.autoctx/agents/*.ts` handlers backed by runtime sessions
-- **Production-traces emit SDK** at `autoctx/production-traces` — customer-facing emit APIs mirroring the Python SDK (A2-II-a)
-
-Runtime command grants are host-created capability handles, not prompt text.
-Trusted env values are injected only into the grant handler or local child
-process. Local grant wrappers do not inherit `process.env`; callers must opt in
-with an explicit `inheritEnv` allowlist. Runtime-session logs record
-`start`/`end`/`error` events with command name, args summary, exit code, and
-redaction metadata; they redact values from the exact env supplied to the
-grant. Prompt-scoped grants last only for that runtime call. Child tasks receive
-grants only when the caller passes grants to `runChildTask()` or when an
-already-granted workspace contains grants whose policy allows child-task
-inheritance.
-
-TypeScript callers can also adapt remote streamable-HTTP MCP servers into
-scoped runtime tool grants with `connectMcpRuntimeTools()`. The trusted host
-code owns the MCP URL and headers, discovered tool names are normalized with
-collision suffixes, input schemas are preserved, and tool results are converted
-to model-safe text while keeping structured content available to callers:
-
-```ts
-import { createInMemoryWorkspaceEnv } from "autoctx";
-import { connectMcpRuntimeTools } from "autoctx/runtimes/mcp";
-
-const mcpTools = await connectMcpRuntimeTools({
-  url: "https://mcp.example.com/rpc",
-  headers: { Authorization: `Bearer ${process.env.MCP_TOKEN ?? ""}` },
-  namePrefix: "docs",
-});
-
-const workspace = await createInMemoryWorkspaceEnv({ cwd: "/repo" }).scope({
-  tools: mcpTools.tools,
-});
-
-const result = await workspace.tools?.[0]?.execute?.({ q: "runtime sessions" });
-await mcpTools.close();
-```
-
-The package also includes an experimental programmable-agent authoring surface
-at `autoctx/agent-runtime`. It discovers handlers from `.autoctx/agents` only
-and avoids colliding with `.autoctx/skills`, scenario directories, or hosted
-deployment concerns. The invoker supplies payload, env, workspace, and an
-`AgentRuntime`; env values are available to trusted handler code but are not
-automatically inserted into prompts. The package uses its bundled `tsx` loader
-for `.ts`, `.tsx`, and `.mts` agent files on Node 18+.
-
-```ts
-// .autoctx/agents/support.ts
-import type { AutoctxAgentContext } from "autoctx/agent-runtime";
-
-type Payload = { threadId?: string; message: string };
-
-export const triggers = { webhook: true };
-
-export default async function ({ id, init, payload }: AutoctxAgentContext<Payload>) {
-  const runtime = await init();
-  const session = await runtime.session(payload.threadId ?? id ?? "default");
-  return session.prompt(payload.message, { role: "support-triager" });
-}
-```
-
-```ts
-import { discoverAutoctxAgents, invokeAutoctxAgent, loadAutoctxAgent } from "autoctx/agent-runtime";
-import { createInMemoryWorkspaceEnv } from "autoctx";
-
-const [entry] = await discoverAutoctxAgents({ cwd: process.cwd() });
-const agent = await loadAutoctxAgent(entry);
-
-const result = await invokeAutoctxAgent(agent, {
-  payload: { threadId: "ticket-123", message: "Please triage this ticket." },
-  env: { SUPPORT_TOKEN: process.env.SUPPORT_TOKEN },
-  runtime: myAgentRuntime,
-  workspace: createInMemoryWorkspaceEnv({ cwd: "/repo" }),
-});
-```
-
-For local iteration, the npm CLI can invoke the same handlers by name, expose
-a tiny dev server, or materialize the approved self-hosted Node build target.
-Env file loading is explicit: pass `--env FILE` to local run/dev, or set
-`AUTOCTX_ENV_FILE` for a generated Node server; values already set in the shell
-win over values in that file. Generated packages use a local `file:` dependency
-on the currently installed `autoctx`, so source builds do not reinstall an older
-npm release that lacks the Node-target subpath. Runtime-backed generated servers
-accept `AUTOCTX_RUNTIME_MODULE` as a bare package specifier, relative/absolute
-file path, or URL.
-
-```bash
-autoctx agent run support \
-  --id ticket-123 \
-  --payload '{"threadId":"ticket-123","message":"Please triage this ticket."}' \
-  --env .env.local \
-  --json
-
-autoctx agent dev --port 3583 --env .env.local
-
-autoctx agent build --target node --out .autoctx/build/node
-cd .autoctx/build/node && npm install && AUTOCTX_ENV_FILE=.env.local npm start
-
-curl http://127.0.0.1:3583/manifest
-curl -X POST http://127.0.0.1:3583/agents/support/invoke \
-  -H 'content-type: application/json' \
-  -d '{"id":"ticket-123","payload":{"message":"Please triage this ticket."}}'
-```
-
-Generic Fetch/ESM hosts can reuse the same manifest/invoke wire shape through
-the control-plane adapter at `autoctx/control-plane/agent-app-fetch`. The
-adapter takes an explicit static catalog or module map; it does not scan the
-filesystem at request time and does not imply a Cloudflare, Vercel, or Deno
-build target.
-
-```ts
-import {
-  createAgentAppFetchHandler,
-  createStaticAgentAppCatalog,
-} from "autoctx/control-plane/agent-app-fetch";
-
-const hostProvidedEnv = { SUPPORT_TOKEN: "host-injected-token" };
-
-const fetchAgentApp = createAgentAppFetchHandler({
-  env: { SUPPORT_TOKEN: hostProvidedEnv.SUPPORT_TOKEN },
-  catalog: createStaticAgentAppCatalog([
-    {
-      name: "support",
-      relativePath: ".autoctx/agents/support.ts",
-      extension: ".ts",
-      triggers: { webhook: true },
-      handler: async (ctx) => ({ id: ctx.id, payload: ctx.payload }),
-    },
-  ]),
-});
-
-export default { fetch: fetchAgentApp };
-```
-
-Fetch hosts can pass an explicit workspace store when handler artifacts should
-survive beyond a single invocation. The default Fetch workspace is request-local
-memory; the store seam is provider-neutral and keeps shell execution unavailable
-unless a separate host-created capability is supplied:
-
-```ts
-import {
-  createAgentAppFetchHandler,
-  createInMemoryAgentAppFetchWorkspaceStore,
-} from "autoctx/control-plane/agent-app-fetch";
-
-const workspaceStore = createInMemoryAgentAppFetchWorkspaceStore();
-
-export default {
-  fetch: createAgentAppFetchHandler({
-    catalog, // a static or module-map catalog supplied by host build code
-    workspaceStore,
-  }),
-};
-```
-
-Build tooling can also precompute a bundler-visible module map and turn it into
-the same Fetch catalog or a generic generated Fetch entrypoint. The planner
-accepts explicit `.autoctx/agents` entries from a build step; it does not
-discover files from the request path:
-
-```ts
-import {
-  createAgentAppFetchCatalogFromModuleMap,
-  createAgentAppFetchHandler,
-  planAgentAppFetchCatalog,
-} from "autoctx/control-plane/agent-app-fetch";
-
-const plan = planAgentAppFetchCatalog({
-  entries: [
-    {
-      name: "support",
-      relativePath: ".autoctx/agents/support.ts",
-      extension: ".ts",
-      triggers: { webhook: true },
-    },
-  ],
-  moduleSpecifier: (entry) => `./${entry.relativePath}`,
-});
-
-const catalog = createAgentAppFetchCatalogFromModuleMap(plan, {
-  support: () => import("./.autoctx/agents/support.ts"),
-});
-
-export default { fetch: createAgentAppFetchHandler({ catalog }) };
-```
-
-For generated Fetch bundles, `renderAgentAppFetchEntrypointTemplate()` emits an
-ESM entrypoint with a static module map, a machine-readable host capability
-manifest, and a `createAgentAppFetchEntrypoint()` factory. Host code can pass
-explicit capabilities such as `env`, `runtime`, `runtimeFactory`,
-`runtimeFactoryName`, `workspaceStore`, or `sessionEventStore`; the generated
-source does not read ambient env or add provider deployment wrappers:
-
-```ts
-import {
-  planAgentAppFetchCatalog,
-  planAgentAppFetchRuntimeFactories,
-  agentAppFetchHostCapabilityManifestSchema,
-  renderAgentAppFetchEntrypointTemplate,
-  renderAgentAppFetchHostCapabilityManifest,
-  renderAgentAppFetchHostCapabilityManifestSchema,
-} from "autoctx/control-plane/agent-app-fetch";
-
-const plan = planAgentAppFetchCatalog({ entries });
-const runtimeFactoryPlan = planAgentAppFetchRuntimeFactories({
-  entries: runtimeEntries,
-});
-const source = renderAgentAppFetchEntrypointTemplate(plan, {
-  runtimeFactoryPlan,
-});
-const manifestJson = renderAgentAppFetchHostCapabilityManifest(plan);
-const manifestSchemaJson = renderAgentAppFetchHostCapabilityManifestSchema();
-// or import agentAppFetchHostCapabilityManifestSchema directly for validators.
-void agentAppFetchHostCapabilityManifestSchema;
-```
-
-The manifest lists the supported Fetch routes (`GET /manifest`, `GET /agents`,
-and `POST /agents/:agent/invoke`), generated agents, accepted host capability
-keys, and unsupported defaults such as runtime filesystem discovery, ambient
-environment capture, and local shell execution. A generated entrypoint can use a
-host-supplied `runtimeFactory` directly or resolve `runtimeFactoryName` through
-the bundled, static runtime factory module map. Provider wrappers can consume the
-manifest JSON and `agentAppFetchHostCapabilityManifestSchema` when validating
-host capability wiring, but provider-specific deployment remains outside this
-package. See [`docs/fetch-api-reference.md`](../docs/fetch-api-reference.md) for
-the exported API surface,
-[`docs/fetch-host-capability-manifest.md`](../docs/fetch-host-capability-manifest.md)
-for manifest validation examples,
-[`docs/generated-fetch-packaging.md`](../docs/generated-fetch-packaging.md),
-[`docs/fetch-troubleshooting.md`](../docs/fetch-troubleshooting.md),
-[`examples/generated-fetch-packaging.ts`](examples/generated-fetch-packaging.ts),
-and [`examples/generated-fetch-runtime-factory-packaging.ts`](examples/generated-fetch-runtime-factory-packaging.ts)
-for generic Fetch/ESM packaging examples and common host wiring fixes.
-
-Runtime-backed Fetch handlers can receive an explicit edge-safe session event
-store. The store appends idempotently by `eventId`, replays by per-session
-sequence, and is host-owned; provider-specific storage adapters belong outside
-this generic package:
-
-```ts
-import {
-  createAgentAppFetchHandler,
-  createInMemoryAgentAppFetchSessionEventStore,
-} from "autoctx/control-plane/agent-app-fetch";
-
-const sessionEventStore = createInMemoryAgentAppFetchSessionEventStore();
-
-export default {
-  fetch: createAgentAppFetchHandler({ catalog, runtime, sessionEventStore }),
-};
-```
-
-Host-owned workspace/session store adapters can run the framework-agnostic Fetch
-store conformance helpers from `autoctx/control-plane/agent-app-fetch`. Each
-case expects a fresh isolated store from `createStore`; the workspace root
-removal case is destructive for that store instance.
-
-```ts
-import {
-  createAgentAppFetchSessionEventStoreConformanceCases,
-  createAgentAppFetchWorkspaceStoreConformanceCases,
-} from "autoctx/control-plane/agent-app-fetch";
-import { describe, it } from "vitest";
-
-describe("host Fetch stores", () => {
-  for (const testCase of createAgentAppFetchWorkspaceStoreConformanceCases({
-    createStore: createHostWorkspaceStore,
-  })) {
-    it(testCase.name, testCase.run);
-  }
-
-  for (const testCase of createAgentAppFetchSessionEventStoreConformanceCases({
-    createStore: createHostSessionEventStore,
-  })) {
-    it(testCase.name, testCase.run);
-  }
-});
-```
-
-Fetch wrappers can also run invocation conformance cases against any factory that
-accepts generic Fetch handler options. The suite verifies the manifest aliases,
-agent invocation envelope, error envelopes, body limits, explicit
-env/workspace/runtime capability wiring, and runtime factory precedence/laziness
-without depending on a provider runtime.
-
-```ts
-import { createAgentAppFetchInvocationConformanceCases } from "autoctx/control-plane/agent-app-fetch";
-import { describe, it } from "vitest";
-
-describe("host Fetch invocation", () => {
-  for (const testCase of createAgentAppFetchInvocationConformanceCases({
-    createHandler: createHostFetchHandler,
-  })) {
-    it(testCase.name, testCase.run);
-  }
-});
-```
-
-See [`docs/fetch-conformance.md`](../docs/fetch-conformance.md) for the full
-runner-agnostic conformance guide,
-[`docs/fetch-troubleshooting.md`](../docs/fetch-troubleshooting.md) for common
-host wiring failures, and
-[`examples/fetch-conformance-host-wrapper.ts`](examples/fetch-conformance-host-wrapper.ts)
-for a typed executable wrapper example. See
-[`docs/edge-runtime-compatibility.md`](../docs/edge-runtime-compatibility.md) and
-[`docs/core-control-package-split.md#agent-app-build-targets`](../docs/core-control-package-split.md#agent-app-build-targets)
-for the OSS/proprietary boundary: provider deployment manifests, hosted secrets,
-fleet scheduling, billing, and tenant orchestration stay outside this OSS
-adapter.
-
-The TypeScript package includes mirrored deterministic semantic prompt
-compaction for long-lived playbooks, trajectories, and session reports.
-Standalone npm runs compact prompt context before the coarse budget fallback,
-then record Pi-shaped entries via the `ArtifactStore` ledger contract:
-`appendCompactionEntries()`, `readCompactionEntries()`, and
-`latestCompactionEntryId()` persist/read `runs/<run_id>/compactions.jsonl` plus
-the `compactions.latest` sidecar for cheap latest-entry lookups.
-
-The TypeScript runtime also mirrors the Python extension hook bus for
-standalone npm runs. Set `AUTOCONTEXT_EXTENSIONS` to a comma-separated list of
-JavaScript/ESM modules or `module:callable` targets, and set
-`AUTOCONTEXT_EXTENSION_FAIL_FAST=true` when hook errors should stop the run.
-Extensions receive ordered Pi-shaped events for run lifecycle, context
-assembly, semantic compaction, provider calls, judge calls, and artifact
-writes:
-
-```js
-export function register(api) {
-  api.on("context", (event) => ({
-    roles: {
-      ...event.payload.roles,
-      competitor: `${event.payload.roles.competitor}\nPrefer concise, testable strategies.`,
-    },
-  }));
-}
-```
+Use the Python package when you need the full Python control plane or local MLX/CUDA training implementation. Use this package when you need Node, npm, the TUI, Fetch/agent adapters, or TypeScript library APIs.
 
 ## Install
 
 ```bash
-npm install autoctx
+bun add -g autoctx
+# or
+npm install -g autoctx
 ```
 
-The current npm release line is `autoctx@0.10.0`.
-Important: use `autoctx`, not `autocontext`.
-`autocontext` on npm is a different package and not this project.
-
-From source:
+From a checkout:
 
 ```bash
 cd ts
@@ -374,914 +20,165 @@ npm install
 npm run build
 ```
 
-## Emit SDK: `autoctx/production-traces`
+## Quick start
 
-Customer applications can emit production traces directly from their
-TypeScript code using the `autoctx/production-traces` subpath. This is the
-TS mirror of the Python `autocontext.production_traces` emit module;
-customers using both languages get one mental model, enforced at the byte
-level by cross-runtime property tests.
+```bash
+AUTOCONTEXT_AGENT_PROVIDER=deterministic autoctx solve "improve customer-support replies" --iterations 3
+```
+
+Use a real provider by setting `AUTOCONTEXT_AGENT_PROVIDER` and its credential:
+
+```bash
+AUTOCONTEXT_AGENT_PROVIDER=anthropic ANTHROPIC_API_KEY=... autoctx solve "..." --iterations 3
+AUTOCONTEXT_AGENT_PROVIDER=openai-compatible AUTOCONTEXT_AGENT_BASE_URL=http://localhost:8000/v1 AUTOCONTEXT_AGENT_API_KEY=... autoctx solve "..." --iterations 3
+AUTOCONTEXT_AGENT_PROVIDER=pi AUTOCONTEXT_PI_COMMAND=pi autoctx solve "..." --iterations 3
+```
+
+Provider routing details live in [../autocontext/docs/agent-integration.md](../autocontext/docs/agent-integration.md).
+
+## CLI surfaces
+
+| Command                                                | Purpose                                                      |
+| ------------------------------------------------------ | ------------------------------------------------------------ |
+| `autoctx solve "..." --iterations 3`                   | Generate and run a scenario from a plain-language goal       |
+| `autoctx run <scenario> --iterations 3`                | Run a saved scenario                                         |
+| `autoctx simulate -d "..."`                            | Build/replay/compare simulations                             |
+| `autoctx investigate -d "..."`                         | Evidence-driven diagnosis                                    |
+| `autoctx analyze --id <id> --type <kind>`              | Inspect runs, simulations, investigations, or missions       |
+| `autoctx mission create --name "..." --goal "..."`     | Create verifier-driven goals                                 |
+| `autoctx mission run --id <id> --max-iterations 3`     | Execute a mission                                            |
+| `autoctx queue add --task-prompt "..." --rubric "..."` | Add evaluation/improvement work                              |
+| `autoctx runtime-sessions timeline --run-id <run_id>`  | Inspect provider/tool/child-task timelines                   |
+| `autoctx mcp-serve`                                    | Expose MCP tools                                             |
+| `autoctx tui`                                          | Start the terminal UI                                        |
+| `autoctx train --scenario <name> --dataset <jsonl>`    | Validate training input and call an injected training runner |
+| `autoctx agent run <name> --payload '{...}'`           | Invoke experimental `.autoctx/agents` handlers               |
+
+`train` is a validation/executor-hook surface in TypeScript; end-to-end MLX/CUDA training lives in the Python package unless your application injects a real `TrainingRunner`.
+
+## MCP and control plane
+
+```bash
+autoctx mcp-serve
+```
+
+The MCP server exposes scenario/run/knowledge/evaluation/feedback/solve/sandbox/export tools. Python and TypeScript share the same high-level vocabulary; parity details are tracked in [../docs/scenario-parity-matrix.md](../docs/scenario-parity-matrix.md).
+
+## Library usage
 
 ```ts
-import {
-  buildTrace,
-  writeJsonl,
-  TraceBatch,
-  hashUserId,
-  loadInstallSalt,
-} from "autoctx/production-traces";
+import { createProvider, LLMJudge } from "autoctx";
 
-// 1) Hash personally-identifying identifiers with the install salt.
-const salt = (await loadInstallSalt(process.cwd())) ?? "";
-const userIdHash = hashUserId(session.user.id, salt);
-
-// 2) Build and validate a ProductionTrace. Throws ValidationError on
-//    invalid input with per-field detail.
-const trace = buildTrace({
-  provider: "openai",
-  model: "gpt-4o-mini",
-  messages: [{ role: "user", content: prompt, timestamp: new Date().toISOString() }],
-  timing: {
-    startedAt: "2026-04-17T12:00:00.000Z",
-    endedAt: "2026-04-17T12:00:01.250Z",
-    latencyMs: 1250,
-  },
-  usage: { tokensIn: 42, tokensOut: 88 },
-  env: { environmentTag: "production", appId: "my-app" },
-  session: { userIdHash },
-});
-
-// 3) Persist: one file per call, or batch across many calls.
-writeJsonl(trace);
-
-const batch = new TraceBatch();
-for (const event of stream) batch.add(buildTrace(/* ... */));
-batch.flush(); // writes accumulated traces as one file
-```
-
-Both ESM and CommonJS consumers are supported via the `"exports"` map:
-
-```ts
-// ESM
-import { buildTrace } from "autoctx/production-traces";
-
-// CJS
-const { buildTrace } = require("autoctx/production-traces");
-```
-
-### Zero telemetry
-
-**Traces go where you put them.** The SDK itself emits zero telemetry
-about its own usage. No analytics, no phone-home, no opt-out toggle
-needed. CI script `check:no-telemetry` greps the SDK source plus every
-transitive dep for suspicious network patterns on every PR.
-
-### Enterprise-discipline guarantees
-
-- **Bundle size**: ~48 kB gzipped at ship, enforced in CI at a
-  100 kB ceiling. Tree-shakable via `"sideEffects"` discipline.
-- **License compatibility**: every dep in the SDK's transitive closure
-  carries an MIT / Apache-2.0 / BSD / ISC / 0BSD license, enforced by
-  `check:license-compatibility`.
-- **No install scripts**: `autoctx` declares no `preinstall`,
-  `install`, or `postinstall` lifecycle hooks. Safe to deploy with
-  `npm install --ignore-scripts`.
-- **Dual ESM + CJS**: both `import` and `require()` work via the
-  `package.json` `"exports"` map.
-- **Cross-runtime parity**: TS `buildTrace` and Python `build_trace`
-  produce byte-identical canonical JSON, enforced at 50 property runs
-  plus 7 committed fixtures.
-
-See [`src/production-traces/sdk/STABILITY.md`](src/production-traces/sdk/STABILITY.md)
-for the API-stability commitment and
-[`src/production-traces/sdk/BUDGET.md`](src/production-traces/sdk/BUDGET.md)
-for the bundle-size budget details.
-
-## CLI Commands
-
-The package ships a full `autoctx` CLI with commands including:
-
-```bash
-# Project setup and discovery
-autoctx init
-autoctx capabilities
-autoctx login
-autoctx whoami
-autoctx logout
-autoctx providers
-autoctx models
-
-# Scenario execution
-autoctx solve "improve customer-support replies for billing disputes" --iterations 3 --json
-autoctx run support_triage --iterations 3 --json
-autoctx run --scenario support_triage --iterations 3 --json
-autoctx list --json
-autoctx runtime-sessions list --limit 10
-autoctx runtime-sessions show --run-id <run-id> --json
-autoctx runtime-sessions timeline --run-id <run-id> --json
-autoctx context-selection --run-id <run-id> --json
-autoctx agent run support --id ticket-123 --payload '{"message":"Please triage this."}' --env .env.local --json
-autoctx agent dev --port 3583 --env .env.local
-autoctx status <run-id>
-autoctx show <run-id> --best
-autoctx watch <run-id>
-autoctx replay --run-id <id> --generation 1
-autoctx benchmark --scenario support_triage --runs 5
-
-# Package management
-autoctx export <run-id> --output pkg.json
-autoctx export-training-data --run-id <id> --output data.jsonl
-autoctx import-package --file pkg.json
-autoctx new-scenario --description "Test summarization quality"
-autoctx new-scenario --template prompt-optimization --name support_triage
-
-# Interactive, simulations, and missions
-autoctx tui [--port 8000]
-autoctx serve [--port 8000] [--json] # HTTP API
-autoctx worker [--poll-interval 5] [--concurrency 2]
-autoctx mcp-serve                     # MCP server on stdio
-autoctx simulate -d "simulate deploying a web service with rollback"
-autoctx simulate -d "simulate escalation thresholds" --sweep max_escalations=1:5:1
-autoctx investigate -d "why did conversion drop after Tuesday's release"
-autoctx investigate -d "checkout is failing" --browser-url https://status.example.com
-autoctx analyze --id deploy_sim --type simulation
-autoctx analyze --left sim_a --right sim_b --type simulation
-autoctx trace-findings --trace ./trace.json          # Markdown report
-autoctx trace-findings --trace ./trace.json --json   # TraceFindingReport JSON
-autoctx probes check --suite ./suite.json            # contract probes (see Contract Probes below)
-autoctx probes check --suite ./suite.json --json     # structured ContractProbeSuiteResult
-autoctx probes extract --trace ./trace.json          # synthesize a probe suite from a harness trace
-autoctx probes extract --trace ./trace.json --output ./suite.json
-autoctx mission create --name "Ship login" --goal "Implement OAuth"
-autoctx mission create --type code --name "Fix login" --goal "Tests pass" --repo-path . --test-command "npm test"
-autoctx mission run --id <mission-id> --max-iterations 3
-autoctx mission status --id <mission-id>
-autoctx mission artifacts --id <mission-id>
-autoctx train --scenario support_triage --dataset data.jsonl --backend cuda
-
-# Evaluation
-autoctx judge -p <prompt> -o <output> -r <rubric>
-autoctx judge --scenario my_saved_task -o <output>
-autoctx improve -p <prompt> -r <rubric> [-n rounds]
-autoctx improve -p <prompt> -o <output> -r <rubric> [-n rounds]
-autoctx improve --scenario my_saved_task [-o <output>]
-autoctx repl --scenario my_saved_task
-
-# Task queue
-autoctx queue add -s <spec> [--priority N] [--browser-url https://status.example.com]
-autoctx queue -s <spec> [...]   # legacy alias; prefer `queue add`
-autoctx queue status [--json]
-autoctx worker --poll-interval 5 --concurrency 2
-autoctx status <run-id>
-```
-
-Stateful persistent providers, including persistent Pi RPC, run with effective worker concurrency `1` to keep long-lived runtime sessions isolated. The worker/API shape is single-tenant or trusted-org infrastructure, not a hosted multi-tenant control plane; review the repo-level [background execution trust boundaries](../docs/background-execution-trust-boundaries.md) before exposing it beyond a trusted network or adding SCM/sandbox credentials.
-
-## Contract Probes
-
-`autoctx probes check --suite <path>` runs the contract-probe suite against observed harness state and reports per-probe pass/fail. It exits 0 on a full pass and 1 on any failure or any load / parse error. Default output is human-readable; pass `--json` to emit a structured `ContractProbeSuiteResult` payload that downstream tools can consume.
-
-The suite file is a JSON document validated by `ContractProbeSuiteSchema`. Every nested object is strict: unknown keys (e.g. a typo like `requiredStdoutPattern` missing the trailing `s`) fail validation rather than silently disappearing. Every declared expectation requires the matching observation; an `expected*` field without its observation fails as `missing-observation` rather than silently passing.
-
-Minimal suite example:
-
-```json
-{
-  "schema_version": 1,
-  "probes": [
-    {
-      "kind": "directory",
-      "label": "final-workdir",
-      "inputs": {
-        "presentFiles": ["solution.txt"],
-        "requiredFiles": ["solution.txt"],
-        "allowedFiles": ["solution.txt"],
-        "ignoredPatterns": ["^trace\\."]
-      }
-    },
-    {
-      "kind": "terminal",
-      "label": "after-build",
-      "inputs": {
-        "exitCode": 0,
-        "stdout": "All checks passed.\n",
-        "stderr": "",
-        "expectedExitCode": 0,
-        "requiredStdoutPatterns": ["checks passed"]
-      }
-    },
-    {
-      "kind": "cleanup",
-      "inputs": {
-        "entries": [
-          { "path": "solution.txt" },
-          { "path": "stale.lock", "mtime": "2026-05-21T10:00:00Z" }
-        ],
-        "now": "2026-05-21T12:00:00Z",
-        "maxLockfileAgeMs": 300000
-      }
-    }
-  ]
-}
-```
-
-Seven probe kinds are supported: `directory`, `terminal`, `service`, `artifact`, `cleanup`, `media`, `distributed`. Each invocation accepts an optional `label` string (caller-supplied attribution; surfaced in the report) and a `kind`-specific `inputs` object. Wire-format notes:
-
-- RegExp values may be a bare pattern string (`"^trace\\."`) or `{ "source": "^trace\\.", "flags": "i" }`. Invalid regexes (e.g. `"[unclosed"`) fail validation cleanly via Zod.
-- Date values are ISO-8601 strings. Malformed dates fail validation cleanly via Zod.
-
-`--json` payload shape:
-
-```json
-{
-  "passed": false,
-  "results": [
-    {
-      "kind": "cleanup",
-      "label": "after-build",
-      "passed": false,
-      "failures": [
-        {
-          "kind": "stale-lockfile",
-          "path": "stale.lock",
-          "message": "stale.lock is a lockfile older than 300000ms"
-        }
-      ]
-    }
-  ]
-}
-```
-
-The `results` field is a discriminated union by `kind`, so TypeScript callers can switch on `kind` and access each probe's typed failure fields (`path`, `rank`, `key`, `endpoint`, etc.) without casting. The library API (`runContractProbeSuite`, `loadContractProbeSuite`, `ContractProbeSuiteSchema`) is exported from the package root for programmatic use.
-
-### Synthesizing a suite from a harness trace
-
-For workflows that record a run and then verify it (rather than hand-authoring a suite), `autoctx probes extract --trace <path>` synthesizes a runnable probe suite from a harness-trace JSON file. The trace bundles both `observations` (what actually happened) and optional `expectations` (what the operator declared should have happened); the extractor joins them.
-
-Coverage: all seven probe kinds (terminal, directory, service, artifact, cleanup, media, distributed). Orphan expectations (declared without a matching observation) fail validation at parse time rather than silently producing a vacuously-passing suite.
-
-Minimal trace example:
-
-```json
-{
-  "schema_version": 1,
-  "label": "smoke-run-2026-05-22",
-  "observations": {
-    "terminal": { "exitCode": 0, "stdout": "All checks passed.\n", "stderr": "" },
-    "workdir": { "presentFiles": ["solution.txt", "trace.log"] },
-    "services": [{ "host": "127.0.0.1", "port": 8080, "protocol": "tcp" }],
-    "artifacts": [{ "path": "manifest.json", "content": "{\"name\":\"x\"}" }],
-    "cleanup": {
-      "entries": [
-        { "path": "solution.txt" },
-        { "path": "stale.lock", "mtime": "2026-05-21T10:00:00Z" }
-      ]
-    },
-    "media": [{ "path": "rendered.png", "width": 256, "height": 128, "byteSize": 4096 }],
-    "distributed": {
-      "worldSize": 1,
-      "ranks": [{ "rank": 0, "steps": 100, "observations": { "loss": "0.1" } }]
-    }
-  },
-  "expectations": {
-    "terminal": { "expectedExitCode": 0, "requiredStdoutPatterns": ["checks passed"] },
-    "directory": {
-      "requiredFiles": ["solution.txt"],
-      "allowedFiles": ["solution.txt"],
-      "ignoredPatterns": ["^trace\\."]
-    },
-    "services": { "required": [{ "host": "127.0.0.1", "port": 8080, "protocol": "tcp" }] },
-    "artifacts": [{ "path": "manifest.json", "requiredJsonFields": ["name"] }],
-    "cleanup": { "now": "2026-05-21T12:00:00Z", "maxLockfileAgeMs": 300000 },
-    "media": [{ "path": "rendered.png", "expectedWidth": 256, "expectedHeight": 128 }],
-    "distributed": { "expectedWorldSize": 1, "mustMatchAcrossRanks": ["loss"] }
-  }
-}
-```
-
-Piping `extract` into `check` round-trips a trace to a pass/fail report:
-
-```bash
-autoctx probes extract --trace trace.json | autoctx probes check --suite -
-autoctx probes extract --trace trace.json --output suite.json
-autoctx probes check --suite suite.json --json
-```
-
-## Provider Configuration
-
-Configure the agent provider via environment variables:
-
-```bash
-# Anthropic (default)
-ANTHROPIC_API_KEY=sk-ant-... autoctx run support_triage --json
-
-# OpenAI-compatible
-AUTOCONTEXT_AGENT_PROVIDER=openai-compatible \
-AUTOCONTEXT_AGENT_API_KEY=sk-... \
-AUTOCONTEXT_AGENT_BASE_URL=https://api.openai.com/v1 \
-autoctx run support_triage --json
-
-# Role-scoped override: competitor uses a separate gateway/key
-AUTOCONTEXT_AGENT_PROVIDER=anthropic \
-ANTHROPIC_API_KEY=sk-ant-primary \
-AUTOCONTEXT_COMPETITOR_PROVIDER=openai-compatible \
-AUTOCONTEXT_COMPETITOR_API_KEY=sk-role \
-AUTOCONTEXT_COMPETITOR_BASE_URL=http://localhost:8000/v1 \
-autoctx run support_triage --json
-
-# Ollama (local)
-AUTOCONTEXT_AGENT_PROVIDER=ollama autoctx run support_triage --json
-
-# Hermes (via OpenAI-compatible gateway)
-AUTOCONTEXT_AGENT_PROVIDER=openai-compatible \
-AUTOCONTEXT_AGENT_BASE_URL=http://localhost:8080/v1 \
-AUTOCONTEXT_AGENT_DEFAULT_MODEL=hermes-3-llama-3.1-8b \
-autoctx run support_triage --json
-
-# Hermes shortcut provider (same gateway path, Hermes defaults)
-AUTOCONTEXT_AGENT_PROVIDER=hermes \
-AUTOCONTEXT_AGENT_BASE_URL=http://localhost:8080/v1 \
-autoctx run support_triage --json
-
-# Claude CLI (local authenticated Claude Code runtime)
-AUTOCONTEXT_AGENT_PROVIDER=claude-cli \
-AUTOCONTEXT_CLAUDE_MODEL=sonnet \
-autoctx run support_triage --json
-
-# Codex CLI (local authenticated Codex runtime)
-AUTOCONTEXT_AGENT_PROVIDER=codex \
-AUTOCONTEXT_CODEX_MODEL=o4-mini \
-autoctx run support_triage --json
-
-# Pi CLI
-AUTOCONTEXT_AGENT_PROVIDER=pi autoctx run support_triage --json
-
-# Pi RPC with one long-lived subprocess
-AUTOCONTEXT_AGENT_PROVIDER=pi-rpc \
-AUTOCONTEXT_PI_RPC_PERSISTENT=true \
-autoctx run support_triage --json
-
-# Deterministic (CI/testing)
-AUTOCONTEXT_AGENT_PROVIDER=deterministic autoctx run support_triage --json
-```
-
-`ANTHROPIC_API_KEY` is the preferred Anthropic credential env var. `AUTOCONTEXT_ANTHROPIC_API_KEY` remains supported as a compatibility alias.
-
-Supported providers: `anthropic`, `openai`, `openai-compatible`, `gemini`, `mistral`, `groq`, `openrouter`, `azure-openai`, `ollama`, `vllm`, `hermes`, `claude-cli`, `codex`, `pi`, `pi-rpc`, `deterministic`.
-
-Programmatic callers can pass `runtimeSession`, `runtimeSessionRole`,
-`runtimeSessionCwd`, and `runtimeSessionCommands` to `createProvider()` for
-CLI-backed providers (`claude-cli`, `codex`, `pi`, `pi-rpc`). Those options
-wrap the underlying `AgentRuntime` at the provider bridge so provider
-completions are recorded in the `RuntimeSession` event log.
-`autoctx run` also creates a run-scoped runtime session automatically for
-CLI-backed providers and persists it in the configured SQLite database. Use
-`autoctx runtime-sessions list` and `autoctx runtime-sessions show
---run-id <run-id> --json` to inspect those recorded provider prompts,
-messages, and child-task events. Use `autoctx runtime-sessions timeline
---run-id <run-id> --json` when operators need a grouped prompt/response and
-child-task timeline instead of the raw event log. `autoctx status <run-id> --json`,
-`autoctx show <run-id> --json`, and `autoctx watch <run-id> --json` include a
-`runtime_session` summary when that persisted log exists. HTTP clients can read
-the same data from `GET /api/cockpit/runtime-sessions`,
-`GET /api/cockpit/runtime-sessions/:session_id`, and
-`GET /api/cockpit/runs/:run_id/runtime-session`; timeline views are available
-at `GET /api/cockpit/runtime-sessions/:session_id/timeline` and
-`GET /api/cockpit/runs/:run_id/runtime-session/timeline`. Cockpit run list, status, and
-resume responses also include `runtime_session` (a summary or `null`) plus
-`runtime_session_url` for direct log discovery. The interactive server emits
-live runtime updates on `/ws/events` as `runtime_session_event` envelopes on the
-`runtime_session` channel; each payload includes the current session summary and
-the appended event.
-
-Inside `autoctx tui`, operators can run `/timeline <run-id>` to render the same
-runtime-session timeline in the recent-activity pane. If a run is active,
-`/timeline` uses that active run id. The TUI recent-activity feed also
-summarizes live runtime-session prompt, assistant, shell, tool, and child-task
-events as they arrive. Use
-`/activity [status|reset|<all|runtime|prompts|commands|children|errors> [quiet|normal|verbose]]`
-to focus that live feed and tune how much detail each runtime event includes.
-Those activity settings are saved in the resolved autoctx config directory and
-reloaded when the TUI starts again; `/activity reset` clears the saved
-preference and returns the feed to `all normal`. On startup, Recent Activity
-logs the loaded activity setting before the command help. Bare `/activity` and
-`/activity status` report the current setting without rewriting the saved
-preference.
-
-`autoctx simulate` and `autoctx investigate` require a configured provider for spec generation. If you want synthetic placeholder behavior for CI/testing, select the deterministic provider explicitly instead of relying on implicit fallback.
-
-Key environment variables:
-
-| Variable                                                             | Purpose                                                     |
-| -------------------------------------------------------------------- | ----------------------------------------------------------- |
-| `AUTOCONTEXT_AGENT_PROVIDER`                                         | Agent provider selection                                    |
-| `AUTOCONTEXT_AGENT_API_KEY`                                          | Global API key override (or use provider-specific env vars) |
-| `AUTOCONTEXT_AGENT_BASE_URL`                                         | Global base URL override for compatible providers           |
-| `AUTOCONTEXT_AGENT_DEFAULT_MODEL`                                    | Override default model                                      |
-| `AUTOCONTEXT_COMPETITOR_API_KEY` / `AUTOCONTEXT_COMPETITOR_BASE_URL` | Optional competitor-specific credential/endpoint override   |
-| `AUTOCONTEXT_ANALYST_API_KEY` / `AUTOCONTEXT_ANALYST_BASE_URL`       | Optional analyst-specific credential/endpoint override      |
-| `AUTOCONTEXT_COACH_API_KEY` / `AUTOCONTEXT_COACH_BASE_URL`           | Optional coach-specific credential/endpoint override        |
-| `AUTOCONTEXT_ARCHITECT_API_KEY` / `AUTOCONTEXT_ARCHITECT_BASE_URL`   | Optional architect-specific credential/endpoint override    |
-| `AUTOCONTEXT_CLAUDE_MODEL`                                           | Claude CLI model alias override                             |
-| `AUTOCONTEXT_CODEX_MODEL`                                            | Codex CLI model override                                    |
-| `AUTOCONTEXT_PI_RPC_PERSISTENT`                                      | Reuse one Pi RPC subprocess across provider calls           |
-| `AUTOCONTEXT_CONFIG_DIR`                                             | Override where `login` / `whoami` read saved credentials    |
-| `AUTOCONTEXT_DB_PATH`                                                | SQLite database path                                        |
-
-Credential resolution order is:
-
-1. Environment variables
-2. CLI flags
-3. Project config (`.autoctx.json`)
-4. Credential store (`~/.config/autoctx/credentials.json`)
-
-## Project Defaults
-
-`autoctx init` scaffolds a `.autoctx.json` file in your project. When present, the CLI uses it for:
-
-- Default provider selection
-- Default model preference
-- Default scenario for `run`, `benchmark`, and `export`
-- Project `runs/` and `knowledge/` roots
-- The default SQLite database location under the configured `runs_dir`
-
-`autoctx init` also writes an `AGENTS.md` block with the recommended local autocontext workflow.
-
-`autoctx capabilities` returns structured JSON describing commands, providers, scenarios, the canonical concept model, and project-specific state such as the current project config, active runs, and knowledge directory summary.
-
-`autoctx login` can prompt interactively for provider credentials. `autoctx login --provider ollama` validates that a local Ollama server is reachable before persisting the connection details, and `autoctx logout` clears the stored credentials.
-
-`autoctx replay` writes the selected generation and available generations to `stderr` before printing the replay JSON payload. `autoctx export-training-data` writes progress updates to `stderr` while keeping JSONL records on `stdout`.
-
-Saved custom scenarios under `knowledge/_custom_scenarios/` can be reused directly from the TS CLI. Saved parametric scenarios can now be targeted by name in `run` and `benchmark`, while saved agent-task scenarios remain directly usable in `judge`, `improve`, `repl`, and `queue` without retyping their prompt and rubric.
-
-## Control-Plane Strategy Identity
-
-`autoctx candidate register` records deterministic strategy identity metadata for
-each candidate artifact. The identity includes a canonical strategy fingerprint,
-per-file component fingerprints, parent strategy fingerprints, and an exact or
-near duplicate assessment when the candidate matches an existing strategy surface
-for the same scenario and actuator. Environments do not split this identity
-surface: a repeated strategy in staging is still a duplicate of the same
-scenario/actuator strategy from production.
-
-```bash
-autoctx candidate register \
-  --scenario grid_ctf \
-  --actuator prompt-patch \
-  --payload ./payload \
-  --output json
-```
-
-`autoctx candidate show <artifact-id> --output json` returns the full
-`strategyIdentity` block. `autoctx candidate list --output json` includes compact
-`strategyFingerprint` and `duplicateKind` fields for automation.
-
-If a newly registered candidate is an exact or near duplicate of a disabled or
-already-quarantined strategy, the artifact also records `strategyQuarantine`.
-Promotion decisions reject quarantined strategies as non-promotion evidence, and
-`autoctx candidate list --output json` includes `quarantineReason` for quick
-triage. Operational memory can also skip findings tied to quarantined strategy
-fingerprints before they are rendered back into agent context. Older artifacts
-without `strategyIdentity` can still seed exact duplicate/quarantine checks via
-their content-addressed `payloadHash`.
-
-## Control-Plane Eval Tracks
-
-`autoctx eval attach` accepts `--track verified|experimental` for attached
-EvalRuns. Verified runs are promotion-grade evidence; experimental runs remain
-inspectable but are rejected by promotion decisions by default.
-
-```bash
-autoctx eval attach <artifact-id> \
-  --suite prod-eval \
-  --metrics metrics.json \
-  --dataset-provenance dataset.json \
-  --track experimental \
-  --output json
-```
-
-`autoctx eval list <artifact-id> --output json` includes the effective track for
-each EvalRun. Legacy clean EvalRuns without an explicit track are reported as
-`verified`; non-clean integrity still blocks ingestion and promotion evidence.
-
-For accepted strategy or harness changes, promotion can also require explicit
-ablation evidence. Attach an ablation verification object to the EvalRun:
-
-```json
-{
-  "status": "passed",
-  "targets": ["strategy", "harness"],
-  "verifiedAt": "2026-05-13T12:00:00.000Z",
-  "evidenceRefs": ["runs/ablation/run_1.json"]
-}
-```
-
-```bash
-autoctx eval attach <artifact-id> \
-  --suite prod-eval \
-  --metrics metrics.json \
-  --dataset-provenance dataset.json \
-  --ablation-verification ablation.json
-```
-
-Ablation checks are opt in at decision time:
-
-```bash
-autoctx promotion decide <artifact-id> \
-  --baseline auto \
-  --require-ablation \
-  --ablation-targets strategy,harness \
-  --output json
-```
-
-When enabled, the PromotionDecision includes an `ablationVerification`
-assessment and fails if the latest candidate EvalRun is missing evidence, has a
-`failed` or `incomplete` status, or does not cover every required target.
-
-## Control-Plane Harness Proposals
-
-`autoctx harness proposal create` records evidence-backed harness/context change
-proposals before they can affect the loop. A proposal carries finding lineage,
-the target surface, concrete patches, expected impact, rollback criteria, and
-provenance.
-
-```bash
-autoctx harness proposal create \
-  --finding finding-1 \
-  --surface prompt \
-  --summary "tighten verifier-facing prompt" \
-  --patches patches.json \
-  --expected-impact impact.json \
-  --rollback "revert if heldout quality drops" \
-  --output json
-```
-
-`autoctx harness proposal decide` gates a proposal against the candidate
-artifact's EvalRun evidence for the requested suite. `heldout` and `fresh`
-validation can accept or reject the proposal when compared with matching-suite
-baseline evidence; `dev` or missing-baseline validation stays `inconclusive`.
-Promotion-grade decisions must also include at least one `--evidence-ref`;
-omitting evidence refs keeps the durable proposal decision `inconclusive`.
-
-```bash
-autoctx harness proposal decide <proposal-id> \
-  --candidate <artifact-id> \
-  --baseline <artifact-id>|auto|none \
-  --validation heldout \
-  --suite prod-heldout \
-  --evidence-ref runs/heldout/candidate.json \
-  --output json
-```
-
-Use `autoctx harness proposal list --output json` for a compact review queue and
-`autoctx harness proposal show <proposal-id> --output json` for the full durable
-record under `.autocontext/harness-proposals/`.
-
-## MCP Tools (40+)
-
-`mcp-serve` starts the MCP server on stdio with tools across these families:
-
-| Family        | Tools                                                                                                                                  |
-| ------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| Scenarios     | list_scenarios, get_scenario, validate_strategy, run_match, run_tournament, run_scenario                                               |
-| Runs          | list_runs, get_run_status, get_generation_detail, list_runtime_sessions, get_runtime_session, get_runtime_session_timeline, run_replay |
-| Knowledge     | get_playbook, read_trajectory, read_hints, read_analysis, read_tools, read_skills                                                      |
-| Evaluation    | evaluate_output, run_improvement_loop, run_repl_session, generate_output                                                               |
-| Task queue    | queue_task, get_queue_status, get_task_result                                                                                          |
-| Export/Search | export_skill, export_package, import_package, list_solved, search_strategies                                                           |
-| Feedback      | record_feedback, get_feedback                                                                                                          |
-| Solve         | solve_scenario, solve_status, solve_result                                                                                             |
-| Sandbox       | sandbox_create, sandbox_run, sandbox_status, sandbox_playbook, sandbox_list, sandbox_destroy                                           |
-| Agent tasks   | create_agent_task, list_agent_tasks, get_agent_task                                                                                    |
-| Missions      | create_mission, mission_status, mission_result, mission_artifacts, pause_mission, resume_mission, cancel_mission                       |
-| Discovery     | capabilities                                                                                                                           |
-
-`create_mission` and `autoctx mission create` both support a code-mission variant with `type=code` plus `repo_path` / `test_command` (and optional `lint_command` / `build_command`) so mission success is tied to external checks instead of model self-report.
-
-### Claude Code integration
-
-```json
-{
-  "mcpServers": {
-    "autocontext": {
-      "command": "npx",
-      "args": ["autoctx", "mcp-serve"],
-      "env": {
-        "ANTHROPIC_API_KEY": "sk-ant-..."
-      }
-    }
-  }
-}
-```
-
-## Library Usage
-
-```ts
-import { createProvider, LLMJudge, ImprovementLoop, SimpleAgentTask } from "autoctx";
-
-// One-shot evaluation
 const provider = createProvider({
   providerType: "anthropic",
   apiKey: process.env.ANTHROPIC_API_KEY ?? "",
 });
-const judge = new LLMJudge({ provider, rubric: "Score clarity and correctness." });
+
+const judge = new LLMJudge({
+  provider,
+  model: provider.defaultModel(),
+  rubric: "Score clarity and correctness.",
+});
+
 const result = await judge.evaluate({
   taskPrompt: "Explain binary search.",
   agentOutput: "Binary search halves the search space each step.",
 });
-
-// Multi-round improvement
-const task = new SimpleAgentTask(
-  "Draft a support reply for a billing dispute.",
-  "Score accuracy, policy compliance, and tone.",
-  provider,
-);
-const loop = new ImprovementLoop({ task, maxRounds: 3, qualityThreshold: 0.9 });
-const improved = await loop.run({
-  initialOutput: "We can help with that billing issue.",
-  state: {},
-});
 ```
 
-## TS / Python Scope
-
-The TypeScript package includes the current 0.4.x operator-facing surfaces:
-
-- `simulate`
-- `investigate`
-- `analyze`
-- `context-selection`
-- `trace-findings` — extract structured findings (`TraceFindingReport`) from a `PublicTrace` JSON file
-- `mission`
-- `train` as a validation plus executor-hook surface
-
-`campaign` now ships as a first-class TypeScript CLI/API/MCP workflow for multi-mission coordination.
-
-`context-selection` reads persisted per-run context-selection artifacts and
-renders the same budget, semantic compaction cache, diagnostics, and selected
-context telemetry cards exposed through Cockpit HTTP.
-
-For end-to-end local MLX/CUDA training, the Python package is still the canonical out-of-the-box runtime.
-
-## Browser Exploration Contract
-
-The TypeScript package exposes the shared browser exploration contract and policy helpers from the package root. Browser exploration is disabled by default and configured through `AUTOCONTEXT_BROWSER_*` settings such as `AUTOCONTEXT_BROWSER_ENABLED`, `AUTOCONTEXT_BROWSER_ALLOWED_DOMAINS`, and `AUTOCONTEXT_BROWSER_PROFILE_MODE`.
-
-Use `resolveBrowserSessionConfig(...)`, `evaluateBrowserActionPolicy(...)`, and the `validateBrowser*` helpers when integrating a browser backend or agent harness.
-
-When browser exploration is enabled, the TS CLI can capture a policy-gated Chrome DevTools Protocol snapshot and attach it as evidence for `autoctx investigate --browser-url <url>`. Queued agent tasks can also store `--browser-url`; the runner resolves it through an injected browser-context service so enterprise deployments can keep browser access disabled by default, domain-scoped, and audit-artifact backed.
-
-## Python-Only Commands
-
-These workflows require infrastructure not available in the npm package:
-
-- `ecosystem` — Multi-provider cycling
-- `ab-test` — Requires ecosystem runner
-- `resume` / `wait` — Run recovery infrastructure
-- `hermes inspect` / `hermes export-skill` — Hermes v0.12 Curator inspection and Hermes skill export
-- `trigger-distillation` — Training pipeline
-- Monitor conditions — Monitoring engine
-
-`train` is exposed in the TS CLI as a validation plus executor-hook surface, but the npm package does not bundle a real MLX/CUDA trainer. For end-to-end local training, use the Python package (`pip install autocontext`) or inject a real `TrainingRunner` executor from code.
-
-## OpenAI integration
-
-autocontext ships a zero-configuration OpenAI instrumentation path that
-automatically wraps your existing `new OpenAI(...)` calls and emits structured
-traces to a sink of your choice.
-
-### 1. Register detectors
-
-Create `.autoctx.instrument.config.mjs` at the root of your repo:
-
-```js
-// .autoctx.instrument.config.mjs
-import { registerDetectorPlugin } from "autoctx/control-plane/instrument";
-import { plugin as openaiTsPlugin } from "autoctx/detectors/openai-ts";
-
-registerDetectorPlugin(openaiTsPlugin);
-```
-
-### 2. Run instrument
-
-Preview changes without touching any files:
-
-```bash
-autoctx instrument --dry-run
-```
-
-Apply changes on a new branch for review:
-
-```bash
-autoctx instrument --apply --branch autoctx/instrument
-```
-
-### 3. Review the PR
-
-The instrument command opens a branch. Open the PR and review the diff — you
-will see your `new OpenAI(...)` calls wrapped with `instrumentClient(...)`.
-Edit the generated TODO comment to point at your `FileSink`:
+Prefer package subpath exports for specialized surfaces:
 
 ```ts
-// Before (generated):
-const client = instrumentClient(new OpenAI(), { sink: /* TODO: pass your TraceSink here */ });
-
-// After (your edit):
-import { FileSink } from "autoctx/integrations/openai";
-const sink = new FileSink("./traces/openai.jsonl");
-const client = instrumentClient(new OpenAI(), { sink });
+import { buildTrace } from "autoctx/production-traces";
+import { instrumentClient } from "autoctx/integrations/anthropic";
+import type { AutoctxAgentContext } from "autoctx/agent-runtime";
+import { connectMcpRuntimeTools } from "autoctx/runtimes/mcp";
 ```
 
-Merge the PR.
-
-### 4. Customer code emits traces
-
-Your code is unchanged beyond the wrap. Every `chat.completions.create` call
-now emits a JSONL trace line to your sink:
-
-```ts
-import OpenAI from "openai";
-import { instrumentClient, FileSink, autocontextSession } from "autoctx/integrations/openai";
-
-const sink = new FileSink("./traces/openai.jsonl");
-const client = instrumentClient(new OpenAI(), { sink });
-
-await autocontextSession({ userId: "u_123" }, async () => {
-  const res = await client.chat.completions.create({
-    model: "gpt-4o",
-    messages: [{ role: "user", content: "Hello!" }],
-  });
-  console.log(res.choices[0].message.content);
-});
-
-await sink.close();
-```
-
-Emitted trace line (pretty-printed for readability):
-
-```jsonl
-{
-  "schemaVersion": "1.0",
-  "traceId": "...",
-  "sessionContext": {
-    "userId": "u_123"
-  },
-  "request": {
-    "model": "gpt-4o",
-    "messages": [
-      {
-        "role": "user",
-        "content": "Hello!"
-      }
-    ]
-  },
-  "response": {
-    "id": "...",
-    "choices": [
-      {
-        "message": {
-          "role": "assistant",
-          "content": "Hi! How can I help?"
-        },
-        "finish_reason": "stop"
-      }
-    ],
-    "usage": {
-      "prompt_tokens": 9,
-      "completion_tokens": 7,
-      "total_tokens": 16
-    }
-  },
-  "durationMs": 342,
-  "errorReason": null
-}
-```
-
-For the Python equivalent, see
-`autocontext/src/autocontext/integrations/openai/STABILITY.md`.
-
-## Anthropic integration
-
-autocontext ships a zero-configuration Anthropic instrumentation path that
-automatically wraps your existing `new Anthropic(...)` calls and emits structured
-traces to a sink of your choice.
-
-### 1. Register detectors
-
-Create `.autoctx.instrument.config.mjs` at the root of your repo:
-
-```js
-// .autoctx.instrument.config.mjs
-import { registerDetectorPlugin } from "autoctx/control-plane/instrument";
-import { plugin as anthropicTsPlugin } from "autoctx/detectors/anthropic-ts";
-
-registerDetectorPlugin(anthropicTsPlugin);
-```
-
-### 2. Run instrument
-
-Preview changes without touching any files:
-
-```bash
-autoctx instrument --dry-run
-```
-
-Apply changes on a new branch for review:
-
-```bash
-autoctx instrument --apply --branch autoctx/instrument
-```
-
-### 3. Review the PR
-
-The instrument command opens a branch. Open the PR and review the diff — you
-will see your `new Anthropic(...)` calls wrapped with `instrumentClient(...)`.
-Edit the generated TODO comment to point at your `FileSink`:
-
-```ts
-// Before (generated):
-const client = instrumentClient(new Anthropic(), { sink: /* TODO: pass your TraceSink here */ });
-
-// After (your edit):
-import { FileSink } from "autoctx/integrations/anthropic";
-const sink = new FileSink("./traces/anthropic.jsonl");
-const client = instrumentClient(new Anthropic(), { sink });
-```
-
-Merge the PR.
-
-### 4. Customer code emits traces
-
-Your code is unchanged beyond the wrap. Every `messages.create` call now emits
-a JSONL trace line to your sink:
+## Production traces
 
 ```ts
 import Anthropic from "@anthropic-ai/sdk";
-import { instrumentClient, FileSink, autocontextSession } from "autoctx/integrations/anthropic";
+import { FileSink, instrumentClient } from "autoctx/integrations/anthropic";
 
 const sink = new FileSink("./traces/anthropic.jsonl");
-const client = instrumentClient(new Anthropic(), { sink });
-
-await autocontextSession({ userId: "u_123" }, async () => {
-  const res = await client.messages.create({
-    model: "claude-opus-4-7-20251101",
-    max_tokens: 256,
-    messages: [{ role: "user", content: "Hello!" }],
-  });
-  console.log(res.content[0].type === "text" ? res.content[0].text : "");
+const client = instrumentClient(new Anthropic(), {
+  sink,
+  appId: "billing-bot",
+  environmentTag: "prod",
 });
-
-await sink.close();
 ```
 
-Emitted trace line (pretty-printed for readability):
+The SDK captures provider-native content blocks, cache-aware usage, outcome
+taxonomy, and dataset/retention helpers. Deeper notes live in
+[../docs/analytics.md](../docs/analytics.md),
+[../docs/opentelemetry-bridge.md](../docs/opentelemetry-bridge.md), and the
+source under `src/production-traces/`.
 
-```jsonl
-{
-  "schemaVersion": "1.0",
-  "traceId": "...",
-  "sessionContext": {
-    "userId": "u_123"
-  },
-  "request": {
-    "model": "claude-opus-4-7-20251101",
-    "messages": [
-      {
-        "role": "user",
-        "content": "Hello!"
-      }
-    ]
-  },
-  "response": {
-    "id": "...",
-    "content": [
-      {
-        "type": "text",
-        "text": "Hi! How can I help?"
-      }
-    ],
-    "stop_reason": "end_turn",
-    "usage": {
-      "input_tokens": 9,
-      "output_tokens": 7
-    }
-  },
-  "durationMs": 342,
-  "errorReason": null
+## Agent handlers
+
+The experimental `autoctx/agent-runtime` subpath discovers handlers only from
+`.autoctx/agents` and invokes them with explicit `payload`, `env`, `workspace`,
+and `AgentRuntime` capabilities.
+
+```ts
+// .autoctx/agents/support.ts
+import type { AutoctxAgentContext } from "autoctx/agent-runtime";
+
+export default async function ({ init, payload }: AutoctxAgentContext<{ message: string }>) {
+  const runtime = await init();
+  const session = await runtime.session("support");
+  return session.prompt(payload.message, { role: "support-triager" });
 }
 ```
 
-For the Python equivalent, see
-`autocontext/src/autocontext/integrations/anthropic/STABILITY.md`.
+```bash
+autoctx agent run support --payload '{"message":"triage this ticket"}' --json
+autoctx agent dev --port 3583
+autoctx agent build --target node --out .autoctx/build/node
+```
+
+Examples:
+[../examples/README.md](../examples/README.md#experimental-typescript-agent-handler).
+
+## Fetch/edge adapters
+
+Generic Fetch/ESM hosts can use static catalogs and explicit host capabilities;
+the package does not imply Cloudflare/Vercel/Deno deployment wrappers.
+
+Reference docs moved out of this README:
+
+- [../docs/fetch-api-reference.md](../docs/fetch-api-reference.md)
+- [../docs/fetch-host-capability-manifest.md](../docs/fetch-host-capability-manifest.md)
+- [../docs/generated-fetch-packaging.md](../docs/generated-fetch-packaging.md)
+- [../docs/fetch-conformance.md](../docs/fetch-conformance.md)
+- [../docs/fetch-troubleshooting.md](../docs/fetch-troubleshooting.md)
+- [../docs/edge-runtime-compatibility.md](../docs/edge-runtime-compatibility.md)
+
+## Contract probes
+
+```bash
+autoctx probes check --suite contract-probes.json
+autoctx probes check --suite contract-probes.json --json
+autoctx probes extract --trace harness-trace.json --output contract-probes.json
+```
+
+Use probes to turn observed harness behavior into strict executable checks.
+
+## Project defaults
+
+`autoctx` searches upward for `.autoctxrc.json`, `.autoctxrc`, or
+`autoctx.config.json`. Explicit CLI flags win over config files. Env file
+loading for agent handlers is explicit: pass `--env FILE` or set
+`AUTOCTX_ENV_FILE` for generated Node servers.
 
 ## Development
 
 ```bash
-cd ts
-npm install
-npm test              # vitest
-npm run lint          # tsc --noEmit
-npm run build         # tsc (outputs to dist/)
-npm run check:a2-ii-a-all  # enterprise discipline checks for the SDK subpath
+npm run build
+npm run lint
+npm test
 ```
+
+Keep this README as the package entry point. Put long reference material in
+`../docs/`, `examples/`, or source-level API docs.
