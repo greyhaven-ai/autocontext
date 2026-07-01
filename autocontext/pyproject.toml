@@ -46,6 +46,7 @@ all = ["autocontext[mcp,agent-sdk,monty,openai,browser,primeintellect]"]
 
 [dependency-groups]
 dev = [
+  "datamodel-code-generator>=0.56.0,<0.57.0",
   "httpx>=0.28.1",
   "hypothesis>=6.151.12",
   "mypy>=1.16.0",
