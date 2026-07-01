@@ -274,9 +274,9 @@ class TestRapidGateInTournament:
 
         mock_tournament = _make_mock_tournament()
 
-        with patch("autocontext.loop.stages.EvaluationRunner") as MockRunner, \
-             patch("autocontext.loop.stages.ScenarioEvaluator"), \
-             patch("autocontext.loop.stages.rapid_gate") as mock_rapid_gate:
+        with patch("autocontext.loop.stage_helpers.tournament_prep.EvaluationRunner") as MockRunner, \
+             patch("autocontext.loop.stage_helpers.tournament_prep.ScenarioEvaluator"), \
+             patch("autocontext.loop.stage_helpers.exploration.rapid_gate") as mock_rapid_gate:
             MockRunner.return_value.run.return_value = mock_tournament
             mock_rapid_gate.return_value = RapidGateResult(
                 decision="advance", delta=0.1, reason="improved",
@@ -320,9 +320,9 @@ class TestRapidGateInTournament:
 
         mock_tournament = _make_mock_tournament()
 
-        with patch("autocontext.loop.stages.EvaluationRunner") as MockRunner, \
-             patch("autocontext.loop.stages.ScenarioEvaluator"), \
-             patch("autocontext.loop.stages.rapid_gate") as mock_rapid_gate:
+        with patch("autocontext.loop.stage_helpers.tournament_prep.EvaluationRunner") as MockRunner, \
+             patch("autocontext.loop.stage_helpers.tournament_prep.ScenarioEvaluator"), \
+             patch("autocontext.loop.stage_helpers.exploration.rapid_gate") as mock_rapid_gate:
             MockRunner.return_value.run.return_value = mock_tournament
 
             stage_tournament(
@@ -371,9 +371,9 @@ class TestRapidToLinearTransition:
 
         mock_tournament = _make_mock_tournament()
 
-        with patch("autocontext.loop.stages.EvaluationRunner") as MockRunner, \
-             patch("autocontext.loop.stages.ScenarioEvaluator"), \
-             patch("autocontext.loop.stages.rapid_gate") as mock_rapid_gate, \
+        with patch("autocontext.loop.stage_helpers.tournament_prep.EvaluationRunner") as MockRunner, \
+             patch("autocontext.loop.stage_helpers.tournament_prep.ScenarioEvaluator"), \
+             patch("autocontext.loop.stage_helpers.exploration.rapid_gate") as mock_rapid_gate, \
              patch("autocontext.loop.stages.should_transition_to_linear") as mock_transition:
             MockRunner.return_value.run.return_value = mock_tournament
             mock_rapid_gate.return_value = RapidGateResult(
@@ -416,9 +416,9 @@ class TestRapidToLinearTransition:
 
         mock_tournament = _make_mock_tournament()
 
-        with patch("autocontext.loop.stages.EvaluationRunner") as MockRunner, \
-             patch("autocontext.loop.stages.ScenarioEvaluator"), \
-             patch("autocontext.loop.stages.rapid_gate") as mock_rapid_gate, \
+        with patch("autocontext.loop.stage_helpers.tournament_prep.EvaluationRunner") as MockRunner, \
+             patch("autocontext.loop.stage_helpers.tournament_prep.ScenarioEvaluator"), \
+             patch("autocontext.loop.stage_helpers.exploration.rapid_gate") as mock_rapid_gate, \
              patch("autocontext.loop.stages.should_transition_to_linear") as mock_transition:
             MockRunner.return_value.run.return_value = mock_tournament
             mock_rapid_gate.return_value = RapidGateResult(
