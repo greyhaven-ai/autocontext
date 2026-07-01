@@ -13,13 +13,21 @@ import signal
 import time
 import traceback
 import uuid
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from autocontext.notifications.base import Notifier
 
 from autocontext.config.settings import AppSettings
+from autocontext.execution.agent_task_completion import (
+    TaskConfig,
+    build_evaluator_guardrail_payload,
+    build_objective_guardrail_payload,
+    build_objective_payload,
+    build_objective_revision_feedback,
+    build_rubric_calibration_payload,
+    compute_effective_met_threshold,
+)
 from autocontext.execution.agent_task_evolution import (
     AgentTaskEvolutionRunner,
     AgentTaskGenerationEvaluation,
@@ -28,80 +36,20 @@ from autocontext.execution.agent_task_evolution import (
 from autocontext.execution.evaluator_guardrail import evaluate_evaluator_guardrail
 from autocontext.execution.improvement_loop import ImprovementLoop, ImprovementResult
 from autocontext.execution.judge import LLMJudge
-from autocontext.execution.objective_verification import (
-    ObjectiveVerificationConfig,
-    run_objective_verification,
-)
 from autocontext.execution.queued_task_browser_context import (
     QueuedTaskBrowserContextService,
     create_queued_task_browser_context_service,
 )
-from autocontext.execution.rubric_calibration import run_judge_calibration
 from autocontext.execution.simple_agent_task_workflow import (
     generate_simple_agent_task_output,
     revise_simple_agent_task_output,
 )
 from autocontext.execution.task_queue_store import TaskQueueEnqueueStore, TaskQueueStore
-from autocontext.execution.verification_dataset import enrich_objective_payload
-from autocontext.harness.pipeline.objective_guardrail import (
-    evaluate_objective_guardrail,
-    resolve_objective_guardrail_policy,
-)
 from autocontext.providers.base import LLMProvider
 from autocontext.scenarios.agent_task import AgentTaskInterface, AgentTaskResult
 from autocontext.simplicity import normalize_simplicity_mode
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass(slots=True)
-class TaskConfig:
-    """Configuration for a queued task run."""
-
-    generations: int = 1
-    max_rounds: int = 5
-    quality_threshold: float = 0.9
-    min_rounds: int = 1
-    reference_context: str | None = None
-    browser_url: str | None = None
-    required_concepts: list[str] | None = None
-    calibration_examples: list[dict] | None = None
-    initial_output: str | None = None
-    rubric: str | None = None
-    task_prompt: str | None = None
-    revision_prompt: str | None = None
-    objective_verification: dict[str, Any] | None = None
-    judge_samples: int = 1
-    judge_temperature: float = 0.0
-    judge_disagreement_threshold: float = 0.15
-    judge_bias_probes_enabled: bool = False
-    simplicity_mode: str = "off"
-
-    @classmethod
-    def from_json(cls, data: str | None) -> TaskConfig:
-        if not data:
-            return cls()
-        parsed = json.loads(data)
-        return cls(
-            generations=parsed.get("generations", 1),
-            max_rounds=parsed.get("max_rounds", 5),
-            quality_threshold=parsed.get("quality_threshold", 0.9),
-            min_rounds=parsed.get("min_rounds", 1),
-            reference_context=parsed.get("reference_context"),
-            browser_url=parsed.get("browser_url"),
-            required_concepts=parsed.get("required_concepts"),
-            calibration_examples=parsed.get("calibration_examples"),
-            initial_output=parsed.get("initial_output"),
-            rubric=parsed.get("rubric"),
-            task_prompt=parsed.get("task_prompt"),
-            revision_prompt=parsed.get("revision_prompt"),
-            objective_verification=parsed.get("objective_verification"),
-            judge_samples=parsed.get("judge_samples", 1),
-            judge_temperature=parsed.get("judge_temperature", 0.0),
-            judge_disagreement_threshold=parsed.get("judge_disagreement_threshold", 0.15),
-            judge_bias_probes_enabled=parsed.get("judge_bias_probes_enabled", False),
-            simplicity_mode=normalize_simplicity_mode(parsed.get("simplicity_mode")),
-        )
 
 
 def _serialize_result(
@@ -114,13 +62,15 @@ def _serialize_result(
     """Serialize an ImprovementResult to JSON."""
     rounds = []
     for r in result.rounds:
-        rounds.append({
-            "round_number": r.round_number,
-            "score": r.score,
-            "reasoning": r.reasoning,
-            "dimension_scores": r.dimension_scores,
-            "is_revision": r.is_revision,
-        })
+        rounds.append(
+            {
+                "round_number": r.round_number,
+                "score": r.score,
+                "reasoning": r.reasoning,
+                "dimension_scores": r.dimension_scores,
+                "is_revision": r.is_revision,
+            }
+        )
     data: dict[str, Any] = {
         "rounds": rounds,
         "best_score": result.best_score,
@@ -180,18 +130,9 @@ def _serialize_evolution_result(
             "best_round": result.best_round,
             "total_rounds": result.total_rounds,
             "met_threshold": result.met_threshold,
-            **(
-                {"pareto_frontier": result.pareto_frontier}
-                if result.pareto_frontier else {}
-            ),
-            **(
-                {"actionable_side_info": result.actionable_side_info}
-                if result.actionable_side_info else {}
-            ),
-            **(
-                {"optimizer_metadata": result.metadata}
-                if result.metadata else {}
-            ),
+            **({"pareto_frontier": result.pareto_frontier} if result.pareto_frontier else {}),
+            **({"actionable_side_info": result.actionable_side_info} if result.actionable_side_info else {}),
+            **({"optimizer_metadata": result.metadata} if result.metadata else {}),
         }
         for idx, result in enumerate(generation_results)
     ]
@@ -203,9 +144,7 @@ def _serialize_evolution_result(
         "rounds": final_rounds,
         "best_score": trajectory.metadata.get("best_score", trajectory.final_score),
         "met_threshold": (
-            met_threshold
-            if met_threshold is not None
-            else any(result.met_threshold for result in generation_results)
+            met_threshold if met_threshold is not None else any(result.met_threshold for result in generation_results)
         ),
         "total_rounds": sum(result.total_rounds for result in generation_results),
     }
@@ -226,114 +165,6 @@ def _serialize_evolution_result(
         if final_result.metadata:
             data["optimizer_metadata"] = final_result.metadata
     return json.dumps(data)
-
-
-def _build_objective_payload(
-    output: str,
-    rubric_score: float,
-    config: TaskConfig,
-    *,
-    run_id: str | None = None,
-) -> dict[str, Any] | None:
-    """Run optional objective verification for a task result."""
-    if not config.objective_verification:
-        return None
-    verification_config = ObjectiveVerificationConfig.from_dict(config.objective_verification)
-    if not verification_config.ground_truth:
-        dataset_id = config.objective_verification.get("dataset_id")
-        if dataset_id:
-            msg = (
-                "Queued task objective_verification references dataset "
-                f"'{dataset_id}' but was not resolved before execution"
-            )
-            raise ValueError(msg)
-        return None
-    payload = run_objective_verification(
-        output=output,
-        rubric_score=rubric_score,
-        config=verification_config,
-    )
-    return enrich_objective_payload(
-        payload,
-        run_id=run_id,
-        created_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-    )
-
-
-def _build_objective_revision_feedback(
-    output: str,
-    rubric_score: float,
-    config: TaskConfig,
-) -> str | None:
-    """Build optional oracle-derived revision context for the next loop round."""
-    payload = _build_objective_payload(output, rubric_score, config)
-    if not payload:
-        return None
-    revision_feedback = payload.get("revision_feedback")
-    if not isinstance(revision_feedback, dict):
-        return None
-    context = revision_feedback.get("revision_prompt_context")
-    if not isinstance(context, str) or not context.strip():
-        return None
-    return context
-
-
-def _build_objective_guardrail_payload(
-    objective_payload: dict[str, Any] | None,
-    config: TaskConfig,
-) -> dict[str, Any] | None:
-    """Build optional binding guardrail results from an objective payload."""
-    if objective_payload is None or not config.objective_verification:
-        return None
-    policy = resolve_objective_guardrail_policy(config.objective_verification)
-    result = evaluate_objective_guardrail(objective_payload, policy)
-    return result.to_dict() if result is not None else None
-
-
-def _build_evaluator_guardrail_payload(
-    task: AgentTaskInterface,
-    output: str,
-    config: TaskConfig,
-    *,
-    reference_context: str | None = None,
-) -> dict[str, Any] | None:
-    """Run live evaluator guardrails on the best output when enabled."""
-    if config.judge_samples <= 1 and not config.judge_bias_probes_enabled:
-        return None
-    evaluation = task.evaluate_output(
-        output,
-        task.initial_state(),
-        reference_context=reference_context,
-        required_concepts=config.required_concepts,
-        calibration_examples=config.calibration_examples,
-    )
-    return evaluation.evaluator_guardrail
-
-
-def _build_rubric_calibration_payload(
-    *,
-    store: TaskQueueStore,
-    spec_name: str,
-    task_prompt: str,
-    rubric: str,
-    provider: LLMProvider,
-    model: str,
-    reference_context: str | None = None,
-    required_concepts: list[str] | None = None,
-) -> dict[str, Any] | None:
-    """Run live rubric calibration against stored human feedback anchors."""
-    calibration_examples = store.get_calibration_examples(spec_name, limit=5)
-    report = run_judge_calibration(
-        domain=spec_name,
-        task_prompt=task_prompt,
-        rubric=rubric,
-        provider=provider,
-        model=model or provider.default_model(),
-        calibration_examples=calibration_examples,
-        reference_context=reference_context,
-        required_concepts=required_concepts,
-    )
-    return report.to_dict() if report is not None else None
 
 
 class SimpleAgentTask(AgentTaskInterface):
@@ -418,11 +249,7 @@ class SimpleAgentTask(AgentTaskInterface):
             reasoning=judge_result.reasoning,
             dimension_scores=judge_result.dimension_scores,
             internal_retries=judge_result.internal_retries,
-            evaluator_guardrail=(
-                evaluator_guardrail.to_dict()
-                if evaluator_guardrail is not None
-                else None
-            ),
+            evaluator_guardrail=(evaluator_guardrail.to_dict() if evaluator_guardrail is not None else None),
         )
 
     def generate_output(self, state: dict) -> str:
@@ -448,11 +275,7 @@ class SimpleAgentTask(AgentTaskInterface):
             revision_prompt=self._revision_prompt,
             reference_context=state.get("reference_context"),
             required_concepts=state.get("required_concepts"),
-            objective_feedback=(
-                objective_feedback
-                if isinstance(objective_feedback, str)
-                else None
-            ),
+            objective_feedback=(objective_feedback if isinstance(objective_feedback, str) else None),
             simplicity_mode=self._simplicity_mode,
         )
 
@@ -499,7 +322,8 @@ class TaskRunner:
 
         logger.info(
             "task runner started (poll_interval=%.1fs, concurrency=%d)",
-            self.poll_interval, self.concurrency,
+            self.poll_interval,
+            self.concurrency,
         )
 
         while not self._shutdown:
@@ -597,10 +421,12 @@ class TaskRunner:
             initial_output = config.initial_output
             if not initial_output:
                 logger.info("generating initial output for task %s", task_id)
-                initial_output = agent_task.generate_output({
-                    "reference_context": reference_context,
-                    "required_concepts": config.required_concepts,
-                })
+                initial_output = agent_task.generate_output(
+                    {
+                        "reference_context": reference_context,
+                        "required_concepts": config.required_concepts,
+                    }
+                )
             if config.generations > 1:
                 result = self._run_task_multi_generation(
                     task_id=task_id,
@@ -622,8 +448,8 @@ class TaskRunner:
                     "required_concepts": config.required_concepts,
                 }
                 if config.objective_verification:
-                    loop_state["revision_feedback_callback"] = (
-                        lambda current_output, judge_result: _build_objective_revision_feedback(
+                    loop_state["revision_feedback_callback"] = lambda current_output, judge_result: (
+                        build_objective_revision_feedback(
                             current_output,
                             judge_result.score,
                             config,
@@ -637,29 +463,29 @@ class TaskRunner:
                     required_concepts=config.required_concepts,
                     calibration_examples=config.calibration_examples,
                 )
-                objective_payload = _build_objective_payload(
+                objective_payload = build_objective_payload(
                     result.best_output,
                     result.best_score,
                     config,
                     run_id=task_id,
                 )
-                objective_guardrail = _build_objective_guardrail_payload(
+                objective_guardrail = build_objective_guardrail_payload(
                     objective_payload,
                     config,
                 )
-                evaluator_guardrail = _build_evaluator_guardrail_payload(
+                evaluator_guardrail = build_evaluator_guardrail_payload(
                     agent_task,
                     result.best_output,
                     config,
                     reference_context=reference_context,
                 )
-                effective_met_threshold = result.met_threshold and (
-                    objective_guardrail is None or bool(objective_guardrail.get("passed"))
-                ) and (
-                    evaluator_guardrail is None or bool(evaluator_guardrail.get("passed"))
+                effective_met_threshold = compute_effective_met_threshold(
+                    result.met_threshold,
+                    objective_guardrail,
+                    evaluator_guardrail,
                 )
                 result.met_threshold = effective_met_threshold
-                rubric_calibration = _build_rubric_calibration_payload(
+                rubric_calibration = build_rubric_calibration_payload(
                     store=self.store,
                     spec_name=spec_name,
                     task_prompt=agent_task.get_task_prompt({}),
@@ -687,7 +513,10 @@ class TaskRunner:
 
             logger.info(
                 "task %s completed: score=%.2f rounds=%d threshold_met=%s",
-                task_id, result.best_score, result.total_rounds, result.met_threshold,
+                task_id,
+                result.best_score,
+                result.total_rounds,
+                result.met_threshold,
             )
 
             self._emit_completion_event(task_id, spec_name, result)
@@ -731,12 +560,10 @@ class TaskRunner:
                 "required_concepts": config.required_concepts,
             }
             if config.objective_verification:
-                loop_state["revision_feedback_callback"] = (
-                    lambda current_output, judge_result: _build_objective_revision_feedback(
-                        current_output,
-                        judge_result.score,
-                        config,
-                    )
+                loop_state["revision_feedback_callback"] = lambda current_output, judge_result: build_objective_revision_feedback(
+                    current_output,
+                    judge_result.score,
+                    config,
                 )
             loop_result = loop.run(
                 initial_output=output,
@@ -777,28 +604,28 @@ class TaskRunner:
         met_threshold = any(result.met_threshold for result in ordered_results)
         best_score = state.best_score
         best_output = state.best_output
-        objective_payload = _build_objective_payload(
+        objective_payload = build_objective_payload(
             best_output,
             best_score,
             config,
             run_id=task_id,
         )
-        objective_guardrail = _build_objective_guardrail_payload(
+        objective_guardrail = build_objective_guardrail_payload(
             objective_payload,
             config,
         )
-        evaluator_guardrail = _build_evaluator_guardrail_payload(
+        evaluator_guardrail = build_evaluator_guardrail_payload(
             agent_task,
             best_output,
             config,
             reference_context=reference_context,
         )
-        effective_met_threshold = met_threshold and (
-            objective_guardrail is None or bool(objective_guardrail.get("passed"))
-        ) and (
-            evaluator_guardrail is None or bool(evaluator_guardrail.get("passed"))
+        effective_met_threshold = compute_effective_met_threshold(
+            met_threshold,
+            objective_guardrail,
+            evaluator_guardrail,
         )
-        rubric_calibration = _build_rubric_calibration_payload(
+        rubric_calibration = build_rubric_calibration_payload(
             store=self.store,
             spec_name=spec_name,
             task_prompt=agent_task.get_task_prompt({}),
@@ -857,9 +684,7 @@ class TaskRunner:
             reference_context=config.reference_context,
         )
 
-    def _emit_completion_event(
-        self, task_id: str, spec_name: str, result: ImprovementResult
-    ) -> None:
+    def _emit_completion_event(self, task_id: str, spec_name: str, result: ImprovementResult) -> None:
         if not self.notifier:
             return
         try:
@@ -926,11 +751,7 @@ def create_task_runner_from_settings(
     concurrency: int = 1,
 ) -> TaskRunner:
     """Build a task runner from app settings with optional browser enrichment."""
-    browser_context_service = (
-        create_queued_task_browser_context_service(settings)
-        if settings.browser_enabled
-        else None
-    )
+    browser_context_service = create_queued_task_browser_context_service(settings) if settings.browser_enabled else None
     return TaskRunner(
         store=store,
         provider=provider,

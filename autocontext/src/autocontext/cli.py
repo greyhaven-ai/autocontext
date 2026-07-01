@@ -42,6 +42,11 @@ from autocontext.cli_worker import register_worker_command
 from autocontext.config import load_settings
 from autocontext.config.presets import VALID_PRESET_NAMES
 from autocontext.config.settings import AppSettings
+from autocontext.execution.agent_task_completion import (
+    TaskConfig,
+    build_evaluator_guardrail_payload,
+    compute_effective_met_threshold,
+)
 from autocontext.execution.improvement_loop import ImprovementLoop
 from autocontext.extensions import active_hook_bus
 from autocontext.loop.generation_runner import GenerationRunner
@@ -114,8 +119,6 @@ def _artifacts_from_settings(settings: AppSettings) -> ArtifactStore:
         settings,
         enable_buffered_writes=True,
     )
-
-
 
 
 def _write_json_stdout(payload: object) -> None:
@@ -244,11 +247,7 @@ def _run_agent_task(
     loop = ImprovementLoop(
         task=task,
         max_rounds=max_rounds,
-        metadata=(
-            simplicity_mode_metadata(settings.simplicity_mode)
-            if settings.simplicity_mode != "off"
-            else None
-        ),
+        metadata=(simplicity_mode_metadata(settings.simplicity_mode) if settings.simplicity_mode != "off" else None),
     )
     active_run_id = run_id or f"task_{uuid.uuid4().hex[:12]}"
     sqlite.create_run(
@@ -289,6 +288,29 @@ def _run_agent_task(
         )
         raise
 
+    # AC-848: apply the same guardrail-adjusted effective_met_threshold that
+    # execution/task_runner.py::_process_task applies, via the shared
+    # agent_task_completion helpers, so the two execution paths cannot drift.
+    # There is no queued objective_verification config for a direct scenario
+    # run, so only the evaluator guardrail (judge_samples / bias probes) can
+    # veto here.
+    guardrail_config = TaskConfig(
+        judge_samples=settings.judge_samples,
+        judge_temperature=settings.judge_temperature,
+        judge_disagreement_threshold=settings.judge_disagreement_threshold,
+        judge_bias_probes_enabled=settings.judge_bias_probes_enabled,
+    )
+    evaluator_guardrail = build_evaluator_guardrail_payload(
+        task,
+        result.best_output,
+        guardrail_config,
+    )
+    effective_met_threshold = compute_effective_met_threshold(
+        result.met_threshold,
+        None,
+        evaluator_guardrail,
+    )
+
     sqlite.append_agent_output(active_run_id, 1, "competitor", result.best_output)
     sqlite.upsert_generation(
         active_run_id,
@@ -309,7 +331,7 @@ def _run_agent_task(
         best_score=result.best_score,
         best_output=result.best_output,
         total_rounds=result.total_rounds,
-        met_threshold=result.met_threshold,
+        met_threshold=effective_met_threshold,
         termination_reason=result.termination_reason,
         optimizer_metadata=getattr(result, "metadata", {}) or None,
     )
@@ -856,10 +878,6 @@ def mcp_serve() -> None:
     run_server()
 
 
-
-
-
-
 @app.command()
 def simulate(
     description: str = typer.Option("", "--description", "-d", help="Plain-language description of what to simulate"),
@@ -1038,8 +1056,6 @@ def investigate(
         write_json_stderr=_write_json_stderr,
         check_json_exit=_check_json_exit,
     )
-
-
 
 
 @app.command()

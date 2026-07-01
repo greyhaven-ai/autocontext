@@ -1,4 +1,5 @@
 """Tests for AC-231: direct agent-task execution support in the Python CLI."""
+
 from __future__ import annotations
 
 import dataclasses
@@ -260,6 +261,60 @@ class TestAgentTaskServeRejection:
             result = runner.invoke(app, ["run", "--serve", "--scenario", "mock_task"])
 
         assert result.exit_code == 2
+
+
+class _EvaluatorGuardrailFailTask(_MockAgentTask):
+    """Task whose judge reports a failed evaluator guardrail (AC-848).
+
+    Mirrors what execution/task_runner.py::_process_task sees when
+    ``config.judge_bias_probes_enabled`` (or ``judge_samples > 1``) triggers
+    a live evaluator guardrail check on the best output.
+    """
+
+    def evaluate_output(
+        self,
+        output: str,
+        state: dict,
+        reference_context: str | None = None,
+        required_concepts: list[str] | None = None,
+        calibration_examples: list[dict] | None = None,
+        pinned_dimensions: list[str] | None = None,
+    ) -> AgentTaskResult:
+        return AgentTaskResult(
+            score=0.95,
+            reasoning="judge liked it",
+            dimension_scores={"quality": 0.95},
+            evaluator_guardrail={
+                "passed": False,
+                "reason": "judge disagreement exceeded threshold",
+                "violations": ["judge disagreement exceeded threshold"],
+            },
+        )
+
+
+class TestAgentTaskGuardrailParity:
+    """AC-848: CLI path must apply the same guardrail-adjusted
+    effective_met_threshold as execution/task_runner.py::_process_task."""
+
+    def test_evaluator_guardrail_forces_met_threshold_false(self, tmp_path: Path) -> None:
+        settings = _settings(tmp_path).model_copy(update={"judge_bias_probes_enabled": True})
+        loop_result = _FakeLoopResult()
+        loop_result.met_threshold = True
+        with (
+            patch("autocontext.cli.SCENARIO_REGISTRY", {"mock_task": _EvaluatorGuardrailFailTask}),
+            patch("autocontext.cli.load_settings", return_value=settings),
+            patch("autocontext.cli._resolve_agent_task_runtime", return_value=(_FakeProvider(), "runtime-model")),
+            patch("autocontext.cli.ImprovementLoop") as mock_loop,
+        ):
+            mock_loop.return_value.run.return_value = loop_result
+            result = runner.invoke(app, ["run", "--json", "--scenario", "mock_task", "--run-id", "task-guardrail-001"])
+
+        assert result.exit_code == 0, result.stderr
+        data = json.loads(result.stdout.strip())
+        # The loop itself reported met_threshold=True, but the evaluator
+        # guardrail failed, so the effective (guardrail-adjusted) result
+        # must be False -- the same gate execution/task_runner.py applies.
+        assert data["met_threshold"] is False
 
 
 class TestAgentTaskRunSummary:
