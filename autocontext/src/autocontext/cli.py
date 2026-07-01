@@ -8,6 +8,8 @@ import sys
 import threading
 import time
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NoReturn
@@ -127,6 +129,32 @@ def _write_json_stdout(payload: object) -> None:
 
 def _write_json_stderr(message: str) -> None:
     sys.stderr.write(json.dumps({"error": message}) + "\n")
+
+
+@contextmanager
+def cli_error_boundary(json_output: bool, *, action: str) -> Iterator[None]:
+    """Convert KeyboardInterrupt/Exception into the CLI's JSON-or-Rich exit convention.
+
+    `run` and `resume` both need identical KeyboardInterrupt -> exit(1) and
+    Exception -> exit(1) handling, differing only in the action verb used in
+    the interrupted-message text (e.g. "run interrupted" / "Run interrupted.",
+    "resume interrupted" / "Resume interrupted.").
+    """
+    try:
+        yield
+    except KeyboardInterrupt:
+        if json_output:
+            _write_json_stderr(f"{action} interrupted")
+        else:
+            console.print(f"[yellow]{action.capitalize()} interrupted.[/yellow]")
+        raise typer.Exit(code=1) from None
+    except Exception as exc:
+        logger.debug("cli: caught Exception", exc_info=True)
+        if json_output:
+            _write_json_stderr(str(exc))
+        else:
+            console.print(f"[red]Error: {exc}[/red]")
+        raise typer.Exit(code=1) from exc
 
 
 def _check_json_exit(result: dict[str, Any]) -> None:
@@ -374,21 +402,8 @@ def run(
 
         _apply_preset_env(preset)
         settings = load_settings()
-        try:
+        with cli_error_boundary(json_output, action="run"):
             task_summary = _run_agent_task(scenario, settings, max_rounds=gens, run_id=run_id)
-        except KeyboardInterrupt:
-            if json_output:
-                _write_json_stderr("run interrupted")
-            else:
-                console.print("[yellow]Run interrupted.[/yellow]")
-            raise typer.Exit(code=1) from None
-        except Exception as exc:
-            logger.debug("cli: caught Exception", exc_info=True)
-            if json_output:
-                _write_json_stderr(str(exc))
-            else:
-                console.print(f"[red]Error: {exc}[/red]")
-            raise typer.Exit(code=1) from exc
         if json_output:
             _write_json_stdout(dataclasses.asdict(task_summary))
         else:
@@ -429,21 +444,8 @@ def run(
         console.print(f"[dim]API: http://localhost:{port}/api/runs | WS: ws://localhost:{port}/ws/interactive[/dim]")
         uvicorn.run(interactive_app, host="127.0.0.1", port=int(port), log_level="info")
     else:
-        try:
+        with cli_error_boundary(json_output, action="run"):
             summary = _runner(preset).run(scenario_name=scenario, generations=gens, run_id=run_id)
-        except KeyboardInterrupt:
-            if json_output:
-                _write_json_stderr("run interrupted")
-            else:
-                console.print("[yellow]Run interrupted.[/yellow]")
-            raise typer.Exit(code=1) from None
-        except Exception as exc:
-            logger.debug("cli: caught Exception", exc_info=True)
-            if json_output:
-                _write_json_stderr(str(exc))
-            else:
-                console.print(f"[red]Error: {exc}[/red]")
-            raise typer.Exit(code=1) from exc
         if json_output:
             _write_json_stdout(dataclasses.asdict(summary))
         else:
@@ -472,21 +474,8 @@ def resume(
 ) -> None:
     """Resume an existing run idempotently."""
 
-    try:
+    with cli_error_boundary(json_output, action="resume"):
         summary = _runner().run(scenario_name=scenario, generations=gens, run_id=run_id)
-    except KeyboardInterrupt:
-        if json_output:
-            _write_json_stderr("resume interrupted")
-        else:
-            console.print("[yellow]Resume interrupted.[/yellow]")
-        raise typer.Exit(code=1) from None
-    except Exception as exc:
-        logger.debug("cli: caught Exception", exc_info=True)
-        if json_output:
-            _write_json_stderr(str(exc))
-        else:
-            console.print(f"[red]Error: {exc}[/red]")
-        raise typer.Exit(code=1) from exc
     if json_output:
         _write_json_stdout(dataclasses.asdict(summary))
     else:
