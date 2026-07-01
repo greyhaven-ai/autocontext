@@ -463,38 +463,19 @@ class TaskRunner:
                     required_concepts=config.required_concepts,
                     calibration_examples=config.calibration_examples,
                 )
-                objective_payload = build_objective_payload(
-                    result.best_output,
-                    result.best_score,
-                    config,
-                    run_id=task_id,
-                )
-                objective_guardrail = build_objective_guardrail_payload(
-                    objective_payload,
-                    config,
-                )
-                evaluator_guardrail = build_evaluator_guardrail_payload(
-                    agent_task,
-                    result.best_output,
-                    config,
-                    reference_context=reference_context,
-                )
-                effective_met_threshold = compute_effective_met_threshold(
-                    result.met_threshold,
-                    objective_guardrail,
-                    evaluator_guardrail,
+                objective_payload, objective_guardrail, evaluator_guardrail, effective_met_threshold, rubric_calibration = (
+                    self._finalize_task_output(
+                        agent_task=agent_task,
+                        task_id=task_id,
+                        spec_name=spec_name,
+                        best_output=result.best_output,
+                        best_score=result.best_score,
+                        met_threshold=result.met_threshold,
+                        reference_context=reference_context,
+                        config=config,
+                    )
                 )
                 result.met_threshold = effective_met_threshold
-                rubric_calibration = build_rubric_calibration_payload(
-                    store=self.store,
-                    spec_name=spec_name,
-                    task_prompt=agent_task.get_task_prompt({}),
-                    rubric=agent_task.get_rubric(),
-                    provider=self.provider,
-                    model=self.model,
-                    reference_context=reference_context,
-                    required_concepts=config.required_concepts,
-                )
 
                 self.store.complete_task(
                     task_id=task_id,
@@ -604,36 +585,17 @@ class TaskRunner:
         met_threshold = any(result.met_threshold for result in ordered_results)
         best_score = state.best_score
         best_output = state.best_output
-        objective_payload = build_objective_payload(
-            best_output,
-            best_score,
-            config,
-            run_id=task_id,
-        )
-        objective_guardrail = build_objective_guardrail_payload(
-            objective_payload,
-            config,
-        )
-        evaluator_guardrail = build_evaluator_guardrail_payload(
-            agent_task,
-            best_output,
-            config,
-            reference_context=reference_context,
-        )
-        effective_met_threshold = compute_effective_met_threshold(
-            met_threshold,
-            objective_guardrail,
-            evaluator_guardrail,
-        )
-        rubric_calibration = build_rubric_calibration_payload(
-            store=self.store,
-            spec_name=spec_name,
-            task_prompt=agent_task.get_task_prompt({}),
-            rubric=agent_task.get_rubric(),
-            provider=self.provider,
-            model=self.model,
-            reference_context=reference_context,
-            required_concepts=config.required_concepts,
+        objective_payload, objective_guardrail, evaluator_guardrail, effective_met_threshold, rubric_calibration = (
+            self._finalize_task_output(
+                agent_task=agent_task,
+                task_id=task_id,
+                spec_name=spec_name,
+                best_output=best_output,
+                best_score=best_score,
+                met_threshold=met_threshold,
+                reference_context=reference_context,
+                config=config,
+            )
         )
 
         self.store.complete_task(
@@ -671,6 +633,57 @@ class TaskRunner:
             judge_calls=sum(result.judge_calls for result in ordered_results),
             dimension_trajectory={},
         )
+
+    def _finalize_task_output(
+        self,
+        *,
+        agent_task: SimpleAgentTask,
+        task_id: str,
+        spec_name: str,
+        best_output: str,
+        best_score: float,
+        met_threshold: bool,
+        reference_context: str | None,
+        config: TaskConfig,
+    ) -> tuple[dict[str, Any] | None, dict[str, Any] | None, dict[str, Any] | None, bool, dict[str, Any] | None]:
+        """Assemble the objective/guardrail/calibration payload pieces shared by
+        the single- and multi-generation task-completion paths.
+
+        Returns (objective_payload, objective_guardrail, evaluator_guardrail,
+        effective_met_threshold, rubric_calibration).
+        """
+        objective_payload = build_objective_payload(
+            best_output,
+            best_score,
+            config,
+            run_id=task_id,
+        )
+        objective_guardrail = build_objective_guardrail_payload(
+            objective_payload,
+            config,
+        )
+        evaluator_guardrail = build_evaluator_guardrail_payload(
+            agent_task,
+            best_output,
+            config,
+            reference_context=reference_context,
+        )
+        effective_met_threshold = compute_effective_met_threshold(
+            met_threshold,
+            objective_guardrail,
+            evaluator_guardrail,
+        )
+        rubric_calibration = build_rubric_calibration_payload(
+            store=self.store,
+            spec_name=spec_name,
+            task_prompt=agent_task.get_task_prompt({}),
+            rubric=agent_task.get_rubric(),
+            provider=self.provider,
+            model=self.model,
+            reference_context=reference_context,
+            required_concepts=config.required_concepts,
+        )
+        return objective_payload, objective_guardrail, evaluator_guardrail, effective_met_threshold, rubric_calibration
 
     def _resolve_reference_context(self, task_id: str, config: TaskConfig) -> str | None:
         """Resolve authoritative reference context for a queued task."""
