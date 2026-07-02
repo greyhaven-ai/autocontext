@@ -2396,7 +2396,10 @@ class TestStageTournamentAttempt:
         agents.competitor.run.return_value = ('{"aggression": 0.9}', None)
         agents.translator.translate.return_value = ({"aggression": 0.9}, None)
 
-        with patch("autocontext.loop.stage_helpers.tournament_prep.build_retry_prompt", return_value="HELPER RETRY PROMPT") as build_prompt:
+        with patch(
+            "autocontext.loop.stage_helpers.tournament_prep.build_retry_prompt",
+            return_value="HELPER RETRY PROMPT",
+        ) as build_prompt:
             stage_tournament(
                 ctx,
                 supervisor=supervisor,
