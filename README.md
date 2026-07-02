@@ -86,7 +86,6 @@ Everything is filesystem-first: inspect it, diff it, replay it, export it, or fe
 Python owns the full control-plane package; TypeScript owns several operator-facing surfaces, the TUI, and Node runtime adapters. Start with [autocontext/README.md](autocontext/README.md) or [ts/README.md](ts/README.md).
 
 <!-- autocontext-whats-new:start -->
-
 ## What's New in 0.10.0
 
 - **Scaled training plans** add default-off CUDA/TRL profiles for 7B QLoRA RLVR and sharded 32B/72B distillation across Python and TypeScript.
