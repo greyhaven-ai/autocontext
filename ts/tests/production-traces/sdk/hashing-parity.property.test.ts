@@ -38,7 +38,11 @@ const idArb = fc
 // worker long enough under CI load to starve the worker RPC channel
 // ("Timeout calling onTaskUpdate"). CI sets HASHING_PARITY_NUM_RUNS to a
 // smaller count; local runs keep the full 100.
-const numRuns = Number(process.env.HASHING_PARITY_NUM_RUNS ?? "100");
+// Guard against empty-string/typo env values: Number("") is 0 and fast-check
+// with numRuns 0 passes vacuously, so fall back to 100 unless the value is a
+// positive integer.
+const parsedNumRuns = Number(process.env.HASHING_PARITY_NUM_RUNS ?? "100");
+const numRuns = Number.isInteger(parsedNumRuns) && parsedNumRuns > 0 ? parsedNumRuns : 100;
 
 maybeSuite(`P-hashing-parity (property, ${numRuns} runs)`, () => {
   test("hashUserId matches Python hash_user_id byte-for-byte", async () => {
