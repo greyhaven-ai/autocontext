@@ -94,6 +94,9 @@ jobs:
       - name: TypeScript package boundary checks
         working-directory: ts
         run: npx vitest run tests/package-topology.test.ts tests/package-boundaries.test.ts
+      - name: Python/TS schema sync drift check
+        working-directory: ts
+        run: uv run --frozen --project ../autocontext -- npm run check:schemas
 
   smoke:
     needs: [lint, test, package-boundaries]

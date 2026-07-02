@@ -1,4 +1,5 @@
 """Tests for AC-231: direct agent-task execution support in the Python CLI."""
+
 from __future__ import annotations
 
 import dataclasses
@@ -260,6 +261,147 @@ class TestAgentTaskServeRejection:
             result = runner.invoke(app, ["run", "--serve", "--scenario", "mock_task"])
 
         assert result.exit_code == 2
+
+
+class _EvaluatorGuardrailFailTask(_MockAgentTask):
+    """Task whose judge reports a failed evaluator guardrail (AC-848).
+
+    Mirrors what execution/task_runner.py::_process_task sees when
+    ``config.judge_bias_probes_enabled`` (or ``judge_samples > 1``) triggers
+    a live evaluator guardrail check on the best output.
+    """
+
+    def evaluate_output(
+        self,
+        output: str,
+        state: dict,
+        reference_context: str | None = None,
+        required_concepts: list[str] | None = None,
+        calibration_examples: list[dict] | None = None,
+        pinned_dimensions: list[str] | None = None,
+    ) -> AgentTaskResult:
+        return AgentTaskResult(
+            score=0.95,
+            reasoning="judge liked it",
+            dimension_scores={"quality": 0.95},
+            evaluator_guardrail={
+                "passed": False,
+                "reason": "judge disagreement exceeded threshold",
+                "violations": ["judge disagreement exceeded threshold"],
+            },
+        )
+
+
+class _PreparedStateGuardrailTask(_ContextTask):
+    """Guardrail evaluation must receive the prepared context state (AC-848).
+
+    ``_ContextTask.prepare_context`` injects ``prepared=True``; a guardrail
+    evaluated against the raw ``initial_state()`` would not see it. This task
+    passes the guardrail only when the prepared state reaches it, so the test
+    distinguishes prepared-state wiring from an ``initial_state()`` fallback.
+    """
+
+    def evaluate_output(
+        self,
+        output: str,
+        state: dict,
+        reference_context: str | None = None,
+        required_concepts: list[str] | None = None,
+        calibration_examples: list[dict] | None = None,
+        pinned_dimensions: list[str] | None = None,
+    ) -> AgentTaskResult:
+        prepared = bool(state.get("prepared"))
+        return AgentTaskResult(
+            score=0.95,
+            reasoning="checked state",
+            dimension_scores={"quality": 0.95},
+            evaluator_guardrail={
+                "passed": prepared,
+                "reason": "prepared context present" if prepared else "guardrail saw stale initial state",
+                "violations": [] if prepared else ["guardrail saw stale initial state"],
+            },
+        )
+
+
+class TestAgentTaskGuardrailParity:
+    """AC-848: CLI path must apply the same guardrail-adjusted
+    effective_met_threshold as execution/task_runner.py::_process_task."""
+
+    def test_evaluator_guardrail_forces_met_threshold_false(self, tmp_path: Path) -> None:
+        settings = _settings(tmp_path).model_copy(update={"judge_bias_probes_enabled": True})
+        loop_result = _FakeLoopResult()
+        loop_result.met_threshold = True
+        with (
+            patch("autocontext.cli.SCENARIO_REGISTRY", {"mock_task": _EvaluatorGuardrailFailTask}),
+            patch("autocontext.cli.load_settings", return_value=settings),
+            patch("autocontext.cli._resolve_agent_task_runtime", return_value=(_FakeProvider(), "runtime-model")),
+            patch("autocontext.cli.ImprovementLoop") as mock_loop,
+        ):
+            mock_loop.return_value.run.return_value = loop_result
+            result = runner.invoke(app, ["run", "--json", "--scenario", "mock_task", "--run-id", "task-guardrail-001"])
+
+        assert result.exit_code == 0, result.stderr
+        data = json.loads(result.stdout.strip())
+        # The loop itself reported met_threshold=True, but the evaluator
+        # guardrail failed, so the effective (guardrail-adjusted) result
+        # must be False -- the same gate execution/task_runner.py applies.
+        assert data["met_threshold"] is False
+
+    def test_guardrail_veto_does_not_persist_threshold_met(self, tmp_path: Path) -> None:
+        """A veto that flips met_threshold True->False must not leave the
+        termination_reason/gate_decision claiming "threshold_met" (mirrors the
+        ``"threshold_met" if effective else "max_rounds"`` derivation in
+        execution/task_runner.py::_run_task_multi_generation)."""
+        settings = _settings(tmp_path).model_copy(update={"judge_bias_probes_enabled": True})
+        loop_result = _FakeLoopResult()
+        loop_result.met_threshold = True
+        loop_result.termination_reason = "threshold_met"
+        with (
+            patch("autocontext.cli.SCENARIO_REGISTRY", {"mock_task": _EvaluatorGuardrailFailTask}),
+            patch("autocontext.cli.load_settings", return_value=settings),
+            patch("autocontext.cli._resolve_agent_task_runtime", return_value=(_FakeProvider(), "runtime-model")),
+            patch("autocontext.cli.ImprovementLoop") as mock_loop,
+        ):
+            mock_loop.return_value.run.return_value = loop_result
+            result = runner.invoke(app, ["run", "--json", "--scenario", "mock_task", "--run-id", "task-guardrail-veto-001"])
+
+        assert result.exit_code == 0, result.stderr
+        data = json.loads(result.stdout.strip())
+        assert data["met_threshold"] is False
+        # Coherent termination: not still "threshold_met".
+        assert data["termination_reason"] != "threshold_met"
+        assert data["termination_reason"] == "max_rounds"
+
+        # The persisted gate_decision must match the coherent termination.
+        store = SQLiteStore(settings.db_path)
+        with store.connect() as conn:
+            gen_row = conn.execute(
+                "SELECT gate_decision FROM generations WHERE run_id = ? AND generation_index = 1",
+                ("task-guardrail-veto-001",),
+            ).fetchone()
+        assert gen_row is not None
+        assert gen_row["gate_decision"] == "max_rounds"
+
+    def test_guardrail_receives_prepared_state_not_initial_state(self, tmp_path: Path) -> None:
+        """The evaluator guardrail must re-evaluate against the same prepared
+        state the ImprovementLoop used, not a fresh ``task.initial_state()``."""
+        settings = _settings(tmp_path).model_copy(update={"judge_bias_probes_enabled": True})
+        loop_result = _FakeLoopResult()
+        loop_result.met_threshold = True
+        with (
+            patch("autocontext.cli.SCENARIO_REGISTRY", {"mock_task": _PreparedStateGuardrailTask}),
+            patch("autocontext.cli.load_settings", return_value=settings),
+            patch("autocontext.cli._resolve_agent_task_runtime", return_value=(_FakeProvider(), "runtime-model")),
+            patch("autocontext.cli.ImprovementLoop") as mock_loop,
+        ):
+            mock_loop.return_value.run.return_value = loop_result
+            result = runner.invoke(app, ["run", "--json", "--scenario", "mock_task", "--run-id", "task-guardrail-prep-001"])
+
+        assert result.exit_code == 0, result.stderr
+        data = json.loads(result.stdout.strip())
+        # The guardrail only passes when it received the prepared state; a
+        # fallback to initial_state() would veto and flip this to False.
+        assert data["met_threshold"] is True
 
 
 class TestAgentTaskRunSummary:
