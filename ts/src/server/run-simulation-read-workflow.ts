@@ -32,7 +32,13 @@ export interface RunSimulationApi {
 
 export interface RunSimulationReadDeps {
   openStore: () => RunReadStore;
-  readPlaybook: (scenario: string, roots: { runsRoot: string; knowledgeRoot: string }) => string | null;
+  // Only the "playbook" route reads this (AC-862): every other route's
+  // request kind is a fixed literal that never reaches the playbook case,
+  // so callers that never dispatch "playbook" may omit it.
+  readPlaybook?: (
+    scenario: string,
+    roots: { runsRoot: string; knowledgeRoot: string },
+  ) => string | null;
   loadReplayArtifactResponse: typeof loadReplayArtifactResponse;
 }
 
@@ -120,10 +126,12 @@ export function executeRunSimulationReadRequest(opts: {
         status: 200,
         body: {
           scenario: opts.scenario,
-          content: opts.deps.readPlaybook(opts.scenario!, {
-            runsRoot: opts.runManager.getRunsRoot(),
-            knowledgeRoot: opts.runManager.getKnowledgeRoot(),
-          }),
+          content: opts.deps.readPlaybook
+            ? opts.deps.readPlaybook(opts.scenario!, {
+                runsRoot: opts.runManager.getRunsRoot(),
+                knowledgeRoot: opts.runManager.getKnowledgeRoot(),
+              })
+            : null,
         },
       };
     case "scenarios":

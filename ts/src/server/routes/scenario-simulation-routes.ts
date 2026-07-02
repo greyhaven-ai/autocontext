@@ -1,8 +1,9 @@
 /**
  * /api/scenarios and /api/simulations routes (AC-852).
  *
- * Shares the executeRunSimulationReadRequest dispatcher with run-list-routes;
- * all four call sites here use the null-returning readPlaybook stub.
+ * Shares the executeRunSimulationReadRequest dispatcher with run-list-routes.
+ * None of the four routes here dispatch the "playbook" case, so their
+ * shared runSimDeps omits readPlaybook (AC-862; optional on the deps type).
  */
 
 import {
