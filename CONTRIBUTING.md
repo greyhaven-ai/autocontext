@@ -26,6 +26,8 @@ cd ts
 npm install
 ```
 
+Native modules (`isolated-vm`, `better-sqlite3`) need Node 22; use the version pinned in `ts/.nvmrc` (also applies to `pi/`, which depends on `ts/` and inherits the same native-module requirement).
+
 ## Common Checks
 
 Python:

@@ -31,6 +31,7 @@ def _make_ctx(
         runs_root=tmp_path / "runs",
         knowledge_root=tmp_path / "knowledge",
         skills_root=tmp_path / "skills",
+        claude_skills_path=tmp_path / ".claude" / "skills",
         generation_time_budget_seconds=budget,
     )
     scenario = MagicMock()
@@ -141,6 +142,7 @@ class TestPipelineBudget:
             runs_root=tmp_path / "runs",
             knowledge_root=tmp_path / "knowledge",
             skills_root=tmp_path / "skills",
+            claude_skills_path=tmp_path / ".claude" / "skills",
             generation_time_budget_seconds=1,  # very short budget
             coherence_check_enabled=True,
             probe_matches=3,
@@ -217,6 +219,7 @@ class TestPipelineBudget:
             runs_root=tmp_path / "runs",
             knowledge_root=tmp_path / "knowledge",
             skills_root=tmp_path / "skills",
+            claude_skills_path=tmp_path / ".claude" / "skills",
             generation_time_budget_seconds=0,
         )
         runner = GenerationRunner(settings)
@@ -235,6 +238,7 @@ class TestPipelineBudget:
             runs_root=tmp_path / "runs",
             knowledge_root=tmp_path / "knowledge",
             skills_root=tmp_path / "skills",
+            claude_skills_path=tmp_path / ".claude" / "skills",
         )
         runner = GenerationRunner(settings)
         runner.migrate(Path("migrations"))
@@ -269,6 +273,7 @@ class TestPipelineBudget:
             runs_root=tmp_path / "runs",
             knowledge_root=tmp_path / "knowledge",
             skills_root=tmp_path / "skills",
+            claude_skills_path=tmp_path / ".claude" / "skills",
         )
         runner = GenerationRunner(settings)
         runner.migrate(Path("migrations"))

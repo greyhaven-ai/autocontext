@@ -265,11 +265,9 @@ class TestBuildRunTraceChaining:
 
 
 def test_group_by_generation_helper_matches_manual_grouping(tmp_path: Path) -> None:
-    """If `_group_by_generation` was extracted, it must group identically to the
-    inline `defaultdict(list)` loops it replaces."""
+    """`_group_by_generation` must group identically to the inline
+    `defaultdict(list)` loops it replaces."""
     runner = _build_runner(tmp_path)
-    if not hasattr(runner, "_group_by_generation"):
-        return
     grouped = runner._group_by_generation(_ROLE_METRICS)
     assert dict(grouped) == {0: [_ROLE_METRICS[0]], 1: [_ROLE_METRICS[1]]}
     assert grouped[42] == []  # defaultdict(list) semantics preserved
