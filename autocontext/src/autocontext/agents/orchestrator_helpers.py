@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 NotifyFn = Callable[[str, str], None]
 
 
-def run_competitor_phase(
+def _run_competitor_phase(
     orchestrator: AgentOrchestrator,
     prompts: PromptBundle,
     generation_index: int,
@@ -87,7 +87,7 @@ def run_competitor_phase(
     return raw_text, competitor_exec
 
 
-def run_translator_phase(
+def _run_translator_phase(
     orchestrator: AgentOrchestrator,
     raw_text: str,
     strategy_interface: str,
@@ -114,7 +114,7 @@ def run_translator_phase(
     return strategy, translator_exec
 
 
-def run_analyst_coach_architect(
+def _run_analyst_coach_architect(
     orchestrator: AgentOrchestrator,
     prompts: PromptBundle,
     run_id: str,
@@ -199,7 +199,7 @@ def run_analyst_coach_architect(
     return analyst_exec, coach_exec, architect_exec
 
 
-def assemble_agent_outputs(
+def _assemble_agent_outputs(
     orchestrator: AgentOrchestrator,
     raw_text: str,
     strategy: dict[str, Any],

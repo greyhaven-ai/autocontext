@@ -767,11 +767,6 @@ class SQLiteStore(
 
     # ---- Shared JSON field parsing (used by hub + notebook mixins) ----
 
-    _HUB_SESSION_JSON_FIELDS = frozenset({"metadata_json"})
-    _HUB_PACKAGE_JSON_FIELDS = frozenset({"tags_json", "metadata_json"})
-    _HUB_RESULT_JSON_FIELDS = frozenset({"tags_json", "metadata_json"})
-    _HUB_PROMOTION_JSON_FIELDS = frozenset({"metadata_json"})
-
     @staticmethod
     def _parse_json_field(raw: Any, default: Any) -> Any:
         if not isinstance(raw, str):

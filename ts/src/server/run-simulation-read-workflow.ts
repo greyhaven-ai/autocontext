@@ -42,6 +42,13 @@ export interface RunSimulationReadDeps {
   loadReplayArtifactResponse: typeof loadReplayArtifactResponse;
 }
 
+// Deps variant for the playbook call path (AC-868): readPlaybook is required
+// here so the compiler catches a caller wiring the playbook route to deps
+// that omit it, instead of silently falling back to a null response.
+export interface RunSimulationReadDepsWithPlaybook extends RunSimulationReadDeps {
+  readPlaybook: NonNullable<RunSimulationReadDeps["readPlaybook"]>;
+}
+
 export function loadReplayArtifactResponse(opts: {
   runsRoot: string;
   runId: string;

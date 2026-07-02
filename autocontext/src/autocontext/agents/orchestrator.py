@@ -16,10 +16,10 @@ from autocontext.agents.curator import KnowledgeCurator
 from autocontext.agents.llm_client import DeferredMLXClient, LanguageModelClient, build_client_from_settings
 from autocontext.agents.model_router import ModelRouter, TierConfig
 from autocontext.agents.orchestrator_helpers import (
-    assemble_agent_outputs,
-    run_analyst_coach_architect,
-    run_competitor_phase,
-    run_translator_phase,
+    _assemble_agent_outputs,
+    _run_analyst_coach_architect,
+    _run_competitor_phase,
+    _run_translator_phase,
 )
 from autocontext.agents.parsers import parse_analyst_output, parse_architect_output, parse_coach_output, parse_competitor_output
 from autocontext.agents.role_router import ProviderClass, RoleRouter, RoutingContext
@@ -543,7 +543,7 @@ class AgentOrchestrator:
             if on_role_event:
                 on_role_event(role, status)
 
-        raw_text, competitor_exec = run_competitor_phase(
+        raw_text, competitor_exec = _run_competitor_phase(
             self,
             prompts,
             generation_index,
@@ -557,7 +557,7 @@ class AgentOrchestrator:
             _notify,
         )
 
-        strategy, translator_exec = run_translator_phase(
+        strategy, translator_exec = _run_translator_phase(
             self,
             raw_text,
             strategy_interface,
@@ -571,7 +571,7 @@ class AgentOrchestrator:
         if generation_index % self.settings.architect_every_n_gens != 0:
             architect_prompt += _ARCHITECT_CADENCE_SKIP
 
-        analyst_exec, coach_exec, architect_exec = run_analyst_coach_architect(
+        analyst_exec, coach_exec, architect_exec = _run_analyst_coach_architect(
             self,
             prompts,
             run_id,
@@ -584,7 +584,7 @@ class AgentOrchestrator:
             _notify,
         )
 
-        return assemble_agent_outputs(
+        return _assemble_agent_outputs(
             self,
             raw_text,
             strategy,

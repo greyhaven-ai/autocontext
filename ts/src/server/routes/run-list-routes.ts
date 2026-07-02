@@ -6,12 +6,15 @@
  * real readPlaybook implementation; the run routes below dispatch route
  * literals that never reach the playbook case, so their shared runSimDeps
  * omits readPlaybook entirely (AC-862; it is optional on the deps type).
+ * playbookDeps uses RunSimulationReadDepsWithPlaybook so the compiler
+ * requires readPlaybook at this one call site (AC-868).
  */
 
 import {
   executeRunSimulationReadRequest,
   type RunSimulationApi,
   type RunSimulationReadDeps,
+  type RunSimulationReadDepsWithPlaybook,
   type RunSimulationReadRunManager,
 } from "../run-simulation-read-workflow.js";
 import { asRunId, asScenarioName } from "../../domain/ids.js";
@@ -23,7 +26,7 @@ export async function tryRunListRoutes(
     runManager: RunSimulationReadRunManager;
     simulationApi: RunSimulationApi;
     runSimDeps: RunSimulationReadDeps;
-    playbookDeps: RunSimulationReadDeps;
+    playbookDeps: RunSimulationReadDepsWithPlaybook;
   },
 ): Promise<boolean> {
   const { runManager, simulationApi, runSimDeps, playbookDeps } = opts;
