@@ -27,7 +27,10 @@ import {
 } from "../knowledge/semantic-compaction.js";
 import { completeWithProviderHooks, HookEvents, HookBus } from "../extensions/index.js";
 import { ContextBudget } from "../prompts/context-budget.js";
-import { parseCuratorLessonResult, parseCuratorPlaybookDecision } from "../agents/curator-parser.js";
+import {
+  parseCuratorLessonResult,
+  parseCuratorPlaybookDecision,
+} from "../agents/curator-parser.js";
 import {
   CompositeNotifier,
   HTTPNotifier,
@@ -44,7 +47,10 @@ import {
   buildCuratorPrompt,
   buildSupportPrompt,
 } from "./generation-prompts.js";
-import { createGenerationAttemptWorkflow, runGenerationAttemptWorkflow } from "./generation-attempt-workflow.js";
+import {
+  createGenerationAttemptWorkflow,
+  runGenerationAttemptWorkflow,
+} from "./generation-attempt-workflow.js";
 import { SolveGenerationBudget } from "../knowledge/solve-generation-budget.js";
 import {
   completeGenerationLifecycleWorkflow,
@@ -57,10 +63,13 @@ import {
   completeGenerationLoopRun,
   createGenerationLoopOrchestration,
   failGenerationLoopRun,
+  type GenerationLoopOrchestration,
 } from "./generation-loop-orchestrator.js";
 import { GenerationRecovery } from "./generation-recovery.js";
 import { hasRemainingGenerationCycles } from "./generation-cycle-state.js";
 import type { GenerationAttempt } from "./generation-phase-state.js";
+import type { GenerationAttemptOrchestration } from "./generation-attempt-orchestrator.js";
+import type { GenerationLoopEventSequenceItem } from "./generation-side-effect-coordinator.js";
 import {
   consumeFreshStartHint,
   queueFreshStartHint,
@@ -201,7 +210,10 @@ export class GenerationRunner {
     this.#contextBudget = new ContextBudget(opts.contextBudgetTokens ?? 100_000);
     this.#curatorEnabled = opts.curatorEnabled ?? false;
     this.#curatorConsolidateEveryNGens = opts.curatorConsolidateEveryNGens ?? 3;
-    this.#hintStyle = effectiveHintStyle(opts.softHintsEnabled ?? false, opts.hintStyle ?? "default");
+    this.#hintStyle = effectiveHintStyle(
+      opts.softHintsEnabled ?? false,
+      opts.hintStyle ?? "default",
+    );
     this.#skillMaxLessons = opts.skillMaxLessons ?? 30;
     this.#deadEndTrackingEnabled = opts.deadEndTrackingEnabled ?? false;
     this.#deadEndMaxEntries = opts.deadEndMaxEntries ?? 20;
@@ -233,8 +245,7 @@ export class GenerationRunner {
     this.#explorationCollapseAutoMitigation = opts.explorationCollapseAutoMitigation ?? false;
     this.#notifyOn = parseNotificationFilter(opts.notifyOn);
     this.#notifier =
-      opts.notifier
-      ?? buildConfiguredNotifier(opts.notifyWebhookUrl ?? null, [...this.#notifyOn]);
+      opts.notifier ?? buildConfiguredNotifier(opts.notifyWebhookUrl ?? null, [...this.#notifyOn]);
     this.#controller = opts.controller ?? null;
     this.#events = opts.events ?? null;
     this.#generationTimeBudgetSeconds = opts.generationTimeBudgetSeconds ?? null;
@@ -263,172 +274,207 @@ export class GenerationRunner {
       this.emit("run_started", orchestration.events.runStarted!);
 
       while (hasRemainingGenerationCycles(orchestration.cycleState)) {
-        await this.#controller?.waitIfPaused();
-        const generationBudget = new SolveGenerationBudget({
-          scenarioName: this.#scenario.name,
-          budgetSeconds: this.#generationTimeBudgetSeconds,
-        });
-        generationBudget.check("generation start");
-        const activeGeneration = orchestration.cycleState.completedGenerations + 1;
-        this.emitHook(HookEvents.GENERATION_START, {
-          run_id: runId,
-          scenario: this.#scenario.name,
-          generation: activeGeneration,
-        });
-        let lifecycle: Awaited<ReturnType<typeof runGenerationLifecycleWorkflow>>;
-        try {
-          lifecycle = await runGenerationLifecycleWorkflow(
-            createGenerationLifecycleWorkflow({
-              orchestration,
-              curatorEnabled: this.#curatorEnabled,
-              maxRetries: this.#maxRetries,
-              runAttempt: async ({ attemptOrchestration, generation }) => {
-                await this.#controller?.waitIfPaused();
-                const competitorPrompt = this.buildCompetitorPrompt(runId, generation);
-                return runGenerationAttemptWorkflow(
-                  createGenerationAttemptWorkflow({
-                    attemptOrchestration,
-                    runId,
-                    generation,
-                    competitorPrompt,
-                    seedBase: this.#seedBase,
-                    matchesPerGeneration: this.#matchesPerGeneration,
-                    currentElo: this.#runState!.currentElo,
-                    executeCompetitor: () => this.completeRole("competitor", competitorPrompt),
-                    beforeTournament: async () => {
-                      await this.#controller?.waitIfPaused();
-                    },
-                    executeTournament: ({ strategy: nextStrategy, tournamentOptions }) =>
-                      new TournamentRunner(this.#scenario, tournamentOptions).run(nextStrategy),
-                    decideGate: ({ attemptOrchestration: currentAttemptOrchestration, tournamentResult }) => {
-                      const retryCount = currentAttemptOrchestration.phaseState.attemptState.retryCount;
-                      const baseDecision = this.#gate.evaluate(
-                        currentAttemptOrchestration.orchestration.cycleState.previousBestOverall,
-                        tournamentResult.bestScore,
-                        retryCount,
-                        this.#maxRetries,
-                      );
-                      const decision = applyAnnealingToGateDecision(baseDecision, {
-                        enabled: this.#experimentalAnnealingEnabled,
-                        generation,
-                        randomValue: deterministicAnnealingRandomValue(this.#seedBase, generation, retryCount),
-                        startTemperature: this.#annealingStartTemperature,
-                        endTemperature: this.#annealingEndTemperature,
-                        generations: this.#annealingGenerations,
-                      });
-                      const gateDecision = this.#controller?.takeGateOverride() as GenerationAttempt["gateDecision"] | null ?? decision.decision;
-                      return {
-                        gateDecision,
-                        delta: decision.delta,
-                        threshold: decision.threshold,
-                        metadata: decision.metadata,
-                      };
-                    },
-                  }),
-                );
-              },
-            }),
-          );
-        } catch (error) {
-          this.emitHook(HookEvents.GENERATION_END, {
-            run_id: runId,
-            scenario: this.#scenario.name,
-            generation: activeGeneration,
-            status: "failed",
-            error: error instanceof Error ? error.message : String(error),
-          });
-          throw error;
-        }
-        generationBudget.check("generation lifecycle");
-        orchestration = lifecycle.orchestration;
-        this.#runState = orchestration.runState;
-        for (const event of lifecycle.events) {
-          this.emit(event.event, event.payload);
-        }
-
-        this.#journal.persistGeneration(runId, lifecycle.generation, lifecycle.finalizedAttempt);
-        generationBudget.check("generation persistence");
-        await this.#controller?.waitIfPaused();
-        await this.runSupportRoles(runId, lifecycle.generation, lifecycle.finalizedAttempt);
-        generationBudget.check("support roles");
-        await this.applyAdvancedFeatures(
-          runId,
-          lifecycle.generation,
-          lifecycle.finalizedAttempt,
-          lifecycle.phaseState.previousBestForGeneration,
-        );
-        generationBudget.check("advanced generation features");
-        lifecycle = completeGenerationLifecycleWorkflow(lifecycle);
-        orchestration = lifecycle.orchestration;
-        this.emit("generation_completed", orchestration.events.generationCompleted!);
-        this.emitHook(HookEvents.GENERATION_END, {
-          run_id: runId,
-          scenario: this.#scenario.name,
-          generation: lifecycle.generation,
-          status: "completed",
-          mean_score: lifecycle.finalizedAttempt.tournamentResult.meanScore,
-          best_score: lifecycle.finalizedAttempt.tournamentResult.bestScore,
-          elo: lifecycle.finalizedAttempt.tournamentResult.elo,
-          gate_decision: lifecycle.finalizedAttempt.gateDecision,
-        });
+        orchestration = await this.runGeneration(runId, orchestration);
       }
 
-      this.#store.updateRunStatus(runId, "completed");
-      const sessionReportPath = this.#journal.persistSessionReport(runId, {
-        runStartedAtMs: this.#runState.startedAtMs,
-        explorationMode: this.#explorationMode,
-      });
-      orchestration = completeGenerationLoopRun(orchestration, {
-        finishedAtMs: Date.now(),
-        sessionReportPath,
-        deadEndsFound: this.#journal.countDeadEnds(),
-      });
-      this.#runState = orchestration.runState;
-      this.emit("run_completed", orchestration.events.runCompleted!);
-      this.emitHook(HookEvents.RUN_END, {
-        run_id: runId,
-        scenario: this.#scenario.name,
-        status: "completed",
-        completed_generations: orchestration.cycleState.completedGenerations,
-        best_score: this.#runState.bestScore,
-        elo: this.#runState.currentElo,
-        session_report_path: sessionReportPath,
-        dead_ends_found: this.#journal.countDeadEnds(),
-      });
-      await this.notify("completion", runId, this.#runState.bestScore, {
-        roundCount: orchestration.cycleState.completedGenerations,
-        metadata: { session_report_path: sessionReportPath },
-      });
-
-      return {
-        runId,
-        generationsCompleted: orchestration.cycleState.completedGenerations,
-        bestScore: this.#runState.bestScore,
-        currentElo: this.#runState.currentElo,
-      };
+      return await this.finalizeSuccessfulRun(runId, orchestration);
     } catch (error) {
-      orchestration = failGenerationLoopRun(orchestration, {
-        finishedAtMs: Date.now(),
-        error: error instanceof Error ? error.message : String(error),
-      });
-      this.#runState = orchestration.runState;
-      this.#store.updateRunStatus(runId, "failed");
-      this.emit("run_failed", orchestration.events.runFailed!);
-      this.emitHook(HookEvents.RUN_END, {
+      return await this.handleRunFailure(runId, orchestration, error);
+    }
+  }
+
+  private async runGeneration(
+    runId: string,
+    orchestration: GenerationLoopOrchestration,
+  ): Promise<GenerationLoopOrchestration> {
+    await this.#controller?.waitIfPaused();
+    const generationBudget = new SolveGenerationBudget({
+      scenarioName: this.#scenario.name,
+      budgetSeconds: this.#generationTimeBudgetSeconds,
+    });
+    generationBudget.check("generation start");
+    const activeGeneration = orchestration.cycleState.completedGenerations + 1;
+    this.emitHook(HookEvents.GENERATION_START, {
+      run_id: runId,
+      scenario: this.#scenario.name,
+      generation: activeGeneration,
+    });
+    let lifecycle: Awaited<ReturnType<typeof runGenerationLifecycleWorkflow>>;
+    try {
+      lifecycle = await runGenerationLifecycleWorkflow(
+        createGenerationLifecycleWorkflow({
+          orchestration,
+          curatorEnabled: this.#curatorEnabled,
+          maxRetries: this.#maxRetries,
+          runAttempt: ({ attemptOrchestration, generation }) =>
+            this.runGenerationAttempt(attemptOrchestration, runId, generation),
+        }),
+      );
+    } catch (error) {
+      this.emitHook(HookEvents.GENERATION_END, {
         run_id: runId,
         scenario: this.#scenario.name,
+        generation: activeGeneration,
         status: "failed",
-        completed_generations: this.#store.getScoreTrajectory(runId).length,
-        best_score: this.#runState.bestScore,
-        elo: this.#runState.currentElo,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      await this.notify("failure", runId, this.#runState.bestScore, {
-        roundCount: this.#store.getScoreTrajectory(runId).length,
         error: error instanceof Error ? error.message : String(error),
       });
       throw error;
     }
+    generationBudget.check("generation lifecycle");
+    orchestration = lifecycle.orchestration;
+    this.#runState = orchestration.runState;
+    for (const event of lifecycle.events) {
+      this.emit(event.event, event.payload);
+    }
+
+    this.#journal.persistGeneration(runId, lifecycle.generation, lifecycle.finalizedAttempt);
+    generationBudget.check("generation persistence");
+    await this.#controller?.waitIfPaused();
+    await this.runSupportRoles(runId, lifecycle.generation, lifecycle.finalizedAttempt);
+    generationBudget.check("support roles");
+    await this.applyAdvancedFeatures(
+      runId,
+      lifecycle.generation,
+      lifecycle.finalizedAttempt,
+      lifecycle.phaseState.previousBestForGeneration,
+    );
+    generationBudget.check("advanced generation features");
+    lifecycle = completeGenerationLifecycleWorkflow(lifecycle);
+    orchestration = lifecycle.orchestration;
+    this.emit("generation_completed", orchestration.events.generationCompleted!);
+    this.emitHook(HookEvents.GENERATION_END, {
+      run_id: runId,
+      scenario: this.#scenario.name,
+      generation: lifecycle.generation,
+      status: "completed",
+      mean_score: lifecycle.finalizedAttempt.tournamentResult.meanScore,
+      best_score: lifecycle.finalizedAttempt.tournamentResult.bestScore,
+      elo: lifecycle.finalizedAttempt.tournamentResult.elo,
+      gate_decision: lifecycle.finalizedAttempt.gateDecision,
+    });
+    return orchestration;
+  }
+
+  private async runGenerationAttempt(
+    attemptOrchestration: GenerationAttemptOrchestration,
+    runId: string,
+    generation: number,
+  ): Promise<{
+    attemptOrchestration: GenerationAttemptOrchestration;
+    events: GenerationLoopEventSequenceItem[];
+  }> {
+    await this.#controller?.waitIfPaused();
+    const competitorPrompt = this.buildCompetitorPrompt(runId, generation);
+    return runGenerationAttemptWorkflow(
+      createGenerationAttemptWorkflow({
+        attemptOrchestration,
+        runId,
+        generation,
+        competitorPrompt,
+        seedBase: this.#seedBase,
+        matchesPerGeneration: this.#matchesPerGeneration,
+        currentElo: this.#runState!.currentElo,
+        executeCompetitor: () => this.completeRole("competitor", competitorPrompt),
+        beforeTournament: async () => {
+          await this.#controller?.waitIfPaused();
+        },
+        executeTournament: ({ strategy: nextStrategy, tournamentOptions }) =>
+          new TournamentRunner(this.#scenario, tournamentOptions).run(nextStrategy),
+        decideGate: ({ attemptOrchestration: currentAttemptOrchestration, tournamentResult }) => {
+          const retryCount = currentAttemptOrchestration.phaseState.attemptState.retryCount;
+          const baseDecision = this.#gate.evaluate(
+            currentAttemptOrchestration.orchestration.cycleState.previousBestOverall,
+            tournamentResult.bestScore,
+            retryCount,
+            this.#maxRetries,
+          );
+          const decision = applyAnnealingToGateDecision(baseDecision, {
+            enabled: this.#experimentalAnnealingEnabled,
+            generation,
+            randomValue: deterministicAnnealingRandomValue(this.#seedBase, generation, retryCount),
+            startTemperature: this.#annealingStartTemperature,
+            endTemperature: this.#annealingEndTemperature,
+            generations: this.#annealingGenerations,
+          });
+          const gateDecision =
+            (this.#controller?.takeGateOverride() as GenerationAttempt["gateDecision"] | null) ??
+            decision.decision;
+          return {
+            gateDecision,
+            delta: decision.delta,
+            threshold: decision.threshold,
+            metadata: decision.metadata,
+          };
+        },
+      }),
+    );
+  }
+
+  private async finalizeSuccessfulRun(
+    runId: string,
+    orchestration: GenerationLoopOrchestration,
+  ): Promise<RunResult> {
+    this.#store.updateRunStatus(runId, "completed");
+    const sessionReportPath = this.#journal.persistSessionReport(runId, {
+      runStartedAtMs: this.#runState!.startedAtMs,
+      explorationMode: this.#explorationMode,
+    });
+    orchestration = completeGenerationLoopRun(orchestration, {
+      finishedAtMs: Date.now(),
+      sessionReportPath,
+      deadEndsFound: this.#journal.countDeadEnds(),
+    });
+    this.#runState = orchestration.runState;
+    this.emit("run_completed", orchestration.events.runCompleted!);
+    this.emitHook(HookEvents.RUN_END, {
+      run_id: runId,
+      scenario: this.#scenario.name,
+      status: "completed",
+      completed_generations: orchestration.cycleState.completedGenerations,
+      best_score: this.#runState.bestScore,
+      elo: this.#runState.currentElo,
+      session_report_path: sessionReportPath,
+      dead_ends_found: this.#journal.countDeadEnds(),
+    });
+    await this.notify("completion", runId, this.#runState.bestScore, {
+      roundCount: orchestration.cycleState.completedGenerations,
+      metadata: { session_report_path: sessionReportPath },
+    });
+
+    return {
+      runId,
+      generationsCompleted: orchestration.cycleState.completedGenerations,
+      bestScore: this.#runState.bestScore,
+      currentElo: this.#runState.currentElo,
+    };
+  }
+
+  private async handleRunFailure(
+    runId: string,
+    orchestration: GenerationLoopOrchestration,
+    error: unknown,
+  ): Promise<never> {
+    orchestration = failGenerationLoopRun(orchestration, {
+      finishedAtMs: Date.now(),
+      error: error instanceof Error ? error.message : String(error),
+    });
+    this.#runState = orchestration.runState;
+    this.#store.updateRunStatus(runId, "failed");
+    this.emit("run_failed", orchestration.events.runFailed!);
+    this.emitHook(HookEvents.RUN_END, {
+      run_id: runId,
+      scenario: this.#scenario.name,
+      status: "failed",
+      completed_generations: this.#store.getScoreTrajectory(runId).length,
+      best_score: this.#runState.bestScore,
+      elo: this.#runState.currentElo,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    await this.notify("failure", runId, this.#runState.bestScore, {
+      roundCount: this.#store.getScoreTrajectory(runId).length,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
   }
 
   private buildCompetitorPrompt(runId: string, generation: number): string {
@@ -454,7 +500,8 @@ export class GenerationRunner {
       dead_ends: this.#artifactStore.readDeadEnds(this.#scenario.name),
     });
     const injectedHint = this.#controller?.takeHint();
-    const operatorHint = [trimmed.scout_mutation_guidance, injectedHint].filter(Boolean).join("\n\n") || null;
+    const operatorHint =
+      [trimmed.scout_mutation_guidance, injectedHint].filter(Boolean).join("\n\n") || null;
 
     const competitor = buildCompetitorPrompt({
       scenarioName: this.#scenario.name,
@@ -524,8 +571,8 @@ export class GenerationRunner {
         runId,
         generation,
         ledgerPath: ledgerWrite?.ledgerPath ?? this.#artifactStore.compactionLedgerPath(runId),
-        latestEntryPath: ledgerWrite?.latestEntryPath
-          ?? this.#artifactStore.compactionLatestEntryPath(runId),
+        latestEntryPath:
+          ledgerWrite?.latestEntryPath ?? this.#artifactStore.compactionLatestEntryPath(runId),
         entries: ledgerWrite?.entries ?? entries,
       });
     }
@@ -573,8 +620,7 @@ export class GenerationRunner {
     const trajectory = new ScoreTrajectoryBuilder(this.#store.getScoreTrajectory(runId)).build();
 
     return buildCuratorPrompt({
-      tournamentSummary:
-        `Gate=${attempt.gateDecision}, Best=${attempt.tournamentResult.bestScore.toFixed(4)}, Mean=${attempt.tournamentResult.meanScore.toFixed(4)}`,
+      tournamentSummary: `Gate=${attempt.gateDecision}, Best=${attempt.tournamentResult.bestScore.toFixed(4)}, Mean=${attempt.tournamentResult.meanScore.toFixed(4)}`,
       currentPlaybook,
       proposedPlaybook,
       trajectory,
@@ -597,7 +643,11 @@ export class GenerationRunner {
     return this.#roleModels[role];
   }
 
-  private async completeRole(role: GenerationRole, userPrompt: string, systemPrompt = ""): Promise<CompletionResult> {
+  private async completeRole(
+    role: GenerationRole,
+    userPrompt: string,
+    systemPrompt = "",
+  ): Promise<CompletionResult> {
     return completeWithProviderHooks({
       hookBus: this.#hookBus,
       provider: this.providerForRole(role),
@@ -607,7 +657,6 @@ export class GenerationRunner {
       userPrompt,
     });
   }
-
 
   private async runSupportRoles(
     runId: string,
@@ -641,8 +690,7 @@ export class GenerationRunner {
     );
 
     const currentPlaybook = this.#artifactStore.readPlaybook(this.#scenario.name);
-    const normalizedPlaybook =
-      currentPlaybook === EMPTY_PLAYBOOK_SENTINEL ? "" : currentPlaybook;
+    const normalizedPlaybook = currentPlaybook === EMPTY_PLAYBOOK_SENTINEL ? "" : currentPlaybook;
     const hasStructuredPlaybook =
       coachResult.text.includes(PLAYBOOK_MARKERS.PLAYBOOK_START) &&
       coachResult.text.includes(PLAYBOOK_MARKERS.PLAYBOOK_END) &&
@@ -707,9 +755,9 @@ export class GenerationRunner {
     }
 
     if (
-      this.#curatorEnabled
-      && this.#curatorConsolidateEveryNGens > 0
-      && gen % this.#curatorConsolidateEveryNGens === 0
+      this.#curatorEnabled &&
+      this.#curatorConsolidateEveryNGens > 0 &&
+      gen % this.#curatorConsolidateEveryNGens === 0
     ) {
       await this.runCuratorConsolidation(runId, gen);
     }
@@ -816,7 +864,11 @@ export class GenerationRunner {
     if (report.events.length === 0) return;
     this.#artifactStore.writeJson(
       join(this.#artifactStore.generationDir(runId, gen), "exploration_collapse_guard.json"),
-      { schema_version: report.schemaVersion, advisory_only: report.advisoryOnly, events: report.records },
+      {
+        schema_version: report.schemaVersion,
+        advisory_only: report.advisoryOnly,
+        events: report.records,
+      },
     );
   }
 
@@ -862,7 +914,10 @@ export class GenerationRunner {
     return readStringRecord(event.payload.roles) ?? roles;
   }
 
-  private emitHook(name: HookEvents, payload: Record<string, unknown>): ReturnType<HookBus["emit"]> {
+  private emitHook(
+    name: HookEvents,
+    payload: Record<string, unknown>,
+  ): ReturnType<HookBus["emit"]> {
     const event = this.#hookBus.emit(name, payload);
     event.raiseIfBlocked();
     return event;
@@ -881,13 +936,7 @@ export class GenerationRunner {
   ): void {
     this.emit(
       "role_completed",
-      buildRoleCompletedPayload(
-        runId,
-        generation,
-        role,
-        Date.now() - startedAt,
-        usage,
-      ),
+      buildRoleCompletedPayload(runId, generation, role, Date.now() - startedAt, usage),
     );
   }
 }
@@ -899,13 +948,15 @@ function explorationSnapshots(rows: unknown[]): ExplorationSnapshot[] {
     const score = finiteNumber(row.best_score);
     if (generation === undefined || score === undefined) return [];
     const gate = typeof row.gate_decision === "string" ? row.gate_decision : "";
-    return [{
-      generationIndex: generation,
-      responseLength: 1,
-      routeSignature: gate || undefined,
-      rollbackRate: gate === "rollback" ? 1 : 0,
-      score,
-    }];
+    return [
+      {
+        generationIndex: generation,
+        responseLength: 1,
+        routeSignature: gate || undefined,
+        rollbackRate: gate === "rollback" ? 1 : 0,
+        score,
+      },
+    ];
   });
 }
 
@@ -929,10 +980,7 @@ function buildConfiguredNotifier(
   eventFilter: EventType[],
 ): Notifier | null {
   if (!webhookUrl) return null;
-  return new CompositeNotifier(
-    [new StdoutNotifier(), new HTTPNotifier(webhookUrl)],
-    eventFilter,
-  );
+  return new CompositeNotifier([new StdoutNotifier(), new HTTPNotifier(webhookUrl)], eventFilter);
 }
 
 function extractMarkedSection(content: string, startMarker: string, endMarker: string): string {

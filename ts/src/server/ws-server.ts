@@ -23,19 +23,11 @@ import {
   buildMissionProgressMessage,
   subscribeToMissionProgressEvents,
 } from "./mission-progress-workflow.js";
-import { executeMissionActionRequest } from "./mission-action-workflow.js";
-import { executeMissionReadRequest } from "./mission-read-workflow.js";
-import {
-  executeRunSimulationReadRequest,
-  loadReplayArtifactResponse,
-} from "./run-simulation-read-workflow.js";
 import { buildCampaignApiRoutes } from "./campaign-api.js";
-import { executeCampaignRouteRequest } from "./campaign-route-workflow.js";
 import { buildClientErrorMessage } from "./client-error-workflow.js";
 import { executeChatAgentCommand } from "./chat-agent-command-workflow.js";
 import { executeInteractiveControlCommand } from "./interactive-control-command-workflow.js";
 import { executeInteractiveScenarioCommand } from "./interactive-scenario-command-workflow.js";
-import { buildHttpApiParityMatrix } from "./http-api-parity.js";
 import { buildCockpitApiRoutes } from "./cockpit-api.js";
 import { buildHubApiRoutes } from "./hub-api.js";
 import { buildKnowledgeApiRoutes } from "./knowledge-api.js";
@@ -48,8 +40,23 @@ import { buildBackgroundSessionApiRoutes } from "./background-session-api.js";
 import { buildRuntimeSessionApiRoutes } from "./runtime-session-api.js";
 import { buildSimulationApiRoutes } from "./simulation-api.js";
 import { buildTraceGateReviewApiRoutes } from "./trace-gate-review-api.js";
-import { renderDashboardHtml } from "./simulation-dashboard.js";
 import { buildSessionBootstrapMessages, buildStateMessage } from "./websocket-session-bootstrap.js";
+import {
+  loadReplayArtifactResponse,
+  type RunSimulationReadDeps,
+} from "./run-simulation-read-workflow.js";
+import type { HttpRouteContext } from "./routes/http-route-context.js";
+import { tryRootRoutes } from "./routes/root-routes.js";
+import { tryNotebookRoutes } from "./routes/notebook-routes.js";
+import { tryMonitorRoutes } from "./routes/monitor-routes.js";
+import { tryOpenClawRoutes } from "./routes/openclaw-routes.js";
+import { tryCockpitRoutes } from "./routes/cockpit-routes.js";
+import { tryHubRoutes } from "./routes/hub-routes.js";
+import { tryRunListRoutes } from "./routes/run-list-routes.js";
+import { tryKnowledgeRoutes } from "./routes/knowledge-routes.js";
+import { tryScenarioSimulationRoutes } from "./routes/scenario-simulation-routes.js";
+import { tryCampaignRoutes } from "./routes/campaign-routes.js";
+import { tryMissionRoutes } from "./routes/mission-routes.js";
 import { parseClientMessage } from "./protocol.js";
 import type { ClientMessage, ServerMessage } from "./protocol.js";
 import type { RunManager } from "./run-manager.js";
@@ -179,6 +186,14 @@ export class InteractiveServer {
     const url = requestUrl.pathname;
     const method = req.method ?? "GET";
     const settings = loadSettings();
+
+    // Shared per-request closures (AC-852): built once, reused across every
+    // route builder below instead of repeating `() => this.#openStore()` and
+    // `() => new RuntimeSessionEventStore(...)` at each call site.
+    const openStore = () => this.#openStore();
+    const openRuntimeSessionStore = () =>
+      new RuntimeSessionEventStore(this.#runManager.getDbPath());
+
     const campaignApi = buildCampaignApiRoutes(this.#campaignManager);
     const missionApi = buildMissionApiRoutes(this.#missionManager, this.#runManager.getRunsRoot());
     const artifactStore = new ArtifactStore({
@@ -189,37 +204,37 @@ export class InteractiveServer {
       runsRoot: this.#runManager.getRunsRoot(),
       knowledgeRoot: this.#runManager.getKnowledgeRoot(),
       skillsRoot: this.#runManager.getSkillsRoot(),
-      openStore: () => this.#openStore(),
+      openStore,
       getSolveManager: () => this.#getSolveManager(),
     });
     const notebookApi = buildNotebookApiRoutes({
-      openStore: () => this.#openStore(),
+      openStore,
       artifacts: artifactStore,
       emitNotebookEvent: (event, payload) => {
         this.#runManager.events.emit(event, payload, "notebook");
       },
     });
     const cockpitNotebookApi = buildNotebookApiRoutes({
-      openStore: () => this.#openStore(),
+      openStore,
       artifacts: artifactStore,
       emitNotebookEvent: (event, payload) => {
         this.#runManager.events.emit(event, { ...payload, source: "cockpit" }, "cockpit");
       },
     });
     const cockpitApi = buildCockpitApiRoutes({
-      openStore: () => this.#openStore(),
-      openRuntimeSessionStore: () => new RuntimeSessionEventStore(this.#runManager.getDbPath()),
+      openStore,
+      openRuntimeSessionStore,
       notebookApi: cockpitNotebookApi,
       settings,
       runsRoot: this.#runManager.getRunsRoot(),
       knowledgeRoot: this.#runManager.getKnowledgeRoot(),
     });
     const backgroundSessionApi = buildBackgroundSessionApiRoutes({
-      openStore: () => new RuntimeSessionEventStore(this.#runManager.getDbPath()),
-      openSourceStore: () => this.#openStore(),
+      openStore: openRuntimeSessionStore,
+      openSourceStore: openStore,
     });
     const runtimeSessionApi = buildRuntimeSessionApiRoutes({
-      openStore: () => new RuntimeSessionEventStore(this.#runManager.getDbPath()),
+      openStore: openRuntimeSessionStore,
     });
     const traceGateReviewApi = buildTraceGateReviewApiRoutes({
       runsRoot: this.#runManager.getRunsRoot(),
@@ -228,10 +243,10 @@ export class InteractiveServer {
       runsRoot: this.#runManager.getRunsRoot(),
       knowledgeRoot: this.#runManager.getKnowledgeRoot(),
       skillsRoot: this.#runManager.getSkillsRoot(),
-      openStore: () => this.#openStore(),
+      openStore,
     });
     const monitorApi = buildMonitorApiRoutes({
-      openStore: () => this.#openStore(),
+      openStore,
       monitorEngine: settings.monitorEnabled ? this.#getMonitorEngine(settings) : null,
       defaultHeartbeatTimeoutSeconds: settings.monitorHeartbeatTimeout,
       maxConditions: settings.monitorMaxConditions,
@@ -239,7 +254,7 @@ export class InteractiveServer {
     const openClawApi = buildOpenClawApiRoutes({
       knowledgeRoot: this.#runManager.getKnowledgeRoot(),
       settings: loadSettings(),
-      openStore: () => this.#openStore(),
+      openStore,
     });
     const simulationApi = buildSimulationApiRoutes(this.#runManager.getKnowledgeRoot());
 
@@ -268,976 +283,76 @@ export class InteractiveServer {
       res.end(JSON.stringify(body, null, 2));
     };
 
-    // Root endpoint — API info.
-    if (url === "/") {
-      json(200, {
-        service: "autocontext",
-        version: "0.2.4",
-        endpoints: {
-          health: "/health",
-          dashboard: "/dashboard",
-          capabilities: {
-            http: "/api/capabilities/http",
-          },
-          runs: "/api/runs",
-          simulations: "/api/simulations",
-          scenarios: "/api/scenarios",
-          knowledge: {
-            scenarios: "/api/knowledge/scenarios",
-            export: "/api/knowledge/export/:scenario",
-            import: "/api/knowledge/import",
-            search: "/api/knowledge/search",
-            solve: "/api/knowledge/solve",
-            playbook: "/api/knowledge/playbook/:scenario",
-            lifecycle: "/api/knowledge/:scenario/lifecycle",
-          },
-          campaigns: "/api/campaigns",
-          missions: "/api/missions",
-          monitors: "/api/monitors",
-          notebooks: "/api/notebooks",
-          openclaw: "/api/openclaw",
-          cockpit: "/api/cockpit",
-          context_selection: "/api/cockpit/runs/:run_id/context-selection",
-          trace_gates: "/api/cockpit/runs/:run_id/trace-gates",
-          background_sessions: {
-            list: "/api/cockpit/background-sessions",
-            show: "/api/cockpit/background-sessions/:session_id",
-          },
-          runtime_sessions: {
-            list: "/api/cockpit/runtime-sessions",
-            show: "/api/cockpit/runtime-sessions/:session_id",
-            timeline: "/api/cockpit/runtime-sessions/:session_id/timeline",
-            run: "/api/cockpit/runs/:run_id/runtime-session",
-            run_timeline: "/api/cockpit/runs/:run_id/runtime-session/timeline",
-          },
-          hub: "/api/hub",
-          websocket: "/ws/interactive",
-          events: "/ws/events",
-        },
-      });
-      return;
-    }
+    const ctx: HttpRouteContext = {
+      url,
+      method,
+      requestUrl,
+      res,
+      json,
+      readJsonBody: () => this.#readJsonBody(req),
+    };
 
-    // Simulation dashboard HTML
-    if (url === "/dashboard" || url === "/dashboard/") {
-      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-      res.end(renderDashboardHtml());
-      return;
-    }
+    // Shared executeRunSimulationReadRequest deps (AC-852): the playbook
+    // route is the one call site with a real readPlaybook implementation;
+    // every other run/scenario/simulation route keeps the null-returning
+    // stub the original code used (see AC-852 task report for the tracked
+    // asymmetry: this refactor does not wire new capability).
+    const runSimDeps: RunSimulationReadDeps = {
+      openStore,
+      readPlaybook: () => null,
+      loadReplayArtifactResponse,
+    };
+    const playbookDeps: RunSimulationReadDeps = {
+      openStore,
+      readPlaybook: (playbookScenario, roots) => {
+        const artifacts = new ArtifactStore(roots);
+        return artifacts.readPlaybook(playbookScenario);
+      },
+      loadReplayArtifactResponse,
+    };
 
-    // Health
-    if (url === "/health") {
-      json(200, { status: "ok" });
-      return;
-    }
-
-    // GET /api/capabilities/http
-    if (method === "GET" && url === "/api/capabilities/http") {
-      json(200, buildHttpApiParityMatrix());
-      return;
-    }
-
-    // GET /api/notebooks
-    if (method === "GET" && (url === "/api/notebooks" || url === "/api/notebooks/")) {
-      const response = notebookApi.list();
-      json(response.status, response.body);
-      return;
-    }
-
-    // GET/PUT/DELETE /api/notebooks/:sessionId
-    const notebookMatch = url.match(/^\/api\/notebooks\/([^/]+)$/);
-    if (notebookMatch) {
-      const [, rawSessionId] = notebookMatch;
-      const sessionId = decodeURIComponent(rawSessionId!);
-      if (method === "GET") {
-        const response = notebookApi.get(sessionId);
-        json(response.status, response.body);
-        return;
-      }
-      if (method === "PUT") {
-        const response = notebookApi.upsert(sessionId, await this.#readJsonBody(req));
-        json(response.status, response.body);
-        return;
-      }
-      if (method === "DELETE") {
-        const response = notebookApi.delete(sessionId);
-        json(response.status, response.body);
-        return;
-      }
-    }
-
-    // GET/POST /api/monitors
-    if (url === "/api/monitors" || url === "/api/monitors/") {
-      if (method === "GET") {
-        const response = monitorApi.list(requestUrl.searchParams);
-        json(response.status, response.body);
-        return;
-      }
-      if (method === "POST") {
-        const response = monitorApi.create(await this.#readJsonBody(req));
-        json(response.status, response.body);
-        return;
-      }
-    }
-
-    // GET /api/monitors/alerts
-    if (method === "GET" && url === "/api/monitors/alerts") {
-      const response = monitorApi.listAlerts(requestUrl.searchParams);
-      json(response.status, response.body);
-      return;
-    }
-
-    // POST /api/monitors/:conditionId/wait
-    const monitorWaitMatch = url.match(/^\/api\/monitors\/([^/]+)\/wait$/);
-    if (method === "POST" && monitorWaitMatch) {
-      const [, rawConditionId] = monitorWaitMatch;
-      const response = await monitorApi.wait(
-        decodeURIComponent(rawConditionId!),
-        requestUrl.searchParams,
-      );
-      json(response.status, response.body);
-      return;
-    }
-
-    // DELETE /api/monitors/:conditionId
-    const monitorMatch = url.match(/^\/api\/monitors\/([^/]+)$/);
-    if (method === "DELETE" && monitorMatch) {
-      const [, rawConditionId] = monitorMatch;
-      const response = monitorApi.delete(decodeURIComponent(rawConditionId!));
-      json(response.status, response.body);
-      return;
-    }
-
-    // POST /api/openclaw/evaluate
-    if (method === "POST" && url === "/api/openclaw/evaluate") {
-      const response = openClawApi.evaluate(await this.#readJsonBody(req));
-      json(response.status, response.body);
-      return;
-    }
-
-    // POST /api/openclaw/validate
-    if (method === "POST" && url === "/api/openclaw/validate") {
-      const response = openClawApi.validate(await this.#readJsonBody(req));
-      json(response.status, response.body);
-      return;
-    }
-
-    // GET/POST /api/openclaw/artifacts
-    if (url === "/api/openclaw/artifacts" || url === "/api/openclaw/artifacts/") {
-      if (method === "GET") {
-        const response = openClawApi.listArtifacts(requestUrl.searchParams);
-        json(response.status, response.body);
-        return;
-      }
-      if (method === "POST") {
-        const response = openClawApi.publishArtifact(await this.#readJsonBody(req));
-        json(response.status, response.body);
-        return;
-      }
-    }
-
-    // GET /api/openclaw/artifacts/:artifactId
-    const openClawArtifactMatch = url.match(/^\/api\/openclaw\/artifacts\/([^/]+)$/);
-    if (method === "GET" && openClawArtifactMatch) {
-      const [, rawArtifactId] = openClawArtifactMatch;
-      const response = openClawApi.fetchArtifact(decodeURIComponent(rawArtifactId!));
-      json(response.status, response.body);
-      return;
-    }
-
-    // GET/POST /api/openclaw/distill
-    if (url === "/api/openclaw/distill" || url === "/api/openclaw/distill/") {
-      if (method === "GET") {
-        const response = openClawApi.distillStatus(requestUrl.searchParams);
-        json(response.status, response.body);
-        return;
-      }
-      if (method === "POST") {
-        const response = openClawApi.triggerDistillation(await this.#readJsonBody(req));
-        json(response.status, response.body);
-        return;
-      }
-    }
-
-    // GET/PATCH /api/openclaw/distill/:jobId
-    const openClawDistillMatch = url.match(/^\/api\/openclaw\/distill\/([^/]+)$/);
-    if (openClawDistillMatch) {
-      const [, rawJobId] = openClawDistillMatch;
-      const jobId = decodeURIComponent(rawJobId!);
-      if (method === "GET") {
-        const response = openClawApi.getDistillJob(jobId);
-        json(response.status, response.body);
-        return;
-      }
-      if (method === "PATCH") {
-        const response = openClawApi.updateDistillJob(jobId, await this.#readJsonBody(req));
-        json(response.status, response.body);
-        return;
-      }
-    }
-
-    // GET /api/openclaw/capabilities
-    if (method === "GET" && url === "/api/openclaw/capabilities") {
-      const response = openClawApi.capabilities();
-      json(response.status, response.body);
-      return;
-    }
-
-    // GET /api/openclaw/discovery/capabilities
-    if (method === "GET" && url === "/api/openclaw/discovery/capabilities") {
-      const response = openClawApi.discoveryCapabilities();
-      json(response.status, response.body);
-      return;
-    }
-
-    // GET /api/openclaw/discovery/health
-    if (method === "GET" && url === "/api/openclaw/discovery/health") {
-      const response = openClawApi.discoveryHealth();
-      json(response.status, response.body);
-      return;
-    }
-
-    // GET /api/openclaw/discovery/scenario/:scenarioName/artifacts
-    const openClawScenarioArtifactsMatch = url.match(
-      /^\/api\/openclaw\/discovery\/scenario\/([^/]+)\/artifacts$/,
-    );
-    if (method === "GET" && openClawScenarioArtifactsMatch) {
-      const [, rawScenarioName] = openClawScenarioArtifactsMatch;
-      const response = openClawApi.discoveryScenarioArtifacts(decodeURIComponent(rawScenarioName!));
-      json(response.status, response.body);
-      return;
-    }
-
-    // GET /api/openclaw/discovery/scenario/:scenarioName
-    const openClawScenarioMatch = url.match(/^\/api\/openclaw\/discovery\/scenario\/([^/]+)$/);
-    if (method === "GET" && openClawScenarioMatch) {
-      const [, rawScenarioName] = openClawScenarioMatch;
-      const response = openClawApi.discoveryScenario(decodeURIComponent(rawScenarioName!));
-      json(response.status, response.body);
-      return;
-    }
-
-    // GET /api/openclaw/skill/manifest
-    if (method === "GET" && url === "/api/openclaw/skill/manifest") {
-      const response = openClawApi.skillManifest();
-      json(response.status, response.body);
-      return;
-    }
-
-    // Cockpit notebook context routes
+    if (tryRootRoutes(ctx)) return;
+    if (await tryNotebookRoutes(ctx, notebookApi)) return;
+    if (await tryMonitorRoutes(ctx, monitorApi)) return;
+    if (await tryOpenClawRoutes(ctx, openClawApi)) return;
     if (
-      method === "GET" &&
-      (url === "/api/cockpit/notebooks" || url === "/api/cockpit/notebooks/")
-    ) {
-      const response = cockpitApi.listNotebooks();
-      json(response.status, response.body);
+      await tryCockpitRoutes(ctx, {
+        cockpitApi,
+        backgroundSessionApi,
+        runtimeSessionApi,
+        traceGateReviewApi,
+      })
+    )
       return;
-    }
-
-    const cockpitNotebookEffectiveMatch = url.match(
-      /^\/api\/cockpit\/notebooks\/([^/]+)\/effective-context$/,
-    );
-    if (method === "GET" && cockpitNotebookEffectiveMatch) {
-      const [, rawSessionId] = cockpitNotebookEffectiveMatch;
-      const response = cockpitApi.effectiveNotebookContext(decodeURIComponent(rawSessionId!));
-      json(response.status, response.body);
-      return;
-    }
-
-    const cockpitNotebookMatch = url.match(/^\/api\/cockpit\/notebooks\/([^/]+)$/);
-    if (cockpitNotebookMatch) {
-      const [, rawSessionId] = cockpitNotebookMatch;
-      const sessionId = decodeURIComponent(rawSessionId!);
-      if (method === "GET") {
-        const response = cockpitApi.getNotebook(sessionId);
-        json(response.status, response.body);
-        return;
-      }
-      if (method === "PUT") {
-        const response = cockpitApi.upsertNotebook(sessionId, await this.#readJsonBody(req));
-        json(response.status, response.body);
-        return;
-      }
-      if (method === "DELETE") {
-        const response = cockpitApi.deleteNotebook(sessionId);
-        json(response.status, response.body);
-        return;
-      }
-    }
-
-    // Cockpit run routes
-    if (method === "GET" && (url === "/api/cockpit/runs" || url === "/api/cockpit/runs/")) {
-      const response = cockpitApi.listRuns();
-      json(response.status, response.body);
-      return;
-    }
-
-    // Cockpit background-session routes
+    if (await tryHubRoutes(ctx, hubApi)) return;
     if (
-      method === "GET" &&
-      (url === "/api/cockpit/background-sessions" || url === "/api/cockpit/background-sessions/")
-    ) {
-      const response = backgroundSessionApi.list(requestUrl.searchParams);
-      json(response.status, response.body);
+      await tryRunListRoutes(ctx, {
+        runManager: this.#runManager,
+        simulationApi,
+        runSimDeps,
+        playbookDeps,
+      })
+    )
       return;
-    }
-
-    const cockpitBackgroundSessionMatch = url.match(
-      /^\/api\/cockpit\/background-sessions\/([^/]+)$/,
-    );
-    if (method === "GET" && cockpitBackgroundSessionMatch) {
-      const [, rawSessionId] = cockpitBackgroundSessionMatch;
-      const response = backgroundSessionApi.getBySessionId(decodeURIComponent(rawSessionId!));
-      json(response.status, response.body);
-      return;
-    }
-
-    // Cockpit runtime-session routes
+    if (await tryKnowledgeRoutes(ctx, knowledgeApi)) return;
     if (
-      method === "GET" &&
-      (url === "/api/cockpit/runtime-sessions" || url === "/api/cockpit/runtime-sessions/")
-    ) {
-      const response = runtimeSessionApi.list(requestUrl.searchParams);
-      json(response.status, response.body);
-      return;
-    }
-
-    const cockpitRuntimeSessionTimelineMatch = url.match(
-      /^\/api\/cockpit\/runtime-sessions\/([^/]+)\/timeline$/,
-    );
-    if (method === "GET" && cockpitRuntimeSessionTimelineMatch) {
-      const [, rawSessionId] = cockpitRuntimeSessionTimelineMatch;
-      const response = runtimeSessionApi.getTimelineBySessionId(decodeURIComponent(rawSessionId!));
-      json(response.status, response.body);
-      return;
-    }
-
-    const cockpitRuntimeSessionMatch = url.match(/^\/api\/cockpit\/runtime-sessions\/([^/]+)$/);
-    if (method === "GET" && cockpitRuntimeSessionMatch) {
-      const [, rawSessionId] = cockpitRuntimeSessionMatch;
-      const response = runtimeSessionApi.getBySessionId(decodeURIComponent(rawSessionId!));
-      json(response.status, response.body);
-      return;
-    }
-
-    const cockpitRunRuntimeSessionTimelineMatch = url.match(
-      /^\/api\/cockpit\/runs\/([^/]+)\/runtime-session\/timeline$/,
-    );
-    if (method === "GET" && cockpitRunRuntimeSessionTimelineMatch) {
-      const [, rawRunId] = cockpitRunRuntimeSessionTimelineMatch;
-      const response = runtimeSessionApi.getTimelineByRunId(decodeURIComponent(rawRunId!));
-      json(response.status, response.body);
-      return;
-    }
-
-    const cockpitRunRuntimeSessionMatch = url.match(
-      /^\/api\/cockpit\/runs\/([^/]+)\/runtime-session$/,
-    );
-    if (method === "GET" && cockpitRunRuntimeSessionMatch) {
-      const [, rawRunId] = cockpitRunRuntimeSessionMatch;
-      const response = runtimeSessionApi.getByRunId(decodeURIComponent(rawRunId!));
-      json(response.status, response.body);
-      return;
-    }
-
-    const cockpitTraceGateReviewMatch = url.match(/^\/api\/cockpit\/runs\/([^/]+)\/trace-gates$/);
-    if (method === "GET" && cockpitTraceGateReviewMatch) {
-      const [, rawRunId] = cockpitTraceGateReviewMatch;
-      const response = traceGateReviewApi.getByRunId(decodeURIComponent(rawRunId!));
-      json(response.status, response.body);
-      return;
-    }
-
-    const cockpitContextSelectionMatch = url.match(
-      /^\/api\/cockpit\/runs\/([^/]+)\/context-selection$/,
-    );
-    if (method === "GET" && cockpitContextSelectionMatch) {
-      const [, rawRunId] = cockpitContextSelectionMatch;
-      const response = cockpitApi.contextSelection(decodeURIComponent(rawRunId!));
-      json(response.status, response.body);
-      return;
-    }
-
-    const cockpitCompareMatch = url.match(/^\/api\/cockpit\/runs\/([^/]+)\/compare\/(\d+)\/(\d+)$/);
-    if (method === "GET" && cockpitCompareMatch) {
-      const [, rawRunId, rawGenA, rawGenB] = cockpitCompareMatch;
-      const response = cockpitApi.compareGenerations(
-        decodeURIComponent(rawRunId!),
-        Number.parseInt(rawGenA!, 10),
-        Number.parseInt(rawGenB!, 10),
-      );
-      json(response.status, response.body);
-      return;
-    }
-
-    const cockpitRunResourceMatch = url.match(
-      /^\/api\/cockpit\/runs\/([^/]+)\/(status|changelog|resume|consultations)$/,
-    );
-    if (method === "GET" && cockpitRunResourceMatch) {
-      const [, rawRunId, resource] = cockpitRunResourceMatch;
-      const runId = decodeURIComponent(rawRunId!);
-      const response =
-        resource === "status"
-          ? cockpitApi.runStatus(runId)
-          : resource === "changelog"
-            ? cockpitApi.changelog(runId)
-            : resource === "resume"
-              ? cockpitApi.resumeInfo(runId)
-              : cockpitApi.listConsultations(runId);
-      json(response.status, response.body);
-      return;
-    }
-
-    const cockpitConsultMatch = url.match(/^\/api\/cockpit\/runs\/([^/]+)\/consult$/);
-    if (method === "POST" && cockpitConsultMatch) {
-      const [, rawRunId] = cockpitConsultMatch;
-      const response = await cockpitApi.requestConsultation(
-        decodeURIComponent(rawRunId!),
-        await this.#readJsonBody(req),
-      );
-      json(response.status, response.body);
-      return;
-    }
-
-    const cockpitWriteupMatch = url.match(/^\/api\/cockpit\/writeup\/([^/]+)$/);
-    if (method === "GET" && cockpitWriteupMatch) {
-      const [, rawRunId] = cockpitWriteupMatch;
-      const response = cockpitApi.writeup(decodeURIComponent(rawRunId!));
-      json(response.status, response.body);
-      return;
-    }
-
-    // Research hub session routes
-    if (method === "GET" && (url === "/api/hub/sessions" || url === "/api/hub/sessions/")) {
-      const response = hubApi.listSessions();
-      json(response.status, response.body);
-      return;
-    }
-
-    const hubSessionHeartbeatMatch = url.match(/^\/api\/hub\/sessions\/([^/]+)\/heartbeat$/);
-    if (method === "POST" && hubSessionHeartbeatMatch) {
-      const [, rawSessionId] = hubSessionHeartbeatMatch;
-      const response = hubApi.heartbeatSession(
-        decodeURIComponent(rawSessionId!),
-        await this.#readJsonBody(req),
-      );
-      json(response.status, response.body);
-      return;
-    }
-
-    const hubSessionMatch = url.match(/^\/api\/hub\/sessions\/([^/]+)$/);
-    if (hubSessionMatch) {
-      const [, rawSessionId] = hubSessionMatch;
-      const sessionId = decodeURIComponent(rawSessionId!);
-      if (method === "GET") {
-        const response = hubApi.getSession(sessionId);
-        json(response.status, response.body);
-        return;
-      }
-      if (method === "PUT") {
-        const response = hubApi.upsertSession(sessionId, await this.#readJsonBody(req));
-        json(response.status, response.body);
-        return;
-      }
-    }
-
-    // Research hub package routes
-    const hubPackageFromRunMatch = url.match(/^\/api\/hub\/packages\/from-run\/([^/]+)$/);
-    if (method === "POST" && hubPackageFromRunMatch) {
-      const [, rawRunId] = hubPackageFromRunMatch;
-      const response = hubApi.promotePackageFromRun(
-        decodeURIComponent(rawRunId!),
-        await this.#readJsonBody(req),
-      );
-      json(response.status, response.body);
-      return;
-    }
-
-    if (method === "GET" && (url === "/api/hub/packages" || url === "/api/hub/packages/")) {
-      const response = hubApi.listPackages();
-      json(response.status, response.body);
-      return;
-    }
-
-    const hubPackageAdoptMatch = url.match(/^\/api\/hub\/packages\/([^/]+)\/adopt$/);
-    if (method === "POST" && hubPackageAdoptMatch) {
-      const [, rawPackageId] = hubPackageAdoptMatch;
-      const response = hubApi.adoptPackage(
-        decodeURIComponent(rawPackageId!),
-        await this.#readJsonBody(req),
-      );
-      json(response.status, response.body);
-      return;
-    }
-
-    const hubPackageMatch = url.match(/^\/api\/hub\/packages\/([^/]+)$/);
-    if (method === "GET" && hubPackageMatch) {
-      const [, rawPackageId] = hubPackageMatch;
-      const response = hubApi.getPackage(decodeURIComponent(rawPackageId!));
-      json(response.status, response.body);
-      return;
-    }
-
-    // Research hub result and promotion routes
-    const hubResultFromRunMatch = url.match(/^\/api\/hub\/results\/from-run\/([^/]+)$/);
-    if (method === "POST" && hubResultFromRunMatch) {
-      const [, rawRunId] = hubResultFromRunMatch;
-      const response = hubApi.materializeResultFromRun(
-        decodeURIComponent(rawRunId!),
-        await this.#readJsonBody(req),
-      );
-      json(response.status, response.body);
-      return;
-    }
-
-    if (method === "GET" && (url === "/api/hub/results" || url === "/api/hub/results/")) {
-      const response = hubApi.listResults();
-      json(response.status, response.body);
-      return;
-    }
-
-    const hubResultMatch = url.match(/^\/api\/hub\/results\/([^/]+)$/);
-    if (method === "GET" && hubResultMatch) {
-      const [, rawResultId] = hubResultMatch;
-      const response = hubApi.getResult(decodeURIComponent(rawResultId!));
-      json(response.status, response.body);
-      return;
-    }
-
-    if (method === "POST" && (url === "/api/hub/promotions" || url === "/api/hub/promotions/")) {
-      const response = hubApi.createPromotion(await this.#readJsonBody(req));
-      json(response.status, response.body);
-      return;
-    }
-
-    if (method === "GET" && (url === "/api/hub/feed" || url === "/api/hub/feed/")) {
-      const response = hubApi.feed();
-      json(response.status, response.body);
-      return;
-    }
-
-    // GET /api/runs
-    if (url === "/api/runs" || url.startsWith("/api/runs?")) {
-      const response = executeRunSimulationReadRequest({
-        route: "runs_list",
+      await tryScenarioSimulationRoutes(ctx, {
         runManager: this.#runManager,
         simulationApi,
-        deps: {
-          openStore: () => this.#openStore(),
-          readPlaybook: () => null,
-          loadReplayArtifactResponse,
-        },
-      });
-      json(response.status, response.body);
+        runSimDeps,
+      })
+    )
       return;
-    }
-
-    // GET /api/runs/:id/replay/:gen
-    const replayMatch = url.match(/^\/api\/runs\/([^/]+)\/replay\/(\d+)$/);
-    if (replayMatch) {
-      const [, runId, genStr] = replayMatch;
-      const response = executeRunSimulationReadRequest({
-        route: "run_replay",
-        runId: runId!,
-        generation: parseInt(genStr!, 10),
-        runManager: this.#runManager,
-        simulationApi,
-        deps: {
-          openStore: () => this.#openStore(),
-          readPlaybook: () => null,
-          loadReplayArtifactResponse,
-        },
-      });
-      json(response.status, response.body);
+    if (await tryCampaignRoutes(ctx, { campaignApi, campaignManager: this.#campaignManager }))
       return;
-    }
-
-    // GET /api/runs/:id/status
-    const statusMatch = url.match(/^\/api\/runs\/([^/]+)\/status$/);
-    if (statusMatch) {
-      const [, runId] = statusMatch;
-      const response = executeRunSimulationReadRequest({
-        route: "run_status",
-        runId: runId!,
-        runManager: this.#runManager,
-        simulationApi,
-        deps: {
-          openStore: () => this.#openStore(),
-          readPlaybook: () => null,
-          loadReplayArtifactResponse,
-        },
-      });
-      json(response.status, response.body);
-      return;
-    }
-
-    // GET /api/knowledge/playbook/:scenario
-    const playbookMatch = url.match(/^\/api\/knowledge\/playbook\/([^/]+)$/);
-    if (playbookMatch) {
-      const [, scenario] = playbookMatch;
-      const response = executeRunSimulationReadRequest({
-        route: "playbook",
-        scenario: scenario!,
-        runManager: this.#runManager,
-        simulationApi,
-        deps: {
-          openStore: () => this.#openStore(),
-          readPlaybook: (playbookScenario, roots) => {
-            const artifacts = new ArtifactStore(roots);
-            return artifacts.readPlaybook(playbookScenario);
-          },
-          loadReplayArtifactResponse,
-        },
-      });
-      json(response.status, response.body);
-      return;
-    }
-
-    // GET /api/knowledge/scenarios
-    if (method === "GET" && url === "/api/knowledge/scenarios") {
-      const response = knowledgeApi.listSolved();
-      json(response.status, response.body);
-      return;
-    }
-
-    // GET /api/knowledge/export/:scenario
-    const knowledgeExportMatch = url.match(/^\/api\/knowledge\/export\/([^/]+)$/);
-    if (method === "GET" && knowledgeExportMatch) {
-      const [, rawScenario] = knowledgeExportMatch;
-      const response = knowledgeApi.exportScenario(decodeURIComponent(rawScenario!));
-      json(response.status, response.body);
-      return;
-    }
-
-    // POST /api/knowledge/import
-    if (method === "POST" && url === "/api/knowledge/import") {
-      const response = knowledgeApi.importPackage(await this.#readJsonBody(req));
-      json(response.status, response.body);
-      return;
-    }
-
-    // POST /api/knowledge/search
-    if (method === "POST" && url === "/api/knowledge/search") {
-      const response = knowledgeApi.search(await this.#readJsonBody(req));
-      json(response.status, response.body);
-      return;
-    }
-
-    // POST /api/knowledge/solve
-    if (method === "POST" && url === "/api/knowledge/solve") {
-      const response = knowledgeApi.submitSolve(await this.#readJsonBody(req));
-      json(response.status, response.body);
-      return;
-    }
-
-    // GET/POST /api/knowledge/:scenario/playbook/(pending|approve|reject)
-    const pendingPlaybookMatch = url.match(/^\/api\/knowledge\/([^/]+)\/playbook\/pending$/);
-    if (method === "GET" && pendingPlaybookMatch) {
-      const [, rawScenario] = pendingPlaybookMatch;
-      const response = knowledgeApi.pendingPlaybook(decodeURIComponent(rawScenario!));
-      json(response.status, response.body);
-      return;
-    }
-    const approvePlaybookMatch = url.match(/^\/api\/knowledge\/([^/]+)\/playbook\/approve$/);
-    if (method === "POST" && approvePlaybookMatch) {
-      const [, rawScenario] = approvePlaybookMatch;
-      const response = knowledgeApi.approvePendingPlaybook(decodeURIComponent(rawScenario!));
-      json(response.status, response.body);
-      return;
-    }
-    const rejectPlaybookMatch = url.match(/^\/api\/knowledge\/([^/]+)\/playbook\/reject$/);
-    if (method === "POST" && rejectPlaybookMatch) {
-      const [, rawScenario] = rejectPlaybookMatch;
-      const response = knowledgeApi.rejectPendingPlaybook(decodeURIComponent(rawScenario!));
-      json(response.status, response.body);
-      return;
-    }
-
-    // GET /api/knowledge/:scenario/lifecycle
-    const lessonLifecycleMatch = url.match(/^\/api\/knowledge\/([^/]+)\/lifecycle$/);
-    if (method === "GET" && lessonLifecycleMatch) {
-      const [, rawScenario] = lessonLifecycleMatch;
-      const response = knowledgeApi.lessonLifecycle(decodeURIComponent(rawScenario!));
-      json(response.status, response.body);
-      return;
-    }
-
-    // POST /api/knowledge/:scenario/lessons/:lessonId/(approve|reject|curate)
-    const lessonActionMatch = url.match(
-      /^\/api\/knowledge\/([^/]+)\/lessons\/([^/]+)\/(approve|reject|curate)$/,
-    );
-    if (method === "POST" && lessonActionMatch) {
-      const [, rawScenario, rawLessonId, action] = lessonActionMatch;
-      const scenario = decodeURIComponent(rawScenario!);
-      const lessonId = decodeURIComponent(rawLessonId!);
-      const response =
-        action === "approve"
-          ? knowledgeApi.approveLesson(scenario, lessonId)
-          : action === "reject"
-            ? knowledgeApi.rejectLesson(scenario, lessonId)
-            : knowledgeApi.curateLesson(scenario, lessonId, await this.#readJsonBody(req));
-      json(response.status, response.body);
-      return;
-    }
-
-    // GET /api/knowledge/solve/:jobId
-    const knowledgeSolveMatch = url.match(/^\/api\/knowledge\/solve\/([^/]+)$/);
-    if (method === "GET" && knowledgeSolveMatch) {
-      const [, rawJobId] = knowledgeSolveMatch;
-      const response = knowledgeApi.solveStatus(decodeURIComponent(rawJobId!));
-      json(response.status, response.body);
-      return;
-    }
-
-    // GET /api/scenarios
-    if (url === "/api/scenarios") {
-      const response = executeRunSimulationReadRequest({
-        route: "scenarios",
-        runManager: this.#runManager,
-        simulationApi,
-        deps: {
-          openStore: () => this.#openStore(),
-          readPlaybook: () => null,
-          loadReplayArtifactResponse,
-        },
-      });
-      json(response.status, response.body);
-      return;
-    }
-
-    // GET /api/simulations
-    if (method === "GET" && url === "/api/simulations") {
-      const response = executeRunSimulationReadRequest({
-        route: "simulations_list",
-        runManager: this.#runManager,
-        simulationApi,
-        deps: {
-          openStore: () => this.#openStore(),
-          readPlaybook: () => null,
-          loadReplayArtifactResponse,
-        },
-      });
-      json(response.status, response.body);
-      return;
-    }
-
-    // GET /api/simulations/:name
-    const simulationMatch = url.match(/^\/api\/simulations\/([^/]+)$/);
-    if (method === "GET" && simulationMatch) {
-      const [, rawName] = simulationMatch;
-      const response = executeRunSimulationReadRequest({
-        route: "simulation_detail",
-        simulationName: decodeURIComponent(rawName!),
-        rawSimulationName: rawName!,
-        runManager: this.#runManager,
-        simulationApi,
-        deps: {
-          openStore: () => this.#openStore(),
-          readPlaybook: () => null,
-          loadReplayArtifactResponse,
-        },
-      });
-      json(response.status, response.body);
-      return;
-    }
-
-    // GET /api/simulations/:name/dashboard
-    const simulationDashboardMatch = url.match(/^\/api\/simulations\/([^/]+)\/dashboard$/);
-    if (method === "GET" && simulationDashboardMatch) {
-      const [, rawName] = simulationDashboardMatch;
-      const response = executeRunSimulationReadRequest({
-        route: "simulation_dashboard",
-        simulationName: decodeURIComponent(rawName!),
-        rawSimulationName: rawName!,
-        runManager: this.#runManager,
-        simulationApi,
-        deps: {
-          openStore: () => this.#openStore(),
-          readPlaybook: () => null,
-          loadReplayArtifactResponse,
-        },
-      });
-      json(response.status, response.body);
-      return;
-    }
-
-    // GET /api/campaigns
-    if (method === "GET" && url === "/api/campaigns") {
-      const response = executeCampaignRouteRequest({
-        route: "list",
-        queryStatus: requestUrl.searchParams.get("status") ?? undefined,
-        body: {},
-        campaignApi,
-        campaignManager: this.#campaignManager,
-      });
-      json(response.status, response.body);
-      return;
-    }
-
-    // POST /api/campaigns
-    if (method === "POST" && url === "/api/campaigns") {
-      const response = executeCampaignRouteRequest({
-        route: "create",
-        body: await this.#readJsonBody(req),
-        campaignApi,
-        campaignManager: this.#campaignManager,
-      });
-      json(response.status, response.body);
-      return;
-    }
-
-    // GET /api/campaigns/:id
-    const campaignMatch = url.match(/^\/api\/campaigns\/([^/]+)$/);
-    if (method === "GET" && campaignMatch) {
-      const [, campaignId] = campaignMatch;
-      const response = executeCampaignRouteRequest({
-        route: "detail",
-        campaignId: campaignId!,
-        body: {},
-        campaignApi,
-        campaignManager: this.#campaignManager,
-      });
-      json(response.status, response.body);
-      return;
-    }
-
-    // GET /api/campaigns/:id/progress
-    const campaignProgressMatch = url.match(/^\/api\/campaigns\/([^/]+)\/progress$/);
-    if (method === "GET" && campaignProgressMatch) {
-      const [, campaignId] = campaignProgressMatch;
-      const response = executeCampaignRouteRequest({
-        route: "progress",
-        campaignId: campaignId!,
-        body: {},
-        campaignApi,
-        campaignManager: this.#campaignManager,
-      });
-      json(response.status, response.body);
-      return;
-    }
-
-    // POST /api/campaigns/:id/missions
-    const campaignMissionMatch = url.match(/^\/api\/campaigns\/([^/]+)\/missions$/);
-    if (method === "POST" && campaignMissionMatch) {
-      const [, campaignId] = campaignMissionMatch;
-      const response = executeCampaignRouteRequest({
-        route: "add_mission",
-        campaignId: campaignId!,
-        body: await this.#readJsonBody(req),
-        campaignApi,
-        campaignManager: this.#campaignManager,
-      });
-      json(response.status, response.body);
-      return;
-    }
-
-    // POST /api/campaigns/:id/(pause|resume|cancel)
-    const campaignActionMatch = url.match(/^\/api\/campaigns\/([^/]+)\/(pause|resume|cancel)$/);
-    if (method === "POST" && campaignActionMatch) {
-      const [, campaignId, action] = campaignActionMatch;
-      const response = executeCampaignRouteRequest({
-        route: "status",
-        campaignId: campaignId!,
-        action: action as "pause" | "resume" | "cancel",
-        body: {},
-        campaignApi,
-        campaignManager: this.#campaignManager,
-      });
-      json(response.status, response.body);
-      return;
-    }
-
-    // GET /api/missions
-    if (method === "GET" && url === "/api/missions") {
-      json(200, missionApi.listMissions(requestUrl.searchParams.get("status") ?? undefined));
-      return;
-    }
-
-    // GET /api/missions/:id
-    const missionMatch = url.match(/^\/api\/missions\/([^/]+)$/);
-    if (method === "GET" && missionMatch) {
-      const [, missionId] = missionMatch;
-      const response = executeMissionReadRequest({
-        missionId: missionId!,
-        resource: "detail",
-        missionManager: this.#missionManager,
+    if (
+      await tryMissionRoutes(ctx, {
         missionApi,
-      });
-      json(response.status, response.body);
-      return;
-    }
-
-    // GET /api/missions/:id/steps
-    const missionStepsMatch = url.match(/^\/api\/missions\/([^/]+)\/steps$/);
-    if (method === "GET" && missionStepsMatch) {
-      const [, missionId] = missionStepsMatch;
-      const response = executeMissionReadRequest({
-        missionId: missionId!,
-        resource: "steps",
-        missionManager: this.#missionManager,
-        missionApi,
-      });
-      json(response.status, response.body);
-      return;
-    }
-
-    // GET /api/missions/:id/subgoals
-    const missionSubgoalsMatch = url.match(/^\/api\/missions\/([^/]+)\/subgoals$/);
-    if (method === "GET" && missionSubgoalsMatch) {
-      const [, missionId] = missionSubgoalsMatch;
-      const response = executeMissionReadRequest({
-        missionId: missionId!,
-        resource: "subgoals",
-        missionManager: this.#missionManager,
-        missionApi,
-      });
-      json(response.status, response.body);
-      return;
-    }
-
-    // GET /api/missions/:id/budget
-    const missionBudgetMatch = url.match(/^\/api\/missions\/([^/]+)\/budget$/);
-    if (method === "GET" && missionBudgetMatch) {
-      const [, missionId] = missionBudgetMatch;
-      const response = executeMissionReadRequest({
-        missionId: missionId!,
-        resource: "budget",
-        missionManager: this.#missionManager,
-        missionApi,
-      });
-      json(response.status, response.body);
-      return;
-    }
-
-    // GET /api/missions/:id/artifacts
-    const missionArtifactsMatch = url.match(/^\/api\/missions\/([^/]+)\/artifacts$/);
-    if (method === "GET" && missionArtifactsMatch) {
-      const [, missionId] = missionArtifactsMatch;
-      const response = executeMissionReadRequest({
-        missionId: missionId!,
-        resource: "artifacts",
-        missionManager: this.#missionManager,
-        missionApi,
-      });
-      json(response.status, response.body);
-      return;
-    }
-
-    // POST /api/missions/:id/(run|pause|resume|cancel)
-    const missionActionMatch = url.match(/^\/api\/missions\/([^/]+)\/(run|pause|resume|cancel)$/);
-    if (method === "POST" && missionActionMatch) {
-      const [, missionId, action] = missionActionMatch;
-      const body = action === "run" ? await this.#readJsonBody(req) : {};
-      const response = await executeMissionActionRequest({
-        action: action as "run" | "pause" | "resume" | "cancel",
-        missionId: missionId!,
-        body,
         missionManager: this.#missionManager,
         runManager: this.#runManager,
-      });
-      json(response.status, response.body);
+      })
+    )
       return;
-    }
 
     // 404 fallback
     json(404, { error: "Not found" });
