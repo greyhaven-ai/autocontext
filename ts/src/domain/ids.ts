@@ -9,7 +9,7 @@
  * serialization concerns).
  *
  * Discipline: convert at the boundary, carry the brand internally.
- *   - HTTP route parsing, DB reads, and CLI arg parsing are boundaries —
+ *   - HTTP route parsing, DB reads, and CLI arg parsing are boundaries:
  *     call `asRunId` / `asScenarioName` / `asDbPath` once, immediately after
  *     the raw string is obtained.
  *   - Everything downstream that has been migrated to a branded parameter
@@ -20,8 +20,16 @@
  *   - `unbrand` is an identity passthrough for the rare case where code
  *     needs the underlying `string` type explicitly (e.g. a generic
  *     `Record<string, unknown>` key). It performs no validation or
- *     transformation — it exists purely to document the intent at the call
+ *     transformation, it exists purely to document the intent at the call
  *     site instead of reaching for an `as string` cast.
+ *
+ * Validation is deliberately byte-empty-only (`value.length === 0`), not
+ * whitespace-trimmed. Several downstream consumers (e.g. `cockpit-api.ts`'s
+ * `contextSelection`) trim internally and turn a whitespace-only id into a
+ * specific 404/422, and callers rely on that HTTP-layer behavior. A
+ * trim-based check here would throw before that code ever runs, replacing
+ * a handled 4xx with an unhandled 500. These constructors exist to add a
+ * type boundary, not to change what counts as a valid id.
  */
 
 declare const brand: unique symbol;
@@ -32,34 +40,36 @@ export type ScenarioName = Brand<string, "ScenarioName">;
 export type DbPath = Brand<string, "DbPath">;
 
 /**
- * Construct a `RunId` from a raw string. Throws if the value is empty or
- * all-whitespace — a run id is always caller- or ULID-supplied and should
- * never be blank.
+ * Construct a `RunId` from a raw string. Throws only if the value is
+ * byte-empty (see the module doc comment for why this doesn't also reject
+ * whitespace-only input).
  */
 export function asRunId(value: string): RunId {
-  if (value.trim().length === 0) {
+  if (value.length === 0) {
     throw new Error("RunId must be a non-empty string");
   }
   return value as RunId;
 }
 
 /**
- * Construct a `ScenarioName` from a raw string. Throws if the value is
- * empty or all-whitespace.
+ * Construct a `ScenarioName` from a raw string. Throws only if the value is
+ * byte-empty (see the module doc comment for why this doesn't also reject
+ * whitespace-only input).
  */
 export function asScenarioName(value: string): ScenarioName {
-  if (value.trim().length === 0) {
+  if (value.length === 0) {
     throw new Error("ScenarioName must be a non-empty string");
   }
   return value as ScenarioName;
 }
 
 /**
- * Construct a `DbPath` from a raw string. Throws if the value is empty or
- * all-whitespace.
+ * Construct a `DbPath` from a raw string. Throws only if the value is
+ * byte-empty (see the module doc comment for why this doesn't also reject
+ * whitespace-only input).
  */
 export function asDbPath(value: string): DbPath {
-  if (value.trim().length === 0) {
+  if (value.length === 0) {
     throw new Error("DbPath must be a non-empty string");
   }
   return value as DbPath;

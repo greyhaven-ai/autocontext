@@ -22,7 +22,10 @@ async function fetchJson(url: string): Promise<{ status: number; body: unknown }
   return { status: res.status, body };
 }
 
-async function postJson(url: string, body: Record<string, unknown>): Promise<{ status: number; body: unknown }> {
+async function postJson(
+  url: string,
+  body: Record<string, unknown>,
+): Promise<{ status: number; body: unknown }> {
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -42,7 +45,10 @@ function readStringProperty(value: unknown, key: string): string {
   return descriptor.value;
 }
 
-async function putJson(url: string, body: Record<string, unknown>): Promise<{ status: number; body: unknown }> {
+async function putJson(
+  url: string,
+  body: Record<string, unknown>,
+): Promise<{ status: number; body: unknown }> {
   const res = await fetch(url, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -51,7 +57,10 @@ async function putJson(url: string, body: Record<string, unknown>): Promise<{ st
   return { status: res.status, body: await res.json() };
 }
 
-async function patchJson(url: string, body: Record<string, unknown>): Promise<{ status: number; body: unknown }> {
+async function patchJson(
+  url: string,
+  body: Record<string, unknown>,
+): Promise<{ status: number; body: unknown }> {
   const res = await fetch(url, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
@@ -77,7 +86,7 @@ async function createTestServer(dir: string) {
   store.createRun("test-run-1", "grid_ctf", 3, "local");
   store.upsertGeneration("test-run-1", 1, {
     meanScore: 0.65,
-    bestScore: 0.70,
+    bestScore: 0.7,
     elo: 1050,
     wins: 3,
     losses: 2,
@@ -86,7 +95,7 @@ async function createTestServer(dir: string) {
   });
   store.recordMatch("test-run-1", 1, {
     seed: 42,
-    score: 0.70,
+    score: 0.7,
     passedValidation: true,
     validationErrors: "",
     winner: "challenger",
@@ -98,13 +107,17 @@ async function createTestServer(dir: string) {
   mkdirSync(replayDir, { recursive: true });
   writeFileSync(
     join(replayDir, "grid_ctf_1.json"),
-    JSON.stringify({
-      scenario: "grid_ctf",
-      seed: 42,
-      narrative: "Blue team secured the center route.",
-      timeline: [{ turn: 1, action: "advance" }],
-      matches: [{ seed: 42, score: 0.7, winner: "challenger" }],
-    }, null, 2),
+    JSON.stringify(
+      {
+        scenario: "grid_ctf",
+        seed: 42,
+        narrative: "Blue team secured the center route.",
+        timeline: [{ turn: 1, action: "advance" }],
+        matches: [{ seed: 42, score: 0.7, winner: "challenger" }],
+      },
+      null,
+      2,
+    ),
     "utf-8",
   );
 
@@ -129,89 +142,107 @@ async function createTestServer(dir: string) {
   mkdirSync(progressDir, { recursive: true });
   writeFileSync(
     join(progressDir, "test-run-1.json"),
-    JSON.stringify({
-      run_id: "test-run-1",
-      scenario: "grid_ctf",
-      total_generations: 1,
-      advances: 1,
-      rollbacks: 0,
-      retries: 0,
-      progress: {
-        raw_score: 0.7,
-        normalized_score: 0.7,
-        score_floor: 0,
-        score_ceiling: 1,
-        pct_of_ceiling: 70,
+    JSON.stringify(
+      {
+        run_id: "test-run-1",
+        scenario: "grid_ctf",
+        total_generations: 1,
+        advances: 1,
+        rollbacks: 0,
+        retries: 0,
+        progress: {
+          raw_score: 0.7,
+          normalized_score: 0.7,
+          score_floor: 0,
+          score_ceiling: 1,
+          pct_of_ceiling: 70,
+        },
+        cost: {
+          total_input_tokens: 20000,
+          total_output_tokens: 10000,
+          total_tokens: 30000,
+          total_cost_usd: 0.15,
+        },
       },
-      cost: {
-        total_input_tokens: 20000,
-        total_output_tokens: 10000,
-        total_tokens: 30000,
-        total_cost_usd: 0.15,
-      },
-    }, null, 2),
+      null,
+      2,
+    ),
     "utf-8",
   );
   const weaknessDir = join(scenarioKnowledgeDir, "weakness_reports");
   mkdirSync(weaknessDir, { recursive: true });
   writeFileSync(
     join(weaknessDir, "test-run-1.json"),
-    JSON.stringify({
-      run_id: "test-run-1",
-      scenario: "grid_ctf",
-      total_generations: 1,
-      weaknesses: [{
-        category: "validation_failure",
-        severity: "medium",
-        affected_generations: [1],
-        description: "Parse failure on generation 1",
-        evidence: { count: 1 },
-        frequency: 1,
-      }],
-    }, null, 2),
+    JSON.stringify(
+      {
+        run_id: "test-run-1",
+        scenario: "grid_ctf",
+        total_generations: 1,
+        weaknesses: [
+          {
+            category: "validation_failure",
+            severity: "medium",
+            affected_generations: [1],
+            description: "Parse failure on generation 1",
+            evidence: { count: 1 },
+            frequency: 1,
+          },
+        ],
+      },
+      null,
+      2,
+    ),
     "utf-8",
   );
   const facetDir = join(dir, "knowledge", "analytics", "facets");
   mkdirSync(facetDir, { recursive: true });
   writeFileSync(
     join(facetDir, "test-run-1.json"),
-    JSON.stringify({
-      run_id: "test-run-1",
-      scenario: "grid_ctf",
-      scenario_family: "game",
-      agent_provider: "deterministic",
-      executor_mode: "local",
-      total_generations: 1,
-      advances: 1,
-      retries: 0,
-      rollbacks: 0,
-      best_score: 0.7,
-      best_elo: 1050,
-      total_duration_seconds: 12,
-      total_tokens: 30000,
-      total_cost_usd: 0.15,
-      tool_invocations: 2,
-      validation_failures: 1,
-      consultation_count: 0,
-      consultation_cost_usd: 0,
-      friction_signals: [{
-        signal_type: "validation_failure",
-        severity: "medium",
-        generation_index: 1,
-        description: "Parse failure on generation 1",
-        evidence: ["ev-1"],
-        recoverable: true,
-      }],
-      delight_signals: [{
-        signal_type: "strong_improvement",
-        generation_index: 1,
-        description: "Center route improved quickly",
-        evidence: ["ev-2"],
-      }],
-      events: [],
-      metadata: {},
-      created_at: "2026-04-25T00:00:00Z",
-    }, null, 2),
+    JSON.stringify(
+      {
+        run_id: "test-run-1",
+        scenario: "grid_ctf",
+        scenario_family: "game",
+        agent_provider: "deterministic",
+        executor_mode: "local",
+        total_generations: 1,
+        advances: 1,
+        retries: 0,
+        rollbacks: 0,
+        best_score: 0.7,
+        best_elo: 1050,
+        total_duration_seconds: 12,
+        total_tokens: 30000,
+        total_cost_usd: 0.15,
+        tool_invocations: 2,
+        validation_failures: 1,
+        consultation_count: 0,
+        consultation_cost_usd: 0,
+        friction_signals: [
+          {
+            signal_type: "validation_failure",
+            severity: "medium",
+            generation_index: 1,
+            description: "Parse failure on generation 1",
+            evidence: ["ev-1"],
+            recoverable: true,
+          },
+        ],
+        delight_signals: [
+          {
+            signal_type: "strong_improvement",
+            generation_index: 1,
+            description: "Center route improved quickly",
+            evidence: ["ev-2"],
+          },
+        ],
+        events: [],
+        metadata: {},
+        created_at: "2026-04-25T00:00:00Z",
+      },
+      null,
+      2,
+    ),
     "utf-8",
   );
 
@@ -219,13 +250,17 @@ async function createTestServer(dir: string) {
   mkdirSync(customDir, { recursive: true });
   writeFileSync(
     join(customDir, "agent_task_spec.json"),
-    JSON.stringify({
-      task_prompt: "Summarize the control-plane state.",
-      judge_rubric: "Prefer concise and accurate summaries.",
-      output_format: "free_text",
-      max_rounds: 1,
-      quality_threshold: 0.9,
-    }, null, 2),
+    JSON.stringify(
+      {
+        task_prompt: "Summarize the control-plane state.",
+        judge_rubric: "Prefer concise and accurate summaries.",
+        output_format: "free_text",
+        max_rounds: 1,
+        quality_threshold: 0.9,
+      },
+      null,
+      2,
+    ),
     "utf-8",
   );
 
@@ -260,11 +295,8 @@ afterEach(async () => {
 });
 
 async function persistRuntimeSession(dir: string): Promise<void> {
-  const {
-    RuntimeSessionEventLog,
-    RuntimeSessionEventStore,
-    RuntimeSessionEventType,
-  } = await import("../src/session/runtime-events.js");
+  const { RuntimeSessionEventLog, RuntimeSessionEventStore, RuntimeSessionEventType } =
+    await import("../src/session/runtime-events.js");
   const eventStore = new RuntimeSessionEventStore(join(dir, "test.db"));
   const log = RuntimeSessionEventLog.create({
     sessionId: "run:test-run-1:runtime",
@@ -297,45 +329,51 @@ function persistContextSelectionDecision(dir: string): void {
   mkdirSync(contextDir, { recursive: true });
   writeFileSync(
     join(contextDir, "gen_1_generation_prompt_context.json"),
-    JSON.stringify({
-      schema_version: 1,
-      run_id: "test-run-1",
-      scenario_name: "grid_ctf",
-      generation: 1,
-      stage: "generation_prompt_context",
-      created_at: "2026-01-02T03:04:05.000Z",
-      metadata: {
-        context_budget_telemetry: {
-          input_token_estimate: 120,
-          output_token_estimate: 20,
-          dedupe_hit_count: 1,
-          component_cap_hit_count: 2,
-          trimmed_component_count: 1,
+    JSON.stringify(
+      {
+        schema_version: 1,
+        run_id: "test-run-1",
+        scenario_name: "grid_ctf",
+        generation: 1,
+        stage: "generation_prompt_context",
+        created_at: "2026-01-02T03:04:05.000Z",
+        metadata: {
+          context_budget_telemetry: {
+            input_token_estimate: 120,
+            output_token_estimate: 20,
+            dedupe_hit_count: 1,
+            component_cap_hit_count: 2,
+            trimmed_component_count: 1,
+          },
+          prompt_compaction_cache: {
+            hits: 0,
+            misses: 10,
+            lookups: 10,
+          },
         },
-        prompt_compaction_cache: {
-          hits: 0,
-          misses: 10,
-          lookups: 10,
+        metrics: {
+          candidate_count: 1,
+          selected_count: 1,
+          candidate_token_estimate: 100,
+          selected_token_estimate: 20,
         },
+        candidates: [
+          {
+            artifact_id: "playbook",
+            artifact_type: "prompt_component",
+            source: "prompt_assembly",
+            candidate_token_estimate: 100,
+            selected_token_estimate: 20,
+            selected: true,
+            selection_reason: "retained_after_prompt_assembly",
+            candidate_content_hash: "candidate",
+            selected_content_hash: "selected",
+          },
+        ],
       },
-      metrics: {
-        candidate_count: 1,
-        selected_count: 1,
-        candidate_token_estimate: 100,
-        selected_token_estimate: 20,
-      },
-      candidates: [{
-        artifact_id: "playbook",
-        artifact_type: "prompt_component",
-        source: "prompt_assembly",
-        candidate_token_estimate: 100,
-        selected_token_estimate: 20,
-        selected: true,
-        selection_reason: "retained_after_prompt_assembly",
-        candidate_content_hash: "candidate",
-        selected_content_hash: "selected",
-      }],
-    }, null, 2),
+      null,
+      2,
+    ),
     "utf-8",
   );
 }
@@ -400,71 +438,97 @@ describe("HTTP API — health", () => {
       python: { support: "supported" },
       typescript: { support: "supported" },
     });
-    expect(matrix.routes).toContainEqual(expect.objectContaining({
-      method: "POST",
-      path: "/api/knowledge/import",
-      status: "aligned",
-    }));
-    expect(matrix.routes).toContainEqual(expect.objectContaining({
-      method: "GET",
-      path: "/api/knowledge/playbook/:scenario",
-      status: "python_gap",
-    }));
-    expect(matrix.routes).toContainEqual(expect.objectContaining({
-      method: "GET",
-      path: "/api/notebooks",
-      status: "aligned",
-    }));
-    expect(matrix.routes).toContainEqual(expect.objectContaining({
-      method: "GET",
-      path: "/api/monitors",
-      status: "aligned",
-    }));
-    expect(matrix.routes).toContainEqual(expect.objectContaining({
-      method: "GET",
-      path: "/api/openclaw/capabilities",
-      status: "aligned",
-    }));
-    expect(matrix.routes).toContainEqual(expect.objectContaining({
-      method: "POST",
-      path: "/api/openclaw/evaluate",
-      status: "aligned",
-    }));
-    expect(matrix.routes).toContainEqual(expect.objectContaining({
-      method: "GET",
-      path: "/api/cockpit/runs",
-      status: "aligned",
-    }));
-    expect(matrix.routes).toContainEqual(expect.objectContaining({
-      method: "GET",
-      path: "/api/cockpit/runs/:run_id/context-selection",
-      status: "aligned",
-    }));
-    expect(matrix.routes).toContainEqual(expect.objectContaining({
-      method: "GET",
-      path: "/api/cockpit/runtime-sessions",
-      status: "python_gap",
-    }));
-    expect(matrix.routes).toContainEqual(expect.objectContaining({
-      method: "GET",
-      path: "/api/cockpit/runs/:run_id/runtime-session",
-      status: "python_gap",
-    }));
-    expect(matrix.routes).toContainEqual(expect.objectContaining({
-      method: "GET",
-      path: "/api/cockpit/runs/:run_id/runtime-session/timeline",
-      status: "python_gap",
-    }));
-    expect(matrix.routes).toContainEqual(expect.objectContaining({
-      method: "GET",
-      path: "/api/hub/feed",
-      status: "aligned",
-    }));
-    expect(matrix.routes).toContainEqual(expect.objectContaining({
-      method: "GET",
-      path: "/api/missions",
-      status: "python_gap",
-    }));
+    expect(matrix.routes).toContainEqual(
+      expect.objectContaining({
+        method: "POST",
+        path: "/api/knowledge/import",
+        status: "aligned",
+      }),
+    );
+    expect(matrix.routes).toContainEqual(
+      expect.objectContaining({
+        method: "GET",
+        path: "/api/knowledge/playbook/:scenario",
+        status: "python_gap",
+      }),
+    );
+    expect(matrix.routes).toContainEqual(
+      expect.objectContaining({
+        method: "GET",
+        path: "/api/notebooks",
+        status: "aligned",
+      }),
+    );
+    expect(matrix.routes).toContainEqual(
+      expect.objectContaining({
+        method: "GET",
+        path: "/api/monitors",
+        status: "aligned",
+      }),
+    );
+    expect(matrix.routes).toContainEqual(
+      expect.objectContaining({
+        method: "GET",
+        path: "/api/openclaw/capabilities",
+        status: "aligned",
+      }),
+    );
+    expect(matrix.routes).toContainEqual(
+      expect.objectContaining({
+        method: "POST",
+        path: "/api/openclaw/evaluate",
+        status: "aligned",
+      }),
+    );
+    expect(matrix.routes).toContainEqual(
+      expect.objectContaining({
+        method: "GET",
+        path: "/api/cockpit/runs",
+        status: "aligned",
+      }),
+    );
+    expect(matrix.routes).toContainEqual(
+      expect.objectContaining({
+        method: "GET",
+        path: "/api/cockpit/runs/:run_id/context-selection",
+        status: "aligned",
+      }),
+    );
+    expect(matrix.routes).toContainEqual(
+      expect.objectContaining({
+        method: "GET",
+        path: "/api/cockpit/runtime-sessions",
+        status: "python_gap",
+      }),
+    );
+    expect(matrix.routes).toContainEqual(
+      expect.objectContaining({
+        method: "GET",
+        path: "/api/cockpit/runs/:run_id/runtime-session",
+        status: "python_gap",
+      }),
+    );
+    expect(matrix.routes).toContainEqual(
+      expect.objectContaining({
+        method: "GET",
+        path: "/api/cockpit/runs/:run_id/runtime-session/timeline",
+        status: "python_gap",
+      }),
+    );
+    expect(matrix.routes).toContainEqual(
+      expect.objectContaining({
+        method: "GET",
+        path: "/api/hub/feed",
+        status: "aligned",
+      }),
+    );
+    expect(matrix.routes).toContainEqual(
+      expect.objectContaining({
+        method: "GET",
+        path: "/api/missions",
+        status: "python_gap",
+      }),
+    );
   });
 });
 
@@ -486,7 +550,7 @@ describe("HTTP API — runs", () => {
     expect(status).toBe(200);
     const gens = body as Array<Record<string, unknown>>;
     expect(gens.length).toBe(1);
-    expect(gens[0].best_score).toBeCloseTo(0.70);
+    expect(gens[0].best_score).toBeCloseTo(0.7);
   });
 
   it("GET /api/runs/:id/status returns 404 for missing run", async () => {
@@ -715,10 +779,12 @@ describe("HTTP API — monitors", () => {
     expect(active.body).toEqual([]);
 
     const all = await fetchJson(`${baseUrl}/api/monitors?active_only=false`);
-    expect(all.body).toContainEqual(expect.objectContaining({
-      id: conditionId,
-      active: 0,
-    }));
+    expect(all.body).toContainEqual(
+      expect.objectContaining({
+        id: conditionId,
+        active: 0,
+      }),
+    );
   });
 
   it("DELETE /api/monitors/:condition_id deactivates conditions", async () => {
@@ -756,7 +822,10 @@ describe("HTTP API — monitors", () => {
       best_score: 0.91,
     });
 
-    const { status, body } = await postJson(`${baseUrl}/api/monitors/${conditionId}/wait?timeout=0.1`, {});
+    const { status, body } = await postJson(
+      `${baseUrl}/api/monitors/${conditionId}/wait?timeout=0.1`,
+      {},
+    );
     expect(status).toBe(200);
     expect(body).toMatchObject({
       fired: true,
@@ -811,21 +880,27 @@ describe("HTTP API — cockpit", () => {
     expect(listed.status).toBe(200);
     expect(listed.body).toContainEqual(expect.objectContaining({ session_id: "test-run-1" }));
 
-    const effective = await fetchJson(`${baseUrl}/api/cockpit/notebooks/test-run-1/effective-context`);
+    const effective = await fetchJson(
+      `${baseUrl}/api/cockpit/notebooks/test-run-1/effective-context`,
+    );
     expect(effective.status).toBe(200);
     expect(effective.body).toMatchObject({
       session_id: "test-run-1",
       role_contexts: expect.objectContaining({
         competitor: expect.stringContaining("Keep center control."),
       }),
-      warnings: [expect.objectContaining({
-        field: "best_score",
-        warning_type: "stale_score",
-      })],
+      warnings: [
+        expect.objectContaining({
+          field: "best_score",
+          warning_type: "stale_score",
+        }),
+      ],
       notebook_empty: false,
     });
 
-    const deleted = await fetch(`${baseUrl}/api/cockpit/notebooks/test-run-1`, { method: "DELETE" });
+    const deleted = await fetch(`${baseUrl}/api/cockpit/notebooks/test-run-1`, {
+      method: "DELETE",
+    });
     expect(deleted.status).toBe(200);
   });
 
@@ -833,16 +908,18 @@ describe("HTTP API — cockpit", () => {
     const { status, body } = await fetchJson(`${baseUrl}/api/cockpit/runs`);
 
     expect(status).toBe(200);
-    expect(body).toContainEqual(expect.objectContaining({
-      run_id: "test-run-1",
-      scenario_name: "grid_ctf",
-      generations_completed: 1,
-      best_score: 0.7,
-      best_elo: 1050,
-      status: "running",
-      runtime_session: null,
-      runtime_session_url: "/api/cockpit/runs/test-run-1/runtime-session",
-    }));
+    expect(body).toContainEqual(
+      expect.objectContaining({
+        run_id: "test-run-1",
+        scenario_name: "grid_ctf",
+        generations_completed: 1,
+        best_score: 0.7,
+        best_elo: 1050,
+        status: "running",
+        runtime_session: null,
+        runtime_session_url: "/api/cockpit/runs/test-run-1/runtime-session",
+      }),
+    );
   });
 
   it("GET /api/cockpit/runs includes runtime-session summaries when present", async () => {
@@ -867,11 +944,13 @@ describe("HTTP API — cockpit", () => {
       scenario_name: "grid_ctf",
       target_generations: 3,
       status: "running",
-      generations: [expect.objectContaining({
-        generation: 1,
-        best_score: 0.7,
-        elo: 1050,
-      })],
+      generations: [
+        expect.objectContaining({
+          generation: 1,
+          best_score: 0.7,
+          elo: 1050,
+        }),
+      ],
     });
     expectTestRunRuntimeSessionDiscovery(body);
   });
@@ -879,7 +958,9 @@ describe("HTTP API — cockpit", () => {
   it("GET /api/cockpit/runs/:run_id/context-selection returns telemetry cards", async () => {
     persistContextSelectionDecision(dir);
 
-    const { status, body } = await fetchJson(`${baseUrl}/api/cockpit/runs/test-run-1/context-selection`);
+    const { status, body } = await fetchJson(
+      `${baseUrl}/api/cockpit/runs/test-run-1/context-selection`,
+    );
 
     expect(status).toBe(200);
     expect(body).toMatchObject({
@@ -906,7 +987,9 @@ describe("HTTP API — cockpit", () => {
   });
 
   it("GET /api/cockpit/runs/:run_id/context-selection handles missing artifacts", async () => {
-    const { status, body } = await fetchJson(`${baseUrl}/api/cockpit/runs/test-run-1/context-selection`);
+    const { status, body } = await fetchJson(
+      `${baseUrl}/api/cockpit/runs/test-run-1/context-selection`,
+    );
 
     expect(status).toBe(404);
     expect(body).toMatchObject({
@@ -915,11 +998,26 @@ describe("HTTP API — cockpit", () => {
   });
 
   it("GET /api/cockpit/runs/:run_id/context-selection rejects escaped run ids", async () => {
-    const { status, body } = await fetchJson(`${baseUrl}/api/cockpit/runs/%2E%2E%2Foutside/context-selection`);
+    const { status, body } = await fetchJson(
+      `${baseUrl}/api/cockpit/runs/%2E%2E%2Foutside/context-selection`,
+    );
 
     expect(status).toBe(422);
     expect(body).toMatchObject({
       detail: expect.stringContaining("escapes runs root"),
+    });
+  });
+
+  it("GET /api/cockpit/runs/:run_id/context-selection returns the pre-branding 422 for a whitespace-only run id", async () => {
+    // AC-855 regression: a %20 path segment decodes to a non-empty, all-whitespace
+    // run id. asRunId must not reject it at the route boundary (that would surface
+    // as an uncaught 500): the branded id has to flow through unchanged to
+    // cockpit-api.ts, which trims internally and returns this same 422.
+    const { status, body } = await fetchJson(`${baseUrl}/api/cockpit/runs/%20/context-selection`);
+
+    expect(status).toBe(422);
+    expect(body).toMatchObject({
+      detail: "run_id is required",
     });
   });
 
@@ -983,20 +1081,24 @@ describe("HTTP API — cockpit", () => {
     mkdirSync(writeupsDir, { recursive: true });
     writeFileSync(
       join(writeupsDir, "trace-writeup-test-run-1.json"),
-      JSON.stringify({
-        writeup_id: "trace-writeup-test-run-1",
-        run_id: "test-run-1",
-        generation_index: 1,
-        findings: [],
-        failure_motifs: [],
-        recovery_paths: [],
-        summary: "Persisted trace-grounded summary.",
-        created_at: "2025-01-01T00:00:00.000Z",
-        metadata: {
-          scenario: "grid_ctf",
-          scenario_family: "game",
+      JSON.stringify(
+        {
+          writeup_id: "trace-writeup-test-run-1",
+          run_id: "test-run-1",
+          generation_index: 1,
+          findings: [],
+          failure_motifs: [],
+          recovery_paths: [],
+          summary: "Persisted trace-grounded summary.",
+          created_at: "2025-01-01T00:00:00.000Z",
+          metadata: {
+            scenario: "grid_ctf",
+            scenario_family: "game",
+          },
         },
-      }, null, 2),
+        null,
+        2,
+      ),
       "utf-8",
     );
 
@@ -1104,7 +1206,9 @@ describe("HTTP API — cockpit", () => {
   it("GET /api/cockpit/runs/:run_id/runtime-session resolves the run-scoped log", async () => {
     await persistRuntimeSession(dir);
 
-    const { status, body } = await fetchJson(`${baseUrl}/api/cockpit/runs/test-run-1/runtime-session`);
+    const { status, body } = await fetchJson(
+      `${baseUrl}/api/cockpit/runs/test-run-1/runtime-session`,
+    );
 
     expect(status).toBe(200);
     expect(body).toMatchObject({
@@ -1133,7 +1237,9 @@ describe("HTTP API — cockpit", () => {
   });
 
   it("GET /api/cockpit/runs/:run_id/runtime-session returns 404 when no log exists", async () => {
-    const { status, body } = await fetchJson(`${baseUrl}/api/cockpit/runs/test-run-1/runtime-session`);
+    const { status, body } = await fetchJson(
+      `${baseUrl}/api/cockpit/runs/test-run-1/runtime-session`,
+    );
 
     expect(status).toBe(404);
     expect(body).toEqual({
@@ -1163,7 +1269,9 @@ describe("HTTP API — cockpit", () => {
         trigger: "operator_request",
         model_used: "deterministic-dev",
       });
-      expect(readStringProperty(consultation.body, "advisory_markdown")).toContain("Consultation model");
+      expect(readStringProperty(consultation.body, "advisory_markdown")).toContain(
+        "Consultation model",
+      );
 
       const listed = await fetchJson(`${baseUrl}/api/cockpit/runs/test-run-1/consultations`);
       expect(listed.status).toBe(200);
@@ -1274,8 +1382,12 @@ describe("HTTP API — research hub", () => {
     });
     const packageId = (promoted.body as Record<string, unknown>).package_id as string;
     expect(packageId).toMatch(/^pkg-/);
-    expect(existsSync(join(dir, "knowledge", "_hub", "packages", packageId, "shared_package.json"))).toBe(true);
-    expect(existsSync(join(dir, "knowledge", "_hub", "packages", packageId, "strategy_package.json"))).toBe(true);
+    expect(
+      existsSync(join(dir, "knowledge", "_hub", "packages", packageId, "shared_package.json")),
+    ).toBe(true);
+    expect(
+      existsSync(join(dir, "knowledge", "_hub", "packages", packageId, "strategy_package.json")),
+    ).toBe(true);
 
     const listed = await fetchJson(`${baseUrl}/api/hub/packages`);
     expect(listed.status).toBe(200);
@@ -1330,7 +1442,10 @@ describe("HTTP API — research hub", () => {
 
     const fetchedResult = await fetchJson(`${baseUrl}/api/hub/results/${resultId}`);
     expect(fetchedResult.status).toBe(200);
-    expect(fetchedResult.body).toMatchObject({ result_id: resultId, summary: expect.stringContaining("test-run-1") });
+    expect(fetchedResult.body).toMatchObject({
+      result_id: resultId,
+      summary: expect.stringContaining("test-run-1"),
+    });
 
     const promotion = await postJson(`${baseUrl}/api/hub/promotions`, {
       package_id: "pkg-external",
@@ -1448,15 +1563,19 @@ describe("HTTP API — OpenClaw", () => {
       artifact_type: "policy",
     });
 
-    const listed = await fetchJson(`${baseUrl}/api/openclaw/artifacts?scenario=grid_ctf&artifact_type=policy`);
+    const listed = await fetchJson(
+      `${baseUrl}/api/openclaw/artifacts?scenario=grid_ctf&artifact_type=policy`,
+    );
     expect(listed.status).toBe(200);
-    expect(listed.body).toContainEqual(expect.objectContaining({
-      id: "artifact-1",
-      name: "Grid policy",
-      artifact_type: "policy",
-      scenario: "grid_ctf",
-      version: 1,
-    }));
+    expect(listed.body).toContainEqual(
+      expect.objectContaining({
+        id: "artifact-1",
+        name: "Grid policy",
+        artifact_type: "policy",
+        scenario: "grid_ctf",
+        version: 1,
+      }),
+    );
 
     const fetched = await fetchJson(`${baseUrl}/api/openclaw/artifacts/artifact-1`);
     expect(fetched.status).toBe(200);
@@ -1548,11 +1667,13 @@ describe("HTTP API — OpenClaw", () => {
       name: "autocontext",
       rest_base_path: "/api/openclaw",
     });
-    expect((body as Record<string, unknown>).scenarios).toContainEqual(expect.objectContaining({
-      name: "grid_ctf",
-      display_name: "Grid Ctf",
-      scenario_type: "parametric",
-    }));
+    expect((body as Record<string, unknown>).scenarios).toContainEqual(
+      expect.objectContaining({
+        name: "grid_ctf",
+        display_name: "Grid Ctf",
+        scenario_type: "parametric",
+      }),
+    );
   });
 
   it("distillation job endpoints keep Python-compatible lifecycle semantics", async () => {
@@ -1567,7 +1688,9 @@ describe("HTTP API — OpenClaw", () => {
       status: "failed",
       scenario: "grid_ctf",
     });
-    expect((triggered.body as Record<string, unknown>).error).toContain("No distillation sidecar configured");
+    expect((triggered.body as Record<string, unknown>).error).toContain(
+      "No distillation sidecar configured",
+    );
     const jobId = (triggered.body as Record<string, unknown>).job_id as string;
 
     const job = await fetchJson(`${baseUrl}/api/openclaw/distill/${jobId}`);
@@ -1680,12 +1803,12 @@ describe("HTTP API — knowledge", () => {
       metadataWritten: true,
       conflictPolicy: "overwrite",
     });
-    expect(readFileSync(join(dir, "knowledge", "imported_task", "playbook.md"), "utf-8"))
-      .toContain("Use the imported strategy.");
-    expect(readFileSync(
-      join(dir, "knowledge", "imported_task", "package_metadata.json"),
-      "utf-8",
-    )).toContain("http-test");
+    expect(readFileSync(join(dir, "knowledge", "imported_task", "playbook.md"), "utf-8")).toContain(
+      "Use the imported strategy.",
+    );
+    expect(
+      readFileSync(join(dir, "knowledge", "imported_task", "package_metadata.json"), "utf-8"),
+    ).toContain("http-test");
     expect(existsSync(join(dir, "skills", "imported-task-ops", "SKILL.md"))).toBe(true);
   });
 
@@ -1757,9 +1880,11 @@ describe("HTTP API — dashboard event stream", () => {
         });
         ws.once("error", reject);
 
-        const events = (mgr as unknown as {
-          events: { emit: (event: string, payload: Record<string, unknown>) => void };
-        }).events;
+        const events = (
+          mgr as unknown as {
+            events: { emit: (event: string, payload: Record<string, unknown>) => void };
+          }
+        ).events;
         events.emit("run_started", { run_id: "ws-test", scenario: "grid_ctf" });
       });
       ws.once("error", reject);
