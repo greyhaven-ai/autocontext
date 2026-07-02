@@ -29,7 +29,7 @@ autocontext/                  # Python package root (pyproject.toml lives here)
     rlm/                      # REPL-loop mode (optional analyst/architect)
     mcp/                      # MCP server, tool implementations, sandbox manager
     server/                   # FastAPI dashboard + WebSocket events
-  tests/                      # Pytest tests (~2800 tests)
+  tests/                      # Pytest tests (~7700 tests)
   migrations/                 # SQLite migration SQL files (001-007, applied in filename order)
   dashboard/                  # Single-page HTML dashboard
   knowledge/                  # Runtime-generated: per-scenario playbooks, analysis, tools, hints, snapshots
@@ -51,7 +51,7 @@ ts/                           # TypeScript package (autoctx on npm)
       routes/                 # Extracted HTTP route handlers (12 modules; AC-852)
     mcp/                      # MCP server with tool implementations
     cli/                      # CLI entry point; command-handlers.ts barrel over commands/ (15 family modules; AC-853)
-  tests/                      # Vitest tests (1600+ tests)
+  tests/                      # Vitest tests (5000+ tests)
   migrations/                 # Shared SQLite migration SQL (cross-compatible with Python)
 pi/                           # Pi coding agent extension (@autocontext/pi)
   src/                        # Extension with 5 tools (judge, improve, status, scenarios, queue)
@@ -220,7 +220,7 @@ Published as `autoctx` on npm. ESM-only, strict TypeScript, Node.js >=18.
 cd ts
 npm install
 npm run lint          # tsc --noEmit
-npm test              # vitest run (1600+ tests)
+npm test              # vitest run (5000+ tests)
 npm run build         # tsc (outputs to dist/)
 
 # Core commands
