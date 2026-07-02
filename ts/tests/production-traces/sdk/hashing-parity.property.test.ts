@@ -1,9 +1,6 @@
 import { describe, test } from "vitest";
 import fc from "fast-check";
-import {
-  hashUserId,
-  hashSessionId,
-} from "../../../src/production-traces/sdk/hashing.js";
+import { hashUserId, hashSessionId } from "../../../src/production-traces/sdk/hashing.js";
 import {
   callPythonHashUserIdAsync,
   callPythonHashSessionIdAsync,
@@ -30,10 +27,20 @@ const maybeSuite = parity ? describe : describe.skip;
 // encoding. The actual production install-salt is 64 hex chars, but the
 // primitive admits any non-empty salt, so we property-test the algorithm
 // shape broadly.
-const saltArb = fc.string({ minLength: 1, maxLength: 64 }).filter((s) => s.length > 0 && !s.includes("\u0000"));
-const idArb = fc.string({ minLength: 1, maxLength: 64 }).filter((s) => s.length > 0 && !s.includes("\u0000"));
+const saltArb = fc
+  .string({ minLength: 1, maxLength: 64 })
+  .filter((s) => s.length > 0 && !s.includes("\u0000"));
+const idArb = fc
+  .string({ minLength: 1, maxLength: 64 })
+  .filter((s) => s.length > 0 && !s.includes("\u0000"));
 
-maybeSuite("P-hashing-parity (property, 100 runs)", () => {
+// Each property run spawns a Python subprocess, which blocks the vitest
+// worker long enough under CI load to starve the worker RPC channel
+// ("Timeout calling onTaskUpdate"). CI sets HASHING_PARITY_NUM_RUNS to a
+// smaller count; local runs keep the full 100.
+const numRuns = Number(process.env.HASHING_PARITY_NUM_RUNS ?? "100");
+
+maybeSuite(`P-hashing-parity (property, ${numRuns} runs)`, () => {
   test("hashUserId matches Python hash_user_id byte-for-byte", async () => {
     await fc.assert(
       fc.asyncProperty(idArb, saltArb, async (userId, salt) => {
@@ -41,7 +48,7 @@ maybeSuite("P-hashing-parity (property, 100 runs)", () => {
         const py = await callPythonHashUserIdAsync(userId, salt);
         return ts === py;
       }),
-      { numRuns: 100 },
+      { numRuns },
     );
   }, 120_000);
 
@@ -52,7 +59,7 @@ maybeSuite("P-hashing-parity (property, 100 runs)", () => {
         const py = await callPythonHashSessionIdAsync(sessionId, salt);
         return ts === py;
       }),
-      { numRuns: 100 },
+      { numRuns },
     );
   }, 120_000);
 });

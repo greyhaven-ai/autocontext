@@ -132,6 +132,12 @@ jobs:
         run: npm rebuild better-sqlite3 isolated-vm
       - name: Run full TypeScript test suite
         run: npm test
+        env:
+          # Sync Python subprocess spawns in the hashing-parity property tests
+          # block vitest workers long enough to starve the worker RPC channel
+          # on saturated runners; 25 runs keeps the parity check meaningful
+          # while staying under the RPC timeout. Local runs default to 100.
+          HASHING_PARITY_NUM_RUNS: "25"
 
   smoke:
     needs: [lint, test, package-boundaries]
