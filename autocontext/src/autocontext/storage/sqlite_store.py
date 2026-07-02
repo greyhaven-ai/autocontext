@@ -9,15 +9,26 @@ from typing import Any, cast
 from autocontext.storage.bootstrap_schema import bootstrap_core_schema, default_migrations_dir
 from autocontext.storage.row_types import GenerationMetricsRow, RunRow
 from autocontext.storage.sqlite_migrations import apply_python_migration_files
+from autocontext.storage.sqlite_store_consultations import SQLiteConsultationStoreMixin
 from autocontext.storage.sqlite_store_hub import SQLiteHubStoreMixin
+from autocontext.storage.sqlite_store_human_feedback import SQLiteHumanFeedbackStoreMixin
 from autocontext.storage.sqlite_store_monitoring import SQLiteMonitorStoreMixin
+from autocontext.storage.sqlite_store_notebooks import SQLiteNotebookStoreMixin
+from autocontext.storage.sqlite_store_task_queue import SQLiteTaskQueueStoreMixin
 
 SQLITE_BUSY_TIMEOUT_MS = 5_000
 AgentOutputBatch = tuple[str, str]
 AgentRoleMetricBatch = tuple[str, str, int, int, int, str, str]
 
 
-class SQLiteStore(SQLiteHubStoreMixin, SQLiteMonitorStoreMixin):
+class SQLiteStore(
+    SQLiteHubStoreMixin,
+    SQLiteMonitorStoreMixin,
+    SQLiteTaskQueueStoreMixin,
+    SQLiteConsultationStoreMixin,
+    SQLiteHumanFeedbackStoreMixin,
+    SQLiteNotebookStoreMixin,
+):
     def __init__(self, db_path: Path) -> None:
         self.db_path = db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -190,9 +201,15 @@ class SQLiteStore(SQLiteHubStoreMixin, SQLiteMonitorStoreMixin):
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    run_id, generation_index, seed, score,
-                    int(passed_validation), validation_errors,
-                    winner or "", strategy_json or "", replay_json or "",
+                    run_id,
+                    generation_index,
+                    seed,
+                    score,
+                    int(passed_validation),
+                    validation_errors,
+                    winner or "",
+                    strategy_json or "",
+                    replay_json or "",
                 ),
             )
 
@@ -340,15 +357,17 @@ class SQLiteStore(SQLiteHubStoreMixin, SQLiteMonitorStoreMixin):
             run_id,
             generation_index,
             outputs=[],
-            role_metrics=[(
-                role,
-                model,
-                input_tokens,
-                output_tokens,
-                latency_ms,
-                subagent_id,
-                status,
-            )],
+            role_metrics=[
+                (
+                    role,
+                    model,
+                    input_tokens,
+                    output_tokens,
+                    latency_ms,
+                    subagent_id,
+                    status,
+                )
+            ],
         )
 
     def append_agent_role_metrics(
@@ -735,9 +754,7 @@ class SQLiteStore(SQLiteHubStoreMixin, SQLiteMonitorStoreMixin):
         """Return best knowledge snapshots per scenario."""
         with self.connect() as conn:
             rows = conn.execute(
-                "SELECT scenario, best_score, best_elo, run_id, created_at "
-                "FROM knowledge_snapshots "
-                "ORDER BY best_score DESC"
+                "SELECT scenario, best_score, best_elo, run_id, created_at FROM knowledge_snapshots ORDER BY best_score DESC"
             ).fetchall()
         # Deduplicate: keep only the best per scenario
         seen: dict[str, dict[str, Any]] = {}
@@ -748,269 +765,7 @@ class SQLiteStore(SQLiteHubStoreMixin, SQLiteMonitorStoreMixin):
                 seen[scn] = d
         return list(seen.values())
 
-    # -- Human feedback --
-
-    def insert_human_feedback(
-        self,
-        scenario_name: str,
-        agent_output: str,
-        human_score: float | None = None,
-        human_notes: str = "",
-        generation_id: str | None = None,
-    ) -> int:
-        """Store human feedback on an agent task output. Returns the row id."""
-        if human_score is not None and not (0.0 <= human_score <= 1.0):
-            raise ValueError(f"human_score must be in [0.0, 1.0], got {human_score}")
-        with self.connect() as conn:
-            cursor = conn.execute(
-                """
-                INSERT INTO human_feedback(scenario_name, generation_id, agent_output, human_score, human_notes)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (scenario_name, generation_id, agent_output, human_score, human_notes),
-            )
-            return cursor.lastrowid or 0
-
-    def get_human_feedback(self, scenario_name: str, limit: int = 10) -> list[dict[str, Any]]:
-        """Retrieve recent human feedback for a scenario."""
-        with self.connect() as conn:
-            rows = conn.execute(
-                """
-                SELECT id, scenario_name, generation_id, agent_output, human_score, human_notes, created_at
-                FROM human_feedback
-                WHERE scenario_name = ?
-                ORDER BY created_at DESC
-                LIMIT ?
-                """,
-                (scenario_name, limit),
-            ).fetchall()
-            return [dict(r) for r in rows]
-
-    def get_calibration_examples(self, scenario_name: str, limit: int = 5) -> list[dict[str, Any]]:
-        """Retrieve feedback with both score and notes — suitable for judge calibration."""
-        with self.connect() as conn:
-            rows = conn.execute(
-                """
-                SELECT id, scenario_name, agent_output, human_score, human_notes, created_at
-                FROM human_feedback
-                WHERE scenario_name = ? AND human_score IS NOT NULL AND human_notes != ''
-                ORDER BY created_at DESC
-                LIMIT ?
-                """,
-                (scenario_name, limit),
-            ).fetchall()
-            return [dict(r) for r in rows]
-
-    # ---- Task Queue CRUD ----
-
-    def enqueue_task(
-        self,
-        task_id: str,
-        spec_name: str,
-        priority: int = 0,
-        config: dict[str, Any] | None = None,
-        scheduled_at: str | None = None,
-    ) -> None:
-        """Add a task to the queue."""
-        config_json = json.dumps(config) if config else None
-        with self.connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO task_queue(id, spec_name, priority, config_json, scheduled_at)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (task_id, spec_name, priority, config_json, scheduled_at),
-            )
-
-    def dequeue_task(self) -> dict[str, Any] | None:
-        """Claim the highest-priority pending task.
-
-        Returns the task row as a dict, or None if queue is empty.
-        Uses a single UPDATE with subquery for true atomic dequeue —
-        prevents double-processing under concurrent access.
-        """
-        with self.connect() as conn:
-            # Atomic: SELECT the best candidate, then UPDATE in one transaction.
-            # SQLite's write lock on the transaction prevents two connections
-            # from claiming the same row.
-            row = conn.execute(
-                """
-                SELECT id FROM task_queue
-                WHERE status = 'pending'
-                  AND (scheduled_at IS NULL OR scheduled_at <= datetime('now'))
-                ORDER BY priority DESC, created_at ASC
-                LIMIT 1
-                """,
-            ).fetchone()
-            if not row:
-                return None
-
-            task_id = row["id"]
-            conn.execute(
-                """
-                UPDATE task_queue
-                SET status = 'running',
-                    started_at = datetime('now'),
-                    updated_at = datetime('now')
-                WHERE id = ? AND status = 'pending'
-                """,
-                (task_id,),
-            )
-            # Check we actually claimed it (another runner might have beaten us)
-            if conn.execute("SELECT changes()").fetchone()[0] == 0:
-                return None
-
-            updated = conn.execute(
-                "SELECT * FROM task_queue WHERE id = ?", (task_id,)
-            ).fetchone()
-            return dict(updated) if updated else None
-
-    def complete_task(
-        self,
-        task_id: str,
-        best_score: float,
-        best_output: str,
-        total_rounds: int,
-        met_threshold: bool,
-        result_json: str | None = None,
-    ) -> None:
-        """Mark a task as completed with results."""
-        with self.connect() as conn:
-            conn.execute(
-                """
-                UPDATE task_queue
-                SET status = 'completed',
-                    completed_at = datetime('now'),
-                    updated_at = datetime('now'),
-                    best_score = ?,
-                    best_output = ?,
-                    total_rounds = ?,
-                    met_threshold = ?,
-                    result_json = ?
-                WHERE id = ?
-                """,
-                (best_score, best_output, total_rounds, 1 if met_threshold else 0, result_json, task_id),
-            )
-
-    def fail_task(self, task_id: str, error: str) -> None:
-        """Mark a task as failed."""
-        with self.connect() as conn:
-            conn.execute(
-                """
-                UPDATE task_queue
-                SET status = 'failed',
-                    completed_at = datetime('now'),
-                    updated_at = datetime('now'),
-                    error = ?
-                WHERE id = ?
-                """,
-                (error, task_id),
-            )
-
-    def get_task(self, task_id: str) -> dict[str, Any] | None:
-        """Get a task by ID."""
-        with self.connect() as conn:
-            row = conn.execute(
-                "SELECT * FROM task_queue WHERE id = ?", (task_id,)
-            ).fetchone()
-            return dict(row) if row else None
-
-    def list_tasks(
-        self,
-        status: str | None = None,
-        spec_name: str | None = None,
-        limit: int = 50,
-    ) -> list[dict[str, Any]]:
-        """List tasks with optional filters."""
-        query = "SELECT * FROM task_queue WHERE 1=1"
-        params: list[Any] = []
-        if status:
-            query += " AND status = ?"
-            params.append(status)
-        if spec_name:
-            query += " AND spec_name = ?"
-            params.append(spec_name)
-        query += " ORDER BY created_at DESC LIMIT ?"
-        params.append(limit)
-        with self.connect() as conn:
-            rows = conn.execute(query, params).fetchall()
-            return [dict(r) for r in rows]
-
-    def pending_task_count(self) -> int:
-        """Count pending tasks in the queue."""
-        with self.connect() as conn:
-            row = conn.execute(
-                "SELECT COUNT(*) as cnt FROM task_queue WHERE status = 'pending'"
-            ).fetchone()
-            return row["cnt"] if row else 0
-
-    # ---- Consultation Log (AC-212) ----
-
-    def insert_consultation(
-        self,
-        run_id: str,
-        generation_index: int,
-        trigger: str,
-        context_summary: str,
-        critique: str,
-        alternative_hypothesis: str,
-        tiebreak_recommendation: str,
-        suggested_next_action: str,
-        raw_response: str,
-        model_used: str,
-        cost_usd: float | None,
-    ) -> int:
-        """Persist a consultation result. Returns the row id."""
-        with self.connect() as conn:
-            cursor = conn.execute(
-                """
-                INSERT INTO consultation_log(
-                    run_id, generation_index, trigger, context_summary,
-                    critique, alternative_hypothesis, tiebreak_recommendation,
-                    suggested_next_action, raw_response, model_used, cost_usd
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    run_id, generation_index, trigger, context_summary,
-                    critique, alternative_hypothesis, tiebreak_recommendation,
-                    suggested_next_action, raw_response, model_used, cost_usd,
-                ),
-            )
-            return cursor.lastrowid or 0
-
-    def get_consultations_for_run(self, run_id: str) -> list[dict[str, Any]]:
-        """Retrieve all consultation records for a run, ordered by generation."""
-        with self.connect() as conn:
-            rows = conn.execute(
-                """
-                SELECT id, run_id, generation_index, trigger, context_summary,
-                       critique, alternative_hypothesis, tiebreak_recommendation,
-                       suggested_next_action, raw_response, model_used, cost_usd, created_at
-                FROM consultation_log
-                WHERE run_id = ?
-                ORDER BY generation_index, id
-                """,
-                (run_id,),
-            ).fetchall()
-            return [dict(r) for r in rows]
-
-    def get_total_consultation_cost(self, run_id: str) -> float:
-        """Return total consultation cost for a run."""
-        with self.connect() as conn:
-            row = conn.execute(
-                "SELECT COALESCE(SUM(cost_usd), 0.0) as total FROM consultation_log WHERE run_id = ?",
-                (run_id,),
-            ).fetchone()
-            return float(row["total"]) if row else 0.0
-
-    # ---- Session Notebook CRUD ----
-
-    _NOTEBOOK_JSON_FIELDS = frozenset({
-        "current_hypotheses",
-        "unresolved_questions",
-        "operator_observations",
-        "follow_ups",
-    })
+    # ---- Shared JSON field parsing (used by hub + notebook mixins) ----
 
     _HUB_SESSION_JSON_FIELDS = frozenset({"metadata_json"})
     _HUB_PACKAGE_JSON_FIELDS = frozenset({"tags_json", "metadata_json"})
@@ -1025,133 +780,6 @@ class SQLiteStore(SQLiteHubStoreMixin, SQLiteMonitorStoreMixin):
             return json.loads(raw)
         except (ValueError, TypeError):
             return default
-
-    def _parse_notebook_row(self, row: dict[str, Any]) -> dict[str, Any]:
-        """Parse JSON string fields in a notebook row back to lists."""
-        result = dict(row)
-        for field in self._NOTEBOOK_JSON_FIELDS:
-            raw = result.get(field)
-            if isinstance(raw, str):
-                result[field] = self._parse_json_field(raw, [])
-        return result
-
-    def upsert_notebook(
-        self,
-        session_id: str,
-        scenario_name: str,
-        current_objective: str | None = None,
-        current_hypotheses: list[str] | None = None,
-        best_run_id: str | None = None,
-        best_generation: int | None = None,
-        best_score: float | None = None,
-        unresolved_questions: list[str] | None = None,
-        operator_observations: list[str] | None = None,
-        follow_ups: list[str] | None = None,
-    ) -> None:
-        """Insert or update a session notebook."""
-        existing = self.get_notebook(session_id)
-        merged_current_objective = current_objective if current_objective is not None else (
-            str(existing["current_objective"]) if existing is not None else ""
-        )
-        merged_hypotheses = current_hypotheses if current_hypotheses is not None else (
-            list(existing["current_hypotheses"]) if existing is not None else []
-        )
-        merged_best_run_id = best_run_id if best_run_id is not None else (
-            str(existing["best_run_id"]) if existing and existing.get("best_run_id") is not None else None
-        )
-        merged_best_generation = best_generation if best_generation is not None else (
-            int(existing["best_generation"]) if existing and existing.get("best_generation") is not None else None
-        )
-        merged_best_score = best_score if best_score is not None else (
-            float(existing["best_score"]) if existing and existing.get("best_score") is not None else None
-        )
-        merged_questions = unresolved_questions if unresolved_questions is not None else (
-            list(existing["unresolved_questions"]) if existing is not None else []
-        )
-        merged_observations = operator_observations if operator_observations is not None else (
-            list(existing["operator_observations"]) if existing is not None else []
-        )
-        merged_follow_ups = follow_ups if follow_ups is not None else (
-            list(existing["follow_ups"]) if existing is not None else []
-        )
-
-        hypotheses_json = json.dumps(merged_hypotheses)
-        questions_json = json.dumps(merged_questions)
-        observations_json = json.dumps(merged_observations)
-        follow_ups_json = json.dumps(merged_follow_ups)
-
-        with self.connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO session_notebooks(
-                    session_id, scenario_name, current_objective, current_hypotheses,
-                    best_run_id, best_generation, best_score,
-                    unresolved_questions, operator_observations, follow_ups
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(session_id) DO UPDATE SET
-                    scenario_name = excluded.scenario_name,
-                    current_objective = excluded.current_objective,
-                    current_hypotheses = excluded.current_hypotheses,
-                    best_run_id = excluded.best_run_id,
-                    best_generation = excluded.best_generation,
-                    best_score = excluded.best_score,
-                    unresolved_questions = excluded.unresolved_questions,
-                    operator_observations = excluded.operator_observations,
-                    follow_ups = excluded.follow_ups,
-                    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-                """,
-                (
-                    session_id,
-                    scenario_name,
-                    merged_current_objective,
-                    hypotheses_json,
-                    merged_best_run_id,
-                    merged_best_generation,
-                    merged_best_score,
-                    questions_json,
-                    observations_json,
-                    follow_ups_json,
-                ),
-            )
-
-    def get_notebook(self, session_id: str) -> dict[str, Any] | None:
-        """Get a session notebook by session id."""
-        with self.connect() as conn:
-            row = conn.execute(
-                "SELECT * FROM session_notebooks WHERE session_id = ?",
-                (session_id,),
-            ).fetchone()
-            if row is None:
-                return None
-            return self._parse_notebook_row(dict(row))
-
-    def list_notebooks(self) -> list[dict[str, Any]]:
-        """List all session notebooks."""
-        with self.connect() as conn:
-            rows = conn.execute(
-                "SELECT * FROM session_notebooks ORDER BY updated_at DESC"
-            ).fetchall()
-            return [self._parse_notebook_row(dict(r)) for r in rows]
-
-    def list_notebooks_for_run(self, run_id: str) -> list[dict[str, Any]]:
-        """List notebooks whose current best run matches the provided run id."""
-        with self.connect() as conn:
-            rows = conn.execute(
-                "SELECT * FROM session_notebooks WHERE best_run_id = ? ORDER BY updated_at DESC",
-                (run_id,),
-            ).fetchall()
-            return [self._parse_notebook_row(dict(r)) for r in rows]
-
-    def delete_notebook(self, session_id: str) -> bool:
-        """Delete a session notebook. Returns True if a row was deleted."""
-        with self.connect() as conn:
-            conn.execute(
-                "DELETE FROM session_notebooks WHERE session_id = ?",
-                (session_id,),
-            )
-            row = conn.execute("SELECT changes()").fetchone()
-            return bool(row[0] > 0) if row else False
 
     def get_run_best_score(self, run_id: str) -> float | None:
         """Return the best score recorded for a run, if any."""
