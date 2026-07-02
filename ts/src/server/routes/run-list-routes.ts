@@ -3,8 +3,9 @@
  *
  * Both share the executeRunSimulationReadRequest dispatcher and its
  * RunSimulationReadDeps. The playbook route is the one call site with a
- * real readPlaybook implementation; the others keep the null-returning
- * stub (see AC-852 task report for the tracked asymmetry).
+ * real readPlaybook implementation; the run routes below dispatch route
+ * literals that never reach the playbook case, so their shared runSimDeps
+ * omits readPlaybook entirely (AC-862; it is optional on the deps type).
  */
 
 import {
