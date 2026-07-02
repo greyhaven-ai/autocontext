@@ -131,7 +131,11 @@ jobs:
       - name: Rebuild native modules (better-sqlite3, isolated-vm)
         run: npm rebuild better-sqlite3 isolated-vm
       - name: Run full TypeScript test suite
-        run: npm test
+        # The dot reporter and capped workers keep the vitest host process
+        # responsive: with the default reporter streaming per-test lines for
+        # 5,600+ tests, the host starves worker RPC calls and the run fails
+        # with "Timeout calling onTaskUpdate" despite all tests passing.
+        run: npm test -- --reporter=dot --maxWorkers=2
         env:
           # Sync Python subprocess spawns in the hashing-parity property tests
           # block vitest workers long enough to starve the worker RPC channel
