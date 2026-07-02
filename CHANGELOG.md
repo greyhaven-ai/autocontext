@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- AC-855 adds branded `RunId`/`ScenarioName`/`DbPath` id types, exported from the TypeScript package root; `GenerationRunner.run` now takes a `RunId` instead of a bare `string` (compile-time only, construct with `asRunId`).
+
+### Changed
+
+- AC-850 through AC-864 decompose several oversized modules with no runtime behavior change: `ws-server` HTTP routing into `ts/src/server/routes/`, the TypeScript CLI dispatcher into `ts/src/cli/commands/` behind a slim `command-handlers.ts` barrel, `stage_tournament` and `run_generation` into named helpers, and `SQLiteStore`/`ArtifactStore` into per-concern mixin modules.
+
 ## [0.10.0] - 2026-06-24
 
 ### Added

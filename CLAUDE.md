@@ -15,10 +15,10 @@ autocontext/                  # Python package root (pyproject.toml lives here)
   src/autocontext/            # Source code
     agents/                   # LLM agent roles (competitor, analyst, coach, architect, curator)
     knowledge/                # Knowledge processing (trajectory builder, skill export, search, solve-on-demand)
-    loop/                     # Generation runner, event emitter
+    loop/                     # Generation runner, event emitter, stage decomposition helpers (stage_helpers/)
     prompts/                  # Prompt template assembly
     config/                   # Pydantic settings from AUTOCONTEXT_* env vars
-    storage/                  # SQLiteStore, ArtifactStore
+    storage/                  # SQLiteStore, ArtifactStore, split across sqlite_store_*/artifact_* mixin modules
     scenarios/                # Pluggable scenarios (grid_ctf, othello, custom/, agent tasks)
       custom/               # Natural-language → generated scenario pipeline (spec, codegen, validation, loading)
                             # Also: agent task pipeline (agent_task_designer, agent_task_codegen, agent_task_validator, agent_task_creator)
@@ -46,8 +46,11 @@ ts/                           # TypeScript package (autoctx on npm)
     mission/                  # MissionManager, planner, adaptive executor, campaigns (AC-410, AC-435, AC-428)
     traces/                   # Public trace schema, redaction, export, publishers, data plane (AC-462–466)
     training/                 # Model strategy, backends (MLX/CUDA), prompt alignment, promotion (AC-456–460)
+    domain/                   # Branded id types (RunId, ScenarioName, DbPath; AC-855), root-exported
+    server/                   # InteractiveServer: WebSocket protocol + HTTP routing
+      routes/                 # Extracted HTTP route handlers (12 modules; AC-852)
     mcp/                      # MCP server with tool implementations
-    cli/                      # CLI entry point with all commands
+    cli/                      # CLI entry point; command-handlers.ts barrel over commands/ (15 family modules; AC-853)
   tests/                      # Vitest tests (1600+ tests)
   migrations/                 # Shared SQLite migration SQL (cross-compatible with Python)
 pi/                           # Pi coding agent extension (@autocontext/pi)
@@ -150,6 +153,7 @@ Optional (`AUTOCONTEXT_RLM_ENABLED=true`): replaces single-shot analyst/architec
 ### Scenarios (`scenarios/`)
 
 Dual-interface registry (`SCENARIO_REGISTRY` in `scenarios/__init__.py`):
+
 - **Game scenarios** — `ScenarioInterface` ABC (`execute_match`, `describe_rules`, etc.). Built-in: `grid_ctf`, `othello`.
 - **Agent task scenarios** — `AgentTaskInterface` ABC (`evaluate_output`, `get_task_prompt`, `revise_output`, etc.). Evaluated by LLM judge.
 
@@ -206,7 +210,7 @@ All config via `AUTOCONTEXT_*` env vars, loaded in `config/settings.py` as Pydan
 
 ## CI
 
-GitHub Actions (`.github/workflows/ci.yml`) runs: ruff check, mypy, pytest, deterministic smoke runs for both scenarios (`grid_ctf` 3 gens, `othello` 1 gen), and dashboard API health check. A separate `primeintellect-live` job runs when secrets are available. Monty-specific tests (`test_monty_*.py`) are skipped in CI when pydantic-monty is not installed (`pytest.mark.skipif`).
+GitHub Actions (`.github/workflows/ci.yml`) runs: ruff check, mypy, pytest, a `package-boundaries` job (Python/TypeScript topology checks plus the three Python/TS schema sync checks, run under `uv run --frozen`), deterministic smoke runs for both scenarios (`grid_ctf` 3 gens, `othello` 1 gen) with a curl readiness loop, and dashboard API health check. A separate `primeintellect-live` job runs when secrets are available. Monty-specific tests (`test_monty_*.py`) are skipped in CI when pydantic-monty is not installed (`pytest.mark.skipif`).
 
 ## TypeScript Package (`ts/`)
 
