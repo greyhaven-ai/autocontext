@@ -1,7 +1,7 @@
 {
   "core_version": "0.11.0",
-  "pi_version": "0.8.0",
-  "pi_autoctx_dependency": "^0.10.0",
+  "pi_version": "0.9.0",
+  "pi_autoctx_dependency": "^0.11.0",
   "whats_new": [
     "**Guardrail parity** fixes the CLI agent-task path so it applies the same guardrail-adjusted score threshold as the task runner, evaluated against the fully prepared task state.",
     "**Branded id types** add `RunId`, `ScenarioName`, and `DbPath` to the TypeScript package root; `GenerationRunner.run` now takes a `RunId` (construct with `asRunId`), a compile-time-only change.",
