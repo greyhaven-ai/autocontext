@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.11.0] - 2026-07-02
 
 ### Added
 
@@ -11,6 +11,11 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - AC-850 through AC-864 decompose several oversized modules with no runtime behavior change: `ws-server` HTTP routing into `ts/src/server/routes/`, the TypeScript CLI dispatcher into `ts/src/cli/commands/` behind a slim `command-handlers.ts` barrel, `stage_tournament` and `run_generation` into named helpers, and `SQLiteStore`/`ArtifactStore` into per-concern mixin modules.
+- Dependency remediation clears every critical and high security advisory: anthropic sdk `^0.91.1`, urllib3, starlette, python-multipart, pyjwt, vitest, and more across the Python, TypeScript, and pi packages; CI now gates the Python/TypeScript schema sync scripts.
+
+### Fixed
+
+- AC-848 makes the CLI agent-task path apply the same guardrail-adjusted `effective_met_threshold` as the task runner, evaluated against the fully prepared task state, with coherent persisted `termination_reason` on guardrail veto.
 
 ## [0.10.0] - 2026-06-24
 
