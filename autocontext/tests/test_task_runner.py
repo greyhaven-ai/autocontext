@@ -1321,4 +1321,10 @@ class TestFinalizeTaskOutput:
             config=config,
         )
 
-        assert single_gen_style == multi_gen_style
+        # With no guardrails configured and no calibration anchors in `store`,
+        # the shape is fully deterministic: (objective_payload,
+        # objective_guardrail, evaluator_guardrail, effective_met_threshold,
+        # rubric_calibration).
+        expected = (None, None, None, True, None)
+        assert single_gen_style == expected
+        assert multi_gen_style == expected
