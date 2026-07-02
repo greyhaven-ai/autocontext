@@ -1,6 +1,7 @@
 {
   "modules": [
     "./types/index.js",
+    "./domain/ids.js",
     "./providers/index.js",
     "./judge/index.js",
     "./storage/index.js",

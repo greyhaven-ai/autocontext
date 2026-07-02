@@ -1,6 +1,7 @@
 import { join } from "node:path";
 
 import type { AppSettings } from "../config/index.js";
+import { asRunId } from "../domain/ids.js";
 import type { LoopController } from "../loop/controller.js";
 import type { EventStreamEmitter } from "../loop/events.js";
 import { GenerationRunner } from "../loop/generation-runner.js";
@@ -18,16 +19,16 @@ import { SQLiteStore } from "../storage/index.js";
 export type RunStartPlan =
   | { kind: "builtin_game"; scenarioName: string }
   | {
-    kind: "agent_task_custom";
-    scenarioName: string;
-    entry: CustomScenarioEntry;
-  }
+      kind: "agent_task_custom";
+      scenarioName: string;
+      entry: CustomScenarioEntry;
+    }
   | {
-    kind: "generated_custom";
-    scenarioName: string;
-    entry: CustomScenarioEntry;
-    family: ScenarioFamilyName;
-  };
+      kind: "generated_custom";
+      scenarioName: string;
+      entry: CustomScenarioEntry;
+      family: ScenarioFamilyName;
+    };
 
 export function resolveRunStartPlan(opts: {
   scenario: string;
@@ -42,7 +43,9 @@ export function resolveRunStartPlan(opts: {
   const customScenario = opts.customScenario;
   const family = opts.customScenarioFamily ?? null;
   if (!customScenario) {
-    throw new Error(`Unknown scenario: ${opts.scenario}. Available: ${opts.builtinScenarioNames.join(", ")}`);
+    throw new Error(
+      `Unknown scenario: ${opts.scenario}. Available: ${opts.builtinScenarioNames.join(", ")}`,
+    );
   }
   if (family === "agent_task" || customScenario.type === "agent_task") {
     return {
@@ -55,7 +58,7 @@ export function resolveRunStartPlan(opts: {
   if (!customScenario.hasGeneratedSource || !family) {
     throw new Error(
       `Scenario '${opts.scenario}' is a saved custom ${customScenario.type ?? "unknown"} scenario. ` +
-      "It is discoverable in the TS control plane, but /run currently supports only built-in game, saved agent-task, and generated custom scenarios.",
+        "It is discoverable in the TS control plane, but /run currently supports only built-in game, saved agent-task, and generated custom scenarios.",
     );
   }
 
@@ -73,8 +76,8 @@ export function resolveBuiltInGameScenario(opts: {
   scenarioName: string;
   resolveScenarioClass?: (scenarioName: string) => ScenarioClass | undefined;
 }): ScenarioInterface {
-  const ScenarioClass = opts.resolveScenarioClass?.(opts.scenarioName)
-    ?? SCENARIO_REGISTRY[opts.scenarioName];
+  const ScenarioClass =
+    opts.resolveScenarioClass?.(opts.scenarioName) ?? SCENARIO_REGISTRY[opts.scenarioName];
   if (!ScenarioClass) {
     throw new Error(`Unknown scenario: ${opts.scenarioName}`);
   }
@@ -117,10 +120,12 @@ export async function executeBuiltInGameStartRun(opts: {
   scenario?: ScenarioInterface;
   deps?: BuiltInGameStartRunDeps;
 }): Promise<void> {
-  const scenarioInstance = opts.scenario ?? resolveBuiltInGameScenario({
-    scenarioName: opts.scenarioName,
-    resolveScenarioClass: opts.deps?.resolveScenarioClass,
-  });
+  const scenarioInstance =
+    opts.scenario ??
+    resolveBuiltInGameScenario({
+      scenarioName: opts.scenarioName,
+      resolveScenarioClass: opts.deps?.resolveScenarioClass,
+    });
 
   const store = opts.deps?.createStore?.(opts.opts.dbPath) ?? new SQLiteStore(opts.opts.dbPath);
   store.migrate(opts.opts.migrationsDir);
@@ -130,81 +135,83 @@ export async function executeBuiltInGameStartRun(opts: {
   });
 
   try {
-    const runner = opts.deps?.createRunner?.({
-      provider: opts.providerBundle.defaultProvider,
-      roleProviders: opts.providerBundle.roleProviders,
-      roleModels: opts.providerBundle.roleModels,
-      scenario: scenarioInstance,
-      store: store as SQLiteStore,
-      runsRoot: opts.opts.runsRoot,
-      knowledgeRoot: opts.opts.knowledgeRoot,
-      matchesPerGeneration: opts.settings.matchesPerGeneration,
-      maxRetries: opts.settings.maxRetries,
-      minDelta: opts.settings.backpressureMinDelta,
-      playbookMaxVersions: opts.settings.playbookMaxVersions,
-      requirePlaybookApproval: opts.requirePlaybookApproval ?? false,
-      contextBudgetTokens: opts.settings.contextBudgetTokens,
-      curatorEnabled: opts.settings.curatorEnabled,
-      curatorConsolidateEveryNGens: opts.settings.curatorConsolidateEveryNGens,
-      softHintsEnabled: opts.settings.softHintsEnabled,
-      hintStyle: opts.settings.hintStyle,
-      skillMaxLessons: opts.settings.skillMaxLessons,
-      deadEndTrackingEnabled: opts.settings.deadEndTrackingEnabled,
-      deadEndMaxEntries: opts.settings.deadEndMaxEntries,
-      stagnationResetEnabled: opts.settings.stagnationResetEnabled,
-      stagnationRollbackThreshold: opts.settings.stagnationRollbackThreshold,
-      stagnationPlateauWindow: opts.settings.stagnationPlateauWindow,
-      stagnationPlateauEpsilon: opts.settings.stagnationPlateauEpsilon,
-      stagnationDistillTopLessons: opts.settings.stagnationDistillTopLessons,
-      explorationMode: opts.settings.explorationMode,
-      explorationCollapseGuard: opts.settings.explorationCollapseGuard,
-      explorationCollapseAutoMitigation: opts.settings.explorationCollapseAutoMitigation,
-      notifyWebhookUrl: opts.settings.notifyWebhookUrl,
-      notifyOn: opts.settings.notifyOn,
-      controller: opts.controller,
-      events: opts.events,
-      hookBus,
-      loadedExtensions,
-      runtimeSession: opts.providerBundle.runtimeSession,
-    }) ?? new GenerationRunner({
-      provider: opts.providerBundle.defaultProvider,
-      roleProviders: opts.providerBundle.roleProviders,
-      roleModels: opts.providerBundle.roleModels,
-      scenario: scenarioInstance,
-      store: store as SQLiteStore,
-      runsRoot: opts.opts.runsRoot,
-      knowledgeRoot: opts.opts.knowledgeRoot,
-      matchesPerGeneration: opts.settings.matchesPerGeneration,
-      maxRetries: opts.settings.maxRetries,
-      minDelta: opts.settings.backpressureMinDelta,
-      playbookMaxVersions: opts.settings.playbookMaxVersions,
-      requirePlaybookApproval: opts.requirePlaybookApproval ?? false,
-      contextBudgetTokens: opts.settings.contextBudgetTokens,
-      curatorEnabled: opts.settings.curatorEnabled,
-      curatorConsolidateEveryNGens: opts.settings.curatorConsolidateEveryNGens,
-      softHintsEnabled: opts.settings.softHintsEnabled,
-      hintStyle: opts.settings.hintStyle,
-      skillMaxLessons: opts.settings.skillMaxLessons,
-      deadEndTrackingEnabled: opts.settings.deadEndTrackingEnabled,
-      deadEndMaxEntries: opts.settings.deadEndMaxEntries,
-      stagnationResetEnabled: opts.settings.stagnationResetEnabled,
-      stagnationRollbackThreshold: opts.settings.stagnationRollbackThreshold,
-      stagnationPlateauWindow: opts.settings.stagnationPlateauWindow,
-      stagnationPlateauEpsilon: opts.settings.stagnationPlateauEpsilon,
-      stagnationDistillTopLessons: opts.settings.stagnationDistillTopLessons,
-      explorationMode: opts.settings.explorationMode,
-      explorationCollapseGuard: opts.settings.explorationCollapseGuard,
-      explorationCollapseAutoMitigation: opts.settings.explorationCollapseAutoMitigation,
-      notifyWebhookUrl: opts.settings.notifyWebhookUrl,
-      notifyOn: opts.settings.notifyOn,
-      controller: opts.controller,
-      events: opts.events,
-      hookBus,
-      loadedExtensions,
-      runtimeSession: opts.providerBundle.runtimeSession,
-    });
+    const runner =
+      opts.deps?.createRunner?.({
+        provider: opts.providerBundle.defaultProvider,
+        roleProviders: opts.providerBundle.roleProviders,
+        roleModels: opts.providerBundle.roleModels,
+        scenario: scenarioInstance,
+        store: store as SQLiteStore,
+        runsRoot: opts.opts.runsRoot,
+        knowledgeRoot: opts.opts.knowledgeRoot,
+        matchesPerGeneration: opts.settings.matchesPerGeneration,
+        maxRetries: opts.settings.maxRetries,
+        minDelta: opts.settings.backpressureMinDelta,
+        playbookMaxVersions: opts.settings.playbookMaxVersions,
+        requirePlaybookApproval: opts.requirePlaybookApproval ?? false,
+        contextBudgetTokens: opts.settings.contextBudgetTokens,
+        curatorEnabled: opts.settings.curatorEnabled,
+        curatorConsolidateEveryNGens: opts.settings.curatorConsolidateEveryNGens,
+        softHintsEnabled: opts.settings.softHintsEnabled,
+        hintStyle: opts.settings.hintStyle,
+        skillMaxLessons: opts.settings.skillMaxLessons,
+        deadEndTrackingEnabled: opts.settings.deadEndTrackingEnabled,
+        deadEndMaxEntries: opts.settings.deadEndMaxEntries,
+        stagnationResetEnabled: opts.settings.stagnationResetEnabled,
+        stagnationRollbackThreshold: opts.settings.stagnationRollbackThreshold,
+        stagnationPlateauWindow: opts.settings.stagnationPlateauWindow,
+        stagnationPlateauEpsilon: opts.settings.stagnationPlateauEpsilon,
+        stagnationDistillTopLessons: opts.settings.stagnationDistillTopLessons,
+        explorationMode: opts.settings.explorationMode,
+        explorationCollapseGuard: opts.settings.explorationCollapseGuard,
+        explorationCollapseAutoMitigation: opts.settings.explorationCollapseAutoMitigation,
+        notifyWebhookUrl: opts.settings.notifyWebhookUrl,
+        notifyOn: opts.settings.notifyOn,
+        controller: opts.controller,
+        events: opts.events,
+        hookBus,
+        loadedExtensions,
+        runtimeSession: opts.providerBundle.runtimeSession,
+      }) ??
+      new GenerationRunner({
+        provider: opts.providerBundle.defaultProvider,
+        roleProviders: opts.providerBundle.roleProviders,
+        roleModels: opts.providerBundle.roleModels,
+        scenario: scenarioInstance,
+        store: store as SQLiteStore,
+        runsRoot: opts.opts.runsRoot,
+        knowledgeRoot: opts.opts.knowledgeRoot,
+        matchesPerGeneration: opts.settings.matchesPerGeneration,
+        maxRetries: opts.settings.maxRetries,
+        minDelta: opts.settings.backpressureMinDelta,
+        playbookMaxVersions: opts.settings.playbookMaxVersions,
+        requirePlaybookApproval: opts.requirePlaybookApproval ?? false,
+        contextBudgetTokens: opts.settings.contextBudgetTokens,
+        curatorEnabled: opts.settings.curatorEnabled,
+        curatorConsolidateEveryNGens: opts.settings.curatorConsolidateEveryNGens,
+        softHintsEnabled: opts.settings.softHintsEnabled,
+        hintStyle: opts.settings.hintStyle,
+        skillMaxLessons: opts.settings.skillMaxLessons,
+        deadEndTrackingEnabled: opts.settings.deadEndTrackingEnabled,
+        deadEndMaxEntries: opts.settings.deadEndMaxEntries,
+        stagnationResetEnabled: opts.settings.stagnationResetEnabled,
+        stagnationRollbackThreshold: opts.settings.stagnationRollbackThreshold,
+        stagnationPlateauWindow: opts.settings.stagnationPlateauWindow,
+        stagnationPlateauEpsilon: opts.settings.stagnationPlateauEpsilon,
+        stagnationDistillTopLessons: opts.settings.stagnationDistillTopLessons,
+        explorationMode: opts.settings.explorationMode,
+        explorationCollapseGuard: opts.settings.explorationCollapseGuard,
+        explorationCollapseAutoMitigation: opts.settings.explorationCollapseAutoMitigation,
+        notifyWebhookUrl: opts.settings.notifyWebhookUrl,
+        notifyOn: opts.settings.notifyOn,
+        controller: opts.controller,
+        events: opts.events,
+        hookBus,
+        loadedExtensions,
+        runtimeSession: opts.providerBundle.runtimeSession,
+      });
 
-    await runner.run(opts.runId, opts.generations);
+    await runner.run(asRunId(opts.runId), opts.generations);
   } finally {
     store.close();
     opts.providerBundle.close?.();
@@ -238,9 +245,9 @@ export async function executeAgentTaskCustomStartRun(opts: {
   const executeTask = opts.deps?.executeAgentTaskSolve ?? executeAgentTaskSolve;
   const { hookBus, loadedExtensions } = opts.settings
     ? await initializeHookBus({
-      extensions: opts.settings.extensions,
-      failFast: opts.settings.extensionFailFast,
-    })
+        extensions: opts.settings.extensions,
+        failFast: opts.settings.extensionFailFast,
+      })
     : { hookBus: null, loadedExtensions: [] };
 
   emitHook(hookBus, HookEvents.RUN_START, {

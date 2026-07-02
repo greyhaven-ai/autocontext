@@ -5,6 +5,7 @@
  */
 
 export * from "./types/index.js";
+export * from "./domain/ids.js";
 export * from "./providers/index.js";
 export * from "./judge/index.js";
 export * from "./storage/index.js";
