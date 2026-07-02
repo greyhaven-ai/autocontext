@@ -98,6 +98,40 @@ jobs:
         working-directory: ts
         run: uv run --frozen --project ../autocontext -- npm run check:schemas
 
+  ts-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: ts
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: ts/.nvmrc
+      - name: Reuse setup-node headers for native addons
+        shell: bash
+        run: |
+          nodedir="$(dirname "$(dirname "$(command -v node)")")"
+          test -d "$nodedir/include/node"
+          echo "npm_config_nodedir=$nodedir" >> "$GITHUB_ENV"
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: false
+      - name: Install Python parity deps
+        working-directory: autocontext
+        run: uv sync --locked --group dev
+      - name: Install TypeScript deps
+        run: npm ci --ignore-scripts
+      - name: Rebuild native modules (better-sqlite3, isolated-vm)
+        run: npm rebuild better-sqlite3 isolated-vm
+      - name: Run full TypeScript test suite
+        run: npm test
+
   smoke:
     needs: [lint, test, package-boundaries]
     runs-on: ubuntu-latest
