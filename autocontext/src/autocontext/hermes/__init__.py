@@ -1,9 +1,10 @@
 """Hermes Agent integration helpers.
 
-Scope: read-only integration with NousResearch's Hermes agent and its
-Curator subsystem (inspect, ingest, export-skill, train-advisor; see
-docs/hermes-positioning.md). Currently Python-only: no ts/ mirror exists
-for this package.
+Scope: integration with NousResearch's Hermes agent and its Curator
+subsystem (inspect, ingest, export-skill, train-advisor; see
+docs/hermes-positioning.md). Read-only against Hermes/Curator state,
+though export-skill writes a local skill file when an output path is
+supplied. Currently Python-only: no ts/ mirror exists for this package.
 
 Naming note: unrelated to the "hermes" OpenAI-compatible provider gateway
 in ts/src/providers/provider-factory.ts, which just points at a
