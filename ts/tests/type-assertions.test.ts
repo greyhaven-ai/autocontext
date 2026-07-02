@@ -145,7 +145,12 @@ describe("TypeScript type assertion budget", () => {
     // discriminated unions in `traces/otel-bridge.ts`); the increment is from
     // unrelated merge content. Bumping rather than reverse-engineering other
     // teams' assertions.
-    expect(total).toBeLessThanOrEqual(973);
+    // Bumped to 1045 (AC-867) after a run of unrelated merges (branded-ID
+    // migration, storage mixin decomposition, CLI command-family split,
+    // GenerationRunner phase decomposition, and others) landed through main
+    // between the last bump and this baseline pass. Same "bump, don't
+    // reverse-engineer" policy as above.
+    expect(total).toBeLessThanOrEqual(1045);
   });
 
   it("mission/store.ts should use row types instead of inline casts", () => {
