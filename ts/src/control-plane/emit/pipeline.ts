@@ -160,6 +160,7 @@ export async function emitPr(
     layout,
     ...(opts.baseBranch ? { baseBranch: opts.baseBranch } : {}),
     ...(opts.preflightDetector ? { detect: opts.preflightDetector } : {}),
+    ...(opts.env ? { env: opts.env } : {}),
   });
   if (!preflightResult.ok) {
     throw new EmitPreflightError(preflightResult.issues);
@@ -188,8 +189,9 @@ export async function emitPr(
   const branchName = opts.branchName ?? branchNameFor(candidate);
   const decisionBand = decisionBandOf(decision);
   const baseBranch = opts.baseBranch ?? "main";
-  const prTitle = opts.prTitle
-    ?? `autocontext: promote ${candidate.actuatorType} for ${candidate.scenario} (${decisionBand})`;
+  const prTitle =
+    opts.prTitle ??
+    `autocontext: promote ${candidate.actuatorType} for ${candidate.scenario} (${decisionBand})`;
 
   let location: EmitLocation;
   switch (resolvedMode) {
@@ -263,7 +265,11 @@ function resolveBaseline(
   if (arg === null) return null;
   let baseArtifact: Artifact | null = null;
   if (arg === "auto") {
-    baseArtifact = registry.getActive(candidate.scenario, candidate.actuatorType, candidate.environmentTag);
+    baseArtifact = registry.getActive(
+      candidate.scenario,
+      candidate.actuatorType,
+      candidate.environmentTag,
+    );
   } else {
     try {
       baseArtifact = registry.loadArtifact(arg);
@@ -284,10 +290,14 @@ function resolveBaseline(
 function decisionBandOf(d: PromotionDecision): string {
   if (!d.pass) return "HARD FAIL";
   switch (d.recommendedTargetState) {
-    case "active": return "STRONG";
-    case "canary": return "MODERATE";
-    case "shadow": return "MARGINAL";
-    case "disabled": return "HARD FAIL";
+    case "active":
+      return "STRONG";
+    case "canary":
+      return "MODERATE";
+    case "shadow":
+      return "MARGINAL";
+    case "disabled":
+      return "HARD FAIL";
   }
 }
 

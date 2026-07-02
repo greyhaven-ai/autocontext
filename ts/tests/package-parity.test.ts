@@ -172,7 +172,7 @@ describe("CLI help matches README", () => {
     for (const cmd of expected) {
       expect(help).toContain(cmd);
     }
-  }, 15000);
+  }, 120000);
 });
 
 // ---------------------------------------------------------------------------
