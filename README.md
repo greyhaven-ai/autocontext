@@ -27,9 +27,9 @@ autocontext is a harness for agent improvement. Give it a goal, it runs the task
 
 | Surface             | Command                               |
 | ------------------- | ------------------------------------- |
-| Python CLI          | `uv tool install autocontext==0.10.0` |
-| Python library/dev  | `uv pip install autocontext==0.10.0`  |
-| TypeScript/Node CLI | `bun add -g autoctx@0.10.0`           |
+| Python CLI          | `uv tool install autocontext==0.11.0` |
+| Python library/dev  | `uv pip install autocontext==0.11.0`  |
+| TypeScript/Node CLI | `bun add -g autoctx@0.11.0`           |
 | Pi extension        | `pi install npm:pi-autocontext@0.8.0` |
 
 The PyPI package is `autocontext`; the CLI is `autoctx`. The npm package is `autoctx` (not the unrelated `autocontext` npm package). Provider variables live in [`.env.example`](.env.example).
@@ -86,11 +86,11 @@ Everything is filesystem-first: inspect it, diff it, replay it, export it, or fe
 Python owns the full control-plane package; TypeScript owns several operator-facing surfaces, the TUI, and Node runtime adapters. Start with [autocontext/README.md](autocontext/README.md) or [ts/README.md](ts/README.md).
 
 <!-- autocontext-whats-new:start -->
-## What's New in 0.10.0
+## What's New in 0.11.0
 
-- **Scaled training plans** add default-off CUDA/TRL profiles for 7B QLoRA RLVR and sharded 32B/72B distillation across Python and TypeScript.
-- **Training scale metadata** records device count, sharding, memory budgets, quantization, parameter count, and deployment VRAM for registry gating.
-- **TypeScript CLI parity** makes `--scale-profile` preserve profile backend/base/mode and documents every scale-related train flag.
+- **Guardrail parity** fixes the CLI agent-task path so it applies the same guardrail-adjusted score threshold as the task runner, evaluated against the fully prepared task state.
+- **Branded id types** add `RunId`, `ScenarioName`, and `DbPath` to the TypeScript package root; `GenerationRunner.run` now takes a `RunId` (construct with `asRunId`), a compile-time-only change.
+- **Dependency refresh** clears every critical and high security advisory across the Python and TypeScript packages, including the anthropic sdk, urllib3, starlette, and vitest lines.
 <!-- autocontext-whats-new:end -->
 
 ## Scenario Families

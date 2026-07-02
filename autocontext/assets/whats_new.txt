@@ -1,3 +1,3 @@
-**Scaled training plans** add default-off CUDA/TRL profiles for 7B QLoRA RLVR and sharded 32B/72B distillation across Python and TypeScript.
-**Training scale metadata** records device count, sharding, memory budgets, quantization, parameter count, and deployment VRAM for registry gating.
-**TypeScript CLI parity** makes `--scale-profile` preserve profile backend/base/mode and documents every scale-related train flag.
+**Guardrail parity** fixes the CLI agent-task path so it applies the same guardrail-adjusted score threshold as the task runner, evaluated against the fully prepared task state.
+**Branded id types** add `RunId`, `ScenarioName`, and `DbPath` to the TypeScript package root; `GenerationRunner.run` now takes a `RunId` (construct with `asRunId`), a compile-time-only change.
+**Dependency refresh** clears every critical and high security advisory across the Python and TypeScript packages, including the anthropic sdk, urllib3, starlette, and vitest lines.
