@@ -292,14 +292,13 @@ export class InteractiveServer {
       readJsonBody: () => this.#readJsonBody(req),
     };
 
-    // Shared executeRunSimulationReadRequest deps (AC-852): the playbook
-    // route is the one call site with a real readPlaybook implementation;
-    // every other run/scenario/simulation route keeps the null-returning
-    // stub the original code used (see AC-852 task report for the tracked
-    // asymmetry: this refactor does not wire new capability).
+    // Shared executeRunSimulationReadRequest deps (AC-852). readPlaybook is
+    // optional (AC-862): only the "playbook" route reads it, and every other
+    // run/scenario/simulation route dispatches a fixed route literal that
+    // never reaches that case, so readPlaybook is dropped here as a dead
+    // parameter (see AC-862 task report for the investigation).
     const runSimDeps: RunSimulationReadDeps = {
       openStore,
-      readPlaybook: () => null,
       loadReplayArtifactResponse,
     };
     const playbookDeps: RunSimulationReadDeps = {
