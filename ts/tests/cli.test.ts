@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 const CLI = join(import.meta.dirname, "..", "src", "cli", "index.ts");
 
@@ -50,10 +52,23 @@ describe("CLI", () => {
     expect(exitCode).toBe(1);
   });
 
-  it("status creates db and shows count", () => {
-    const { stdout, exitCode } = runCli(["status"]);
-    expect(exitCode).toBe(0);
-    expect(JSON.parse(stdout).pendingCount).toBe(0);
+  it("queue status creates db and shows count", () => {
+    // AC-697 slice 2 made top-level `status` run-status-only (requires <run-id>) and moved
+    // the queue-pending-count behavior this test exercises to `autoctx queue status`.
+    //
+    // Isolated AUTOCONTEXT_DB_PATH: the default "runs/autocontext.sqlite3" is relative to
+    // cwd and shared by every test that spawns the real CLI, so a fresh count here would
+    // otherwise depend on whatever other tests wrote to that shared file concurrently.
+    const dir = mkdtempSync(join(tmpdir(), "ac-cli-status-"));
+    try {
+      const { stdout, exitCode } = runCli(["queue", "status", "--json"], {
+        AUTOCONTEXT_DB_PATH: join(dir, "autocontext.sqlite3"),
+      });
+      expect(exitCode).toBe(0);
+      expect(JSON.parse(stdout).pendingCount).toBe(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("improve --help shows verbose flag", () => {

@@ -281,8 +281,17 @@ let server: Awaited<ReturnType<typeof createTestServer>>["server"] | undefined;
 let mgr: Awaited<ReturnType<typeof createTestServer>>["mgr"];
 let baseUrl: string;
 
+let previousAgentProvider: string | undefined;
+
 beforeEach(async () => {
   dir = makeTempDir();
+  // createTestServer()'s providerType: "deterministic" only sets the top-level default
+  // provider; buildRoleProviderBundle() routes each generation role off
+  // settings.agentProvider, which reads AUTOCONTEXT_AGENT_PROVIDER. Without this, role
+  // routing falls back to the "anthropic" schema default and endpoints that trigger a
+  // generation role (e.g. solve) require a real ANTHROPIC_API_KEY.
+  previousAgentProvider = process.env.AUTOCONTEXT_AGENT_PROVIDER;
+  process.env.AUTOCONTEXT_AGENT_PROVIDER = "deterministic";
   const testServer = await createTestServer(dir);
   server = testServer.server;
   mgr = testServer.mgr;
@@ -292,6 +301,11 @@ beforeEach(async () => {
 afterEach(async () => {
   await server?.stop();
   rmSync(dir, { recursive: true, force: true });
+  if (previousAgentProvider === undefined) {
+    delete process.env.AUTOCONTEXT_AGENT_PROVIDER;
+  } else {
+    process.env.AUTOCONTEXT_AGENT_PROVIDER = previousAgentProvider;
+  }
 });
 
 async function persistRuntimeSession(dir: string): Promise<void> {

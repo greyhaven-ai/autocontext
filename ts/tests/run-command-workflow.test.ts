@@ -129,9 +129,7 @@ describe("run command workflow", () => {
 
   it("resolves known run scenarios and rejects unknown ones with available names", () => {
     class GridScenario {}
-    expect(
-      resolveRunScenario("grid_ctf", { grid_ctf: GridScenario }),
-    ).toBe(GridScenario);
+    expect(resolveRunScenario("grid_ctf", { grid_ctf: GridScenario })).toBe(GridScenario);
 
     expect(() =>
       resolveRunScenario("missing", { grid_ctf: GridScenario, othello: class Othello {} }),
@@ -230,6 +228,16 @@ describe("run command workflow", () => {
       explorationMode: "balanced",
       notifyWebhookUrl: "https://example.test/hook",
       notifyOn: ["completed"],
+      softHintsEnabled: undefined,
+      hintStyle: undefined,
+      runtimeSession: undefined,
+      seedBase: 1000,
+      experimentalAnnealingEnabled: false,
+      experimentalLevyScoutEnabled: false,
+      levyScoutAlpha: 1.5,
+      levyScoutScale: 0.2,
+      explorationCollapseGuard: false,
+      explorationCollapseAutoMitigation: false,
     });
     expect(run).toHaveBeenCalledWith("run-custom", 3);
     expect(close).toHaveBeenCalled();

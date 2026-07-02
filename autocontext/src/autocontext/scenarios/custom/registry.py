@@ -123,7 +123,9 @@ def _load_family_class(custom_dir: Path, name: str, marker: str) -> type[Any]:
         else:
             _auto_materialize_family_source(custom_dir, name, family.name)
 
-    cls = load_custom_scenario(custom_dir, name, family.interface_class)
+    # sys.modules keys scenario modules by name alone, not by custom_dir, so a stale or
+    # different-knowledge_root scenario sharing this name would otherwise be reused silently.
+    cls = load_custom_scenario(custom_dir, name, family.interface_class, force_reload=True)
     detected = detect_family(cls())
     if detected is None or detected.name != family.name:
         raise ImportError(

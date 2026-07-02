@@ -8,12 +8,15 @@ import { join } from "node:path";
 
 const CLI = join(import.meta.dirname, "..", "src", "cli", "index.ts");
 
-function runCli(args: string[]): { stdout: string; stderr: string; exitCode: number } {
+function runCli(
+  args: string[],
+  envOverrides: Record<string, string> = {},
+): { stdout: string; stderr: string; exitCode: number } {
   try {
     const stdout = execFileSync("npx", ["tsx", CLI, ...args], {
       encoding: "utf8",
       timeout: 15000,
-      env: { ...process.env, NODE_NO_WARNINGS: "1" },
+      env: { ...process.env, NODE_NO_WARNINGS: "1", ...envOverrides },
     });
     return { stdout, stderr: "", exitCode: 0 };
   } catch (err: unknown) {
@@ -21,6 +24,12 @@ function runCli(args: string[]): { stdout: string; stderr: string; exitCode: num
     return { stdout: e.stdout ?? "", stderr: e.stderr ?? "", exitCode: e.status ?? 1 };
   }
 }
+
+// buildRoleProviderBundle() routes each generation role (competitor/analyst/coach/...)
+// off settings.agentProvider, which only reads AUTOCONTEXT_AGENT_PROVIDER; the CLI
+// --provider flag alone only sets the top-level default provider, not per-role routing.
+// Both must be set for a fully offline deterministic run.
+const DETERMINISTIC_ENV = { AUTOCONTEXT_AGENT_PROVIDER: "deterministic" };
 
 describe("benchmark --provider flag", () => {
   it("benchmark --help mentions --provider", () => {
@@ -30,28 +39,42 @@ describe("benchmark --provider flag", () => {
   });
 
   it("benchmark --provider deterministic does not throw ERR_PARSE_ARGS_UNKNOWN_OPTION", () => {
-    const { stderr, exitCode } = runCli([
-      "benchmark",
-      "--scenario", "grid_ctf",
-      "--provider", "deterministic",
-      "--runs", "1",
-      "--gens", "1",
-      "--json",
-    ]);
+    const { stderr, exitCode } = runCli(
+      [
+        "benchmark",
+        "--scenario",
+        "grid_ctf",
+        "--provider",
+        "deterministic",
+        "--runs",
+        "1",
+        "--gens",
+        "1",
+        "--json",
+      ],
+      DETERMINISTIC_ENV,
+    );
     // Should NOT contain the parse args error
     expect(stderr).not.toContain("ERR_PARSE_ARGS_UNKNOWN_OPTION");
     expect(exitCode).toBe(0);
   });
 
   it("benchmark --provider deterministic --json returns valid results", () => {
-    const { stdout, exitCode } = runCli([
-      "benchmark",
-      "--scenario", "grid_ctf",
-      "--provider", "deterministic",
-      "--runs", "1",
-      "--gens", "1",
-      "--json",
-    ]);
+    const { stdout, exitCode } = runCli(
+      [
+        "benchmark",
+        "--scenario",
+        "grid_ctf",
+        "--provider",
+        "deterministic",
+        "--runs",
+        "1",
+        "--gens",
+        "1",
+        "--json",
+      ],
+      DETERMINISTIC_ENV,
+    );
     expect(exitCode).toBe(0);
     const result = JSON.parse(stdout);
     expect(result.scenario).toBe("grid_ctf");

@@ -19,7 +19,10 @@ function makeTempDir(): string {
   return mkdtempSync(join(tmpdir(), "ac-dash-"));
 }
 
-async function fetchJson(url: string, init?: RequestInit): Promise<{ status: number; body: unknown }> {
+async function fetchJson(
+  url: string,
+  init?: RequestInit,
+): Promise<{ status: number; body: unknown }> {
   const res = await fetch(url, init);
   const body = await res.json();
   return { status: res.status, body };
@@ -82,12 +85,14 @@ describe("Mission event protocol", () => {
 
   it("MissionProgressMsgSchema is in ServerMessageSchema", async () => {
     const { parseServerMessage } = await import("../src/server/protocol.js");
-    expect(() => parseServerMessage({
-      type: "mission_progress",
-      missionId: "m-1",
-      status: "active",
-      stepsCompleted: 1,
-    })).not.toThrow();
+    expect(() =>
+      parseServerMessage({
+        type: "mission_progress",
+        missionId: "m-1",
+        status: "active",
+        stepsCompleted: 1,
+      }),
+    ).not.toThrow();
   });
 });
 
@@ -97,8 +102,12 @@ describe("Mission event protocol", () => {
 
 describe("MissionEventEmitter", () => {
   let dir: string;
-  beforeEach(() => { dir = makeTempDir(); });
-  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+  beforeEach(() => {
+    dir = makeTempDir();
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   it("emits mission_created event", async () => {
     const { MissionEventEmitter } = await import("../src/mission/events.js");
@@ -163,8 +172,12 @@ describe("MissionEventEmitter", () => {
 
 describe("Mission API routes", () => {
   let dir: string;
-  beforeEach(() => { dir = makeTempDir(); });
-  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+  beforeEach(() => {
+    dir = makeTempDir();
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   it("buildMissionApiRoutes returns handlers for all endpoints", async () => {
     const { buildMissionApiRoutes } = await import("../src/server/mission-api.js");
@@ -244,9 +257,16 @@ describe("Mission dashboard integration", () => {
   let server: Awaited<ReturnType<typeof createMissionDashboardServer>>["server"];
   let baseUrl: string;
   let missionId: string;
+  let previousAgentProvider: string | undefined;
 
   beforeEach(async () => {
     dir = makeTempDir();
+    // createMissionDashboardServer()'s providerType: "deterministic" only sets the
+    // top-level default provider; buildRoleProviderBundle() routes each generation role
+    // off settings.agentProvider, which reads AUTOCONTEXT_AGENT_PROVIDER. Without this,
+    // mission planning/advancement requires a real ANTHROPIC_API_KEY.
+    previousAgentProvider = process.env.AUTOCONTEXT_AGENT_PROVIDER;
+    process.env.AUTOCONTEXT_AGENT_PROVIDER = "deterministic";
     const setup = await createMissionDashboardServer(dir);
     server = setup.server;
     baseUrl = setup.baseUrl;
@@ -256,6 +276,11 @@ describe("Mission dashboard integration", () => {
   afterEach(async () => {
     await server.stop();
     rmSync(dir, { recursive: true, force: true });
+    if (previousAgentProvider === undefined) {
+      delete process.env.AUTOCONTEXT_AGENT_PROVIDER;
+    } else {
+      process.env.AUTOCONTEXT_AGENT_PROVIDER = previousAgentProvider;
+    }
   });
 
   it("mounts mission REST endpoints on the live server", async () => {
@@ -272,15 +297,21 @@ describe("Mission dashboard integration", () => {
     expect((budget.body as Record<string, unknown>).stepsUsed).toBe(1);
 
     const artifacts = await fetchJson(`${baseUrl}/api/missions/${missionId}/artifacts`);
-    expect((artifacts.body as Record<string, unknown>).checkpointDir).toContain(`/missions/${missionId}/checkpoints`);
+    expect((artifacts.body as Record<string, unknown>).checkpointDir).toContain(
+      `/missions/${missionId}/checkpoints`,
+    );
   });
 
   it("mission operator controls work against the live server and write checkpoints", async () => {
-    const paused = await fetchJson(`${baseUrl}/api/missions/${missionId}/pause`, { method: "POST" });
+    const paused = await fetchJson(`${baseUrl}/api/missions/${missionId}/pause`, {
+      method: "POST",
+    });
     expect(paused.status).toBe(200);
     expect((paused.body as Record<string, unknown>).status).toBe("paused");
 
-    const resumed = await fetchJson(`${baseUrl}/api/missions/${missionId}/resume`, { method: "POST" });
+    const resumed = await fetchJson(`${baseUrl}/api/missions/${missionId}/resume`, {
+      method: "POST",
+    });
     expect((resumed.body as Record<string, unknown>).status).toBe("active");
 
     const advanced = await fetchJson(`${baseUrl}/api/missions/${missionId}/run`, {
@@ -295,7 +326,9 @@ describe("Mission dashboard integration", () => {
 
     const artifacts = await fetchJson(`${baseUrl}/api/missions/${missionId}/artifacts`);
     expect(Array.isArray((artifacts.body as Record<string, unknown>).checkpoints)).toBe(true);
-    expect(((artifacts.body as Record<string, unknown>).checkpoints as unknown[]).length).toBeGreaterThan(0);
+    expect(
+      ((artifacts.body as Record<string, unknown>).checkpoints as unknown[]).length,
+    ).toBeGreaterThan(0);
   });
 
   it("streams mission progress via WebSocket (AC-467: dashboard removed, API-only)", async () => {

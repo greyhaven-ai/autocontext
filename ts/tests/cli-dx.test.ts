@@ -35,6 +35,13 @@ function buildCliEnv(overrides: Record<string, string> = {}): NodeJS.ProcessEnv 
   for (const key of SANITIZED_ENV_KEYS) {
     delete env[key];
   }
+  // Default AUTOCONTEXT_CONFIG_DIR to a fresh, isolated directory unless the caller
+  // overrides it: without this, a test that forgets to pass its own configDir falls
+  // through to the real default (~/.config/autoctx) and its pass/fail would depend on
+  // whether the developer running the suite has ever run `autoctx login` for real.
+  if (!overrides.AUTOCONTEXT_CONFIG_DIR) {
+    env.AUTOCONTEXT_CONFIG_DIR = mkdtempSync(join(tmpdir(), "ac-cli-dx-config-"));
+  }
   return { ...env, ...overrides };
 }
 
@@ -80,7 +87,9 @@ async function runLongLivedCli(
     let sawOutput = false;
     const timeout = setTimeout(() => {
       child.kill("SIGTERM");
-      rejectPromise(new Error(`Timed out waiting for CLI output.\nstdout:\n${stdout}\nstderr:\n${stderr}`));
+      rejectPromise(
+        new Error(`Timed out waiting for CLI output.\nstdout:\n${stdout}\nstderr:\n${stderr}`),
+      );
     }, 15000);
 
     const maybeStop = () => {
@@ -109,7 +118,11 @@ async function runLongLivedCli(
         resolvePromise({ stdout, stderr, exitCode: code ?? 0 });
         return;
       }
-      rejectPromise(new Error(`CLI exited before producing startup output.\nstdout:\n${stdout}\nstderr:\n${stderr}`));
+      rejectPromise(
+        new Error(
+          `CLI exited before producing startup output.\nstdout:\n${stdout}\nstderr:\n${stderr}`,
+        ),
+      );
     });
   });
 }
@@ -129,7 +142,9 @@ async function runCliAsync(
     let stderr = "";
     const timeout = setTimeout(() => {
       child.kill("SIGTERM");
-      rejectPromise(new Error(`Timed out waiting for CLI completion.\nstdout:\n${stdout}\nstderr:\n${stderr}`));
+      rejectPromise(
+        new Error(`Timed out waiting for CLI completion.\nstdout:\n${stdout}\nstderr:\n${stderr}`),
+      );
     }, 15000);
 
     child.stdout.setEncoding("utf8");
@@ -175,7 +190,9 @@ async function runPromptedCli(
     let stdinClosed = false;
     const timeout = setTimeout(() => {
       child.kill("SIGTERM");
-      rejectPromise(new Error(`Timed out waiting for prompt flow.\nstdout:\n${stdout}\nstderr:\n${stderr}`));
+      rejectPromise(
+        new Error(`Timed out waiting for prompt flow.\nstdout:\n${stdout}\nstderr:\n${stderr}`),
+      );
     }, 15000);
 
     child.stdout.setEncoding("utf8");
@@ -215,8 +232,12 @@ async function runPromptedCli(
 
 describe("AC-393: autoctx init", () => {
   let dir: string;
-  beforeEach(() => { dir = makeTempDir(); });
-  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+  beforeEach(() => {
+    dir = makeTempDir();
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   it("help includes init command", () => {
     const { stdout } = runCli(["--help"]);
@@ -308,7 +329,15 @@ describe("AC-405: autoctx capabilities", () => {
       expect.arrayContaining(["Scenario", "Task", "Mission", "Campaign"]),
     );
     expect(caps.concept_model.runtime.map((entry: { name: string }) => entry.name)).toEqual(
-      expect.arrayContaining(["Run", "Step", "Verifier", "Artifact", "Knowledge", "Budget", "Policy"]),
+      expect.arrayContaining([
+        "Run",
+        "Step",
+        "Verifier",
+        "Artifact",
+        "Knowledge",
+        "Budget",
+        "Policy",
+      ]),
     );
   });
 
@@ -394,8 +423,12 @@ describe("AC-418: capabilities version", () => {
 
 describe("AC-407: credential management", () => {
   let dir: string;
-  beforeEach(() => { dir = makeTempDir(); });
-  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+  beforeEach(() => {
+    dir = makeTempDir();
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   it("help includes login command", () => {
     const { stdout } = runCli(["--help"]);
@@ -446,7 +479,15 @@ describe("AC-407: credential management", () => {
     const env = { AUTOCONTEXT_CONFIG_DIR: configDir };
 
     const { exitCode } = runCli(
-      ["login", "--provider", "anthropic", "--key", "!echo sk-test-shell", "--config-dir", configDir],
+      [
+        "login",
+        "--provider",
+        "anthropic",
+        "--key",
+        "!echo sk-test-shell",
+        "--config-dir",
+        configDir,
+      ],
       { env },
     );
     expect(exitCode).toBe(0);
@@ -454,19 +495,26 @@ describe("AC-407: credential management", () => {
     const store = JSON.parse(readFileSync(join(configDir, "credentials.json"), "utf-8"));
     expect(store.providers.anthropic.apiKey).toBe("!echo sk-test-shell");
 
-    const runResult = runCli(["run", "--provider", "anthropic", "--scenario", "nonexistent_scenario_xyz"], { env });
+    const runResult = runCli(
+      ["run", "--provider", "anthropic", "--scenario", "nonexistent_scenario_xyz"],
+      { env },
+    );
     expect(runResult.stderr).toContain("Unknown scenario: nonexistent_scenario_xyz");
     expect(runResult.stderr).not.toContain("ANTHROPIC_API_KEY");
   });
 
   it("login supports interactive prompts when flags are omitted", async () => {
     const configDir = join(dir, "config");
-    const { exitCode, stderr } = await runPromptedCli(["login", "--config-dir", configDir], [
-      { when: "Provider:", answer: "anthropic\n" },
-      { when: "API key:", answer: "sk-test-interactive\n" },
-    ], {
-      env: { AUTOCONTEXT_CONFIG_DIR: configDir },
-    });
+    const { exitCode, stderr } = await runPromptedCli(
+      ["login", "--config-dir", configDir],
+      [
+        { when: "Provider:", answer: "anthropic\n" },
+        { when: "API key:", answer: "sk-test-interactive\n" },
+      ],
+      {
+        env: { AUTOCONTEXT_CONFIG_DIR: configDir },
+      },
+    );
 
     expect(exitCode).toBe(0);
     expect(stderr).toContain("Provider:");
@@ -501,17 +549,20 @@ describe("AC-407: credential management", () => {
         throw new Error("Expected Ollama test server to bind to a TCP port");
       }
 
-      const { exitCode, stdout } = await runCliAsync([
-        "login",
-        "--provider",
-        "ollama",
-        "--base-url",
-        `http://127.0.0.1:${address.port}/v1/`,
-        "--config-dir",
-        configDir,
-      ], {
-        env: { AUTOCONTEXT_CONFIG_DIR: configDir },
-      });
+      const { exitCode, stdout } = await runCliAsync(
+        [
+          "login",
+          "--provider",
+          "ollama",
+          "--base-url",
+          `http://127.0.0.1:${address.port}/v1/`,
+          "--config-dir",
+          configDir,
+        ],
+        {
+          env: { AUTOCONTEXT_CONFIG_DIR: configDir },
+        },
+      );
 
       expect(exitCode).toBe(0);
       expect(stdout).toContain(`Connected to Ollama at http://127.0.0.1:${address.port}`);
@@ -535,10 +586,18 @@ describe("AC-407: credential management", () => {
   it("logout removes stored credentials", () => {
     const configDir = join(dir, "config");
     mkdirSync(configDir, { recursive: true });
-    writeFileSync(join(configDir, "credentials.json"), JSON.stringify({
-      provider: "anthropic",
-      apiKey: "sk-test-logout",
-    }, null, 2), "utf-8");
+    writeFileSync(
+      join(configDir, "credentials.json"),
+      JSON.stringify(
+        {
+          provider: "anthropic",
+          apiKey: "sk-test-logout",
+        },
+        null,
+        2,
+      ),
+      "utf-8",
+    );
 
     const { stdout, exitCode } = runCli(["logout", "--config-dir", configDir], {
       env: { AUTOCONTEXT_CONFIG_DIR: configDir },
@@ -550,15 +609,12 @@ describe("AC-407: credential management", () => {
   });
 
   it("uses environment variables before CLI provider flags", () => {
-    const { stderr, exitCode } = runCli([
-      "run",
-      "--provider",
-      "anthropic",
-      "--scenario",
-      "nonexistent_scenario_xyz",
-    ], {
-      env: { AUTOCONTEXT_AGENT_PROVIDER: "deterministic" },
-    });
+    const { stderr, exitCode } = runCli(
+      ["run", "--provider", "anthropic", "--scenario", "nonexistent_scenario_xyz"],
+      {
+        env: { AUTOCONTEXT_AGENT_PROVIDER: "deterministic" },
+      },
+    );
 
     expect(exitCode).toBe(1);
     expect(stderr).toContain("Unknown scenario: nonexistent_scenario_xyz");
@@ -573,13 +629,10 @@ describe("AC-407: credential management", () => {
       knowledge_dir: "./knowledge",
     });
 
-    const { stderr, exitCode } = runCli([
-      "run",
-      "--provider",
-      "anthropic",
-      "--scenario",
-      "nonexistent_scenario_xyz",
-    ], { cwd: dir });
+    const { stderr, exitCode } = runCli(
+      ["run", "--provider", "anthropic", "--scenario", "nonexistent_scenario_xyz"],
+      { cwd: dir },
+    );
 
     expect(exitCode).toBe(1);
     expect(stderr).toContain("ANTHROPIC_API_KEY");
@@ -594,16 +647,20 @@ describe("AC-407: credential management", () => {
       runs_dir: "./runs",
       knowledge_dir: "./knowledge",
     });
-    writeFileSync(join(configDir, "credentials.json"), JSON.stringify({
-      provider: "anthropic",
-      apiKey: "sk-test-store",
-    }, null, 2), "utf-8");
+    writeFileSync(
+      join(configDir, "credentials.json"),
+      JSON.stringify(
+        {
+          provider: "anthropic",
+          apiKey: "sk-test-store",
+        },
+        null,
+        2,
+      ),
+      "utf-8",
+    );
 
-    const { stderr, exitCode } = runCli([
-      "run",
-      "--scenario",
-      "nonexistent_scenario_xyz",
-    ], {
+    const { stderr, exitCode } = runCli(["run", "--scenario", "nonexistent_scenario_xyz"], {
       cwd: dir,
       env: { AUTOCONTEXT_CONFIG_DIR: configDir },
     });
@@ -649,11 +706,8 @@ describe("runtime session run inspection", () => {
       mkdirSync(join(dir, "runs"), { recursive: true });
 
       const { SQLiteStore } = await import("../src/storage/index.js");
-      const {
-        RuntimeSessionEventLog,
-        RuntimeSessionEventStore,
-        RuntimeSessionEventType,
-      } = await import("../src/session/runtime-events.js");
+      const { RuntimeSessionEventLog, RuntimeSessionEventStore, RuntimeSessionEventType } =
+        await import("../src/session/runtime-events.js");
       const { runtimeSessionIdForRun } = await import("../src/session/runtime-session-ids.js");
 
       const store = new SQLiteStore(dbPath);
@@ -768,11 +822,8 @@ describe("runtime session run inspection", () => {
       const dbPath = join(dir, "runs", "autocontext.sqlite3");
       mkdirSync(join(dir, "runs"), { recursive: true });
 
-      const {
-        RuntimeSessionEventLog,
-        RuntimeSessionEventStore,
-        RuntimeSessionEventType,
-      } = await import("../src/session/runtime-events.js");
+      const { RuntimeSessionEventLog, RuntimeSessionEventStore, RuntimeSessionEventType } =
+        await import("../src/session/runtime-events.js");
       const { runtimeSessionIdForRun } = await import("../src/session/runtime-session-ids.js");
 
       const eventStore = new RuntimeSessionEventStore(dbPath);
@@ -850,18 +901,19 @@ describe("AC-423: replay generation info", () => {
         seed: 1003,
         narrative: "Blue secured the relay point.",
       };
-      writeFileSync(join(replayDir1, "grid_ctf_1.json"), JSON.stringify({ scenario: "grid_ctf", seed: 1001 }), "utf-8");
+      writeFileSync(
+        join(replayDir1, "grid_ctf_1.json"),
+        JSON.stringify({ scenario: "grid_ctf", seed: 1001 }),
+        "utf-8",
+      );
       writeFileSync(join(replayDir3, "grid_ctf_3.json"), JSON.stringify(payload), "utf-8");
 
-      const { stdout, stderr, exitCode } = runCli([
-        "replay",
-        "--run-id",
-        "run-123",
-        "--generation",
-        "3",
-      ], {
-        env: { AUTOCONTEXT_RUNS_ROOT: runsRoot },
-      });
+      const { stdout, stderr, exitCode } = runCli(
+        ["replay", "--run-id", "run-123", "--generation", "3"],
+        {
+          env: { AUTOCONTEXT_RUNS_ROOT: runsRoot },
+        },
+      );
 
       expect(exitCode).toBe(0);
       expect(stderr).toContain("Replaying generation 3. Available generations: 1, 3");
@@ -919,17 +971,16 @@ describe("AC-424: export-training-data", () => {
       store.appendAgentOutput("cli-progress", 1, "competitor", '{"aggression": 0.6}');
       store.close();
 
-      const { stdout, stderr, exitCode } = runCli([
-        "export-training-data",
-        "--run-id",
-        "cli-progress",
-      ], {
-        env: {
-          AUTOCONTEXT_DB_PATH: dbPath,
-          AUTOCONTEXT_RUNS_ROOT: runsRoot,
-          AUTOCONTEXT_KNOWLEDGE_ROOT: knowledgeRoot,
+      const { stdout, stderr, exitCode } = runCli(
+        ["export-training-data", "--run-id", "cli-progress"],
+        {
+          env: {
+            AUTOCONTEXT_DB_PATH: dbPath,
+            AUTOCONTEXT_RUNS_ROOT: runsRoot,
+            AUTOCONTEXT_KNOWLEDGE_ROOT: knowledgeRoot,
+          },
         },
-      });
+      );
 
       expect(exitCode).toBe(0);
       expect(stderr).toContain("Exporting training data for run cli-progress...");
