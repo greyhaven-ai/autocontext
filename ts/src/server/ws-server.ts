@@ -44,6 +44,7 @@ import { buildSessionBootstrapMessages, buildStateMessage } from "./websocket-se
 import {
   loadReplayArtifactResponse,
   type RunSimulationReadDeps,
+  type RunSimulationReadDepsWithPlaybook,
 } from "./run-simulation-read-workflow.js";
 import type { HttpRouteContext } from "./routes/http-route-context.js";
 import { tryRootRoutes } from "./routes/root-routes.js";
@@ -301,7 +302,7 @@ export class InteractiveServer {
       openStore,
       loadReplayArtifactResponse,
     };
-    const playbookDeps: RunSimulationReadDeps = {
+    const playbookDeps: RunSimulationReadDepsWithPlaybook = {
       openStore,
       readPlaybook: (playbookScenario, roots) => {
         const artifacts = new ArtifactStore(roots);
