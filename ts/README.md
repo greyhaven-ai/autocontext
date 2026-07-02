@@ -12,6 +12,8 @@ bun add -g autoctx
 npm install -g autoctx
 ```
 
+Important: use `autoctx`, not `autocontext`. `autocontext` on npm is a different package and not this project.
+
 From a checkout:
 
 ```bash
@@ -34,6 +36,10 @@ AUTOCONTEXT_AGENT_PROVIDER=openai-compatible AUTOCONTEXT_AGENT_BASE_URL=http://l
 AUTOCONTEXT_AGENT_PROVIDER=pi AUTOCONTEXT_PI_COMMAND=pi autoctx solve "..." --iterations 3
 ```
 
+`ANTHROPIC_API_KEY` is the preferred Anthropic credential env var; `AUTOCONTEXT_ANTHROPIC_API_KEY` remains supported as a compatibility alias.
+
+Supported providers: `anthropic`, `openai`, `openai-compatible`, `gemini`, `mistral`, `groq`, `openrouter`, `azure-openai`, `ollama`, `vllm`, `hermes`, `claude-cli`, `codex`, `pi`, `pi-rpc`, `deterministic`.
+
 Provider routing details live in [../autocontext/docs/agent-integration.md](../autocontext/docs/agent-integration.md).
 
 ## CLI surfaces
@@ -41,7 +47,7 @@ Provider routing details live in [../autocontext/docs/agent-integration.md](../a
 | Command                                                | Purpose                                                      |
 | ------------------------------------------------------ | ------------------------------------------------------------ |
 | `autoctx solve "..." --iterations 3`                   | Generate and run a scenario from a plain-language goal       |
-| `autoctx run <scenario> --iterations 3`                | Run a saved scenario                                         |
+| `autoctx run --scenario <name> --iterations 3`         | Run a saved scenario                                         |
 | `autoctx simulate -d "..."`                            | Build/replay/compare simulations                             |
 | `autoctx investigate -d "..."`                         | Evidence-driven diagnosis                                    |
 | `autoctx analyze --id <id> --type <kind>`              | Inspect runs, simulations, investigations, or missions       |
@@ -49,6 +55,10 @@ Provider routing details live in [../autocontext/docs/agent-integration.md](../a
 | `autoctx mission run --id <id> --max-iterations 3`     | Execute a mission                                            |
 | `autoctx queue add --task-prompt "..." --rubric "..."` | Add evaluation/improvement work                              |
 | `autoctx runtime-sessions timeline --run-id <run_id>`  | Inspect provider/tool/child-task timelines                   |
+| `autoctx benchmark --scenario <name> --runs 5`         | Run a scenario repeatedly and summarize outcomes             |
+| `autoctx export <run_id> --output pkg.json`            | Export a run's playbook/skills as a portable package         |
+| `autoctx import-package --file pkg.json`               | Import a portable knowledge package                          |
+| `autoctx new-scenario --description "..."`             | Generate a scenario from a plain-language description        |
 | `autoctx mcp-serve`                                    | Expose MCP tools                                             |
 | `autoctx tui`                                          | Start the terminal UI                                        |
 | `autoctx train --scenario <name> --dataset <jsonl>`    | Validate training input and call an injected training runner |
@@ -56,13 +66,21 @@ Provider routing details live in [../autocontext/docs/agent-integration.md](../a
 
 `train` is a validation/executor-hook surface in TypeScript; end-to-end MLX/CUDA training lives in the Python package unless your application injects a real `TrainingRunner`.
 
+## Python-Only commands
+
+These workflows require infrastructure not shipped in the npm package: `ecosystem`
+(multi-provider cycling), `ab-test` (requires the ecosystem runner), `resume` /
+`wait` (run recovery infrastructure), and `trigger-distillation` (training
+pipeline). They are available via `pip install autocontext`; the npm package's
+`train` command is a validation/executor-hook surface only.
+
 ## MCP and control plane
 
 ```bash
 autoctx mcp-serve
 ```
 
-The MCP server exposes scenario/run/knowledge/evaluation/feedback/solve/sandbox/export tools. Python and TypeScript share the same high-level vocabulary; parity details are tracked in [../docs/scenario-parity-matrix.md](../docs/scenario-parity-matrix.md).
+The MCP server exposes 40+ tools across scenarios, runs, knowledge, evaluation, feedback, solve (`solve_scenario`, `solve_status`, `solve_result`), sandbox (`sandbox_create`, `sandbox_run`, `sandbox_status`, ...), export, and discovery (`capabilities`). Python and TypeScript share the same high-level vocabulary; parity details are tracked in [../docs/scenario-parity-matrix.md](../docs/scenario-parity-matrix.md).
 
 ## Library usage
 
@@ -154,6 +172,11 @@ Reference docs moved out of this README:
 - [../docs/fetch-conformance.md](../docs/fetch-conformance.md)
 - [../docs/fetch-troubleshooting.md](../docs/fetch-troubleshooting.md)
 - [../docs/edge-runtime-compatibility.md](../docs/edge-runtime-compatibility.md)
+
+Runnable examples: [`examples/fetch-conformance-host-wrapper.ts`](examples/fetch-conformance-host-wrapper.ts)
+(typed executable wrapper) and
+[`examples/generated-fetch-runtime-factory-packaging.ts`](examples/generated-fetch-runtime-factory-packaging.ts)
+(generic Fetch/ESM packaging).
 
 ## Contract probes
 
