@@ -71,4 +71,4 @@ def test_release_manifest_checks_package_version_files() -> None:
 
     assert "autocontext/src/autocontext/__init__.py version 0.10.0 != manifest 9.9.9" in issues
     assert "pi/package.json version 0.8.0 != manifest 0.9.0" in issues
-    assert "pi/package.json autoctx dependency ^0.8.0 != manifest ^0.9.0" in issues
+    assert "pi/package.json autoctx dependency ^0.10.0 != manifest ^0.9.0" in issues

@@ -198,7 +198,7 @@
     "vitest": "^3.0.0"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.90.0",
+    "@anthropic-ai/sdk": "^0.91.1",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "ajv": "^8.18.0",
     "ajv-formats": "^3.0.1",
