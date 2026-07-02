@@ -27,7 +27,7 @@
     "typebox": "*"
   },
   "dependencies": {
-    "autoctx": "^0.8.0"
+    "autoctx": "^0.10.0"
   },
   "devDependencies": {
     "@earendil-works/pi-ai": "^0.79.0",
