@@ -1,4 +1,5 @@
 """End-to-end integration tests for ecosystem loop."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -157,20 +158,29 @@ def test_ecosystem_cli_runs_deterministic(tmp_path: Path, monkeypatch: object) -
     mp.setenv("AUTOCONTEXT_RUNS_ROOT", str(tmp_path / "runs"))
     mp.setenv("AUTOCONTEXT_KNOWLEDGE_ROOT", str(tmp_path / "knowledge"))
     mp.setenv("AUTOCONTEXT_SKILLS_ROOT", str(tmp_path / "skills"))
+    mp.setenv("AUTOCONTEXT_CLAUDE_SKILLS_PATH", str(tmp_path / ".claude" / "skills"))
     mp.setenv("AUTOCONTEXT_EVENT_STREAM_PATH", str(tmp_path / "runs" / "events.ndjson"))
     mp.setenv("AUTOCONTEXT_MATCHES_PER_GENERATION", "2")
 
     runner = CliRunner()
-    result = runner.invoke(app, [
-        "ecosystem",
-        "--scenario", "grid_ctf",
-        "--cycles", "1",
-        "--gens-per-cycle", "1",
-        "--provider-a", "deterministic",
-        "--provider-b", "deterministic",
-        "--no-rlm-a",
-        "--no-rlm-b",
-    ])
+    result = runner.invoke(
+        app,
+        [
+            "ecosystem",
+            "--scenario",
+            "grid_ctf",
+            "--cycles",
+            "1",
+            "--gens-per-cycle",
+            "1",
+            "--provider-a",
+            "deterministic",
+            "--provider-b",
+            "deterministic",
+            "--no-rlm-a",
+            "--no-rlm-b",
+        ],
+    )
     assert result.exit_code == 0, f"CLI failed: {result.output}"
     assert "Ecosystem Summary" in result.output
     assert "Score Trajectory" in result.output

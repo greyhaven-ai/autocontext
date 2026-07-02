@@ -21,6 +21,9 @@ node_modules/
 
 # Local agent / superpowers workflow artifacts
 .claude/projects/
+# Runtime-synced skill symlinks (absolute paths, machine-specific; see
+# ArtifactStore.sync_skills_to_claude)
+autocontext/.claude/skills/
 .pi/
 .pi-lens/
 /superpowers/
