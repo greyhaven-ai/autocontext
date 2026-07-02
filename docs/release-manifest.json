@@ -1,7 +1,7 @@
 {
   "core_version": "0.10.0",
   "pi_version": "0.8.0",
-  "pi_autoctx_dependency": "^0.8.0",
+  "pi_autoctx_dependency": "^0.10.0",
   "whats_new": [
     "**Scaled training plans** add default-off CUDA/TRL profiles for 7B QLoRA RLVR and sharded 32B/72B distillation across Python and TypeScript.",
     "**Training scale metadata** records device count, sharding, memory budgets, quantization, parameter count, and deployment VRAM for registry gating.",
