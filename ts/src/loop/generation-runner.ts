@@ -11,6 +11,7 @@
  */
 
 import type { CompletionResult, LLMProvider } from "../types/index.js";
+import type { RunId } from "../domain/ids.js";
 import type { ScenarioInterface } from "../scenarios/game-interface.js";
 import type { SQLiteStore } from "../storage/index.js";
 import { TournamentRunner } from "../execution/tournament.js";
@@ -133,7 +134,7 @@ export interface GenerationRunnerOpts {
 }
 
 export interface RunResult {
-  runId: string;
+  runId: RunId;
   generationsCompleted: number;
   bestScore: number;
   currentElo: number;
@@ -254,7 +255,7 @@ export class GenerationRunner {
     this.#runtimeSession = opts.runtimeSession;
   }
 
-  async run(runId: string, generations: number): Promise<RunResult> {
+  async run(runId: RunId, generations: number): Promise<RunResult> {
     this.emitHook(HookEvents.RUN_START, {
       run_id: runId,
       scenario: this.#scenario.name,
@@ -284,7 +285,7 @@ export class GenerationRunner {
   }
 
   private async runGeneration(
-    runId: string,
+    runId: RunId,
     orchestration: GenerationLoopOrchestration,
   ): Promise<GenerationLoopOrchestration> {
     await this.#controller?.waitIfPaused();
@@ -357,7 +358,7 @@ export class GenerationRunner {
 
   private async runGenerationAttempt(
     attemptOrchestration: GenerationAttemptOrchestration,
-    runId: string,
+    runId: RunId,
     generation: number,
   ): Promise<{
     attemptOrchestration: GenerationAttemptOrchestration;
@@ -411,7 +412,7 @@ export class GenerationRunner {
   }
 
   private async finalizeSuccessfulRun(
-    runId: string,
+    runId: RunId,
     orchestration: GenerationLoopOrchestration,
   ): Promise<RunResult> {
     this.#store.updateRunStatus(runId, "completed");
@@ -450,7 +451,7 @@ export class GenerationRunner {
   }
 
   private async handleRunFailure(
-    runId: string,
+    runId: RunId,
     orchestration: GenerationLoopOrchestration,
     error: unknown,
   ): Promise<never> {
@@ -477,7 +478,7 @@ export class GenerationRunner {
     throw error;
   }
 
-  private buildCompetitorPrompt(runId: string, generation: number): string {
+  private buildCompetitorPrompt(runId: RunId, generation: number): string {
     const consumedHint = consumeFreshStartHint(this.#runState!);
     this.#runState = consumedHint.state;
     const freshStartHint = consumedHint.hint;
@@ -519,7 +520,7 @@ export class GenerationRunner {
   }
 
   private applyContextComponentsHook(
-    runId: string,
+    runId: RunId,
     generation: number,
     role: string,
     components: Record<string, string>,
@@ -535,7 +536,7 @@ export class GenerationRunner {
   }
 
   private compactPromptComponentsForRun(
-    runId: string,
+    runId: RunId,
     generation: number,
     components: Record<string, string>,
   ): Record<string, string> {
@@ -581,7 +582,7 @@ export class GenerationRunner {
 
   private buildSupportPrompt(
     role: "analyst" | "coach",
-    runId: string,
+    runId: RunId,
     generation: number,
     attempt: GenerationAttempt,
   ): string {
@@ -612,7 +613,7 @@ export class GenerationRunner {
   }
 
   private buildCuratorPrompt(
-    runId: string,
+    runId: RunId,
     currentPlaybook: string,
     proposedPlaybook: string,
     attempt: GenerationAttempt,
@@ -659,7 +660,7 @@ export class GenerationRunner {
   }
 
   private async runSupportRoles(
-    runId: string,
+    runId: RunId,
     gen: number,
     attempt: GenerationAttempt,
   ): Promise<void> {
@@ -763,7 +764,7 @@ export class GenerationRunner {
     }
   }
 
-  private async runCuratorConsolidation(runId: string, gen: number): Promise<void> {
+  private async runCuratorConsolidation(runId: RunId, gen: number): Promise<void> {
     if (this.#requirePlaybookApproval) return;
     const playbook = this.#artifactStore.readPlaybook(this.#scenario.name);
     if (!playbook || playbook === EMPTY_PLAYBOOK_SENTINEL) return;
@@ -803,7 +804,7 @@ export class GenerationRunner {
   }
 
   private async applyAdvancedFeatures(
-    runId: string,
+    runId: RunId,
     gen: number,
     attempt: GenerationAttempt,
     previousBestForGeneration: number,
@@ -842,7 +843,7 @@ export class GenerationRunner {
     this.persistExplorationCollapseGuard(runId, gen);
   }
 
-  private persistExplorationCollapseGuard(runId: string, gen: number): void {
+  private persistExplorationCollapseGuard(runId: RunId, gen: number): void {
     if (!this.#explorationCollapseGuard) return;
     const playbook = this.#artifactStore.readPlaybook(this.#scenario.name).trim();
     if (!playbook || playbook === EMPTY_PLAYBOOK_SENTINEL) return;
@@ -874,7 +875,7 @@ export class GenerationRunner {
 
   private async notify(
     type: EventType,
-    runId: string,
+    runId: RunId,
     score: number,
     extras: {
       previousBest?: number;
@@ -901,7 +902,7 @@ export class GenerationRunner {
   }
 
   private applyContextHook(
-    runId: string,
+    runId: RunId,
     generation: number,
     roles: Record<string, string>,
   ): Record<string, string> {
@@ -928,7 +929,7 @@ export class GenerationRunner {
   }
 
   private emitRoleCompleted(
-    runId: string,
+    runId: RunId,
     generation: number,
     role: "competitor" | "analyst" | "coach" | "curator",
     startedAt: number,

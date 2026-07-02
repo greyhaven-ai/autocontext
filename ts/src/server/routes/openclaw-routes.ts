@@ -3,6 +3,7 @@
  */
 
 import type { OpenClawApiRoutes } from "../openclaw-api.js";
+import { asScenarioName } from "../../domain/ids.js";
 import type { HttpRouteContext } from "./http-route-context.js";
 
 export async function tryOpenClawRoutes(
@@ -104,7 +105,9 @@ export async function tryOpenClawRoutes(
   );
   if (ctx.method === "GET" && openClawScenarioArtifactsMatch) {
     const [, rawScenarioName] = openClawScenarioArtifactsMatch;
-    const response = openClawApi.discoveryScenarioArtifacts(decodeURIComponent(rawScenarioName!));
+    const response = openClawApi.discoveryScenarioArtifacts(
+      asScenarioName(decodeURIComponent(rawScenarioName!)),
+    );
     ctx.json(response.status, response.body);
     return true;
   }
@@ -113,7 +116,9 @@ export async function tryOpenClawRoutes(
   const openClawScenarioMatch = ctx.url.match(/^\/api\/openclaw\/discovery\/scenario\/([^/]+)$/);
   if (ctx.method === "GET" && openClawScenarioMatch) {
     const [, rawScenarioName] = openClawScenarioMatch;
-    const response = openClawApi.discoveryScenario(decodeURIComponent(rawScenarioName!));
+    const response = openClawApi.discoveryScenario(
+      asScenarioName(decodeURIComponent(rawScenarioName!)),
+    );
     ctx.json(response.status, response.body);
     return true;
   }

@@ -1,3 +1,5 @@
+import { asRunId } from "../domain/ids.js";
+
 export const BENCHMARK_HELP_TEXT = `autoctx benchmark — Run benchmark (multiple runs, aggregate stats)
 
 Usage: autoctx benchmark [options]
@@ -105,7 +107,7 @@ export async function executeBenchmarkCommandWorkflow<
           runsRoot: opts.runsRoot,
           knowledgeRoot: opts.knowledgeRoot,
         });
-        const result = await runner.run(`bench_${now()}_${i}`, opts.plan.numGens);
+        const result = await runner.run(asRunId(`bench_${now()}_${i}`), opts.plan.numGens);
         scores.push(result.bestScore);
       } finally {
         store.close();

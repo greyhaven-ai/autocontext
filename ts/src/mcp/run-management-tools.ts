@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type { LLMProvider } from "../types/index.js";
+import { asRunId } from "../domain/ids.js";
 import { ArtifactStore } from "../knowledge/artifact-store.js";
 import { GenerationRunner } from "../loop/generation-runner.js";
 import { assertFamilyContract } from "../scenarios/family-interfaces.js";
@@ -232,7 +233,7 @@ export function registerRunManagementTools(
         return jsonText(buildRunScenarioUnknownPayload(args.scenario));
       }
 
-      const runId = args.runId ?? internals.createRunId();
+      const runId = asRunId(args.runId ?? internals.createRunId());
       const scenario = new ScenarioClass();
       internals.assertFamilyContract(scenario, "game", `scenario '${args.scenario}'`);
       const runner = internals.createRunner({

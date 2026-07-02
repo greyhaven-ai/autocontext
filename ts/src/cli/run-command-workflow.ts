@@ -1,3 +1,4 @@
+import { asRunId } from "../domain/ids.js";
 import type { HookBus } from "../extensions/index.js";
 
 export const RUN_HELP_TEXT = `autoctx run — Run the generation loop for a scenario
@@ -122,11 +123,13 @@ export interface AgentTaskRunStore {
   close(): void;
 }
 
-export async function executeAgentTaskRunCommandWorkflow<TProviderBundle extends {
-  defaultProvider: unknown;
-  defaultConfig: { providerType: string };
-  close?: () => void;
-}>(opts: {
+export async function executeAgentTaskRunCommandWorkflow<
+  TProviderBundle extends {
+    defaultProvider: unknown;
+    defaultConfig: { providerType: string };
+    close?: () => void;
+  },
+>(opts: {
   plan: RunCommandPlan;
   providerBundle: TProviderBundle;
   spec: Record<string, unknown>;
@@ -138,15 +141,20 @@ export async function executeAgentTaskRunCommandWorkflow<TProviderBundle extends
 }): Promise<RunCommandResult> {
   const provider = opts.providerBundle.defaultConfig.providerType;
   const migrationsDir = opts.migrationsDir;
-  const store = opts.createStore && opts.dbPath && opts.migrationsDir
-    ? opts.createStore(opts.dbPath)
-    : null;
+  const store =
+    opts.createStore && opts.dbPath && opts.migrationsDir ? opts.createStore(opts.dbPath) : null;
 
   try {
     if (store && migrationsDir) {
       store.migrate(migrationsDir);
     }
-    store?.createRun(opts.plan.runId, opts.plan.scenarioName, opts.plan.gens, "agent_task", provider);
+    store?.createRun(
+      opts.plan.runId,
+      opts.plan.scenarioName,
+      opts.plan.gens,
+      "agent_task",
+      provider,
+    );
 
     const result = await opts.executeAgentTaskSolve({
       provider: opts.providerBundle.defaultProvider,
@@ -246,12 +254,17 @@ export async function executeRunCommandWorkflow<
     close?: () => void;
   },
   TStore extends { migrate(path: string): void; close(): void },
-  TRunner extends { run(runId: string, gens: number): Promise<{
-    runId: string;
-    generationsCompleted: number;
-    bestScore: number;
-    currentElo: number;
-  }> },
+  TRunner extends {
+    run(
+      runId: string,
+      gens: number,
+    ): Promise<{
+      runId: string;
+      generationsCompleted: number;
+      bestScore: number;
+      currentElo: number;
+    }>;
+  },
   TScenario,
 >(opts: {
   dbPath: string;
@@ -264,43 +277,47 @@ export async function executeRunCommandWorkflow<
   ScenarioClass: new () => TScenario;
   assertFamilyContract: (scenario: TScenario, family: "game", label: string) => void;
   createStore: (dbPath: string) => TStore;
-  createRunner: (opts: {
-    provider: TProviderBundle["defaultProvider"];
-    roleProviders: TProviderBundle["roleProviders"];
-    roleModels: TProviderBundle["roleModels"];
-    scenario: TScenario;
-    store: TStore;
-    runsRoot: string;
-    knowledgeRoot: string;
-    matchesPerGeneration: number;
-    maxRetries: number;
-    minDelta: number;
-    playbookMaxVersions: number;
-    contextBudgetTokens: number;
-    curatorEnabled: boolean;
-    curatorConsolidateEveryNGens: number;
-    softHintsEnabled: boolean;
-    hintStyle: string;
-    skillMaxLessons: number;
-    deadEndTrackingEnabled: boolean;
-    deadEndMaxEntries: number;
-    stagnationResetEnabled: boolean;
-    stagnationRollbackThreshold: number;
-    stagnationPlateauWindow: number;
-    stagnationPlateauEpsilon: number;
-    stagnationDistillTopLessons: number;
-    explorationMode: unknown;
-    seedBase?: number;
-    experimentalAnnealingEnabled?: boolean;
-    experimentalLevyScoutEnabled?: boolean;
-    levyScoutAlpha?: number;
-    levyScoutScale?: number;
-    explorationCollapseGuard?: boolean;
-    explorationCollapseAutoMitigation?: boolean;
-    notifyWebhookUrl: unknown;
-    notifyOn: unknown;
-    runtimeSession?: TProviderBundle["runtimeSession"];
-  } | Record<string, unknown>) => TRunner;
+  createRunner: (
+    opts:
+      | {
+          provider: TProviderBundle["defaultProvider"];
+          roleProviders: TProviderBundle["roleProviders"];
+          roleModels: TProviderBundle["roleModels"];
+          scenario: TScenario;
+          store: TStore;
+          runsRoot: string;
+          knowledgeRoot: string;
+          matchesPerGeneration: number;
+          maxRetries: number;
+          minDelta: number;
+          playbookMaxVersions: number;
+          contextBudgetTokens: number;
+          curatorEnabled: boolean;
+          curatorConsolidateEveryNGens: number;
+          softHintsEnabled: boolean;
+          hintStyle: string;
+          skillMaxLessons: number;
+          deadEndTrackingEnabled: boolean;
+          deadEndMaxEntries: number;
+          stagnationResetEnabled: boolean;
+          stagnationRollbackThreshold: number;
+          stagnationPlateauWindow: number;
+          stagnationPlateauEpsilon: number;
+          stagnationDistillTopLessons: number;
+          explorationMode: unknown;
+          seedBase?: number;
+          experimentalAnnealingEnabled?: boolean;
+          experimentalLevyScoutEnabled?: boolean;
+          levyScoutAlpha?: number;
+          levyScoutScale?: number;
+          explorationCollapseGuard?: boolean;
+          explorationCollapseAutoMitigation?: boolean;
+          notifyWebhookUrl: unknown;
+          notifyOn: unknown;
+          runtimeSession?: TProviderBundle["runtimeSession"];
+        }
+      | Record<string, unknown>,
+  ) => TRunner;
 }): Promise<RunCommandResult> {
   const scenario = new opts.ScenarioClass();
   opts.assertFamilyContract(scenario, "game", `scenario '${opts.plan.scenarioName}'`);
@@ -345,7 +362,7 @@ export async function executeRunCommandWorkflow<
       notifyOn: opts.settings.notifyOn,
       runtimeSession: opts.providerBundle.runtimeSession,
     });
-    const result = await runner.run(opts.plan.runId, opts.plan.gens);
+    const result = await runner.run(asRunId(opts.plan.runId), opts.plan.gens);
     const provider = opts.providerBundle.defaultConfig.providerType;
     return {
       ...result,
