@@ -148,13 +148,20 @@ def build_evaluator_guardrail_payload(
     config: TaskConfig,
     *,
     reference_context: str | None = None,
+    state: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
-    """Run live evaluator guardrails on the best output when enabled."""
+    """Run live evaluator guardrails on the best output when enabled.
+
+    ``state`` should be the same prepared/validated state the
+    ``ImprovementLoop`` ran against so the guardrail re-evaluates the best
+    output under identical context. When omitted it falls back to a fresh
+    ``task.initial_state()``.
+    """
     if config.judge_samples <= 1 and not config.judge_bias_probes_enabled:
         return None
     evaluation = task.evaluate_output(
         output,
-        task.initial_state(),
+        task.initial_state() if state is None else state,
         reference_context=reference_context,
         required_concepts=config.required_concepts,
         calibration_examples=config.calibration_examples,
