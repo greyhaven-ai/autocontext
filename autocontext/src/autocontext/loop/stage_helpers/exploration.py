@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 
 # Avoid circular: import at function call site if needed
@@ -9,28 +10,42 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from autocontext.harness.core.types import RoleExecution
+from autocontext.harness.evaluation.dimensional import detect_dimension_regression
 from autocontext.harness.evaluation.runner import EvaluationRunner
 from autocontext.harness.evaluation.scenario_evaluator import ScenarioEvaluator
 from autocontext.harness.evaluation.types import EvaluationLimits as HarnessLimits
+from autocontext.harness.evaluation.types import EvaluationSummary
+from autocontext.harness.pipeline.trend_gate import TrendAwareGate
+from autocontext.knowledge.rapid_gate import rapid_gate
+from autocontext.loop.cost_control import CostPolicy, evaluate_cost_effectiveness
 from autocontext.loop.exploration import (
     BasinCandidate,
     BranchRecord,
     DivergentCompetitorConfig,
     MultiBasinConfig,
+    NoveltyConfig,
+    apply_novelty_bonus,
+    compute_novelty_score,
     generate_basin_candidates,
     should_spawn_divergent,
     should_trigger_multi_basin,
 )
-from autocontext.loop.stage_helpers.tournament_prep import _build_live_opponent_pool
+from autocontext.loop.stage_helpers.dimensions import _load_previous_best_dimensions
+from autocontext.loop.stage_helpers.tournament_prep import _build_live_opponent_pool, _run_holdout_verification
 from autocontext.loop.stage_types import GenerationContext
+from autocontext.loop.tournament_helpers import resolve_gate_decision
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from autocontext.agents.orchestrator import AgentOrchestrator
     from autocontext.agents.types import AgentOutputs
+    from autocontext.config.settings import AppSettings
     from autocontext.execution.supervisor import ExecutionSupervisor
+    from autocontext.harness.pipeline.gate import BackpressureGate
+    from autocontext.harness.pipeline.holdout import HoldoutResult
     from autocontext.loop.events import EventStreamEmitter
+    from autocontext.scenarios.base import ScenarioInterface
     from autocontext.storage import SQLiteStore
 
 
@@ -218,31 +233,32 @@ def _select_exploration_strategy(
             ),
         ]
 
-    candidate_entries: list[dict[str, Any]] = [{
-        "branch_type": "conservative",
-        "strategy": outputs.strategy,
-        "temperature": 0.2,
-        "metadata": {"source": "base_generation"},
-    }]
+    candidate_entries: list[dict[str, Any]] = [
+        {
+            "branch_type": "conservative",
+            "strategy": outputs.strategy,
+            "temperature": 0.2,
+            "metadata": {"source": "base_generation"},
+        }
+    ]
     seen_strategies = {json.dumps(outputs.strategy, sort_keys=True)}
 
     if events is not None:
-        events.emit("exploration_started", {
-            "run_id": ctx.run_id,
-            "generation": ctx.generation,
-            "multi_basin_triggered": multi_basin_triggered,
-            "divergent_triggered": divergent_triggered,
-            "gate_history": ctx.gate_decision_history,
-        })
+        events.emit(
+            "exploration_started",
+            {
+                "run_id": ctx.run_id,
+                "generation": ctx.generation,
+                "multi_basin_triggered": multi_basin_triggered,
+                "divergent_triggered": divergent_triggered,
+                "gate_history": ctx.gate_decision_history,
+            },
+        )
 
     for branch in branch_specs:
         if branch.branch_type == "conservative":
             continue
-        branch_temperature = (
-            divergent_config.temperature
-            if branch.branch_type == "divergent"
-            else branch.temperature
-        )
+        branch_temperature = divergent_config.temperature if branch.branch_type == "divergent" else branch.temperature
         branch_prompt = _build_branch_competitor_prompt(
             ctx,
             playbook=branch.playbook,
@@ -269,12 +285,14 @@ def _select_exploration_strategy(
             if not valid:
                 continue
         seen_strategies.add(serialized)
-        candidate_entries.append({
-            "branch_type": branch.branch_type,
-            "strategy": strategy,
-            "temperature": branch_temperature,
-            "metadata": dict(branch.metadata),
-        })
+        candidate_entries.append(
+            {
+                "branch_type": branch.branch_type,
+                "strategy": strategy,
+                "temperature": branch_temperature,
+                "metadata": dict(branch.metadata),
+            }
+        )
 
     if len(candidate_entries) == 1:
         return outputs.strategy, {}
@@ -294,14 +312,16 @@ def _select_exploration_strategy(
             challenger_uncertainty=ctx.challenger_uncertainty,
             opponent_pool=opponent_pool,
         )
-        selection_results.append({
-            "branch_type": candidate["branch_type"],
-            "best_score": tournament.best_score,
-            "mean_score": tournament.mean_score,
-            "strategy": candidate["strategy"],
-            "temperature": candidate["temperature"],
-            "metadata": dict(candidate.get("metadata", {})),
-        })
+        selection_results.append(
+            {
+                "branch_type": candidate["branch_type"],
+                "best_score": tournament.best_score,
+                "mean_score": tournament.mean_score,
+                "strategy": candidate["strategy"],
+                "temperature": candidate["temperature"],
+                "metadata": dict(candidate.get("metadata", {})),
+            }
+        )
 
     selected = max(
         selection_results,
@@ -334,9 +354,173 @@ def _select_exploration_strategy(
         ],
     }
     if events is not None:
-        events.emit("exploration_selected", {
-            "run_id": ctx.run_id,
-            "generation": ctx.generation,
-            **metadata,
-        })
+        events.emit(
+            "exploration_selected",
+            {
+                "run_id": ctx.run_id,
+                "generation": ctx.generation,
+                **metadata,
+            },
+        )
     return dict(selected["strategy"]), metadata
+
+
+@dataclasses.dataclass(slots=True)
+class _GateAdjustmentOutcome:
+    """Result of resolving the final gate decision for one tournament attempt."""
+
+    tournament: EvaluationSummary
+    gate_decision: str
+    gate_reason: str
+    gate_result: Any
+    holdout_result: HoldoutResult | None
+
+
+def _apply_novelty_and_cost_adjustments(
+    ctx: GenerationContext,
+    *,
+    tournament: EvaluationSummary,
+    gate: BackpressureGate | TrendAwareGate,
+    scenario: ScenarioInterface,
+    supervisor: ExecutionSupervisor,
+    sqlite: SQLiteStore,
+    events: EventStreamEmitter,
+    settings: AppSettings,
+    current_strategy: dict[str, Any],
+    attempt: int,
+    use_rapid: bool,
+    harness_limits: HarnessLimits,
+) -> _GateAdjustmentOutcome:
+    """Apply dimension-regression, novelty-bonus, and cost-effectiveness adjustments,
+    resolve the gate decision, then run holdout verification when advancing."""
+    previous_best_dimensions = _load_previous_best_dimensions(sqlite, ctx.run_id)
+    if previous_best_dimensions and tournament.best_dimensions:
+        tournament = dataclasses.replace(
+            tournament,
+            dimension_regressions=detect_dimension_regression(
+                previous_best_dimensions,
+                tournament.best_dimensions,
+                threshold=settings.scoring_dimension_regression_threshold,
+            ),
+        )
+
+    custom_metrics = None
+    if isinstance(gate, TrendAwareGate):
+        best_eval = max(tournament.results, key=lambda r: r.score)
+        best_exec = best_eval.metadata["execution_output"]
+        custom_metrics = scenario.custom_backpressure(best_exec.result)
+    recent_strategies = _load_recent_numeric_strategies(
+        sqlite,
+        run_id=ctx.run_id,
+        window=settings.novelty_history_window,
+    )
+    gate_best_score = tournament.best_score
+    if settings.novelty_enabled and recent_strategies:
+        novelty_score = compute_novelty_score(current_strategy, recent_strategies)
+        gate_best_score = apply_novelty_bonus(
+            tournament.best_score,
+            novelty_score,
+            NoveltyConfig(
+                weight=settings.novelty_weight,
+                enabled=settings.novelty_enabled,
+            ),
+        )
+        custom_metrics = dict(custom_metrics or {})
+        custom_metrics.update(
+            {
+                "search_proxy_score": gate_best_score,
+                "novelty_score": novelty_score,
+                "raw_best_score": tournament.best_score,
+                "novelty_adjusted_best_score": gate_best_score,
+            }
+        )
+        ctx.exploration_metadata = {
+            **ctx.exploration_metadata,
+            "novelty": {
+                "score": novelty_score,
+                "raw_best_score": tournament.best_score,
+                "adjusted_best_score": gate_best_score,
+                "history_window": len(recent_strategies),
+            },
+        }
+    holdout_result = None
+    gate_result = resolve_gate_decision(
+        tournament_best_score=gate_best_score,
+        tournament_mean_score=tournament.mean_score,
+        tournament_results=tournament.results,
+        previous_best=ctx.previous_best,
+        gate=gate,
+        score_history=ctx.score_history,
+        gate_decision_history=ctx.gate_decision_history,
+        retry_count=attempt,
+        max_retries=settings.max_retries,
+        use_rapid=use_rapid,
+        custom_metrics=custom_metrics,
+        rapid_gate_fn=rapid_gate,
+        annealing_enabled=settings.experimental_annealing_enabled,
+        annealing_seed=settings.seed_base,
+        generation=ctx.generation,
+    )
+    gate_decision, gate_reason = gate_result.decision, gate_result.reason
+    generation_cost_usd = float(ctx.cost_control_metadata.get("generation_cost_usd", 0.0) or 0.0)
+    if generation_cost_usd > 0:
+        score_delta = max(0.0, tournament.best_score - ctx.previous_best)
+        cost_effectiveness = evaluate_cost_effectiveness(
+            generation_cost_usd,
+            score_delta,
+            max_cost_per_delta=CostPolicy(
+                max_cost_per_delta_point=settings.cost_max_per_delta_point,
+                throttle_above_total=settings.cost_throttle_above_total,
+            ).max_cost_per_delta_point,
+        )
+        ctx.cost_control_metadata = {
+            **ctx.cost_control_metadata,
+            "cost_effectiveness": cost_effectiveness,
+        }
+        if gate_decision == "retry":
+            retry_blocked_by_cost = bool(ctx.cost_control_metadata.get("throttled"))
+            retry_blocked_by_efficiency = score_delta > 0 and not cost_effectiveness["efficient"]
+            if retry_blocked_by_cost or retry_blocked_by_efficiency:
+                reasons: list[str] = []
+                if retry_blocked_by_cost:
+                    reasons.append("budget throttle is active")
+                if retry_blocked_by_efficiency:
+                    reasons.append(
+                        "cost per delta "
+                        f"${cost_effectiveness['cost_per_delta_point']:.4f} exceeds "
+                        f"${settings.cost_max_per_delta_point:.4f}"
+                    )
+                gate_decision = "rollback"
+                gate_reason = "Cost control suppressed retry: " + "; ".join(reasons)
+
+    if gate_decision == "advance":
+        holdout_result = _run_holdout_verification(
+            ctx,
+            supervisor=supervisor,
+            strategy=current_strategy,
+            in_sample_score=tournament.best_score,
+            limits=harness_limits,
+        )
+        if holdout_result is not None:
+            events.emit(
+                "holdout_evaluated",
+                {
+                    "run_id": ctx.run_id,
+                    "generation": ctx.generation,
+                    "holdout": holdout_result.to_dict(),
+                },
+            )
+            if not holdout_result.passed:
+                gate_reason = f"Holdout blocked advance: {holdout_result.reason}"
+                if not use_rapid and attempt < settings.max_retries:
+                    gate_decision = "retry"
+                else:
+                    gate_decision = "rollback"
+
+    return _GateAdjustmentOutcome(
+        tournament=tournament,
+        gate_decision=gate_decision,
+        gate_reason=gate_reason,
+        gate_result=gate_result,
+        holdout_result=holdout_result,
+    )

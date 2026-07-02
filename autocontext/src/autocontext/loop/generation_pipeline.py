@@ -1,4 +1,5 @@
 """GenerationPipeline — composed stage orchestrator for the generation loop."""
+
 from __future__ import annotations
 
 import logging
@@ -17,6 +18,7 @@ from autocontext.execution.phased_execution import (
 from autocontext.extensions import HookEvents
 from autocontext.knowledge.coherence import check_coherence
 from autocontext.loop.cost_control import CostBudget, CostPolicy, CostTracker, throttle_state
+from autocontext.loop.stage_helpers.tournament_prep import _build_empty_tournament
 from autocontext.loop.stage_preflight import stage_preflight
 from autocontext.loop.stage_prevalidation import stage_prevalidation
 from autocontext.loop.stage_probe import stage_probe
@@ -24,7 +26,6 @@ from autocontext.loop.stage_staged_validation import stage_staged_validation
 from autocontext.loop.stage_tree_search import stage_tree_search
 from autocontext.loop.stage_types import GenerationContext
 from autocontext.loop.stages import (
-    _build_empty_tournament,
     stage_agent_generation,
     stage_curator_gate,
     stage_knowledge_setup,
@@ -81,20 +82,26 @@ def _rollback_for_budget(
     ctx.gate_delta = 0.0
     ctx.score_history.append(0.0)
     ctx.gate_decision_history.append("rollback")
-    events.emit("generation_budget_exhausted", {
-        "run_id": ctx.run_id,
-        "generation": ctx.generation,
-        "budget_seconds": ctx.settings.generation_time_budget_seconds,
-        "phase_name": phase_name,
-        "phase_budget_seconds": phase_budget_seconds,
-    })
-    events.emit("gate_decided", {
-        "run_id": ctx.run_id,
-        "generation": ctx.generation,
-        "decision": "rollback",
-        "delta": 0.0,
-        "tier": "budget",
-    })
+    events.emit(
+        "generation_budget_exhausted",
+        {
+            "run_id": ctx.run_id,
+            "generation": ctx.generation,
+            "budget_seconds": ctx.settings.generation_time_budget_seconds,
+            "phase_name": phase_name,
+            "phase_budget_seconds": phase_budget_seconds,
+        },
+    )
+    events.emit(
+        "gate_decided",
+        {
+            "run_id": ctx.run_id,
+            "generation": ctx.generation,
+            "decision": "rollback",
+            "delta": 0.0,
+            "tier": "budget",
+        },
+    )
     return ctx
 
 
@@ -151,11 +158,14 @@ def _record_phase_result(
     phase_results: list[PhaseResult],
 ) -> None:
     phase_results.append(result)
-    events.emit("generation_phase_result", {
-        "run_id": ctx.run_id,
-        "generation": ctx.generation,
-        **result.to_dict(),
-    })
+    events.emit(
+        "generation_phase_result",
+        {
+            "run_id": ctx.run_id,
+            "generation": ctx.generation,
+            **result.to_dict(),
+        },
+    )
 
 
 def _finalize_phased_execution(
@@ -305,25 +315,33 @@ class GenerationPipeline:
         phase_plan = _build_phase_plan(ctx)
         phase_results: list[PhaseResult] = []
         if phase_plan is not None:
-            self._events.emit("generation_phase_plan", {
-                "run_id": ctx.run_id,
-                "generation": ctx.generation,
-                "total_budget_seconds": phase_plan.total_budget_seconds,
-                "allow_rollover": phase_plan.allow_rollover,
-                "phases": [
-                    {
-                        "phase_name": phase.phase_name,
-                        "budget_seconds": phase.budget_seconds,
-                    }
-                    for phase in phase_plan.phases
-                ],
-            })
+            self._events.emit(
+                "generation_phase_plan",
+                {
+                    "run_id": ctx.run_id,
+                    "generation": ctx.generation,
+                    "total_budget_seconds": phase_plan.total_budget_seconds,
+                    "allow_rollover": phase_plan.allow_rollover,
+                    "phases": [
+                        {
+                            "phase_name": phase.phase_name,
+                            "budget_seconds": phase.budget_seconds,
+                        }
+                        for phase in phase_plan.phases
+                    ],
+                },
+            )
 
         def _on_role_event(role: str, status: str) -> None:
-            self._events.emit("role_event", {
-                "run_id": ctx.run_id, "generation": ctx.generation,
-                "role": role, "status": status,
-            })
+            self._events.emit(
+                "role_event",
+                {
+                    "run_id": ctx.run_id,
+                    "generation": ctx.generation,
+                    "role": role,
+                    "status": status,
+                },
+            )
 
         # Stage 0: Startup verification (generation 1 only)
         if ctx.generation == 1:
@@ -333,10 +351,13 @@ class GenerationPipeline:
                 db_path=ctx.settings.db_path,
             )
             if report.warnings:
-                self._events.emit("startup_verification", {
-                    "run_id": ctx.run_id,
-                    "warnings": report.warnings,
-                })
+                self._events.emit(
+                    "startup_verification",
+                    {
+                        "run_id": ctx.run_id,
+                        "warnings": report.warnings,
+                    },
+                )
 
         # Stage 0.5: Pre-flight harness synthesis (generation 1 only)
         if ctx.generation == 1:
@@ -356,9 +377,14 @@ class GenerationPipeline:
         # Hook: PrimeIntellect warm provision
         if self._warm_provision_fn is not None:
             warm_state = self._warm_provision_fn(ctx)
-            self._events.emit("primeintellect_warm_state", {
-                "run_id": ctx.run_id, "generation": ctx.generation, **warm_state,
-            })
+            self._events.emit(
+                "primeintellect_warm_state",
+                {
+                    "run_id": ctx.run_id,
+                    "generation": ctx.generation,
+                    **warm_state,
+                },
+            )
 
         # Stage 2+3: Tree search mode OR standard agent generation + tournament
         use_tree_search = ctx.settings.exploration_mode == "tree"
@@ -411,11 +437,14 @@ class GenerationPipeline:
                         skipped_stages.append("consultation")
                     if skipped_stages:
                         ctx.cost_control_metadata["skipped_stages"] = skipped_stages
-                    self._events.emit("cost_throttle_applied", {
-                        "run_id": ctx.run_id,
-                        "generation": ctx.generation,
-                        "cost_control": ctx.cost_control_metadata,
-                    })
+                    self._events.emit(
+                        "cost_throttle_applied",
+                        {
+                            "run_id": ctx.run_id,
+                            "generation": ctx.generation,
+                            "cost_control": ctx.cost_control_metadata,
+                        },
+                    )
 
                 # Hook: Controller chat checkpoint
                 if self._controller is not None and self._chat_with_agent_fn is not None:
@@ -517,8 +546,7 @@ class GenerationPipeline:
                 scaffolding_error = None
                 if scaffolding_exhausted:
                     scaffolding_error = (
-                        f"{_PHASE_SCAFFOLDING} phase exceeded "
-                        f"{scaffolding_budget.budget_seconds}s budget before execution"
+                        f"{_PHASE_SCAFFOLDING} phase exceeded {scaffolding_budget.budget_seconds}s budget before execution"
                     )
                 scaffolding_result = _build_phase_result(
                     budget=scaffolding_budget,
@@ -645,7 +673,9 @@ class GenerationPipeline:
         if self._meta_optimizer is not None:
             try:
                 self._meta_optimizer.record_gate_decision(
-                    ctx.gate_decision, ctx.gate_delta, ctx.generation,
+                    ctx.gate_decision,
+                    ctx.gate_delta,
+                    ctx.generation,
                 )
             except Exception:
                 logger.debug("meta_optimizer.record_gate_decision failed", exc_info=True)
@@ -698,11 +728,14 @@ class GenerationPipeline:
                 skills_root=self._artifacts.skills_root,
             )
             if coherence.issues:
-                self._events.emit("coherence_warning", {
-                    "run_id": ctx.run_id,
-                    "generation": ctx.generation,
-                    "issues": coherence.issues,
-                })
+                self._events.emit(
+                    "coherence_warning",
+                    {
+                        "run_id": ctx.run_id,
+                        "generation": ctx.generation,
+                        "issues": coherence.issues,
+                    },
+                )
 
         # Meta-optimization: record full generation metrics
         if self._meta_optimizer is not None and ctx.outputs is not None:
@@ -726,14 +759,17 @@ class GenerationPipeline:
             ctx.generation,
             ctx.generation_elapsed_seconds,
         )
-        self._events.emit("generation_timing", {
-            "run_id": ctx.run_id,
-            "generation": ctx.generation,
-            "elapsed_seconds": round(ctx.generation_elapsed_seconds, 2),
-            "budget_seconds": ctx.settings.generation_time_budget_seconds,
-            "over_budget": _over_budget(ctx),
-            "phased_execution": ctx.phased_execution,
-        })
+        self._events.emit(
+            "generation_timing",
+            {
+                "run_id": ctx.run_id,
+                "generation": ctx.generation,
+                "elapsed_seconds": round(ctx.generation_elapsed_seconds, 2),
+                "budget_seconds": ctx.settings.generation_time_budget_seconds,
+                "over_budget": _over_budget(ctx),
+                "phased_execution": ctx.phased_execution,
+            },
+        )
         if ctx.hook_bus is not None:
             generation_end = ctx.hook_bus.emit(
                 HookEvents.GENERATION_END,

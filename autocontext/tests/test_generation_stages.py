@@ -1299,7 +1299,7 @@ class TestStageTournament:
         artifacts = MagicMock()
 
         with (
-            patch("autocontext.loop.stages.resolve_gate_decision") as resolve_gate,
+            patch("autocontext.loop.stage_helpers.exploration.resolve_gate_decision") as resolve_gate,
             patch("autocontext.loop.stages.apply_tournament_outcome") as apply_outcome,
         ):
             resolve_gate.return_value = MagicMock(
@@ -1456,7 +1456,7 @@ class TestStageTournament:
         sqlite = MagicMock()
         artifacts = MagicMock()
 
-        with patch("autocontext.loop.stages.resolve_gate_decision") as resolve_gate:
+        with patch("autocontext.loop.stage_helpers.exploration.resolve_gate_decision") as resolve_gate:
             resolve_gate.return_value = MagicMock(
                 decision="advance",
                 delta=0.42,
@@ -1498,7 +1498,7 @@ class TestStageTournament:
         sqlite = MagicMock()
         artifacts = MagicMock()
 
-        with patch("autocontext.loop.stages.resolve_gate_decision") as resolve_gate:
+        with patch("autocontext.loop.stage_helpers.exploration.resolve_gate_decision") as resolve_gate:
             resolve_gate.return_value = MagicMock(
                 decision="retry",
                 delta=0.0,
@@ -1575,7 +1575,7 @@ class TestStageTournament:
         ]
         artifacts = MagicMock()
 
-        with patch("autocontext.loop.stages.EvaluationRunner.run", return_value=tournament):
+        with patch("autocontext.loop.stage_helpers.tournament_prep.EvaluationRunner.run", return_value=tournament):
             result = stage_tournament(
                 ctx,
                 supervisor=_make_inline_supervisor(),
@@ -1605,7 +1605,7 @@ class TestStageTournament:
         sqlite = MagicMock()
         artifacts = MagicMock()
 
-        with patch("autocontext.loop.stages.resolve_gate_decision") as resolve_gate:
+        with patch("autocontext.loop.stage_helpers.exploration.resolve_gate_decision") as resolve_gate:
             resolve_gate.return_value = MagicMock(
                 decision="advance",
                 delta=0.42,
@@ -2396,7 +2396,10 @@ class TestStageTournamentAttempt:
         agents.competitor.run.return_value = ('{"aggression": 0.9}', None)
         agents.translator.translate.return_value = ({"aggression": 0.9}, None)
 
-        with patch("autocontext.loop.stages.build_retry_prompt", return_value="HELPER RETRY PROMPT") as build_prompt:
+        with patch(
+            "autocontext.loop.stage_helpers.tournament_prep.build_retry_prompt",
+            return_value="HELPER RETRY PROMPT",
+        ) as build_prompt:
             stage_tournament(
                 ctx,
                 supervisor=supervisor,

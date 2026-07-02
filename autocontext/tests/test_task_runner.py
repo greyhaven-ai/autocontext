@@ -1222,3 +1222,103 @@ class TestTaskRunnerFactory:
         assert result["status"] == "failed"
         assert "browser exploration is not configured" in (result["error"] or "")
         mock_create.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# _finalize_task_output (AC-851): the payload-assembly helper extracted from
+# the duplicated tail of _process_task's single-generation branch and
+# _run_task_multi_generation.
+# ---------------------------------------------------------------------------
+
+
+class TestFinalizeTaskOutput:
+    def _make_runner(self, store, provider=None):
+        return TaskRunner(store=store, provider=provider or _MockProvider())
+
+    def _make_agent_task(self, provider):
+        return SimpleAgentTask(
+            task_prompt="Do the thing",
+            rubric="Be accurate",
+            provider=provider,
+        )
+
+    def test_no_guardrails_configured_passes_met_threshold_through_unchanged(self, store):
+        provider = _MockProvider()
+        runner = self._make_runner(store, provider)
+        agent_task = self._make_agent_task(provider)
+        config = TaskConfig()  # no objective_verification, judge_samples=1, bias probes off
+
+        (
+            objective_payload,
+            objective_guardrail,
+            evaluator_guardrail,
+            effective_met_threshold,
+            rubric_calibration,
+        ) = runner._finalize_task_output(
+            agent_task=agent_task,
+            task_id="task-1",
+            spec_name="spec-1",
+            best_output="the output",
+            best_score=0.9,
+            met_threshold=True,
+            reference_context=None,
+            config=config,
+        )
+
+        assert objective_payload is None
+        assert objective_guardrail is None
+        assert evaluator_guardrail is None
+        assert effective_met_threshold is True
+        assert rubric_calibration is None  # store has no calibration anchors
+
+    def test_false_met_threshold_stays_false_with_no_guardrails(self, store):
+        provider = _MockProvider()
+        runner = self._make_runner(store, provider)
+        agent_task = self._make_agent_task(provider)
+        config = TaskConfig()
+
+        result = runner._finalize_task_output(
+            agent_task=agent_task,
+            task_id="task-2",
+            spec_name="spec-2",
+            best_output="the output",
+            best_score=0.4,
+            met_threshold=False,
+            reference_context=None,
+            config=config,
+        )
+
+        assert result[3] is False  # effective_met_threshold
+
+    def test_single_and_multi_generation_call_shapes_agree_for_identical_inputs(self, store):
+        """The two call sites (_process_task's single-gen branch and
+        _run_task_multi_generation) pass differently-named locals into this
+        helper; for identical values they must produce identical output so
+        neither path can silently drift from the other."""
+        provider = _MockProvider()
+        runner = self._make_runner(store, provider)
+        agent_task = self._make_agent_task(provider)
+        config = TaskConfig()
+
+        single_gen_style = runner._finalize_task_output(
+            agent_task=agent_task,
+            task_id="task-3",
+            spec_name="spec-3",
+            best_output="shared output",
+            best_score=0.75,
+            met_threshold=True,
+            reference_context="ctx",
+            config=config,
+        )
+        multi_gen_style = runner._finalize_task_output(
+            agent_task=agent_task,
+            task_id="task-3",
+            spec_name="spec-3",
+            best_output="shared output",
+            best_score=0.75,
+            met_threshold=True,
+            reference_context="ctx",
+            config=config,
+        )
+
+        assert single_gen_style == multi_gen_style

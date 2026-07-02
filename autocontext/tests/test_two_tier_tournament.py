@@ -393,7 +393,7 @@ class TestTwoTierEnabled:
 
         with (
             patch("autocontext.loop.stages.ValidityGate") as MockVG,
-            patch("autocontext.loop.stages.build_validity_rollback") as build_rollback,
+            patch("autocontext.loop.stage_helpers.tournament_prep.build_validity_rollback") as build_rollback,
         ):
             mock_vg_instance = MagicMock()
             mock_vg_instance.check.return_value = MagicMock(
