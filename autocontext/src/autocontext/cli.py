@@ -300,15 +300,28 @@ def _run_agent_task(
         judge_disagreement_threshold=settings.judge_disagreement_threshold,
         judge_bias_probes_enabled=settings.judge_bias_probes_enabled,
     )
-    evaluator_guardrail = build_evaluator_guardrail_payload(
-        task,
-        result.best_output,
-        guardrail_config,
-    )
+    # The guardrail re-runs the live judge, so it must run inside the same
+    # hook-bus context as the loop's judge calls (above), and it must see the
+    # same prepared/validated ``state`` the loop ran against -- not a fresh
+    # ``task.initial_state()`` that would drop any injected context.
+    with active_hook_bus(hook_bus):
+        evaluator_guardrail = build_evaluator_guardrail_payload(
+            task,
+            result.best_output,
+            guardrail_config,
+            state=state,
+        )
     effective_met_threshold = compute_effective_met_threshold(
         result.met_threshold,
         None,
         evaluator_guardrail,
+    )
+    # When a guardrail vetoes a loop that met the threshold, the persisted
+    # termination_reason/gate_decision must not still claim "threshold_met".
+    # Mirror the ``"threshold_met" if effective else "max_rounds"`` derivation
+    # in execution/task_runner.py::_run_task_multi_generation.
+    effective_termination_reason = (
+        "max_rounds" if result.met_threshold and not effective_met_threshold else result.termination_reason
     )
 
     sqlite.append_agent_output(active_run_id, 1, "competitor", result.best_output)
@@ -320,7 +333,7 @@ def _run_agent_task(
         elo=0.0,
         wins=0,
         losses=0,
-        gate_decision=result.termination_reason,
+        gate_decision=effective_termination_reason,
         status="completed",
         duration_seconds=(result.duration_ms / 1000.0) if result.duration_ms is not None else None,
     )
@@ -332,7 +345,7 @@ def _run_agent_task(
         best_output=result.best_output,
         total_rounds=result.total_rounds,
         met_threshold=effective_met_threshold,
-        termination_reason=result.termination_reason,
+        termination_reason=effective_termination_reason,
         optimizer_metadata=getattr(result, "metadata", {}) or None,
     )
 
