@@ -4,6 +4,7 @@
  */
 
 import { ArtifactStore } from "../knowledge/artifact-store.js";
+import { asRunId } from "../domain/ids.js";
 import { assertFamilyContract } from "../scenarios/family-interfaces.js";
 import { SCENARIO_REGISTRY } from "../scenarios/registry.js";
 import type { LLMProvider } from "../types/index.js";
@@ -76,7 +77,7 @@ export class SandboxManager {
     if (sandbox.status === "destroyed") throw new Error(`Sandbox ${sandboxId} is destroyed`);
 
     sandbox.status = "running";
-    const runId = `${sandboxId}_run_${Date.now()}`;
+    const runId = asRunId(`${sandboxId}_run_${Date.now()}`);
     sandbox.runId = runId;
 
     try {

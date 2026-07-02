@@ -6,6 +6,7 @@ import type { BackgroundSessionApiRoutes } from "../background-session-api.js";
 import type { CockpitApiRoutes } from "../cockpit-api.js";
 import type { RuntimeSessionApiRoutes } from "../runtime-session-api.js";
 import type { TraceGateReviewApiRoutes } from "../trace-gate-review-api.js";
+import { asRunId } from "../../domain/ids.js";
 import type { HttpRouteContext } from "./http-route-context.js";
 
 export async function tryCockpitRoutes(
@@ -124,7 +125,7 @@ export async function tryCockpitRoutes(
   );
   if (ctx.method === "GET" && cockpitRunRuntimeSessionTimelineMatch) {
     const [, rawRunId] = cockpitRunRuntimeSessionTimelineMatch;
-    const response = runtimeSessionApi.getTimelineByRunId(decodeURIComponent(rawRunId!));
+    const response = runtimeSessionApi.getTimelineByRunId(asRunId(decodeURIComponent(rawRunId!)));
     ctx.json(response.status, response.body);
     return true;
   }
@@ -134,7 +135,7 @@ export async function tryCockpitRoutes(
   );
   if (ctx.method === "GET" && cockpitRunRuntimeSessionMatch) {
     const [, rawRunId] = cockpitRunRuntimeSessionMatch;
-    const response = runtimeSessionApi.getByRunId(decodeURIComponent(rawRunId!));
+    const response = runtimeSessionApi.getByRunId(asRunId(decodeURIComponent(rawRunId!)));
     ctx.json(response.status, response.body);
     return true;
   }
@@ -142,7 +143,7 @@ export async function tryCockpitRoutes(
   const cockpitTraceGateReviewMatch = ctx.url.match(/^\/api\/cockpit\/runs\/([^/]+)\/trace-gates$/);
   if (ctx.method === "GET" && cockpitTraceGateReviewMatch) {
     const [, rawRunId] = cockpitTraceGateReviewMatch;
-    const response = traceGateReviewApi.getByRunId(decodeURIComponent(rawRunId!));
+    const response = traceGateReviewApi.getByRunId(asRunId(decodeURIComponent(rawRunId!)));
     ctx.json(response.status, response.body);
     return true;
   }
@@ -152,7 +153,7 @@ export async function tryCockpitRoutes(
   );
   if (ctx.method === "GET" && cockpitContextSelectionMatch) {
     const [, rawRunId] = cockpitContextSelectionMatch;
-    const response = cockpitApi.contextSelection(decodeURIComponent(rawRunId!));
+    const response = cockpitApi.contextSelection(asRunId(decodeURIComponent(rawRunId!)));
     ctx.json(response.status, response.body);
     return true;
   }
@@ -163,7 +164,7 @@ export async function tryCockpitRoutes(
   if (ctx.method === "GET" && cockpitCompareMatch) {
     const [, rawRunId, rawGenA, rawGenB] = cockpitCompareMatch;
     const response = cockpitApi.compareGenerations(
-      decodeURIComponent(rawRunId!),
+      asRunId(decodeURIComponent(rawRunId!)),
       Number.parseInt(rawGenA!, 10),
       Number.parseInt(rawGenB!, 10),
     );
@@ -176,7 +177,7 @@ export async function tryCockpitRoutes(
   );
   if (ctx.method === "GET" && cockpitRunResourceMatch) {
     const [, rawRunId, resource] = cockpitRunResourceMatch;
-    const runId = decodeURIComponent(rawRunId!);
+    const runId = asRunId(decodeURIComponent(rawRunId!));
     const response =
       resource === "status"
         ? cockpitApi.runStatus(runId)
@@ -193,7 +194,7 @@ export async function tryCockpitRoutes(
   if (ctx.method === "POST" && cockpitConsultMatch) {
     const [, rawRunId] = cockpitConsultMatch;
     const response = await cockpitApi.requestConsultation(
-      decodeURIComponent(rawRunId!),
+      asRunId(decodeURIComponent(rawRunId!)),
       await ctx.readJsonBody(),
     );
     ctx.json(response.status, response.body);
@@ -203,7 +204,7 @@ export async function tryCockpitRoutes(
   const cockpitWriteupMatch = ctx.url.match(/^\/api\/cockpit\/writeup\/([^/]+)$/);
   if (ctx.method === "GET" && cockpitWriteupMatch) {
     const [, rawRunId] = cockpitWriteupMatch;
-    const response = cockpitApi.writeup(decodeURIComponent(rawRunId!));
+    const response = cockpitApi.writeup(asRunId(decodeURIComponent(rawRunId!)));
     ctx.json(response.status, response.body);
     return true;
   }

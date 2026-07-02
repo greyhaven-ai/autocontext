@@ -4,6 +4,7 @@
  */
 
 import type { KnowledgeApiRoutes } from "../knowledge-api.js";
+import { asScenarioName } from "../../domain/ids.js";
 import type { HttpRouteContext } from "./http-route-context.js";
 
 export async function tryKnowledgeRoutes(
@@ -21,7 +22,7 @@ export async function tryKnowledgeRoutes(
   const knowledgeExportMatch = ctx.url.match(/^\/api\/knowledge\/export\/([^/]+)$/);
   if (ctx.method === "GET" && knowledgeExportMatch) {
     const [, rawScenario] = knowledgeExportMatch;
-    const response = knowledgeApi.exportScenario(decodeURIComponent(rawScenario!));
+    const response = knowledgeApi.exportScenario(asScenarioName(decodeURIComponent(rawScenario!)));
     ctx.json(response.status, response.body);
     return true;
   }
@@ -51,21 +52,25 @@ export async function tryKnowledgeRoutes(
   const pendingPlaybookMatch = ctx.url.match(/^\/api\/knowledge\/([^/]+)\/playbook\/pending$/);
   if (ctx.method === "GET" && pendingPlaybookMatch) {
     const [, rawScenario] = pendingPlaybookMatch;
-    const response = knowledgeApi.pendingPlaybook(decodeURIComponent(rawScenario!));
+    const response = knowledgeApi.pendingPlaybook(asScenarioName(decodeURIComponent(rawScenario!)));
     ctx.json(response.status, response.body);
     return true;
   }
   const approvePlaybookMatch = ctx.url.match(/^\/api\/knowledge\/([^/]+)\/playbook\/approve$/);
   if (ctx.method === "POST" && approvePlaybookMatch) {
     const [, rawScenario] = approvePlaybookMatch;
-    const response = knowledgeApi.approvePendingPlaybook(decodeURIComponent(rawScenario!));
+    const response = knowledgeApi.approvePendingPlaybook(
+      asScenarioName(decodeURIComponent(rawScenario!)),
+    );
     ctx.json(response.status, response.body);
     return true;
   }
   const rejectPlaybookMatch = ctx.url.match(/^\/api\/knowledge\/([^/]+)\/playbook\/reject$/);
   if (ctx.method === "POST" && rejectPlaybookMatch) {
     const [, rawScenario] = rejectPlaybookMatch;
-    const response = knowledgeApi.rejectPendingPlaybook(decodeURIComponent(rawScenario!));
+    const response = knowledgeApi.rejectPendingPlaybook(
+      asScenarioName(decodeURIComponent(rawScenario!)),
+    );
     ctx.json(response.status, response.body);
     return true;
   }
@@ -74,7 +79,7 @@ export async function tryKnowledgeRoutes(
   const lessonLifecycleMatch = ctx.url.match(/^\/api\/knowledge\/([^/]+)\/lifecycle$/);
   if (ctx.method === "GET" && lessonLifecycleMatch) {
     const [, rawScenario] = lessonLifecycleMatch;
-    const response = knowledgeApi.lessonLifecycle(decodeURIComponent(rawScenario!));
+    const response = knowledgeApi.lessonLifecycle(asScenarioName(decodeURIComponent(rawScenario!)));
     ctx.json(response.status, response.body);
     return true;
   }
@@ -85,7 +90,7 @@ export async function tryKnowledgeRoutes(
   );
   if (ctx.method === "POST" && lessonActionMatch) {
     const [, rawScenario, rawLessonId, action] = lessonActionMatch;
-    const scenario = decodeURIComponent(rawScenario!);
+    const scenario = asScenarioName(decodeURIComponent(rawScenario!));
     const lessonId = decodeURIComponent(rawLessonId!);
     const response =
       action === "approve"

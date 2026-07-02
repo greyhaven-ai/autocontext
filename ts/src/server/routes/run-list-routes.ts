@@ -13,6 +13,7 @@ import {
   type RunSimulationReadDeps,
   type RunSimulationReadRunManager,
 } from "../run-simulation-read-workflow.js";
+import { asRunId, asScenarioName } from "../../domain/ids.js";
 import type { HttpRouteContext } from "./http-route-context.js";
 
 export async function tryRunListRoutes(
@@ -41,10 +42,11 @@ export async function tryRunListRoutes(
   // GET /api/runs/:id/replay/:gen
   const replayMatch = ctx.url.match(/^\/api\/runs\/([^/]+)\/replay\/(\d+)$/);
   if (replayMatch) {
-    const [, runId, genStr] = replayMatch;
+    const [, rawRunId, genStr] = replayMatch;
+    const runId = asRunId(rawRunId!);
     const response = executeRunSimulationReadRequest({
       route: "run_replay",
-      runId: runId!,
+      runId,
       generation: parseInt(genStr!, 10),
       runManager,
       simulationApi,
@@ -57,10 +59,11 @@ export async function tryRunListRoutes(
   // GET /api/runs/:id/status
   const statusMatch = ctx.url.match(/^\/api\/runs\/([^/]+)\/status$/);
   if (statusMatch) {
-    const [, runId] = statusMatch;
+    const [, rawRunId] = statusMatch;
+    const runId = asRunId(rawRunId!);
     const response = executeRunSimulationReadRequest({
       route: "run_status",
-      runId: runId!,
+      runId,
       runManager,
       simulationApi,
       deps: runSimDeps,
@@ -72,10 +75,11 @@ export async function tryRunListRoutes(
   // GET /api/knowledge/playbook/:scenario
   const playbookMatch = ctx.url.match(/^\/api\/knowledge\/playbook\/([^/]+)$/);
   if (playbookMatch) {
-    const [, scenario] = playbookMatch;
+    const [, rawScenario] = playbookMatch;
+    const scenario = asScenarioName(rawScenario!);
     const response = executeRunSimulationReadRequest({
       route: "playbook",
-      scenario: scenario!,
+      scenario,
       runManager,
       simulationApi,
       deps: playbookDeps,
