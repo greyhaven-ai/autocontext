@@ -45,6 +45,10 @@ skills/*
 autocontext/runs/
 autocontext/knowledge/
 
+# Hatchling custom build-hook staging output (autocontext/hatch_build.py
+# stages docs/cli-contract.json under build/ before force-including it)
+autocontext/build/
+
 # Database artifacts
 *.sqlite3
 *.db

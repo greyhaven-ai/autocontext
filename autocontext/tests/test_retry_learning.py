@@ -65,6 +65,7 @@ def _make_settings(tmp_path: Path, **overrides: Any) -> AppSettings:
         "runs_root": tmp_path / "runs",
         "knowledge_root": tmp_path / "knowledge",
         "skills_root": tmp_path / "skills",
+        "claude_skills_path": tmp_path / ".claude" / "skills",
         "event_stream_path": tmp_path / "runs" / "events.ndjson",
         "seed_base": 2000,
         "agent_provider": "deterministic",

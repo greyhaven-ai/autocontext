@@ -129,7 +129,10 @@ jobs:
           trap cleanup EXIT
           uv run autoctx serve --host 127.0.0.1 --port 8010 &
           SERVER_PID=$!
-          sleep 2
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8010/health && break
+            sleep 1
+          done
           curl -fsS http://127.0.0.1:8010/health
           curl -fsS http://127.0.0.1:8010/api/runs
 
