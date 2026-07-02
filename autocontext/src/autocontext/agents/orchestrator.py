@@ -3,7 +3,6 @@ from __future__ import annotations
 import json as _json
 import logging
 from collections.abc import Callable, Sequence
-from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,6 +15,12 @@ from autocontext.agents.competitor import CompetitorRunner
 from autocontext.agents.curator import KnowledgeCurator
 from autocontext.agents.llm_client import DeferredMLXClient, LanguageModelClient, build_client_from_settings
 from autocontext.agents.model_router import ModelRouter, TierConfig
+from autocontext.agents.orchestrator_helpers import (
+    assemble_agent_outputs,
+    run_analyst_coach_architect,
+    run_competitor_phase,
+    run_translator_phase,
+)
 from autocontext.agents.parsers import parse_analyst_output, parse_architect_output, parse_coach_output, parse_competitor_output
 from autocontext.agents.role_router import ProviderClass, RoleRouter, RoutingContext
 from autocontext.agents.role_runtime_overrides import apply_role_overrides, settings_for_budgeted_role_call
@@ -538,162 +543,56 @@ class AgentOrchestrator:
             if on_role_event:
                 on_role_event(role, status)
 
-        # --- Competitor phase ---
-        competitor_model = (
-            self.resolve_model(
-                "competitor",
-                generation=generation_index,
-                scenario_name=scenario_name,
-            )
-            or self.competitor.model
-        )
-        use_competitor_rlm = (
-            self.settings.rlm_enabled
-            and self.settings.rlm_competitor_enabled
-            and self._rlm_loader is not None
-            and self.settings.agent_provider != "agent_sdk"
+        raw_text, competitor_exec = run_competitor_phase(
+            self,
+            prompts,
+            generation_index,
+            tool_context,
+            run_id,
+            scenario_name,
+            strategy_interface,
+            scenario_rules,
+            current_strategy,
+            generation_deadline,
+            _notify,
         )
 
-        if use_competitor_rlm:
-            _notify("competitor", "started")
-            raw_text, competitor_exec = self._run_rlm_competitor(
-                run_id,
-                scenario_name,
-                generation_index,
-                model=competitor_model,
-                strategy_interface=strategy_interface,
-                scenario_rules=scenario_rules,
-                current_strategy=current_strategy,
-            )
-            _notify("competitor", "completed")
-        else:
-            _notify("competitor", "started")
-            competitor_prompt = prompts.competitor
-            if self.settings.code_strategies_enabled:
-                from autocontext.prompts.templates import code_strategy_competitor_suffix
+        strategy, translator_exec = run_translator_phase(
+            self,
+            raw_text,
+            strategy_interface,
+            generation_index,
+            scenario_name,
+            generation_deadline,
+            _notify,
+        )
 
-                competitor_prompt += code_strategy_competitor_suffix(strategy_interface)
-            with self._use_role_runtime(
-                "competitor",
-                self.competitor,
-                generation=generation_index,
-                scenario_name=scenario_name,
-                generation_deadline=generation_deadline,
-            ):
-                raw_text, competitor_exec = self.competitor.run(competitor_prompt, tool_context=tool_context)
-            _notify("competitor", "completed")
-
-        _notify("translator", "started")
-        with self._use_role_runtime(
-            "translator",
-            self.translator,
-            generation=generation_index,
-            scenario_name=scenario_name,
-            generation_deadline=generation_deadline,
-        ):
-            if self.settings.code_strategies_enabled:
-                strategy, translator_exec = self.translator.translate_code(raw_text)
-            else:
-                strategy, translator_exec = self.translator.translate(raw_text, strategy_interface)
-        _notify("translator", "completed")
         architect_prompt = prompts.architect
         if generation_index % self.settings.architect_every_n_gens != 0:
             architect_prompt += _ARCHITECT_CADENCE_SKIP
 
-        if self.settings.rlm_enabled and self._rlm_loader is not None and self.settings.agent_provider != "agent_sdk":
-            _notify("analyst", "started")
-            _notify("architect", "started")
-            analyst_exec, architect_exec = self._run_rlm_roles(
-                run_id,
-                scenario_name,
-                generation_index,
-                strategy,
-                architect_prompt,
-                scenario_rules=scenario_rules,
-            )
-            _notify("analyst", "completed")
-            _notify("architect", "completed")
-            _notify("coach", "started")
-            enriched_coach_prompt = self._enrich_coach_prompt(prompts.coach, analyst_exec.content)
-            with ThreadPoolExecutor(max_workers=1) as pool:
-                with self._use_role_runtime(
-                    "coach",
-                    self.coach,
-                    generation=generation_index,
-                    scenario_name=scenario_name,
-                    generation_deadline=generation_deadline,
-                ):
-                    coach_future = pool.submit(self.coach.run, enriched_coach_prompt)
-                    coach_exec = coach_future.result()
-            _notify("coach", "completed")
-        else:
-            # Analyst runs first; its output enriches the coach prompt
-            _notify("analyst", "started")
-            with self._use_role_runtime(
-                "analyst",
-                self.analyst,
-                generation=generation_index,
-                scenario_name=scenario_name,
-                generation_deadline=generation_deadline,
-            ):
-                analyst_exec = self.analyst.run(prompts.analyst)
-            _notify("analyst", "completed")
-            enriched_coach_prompt = self._enrich_coach_prompt(prompts.coach, analyst_exec.content)
-            _notify("coach", "started")
-            _notify("architect", "started")
-            with (
-                self._use_role_runtime(
-                    "coach",
-                    self.coach,
-                    generation=generation_index,
-                    scenario_name=scenario_name,
-                    generation_deadline=generation_deadline,
-                ),
-                self._use_role_runtime(
-                    "architect",
-                    self.architect,
-                    generation=generation_index,
-                    scenario_name=scenario_name,
-                    generation_deadline=generation_deadline,
-                ),
-            ):
-                with ThreadPoolExecutor(max_workers=2) as pool:
-                    coach_future = pool.submit(self.coach.run, enriched_coach_prompt)
-                    architect_future = pool.submit(self.architect.run, architect_prompt)
-                    coach_exec = coach_future.result()
-                    _notify("coach", "completed")
-                    architect_exec = architect_future.result()
-                    _notify("architect", "completed")
+        analyst_exec, coach_exec, architect_exec = run_analyst_coach_architect(
+            self,
+            prompts,
+            run_id,
+            scenario_name,
+            generation_index,
+            strategy,
+            architect_prompt,
+            scenario_rules,
+            generation_deadline,
+            _notify,
+        )
 
-        tools = parse_architect_tool_specs(architect_exec.content)
-        harness_specs = parse_architect_harness_specs(architect_exec.content)
-        coach_playbook, coach_lessons, coach_hints = parse_coach_sections(coach_exec.content)
-
-        # Parse typed contracts
-        competitor_typed = parse_competitor_output(
+        return assemble_agent_outputs(
+            self,
             raw_text,
             strategy,
-            is_code_strategy=self.settings.code_strategies_enabled,
-        )
-        analyst_typed = parse_analyst_output(analyst_exec.content)
-        coach_typed = parse_coach_output(coach_exec.content)
-        architect_typed = parse_architect_output(architect_exec.content)
-
-        return AgentOutputs(
-            strategy=strategy,
-            analysis_markdown=analyst_exec.content,
-            coach_markdown=coach_exec.content,
-            coach_playbook=coach_playbook,
-            coach_lessons=coach_lessons,
-            coach_competitor_hints=coach_hints,
-            architect_markdown=architect_exec.content,
-            architect_tools=tools,
-            architect_harness_specs=harness_specs,
-            role_executions=[competitor_exec, translator_exec, analyst_exec, coach_exec, architect_exec],
-            competitor_output=competitor_typed,
-            analyst_output=analyst_typed,
-            coach_output=coach_typed,
-            architect_output=architect_typed,
+            competitor_exec,
+            translator_exec,
+            analyst_exec,
+            coach_exec,
+            architect_exec,
         )
 
     def _run_via_pipeline(
