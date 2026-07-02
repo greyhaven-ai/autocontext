@@ -234,7 +234,7 @@ describe("autoctx campaign list", () => {
     const parsed = JSON.parse(stdout);
     expect(parsed.length).toBe(1);
     expect(parsed[0].name).toBe("B");
-  }, 15000);
+  });
 
   it("rejects invalid status filters", () => {
     const { exitCode, stderr } = runCli(["campaign", "list", "--status", "mystery"], { cwd: dir });
@@ -278,7 +278,7 @@ describe("autoctx campaign add-mission and progress", () => {
     });
     const progress = JSON.parse(progressOut);
     expect(progress.totalMissions).toBe(1);
-  }, 15000);
+  });
 
   it("adds a mission with priority and dependencies", () => {
     const { stdout: cOut } = runCli(["campaign", "create", "--name", "C", "--goal", "g"], {
@@ -317,7 +317,7 @@ describe("autoctx campaign add-mission and progress", () => {
     const { stdout: statusOut } = runCli(["campaign", "status", "--id", campaignId], { cwd: dir });
     const status = JSON.parse(statusOut);
     expect(status.missions.length).toBe(2);
-  }, 15000);
+  });
 
   it("rejects invalid priority values", () => {
     const { stdout: cOut } = runCli(["campaign", "create", "--name", "C", "--goal", "g"], {
@@ -345,7 +345,7 @@ describe("autoctx campaign add-mission and progress", () => {
     );
     expect(exitCode).toBe(1);
     expect(stderr).toContain("--priority must be a positive integer");
-  }, 15000);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -387,7 +387,7 @@ describe("autoctx campaign lifecycle", () => {
 
     const { stdout } = runCli(["campaign", "status", "--id", id], { cwd: dir });
     expect(JSON.parse(stdout).status).toBe("active");
-  }, 15000);
+  });
 
   it("cancel sets status to canceled", () => {
     const { stdout: created } = runCli(["campaign", "create", "--name", "T", "--goal", "g"], {
@@ -417,7 +417,7 @@ describe("autoctx campaign lifecycle", () => {
 
     const { stdout } = runCli(["campaign", "status", "--id", id], { cwd: dir });
     expect(JSON.parse(stdout).status).toBe("canceled");
-  }, 15000);
+  });
 
   it("returns an error for nonexistent campaign IDs", () => {
     const { stderr, exitCode } = runCli(["campaign", "status", "--id", "nonexistent-id"], {
