@@ -1,5 +1,5 @@
 /**
- * autocontext CLI — command handler registry.
+ * autocontext CLI: command handler registry.
  *
  * AC-853: command-handlers.ts was split by command family into
  * ./commands/<family>.ts. This file is now a re-export barrel: it wires

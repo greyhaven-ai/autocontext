@@ -296,7 +296,7 @@ export class InteractiveServer {
     // route is the one call site with a real readPlaybook implementation;
     // every other run/scenario/simulation route keeps the null-returning
     // stub the original code used (see AC-852 task report for the tracked
-    // asymmetry — this refactor does not wire new capability).
+    // asymmetry: this refactor does not wire new capability).
     const runSimDeps: RunSimulationReadDeps = {
       openStore,
       readPlaybook: () => null,
