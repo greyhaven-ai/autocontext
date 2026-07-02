@@ -96,7 +96,7 @@ jobs:
         run: npx vitest run tests/package-topology.test.ts tests/package-boundaries.test.ts
       - name: Python/TS schema sync drift check
         working-directory: ts
-        run: uv run --project ../autocontext -- npm run check:schemas
+        run: uv run --frozen --project ../autocontext -- npm run check:schemas
 
   smoke:
     needs: [lint, test, package-boundaries]
