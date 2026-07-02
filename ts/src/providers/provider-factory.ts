@@ -5,7 +5,10 @@ import { ClaudeCLIRuntime } from "../runtimes/claude-cli.js";
 import { CodexCLIRuntime, CodexCLIConfig } from "../runtimes/codex-cli.js";
 import { PiCLIRuntime, PiCLIConfig } from "../runtimes/pi-cli.js";
 import { PiPersistentRPCRuntime, PiRPCRuntime, PiRPCConfig } from "../runtimes/pi-rpc.js";
-import { RuntimeBridgeProvider, type RuntimeBridgeProviderOpts } from "../agents/provider-bridge.js";
+import {
+  RuntimeBridgeProvider,
+  type RuntimeBridgeProviderOpts,
+} from "../agents/provider-bridge.js";
 import type { AgentRuntime } from "../runtimes/base.js";
 import { SUPPORTED_PROVIDER_TYPES } from "./supported-provider-types.js";
 import type { RuntimeCommandGrant } from "../runtimes/workspace-env.js";
@@ -219,6 +222,9 @@ export function createProvider(opts: CreateProviderOpts): LLMProvider {
   }
 
   if (type === "hermes") {
+    // Naming collision only: this is an OpenAI-compatible gateway pointed at a
+    // Hermes-3-Llama model. Unrelated to autocontext.hermes (Python), which
+    // integrates with NousResearch's Hermes agent Curator subsystem.
     const inner = createOpenAICompatibleProvider({
       apiKey: opts.apiKey ?? "no-key",
       baseUrl: opts.baseUrl ?? "http://localhost:8080/v1",
