@@ -55,7 +55,7 @@ function jsonText(payload: unknown, indent?: number): JsonToolResponse {
 const ReadTrajectoryArgsSchema = z.object({ runId: z.string() });
 type ReadTrajectoryArgs = z.infer<typeof ReadTrajectoryArgsSchema>;
 
-const ScenarioArgsSchema = z.object({ scenario: z.string() });
+const ScenarioArgsSchema = z.object({ scenario: z.string().min(1) });
 type ScenarioArgs = z.infer<typeof ScenarioArgsSchema>;
 
 const ReadAnalysisArgsSchema = z.object({

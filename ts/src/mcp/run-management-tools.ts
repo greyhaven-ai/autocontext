@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import type { LLMProvider } from "../types/index.js";
-import { asRunId, asScenarioName } from "../domain/ids.js";
+import { asRunId, asScenarioName, type ScenarioName } from "../domain/ids.js";
 import { ArtifactStore } from "../knowledge/artifact-store.js";
 import { GenerationRunner } from "../loop/generation-runner.js";
 import { assertFamilyContract } from "../scenarios/family-interfaces.js";
@@ -47,7 +47,7 @@ interface RunControlSettings {
 
 interface RunManagementInternals {
   createArtifactStore(opts: { runsRoot: string; knowledgeRoot: string }): {
-    readPlaybook(scenarioName: string): string;
+    readPlaybook(scenarioName: ScenarioName): string;
   };
   loadScenarioRegistry(): ScenarioRegistry;
   assertFamilyContract(scenario: ScenarioLike, family: "game", label: string): void;
@@ -123,7 +123,7 @@ const RunIdArgsSchema = z.object({
 type RunIdArgs = z.infer<typeof RunIdArgsSchema>;
 
 const GetPlaybookArgsSchema = z.object({
-  scenario: z.string().describe("Scenario name"),
+  scenario: z.string().min(1).describe("Scenario name"),
 });
 type GetPlaybookArgs = z.infer<typeof GetPlaybookArgsSchema>;
 
