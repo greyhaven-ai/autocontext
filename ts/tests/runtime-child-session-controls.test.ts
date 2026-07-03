@@ -69,11 +69,17 @@ describe("runtime child session controls", () => {
       isError: true,
       error: "Maximum concurrent child sessions (1) exceeded",
     });
+    // AC-874: every delegated task attempt, including one rejected by the concurrency
+    // guardrail, logs a paired CHILD_TASK_STARTED/CHILD_TASK_COMPLETED so consumers that
+    // reconcile start/end event pairs (e.g. the runtime-session timeline) never see an
+    // orphaned failure event. This is orthogonal to slot reservation: "second" still loses
+    // the race and never runs its handler (see startedTasks above); it just also gets a
+    // start/end pair recorded for the rejected attempt.
     const parent = eventStore.load("runtime-parent");
     const startedEvents = (parent?.events ?? []).filter(
       (event) => event.eventType === RuntimeSessionEventType.CHILD_TASK_STARTED,
     );
-    expect(startedEvents.map((event) => event.payload.taskId)).toEqual(["first"]);
+    expect(startedEvents.map((event) => event.payload.taskId)).toEqual(["first", "second"]);
 
     eventStore.close();
   });

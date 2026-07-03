@@ -154,16 +154,7 @@ describe("RuntimeChildTaskRunner", () => {
     });
   });
 
-  // AC-783 ("model child background sessions") moved the depth/concurrency early-rejection
-  // checks in RuntimeChildTaskRunner.run() to before the CHILD_TASK_STARTED append, so a
-  // depth-exceeded task now logs only CHILD_TASK_COMPLETED (no CHILD_TASK_STARTED) to
-  // parentLog. That is a real, deterministic behavior regression from the pre-AC-783
-  // contract this test encodes (start-then-outcome lifecycle for every delegated task
-  // attempt), not a test-hygiene or environment problem. Fixing RuntimeChildTaskRunner is
-  // out of scope for AC-867 (test-baseline hygiene) and needs its own review since other
-  // consumers may have been written against the current (buggy) event sequence since
-  // June 12. Tracked as a finding in the AC-867 report; not fixed here.
-  it.skip("fails delegated tasks that exceed the configured child task depth", async () => {
+  it("fails delegated tasks that exceed the configured child task depth", async () => {
     const workspace = createInMemoryWorkspaceEnv({ cwd: "/workspace" });
     const coordinator = Coordinator.create("parent-session", "ship auth");
     const parentLog = RuntimeSessionEventLog.create({ sessionId: "parent-session" });
@@ -226,6 +217,88 @@ describe("RuntimeChildTaskRunner", () => {
       maxDepth: 1,
     });
     expect(result.childSessionLog.metadata).toMatchObject({ depth: 2, maxDepth: 1 });
+    expect(result.childSessionLog.events.map((event) => event.eventType)).toEqual([
+      RuntimeSessionEventType.PROMPT_SUBMITTED,
+      RuntimeSessionEventType.ASSISTANT_MESSAGE,
+    ]);
+  });
+
+  it("fails delegated tasks that exceed the configured concurrent child task limit", async () => {
+    const workspace = createInMemoryWorkspaceEnv({ cwd: "/workspace" });
+    const coordinator = Coordinator.create("parent-session", "ship auth");
+    const parentLog = RuntimeSessionEventLog.create({ sessionId: "parent-session" });
+    const runner = new RuntimeChildTaskRunner({
+      coordinator,
+      parentLog,
+      workspace,
+      maxConcurrentChildTasks: 1,
+    });
+    let called = false;
+
+    // Seed an already-active child session (CHILD_TASK_STARTED with no matching
+    // CHILD_TASK_COMPLETED yet) so the next run() call is rejected for exceeding
+    // maxConcurrentChildTasks.
+    parentLog.append(RuntimeSessionEventType.CHILD_TASK_STARTED, {
+      taskId: "task-in-flight",
+      childSessionId: "task:parent-session:task-in-flight:worker-0",
+      workerId: "worker-0",
+      role: "researcher",
+      cwd: "/workspace",
+      depth: 1,
+      maxDepth: 4,
+    });
+
+    const result = await runner.run({
+      taskId: "task-too-many",
+      prompt: "Research nested auth flow",
+      role: "researcher",
+      handler: () => {
+        called = true;
+        return { text: "should not run" };
+      },
+    });
+
+    expect(called).toBe(false);
+    expect(result).toMatchObject({
+      taskId: "task-too-many",
+      isError: true,
+      text: "",
+      error: "Maximum concurrent child sessions (1) exceeded",
+      depth: 1,
+      maxDepth: 4,
+    });
+    expect(coordinator.workers[0].status).toBe(WorkerStatus.FAILED);
+    expect(
+      coordinator.events.find((event) => event.eventType === CoordinatorEventType.WORKER_FAILED)
+        ?.payload,
+    ).toMatchObject({
+      workerId: result.workerId,
+      taskId: "task-too-many",
+      childSessionId: result.childSessionId,
+      parentSessionId: "parent-session",
+      isError: true,
+      error: "Maximum concurrent child sessions (1) exceeded",
+      depth: 1,
+      maxDepth: 4,
+    });
+    expect(parentLog.events.map((event) => event.eventType)).toEqual([
+      RuntimeSessionEventType.CHILD_TASK_STARTED,
+      RuntimeSessionEventType.CHILD_TASK_STARTED,
+      RuntimeSessionEventType.CHILD_TASK_COMPLETED,
+    ]);
+    expect(parentLog.events[1].payload).toMatchObject({
+      taskId: "task-too-many",
+      depth: 1,
+      maxDepth: 4,
+    });
+    expect(parentLog.events.at(-1)?.payload).toMatchObject({
+      taskId: "task-too-many",
+      isError: true,
+      error: "Maximum concurrent child sessions (1) exceeded",
+      depth: 1,
+      maxDepth: 4,
+    });
+    expect(result.childSessionLog.metadata).toMatchObject({ depth: 1, maxDepth: 4 });
     expect(result.childSessionLog.events.map((event) => event.eventType)).toEqual([
       RuntimeSessionEventType.PROMPT_SUBMITTED,
       RuntimeSessionEventType.ASSISTANT_MESSAGE,
