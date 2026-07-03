@@ -89,6 +89,16 @@ class Charter(BaseModel):
         return self
 
     @model_validator(mode="after")
+    def _source_names_unique(self) -> Charter:
+        # the trace store keys ingest cursors by source name; duplicates
+        # would clobber each other's watermarks and silently skip records
+        names = [source.name for source in self.sources]
+        duplicates = {name for name in names if names.count(name) > 1}
+        if duplicates:
+            raise ValueError(f"duplicate source names: {sorted(duplicates)}")
+        return self
+
+    @model_validator(mode="after")
     def _target_names_unique(self) -> Charter:
         # policy lookups and proposal keying treat target name as a unique key
         names = [target.name for target in self.targets]

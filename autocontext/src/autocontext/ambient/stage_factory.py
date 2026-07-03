@@ -22,6 +22,7 @@ def build_stages(
     otel_feed_dir: Path,
 ) -> dict[str, Stage]:
     sources: list[TraceSource] = []
+    unsupported: list[tuple[str, str]] = []
     for spec in charter.sources:
         if not spec.enabled:
             continue
@@ -30,12 +31,13 @@ def build_stages(
         elif spec.kind == "otel":
             sources.append(JsonlFeedSource(name=spec.name, feed_dir=otel_feed_dir))
         else:
-            emitter.emit("ingest_source_unsupported", {"source": spec.name, "kind": spec.kind}, channel="ambient")
+            unsupported.append((spec.name, spec.kind))
     stages: dict[str, Stage] = {name: NoOpStage(name=name) for name in STAGE_NAMES}
     stages["ingest"] = IngestStage(
         name="ingest",
         trace_store=TraceStore(db_path),
         sources=sources,
         disk_quota_gb=charter.budgets.disk_quota_gb,
+        unsupported=unsupported,
     )
     return stages

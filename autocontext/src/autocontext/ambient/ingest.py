@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from autocontext.ambient.redaction_gate import redact_payload
 from autocontext.ambient.sources.contract import TraceSource
@@ -18,8 +18,18 @@ class IngestStage:
     trace_store: TraceStore
     sources: list[TraceSource]
     disk_quota_gb: float
+    unsupported: list[tuple[str, str]] = field(default_factory=list)
+    _announced: bool = False
 
     def run_once(self, ctx: StageContext) -> StageResult:
+        if not self._announced:
+            # announced at run time, not construction, so read-only commands
+            # (status builds the stage set too) never write events
+            for source_name, kind in self.unsupported:
+                ctx.emitter.emit(
+                    "ingest_source_unsupported", {"source": source_name, "kind": kind}, channel="ambient"
+                )
+            self._announced = True
         appended = 0
         errors = 0
         for source in self.sources:

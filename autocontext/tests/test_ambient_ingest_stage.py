@@ -105,3 +105,16 @@ def test_disk_quota_triggers_prune(tmp_path: Path) -> None:
     assert store.count() < before
     events = (tmp_path / "events.ndjson").read_text(encoding="utf-8")
     assert "trace_retention_pruned" in events
+
+
+def test_unsupported_kinds_announced_once_at_run_time(tmp_path: Path) -> None:
+    store = TraceStore(tmp_path / "ambient.sqlite3")
+    stage = IngestStage(
+        name="ingest", trace_store=store, sources=[], disk_quota_gb=10.0,
+        unsupported=[("box", "full-box")],
+    )
+    ctx = _ctx(tmp_path)
+    stage.run_once(ctx)
+    stage.run_once(ctx)
+    events = (tmp_path / "events.ndjson").read_text(encoding="utf-8")
+    assert events.count("ingest_source_unsupported") == 1

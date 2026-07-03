@@ -69,4 +69,6 @@ def test_unsupported_kinds_emit_event_and_are_skipped(tmp_path: Path) -> None:
     ingest = stages["ingest"]
     assert isinstance(ingest, IngestStage)
     assert len(ingest.sources) == 1
-    assert "ingest_source_unsupported" in events_path.read_text(encoding="utf-8")
+    assert ingest.unsupported == [("box", "full-box")]
+    # construction is event-silent; the announcement happens on first run
+    assert not events_path.exists() or "ingest_source_unsupported" not in events_path.read_text(encoding="utf-8")
