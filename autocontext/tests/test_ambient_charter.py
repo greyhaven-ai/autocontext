@@ -73,3 +73,11 @@ def test_full_box_source_allowed_on_hosted_tier() -> None:
 def test_target_autonomy_override_optional() -> None:
     charter = _minimal_charter()
     assert charter.targets[0].autonomy is None
+
+
+def test_guardrail_floor_holds_on_assignment() -> None:
+    config = GuardrailConfig()
+    with pytest.raises(ValidationError, match="guardrail floor"):
+        config.frozen_anchor = False
+    with pytest.raises(ValidationError):
+        config.min_frontier_fraction = 0.0

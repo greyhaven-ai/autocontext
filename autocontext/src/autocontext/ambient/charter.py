@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 AutonomyLevel = Literal["propose", "train", "full"]
 DeploymentTier = Literal["oss", "hosted-box"]
@@ -19,6 +19,12 @@ _FLOOR_MESSAGE = "guardrail floor: this protection cannot be disabled through th
 
 
 class GuardrailConfig(BaseModel):
+    # validate_assignment closes the silent post-construction bypass
+    # (attribute assignment re-runs the floor validators). model_construct
+    # and model_copy(update=...) still skip validation by pydantic design;
+    # never use them on charter models with untrusted input.
+    model_config = ConfigDict(validate_assignment=True)
+
     frozen_anchor: bool = True
     provenance_quarantine: bool = True
     asymmetric_trainability: bool = True
