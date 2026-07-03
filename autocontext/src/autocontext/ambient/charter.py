@@ -23,7 +23,7 @@ class GuardrailConfig(BaseModel):
     # (attribute assignment re-runs the floor validators). model_construct
     # and model_copy(update=...) still skip validation by pydantic design;
     # never use them on charter models with untrusted input.
-    model_config = ConfigDict(validate_assignment=True)
+    model_config = ConfigDict(validate_assignment=True, extra="forbid")
 
     frozen_anchor: bool = True
     provenance_quarantine: bool = True
@@ -40,6 +40,8 @@ class GuardrailConfig(BaseModel):
 
 
 class CharterSource(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str = Field(min_length=1)
     kind: SourceKind
     enabled: bool = True
@@ -47,6 +49,8 @@ class CharterSource(BaseModel):
 
 
 class CharterTarget(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str = Field(min_length=1)
     kind: Literal["role", "task_family"]
     selector: str = Field(min_length=1)
@@ -58,6 +62,8 @@ class CharterTarget(BaseModel):
 
 
 class CharterBudgets(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     gpu_hours_per_window: float = Field(gt=0)
     window_hours: int = Field(ge=1)
     disk_quota_gb: float = Field(gt=0)
@@ -65,6 +71,8 @@ class CharterBudgets(BaseModel):
 
 
 class Charter(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     tier: DeploymentTier
     control_surface: Literal["local", "autowork"] = "local"
     autonomy: AutonomyLevel = "propose"

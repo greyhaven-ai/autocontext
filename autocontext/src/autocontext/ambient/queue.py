@@ -64,7 +64,11 @@ class AmbientQueue:
             return AmbientJob(row[0], row[1], row[2], json.loads(row[3]), row[4])
 
     def requeue_stale_running(self) -> int:
-        """return jobs stuck in running (for example after a crash) to pending."""
+        """return jobs stuck in running (for example after a crash) to pending.
+
+        Assumes a single resident daemon per database: a second concurrent
+        daemon calling this would clobber the first one's in-flight jobs.
+        """
         with self._connect() as conn:
             cursor = conn.execute("UPDATE ambient_queue SET status = 'pending' WHERE status = 'running'")
             return int(cursor.rowcount)

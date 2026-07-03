@@ -94,3 +94,18 @@ def test_duplicate_target_names_rejected() -> None:
     )
     with pytest.raises(ValidationError, match="duplicate target names"):
         _minimal_charter(targets=[target, target.model_copy()])
+
+
+def test_unknown_charter_keys_rejected() -> None:
+    with pytest.raises(ValidationError):
+        _minimal_charter(autonmy="full")  # typo'd key must fail loudly
+    with pytest.raises(ValidationError):
+        CharterTarget(
+            name="t",
+            kind="role",
+            selector="s",
+            base_model="m",
+            min_dataset_records=1,
+            eval_suite="e",
+            autonmy="full",
+        )

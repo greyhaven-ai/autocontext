@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from autocontext.ambient.charter import Charter, CharterBudgets, CharterTarget
 
@@ -49,14 +49,26 @@ class ProposalStore:
         for line in self.path.read_text(encoding="utf-8").splitlines():
             if not line.strip():
                 continue
-            proposal = CharterProposal(**json.loads(line))
+            try:
+                proposal = CharterProposal(**json.loads(line))
+            except (json.JSONDecodeError, ValidationError):
+                # a crash mid-append can leave a torn trailing line; skip it
+                # rather than bricking every read of the store
+                continue
             records[proposal.proposal_id] = proposal
         return records
 
     def append(self, proposal: CharterProposal) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        prefix = ""
+        if self.path.exists():
+            tail = self.path.read_bytes()[-1:]
+            if tail and tail != b"\n":
+                # a torn trailing line from a crash mid-append must not
+                # swallow the next record; start it on a fresh line
+                prefix = "\n"
         with self.path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(proposal.model_dump(mode="json")) + "\n")
+            handle.write(prefix + json.dumps(proposal.model_dump(mode="json")) + "\n")
 
     def pending(self) -> list[CharterProposal]:
         return [p for p in self._read_all().values() if p.status == "pending"]

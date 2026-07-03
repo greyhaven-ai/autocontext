@@ -72,3 +72,13 @@ def test_store_append_pending_and_mark(tmp_path: Path) -> None:
     assert [p.proposal_id for p in store.pending()] == ["p-1"]
     store.mark("p-1", "applied")
     assert store.pending() == []
+
+
+def test_store_survives_torn_trailing_line(tmp_path: Path) -> None:
+    store = ProposalStore(tmp_path / "proposals.jsonl")
+    store.append(_add_target_proposal())
+    with store.path.open("a", encoding="utf-8") as handle:
+        handle.write('{"proposal_id": "p-torn", "kin')  # crash mid-append
+    assert [p.proposal_id for p in store.pending()] == ["p-1"]
+    store.mark("p-1", "applied")
+    assert store.pending() == []

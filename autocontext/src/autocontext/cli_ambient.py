@@ -64,7 +64,7 @@ def status(
         raise typer.Exit(code=1) from exc
     charter = daemon.charter
     console.print(f"tier={charter.tier} autonomy={charter.autonomy} targets={len(charter.targets)}")
-    table = Table("stage", "paused", "queue depth")
+    table = Table("stage", "paused (this process)", "backlog")
     for name, info in daemon.status().items():
         table.add_row(name, str(info["paused"]), str(info["queue_depth"]))
     console.print(table)

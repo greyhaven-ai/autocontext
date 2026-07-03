@@ -85,4 +85,7 @@ class AmbientDaemon:
                 time.sleep(poll_seconds)
 
     def status(self) -> dict[str, dict[str, object]]:
+        """per-stage view: paused reflects only this process's breakers, and
+        queue_depth counts pending backlog only (in-flight jobs are invisible).
+        """
         return {name: {"paused": self._breakers[name].paused, "queue_depth": self.queue.depth(name)} for name in self._stages}
