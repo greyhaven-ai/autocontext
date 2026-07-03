@@ -109,3 +109,18 @@ def test_unknown_charter_keys_rejected() -> None:
             eval_suite="e",
             autonmy="full",
         )
+
+
+def test_non_default_redaction_profile_rejected() -> None:
+    with pytest.raises(ValidationError, match="reserved"):
+        CharterSource(name="native", kind="autocontext", redaction_profile="strict")
+
+
+def test_duplicate_source_names_rejected() -> None:
+    with pytest.raises(ValidationError, match="duplicate source names"):
+        _minimal_charter(
+            sources=[
+                CharterSource(name="main", kind="autocontext"),
+                CharterSource(name="main", kind="otel"),
+            ]
+        )

@@ -45,7 +45,16 @@ class CharterSource(BaseModel):
     name: str = Field(min_length=1)
     kind: SourceKind
     enabled: bool = True
+    # reserved: only "default" is accepted today; alternate redaction
+    # profiles are a future slice and rejected by the validator below
     redaction_profile: str = "default"
+
+    @field_validator("redaction_profile")
+    @classmethod
+    def _reserved_redaction_profile(cls, value: str) -> str:
+        if value != "default":
+            raise ValueError("redaction profiles beyond default are reserved for a future slice")
+        return value
 
 
 class CharterTarget(BaseModel):
@@ -86,6 +95,16 @@ class Charter(BaseModel):
         for source in self.sources:
             if source.kind == "full-box" and self.tier != "hosted-box":
                 raise ValueError("full-box sources require the hosted-box tier")
+        return self
+
+    @model_validator(mode="after")
+    def _source_names_unique(self) -> Charter:
+        # the trace store keys ingest cursors by source name; duplicates
+        # would clobber each other's watermarks and silently skip records
+        names = [source.name for source in self.sources]
+        duplicates = {name for name in names if names.count(name) > 1}
+        if duplicates:
+            raise ValueError(f"duplicate source names: {sorted(duplicates)}")
         return self
 
     @model_validator(mode="after")
