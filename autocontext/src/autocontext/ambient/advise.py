@@ -11,6 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from uuid import uuid4
 
+from pydantic import ValidationError
+
 from autocontext.ambient.charter import Charter, CharterTarget
 from autocontext.ambient.eligibility import is_evaluative_target
 from autocontext.ambient.proposals import CharterProposal, ProposalStore
@@ -37,6 +39,9 @@ def _covered_scenarios(charter: Charter, store: ProposalStore) -> tuple[bool, se
     """
     role_coverage = any(target.kind == "role" and not is_evaluative_target(target) for target in charter.targets)
     covered = {target.selector for target in charter.targets if target.kind == "task_family"}
+    # only pending proposals count as coverage: a rejected proposal's scenario is
+    # deliberately eligible to be re-proposed on a later scan (rejection is a
+    # decision about that proposal, not a permanent suppression of the scenario).
     for proposal in store.pending():
         selector = proposal.payload.get("selector")
         if proposal.kind == "add_target" and isinstance(selector, str):
@@ -87,10 +92,12 @@ class AdviseStage:
                     channel="ambient",
                 )
                 continue
-            proposal = CharterProposal(
-                proposal_id=f"add-target-{scenario}-{uuid4().hex[:8]}",
-                kind="add_target",
-                payload=CharterTarget(
+            # scenario names flow in from trace payloads and are not slug-validated
+            # upstream, so a name the charter would reject must be skipped here
+            # rather than allowed to trip the stage breaker (three raised cycles
+            # auto-pause the advise stage).
+            try:
+                target = CharterTarget(
                     name=f"{scenario}-auto",
                     kind="task_family",
                     selector=scenario,
@@ -98,7 +105,18 @@ class AdviseStage:
                     method="sft-distill",
                     min_dataset_records=template.min_dataset_records,
                     eval_suite=template.eval_suite,
-                ).model_dump(mode="json"),
+                )
+            except ValidationError as exc:
+                ctx.emitter.emit(
+                    "advise_invalid_scenario",
+                    {"scenario": scenario, "error": str(exc)},
+                    channel="ambient",
+                )
+                continue
+            proposal = CharterProposal(
+                proposal_id=f"add-target-{scenario}-{uuid4().hex[:8]}",
+                kind="add_target",
+                payload=target.model_dump(mode="json"),
                 rationale=(
                     f"{entry.count} eligible frontier traces for scenario {scenario} "
                     f"at mean score {entry.mean_score:.2f}; propose an sft-distill target"

@@ -164,6 +164,29 @@ def test_no_template_target_emits_event_not_proposal(tmp_path: Path) -> None:
     assert any(e["event"] == "advise_no_template" for e in events)
 
 
+def test_pattern_invalid_scenario_is_skipped_not_raised(tmp_path: Path) -> None:
+    traces = TraceStore(tmp_path / "traces.sqlite3")
+    # "_probe" leads with an underscore, which violates the CharterTarget.name
+    # slug pattern; it must be skipped without tripping the stage breaker while
+    # a valid sibling scenario still yields its proposal
+    _seed_scenario(traces, "_probe", count=5, score=0.9)
+    _seed_scenario(traces, "lean_prover", count=5, score=0.9)
+    store = ProposalStore(tmp_path / "proposals.jsonl")
+    template = _target(name="othello-target", kind="task_family", selector="othello")
+    stage = AdviseStage(name="advise", trace_store=traces, min_traces=5)
+
+    result = stage.run_once(_ctx(tmp_path, _charter([template]), store))
+
+    assert result.processed == 1
+    pending = store.pending()
+    assert len(pending) == 1
+    assert pending[0].payload["selector"] == "lean_prover"
+    events = [json.loads(line) for line in (tmp_path / "events.ndjson").read_text(encoding="utf-8").splitlines() if line.strip()]
+    invalid = [e for e in events if e["event"] == "advise_invalid_scenario"]
+    assert len(invalid) == 1
+    assert invalid[0]["payload"]["scenario"] == "_probe"
+
+
 def test_missing_proposal_store_is_a_quiet_skip(tmp_path: Path) -> None:
     traces = TraceStore(tmp_path / "traces.sqlite3")
     _seed_scenario(traces, "lean_prover", count=5, score=0.9)
