@@ -49,16 +49,25 @@ class AmbientQueue:
             return int(cursor.lastrowid or 0)
 
     def claim(self, stage: str) -> AmbientJob | None:
+        # single atomic statement: a select-then-update pair would let two
+        # connections claim the same pending row (toctou double-claim)
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT job_id, stage, kind, payload, attempts FROM ambient_queue "
-                "WHERE stage = ? AND status = 'pending' ORDER BY job_id LIMIT 1",
+                "UPDATE ambient_queue SET status = 'running' WHERE job_id = ("
+                "SELECT job_id FROM ambient_queue WHERE stage = ? AND status = 'pending' "
+                "ORDER BY job_id LIMIT 1) AND status = 'pending' "
+                "RETURNING job_id, stage, kind, payload, attempts",
                 (stage,),
             ).fetchone()
             if row is None:
                 return None
-            conn.execute("UPDATE ambient_queue SET status = 'running' WHERE job_id = ?", (row[0],))
             return AmbientJob(row[0], row[1], row[2], json.loads(row[3]), row[4])
+
+    def requeue_stale_running(self) -> int:
+        """return jobs stuck in running (for example after a crash) to pending."""
+        with self._connect() as conn:
+            cursor = conn.execute("UPDATE ambient_queue SET status = 'pending' WHERE status = 'running'")
+            return int(cursor.rowcount)
 
     def complete(self, job_id: int) -> None:
         with self._connect() as conn:

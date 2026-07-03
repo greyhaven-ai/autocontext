@@ -40,3 +40,24 @@ def test_queue_survives_reopen(tmp_path: Path) -> None:
     path = tmp_path / "ambient.sqlite3"
     AmbientQueue(path).enqueue("ingest", "poll_source", {})
     assert AmbientQueue(path).depth("ingest") == 1
+
+
+def test_claim_never_double_claims(tmp_path: Path) -> None:
+    path = tmp_path / "ambient.sqlite3"
+    queue_a = AmbientQueue(path)
+    queue_b = AmbientQueue(path)
+    queue_a.enqueue("ingest", "poll_source", {})
+    first = queue_a.claim("ingest")
+    second = queue_b.claim("ingest")
+    assert first is not None
+    assert second is None
+
+
+def test_requeue_stale_running(tmp_path: Path) -> None:
+    queue = AmbientQueue(tmp_path / "ambient.sqlite3")
+    queue.enqueue("train", "run_target", {})
+    assert queue.claim("train") is not None
+    assert queue.depth("train") == 0
+    assert queue.requeue_stale_running() == 1
+    assert queue.depth("train") == 1
+    assert queue.claim("train") is not None
