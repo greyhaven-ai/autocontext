@@ -33,11 +33,6 @@ class AmbientDaemon:
         self._breakers: dict[str, AutoPauseBreaker] = {
             name: AutoPauseBreaker(threshold=breaker_threshold) for name in self._stages
         }
-        # crash recovery: jobs stuck in running from a previous process
-        # return to pending before the first cycle
-        requeued = self.queue.requeue_stale_running()
-        if requeued:
-            self.emitter.emit("stale_jobs_requeued", {"count": requeued}, channel="ambient")
 
     def _context(self) -> StageContext:
         return StageContext(charter=self.charter, queue=self.queue, emitter=self.emitter)
@@ -76,6 +71,12 @@ class AmbientDaemon:
         return results
 
     def run_forever(self, poll_seconds: float, max_cycles: int | None = None) -> None:
+        # crash recovery lives here, not in the constructor: read-only
+        # commands (status) and manual one-shots construct a daemon too, and
+        # must never yank another process's in-flight jobs back to pending
+        requeued = self.queue.requeue_stale_running()
+        if requeued:
+            self.emitter.emit("stale_jobs_requeued", {"count": requeued}, channel="ambient")
         cycles = 0
         while max_cycles is None or cycles < max_cycles:
             self.run_cycle()

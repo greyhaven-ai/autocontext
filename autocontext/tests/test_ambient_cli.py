@@ -103,3 +103,19 @@ def test_once_runs_single_stage(tmp_path: Path) -> None:
     )
     assert result.exit_code == 0, result.output
     assert "processed" in result.output
+
+
+def test_status_does_not_requeue_running_jobs(tmp_path: Path) -> None:
+    from autocontext.ambient.queue import AmbientQueue
+
+    charter_path = _init(tmp_path)
+    db_path = tmp_path / "a.sqlite3"
+    queue = AmbientQueue(db_path)
+    queue.enqueue("ingest", "poll_source", {})
+    assert queue.claim("ingest") is not None  # in-flight in another process
+    result = runner.invoke(
+        app,
+        ["ambient", "status", "--charter-path", str(charter_path), "--db-path", str(db_path)],
+    )
+    assert result.exit_code == 0, result.output
+    assert queue.depth("ingest") == 0  # still running, not yanked back

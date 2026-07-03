@@ -98,7 +98,7 @@ def test_run_stage_once_unknown_stage_raises(tmp_path: Path) -> None:
         _daemon(tmp_path).run_stage_once("nonsense")
 
 
-def test_daemon_requeues_stale_running_jobs_on_startup(tmp_path: Path) -> None:
+def test_run_forever_requeues_stale_running_jobs_before_first_cycle(tmp_path: Path) -> None:
     queue = AmbientQueue(tmp_path / "ambient.sqlite3")
     queue.enqueue("ingest", "poll_source", {})
     assert queue.claim("ingest") is not None  # simulate a crash mid-job
@@ -107,6 +107,9 @@ def test_daemon_requeues_stale_running_jobs_on_startup(tmp_path: Path) -> None:
         queue=queue,
         emitter=EventStreamEmitter(tmp_path / "events.ndjson"),
     )
+    # construction is side-effect free: the in-flight job stays running
+    assert daemon.status()["ingest"]["queue_depth"] == 0
+    daemon.run_forever(poll_seconds=0.0, max_cycles=0)
     assert daemon.status()["ingest"]["queue_depth"] == 1
 
 
