@@ -23,6 +23,7 @@ class JsonlFeedSource:
 
     name: str
     feed_dir: Path
+    kind: str = "otel"
     batch_size: int = 500
 
     def _files(self) -> list[Path]:

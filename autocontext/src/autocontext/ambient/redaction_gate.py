@@ -20,6 +20,8 @@ def _redact_value(value: Any, counter: list[int]) -> Any:
 
 
 def redact_payload(payload: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    # dict keys are structural and not redacted; payloads are JSON-origin so
+    # keys are strings and never carry content.
     counter = [0]
     redacted = {key: _redact_value(value, counter) for key, value in payload.items()}
     return redacted, counter[0]

@@ -44,6 +44,7 @@ def _ctx(tmp_path: Path) -> StageContext:
 class ScriptedSource:
     name: str
     polls: list[SourcePoll]
+    kind: str = "autocontext"
     seen_cursors: list[str | None] = field(default_factory=list)
 
     def poll(self, cursor: str | None) -> SourcePoll:
@@ -54,6 +55,7 @@ class ScriptedSource:
 @dataclass
 class ExplodingSource:
     name: str
+    kind: str = "autocontext"
 
     def poll(self, cursor: str | None) -> SourcePoll:
         raise RuntimeError("feed offline")
@@ -69,7 +71,7 @@ def test_ingest_appends_redacts_and_advances_cursor(tmp_path: Path) -> None:
     result = stage.run_once(_ctx(tmp_path))
     assert result.processed == 1 and result.errors == 0
     assert source.seen_cursors == [None]
-    assert store.get_cursor("native") == "5"
+    assert store.get_cursor("autocontext:native") == "5"
     record = store.recent(limit=1)[0]
     assert _FAKE_KEY not in str(record.payload)
     assert record.redaction_findings >= 1
@@ -110,7 +112,10 @@ def test_disk_quota_triggers_prune(tmp_path: Path) -> None:
 def test_unsupported_kinds_announced_once_at_run_time(tmp_path: Path) -> None:
     store = TraceStore(tmp_path / "ambient.sqlite3")
     stage = IngestStage(
-        name="ingest", trace_store=store, sources=[], disk_quota_gb=10.0,
+        name="ingest",
+        trace_store=store,
+        sources=[],
+        disk_quota_gb=10.0,
         unsupported=[("box", "full-box")],
     )
     ctx = _ctx(tmp_path)

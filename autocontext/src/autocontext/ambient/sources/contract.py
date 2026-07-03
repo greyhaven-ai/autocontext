@@ -21,5 +21,11 @@ class SourcePoll:
 
 class TraceSource(Protocol):
     name: str
+    kind: str
 
-    def poll(self, cursor: str | None) -> SourcePoll: ...
+    def poll(self, cursor: str | None) -> SourcePoll:
+        """A poll that returns records must also return a next_cursor;
+        returning records with next_cursor None would re-ingest the same
+        batch every poll.
+        """
+        ...

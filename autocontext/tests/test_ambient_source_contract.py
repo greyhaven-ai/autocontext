@@ -8,6 +8,7 @@ from autocontext.ambient.sources.contract import RawTrace, SourcePoll, TraceSour
 @dataclass
 class FakeSource:
     name: str
+    kind: str = "autocontext"
 
     def poll(self, cursor: str | None) -> SourcePoll:
         return SourcePoll(records=[RawTrace(kind="x", payload={"cursor": cursor})], next_cursor="1")
@@ -19,3 +20,4 @@ def test_contract_shapes() -> None:
     assert result.records[0].payload == {"cursor": None}
     assert result.records[0].produced_by == "frontier"
     assert result.next_cursor == "1"
+    assert source.kind == "autocontext"

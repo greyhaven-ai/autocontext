@@ -26,14 +26,15 @@ class IngestStage:
             # announced at run time, not construction, so read-only commands
             # (status builds the stage set too) never write events
             for source_name, kind in self.unsupported:
-                ctx.emitter.emit(
-                    "ingest_source_unsupported", {"source": source_name, "kind": kind}, channel="ambient"
-                )
+                ctx.emitter.emit("ingest_source_unsupported", {"source": source_name, "kind": kind}, channel="ambient")
             self._announced = True
         appended = 0
         errors = 0
         for source in self.sources:
-            cursor = self.trace_store.get_cursor(source.name)
+            # kind-namespacing means a charter kind change restarts that
+            # source's cursor cleanly instead of cross-reading a foreign format
+            cursor_key = f"{source.kind}:{source.name}"
+            cursor = self.trace_store.get_cursor(cursor_key)
             try:
                 poll = source.poll(cursor)
                 for record in poll.records:
@@ -41,7 +42,7 @@ class IngestStage:
                     self.trace_store.append(source.name, record.kind, payload, record.produced_by, findings)
                     appended += 1
                 if poll.next_cursor is not None:
-                    self.trace_store.set_cursor(source.name, poll.next_cursor)
+                    self.trace_store.set_cursor(cursor_key, poll.next_cursor)
             except Exception as exc:
                 errors += 1
                 ctx.emitter.emit("ingest_source_failed", {"source": source.name, "error": str(exc)}, channel="ambient")

@@ -50,6 +50,7 @@ def test_build_stages_wires_enabled_sources(tmp_path: Path) -> None:
     assert ingest.disk_quota_gb == 7.0
     kinds = [type(source) for source in ingest.sources]
     assert kinds == [NativeRunsSource, JsonlFeedSource]
+    assert [source.kind for source in ingest.sources] == ["autocontext", "otel"]
     assert all(isinstance(stages[name], NoOpStage) for name in ("curate", "advise", "train", "evaluate"))
 
 
