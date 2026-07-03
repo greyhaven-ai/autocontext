@@ -2,6 +2,7 @@
  * `queue` and `worker` commands (AC-853 split of command-handlers.ts).
  */
 import { parseArgs } from "node:util";
+import { asDbPath } from "../../domain/ids.js";
 import { getMigrationsDir, getProvider, loadSavedAgentTaskScenario } from "./shared.js";
 
 export async function cmdQueue(dbPath: string): Promise<void> {
@@ -33,7 +34,7 @@ export async function cmdQueue(dbPath: string): Promise<void> {
     const { executeStatusCommandWorkflow, renderStatusResult } =
       await import("../queue-status-command-workflow.js");
     const { SQLiteStore } = await import("../../storage/index.js");
-    const store = new SQLiteStore(dbPath);
+    const store = new SQLiteStore(asDbPath(dbPath));
     const result = executeStatusCommandWorkflow({
       store,
       migrationsDir: getMigrationsDir(),
@@ -79,7 +80,7 @@ export async function cmdQueue(dbPath: string): Promise<void> {
   const { enqueueTask } = await import("../../execution/task-runner.js");
   const savedScenario = await loadSavedAgentTaskScenario(values.spec);
 
-  const store = new SQLiteStore(dbPath);
+  const store = new SQLiteStore(asDbPath(dbPath));
   const migrationsDir = getMigrationsDir();
   store.migrate(migrationsDir);
 
@@ -119,7 +120,7 @@ export async function cmdWorker(dbPath: string): Promise<void> {
   const { initializeHookBus } = await import("../../extensions/index.js");
 
   const settings = loadSettings();
-  const store = new SQLiteStore(dbPath);
+  const store = new SQLiteStore(asDbPath(dbPath));
   store.migrate(getMigrationsDir());
   const { provider, model } = await getProvider(plan.model ? { model: plan.model } : {});
   const concurrency = resolveWorkerConcurrency(provider, plan.concurrency);

@@ -16,6 +16,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
+import { asDbPath } from "../domain/ids.js";
 import { SQLiteStore } from "../storage/index.js";
 import { MissionManager } from "../mission/manager.js";
 import { normalizeConfidence } from "../analytics/number-utils.js";
@@ -176,7 +177,9 @@ export class AnalysisEngine {
     if (!left) limitations.push(`Left artifact '${request.left.id}' not found`);
     if (!right) limitations.push(`Right artifact '${request.right.id}' not found`);
     if (request.left.type !== request.right.type) {
-      limitations.push(`Comparing different types (${request.left.type} vs ${request.right.type}) — results may be limited`);
+      limitations.push(
+        `Comparing different types (${request.left.type} vs ${request.right.type}) — results may be limited`,
+      );
     }
 
     if (!left || !right) {
@@ -199,7 +202,10 @@ export class AnalysisEngine {
         target: request.left,
         compareTarget: request.right,
         mode: "compare",
-        summary: { headline: "Comparison unavailable across different artifact types", confidence: 0 },
+        summary: {
+          headline: "Comparison unavailable across different artifact types",
+          confidence: 0,
+        },
         findings: [],
         regressions: [],
         limitations,
@@ -316,7 +322,7 @@ export class AnalysisEngine {
       return null;
     }
 
-    const store = new SQLiteStore(this.dbPath);
+    const store = new SQLiteStore(asDbPath(this.dbPath));
     try {
       const run = store.getRun(id);
       if (!run) {
@@ -442,7 +448,12 @@ export class AnalysisEngine {
       });
       if (summary && typeof summary.score === "number") {
         findings.push({
-          kind: summary.score >= 0.8 ? "improvement" : summary.score >= 0.5 ? "observation" : "regression",
+          kind:
+            summary.score >= 0.8
+              ? "improvement"
+              : summary.score >= 0.5
+                ? "observation"
+                : "regression",
           statement: `Best generation score reached ${summary.score.toFixed(2)}`,
           evidence: ["run trajectory"],
         });
@@ -454,7 +465,12 @@ export class AnalysisEngine {
       const name = String(mission.name ?? mission.id ?? "mission");
       const status = String(mission.status ?? artifact.status ?? "unknown");
       findings.push({
-        kind: status === "completed" ? "conclusion" : status === "failed" || status === "verifier_failed" ? "warning" : "observation",
+        kind:
+          status === "completed"
+            ? "conclusion"
+            : status === "failed" || status === "verifier_failed"
+              ? "warning"
+              : "observation",
         statement: `Mission '${name}' is ${status}`,
         evidence: ["mission status"],
       });
@@ -479,7 +495,10 @@ export class AnalysisEngine {
     return findings;
   }
 
-  private extractRegressions(artifact: Record<string, unknown>, type: AnalysisTargetType): string[] {
+  private extractRegressions(
+    artifact: Record<string, unknown>,
+    type: AnalysisTargetType,
+  ): string[] {
     const regressions: string[] = [];
     if (type === "simulation") {
       const summary = artifact.summary as Record<string, unknown> | undefined;
@@ -502,7 +521,9 @@ export class AnalysisEngine {
     if (type === "mission") {
       const mission = (artifact.mission as Record<string, unknown> | undefined) ?? artifact;
       const status = String(mission.status ?? artifact.status ?? "unknown");
-      if (["failed", "verifier_failed", "blocked", "budget_exhausted", "canceled"].includes(status)) {
+      if (
+        ["failed", "verifier_failed", "blocked", "budget_exhausted", "canceled"].includes(status)
+      ) {
         regressions.push(`Mission status is ${status}`);
       }
       const latestVerification = artifact.latestVerification as Record<string, unknown> | undefined;
@@ -513,7 +534,11 @@ export class AnalysisEngine {
     return regressions;
   }
 
-  private buildSummary(artifact: Record<string, unknown>, type: AnalysisTargetType, findings: Finding[]): AnalysisSummary {
+  private buildSummary(
+    artifact: Record<string, unknown>,
+    type: AnalysisTargetType,
+    findings: Finding[],
+  ): AnalysisSummary {
     if (type === "simulation") {
       const summary = artifact.summary as Record<string, unknown> | undefined;
       const score = Number(summary?.score ?? 0);
@@ -542,7 +567,8 @@ export class AnalysisEngine {
       const status = String(mission.status ?? artifact.status ?? "unknown");
       return {
         headline: `Mission '${mission.name ?? mission.id ?? "unknown"}' is ${status}`,
-        confidence: status === "completed" ? 0.9 : status === "active" || status === "paused" ? 0.6 : 0.7,
+        confidence:
+          status === "completed" ? 0.9 : status === "active" || status === "paused" ? 0.6 : 0.7,
       };
     }
     return {
@@ -560,7 +586,8 @@ export class AnalysisEngine {
     }
     if (type === "investigation") {
       limitations.push("Analysis based on generated investigation scenario");
-      const lims = (artifact.conclusion as Record<string, unknown> | undefined)?.limitations as string[] | undefined;
+      const lims = (artifact.conclusion as Record<string, unknown> | undefined)?.limitations as
+        string[] | undefined;
       if (lims) limitations.push(...lims);
     }
     if (type === "run") {
@@ -584,7 +611,9 @@ export class AnalysisEngine {
   // -------------------------------------------------------------------------
 
   private compareFindings(
-    left: Record<string, unknown>, right: Record<string, unknown>, type: AnalysisTargetType,
+    left: Record<string, unknown>,
+    right: Record<string, unknown>,
+    type: AnalysisTargetType,
   ): Finding[] {
     const findings: Finding[] = [];
     const leftScore = this.extractScore(left);
@@ -618,30 +647,44 @@ export class AnalysisEngine {
     }
 
     if (findings.length === 0) {
-      findings.push({ kind: "observation", statement: "No significant differences found", evidence: ["comparison"] });
+      findings.push({
+        kind: "observation",
+        statement: "No significant differences found",
+        evidence: ["comparison"],
+      });
     }
 
     return findings;
   }
 
-  private compareRegressions(left: Record<string, unknown>, right: Record<string, unknown>): string[] {
+  private compareRegressions(
+    left: Record<string, unknown>,
+    right: Record<string, unknown>,
+  ): string[] {
     const regressions: string[] = [];
     const leftScore = this.extractScore(left) ?? 0;
     const rightScore = this.extractScore(right) ?? 0;
     if (rightScore < leftScore - 0.05) {
-      regressions.push(`Overall score regressed from ${leftScore.toFixed(2)} to ${rightScore.toFixed(2)}`);
+      regressions.push(
+        `Overall score regressed from ${leftScore.toFixed(2)} to ${rightScore.toFixed(2)}`,
+      );
     }
     const leftDims = this.extractDimensionScores(left);
     const rightDims = this.extractDimensionScores(right);
     for (const dim of Object.keys(leftDims)) {
       if ((rightDims[dim] ?? 0) < leftDims[dim] - 0.1) {
-        regressions.push(`${dim} regressed from ${leftDims[dim].toFixed(2)} to ${(rightDims[dim] ?? 0).toFixed(2)}`);
+        regressions.push(
+          `${dim} regressed from ${leftDims[dim].toFixed(2)} to ${(rightDims[dim] ?? 0).toFixed(2)}`,
+        );
       }
     }
     return regressions;
   }
 
-  private computeAttribution(left: Record<string, unknown>, right: Record<string, unknown>): Attribution {
+  private computeAttribution(
+    left: Record<string, unknown>,
+    right: Record<string, unknown>,
+  ): Attribution {
     const leftDims = this.extractDimensionScores(left);
     const rightDims = this.extractDimensionScores(right);
     const factors: Array<{ name: string; weight: number }> = [];
@@ -658,8 +701,10 @@ export class AnalysisEngine {
   }
 
   private buildCompareSummary(
-    left: Record<string, unknown>, right: Record<string, unknown>,
-    findings: Finding[], regressions: string[],
+    left: Record<string, unknown>,
+    right: Record<string, unknown>,
+    findings: Finding[],
+    regressions: string[],
   ): AnalysisSummary {
     const leftScore = this.extractScore(left);
     const rightScore = this.extractScore(right);
@@ -669,11 +714,12 @@ export class AnalysisEngine {
     let headline: string;
     if (leftScore != null && rightScore != null) {
       const delta = rightScore - leftScore;
-      headline = delta > 0
-        ? `Score improved by ${delta.toFixed(2)} (${leftScore.toFixed(2)} → ${rightScore.toFixed(2)}) with ${improvements} improvement(s)`
-        : delta < 0
-        ? `Score regressed by ${Math.abs(delta).toFixed(2)} (${leftScore.toFixed(2)} → ${rightScore.toFixed(2)}) with ${regCount} regression(s)`
-        : `Score unchanged at ${leftScore.toFixed(2)}`;
+      headline =
+        delta > 0
+          ? `Score improved by ${delta.toFixed(2)} (${leftScore.toFixed(2)} → ${rightScore.toFixed(2)}) with ${improvements} improvement(s)`
+          : delta < 0
+            ? `Score regressed by ${Math.abs(delta).toFixed(2)} (${leftScore.toFixed(2)} → ${rightScore.toFixed(2)}) with ${regCount} regression(s)`
+            : `Score unchanged at ${leftScore.toFixed(2)}`;
     } else {
       headline = `Comparison: ${findings.length} finding(s), ${regCount} regression(s)`;
     }

@@ -1,5 +1,6 @@
 import Database from "better-sqlite3";
 
+import type { DbPath } from "../domain/ids.js";
 import type {
   AgentOutputRow,
   ConsultationRow,
@@ -105,7 +106,7 @@ export function configureSqliteDatabase(db: Pick<Database.Database, "pragma">): 
 export class SQLiteStore {
   #db: Database.Database;
 
-  constructor(dbPath: string) {
+  constructor(dbPath: DbPath) {
     this.#db = new Database(dbPath);
     configureSqliteDatabase(this.#db);
   }

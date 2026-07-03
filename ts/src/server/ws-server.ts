@@ -66,6 +66,7 @@ import type { EventCallback } from "../loop/events.js";
 import { loadSettings, type AppSettings } from "../config/index.js";
 import { RuntimeSessionEventStore } from "../session/runtime-events.js";
 import { SQLiteStore } from "../storage/index.js";
+import { asDbPath, asScenarioName } from "../domain/ids.js";
 import { ArtifactStore } from "../knowledge/artifact-store.js";
 import { SolveManager } from "../knowledge/solver.js";
 import type { LLMProvider } from "../types/index.js";
@@ -306,7 +307,7 @@ export class InteractiveServer {
       openStore,
       readPlaybook: (playbookScenario, roots) => {
         const artifacts = new ArtifactStore(roots);
-        return artifacts.readPlaybook(playbookScenario);
+        return artifacts.readPlaybook(asScenarioName(playbookScenario));
       },
       loadReplayArtifactResponse,
     };
@@ -359,7 +360,7 @@ export class InteractiveServer {
   }
 
   #openStore(): SQLiteStore {
-    const store = new SQLiteStore(this.#runManager.getDbPath());
+    const store = new SQLiteStore(asDbPath(this.#runManager.getDbPath()));
     store.migrate(this.#runManager.getMigrationsDir());
     return store;
   }

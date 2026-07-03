@@ -1,13 +1,14 @@
 /** Per-scenario path containment (mirrors Python autocontext/storage/scenario_paths.py). */
 import { resolve, sep } from "node:path";
+import { asScenarioName, type ScenarioName } from "../domain/ids.js";
 
-export function normalizeScenarioSegment(scenario: string): string {
+export function normalizeScenarioSegment(scenario: string): ScenarioName {
   const s = scenario.trim();
   if (!s) throw new Error("scenario name is required");
   if (s.includes("/") || s.includes("\\") || s === "." || s === "..") {
     throw new Error(`scenario name must be a single path segment: ${scenario}`);
   }
-  return s;
+  return asScenarioName(s);
 }
 
 /** Resolve a scenario directory and ensure it stays under knowledgeRoot. Throws on unsafe input. */

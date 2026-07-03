@@ -10,6 +10,7 @@ import {
   appendFileSync,
 } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
+import type { RunId } from "../domain/ids.js";
 
 const COMPACTION_LEDGER_TAIL_BYTES = 64 * 1024;
 
@@ -31,15 +32,15 @@ export class CompactionLedgerStore {
     this.runsRoot = runsRoot;
   }
 
-  ledgerPath(runId: string): string {
+  ledgerPath(runId: RunId): string {
     return this.resolveRunPath(runId, "compactions.jsonl");
   }
 
-  latestEntryPath(runId: string): string {
+  latestEntryPath(runId: RunId): string {
     return this.resolveRunPath(runId, "compactions.latest");
   }
 
-  appendEntries(runId: string, entries: CompactionEntry[]): void {
+  appendEntries(runId: RunId, entries: CompactionEntry[]): void {
     if (entries.length === 0) return;
     const path = this.ledgerPath(runId);
     mkdirSync(dirname(path), { recursive: true });
@@ -47,7 +48,7 @@ export class CompactionLedgerStore {
     writeFileSync(this.latestEntryPath(runId), `${entries.at(-1)!.id}\n`, "utf-8");
   }
 
-  readEntries(runId: string, opts: { limit?: number } = {}): CompactionEntry[] {
+  readEntries(runId: RunId, opts: { limit?: number } = {}): CompactionEntry[] {
     const limit = opts.limit ?? 20;
     const path = this.ledgerPath(runId);
     if (!existsSync(path)) return [];
@@ -59,7 +60,10 @@ export class CompactionLedgerStore {
     } else {
       [text, truncated] = readTailText(path, COMPACTION_LEDGER_TAIL_BYTES);
     }
-    const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    const lines = text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
     const parseableLines = truncated ? lines.slice(1) : lines;
     const entries = parseableLines
       .map(parseEntry)
@@ -67,7 +71,7 @@ export class CompactionLedgerStore {
     return limit > 0 ? entries.slice(-limit) : entries;
   }
 
-  latestEntryId(runId: string): string {
+  latestEntryId(runId: RunId): string {
     const latestPath = this.latestEntryPath(runId);
     if (existsSync(latestPath)) {
       return readFileSync(latestPath, "utf-8").trim();
@@ -75,7 +79,10 @@ export class CompactionLedgerStore {
     const path = this.ledgerPath(runId);
     if (!existsSync(path)) return "";
     const [text, truncated] = readTailText(path, COMPACTION_LEDGER_TAIL_BYTES);
-    const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    const lines = text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
     const parseableLines = truncated ? lines.slice(1) : lines;
     for (const line of parseableLines.reverse()) {
       const entry = parseEntry(line);
@@ -84,7 +91,7 @@ export class CompactionLedgerStore {
     return "";
   }
 
-  private resolveRunPath(runId: string, fileName: string): string {
+  private resolveRunPath(runId: RunId, fileName: string): string {
     const root = resolve(this.runsRoot);
     const runDir = resolve(root, runId);
     const relativeRunPath = relative(root, runDir);

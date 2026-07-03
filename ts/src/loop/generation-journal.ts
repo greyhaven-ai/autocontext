@@ -1,5 +1,6 @@
 import { join } from "node:path";
 
+import { asScenarioName, type RunId } from "../domain/ids.js";
 import { ArtifactStore } from "../knowledge/artifact-store.js";
 import { generateSessionReport } from "../knowledge/session-report.js";
 import { ScoreTrajectoryBuilder } from "../knowledge/trajectory.js";
@@ -35,7 +36,11 @@ export class GenerationJournal {
     this.#scenario = opts.scenario;
   }
 
-  persistGeneration(runId: string, generationIndex: number, attempt: GenerationJournalAttempt): void {
+  persistGeneration(
+    runId: RunId,
+    generationIndex: number,
+    attempt: GenerationJournalAttempt,
+  ): void {
     this.#store.upsertGeneration(runId, generationIndex, {
       meanScore: attempt.tournamentResult.meanScore,
       bestScore: attempt.tournamentResult.bestScore,
@@ -58,38 +63,53 @@ export class GenerationJournal {
       });
     }
 
-    this.#store.appendAgentOutput(runId, generationIndex, "competitor", attempt.competitorResultText);
+    this.#store.appendAgentOutput(
+      runId,
+      generationIndex,
+      "competitor",
+      attempt.competitorResultText,
+    );
 
     const generationDir = this.#artifacts.generationDir(runId, generationIndex);
-    this.#artifacts.writeMarkdown(join(generationDir, "competitor_prompt.md"), attempt.competitorPrompt);
-    this.#artifacts.writeMarkdown(join(generationDir, "competitor_output.md"), attempt.competitorResultText);
+    this.#artifacts.writeMarkdown(
+      join(generationDir, "competitor_prompt.md"),
+      attempt.competitorPrompt,
+    );
+    this.#artifacts.writeMarkdown(
+      join(generationDir, "competitor_output.md"),
+      attempt.competitorResultText,
+    );
     this.#artifacts.writeMarkdown(
       join(generationDir, "trajectory.md"),
-      new ScoreTrajectoryBuilder(this.#store.getScoreTrajectory(runId)).build() || "No prior trajectory yet.",
+      new ScoreTrajectoryBuilder(this.#store.getScoreTrajectory(runId)).build() ||
+        "No prior trajectory yet.",
     );
 
     const bestReplayMatch = attempt.tournamentResult.matches.reduce((best, current) =>
       current.score > best.score ? current : best,
     );
 
-    this.#artifacts.writeJson(join(generationDir, "replays", `${this.#scenario.name}_${generationIndex}.json`), {
-      run_id: runId,
-      generation: generationIndex,
-      scenario: this.#scenario.name,
-      seed: bestReplayMatch.seed,
-      score: bestReplayMatch.score,
-      winner: bestReplayMatch.winner,
-      narrative: this.#scenario.replayToNarrative(bestReplayMatch.replay),
-      timeline: bestReplayMatch.replay,
-      matches: attempt.tournamentResult.matches.map((match) => ({
-        seed: match.seed,
-        score: match.score,
-        winner: match.winner,
-        passed_validation: match.passedValidation,
-        validation_errors: match.validationErrors,
-        timeline: match.replay,
-      })),
-    });
+    this.#artifacts.writeJson(
+      join(generationDir, "replays", `${this.#scenario.name}_${generationIndex}.json`),
+      {
+        run_id: runId,
+        generation: generationIndex,
+        scenario: this.#scenario.name,
+        seed: bestReplayMatch.seed,
+        score: bestReplayMatch.score,
+        winner: bestReplayMatch.winner,
+        narrative: this.#scenario.replayToNarrative(bestReplayMatch.replay),
+        timeline: bestReplayMatch.replay,
+        matches: attempt.tournamentResult.matches.map((match) => ({
+          seed: match.seed,
+          score: match.score,
+          winner: match.winner,
+          passed_validation: match.passedValidation,
+          validation_errors: match.validationErrors,
+          timeline: match.replay,
+        })),
+      },
+    );
 
     this.#artifacts.writeJson(join(generationDir, "tournament_summary.json"), {
       gate_decision: attempt.gateDecision,
@@ -102,15 +122,15 @@ export class GenerationJournal {
   }
 
   countDeadEnds(): number {
-    const content = this.#artifacts.readDeadEnds(this.#scenario.name);
+    const content = this.#artifacts.readDeadEnds(asScenarioName(this.#scenario.name));
     if (!content) return 0;
     return content.split("\n").filter((line) => line.startsWith("### Dead End")).length;
   }
 
-  persistSessionReport(runId: string, context: SessionReportContext): string {
+  persistSessionReport(runId: RunId, context: SessionReportContext): string {
     const report = generateSessionReport(
       runId,
-      this.#scenario.name,
+      asScenarioName(this.#scenario.name),
       this.#store.getScoreTrajectory(runId) as unknown as Array<Record<string, unknown>>,
       {
         durationSeconds: (Date.now() - context.runStartedAtMs) / 1000,
@@ -121,7 +141,7 @@ export class GenerationJournal {
     const markdown = report.toMarkdown();
     const runPath = join(this.#artifacts.runsRoot, runId, "session_report.md");
     this.#artifacts.writeMarkdown(runPath, markdown);
-    this.#artifacts.writeSessionReport(this.#scenario.name, runId, markdown);
+    this.#artifacts.writeSessionReport(asScenarioName(this.#scenario.name), runId, markdown);
     return runPath;
   }
 }

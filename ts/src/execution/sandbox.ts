@@ -4,7 +4,7 @@
  */
 
 import { ArtifactStore } from "../knowledge/artifact-store.js";
-import { asRunId } from "../domain/ids.js";
+import { asRunId, asScenarioName } from "../domain/ids.js";
 import { assertFamilyContract } from "../scenarios/family-interfaces.js";
 import { SCENARIO_REGISTRY } from "../scenarios/registry.js";
 import type { LLMProvider } from "../types/index.js";
@@ -114,7 +114,7 @@ export class SandboxManager {
       runsRoot: this.#runsRoot,
       knowledgeRoot: this.#knowledgeRoot,
     });
-    return artifacts.readPlaybook(sandbox.scenarioName);
+    return artifacts.readPlaybook(asScenarioName(sandbox.scenarioName));
   }
 
   destroy(sandboxId: string): boolean {

@@ -1,7 +1,7 @@
 import { join } from "node:path";
 
 import type { AppSettings } from "../config/index.js";
-import { asRunId } from "../domain/ids.js";
+import { asDbPath, asRunId } from "../domain/ids.js";
 import type { LoopController } from "../loop/controller.js";
 import type { EventStreamEmitter } from "../loop/events.js";
 import { GenerationRunner } from "../loop/generation-runner.js";
@@ -127,7 +127,8 @@ export async function executeBuiltInGameStartRun(opts: {
       resolveScenarioClass: opts.deps?.resolveScenarioClass,
     });
 
-  const store = opts.deps?.createStore?.(opts.opts.dbPath) ?? new SQLiteStore(opts.opts.dbPath);
+  const store =
+    opts.deps?.createStore?.(opts.opts.dbPath) ?? new SQLiteStore(asDbPath(opts.opts.dbPath));
   store.migrate(opts.opts.migrationsDir);
   const { hookBus, loadedExtensions } = await initializeHookBus({
     extensions: opts.settings.extensions,

@@ -4,6 +4,7 @@
  */
 import { parseArgs } from "node:util";
 import { resolve, join } from "node:path";
+import { asDbPath } from "../../domain/ids.js";
 import {
   errorMessage,
   getMigrationsDir,
@@ -107,7 +108,7 @@ export async function cmdRun(dbPath: string): Promise<void> {
         hookBus,
         dbPath,
         migrationsDir: getMigrationsDir(),
-        createStore: (runDbPath) => new SQLiteStore(runDbPath),
+        createStore: (runDbPath) => new SQLiteStore(asDbPath(runDbPath)),
       });
       const rendered = renderRunResult(result, plan.json);
       if (rendered.stderr) {
@@ -140,7 +141,7 @@ export async function cmdRun(dbPath: string): Promise<void> {
     providerBundle,
     ScenarioClass,
     assertFamilyContract,
-    createStore: (runDbPath) => new SQLiteStore(runDbPath),
+    createStore: (runDbPath) => new SQLiteStore(asDbPath(runDbPath)),
     createRunner: (runnerOpts) =>
       new GenerationRunner({
         ...(runnerOpts as import("../../loop/generation-runner.js").GenerationRunnerOpts),
@@ -176,7 +177,7 @@ export async function cmdList(dbPath: string): Promise<void> {
   }
 
   const { SQLiteStore } = await import("../../storage/index.js");
-  const store = new SQLiteStore(dbPath);
+  const store = new SQLiteStore(asDbPath(dbPath));
   store.migrate(getMigrationsDir());
 
   try {
@@ -303,7 +304,7 @@ export async function cmdShow(dbPath: string): Promise<void> {
   }
 
   const { SQLiteStore } = await import("../../storage/index.js");
-  const store = new SQLiteStore(dbPath);
+  const store = new SQLiteStore(asDbPath(dbPath));
   store.migrate(getMigrationsDir());
   try {
     const run = store.getRun(runId);
@@ -356,7 +357,7 @@ export async function cmdWatch(dbPath: string): Promise<void> {
   }
 
   const { SQLiteStore } = await import("../../storage/index.js");
-  const store = new SQLiteStore(dbPath);
+  const store = new SQLiteStore(asDbPath(dbPath));
   store.migrate(getMigrationsDir());
   try {
     while (true) {
@@ -451,7 +452,7 @@ export async function cmdStatus(dbPath: string): Promise<void> {
   }
 
   const { SQLiteStore } = await import("../../storage/index.js");
-  const store = new SQLiteStore(dbPath);
+  const store = new SQLiteStore(asDbPath(dbPath));
   const { renderRunStatus } = await import("../run-inspection-command-workflow.js");
   store.migrate(getMigrationsDir());
   const run = store.getRun(runId);
@@ -539,7 +540,7 @@ export async function cmdBenchmark(dbPath: string): Promise<void> {
     providerBundle,
     ScenarioClass,
     assertFamilyContract,
-    createStore: (benchmarkDbPath) => new SQLiteStore(benchmarkDbPath),
+    createStore: (benchmarkDbPath) => new SQLiteStore(asDbPath(benchmarkDbPath)),
     createRunner: (runnerOpts) =>
       new GenerationRunner({
         ...runnerOpts,

@@ -2,16 +2,12 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 
+import { asScenarioName } from "../domain/ids.js";
 import { ArtifactStore } from "../knowledge/artifact-store.js";
 import { exportStrategyPackage } from "../knowledge/package.js";
 import { ScoreTrajectoryBuilder, type TrajectoryRow } from "../knowledge/trajectory.js";
 import { extractDelimitedSection } from "../agents/roles.js";
-import type {
-  AgentOutputRow,
-  GenerationRow,
-  RunRow,
-  SQLiteStore,
-} from "../storage/index.js";
+import type { AgentOutputRow, GenerationRow, RunRow, SQLiteStore } from "../storage/index.js";
 
 interface JsonToolResponse {
   content: Array<{
@@ -25,7 +21,10 @@ type McpToolRegistrar = {
 };
 
 interface KnowledgeReadbackInternals {
-  createArtifactStore(opts: { runsRoot: string; knowledgeRoot: string }): Pick<ArtifactStore, "readPlaybook">;
+  createArtifactStore(opts: {
+    runsRoot: string;
+    knowledgeRoot: string;
+  }): Pick<ArtifactStore, "readPlaybook">;
   extractDelimitedSection(content: string, startMarker: string, endMarker: string): string | null;
   exportStrategyPackage(opts: {
     scenarioName: string;
@@ -56,7 +55,7 @@ function jsonText(payload: unknown, indent?: number): JsonToolResponse {
 const ReadTrajectoryArgsSchema = z.object({ runId: z.string() });
 type ReadTrajectoryArgs = z.infer<typeof ReadTrajectoryArgsSchema>;
 
-const ScenarioArgsSchema = z.object({ scenario: z.string() });
+const ScenarioArgsSchema = z.object({ scenario: z.string().min(1) });
 type ScenarioArgs = z.infer<typeof ScenarioArgsSchema>;
 
 const ReadAnalysisArgsSchema = z.object({
@@ -111,12 +110,13 @@ export function registerKnowledgeReadbackTools(
         runsRoot: opts.runsRoot,
         knowledgeRoot: opts.knowledgeRoot,
       });
-      const playbook = artifacts.readPlaybook(args.scenario);
-      const hints = internals.extractDelimitedSection(
-        playbook,
-        "<!-- COMPETITOR_HINTS_START -->",
-        "<!-- COMPETITOR_HINTS_END -->",
-      ) ?? "";
+      const playbook = artifacts.readPlaybook(asScenarioName(args.scenario));
+      const hints =
+        internals.extractDelimitedSection(
+          playbook,
+          "<!-- COMPETITOR_HINTS_START -->",
+          "<!-- COMPETITOR_HINTS_END -->",
+        ) ?? "";
       return {
         content: [{ type: "text", text: hints || "No hints available." }],
       };
@@ -128,10 +128,7 @@ export function registerKnowledgeReadbackTools(
     "Read the analyst output for a specific generation",
     ReadAnalysisArgsSchema.shape,
     async (args: ReadAnalysisArgs) => {
-      const outputs = opts.store.getAgentOutputs(
-        args.runId,
-        args.generation,
-      );
+      const outputs = opts.store.getAgentOutputs(args.runId, args.generation);
       const analyst = outputs.find((output) => output.role === "analyst");
       return {
         content: [{ type: "text", text: analyst?.content ?? "No analysis found." }],
@@ -165,12 +162,14 @@ export function registerKnowledgeReadbackTools(
     async (args: ScenarioArgs) => {
       const skillPath = join(opts.knowledgeRoot, args.scenario, "SKILL.md");
       return {
-        content: [{
-          type: "text",
-          text: existsSync(skillPath)
-            ? readFileSync(skillPath, "utf-8")
-            : "No skill notes found.",
-        }],
+        content: [
+          {
+            type: "text",
+            text: existsSync(skillPath)
+              ? readFileSync(skillPath, "utf-8")
+              : "No skill notes found.",
+          },
+        ],
       };
     },
   );
@@ -240,10 +239,7 @@ export function registerKnowledgeReadbackTools(
       for (const run of runs) {
         const generations: GenerationRow[] = opts.store.getGenerations(run.run_id);
         for (const generation of generations) {
-          const outputs = opts.store.getAgentOutputs(
-            run.run_id,
-            generation.generation_index,
-          );
+          const outputs = opts.store.getAgentOutputs(run.run_id, generation.generation_index);
           const competitor = outputs.find((output) => output.role === "competitor");
           if (competitor && competitor.content.toLowerCase().includes(queryLower)) {
             results.push({

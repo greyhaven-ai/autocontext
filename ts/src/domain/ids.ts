@@ -30,6 +30,27 @@
  * trim-based check here would throw before that code ever runs, replacing
  * a handled 4xx with an unhandled 500. These constructors exist to add a
  * type boundary, not to change what counts as a valid id.
+ *
+ * Constructor idiom (AC-866): throwing `asX()` here vs. nullable `parseX()`
+ * in `production-traces/contract/branded-ids.ts` is a deliberate,
+ * boundary-driven split, not an inconsistency to unify away:
+ *   - `RunId` / `ScenarioName` / `DbPath` cross boundaries where the raw
+ *     string is already format-guaranteed by something upstream: a route
+ *     regex that requires at least one non-slash character, a required CLI
+ *     argument, a primary key read back out of SQLite. A byte-empty value
+ *     at one of these boundaries means a caller broke an invariant, not
+ *     that a user typed something invalid — throwing is the right response.
+ *   - `production-traces`' brands (`ProductionTraceId`, `AppId`,
+ *     `UserIdHash`, `FeedbackRefId`, etc.) cross boundaries where malformed
+ *     input is routine: an HTTP path segment checked against a strict
+ *     ULID/slug/hex-hash regex, or an opaque customer-supplied reference.
+ *     Failure there is an expected, per-request outcome that the caller
+ *     branches on (typically into a 404), so a nullable return is the right
+ *     shape — throwing would turn routine bad input into an uncaught 500.
+ * Same brand mechanism, two constructor shapes, chosen by what a real
+ * caller at each boundary needs to do when validation fails. Do not add a
+ * nullable `parseRunId` / `parseScenarioName` / `parseDbPath` here without a
+ * concrete boundary that needs one.
  */
 
 declare const brand: unique symbol;

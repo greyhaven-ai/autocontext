@@ -1,4 +1,5 @@
 import type { TraceGateOperatorView } from "../analytics/trace-gate-operator-view.js";
+import { asDbPath } from "../domain/ids.js";
 import type { RunManager } from "../server/run-manager.js";
 import type { TuiActivitySettings } from "./activity-summary.js";
 import { resetTuiActivitySettings, saveTuiActivitySettings } from "./activity-settings-store.js";
@@ -47,7 +48,7 @@ async function loadTuiRunInspection(
   generations: import("../cli/run-inspection-command-workflow.js").RunInspectionGeneration[];
 }> {
   const { SQLiteStore } = await import("../storage/index.js");
-  const store = new SQLiteStore(manager.getDbPath());
+  const store = new SQLiteStore(asDbPath(manager.getDbPath()));
   store.migrate(manager.getMigrationsDir());
   try {
     const run = store.getRun(runId);

@@ -1,3 +1,4 @@
+import type { RunId, ScenarioName } from "../domain/ids.js";
 import { ArtifactStore } from "../knowledge/artifact-store.js";
 import { DeadEndEntry, consolidateDeadEnds } from "../knowledge/dead-end.js";
 import { PLAYBOOK_MARKERS } from "../knowledge/playbook.js";
@@ -6,7 +7,7 @@ import type { StagnationDetector, StagnationReport } from "./stagnation.js";
 
 export interface GenerationRecoveryOpts {
   artifacts: ArtifactStore;
-  scenarioName: string;
+  scenarioName: ScenarioName;
   deadEndTrackingEnabled: boolean;
   deadEndMaxEntries: number;
   stagnationResetEnabled: boolean;
@@ -44,7 +45,7 @@ function extractMarkedSection(content: string, startMarker: string, endMarker: s
 
 export class GenerationRecovery {
   readonly #artifacts: ArtifactStore;
-  readonly #scenarioName: string;
+  readonly #scenarioName: ScenarioName;
   readonly #deadEndTrackingEnabled: boolean;
   readonly #deadEndMaxEntries: number;
   readonly #stagnationResetEnabled: boolean;
@@ -63,7 +64,7 @@ export class GenerationRecovery {
     this.#stagnationDetector = opts.stagnationDetector;
   }
 
-  handleAttempt(runId: string, attempt: GenerationRecoveryAttempt): GenerationRecoveryOutcome {
+  handleAttempt(runId: RunId, attempt: GenerationRecoveryAttempt): GenerationRecoveryOutcome {
     const events: GenerationRecoveryEvent[] = [];
     let deadEndRecorded = false;
 
@@ -134,7 +135,8 @@ export class GenerationRecovery {
       .filter((line) => line.startsWith("-"))
       .slice(0, this.#stagnationDistillTopLessons);
 
-    const deadEnds = this.#artifacts.readDeadEnds(this.#scenarioName)
+    const deadEnds = this.#artifacts
+      .readDeadEnds(this.#scenarioName)
       .split("\n")
       .map((line) => line.trim())
       .filter((line) => line.startsWith("- **Gen"))
