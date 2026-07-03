@@ -11,6 +11,14 @@ from autocontext.ambient.sources.contract import RawTrace, SourcePoll
 
 @dataclass(slots=True)
 class NativeRunsSource:
+    """incremental reader over a loop runs database.
+
+    Watermarks on the generations rowid, which assumes the runs db is
+    append-only and never VACUUMed directly (loop code neither deletes
+    generations nor vacuums; a manual VACUUM could renumber rowids and
+    silently skip rows below the cursor).
+    """
+
     name: str
     runs_db_path: Path
     batch_size: int = 500
@@ -19,7 +27,9 @@ class NativeRunsSource:
         if not self.runs_db_path.exists():
             return SourcePoll()
         watermark = int(cursor or 0)
-        conn = sqlite3.connect(self.runs_db_path)
+        # read-only open: least privilege for a pure reader, and it can
+        # never take a write lock against the live loop
+        conn = sqlite3.connect(f"{self.runs_db_path.resolve().as_uri()}?mode=ro", uri=True)
         try:
             rows = conn.execute(
                 "SELECT g.rowid, g.run_id, r.scenario, g.generation_index, g.mean_score, "
