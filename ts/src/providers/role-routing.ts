@@ -84,6 +84,14 @@ export interface RoleRoutingSettings {
 
 export interface RoleRoutingContext {
   availableLocalModels?: readonly string[];
+  /**
+   * Explicit provider override (e.g. the CLI `--provider` flag, `RunManager({ providerType })`,
+   * or a `switch_provider` command). Takes precedence over `settings.agentProvider` for any
+   * role that doesn't already have its own role-specific provider setting (which stays the
+   * highest-priority route). When omitted, routing falls back to the env-derived
+   * `settings.agentProvider`, unchanged from prior behavior.
+   */
+  providerOverride?: string;
 }
 
 export interface RoutedProviderConfig {
@@ -106,6 +114,13 @@ export interface RoleRoutingCostEstimate {
 function clean(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed ? trimmed : undefined;
+}
+
+// Mirrors provider-config-resolution.ts's envProviderType precedence: the
+// AUTOCONTEXT_AGENT_PROVIDER/AUTOCONTEXT_PROVIDER env vars outrank an explicit
+// providerOverride, matching how resolveProviderConfig() resolves the default provider.
+function envProviderOverride(): string | undefined {
+  return clean(process.env.AUTOCONTEXT_AGENT_PROVIDER) ?? clean(process.env.AUTOCONTEXT_PROVIDER);
 }
 
 function normalizeProvider(providerType: string | undefined): string {
@@ -193,19 +208,19 @@ export function routeRoleProvider(
   if (explicitProvider) {
     const providerType = normalizeProvider(explicitProvider);
     const providerClass = EXPLICIT_PROVIDER_CLASS[providerType] ?? "frontier";
-    const model = providerClass === "local"
-      ? tierModel("local", settings)
-      : roleSpecificModel(role, settings);
+    const model =
+      providerClass === "local" ? tierModel("local", settings) : roleSpecificModel(role, settings);
     return routedConfig(role, providerType, providerClass, model);
   }
 
-  const providerType = normalizeProvider(settings.agentProvider);
+  const providerType = normalizeProvider(
+    envProviderOverride() ?? clean(context.providerOverride) ?? settings.agentProvider,
+  );
   const providerClass = EXPLICIT_PROVIDER_CLASS[providerType] ?? "mid_tier";
 
   if (settings.roleRouting !== "auto") {
-    const model = providerClass === "local"
-      ? tierModel("local", settings)
-      : roleSpecificModel(role, settings);
+    const model =
+      providerClass === "local" ? tierModel("local", settings) : roleSpecificModel(role, settings);
     return routedConfig(role, providerType, providerClass, model);
   }
 

@@ -623,25 +623,10 @@ describe("InteractiveServer", () => {
     }
   }, 15000);
 
-  // Genuine product bug, not a test-hygiene or environment problem (out of scope for
-  // AC-867): RunManagerProviderSession.resolveProviderBundle() correctly threads a
-  // switch_provider override's providerType into buildRoleProviderBundle(), but
-  // routeRoleProvider() (role-routing.ts) has no override parameter at all and always
-  // re-derives every generation role's provider from settings.agentProvider (env-var
-  // driven). So switching the active session to "deterministic" updates
-  // getActiveProviderType() and the *default* provider, but every per-role provider
-  // (competitor/analyst/coach/...) used by chatAgent() still resolves independently and
-  // ignores the switch, so a subsequent chat_agent call still throws the original
-  // provider's "API key required" error. Confirmed by direct repro against
-  // InteractiveServer: switch_provider succeeds and getActiveProviderType() reports
-  // "deterministic", yet the next chat_agent call still fails with
-  // "ANTHROPIC_API_KEY environment variable required". This is the same class of gap as
-  // the CLI --provider flag (worked around for benchmark-provider.test.ts and the
-  // RunManager tests above via AUTOCONTEXT_AGENT_PROVIDER), but here it cannot be worked
-  // around with an env var because the whole point of this test is switching mid-session
-  // away from an initial provider. Tracked as a finding in the AC-867 report; not fixed
-  // here since it requires changing routeRoleProvider()'s signature/behavior.
-  it.skip("applies provider switches to subsequent live chat requests", async () => {
+  // AC-873: routeRoleProvider() now accepts a providerOverride so per-role providers
+  // (competitor/analyst/coach/...) track switch_provider the same way the default
+  // provider already did.
+  it("applies provider switches to subsequent live chat requests", async () => {
     const previousConfigDir = process.env.AUTOCONTEXT_CONFIG_DIR;
     const configDir = join(dir, "config");
     mkdirSync(configDir, { recursive: true });

@@ -78,13 +78,14 @@ describe("shared role routing contract", () => {
       providerClass: "mid_tier",
       model: "competitor-role-model",
     });
-    expect(routeRoleProvider(baseSettings({ competitorProvider: "mlx" }), "competitor"))
-      .toMatchObject({
-        providerType: "mlx",
-        providerClass: "local",
-        model: "/models/default-local",
-        executableInTypeScript: false,
-      });
+    expect(
+      routeRoleProvider(baseSettings({ competitorProvider: "mlx" }), "competitor"),
+    ).toMatchObject({
+      providerType: "mlx",
+      providerClass: "local",
+      model: "/models/default-local",
+      executableInTypeScript: false,
+    });
   });
 
   it("routes auto mode through Python-compatible tier preferences", () => {
@@ -122,6 +123,52 @@ describe("shared role routing contract", () => {
       model: "opus-tier-model",
       executableInTypeScript: true,
     });
+  });
+
+  it("AC-873: applies a providerOverride when settings.agentProvider has no per-role setting", () => {
+    const routed = routeRoleProvider(baseSettings({ roleRouting: "off" }), "analyst", {
+      providerOverride: "deterministic",
+    });
+
+    expect(routed).toMatchObject({
+      providerType: "deterministic",
+      providerClass: "fast",
+      model: "analyst-role-model",
+    });
+  });
+
+  it("AC-873: lets an explicit per-role provider setting win over a providerOverride", () => {
+    const routed = routeRoleProvider(baseSettings({ competitorProvider: "ollama" }), "competitor", {
+      providerOverride: "deterministic",
+    });
+
+    expect(routed).toMatchObject({ providerType: "ollama", providerClass: "mid_tier" });
+  });
+
+  it("AC-873: falls back to settings.agentProvider when no providerOverride is supplied", () => {
+    const routed = routeRoleProvider(baseSettings({ roleRouting: "off" }), "analyst");
+
+    expect(routed).toMatchObject({ providerType: "deterministic", providerClass: "fast" });
+  });
+
+  it("AC-873: lets the AUTOCONTEXT_AGENT_PROVIDER env var win over a providerOverride", () => {
+    const previous = process.env.AUTOCONTEXT_AGENT_PROVIDER;
+    process.env.AUTOCONTEXT_AGENT_PROVIDER = "ollama";
+    try {
+      const routed = routeRoleProvider(
+        baseSettings({ roleRouting: "off", agentProvider: "ollama" }),
+        "analyst",
+        { providerOverride: "deterministic" },
+      );
+
+      expect(routed).toMatchObject({ providerType: "ollama", providerClass: "mid_tier" });
+    } finally {
+      if (previous === undefined) {
+        delete process.env.AUTOCONTEXT_AGENT_PROVIDER;
+      } else {
+        process.env.AUTOCONTEXT_AGENT_PROVIDER = previous;
+      }
+    }
   });
 
   it("keeps Python's mid-tier fallback for unknown role names", () => {
@@ -168,20 +215,53 @@ describe("role-routed provider bundles", () => {
     bundle.close?.();
   });
 
+  it("AC-873: threads a providerType override into per-role routing, not just the default provider", () => {
+    const previousAgentProvider = process.env.AUTOCONTEXT_AGENT_PROVIDER;
+    const previousProvider = process.env.AUTOCONTEXT_PROVIDER;
+    delete process.env.AUTOCONTEXT_AGENT_PROVIDER;
+    delete process.env.AUTOCONTEXT_PROVIDER;
+    try {
+      const bundle = buildRoleProviderBundle(
+        baseSettings({ agentProvider: "anthropic", roleRouting: "off" }),
+        { providerType: "deterministic" },
+      );
+
+      expect(bundle.defaultConfig.providerType).toBe("deterministic");
+      expect(bundle.roleRoutes?.analyst).toMatchObject({ providerType: "deterministic" });
+      expect(bundle.roleProviders.analyst?.name).toBe("deterministic");
+      bundle.close?.();
+    } finally {
+      if (previousAgentProvider === undefined) {
+        delete process.env.AUTOCONTEXT_AGENT_PROVIDER;
+      } else {
+        process.env.AUTOCONTEXT_AGENT_PROVIDER = previousAgentProvider;
+      }
+      if (previousProvider === undefined) {
+        delete process.env.AUTOCONTEXT_PROVIDER;
+      } else {
+        process.env.AUTOCONTEXT_PROVIDER = previousProvider;
+      }
+    }
+  });
+
   it("uses routed tier models as CLI runtime defaults for role providers", () => {
-    const claudeBundle = buildRoleProviderBundle(baseSettings({
-      agentProvider: "claude-cli",
-      claudeModel: "sonnet-cli",
-    }));
+    const claudeBundle = buildRoleProviderBundle(
+      baseSettings({
+        agentProvider: "claude-cli",
+        claudeModel: "sonnet-cli",
+      }),
+    );
     expect(claudeBundle.defaultProvider.defaultModel()).toBe("sonnet-cli");
     expect(claudeBundle.roleModels.competitor).toBe("opus-tier-model");
     expect(claudeBundle.roleProviders.competitor?.defaultModel()).toBe("opus-tier-model");
     claudeBundle.close?.();
 
-    const codexBundle = buildRoleProviderBundle(baseSettings({
-      agentProvider: "codex",
-      codexModel: "codex-global",
-    }));
+    const codexBundle = buildRoleProviderBundle(
+      baseSettings({
+        agentProvider: "codex",
+        codexModel: "codex-global",
+      }),
+    );
     expect(codexBundle.defaultProvider.defaultModel()).toBe("codex-global");
     expect(codexBundle.roleModels.analyst).toBe("sonnet-tier-model");
     expect(codexBundle.roleProviders.analyst?.defaultModel()).toBe("sonnet-tier-model");

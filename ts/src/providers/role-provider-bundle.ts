@@ -323,7 +323,10 @@ export function buildRoleProviderBundle(
   const roleRoutes = Object.fromEntries(
     ROUTED_GENERATION_ROLES.map((role) => [
       role,
-      routeRoleProvider(settings, role, opts.routingContext),
+      routeRoleProvider(settings, role, {
+        ...opts.routingContext,
+        providerOverride: overrides.providerType,
+      }),
     ]),
   ) as Record<GenerationRole, RoutedProviderConfig>;
   for (const role of ROUTED_GENERATION_ROLES) {
@@ -373,9 +376,10 @@ export function buildRoleProviderBundle(
   const defaultProvider = createProvider(
     withRuntimeSession(defaultConfig, settings, runtimeSession, "default"),
   );
-  const providerForConfig = (config: ProviderConfig, role: GenerationRole): LLMProvider => createProvider(
-    withRoutedRuntimeModel(config, withRuntimeSession(config, settings, runtimeSession, role)),
-  );
+  const providerForConfig = (config: ProviderConfig, role: GenerationRole): LLMProvider =>
+    createProvider(
+      withRoutedRuntimeModel(config, withRuntimeSession(config, settings, runtimeSession, role)),
+    );
   const roleProviders = Object.fromEntries(
     ROUTED_GENERATION_ROLES.map((role) => {
       const provider = providerForConfig(roleConfigs[role], role);
