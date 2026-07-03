@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Protocol
 
 from autocontext.ambient.charter import Charter
+from autocontext.ambient.proposals import ProposalStore
 from autocontext.ambient.queue import AmbientQueue
 from autocontext.harness.core.events import EventStreamEmitter
 
@@ -23,6 +24,7 @@ class StageContext:
     charter: Charter
     queue: AmbientQueue
     emitter: EventStreamEmitter
+    proposal_store: ProposalStore | None = None
 
 
 class Stage(Protocol):

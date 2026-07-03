@@ -8,6 +8,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 
 from autocontext.ambient.charter import Charter
+from autocontext.ambient.proposals import ProposalStore
 from autocontext.ambient.queue import AmbientQueue
 from autocontext.ambient.stage import (
     STAGE_NAMES,
@@ -27,18 +28,25 @@ class AmbientDaemon:
         queue: AmbientQueue,
         emitter: EventStreamEmitter,
         stages: dict[str, Stage] | None = None,
+        proposal_store: ProposalStore | None = None,
         breaker_threshold: int = 3,
     ) -> None:
         self.charter = charter
         self.queue = queue
         self.emitter = emitter
+        self.proposal_store = proposal_store
         self._stages: dict[str, Stage] = stages if stages is not None else {name: NoOpStage(name=name) for name in STAGE_NAMES}
         self._breakers: dict[str, AutoPauseBreaker] = {
             name: AutoPauseBreaker(threshold=breaker_threshold) for name in self._stages
         }
 
     def _context(self) -> StageContext:
-        return StageContext(charter=self.charter, queue=self.queue, emitter=self.emitter)
+        return StageContext(
+            charter=self.charter,
+            queue=self.queue,
+            emitter=self.emitter,
+            proposal_store=self.proposal_store,
+        )
 
     def run_stage_once(self, stage_name: str) -> StageResult:
         stage = self._stages[stage_name]

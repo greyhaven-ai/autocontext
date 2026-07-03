@@ -7,6 +7,7 @@ import pytest
 
 from autocontext.ambient.charter import Charter, CharterBudgets, CharterSource, CharterTarget
 from autocontext.ambient.daemon import AmbientDaemon
+from autocontext.ambient.proposals import ProposalStore
 from autocontext.ambient.queue import AmbientQueue
 from autocontext.ambient.stage import STAGE_NAMES, StageContext, StageResult
 from autocontext.harness.core.events import EventStreamEmitter
@@ -174,3 +175,26 @@ def test_lock_releases_after_run_forever(tmp_path: Path) -> None:
     daemon = _daemon(tmp_path)
     daemon.run_forever(poll_seconds=0.0, max_cycles=1)
     daemon.run_forever(poll_seconds=0.0, max_cycles=1)  # second sequential run acquires cleanly
+
+
+def test_daemon_threads_proposal_store_into_stage_context(tmp_path: Path) -> None:
+    seen: list[object] = []
+
+    @dataclass(slots=True)
+    class Capture:
+        name: str = "advise"
+
+        def run_once(self, ctx: StageContext) -> StageResult:
+            seen.append(ctx.proposal_store)
+            return StageResult()
+
+    store = ProposalStore(tmp_path / "proposals.jsonl")
+    daemon = AmbientDaemon(
+        charter=_charter(),
+        queue=AmbientQueue(tmp_path / "ambient.sqlite3"),
+        emitter=EventStreamEmitter(tmp_path / "events.ndjson"),
+        stages={"advise": Capture()},
+        proposal_store=store,
+    )
+    daemon.run_stage_once("advise")
+    assert seen == [store]

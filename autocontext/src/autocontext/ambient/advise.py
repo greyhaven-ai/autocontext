@@ -1,0 +1,119 @@
+"""the advise stage: heuristic charter proposals from observed trace quality.
+
+Deliberately LLM-free (matching the hermes advisor's offline posture): the
+rules are deterministic aggregates over recent traces. Advise only ever
+EMITS proposals; applying one to the charter is a control-surface action
+(autoctx ambient approve) at every autonomy level.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from uuid import uuid4
+
+from autocontext.ambient.charter import Charter, CharterTarget
+from autocontext.ambient.eligibility import is_evaluative_target
+from autocontext.ambient.proposals import CharterProposal, ProposalStore
+from autocontext.ambient.stage import StageContext, StageResult
+from autocontext.ambient.trace_store import TraceStore
+
+
+@dataclass(slots=True)
+class _ScenarioStats:
+    count: int = 0
+    score_total: float = 0.0
+
+    @property
+    def mean_score(self) -> float:
+        return self.score_total / self.count if self.count else 0.0
+
+
+def _covered_scenarios(charter: Charter, store: ProposalStore) -> tuple[bool, set[str]]:
+    """Returns (role_coverage, covered_selectors).
+
+    A non-evaluative role target trains on every scenario its role appears
+    in, so it covers everything; task-family targets and pending add_target
+    proposals cover their specific selector.
+    """
+    role_coverage = any(target.kind == "role" and not is_evaluative_target(target) for target in charter.targets)
+    covered = {target.selector for target in charter.targets if target.kind == "task_family"}
+    for proposal in store.pending():
+        selector = proposal.payload.get("selector")
+        if proposal.kind == "add_target" and isinstance(selector, str):
+            covered.add(selector)
+    return role_coverage, covered
+
+
+@dataclass(slots=True)
+class AdviseStage:
+    name: str
+    trace_store: TraceStore
+    scan_limit: int = 2000
+    min_traces: int = 50
+    min_mean_score: float = 0.5
+
+    def run_once(self, ctx: StageContext) -> StageResult:
+        store = ctx.proposal_store
+        if store is None:
+            return StageResult()
+        stats: dict[str, _ScenarioStats] = {}
+        for trace in self.trace_store.recent(self.scan_limit):
+            if trace.kind != "agent_output" or trace.produced_by != "frontier":
+                continue
+            payload = trace.payload
+            if payload.get("role") != "competitor" or payload.get("status") != "completed":
+                continue
+            scenario = payload.get("scenario")
+            if not isinstance(scenario, str) or not scenario:
+                continue
+            entry = stats.setdefault(scenario, _ScenarioStats())
+            entry.count += 1
+            entry.score_total += float(payload.get("best_score") or 0.0)
+        role_coverage, covered = _covered_scenarios(ctx.charter, store)
+        emitted = 0
+        for scenario in sorted(stats):
+            entry = stats[scenario]
+            if entry.count < self.min_traces or entry.mean_score < self.min_mean_score:
+                continue
+            if role_coverage or scenario in covered:
+                continue
+            template = next(iter(ctx.charter.targets), None)
+            if template is None:
+                # a proposal must not invent a base model or eval suite; ask
+                # the human to seed the first target instead
+                ctx.emitter.emit(
+                    "advise_no_template",
+                    {"scenario": scenario, "traces": entry.count, "mean_score": entry.mean_score},
+                    channel="ambient",
+                )
+                continue
+            proposal = CharterProposal(
+                proposal_id=f"add-target-{scenario}-{uuid4().hex[:8]}",
+                kind="add_target",
+                payload=CharterTarget(
+                    name=f"{scenario}-auto",
+                    kind="task_family",
+                    selector=scenario,
+                    base_model=template.base_model,
+                    method="sft-distill",
+                    min_dataset_records=template.min_dataset_records,
+                    eval_suite=template.eval_suite,
+                ).model_dump(mode="json"),
+                rationale=(
+                    f"{entry.count} eligible frontier traces for scenario {scenario} "
+                    f"at mean score {entry.mean_score:.2f}; propose an sft-distill target"
+                ),
+            )
+            store.append(proposal)
+            ctx.emitter.emit(
+                "advise_proposal_emitted",
+                {
+                    "proposal_id": proposal.proposal_id,
+                    "selector": scenario,
+                    "traces": entry.count,
+                    "mean_score": entry.mean_score,
+                },
+                channel="ambient",
+            )
+            emitted += 1
+        return StageResult(processed=emitted)
