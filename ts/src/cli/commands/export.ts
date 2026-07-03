@@ -4,6 +4,7 @@
  */
 import { parseArgs } from "node:util";
 import { resolve, dirname } from "node:path";
+import { asDbPath } from "../../domain/ids.js";
 import { errorMessage, getMigrationsDir, resolveScenarioOption } from "./shared.js";
 
 export async function cmdExport(dbPath: string): Promise<void> {
@@ -33,7 +34,7 @@ export async function cmdExport(dbPath: string): Promise<void> {
   const { SQLiteStore } = await import("../../storage/index.js");
 
   const settings = loadSettings();
-  const store = new SQLiteStore(dbPath);
+  const store = new SQLiteStore(asDbPath(dbPath));
   store.migrate(getMigrationsDir());
 
   let plan;
@@ -114,7 +115,7 @@ export async function cmdExportTrainingData(dbPath: string): Promise<void> {
   const { exportTrainingData } = await import("../../training/export.js");
 
   const settings = loadSettings();
-  const store = new SQLiteStore(dbPath);
+  const store = new SQLiteStore(asDbPath(dbPath));
   store.migrate(getMigrationsDir());
   const artifacts = new ArtifactStore({
     runsRoot: resolve(settings.runsRoot),

@@ -3,6 +3,7 @@
  */
 import { parseArgs } from "node:util";
 import { resolve } from "node:path";
+import { asDbPath } from "../../domain/ids.js";
 import { getMigrationsDir, getProvider } from "./shared.js";
 
 export async function cmdServeHttp(dbPath: string): Promise<void> {
@@ -116,7 +117,7 @@ export async function cmdMcpServe(dbPath: string): Promise<void> {
   const { startServer } = await import("../../mcp/server.js");
   const { loadSettings } = await import("../../config/index.js");
 
-  const store = new SQLiteStore(dbPath);
+  const store = new SQLiteStore(asDbPath(dbPath));
   store.migrate(getMigrationsDir());
 
   const { provider, model } = await getProvider();

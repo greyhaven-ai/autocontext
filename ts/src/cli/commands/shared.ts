@@ -3,6 +3,7 @@
  */
 import { resolve, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { asDbPath } from "../../domain/ids.js";
 
 export function getMigrationsDir(): string {
   const thisDir = dirname(fileURLToPath(import.meta.url));
@@ -135,7 +136,7 @@ export async function buildProjectConfigSummary(): Promise<Record<string, unknow
   let activeRuns = 0;
   if (existsSync(dbPath)) {
     const { SQLiteStore } = await import("../../storage/index.js");
-    const store = new SQLiteStore(dbPath);
+    const store = new SQLiteStore(asDbPath(dbPath));
     try {
       store.migrate(getMigrationsDir());
       const runs = store.listRuns(1000);

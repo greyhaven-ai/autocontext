@@ -4,6 +4,7 @@
  */
 import { parseArgs } from "node:util";
 import { resolve } from "node:path";
+import { asDbPath } from "../../domain/ids.js";
 import type { LLMProvider } from "../../types/index.js";
 import {
   errorMessage,
@@ -56,7 +57,7 @@ export async function cmdSolve(dbPath: string): Promise<void> {
   const { SolveManager } = await import("../../knowledge/solver.js");
 
   const settings = loadSettings();
-  const store = new SQLiteStore(dbPath);
+  const store = new SQLiteStore(asDbPath(dbPath));
   store.migrate(getMigrationsDir());
 
   let provider: LLMProvider | undefined;
