@@ -14,6 +14,7 @@ from autocontext.ambient.charter_io import CharterLoadError, load_charter, save_
 from autocontext.ambient.daemon import AmbientDaemon
 from autocontext.ambient.interview import build_charter, run_interview
 from autocontext.ambient.queue import AmbientQueue
+from autocontext.ambient.stage_factory import build_stages
 from autocontext.harness.core.events import EventStreamEmitter
 
 ambient_app = typer.Typer(help="ambient trainer: resident daemon that learns from traces")
@@ -22,14 +23,31 @@ console = Console()
 _DEFAULT_CHARTER = Path("ambient-charter.yaml")
 _DEFAULT_DB = Path("runs/ambient.sqlite3")
 _DEFAULT_EVENTS = Path("runs/ambient-events.ndjson")
+_DEFAULT_RUNS_DB = Path("runs/autocontext.sqlite3")
+_DEFAULT_OTEL_FEED = Path("runs/ambient-otel-feed")
 
 
-def _daemon(charter_path: Path, db_path: Path, events_path: Path) -> AmbientDaemon:
+def _daemon(
+    charter_path: Path,
+    db_path: Path,
+    events_path: Path,
+    runs_db_path: Path,
+    otel_feed_dir: Path,
+) -> AmbientDaemon:
     charter = load_charter(charter_path)
+    emitter = EventStreamEmitter(events_path)
+    stages = build_stages(
+        charter,
+        db_path=db_path,
+        emitter=emitter,
+        runs_db_path=runs_db_path,
+        otel_feed_dir=otel_feed_dir,
+    )
     return AmbientDaemon(
         charter=charter,
         queue=AmbientQueue(db_path),
-        emitter=EventStreamEmitter(events_path),
+        emitter=emitter,
+        stages=stages,
     )
 
 
@@ -56,9 +74,11 @@ def status(
     charter_path: Annotated[Path, typer.Option("--charter-path")] = _DEFAULT_CHARTER,
     db_path: Annotated[Path, typer.Option("--db-path")] = _DEFAULT_DB,
     events_path: Annotated[Path, typer.Option("--events-path")] = _DEFAULT_EVENTS,
+    runs_db: Annotated[Path, typer.Option("--runs-db")] = _DEFAULT_RUNS_DB,
+    otel_feed_dir: Annotated[Path, typer.Option("--otel-feed-dir")] = _DEFAULT_OTEL_FEED,
 ) -> None:
     try:
-        daemon = _daemon(charter_path, db_path, events_path)
+        daemon = _daemon(charter_path, db_path, events_path, runs_db, otel_feed_dir)
     except CharterLoadError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
@@ -75,11 +95,13 @@ def run(
     charter_path: Annotated[Path, typer.Option("--charter-path")] = _DEFAULT_CHARTER,
     db_path: Annotated[Path, typer.Option("--db-path")] = _DEFAULT_DB,
     events_path: Annotated[Path, typer.Option("--events-path")] = _DEFAULT_EVENTS,
+    runs_db: Annotated[Path, typer.Option("--runs-db")] = _DEFAULT_RUNS_DB,
+    otel_feed_dir: Annotated[Path, typer.Option("--otel-feed-dir")] = _DEFAULT_OTEL_FEED,
     poll_seconds: Annotated[float, typer.Option("--poll-seconds", min=0.0)] = 30.0,
     max_cycles: Annotated[int | None, typer.Option("--max-cycles", hidden=True)] = None,
 ) -> None:
     try:
-        daemon = _daemon(charter_path, db_path, events_path)
+        daemon = _daemon(charter_path, db_path, events_path, runs_db, otel_feed_dir)
     except CharterLoadError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
@@ -96,9 +118,11 @@ def once(
     charter_path: Annotated[Path, typer.Option("--charter-path")] = _DEFAULT_CHARTER,
     db_path: Annotated[Path, typer.Option("--db-path")] = _DEFAULT_DB,
     events_path: Annotated[Path, typer.Option("--events-path")] = _DEFAULT_EVENTS,
+    runs_db: Annotated[Path, typer.Option("--runs-db")] = _DEFAULT_RUNS_DB,
+    otel_feed_dir: Annotated[Path, typer.Option("--otel-feed-dir")] = _DEFAULT_OTEL_FEED,
 ) -> None:
     try:
-        daemon = _daemon(charter_path, db_path, events_path)
+        daemon = _daemon(charter_path, db_path, events_path, runs_db, otel_feed_dir)
     except CharterLoadError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc

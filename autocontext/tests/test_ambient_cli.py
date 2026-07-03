@@ -126,11 +126,67 @@ def test_run_rejects_negative_poll_seconds(tmp_path: Path) -> None:
     result = runner.invoke(
         app,
         [
-            "ambient", "run",
-            "--charter-path", str(charter_path),
-            "--db-path", str(tmp_path / "a.sqlite3"),
-            "--events-path", str(tmp_path / "events.ndjson"),
-            "--poll-seconds", "-1",
+            "ambient",
+            "run",
+            "--charter-path",
+            str(charter_path),
+            "--db-path",
+            str(tmp_path / "a.sqlite3"),
+            "--events-path",
+            str(tmp_path / "events.ndjson"),
+            "--poll-seconds",
+            "-1",
         ],
     )
     assert result.exit_code != 0
+
+
+def test_once_ingest_pulls_from_runs_db(tmp_path: Path) -> None:
+    import sqlite3
+
+    from autocontext.ambient.trace_store import TraceStore
+
+    charter_path = _init(tmp_path)
+    runs_db = tmp_path / "runs.sqlite3"
+    conn = sqlite3.connect(runs_db)
+    conn.executescript(
+        "CREATE TABLE runs (run_id TEXT PRIMARY KEY, scenario TEXT NOT NULL, target_generations INTEGER NOT NULL, "
+        "executor_mode TEXT NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')), "
+        "updated_at TEXT NOT NULL DEFAULT (datetime('now')));"
+        "CREATE TABLE generations (run_id TEXT NOT NULL, generation_index INTEGER NOT NULL, mean_score REAL NOT NULL, "
+        "best_score REAL NOT NULL, gate_decision TEXT NOT NULL, status TEXT NOT NULL, "
+        "created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')), "
+        "PRIMARY KEY (run_id, generation_index));"
+    )
+    conn.execute(
+        "INSERT INTO runs (run_id, scenario, target_generations, executor_mode, status) "
+        "VALUES ('r1', 'grid_ctf', 1, 'local', 'completed')"
+    )
+    conn.execute(
+        "INSERT INTO generations (run_id, generation_index, mean_score, best_score, gate_decision, status) "
+        "VALUES ('r1', 0, 1.0, 2.0, 'advance', 'completed')"
+    )
+    conn.commit()
+    conn.close()
+    db_path = tmp_path / "ambient.sqlite3"
+    result = runner.invoke(
+        app,
+        [
+            "ambient",
+            "once",
+            "ingest",
+            "--charter-path",
+            str(charter_path),
+            "--db-path",
+            str(db_path),
+            "--events-path",
+            str(tmp_path / "events.ndjson"),
+            "--runs-db",
+            str(runs_db),
+            "--otel-feed-dir",
+            str(tmp_path / "feed"),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "processed=1" in result.output
+    assert TraceStore(db_path).count() == 1
