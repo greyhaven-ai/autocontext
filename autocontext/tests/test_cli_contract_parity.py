@@ -64,6 +64,7 @@ def contract() -> Contract:
 UNCONTRACTED_TOP_LEVEL_ALLOWLIST: frozenset[str] = frozenset(
     {
         "ab-test",
+        "ambient",
         "analytics",
         "benchmark",
         "ecosystem",

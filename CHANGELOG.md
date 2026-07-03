@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- `autoctx ambient` foundation: a charter-driven resident daemon skeleton (interview wizard, autonomy dial with guardrail floors, durable stage queue, five stages with auto-pause breakers, status/run/once cli). Stages are no-ops pending the ingest, curation, and training plans (docs/ambient-trainer-design.md).
+
 ## [0.11.0] - 2026-07-02
 
 ### Added

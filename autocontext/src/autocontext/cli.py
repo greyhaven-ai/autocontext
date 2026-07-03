@@ -20,6 +20,7 @@ from rich.console import Console
 from rich.table import Table
 
 from autocontext.agents.orchestrator import AgentOrchestrator
+from autocontext.cli_ambient import ambient_app
 from autocontext.cli_analytics import register_analytics_command
 from autocontext.cli_capabilities import register_capabilities_command
 from autocontext.cli_hermes import register_hermes_command
@@ -692,6 +693,7 @@ def _serve_mcp() -> None:
 
 
 app.add_typer(_serve_app, name="serve")
+app.add_typer(ambient_app, name="ambient")
 
 
 @app.command()
