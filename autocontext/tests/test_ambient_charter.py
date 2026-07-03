@@ -81,3 +81,16 @@ def test_guardrail_floor_holds_on_assignment() -> None:
         config.frozen_anchor = False
     with pytest.raises(ValidationError):
         config.min_frontier_fraction = 0.0
+
+
+def test_duplicate_target_names_rejected() -> None:
+    target = CharterTarget(
+        name="dup",
+        kind="role",
+        selector="competitor@grid_ctf",
+        base_model="Qwen/Qwen2.5-3B-Instruct",
+        min_dataset_records=1,
+        eval_suite="s",
+    )
+    with pytest.raises(ValidationError, match="duplicate target names"):
+        _minimal_charter(targets=[target, target.model_copy()])

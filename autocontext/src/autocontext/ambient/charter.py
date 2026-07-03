@@ -79,3 +79,12 @@ class Charter(BaseModel):
             if source.kind == "full-box" and self.tier != "hosted-box":
                 raise ValueError("full-box sources require the hosted-box tier")
         return self
+
+    @model_validator(mode="after")
+    def _target_names_unique(self) -> Charter:
+        # policy lookups and proposal keying treat target name as a unique key
+        names = [target.name for target in self.targets]
+        duplicates = {name for name in names if names.count(name) > 1}
+        if duplicates:
+            raise ValueError(f"duplicate target names: {sorted(duplicates)}")
+        return self
