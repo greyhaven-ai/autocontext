@@ -41,9 +41,11 @@ export class RunManagerProviderSession {
     if (this.#providerOverride === null) {
       return null;
     }
-    return this.#providerOverride?.providerType
-      ?? this.#defaults.providerType
-      ?? this.#loadSettings().agentProvider;
+    return (
+      this.#providerOverride?.providerType ??
+      this.#defaults.providerType ??
+      this.#loadSettings().agentProvider
+    );
   }
 
   setActiveProvider(config: ProviderSessionOverride): void {
@@ -68,12 +70,24 @@ export class RunManagerProviderSession {
     }
 
     const overrides = this.#providerOverride ?? this.#defaults;
-    return this.#buildRoleProviderBundle(settings, {
-      providerType: overrides.providerType,
-      apiKey: overrides.apiKey,
-      baseUrl: overrides.baseUrl,
-      model: overrides.model,
-    }, opts);
+    // A defined #providerOverride means setActiveProvider() ran (e.g. switch_provider or
+    // login) — a deliberate mid-session decision that should win over a pinned env var.
+    // Falling back to #defaults (the constructor's startup providerType) keeps the
+    // construction-time precedent where a live env var still wins.
+    const isSessionExplicit = this.#providerOverride !== undefined;
+    const resolvedOpts: ProviderCompositionOpts | undefined = isSessionExplicit
+      ? { ...opts, preferProviderOverride: true }
+      : opts;
+    return this.#buildRoleProviderBundle(
+      settings,
+      {
+        providerType: overrides.providerType,
+        apiKey: overrides.apiKey,
+        baseUrl: overrides.baseUrl,
+        model: overrides.model,
+      },
+      resolvedOpts,
+    );
   }
 
   buildProvider(role?: GenerationRole, settings = this.#loadSettings()) {
@@ -94,7 +108,11 @@ export class RunManagerProviderSession {
     opts?: ProviderCompositionOpts,
   ): RoleProviderBundle {
     if (opts) {
-      return (this.#deps.buildRoleProviderBundle ?? buildRoleProviderBundle)(settings, overrides, opts);
+      return (this.#deps.buildRoleProviderBundle ?? buildRoleProviderBundle)(
+        settings,
+        overrides,
+        opts,
+      );
     }
     return (this.#deps.buildRoleProviderBundle ?? buildRoleProviderBundle)(settings, overrides);
   }

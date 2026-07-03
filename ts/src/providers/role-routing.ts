@@ -90,8 +90,21 @@ export interface RoleRoutingContext {
    * role that doesn't already have its own role-specific provider setting (which stays the
    * highest-priority route). When omitted, routing falls back to the env-derived
    * `settings.agentProvider`, unchanged from prior behavior.
+   *
+   * By default a live `AUTOCONTEXT_AGENT_PROVIDER`/`AUTOCONTEXT_PROVIDER` env var still
+   * outranks this override (construction-time overrides, e.g. the CLI `--provider` flag,
+   * keep that precedent). Set `preferProviderOverride` to flip that for a deliberate
+   * mid-session switch (e.g. `switch_provider`), which should win regardless of a pinned env
+   * var.
    */
   providerOverride?: string;
+  /**
+   * When true, `providerOverride` wins over a live env var instead of losing to it. Mirrors
+   * `resolveProviderConfig()`'s `preferProviderOverride` option; intended for overrides that
+   * represent an explicit runtime decision (a session's active provider was just switched)
+   * rather than a process-startup default.
+   */
+  preferProviderOverride?: boolean;
 }
 
 export interface RoutedProviderConfig {
@@ -116,9 +129,13 @@ function clean(value: string | undefined): string | undefined {
   return trimmed ? trimmed : undefined;
 }
 
-// Mirrors provider-config-resolution.ts's envProviderType precedence: the
-// AUTOCONTEXT_AGENT_PROVIDER/AUTOCONTEXT_PROVIDER env vars outrank an explicit
-// providerOverride, matching how resolveProviderConfig() resolves the default provider.
+// Boundary: reads live process.env rather than the settings snapshot (settings.agentProvider
+// was captured once by loadSettings() and can be stale for a long-lived process). This is a
+// deliberate divergence, not an oversight — it mirrors provider-config-resolution.ts's
+// envProviderType read so the default provider (via resolveProviderConfig) and per-role
+// routes (via routeRoleProvider) stay precedence-consistent: a live
+// AUTOCONTEXT_AGENT_PROVIDER/AUTOCONTEXT_PROVIDER outranks an explicit providerOverride
+// unless the caller sets `preferProviderOverride` (see RoleRoutingContext).
 function envProviderOverride(): string | undefined {
   return clean(process.env.AUTOCONTEXT_AGENT_PROVIDER) ?? clean(process.env.AUTOCONTEXT_PROVIDER);
 }
@@ -214,7 +231,10 @@ export function routeRoleProvider(
   }
 
   const providerType = normalizeProvider(
-    envProviderOverride() ?? clean(context.providerOverride) ?? settings.agentProvider,
+    (context.preferProviderOverride ? clean(context.providerOverride) : undefined) ??
+      envProviderOverride() ??
+      clean(context.providerOverride) ??
+      settings.agentProvider,
   );
   const providerClass = EXPLICIT_PROVIDER_CLASS[providerType] ?? "mid_tier";
 

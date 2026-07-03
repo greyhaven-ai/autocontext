@@ -90,6 +90,15 @@ export interface ProviderRuntimeSessionOpts {
 export interface ProviderCompositionOpts {
   runtimeSession?: ProviderRuntimeSessionOpts;
   routingContext?: RoleRoutingContext;
+  /**
+   * Marks `overrides.providerType` as a deliberate runtime decision (e.g. a `switch_provider`
+   * command mid-session) rather than a process-startup default (e.g. the CLI `--provider`
+   * flag or `RunManager({ providerType })`'s constructor default). When true, the override
+   * wins over a live `AUTOCONTEXT_AGENT_PROVIDER`/`AUTOCONTEXT_PROVIDER` env var for both the
+   * default provider and every per-role route; when false/omitted, a pinned env var still
+   * wins, matching prior behavior.
+   */
+  preferProviderOverride?: boolean;
 }
 
 export interface RoleProviderBundle {
@@ -316,16 +325,23 @@ export function buildRoleProviderBundle(
   overrides: Partial<ProviderConfig> = {},
   opts: ProviderCompositionOpts = {},
 ): RoleProviderBundle {
-  const defaultConfig = resolveProviderConfig({
-    ...overrides,
-    providerType: overrides.providerType ?? settings.agentProvider,
-  });
+  // Only actually prefer the override when there is one to prefer — an empty overrides.providerType
+  // with preferProviderOverride:true must fall through to the usual env/settings precedence.
+  const preferOverride = Boolean(opts.preferProviderOverride) && Boolean(overrides.providerType);
+  const defaultConfig = resolveProviderConfig(
+    {
+      ...overrides,
+      providerType: overrides.providerType ?? settings.agentProvider,
+    },
+    { preferProviderOverride: preferOverride },
+  );
   const roleRoutes = Object.fromEntries(
     ROUTED_GENERATION_ROLES.map((role) => [
       role,
       routeRoleProvider(settings, role, {
         ...opts.routingContext,
         providerOverride: overrides.providerType,
+        preferProviderOverride: preferOverride,
       }),
     ]),
   ) as Record<GenerationRole, RoutedProviderConfig>;

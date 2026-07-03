@@ -13,34 +13,64 @@ function makeSettings(agentProvider = "anthropic"): AppSettings {
 
 describe("run-manager provider session", () => {
   it("uses configured defaults when no session override has been set", () => {
-    const session = new RunManagerProviderSession({
-      providerType: "deterministic",
-      model: "default-model",
-    }, {
-      loadSettings: () => makeSettings("anthropic"),
-      buildRoleProviderBundle: vi.fn(() => ({
-        defaultProvider: { name: "default", defaultModel: () => "default-model", complete: vi.fn() },
-        defaultConfig: { providerType: "deterministic", apiKey: "", baseUrl: "", model: "default-model" },
-        roleProviders: {},
-        roleModels: {},
-      } satisfies RoleProviderBundle)),
-    });
+    const session = new RunManagerProviderSession(
+      {
+        providerType: "deterministic",
+        model: "default-model",
+      },
+      {
+        loadSettings: () => makeSettings("anthropic"),
+        buildRoleProviderBundle: vi.fn(
+          () =>
+            ({
+              defaultProvider: {
+                name: "default",
+                defaultModel: () => "default-model",
+                complete: vi.fn(),
+              },
+              defaultConfig: {
+                providerType: "deterministic",
+                apiKey: "",
+                baseUrl: "",
+                model: "default-model",
+              },
+              roleProviders: {},
+              roleModels: {},
+            }) satisfies RoleProviderBundle,
+        ),
+      },
+    );
 
     expect(session.getActiveProviderType()).toBe("deterministic");
   });
 
   it("normalizes and applies explicit active provider overrides", () => {
-    const buildRoleProviderBundle = vi.fn(() => ({
-      defaultProvider: { name: "default", defaultModel: () => "session-model", complete: vi.fn() },
-      defaultConfig: { providerType: "deterministic", apiKey: "", baseUrl: "", model: "session-model" },
-      roleProviders: {},
-      roleModels: {},
-    } satisfies RoleProviderBundle));
+    const buildRoleProviderBundle = vi.fn(
+      () =>
+        ({
+          defaultProvider: {
+            name: "default",
+            defaultModel: () => "session-model",
+            complete: vi.fn(),
+          },
+          defaultConfig: {
+            providerType: "deterministic",
+            apiKey: "",
+            baseUrl: "",
+            model: "session-model",
+          },
+          roleProviders: {},
+          roleModels: {},
+        }) satisfies RoleProviderBundle,
+    );
 
-    const session = new RunManagerProviderSession({}, {
-      loadSettings: () => makeSettings("anthropic"),
-      buildRoleProviderBundle,
-    });
+    const session = new RunManagerProviderSession(
+      {},
+      {
+        loadSettings: () => makeSettings("anthropic"),
+        buildRoleProviderBundle,
+      },
+    );
 
     session.setActiveProvider({
       providerType: "  DETERMINISTIC  ",
@@ -50,6 +80,9 @@ describe("run-manager provider session", () => {
 
     expect(session.getActiveProviderType()).toBe("deterministic");
     session.resolveProviderBundle(makeSettings("anthropic"));
+    // AC-873 fix round: a session-explicit switch (setActiveProvider) must mark
+    // preferProviderOverride:true so it wins over a pinned env var, not just update
+    // getActiveProviderType() cosmetically.
     expect(buildRoleProviderBundle).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
@@ -57,20 +90,36 @@ describe("run-manager provider session", () => {
         model: "session-model",
         baseUrl: "http://example.test",
       }),
+      expect.objectContaining({ preferProviderOverride: true }),
     );
   });
 
   it("forwards runtime-session composition options to provider bundle resolution", () => {
-    const buildRoleProviderBundle = vi.fn(() => ({
-      defaultProvider: { name: "default", defaultModel: () => "session-model", complete: vi.fn() },
-      defaultConfig: { providerType: "deterministic", apiKey: "", baseUrl: "", model: "session-model" },
-      roleProviders: {},
-      roleModels: {},
-    } satisfies RoleProviderBundle));
-    const session = new RunManagerProviderSession({ providerType: "deterministic" }, {
-      loadSettings: () => makeSettings("anthropic"),
-      buildRoleProviderBundle,
-    });
+    const buildRoleProviderBundle = vi.fn(
+      () =>
+        ({
+          defaultProvider: {
+            name: "default",
+            defaultModel: () => "session-model",
+            complete: vi.fn(),
+          },
+          defaultConfig: {
+            providerType: "deterministic",
+            apiKey: "",
+            baseUrl: "",
+            model: "session-model",
+          },
+          roleProviders: {},
+          roleModels: {},
+        }) satisfies RoleProviderBundle,
+    );
+    const session = new RunManagerProviderSession(
+      { providerType: "deterministic" },
+      {
+        loadSettings: () => makeSettings("anthropic"),
+        buildRoleProviderBundle,
+      },
+    );
     const opts = {
       runtimeSession: {
         sessionId: "run:abc:runtime",
@@ -89,10 +138,13 @@ describe("run-manager provider session", () => {
   });
 
   it("treats clearActiveProvider as an explicit unauthenticated session", () => {
-    const session = new RunManagerProviderSession({ providerType: "deterministic" }, {
-      loadSettings: () => makeSettings("anthropic"),
-      buildRoleProviderBundle: vi.fn(),
-    });
+    const session = new RunManagerProviderSession(
+      { providerType: "deterministic" },
+      {
+        loadSettings: () => makeSettings("anthropic"),
+        buildRoleProviderBundle: vi.fn(),
+      },
+    );
 
     session.clearActiveProvider();
 
@@ -103,17 +155,36 @@ describe("run-manager provider session", () => {
   });
 
   it("builds role-aware providers from the resolved provider bundle", () => {
-    const defaultProvider = { name: "default", defaultModel: () => "default-model", complete: vi.fn() };
-    const analystProvider = { name: "analyst", defaultModel: () => "analyst-model", complete: vi.fn() };
-    const session = new RunManagerProviderSession({ providerType: "deterministic" }, {
-      loadSettings: () => makeSettings("deterministic"),
-      buildRoleProviderBundle: vi.fn(() => ({
-        defaultProvider,
-        defaultConfig: { providerType: "deterministic", apiKey: "", baseUrl: "", model: "default-model" },
-        roleProviders: { analyst: analystProvider },
-        roleModels: { analyst: "analyst-model" },
-      } satisfies RoleProviderBundle)),
-    });
+    const defaultProvider = {
+      name: "default",
+      defaultModel: () => "default-model",
+      complete: vi.fn(),
+    };
+    const analystProvider = {
+      name: "analyst",
+      defaultModel: () => "analyst-model",
+      complete: vi.fn(),
+    };
+    const session = new RunManagerProviderSession(
+      { providerType: "deterministic" },
+      {
+        loadSettings: () => makeSettings("deterministic"),
+        buildRoleProviderBundle: vi.fn(
+          () =>
+            ({
+              defaultProvider,
+              defaultConfig: {
+                providerType: "deterministic",
+                apiKey: "",
+                baseUrl: "",
+                model: "default-model",
+              },
+              roleProviders: { analyst: analystProvider },
+              roleModels: { analyst: "analyst-model" },
+            }) satisfies RoleProviderBundle,
+        ),
+      },
+    );
 
     expect(session.buildProvider()).toBe(defaultProvider);
     expect(session.buildProvider("analyst")).toBe(analystProvider);

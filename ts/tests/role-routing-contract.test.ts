@@ -49,6 +49,30 @@ function baseSettings(overrides: Partial<RoleProviderSettings> = {}): RoleProvid
   };
 }
 
+// AC-873: routeRoleProvider() reads AUTOCONTEXT_AGENT_PROVIDER/AUTOCONTEXT_PROVIDER live from
+// process.env, so any test exercising its no-env-pinned precedence must isolate a dirty
+// runner env (e.g. a real CI env var, or leakage from another test) or it can flip silently.
+function withCleanProviderEnv(run: () => void): void {
+  const previousAgentProvider = process.env.AUTOCONTEXT_AGENT_PROVIDER;
+  const previousProvider = process.env.AUTOCONTEXT_PROVIDER;
+  delete process.env.AUTOCONTEXT_AGENT_PROVIDER;
+  delete process.env.AUTOCONTEXT_PROVIDER;
+  try {
+    run();
+  } finally {
+    if (previousAgentProvider === undefined) {
+      delete process.env.AUTOCONTEXT_AGENT_PROVIDER;
+    } else {
+      process.env.AUTOCONTEXT_AGENT_PROVIDER = previousAgentProvider;
+    }
+    if (previousProvider === undefined) {
+      delete process.env.AUTOCONTEXT_PROVIDER;
+    } else {
+      process.env.AUTOCONTEXT_PROVIDER = previousProvider;
+    }
+  }
+}
+
 describe("shared role routing contract", () => {
   it("keeps TypeScript routing constants aligned with the shared contract", () => {
     expect(PROVIDER_CLASSES).toEqual(CONTRACT.provider_classes);
@@ -126,35 +150,44 @@ describe("shared role routing contract", () => {
   });
 
   it("AC-873: applies a providerOverride when settings.agentProvider has no per-role setting", () => {
-    const routed = routeRoleProvider(baseSettings({ roleRouting: "off" }), "analyst", {
-      providerOverride: "deterministic",
-    });
+    withCleanProviderEnv(() => {
+      const routed = routeRoleProvider(baseSettings({ roleRouting: "off" }), "analyst", {
+        providerOverride: "deterministic",
+      });
 
-    expect(routed).toMatchObject({
-      providerType: "deterministic",
-      providerClass: "fast",
-      model: "analyst-role-model",
+      expect(routed).toMatchObject({
+        providerType: "deterministic",
+        providerClass: "fast",
+        model: "analyst-role-model",
+      });
     });
   });
 
   it("AC-873: lets an explicit per-role provider setting win over a providerOverride", () => {
-    const routed = routeRoleProvider(baseSettings({ competitorProvider: "ollama" }), "competitor", {
-      providerOverride: "deterministic",
-    });
+    withCleanProviderEnv(() => {
+      const routed = routeRoleProvider(
+        baseSettings({ competitorProvider: "ollama" }),
+        "competitor",
+        {
+          providerOverride: "deterministic",
+        },
+      );
 
-    expect(routed).toMatchObject({ providerType: "ollama", providerClass: "mid_tier" });
+      expect(routed).toMatchObject({ providerType: "ollama", providerClass: "mid_tier" });
+    });
   });
 
   it("AC-873: falls back to settings.agentProvider when no providerOverride is supplied", () => {
-    const routed = routeRoleProvider(baseSettings({ roleRouting: "off" }), "analyst");
+    withCleanProviderEnv(() => {
+      const routed = routeRoleProvider(baseSettings({ roleRouting: "off" }), "analyst");
 
-    expect(routed).toMatchObject({ providerType: "deterministic", providerClass: "fast" });
+      expect(routed).toMatchObject({ providerType: "deterministic", providerClass: "fast" });
+    });
   });
 
-  it("AC-873: lets the AUTOCONTEXT_AGENT_PROVIDER env var win over a providerOverride", () => {
-    const previous = process.env.AUTOCONTEXT_AGENT_PROVIDER;
-    process.env.AUTOCONTEXT_AGENT_PROVIDER = "ollama";
-    try {
+  it("AC-873: lets the AUTOCONTEXT_AGENT_PROVIDER env var win over a construction-time providerOverride", () => {
+    withCleanProviderEnv(() => {
+      process.env.AUTOCONTEXT_AGENT_PROVIDER = "ollama";
       const routed = routeRoleProvider(
         baseSettings({ roleRouting: "off", agentProvider: "ollama" }),
         "analyst",
@@ -162,13 +195,20 @@ describe("shared role routing contract", () => {
       );
 
       expect(routed).toMatchObject({ providerType: "ollama", providerClass: "mid_tier" });
-    } finally {
-      if (previous === undefined) {
-        delete process.env.AUTOCONTEXT_AGENT_PROVIDER;
-      } else {
-        process.env.AUTOCONTEXT_AGENT_PROVIDER = previous;
-      }
-    }
+    });
+  });
+
+  it("AC-873: lets a preferProviderOverride win over a pinned AUTOCONTEXT_AGENT_PROVIDER (mid-session switch)", () => {
+    withCleanProviderEnv(() => {
+      process.env.AUTOCONTEXT_AGENT_PROVIDER = "ollama";
+      const routed = routeRoleProvider(
+        baseSettings({ roleRouting: "off", agentProvider: "ollama" }),
+        "analyst",
+        { providerOverride: "deterministic", preferProviderOverride: true },
+      );
+
+      expect(routed).toMatchObject({ providerType: "deterministic", providerClass: "fast" });
+    });
   });
 
   it("keeps Python's mid-tier fallback for unknown role names", () => {
@@ -216,11 +256,7 @@ describe("role-routed provider bundles", () => {
   });
 
   it("AC-873: threads a providerType override into per-role routing, not just the default provider", () => {
-    const previousAgentProvider = process.env.AUTOCONTEXT_AGENT_PROVIDER;
-    const previousProvider = process.env.AUTOCONTEXT_PROVIDER;
-    delete process.env.AUTOCONTEXT_AGENT_PROVIDER;
-    delete process.env.AUTOCONTEXT_PROVIDER;
-    try {
+    withCleanProviderEnv(() => {
       const bundle = buildRoleProviderBundle(
         baseSettings({ agentProvider: "anthropic", roleRouting: "off" }),
         { providerType: "deterministic" },
@@ -230,18 +266,40 @@ describe("role-routed provider bundles", () => {
       expect(bundle.roleRoutes?.analyst).toMatchObject({ providerType: "deterministic" });
       expect(bundle.roleProviders.analyst?.name).toBe("deterministic");
       bundle.close?.();
-    } finally {
-      if (previousAgentProvider === undefined) {
-        delete process.env.AUTOCONTEXT_AGENT_PROVIDER;
-      } else {
-        process.env.AUTOCONTEXT_AGENT_PROVIDER = previousAgentProvider;
-      }
-      if (previousProvider === undefined) {
-        delete process.env.AUTOCONTEXT_PROVIDER;
-      } else {
-        process.env.AUTOCONTEXT_PROVIDER = previousProvider;
-      }
-    }
+    });
+  });
+
+  it("AC-873: preferProviderOverride lets a mid-session switch win over a pinned env var, for both the default provider and per-role routes", () => {
+    withCleanProviderEnv(() => {
+      process.env.AUTOCONTEXT_AGENT_PROVIDER = "anthropic";
+      const bundle = buildRoleProviderBundle(
+        baseSettings({ agentProvider: "anthropic", roleRouting: "off" }),
+        { providerType: "deterministic" },
+        { preferProviderOverride: true },
+      );
+
+      expect(bundle.defaultConfig.providerType).toBe("deterministic");
+      expect(bundle.roleRoutes?.analyst).toMatchObject({ providerType: "deterministic" });
+      expect(bundle.roleProviders.analyst?.name).toBe("deterministic");
+      bundle.close?.();
+    });
+  });
+
+  it("AC-873: without preferProviderOverride, a pinned env var still wins over the override for both default and per-role routes (construction-time precedent preserved)", () => {
+    withCleanProviderEnv(() => {
+      // "deterministic" needs no credentials, so a mistaken precedence bug here would surface
+      // as a wrong providerType rather than being masked by an unrelated ANTHROPIC_API_KEY
+      // ProviderError.
+      process.env.AUTOCONTEXT_AGENT_PROVIDER = "deterministic";
+      const bundle = buildRoleProviderBundle(
+        baseSettings({ agentProvider: "deterministic", roleRouting: "off" }),
+        { providerType: "ollama" },
+      );
+
+      expect(bundle.defaultConfig.providerType).toBe("deterministic");
+      expect(bundle.roleRoutes?.analyst).toMatchObject({ providerType: "deterministic" });
+      bundle.close?.();
+    });
   });
 
   it("uses routed tier models as CLI runtime defaults for role providers", () => {
