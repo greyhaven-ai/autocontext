@@ -623,25 +623,10 @@ describe("InteractiveServer", () => {
     }
   }, 15000);
 
-  // Genuine product bug, not a test-hygiene or environment problem (out of scope for
-  // AC-867): RunManagerProviderSession.resolveProviderBundle() correctly threads a
-  // switch_provider override's providerType into buildRoleProviderBundle(), but
-  // routeRoleProvider() (role-routing.ts) has no override parameter at all and always
-  // re-derives every generation role's provider from settings.agentProvider (env-var
-  // driven). So switching the active session to "deterministic" updates
-  // getActiveProviderType() and the *default* provider, but every per-role provider
-  // (competitor/analyst/coach/...) used by chatAgent() still resolves independently and
-  // ignores the switch, so a subsequent chat_agent call still throws the original
-  // provider's "API key required" error. Confirmed by direct repro against
-  // InteractiveServer: switch_provider succeeds and getActiveProviderType() reports
-  // "deterministic", yet the next chat_agent call still fails with
-  // "ANTHROPIC_API_KEY environment variable required". This is the same class of gap as
-  // the CLI --provider flag (worked around for benchmark-provider.test.ts and the
-  // RunManager tests above via AUTOCONTEXT_AGENT_PROVIDER), but here it cannot be worked
-  // around with an env var because the whole point of this test is switching mid-session
-  // away from an initial provider. Tracked as a finding in the AC-867 report; not fixed
-  // here since it requires changing routeRoleProvider()'s signature/behavior.
-  it.skip("applies provider switches to subsequent live chat requests", async () => {
+  // AC-873: routeRoleProvider() now accepts a providerOverride so per-role providers
+  // (competitor/analyst/coach/...) track switch_provider the same way the default
+  // provider already did.
+  it("applies provider switches to subsequent live chat requests", async () => {
     const previousConfigDir = process.env.AUTOCONTEXT_CONFIG_DIR;
     const configDir = join(dir, "config");
     mkdirSync(configDir, { recursive: true });
@@ -651,6 +636,68 @@ describe("InteractiveServer", () => {
     // "deterministic" for every other test here).
     const previousAgentProviderForThisTest = process.env.AUTOCONTEXT_AGENT_PROVIDER;
     delete process.env.AUTOCONTEXT_AGENT_PROVIDER;
+
+    const { RunManager, InteractiveServer } = await import("../src/server/index.js");
+    const mgr = new RunManager({
+      dbPath: join(dir, "test.db"),
+      migrationsDir: join(__dirname, "..", "migrations"),
+      runsRoot: join(dir, "runs"),
+      knowledgeRoot: join(dir, "knowledge"),
+      providerType: "anthropic",
+    });
+    const server = new InteractiveServer({ runManager: mgr, port: 0 });
+    await server.start();
+
+    const socket = await openSocket(server.url);
+
+    try {
+      await socket.waitFor((msg) => msg.type === "hello");
+      await socket.waitFor((msg) => msg.type === "environments");
+      await socket.waitFor((msg) => msg.type === "state");
+
+      socket.send({ type: "chat_agent", role: "analyst", message: "What changed?" });
+      const initialError = await socket.waitFor((msg) => msg.type === "error");
+      expect(String(initialError.message)).toContain("ANTHROPIC_API_KEY");
+
+      socket.send({ type: "switch_provider", provider: "deterministic" });
+      const authStatus = await socket.waitFor((msg) => msg.type === "auth_status");
+      expect(authStatus.provider).toBe("deterministic");
+      expect(authStatus.authenticated).toBe(true);
+      expect(mgr.getActiveProviderType()).toBe("deterministic");
+
+      socket.send({ type: "chat_agent", role: "analyst", message: "What changed?" });
+      const reply = await socket.waitFor((msg) => msg.type === "chat_response");
+      expect(String(reply.text)).toContain("## Findings");
+    } finally {
+      socket.close();
+      await server.stop();
+      if (previousConfigDir === undefined) {
+        delete process.env.AUTOCONTEXT_CONFIG_DIR;
+      } else {
+        process.env.AUTOCONTEXT_CONFIG_DIR = previousConfigDir;
+      }
+      if (previousAgentProviderForThisTest === undefined) {
+        delete process.env.AUTOCONTEXT_AGENT_PROVIDER;
+      } else {
+        process.env.AUTOCONTEXT_AGENT_PROVIDER = previousAgentProviderForThisTest;
+      }
+    }
+  }, 15000);
+
+  // AC-873 fix round: the no-pin variant above proved the override reaches per-role
+  // routing, but under the common deployment shape (AUTOCONTEXT_AGENT_PROVIDER pinned via
+  // env) a live env var used to win for BOTH the default provider and per-role routes,
+  // consistently — so switch_provider silently no-opped even though
+  // getActiveProviderType()/auth_status reported the switch as successful. This variant
+  // pins the env var to "anthropic" (instead of deleting it) to prove a deliberate
+  // mid-session switch_provider now wins over that pin.
+  it("applies provider switches to subsequent live chat requests even when AUTOCONTEXT_AGENT_PROVIDER is pinned via env", async () => {
+    const previousConfigDir = process.env.AUTOCONTEXT_CONFIG_DIR;
+    const configDir = join(dir, "config");
+    mkdirSync(configDir, { recursive: true });
+    process.env.AUTOCONTEXT_CONFIG_DIR = configDir;
+    const previousAgentProviderForThisTest = process.env.AUTOCONTEXT_AGENT_PROVIDER;
+    process.env.AUTOCONTEXT_AGENT_PROVIDER = "anthropic";
 
     const { RunManager, InteractiveServer } = await import("../src/server/index.js");
     const mgr = new RunManager({
