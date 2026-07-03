@@ -76,3 +76,46 @@ def test_prune_oldest_removes_oldest_fraction(tmp_path: Path) -> None:
     remaining = {record.record_id for record in store.recent(limit=100)}
     assert set(ids[3:]) == remaining
     assert store.db_size_bytes() > 0
+
+
+def test_read_after_returns_ascending_records_after_id(tmp_path: Path) -> None:
+    store = TraceStore(tmp_path / "traces.sqlite3")
+    first = store.append("autocontext:native", "generation", {"n": 1}, "frontier", 0)
+    store.append("autocontext:native", "generation", {"n": 2}, "frontier", 0)
+    store.append("autocontext:native", "generation", {"n": 3}, "frontier", 0)
+
+    records = store.read_after(first, limit=10)
+
+    assert [r.payload["n"] for r in records] == [2, 3]
+    assert records[0].record_id < records[1].record_id
+
+
+def test_read_after_respects_limit(tmp_path: Path) -> None:
+    store = TraceStore(tmp_path / "traces.sqlite3")
+    for n in range(5):
+        store.append("s", "generation", {"n": n}, "frontier", 0)
+
+    assert len(store.read_after(0, limit=2)) == 2
+
+
+def test_read_after_filters_by_kind_source_and_produced_by(tmp_path: Path) -> None:
+    store = TraceStore(tmp_path / "traces.sqlite3")
+    store.append("autocontext:native", "generation", {"n": 1}, "frontier", 0)
+    store.append("autocontext-outputs:native", "agent_output", {"n": 2}, "frontier", 0)
+    store.append("autocontext-outputs:native", "agent_output", {"n": 3}, "finetune:lineage-1", 0)
+
+    by_kind = store.read_after(0, limit=10, kind="agent_output")
+    assert [r.payload["n"] for r in by_kind] == [2, 3]
+
+    by_source = store.read_after(0, limit=10, source="autocontext:native")
+    assert [r.payload["n"] for r in by_source] == [1]
+
+    by_producer = store.read_after(0, limit=10, kind="agent_output", produced_by="frontier")
+    assert [r.payload["n"] for r in by_producer] == [2]
+
+
+def test_read_after_empty_when_nothing_newer(tmp_path: Path) -> None:
+    store = TraceStore(tmp_path / "traces.sqlite3")
+    last = store.append("s", "generation", {}, "frontier", 0)
+
+    assert store.read_after(last, limit=10) == []

@@ -23,6 +23,9 @@ CREATE TABLE IF NOT EXISTS ambient_source_cursors (
     source TEXT PRIMARY KEY,
     cursor TEXT NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_ambient_traces_source ON ambient_traces(source);
+CREATE INDEX IF NOT EXISTS idx_ambient_traces_kind ON ambient_traces(kind);
+CREATE INDEX IF NOT EXISTS idx_ambient_traces_produced_by ON ambient_traces(produced_by);
 """
 
 
@@ -104,6 +107,38 @@ class TraceStore:
                 "SELECT record_id, source, kind, payload, produced_by, redaction_findings, created_at "
                 "FROM ambient_traces ORDER BY record_id DESC LIMIT ?",
                 (limit,),
+            ).fetchall()
+        return [TraceRecord(r[0], r[1], r[2], json.loads(r[3]), r[4], r[5], r[6]) for r in rows]
+
+    def read_after(
+        self,
+        after_record_id: int,
+        limit: int,
+        *,
+        source: str | None = None,
+        kind: str | None = None,
+        produced_by: str | None = None,
+    ) -> list[TraceRecord]:
+        """Forward pagination for curate/advise readers: ascending record_id,
+        strictly after the given watermark, with optional column filters.
+        """
+        clauses = ["record_id > ?"]
+        params: list[Any] = [after_record_id]
+        if source is not None:
+            clauses.append("source = ?")
+            params.append(source)
+        if kind is not None:
+            clauses.append("kind = ?")
+            params.append(kind)
+        if produced_by is not None:
+            clauses.append("produced_by = ?")
+            params.append(produced_by)
+        params.append(limit)
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT record_id, source, kind, payload, produced_by, redaction_findings, created_at "
+                f"FROM ambient_traces WHERE {' AND '.join(clauses)} ORDER BY record_id ASC LIMIT ?",
+                params,
             ).fetchall()
         return [TraceRecord(r[0], r[1], r[2], json.loads(r[3]), r[4], r[5], r[6]) for r in rows]
 
