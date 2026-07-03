@@ -35,7 +35,7 @@ telemetry.
    control surface.
 5. **Architecture**: pipeline daemon (approach A): five loosely-coupled
    stages around a durable queue. Longevity commitment: every stage runs both
-   resident and one-shot (`autoctx ambient <stage> --once`), so the system can
+   resident and one-shot (`autoctx ambient once <stage>`), so the system can
    degrade into a cron-over-stages model without a rewrite and can later split
    stages across machines by re-pointing queue endpoints.
 6. **V1 bar**: the full closed loop on our box: interview to charter, ingest,
