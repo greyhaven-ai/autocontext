@@ -98,6 +98,51 @@ jobs:
         working-directory: ts
         run: uv run --frozen --project ../autocontext -- npm run check:schemas
 
+  ts-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: ts
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: ts/.nvmrc
+      - name: Reuse setup-node headers for native addons
+        shell: bash
+        run: |
+          nodedir="$(dirname "$(dirname "$(command -v node)")")"
+          test -d "$nodedir/include/node"
+          echo "npm_config_nodedir=$nodedir" >> "$GITHUB_ENV"
+      - uses: oven-sh/setup-bun@v2
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: false
+      - name: Install Python parity deps
+        working-directory: autocontext
+        run: uv sync --locked --group dev
+      - name: Install TypeScript deps
+        run: npm ci --ignore-scripts
+      - name: Rebuild native modules (better-sqlite3, isolated-vm)
+        run: npm rebuild better-sqlite3 isolated-vm
+      - name: Run full TypeScript test suite
+        # The dot reporter and capped workers keep the vitest host process
+        # responsive: with the default reporter streaming per-test lines for
+        # 5,600+ tests, the host starves worker RPC calls and the run fails
+        # with "Timeout calling onTaskUpdate" despite all tests passing.
+        run: npm test -- --reporter=dot --maxWorkers=2
+        env:
+          # Sync Python subprocess spawns in the hashing-parity property tests
+          # block vitest workers long enough to starve the worker RPC channel
+          # on saturated runners; 25 runs keeps the parity check meaningful
+          # while staying under the RPC timeout. Local runs default to 100.
+          HASHING_PARITY_NUM_RUNS: "25"
+
   smoke:
     needs: [lint, test, package-boundaries]
     runs-on: ubuntu-latest

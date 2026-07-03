@@ -56,6 +56,8 @@ export interface PreflightInputs {
   readonly baseBranch?: string;
   /** Optional detector; a default implementation shells out to gh/git via execFileSync. */
   readonly detect?: PreflightDetector;
+  /** Env for the default detector's gh/git subprocess calls. Default: process.env. */
+  readonly env?: NodeJS.ProcessEnv;
 }
 
 /**
@@ -66,7 +68,7 @@ export interface PreflightInputs {
  */
 export function preflight(inputs: PreflightInputs): PreflightResult {
   const { candidate, mode, baseBranch } = inputs;
-  const detect = inputs.detect ?? defaultDetector(inputs.cwd);
+  const detect = inputs.detect ?? defaultDetector(inputs.cwd, inputs.env);
   const issues: PreflightIssue[] = [];
 
   // --- 13: target-path / actuator resolvability ---
@@ -167,7 +169,10 @@ function globToRegExp(pattern: string): RegExp {
         re += escapeRe(c);
         i += 1;
       } else {
-        const alts = pattern.slice(i + 1, end).split(",").map(escapeRe);
+        const alts = pattern
+          .slice(i + 1, end)
+          .split(",")
+          .map(escapeRe);
         re += `(?:${alts.join("|")})`;
         i = end + 1;
       }
@@ -186,11 +191,12 @@ function escapeRe(s: string): string {
 
 // ---------- default detector ----------
 
-function defaultDetector(cwd: string): PreflightDetector {
+function defaultDetector(cwd: string, env?: NodeJS.ProcessEnv): PreflightDetector {
+  const subprocessEnv = env ?? process.env;
   return {
     gh(): boolean {
       try {
-        execFileSync("gh", ["auth", "status"], { cwd, stdio: "ignore" });
+        execFileSync("gh", ["auth", "status"], { cwd, env: subprocessEnv, stdio: "ignore" });
         return true;
       } catch {
         return false;
@@ -198,7 +204,7 @@ function defaultDetector(cwd: string): PreflightDetector {
     },
     git(): boolean {
       try {
-        execFileSync("git", ["--version"], { cwd, stdio: "ignore" });
+        execFileSync("git", ["--version"], { cwd, env: subprocessEnv, stdio: "ignore" });
         // Also verify a git repo is initialized at cwd.
         return existsSync(join(cwd, ".git"));
       } catch {
@@ -209,6 +215,7 @@ function defaultDetector(cwd: string): PreflightDetector {
       try {
         const out = execFileSync("git", ["status", "--porcelain"], {
           cwd,
+          env: subprocessEnv,
           stdio: ["ignore", "pipe", "ignore"],
         });
         return out.toString("utf-8").trim().length === 0;
@@ -220,6 +227,7 @@ function defaultDetector(cwd: string): PreflightDetector {
       try {
         execFileSync("git", ["rev-parse", "--verify", branch], {
           cwd,
+          env: subprocessEnv,
           stdio: "ignore",
         });
         return true;
@@ -228,6 +236,7 @@ function defaultDetector(cwd: string): PreflightDetector {
         try {
           execFileSync("git", ["rev-parse", "--verify", `origin/${branch}`], {
             cwd,
+            env: subprocessEnv,
             stdio: "ignore",
           });
           return true;

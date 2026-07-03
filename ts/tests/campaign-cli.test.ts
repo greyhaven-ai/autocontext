@@ -116,14 +116,7 @@ describe("autoctx campaign create", () => {
 
   it("creates a campaign and returns its ID", () => {
     const { stdout, exitCode } = runCli(
-      [
-        "campaign",
-        "create",
-        "--name",
-        "Q2 Goals",
-        "--goal",
-        "Ship OAuth and billing",
-      ],
+      ["campaign", "create", "--name", "Q2 Goals", "--goal", "Ship OAuth and billing"],
       { cwd: dir },
     );
     expect(exitCode).toBe(0);
@@ -164,16 +157,7 @@ describe("autoctx campaign create", () => {
 
   it("rejects invalid numeric budget flags", () => {
     const { exitCode, stderr } = runCli(
-      [
-        "campaign",
-        "create",
-        "--name",
-        "Bad",
-        "--goal",
-        "g",
-        "--max-missions",
-        "oops",
-      ],
+      ["campaign", "create", "--name", "Bad", "--goal", "g", "--max-missions", "oops"],
       { cwd: dir },
     );
     expect(exitCode).toBe(1);
@@ -237,10 +221,9 @@ describe("autoctx campaign list", () => {
   });
 
   it("filters by status", () => {
-    const { stdout: r1 } = runCli(
-      ["campaign", "create", "--name", "A", "--goal", "g1"],
-      { cwd: dir },
-    );
+    const { stdout: r1 } = runCli(["campaign", "create", "--name", "A", "--goal", "g1"], {
+      cwd: dir,
+    });
     runCli(["campaign", "create", "--name", "B", "--goal", "g2"], { cwd: dir });
     const { id } = JSON.parse(r1);
     runCli(["campaign", "pause", "--id", id], { cwd: dir });
@@ -251,13 +234,10 @@ describe("autoctx campaign list", () => {
     const parsed = JSON.parse(stdout);
     expect(parsed.length).toBe(1);
     expect(parsed[0].name).toBe("B");
-  }, 15000);
+  });
 
   it("rejects invalid status filters", () => {
-    const { exitCode, stderr } = runCli(
-      ["campaign", "list", "--status", "mystery"],
-      { cwd: dir },
-    );
+    const { exitCode, stderr } = runCli(["campaign", "list", "--status", "mystery"], { cwd: dir });
     expect(exitCode).toBe(1);
     expect(stderr).toContain("--status must be one of");
   });
@@ -277,62 +257,46 @@ describe("autoctx campaign add-mission and progress", () => {
   });
 
   it("adds a mission to a campaign", () => {
-    const { stdout: cOut } = runCli(
-      ["campaign", "create", "--name", "C", "--goal", "g"],
-      { cwd: dir },
-    );
+    const { stdout: cOut } = runCli(["campaign", "create", "--name", "C", "--goal", "g"], {
+      cwd: dir,
+    });
     const campaignId = JSON.parse(cOut).id;
 
-    const { stdout: mOut } = runCli(
-      ["mission", "create", "--name", "M1", "--goal", "mg"],
-      { cwd: dir },
-    );
+    const { stdout: mOut } = runCli(["mission", "create", "--name", "M1", "--goal", "mg"], {
+      cwd: dir,
+    });
     const missionId = JSON.parse(mOut).id;
 
     const { exitCode } = runCli(
-      [
-        "campaign",
-        "add-mission",
-        "--id",
-        campaignId,
-        "--mission-id",
-        missionId,
-      ],
+      ["campaign", "add-mission", "--id", campaignId, "--mission-id", missionId],
       { cwd: dir },
     );
     expect(exitCode).toBe(0);
 
-    const { stdout: progressOut } = runCli(
-      ["campaign", "progress", "--id", campaignId],
-      { cwd: dir },
-    );
+    const { stdout: progressOut } = runCli(["campaign", "progress", "--id", campaignId], {
+      cwd: dir,
+    });
     const progress = JSON.parse(progressOut);
     expect(progress.totalMissions).toBe(1);
-  }, 15000);
+  });
 
   it("adds a mission with priority and dependencies", () => {
-    const { stdout: cOut } = runCli(
-      ["campaign", "create", "--name", "C", "--goal", "g"],
-      { cwd: dir },
-    );
+    const { stdout: cOut } = runCli(["campaign", "create", "--name", "C", "--goal", "g"], {
+      cwd: dir,
+    });
     const campaignId = JSON.parse(cOut).id;
 
-    const { stdout: m1Out } = runCli(
-      ["mission", "create", "--name", "M1", "--goal", "mg1"],
-      { cwd: dir },
-    );
+    const { stdout: m1Out } = runCli(["mission", "create", "--name", "M1", "--goal", "mg1"], {
+      cwd: dir,
+    });
     const m1Id = JSON.parse(m1Out).id;
 
-    const { stdout: m2Out } = runCli(
-      ["mission", "create", "--name", "M2", "--goal", "mg2"],
-      { cwd: dir },
-    );
+    const { stdout: m2Out } = runCli(["mission", "create", "--name", "M2", "--goal", "mg2"], {
+      cwd: dir,
+    });
     const m2Id = JSON.parse(m2Out).id;
 
-    runCli(
-      ["campaign", "add-mission", "--id", campaignId, "--mission-id", m1Id],
-      { cwd: dir },
-    );
+    runCli(["campaign", "add-mission", "--id", campaignId, "--mission-id", m1Id], { cwd: dir });
     const { exitCode } = runCli(
       [
         "campaign",
@@ -350,25 +314,20 @@ describe("autoctx campaign add-mission and progress", () => {
     );
     expect(exitCode).toBe(0);
 
-    const { stdout: statusOut } = runCli(
-      ["campaign", "status", "--id", campaignId],
-      { cwd: dir },
-    );
+    const { stdout: statusOut } = runCli(["campaign", "status", "--id", campaignId], { cwd: dir });
     const status = JSON.parse(statusOut);
     expect(status.missions.length).toBe(2);
-  }, 15000);
+  });
 
   it("rejects invalid priority values", () => {
-    const { stdout: cOut } = runCli(
-      ["campaign", "create", "--name", "C", "--goal", "g"],
-      { cwd: dir },
-    );
+    const { stdout: cOut } = runCli(["campaign", "create", "--name", "C", "--goal", "g"], {
+      cwd: dir,
+    });
     const campaignId = JSON.parse(cOut).id;
 
-    const { stdout: mOut } = runCli(
-      ["mission", "create", "--name", "M1", "--goal", "mg"],
-      { cwd: dir },
-    );
+    const { stdout: mOut } = runCli(["mission", "create", "--name", "M1", "--goal", "mg"], {
+      cwd: dir,
+    });
     const missionId = JSON.parse(mOut).id;
 
     const { exitCode, stderr } = runCli(
@@ -403,10 +362,9 @@ describe("autoctx campaign lifecycle", () => {
   });
 
   it("pause sets status to paused", () => {
-    const { stdout: created } = runCli(
-      ["campaign", "create", "--name", "T", "--goal", "g"],
-      { cwd: dir },
-    );
+    const { stdout: created } = runCli(["campaign", "create", "--name", "T", "--goal", "g"], {
+      cwd: dir,
+    });
     const { id } = JSON.parse(created);
 
     const { exitCode } = runCli(["campaign", "pause", "--id", id], {
@@ -419,10 +377,9 @@ describe("autoctx campaign lifecycle", () => {
   });
 
   it("resume sets status back to active", () => {
-    const { stdout: created } = runCli(
-      ["campaign", "create", "--name", "T", "--goal", "g"],
-      { cwd: dir },
-    );
+    const { stdout: created } = runCli(["campaign", "create", "--name", "T", "--goal", "g"], {
+      cwd: dir,
+    });
     const { id } = JSON.parse(created);
 
     runCli(["campaign", "pause", "--id", id], { cwd: dir });
@@ -430,13 +387,12 @@ describe("autoctx campaign lifecycle", () => {
 
     const { stdout } = runCli(["campaign", "status", "--id", id], { cwd: dir });
     expect(JSON.parse(stdout).status).toBe("active");
-  }, 15000);
+  });
 
   it("cancel sets status to canceled", () => {
-    const { stdout: created } = runCli(
-      ["campaign", "create", "--name", "T", "--goal", "g"],
-      { cwd: dir },
-    );
+    const { stdout: created } = runCli(["campaign", "create", "--name", "T", "--goal", "g"], {
+      cwd: dir,
+    });
     const { id } = JSON.parse(created);
 
     runCli(["campaign", "cancel", "--id", id], { cwd: dir });
@@ -446,10 +402,9 @@ describe("autoctx campaign lifecycle", () => {
   });
 
   it("does not allow canceled campaigns to resume", () => {
-    const { stdout: created } = runCli(
-      ["campaign", "create", "--name", "T", "--goal", "g"],
-      { cwd: dir },
-    );
+    const { stdout: created } = runCli(["campaign", "create", "--name", "T", "--goal", "g"], {
+      cwd: dir,
+    });
     const { id } = JSON.parse(created);
 
     runCli(["campaign", "cancel", "--id", id], { cwd: dir });
@@ -465,10 +420,9 @@ describe("autoctx campaign lifecycle", () => {
   });
 
   it("returns an error for nonexistent campaign IDs", () => {
-    const { stderr, exitCode } = runCli(
-      ["campaign", "status", "--id", "nonexistent-id"],
-      { cwd: dir },
-    );
+    const { stderr, exitCode } = runCli(["campaign", "status", "--id", "nonexistent-id"], {
+      cwd: dir,
+    });
     expect(exitCode).toBe(1);
     expect(stderr).toContain("Campaign not found");
   });
