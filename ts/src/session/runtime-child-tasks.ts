@@ -150,8 +150,26 @@ export class RuntimeChildTaskRunner {
       maxDepth: this.maxDepth,
     });
 
+    this.coordinator.startWorker(worker.workerId, coordinatorLineage);
+    this.parentLog.append(RuntimeSessionEventType.CHILD_TASK_STARTED, {
+      taskId,
+      childSessionId,
+      workerId: worker.workerId,
+      role: opts.role,
+      cwd: childCwd,
+      depth: childDepth,
+      maxDepth: this.maxDepth,
+    });
+    childLog.append(RuntimeSessionEventType.PROMPT_SUBMITTED, {
+      prompt: opts.prompt,
+      role: opts.role,
+      cwd: childCwd,
+      depth: childDepth,
+      maxDepth: this.maxDepth,
+    });
+    this.persist(childLog);
+
     if (this.depth >= this.maxDepth) {
-      this.coordinator.startWorker(worker.workerId, coordinatorLineage);
       return this.failChildTask({
         taskId,
         childSessionId,
@@ -164,7 +182,6 @@ export class RuntimeChildTaskRunner {
       });
     }
     if (activeChildCount >= this.maxConcurrentChildTasks) {
-      this.coordinator.startWorker(worker.workerId, coordinatorLineage);
       return this.failChildTask({
         taskId,
         childSessionId,
@@ -176,18 +193,6 @@ export class RuntimeChildTaskRunner {
         message: `Maximum concurrent child sessions (${this.maxConcurrentChildTasks}) exceeded`,
       });
     }
-
-    this.coordinator.startWorker(worker.workerId, coordinatorLineage);
-    this.parentLog.append(RuntimeSessionEventType.CHILD_TASK_STARTED, {
-      taskId,
-      childSessionId,
-      workerId: worker.workerId,
-      role: opts.role,
-      cwd: childCwd,
-      depth: childDepth,
-      maxDepth: this.maxDepth,
-    });
-    this.persist(childLog);
 
     let childWorkspace: RuntimeWorkspaceEnv;
     try {
@@ -226,13 +231,6 @@ export class RuntimeChildTaskRunner {
         childLog: canceledAfterScope,
       });
     }
-    childLog.append(RuntimeSessionEventType.PROMPT_SUBMITTED, {
-      prompt: opts.prompt,
-      role: opts.role,
-      cwd: childWorkspace.cwd,
-      depth: childDepth,
-      maxDepth: this.maxDepth,
-    });
 
     try {
       const output = await opts.handler({
@@ -268,11 +266,10 @@ export class RuntimeChildTaskRunner {
         depth: childDepth,
         maxDepth: this.maxDepth,
       });
-      this.coordinator.completeWorker(
-        worker.workerId,
-        text,
-        { ...coordinatorLineage, isError: false },
-      );
+      this.coordinator.completeWorker(worker.workerId, text, {
+        ...coordinatorLineage,
+        isError: false,
+      });
       this.parentLog.append(RuntimeSessionEventType.CHILD_TASK_COMPLETED, {
         taskId,
         childSessionId,
