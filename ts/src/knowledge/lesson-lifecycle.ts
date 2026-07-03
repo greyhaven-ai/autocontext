@@ -2,6 +2,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import type { ScenarioName } from "../domain/ids.js";
 import { ArtifactStore } from "./artifact-store.js";
 import { PLAYBOOK_MARKERS } from "./playbook.js";
 import { normalizeScenarioSegment } from "./scenario-paths.js";
@@ -65,7 +66,7 @@ function playbookBlock(content: string): { start: number; end: number; body: str
   return { start, end, body: content.slice(start, end) };
 }
 
-function playbookLessons(artifacts: ArtifactStore, scenario: string): DerivedLesson[] {
+function playbookLessons(artifacts: ArtifactStore, scenario: ScenarioName): DerivedLesson[] {
   const block = playbookBlock(artifacts.readPlaybook(scenario));
   if (!block) return [];
   return block.body
@@ -80,7 +81,7 @@ function playbookLessons(artifacts: ArtifactStore, scenario: string): DerivedLes
     }));
 }
 
-function skillLessons(skillsRoot: string | undefined, scenario: string): DerivedLesson[] {
+function skillLessons(skillsRoot: string | undefined, scenario: ScenarioName): DerivedLesson[] {
   if (!skillsRoot) return [];
   const skillPath = join(skillsRoot, `${scenario.replace(/_/g, "-")}-ops`, "SKILL.md");
   if (!existsSync(skillPath)) return [];
@@ -105,7 +106,7 @@ function skillLessons(skillsRoot: string | undefined, scenario: string): Derived
 
 function derivedLessons(
   artifacts: ArtifactStore,
-  scenario: string,
+  scenario: ScenarioName,
   skillsRoot: string | undefined,
 ): DerivedLesson[] {
   const seen = new Set<string>();

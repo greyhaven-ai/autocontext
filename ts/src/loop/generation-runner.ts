@@ -11,7 +11,7 @@
  */
 
 import type { CompletionResult, LLMProvider } from "../types/index.js";
-import type { RunId } from "../domain/ids.js";
+import { asScenarioName, type RunId, type ScenarioName } from "../domain/ids.js";
 import type { ScenarioInterface } from "../scenarios/game-interface.js";
 import type { SQLiteStore } from "../storage/index.js";
 import { TournamentRunner } from "../execution/tournament.js";
@@ -145,6 +145,7 @@ export class GenerationRunner {
   #roleProviders: Partial<Record<GenerationRole, LLMProvider>>;
   #roleModels: Partial<Record<GenerationRole, string>>;
   #scenario: ScenarioInterface;
+  #scenarioName: ScenarioName;
   #store: SQLiteStore;
   #artifactStore: ArtifactStore;
   #journal: GenerationJournal;
@@ -190,6 +191,7 @@ export class GenerationRunner {
     this.#roleProviders = opts.roleProviders ?? {};
     this.#roleModels = opts.roleModels ?? {};
     this.#scenario = opts.scenario;
+    this.#scenarioName = asScenarioName(this.#scenario.name);
     this.#store = opts.store;
     this.#artifactStore = new ArtifactStore({
       runsRoot: opts.runsRoot,
@@ -227,7 +229,7 @@ export class GenerationRunner {
     });
     this.#recovery = new GenerationRecovery({
       artifacts: this.#artifactStore,
-      scenarioName: this.#scenario.name,
+      scenarioName: this.#scenarioName,
       deadEndTrackingEnabled: this.#deadEndTrackingEnabled,
       deadEndMaxEntries: this.#deadEndMaxEntries,
       stagnationResetEnabled: this.#stagnationResetEnabled,
@@ -490,15 +492,15 @@ export class GenerationRunner {
       scale: this.#levyScoutScale,
     });
     const contextComponents = this.applyContextComponentsHook(runId, generation, "competitor", {
-      playbook: this.#artifactStore.readPlaybook(this.#scenario.name),
+      playbook: this.#artifactStore.readPlaybook(this.#scenarioName),
       trajectory: new ScoreTrajectoryBuilder(this.#store.getScoreTrajectory(runId)).build(),
-      session_reports: this.#artifactStore.readSessionReports(this.#scenario.name),
+      session_reports: this.#artifactStore.readSessionReports(this.#scenarioName),
       scout_mutation_guidance: scoutHint,
     });
     const compacted = this.compactPromptComponentsForRun(runId, generation, contextComponents);
     const trimmed = this.#contextBudget.apply({
       ...compacted,
-      dead_ends: this.#artifactStore.readDeadEnds(this.#scenario.name),
+      dead_ends: this.#artifactStore.readDeadEnds(this.#scenarioName),
     });
     const injectedHint = this.#controller?.takeHint();
     const operatorHint =
@@ -587,14 +589,14 @@ export class GenerationRunner {
     attempt: GenerationAttempt,
   ): string {
     const trimmed = this.#contextBudget.apply({
-      playbook: this.#artifactStore.readPlaybook(this.#scenario.name),
+      playbook: this.#artifactStore.readPlaybook(this.#scenarioName),
       trajectory: new ScoreTrajectoryBuilder(this.#store.getScoreTrajectory(runId)).build(),
       analysis:
         `Gate decision: ${attempt.gateDecision}\n` +
         `Best score: ${attempt.tournamentResult.bestScore.toFixed(4)}\n` +
         `Mean score: ${attempt.tournamentResult.meanScore.toFixed(4)}\n` +
         `Wins/Losses: ${attempt.tournamentResult.wins}/${attempt.tournamentResult.losses}`,
-      dead_ends: this.#artifactStore.readDeadEnds(this.#scenario.name),
+      dead_ends: this.#artifactStore.readDeadEnds(this.#scenarioName),
     });
 
     const prompt = buildSupportPrompt({
@@ -690,7 +692,7 @@ export class GenerationRunner {
       `Generation ${gen} Coach`,
     );
 
-    const currentPlaybook = this.#artifactStore.readPlaybook(this.#scenario.name);
+    const currentPlaybook = this.#artifactStore.readPlaybook(this.#scenarioName);
     const normalizedPlaybook = currentPlaybook === EMPTY_PLAYBOOK_SENTINEL ? "" : currentPlaybook;
     const hasStructuredPlaybook =
       coachResult.text.includes(PLAYBOOK_MARKERS.PLAYBOOK_START) &&
@@ -737,7 +739,7 @@ export class GenerationRunner {
 
     if (nextPlaybook) {
       const playbookResult = this.#artifactStore.writeOrStagePlaybook(
-        this.#scenario.name,
+        this.#scenarioName,
         nextPlaybook,
         {
           requireApproval: this.#requirePlaybookApproval,
@@ -766,7 +768,7 @@ export class GenerationRunner {
 
   private async runCuratorConsolidation(runId: RunId, gen: number): Promise<void> {
     if (this.#requirePlaybookApproval) return;
-    const playbook = this.#artifactStore.readPlaybook(this.#scenario.name);
+    const playbook = this.#artifactStore.readPlaybook(this.#scenarioName);
     if (!playbook || playbook === EMPTY_PLAYBOOK_SENTINEL) return;
 
     const lessons = extractMarkedSection(
@@ -800,7 +802,7 @@ export class GenerationRunner {
       PLAYBOOK_MARKERS.LESSONS_END,
       parsed.consolidatedLessons,
     );
-    this.#artifactStore.writePlaybook(this.#scenario.name, updatedPlaybook);
+    this.#artifactStore.writePlaybook(this.#scenarioName, updatedPlaybook);
   }
 
   private async applyAdvancedFeatures(
@@ -845,7 +847,7 @@ export class GenerationRunner {
 
   private persistExplorationCollapseGuard(runId: RunId, gen: number): void {
     if (!this.#explorationCollapseGuard) return;
-    const playbook = this.#artifactStore.readPlaybook(this.#scenario.name).trim();
+    const playbook = this.#artifactStore.readPlaybook(this.#scenarioName).trim();
     if (!playbook || playbook === EMPTY_PLAYBOOK_SENTINEL) return;
     const snapshots = explorationSnapshots(this.#store.getScoreTrajectory(runId));
     if (snapshots.length < 2) return;

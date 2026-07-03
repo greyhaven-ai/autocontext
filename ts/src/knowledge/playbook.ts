@@ -6,6 +6,7 @@
 
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
+import type { ScenarioName } from "../domain/ids.js";
 import { VersionedFileStore } from "./versioned-store.js";
 
 export const EMPTY_PLAYBOOK_SENTINEL =
@@ -30,7 +31,7 @@ export class PlaybookManager {
     this.maxVersions = maxVersions;
   }
 
-  private store(scenarioName: string): VersionedFileStore {
+  private store(scenarioName: ScenarioName): VersionedFileStore {
     let s = this.stores.get(scenarioName);
     if (!s) {
       s = new VersionedFileStore(join(this.knowledgeRoot, scenarioName), {
@@ -44,21 +45,21 @@ export class PlaybookManager {
     return s;
   }
 
-  read(scenarioName: string): string {
+  read(scenarioName: ScenarioName): string {
     const content = this.store(scenarioName).read("playbook.md");
     return content || EMPTY_PLAYBOOK_SENTINEL;
   }
 
-  write(scenarioName: string, content: string): void {
+  write(scenarioName: ScenarioName, content: string): void {
     mkdirSync(join(this.knowledgeRoot, scenarioName), { recursive: true });
     this.store(scenarioName).write("playbook.md", content.trim() + "\n");
   }
 
-  rollback(scenarioName: string): boolean {
+  rollback(scenarioName: ScenarioName): boolean {
     return this.store(scenarioName).rollback("playbook.md");
   }
 
-  versionCount(scenarioName: string): number {
+  versionCount(scenarioName: ScenarioName): number {
     return this.store(scenarioName).versionCount("playbook.md");
   }
 }
@@ -101,10 +102,16 @@ export class PlaybookGuard {
 
     for (const [start, end] of PlaybookGuard.REQUIRED_MARKERS) {
       if (current.includes(start) && !proposed.includes(start)) {
-        return { approved: false, reason: `Required marker '${start}' missing from proposed playbook` };
+        return {
+          approved: false,
+          reason: `Required marker '${start}' missing from proposed playbook`,
+        };
       }
       if (current.includes(end) && !proposed.includes(end)) {
-        return { approved: false, reason: `Required marker '${end}' missing from proposed playbook` };
+        return {
+          approved: false,
+          reason: `Required marker '${end}' missing from proposed playbook`,
+        };
       }
     }
 

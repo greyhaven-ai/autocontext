@@ -14,6 +14,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import type { RunId, ScenarioName } from "../domain/ids.js";
 import { HookEvents, type HookBus } from "../extensions/index.js";
 import { PlaybookManager, EMPTY_PLAYBOOK_SENTINEL } from "./playbook.js";
 import {
@@ -64,27 +65,24 @@ export class ArtifactStore {
     this.runsRoot = opts.runsRoot;
     this.knowledgeRoot = opts.knowledgeRoot;
     this.hookBus = opts.hookBus ?? null;
-    this.playbookManager = new PlaybookManager(
-      opts.knowledgeRoot,
-      opts.maxPlaybookVersions ?? 5,
-    );
+    this.playbookManager = new PlaybookManager(opts.knowledgeRoot, opts.maxPlaybookVersions ?? 5);
     this.compactionLedger = new CompactionLedgerStore(this.runsRoot);
   }
 
-  generationDir(runId: string, generationIndex: number): string {
+  generationDir(runId: RunId, generationIndex: number): string {
     return join(this.runsRoot, runId, "generations", `gen_${generationIndex}`);
   }
 
-  compactionLedgerPath(runId: string): string {
+  compactionLedgerPath(runId: RunId): string {
     return this.compactionLedger.ledgerPath(runId);
   }
 
-  compactionLatestEntryPath(runId: string): string {
+  compactionLatestEntryPath(runId: RunId): string {
     return this.compactionLedger.latestEntryPath(runId);
   }
 
   appendCompactionEntries(
-    runId: string,
+    runId: RunId,
     entries: CompactionEntry[],
   ): AppendedCompactionEntries | null {
     if (entries.length === 0) return null;
@@ -97,13 +95,15 @@ export class ArtifactStore {
       payload: { entries: normalizedEntries },
       content: originalLedgerContent,
     });
-    const contentChanged = ledgerRequest.content !== undefined
-      && ledgerRequest.content !== originalLedgerContent;
+    const contentChanged =
+      ledgerRequest.content !== undefined && ledgerRequest.content !== originalLedgerContent;
     const contentEntries = contentChanged
       ? readCompactionEntriesJsonl(ledgerRequest.content)
       : null;
     if (contentChanged && contentEntries === null) {
-      throw new Error("artifact_write content for compaction ledger must be JSONL compaction entries");
+      throw new Error(
+        "artifact_write content for compaction ledger must be JSONL compaction entries",
+      );
     }
     const payloadEntries = readCompactionEntries(ledgerRequest.payload?.entries);
     const finalEntries = contentEntries ?? payloadEntries ?? normalizedEntries;
@@ -132,11 +132,11 @@ export class ArtifactStore {
     };
   }
 
-  readCompactionEntries(runId: string, opts: { limit?: number } = {}): CompactionEntry[] {
+  readCompactionEntries(runId: RunId, opts: { limit?: number } = {}): CompactionEntry[] {
     return this.compactionLedger.readEntries(runId, opts);
   }
 
-  latestCompactionEntryId(runId: string): string {
+  latestCompactionEntryId(runId: RunId): string {
     return this.compactionLedger.latestEntryId(runId);
   }
 
@@ -180,11 +180,11 @@ export class ArtifactStore {
     }
   }
 
-  readPlaybook(scenarioName: string): string {
+  readPlaybook(scenarioName: ScenarioName): string {
     return this.playbookManager.read(scenarioName);
   }
 
-  writePlaybook(scenarioName: string, content: string): void {
+  writePlaybook(scenarioName: ScenarioName, content: string): void {
     const path = join(this.knowledgeRoot, scenarioName, "playbook.md");
     const request = this.applyArtifactWriteHook({
       path,
@@ -202,11 +202,11 @@ export class ArtifactStore {
   }
 
   writeOrStagePlaybook(
-    scenarioName: string,
+    scenarioName: ScenarioName,
     content: string,
     opts: {
       requireApproval: boolean;
-      sourceRunId: string;
+      sourceRunId: RunId;
       generation: number;
       curatorDecision: string;
     },
@@ -226,24 +226,30 @@ export class ArtifactStore {
     });
   }
 
-  readPendingPlaybook(scenarioName: string): PendingPlaybookView {
+  readPendingPlaybook(scenarioName: ScenarioName): PendingPlaybookView {
     return readPendingPlaybook(this.knowledgeRoot, scenarioName);
   }
 
-  approvePendingPlaybook(scenarioName: string): { ok: boolean; status: "approved" | "missing" } {
+  approvePendingPlaybook(scenarioName: ScenarioName): {
+    ok: boolean;
+    status: "approved" | "missing";
+  } {
     return approvePendingPlaybook(this.knowledgeRoot, scenarioName, this.writePlaybook.bind(this));
   }
 
-  rejectPendingPlaybook(scenarioName: string): { ok: boolean; status: "rejected" | "missing" } {
+  rejectPendingPlaybook(scenarioName: ScenarioName): {
+    ok: boolean;
+    status: "rejected" | "missing";
+  } {
     return rejectPendingPlaybook(this.knowledgeRoot, scenarioName);
   }
 
-  readDeadEnds(scenarioName: string): string {
+  readDeadEnds(scenarioName: ScenarioName): string {
     const path = join(this.knowledgeRoot, scenarioName, "dead_ends.md");
     return existsSync(path) ? readFileSync(path, "utf-8") : "";
   }
 
-  appendDeadEnd(scenarioName: string, entry: string): void {
+  appendDeadEnd(scenarioName: ScenarioName, entry: string): void {
     const path = join(this.knowledgeRoot, scenarioName, "dead_ends.md");
     const request = this.applyArtifactWriteHook({
       path,
@@ -261,12 +267,12 @@ export class ArtifactStore {
     }
   }
 
-  replaceDeadEnds(scenarioName: string, content: string): void {
+  replaceDeadEnds(scenarioName: ScenarioName, content: string): void {
     const path = join(this.knowledgeRoot, scenarioName, "dead_ends.md");
     this.writeMarkdown(path, content);
   }
 
-  writeSessionReport(scenarioName: string, runId: string, content: string): string {
+  writeSessionReport(scenarioName: ScenarioName, runId: RunId, content: string): string {
     const path = join(this.knowledgeRoot, scenarioName, "session_reports", `${runId}.md`);
     this.writeMarkdown(path, content);
     return path;
@@ -279,7 +285,7 @@ export class ArtifactStore {
     }
     const parsed = JSON.parse(readFileSync(path, "utf-8")) as unknown;
     return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? parsed as Record<string, unknown>
+      ? (parsed as Record<string, unknown>)
       : null;
   }
 
@@ -365,7 +371,7 @@ export class ArtifactStore {
     return null;
   }
 
-  readSessionReports(scenarioName: string, limit = 3): string {
+  readSessionReports(scenarioName: ScenarioName, limit = 3): string {
     const dir = join(this.knowledgeRoot, scenarioName, "session_reports");
     if (!existsSync(dir)) return "";
     const reports = readdirSync(dir)
@@ -380,7 +386,10 @@ export class ArtifactStore {
       })
       .sort((a, b) => b.mtimeMs - a.mtimeMs)
       .slice(0, limit)
-      .map((entry) => `### ${entry.name.replace(/\.md$/, "")}\n\n${readFileSync(entry.path, "utf-8").trim()}`);
+      .map(
+        (entry) =>
+          `### ${entry.name.replace(/\.md$/, "")}\n\n${readFileSync(entry.path, "utf-8").trim()}`,
+      );
 
     return reports.join("\n\n").trim();
   }
@@ -408,9 +417,10 @@ function readCompactionEntries(value: unknown): CompactionEntry[] | null {
       timestamp: typeof raw.timestamp === "string" ? raw.timestamp : "",
       summary: typeof raw.summary === "string" ? raw.summary : "",
       firstKeptEntryId: typeof raw.firstKeptEntryId === "string" ? raw.firstKeptEntryId : "",
-      tokensBefore: typeof raw.tokensBefore === "number" && Number.isFinite(raw.tokensBefore)
-        ? raw.tokensBefore
-        : 0,
+      tokensBefore:
+        typeof raw.tokensBefore === "number" && Number.isFinite(raw.tokensBefore)
+          ? raw.tokensBefore
+          : 0,
       details: isRecord(raw.details) ? raw.details : {},
     });
   }
@@ -422,7 +432,10 @@ function readCompactionEntriesJsonl(content: string | undefined): CompactionEntr
     return null;
   }
   const parsedEntries: unknown[] = [];
-  for (const line of content.split(/\r?\n/).map((part) => part.trim()).filter(Boolean)) {
+  for (const line of content
+    .split(/\r?\n/)
+    .map((part) => part.trim())
+    .filter(Boolean)) {
     try {
       parsedEntries.push(JSON.parse(line) as unknown);
     } catch {

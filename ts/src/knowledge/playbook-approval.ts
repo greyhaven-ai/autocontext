@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import type { RunId, ScenarioName } from "../domain/ids.js";
 import { resolveScenarioRoot } from "./scenario-paths.js";
 
 export interface PendingPlaybookProvenance {
@@ -20,7 +21,7 @@ export interface PendingPlaybookView {
 }
 
 export interface StagePendingPlaybookOptions {
-  sourceRunId: string;
+  sourceRunId: RunId;
   generation: number;
   curatorDecision: string;
   createdAt?: string;
@@ -28,7 +29,7 @@ export interface StagePendingPlaybookOptions {
 
 export function stagePendingPlaybook(
   knowledgeRoot: string,
-  scenarioName: string,
+  scenarioName: ScenarioName,
   content: string,
   opts: StagePendingPlaybookOptions,
 ): "pending" {
@@ -60,7 +61,7 @@ export function stagePendingPlaybook(
 
 export function readPendingPlaybook(
   knowledgeRoot: string,
-  scenarioName: string,
+  scenarioName: ScenarioName,
 ): PendingPlaybookView {
   const scenarioDir = resolveScenarioRoot(knowledgeRoot, scenarioName);
   const pendingPath = pendingMd(scenarioDir);
@@ -81,8 +82,8 @@ export function readPendingPlaybook(
 
 export function approvePendingPlaybook(
   knowledgeRoot: string,
-  scenarioName: string,
-  writeLivePlaybook: (scenarioName: string, content: string) => void,
+  scenarioName: ScenarioName,
+  writeLivePlaybook: (scenarioName: ScenarioName, content: string) => void,
 ): { ok: boolean; status: "approved" | "missing" } {
   const pending = readPendingPlaybook(knowledgeRoot, scenarioName);
   if (!pending.hasPending || pending.provenance === null) return { ok: false, status: "missing" };
@@ -93,7 +94,7 @@ export function approvePendingPlaybook(
 
 export function rejectPendingPlaybook(
   knowledgeRoot: string,
-  scenarioName: string,
+  scenarioName: ScenarioName,
 ): { ok: boolean; status: "rejected" | "missing" } {
   const pending = readPendingPlaybook(knowledgeRoot, scenarioName);
   if (!pending.hasPending || pending.provenance === null) return { ok: false, status: "missing" };

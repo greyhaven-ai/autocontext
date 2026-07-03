@@ -4,10 +4,7 @@ import type { SQLiteStore } from "../storage/index.js";
 import type { GenerationRow, MatchRow } from "../storage/storage-contracts.js";
 import { ArtifactStore, EMPTY_PLAYBOOK_SENTINEL } from "./artifact-store.js";
 import { HarnessStore } from "./harness-store.js";
-import {
-  SkillPackage,
-  type SkillPackageDict,
-} from "./skill-package.js";
+import { SkillPackage, type SkillPackageDict } from "./skill-package.js";
 import {
   bestStrategyForScenario,
   descriptionForScenario,
@@ -15,13 +12,10 @@ import {
   readPackageMetadata,
   writePackageMetadata,
 } from "./package-metadata.js";
-import {
-  harnessForScenario,
-  hintsFromPlaybook,
-  lessonsFromPlaybook,
-} from "./package-content.js";
+import { harnessForScenario, hintsFromPlaybook, lessonsFromPlaybook } from "./package-content.js";
 import { coercePackage } from "./package-coercion.js";
 import { assertSafeScenarioId } from "./scenario-id.js";
+import { asScenarioName } from "../domain/ids.js";
 import type {
   ConflictPolicy,
   ImportStrategyPackageResult,
@@ -31,7 +25,11 @@ import type {
 
 const PACKAGE_FORMAT_VERSION = 1;
 
-export type { ConflictPolicy, ImportStrategyPackageResult, StrategyPackageData } from "./package-types.js";
+export type {
+  ConflictPolicy,
+  ImportStrategyPackageResult,
+  StrategyPackageData,
+} from "./package-types.js";
 
 export function exportStrategyPackage(opts: {
   scenarioName: string;
@@ -44,11 +42,13 @@ export function exportStrategyPackage(opts: {
     throw new Error(`Unknown run: ${opts.sourceRunId}`);
   }
   if (sourceRun && sourceRun.scenario !== opts.scenarioName) {
-    throw new Error(`Run '${opts.sourceRunId}' belongs to scenario '${sourceRun.scenario}', not '${opts.scenarioName}'`);
+    throw new Error(
+      `Run '${opts.sourceRunId}' belongs to scenario '${sourceRun.scenario}', not '${opts.scenarioName}'`,
+    );
   }
 
   const persisted = readPackageMetadata(opts.artifacts.knowledgeRoot, opts.scenarioName);
-  const playbook = opts.artifacts.readPlaybook(opts.scenarioName);
+  const playbook = opts.artifacts.readPlaybook(asScenarioName(opts.scenarioName));
   const bestGeneration = opts.sourceRunId
     ? bestGenerationForRun(opts.store.getGenerations(opts.sourceRunId), opts.sourceRunId)
     : opts.store.getBestGenerationForScenario(opts.scenarioName);
@@ -57,7 +57,9 @@ export function exportStrategyPackage(opts: {
   }
   const completedRuns = opts.store.countCompletedRuns(opts.scenarioName);
   const persistedMeta =
-    persisted.metadata && typeof persisted.metadata === "object" && !Array.isArray(persisted.metadata)
+    persisted.metadata &&
+    typeof persisted.metadata === "object" &&
+    !Array.isArray(persisted.metadata)
       ? persisted.metadata
       : {};
 
@@ -67,9 +69,10 @@ export function exportStrategyPackage(opts: {
     description: descriptionForScenario(opts.scenarioName),
     playbook,
     lessons: lessonsFromPlaybook(playbook),
-    bestStrategy: opts.sourceRunId && bestGeneration
-      ? bestStrategyForRun(opts.store, opts.sourceRunId, bestGeneration.generation_index)
-      : bestStrategyForScenario(opts.store, opts.scenarioName, persisted),
+    bestStrategy:
+      opts.sourceRunId && bestGeneration
+        ? bestStrategyForRun(opts.store, opts.sourceRunId, bestGeneration.generation_index)
+        : bestStrategyForScenario(opts.store, opts.scenarioName, persisted),
     bestScore: bestGeneration?.best_score ?? persisted.best_score ?? 0,
     bestElo: bestGeneration?.elo ?? persisted.best_elo ?? 1500,
     hints: hintsFromPlaybook(playbook),
@@ -81,18 +84,18 @@ export function exportStrategyPackage(opts: {
         typeof persistedMeta.completed_runs === "number" ? persistedMeta.completed_runs : 0,
       ),
       has_snapshot:
-        bestGeneration != null
-        || Boolean(
-          typeof persistedMeta.has_snapshot === "boolean"
-            ? persistedMeta.has_snapshot
-            : false,
+        bestGeneration != null ||
+        Boolean(
+          typeof persistedMeta.has_snapshot === "boolean" ? persistedMeta.has_snapshot : false,
         ),
       source_run_id:
-        bestGeneration?.run_id
-        ?? (typeof persistedMeta.source_run_id === "string" ? persistedMeta.source_run_id : null),
+        bestGeneration?.run_id ??
+        (typeof persistedMeta.source_run_id === "string" ? persistedMeta.source_run_id : null),
       source_generation:
-        bestGeneration?.generation_index
-        ?? (typeof persistedMeta.source_generation === "number" ? persistedMeta.source_generation : null),
+        bestGeneration?.generation_index ??
+        (typeof persistedMeta.source_generation === "number"
+          ? persistedMeta.source_generation
+          : null),
     },
   });
 
@@ -107,8 +110,8 @@ function bestGenerationForRun(
     if (!currentBest) return generation;
     if (generation.best_score > currentBest.best_score) return generation;
     if (
-      generation.best_score === currentBest.best_score
-      && generation.generation_index > currentBest.generation_index
+      generation.best_score === currentBest.best_score &&
+      generation.generation_index > currentBest.generation_index
     ) {
       return generation;
     }
@@ -136,10 +139,7 @@ function bestStrategyForRun(
   return parsedCompetitor ?? null;
 }
 
-function bestMatchForRunGeneration(
-  matches: MatchRow[],
-  generationIndex: number,
-): MatchRow | null {
+function bestMatchForRunGeneration(matches: MatchRow[], generationIndex: number): MatchRow | null {
   return matches
     .filter((match) => match.generation_index === generationIndex)
     .reduce<MatchRow | null>((best, match) => {
@@ -157,7 +157,7 @@ function parseStrategyJson(raw: string | undefined): Record<string, unknown> | n
   try {
     const parsed = JSON.parse(raw) as unknown;
     return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? parsed as Record<string, unknown>
+      ? (parsed as Record<string, unknown>)
       : null;
   } catch {
     return null;
@@ -200,18 +200,16 @@ export function importStrategyPackage(opts: {
     conflictPolicy,
   };
 
-  const existingPlaybook = opts.artifacts.readPlaybook(pkg.scenarioName);
+  const existingPlaybook = opts.artifacts.readPlaybook(asScenarioName(pkg.scenarioName));
   const isExistingPlaybookEmpty = !existingPlaybook || existingPlaybook === EMPTY_PLAYBOOK_SENTINEL;
   const shouldWritePlaybook =
-    pkg.playbook
-    && (
-      conflictPolicy === "overwrite"
-      || (conflictPolicy === "merge" && isExistingPlaybookEmpty)
-      || (conflictPolicy === "skip" && isExistingPlaybookEmpty)
-    );
+    pkg.playbook &&
+    (conflictPolicy === "overwrite" ||
+      (conflictPolicy === "merge" && isExistingPlaybookEmpty) ||
+      (conflictPolicy === "skip" && isExistingPlaybookEmpty));
 
   if (shouldWritePlaybook) {
-    opts.artifacts.writePlaybook(pkg.scenarioName, pkg.playbook);
+    opts.artifacts.writePlaybook(asScenarioName(pkg.scenarioName), pkg.playbook);
     result.playbookWritten = true;
   }
 
@@ -241,14 +239,15 @@ export function importStrategyPackage(opts: {
 
   const skillDir = join(opts.skillsRoot, `${pkg.scenarioName.replace(/_/g, "-")}-ops`);
   const skillPath = join(skillDir, "SKILL.md");
-  const skillMarkdown = typeof opts.rawPackage.skill_markdown === "string"
-    ? opts.rawPackage.skill_markdown
-    : new SkillPackage(pkg).toSkillMarkdown();
+  const skillMarkdown =
+    typeof opts.rawPackage.skill_markdown === "string"
+      ? opts.rawPackage.skill_markdown
+      : new SkillPackage(pkg).toSkillMarkdown();
   const shouldWriteSkill =
-    conflictPolicy === "overwrite"
-    || !existsSync(skillPath)
-    || (conflictPolicy === "merge" && !existsSync(skillPath))
-    || (conflictPolicy === "skip" && !existsSync(skillPath));
+    conflictPolicy === "overwrite" ||
+    !existsSync(skillPath) ||
+    (conflictPolicy === "merge" && !existsSync(skillPath)) ||
+    (conflictPolicy === "skip" && !existsSync(skillPath));
   if (shouldWriteSkill) {
     mkdirSync(skillDir, { recursive: true });
     writeFileSync(skillPath, skillMarkdown.trimEnd() + "\n", "utf-8");

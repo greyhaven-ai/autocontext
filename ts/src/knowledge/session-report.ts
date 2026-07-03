@@ -3,6 +3,8 @@
  * Mirrors Python's autocontext/knowledge/report.py.
  */
 
+import type { RunId, ScenarioName } from "../domain/ids.js";
+
 function toFloat(val: unknown, fallback = 0.0): number {
   if (typeof val === "number" && Number.isFinite(val)) return val;
   const n = Number(val);
@@ -10,8 +12,8 @@ function toFloat(val: unknown, fallback = 0.0): number {
 }
 
 export interface SessionReport {
-  runId: string;
-  scenario: string;
+  runId: RunId;
+  scenario: ScenarioName;
   startScore: number;
   endScore: number;
   startElo: number;
@@ -34,8 +36,8 @@ export interface GenerateReportOpts {
 }
 
 export function generateSessionReport(
-  runId: string,
-  scenario: string,
+  runId: RunId,
+  scenario: ScenarioName,
   trajectoryRows: Array<Record<string, unknown>>,
   opts: GenerateReportOpts = {},
 ): SessionReport {
@@ -105,8 +107,8 @@ export function generateSessionReport(
 }
 
 interface ReportData {
-  runId: string;
-  scenario: string;
+  runId: RunId;
+  scenario: ScenarioName;
   startScore: number;
   endScore: number;
   startElo: number;
@@ -152,7 +154,9 @@ function makeReport(data: ReportData): SessionReport {
         lines.push("|-----|-------|-------------|");
         for (const imp of data.topImprovements) {
           const d = toFloat(imp.delta);
-          lines.push(`| ${imp.gen ?? "?"} | ${d >= 0 ? "+" : ""}${d.toFixed(4)} | ${imp.description ?? ""} |`);
+          lines.push(
+            `| ${imp.gen ?? "?"} | ${d >= 0 ? "+" : ""}${d.toFixed(4)} | ${imp.description ?? ""} |`,
+          );
         }
       } else {
         lines.push("No significant improvements recorded.");
