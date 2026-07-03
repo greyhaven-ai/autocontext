@@ -6,16 +6,7 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
-from autocontext.ambient.sources.contract import RawTrace, SourcePoll
-
-# terminal generation states. The loop upserts a "running" placeholder row at
-# generation start (loop/generation_runner.py:1173; also cli.py:298 and
-# knowledge/solve_task_execution.py:211) and completion is an in-place,
-# rowid-preserving UPDATE that flips status to a terminal value: "completed"
-# (loop/stages.py:1101, knowledge/package.py:268, cli.py:366,
-# solve_task_execution.py:319) or "failed" (loop/generation_runner.py:992/1272/1301,
-# cli.py:316, solve_task_execution.py:280). Only terminal rows carry final scores.
-_TERMINAL_STATUSES = frozenset({"completed", "failed"})
+from autocontext.ambient.sources.contract import TERMINAL_GENERATION_STATUSES, RawTrace, SourcePoll
 
 
 @dataclass(slots=True)
@@ -65,7 +56,7 @@ class NativeRunsSource:
         # in-flight row blocks the watermark instead of being skipped
         terminal_prefix = []
         for row in rows:
-            if row[7] not in _TERMINAL_STATUSES:
+            if row[7] not in TERMINAL_GENERATION_STATUSES:
                 break
             terminal_prefix.append(row)
         if not terminal_prefix:

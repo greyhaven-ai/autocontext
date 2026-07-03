@@ -4,6 +4,7 @@ from pathlib import Path
 
 from autocontext.ambient.charter import Charter, CharterBudgets, CharterSource, CharterTarget
 from autocontext.ambient.ingest import IngestStage
+from autocontext.ambient.sources.agent_outputs import AgentOutputsSource
 from autocontext.ambient.sources.jsonl_feed import JsonlFeedSource
 from autocontext.ambient.sources.native import NativeRunsSource
 from autocontext.ambient.stage import STAGE_NAMES, NoOpStage
@@ -49,8 +50,8 @@ def test_build_stages_wires_enabled_sources(tmp_path: Path) -> None:
     assert isinstance(ingest, IngestStage)
     assert ingest.disk_quota_gb == 7.0
     kinds = [type(source) for source in ingest.sources]
-    assert kinds == [NativeRunsSource, JsonlFeedSource]
-    assert [source.kind for source in ingest.sources] == ["autocontext", "otel"]
+    assert kinds == [NativeRunsSource, AgentOutputsSource, JsonlFeedSource]
+    assert [source.kind for source in ingest.sources] == ["autocontext", "autocontext-outputs", "otel"]
     assert all(isinstance(stages[name], NoOpStage) for name in ("curate", "advise", "train", "evaluate"))
 
 
@@ -69,7 +70,22 @@ def test_unsupported_kinds_emit_event_and_are_skipped(tmp_path: Path) -> None:
     )
     ingest = stages["ingest"]
     assert isinstance(ingest, IngestStage)
-    assert len(ingest.sources) == 1
+    # the one enabled autocontext source registers both readers; the full-box source is skipped
+    assert len(ingest.sources) == 2
     assert ingest.unsupported == [("box", "full-box")]
     # construction is event-silent; the announcement happens on first run
     assert not events_path.exists() or "ingest_source_unsupported" not in events_path.read_text(encoding="utf-8")
+
+
+def test_autocontext_source_registers_generation_and_output_readers(tmp_path: Path) -> None:
+    charter = _charter(sources=[CharterSource(name="native", kind="autocontext")])
+    stages = build_stages(
+        charter,
+        db_path=tmp_path / "ambient.sqlite3",
+        emitter=EventStreamEmitter(tmp_path / "events.ndjson"),
+        runs_db_path=tmp_path / "runs.sqlite3",
+        otel_feed_dir=tmp_path / "feed",
+    )
+    ingest = stages["ingest"]
+    kinds = sorted(source.kind for source in ingest.sources)  # type: ignore[attr-defined]
+    assert kinds == ["autocontext", "autocontext-outputs"]

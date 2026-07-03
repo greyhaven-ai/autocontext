@@ -6,6 +6,7 @@ from pathlib import Path
 
 from autocontext.ambient.charter import Charter
 from autocontext.ambient.ingest import IngestStage
+from autocontext.ambient.sources.agent_outputs import AgentOutputsSource
 from autocontext.ambient.sources.contract import TraceSource
 from autocontext.ambient.sources.jsonl_feed import JsonlFeedSource
 from autocontext.ambient.sources.native import NativeRunsSource
@@ -28,6 +29,9 @@ def build_stages(
             continue
         if spec.kind == "autocontext":
             sources.append(NativeRunsSource(name=spec.name, runs_db_path=runs_db_path))
+            # full output text rides its own source so it passes the redaction
+            # gate at ingest; curate never reads the runs db directly
+            sources.append(AgentOutputsSource(name=spec.name, runs_db_path=runs_db_path))
         elif spec.kind == "otel":
             sources.append(JsonlFeedSource(name=spec.name, feed_dir=otel_feed_dir))
         else:
