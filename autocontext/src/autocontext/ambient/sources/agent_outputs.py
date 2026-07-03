@@ -47,12 +47,13 @@ class AgentOutputsSource:
                 (watermark, self.batch_size),
             ).fetchall()
         except sqlite3.OperationalError as exc:
-            # A runs database created before the agent_outputs table existed
-            # is a legitimate older layout, not an error: there is simply
-            # nothing for this source to read, so poll empty and never trip
-            # the ingest breaker. Any other operational failure (locked db,
-            # corruption) is real and must propagate.
-            if "no such table" in str(exc):
+            # A runs database without an agent_outputs table (hand-built
+            # fixtures, manually assembled dbs) is a legitimate layout, not an
+            # error: there is simply nothing for this source to read, so poll
+            # empty and never trip the ingest breaker. The match is pinned to
+            # this table: a db missing generations or runs is corruption and,
+            # like any other operational failure (locked db), must propagate.
+            if "no such table: agent_outputs" in str(exc):
                 return SourcePoll()
             raise
         finally:
