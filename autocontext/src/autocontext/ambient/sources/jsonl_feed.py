@@ -16,9 +16,12 @@ class JsonlFeedSource:
     Assumes the writer names files in monotonic sort order (the
     production-traces sdk's date/ulid layout satisfies this); a file
     sorting before the cursor is treated as fully consumed, so
-    out-of-order or backfilled files are not re-read. A malformed or
-    blank tail after the last valid record is re-scanned each poll
-    (skipped again, never duplicated).
+    out-of-order or backfilled files are not re-read. A file whose text
+    does not end in a newline has a possibly-partial final line (a writer
+    mid-append); that line is held unconsumed until a newline arrives, so
+    the completed record is never lost. A terminated malformed or blank
+    line is genuine garbage: it is skipped and the cursor advances past
+    it (skipped again, never duplicated).
     """
 
     name: str
@@ -45,11 +48,16 @@ class JsonlFeedSource:
             if cursor_file is not None and rel < cursor_file:
                 continue
             start = cursor_line if rel == cursor_file else 0
-            lines = path.read_text(encoding="utf-8").splitlines()
-            for index in range(start, len(lines)):
+            text = path.read_text(encoding="utf-8")
+            terminated = text.endswith("\n")
+            lines = text.splitlines()
+            # an unterminated final line may be a writer mid-append; hold it
+            # (do not consume, do not advance the cursor) until a newline arrives
+            consumable = lines if terminated else lines[:-1]
+            for index in range(start, len(consumable)):
                 if len(records) >= self.batch_size:
                     return SourcePoll(records=records, next_cursor=f"{last_file}:{last_line}")
-                line = lines[index].strip()
+                line = consumable[index].strip()
                 last_file, last_line = rel, index + 1
                 if not line:
                     continue

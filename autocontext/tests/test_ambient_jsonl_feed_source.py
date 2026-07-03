@@ -47,6 +47,21 @@ def test_malformed_lines_are_skipped_but_advance(tmp_path: Path) -> None:
     assert result.next_cursor == "a.jsonl:3"
 
 
+def test_unterminated_tail_is_held_until_complete(tmp_path: Path) -> None:
+    feed = tmp_path / "feed"
+    feed.mkdir(parents=True)
+    (feed / "a.jsonl").write_text('{"n": 1}\n{"n": 2', encoding="utf-8")
+    source = JsonlFeedSource(name="otel", feed_dir=feed)
+    first = source.poll(None)
+    assert [r.payload["n"] for r in first.records] == [1]
+    assert first.next_cursor == "a.jsonl:1"
+    with (feed / "a.jsonl").open("a", encoding="utf-8") as handle:
+        handle.write("3}\n")
+    second = source.poll(first.next_cursor)
+    assert [r.payload["n"] for r in second.records] == [23]
+    assert second.next_cursor == "a.jsonl:2"
+
+
 def test_batch_size_and_missing_dir(tmp_path: Path) -> None:
     source = JsonlFeedSource(name="otel", feed_dir=tmp_path / "absent")
     assert source.poll(None).records == []
