@@ -57,3 +57,11 @@ def test_batch_size_and_missing_dir(tmp_path: Path) -> None:
     assert len(first.records) == 2
     second = limited.poll(first.next_cursor)
     assert [r.payload["n"] for r in second.records] == [2, 3]
+
+
+def test_zero_batch_size_rejected(tmp_path: Path) -> None:
+    import pytest
+
+    source = JsonlFeedSource(name="otel", feed_dir=tmp_path, batch_size=0)
+    with pytest.raises(ValueError, match="at least 1"):
+        source.poll(None)

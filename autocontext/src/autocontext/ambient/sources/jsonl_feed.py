@@ -11,6 +11,16 @@ from autocontext.ambient.sources.contract import RawTrace, SourcePoll
 
 @dataclass(slots=True)
 class JsonlFeedSource:
+    """consumes jsonl trace files in sorted-path order with a file-and-line cursor.
+
+    Assumes the writer names files in monotonic sort order (the
+    production-traces sdk's date/ulid layout satisfies this); a file
+    sorting before the cursor is treated as fully consumed, so
+    out-of-order or backfilled files are not re-read. A malformed or
+    blank tail after the last valid record is re-scanned each poll
+    (skipped again, never duplicated).
+    """
+
     name: str
     feed_dir: Path
     batch_size: int = 500
@@ -21,6 +31,8 @@ class JsonlFeedSource:
         return sorted(self.feed_dir.rglob("*.jsonl"))
 
     def poll(self, cursor: str | None) -> SourcePoll:
+        if self.batch_size < 1:
+            raise ValueError("batch_size must be at least 1")
         cursor_file, cursor_line = None, 0
         if cursor:
             rel, _, line = cursor.rpartition(":")
@@ -51,8 +63,6 @@ class JsonlFeedSource:
                         produced_by=str(obj.get("produced_by", "frontier")),
                     )
                 )
-        if not records and (last_file == cursor_file and last_line == cursor_line):
-            return SourcePoll()
         if not records:
-            return SourcePoll(records=[], next_cursor=None)
+            return SourcePoll()
         return SourcePoll(records=records, next_cursor=f"{last_file}:{last_line}")
