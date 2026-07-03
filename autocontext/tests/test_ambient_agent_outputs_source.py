@@ -37,6 +37,27 @@ def _make_runs_db(path: Path) -> None:
     conn.close()
 
 
+def _make_runs_db_without_agent_outputs(path: Path) -> None:
+    conn = sqlite3.connect(path)
+    conn.executescript(
+        """
+        CREATE TABLE runs (run_id TEXT PRIMARY KEY, scenario TEXT NOT NULL);
+        CREATE TABLE generations (
+            run_id TEXT NOT NULL,
+            generation_index INTEGER NOT NULL,
+            mean_score REAL NOT NULL,
+            best_score REAL NOT NULL,
+            gate_decision TEXT NOT NULL,
+            status TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (run_id, generation_index)
+        );
+        """
+    )
+    conn.commit()
+    conn.close()
+
+
 def _insert(path: Path, sql: str, params: tuple) -> None:
     conn = sqlite3.connect(path)
     conn.execute(sql, params)
@@ -69,6 +90,17 @@ def _add_output(path: Path, run_id: str, index: int, role: str, content: str) ->
 def test_missing_db_yields_empty_poll(tmp_path: Path) -> None:
     source = AgentOutputsSource(name="native", runs_db_path=tmp_path / "absent.sqlite3")
     poll = source.poll(None)
+    assert poll.records == []
+    assert poll.next_cursor is None
+
+
+def test_runs_db_without_agent_outputs_table_yields_empty_poll(tmp_path: Path) -> None:
+    db = tmp_path / "runs.sqlite3"
+    _make_runs_db_without_agent_outputs(db)
+    _add_generation(db, "run_a", 0, "completed")
+
+    poll = AgentOutputsSource(name="native", runs_db_path=db).poll(None)
+
     assert poll.records == []
     assert poll.next_cursor is None
 
