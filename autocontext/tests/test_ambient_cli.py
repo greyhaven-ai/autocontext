@@ -4,6 +4,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
+from autocontext.ambient.datasets import DatasetStore
 from autocontext.cli import app
 
 runner = CliRunner()
@@ -190,3 +191,65 @@ def test_once_ingest_pulls_from_runs_db(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     assert "processed=1" in result.output
     assert TraceStore(db_path).count() == 1
+
+
+_FIXTURE_TARGET_NAME = "competitor-grid_ctf"
+
+
+def test_once_curate_runs_clean_on_empty_stores(tmp_path: Path) -> None:
+    charter_path = _init(tmp_path)
+    result = runner.invoke(
+        app,
+        [
+            "ambient",
+            "once",
+            "curate",
+            "--charter-path",
+            str(charter_path),
+            "--db-path",
+            str(tmp_path / "ambient.sqlite3"),
+            "--events-path",
+            str(tmp_path / "events.ndjson"),
+            "--runs-db",
+            str(tmp_path / "runs.sqlite3"),
+            "--otel-feed-dir",
+            str(tmp_path / "feed"),
+            "--datasets-dir",
+            str(tmp_path / "datasets"),
+            "--proposals-path",
+            str(tmp_path / "proposals.jsonl"),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "processed=0" in result.output
+
+
+def test_status_shows_target_dataset_rows(tmp_path: Path) -> None:
+    charter_path = _init(tmp_path)  # the fixture charter contains at least one target
+    datasets = DatasetStore(tmp_path / "datasets")
+    manifest = datasets.load_manifest(_FIXTURE_TARGET_NAME)
+    datasets.save_manifest(manifest.model_copy(update={"record_count": 4, "mean_score": 0.75}))
+    result = runner.invoke(
+        app,
+        [
+            "ambient",
+            "status",
+            "--charter-path",
+            str(charter_path),
+            "--db-path",
+            str(tmp_path / "ambient.sqlite3"),
+            "--events-path",
+            str(tmp_path / "events.ndjson"),
+            "--runs-db",
+            str(tmp_path / "runs.sqlite3"),
+            "--otel-feed-dir",
+            str(tmp_path / "feed"),
+            "--datasets-dir",
+            str(tmp_path / "datasets"),
+            "--proposals-path",
+            str(tmp_path / "proposals.jsonl"),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert _FIXTURE_TARGET_NAME in result.output
+    assert "4" in result.output

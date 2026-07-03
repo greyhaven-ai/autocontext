@@ -12,7 +12,9 @@ from rich.table import Table
 
 from autocontext.ambient.charter_io import CharterLoadError, load_charter, save_charter
 from autocontext.ambient.daemon import AmbientDaemon
+from autocontext.ambient.datasets import DatasetStore
 from autocontext.ambient.interview import build_charter, run_interview
+from autocontext.ambient.proposals import ProposalStore
 from autocontext.ambient.queue import AmbientQueue
 from autocontext.ambient.stage_factory import build_stages
 from autocontext.harness.core.events import EventStreamEmitter
@@ -25,6 +27,8 @@ _DEFAULT_DB = Path("runs/ambient.sqlite3")
 _DEFAULT_EVENTS = Path("runs/ambient-events.ndjson")
 _DEFAULT_RUNS_DB = Path("runs/autocontext.sqlite3")
 _DEFAULT_OTEL_FEED = Path("runs/ambient-otel-feed")
+_DEFAULT_DATASETS = Path("runs/ambient-datasets")
+_DEFAULT_PROPOSALS = Path("runs/ambient-proposals.jsonl")
 
 
 def _daemon(
@@ -33,6 +37,8 @@ def _daemon(
     events_path: Path,
     runs_db_path: Path,
     otel_feed_dir: Path,
+    datasets_dir: Path,
+    proposals_path: Path,
 ) -> AmbientDaemon:
     charter = load_charter(charter_path)
     emitter = EventStreamEmitter(events_path)
@@ -42,12 +48,14 @@ def _daemon(
         emitter=emitter,
         runs_db_path=runs_db_path,
         otel_feed_dir=otel_feed_dir,
+        datasets_dir=datasets_dir,
     )
     return AmbientDaemon(
         charter=charter,
         queue=AmbientQueue(db_path),
         emitter=emitter,
         stages=stages,
+        proposal_store=ProposalStore(proposals_path),
     )
 
 
@@ -76,9 +84,11 @@ def status(
     events_path: Annotated[Path, typer.Option("--events-path")] = _DEFAULT_EVENTS,
     runs_db: Annotated[Path, typer.Option("--runs-db")] = _DEFAULT_RUNS_DB,
     otel_feed_dir: Annotated[Path, typer.Option("--otel-feed-dir")] = _DEFAULT_OTEL_FEED,
+    datasets_dir: Annotated[Path, typer.Option("--datasets-dir")] = _DEFAULT_DATASETS,
+    proposals_path: Annotated[Path, typer.Option("--proposals-path")] = _DEFAULT_PROPOSALS,
 ) -> None:
     try:
-        daemon = _daemon(charter_path, db_path, events_path, runs_db, otel_feed_dir)
+        daemon = _daemon(charter_path, db_path, events_path, runs_db, otel_feed_dir, datasets_dir, proposals_path)
     except CharterLoadError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
@@ -88,6 +98,13 @@ def status(
     for name, info in daemon.status().items():
         table.add_row(name, str(info["paused"]), str(info["queue_depth"]))
     console.print(table)
+    if charter.targets:
+        dataset_store = DatasetStore(datasets_dir)
+        targets_table = Table("target", "dataset records", "mean score")
+        for target in charter.targets:
+            manifest = dataset_store.load_manifest(target.name)
+            targets_table.add_row(target.name, str(manifest.record_count), f"{manifest.mean_score:.2f}")
+        console.print(targets_table)
 
 
 @ambient_app.command()
@@ -97,11 +114,13 @@ def run(
     events_path: Annotated[Path, typer.Option("--events-path")] = _DEFAULT_EVENTS,
     runs_db: Annotated[Path, typer.Option("--runs-db")] = _DEFAULT_RUNS_DB,
     otel_feed_dir: Annotated[Path, typer.Option("--otel-feed-dir")] = _DEFAULT_OTEL_FEED,
+    datasets_dir: Annotated[Path, typer.Option("--datasets-dir")] = _DEFAULT_DATASETS,
+    proposals_path: Annotated[Path, typer.Option("--proposals-path")] = _DEFAULT_PROPOSALS,
     poll_seconds: Annotated[float, typer.Option("--poll-seconds", min=0.0)] = 30.0,
     max_cycles: Annotated[int | None, typer.Option("--max-cycles", hidden=True)] = None,
 ) -> None:
     try:
-        daemon = _daemon(charter_path, db_path, events_path, runs_db, otel_feed_dir)
+        daemon = _daemon(charter_path, db_path, events_path, runs_db, otel_feed_dir, datasets_dir, proposals_path)
     except CharterLoadError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
@@ -120,9 +139,11 @@ def once(
     events_path: Annotated[Path, typer.Option("--events-path")] = _DEFAULT_EVENTS,
     runs_db: Annotated[Path, typer.Option("--runs-db")] = _DEFAULT_RUNS_DB,
     otel_feed_dir: Annotated[Path, typer.Option("--otel-feed-dir")] = _DEFAULT_OTEL_FEED,
+    datasets_dir: Annotated[Path, typer.Option("--datasets-dir")] = _DEFAULT_DATASETS,
+    proposals_path: Annotated[Path, typer.Option("--proposals-path")] = _DEFAULT_PROPOSALS,
 ) -> None:
     try:
-        daemon = _daemon(charter_path, db_path, events_path, runs_db, otel_feed_dir)
+        daemon = _daemon(charter_path, db_path, events_path, runs_db, otel_feed_dir, datasets_dir, proposals_path)
     except CharterLoadError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc

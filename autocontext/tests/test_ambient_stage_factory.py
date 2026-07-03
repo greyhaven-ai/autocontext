@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from autocontext.ambient.advise import AdviseStage
 from autocontext.ambient.charter import Charter, CharterBudgets, CharterSource, CharterTarget
+from autocontext.ambient.curate import CurateStage
 from autocontext.ambient.ingest import IngestStage
 from autocontext.ambient.sources.agent_outputs import AgentOutputsSource
 from autocontext.ambient.sources.jsonl_feed import JsonlFeedSource
@@ -44,6 +46,7 @@ def test_build_stages_wires_enabled_sources(tmp_path: Path) -> None:
         emitter=EventStreamEmitter(tmp_path / "events.ndjson"),
         runs_db_path=tmp_path / "runs.sqlite3",
         otel_feed_dir=tmp_path / "feed",
+        datasets_dir=tmp_path / "datasets",
     )
     assert set(stages.keys()) == set(STAGE_NAMES)
     ingest = stages["ingest"]
@@ -52,7 +55,9 @@ def test_build_stages_wires_enabled_sources(tmp_path: Path) -> None:
     kinds = [type(source) for source in ingest.sources]
     assert kinds == [NativeRunsSource, AgentOutputsSource, JsonlFeedSource]
     assert [source.kind for source in ingest.sources] == ["autocontext", "autocontext-outputs", "otel"]
-    assert all(isinstance(stages[name], NoOpStage) for name in ("curate", "advise", "train", "evaluate"))
+    assert isinstance(stages["curate"], CurateStage)
+    assert isinstance(stages["advise"], AdviseStage)
+    assert all(isinstance(stages[name], NoOpStage) for name in ("train", "evaluate"))
 
 
 def test_unsupported_kinds_emit_event_and_are_skipped(tmp_path: Path) -> None:
@@ -67,6 +72,7 @@ def test_unsupported_kinds_emit_event_and_are_skipped(tmp_path: Path) -> None:
         emitter=EventStreamEmitter(events_path),
         runs_db_path=tmp_path / "runs.sqlite3",
         otel_feed_dir=tmp_path / "feed",
+        datasets_dir=tmp_path / "datasets",
     )
     ingest = stages["ingest"]
     assert isinstance(ingest, IngestStage)
@@ -85,7 +91,26 @@ def test_autocontext_source_registers_generation_and_output_readers(tmp_path: Pa
         emitter=EventStreamEmitter(tmp_path / "events.ndjson"),
         runs_db_path=tmp_path / "runs.sqlite3",
         otel_feed_dir=tmp_path / "feed",
+        datasets_dir=tmp_path / "datasets",
     )
     ingest = stages["ingest"]
     kinds = sorted(source.kind for source in ingest.sources)  # type: ignore[attr-defined]
     assert kinds == ["autocontext", "autocontext-outputs"]
+
+
+def test_build_stages_wires_real_curate_and_advise(tmp_path: Path) -> None:
+    charter = _charter(sources=[CharterSource(name="native", kind="autocontext")])
+    stages = build_stages(
+        charter,
+        db_path=tmp_path / "ambient.sqlite3",
+        emitter=EventStreamEmitter(tmp_path / "events.ndjson"),
+        runs_db_path=tmp_path / "runs.sqlite3",
+        otel_feed_dir=tmp_path / "feed",
+        datasets_dir=tmp_path / "datasets",
+    )
+    assert isinstance(stages["curate"], CurateStage)
+    assert isinstance(stages["advise"], AdviseStage)
+    # one shared trace store: ingest writes and curate/advise read the same db
+    assert stages["curate"].trace_store is stages["ingest"].trace_store  # type: ignore[attr-defined]
+    assert stages["advise"].trace_store is stages["ingest"].trace_store  # type: ignore[attr-defined]
+    assert stages["train"].__class__.__name__ == "NoOpStage"
