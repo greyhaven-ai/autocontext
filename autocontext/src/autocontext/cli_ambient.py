@@ -1,4 +1,4 @@
-"""cli for the ambient trainer daemon: init, status, run, once."""
+"""cli for the ambient trainer daemon: init, status, run, once, proposals, approve, reject."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from autocontext.ambient.charter_io import CharterLoadError, load_charter, save_
 from autocontext.ambient.daemon import AmbientDaemon
 from autocontext.ambient.datasets import DatasetStore
 from autocontext.ambient.interview import build_charter, run_interview
-from autocontext.ambient.proposals import ProposalStore
+from autocontext.ambient.proposals import ProposalError, ProposalStore, apply_proposal
 from autocontext.ambient.queue import AmbientQueue
 from autocontext.ambient.stage_factory import build_stages
 from autocontext.harness.core.events import EventStreamEmitter
@@ -155,3 +155,57 @@ def once(
     console.print(f"processed={result.processed} errors={result.errors}")
     if result.errors > 0:
         raise typer.Exit(code=1)
+
+
+@ambient_app.command()
+def proposals(
+    charter_path: Annotated[Path, typer.Option("--charter-path")] = _DEFAULT_CHARTER,
+    proposals_path: Annotated[Path, typer.Option("--proposals-path")] = _DEFAULT_PROPOSALS,
+) -> None:
+    store = ProposalStore(proposals_path)
+    pending = store.pending()
+    if not pending:
+        console.print("no pending proposals")
+        return
+    table = Table("proposal id", "kind", "rationale")
+    for proposal in pending:
+        table.add_row(proposal.proposal_id, proposal.kind, proposal.rationale)
+    console.print(table)
+
+
+@ambient_app.command()
+def approve(
+    proposal_id: Annotated[str, typer.Argument()],
+    charter_path: Annotated[Path, typer.Option("--charter-path")] = _DEFAULT_CHARTER,
+    proposals_path: Annotated[Path, typer.Option("--proposals-path")] = _DEFAULT_PROPOSALS,
+) -> None:
+    store = ProposalStore(proposals_path)
+    match = next((p for p in store.pending() if p.proposal_id == proposal_id), None)
+    if match is None:
+        console.print(f"[red]no pending proposal with id {proposal_id}[/red]")
+        raise typer.Exit(code=1)
+    try:
+        charter = load_charter(charter_path)
+        updated = apply_proposal(charter, match)
+    except (CharterLoadError, ProposalError, ValidationError, ValueError) as exc:
+        # the proposal stays pending: nothing was applied, so nothing is marked
+        console.print(f"[red]could not apply proposal: {exc}[/red]")
+        raise typer.Exit(code=1) from exc
+    save_charter(updated, charter_path)
+    store.mark(proposal_id, "applied")
+    console.print(f"applied {proposal_id} to {charter_path}")
+
+
+@ambient_app.command()
+def reject(
+    proposal_id: Annotated[str, typer.Argument()],
+    charter_path: Annotated[Path, typer.Option("--charter-path")] = _DEFAULT_CHARTER,
+    proposals_path: Annotated[Path, typer.Option("--proposals-path")] = _DEFAULT_PROPOSALS,
+) -> None:
+    store = ProposalStore(proposals_path)
+    try:
+        store.mark(proposal_id, "rejected")
+    except ProposalError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+    console.print(f"rejected {proposal_id}")
