@@ -111,6 +111,11 @@ def test_unknown_charter_keys_rejected() -> None:
         )
 
 
+def test_non_default_redaction_profile_rejected() -> None:
+    with pytest.raises(ValidationError, match="reserved"):
+        CharterSource(name="native", kind="autocontext", redaction_profile="strict")
+
+
 def test_duplicate_source_names_rejected() -> None:
     with pytest.raises(ValidationError, match="duplicate source names"):
         _minimal_charter(

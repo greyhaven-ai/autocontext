@@ -45,7 +45,16 @@ class CharterSource(BaseModel):
     name: str = Field(min_length=1)
     kind: SourceKind
     enabled: bool = True
+    # reserved: only "default" is accepted today; alternate redaction
+    # profiles are a future slice and rejected by the validator below
     redaction_profile: str = "default"
+
+    @field_validator("redaction_profile")
+    @classmethod
+    def _reserved_redaction_profile(cls, value: str) -> str:
+        if value != "default":
+            raise ValueError("redaction profiles beyond default are reserved for a future slice")
+        return value
 
 
 class CharterTarget(BaseModel):
