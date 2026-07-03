@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, realpathSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 
+import type { ScenarioName } from "../domain/ids.js";
 import { ArtifactStore } from "../knowledge/artifact-store.js";
 import {
   approveLesson as approveLessonLifecycle,
@@ -30,19 +31,19 @@ export interface KnowledgeSolveManager {
 
 export interface KnowledgeApiRoutes {
   listSolved(): KnowledgeApiResponse;
-  exportScenario(scenarioName: string): KnowledgeApiResponse;
+  exportScenario(scenarioName: ScenarioName): KnowledgeApiResponse;
   importPackage(body: Record<string, unknown>): KnowledgeApiResponse;
   search(body: Record<string, unknown>): KnowledgeApiResponse;
   submitSolve(body: Record<string, unknown>): KnowledgeApiResponse;
   solveStatus(jobId: string): KnowledgeApiResponse;
-  pendingPlaybook(scenarioName: string): KnowledgeApiResponse;
-  approvePendingPlaybook(scenarioName: string): KnowledgeApiResponse;
-  rejectPendingPlaybook(scenarioName: string): KnowledgeApiResponse;
-  lessonLifecycle(scenarioName: string): KnowledgeApiResponse;
-  approveLesson(scenarioName: string, lessonId: string): KnowledgeApiResponse;
-  rejectLesson(scenarioName: string, lessonId: string): KnowledgeApiResponse;
+  pendingPlaybook(scenarioName: ScenarioName): KnowledgeApiResponse;
+  approvePendingPlaybook(scenarioName: ScenarioName): KnowledgeApiResponse;
+  rejectPendingPlaybook(scenarioName: ScenarioName): KnowledgeApiResponse;
+  lessonLifecycle(scenarioName: ScenarioName): KnowledgeApiResponse;
+  approveLesson(scenarioName: ScenarioName, lessonId: string): KnowledgeApiResponse;
+  rejectLesson(scenarioName: ScenarioName, lessonId: string): KnowledgeApiResponse;
   curateLesson(
-    scenarioName: string,
+    scenarioName: ScenarioName,
     lessonId: string,
     body: Record<string, unknown>,
   ): KnowledgeApiResponse;
@@ -230,13 +231,13 @@ export function buildKnowledgeApiRoutes(opts: {
   };
 }
 
-function invalidScenario(scenarioName: string): KnowledgeApiResponse {
+function invalidScenario(scenarioName: ScenarioName): KnowledgeApiResponse {
   return { status: 422, body: { error: `Invalid scenario '${scenarioName}'` } };
 }
 
 function withPlaybookApproval(
   opts: { runsRoot: string; knowledgeRoot: string },
-  scenarioName: string,
+  scenarioName: ScenarioName,
   fn: (artifacts: ArtifactStore) => KnowledgeApiResponse,
 ): KnowledgeApiResponse {
   const scenarioDir = resolveKnowledgeScenarioDir(opts.knowledgeRoot, scenarioName);
@@ -391,8 +392,7 @@ function clampInteger(value: unknown, fallback: number, min: number, max: number
 }
 
 type SolveSubmitOptionsResult =
-  | { ok: true; options?: SolveSubmitOptions }
-  | { ok: false; error: string };
+  { ok: true; options?: SolveSubmitOptions } | { ok: false; error: string };
 
 function parseSolveSubmitOptions(body: Record<string, unknown>): SolveSubmitOptionsResult {
   const family = readOptionalString(body, ["family", "familyOverride", "family_override"]);

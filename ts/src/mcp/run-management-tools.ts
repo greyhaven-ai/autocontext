@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import type { LLMProvider } from "../types/index.js";
-import { asRunId } from "../domain/ids.js";
+import { asRunId, asScenarioName } from "../domain/ids.js";
 import { ArtifactStore } from "../knowledge/artifact-store.js";
 import { GenerationRunner } from "../loop/generation-runner.js";
 import { assertFamilyContract } from "../scenarios/family-interfaces.js";
@@ -215,7 +215,7 @@ export function registerRunManagementTools(
       return jsonText(
         {
           scenario: args.scenario,
-          content: artifacts.readPlaybook(args.scenario),
+          content: artifacts.readPlaybook(asScenarioName(args.scenario)),
         },
         2,
       );

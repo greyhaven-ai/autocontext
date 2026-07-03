@@ -1,3 +1,4 @@
+import { asScenarioName } from "../domain/ids.js";
 import type { ArtifactStore } from "../knowledge/artifact-store.js";
 import type { SQLiteStore } from "../storage/index.js";
 import {
@@ -14,10 +15,7 @@ import type {
   TrainingRecord,
 } from "./export-types.js";
 
-export function resolveTrainingExportRuns(
-  store: SQLiteStore,
-  opts: ExportOpts,
-): ExportRunRef[] {
+export function resolveTrainingExportRuns(store: SQLiteStore, opts: ExportOpts): ExportRunRef[] {
   if (opts.runId) {
     const run = store.getRun(opts.runId);
     if (!run) {
@@ -49,10 +47,13 @@ export function buildTrainingExportRecordsForRun(opts: {
   run: ExportRunRef;
   keptOnly?: boolean;
   includeMatches?: boolean;
-  onGenerationRecords?: (generationIndex: number, generationRecords: TrainingExportRecord[]) => void;
+  onGenerationRecords?: (
+    generationIndex: number,
+    generationRecords: TrainingExportRecord[],
+  ) => void;
 }): TrainingExportRecord[] {
   const records: TrainingExportRecord[] = [];
-  const playbook = opts.artifacts.readPlaybook(opts.run.scenario);
+  const playbook = opts.artifacts.readPlaybook(asScenarioName(opts.run.scenario));
   const hints = extractTrainingHints(playbook);
   const promptContext = resolveTrainingPromptContext(opts.artifacts, opts.run.scenario);
   const generations = opts.store.getGenerations(opts.run.run_id);
@@ -81,15 +82,20 @@ export function buildTrainingExportRecordsForRun(opts: {
     const generationRecords: TrainingExportRecord[] = [record];
 
     if (opts.includeMatches) {
-      const matches = opts.store.getMatchesForGeneration(opts.run.run_id, generation.generation_index);
-      generationRecords.push(...matches.map((match): MatchRecord => ({
-        run_id: opts.run.run_id,
-        generation_index: generation.generation_index,
-        seed: match.seed,
-        score: match.score,
-        passed_validation: !!match.passed_validation,
-        validation_errors: match.validation_errors,
-      })));
+      const matches = opts.store.getMatchesForGeneration(
+        opts.run.run_id,
+        generation.generation_index,
+      );
+      generationRecords.push(
+        ...matches.map((match): MatchRecord => ({
+          run_id: opts.run.run_id,
+          generation_index: generation.generation_index,
+          seed: match.seed,
+          score: match.score,
+          passed_validation: !!match.passed_validation,
+          validation_errors: match.validation_errors,
+        })),
+      );
     }
 
     records.push(...generationRecords);
