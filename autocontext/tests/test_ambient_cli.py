@@ -1,0 +1,105 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from typer.testing import CliRunner
+
+from autocontext.cli import app
+
+runner = CliRunner()
+
+
+def _init(tmp_path: Path) -> Path:
+    charter_path = tmp_path / "ambient-charter.yaml"
+    result = runner.invoke(
+        app,
+        ["ambient", "init", "--charter-path", str(charter_path)],
+        input="oss\npropose\nn\nn\ncompetitor@grid_ctf\nQwen/Qwen2.5-3B-Instruct\n8\n24\n200\n",
+    )
+    assert result.exit_code == 0, result.output
+    return charter_path
+
+
+def test_init_writes_charter(tmp_path: Path) -> None:
+    charter_path = _init(tmp_path)
+    assert charter_path.exists()
+    assert "competitor@grid_ctf" in charter_path.read_text(encoding="utf-8")
+
+
+def test_init_refuses_overwrite_without_force(tmp_path: Path) -> None:
+    charter_path = _init(tmp_path)
+    result = runner.invoke(app, ["ambient", "init", "--charter-path", str(charter_path)])
+    assert result.exit_code == 1
+    assert "already exists" in result.output
+
+
+def test_init_rejects_invalid_numeric_input(tmp_path: Path) -> None:
+    charter_path = tmp_path / "ambient-charter.yaml"
+    result = runner.invoke(
+        app,
+        ["ambient", "init", "--charter-path", str(charter_path)],
+        input="oss\npropose\nn\nn\ncompetitor@grid_ctf\nQwen/Qwen2.5-3B-Instruct\nabc\n24\n200\n",
+    )
+    assert result.exit_code == 1
+    assert "invalid interview input" in result.output
+    assert not charter_path.exists()
+
+
+def test_status_reports_stages(tmp_path: Path) -> None:
+    charter_path = _init(tmp_path)
+    result = runner.invoke(
+        app,
+        ["ambient", "status", "--charter-path", str(charter_path), "--db-path", str(tmp_path / "a.sqlite3")],
+    )
+    assert result.exit_code == 0, result.output
+    for stage in ("ingest", "curate", "advise", "train", "evaluate"):
+        assert stage in result.output
+
+
+def test_status_missing_charter_exits_nonzero(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["ambient", "status", "--charter-path", str(tmp_path / "none.yaml")])
+    assert result.exit_code == 1
+    assert "not found" in result.output
+
+
+def test_run_with_max_cycles_terminates(tmp_path: Path) -> None:
+    charter_path = _init(tmp_path)
+    result = runner.invoke(
+        app,
+        [
+            "ambient",
+            "run",
+            "--charter-path",
+            str(charter_path),
+            "--db-path",
+            str(tmp_path / "a.sqlite3"),
+            "--events-path",
+            str(tmp_path / "events.ndjson"),
+            "--poll-seconds",
+            "0",
+            "--max-cycles",
+            "2",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / "events.ndjson").exists()
+
+
+def test_once_runs_single_stage(tmp_path: Path) -> None:
+    charter_path = _init(tmp_path)
+    result = runner.invoke(
+        app,
+        [
+            "ambient",
+            "once",
+            "ingest",
+            "--charter-path",
+            str(charter_path),
+            "--db-path",
+            str(tmp_path / "a.sqlite3"),
+            "--events-path",
+            str(tmp_path / "events.ndjson"),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "processed" in result.output
