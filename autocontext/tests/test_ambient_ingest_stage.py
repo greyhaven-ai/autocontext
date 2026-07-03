@@ -80,6 +80,25 @@ def test_ingest_appends_redacts_and_advances_cursor(tmp_path: Path) -> None:
     assert source.seen_cursors[-1] == "5"
 
 
+def test_batch_failure_leaves_no_records_and_no_cursor(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    store = TraceStore(tmp_path / "ambient.sqlite3")
+    source = ScriptedSource(
+        name="native",
+        polls=[SourcePoll(records=[RawTrace(kind="generation", payload={"n": 1})], next_cursor="5")],
+    )
+
+    def _boom(*args: object, **kwargs: object) -> int:
+        raise RuntimeError("store down")
+
+    monkeypatch.setattr(TraceStore, "append_batch", _boom)
+    stage = IngestStage(name="ingest", trace_store=store, sources=[source], disk_quota_gb=10.0)
+    result = stage.run_once(_ctx(tmp_path))
+    assert result.errors == 1
+    assert result.processed == 0
+    assert store.count() == 0
+    assert store.get_cursor("autocontext:native") is None
+
+
 def test_failing_source_isolated_and_counted(tmp_path: Path) -> None:
     store = TraceStore(tmp_path / "ambient.sqlite3")
     good = ScriptedSource(name="ok", polls=[SourcePoll(records=[RawTrace(kind="x", payload={})], next_cursor="1")])

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from autocontext.ambient.queue import AmbientQueue
 from autocontext.ambient.trace_store import TraceStore
 
@@ -36,6 +38,34 @@ def test_shares_db_file_with_queue(tmp_path: Path) -> None:
     store.append("native", "generation", {}, "frontier", 0)
     assert queue.depth("ingest") == 1
     assert store.count() == 1
+
+
+def test_append_batch_commits_records_and_cursor_together(tmp_path: Path) -> None:
+    store = TraceStore(tmp_path / "ambient.sqlite3")
+    inserted = store.append_batch(
+        "autocontext:native",
+        [("generation", {"n": 1}, "frontier", 0), ("llm_call", {"n": 2}, "frontier", 1)],
+        "7",
+    )
+    assert inserted == 2
+    assert store.count() == 2
+    assert store.get_cursor("autocontext:native") == "7"
+
+
+def test_append_batch_rolls_back_on_serialization_failure(tmp_path: Path) -> None:
+    store = TraceStore(tmp_path / "ambient.sqlite3")
+    store.set_cursor("autocontext:native", "3")
+    with pytest.raises(TypeError):
+        store.append_batch(
+            "autocontext:native",
+            [
+                ("generation", {"n": 1}, "frontier", 0),
+                ("generation", {"bad": object()}, "frontier", 0),
+            ],
+            "9",
+        )
+    assert store.count() == 0
+    assert store.get_cursor("autocontext:native") == "3"
 
 
 def test_prune_oldest_removes_oldest_fraction(tmp_path: Path) -> None:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 from autocontext.ambient.redaction_gate import redact_payload
 from autocontext.ambient.sources.contract import TraceSource
@@ -10,6 +11,8 @@ from autocontext.ambient.stage import StageContext, StageResult
 from autocontext.ambient.trace_store import TraceStore
 
 _PRUNE_FRACTION = 0.1
+# (kind, payload, produced_by, redaction_findings) as consumed by append_batch
+_BatchRecord = tuple[str, dict[str, Any], str, int]
 
 
 @dataclass(slots=True)
@@ -37,12 +40,16 @@ class IngestStage:
             cursor = self.trace_store.get_cursor(cursor_key)
             try:
                 poll = source.poll(cursor)
+                batch: list[_BatchRecord] = []
                 for record in poll.records:
                     payload, findings = redact_payload(record.payload)
-                    self.trace_store.append(source.name, record.kind, payload, record.produced_by, findings)
-                    appended += 1
-                if poll.next_cursor is not None:
-                    self.trace_store.set_cursor(cursor_key, poll.next_cursor)
+                    batch.append((record.kind, payload, record.produced_by, findings))
+                # store-side failures are now atomic per batch (nothing
+                # persisted, cursor unchanged), so a replay would need the
+                # process to die between the source poll and this call, which
+                # persists nothing; duplicates thus require a repeated poll of
+                # the same source data, which the cursors prevent
+                appended += self.trace_store.append_batch(cursor_key, batch, poll.next_cursor)
             except Exception as exc:
                 errors += 1
                 ctx.emitter.emit("ingest_source_failed", {"source": source.name, "error": str(exc)}, channel="ambient")

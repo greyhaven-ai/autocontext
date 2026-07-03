@@ -57,6 +57,39 @@ class TraceStore:
             )
             return int(cursor.lastrowid or 0)
 
+    def append_batch(
+        self,
+        source_key: str,
+        records: list[tuple[str, dict[str, Any], str, int]],
+        cursor: str | None,
+    ) -> int:
+        """Insert every record and upsert the cursor in one transaction.
+
+        Each tuple is (kind, payload, produced_by, redaction_findings). All
+        inserts plus the cursor upsert (when cursor is not None) run on one
+        connection in one transaction, so a mid-batch failure (including a
+        payload that fails to serialize) persists nothing and leaves the
+        cursor unchanged. Returns the number of rows inserted. The trace
+        source column and the cursor row are both keyed by source_key.
+        """
+        created_at = datetime.now(UTC).isoformat()
+        with self._connect() as conn:
+            inserted = 0
+            for kind, payload, produced_by, redaction_findings in records:
+                conn.execute(
+                    "INSERT INTO ambient_traces (source, kind, payload, produced_by, redaction_findings, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (source_key, kind, json.dumps(payload), produced_by, redaction_findings, created_at),
+                )
+                inserted += 1
+            if cursor is not None:
+                conn.execute(
+                    "INSERT INTO ambient_source_cursors (source, cursor) VALUES (?, ?) "
+                    "ON CONFLICT(source) DO UPDATE SET cursor = excluded.cursor",
+                    (source_key, cursor),
+                )
+        return inserted
+
     def count(self, source: str | None = None) -> int:
         with self._connect() as conn:
             if source is None:
