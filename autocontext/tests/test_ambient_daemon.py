@@ -115,3 +115,27 @@ def test_run_forever_respects_max_cycles(tmp_path: Path) -> None:
     daemon = _daemon(tmp_path, stages={"curate": counting})
     daemon.run_forever(poll_seconds=0.0, max_cycles=3)
     assert counting.runs == 3
+
+
+@dataclass
+class ErrorReportingStage:
+    name: str
+
+    def run_once(self, ctx: StageContext) -> StageResult:
+        return StageResult(processed=0, errors=1)
+
+
+def test_returned_errors_trip_breaker_and_emit_stage_paused(tmp_path: Path) -> None:
+    events_path = tmp_path / "events.ndjson"
+    daemon = AmbientDaemon(
+        charter=_charter(),
+        queue=AmbientQueue(tmp_path / "ambient.sqlite3"),
+        emitter=EventStreamEmitter(events_path),
+        stages={"ingest": ErrorReportingStage(name="ingest")},
+        breaker_threshold=2,
+    )
+    daemon.run_cycle()
+    daemon.run_cycle()
+    assert daemon.status()["ingest"]["paused"] is True
+    contents = events_path.read_text(encoding="utf-8")
+    assert contents.count("stage_paused") == 1

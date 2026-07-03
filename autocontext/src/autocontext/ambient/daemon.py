@@ -45,12 +45,13 @@ class AmbientDaemon:
     def run_stage_once(self, stage_name: str) -> StageResult:
         stage = self._stages[stage_name]
         breaker = self._breakers[stage_name]
+        was_paused = breaker.paused
         try:
             result = stage.run_once(self._context())
         except Exception as exc:
             breaker.record_exception()
             self.emitter.emit("stage_failed", {"stage": stage_name, "error": str(exc)}, channel="ambient")
-            if breaker.paused:
+            if breaker.paused and not was_paused:
                 self.emitter.emit("stage_paused", {"stage": stage_name}, channel="ambient")
             return StageResult(errors=1)
         breaker.record(result)
@@ -59,6 +60,11 @@ class AmbientDaemon:
             {"stage": stage_name, "processed": result.processed, "errors": result.errors},
             channel="ambient",
         )
+        # a stage that reports errors without raising can also trip the
+        # breaker; emit the pause transition here too so alerting never
+        # misses an auto-pause
+        if breaker.paused and not was_paused:
+            self.emitter.emit("stage_paused", {"stage": stage_name}, channel="ambient")
         return result
 
     def run_cycle(self) -> dict[str, StageResult]:
