@@ -119,3 +119,18 @@ def test_status_does_not_requeue_running_jobs(tmp_path: Path) -> None:
     )
     assert result.exit_code == 0, result.output
     assert queue.depth("ingest") == 0  # still running, not yanked back
+
+
+def test_run_rejects_negative_poll_seconds(tmp_path: Path) -> None:
+    charter_path = _init(tmp_path)
+    result = runner.invoke(
+        app,
+        [
+            "ambient", "run",
+            "--charter-path", str(charter_path),
+            "--db-path", str(tmp_path / "a.sqlite3"),
+            "--events-path", str(tmp_path / "events.ndjson"),
+            "--poll-seconds", "-1",
+        ],
+    )
+    assert result.exit_code != 0

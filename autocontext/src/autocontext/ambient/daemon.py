@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import fcntl
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 
 from autocontext.ambient.charter import Charter
 from autocontext.ambient.queue import AmbientQueue
@@ -70,19 +73,42 @@ class AmbientDaemon:
             results[name] = self.run_stage_once(name)
         return results
 
+    @contextmanager
+    def _exclusive_daemon_lock(self) -> Iterator[None]:
+        # exactly one resident daemon per queue database: without this, a
+        # second daemon's startup requeue would hand the first daemon's
+        # in-flight jobs out again (double-claim)
+        lock_path = self.queue.db_path.with_suffix(".lock")
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        handle = lock_path.open("w")
+        try:
+            try:
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError as exc:
+                raise RuntimeError(
+                    f"another ambient daemon already holds {lock_path}; refusing to start a second resident loop"
+                ) from exc
+            yield
+        finally:
+            handle.close()
+
     def run_forever(self, poll_seconds: float, max_cycles: int | None = None) -> None:
-        # crash recovery lives here, not in the constructor: read-only
-        # commands (status) and manual one-shots construct a daemon too, and
-        # must never yank another process's in-flight jobs back to pending
-        requeued = self.queue.requeue_stale_running()
-        if requeued:
-            self.emitter.emit("stale_jobs_requeued", {"count": requeued}, channel="ambient")
-        cycles = 0
-        while max_cycles is None or cycles < max_cycles:
-            self.run_cycle()
-            cycles += 1
-            if poll_seconds > 0:
-                time.sleep(poll_seconds)
+        if poll_seconds < 0:
+            raise ValueError("poll_seconds must be zero or positive")
+        with self._exclusive_daemon_lock():
+            # crash recovery lives here, not in the constructor: read-only
+            # commands (status) and manual one-shots construct a daemon too,
+            # and must never yank another process's in-flight jobs back to
+            # pending; the exclusive lock above makes the requeue safe
+            requeued = self.queue.requeue_stale_running()
+            if requeued:
+                self.emitter.emit("stale_jobs_requeued", {"count": requeued}, channel="ambient")
+            cycles = 0
+            while max_cycles is None or cycles < max_cycles:
+                self.run_cycle()
+                cycles += 1
+                if poll_seconds > 0:
+                    time.sleep(poll_seconds)
 
     def status(self) -> dict[str, dict[str, object]]:
         """per-stage view: paused reflects only this process's breakers, and

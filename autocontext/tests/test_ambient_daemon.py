@@ -142,3 +142,35 @@ def test_returned_errors_trip_breaker_and_emit_stage_paused(tmp_path: Path) -> N
     assert daemon.status()["ingest"]["paused"] is True
     contents = events_path.read_text(encoding="utf-8")
     assert contents.count("stage_paused") == 1
+
+
+def test_run_forever_rejects_negative_poll_seconds(tmp_path: Path) -> None:
+    daemon = _daemon(tmp_path)
+    with pytest.raises(ValueError, match="zero or positive"):
+        daemon.run_forever(poll_seconds=-1.0)
+
+
+def test_second_resident_daemon_refuses_to_start(tmp_path: Path) -> None:
+    import fcntl
+
+    queue = AmbientQueue(tmp_path / "ambient.sqlite3")
+    daemon = AmbientDaemon(
+        charter=_charter(),
+        queue=queue,
+        emitter=EventStreamEmitter(tmp_path / "events.ndjson"),
+    )
+    lock_path = queue.db_path.with_suffix(".lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    holder = lock_path.open("w")
+    fcntl.flock(holder, fcntl.LOCK_EX | fcntl.LOCK_NB)  # first daemon holds the lock
+    try:
+        with pytest.raises(RuntimeError, match="another ambient daemon"):
+            daemon.run_forever(poll_seconds=0.0, max_cycles=0)
+    finally:
+        holder.close()
+
+
+def test_lock_releases_after_run_forever(tmp_path: Path) -> None:
+    daemon = _daemon(tmp_path)
+    daemon.run_forever(poll_seconds=0.0, max_cycles=1)
+    daemon.run_forever(poll_seconds=0.0, max_cycles=1)  # second sequential run acquires cleanly

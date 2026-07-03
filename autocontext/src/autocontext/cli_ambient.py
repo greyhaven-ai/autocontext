@@ -75,7 +75,7 @@ def run(
     charter_path: Annotated[Path, typer.Option("--charter-path")] = _DEFAULT_CHARTER,
     db_path: Annotated[Path, typer.Option("--db-path")] = _DEFAULT_DB,
     events_path: Annotated[Path, typer.Option("--events-path")] = _DEFAULT_EVENTS,
-    poll_seconds: Annotated[float, typer.Option("--poll-seconds")] = 30.0,
+    poll_seconds: Annotated[float, typer.Option("--poll-seconds", min=0.0)] = 30.0,
     max_cycles: Annotated[int | None, typer.Option("--max-cycles", hidden=True)] = None,
 ) -> None:
     try:
@@ -83,7 +83,11 @@ def run(
     except CharterLoadError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
-    daemon.run_forever(poll_seconds=poll_seconds, max_cycles=max_cycles)
+    try:
+        daemon.run_forever(poll_seconds=poll_seconds, max_cycles=max_cycles)
+    except RuntimeError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
 
 
 @ambient_app.command()
