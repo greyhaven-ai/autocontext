@@ -71,7 +71,7 @@ redaction profile:
   (richest labels; already structured).
 - OTel feed: anything shipping traces via the existing otel-bridge and
   production-traces SDK (other agents, Claude Code hooks, instrumented apps).
-- LLM proxy tap: the daemon exposes an OpenAI/Anthropic-compatible gateway
+- LLM proxy tap (plan 3): the daemon exposes an OpenAI/Anthropic-compatible gateway
   endpoint; any tool pointed at it gets traced. Lowest-friction third-party
   capture; lacks tool/execution context by nature.
 - full-box collector (hosted tier only, v2): shell sessions, editor activity,
