@@ -96,6 +96,32 @@ def test_duplicate_target_names_rejected() -> None:
         _minimal_charter(targets=[target, target.model_copy()])
 
 
+@pytest.mark.parametrize("unsafe_name", ["../../etc/foo", "sub/evil"])
+def test_target_name_path_traversal_rejected(unsafe_name: str) -> None:
+    with pytest.raises(ValidationError):
+        CharterTarget(
+            name=unsafe_name,
+            kind="role",
+            selector="competitor@grid_ctf",
+            base_model="Qwen/Qwen2.5-3B-Instruct",
+            min_dataset_records=1,
+            eval_suite="s",
+        )
+
+
+@pytest.mark.parametrize("safe_name", ["grid_ctf-auto", "competitor-local"])
+def test_target_name_slug_accepted(safe_name: str) -> None:
+    target = CharterTarget(
+        name=safe_name,
+        kind="role",
+        selector="competitor@grid_ctf",
+        base_model="Qwen/Qwen2.5-3B-Instruct",
+        min_dataset_records=1,
+        eval_suite="s",
+    )
+    assert target.name == safe_name
+
+
 def test_unknown_charter_keys_rejected() -> None:
     with pytest.raises(ValidationError):
         _minimal_charter(autonmy="full")  # typo'd key must fail loudly
