@@ -55,8 +55,27 @@ class TrainStage:
         backend = select_backend(target.method)
         if backend is None:
             # no installed backend supports this method (a frontier-only ci box):
-            # report and skip, never an error, so the stage breaker does not trip
+            # report and skip, never an error, so the stage breaker does not trip; a box that
+            # cannot train at all should not spend a budget event to discover that
             ctx.emitter.emit("train_no_backend", {"target": target.name, "method": target.method}, channel="ambient")
+            return 0
+        # pre-flight budget: the time budget IS the gpu-hours ceiling because run_training's
+        # timeout caps wall-clock at time_budget_seconds, so the job cannot consume more. gate
+        # on the estimate BEFORE training so a breaching job never spends the hours; the record
+        # step below then charges the ACTUAL hours consumed, which is <= this ceiling.
+        requested_gpu_hours = self.time_budget_seconds / 3600.0
+        used = self.usage_ledger.used_in_window(target.name, ctx.charter.budgets.window_hours, self.now_fn())
+        if not budget_allows(ctx.charter.budgets, used, requested_gpu_hours):
+            ctx.emitter.emit(
+                "train_budget_exhausted",
+                {
+                    "target": target.name,
+                    "used_gpu_hours": used,
+                    "requested_gpu_hours": requested_gpu_hours,
+                    "window_hours": ctx.charter.budgets.window_hours,
+                },
+                channel="ambient",
+            )
             return 0
         scenario = self._scenario_for(target)
         request = TrainRequest(
@@ -68,16 +87,6 @@ class TrainStage:
             memory_limit_mb=self.memory_limit_mb,
         )
         outcome = run_training(backend, request)
-        # the actual gpu_hours are only known once the backend returns; charge the window
-        # against the real cost, and if that would breach the budget do not record or publish
-        used = self.usage_ledger.used_in_window(target.name, ctx.charter.budgets.window_hours, self.now_fn())
-        if not budget_allows(ctx.charter.budgets, used, outcome.gpu_hours):
-            ctx.emitter.emit(
-                "train_budget_exhausted",
-                {"target": target.name, "used_gpu_hours": used, "window_hours": ctx.charter.budgets.window_hours},
-                channel="ambient",
-            )
-            return 0
         self.usage_ledger.record(target.name, outcome.gpu_hours, self.now_fn())
         # run_id=ambient-<target>-<record_count> dedupes bare retries: a re-run at the same
         # record_count with different metrics returns the existing candidate and discards the

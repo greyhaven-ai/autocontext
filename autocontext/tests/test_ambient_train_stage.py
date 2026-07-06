@@ -132,13 +132,24 @@ def test_propose_autonomy_requires_approval(tmp_path: Path, monkeypatch: Any) ->
 
 def test_budget_exhausted_skips(tmp_path: Path, monkeypatch: Any) -> None:
     _seed_dataset(tmp_path, "competitor-local", 6)
-    _patch_backend(monkeypatch, available="trl", gpu_hours=5.0)
+    trained = {"ran": False}
+    monkeypatch.setattr(train_mod, "select_backend", lambda method: "trl")
+
+    def fake_run(backend_name: str, request: Any) -> TrainOutcome:
+        trained["ran"] = True  # the pre-flight gate must return before we get here
+        return TrainOutcome(request.output_dir / "adapters", backend_name, {"num_records": 5.0, "training_seconds": 3600.0}, 1.0)
+
+    monkeypatch.setattr(train_mod, "run_training", fake_run)
     stage = _stage(tmp_path)
-    stage.usage_ledger.record("competitor-local", 9.5, _NOW)  # window budget is 10.0; a 5h job would exceed it
+    # window budget is 10.0; the default time budget is 1800s = 0.5h. seed 9.8 used so the
+    # pre-flight estimate (9.8 + 0.5 = 10.3 > 10.0) breaches before any training happens.
+    stage.usage_ledger.record("competitor-local", 9.8, _NOW)
 
     result = stage.run_once(_ctx(tmp_path, _charter([_target()], gpu_hours=10.0)))
 
     assert result.processed == 0
+    assert not trained["ran"]  # pre-flight prevented the spend: run_training was never reached
+    assert stage.registry.list_all() == []  # and nothing was published
     events = _events(tmp_path)
     assert any(e["event"] == "train_budget_exhausted" for e in events)
 
