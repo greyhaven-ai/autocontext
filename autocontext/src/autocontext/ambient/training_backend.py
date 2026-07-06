@@ -12,10 +12,15 @@ distillation/RLVR, generating its own prompts from the live scenario, so it
 cannot consume a curated per-target dataset file.)
 
 The ambient train stage talks only to this module, never to the heavy mlx
-backend directly, so a cpu-only ci monkeypatches _availability and
-_BACKEND_FNS to exercise the whole stage without a real fine-tune. gpu_hours
-is derived from the wall-clock training_seconds the backend reports, which is
-what the usage ledger and budget floor consume.
+backend directly, so a cpu-only ci monkeypatches _availability and the
+_BACKEND registry to exercise the whole stage without a real fine-tune.
+gpu_hours is derived from the wall-clock training_seconds the backend reports,
+which is what the usage ledger and budget floor consume.
+
+Each backend in the registry carries its own arg-adapter mapping a TrainRequest
+to that backend's exact kwargs, so a second backend with a different signature
+can never be handed foreign kwargs: run_training dispatches through the adapter
+rather than a fixed kwarg set.
 """
 
 from __future__ import annotations
@@ -23,15 +28,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from autocontext.training.autoresearch.mlxlm_backend import run_mlxlm_training
 from autocontext.training.backends import default_backend_registry
-
-# preference order per charter method; first available wins
-_METHOD_BACKENDS: dict[str, tuple[str, ...]] = {"sft-distill": ("mlxlm",)}
-_BACKEND_FNS: dict[str, Callable[..., dict[str, float]]] = {
-    "mlxlm": run_mlxlm_training,
-}
 
 
 @dataclass(slots=True)
@@ -45,6 +45,35 @@ class TrainRequest:
 
 
 @dataclass(slots=True)
+class BackendEntry:
+    """a registry record pairing a backend fn with its request->kwargs adapter."""
+
+    fn: Callable[..., dict[str, float]]
+    adapt: Callable[[TrainRequest], dict[str, Any]]
+
+
+def _adapt_mlxlm(request: TrainRequest) -> dict[str, Any]:
+    return {
+        "scenario_name": request.scenario,
+        "data_path": request.data_path,
+        "output_dir": request.output_dir,
+        "time_budget": request.time_budget_seconds,
+        "memory_limit_mb": request.memory_limit_mb,
+        "base_model": request.base_model,
+        # dedupe is enabled so the curate crash-window duplicate rows are removed at
+        # train time, honoring the mitigation curate.py documents.
+        "dedupe": True,
+    }
+
+
+# preference order per charter method; first available wins
+_METHOD_BACKENDS: dict[str, tuple[str, ...]] = {"sft-distill": ("mlxlm",)}
+_BACKEND: dict[str, BackendEntry] = {
+    "mlxlm": BackendEntry(fn=run_mlxlm_training, adapt=_adapt_mlxlm),
+}
+
+
+@dataclass(slots=True)
 class TrainOutcome:
     checkpoint_path: Path
     backend: str
@@ -55,7 +84,7 @@ class TrainOutcome:
 def _availability() -> dict[str, bool]:
     registry = default_backend_registry()
     out: dict[str, bool] = {}
-    for name in _BACKEND_FNS:
+    for name in _BACKEND:
         backend = registry.get(name)
         out[name] = bool(backend and backend.is_available())
     return out
@@ -70,18 +99,8 @@ def select_backend(method: str) -> str | None:
 
 
 def run_training(backend_name: str, request: TrainRequest) -> TrainOutcome:
-    fn = _BACKEND_FNS[backend_name]
-    metrics = fn(
-        scenario_name=request.scenario,
-        data_path=request.data_path,
-        output_dir=request.output_dir,
-        time_budget=request.time_budget_seconds,
-        memory_limit_mb=request.memory_limit_mb,
-        base_model=request.base_model,
-        # dedupe is enabled so the curate crash-window duplicate rows are removed at
-        # train time, honoring the mitigation curate.py documents.
-        dedupe=True,
-    )
+    entry = _BACKEND[backend_name]
+    metrics = entry.fn(**entry.adapt(request))
     gpu_hours = float(metrics.get("training_seconds", 0.0)) / 3600.0
     checkpoint = request.output_dir / "adapters"
     return TrainOutcome(checkpoint_path=checkpoint, backend=backend_name, metrics=metrics, gpu_hours=gpu_hours)

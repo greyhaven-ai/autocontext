@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import autocontext.ambient.training_backend as tb
-from autocontext.ambient.training_backend import TrainRequest, run_training, select_backend
+from autocontext.ambient.training_backend import BackendEntry, TrainRequest, run_training, select_backend
 
 
 def _request(tmp_path: Path) -> TrainRequest:
@@ -44,7 +44,10 @@ def test_run_training_dispatches_and_derives_gpu_hours(monkeypatch: Any, tmp_pat
         captured.update(kwargs)
         return {"avg_score": 0.8, "valid_rate": 1.0, "training_seconds": 3600.0, "num_records": 12.0}
 
-    monkeypatch.setattr(tb, "_BACKEND_FNS", {"mlxlm": fake_run})
+    # monkeypatch a whole registry entry: the fn is swapped for capture, the real
+    # mlxlm adapter maps the TrainRequest to that backend's exact kwargs.
+    real_adapt = tb._BACKEND["mlxlm"].adapt
+    monkeypatch.setitem(tb._BACKEND, "mlxlm", BackendEntry(fn=fake_run, adapt=real_adapt))
     request = _request(tmp_path)
 
     outcome = run_training("mlxlm", request)
@@ -59,6 +62,22 @@ def test_run_training_dispatches_and_derives_gpu_hours(monkeypatch: Any, tmp_pat
     assert captured["time_budget"] == request.time_budget_seconds
     assert captured["memory_limit_mb"] == request.memory_limit_mb
     assert captured["dedupe"] is True  # train-time dedupe honors the curate crash-window mitigation
+
+
+def test_mlxlm_adapter_maps_request_to_exact_kwargs(tmp_path: Path) -> None:
+    # the adapter is the seam guarding a second backend from foreign kwargs: it must
+    # produce exactly the mlxlm kwarg set, no more, no less.
+    request = _request(tmp_path)
+    kwargs = tb._BACKEND["mlxlm"].adapt(request)
+    assert kwargs == {
+        "scenario_name": "grid_ctf",
+        "data_path": request.data_path,
+        "output_dir": request.output_dir,
+        "time_budget": request.time_budget_seconds,
+        "memory_limit_mb": request.memory_limit_mb,
+        "base_model": "tiny",
+        "dedupe": True,
+    }
 
 
 def test_run_training_unknown_backend_raises(tmp_path: Path) -> None:
