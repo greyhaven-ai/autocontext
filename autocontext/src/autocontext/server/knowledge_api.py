@@ -136,7 +136,7 @@ def solve_status(job_id: str) -> dict[str, Any]:
 
 
 class CurateRequest(BaseModel):
-    action: str = Field(pattern="^(stale|deadEnd|delete)$")
+    action: str = Field(pattern="^(stale|deadEnd|delete|activate)$")
 
 
 def _validate_scenario(scenario_name: str) -> str:
@@ -224,7 +224,7 @@ def reject_lesson_route(scenario_name: str, lesson_id: str) -> dict[str, Any]:
 
 @router.post("/{scenario_name}/lessons/{lesson_id}/curate")
 def curate_lesson_route(scenario_name: str, lesson_id: str, body: CurateRequest) -> dict[str, Any]:
-    """Manually mark an active lesson stale, move it to dead-end, or delete it."""
+    """Curate a lesson: mark stale, move to dead-end, delete, or restore to active."""
     from autocontext.knowledge.lifecycle import curate_lesson
 
     scenario_name = _validate_scenario(scenario_name)
