@@ -1,4 +1,4 @@
-"""the ambient daemon: orchestrates the five stages with per-stage breakers."""
+"""the ambient daemon: orchestrates the six stages with per-stage breakers."""
 
 from __future__ import annotations
 

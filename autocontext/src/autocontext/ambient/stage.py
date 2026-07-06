@@ -10,7 +10,7 @@ from autocontext.ambient.proposals import ProposalStore
 from autocontext.ambient.queue import AmbientQueue
 from autocontext.harness.core.events import EventStreamEmitter
 
-STAGE_NAMES: tuple[str, ...] = ("ingest", "curate", "advise", "train", "evaluate")
+STAGE_NAMES: tuple[str, ...] = ("ingest", "curate", "advise", "train", "evaluate", "promote")
 
 
 @dataclass(slots=True)

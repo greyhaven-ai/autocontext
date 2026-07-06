@@ -77,7 +77,10 @@ class TrainStage:
         # covering them. a hard whole-run deadline is the complete fix and lands with the plan-5
         # backend work.
         requested_gpu_hours = (self.time_budget_seconds + self.assess_overhead_seconds) / 3600.0
-        used = self.usage_ledger.used_in_window(target.name, ctx.charter.budgets.window_hours, self.now_fn())
+        # charter-wide pool: read every target's in-window hours, not just this target's, so a
+        # charter with N targets cannot each spend a full window. record() below stays per-target
+        # for attribution; only the gate reads the shared total.
+        used = self.usage_ledger.used_in_window_all(ctx.charter.budgets.window_hours, self.now_fn())
         if not budget_allows(ctx.charter.budgets, used, requested_gpu_hours):
             ctx.emitter.emit(
                 "train_budget_exhausted",

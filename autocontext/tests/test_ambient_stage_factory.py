@@ -5,11 +5,13 @@ from pathlib import Path
 from autocontext.ambient.advise import AdviseStage
 from autocontext.ambient.charter import Charter, CharterBudgets, CharterSource, CharterTarget
 from autocontext.ambient.curate import CurateStage
+from autocontext.ambient.evaluate import EvaluateStage
 from autocontext.ambient.ingest import IngestStage
+from autocontext.ambient.promote import PromoteStage
 from autocontext.ambient.sources.agent_outputs import AgentOutputsSource
 from autocontext.ambient.sources.jsonl_feed import JsonlFeedSource
 from autocontext.ambient.sources.native import NativeRunsSource
-from autocontext.ambient.stage import STAGE_NAMES, NoOpStage
+from autocontext.ambient.stage import STAGE_NAMES
 from autocontext.ambient.stage_factory import build_stages
 from autocontext.ambient.train import TrainStage
 from autocontext.harness.core.events import EventStreamEmitter
@@ -52,6 +54,7 @@ def test_build_stages_wires_enabled_sources(tmp_path: Path) -> None:
         usage_db=tmp_path / "usage.sqlite3",
         artifacts_dir=tmp_path / "artifacts",
         checkpoints_dir=tmp_path / "checkpoints",
+        suites_dir=tmp_path / "suites",
     )
     assert set(stages.keys()) == set(STAGE_NAMES)
     ingest = stages["ingest"]
@@ -62,7 +65,8 @@ def test_build_stages_wires_enabled_sources(tmp_path: Path) -> None:
     assert [source.kind for source in ingest.sources] == ["autocontext", "autocontext-outputs", "otel"]
     assert isinstance(stages["curate"], CurateStage)
     assert isinstance(stages["advise"], AdviseStage)
-    assert all(isinstance(stages[name], NoOpStage) for name in ("evaluate",))
+    assert isinstance(stages["evaluate"], EvaluateStage)
+    assert isinstance(stages["promote"], PromoteStage)
 
 
 def test_unsupported_kinds_emit_event_and_are_skipped(tmp_path: Path) -> None:
@@ -82,6 +86,7 @@ def test_unsupported_kinds_emit_event_and_are_skipped(tmp_path: Path) -> None:
         usage_db=tmp_path / "usage.sqlite3",
         artifacts_dir=tmp_path / "artifacts",
         checkpoints_dir=tmp_path / "checkpoints",
+        suites_dir=tmp_path / "suites",
     )
     ingest = stages["ingest"]
     assert isinstance(ingest, IngestStage)
@@ -105,6 +110,7 @@ def test_autocontext_source_registers_generation_and_output_readers(tmp_path: Pa
         usage_db=tmp_path / "usage.sqlite3",
         artifacts_dir=tmp_path / "artifacts",
         checkpoints_dir=tmp_path / "checkpoints",
+        suites_dir=tmp_path / "suites",
     )
     ingest = stages["ingest"]
     kinds = sorted(source.kind for source in ingest.sources)  # type: ignore[attr-defined]
@@ -124,6 +130,7 @@ def test_build_stages_wires_real_curate_and_advise(tmp_path: Path) -> None:
         usage_db=tmp_path / "usage.sqlite3",
         artifacts_dir=tmp_path / "artifacts",
         checkpoints_dir=tmp_path / "checkpoints",
+        suites_dir=tmp_path / "suites",
     )
     assert isinstance(stages["curate"], CurateStage)
     assert isinstance(stages["advise"], AdviseStage)
@@ -146,6 +153,34 @@ def test_build_stages_wires_real_train_stage(tmp_path: Path) -> None:
         usage_db=tmp_path / "usage.sqlite3",
         artifacts_dir=tmp_path / "artifacts",
         checkpoints_dir=tmp_path / "checkpoints",
+        suites_dir=tmp_path / "suites",
     )
     assert isinstance(stages["train"], TrainStage)
-    assert stages["evaluate"].__class__.__name__ == "NoOpStage"
+    assert isinstance(stages["evaluate"], EvaluateStage)
+
+
+def test_build_stages_wires_real_evaluate_and_promote_sharing_registry(tmp_path: Path) -> None:
+    charter = _charter(sources=[CharterSource(name="native", kind="autocontext")])
+    stages = build_stages(
+        charter,
+        db_path=tmp_path / "ambient.sqlite3",
+        emitter=EventStreamEmitter(tmp_path / "events.ndjson"),
+        runs_db_path=tmp_path / "runs.sqlite3",
+        otel_feed_dir=tmp_path / "feed",
+        datasets_dir=tmp_path / "datasets",
+        registry_dir=tmp_path / "registry",
+        usage_db=tmp_path / "usage.sqlite3",
+        artifacts_dir=tmp_path / "artifacts",
+        checkpoints_dir=tmp_path / "checkpoints",
+        suites_dir=tmp_path / "suites",
+    )
+    evaluate = stages["evaluate"]
+    promote = stages["promote"]
+    train = stages["train"]
+    assert isinstance(evaluate, EvaluateStage)
+    assert isinstance(promote, PromoteStage)
+    assert evaluate.suites_dir == tmp_path / "suites"
+    # train, evaluate, and promote must share one ModelRegistry instance so a candidate
+    # trained this cycle is the same object evaluate scores and promote activates
+    assert evaluate.registry is train.registry  # type: ignore[attr-defined]
+    assert promote.registry is train.registry  # type: ignore[attr-defined]

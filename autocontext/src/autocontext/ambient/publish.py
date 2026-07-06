@@ -34,7 +34,12 @@ def publish_candidate(
         run_id=run_id,
         checkpoint_path=str(outcome.checkpoint_path),
         backend=outcome.backend,
-        scenario=scenario,
+        # the registry SLOT is the target name, not the raw scenario: activation demotes competing
+        # actives in the same scenario+backend+runtime slot, and two charter targets can map to the
+        # same real scenario (competitor@grid_ctf and analyst@grid_ctf both -> "grid_ctf"). slotting
+        # by target.name keeps each target its own activation slot so promoting one never cross-demotes
+        # a sibling's live model. the real scenario is preserved as scenario_family for grouping.
+        scenario=target.name,
         scenario_family=scenario,
         parameter_count=int(outcome.metrics.get("num_params_m", 0.0) * 1_000_000),
         architecture=target.base_model,

@@ -34,6 +34,7 @@ _DEFAULT_REGISTRY = Path("runs/ambient-registry")
 _DEFAULT_USAGE = Path("runs/ambient-usage.sqlite3")
 _DEFAULT_ARTIFACTS = Path("runs/ambient-artifacts")
 _DEFAULT_CHECKPOINTS = Path("runs/ambient-checkpoints")
+_DEFAULT_SUITES = Path("runs/ambient-eval-suites")
 
 
 def _daemon(
@@ -48,6 +49,7 @@ def _daemon(
     usage_db: Path,
     artifacts_dir: Path,
     checkpoints_dir: Path,
+    suites_dir: Path,
 ) -> AmbientDaemon:
     charter = load_charter(charter_path)
     emitter = EventStreamEmitter(events_path)
@@ -62,6 +64,7 @@ def _daemon(
         usage_db=usage_db,
         artifacts_dir=artifacts_dir,
         checkpoints_dir=checkpoints_dir,
+        suites_dir=suites_dir,
     )
     return AmbientDaemon(
         charter=charter,
@@ -103,6 +106,7 @@ def status(
     usage_db: Annotated[Path, typer.Option("--usage-db")] = _DEFAULT_USAGE,
     artifacts_dir: Annotated[Path, typer.Option("--artifacts-dir")] = _DEFAULT_ARTIFACTS,
     checkpoints_dir: Annotated[Path, typer.Option("--checkpoints-dir")] = _DEFAULT_CHECKPOINTS,
+    suites_dir: Annotated[Path, typer.Option("--suites-dir")] = _DEFAULT_SUITES,
 ) -> None:
     try:
         daemon = _daemon(
@@ -117,6 +121,7 @@ def status(
             usage_db,
             artifacts_dir,
             checkpoints_dir,
+            suites_dir,
         )
     except CharterLoadError as exc:
         console.print(f"[red]{exc}[/red]")
@@ -128,7 +133,8 @@ def status(
         table.add_row(name, str(info["paused"]), str(info["queue_depth"]))
     console.print(table)
     # read-only: construct the registry and count candidates, never train or write events
-    candidates = len(ModelRegistry(registry_dir).list_all())
+    registry = ModelRegistry(registry_dir)
+    candidates = len(registry.list_all())
     console.print(f"candidates={candidates}")
     if charter.targets:
         dataset_store = DatasetStore(datasets_dir)
@@ -137,6 +143,17 @@ def status(
             manifest = dataset_store.load_manifest(target.name)
             targets_table.add_row(target.name, str(manifest.record_count), f"{manifest.mean_score:.2f}")
         console.print(targets_table)
+        # per-target serving pointer: the active artifact for this target's slot, or "none".
+        # the slot key is the target name (task 5), so scan its records for the active one rather
+        # than guessing a backend for resolve_model; still read-only, no promotion happens here.
+        active_table = Table("target", "active model")
+        for target in charter.targets:
+            active = next(
+                (r for r in registry.list_for_scenario(target.name) if r.activation_state == "active"),
+                None,
+            )
+            active_table.add_row(target.name, active.artifact_id if active is not None else "none")
+        console.print(active_table)
 
 
 @ambient_app.command()
@@ -152,6 +169,7 @@ def run(
     usage_db: Annotated[Path, typer.Option("--usage-db")] = _DEFAULT_USAGE,
     artifacts_dir: Annotated[Path, typer.Option("--artifacts-dir")] = _DEFAULT_ARTIFACTS,
     checkpoints_dir: Annotated[Path, typer.Option("--checkpoints-dir")] = _DEFAULT_CHECKPOINTS,
+    suites_dir: Annotated[Path, typer.Option("--suites-dir")] = _DEFAULT_SUITES,
     poll_seconds: Annotated[float, typer.Option("--poll-seconds", min=0.0)] = 30.0,
     max_cycles: Annotated[int | None, typer.Option("--max-cycles", hidden=True)] = None,
 ) -> None:
@@ -168,6 +186,7 @@ def run(
             usage_db,
             artifacts_dir,
             checkpoints_dir,
+            suites_dir,
         )
     except CharterLoadError as exc:
         console.print(f"[red]{exc}[/red]")
@@ -193,6 +212,7 @@ def once(
     usage_db: Annotated[Path, typer.Option("--usage-db")] = _DEFAULT_USAGE,
     artifacts_dir: Annotated[Path, typer.Option("--artifacts-dir")] = _DEFAULT_ARTIFACTS,
     checkpoints_dir: Annotated[Path, typer.Option("--checkpoints-dir")] = _DEFAULT_CHECKPOINTS,
+    suites_dir: Annotated[Path, typer.Option("--suites-dir")] = _DEFAULT_SUITES,
 ) -> None:
     try:
         daemon = _daemon(
@@ -207,6 +227,7 @@ def once(
             usage_db,
             artifacts_dir,
             checkpoints_dir,
+            suites_dir,
         )
     except CharterLoadError as exc:
         console.print(f"[red]{exc}[/red]")

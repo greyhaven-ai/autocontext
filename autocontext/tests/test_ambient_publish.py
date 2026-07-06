@@ -46,6 +46,11 @@ def test_publish_registers_a_non_active_candidate(tmp_path: Path) -> None:
     record = registry.load(artifact_id)
     assert record is not None
     assert record.activation_state == "candidate"
+    # the registry SLOT is the target name (unique per target), so activation never
+    # cross-demotes a sibling target that maps to the same real scenario.
+    assert record.scenario == "competitor-local"
+    # the real scenario is preserved as scenario_family for grouping and provenance.
+    assert record.scenario_family == "grid_ctf"
     assert record.metadata.get("produced_by") == "finetune:competitor-local"
     # the adapter-serving path refuses a record without base_model, so it must be stamped
     assert record.metadata.get("base_model") == "tiny"

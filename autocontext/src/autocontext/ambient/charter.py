@@ -39,6 +39,14 @@ class GuardrailConfig(BaseModel):
         return value
 
 
+class CharterAnchor(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider: str = "anthropic"
+    model: str = Field(min_length=1, default="claude-sonnet-5")
+    rubric: str = Field(min_length=1, default="Score the response for task success from 0 to 1.")
+
+
 class CharterSource(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -94,6 +102,7 @@ class Charter(BaseModel):
     targets: list[CharterTarget]
     budgets: CharterBudgets
     guardrails: GuardrailConfig = Field(default_factory=GuardrailConfig)
+    anchor: CharterAnchor = Field(default_factory=CharterAnchor)
 
     @model_validator(mode="after")
     def _full_box_requires_hosted(self) -> Charter:

@@ -3,8 +3,8 @@ from __future__ import annotations
 from autocontext.ambient.stage import STAGE_NAMES, AutoPauseBreaker, NoOpStage, StageResult
 
 
-def test_stage_names_are_the_five_spec_stages() -> None:
-    assert STAGE_NAMES == ("ingest", "curate", "advise", "train", "evaluate")
+def test_stage_names_are_the_spec_stages() -> None:
+    assert STAGE_NAMES == ("ingest", "curate", "advise", "train", "evaluate", "promote")
 
 
 def test_breaker_pauses_after_threshold_consecutive_failures() -> None:

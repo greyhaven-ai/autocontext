@@ -32,6 +32,17 @@ def test_used_in_window_is_per_target(tmp_path: Path) -> None:
     assert ledger.used_in_window("solver", 24, now.isoformat()) == 5.0
 
 
+def test_used_in_window_all_sums_across_targets(tmp_path: Path) -> None:
+    ledger = UsageLedger(tmp_path / "usage.sqlite3")
+    now = datetime(2026, 7, 6, 12, 0, tzinfo=UTC)
+    ledger.record("prover", 2.0, _iso(now, hours=-30))  # outside a 24h window
+    ledger.record("prover", 1.5, _iso(now, hours=-2))  # inside
+    ledger.record("solver", 0.5, _iso(now, hours=-1))  # inside, a different target
+
+    # the charter-wide pool sums every target's in-window hours into one total
+    assert ledger.used_in_window_all(window_hours=24, now_iso=now.isoformat()) == 2.0
+
+
 def test_window_boundary_is_strict_greater_than(tmp_path: Path) -> None:
     ledger = UsageLedger(tmp_path / "usage.sqlite3")
     now = datetime(2026, 7, 6, 12, 0, tzinfo=UTC)

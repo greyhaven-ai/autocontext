@@ -59,7 +59,7 @@ class CountingStage:
         return StageResult(processed=1)
 
 
-def test_default_daemon_has_five_noop_stages(tmp_path: Path) -> None:
+def test_default_daemon_has_all_noop_stages(tmp_path: Path) -> None:
     daemon = _daemon(tmp_path)
     assert set(daemon.status().keys()) == set(STAGE_NAMES)
 
