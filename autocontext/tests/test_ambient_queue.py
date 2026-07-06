@@ -61,3 +61,26 @@ def test_requeue_stale_running(tmp_path: Path) -> None:
     assert queue.requeue_stale_running() == 1
     assert queue.depth("train") == 1
     assert queue.claim("train") is not None
+
+
+def test_fail_requeues_below_max_attempts(tmp_path: Path) -> None:
+    queue = AmbientQueue(tmp_path / "q.sqlite3")
+    job_id = queue.enqueue("train", "run", {})
+    claimed = queue.claim("train")
+    assert claimed is not None
+    queue.fail(job_id, "boom", max_attempts=3)
+    # back to pending, claimable again
+    assert queue.depth("train") == 1
+    assert queue.dead_letter_count() == 0
+
+
+def test_fail_dead_letters_at_max_attempts(tmp_path: Path) -> None:
+    queue = AmbientQueue(tmp_path / "q.sqlite3")
+    job_id = queue.enqueue("train", "run", {})
+    for _ in range(3):
+        queue.claim("train")
+        queue.fail(job_id, "boom", max_attempts=3)
+    # third failure reaches the cap: dead, not pending
+    assert queue.depth("train") == 0
+    assert queue.dead_letter_count() == 1
+    assert queue.claim("train") is None
