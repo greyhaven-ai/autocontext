@@ -1,4 +1,4 @@
-"""cli for the ambient trainer daemon: init, status, run, once."""
+"""cli for the ambient trainer daemon: init, status, run, once, proposals, approve, reject."""
 
 from __future__ import annotations
 
@@ -12,7 +12,9 @@ from rich.table import Table
 
 from autocontext.ambient.charter_io import CharterLoadError, load_charter, save_charter
 from autocontext.ambient.daemon import AmbientDaemon
+from autocontext.ambient.datasets import DatasetStore
 from autocontext.ambient.interview import build_charter, run_interview
+from autocontext.ambient.proposals import ProposalError, ProposalStore, apply_proposal
 from autocontext.ambient.queue import AmbientQueue
 from autocontext.ambient.stage_factory import build_stages
 from autocontext.harness.core.events import EventStreamEmitter
@@ -25,6 +27,8 @@ _DEFAULT_DB = Path("runs/ambient.sqlite3")
 _DEFAULT_EVENTS = Path("runs/ambient-events.ndjson")
 _DEFAULT_RUNS_DB = Path("runs/autocontext.sqlite3")
 _DEFAULT_OTEL_FEED = Path("runs/ambient-otel-feed")
+_DEFAULT_DATASETS = Path("runs/ambient-datasets")
+_DEFAULT_PROPOSALS = Path("runs/ambient-proposals.jsonl")
 
 
 def _daemon(
@@ -33,6 +37,8 @@ def _daemon(
     events_path: Path,
     runs_db_path: Path,
     otel_feed_dir: Path,
+    datasets_dir: Path,
+    proposals_path: Path,
 ) -> AmbientDaemon:
     charter = load_charter(charter_path)
     emitter = EventStreamEmitter(events_path)
@@ -42,12 +48,14 @@ def _daemon(
         emitter=emitter,
         runs_db_path=runs_db_path,
         otel_feed_dir=otel_feed_dir,
+        datasets_dir=datasets_dir,
     )
     return AmbientDaemon(
         charter=charter,
         queue=AmbientQueue(db_path),
         emitter=emitter,
         stages=stages,
+        proposal_store=ProposalStore(proposals_path),
     )
 
 
@@ -76,9 +84,11 @@ def status(
     events_path: Annotated[Path, typer.Option("--events-path")] = _DEFAULT_EVENTS,
     runs_db: Annotated[Path, typer.Option("--runs-db")] = _DEFAULT_RUNS_DB,
     otel_feed_dir: Annotated[Path, typer.Option("--otel-feed-dir")] = _DEFAULT_OTEL_FEED,
+    datasets_dir: Annotated[Path, typer.Option("--datasets-dir")] = _DEFAULT_DATASETS,
+    proposals_path: Annotated[Path, typer.Option("--proposals-path")] = _DEFAULT_PROPOSALS,
 ) -> None:
     try:
-        daemon = _daemon(charter_path, db_path, events_path, runs_db, otel_feed_dir)
+        daemon = _daemon(charter_path, db_path, events_path, runs_db, otel_feed_dir, datasets_dir, proposals_path)
     except CharterLoadError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
@@ -88,6 +98,13 @@ def status(
     for name, info in daemon.status().items():
         table.add_row(name, str(info["paused"]), str(info["queue_depth"]))
     console.print(table)
+    if charter.targets:
+        dataset_store = DatasetStore(datasets_dir)
+        targets_table = Table("target", "dataset records", "mean score")
+        for target in charter.targets:
+            manifest = dataset_store.load_manifest(target.name)
+            targets_table.add_row(target.name, str(manifest.record_count), f"{manifest.mean_score:.2f}")
+        console.print(targets_table)
 
 
 @ambient_app.command()
@@ -97,11 +114,13 @@ def run(
     events_path: Annotated[Path, typer.Option("--events-path")] = _DEFAULT_EVENTS,
     runs_db: Annotated[Path, typer.Option("--runs-db")] = _DEFAULT_RUNS_DB,
     otel_feed_dir: Annotated[Path, typer.Option("--otel-feed-dir")] = _DEFAULT_OTEL_FEED,
+    datasets_dir: Annotated[Path, typer.Option("--datasets-dir")] = _DEFAULT_DATASETS,
+    proposals_path: Annotated[Path, typer.Option("--proposals-path")] = _DEFAULT_PROPOSALS,
     poll_seconds: Annotated[float, typer.Option("--poll-seconds", min=0.0)] = 30.0,
     max_cycles: Annotated[int | None, typer.Option("--max-cycles", hidden=True)] = None,
 ) -> None:
     try:
-        daemon = _daemon(charter_path, db_path, events_path, runs_db, otel_feed_dir)
+        daemon = _daemon(charter_path, db_path, events_path, runs_db, otel_feed_dir, datasets_dir, proposals_path)
     except CharterLoadError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
@@ -120,9 +139,11 @@ def once(
     events_path: Annotated[Path, typer.Option("--events-path")] = _DEFAULT_EVENTS,
     runs_db: Annotated[Path, typer.Option("--runs-db")] = _DEFAULT_RUNS_DB,
     otel_feed_dir: Annotated[Path, typer.Option("--otel-feed-dir")] = _DEFAULT_OTEL_FEED,
+    datasets_dir: Annotated[Path, typer.Option("--datasets-dir")] = _DEFAULT_DATASETS,
+    proposals_path: Annotated[Path, typer.Option("--proposals-path")] = _DEFAULT_PROPOSALS,
 ) -> None:
     try:
-        daemon = _daemon(charter_path, db_path, events_path, runs_db, otel_feed_dir)
+        daemon = _daemon(charter_path, db_path, events_path, runs_db, otel_feed_dir, datasets_dir, proposals_path)
     except CharterLoadError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
@@ -134,3 +155,63 @@ def once(
     console.print(f"processed={result.processed} errors={result.errors}")
     if result.errors > 0:
         raise typer.Exit(code=1)
+
+
+@ambient_app.command()
+def proposals(
+    charter_path: Annotated[Path, typer.Option("--charter-path")] = _DEFAULT_CHARTER,
+    proposals_path: Annotated[Path, typer.Option("--proposals-path")] = _DEFAULT_PROPOSALS,
+) -> None:
+    store = ProposalStore(proposals_path)
+    pending = store.pending()
+    if not pending:
+        console.print("no pending proposals")
+        return
+    table = Table("proposal id", "kind", "rationale")
+    for proposal in pending:
+        table.add_row(proposal.proposal_id, proposal.kind, proposal.rationale)
+    console.print(table)
+
+
+@ambient_app.command()
+def approve(
+    proposal_id: Annotated[str, typer.Argument()],
+    charter_path: Annotated[Path, typer.Option("--charter-path")] = _DEFAULT_CHARTER,
+    proposals_path: Annotated[Path, typer.Option("--proposals-path")] = _DEFAULT_PROPOSALS,
+) -> None:
+    store = ProposalStore(proposals_path)
+    match = next((p for p in store.pending() if p.proposal_id == proposal_id), None)
+    if match is None:
+        console.print(f"[red]no pending proposal with id {proposal_id}[/red]")
+        raise typer.Exit(code=1)
+    try:
+        charter = load_charter(charter_path)
+        updated = apply_proposal(charter, match)
+    except (CharterLoadError, ProposalError, ValidationError, ValueError) as exc:
+        # the proposal stays pending: nothing was applied, so nothing is marked
+        console.print(f"[red]could not apply proposal: {exc}[/red]")
+        raise typer.Exit(code=1) from exc
+    # save-then-mark crash window: if the process dies between saving the
+    # charter and marking the proposal applied, the charter change is durable
+    # but the proposal stays pending. This never loses data: the operator sees a
+    # still-pending proposal whose target the charter already carries and
+    # rejects the stale proposal by hand (re-approving is also safe, apply is
+    # idempotent on an already-present target).
+    save_charter(updated, charter_path)
+    store.mark(proposal_id, "applied")
+    console.print(f"applied {proposal_id} to {charter_path}")
+
+
+@ambient_app.command()
+def reject(
+    proposal_id: Annotated[str, typer.Argument()],
+    charter_path: Annotated[Path, typer.Option("--charter-path")] = _DEFAULT_CHARTER,
+    proposals_path: Annotated[Path, typer.Option("--proposals-path")] = _DEFAULT_PROPOSALS,
+) -> None:
+    store = ProposalStore(proposals_path)
+    try:
+        store.mark(proposal_id, "rejected")
+    except ProposalError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+    console.print(f"rejected {proposal_id}")

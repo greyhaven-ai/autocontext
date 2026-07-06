@@ -22,6 +22,13 @@ class JsonlFeedSource:
     the completed record is never lost. A terminated malformed or blank
     line is genuine garbage: it is skipped and the cursor advances past
     it (skipped again, never duplicated).
+
+    Provenance is default-closed: a line that omits produced_by (or gives a
+    non-string) is stamped f"external:{name}" rather than inheriting the
+    RawTrace "frontier" default, so an external feed cannot become
+    quarantine-exempt by omission. A line that explicitly declares its
+    provenance keeps it: enabling a feed is the operator's consent flag
+    (per the charter), so an explicit "frontier" declaration is on them.
     """
 
     name: str
@@ -65,11 +72,15 @@ class JsonlFeedSource:
                     obj = json.loads(line)
                 except json.JSONDecodeError:
                     continue
+                declared = obj.get("produced_by")
+                # default-closed: an omitted or non-string provenance is stamped
+                # external so it cannot dodge the quarantine gate by omission
+                produced_by = declared if isinstance(declared, str) and declared else f"external:{self.name}"
                 records.append(
                     RawTrace(
                         kind=str(obj.get("kind", "trace")),
                         payload=obj,
-                        produced_by=str(obj.get("produced_by", "frontier")),
+                        produced_by=produced_by,
                     )
                 )
         if not records:

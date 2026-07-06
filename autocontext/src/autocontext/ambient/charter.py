@@ -60,7 +60,12 @@ class CharterSource(BaseModel):
 class CharterTarget(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    name: str = Field(min_length=1)
+    # target names become dataset and manifest filenames under the store root
+    # (DatasetStore builds root / f"{name}.jsonl"), so path separators and
+    # traversal sequences must be impossible. the pattern forbids a leading dot
+    # (so ".." can never start a name) and excludes "/" everywhere; a slug this
+    # shape stays inside the store root, so no separate path validator is needed.
+    name: str = Field(min_length=1, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
     kind: Literal["role", "task_family"]
     selector: str = Field(min_length=1)
     base_model: str = Field(min_length=1)

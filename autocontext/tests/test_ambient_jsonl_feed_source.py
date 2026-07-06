@@ -74,6 +74,32 @@ def test_batch_size_and_missing_dir(tmp_path: Path) -> None:
     assert [r.payload["n"] for r in second.records] == [2, 3]
 
 
+def test_missing_produced_by_defaults_to_external(tmp_path: Path) -> None:
+    feed = tmp_path / "feed"
+    _write(feed, "a.jsonl", [{"n": 1}])
+    source = JsonlFeedSource(name="prod-otel", feed_dir=feed)
+    result = source.poll(None)
+    # default-closed: an omitted provenance is stamped external, never frontier
+    assert result.records[0].produced_by == "external:prod-otel"
+
+
+def test_explicit_frontier_produced_by_is_kept(tmp_path: Path) -> None:
+    feed = tmp_path / "feed"
+    _write(feed, "a.jsonl", [{"n": 1, "produced_by": "frontier"}])
+    source = JsonlFeedSource(name="prod-otel", feed_dir=feed)
+    result = source.poll(None)
+    # an explicit declaration is the operator's call (enabling the feed is consent)
+    assert result.records[0].produced_by == "frontier"
+
+
+def test_explicit_finetune_produced_by_is_kept(tmp_path: Path) -> None:
+    feed = tmp_path / "feed"
+    _write(feed, "a.jsonl", [{"n": 1, "produced_by": "finetune:x"}])
+    source = JsonlFeedSource(name="prod-otel", feed_dir=feed)
+    result = source.poll(None)
+    assert result.records[0].produced_by == "finetune:x"
+
+
 def test_zero_batch_size_rejected(tmp_path: Path) -> None:
     import pytest
 

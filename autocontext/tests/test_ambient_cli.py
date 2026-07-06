@@ -4,7 +4,11 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
+from autocontext.ambient.charter_io import load_charter
+from autocontext.ambient.datasets import DatasetStore
+from autocontext.ambient.proposals import CharterProposal, ProposalStore
 from autocontext.cli import app
+from autocontext.cli_ambient import ambient_app
 
 runner = CliRunner()
 
@@ -190,3 +194,193 @@ def test_once_ingest_pulls_from_runs_db(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     assert "processed=1" in result.output
     assert TraceStore(db_path).count() == 1
+
+
+_FIXTURE_TARGET_NAME = "competitor-grid_ctf"
+
+
+def test_once_curate_runs_clean_on_empty_stores(tmp_path: Path) -> None:
+    charter_path = _init(tmp_path)
+    result = runner.invoke(
+        app,
+        [
+            "ambient",
+            "once",
+            "curate",
+            "--charter-path",
+            str(charter_path),
+            "--db-path",
+            str(tmp_path / "ambient.sqlite3"),
+            "--events-path",
+            str(tmp_path / "events.ndjson"),
+            "--runs-db",
+            str(tmp_path / "runs.sqlite3"),
+            "--otel-feed-dir",
+            str(tmp_path / "feed"),
+            "--datasets-dir",
+            str(tmp_path / "datasets"),
+            "--proposals-path",
+            str(tmp_path / "proposals.jsonl"),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "processed=0" in result.output
+
+
+def test_status_shows_target_dataset_rows(tmp_path: Path) -> None:
+    charter_path = _init(tmp_path)  # the fixture charter contains at least one target
+    datasets = DatasetStore(tmp_path / "datasets")
+    manifest = datasets.load_manifest(_FIXTURE_TARGET_NAME)
+    datasets.save_manifest(manifest.model_copy(update={"record_count": 4, "mean_score": 0.75}))
+    result = runner.invoke(
+        app,
+        [
+            "ambient",
+            "status",
+            "--charter-path",
+            str(charter_path),
+            "--db-path",
+            str(tmp_path / "ambient.sqlite3"),
+            "--events-path",
+            str(tmp_path / "events.ndjson"),
+            "--runs-db",
+            str(tmp_path / "runs.sqlite3"),
+            "--otel-feed-dir",
+            str(tmp_path / "feed"),
+            "--datasets-dir",
+            str(tmp_path / "datasets"),
+            "--proposals-path",
+            str(tmp_path / "proposals.jsonl"),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert _FIXTURE_TARGET_NAME in result.output
+    assert "4" in result.output
+
+
+def _pending_proposal(tmp_path: Path, proposal_id: str = "add-target-lean-1234") -> ProposalStore:
+    store = ProposalStore(tmp_path / "proposals.jsonl")
+    store.append(
+        CharterProposal(
+            proposal_id=proposal_id,
+            kind="add_target",
+            payload={
+                "name": "lean-auto",
+                "kind": "task_family",
+                "selector": "lean_prover",
+                "base_model": "qwen2.5-3b",
+                "method": "sft-distill",
+                "min_dataset_records": 10,
+                "eval_suite": "anchor-v1",
+            },
+            rationale="5 eligible frontier traces for scenario lean_prover at mean score 0.90",
+        )
+    )
+    return store
+
+
+def test_proposals_lists_pending(tmp_path: Path) -> None:
+    charter_path = _init(tmp_path)
+    _pending_proposal(tmp_path)
+    result = runner.invoke(
+        ambient_app,
+        ["proposals", "--charter-path", str(charter_path), "--proposals-path", str(tmp_path / "proposals.jsonl")],
+    )
+    assert result.exit_code == 0
+    assert "add-target-lean-1234" in result.output
+
+
+def test_proposals_reports_when_empty(tmp_path: Path) -> None:
+    charter_path = _init(tmp_path)
+    result = runner.invoke(
+        ambient_app,
+        ["proposals", "--charter-path", str(charter_path), "--proposals-path", str(tmp_path / "proposals.jsonl")],
+    )
+    assert result.exit_code == 0
+    assert "no pending proposals" in result.output
+
+
+def test_approve_applies_and_marks(tmp_path: Path) -> None:
+    charter_path = _init(tmp_path)
+    store = _pending_proposal(tmp_path)
+    result = runner.invoke(
+        ambient_app,
+        [
+            "approve",
+            "add-target-lean-1234",
+            "--charter-path",
+            str(charter_path),
+            "--proposals-path",
+            str(tmp_path / "proposals.jsonl"),
+        ],
+    )
+    assert result.exit_code == 0
+    updated = load_charter(charter_path)
+    assert any(target.name == "lean-auto" for target in updated.targets)
+    assert store.pending() == []
+
+
+def test_approve_unknown_id_exits_one(tmp_path: Path) -> None:
+    charter_path = _init(tmp_path)
+    result = runner.invoke(
+        ambient_app,
+        ["approve", "nope", "--charter-path", str(charter_path), "--proposals-path", str(tmp_path / "proposals.jsonl")],
+    )
+    assert result.exit_code == 1
+
+
+def test_approve_failure_leaves_proposal_pending(tmp_path: Path) -> None:
+    charter_path = _init(tmp_path)
+    store = _pending_proposal(tmp_path)
+    # first approval consumes it; re-adding the same target must fail
+    runner.invoke(
+        ambient_app,
+        [
+            "approve",
+            "add-target-lean-1234",
+            "--charter-path",
+            str(charter_path),
+            "--proposals-path",
+            str(tmp_path / "proposals.jsonl"),
+        ],
+    )
+    store.append(
+        CharterProposal(
+            proposal_id="dup-1",
+            kind="add_target",
+            payload={
+                "name": "lean-auto",
+                "kind": "task_family",
+                "selector": "lean_prover",
+                "base_model": "qwen2.5-3b",
+                "method": "sft-distill",
+                "min_dataset_records": 10,
+                "eval_suite": "anchor-v1",
+            },
+            rationale="duplicate",
+        )
+    )
+    result = runner.invoke(
+        ambient_app,
+        ["approve", "dup-1", "--charter-path", str(charter_path), "--proposals-path", str(tmp_path / "proposals.jsonl")],
+    )
+    assert result.exit_code == 1
+    assert len(store.pending()) == 1  # dup-1 stays pending, nothing was marked
+
+
+def test_reject_marks_rejected(tmp_path: Path) -> None:
+    charter_path = _init(tmp_path)
+    store = _pending_proposal(tmp_path)
+    result = runner.invoke(
+        ambient_app,
+        [
+            "reject",
+            "add-target-lean-1234",
+            "--charter-path",
+            str(charter_path),
+            "--proposals-path",
+            str(tmp_path / "proposals.jsonl"),
+        ],
+    )
+    assert result.exit_code == 0
+    assert store.pending() == []
