@@ -37,6 +37,8 @@ def _path_opts(tmp_path: Path) -> list[str]:
         str(tmp_path / "artifacts"),
         "--checkpoints-dir",
         str(tmp_path / "checkpoints"),
+        "--suites-dir",
+        str(tmp_path / "suites"),
     ]
 
 
@@ -83,7 +85,7 @@ def test_status_reports_stages(tmp_path: Path) -> None:
         ["ambient", "status", "--charter-path", str(charter_path), *_path_opts(tmp_path)],
     )
     assert result.exit_code == 0, result.output
-    for stage in ("ingest", "curate", "advise", "train", "evaluate"):
+    for stage in ("ingest", "curate", "advise", "train", "evaluate", "promote"):
         assert stage in result.output
 
 
@@ -242,6 +244,58 @@ def test_once_train_runs_clean_on_empty_stores(tmp_path: Path) -> None:
     )
     assert result.exit_code == 0, result.output
     assert "processed=0" in result.output
+
+
+def test_once_evaluate_runs_clean_on_empty_registry(tmp_path: Path) -> None:
+    charter_path = _init(tmp_path)
+    result = runner.invoke(
+        app,
+        [
+            "ambient",
+            "once",
+            "evaluate",
+            "--charter-path",
+            str(charter_path),
+            *_path_opts(tmp_path),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "processed=0" in result.output
+
+
+def test_once_promote_runs_clean_on_empty_registry(tmp_path: Path) -> None:
+    charter_path = _init(tmp_path)
+    result = runner.invoke(
+        app,
+        [
+            "ambient",
+            "once",
+            "promote",
+            "--charter-path",
+            str(charter_path),
+            *_path_opts(tmp_path),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "processed=0" in result.output
+
+
+def test_status_shows_active_model_rows(tmp_path: Path) -> None:
+    charter_path = _init(tmp_path)  # fixture charter carries at least one target
+    result = runner.invoke(
+        app,
+        [
+            "ambient",
+            "status",
+            "--charter-path",
+            str(charter_path),
+            *_path_opts(tmp_path),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    # empty registry: every target resolves to no active model
+    assert "active model" in result.output
+    assert "none" in result.output
 
 
 def test_status_shows_candidates_row(tmp_path: Path) -> None:

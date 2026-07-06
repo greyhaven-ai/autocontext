@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 - The ambient ingest stage is live: charter-enabled sources (autocontext-native runs, jsonl trace feeds) flow through the redaction gate into an append-only trace store with per-source cursors and disk-quota retention; the llm proxy tap follows in the next slice.
 - ambient trainer plan 3: curate and advise stages (agent-output ingestion, guarded per-target datasets, heuristic charter proposals, proposal approval cli)
 - ambient trainer plan 4: train stage with gpu-hours budget ledger, autonomy gating, and model-candidate publication
+- ambient trainer plan 5a: evaluate, promote, and serving-resolution stages closing the ambient loop
 
 ## [0.11.0] - 2026-07-02
 

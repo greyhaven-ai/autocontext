@@ -1,4 +1,4 @@
-"""builds the daemon's stage set from the charter (ingest, curate, advise real; train/evaluate no-op)."""
+"""builds the daemon's stage set from the charter (all six stages ingest..promote are real)."""
 
 from __future__ import annotations
 
@@ -8,7 +8,9 @@ from autocontext.ambient.advise import AdviseStage
 from autocontext.ambient.charter import Charter
 from autocontext.ambient.curate import CurateStage
 from autocontext.ambient.datasets import DatasetStore
+from autocontext.ambient.evaluate import EvaluateStage
 from autocontext.ambient.ingest import IngestStage
+from autocontext.ambient.promote import PromoteStage
 from autocontext.ambient.sources.agent_outputs import AgentOutputsSource
 from autocontext.ambient.sources.contract import TraceSource
 from autocontext.ambient.sources.jsonl_feed import JsonlFeedSource
@@ -32,6 +34,7 @@ def build_stages(
     usage_db: Path,
     artifacts_dir: Path,
     checkpoints_dir: Path,
+    suites_dir: Path,
 ) -> dict[str, Stage]:
     sources: list[TraceSource] = []
     unsupported: list[tuple[str, str]] = []
@@ -49,7 +52,12 @@ def build_stages(
             unsupported.append((spec.name, spec.kind))
     trace_store = TraceStore(db_path)
     dataset_store = DatasetStore(datasets_dir)
+    # the NoOp comprehension seeds the dict in STAGE_NAMES order (which the daemon's run_cycle
+    # iterates, so evaluate precedes promote); every slot is then replaced by its real stage.
     stages: dict[str, Stage] = {name: NoOpStage(name=name) for name in STAGE_NAMES}
+    # one registry shared by train, evaluate, and promote: a candidate trained this cycle is the
+    # same record evaluate scores and promote activates, so they must read and write one store.
+    registry = ModelRegistry(registry_dir)
     stages["ingest"] = IngestStage(
         name="ingest",
         trace_store=trace_store,
@@ -63,8 +71,10 @@ def build_stages(
         name="train",
         dataset_store=dataset_store,
         usage_ledger=UsageLedger(usage_db),
-        registry=ModelRegistry(registry_dir),
+        registry=registry,
         artifacts_root=artifacts_dir,
         checkpoints_root=checkpoints_dir,
     )
+    stages["evaluate"] = EvaluateStage(name="evaluate", registry=registry, suites_dir=suites_dir)
+    stages["promote"] = PromoteStage(name="promote", registry=registry)
     return stages
