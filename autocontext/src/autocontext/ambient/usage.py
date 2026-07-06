@@ -53,6 +53,18 @@ class UsageLedger:
             ).fetchone()
             return float(row[0])
 
+    def used_in_window_all(self, window_hours: int, now_iso: str) -> float:
+        # charter-wide pool: sum every target's hours in the window. record()
+        # stays per-target for attribution, but the budget gate reads this
+        # total so a charter with N targets cannot spend N times the window.
+        cutoff = (datetime.fromisoformat(now_iso) - timedelta(hours=window_hours)).isoformat()
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT COALESCE(SUM(gpu_hours), 0.0) FROM ambient_usage WHERE at_iso > ?",
+                (cutoff,),
+            ).fetchone()
+            return float(row[0])
+
     def total(self, target: str) -> float:
         with self._connect() as conn:
             row = conn.execute(

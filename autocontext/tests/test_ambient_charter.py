@@ -5,6 +5,7 @@ from pydantic import ValidationError
 
 from autocontext.ambient.charter import (
     Charter,
+    CharterAnchor,
     CharterBudgets,
     CharterSource,
     CharterTarget,
@@ -40,6 +41,23 @@ def test_minimal_charter_validates() -> None:
     assert charter.autonomy == "propose"
     assert charter.guardrails.frozen_anchor is True
     assert charter.guardrails.min_frontier_fraction == pytest.approx(0.2)
+
+
+def test_charter_has_default_anchor() -> None:
+    charter = _minimal_charter()
+    assert charter.anchor.model  # a sensible frontier default, never empty
+    assert charter.anchor.provider == "anthropic"
+    assert charter.anchor.rubric
+
+
+def test_anchor_empty_model_rejected() -> None:
+    with pytest.raises(ValidationError):
+        CharterAnchor(model="")
+
+
+def test_anchor_rejects_unknown_field() -> None:
+    with pytest.raises(ValidationError):
+        CharterAnchor(temperature=0.5)  # type: ignore[call-arg]
 
 
 def test_guardrail_booleans_cannot_be_disabled() -> None:

@@ -180,6 +180,34 @@ def test_envelope_over_budget_blocks_even_when_train_budget_alone_fits(tmp_path:
     assert any(e["event"] == "train_budget_exhausted" for e in events)
 
 
+def test_budget_pool_is_charter_wide(tmp_path: Path, monkeypatch: Any) -> None:
+    _seed_dataset(tmp_path, "competitor-local", 6)
+    trained = {"ran": False}
+    monkeypatch.setattr(train_mod, "select_backend", lambda method: "trl")
+
+    def fake_run(backend_name: str, request: Any) -> TrainOutcome:
+        trained["ran"] = True  # the shared pool must block before we get here
+        return TrainOutcome(request.output_dir / "adapters", backend_name, {"num_records": 5.0, "training_seconds": 3600.0}, 1.0)
+
+    monkeypatch.setattr(train_mod, "run_training", fake_run)
+    stage = _stage(tmp_path)
+    # window budget is 10.0h, shared charter-wide. another target already spent 9.6h, so the pool
+    # is nearly exhausted. competitor-local itself has used 0, but its pre-flight (envelope 1.0h)
+    # reads the CHARTER-WIDE total: 9.6 + 1.0 = 10.6 > 10.0, so it is blocked. under the old
+    # per-target read it would have seen 0 and trained, spending a second full window.
+    stage.usage_ledger.record("competitor-other", 9.6, _NOW)
+
+    result = stage.run_once(_ctx(tmp_path, _charter([_target()], gpu_hours=10.0)))
+
+    assert result.processed == 0
+    assert not trained["ran"]  # the shared pool prevented the spend
+    assert stage.registry.list_all() == []
+    events = _events(tmp_path)
+    exhausted = [e for e in events if e["event"] == "train_budget_exhausted"]
+    assert any(e["payload"]["target"] == "competitor-local" for e in exhausted)
+    assert any(e["payload"]["used_gpu_hours"] == 9.6 for e in exhausted)
+
+
 def test_unchanged_dataset_is_not_retrained(tmp_path: Path, monkeypatch: Any) -> None:
     _seed_dataset(tmp_path, "competitor-local", 6)
     calls = {"count": 0}
