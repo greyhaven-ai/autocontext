@@ -39,20 +39,19 @@ def build_sft_config_kwargs(
     max_steps: int,
     batch_size: int,
     learning_rate: float,
-    deadline_seconds: float,
 ) -> dict[str, Any]:
     """Build the plain-dict kwargs for a TRL ``SFTConfig`` (no ``trl`` import).
 
-    ``deadline_seconds`` is recorded so the caller can construct the matching
-    ``DeadlineCallback``; it is not an ``SFTConfig`` field and the caller pops it before
-    passing the remaining kwargs to ``SFTConfig(**kwargs)``.
+    Every key is a real ``SFTConfig`` field, so the returned dict is directly
+    ``SFTConfig(**kwargs)``-safe. The wall-clock deadline is not an ``SFTConfig`` field:
+    the caller already holds ``deadline_seconds`` and passes it straight to
+    :class:`DeadlineCallback`, so it is never threaded through these kwargs.
     """
     return {
         "output_dir": str(output_dir),
         "max_steps": max_steps,
         "per_device_train_batch_size": batch_size,
         "learning_rate": learning_rate,
-        "deadline_seconds": deadline_seconds,
     }
 
 
