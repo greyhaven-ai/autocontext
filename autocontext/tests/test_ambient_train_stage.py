@@ -180,6 +180,49 @@ def test_envelope_over_budget_blocks_even_when_train_budget_alone_fits(tmp_path:
     assert any(e["event"] == "train_budget_exhausted" for e in events)
 
 
+def test_sft_backend_reserves_true_ceiling_not_envelope(tmp_path: Path, monkeypatch: Any) -> None:
+    _seed_dataset(tmp_path, "competitor-local", 6)
+    _patch_backend(monkeypatch, available="sft", gpu_hours=0.5)
+    stage = _stage(tmp_path)
+    # the sft backend enforces a real in-run wall-clock deadline, so its reservation is the TRUE
+    # ceiling = time_budget 1800s = 0.5h (no assess overhead). window budget is 10.0; seed 9.4 used:
+    # 9.4 + 0.5(ceiling) = 9.9 < 10.0 so the job is ALLOWED. the conservative envelope (0.5 + 0.5
+    # assess = 1.0h) would have blocked it (9.4 + 1.0 = 10.4 > 10.0); proving it is not applied.
+    stage.usage_ledger.record("competitor-local", 9.4, _NOW)
+
+    result = stage.run_once(_ctx(tmp_path, _charter([_target()], gpu_hours=10.0)))
+
+    assert result.processed == 1
+    events = _events(tmp_path)
+    assert any(e["event"] == "train_candidate_published" for e in events)
+    assert not any(e["event"] == "train_budget_exhausted" for e in events)
+
+
+def test_mlxlm_backend_keeps_conservative_envelope(tmp_path: Path, monkeypatch: Any) -> None:
+    _seed_dataset(tmp_path, "competitor-local", 6)
+    trained = {"ran": False}
+    monkeypatch.setattr(train_mod, "select_backend", lambda method: "mlxlm")
+
+    def fake_run(backend_name: str, request: Any) -> TrainOutcome:
+        trained["ran"] = True  # the envelope must block before we get here
+        return TrainOutcome(request.output_dir / "adapters", backend_name, {"num_records": 5.0, "training_seconds": 3600.0}, 1.0)
+
+    monkeypatch.setattr(train_mod, "run_training", fake_run)
+    stage = _stage(tmp_path)
+    # mlxlm is NOT deadline-capable: its assessment runs outside any in-run deadline, so the
+    # conservative envelope (0.5 + 0.5 assess = 1.0h) still applies. the true ceiling alone (0.5h)
+    # would fit (9.4 + 0.5 = 9.9), but the envelope blocks it (9.4 + 1.0 = 10.4 > 10.0).
+    stage.usage_ledger.record("competitor-local", 9.4, _NOW)
+
+    result = stage.run_once(_ctx(tmp_path, _charter([_target()], gpu_hours=10.0)))
+
+    assert result.processed == 0
+    assert not trained["ran"]
+    assert stage.registry.list_all() == []
+    events = _events(tmp_path)
+    assert any(e["event"] == "train_budget_exhausted" for e in events)
+
+
 def test_budget_pool_is_charter_wide(tmp_path: Path, monkeypatch: Any) -> None:
     _seed_dataset(tmp_path, "competitor-local", 6)
     trained = {"ran": False}

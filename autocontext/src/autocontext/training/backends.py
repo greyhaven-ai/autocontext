@@ -237,6 +237,35 @@ class TRLBackend(TrainingBackend):
         return ["checkpoint"]  # PEFT/LoRA adapter or saved HF model
 
 
+class SFTBackend(TrainingBackend):
+    """Cross-platform TRL SFT backend: LoRA fine-tuning over a curated dataset via HuggingFace TRL.
+
+    The Linux/CUDA counterpart to the mlxlm backend: both train a LoRA-SFT adapter over the
+    curated per-target dataset file, but this one runs wherever ``trl`` + ``torch`` are installed
+    (Linux / NVIDIA / CPU) rather than being Apple-Silicon-locked. Unlike :class:`TRLBackend`
+    (on-policy GKD/GRPO, which cannot consume a curated file), this is the dataset-SFT path.
+    """
+
+    @property
+    def name(self) -> str:
+        return "sft"
+
+    def is_available(self) -> bool:
+        try:
+            import importlib.util
+
+            return importlib.util.find_spec("trl") is not None and importlib.util.find_spec("torch") is not None
+        except Exception:
+            logger.debug("training.backends: caught Exception", exc_info=True)
+            return False
+
+    def default_checkpoint_dir(self, scenario: str) -> Path:
+        return Path("models") / scenario / "sft"
+
+    def supported_runtime_types(self) -> list[str]:
+        return ["checkpoint"]  # PEFT/LoRA adapter saved under output_dir/adapters
+
+
 class BackendRegistry:
     """Registry of training backends by name."""
 
@@ -265,4 +294,5 @@ def default_backend_registry() -> BackendRegistry:
     registry.register(GRPOBackend())
     registry.register(OnPolicyDistillBackend())
     registry.register(TRLBackend())
+    registry.register(SFTBackend())
     return registry

@@ -37,6 +37,48 @@ def test_select_backend_unknown_method_is_none(monkeypatch: Any) -> None:
     assert select_backend("bogus") is None
 
 
+def test_select_backend_prefers_mlxlm_over_sft(monkeypatch: Any) -> None:
+    # both installed (a mac with trl too): mlxlm wins because it is first in the preference tuple.
+    monkeypatch.setattr(tb, "_availability", lambda: {"mlxlm": True, "sft": True})
+    assert select_backend("sft-distill") == "mlxlm"
+
+
+def test_select_backend_falls_back_to_sft_on_linux(monkeypatch: Any) -> None:
+    # the linux/cuda path: no mlx runtime but trl+torch present, so sft is selected.
+    monkeypatch.setattr(tb, "_availability", lambda: {"mlxlm": False, "sft": True})
+    assert select_backend("sft-distill") == "sft"
+
+
+def test_select_backend_none_when_neither_available(monkeypatch: Any) -> None:
+    monkeypatch.setattr(tb, "_availability", lambda: {"mlxlm": False, "sft": False})
+    assert select_backend("sft-distill") is None
+
+
+def test_sft_adapter_maps_request_including_whole_run_deadline(tmp_path: Path) -> None:
+    # the sft adapter carries every run_sft_training kwarg plus the whole-run deadline: the
+    # deadline is the wall-clock ceiling = time_budget_seconds, in seconds and as a float.
+    request = _request(tmp_path)
+    kwargs = tb._BACKEND["sft"].adapt(request)
+    assert kwargs == {
+        "scenario_name": "grid_ctf",
+        "data_path": request.data_path,
+        "output_dir": request.output_dir,
+        "base_model": "tiny",
+        "time_budget": request.time_budget_seconds,
+        "memory_limit_mb": request.memory_limit_mb,
+        "deadline_seconds": 600.0,
+    }
+    assert kwargs["deadline_seconds"] == float(request.time_budget_seconds)
+    assert isinstance(kwargs["deadline_seconds"], float)
+
+
+def test_sft_is_deadline_capable_and_mlxlm_is_not() -> None:
+    # only the sft backend enforces a real in-run wall-clock deadline, so only it is marked
+    # deadline-capable; the train stage reads this set to pick the budget reservation.
+    assert "sft" in tb._DEADLINE_CAPABLE
+    assert "mlxlm" not in tb._DEADLINE_CAPABLE
+
+
 def test_run_training_dispatches_and_derives_gpu_hours(monkeypatch: Any, tmp_path: Path) -> None:
     captured: dict[str, Any] = {}
 

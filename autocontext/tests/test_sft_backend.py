@@ -13,6 +13,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -85,6 +86,25 @@ def test_deadline_callback_should_stop_uses_clock() -> None:
     cb = sb.DeadlineCallback(deadline_seconds=20.0, clock=clock)  # consumes 100.0 as start
     assert cb.should_stop() is False  # 105.0 - 100.0 = 5.0 < 20.0
     assert cb.should_stop() is True  # 130.0 - 100.0 = 30.0 >= 20.0
+
+
+def test_deadline_trainer_callback_stops_training_past_deadline() -> None:
+    """The real TrainerCallback wrapper flips control.should_training_stop once the deadline passes.
+
+    This is the load-bearing enforcement line: a deadline in the past (a non-positive budget, so the
+    real perf_counter clock is already at/after it) must set should_training_stop on the next step."""
+    callback = sb._make_deadline_callback(_FakeTrainerCallback, deadline_seconds=-1.0)
+    control = SimpleNamespace(should_training_stop=False)
+    callback.on_step_end(args=None, state=None, control=control)
+    assert control.should_training_stop is True
+
+
+def test_deadline_trainer_callback_keeps_training_before_deadline() -> None:
+    """A deadline far in the future leaves should_training_stop untouched: training continues."""
+    callback = sb._make_deadline_callback(_FakeTrainerCallback, deadline_seconds=1e9)
+    control = SimpleNamespace(should_training_stop=False)
+    callback.on_step_end(args=None, state=None, control=control)
+    assert control.should_training_stop is False
 
 
 # ---------------------------------------------------------------------------
