@@ -79,6 +79,36 @@ def test_task_family_selector_matches_scenario() -> None:
     assert assess(_trace(scenario="othello"), target).reason == "selector_mismatch"
 
 
+def test_task_family_non_competitor_role_is_rejected() -> None:
+    # a task-family dataset is a generator dataset: only competitor output is
+    # the generator signal, so a matching-scenario analyst trace is refused
+    target = _target(kind="task_family", selector="grid_ctf")
+    decision = assess(_trace(role="analyst"), target)
+    assert decision.eligible is False
+    assert decision.reason == "non_competitor_role"
+
+
+def test_task_family_coach_role_is_rejected() -> None:
+    # coach text would otherwise sidestep the evaluative-role refusal, which
+    # only guards kind="role" targets
+    target = _target(kind="task_family", selector="grid_ctf")
+    decision = assess(_trace(role="coach"), target)
+    assert decision.eligible is False
+    assert decision.reason == "non_competitor_role"
+
+
+def test_task_family_competitor_role_is_eligible() -> None:
+    target = _target(kind="task_family", selector="grid_ctf")
+    assert assess(_trace(role="competitor"), target).eligible is True
+
+
+def test_role_target_still_accepts_its_own_role() -> None:
+    # the competitor-only rule is task-family-scoped: a role-kind target keeps
+    # training on its own role's traces
+    target = _target(kind="role", selector="analyst")
+    assert assess(_trace(role="analyst"), target).eligible is True
+
+
 def test_empty_content_is_rejected() -> None:
     decision = assess(_trace(content=""), _target())
     assert decision.reason == "missing_content"

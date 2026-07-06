@@ -67,6 +67,10 @@ class AgentOutputsSource:
             terminal_prefix.append(row)
         if not terminal_prefix:
             return SourcePoll()
+        # produced_by is hardcoded "frontier" because v1 only ever reads a loop
+        # driven by a frontier model. Plan 4 must derive provenance from the
+        # run's lineage instead, once fine-tuned models serve the loop and their
+        # output must be quarantined from the next lineage's training set.
         records = [
             RawTrace(
                 kind="agent_output",

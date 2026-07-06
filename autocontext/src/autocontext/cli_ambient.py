@@ -191,6 +191,12 @@ def approve(
         # the proposal stays pending: nothing was applied, so nothing is marked
         console.print(f"[red]could not apply proposal: {exc}[/red]")
         raise typer.Exit(code=1) from exc
+    # save-then-mark crash window: if the process dies between saving the
+    # charter and marking the proposal applied, the charter change is durable
+    # but the proposal stays pending. This never loses data: the operator sees a
+    # still-pending proposal whose target the charter already carries and
+    # rejects the stale proposal by hand (re-approving is also safe, apply is
+    # idempotent on an already-present target).
     save_charter(updated, charter_path)
     store.mark(proposal_id, "applied")
     console.print(f"applied {proposal_id} to {charter_path}")

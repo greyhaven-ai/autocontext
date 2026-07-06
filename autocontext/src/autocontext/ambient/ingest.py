@@ -54,6 +54,13 @@ class IngestStage:
                 errors += 1
                 ctx.emitter.emit("ingest_source_failed", {"source": source.name, "error": str(exc)}, channel="ambient")
         if self.trace_store.db_size_bytes() > self.disk_quota_gb * 1024**3:
+            # KNOWN v1 lose-data window: this prune deletes the oldest traces by
+            # age with no regard for per-target curate cursors, and curate's
+            # read_after silently skips ids it can no longer find, so under
+            # sustained backlog plus disk pressure an un-curated trace can be
+            # pruned before curate reaches it (lost, not duplicated). A later
+            # slice can floor the prune at the minimum manifest cursor across
+            # targets so nothing un-curated is ever deleted.
             deleted = self.trace_store.prune_oldest(_PRUNE_FRACTION)
             ctx.emitter.emit("trace_retention_pruned", {"deleted": deleted}, channel="ambient")
         ctx.emitter.emit("ingest_completed", {"appended": appended, "sources": len(self.sources)}, channel="ambient")

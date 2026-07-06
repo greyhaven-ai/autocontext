@@ -38,8 +38,15 @@ def assess(trace: TraceRecord, target: CharterTarget) -> EligibilityDecision:
         return EligibilityDecision(eligible=False, reason="not_completed")
     if target.kind == "role" and trace.payload.get("role") != target.selector:
         return EligibilityDecision(eligible=False, reason="selector_mismatch")
-    if target.kind == "task_family" and trace.payload.get("scenario") != target.selector:
-        return EligibilityDecision(eligible=False, reason="selector_mismatch")
+    if target.kind == "task_family":
+        if trace.payload.get("scenario") != target.selector:
+            return EligibilityDecision(eligible=False, reason="selector_mismatch")
+        # a task-family dataset is a generator dataset, and only competitor
+        # output is the generator signal; other roles' text would sidestep the
+        # evaluative-role refusal (which only guards kind="role" targets) and
+        # desynchronize dataset stats from the advisor's competitor-only rationale
+        if trace.payload.get("role") != "competitor":
+            return EligibilityDecision(eligible=False, reason="non_competitor_role")
     if not trace.payload.get("content"):
         return EligibilityDecision(eligible=False, reason="missing_content")
     return EligibilityDecision(eligible=True, reason="ok")
@@ -54,11 +61,13 @@ def to_training_record(trace: TraceRecord) -> dict[str, Any]:
     unchanged.
     """
     payload = trace.payload
+    best_score = payload.get("best_score")
+    score = float(best_score) if best_score is not None else 0.0
     return {
         "run_id": payload.get("run_id", ""),
         "scenario": payload.get("scenario", ""),
         "strategy": payload.get("content", ""),
-        "score": float(payload.get("best_score") or 0.0),
+        "score": score,
         "context": {
             "generation_index": payload.get("generation_index"),
             "role": payload.get("role"),

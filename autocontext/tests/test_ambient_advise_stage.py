@@ -135,6 +135,21 @@ def test_generator_role_target_covers_all_scenarios(tmp_path: Path) -> None:
     assert stage.run_once(_ctx(tmp_path, _charter([_target()]), store)).processed == 0
 
 
+def test_non_competitor_role_target_does_not_cover_scenarios(tmp_path: Path) -> None:
+    # the advisor's signal is competitor-only, so a lone analyst role target
+    # must not permanently suppress an otherwise-qualifying scenario proposal
+    traces = TraceStore(tmp_path / "traces.sqlite3")
+    _seed_scenario(traces, "lean_prover", count=5, score=0.9)
+    store = ProposalStore(tmp_path / "proposals.jsonl")
+    stage = AdviseStage(name="advise", trace_store=traces, min_traces=5)
+
+    charter = _charter([_target(name="analyst-local", selector="analyst")])
+    result = stage.run_once(_ctx(tmp_path, charter, store))
+
+    assert result.processed == 1
+    assert store.pending()[0].payload["selector"] == "lean_prover"
+
+
 def test_pending_proposal_is_not_duplicated(tmp_path: Path) -> None:
     traces = TraceStore(tmp_path / "traces.sqlite3")
     _seed_scenario(traces, "lean_prover", count=5, score=0.9)

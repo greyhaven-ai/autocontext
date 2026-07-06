@@ -14,7 +14,6 @@ from uuid import uuid4
 from pydantic import ValidationError
 
 from autocontext.ambient.charter import Charter, CharterTarget
-from autocontext.ambient.eligibility import is_evaluative_target
 from autocontext.ambient.proposals import CharterProposal, ProposalStore
 from autocontext.ambient.stage import StageContext, StageResult
 from autocontext.ambient.trace_store import TraceStore
@@ -33,11 +32,14 @@ class _ScenarioStats:
 def _covered_scenarios(charter: Charter, store: ProposalStore) -> tuple[bool, set[str]]:
     """Returns (role_coverage, covered_selectors).
 
-    A non-evaluative role target trains on every scenario its role appears
-    in, so it covers everything; task-family targets and pending add_target
-    proposals cover their specific selector.
+    A competitor role target trains on every scenario its role appears in, so
+    it covers everything; task-family targets and pending add_target proposals
+    cover their specific selector.
     """
-    role_coverage = any(target.kind == "role" and not is_evaluative_target(target) for target in charter.targets)
+    # only a competitor role target covers all scenarios: the advisor's signal
+    # is competitor-only, so any other role target (e.g. analyst) trains on a
+    # different slice and must not permanently suppress scenario proposals
+    role_coverage = any(target.kind == "role" and target.selector == "competitor" for target in charter.targets)
     covered = {target.selector for target in charter.targets if target.kind == "task_family"}
     # only pending proposals count as coverage: a rejected proposal's scenario is
     # deliberately eligible to be re-proposed on a later scan (rejection is a
@@ -73,7 +75,8 @@ class AdviseStage:
                 continue
             entry = stats.setdefault(scenario, _ScenarioStats())
             entry.count += 1
-            entry.score_total += float(payload.get("best_score") or 0.0)
+            best_score = payload.get("best_score")
+            entry.score_total += float(best_score) if best_score is not None else 0.0
         role_coverage, covered = _covered_scenarios(ctx.charter, store)
         emitted = 0
         for scenario in sorted(stats):

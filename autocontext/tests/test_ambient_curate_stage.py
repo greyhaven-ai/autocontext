@@ -140,6 +140,25 @@ def test_two_targets_hold_independent_cursors(tmp_path: Path) -> None:
     assert datasets.load_manifest("grid-only").skipped_total == 1
 
 
+def test_task_family_target_takes_only_competitor_traces(tmp_path: Path) -> None:
+    traces = TraceStore(tmp_path / "traces.sqlite3")
+    traces.append("autocontext-outputs:native", "agent_output", _output_payload(), "frontier", 0)
+    traces.append("autocontext-outputs:native", "agent_output", _output_payload(role="coach"), "frontier", 0)
+    datasets = DatasetStore(tmp_path / "datasets")
+    stage = CurateStage(name="curate", trace_store=traces, dataset_store=datasets)
+    charter = _charter([_target(name="grid-only", kind="task_family", selector="grid_ctf")])
+
+    result = stage.run_once(_ctx(tmp_path, charter))
+
+    # only the competitor row is the generator signal; the coach row is skipped
+    assert result.processed == 1
+    lines = datasets.dataset_path("grid-only").read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 1
+    manifest = datasets.load_manifest("grid-only")
+    assert manifest.record_count == 1
+    assert manifest.skipped_total == 1
+
+
 def test_evaluative_target_is_skipped_with_event(tmp_path: Path) -> None:
     traces = TraceStore(tmp_path / "traces.sqlite3")
     traces.append("autocontext-outputs:native", "agent_output", _output_payload(role="curator"), "frontier", 0)

@@ -63,7 +63,12 @@ class CurateStage:
                 skipped += 1
         appended = self.dataset_store.append_records(target.name, records)
         # the cursor advances past ineligible traces too; they were assessed
-        # and must not be re-assessed every cycle. Crash ordering note: the
+        # and must not be re-assessed every cycle. KNOWN v1 lose-data window:
+        # read_after silently skips ids it can no longer find, so if ingest's
+        # disk-quota prune deletes the oldest traces (it ignores per-target
+        # cursors) before this cursor reaches them, those un-curated traces are
+        # lost, not duplicated; a later slice can floor that prune at the minimum
+        # manifest cursor. Crash ordering note: the
         # dataset append lands before the manifest (cursor) save, so a crash
         # between them can duplicate this batch's records in the jsonl on the
         # next cycle; dedupe at train time (data_selection.dedupe_records)
