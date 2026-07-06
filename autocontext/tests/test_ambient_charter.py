@@ -168,3 +168,41 @@ def test_duplicate_source_names_rejected() -> None:
                 CharterSource(name="main", kind="otel"),
             ]
         )
+
+
+def _target(name: str) -> CharterTarget:
+    return CharterTarget(
+        name=name,
+        kind="role",
+        selector="competitor@grid_ctf",
+        base_model="Qwen/Qwen2.5-3B-Instruct",
+        min_dataset_records=1,
+        eval_suite="s",
+    )
+
+
+def test_target_name_colliding_with_scenario_rejected() -> None:
+    # "grid_ctf" is a real registered scenario; ambient candidates are slotted by
+    # target name, so this would share the activation slot with non-ambient records
+    with pytest.raises(ValidationError, match="collides with a registered scenario name"):
+        _minimal_charter(targets=[_target("grid_ctf")])
+
+
+def test_target_name_collision_message_names_scenario() -> None:
+    with pytest.raises(ValidationError, match="'othello'"):
+        _minimal_charter(targets=[_target("othello")])
+
+
+def test_normal_target_name_accepted_alongside_scenario_guard() -> None:
+    charter = _minimal_charter(targets=[_target("competitor-local")])
+    assert charter.targets[0].name == "competitor-local"
+
+
+def test_scenario_collision_check_skipped_when_registry_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
+    # a minimal environment where the scenario registry cannot be imported must
+    # not hard-fail charter construction; the guard is skipped, not enforced
+    import sys
+
+    monkeypatch.setitem(sys.modules, "autocontext.scenarios", None)
+    charter = _minimal_charter(targets=[_target("grid_ctf")])
+    assert charter.targets[0].name == "grid_ctf"

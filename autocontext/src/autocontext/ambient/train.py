@@ -12,7 +12,7 @@ from autocontext.ambient.datasets import DatasetStore
 from autocontext.ambient.policy import budget_allows, decide
 from autocontext.ambient.publish import publish_candidate
 from autocontext.ambient.stage import StageContext, StageResult
-from autocontext.ambient.training_backend import TrainRequest, run_training, select_backend
+from autocontext.ambient.training_backend import TrainRequest, is_deadline_capable, run_training, select_backend
 from autocontext.ambient.usage import UsageLedger
 from autocontext.training.model_registry import ModelRegistry
 
@@ -71,12 +71,21 @@ class TrainStage:
             ctx.emitter.emit("train_no_backend", {"target": target.name, "method": target.method}, channel="ambient")
             return 0
         # pre-flight budget: gate on the estimate BEFORE training so a breaching job never spends
-        # the hours; the record step below then charges the ACTUAL hours consumed. the mlxlm
-        # timeout bounds only the training subprocess, so adapter load + assessment run afterward
-        # in-process and are counted in training_seconds too; we reserve a conservative envelope
-        # covering them. a hard whole-run deadline is the complete fix and lands with the plan-5
-        # backend work.
-        requested_gpu_hours = (self.time_budget_seconds + self.assess_overhead_seconds) / 3600.0
+        # the hours; the record step below then charges the ACTUAL hours consumed. the reservation
+        # is asymmetric by backend: a deadline-capable backend (sft) enforces a real wall-clock
+        # deadline (run_sft_training's DeadlineCallback stops the run at time_budget), so its
+        # TRAINING COMPUTE cannot exceed the ceiling and we reserve time_budget exactly. that is what
+        # the recorded gpu_hours measures (training_seconds), so recorded usage stays within the
+        # reservation. note the deadline bounds compute only, not model download/load: a first run
+        # pulling a large base model does that load OUTSIDE the deadline and it is not charged to the
+        # ledger, so total box-occupancy for such a run can exceed the window even though recorded
+        # usage does not. mlxlm has no in-run deadline: its timeout bounds only the training
+        # subprocess, so adapter load + assessment run afterward in-process and are counted in
+        # training_seconds too, so it keeps a conservative envelope covering that assess overhead.
+        if is_deadline_capable(backend):
+            requested_gpu_hours = self.time_budget_seconds / 3600.0
+        else:
+            requested_gpu_hours = (self.time_budget_seconds + self.assess_overhead_seconds) / 3600.0
         # charter-wide pool: read every target's in-window hours, not just this target's, so a
         # charter with N targets cannot each spend a full window. record() below stays per-target
         # for attribution; only the gate reads the shared total.

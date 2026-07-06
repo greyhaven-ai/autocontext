@@ -129,3 +129,26 @@ class Charter(BaseModel):
         if duplicates:
             raise ValueError(f"duplicate target names: {sorted(duplicates)}")
         return self
+
+    @model_validator(mode="after")
+    def _target_names_do_not_collide_with_scenarios(self) -> Charter:
+        # ambient candidates are slotted in the model registry by scenario=target.name,
+        # so a target named like a real scenario would share the activation slot with the
+        # non-ambient records the training runner publishes under that scenario, and
+        # registry.activate() could cross-demote them. imported lazily to avoid an import
+        # cycle (charter must not pull scenarios at module load); a minimal environment
+        # without the registry skips the check rather than hard-failing construction.
+        try:
+            from autocontext.scenarios import SCENARIO_REGISTRY
+        except ImportError:
+            return self
+        scenario_names = set(SCENARIO_REGISTRY)
+        for target in self.targets:
+            name = target.name
+            if name in scenario_names:
+                raise ValueError(
+                    f"charter target name {name!r} collides with a registered scenario name; "
+                    f"ambient candidates are slotted by target name and would cross-demote "
+                    f"non-ambient {name!r} models. Rename the target."
+                )
+        return self

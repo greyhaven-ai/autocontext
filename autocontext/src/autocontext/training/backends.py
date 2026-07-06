@@ -237,6 +237,43 @@ class TRLBackend(TrainingBackend):
         return ["checkpoint"]  # PEFT/LoRA adapter or saved HF model
 
 
+class SFTBackend(TrainingBackend):
+    """Cross-platform TRL SFT backend: LoRA fine-tuning over a curated dataset via HuggingFace TRL.
+
+    The Linux/CUDA counterpart to the mlxlm backend: both train a LoRA-SFT adapter over the
+    curated per-target dataset file, but this one runs wherever ``trl`` + ``torch`` are installed
+    (Linux / NVIDIA / CPU) rather than being Apple-Silicon-locked. Unlike :class:`TRLBackend`
+    (on-policy GKD/GRPO, which cannot consume a curated file), this is the dataset-SFT path.
+    """
+
+    @property
+    def name(self) -> str:
+        return "sft"
+
+    def is_available(self) -> bool:
+        # Availability must equal runnability: the run path's _preflight_sft_deps requires ALL of
+        # _SFT_RUNTIME_DEPS (trl + transformers + peft + torch + datasets). Checking only trl+torch
+        # here would report available on a box missing transformers/peft/datasets, so select_backend
+        # would pick sft and the run would preflight-error (a train failure that trips the breaker)
+        # instead of cleanly falling through to train_no_backend. Import the tuple (sft_backend's
+        # module top pulls in no heavy deps) to keep the two dep lists in sync.
+        try:
+            import importlib.util
+
+            from autocontext.training.autoresearch.sft_backend import _SFT_RUNTIME_DEPS
+
+            return all(importlib.util.find_spec(name) is not None for name in _SFT_RUNTIME_DEPS)
+        except Exception:
+            logger.debug("training.backends: caught Exception", exc_info=True)
+            return False
+
+    def default_checkpoint_dir(self, scenario: str) -> Path:
+        return Path("models") / scenario / "sft"
+
+    def supported_runtime_types(self) -> list[str]:
+        return ["checkpoint"]  # PEFT/LoRA adapter saved under output_dir/adapters
+
+
 class BackendRegistry:
     """Registry of training backends by name."""
 
@@ -265,4 +302,5 @@ def default_backend_registry() -> BackendRegistry:
     registry.register(GRPOBackend())
     registry.register(OnPolicyDistillBackend())
     registry.register(TRLBackend())
+    registry.register(SFTBackend())
     return registry
