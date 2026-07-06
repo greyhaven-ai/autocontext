@@ -1,6 +1,38 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, test, expect } from "vitest";
 import { validateCandidateEvidence } from "../../src/harness-optimization/contract/validators.js";
 import type { CandidateEvidence } from "../../src/harness-optimization/contract/generated-types.js";
+
+// Walk up to the repo root: ts/tests/harness-optimization/ -> ts/tests/ -> ts/ -> <repo root>.
+const FIXTURES_DIR = join(
+  import.meta.dirname,
+  "..",
+  "..",
+  "..",
+  "fixtures",
+  "harness-optimization",
+  "candidate-evidence",
+);
+
+// Both the Python and TypeScript packages load these exact same repo-root files.
+const EXPECTED_FIXTURES = new Set([
+  "valid-minimal.json",
+  "valid-full.json",
+  "invalid-missing-hypothesis.json",
+  "invalid-bad-mechanism-type.json",
+  "invalid-extra-field.json",
+]);
+
+function fixtures(prefix: string): string[] {
+  return readdirSync(FIXTURES_DIR)
+    .filter((name) => name.startsWith(prefix) && name.endsWith(".json"))
+    .sort();
+}
+
+function loadFixture(name: string): unknown {
+  return JSON.parse(readFileSync(join(FIXTURES_DIR, name), "utf8"));
+}
 
 // A minimal fully-valid CandidateEvidence used as the fixture-of-record.
 const validCandidate: CandidateEvidence = {
@@ -43,5 +75,23 @@ describe("validateCandidateEvidence", () => {
     const badEnum = { ...validCandidate, mechanism_type: "not_a_mechanism" };
     const result = validateCandidateEvidence(badEnum);
     expect(result.valid).toBe(false);
+  });
+});
+
+describe("shared repo-root candidate-evidence fixtures", () => {
+  test.each(fixtures("valid-"))("%s validates", (name) => {
+    const result = validateCandidateEvidence(loadFixture(name));
+    expect(result.valid).toBe(true);
+  });
+
+  test.each(fixtures("invalid-"))("%s fails validation", (name) => {
+    const result = validateCandidateEvidence(loadFixture(name));
+    expect(result.valid).toBe(false);
+  });
+
+  test("the fixtures directory contains exactly the expected set", () => {
+    // Set-membership guard: a dropped or renamed fixture fails here.
+    const names = new Set(readdirSync(FIXTURES_DIR).filter((n) => n.endsWith(".json")));
+    expect(names).toEqual(EXPECTED_FIXTURES);
   });
 });

@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "candidate_id": "cand-minimal-001",
+  "mechanism_name": "tighten-validator-error-message",
+  "mechanism_type": "deterministic_code",
+  "target_surface": "harness_validator",
+  "hypothesis": "Clearer validator errors reduce retry loops.",
+  "changes": "Rewrite the validator failure string to name the missing field.",
+  "validation_plan": "Replay the 5 known failing traces and confirm no regressions.",
+  "parity": {
+    "python": "implemented",
+    "typescript": "pending",
+    "schema_hash": "abc123"
+  }
+}
