@@ -97,6 +97,17 @@ _BACKEND: dict[str, BackendEntry] = {
 _DEADLINE_CAPABLE: frozenset[str] = frozenset({"sft"})
 
 
+def is_deadline_capable(backend_name: str) -> bool:
+    """True when this backend enforces a real in-run wall-clock deadline.
+
+    The train stage reads this to decide the budget reservation: a deadline-capable backend passes
+    a deadline through its adapter (see the ``deadline_seconds`` invariant test), so its training
+    compute cannot exceed time_budget_seconds and the exact ceiling is reserved. A backend without
+    an in-run deadline (mlxlm) is reserved a conservative assess envelope instead.
+    """
+    return backend_name in _DEADLINE_CAPABLE
+
+
 @dataclass(slots=True)
 class TrainOutcome:
     checkpoint_path: Path

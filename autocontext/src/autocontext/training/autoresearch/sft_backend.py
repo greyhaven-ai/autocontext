@@ -213,6 +213,15 @@ def run_sft_training(
     dataset = dataset_cls.from_list(pairs)
 
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Build the deadline callback BEFORE the model load so its wall clock starts at the top of the
+    # run. A slow model download/load is then charged against the budget: it does not extend the
+    # window but forecloses the training time left afterward, since the callback stops training at
+    # the next step boundary once the deadline has passed (even if the load ate most of the budget).
+    callbacks: list[Any] = []
+    if deadline_seconds is not None:
+        callbacks.append(_make_deadline_callback(trainer_callback_cls, deadline_seconds))
+
     model = auto_model_cls.from_pretrained(base_model)
     tokenizer = auto_tokenizer_cls.from_pretrained(base_model)
 
@@ -225,10 +234,6 @@ def run_sft_training(
         )
     )
     lora = lora_config_cls(r=8, lora_alpha=16, task_type="CAUSAL_LM")
-
-    callbacks: list[Any] = []
-    if deadline_seconds is not None:
-        callbacks.append(_make_deadline_callback(trainer_callback_cls, deadline_seconds))
 
     trainer = sft_trainer_cls(
         model=model,

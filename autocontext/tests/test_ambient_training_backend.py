@@ -74,9 +74,32 @@ def test_sft_adapter_maps_request_including_whole_run_deadline(tmp_path: Path) -
 
 def test_sft_is_deadline_capable_and_mlxlm_is_not() -> None:
     # only the sft backend enforces a real in-run wall-clock deadline, so only it is marked
-    # deadline-capable; the train stage reads this set to pick the budget reservation.
-    assert "sft" in tb._DEADLINE_CAPABLE
-    assert "mlxlm" not in tb._DEADLINE_CAPABLE
+    # deadline-capable; the train stage reads this predicate to pick the budget reservation.
+    assert tb.is_deadline_capable("sft") is True
+    assert tb.is_deadline_capable("mlxlm") is False
+
+
+def test_every_deadline_capable_backend_adapter_emits_deadline(tmp_path: Path) -> None:
+    # the coupling invariant: a backend marked deadline-capable gets the exact-ceiling reservation,
+    # which is only safe if its adapter actually passes a deadline to the backend fn. enforce that
+    # every deadline-capable backend's adapter emits "deadline_seconds" so a future backend cannot be
+    # marked capable (and reserved the tight ceiling) without a deadline that would let it overrun.
+    request = _request(tmp_path)
+    capable = [name for name in tb._BACKEND if tb.is_deadline_capable(name)]
+    assert capable, "expected at least one deadline-capable backend"
+    for name in capable:
+        kwargs = tb._BACKEND[name].adapt(request)
+        assert "deadline_seconds" in kwargs, f"deadline-capable backend {name!r} must emit deadline_seconds"
+
+
+def test_non_deadline_capable_backend_adapter_omits_deadline(tmp_path: Path) -> None:
+    # the inverse: a backend WITHOUT an in-run deadline (mlxlm) must not emit deadline_seconds; it is
+    # reserved the conservative assess envelope precisely because it cannot stop itself at the ceiling.
+    request = _request(tmp_path)
+    for name in tb._BACKEND:
+        if not tb.is_deadline_capable(name):
+            kwargs = tb._BACKEND[name].adapt(request)
+            assert "deadline_seconds" not in kwargs, f"non-deadline-capable backend {name!r} must not emit deadline_seconds"
 
 
 def test_run_training_dispatches_and_derives_gpu_hours(monkeypatch: Any, tmp_path: Path) -> None:
