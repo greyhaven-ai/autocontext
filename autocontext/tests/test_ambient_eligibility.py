@@ -109,6 +109,31 @@ def test_role_target_still_accepts_its_own_role() -> None:
     assert assess(_trace(role="analyst"), target).eligible is True
 
 
+def test_scoped_role_selector_accepts_matching_role_and_scenario() -> None:
+    target = _target(name="competitor-grid_ctf", selector="competitor@grid_ctf")
+    assert assess(_trace(), target).eligible is True
+
+
+def test_scoped_role_selector_rejects_wrong_scenario() -> None:
+    target = _target(name="competitor-grid_ctf", selector="competitor@grid_ctf")
+    decision = assess(_trace(scenario="othello"), target)
+    assert decision.eligible is False
+    assert decision.reason == "selector_mismatch"
+
+
+def test_scoped_role_selector_rejects_wrong_role() -> None:
+    target = _target(name="competitor-grid_ctf", selector="competitor@grid_ctf")
+    decision = assess(_trace(role="analyst"), target)
+    assert decision.eligible is False
+    assert decision.reason == "selector_mismatch"
+
+
+def test_scoped_evaluative_role_is_flagged() -> None:
+    # the role part decides: a curator@grid_ctf target is evaluative and must
+    # be refused just like a bare curator target
+    assert is_evaluative_target(_target(name="curator-grid_ctf", selector="curator@grid_ctf")) is True
+
+
 def test_empty_content_is_rejected() -> None:
     decision = assess(_trace(content=""), _target())
     assert decision.reason == "missing_content"

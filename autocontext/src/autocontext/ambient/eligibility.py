@@ -25,8 +25,23 @@ class EligibilityDecision:
     reason: str
 
 
+def split_role_selector(selector: str) -> tuple[str, str | None]:
+    """Split a role selector in the role@scenario binding notation.
+
+    A bare role ("competitor") selects that role in every scenario; a
+    scoped binding ("competitor@grid_ctf") selects the role only in the
+    named scenario. This is the same notation the interview wizard and the
+    registry role bindings use, so selectors written in either form work.
+    """
+    role, _, scenario = selector.partition("@")
+    return role, scenario or None
+
+
 def is_evaluative_target(target: CharterTarget) -> bool:
-    return target.kind == "role" and target.selector in EVALUATIVE_ROLES
+    if target.kind != "role":
+        return False
+    role, _ = split_role_selector(target.selector)
+    return role in EVALUATIVE_ROLES
 
 
 def assess(trace: TraceRecord, target: CharterTarget) -> EligibilityDecision:
@@ -36,8 +51,12 @@ def assess(trace: TraceRecord, target: CharterTarget) -> EligibilityDecision:
         return EligibilityDecision(eligible=False, reason="wrong_kind")
     if trace.payload.get("status") != "completed":
         return EligibilityDecision(eligible=False, reason="not_completed")
-    if target.kind == "role" and trace.payload.get("role") != target.selector:
-        return EligibilityDecision(eligible=False, reason="selector_mismatch")
+    if target.kind == "role":
+        role, scenario = split_role_selector(target.selector)
+        if trace.payload.get("role") != role:
+            return EligibilityDecision(eligible=False, reason="selector_mismatch")
+        if scenario is not None and trace.payload.get("scenario") != scenario:
+            return EligibilityDecision(eligible=False, reason="selector_mismatch")
     if target.kind == "task_family":
         if trace.payload.get("scenario") != target.selector:
             return EligibilityDecision(eligible=False, reason="selector_mismatch")

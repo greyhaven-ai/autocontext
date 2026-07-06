@@ -14,6 +14,7 @@ from uuid import uuid4
 from pydantic import ValidationError
 
 from autocontext.ambient.charter import Charter, CharterTarget
+from autocontext.ambient.eligibility import split_role_selector
 from autocontext.ambient.proposals import CharterProposal, ProposalStore
 from autocontext.ambient.stage import StageContext, StageResult
 from autocontext.ambient.trace_store import TraceStore
@@ -32,15 +33,28 @@ class _ScenarioStats:
 def _covered_scenarios(charter: Charter, store: ProposalStore) -> tuple[bool, set[str]]:
     """Returns (role_coverage, covered_selectors).
 
-    A competitor role target trains on every scenario its role appears in, so
-    it covers everything; task-family targets and pending add_target proposals
-    cover their specific selector.
+    An unscoped competitor role target trains on every scenario its role
+    appears in, so it covers everything; task-family targets, competitor role
+    targets bound to a single scenario (competitor@grid_ctf), and pending
+    add_target proposals cover their specific selector.
     """
-    # only a competitor role target covers all scenarios: the advisor's signal
-    # is competitor-only, so any other role target (e.g. analyst) trains on a
-    # different slice and must not permanently suppress scenario proposals
-    role_coverage = any(target.kind == "role" and target.selector == "competitor" for target in charter.targets)
+    # only an unscoped competitor role target covers all scenarios: the
+    # advisor's signal is competitor-only, so any other role target (e.g.
+    # analyst) trains on a different slice and must not permanently suppress
+    # scenario proposals. a competitor binding scoped to one scenario
+    # (competitor@grid_ctf) covers only that scenario, not the rest.
+    role_coverage = False
     covered = {target.selector for target in charter.targets if target.kind == "task_family"}
+    for target in charter.targets:
+        if target.kind != "role":
+            continue
+        role, scenario = split_role_selector(target.selector)
+        if role != "competitor":
+            continue
+        if scenario is None:
+            role_coverage = True
+        else:
+            covered.add(scenario)
     # only pending proposals count as coverage: a rejected proposal's scenario is
     # deliberately eligible to be re-proposed on a later scan (rejection is a
     # decision about that proposal, not a permanent suppression of the scenario).

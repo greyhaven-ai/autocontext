@@ -9,6 +9,7 @@ from typing import Any
 from autocontext.ambient.charter import Charter, CharterBudgets, CharterSource, CharterTarget
 from autocontext.ambient.curate import CurateStage
 from autocontext.ambient.datasets import DatasetStore
+from autocontext.ambient.interview import InterviewAnswers, build_charter
 from autocontext.ambient.queue import AmbientQueue
 from autocontext.ambient.stage import StageContext
 from autocontext.ambient.trace_store import TraceStore
@@ -87,6 +88,38 @@ def test_eligible_traces_land_in_the_target_dataset(tmp_path: Path) -> None:
     assert manifest.record_count == 1
     assert manifest.skipped_total == 1
     assert manifest.last_record_id == 2  # the cursor passed the ineligible trace too
+
+
+def test_default_interview_charter_curates_matching_traces(tmp_path: Path) -> None:
+    # regression for the role@scenario selector finding: the interview wizard's
+    # default first target binds "competitor@grid_ctf", and a matching frontier
+    # competitor grid_ctf trace must land in that target's dataset (the bare
+    # role comparison used to skip every trace and curate zero records).
+    answers = InterviewAnswers(
+        tier="oss",
+        autonomy="propose",
+        enable_otel=False,
+        enable_proxy=False,
+        first_target_role="competitor@grid_ctf",
+        base_model="qwen2.5-3b",
+        gpu_hours_per_window=1.0,
+        window_hours=24,
+        disk_quota_gb=1.0,
+    )
+    charter = build_charter(answers)
+    traces = TraceStore(tmp_path / "traces.sqlite3")
+    traces.append("autocontext-outputs:native", "agent_output", _output_payload(), "frontier", 0)
+    datasets = DatasetStore(tmp_path / "datasets")
+    stage = CurateStage(name="curate", trace_store=traces, dataset_store=datasets)
+
+    result = stage.run_once(_ctx(tmp_path, charter))
+
+    assert result.processed == 1
+    assert result.errors == 0
+    lines = datasets.dataset_path("competitor-grid_ctf").read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 1
+    assert json.loads(lines[0])["strategy"] == "strategy text"
+    assert datasets.load_manifest("competitor-grid_ctf").record_count == 1
 
 
 def test_quarantined_provenance_counts_but_never_lands(tmp_path: Path) -> None:

@@ -150,6 +150,25 @@ def test_non_competitor_role_target_does_not_cover_scenarios(tmp_path: Path) -> 
     assert store.pending()[0].payload["selector"] == "lean_prover"
 
 
+def test_scoped_competitor_role_covers_only_its_scenario(tmp_path: Path) -> None:
+    # a competitor role bound to one scenario (competitor@othello) covers only
+    # othello: it must not suppress an otherwise-qualifying lean_prover
+    # proposal, and othello itself stays covered
+    traces = TraceStore(tmp_path / "traces.sqlite3")
+    _seed_scenario(traces, "lean_prover", count=5, score=0.9)
+    _seed_scenario(traces, "othello", count=5, score=0.9)
+    store = ProposalStore(tmp_path / "proposals.jsonl")
+    stage = AdviseStage(name="advise", trace_store=traces, min_traces=5)
+
+    charter = _charter([_target(name="competitor-othello", selector="competitor@othello")])
+    result = stage.run_once(_ctx(tmp_path, charter, store))
+
+    assert result.processed == 1
+    pending = store.pending()
+    assert len(pending) == 1
+    assert pending[0].payload["selector"] == "lean_prover"
+
+
 def test_pending_proposal_is_not_duplicated(tmp_path: Path) -> None:
     traces = TraceStore(tmp_path / "traces.sqlite3")
     _seed_scenario(traces, "lean_prover", count=5, score=0.9)
