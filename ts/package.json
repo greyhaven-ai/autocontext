@@ -147,6 +147,8 @@
     "check:browser-contract-schemas": "node scripts/generate-browser-contract-types.mjs --check && node scripts/sync-python-browser-contract-schemas.mjs --check",
     "sync:production-traces-schemas": "node scripts/sync-python-production-traces-schemas.mjs",
     "check:production-traces-schemas": "node scripts/generate-production-traces-types.mjs --check && node scripts/sync-python-production-traces-schemas.mjs --check",
+    "build:harness-optimization-types": "node scripts/generate-harness-optimization-types.mjs",
+    "check:harness-optimization-schemas": "node scripts/generate-harness-optimization-types.mjs --check",
     "check:instrument-schemas": "node scripts/check-instrument-schemas.mjs --check",
     "check:schemas": "npm run check:production-traces-schemas && npm run check:browser-contract-schemas && npm run check:instrument-schemas",
     "check:sdk-import-discipline": "node scripts/check-sdk-import-discipline.mjs",
