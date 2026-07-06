@@ -93,6 +93,29 @@ class TestTrainingBackend:
         assert meta["name"] == "mlx"
         assert "runtime_types" in meta
 
+    def test_sft_available_only_when_all_five_deps_present(self, monkeypatch) -> None:
+        # availability must equal runnability: the run path preflights ALL of _SFT_RUNTIME_DEPS, so
+        # is_available must too. trl+torch present but any of transformers/peft/datasets missing =>
+        # not available, so select_backend won't pick sft into a run that would then preflight-error.
+        from autocontext.training.autoresearch.sft_backend import _SFT_RUNTIME_DEPS
+        from autocontext.training.backends import SFTBackend
+
+        present = set(_SFT_RUNTIME_DEPS)
+        monkeypatch.setattr("importlib.util.find_spec", lambda name: object() if name in present else None)
+        assert SFTBackend().is_available() is True
+
+        for missing in ("transformers", "peft", "datasets"):
+            present = set(_SFT_RUNTIME_DEPS) - {missing}
+            assert SFTBackend().is_available() is False, f"missing {missing} must be unavailable"
+
+    def test_sft_unavailable_when_only_trl_and_torch_present(self, monkeypatch) -> None:
+        # the exact preflight-mismatch box: trl+torch installed, the other three absent.
+        present = {"trl", "torch"}
+        monkeypatch.setattr("importlib.util.find_spec", lambda name: object() if name in present else None)
+        from autocontext.training.backends import SFTBackend
+
+        assert SFTBackend().is_available() is False
+
 
 # ===========================================================================
 # BackendRegistry
@@ -201,7 +224,8 @@ class TestEndToEndActivationFlow:
         ctx = ScenarioRoutingContext(scenario="grid_ctf", backend="mlx")
 
         decision = resolve_provider_for_context(
-            ctx, registry,
+            ctx,
+            registry,
             fallback_provider="anthropic",
             fallback_model="claude-sonnet-4-20250514",
         )
@@ -227,19 +251,25 @@ class TestEndToEndActivationFlow:
         # Publish grid_ctf model
         grid_record = publish_training_output(
             TrainingCompletionOutput(
-                run_id="train-grid", checkpoint_path="/models/grid",
-                backend="mlx", scenario="grid_ctf",
+                run_id="train-grid",
+                checkpoint_path="/models/grid",
+                backend="mlx",
+                scenario="grid_ctf",
             ),
-            registry, auto_activate=True,
+            registry,
+            auto_activate=True,
         )
 
         # Publish othello model
         othello_record = publish_training_output(
             TrainingCompletionOutput(
-                run_id="train-othello", checkpoint_path="/models/othello",
-                backend="mlx", scenario="othello",
+                run_id="train-othello",
+                checkpoint_path="/models/othello",
+                backend="mlx",
+                scenario="othello",
             ),
-            registry, auto_activate=True,
+            registry,
+            auto_activate=True,
         )
 
         # Resolve for each scenario

@@ -251,10 +251,18 @@ class SFTBackend(TrainingBackend):
         return "sft"
 
     def is_available(self) -> bool:
+        # Availability must equal runnability: the run path's _preflight_sft_deps requires ALL of
+        # _SFT_RUNTIME_DEPS (trl + transformers + peft + torch + datasets). Checking only trl+torch
+        # here would report available on a box missing transformers/peft/datasets, so select_backend
+        # would pick sft and the run would preflight-error (a train failure that trips the breaker)
+        # instead of cleanly falling through to train_no_backend. Import the tuple (sft_backend's
+        # module top pulls in no heavy deps) to keep the two dep lists in sync.
         try:
             import importlib.util
 
-            return importlib.util.find_spec("trl") is not None and importlib.util.find_spec("torch") is not None
+            from autocontext.training.autoresearch.sft_backend import _SFT_RUNTIME_DEPS
+
+            return all(importlib.util.find_spec(name) is not None for name in _SFT_RUNTIME_DEPS)
         except Exception:
             logger.debug("training.backends: caught Exception", exc_info=True)
             return False

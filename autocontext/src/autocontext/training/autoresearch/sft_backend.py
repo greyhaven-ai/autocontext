@@ -28,16 +28,18 @@ from autocontext.training.autoresearch.mlxlm_backend import records_to_completio
 _SFT_RUNTIME_DEPS = ("trl", "transformers", "peft", "torch", "datasets")
 
 
-def sft_pairs_from_records(records: list[dict[str, Any]]) -> list[dict[str, str]]:
+def sft_pairs_from_records(records: list[dict[str, Any]], task_prompt: str = "") -> list[dict[str, str]]:
     """Convert autoresearch records into TRL SFT ``{"prompt", "completion"}`` pairs.
 
-    A thin adapter over the mlx-lm backend's ``records_to_completions``: each record
-    supplies its own ``prompt`` (dataset-style agent tasks) and the mapping serializes a
-    dict strategy to JSON, keeps a text strategy verbatim, and prepends any teacher
-    ``reasoning`` to the completion. Records without their own prompt fall back to the
-    empty task prompt (SFT pairs come from curated per-record data, not a shared prompt).
+    A thin adapter over the mlx-lm backend's ``records_to_completions``: the mapping
+    serializes a dict strategy to JSON, keeps a text strategy verbatim, and prepends any
+    teacher ``reasoning`` to the completion. A record that carries its own ``prompt``
+    (dataset-style agent tasks) uses it; otherwise the completion trains on ``task_prompt``,
+    the reconstructed scenario task instruction. Ambient curate records persist no per-record
+    ``prompt``, so passing the scenario task prompt keeps the SFT from training completions
+    with no instruction at all (an empty ``task_prompt`` reproduces that bug).
     """
-    return records_to_completions(records, task_prompt="")
+    return records_to_completions(records, task_prompt=task_prompt)
 
 
 def build_sft_config_kwargs(
@@ -173,7 +175,7 @@ def _trainable_params_m(trainer: Any) -> float:
 
 def run_sft_training(
     *,
-    scenario_name: str,  # noqa: ARG001 - seam-signature parity; SFT trains on the curated file, not a live scenario
+    scenario_name: str,
     data_path: Path,
     output_dir: Path,
     base_model: str,
@@ -192,10 +194,18 @@ def run_sft_training(
     step boundary once the wall-clock deadline passes. The adapter is saved to
     ``output_dir/"adapters"`` -- the checkpoint path the ambient train seam reads.
     """
+    from autocontext.scenarios import SCENARIO_REGISTRY
     from autocontext.training.autoresearch.data_selection import prepare_training_records
+    from autocontext.training.autoresearch.mlxlm_backend import scenario_task_prompt_and_state
     from autocontext.training.autoresearch.train import _all_records, _peak_memory_mb
 
     _preflight_sft_deps()
+    if scenario_name not in SCENARIO_REGISTRY:
+        raise ValueError(f"unknown scenario: {scenario_name}")
+    # Reconstruct the scenario task instruction the SAME way the mlxlm backend does: ambient
+    # curate records persist no per-record prompt, so without this every completion would train
+    # with an empty instruction. sft_pairs_from_records still lets a record's own prompt win.
+    task_prompt, _eval_state = scenario_task_prompt_and_state(SCENARIO_REGISTRY[scenario_name]())
     (
         sft_config_cls,
         sft_trainer_cls,
@@ -209,7 +219,7 @@ def run_sft_training(
     curated = prepare_training_records(_all_records(data_path), elite_fraction=1.0, dedupe=True)
     if not curated:
         raise ValueError(f"no training records after curation in {data_path}")
-    pairs = sft_pairs_from_records(curated)
+    pairs = sft_pairs_from_records(curated, task_prompt)
     dataset = dataset_cls.from_list(pairs)
 
     output_dir.mkdir(parents=True, exist_ok=True)

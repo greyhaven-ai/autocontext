@@ -102,6 +102,16 @@ def test_non_deadline_capable_backend_adapter_omits_deadline(tmp_path: Path) -> 
             assert "deadline_seconds" not in kwargs, f"non-deadline-capable backend {name!r} must not emit deadline_seconds"
 
 
+def test_select_backend_none_when_sft_deps_incomplete(monkeypatch: Any) -> None:
+    # end-to-end through the real _availability (not mocked): a box with trl+torch but datasets
+    # (and mlx_lm) missing must NOT select sft, because is_available now requires all five sft deps.
+    # Otherwise select_backend would pick sft and the run would preflight-error (a breaker-tripping
+    # train failure) instead of cleanly returning None -> train_no_backend.
+    present = {"trl", "torch", "transformers", "peft"}  # datasets + mlx_lm absent
+    monkeypatch.setattr("importlib.util.find_spec", lambda name: object() if name in present else None)
+    assert select_backend("sft-distill") is None
+
+
 def test_run_training_dispatches_and_derives_gpu_hours(monkeypatch: Any, tmp_path: Path) -> None:
     captured: dict[str, Any] = {}
 

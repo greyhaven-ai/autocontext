@@ -37,6 +37,23 @@ def test_sft_pairs_match_build_completion_record() -> None:
     assert all(set(p) == {"prompt", "completion"} for p in pairs)
 
 
+def test_sft_pairs_use_task_prompt_when_record_has_none() -> None:
+    """Ambient curate records carry no per-record ``prompt``; the pair must train on the passed
+    scenario ``task_prompt``, not the empty string (the bug: empty task prompt => no instruction)."""
+    records = [{"run_id": "r0", "scenario": "grid_ctf", "strategy": "Answer: 4", "score": 1.0}]
+    pairs = sb.sft_pairs_from_records(records, "Play grid capture-the-flag.")
+    assert pairs == [mb.build_completion_record(task_prompt="Play grid capture-the-flag.", strategy_json="Answer: 4")]
+    assert pairs[0]["prompt"] == "Play grid capture-the-flag."
+
+
+def test_sft_pairs_record_prompt_wins_over_task_prompt() -> None:
+    """A record that carries its own ``prompt`` (dataset-style agent task) keeps the per-record
+    precedence from records_to_completions: the record prompt wins over the shared task_prompt."""
+    records = [{"scenario": "grid_ctf", "prompt": "What is 2+2?", "strategy": "Answer: 4", "score": 1.0}]
+    pairs = sb.sft_pairs_from_records(records, "Play grid capture-the-flag.")
+    assert pairs[0]["prompt"] == "What is 2+2?"
+
+
 def test_sft_pairs_serialize_dict_strategy_like_mlxlm() -> None:
     """A game-scenario record carries a JSON-object strategy; the completion must be the JSON
     serialization the mlxlm mapping produces, not a repr."""
@@ -237,6 +254,60 @@ def test_run_sft_training_wires_dataset_config_and_deadline(monkeypatch: pytest.
     assert metrics["num_records"] == 2.0
     assert metrics["valid_rate"] == 1.0
     assert metrics["avg_score"] == pytest.approx(0.75)  # mean of curated scores 1.0 and 0.5
+
+
+def test_run_sft_training_reconstructs_scenario_task_prompt(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Ambient curate records carry no per-record ``prompt``; the runner must reconstruct the
+    scenario task instruction from ``scenario_name`` and thread it into every dataset pair, so the
+    SFT never trains completions with an empty instruction."""
+    from autocontext.scenarios import SCENARIO_REGISTRY
+    from autocontext.training.autoresearch.data_selection import prepare_training_records
+    from autocontext.training.autoresearch.mlxlm_backend import scenario_task_prompt_and_state
+    from autocontext.training.autoresearch.train import _all_records
+
+    # Records WITHOUT their own prompt (the ambient curate shape): run_id/scenario/strategy/score.
+    records = [
+        {"run_id": "r0", "scenario": "grid_ctf", "strategy": "Answer: 4", "score": 1.0},
+        {"run_id": "r0", "scenario": "grid_ctf", "strategy": "Answer: 8", "score": 0.5},
+    ]
+    data_path = tmp_path / "records.jsonl"
+    data_path.write_text("\n".join(json.dumps(r) for r in records) + "\n", encoding="utf-8")
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(sb, "_preflight_sft_deps", lambda: None)
+    monkeypatch.setattr(sb, "_load_sft_runtime", lambda: _fake_runtime(captured))
+
+    sb.run_sft_training(
+        scenario_name="grid_ctf",
+        data_path=data_path,
+        output_dir=tmp_path / "out",
+        base_model="fake/tiny-model",
+        time_budget=5,
+        memory_limit_mb=4096,
+    )
+
+    expected_prompt, _ = scenario_task_prompt_and_state(SCENARIO_REGISTRY["grid_ctf"]())
+    assert expected_prompt, "grid_ctf must reconstruct a non-empty task prompt"
+    curated = prepare_training_records(_all_records(data_path), elite_fraction=1.0, dedupe=True)
+    assert captured["dataset_pairs"] == sb.sft_pairs_from_records(curated, expected_prompt)
+    # Every pair carries the reconstructed instruction, not "" (the bug this fix closes).
+    assert all(p["prompt"] == expected_prompt for p in captured["dataset_pairs"])
+
+
+def test_run_sft_training_raises_on_unknown_scenario(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """An unknown scenario name cannot reconstruct a task prompt; the runner raises clearly."""
+    data_path = tmp_path / "records.jsonl"
+    _write_records(data_path)
+    monkeypatch.setattr(sb, "_preflight_sft_deps", lambda: None)
+    monkeypatch.setattr(sb, "_load_sft_runtime", lambda: _fake_runtime({}))
+    with pytest.raises(ValueError, match="unknown scenario"):
+        sb.run_sft_training(
+            scenario_name="does-not-exist",
+            data_path=data_path,
+            output_dir=tmp_path / "out",
+            base_model="fake/tiny-model",
+            time_budget=5,
+            memory_limit_mb=4096,
+        )
 
 
 def test_run_sft_training_attaches_no_callback_without_deadline(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
