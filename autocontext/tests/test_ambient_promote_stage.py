@@ -214,6 +214,40 @@ def test_propose_autonomy_requires_approval_and_does_not_activate(tmp_path: Path
     assert "approval" in approval[0]["payload"]["reason"]
 
 
+def test_train_autonomy_requires_approval_and_does_not_activate(tmp_path: Path) -> None:
+    registry = ModelRegistry(tmp_path / "registry")
+    _record(registry, "cand-1", "competitor-local", state="candidate", eval_meta=_eval(0.8))
+    charter = _charter([_target("competitor-local")], autonomy="train")
+
+    result = _stage(registry).run_once(_ctx(tmp_path, charter))
+
+    assert (result.processed, result.errors) == (0, 0)
+    candidate = registry.load("cand-1")
+    assert candidate is not None and candidate.activation_state == "candidate"
+    assert "probation" not in candidate.metadata
+    approval = [e for e in _events(tmp_path) if e["event"] == "promote_requires_approval"]
+    assert approval[0]["payload"]["target"] == "competitor-local"
+    assert approval[0]["payload"]["artifact_id"] == "cand-1"
+    assert "approval" in approval[0]["payload"]["reason"]
+
+
+def test_equal_score_tie_does_not_promote(tmp_path: Path) -> None:
+    registry = ModelRegistry(tmp_path / "registry")
+    _record(registry, "old-active", "competitor-local", state="active", eval_meta=_eval(0.7))
+    _record(registry, "cand-1", "competitor-local", state="candidate", eval_meta=_eval(0.7))
+    charter = _charter([_target("competitor-local")])
+
+    result = _stage(registry).run_once(_ctx(tmp_path, charter))
+
+    assert (result.processed, result.errors) == (0, 0)
+    incumbent = registry.load("old-active")
+    candidate = registry.load("cand-1")
+    assert incumbent is not None and incumbent.activation_state == "active"
+    assert candidate is not None and candidate.activation_state == "candidate"
+    assert "probation" not in candidate.metadata
+    assert _events(tmp_path) == []
+
+
 def test_per_target_failure_is_isolated(tmp_path: Path) -> None:
     registry = _ActivateFailRegistry(tmp_path / "registry", fail_id="poison")
     _record(registry, "poison", "target-a", state="candidate", eval_meta=_eval(0.8))

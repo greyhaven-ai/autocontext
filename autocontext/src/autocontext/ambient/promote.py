@@ -8,7 +8,7 @@ An incumbent scored under a different (or absent) anchor is not comparable, so v
 auto-promote across mismatched anchors and emits promote_anchor_mismatch instead.
 
 On promote the new record gets a "probation" marker naming the previous active artifact, then
-registry.activate demotes that incumbent to disabled — kept warm as the rollback target. This
+registry.activate demotes that incumbent to disabled, kept warm as the rollback target. This
 stage never generates or scores; it reads eval metadata and moves the activation pointer.
 """
 
@@ -120,7 +120,7 @@ class PromoteStage:
         best_anchor = best.metadata["eval"].get("anchor_model")
         if isinstance(incumbent_eval, dict) and incumbent_eval.get("anchor_model") == best_anchor:
             return bool(best.metadata["eval"]["score"] > incumbent_eval["score"])
-        # v1 rule: never auto-promote across mismatched (or absent) anchors — the scores are not
+        # v1 rule: never auto-promote across mismatched (or absent) anchors: the scores are not
         # comparable, so a human decides.
         ctx.emitter.emit(
             "promote_anchor_mismatch",
