@@ -93,6 +93,23 @@ class EvaluateStage:
         # constructing the default provider per candidate would be wasteful. build lazily so a cycle
         # with no eligible candidate never touches the provider.
         scorer: _Scorer | None = None
+        # the drift canary is a property of the fixed charter anchor, not the candidate being
+        # evaluated, so it is computed once per cycle and applied to all candidates. it shares the
+        # scorer's lazy-build-once pattern: both build on the first candidate that actually has a
+        # suite to score, so an all-skipped or all-no-suite cycle never touches the probe provider.
+        drift: BiasProbeResult | None = None
+
+        def get_scorer() -> _Scorer:
+            nonlocal scorer
+            if scorer is None:
+                scorer = judge_factory(anchor)
+            return scorer
+
+        def get_drift() -> BiasProbeResult:
+            nonlocal drift
+            if drift is None:
+                drift = probe_fn(anchor)
+            return drift
 
         processed = 0
         errors = 0
@@ -107,9 +124,7 @@ class EvaluateStage:
                 # so it is silently skipped rather than reported as ours.
                 continue
             try:
-                if scorer is None:
-                    scorer = judge_factory(anchor)
-                processed += self._evaluate_candidate(ctx, record, target, anchor, scorer, probe_fn)
+                processed += self._evaluate_candidate(ctx, record, target, anchor, get_scorer, get_drift)
             except Exception as exc:
                 errors += 1
                 ctx.emitter.emit(
@@ -125,8 +140,8 @@ class EvaluateStage:
         record: DistilledModelRecord,
         target: CharterTarget,
         anchor: CharterAnchor,
-        scorer: _Scorer,
-        probe_fn: Callable[..., BiasProbeResult],
+        get_scorer: Callable[[], _Scorer],
+        get_drift: Callable[[], BiasProbeResult],
     ) -> int:
         suite = load_eval_suite(self.suites_dir, target.eval_suite)
         if suite is None or not suite.cases:
@@ -140,10 +155,15 @@ class EvaluateStage:
             )
             return 0
 
+        # v1 stand-in: the injected scorer receives (case.prompt, case.reference); plan 5b wires the
+        # candidate model's real generation as the scored output.
+        scorer = get_scorer()
         scores = [scorer.score(case.prompt, case.reference) for case in suite.cases]
         avg_score = sum(scores) / len(scores)
 
-        probe = probe_fn(anchor)
+        # the drift canary depends only on the anchor, so this returns the same memoized probe for
+        # every candidate in the cycle.
+        probe = get_drift()
         drift_ok = probe.magnitude <= self.drift_tolerance
 
         record.metadata["eval"] = {

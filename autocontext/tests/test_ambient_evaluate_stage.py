@@ -109,6 +109,18 @@ def _probe(magnitude: float) -> Any:
     return _fn
 
 
+class _CountingProbe:
+    """A drift probe that records how many times it was invoked."""
+
+    def __init__(self, magnitude: float) -> None:
+        self.magnitude = magnitude
+        self.calls = 0
+
+    def __call__(self, anchor: CharterAnchor) -> BiasProbeResult:
+        self.calls += 1
+        return BiasProbeResult(probe_type="position", detected=self.magnitude > 0.1, magnitude=self.magnitude, details="")
+
+
 def _stage(tmp_path: Path, registry: ModelRegistry, scorer: Any, magnitude: float, drift_tolerance: float = 0.2) -> EvaluateStage:
     return EvaluateStage(
         name="evaluate",
@@ -254,6 +266,94 @@ def test_drift_above_tolerance_records_eval_with_drift_ok_false(tmp_path: Path) 
     assert reloaded is not None
     assert reloaded.metadata["eval"]["drift_ok"] is False
     assert reloaded.metadata["eval"]["drift_magnitude"] == 0.5
+
+
+def test_drift_probe_computed_once_per_run_once(tmp_path: Path) -> None:
+    registry = ModelRegistry(tmp_path / "registry")
+    _candidate(registry, "cand-a", "target-a")
+    _candidate(registry, "cand-b", "target-b")
+    _seed_suite(tmp_path / "suites", "suite-a", [("p1", "r1")])
+    _seed_suite(tmp_path / "suites", "suite-b", [("p2", "r2")])
+    charter = _charter([_target("target-a", "suite-a"), _target("target-b", "suite-b")])
+    probe = _CountingProbe(0.3)
+    stage = EvaluateStage(
+        name="evaluate",
+        registry=registry,
+        suites_dir=tmp_path / "suites",
+        judge_factory=lambda anchor: _FixedScorer(0.9),
+        probe_fn=probe,
+        drift_tolerance=0.5,
+        now_fn=lambda: _NOW,
+    )
+
+    result = stage.run_once(_ctx(tmp_path, charter))
+
+    assert (result.processed, result.errors) == (2, 0)
+    assert probe.calls == 1  # the canary depends only on the anchor, so it runs once per cycle
+    a = registry.load("cand-a")
+    b = registry.load("cand-b")
+    assert a is not None and b is not None
+    assert a.metadata["eval"]["drift_magnitude"] == 0.3
+    assert b.metadata["eval"]["drift_magnitude"] == 0.3
+    assert a.metadata["eval"]["drift_ok"] is True and b.metadata["eval"]["drift_ok"] is True
+
+
+def test_all_no_suite_run_never_probes(tmp_path: Path) -> None:
+    registry = ModelRegistry(tmp_path / "registry")
+    _candidate(registry, "cand-1", "competitor-local")
+    charter = _charter([_target("competitor-local", "missing-suite")])
+    probe = _CountingProbe(0.1)
+    stage = EvaluateStage(
+        name="evaluate",
+        registry=registry,
+        suites_dir=tmp_path / "suites",
+        judge_factory=lambda anchor: _FixedScorer(0.9),
+        probe_fn=probe,
+        now_fn=lambda: _NOW,
+    )
+
+    result = stage.run_once(_ctx(tmp_path, charter))
+
+    assert (result.processed, result.errors) == (0, 0)
+    assert probe.calls == 0  # nothing to score, so the probe provider is never built
+
+
+def test_all_skipped_run_never_probes(tmp_path: Path) -> None:
+    registry = ModelRegistry(tmp_path / "registry")
+    _candidate(registry, "active-1", "competitor-local", activation_state="active")
+    _seed_suite(tmp_path / "suites", "anchor-v1", [("p1", "r1")])
+    charter = _charter([_target("competitor-local", "anchor-v1")])
+    probe = _CountingProbe(0.1)
+    stage = EvaluateStage(
+        name="evaluate",
+        registry=registry,
+        suites_dir=tmp_path / "suites",
+        judge_factory=lambda anchor: _FixedScorer(0.9),
+        probe_fn=probe,
+        now_fn=lambda: _NOW,
+    )
+
+    result = stage.run_once(_ctx(tmp_path, charter))
+
+    assert (result.processed, result.errors) == (0, 0)
+    assert probe.calls == 0
+
+
+def test_drift_ok_boundary_is_inclusive(tmp_path: Path) -> None:
+    registry = ModelRegistry(tmp_path / "registry")
+    _candidate(registry, "cand-1", "competitor-local")
+    _seed_suite(tmp_path / "suites", "anchor-v1", [("p1", "r1")])
+    charter = _charter([_target("competitor-local", "anchor-v1")])
+    # magnitude exactly equal to the tolerance: drift_ok is True because the check is <= (inclusive).
+    stage = _stage(tmp_path, registry, _FixedScorer(0.9), magnitude=0.2, drift_tolerance=0.2)
+
+    result = stage.run_once(_ctx(tmp_path, charter))
+
+    assert (result.processed, result.errors) == (1, 0)
+    reloaded = registry.load("cand-1")
+    assert reloaded is not None
+    assert reloaded.metadata["eval"]["drift_magnitude"] == 0.2
+    assert reloaded.metadata["eval"]["drift_ok"] is True
 
 
 def test_reregister_keeps_activation_state_candidate(tmp_path: Path) -> None:
