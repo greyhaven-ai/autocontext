@@ -18,6 +18,7 @@ from autocontext.ambient.proposals import ProposalError, ProposalStore, apply_pr
 from autocontext.ambient.queue import AmbientQueue
 from autocontext.ambient.stage_factory import build_stages
 from autocontext.harness.core.events import EventStreamEmitter
+from autocontext.training.model_registry import ModelRegistry
 
 ambient_app = typer.Typer(help="ambient trainer: resident daemon that learns from traces")
 console = Console()
@@ -127,8 +128,6 @@ def status(
         table.add_row(name, str(info["paused"]), str(info["queue_depth"]))
     console.print(table)
     # read-only: construct the registry and count candidates, never train or write events
-    from autocontext.training.model_registry import ModelRegistry
-
     candidates = len(ModelRegistry(registry_dir).list_all())
     console.print(f"candidates={candidates}")
     if charter.targets:

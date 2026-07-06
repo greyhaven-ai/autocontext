@@ -78,6 +78,9 @@ def run_training(backend_name: str, request: TrainRequest) -> TrainOutcome:
         time_budget=request.time_budget_seconds,
         memory_limit_mb=request.memory_limit_mb,
         base_model=request.base_model,
+        # dedupe is enabled so the curate crash-window duplicate rows are removed at
+        # train time, honoring the mitigation curate.py documents.
+        dedupe=True,
     )
     gpu_hours = float(metrics.get("training_seconds", 0.0)) / 3600.0
     checkpoint = request.output_dir / "adapters"

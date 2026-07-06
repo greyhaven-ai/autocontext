@@ -58,6 +58,7 @@ def test_run_training_dispatches_and_derives_gpu_hours(monkeypatch: Any, tmp_pat
     assert captured["output_dir"] == request.output_dir
     assert captured["time_budget"] == request.time_budget_seconds
     assert captured["memory_limit_mb"] == request.memory_limit_mb
+    assert captured["dedupe"] is True  # train-time dedupe honors the curate crash-window mitigation
 
 
 def test_run_training_unknown_backend_raises(tmp_path: Path) -> None:
