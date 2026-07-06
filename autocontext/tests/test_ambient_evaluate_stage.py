@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from autocontext.ambient.charter import Charter, CharterAnchor, CharterBudgets, CharterSource, CharterTarget
-from autocontext.ambient.evaluate import EvaluateStage
+from autocontext.ambient.evaluate import EvaluateStage, eval_fingerprint
 from autocontext.ambient.queue import AmbientQueue
 from autocontext.ambient.stage import StageContext
 from autocontext.execution.bias_probes import BiasProbeResult
@@ -186,11 +186,13 @@ def test_empty_suite_emits_no_suite(tmp_path: Path) -> None:
     assert any(e["event"] == "evaluate_no_suite" for e in _events(tmp_path))
 
 
-def test_already_evaluated_candidate_is_skipped(tmp_path: Path) -> None:
+def test_already_evaluated_candidate_with_current_fingerprint_is_skipped(tmp_path: Path) -> None:
     registry = ModelRegistry(tmp_path / "registry")
-    _candidate(registry, "cand-1", "competitor-local", metadata={"eval": {"score": 0.5}})
-    _seed_suite(tmp_path / "suites", "anchor-v1", [("p1", "r1")])
     charter = _charter([_target("competitor-local", "anchor-v1")])
+    current = eval_fingerprint(charter.anchor, "anchor-v1")
+    stored = {"score": 0.5, "fingerprint": current}
+    _candidate(registry, "cand-1", "competitor-local", metadata={"eval": stored})
+    _seed_suite(tmp_path / "suites", "anchor-v1", [("p1", "r1")])
     stage = _stage(tmp_path, registry, _FixedScorer(0.9), magnitude=0.1)
 
     result = stage.run_once(_ctx(tmp_path, charter))
@@ -198,7 +200,7 @@ def test_already_evaluated_candidate_is_skipped(tmp_path: Path) -> None:
     assert (result.processed, result.errors) == (0, 0)
     reloaded = registry.load("cand-1")
     assert reloaded is not None
-    assert reloaded.metadata["eval"] == {"score": 0.5}  # untouched
+    assert reloaded.metadata["eval"] == stored  # untouched: fingerprint matches the current config
     assert _events(tmp_path) == []
 
 
@@ -368,3 +370,124 @@ def test_reregister_keeps_activation_state_candidate(tmp_path: Path) -> None:
     reloaded = registry.load("cand-1")
     assert reloaded is not None
     assert reloaded.activation_state == "candidate"
+
+
+def test_from_candidate_generation_defaults_false_placeholder(tmp_path: Path) -> None:
+    registry = ModelRegistry(tmp_path / "registry")
+    _candidate(registry, "cand-1", "competitor-local")
+    _seed_suite(tmp_path / "suites", "anchor-v1", [("p1", "r1")])
+    charter = _charter([_target("competitor-local", "anchor-v1")])
+    # _stage leaves scores_candidate_generation at its False default: the score judged the suite's
+    # reference text, a placeholder, so the eval is stamped from_candidate_generation False.
+    stage = _stage(tmp_path, registry, _FixedScorer(0.9), magnitude=0.1)
+
+    result = stage.run_once(_ctx(tmp_path, charter))
+
+    assert (result.processed, result.errors) == (1, 0)
+    reloaded = registry.load("cand-1")
+    assert reloaded is not None
+    assert reloaded.metadata["eval"]["from_candidate_generation"] is False
+
+
+def test_from_candidate_generation_stamped_true_when_flag_set(tmp_path: Path) -> None:
+    registry = ModelRegistry(tmp_path / "registry")
+    _candidate(registry, "cand-1", "competitor-local")
+    _seed_suite(tmp_path / "suites", "anchor-v1", [("p1", "r1")])
+    charter = _charter([_target("competitor-local", "anchor-v1")])
+    stage = EvaluateStage(
+        name="evaluate",
+        registry=registry,
+        suites_dir=tmp_path / "suites",
+        judge_factory=lambda anchor: _FixedScorer(0.9),
+        probe_fn=_probe(0.1),
+        now_fn=lambda: _NOW,
+        scores_candidate_generation=True,
+    )
+
+    result = stage.run_once(_ctx(tmp_path, charter))
+
+    assert (result.processed, result.errors) == (1, 0)
+    reloaded = registry.load("cand-1")
+    assert reloaded is not None
+    assert reloaded.metadata["eval"]["from_candidate_generation"] is True
+
+
+def test_matching_fingerprint_candidate_is_not_rescored(tmp_path: Path) -> None:
+    registry = ModelRegistry(tmp_path / "registry")
+    charter = _charter([_target("competitor-local", "anchor-v1")])
+    current = eval_fingerprint(charter.anchor, "anchor-v1")
+    stored = {"score": 0.42, "anchor_model": "claude-sonnet-5", "fingerprint": current}
+    _candidate(registry, "cand-1", "competitor-local", metadata={"eval": stored})
+    _seed_suite(tmp_path / "suites", "anchor-v1", [("p1", "r1")])
+    stage = _stage(tmp_path, registry, _FixedScorer(0.9), magnitude=0.1)
+
+    result = stage.run_once(_ctx(tmp_path, charter))
+
+    assert (result.processed, result.errors) == (0, 0)
+    reloaded = registry.load("cand-1")
+    assert reloaded is not None
+    assert reloaded.metadata["eval"] == stored  # unchanged: still scored under the current config
+    assert _events(tmp_path) == []
+
+
+def test_stale_fingerprint_candidate_is_reevaluated(tmp_path: Path) -> None:
+    registry = ModelRegistry(tmp_path / "registry")
+    charter = _charter([_target("competitor-local", "anchor-v1")])
+    # an eval scored under a previous anchor: its fingerprint carries a different anchor model, so it
+    # no longer matches the current config and must be re-scored rather than left stuck.
+    stale_anchor = CharterAnchor(provider="anthropic", model="claude-opus-4-8", rubric="Score 0 to 1.")
+    stale = {"score": 0.42, "anchor_model": "claude-opus-4-8", "fingerprint": eval_fingerprint(stale_anchor, "anchor-v1")}
+    _candidate(registry, "cand-1", "competitor-local", metadata={"eval": stale})
+    _seed_suite(tmp_path / "suites", "anchor-v1", [("p1", "r1")])
+    stage = _stage(tmp_path, registry, _FixedScorer(0.9), magnitude=0.1)
+
+    result = stage.run_once(_ctx(tmp_path, charter))
+
+    assert (result.processed, result.errors) == (1, 0)
+    reloaded = registry.load("cand-1")
+    assert reloaded is not None
+    eval_meta = reloaded.metadata["eval"]
+    assert eval_meta["score"] == 0.9  # re-scored under the current anchor
+    assert eval_meta["anchor_model"] == "claude-sonnet-5"
+    assert eval_meta["fingerprint"] == eval_fingerprint(charter.anchor, "anchor-v1")
+
+
+def test_drift_probe_memoized_across_reevaluations(tmp_path: Path) -> None:
+    registry = ModelRegistry(tmp_path / "registry")
+    charter = _charter([_target("target-a", "suite-a"), _target("target-b", "suite-b")])
+    # both candidates carry a stale eval (previous anchor), so both are re-evaluated this cycle. the
+    # drift canary depends only on the anchor, so it must still be probed exactly once for the cycle.
+    stale_anchor = CharterAnchor(provider="anthropic", model="claude-opus-4-8", rubric="Score 0 to 1.")
+    _candidate(
+        registry,
+        "cand-a",
+        "target-a",
+        metadata={"eval": {"score": 0.1, "fingerprint": eval_fingerprint(stale_anchor, "suite-a")}},
+    )
+    _candidate(
+        registry,
+        "cand-b",
+        "target-b",
+        metadata={"eval": {"score": 0.1, "fingerprint": eval_fingerprint(stale_anchor, "suite-b")}},
+    )
+    _seed_suite(tmp_path / "suites", "suite-a", [("p1", "r1")])
+    _seed_suite(tmp_path / "suites", "suite-b", [("p2", "r2")])
+    probe = _CountingProbe(0.3)
+    stage = EvaluateStage(
+        name="evaluate",
+        registry=registry,
+        suites_dir=tmp_path / "suites",
+        judge_factory=lambda anchor: _FixedScorer(0.9),
+        probe_fn=probe,
+        drift_tolerance=0.5,
+        now_fn=lambda: _NOW,
+    )
+
+    result = stage.run_once(_ctx(tmp_path, charter))
+
+    assert (result.processed, result.errors) == (2, 0)
+    assert probe.calls == 1  # memoized across both re-evaluations
+    a = registry.load("cand-a")
+    b = registry.load("cand-b")
+    assert a is not None and a.metadata["eval"]["score"] == 0.9
+    assert b is not None and b.metadata["eval"]["score"] == 0.9

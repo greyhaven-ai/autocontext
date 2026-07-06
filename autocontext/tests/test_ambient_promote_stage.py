@@ -54,12 +54,15 @@ def _events(tmp_path: Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
-def _eval(score: float, *, anchor: str = _ANCHOR, drift_ok: bool = True) -> dict[str, Any]:
+def _eval(score: float, *, anchor: str = _ANCHOR, drift_ok: bool = True, from_candidate: bool = True) -> dict[str, Any]:
     return {
         "anchor_model": anchor,
         "score": score,
         "drift_magnitude": 0.1,
         "drift_ok": drift_ok,
+        # default True: these evals stand in for real candidate-generation scores, which is what the
+        # promote stage requires before it will activate a candidate.
+        "from_candidate_generation": from_candidate,
         "evaluated_at": _NOW,
     }
 
@@ -290,6 +293,29 @@ def test_per_target_failure_is_isolated(tmp_path: Path) -> None:
     failed = [e for e in _events(tmp_path) if e["event"] == "promote_target_failed"]
     assert failed[0]["payload"]["target"] == "target-a"
     assert "activate boom" in failed[0]["payload"]["error"]
+
+
+def test_placeholder_eval_candidate_is_not_promoted(tmp_path: Path) -> None:
+    registry = ModelRegistry(tmp_path / "registry")
+    # a high-scoring, drift-clean candidate whose eval judged a placeholder (reference text), not the
+    # candidate's real generation: promotion must refuse it rather than activate a model on a score
+    # that never ran it.
+    _record(
+        registry,
+        "cand-1",
+        "competitor-local",
+        state="candidate",
+        eval_meta=_eval(0.99, from_candidate=False),
+    )
+    charter = _charter([_target("competitor-local")])
+
+    result = _stage(registry).run_once(_ctx(tmp_path, charter))
+
+    assert (result.processed, result.errors) == (0, 0)
+    candidate = registry.load("cand-1")
+    assert candidate is not None and candidate.activation_state == "candidate"
+    assert "probation" not in candidate.metadata
+    assert _events(tmp_path) == []
 
 
 def test_no_candidates_is_quiet(tmp_path: Path) -> None:

@@ -183,6 +183,10 @@ def test_miniature_ingest_through_serving(tmp_path: Path, monkeypatch: Any) -> N
     evaluate.judge_factory = lambda anchor: _FixedScorer(0.9)
     evaluate.probe_fn = _clean_probe
     evaluate.now_fn = lambda: _NOW
+    # EvaluateStage is a non-frozen slots dataclass; flip its candidate-generation flag on the built
+    # instance. the injected _FixedScorer stands in for real candidate generation, so promotion (which
+    # refuses placeholder evals) is allowed to activate this candidate.
+    evaluate.scores_candidate_generation = True
 
     ctx = _ctx(tmp_path, charter)
 

@@ -59,6 +59,8 @@ def _eval(score: float, *, anchor: str = _ANCHOR, drift_ok: bool = True) -> dict
         "score": score,
         "drift_magnitude": 0.1,
         "drift_ok": drift_ok,
+        # real-generation eval: the promote stage only activates a candidate scored on its own output.
+        "from_candidate_generation": True,
         "evaluated_at": _NOW,
     }
 

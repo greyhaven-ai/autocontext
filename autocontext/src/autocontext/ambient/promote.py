@@ -54,8 +54,12 @@ class PromoteStage:
         candidates = [r for r in records if self._is_promotable_candidate(r, target.name)]
         # only compare candidates scored under the CURRENT charter anchor: if the anchor
         # changed between training cycles, candidates carrying scores from a stale anchor are
-        # not apples-to-apples, so they are not eligible to be picked as best this cycle (they
-        # get re-scored under the new anchor by the evaluate stage, a separate 5b concern).
+        # not apples-to-apples, so they are not eligible to be picked as best this cycle. the
+        # evaluate stage now re-scores such candidates under the new anchor on a later cycle (it
+        # re-evaluates whenever the eval fingerprint changes), so a stale-anchor candidate becomes
+        # eligible again once re-scored. the INCUMBENT (an active record) is still not re-scored, so
+        # a post-anchor-change promote can still anchor-mismatch against a stale incumbent; that
+        # incumbent-side re-evaluation is tracked in AC-883 and is out of scope here.
         current_anchor = ctx.charter.anchor.model
         candidates = [r for r in candidates if r.metadata["eval"].get("anchor_model") == current_anchor]
         if not candidates:
@@ -104,8 +108,16 @@ class PromoteStage:
         if record.activation_state != "candidate" or record.metadata.get("target") != target_name:
             return False
         eval_meta = record.metadata.get("eval")
+        if not isinstance(eval_meta, dict):
+            return False
+        # until real candidate generation is wired (plan 5b), evaluation scores a placeholder (the
+        # eval suite's reference text, not the candidate's own output), so promotion must refuse those
+        # candidates rather than activate a model on a score that never ran it. only a candidate whose
+        # eval judged its real generation (from_candidate_generation True) is promotable.
+        if eval_meta.get("from_candidate_generation") is not True:
+            return False
         # a drift-flagged candidate is never promotable, however high its score.
-        return isinstance(eval_meta, dict) and eval_meta.get("drift_ok") is True
+        return eval_meta.get("drift_ok") is True
 
     @staticmethod
     def _incumbent(records: list[DistilledModelRecord], target_name: str) -> DistilledModelRecord | None:
