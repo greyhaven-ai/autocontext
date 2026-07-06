@@ -141,8 +141,9 @@ def test_budget_exhausted_skips(tmp_path: Path, monkeypatch: Any) -> None:
 
     monkeypatch.setattr(train_mod, "run_training", fake_run)
     stage = _stage(tmp_path)
-    # window budget is 10.0; the default time budget is 1800s = 0.5h. seed 9.8 used so the
-    # pre-flight estimate (9.8 + 0.5 = 10.3 > 10.0) breaches before any training happens.
+    # window budget is 10.0; the default reserved envelope is time_budget (1800s) + assess
+    # overhead (1800s) = 1.0h. seed 9.8 used so the pre-flight estimate (9.8 + 1.0 = 10.8 > 10.0)
+    # breaches before any training happens.
     stage.usage_ledger.record("competitor-local", 9.8, _NOW)
 
     result = stage.run_once(_ctx(tmp_path, _charter([_target()], gpu_hours=10.0)))
@@ -152,6 +153,90 @@ def test_budget_exhausted_skips(tmp_path: Path, monkeypatch: Any) -> None:
     assert stage.registry.list_all() == []  # and nothing was published
     events = _events(tmp_path)
     assert any(e["event"] == "train_budget_exhausted" for e in events)
+
+
+def test_envelope_over_budget_blocks_even_when_train_budget_alone_fits(tmp_path: Path, monkeypatch: Any) -> None:
+    _seed_dataset(tmp_path, "competitor-local", 6)
+    trained = {"ran": False}
+    monkeypatch.setattr(train_mod, "select_backend", lambda method: "trl")
+
+    def fake_run(backend_name: str, request: Any) -> TrainOutcome:
+        trained["ran"] = True
+        return TrainOutcome(request.output_dir / "adapters", backend_name, {"num_records": 5.0, "training_seconds": 3600.0}, 1.0)
+
+    monkeypatch.setattr(train_mod, "run_training", fake_run)
+    stage = _stage(tmp_path)
+    # window budget is 10.0. train_budget alone is 1800s = 0.5h, which would fit (9.4 + 0.5 = 9.9).
+    # but the reserved envelope adds the 1800s assess overhead -> 1.0h, so 9.4 + 1.0 = 10.4 > 10.0
+    # and the job is blocked pre-flight. this is the under-reservation the fix closes.
+    stage.usage_ledger.record("competitor-local", 9.4, _NOW)
+
+    result = stage.run_once(_ctx(tmp_path, _charter([_target()], gpu_hours=10.0)))
+
+    assert result.processed == 0
+    assert not trained["ran"]
+    assert stage.registry.list_all() == []
+    events = _events(tmp_path)
+    assert any(e["event"] == "train_budget_exhausted" for e in events)
+
+
+def test_unchanged_dataset_is_not_retrained(tmp_path: Path, monkeypatch: Any) -> None:
+    _seed_dataset(tmp_path, "competitor-local", 6)
+    calls = {"count": 0}
+    monkeypatch.setattr(train_mod, "select_backend", lambda method: "trl")
+
+    def fake_run(backend_name: str, request: Any) -> TrainOutcome:
+        calls["count"] += 1
+        return TrainOutcome(
+            request.output_dir / "adapters",
+            backend_name,
+            {"num_records": 6.0, "training_seconds": 3600.0},
+            1.0,
+        )
+
+    monkeypatch.setattr(train_mod, "run_training", fake_run)
+    stage = _stage(tmp_path)
+    charter = _charter([_target()])
+
+    first = stage.run_once(_ctx(tmp_path, charter))
+    second = stage.run_once(_ctx(tmp_path, charter))
+
+    assert first.processed == 1
+    assert second.processed == 0  # the unchanged manifest is skipped the second cycle
+    assert calls["count"] == 1  # run_training ran exactly once
+    assert stage.usage_ledger.used_in_window("competitor-local", 24, _NOW) == 1.0  # charged once
+    assert len(stage.registry.list_all()) == 1
+    events = _events(tmp_path)
+    up_to_date = [e for e in events if e["event"] == "train_up_to_date"]
+    assert len(up_to_date) == 1
+    assert up_to_date[0]["payload"]["record_count"] == 6
+
+
+def test_growing_dataset_trains_a_distinct_checkpoint(tmp_path: Path, monkeypatch: Any) -> None:
+    _seed_dataset(tmp_path, "competitor-local", 5)
+    monkeypatch.setattr(train_mod, "select_backend", lambda method: "trl")
+
+    def fake_run(backend_name: str, request: Any) -> TrainOutcome:
+        return TrainOutcome(
+            request.output_dir / "adapters",
+            backend_name,
+            {"num_records": 6.0, "training_seconds": 3600.0},
+            1.0,
+        )
+
+    monkeypatch.setattr(train_mod, "run_training", fake_run)
+    stage = _stage(tmp_path)
+    charter = _charter([_target()])
+
+    stage.run_once(_ctx(tmp_path, charter))
+    _seed_dataset(tmp_path, "competitor-local", 1)  # grow 5 -> 6
+    stage.run_once(_ctx(tmp_path, charter))
+
+    records = stage.registry.list_all()
+    assert len(records) == 2
+    paths = sorted(r.checkpoint_path for r in records)
+    assert any("/5/" in p for p in paths)
+    assert any("/6/" in p for p in paths)
 
 
 def test_no_available_backend_is_not_an_error(tmp_path: Path, monkeypatch: Any) -> None:

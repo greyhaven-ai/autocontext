@@ -28,6 +28,7 @@ def publish_candidate(
     registry: ModelRegistry,
     artifacts_root: Path,
     run_id: str,
+    record_count: int,
 ) -> str:
     completion = TrainingCompletionOutput(
         run_id=run_id,
@@ -40,7 +41,17 @@ def publish_candidate(
         training_metrics=outcome.metrics,
         data_stats={"num_records": outcome.metrics.get("num_records", 0.0)},
         runtime_types=["provider"],
-        metadata={"produced_by": f"finetune:{target.name}", "target": target.name, "gpu_hours": outcome.gpu_hours},
+        # base_model is required by the adapter-serving path (scenario_bound_clients.plan_local_client):
+        # an mlxlm adapter record without it cannot be rebuilt into a client and is skipped as broken.
+        # record_count stamps the dataset size this candidate was trained on, so the train stage can
+        # detect an unchanged manifest and skip a redundant retrain of the same data.
+        metadata={
+            "produced_by": f"finetune:{target.name}",
+            "target": target.name,
+            "gpu_hours": outcome.gpu_hours,
+            "base_model": target.base_model,
+            "record_count": record_count,
+        },
     )
     record = publish_training_output(completion, registry, artifacts_root=artifacts_root, auto_activate=False)
     return record.artifact_id

@@ -40,12 +40,16 @@ def test_publish_registers_a_non_active_candidate(tmp_path: Path) -> None:
         registry=registry,
         artifacts_root=tmp_path / "artifacts",
         run_id="ambient-run-1",
+        record_count=10,
     )
 
     record = registry.load(artifact_id)
     assert record is not None
     assert record.activation_state == "candidate"
     assert record.metadata.get("produced_by") == "finetune:competitor-local"
+    # the adapter-serving path refuses a record without base_model, so it must be stamped
+    assert record.metadata.get("base_model") == "tiny"
+    assert record.metadata.get("record_count") == 10
 
 
 def test_publish_is_idempotent_on_same_inputs(tmp_path: Path) -> None:
@@ -58,6 +62,7 @@ def test_publish_is_idempotent_on_same_inputs(tmp_path: Path) -> None:
         registry=registry,
         artifacts_root=tmp_path / "artifacts",
         run_id="ambient-run-1",
+        record_count=10,
     )
     first = publish_candidate(**kwargs)
     second = publish_candidate(**kwargs)
