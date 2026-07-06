@@ -7,6 +7,15 @@ live model for a target is a scenario-routing lookup keyed on the target name.
 resolve_active_serving is a thin wrapper over the scenario-routing resolver that
 returns the active model for a target (or the fallback when none is live).
 
+Scope boundary: resolve_active_serving is keyed on the TARGET name, so it is a
+per-target lookup a caller runs when it already knows which target to serve. The
+generation loop's own live router (resolve_provider_for_context, driven by the real
+scenario context of a running match) does NOT see these per-target ambient records:
+ambient candidates are slotted by target name, not by the real scenario, so the
+target key and the running-scenario key never coincide. Wiring per-role live serving
+into the running loop (mapping a live scenario onto the right ambient target) is
+deferred to plan 5b.
+
 ServerSupervisor carries the health/rollback logic a real vLLM launch needs, with
 launch itself left to a later slice (plan 5b/ops). It is unit-tested with fakes:
 poll_interval_fn defaults to a no-op so tests never sleep.

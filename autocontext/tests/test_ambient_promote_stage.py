@@ -197,6 +197,34 @@ def test_different_anchor_incumbent_emits_mismatch_and_does_not_activate(tmp_pat
     assert mismatch[0]["payload"] == {"target": "competitor-local", "artifact_id": "cand-1"}
 
 
+def test_candidate_under_stale_anchor_is_not_eligible_despite_higher_score(tmp_path: Path) -> None:
+    registry = ModelRegistry(tmp_path / "registry")
+    # two drift-clean candidates for the same target: the higher-scoring one was scored under a
+    # stale anchor (a previous charter anchor), the lower-scoring one under the current anchor.
+    _record(registry, "cand-current", "competitor-local", state="candidate", eval_meta=_eval(0.6))
+    _record(
+        registry,
+        "cand-stale",
+        "competitor-local",
+        state="candidate",
+        eval_meta=_eval(0.95, anchor="claude-opus-4-8"),
+    )
+    charter = _charter([_target("competitor-local")])
+
+    result = _stage(registry).run_once(_ctx(tmp_path, charter))
+
+    # the current-anchor candidate is the only promotion consideration; the stale higher-score
+    # one is never picked as best, so it is not promoted despite its higher score.
+    assert (result.processed, result.errors) == (1, 0)
+    promoted = registry.load("cand-current")
+    assert promoted is not None and promoted.activation_state == "active"
+    stale = registry.load("cand-stale")
+    assert stale is not None and stale.activation_state == "candidate"
+    assert "probation" not in stale.metadata
+    activated = [e for e in _events(tmp_path) if e["event"] == "promote_activated"]
+    assert activated[0]["payload"]["artifact_id"] == "cand-current"
+
+
 def test_propose_autonomy_requires_approval_and_does_not_activate(tmp_path: Path) -> None:
     registry = ModelRegistry(tmp_path / "registry")
     _record(registry, "cand-1", "competitor-local", state="candidate", eval_meta=_eval(0.8))

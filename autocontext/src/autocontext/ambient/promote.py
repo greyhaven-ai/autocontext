@@ -52,8 +52,15 @@ class PromoteStage:
     def _promote_target(self, ctx: StageContext, target: CharterTarget) -> int:
         records = self.registry.list_all()
         candidates = [r for r in records if self._is_promotable_candidate(r, target.name)]
+        # only compare candidates scored under the CURRENT charter anchor: if the anchor
+        # changed between training cycles, candidates carrying scores from a stale anchor are
+        # not apples-to-apples, so they are not eligible to be picked as best this cycle (they
+        # get re-scored under the new anchor by the evaluate stage, a separate 5b concern).
+        current_anchor = ctx.charter.anchor.model
+        candidates = [r for r in candidates if r.metadata["eval"].get("anchor_model") == current_anchor]
         if not candidates:
-            # nothing evaluated-and-clean for this target this cycle: stay quiet.
+            # nothing evaluated-and-clean under the current anchor for this target this cycle:
+            # stay quiet, same as having no candidates at all.
             return 0
 
         best = max(candidates, key=lambda r: r.metadata["eval"]["score"])
