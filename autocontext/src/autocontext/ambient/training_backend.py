@@ -1,7 +1,18 @@
 """the training-backend seam: availability selection and run indirection.
 
-The ambient train stage talks only to this module, never to the heavy mlx or
-trl backends directly, so a cpu-only ci monkeypatches _availability and
+mlxlm is the only backend wired here, and it is the only one that trains a
+LoRA-SFT adapter over the curated data_path file the ambient curate stage
+writes. It requires Darwin plus the mlx runtime, so on a box without them
+select_backend returns None and the train stage cleanly no-ops (no error). A
+Linux or CUDA SFT-over-dataset backend is future work: until it lands, ambient
+training only produces candidates on an mlx-capable box.
+
+(The trl backend is deliberately not wired: it does on-policy
+distillation/RLVR, generating its own prompts from the live scenario, so it
+cannot consume a curated per-target dataset file.)
+
+The ambient train stage talks only to this module, never to the heavy mlx
+backend directly, so a cpu-only ci monkeypatches _availability and
 _BACKEND_FNS to exercise the whole stage without a real fine-tune. gpu_hours
 is derived from the wall-clock training_seconds the backend reports, which is
 what the usage ledger and budget floor consume.
@@ -14,14 +25,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from autocontext.training.autoresearch.mlxlm_backend import run_mlxlm_training
-from autocontext.training.autoresearch.trl_backend import run_trl_training
 from autocontext.training.backends import default_backend_registry
 
 # preference order per charter method; first available wins
-_METHOD_BACKENDS: dict[str, tuple[str, ...]] = {"sft-distill": ("mlxlm", "trl")}
+_METHOD_BACKENDS: dict[str, tuple[str, ...]] = {"sft-distill": ("mlxlm",)}
 _BACKEND_FNS: dict[str, Callable[..., dict[str, float]]] = {
     "mlxlm": run_mlxlm_training,
-    "trl": run_trl_training,
 }
 
 
