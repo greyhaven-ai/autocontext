@@ -15,7 +15,10 @@ from autocontext.ambient.sources.jsonl_feed import JsonlFeedSource
 from autocontext.ambient.sources.native import NativeRunsSource
 from autocontext.ambient.stage import STAGE_NAMES, NoOpStage, Stage
 from autocontext.ambient.trace_store import TraceStore
+from autocontext.ambient.train import TrainStage
+from autocontext.ambient.usage import UsageLedger
 from autocontext.harness.core.events import EventStreamEmitter
+from autocontext.training.model_registry import ModelRegistry
 
 
 def build_stages(
@@ -25,6 +28,10 @@ def build_stages(
     runs_db_path: Path,
     otel_feed_dir: Path,
     datasets_dir: Path,
+    registry_dir: Path,
+    usage_db: Path,
+    artifacts_dir: Path,
+    checkpoints_dir: Path,
 ) -> dict[str, Stage]:
     sources: list[TraceSource] = []
     unsupported: list[tuple[str, str]] = []
@@ -52,4 +59,12 @@ def build_stages(
     )
     stages["curate"] = CurateStage(name="curate", trace_store=trace_store, dataset_store=dataset_store)
     stages["advise"] = AdviseStage(name="advise", trace_store=trace_store)
+    stages["train"] = TrainStage(
+        name="train",
+        dataset_store=dataset_store,
+        usage_ledger=UsageLedger(usage_db),
+        registry=ModelRegistry(registry_dir),
+        artifacts_root=artifacts_dir,
+        checkpoints_root=checkpoints_dir,
+    )
     return stages

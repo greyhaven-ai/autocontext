@@ -77,12 +77,24 @@ class AmbientQueue:
         with self._connect() as conn:
             conn.execute("UPDATE ambient_queue SET status = 'done' WHERE job_id = ?", (job_id,))
 
-    def fail(self, job_id: int, error: str) -> None:
+    def fail(self, job_id: int, error: str, *, max_attempts: int = 5) -> None:
+        # a job that has failed max_attempts times is a poison job: move it to
+        # 'dead' so it stops being reclaimed and looping forever. attempts is
+        # incremented first so the count reflects this failure.
         with self._connect() as conn:
             conn.execute(
-                "UPDATE ambient_queue SET status = 'pending', attempts = attempts + 1, last_error = ? WHERE job_id = ?",
+                "UPDATE ambient_queue SET attempts = attempts + 1, last_error = ? WHERE job_id = ?",
                 (error, job_id),
             )
+            conn.execute(
+                "UPDATE ambient_queue SET status = CASE WHEN attempts >= ? THEN 'dead' ELSE 'pending' END WHERE job_id = ?",
+                (max_attempts, job_id),
+            )
+
+    def dead_letter_count(self) -> int:
+        with self._connect() as conn:
+            row = conn.execute("SELECT COUNT(*) FROM ambient_queue WHERE status = 'dead'").fetchone()
+            return int(row[0])
 
     def depth(self, stage: str) -> int:
         with self._connect() as conn:

@@ -13,6 +13,33 @@ from autocontext.cli_ambient import ambient_app
 runner = CliRunner()
 
 
+def _path_opts(tmp_path: Path) -> list[str]:
+    """Every ambient path option pointed under tmp_path, so status/run/once never
+    fall back to a real runs/ default and write into the package root."""
+    return [
+        "--db-path",
+        str(tmp_path / "ambient.sqlite3"),
+        "--events-path",
+        str(tmp_path / "events.ndjson"),
+        "--runs-db",
+        str(tmp_path / "runs.sqlite3"),
+        "--otel-feed-dir",
+        str(tmp_path / "feed"),
+        "--datasets-dir",
+        str(tmp_path / "datasets"),
+        "--proposals-path",
+        str(tmp_path / "proposals.jsonl"),
+        "--registry-dir",
+        str(tmp_path / "registry"),
+        "--usage-db",
+        str(tmp_path / "usage.sqlite3"),
+        "--artifacts-dir",
+        str(tmp_path / "artifacts"),
+        "--checkpoints-dir",
+        str(tmp_path / "checkpoints"),
+    ]
+
+
 def _init(tmp_path: Path) -> Path:
     charter_path = tmp_path / "ambient-charter.yaml"
     result = runner.invoke(
@@ -53,7 +80,7 @@ def test_status_reports_stages(tmp_path: Path) -> None:
     charter_path = _init(tmp_path)
     result = runner.invoke(
         app,
-        ["ambient", "status", "--charter-path", str(charter_path), "--db-path", str(tmp_path / "a.sqlite3")],
+        ["ambient", "status", "--charter-path", str(charter_path), *_path_opts(tmp_path)],
     )
     assert result.exit_code == 0, result.output
     for stage in ("ingest", "curate", "advise", "train", "evaluate"):
@@ -75,10 +102,7 @@ def test_run_with_max_cycles_terminates(tmp_path: Path) -> None:
             "run",
             "--charter-path",
             str(charter_path),
-            "--db-path",
-            str(tmp_path / "a.sqlite3"),
-            "--events-path",
-            str(tmp_path / "events.ndjson"),
+            *_path_opts(tmp_path),
             "--poll-seconds",
             "0",
             "--max-cycles",
@@ -99,10 +123,7 @@ def test_once_runs_single_stage(tmp_path: Path) -> None:
             "ingest",
             "--charter-path",
             str(charter_path),
-            "--db-path",
-            str(tmp_path / "a.sqlite3"),
-            "--events-path",
-            str(tmp_path / "events.ndjson"),
+            *_path_opts(tmp_path),
         ],
     )
     assert result.exit_code == 0, result.output
@@ -113,13 +134,13 @@ def test_status_does_not_requeue_running_jobs(tmp_path: Path) -> None:
     from autocontext.ambient.queue import AmbientQueue
 
     charter_path = _init(tmp_path)
-    db_path = tmp_path / "a.sqlite3"
+    db_path = tmp_path / "ambient.sqlite3"  # matches --db-path in _path_opts
     queue = AmbientQueue(db_path)
     queue.enqueue("ingest", "poll_source", {})
     assert queue.claim("ingest") is not None  # in-flight in another process
     result = runner.invoke(
         app,
-        ["ambient", "status", "--charter-path", str(charter_path), "--db-path", str(db_path)],
+        ["ambient", "status", "--charter-path", str(charter_path), *_path_opts(tmp_path)],
     )
     assert result.exit_code == 0, result.output
     assert queue.depth("ingest") == 0  # still running, not yanked back
@@ -134,10 +155,7 @@ def test_run_rejects_negative_poll_seconds(tmp_path: Path) -> None:
             "run",
             "--charter-path",
             str(charter_path),
-            "--db-path",
-            str(tmp_path / "a.sqlite3"),
-            "--events-path",
-            str(tmp_path / "events.ndjson"),
+            *_path_opts(tmp_path),
             "--poll-seconds",
             "-1",
         ],
@@ -172,7 +190,7 @@ def test_once_ingest_pulls_from_runs_db(tmp_path: Path) -> None:
     )
     conn.commit()
     conn.close()
-    db_path = tmp_path / "ambient.sqlite3"
+    db_path = tmp_path / "ambient.sqlite3"  # matches --db-path in _path_opts
     result = runner.invoke(
         app,
         [
@@ -181,14 +199,7 @@ def test_once_ingest_pulls_from_runs_db(tmp_path: Path) -> None:
             "ingest",
             "--charter-path",
             str(charter_path),
-            "--db-path",
-            str(db_path),
-            "--events-path",
-            str(tmp_path / "events.ndjson"),
-            "--runs-db",
-            str(runs_db),
-            "--otel-feed-dir",
-            str(tmp_path / "feed"),
+            *_path_opts(tmp_path),
         ],
     )
     assert result.exit_code == 0, result.output
@@ -209,22 +220,44 @@ def test_once_curate_runs_clean_on_empty_stores(tmp_path: Path) -> None:
             "curate",
             "--charter-path",
             str(charter_path),
-            "--db-path",
-            str(tmp_path / "ambient.sqlite3"),
-            "--events-path",
-            str(tmp_path / "events.ndjson"),
-            "--runs-db",
-            str(tmp_path / "runs.sqlite3"),
-            "--otel-feed-dir",
-            str(tmp_path / "feed"),
-            "--datasets-dir",
-            str(tmp_path / "datasets"),
-            "--proposals-path",
-            str(tmp_path / "proposals.jsonl"),
+            *_path_opts(tmp_path),
         ],
     )
     assert result.exit_code == 0, result.output
     assert "processed=0" in result.output
+
+
+def test_once_train_runs_clean_on_empty_stores(tmp_path: Path) -> None:
+    charter_path = _init(tmp_path)
+    result = runner.invoke(
+        app,
+        [
+            "ambient",
+            "once",
+            "train",
+            "--charter-path",
+            str(charter_path),
+            *_path_opts(tmp_path),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "processed=0" in result.output
+
+
+def test_status_shows_candidates_row(tmp_path: Path) -> None:
+    charter_path = _init(tmp_path)
+    result = runner.invoke(
+        app,
+        [
+            "ambient",
+            "status",
+            "--charter-path",
+            str(charter_path),
+            *_path_opts(tmp_path),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "candidates=0" in result.output
 
 
 def test_status_shows_target_dataset_rows(tmp_path: Path) -> None:
@@ -239,18 +272,7 @@ def test_status_shows_target_dataset_rows(tmp_path: Path) -> None:
             "status",
             "--charter-path",
             str(charter_path),
-            "--db-path",
-            str(tmp_path / "ambient.sqlite3"),
-            "--events-path",
-            str(tmp_path / "events.ndjson"),
-            "--runs-db",
-            str(tmp_path / "runs.sqlite3"),
-            "--otel-feed-dir",
-            str(tmp_path / "feed"),
-            "--datasets-dir",
-            str(tmp_path / "datasets"),
-            "--proposals-path",
-            str(tmp_path / "proposals.jsonl"),
+            *_path_opts(tmp_path),
         ],
     )
     assert result.exit_code == 0, result.output
