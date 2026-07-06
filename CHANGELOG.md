@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file.
 - `autoctx ambient` foundation: a charter-driven resident daemon skeleton (interview wizard, autonomy dial with guardrail floors, durable stage queue, five stages with auto-pause breakers, status/run/once cli). Stages are no-ops pending the ingest, curation, and training plans (docs/ambient-trainer-design.md).
 - The ambient ingest stage is live: charter-enabled sources (autocontext-native runs, jsonl trace feeds) flow through the redaction gate into an append-only trace store with per-source cursors and disk-quota retention; the llm proxy tap follows in the next slice.
 - ambient trainer plan 3: curate and advise stages (agent-output ingestion, guarded per-target datasets, heuristic charter proposals, proposal approval cli)
+- ambient trainer plan 4: train stage with gpu-hours budget ledger, autonomy gating, and model-candidate publication
 
 ## [0.11.0] - 2026-07-02
 

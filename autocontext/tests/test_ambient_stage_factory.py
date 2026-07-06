@@ -11,6 +11,7 @@ from autocontext.ambient.sources.jsonl_feed import JsonlFeedSource
 from autocontext.ambient.sources.native import NativeRunsSource
 from autocontext.ambient.stage import STAGE_NAMES, NoOpStage
 from autocontext.ambient.stage_factory import build_stages
+from autocontext.ambient.train import TrainStage
 from autocontext.harness.core.events import EventStreamEmitter
 
 
@@ -47,6 +48,10 @@ def test_build_stages_wires_enabled_sources(tmp_path: Path) -> None:
         runs_db_path=tmp_path / "runs.sqlite3",
         otel_feed_dir=tmp_path / "feed",
         datasets_dir=tmp_path / "datasets",
+        registry_dir=tmp_path / "registry",
+        usage_db=tmp_path / "usage.sqlite3",
+        artifacts_dir=tmp_path / "artifacts",
+        checkpoints_dir=tmp_path / "checkpoints",
     )
     assert set(stages.keys()) == set(STAGE_NAMES)
     ingest = stages["ingest"]
@@ -57,7 +62,7 @@ def test_build_stages_wires_enabled_sources(tmp_path: Path) -> None:
     assert [source.kind for source in ingest.sources] == ["autocontext", "autocontext-outputs", "otel"]
     assert isinstance(stages["curate"], CurateStage)
     assert isinstance(stages["advise"], AdviseStage)
-    assert all(isinstance(stages[name], NoOpStage) for name in ("train", "evaluate"))
+    assert all(isinstance(stages[name], NoOpStage) for name in ("evaluate",))
 
 
 def test_unsupported_kinds_emit_event_and_are_skipped(tmp_path: Path) -> None:
@@ -73,6 +78,10 @@ def test_unsupported_kinds_emit_event_and_are_skipped(tmp_path: Path) -> None:
         runs_db_path=tmp_path / "runs.sqlite3",
         otel_feed_dir=tmp_path / "feed",
         datasets_dir=tmp_path / "datasets",
+        registry_dir=tmp_path / "registry",
+        usage_db=tmp_path / "usage.sqlite3",
+        artifacts_dir=tmp_path / "artifacts",
+        checkpoints_dir=tmp_path / "checkpoints",
     )
     ingest = stages["ingest"]
     assert isinstance(ingest, IngestStage)
@@ -92,6 +101,10 @@ def test_autocontext_source_registers_generation_and_output_readers(tmp_path: Pa
         runs_db_path=tmp_path / "runs.sqlite3",
         otel_feed_dir=tmp_path / "feed",
         datasets_dir=tmp_path / "datasets",
+        registry_dir=tmp_path / "registry",
+        usage_db=tmp_path / "usage.sqlite3",
+        artifacts_dir=tmp_path / "artifacts",
+        checkpoints_dir=tmp_path / "checkpoints",
     )
     ingest = stages["ingest"]
     kinds = sorted(source.kind for source in ingest.sources)  # type: ignore[attr-defined]
@@ -107,10 +120,32 @@ def test_build_stages_wires_real_curate_and_advise(tmp_path: Path) -> None:
         runs_db_path=tmp_path / "runs.sqlite3",
         otel_feed_dir=tmp_path / "feed",
         datasets_dir=tmp_path / "datasets",
+        registry_dir=tmp_path / "registry",
+        usage_db=tmp_path / "usage.sqlite3",
+        artifacts_dir=tmp_path / "artifacts",
+        checkpoints_dir=tmp_path / "checkpoints",
     )
     assert isinstance(stages["curate"], CurateStage)
     assert isinstance(stages["advise"], AdviseStage)
     # one shared trace store: ingest writes and curate/advise read the same db
     assert stages["curate"].trace_store is stages["ingest"].trace_store  # type: ignore[attr-defined]
     assert stages["advise"].trace_store is stages["ingest"].trace_store  # type: ignore[attr-defined]
-    assert stages["train"].__class__.__name__ == "NoOpStage"
+    assert isinstance(stages["train"], TrainStage)
+
+
+def test_build_stages_wires_real_train_stage(tmp_path: Path) -> None:
+    charter = _charter(sources=[CharterSource(name="native", kind="autocontext")])
+    stages = build_stages(
+        charter,
+        db_path=tmp_path / "ambient.sqlite3",
+        emitter=EventStreamEmitter(tmp_path / "events.ndjson"),
+        runs_db_path=tmp_path / "runs.sqlite3",
+        otel_feed_dir=tmp_path / "feed",
+        datasets_dir=tmp_path / "datasets",
+        registry_dir=tmp_path / "registry",
+        usage_db=tmp_path / "usage.sqlite3",
+        artifacts_dir=tmp_path / "artifacts",
+        checkpoints_dir=tmp_path / "checkpoints",
+    )
+    assert isinstance(stages["train"], TrainStage)
+    assert stages["evaluate"].__class__.__name__ == "NoOpStage"

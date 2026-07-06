@@ -227,6 +227,71 @@ def test_once_curate_runs_clean_on_empty_stores(tmp_path: Path) -> None:
     assert "processed=0" in result.output
 
 
+def test_once_train_runs_clean_on_empty_stores(tmp_path: Path) -> None:
+    charter_path = _init(tmp_path)
+    result = runner.invoke(
+        app,
+        [
+            "ambient",
+            "once",
+            "train",
+            "--charter-path",
+            str(charter_path),
+            "--db-path",
+            str(tmp_path / "ambient.sqlite3"),
+            "--events-path",
+            str(tmp_path / "events.ndjson"),
+            "--runs-db",
+            str(tmp_path / "runs.sqlite3"),
+            "--otel-feed-dir",
+            str(tmp_path / "feed"),
+            "--datasets-dir",
+            str(tmp_path / "datasets"),
+            "--proposals-path",
+            str(tmp_path / "proposals.jsonl"),
+            "--registry-dir",
+            str(tmp_path / "registry"),
+            "--usage-db",
+            str(tmp_path / "usage.sqlite3"),
+            "--artifacts-dir",
+            str(tmp_path / "artifacts"),
+            "--checkpoints-dir",
+            str(tmp_path / "checkpoints"),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "processed=0" in result.output
+
+
+def test_status_shows_candidates_row(tmp_path: Path) -> None:
+    charter_path = _init(tmp_path)
+    result = runner.invoke(
+        app,
+        [
+            "ambient",
+            "status",
+            "--charter-path",
+            str(charter_path),
+            "--db-path",
+            str(tmp_path / "ambient.sqlite3"),
+            "--events-path",
+            str(tmp_path / "events.ndjson"),
+            "--runs-db",
+            str(tmp_path / "runs.sqlite3"),
+            "--otel-feed-dir",
+            str(tmp_path / "feed"),
+            "--datasets-dir",
+            str(tmp_path / "datasets"),
+            "--proposals-path",
+            str(tmp_path / "proposals.jsonl"),
+            "--registry-dir",
+            str(tmp_path / "registry"),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "candidates=0" in result.output
+
+
 def test_status_shows_target_dataset_rows(tmp_path: Path) -> None:
     charter_path = _init(tmp_path)  # the fixture charter contains at least one target
     datasets = DatasetStore(tmp_path / "datasets")

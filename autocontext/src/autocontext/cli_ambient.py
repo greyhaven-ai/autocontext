@@ -29,6 +29,10 @@ _DEFAULT_RUNS_DB = Path("runs/autocontext.sqlite3")
 _DEFAULT_OTEL_FEED = Path("runs/ambient-otel-feed")
 _DEFAULT_DATASETS = Path("runs/ambient-datasets")
 _DEFAULT_PROPOSALS = Path("runs/ambient-proposals.jsonl")
+_DEFAULT_REGISTRY = Path("runs/ambient-registry")
+_DEFAULT_USAGE = Path("runs/ambient-usage.sqlite3")
+_DEFAULT_ARTIFACTS = Path("runs/ambient-artifacts")
+_DEFAULT_CHECKPOINTS = Path("runs/ambient-checkpoints")
 
 
 def _daemon(
@@ -39,6 +43,10 @@ def _daemon(
     otel_feed_dir: Path,
     datasets_dir: Path,
     proposals_path: Path,
+    registry_dir: Path,
+    usage_db: Path,
+    artifacts_dir: Path,
+    checkpoints_dir: Path,
 ) -> AmbientDaemon:
     charter = load_charter(charter_path)
     emitter = EventStreamEmitter(events_path)
@@ -49,6 +57,10 @@ def _daemon(
         runs_db_path=runs_db_path,
         otel_feed_dir=otel_feed_dir,
         datasets_dir=datasets_dir,
+        registry_dir=registry_dir,
+        usage_db=usage_db,
+        artifacts_dir=artifacts_dir,
+        checkpoints_dir=checkpoints_dir,
     )
     return AmbientDaemon(
         charter=charter,
@@ -86,9 +98,25 @@ def status(
     otel_feed_dir: Annotated[Path, typer.Option("--otel-feed-dir")] = _DEFAULT_OTEL_FEED,
     datasets_dir: Annotated[Path, typer.Option("--datasets-dir")] = _DEFAULT_DATASETS,
     proposals_path: Annotated[Path, typer.Option("--proposals-path")] = _DEFAULT_PROPOSALS,
+    registry_dir: Annotated[Path, typer.Option("--registry-dir")] = _DEFAULT_REGISTRY,
+    usage_db: Annotated[Path, typer.Option("--usage-db")] = _DEFAULT_USAGE,
+    artifacts_dir: Annotated[Path, typer.Option("--artifacts-dir")] = _DEFAULT_ARTIFACTS,
+    checkpoints_dir: Annotated[Path, typer.Option("--checkpoints-dir")] = _DEFAULT_CHECKPOINTS,
 ) -> None:
     try:
-        daemon = _daemon(charter_path, db_path, events_path, runs_db, otel_feed_dir, datasets_dir, proposals_path)
+        daemon = _daemon(
+            charter_path,
+            db_path,
+            events_path,
+            runs_db,
+            otel_feed_dir,
+            datasets_dir,
+            proposals_path,
+            registry_dir,
+            usage_db,
+            artifacts_dir,
+            checkpoints_dir,
+        )
     except CharterLoadError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
@@ -98,6 +126,11 @@ def status(
     for name, info in daemon.status().items():
         table.add_row(name, str(info["paused"]), str(info["queue_depth"]))
     console.print(table)
+    # read-only: construct the registry and count candidates, never train or write events
+    from autocontext.training.model_registry import ModelRegistry
+
+    candidates = len(ModelRegistry(registry_dir).list_all())
+    console.print(f"candidates={candidates}")
     if charter.targets:
         dataset_store = DatasetStore(datasets_dir)
         targets_table = Table("target", "dataset records", "mean score")
@@ -116,11 +149,27 @@ def run(
     otel_feed_dir: Annotated[Path, typer.Option("--otel-feed-dir")] = _DEFAULT_OTEL_FEED,
     datasets_dir: Annotated[Path, typer.Option("--datasets-dir")] = _DEFAULT_DATASETS,
     proposals_path: Annotated[Path, typer.Option("--proposals-path")] = _DEFAULT_PROPOSALS,
+    registry_dir: Annotated[Path, typer.Option("--registry-dir")] = _DEFAULT_REGISTRY,
+    usage_db: Annotated[Path, typer.Option("--usage-db")] = _DEFAULT_USAGE,
+    artifacts_dir: Annotated[Path, typer.Option("--artifacts-dir")] = _DEFAULT_ARTIFACTS,
+    checkpoints_dir: Annotated[Path, typer.Option("--checkpoints-dir")] = _DEFAULT_CHECKPOINTS,
     poll_seconds: Annotated[float, typer.Option("--poll-seconds", min=0.0)] = 30.0,
     max_cycles: Annotated[int | None, typer.Option("--max-cycles", hidden=True)] = None,
 ) -> None:
     try:
-        daemon = _daemon(charter_path, db_path, events_path, runs_db, otel_feed_dir, datasets_dir, proposals_path)
+        daemon = _daemon(
+            charter_path,
+            db_path,
+            events_path,
+            runs_db,
+            otel_feed_dir,
+            datasets_dir,
+            proposals_path,
+            registry_dir,
+            usage_db,
+            artifacts_dir,
+            checkpoints_dir,
+        )
     except CharterLoadError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
@@ -141,9 +190,25 @@ def once(
     otel_feed_dir: Annotated[Path, typer.Option("--otel-feed-dir")] = _DEFAULT_OTEL_FEED,
     datasets_dir: Annotated[Path, typer.Option("--datasets-dir")] = _DEFAULT_DATASETS,
     proposals_path: Annotated[Path, typer.Option("--proposals-path")] = _DEFAULT_PROPOSALS,
+    registry_dir: Annotated[Path, typer.Option("--registry-dir")] = _DEFAULT_REGISTRY,
+    usage_db: Annotated[Path, typer.Option("--usage-db")] = _DEFAULT_USAGE,
+    artifacts_dir: Annotated[Path, typer.Option("--artifacts-dir")] = _DEFAULT_ARTIFACTS,
+    checkpoints_dir: Annotated[Path, typer.Option("--checkpoints-dir")] = _DEFAULT_CHECKPOINTS,
 ) -> None:
     try:
-        daemon = _daemon(charter_path, db_path, events_path, runs_db, otel_feed_dir, datasets_dir, proposals_path)
+        daemon = _daemon(
+            charter_path,
+            db_path,
+            events_path,
+            runs_db,
+            otel_feed_dir,
+            datasets_dir,
+            proposals_path,
+            registry_dir,
+            usage_db,
+            artifacts_dir,
+            checkpoints_dir,
+        )
     except CharterLoadError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
