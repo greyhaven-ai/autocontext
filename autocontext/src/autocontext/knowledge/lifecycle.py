@@ -202,10 +202,22 @@ def curate_lesson(
     del lesson_store, current_generation
     if action == "delete":
         found, _text = _remove_lesson(artifacts, scenario, lesson_id)
-        return "deleted" if found else None
+        if found:
+            return "deleted"
+        removed, _entry = _remove_dead_end(artifacts, scenario, lesson_id)
+        return "deleted" if removed else None
     if action == "stale":
         found, _text = _set_lesson_stale(artifacts, scenario, lesson_id, stale=True)
         return "stale" if found else None
+    if action == "activate":
+        found, _text = _set_lesson_stale(artifacts, scenario, lesson_id, stale=False)
+        if found:
+            return "active"
+        removed, entry = _remove_dead_end(artifacts, scenario, lesson_id)
+        if not removed or entry is None:
+            return None
+        _append_playbook_lesson(artifacts, scenario, entry)
+        return "active"
     if action == "deadEnd":
         found, text = _remove_lesson(artifacts, scenario, lesson_id)
         if not found or text is None:
@@ -219,6 +231,43 @@ def _remove_lesson(artifacts: ArtifactStore, scenario: str, lesson_id: str) -> t
     found_playbook, text = _rewrite_playbook_lessons(artifacts, scenario, lesson_id, mode="remove")
     found_skill, skill_text = _rewrite_skill_lessons(artifacts, scenario, lesson_id, mode="remove")
     return found_playbook or found_skill, text or skill_text
+
+
+def _remove_dead_end(
+    artifacts: ArtifactStore, scenario: str, lesson_id: str
+) -> tuple[bool, str | None]:
+    """Remove one dead-end block by its derived id; returns its text when found."""
+    md = artifacts.read_dead_ends(scenario)
+    kept: list[str] = []
+    removed: str | None = None
+    for block in md.split("### Dead End"):
+        text = block.strip()
+        if not text:
+            continue
+        did = "deadend_" + hashlib.sha256(text.encode("utf-8")).hexdigest()[:8]
+        if removed is None and did == lesson_id:
+            removed = text
+            continue
+        kept.append(text)
+    if removed is None:
+        return False, None
+    rendered = "".join(f"### Dead End\n\n{text}\n\n" for text in kept)
+    artifacts.replace_dead_ends(scenario, rendered)
+    return True, removed
+
+
+def _append_playbook_lesson(artifacts: ArtifactStore, scenario: str, text: str) -> None:
+    """Append a lesson bullet to the playbook's lessons block (creating one if absent)."""
+    content = artifacts.read_playbook(scenario)
+    bullet = f"- {text}"
+    block = _playbook_block(content)
+    if block is None:
+        suffix = f"\n{LESSONS_START}\n{bullet}\n{LESSONS_END}\n"
+        artifacts.write_playbook(scenario, content + suffix)
+        return
+    block_start, end, body = block
+    new_body = body.rstrip("\n") + f"\n{bullet}\n"
+    artifacts.write_playbook(scenario, content[:block_start] + new_body + content[end:])
 
 
 def _set_lesson_stale(

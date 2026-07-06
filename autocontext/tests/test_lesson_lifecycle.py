@@ -131,3 +131,66 @@ def test_curate_missing_or_unknown_action_returns_none(tmp_path: Path) -> None:
 
     assert curate_lesson(artifacts=artifacts, scenario="scn", lesson_id="missing", action="delete", current_generation=1) is None
     assert curate_lesson(artifacts=artifacts, scenario="scn", lesson_id="missing", action="bad", current_generation=1) is None
+
+
+def test_curate_activate_restores_a_stale_lesson(tmp_path: Path) -> None:
+    artifacts = _store(tmp_path)
+    artifacts.write_playbook("scn", _playbook("bring me back"))
+    [lesson] = build_lifecycle(artifacts=artifacts, scenario="scn", current_generation=1)["active"]
+    curate_lesson(artifacts=artifacts, scenario="scn", lesson_id=lesson["id"], action="stale", current_generation=2)
+
+    assert (
+        curate_lesson(
+            artifacts=artifacts,
+            scenario="scn",
+            lesson_id=lesson["id"],
+            action="activate",
+            current_generation=3,
+        )
+        == "active"
+    )
+    view = build_lifecycle(artifacts=artifacts, scenario="scn", current_generation=3)
+    assert [v["text"] for v in view["active"]] == ["bring me back"]
+    assert view["stale"] == []
+
+
+def test_curate_activate_restores_a_dead_end_to_the_lessons_block(tmp_path: Path) -> None:
+    artifacts = _store(tmp_path)
+    artifacts.write_playbook("scn", _playbook("doomed", "survivor"))
+    [doomed, _] = build_lifecycle(artifacts=artifacts, scenario="scn", current_generation=1)["active"]
+    curate_lesson(artifacts=artifacts, scenario="scn", lesson_id=doomed["id"], action="deadEnd", current_generation=2)
+    [dead] = build_lifecycle(artifacts=artifacts, scenario="scn", current_generation=2)["deadEnd"]
+
+    assert (
+        curate_lesson(
+            artifacts=artifacts,
+            scenario="scn",
+            lesson_id=dead["id"],
+            action="activate",
+            current_generation=3,
+        )
+        == "active"
+    )
+    view = build_lifecycle(artifacts=artifacts, scenario="scn", current_generation=3)
+    assert view["deadEnd"] == []
+    assert sorted(v["text"] for v in view["active"]) == ["doomed", "survivor"]
+
+
+def test_curate_delete_removes_a_dead_end(tmp_path: Path) -> None:
+    artifacts = _store(tmp_path)
+    artifacts.write_playbook("scn", _playbook("doomed"))
+    [doomed] = build_lifecycle(artifacts=artifacts, scenario="scn", current_generation=1)["active"]
+    curate_lesson(artifacts=artifacts, scenario="scn", lesson_id=doomed["id"], action="deadEnd", current_generation=2)
+    [dead] = build_lifecycle(artifacts=artifacts, scenario="scn", current_generation=2)["deadEnd"]
+
+    assert (
+        curate_lesson(
+            artifacts=artifacts,
+            scenario="scn",
+            lesson_id=dead["id"],
+            action="delete",
+            current_generation=3,
+        )
+        == "deleted"
+    )
+    assert build_lifecycle(artifacts=artifacts, scenario="scn", current_generation=3)["deadEnd"] == []
