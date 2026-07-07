@@ -4,7 +4,11 @@ from typing import Any
 
 import pytest
 
-from autocontext.harness_optimization.calibration import compute_calibration
+from autocontext.harness_optimization.calibration import (
+    cite_margin_vs_noise,
+    compute_calibration,
+    render_calibration_report,
+)
 
 FIX = Path(__file__).resolve().parents[3] / "fixtures" / "harness-optimization" / "calibration-cases" / "calibration-cases.json"
 
@@ -50,3 +54,65 @@ def test_report_metadata_and_notes() -> None:
     assert report.scenario_id == "grid_ctf"
     assert report.current_min_delta == 0.05
     assert report.notes == "SE=0.0051 over n=5; margin above_noise"
+
+
+def _case_by_name(name: str) -> dict[str, Any]:
+    for case in _CASES:
+        if case["name"] == name:
+            return case
+    raise KeyError(name)
+
+
+def _report_for(name: str) -> Any:
+    case = _case_by_name(name)
+    return compute_calibration(
+        case["scores"],
+        scenario_id=case["scenario_id"],
+        current_min_delta=case["current_min_delta"],
+        max_trials=case["max_trials"],
+    )
+
+
+def test_render_calibration_report_contains_fields() -> None:
+    report = _report_for("low_noise")
+    rendered = render_calibration_report(report)
+
+    assert "calibration report:" in rendered
+    assert report.scenario_id in rendered
+    assert "standard_error:" in rendered
+    assert "recommended_min_delta:" in rendered
+    assert "recommended_trial_count:" in rendered
+    assert "margin:" in rendered
+    assert f"mean: {report.mean:.6f}" in rendered
+    assert f"samples: {report.sample_size}" in rendered
+
+
+def test_render_report_sparse_line_present_for_noisy() -> None:
+    report = _report_for("high_noise")
+    rendered = render_calibration_report(report)
+
+    assert report.sparse_metric_too_noisy is True
+    assert "sparse metric too noisy: optimize a denser verifier signal instead" in rendered
+    assert rendered.splitlines()[-1] == ("sparse metric too noisy: optimize a denser verifier signal instead")
+
+
+def test_render_report_sparse_line_absent_for_clean() -> None:
+    report = _report_for("low_noise")
+    rendered = render_calibration_report(report)
+
+    assert report.sparse_metric_too_noisy is False
+    assert "sparse metric too noisy" not in rendered
+
+
+def test_cite_margin_vs_noise_format() -> None:
+    report = _report_for("high_noise")
+    citation = cite_margin_vs_noise(report)
+
+    assert "margin" in citation
+    assert report.margin_vs_noise in citation
+    assert "recommended >=" in citation
+    assert f"{report.current_min_delta:.6f}" in citation
+    assert f"{report.recommended_min_delta:.6f}" in citation
+    assert citation == (
+        f"margin {report.current_min_delta:.6f} is {report.margin_vs_noise} (recommended >= {report.recommended_min_delta:.6f})"
+    )

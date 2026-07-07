@@ -78,3 +78,51 @@ def compute_calibration(
         sparse_metric_too_noisy=sparse_metric_too_noisy,
         notes=notes,
     )
+
+
+# Numeric fields are rendered with a fixed 6-decimal format so the text is
+# identical across languages. Do NOT use raw str(): Python str(2.0) -> "2.0"
+# while JS String(2) -> "2", which would diverge. The TypeScript port must use
+# the same 6-decimal fixed format (value.toFixed(6)) so the two reports match
+# character-for-character.
+def _fmt_float(value: float) -> str:
+    return f"{value:.6f}"
+
+
+_SPARSE_NOISE_LINE = "sparse metric too noisy: optimize a denser verifier signal instead"
+
+
+def render_calibration_report(report: CalibrationReport) -> str:
+    """Render a calibration report as a stable multi-line string.
+
+    The wording is mirrored character-for-character by the TypeScript port, so
+    every numeric field is formatted through :func:`_fmt_float` (6-decimal fixed)
+    for the float fields and plain integer ``str`` for the counts.
+    """
+    lines = [
+        f"calibration report: {report.scenario_id}",
+        f"samples: {report.sample_size}",
+        f"mean: {_fmt_float(report.mean)}",
+        f"std_dev: {_fmt_float(report.std_dev)}",
+        f"standard_error: {_fmt_float(report.standard_error)}",
+        f"recommended_min_delta: {_fmt_float(report.recommended_min_delta)}",
+        f"recommended_trial_count: {report.recommended_trial_count}",
+        f"current_min_delta: {_fmt_float(report.current_min_delta)}",
+        f"margin: {report.margin_vs_noise}",
+    ]
+    if report.sparse_metric_too_noisy:
+        lines.append(_SPARSE_NOISE_LINE)
+    return "\n".join(lines)
+
+
+def cite_margin_vs_noise(report: CalibrationReport) -> str:
+    """Render a one-line citation of the margin against the noise floor.
+
+    Both numbers use the same 6-decimal fixed format as
+    :func:`render_calibration_report` so the TypeScript port (toFixed(6))
+    produces identical text.
+    """
+    return (
+        f"margin {_fmt_float(report.current_min_delta)} is {report.margin_vs_noise} "
+        f"(recommended >= {_fmt_float(report.recommended_min_delta)})"
+    )
