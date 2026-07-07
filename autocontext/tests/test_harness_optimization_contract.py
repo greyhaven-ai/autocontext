@@ -15,7 +15,10 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from autocontext.harness_optimization.contract.models import CandidateEvidence
+from autocontext.harness_optimization.contract.models import (
+    CandidateEvidence,
+    PromotionScore,
+)
 
 # Walk up to the repo root: autocontext/tests/ -> autocontext/ -> <repo root>.
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -101,3 +104,58 @@ def test_shared_fixture_directory_contains_the_expected_set() -> None:
     # Set-membership guard: a dropped or renamed fixture fails here.
     names = {p.name for p in FIXTURES_DIR.glob("*.json")}
     assert names == EXPECTED_FIXTURES
+
+
+def _valid_promotion_score() -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "candidate_id": "cand-001",
+        "weight_version": "w-2026-07",
+        "components": {
+            "dense_quality_score": 0.82,
+            "sparse_success_rate": 0.6,
+            "tokens_per_million": 1200.0,
+            "error_rate": 0.05,
+            "score_variance": 0.01,
+        },
+        "weights": {
+            "sparse_success_weight": 1.0,
+            "token_cost_weight": 0.2,
+            "error_weight": 0.5,
+            "variance_weight": 0.1,
+        },
+        "score": 0.71,
+        "parity": {
+            "python": "implemented",
+            "typescript": "pending",
+            "schema_hash": "abc123",
+        },
+    }
+
+
+def test_valid_promotion_score_round_trips() -> None:
+    data = _valid_promotion_score()
+    model = PromotionScore(**data)
+    dumped = model.model_dump(exclude_none=True)
+    assert dumped == data
+
+
+def test_promotion_score_missing_required_component_raises() -> None:
+    data = _valid_promotion_score()
+    del data["components"]["error_rate"]
+    with pytest.raises(ValidationError):
+        PromotionScore(**data)
+
+
+def test_promotion_score_extra_field_raises() -> None:
+    data = _valid_promotion_score()
+    data["unexpected_field"] = "nope"
+    with pytest.raises(ValidationError):
+        PromotionScore(**data)
+
+
+def test_promotion_score_empty_parity_raises() -> None:
+    data = _valid_promotion_score()
+    data["parity"] = {}
+    with pytest.raises(ValidationError):
+        PromotionScore(**data)

@@ -2,7 +2,8 @@ import Ajv2020 from "ajv/dist/2020.js";
 import type { ErrorObject, ValidateFunction } from "ajv";
 import addFormats from "ajv-formats";
 import candidateEvidenceSchema from "./json-schemas/candidate-evidence.schema.json" with { type: "json" };
-import type { CandidateEvidence } from "./generated-types.js";
+import promotionScoreSchema from "./json-schemas/promotion-score.schema.json" with { type: "json" };
+import type { CandidateEvidence, PromotionScore } from "./generated-types.js";
 
 // Shared validation-result shape (matches the production-traces contract).
 export type ValidationResult =
@@ -16,11 +17,16 @@ const addFormatsFn =
 const ajv = new AjvCtor({ strict: true, allErrors: true });
 addFormatsFn(ajv);
 
-// Register the schema once at module init so $refs resolve.
+// Register the schemas once at module init so $refs resolve.
 ajv.addSchema(candidateEvidenceSchema as object);
+ajv.addSchema(promotionScoreSchema as object);
 
 const candidateEvidenceValidator = ajv.getSchema(
   "https://autocontext.dev/schema/harness-optimization/candidate-evidence.json",
+)!;
+
+const promotionScoreValidator = ajv.getSchema(
+  "https://autocontext.dev/schema/harness-optimization/promotion-score.json",
 )!;
 
 function toResult(validate: ValidateFunction, input: unknown): ValidationResult {
@@ -39,5 +45,9 @@ export function validateCandidateEvidence(input: unknown): ValidationResult {
   return toResult(candidateEvidenceValidator, input);
 }
 
-// Type-level assertion — if the TS type drifts from the schema this won't compile.
-export type _TypeCheck = CandidateEvidence;
+export function validatePromotionScore(input: unknown): ValidationResult {
+  return toResult(promotionScoreValidator, input);
+}
+
+// Type-level assertion — if a TS type drifts from its schema this won't compile.
+export type _TypeCheck = CandidateEvidence | PromotionScore;

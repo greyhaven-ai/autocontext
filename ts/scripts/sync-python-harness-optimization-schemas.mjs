@@ -5,14 +5,15 @@
  *
  * Pipeline:
  *   1. Mirror schemas: ts/.../json-schemas/ → autocontext/.../json_schemas/
- *   2. Bundle $refs in the aggregate `candidate-evidence.schema.json` using a
- *      custom local URL resolver (maps `https://autocontext.dev/schema/
+ *   2. Bundle $refs in the codegen-only aggregate `_aggregate.schema.json` using
+ *      a custom local URL resolver (maps `https://autocontext.dev/schema/
  *      harness-optimization/*.json` to the local canonical files).
  *   3. Feed the bundled aggregate to `datamodel-codegen` to regenerate
  *      `autocontext/.../contract/models.py`.
  *   4. Rewrite the generator's default banner to our AUTO-GENERATED banner.
  *
- * The Pydantic side only needs `CandidateEvidence` (the top-level aggregate).
+ * The aggregate root $refs every public artifact so the Pydantic side emits each
+ * as its own top-level model (CandidateEvidence, PromotionScore, ...).
  *
  * Usage:
  *   node scripts/sync-python-harness-optimization-schemas.mjs          # regenerate
@@ -47,7 +48,10 @@ const DST_SCHEMAS_DIR = join(PY_ROOT, "src/autocontext/harness_optimization/cont
 const MODELS_PY_PATH = join(PY_ROOT, "src/autocontext/harness_optimization/contract/models.py");
 
 const URL_PREFIX = "https://autocontext.dev/schema/harness-optimization/";
-const AGGREGATE_FOR_PYDANTIC = "candidate-evidence.schema.json";
+// Codegen-only aggregate root that $refs every public artifact so datamodel-codegen
+// emits each as its own top-level model into one models.py (CandidateEvidence,
+// PromotionScore, ...). See json-schemas/_aggregate.schema.json.
+const AGGREGATE_FOR_PYDANTIC = "_aggregate.schema.json";
 
 const args = process.argv.slice(2);
 const checkOnly = args.includes("--check");
@@ -124,7 +128,7 @@ const bundled = await $RefParser.bundle(aggregateEntry, {
 // -- Step 3: invoke datamodel-codegen on the bundled schema -------------------
 
 const tmpDir = mkdtempSync(join(tmpdir(), "autoctx-pydantic-gen-"));
-const bundledPath = join(tmpDir, "candidate-evidence.bundled.json");
+const bundledPath = join(tmpDir, "aggregate.bundled.json");
 const generatedPath = join(tmpDir, "models.py");
 writeFileSync(bundledPath, JSON.stringify(bundled, null, 2));
 

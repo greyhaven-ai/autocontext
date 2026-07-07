@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autocontext.dev/schema/harness-optimization/promotion-score.json",
+  "title": "PromotionScore",
+  "description": "Computed harness-promotion score for a single candidate (AC-877). Combines the dense quality signal with the sparse per-case success rate, marginal token cost, error rate, and score variance under a named, versioned set of weights. This is the artifact the promotion gate reads to decide whether a candidate advances. Shared source of truth for both the Python and TypeScript autocontext packages.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "candidate_id",
+    "weight_version",
+    "components",
+    "weights",
+    "score",
+    "parity"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Schema version for forward compatibility. Always 1 for this revision."
+    },
+    "candidate_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable unique identifier of the candidate this score belongs to."
+    },
+    "weight_version": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Version tag of the weight set used to compute this score."
+    },
+    "components": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dense_quality_score",
+        "sparse_success_rate",
+        "tokens_per_million",
+        "error_rate",
+        "score_variance"
+      ],
+      "properties": {
+        "dense_quality_score": {
+          "type": "number",
+          "description": "Dense quality signal, typically a judge or rubric score."
+        },
+        "sparse_success_rate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Fraction of target cases the candidate resolved, in [0, 1]."
+        },
+        "tokens_per_million": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Marginal token cost expressed per million tokens."
+        },
+        "error_rate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Fraction of runs that errored, in [0, 1]."
+        },
+        "score_variance": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Variance of the score across samples."
+        }
+      },
+      "description": "The measured components that feed the weighted promotion score."
+    },
+    "weights": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sparse_success_weight", "token_cost_weight", "error_weight", "variance_weight"],
+      "properties": {
+        "sparse_success_weight": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Weight applied to the sparse success rate."
+        },
+        "token_cost_weight": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Weight applied to the marginal token cost."
+        },
+        "error_weight": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Weight applied to the error rate."
+        },
+        "variance_weight": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Weight applied to the score variance."
+        }
+      },
+      "description": "The named weights applied to each component."
+    },
+    "score": {
+      "type": "number",
+      "description": "The computed harness promotion score."
+    },
+    "parity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["python", "typescript", "schema_hash"],
+      "properties": {
+        "python": {
+          "type": "string",
+          "enum": ["implemented", "pending", "n_a"],
+          "description": "Implementation status of this candidate in the Python package."
+        },
+        "typescript": {
+          "type": "string",
+          "enum": ["implemented", "pending", "n_a"],
+          "description": "Implementation status of this candidate in the TypeScript package."
+        },
+        "schema_hash": {
+          "type": "string",
+          "description": "Content hash of the shared schema the two implementations agree on."
+        }
+      },
+      "description": "Cross-language parity status for this candidate."
+    }
+  }
+}
