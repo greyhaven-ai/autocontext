@@ -98,9 +98,15 @@ jobs:
         working-directory: ts
         run: uv run --frozen --project ../autocontext -- npm run check:schemas
 
-  ts-test:
+  ts-test-shards:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      # Report every shard's result in one run rather than stopping at the first
+      # failure, so a real test failure surfaces everywhere it occurs.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     defaults:
       run:
         working-directory: ts
@@ -130,18 +136,34 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Rebuild native modules (better-sqlite3, isolated-vm)
         run: npm rebuild better-sqlite3 isolated-vm
-      - name: Run full TypeScript test suite
-        # The dot reporter and capped workers keep the vitest host process
-        # responsive: with the default reporter streaming per-test lines for
-        # 5,600+ tests, the host starves worker RPC calls and the run fails
-        # with "Timeout calling onTaskUpdate" despite all tests passing.
-        run: npm test -- --reporter=dot --maxWorkers=2
+      - name: Run TypeScript test shard ${{ matrix.shard }}/4
+        # The suite is sharded (AC-892): each runner shepherds ~1/4 of the
+        # 5,600+ task updates instead of all of them, so the vitest host
+        # process no longer starves the worker RPC channel and fails with
+        # "Timeout calling onTaskUpdate" on saturated runners. The dot reporter
+        # and capped workers still keep each shard's host responsive.
+        run: npm test -- --reporter=dot --shard=${{ matrix.shard }}/4 --maxWorkers=2
         env:
           # Sync Python subprocess spawns in the hashing-parity property tests
           # block vitest workers long enough to starve the worker RPC channel
           # on saturated runners; 25 runs keeps the parity check meaningful
           # while staying under the RPC timeout. Local runs default to 100.
           HASHING_PARITY_NUM_RUNS: "25"
+
+  # Single required-status context: branch protection keeps requiring "ts-test"
+  # unchanged, and it is green only when every shard is green.
+  ts-test:
+    if: always()
+    needs: [ts-test-shards]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify all ts-test shards passed
+        run: |
+          if [ "${{ needs.ts-test-shards.result }}" != "success" ]; then
+            echo "one or more ts-test shards failed"
+            exit 1
+          fi
+          echo "all ts-test shards passed"
 
   smoke:
     needs: [lint, test, package-boundaries]
