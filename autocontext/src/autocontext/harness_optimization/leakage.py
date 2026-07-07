@@ -34,16 +34,14 @@ def _web_host(resource: str) -> str:
 
 def audit_leakage(metadata: IntegrityMetadata, access_records: Sequence[AccessRecord]) -> LeakageAudit:
     forbidden = set(metadata.forbidden_sources)
-    split_ids = set(metadata.split_ids)
     allowlist = set(metadata.web_allowlist or [])
     reasons: list[str] = []
 
+    # Pass 1: forbidden source read.
     for rec in access_records:
         if rec.source_id in forbidden:
             reasons.append(f"forbidden source read: {rec.source_id} ({rec.resource})")
-    for rec in access_records:
-        if rec.kind == "split" and rec.resource in split_ids and rec.source_id in forbidden:
-            reasons.append(f"forbidden split touched: {rec.resource}")
+    # Pass 2: web policy.
     for rec in access_records:
         if rec.kind == "web":
             host = _web_host(rec.resource)
@@ -63,3 +61,23 @@ def audit_leakage(metadata: IntegrityMetadata, access_records: Sequence[AccessRe
             reasons=tuple(f"required source unproven: {s}" for s in unknown),
         )
     return LeakageAudit(status="clean", reasons=())
+
+
+def render_leakage_report(metadata: IntegrityMetadata, audit: LeakageAudit) -> str:
+    """Render a short multi-line report of the metadata policy and the computed audit.
+
+    Lists mode, allowed_sources, forbidden_sources, required_sources, web_policy,
+    web_allowlist, the computed status, and each reason prefixed with ``- ``.
+    """
+    lines = [
+        "autocontext leakage audit",
+        f"mode: {metadata.mode}",
+        f"allowed_sources: {', '.join(metadata.allowed_sources)}",
+        f"forbidden_sources: {', '.join(metadata.forbidden_sources)}",
+        f"required_sources: {', '.join(metadata.required_sources)}",
+        f"web_policy: {metadata.web_policy}",
+        f"web_allowlist: {', '.join(metadata.web_allowlist or [])}",
+        f"status: {audit.status}",
+    ]
+    lines.extend(f"- {reason}" for reason in audit.reasons)
+    return "\n".join(lines)

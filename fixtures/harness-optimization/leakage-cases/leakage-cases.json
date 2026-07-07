@@ -142,6 +142,92 @@
         "expected_advance": true,
         "expected_non_promotion_grade": true
       }
+    },
+    {
+      "name": "unknown_required",
+      "metadata": {
+        "schema_version": 1,
+        "run_id": "run-ac879-unknown-006",
+        "mode": "verified",
+        "allowed_sources": ["train-split"],
+        "forbidden_sources": ["holdout-split", "test-split"],
+        "required_sources": ["train-split", "secret-eval"],
+        "web_policy": "blocked",
+        "web_allowlist": null,
+        "split_ids": ["bench-v3-train", "bench-v3-holdout"],
+        "prompt_provenance": "prompts/harness-optimization/proposer-v2.md",
+        "adapter_capabilities": ["filesystem_sandbox", "network_block"],
+        "leakage_status": "unknown",
+        "contamination_reasons": ["required source unproven: secret-eval"]
+      },
+      "access_records": [
+        { "resource": "data/train.jsonl", "source_id": "train-split", "kind": "file" }
+      ],
+      "expected_status": "unknown",
+      "expected_reason_count": 1,
+      "gate": {
+        "mode": "verified",
+        "expected_advance": false,
+        "expected_non_promotion_grade": true
+      }
+    },
+    {
+      "name": "allowlist_violation",
+      "metadata": {
+        "schema_version": 1,
+        "run_id": "run-ac879-allowmiss-007",
+        "mode": "verified",
+        "allowed_sources": ["train-split", "docs"],
+        "forbidden_sources": ["holdout-split", "test-split"],
+        "required_sources": ["train-split"],
+        "web_policy": "allowlist",
+        "web_allowlist": ["docs.example.com"],
+        "split_ids": ["bench-v3-train", "bench-v3-holdout"],
+        "prompt_provenance": "prompts/harness-optimization/proposer-v2.md",
+        "adapter_capabilities": ["filesystem_sandbox", "network_block"],
+        "leakage_status": "contaminated",
+        "contamination_reasons": ["web host not in allowlist: other.example.com"]
+      },
+      "access_records": [
+        { "resource": "data/train.jsonl", "source_id": "train-split", "kind": "file" },
+        { "resource": "https://other.example.com/x", "source_id": "web-fetch", "kind": "web" }
+      ],
+      "expected_status": "contaminated",
+      "expected_reason_count": 1,
+      "gate": {
+        "mode": "verified",
+        "expected_advance": false,
+        "expected_non_promotion_grade": true
+      }
+    },
+    {
+      "name": "bare_host_with_path_allowed",
+      "metadata": {
+        "schema_version": 1,
+        "run_id": "run-ac879-barehost-008",
+        "mode": "verified",
+        "allowed_sources": ["train-split", "docs"],
+        "forbidden_sources": ["holdout-split", "test-split"],
+        "required_sources": ["train-split"],
+        "web_policy": "allowlist",
+        "web_allowlist": ["docs.example.com"],
+        "split_ids": ["bench-v3-train", "bench-v3-holdout"],
+        "prompt_provenance": "prompts/harness-optimization/proposer-v2.md",
+        "adapter_capabilities": ["filesystem_sandbox", "network_block"],
+        "leakage_status": "clean",
+        "contamination_reasons": []
+      },
+      "access_records": [
+        { "resource": "data/train.jsonl", "source_id": "train-split", "kind": "file" },
+        { "resource": "docs.example.com/guide", "source_id": "docs", "kind": "web" }
+      ],
+      "expected_status": "clean",
+      "expected_reason_count": 0,
+      "gate": {
+        "mode": "verified",
+        "expected_advance": true,
+        "expected_non_promotion_grade": false
+      }
     }
   ]
 }

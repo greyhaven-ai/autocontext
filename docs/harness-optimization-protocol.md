@@ -268,25 +268,28 @@ sequence of observed `AccessRecord`s (each an `{resource, source_id, kind}`
 triple, where kind is `file`, `trace`, `web`, or `split`) and return a
 `LeakageAudit` of `status` plus `reasons`. Both are pure functions over the
 declared policy and the supplied access log: no filesystem or network access, so
-the same inputs always produce the same verdict. The audit runs three
-contamination passes and, only if all three are clean, one proven-clean check:
+the same inputs always produce the same verdict. The audit runs two
+contamination passes and, only if both are clean, one proven-clean check:
 
 - **Pass 1, forbidden source read**: any access record whose `source_id` is a
   forbidden source is a contamination.
-- **Pass 2, forbidden split touched**: any `split`-kind record whose `resource`
-  is a declared split id and whose `source_id` is forbidden is a contamination.
-- **Pass 3, web policy**: under a `blocked` policy any web read is a
+- **Pass 2, web policy**: under a `blocked` policy any web read is a
   contamination; under an `allowlist` policy a web read whose host is not in the
   allowlist is a contamination; an `open` policy permits any host.
 
+Holdout/forbidden detection is source-id-attribution-based: an access record must
+carry the forbidden `source_id` to be flagged, so `split_ids` and
+`adapter_capabilities` are declarative metadata, not audited.
+
 If any pass fires, the status is `contaminated` and every reason is listed. If
-all three passes are clean, the audit applies the **required-source proven-clean
+both passes are clean, the audit applies the **required-source proven-clean
 rule**: a required source is proven clean when it is a declared allowed source OR
 it appears in the access log. Any required source that is neither is unproven, so
 the status is `unknown` (the run cannot be shown clean, but no contamination was
 observed either). Only when every required source is proven clean is the status
-`clean`. `renderLeakageReport` (TypeScript) renders a short human-readable report
-of the policy plus the computed status and reasons.
+`clean`. `render_leakage_report` (Python) and `renderLeakageReport` (TypeScript)
+render a short human-readable report of the policy (including `required_sources`
+and `web_allowlist`) plus the computed status and reasons.
 
 ### Verified fail-closed and the exploratory override
 
@@ -312,10 +315,10 @@ it only means the result cannot be trusted as a clean measurement, so it must no
 enter the promotion set. Framing these as discarded rather than as failures keeps
 the leakage signal honest and separate from the quality signal.
 
-### The five worked cases
+### The worked cases
 
 A shared fixture
-(`fixtures/harness-optimization/leakage-cases/leakage-cases.json`) pins five
+(`fixtures/harness-optimization/leakage-cases/leakage-cases.json`) pins eight
 cases that both packages load to prove they compute identical statuses, reason
 counts, and gate decisions:
 
@@ -334,6 +337,16 @@ counts, and gate decisions:
 - **exploratory_override**: an exploratory run peeks at the forbidden
   `holdout-split`, so the audit is `contaminated`, but the override advances it
   non-promotion-grade.
+- **unknown_required**: a verified run declares `secret-eval` required but never
+  reads it and it is not an allowed source, so the audit is `unknown` and the
+  gate blocks it.
+- **allowlist_violation**: a verified run fetches `other.example.com` under an
+  `allowlist` policy that lists only `docs.example.com`, so pass 2 marks it
+  `contaminated` and the gate blocks it.
+- **bare_host_with_path_allowed**: a verified run reads an allowlisted host given
+  as the bare `docs.example.com/guide` (host plus path, no scheme), which both
+  languages parse to `docs.example.com`, so the audit is `clean` and the gate
+  advances it promotion-grade.
 
 ## The contract pattern
 

@@ -124,7 +124,7 @@ export interface IntegrityMetadata {
    */
   run_id: string;
   /**
-   * Run mode: verified enforces fail-closed leakage checks, exploratory proceeds but is marked non-promotion-grade.
+   * Run mode: verified fails closed on leakage, exploratory is marked non-promotion-grade.
    */
   mode: "verified" | "exploratory";
   /**
@@ -146,15 +146,15 @@ export interface IntegrityMetadata {
   /**
    * Hosts permitted when web_policy is allowlist. Optional; omitted or empty means no host is permitted.
    */
-  web_allowlist?: string[];
+  web_allowlist?: string[] | null;
   /**
    * Benchmark or test split manifest ids in play for this run.
    */
   split_ids: string[];
   /**
-   * Where the proposer prompts came from. Required non-empty for verified mode, enforced by the gate rather than the schema so exploratory runs can omit it.
+   * Where proposer prompts came from. Verified mode requires it non-empty (gate-enforced, not schema).
    */
-  prompt_provenance?: string;
+  prompt_provenance?: string | null;
   /**
    * What the runtime or adapter can enforce, for example filesystem sandboxing or network blocking.
    */

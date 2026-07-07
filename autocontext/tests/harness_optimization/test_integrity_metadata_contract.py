@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from autocontext.harness_optimization.contract.models import IntegrityMetadata
 
@@ -17,5 +18,5 @@ def test_valid_verified_clean_round_trips() -> None:
 
 def test_missing_mode_rejected() -> None:
     data = json.loads((FIX / "invalid-missing-mode.json").read_text())
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         IntegrityMetadata.model_validate(data)

@@ -32,7 +32,7 @@
     "mode": {
       "type": "string",
       "enum": ["verified", "exploratory"],
-      "description": "Run mode: verified enforces fail-closed leakage checks, exploratory proceeds but is marked non-promotion-grade."
+      "description": "Run mode: verified fails closed on leakage, exploratory is marked non-promotion-grade."
     },
     "allowed_sources": {
       "type": "array",
@@ -55,7 +55,7 @@
       "description": "Web-access policy: blocked forbids all web reads, allowlist permits only listed hosts, open permits any."
     },
     "web_allowlist": {
-      "type": "array",
+      "type": ["array", "null"],
       "items": { "type": "string" },
       "description": "Hosts permitted when web_policy is allowlist. Optional; omitted or empty means no host is permitted."
     },
@@ -65,8 +65,8 @@
       "description": "Benchmark or test split manifest ids in play for this run."
     },
     "prompt_provenance": {
-      "type": "string",
-      "description": "Where the proposer prompts came from. Required non-empty for verified mode, enforced by the gate rather than the schema so exploratory runs can omit it."
+      "type": ["string", "null"],
+      "description": "Where proposer prompts came from. Verified mode requires it non-empty (gate-enforced, not schema)."
     },
     "adapter_capabilities": {
       "type": "array",

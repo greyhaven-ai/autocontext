@@ -326,7 +326,7 @@ class IntegrityMetadata(BaseModel):
     mode: Annotated[
         Literal['verified', 'exploratory'],
         Field(
-            description='Run mode: verified enforces fail-closed leakage checks, exploratory proceeds but is marked non-promotion-grade.'
+            description='Run mode: verified fails closed on leakage, exploratory is marked non-promotion-grade.'
         ),
     ]
     allowed_sources: Annotated[
@@ -363,7 +363,7 @@ class IntegrityMetadata(BaseModel):
     prompt_provenance: Annotated[
         str | None,
         Field(
-            description='Where the proposer prompts came from. Required non-empty for verified mode, enforced by the gate rather than the schema so exploratory runs can omit it.'
+            description='Where proposer prompts came from. Verified mode requires it non-empty (gate-enforced, not schema).'
         ),
     ] = None
     adapter_capabilities: Annotated[

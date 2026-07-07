@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { validateIntegrityMetadata } from "../../src/harness-optimization/contract/validators.js";
 
-const FIX = join(__dirname, "../../../fixtures/harness-optimization/integrity-metadata");
+const FIX = join(import.meta.dirname, "../../../fixtures/harness-optimization/integrity-metadata");
 
 describe("integrity-metadata contract", () => {
   it("accepts a verified clean record", () => {

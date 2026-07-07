@@ -27,14 +27,14 @@ export interface LeakageAudit {
 }
 
 /**
- * Extract the host from a web resource. Mirrors Python's urlparse with a
- * `//`-prefix fallback for bare hosts (parsed.hostname or resource): a bare
- * `docs.example.com` becomes `//docs.example.com` so the host parses, and a
- * value that cannot be parsed falls back to the raw resource.
+ * Extract the host from a web resource. Mirrors Python's urlparse: a bare host
+ * (with or without a path) is parsed under a synthetic `http://` scheme so the
+ * host resolves (`docs.example.com/guide` -> `docs.example.com`), and a value
+ * that cannot be parsed falls back to the raw resource.
  */
 function webHost(resource: string): string {
   try {
-    const parsed = new URL(resource.includes("://") ? resource : `//${resource}`);
+    const parsed = new URL(resource.includes("://") ? resource : `http://${resource}`);
     return parsed.hostname || resource;
   } catch {
     return resource;
@@ -46,7 +46,6 @@ export function auditLeakage(
   accessRecords: readonly AccessRecord[],
 ): LeakageAudit {
   const forbidden = new Set(metadata.forbidden_sources);
-  const splitIds = new Set(metadata.split_ids);
   const allowlist = new Set(metadata.web_allowlist ?? []);
   const reasons: string[] = [];
 
@@ -56,13 +55,7 @@ export function auditLeakage(
       reasons.push(`forbidden source read: ${rec.source_id} (${rec.resource})`);
     }
   }
-  // Pass 2: forbidden split touched.
-  for (const rec of accessRecords) {
-    if (rec.kind === "split" && splitIds.has(rec.resource) && forbidden.has(rec.source_id)) {
-      reasons.push(`forbidden split touched: ${rec.resource}`);
-    }
-  }
-  // Pass 3: web policy.
+  // Pass 2: web policy.
   for (const rec of accessRecords) {
     if (rec.kind === "web") {
       const host = webHost(rec.resource);
@@ -94,8 +87,9 @@ export function auditLeakage(
 
 /**
  * Render a short multi-line report of the metadata policy and the computed
- * audit. Lists mode, allowed_sources, forbidden_sources, web_policy, the
- * computed status, and each reason prefixed with `- `.
+ * audit. Lists mode, allowed_sources, forbidden_sources, required_sources,
+ * web_policy, web_allowlist, the computed status, and each reason prefixed with
+ * `- `.
  */
 export function renderLeakageReport(metadata: IntegrityMetadata, audit: LeakageAudit): string {
   const lines = [
@@ -103,7 +97,9 @@ export function renderLeakageReport(metadata: IntegrityMetadata, audit: LeakageA
     `mode: ${metadata.mode}`,
     `allowed_sources: ${metadata.allowed_sources.join(", ")}`,
     `forbidden_sources: ${metadata.forbidden_sources.join(", ")}`,
+    `required_sources: ${metadata.required_sources.join(", ")}`,
     `web_policy: ${metadata.web_policy}`,
+    `web_allowlist: ${(metadata.web_allowlist ?? []).join(", ")}`,
     `status: ${audit.status}`,
   ];
   for (const reason of audit.reasons) {
