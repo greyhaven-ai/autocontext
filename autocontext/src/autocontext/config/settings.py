@@ -534,6 +534,14 @@ class AppSettings(BaseModel):
         default="",
         description="Comma-separated scenario allowlist for repair gates; empty = none",
     )
+    harness_leakage_gate_enabled: bool = Field(
+        default=False,
+        description="Opt-in verified-mode leakage gate (AC-879)",
+    )
+    harness_leakage_gate_scenarios: str = Field(
+        default="",
+        description="Comma-separated scenario allowlist for the leakage gate; empty = none",
+    )
     # Pre-flight harness synthesis (AC-150)
     harness_preflight_enabled: bool = Field(
         default=False,

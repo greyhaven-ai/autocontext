@@ -304,3 +304,83 @@ class RepairResult(BaseModel):
     parity: Annotated[
         Parity, Field(description='Cross-language parity status for this candidate.')
     ]
+
+
+class IntegrityMetadata(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    schema_version: Annotated[
+        Literal[1],
+        Field(
+            description='Schema version for forward compatibility. Always 1 for this revision.'
+        ),
+    ]
+    run_id: Annotated[
+        str,
+        Field(
+            description='Identifier of the run this integrity record describes.',
+            min_length=1,
+        ),
+    ]
+    mode: Annotated[
+        Literal['verified', 'exploratory'],
+        Field(
+            description='Run mode: verified fails closed on leakage, exploratory is marked non-promotion-grade.'
+        ),
+    ]
+    allowed_sources: Annotated[
+        list[str], Field(description='Source ids the proposer or evaluator may read.')
+    ]
+    forbidden_sources: Annotated[
+        list[str],
+        Field(
+            description='Source ids that must never be read, for example holdout or test-split sources.'
+        ),
+    ]
+    required_sources: Annotated[
+        list[str],
+        Field(
+            description='Subset of sources whose status must be known-clean for a verified run to advance.'
+        ),
+    ]
+    web_policy: Annotated[
+        Literal['blocked', 'allowlist', 'open'],
+        Field(
+            description='Web-access policy: blocked forbids all web reads, allowlist permits only listed hosts, open permits any.'
+        ),
+    ]
+    web_allowlist: Annotated[
+        list[str] | None,
+        Field(
+            description='Hosts permitted when web_policy is allowlist. Optional; omitted or empty means no host is permitted.'
+        ),
+    ] = None
+    split_ids: Annotated[
+        list[str],
+        Field(description='Benchmark or test split manifest ids in play for this run.'),
+    ]
+    prompt_provenance: Annotated[
+        str | None,
+        Field(
+            description='Where proposer prompts came from. Verified mode requires it non-empty (gate-enforced, not schema).'
+        ),
+    ] = None
+    adapter_capabilities: Annotated[
+        list[str],
+        Field(
+            description='What the runtime or adapter can enforce, for example filesystem sandboxing or network blocking.'
+        ),
+    ]
+    leakage_status: Annotated[
+        Literal['clean', 'contaminated', 'unknown'],
+        Field(
+            description='Computed leakage status: clean, contaminated, or unknown when it cannot be proven clean.'
+        ),
+    ]
+    contamination_reasons: Annotated[
+        list[str],
+        Field(
+            description='Human-readable reasons for a contaminated or unknown status. Empty when clean.'
+        ),
+    ]

@@ -19,6 +19,7 @@ from autocontext.extensions import HookEvents
 from autocontext.knowledge.coherence import check_coherence
 from autocontext.loop.cost_control import CostBudget, CostPolicy, CostTracker, throttle_state
 from autocontext.loop.stage_helpers.tournament_prep import _build_empty_tournament
+from autocontext.loop.stage_leakage import stage_leakage
 from autocontext.loop.stage_preflight import stage_preflight
 from autocontext.loop.stage_prevalidation import stage_prevalidation
 from autocontext.loop.stage_probe import stage_probe
@@ -458,6 +459,10 @@ class GenerationPipeline:
                 # Stage 2.25: Opt-in deterministic repair gate (default off => no-op)
                 if not _over_budget(ctx) and not _phase_exhausted(scaffolding_started_at, scaffolding_budget):
                     ctx = stage_repair(ctx, events=self._events)
+
+                # Stage 2.26: Opt-in verified-mode leakage gate (default off => no-op)
+                if not _over_budget(ctx) and not _phase_exhausted(scaffolding_started_at, scaffolding_budget):
+                    ctx = stage_leakage(ctx, events=self._events)
 
                 # Stage 2.3: Staged validation (progressive checks before tournament)
                 if not _over_budget(ctx) and not _phase_exhausted(scaffolding_started_at, scaffolding_budget):

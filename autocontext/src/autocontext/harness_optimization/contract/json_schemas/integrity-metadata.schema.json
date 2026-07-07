@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autocontext.dev/schema/harness-optimization/integrity-metadata.json",
+  "title": "IntegrityMetadata",
+  "description": "Declared integrity scope for a harness-optimization run (AC-879). It records which sources the proposer and evaluator were allowed to read, which are forbidden (holdout, test splits), the web-access policy, the benchmark split manifest in play, and the computed leakage status so a reviewer can prove a candidate was proposed without touching held-out evidence. Verified-mode enforcement (fail closed on contamination or unknown status) is applied by the leakage gate, not by this schema. This schema is the single source of truth for both the Python and TypeScript autocontext packages.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "mode",
+    "allowed_sources",
+    "forbidden_sources",
+    "required_sources",
+    "web_policy",
+    "split_ids",
+    "adapter_capabilities",
+    "leakage_status",
+    "contamination_reasons"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Schema version for forward compatibility. Always 1 for this revision."
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Identifier of the run this integrity record describes."
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["verified", "exploratory"],
+      "description": "Run mode: verified fails closed on leakage, exploratory is marked non-promotion-grade."
+    },
+    "allowed_sources": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Source ids the proposer or evaluator may read."
+    },
+    "forbidden_sources": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Source ids that must never be read, for example holdout or test-split sources."
+    },
+    "required_sources": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Subset of sources whose status must be known-clean for a verified run to advance."
+    },
+    "web_policy": {
+      "type": "string",
+      "enum": ["blocked", "allowlist", "open"],
+      "description": "Web-access policy: blocked forbids all web reads, allowlist permits only listed hosts, open permits any."
+    },
+    "web_allowlist": {
+      "type": ["array", "null"],
+      "items": { "type": "string" },
+      "description": "Hosts permitted when web_policy is allowlist. Optional; omitted or empty means no host is permitted."
+    },
+    "split_ids": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Benchmark or test split manifest ids in play for this run."
+    },
+    "prompt_provenance": {
+      "type": ["string", "null"],
+      "description": "Where proposer prompts came from. Verified mode requires it non-empty (gate-enforced, not schema)."
+    },
+    "adapter_capabilities": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "What the runtime or adapter can enforce, for example filesystem sandboxing or network blocking."
+    },
+    "leakage_status": {
+      "type": "string",
+      "enum": ["clean", "contaminated", "unknown"],
+      "description": "Computed leakage status: clean, contaminated, or unknown when it cannot be proven clean."
+    },
+    "contamination_reasons": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Human-readable reasons for a contaminated or unknown status. Empty when clean."
+    }
+  }
+}

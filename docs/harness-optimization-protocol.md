@@ -237,6 +237,117 @@ A fifth repair, reassembling a partially written artifact from a recorded
 tool-call trace, is deliberately deferred: it needs a recorded tool-call trace
 that the harness does not yet capture. It is a follow-up, not part of this gate.
 
+## Leakage audit (AC-879)
+
+A harness optimization run can accidentally learn from data it was never
+supposed to see: a proposer that peeks at a holdout split, a web fetch that
+pulls the answer, a required source that was never proven clean. The
+**IntegrityMetadata** artifact declares what a run was allowed to touch, and a
+deterministic post-proposal audit checks the declaration against what the run
+actually read. Its schema lives at
+`ts/src/harness-optimization/contract/json-schemas/integrity-metadata.schema.json`
+and generates both packages' types under the same drift gate: the TypeScript
+`IntegrityMetadata` interface, the Python `IntegrityMetadata` pydantic model, and
+the `validateIntegrityMetadata` validator.
+
+IntegrityMetadata records the run identity and its data policy: `run_id`; `mode`
+(`verified` or `exploratory`); `allowed_sources`, `forbidden_sources`, and
+`required_sources` (source ids the run may read, must never read, and must prove
+clean before advancing); `web_policy` (`blocked`, `allowlist`, or `open`) with an
+optional `web_allowlist` of permitted hosts; `split_ids` (the benchmark or test
+split manifests in play); `prompt_provenance` (where the proposer prompts came
+from, optional in the schema but required by the verified gate); and
+`adapter_capabilities` (what the runtime can enforce, for example filesystem
+sandboxing or network blocking). It also carries the computed `leakage_status`
+and `contamination_reasons` so a persisted record explains its own verdict.
+
+### The three-status audit
+
+`audit_leakage` (Python) and `auditLeakage` (TypeScript) take the metadata plus a
+sequence of observed `AccessRecord`s (each an `{resource, source_id, kind}`
+triple, where kind is `file`, `trace`, `web`, or `split`) and return a
+`LeakageAudit` of `status` plus `reasons`. Both are pure functions over the
+declared policy and the supplied access log: no filesystem or network access, so
+the same inputs always produce the same verdict. The audit runs two
+contamination passes and, only if both are clean, one proven-clean check:
+
+- **Pass 1, forbidden source read**: any access record whose `source_id` is a
+  forbidden source is a contamination.
+- **Pass 2, web policy**: under a `blocked` policy any web read is a
+  contamination; under an `allowlist` policy a web read whose host is not in the
+  allowlist is a contamination; an `open` policy permits any host.
+
+Holdout/forbidden detection is source-id-attribution-based: an access record must
+carry the forbidden `source_id` to be flagged, so `split_ids` and
+`adapter_capabilities` are declarative metadata, not audited.
+
+If any pass fires, the status is `contaminated` and every reason is listed. If
+both passes are clean, the audit applies the **required-source proven-clean
+rule**: a required source is proven clean when it is a declared allowed source OR
+it appears in the access log. Any required source that is neither is unproven, so
+the status is `unknown` (the run cannot be shown clean, but no contamination was
+observed either). Only when every required source is proven clean is the status
+`clean`. `render_leakage_report` (Python) and `renderLeakageReport` (TypeScript)
+render a short human-readable report of the policy (including `required_sources`
+and `web_allowlist`) plus the computed status and reasons.
+
+### Verified fail-closed and the exploratory override
+
+`evaluate_leakage_gate` (Python) and `evaluateLeakageGate` (TypeScript) turn a
+`LeakageAudit` plus the run mode and prompt provenance into a
+`LeakageGateDecision` of `advance`, `non_promotion_grade`, and `rationale`. Like
+the repair gate, the leakage gate is caller-gated: it never reads settings, so a
+default run is unaffected until a caller invokes it.
+
+A **verified** run fails closed. It advances only when the audit status is
+`clean` AND the prompt provenance is non-empty. A non-clean status (contaminated
+or unknown) or a missing provenance blocks the run (`advance` is false) and marks
+it `non_promotion_grade`. Provenance is enforced by the gate rather than the
+schema precisely so an exploratory run can omit it while a verified run cannot.
+
+An **exploratory** run takes the operator override: it always advances, but it is
+always stamped `non_promotion_grade` regardless of the audit, so a deliberate
+peek can proceed for investigation without ever polluting the promotion set.
+
+A contaminated or blocked verified attempt is **discarded** as
+non-promotion-grade. This is not evidence that the model or the harness failed:
+it only means the result cannot be trusted as a clean measurement, so it must not
+enter the promotion set. Framing these as discarded rather than as failures keeps
+the leakage signal honest and separate from the quality signal.
+
+### The worked cases
+
+A shared fixture
+(`fixtures/harness-optimization/leakage-cases/leakage-cases.json`) pins eight
+cases that both packages load to prove they compute identical statuses, reason
+counts, and gate decisions:
+
+- **clean_run**: a verified run reads only `train-split` and an allowlisted
+  `docs.example.com` host, so the audit is `clean` and the gate advances it
+  promotion-grade.
+- **holdout_file_touch**: a verified run reads the forbidden `holdout-split`
+  file, pass 1 marks it `contaminated`, and the gate blocks it, so the attempt is
+  discarded.
+- **web_contaminated**: a verified run fetches `evil.example.com` under a
+  `blocked` web policy, pass 3 marks it `contaminated`, and the gate blocks it, so
+  the attempt is discarded.
+- **missing_provenance**: a verified run is audit-`clean` but declares no
+  `prompt_provenance`, so the gate fails closed on missing provenance and discards
+  it, showing the gate enforces provenance the schema leaves optional.
+- **exploratory_override**: an exploratory run peeks at the forbidden
+  `holdout-split`, so the audit is `contaminated`, but the override advances it
+  non-promotion-grade.
+- **unknown_required**: a verified run declares `secret-eval` required but never
+  reads it and it is not an allowed source, so the audit is `unknown` and the
+  gate blocks it.
+- **allowlist_violation**: a verified run fetches `other.example.com` under an
+  `allowlist` policy that lists only `docs.example.com`, so pass 2 marks it
+  `contaminated` and the gate blocks it.
+- **bare_host_with_path_allowed**: a verified run reads an allowlisted host given
+  as the bare `docs.example.com/guide` (host plus path, no scheme), which both
+  languages parse to `docs.example.com`, so the audit is `clean` and the gate
+  advances it promotion-grade.
+
 ## The contract pattern
 
 This is the foundation artifact. The later protocol artifacts follow the same

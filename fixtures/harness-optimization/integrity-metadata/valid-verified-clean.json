@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "run_id": "run-ac879-verified-001",
+  "mode": "verified",
+  "allowed_sources": ["train-split", "docs", "public-corpus"],
+  "forbidden_sources": ["holdout-split", "test-split"],
+  "required_sources": ["train-split"],
+  "web_policy": "allowlist",
+  "web_allowlist": ["docs.example.com"],
+  "split_ids": ["bench-v3-train", "bench-v3-holdout"],
+  "prompt_provenance": "prompts/harness-optimization/proposer-v2.md",
+  "adapter_capabilities": ["filesystem_sandbox", "network_block"],
+  "leakage_status": "clean",
+  "contamination_reasons": []
+}

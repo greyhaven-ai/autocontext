@@ -110,6 +110,65 @@ export interface CandidateEvidence {
   };
 }
 
+// ---- integrity-metadata.schema.json ----
+/**
+ * Declared integrity scope for a harness-optimization run (AC-879). It records which sources the proposer and evaluator were allowed to read, which are forbidden (holdout, test splits), the web-access policy, the benchmark split manifest in play, and the computed leakage status so a reviewer can prove a candidate was proposed without touching held-out evidence. Verified-mode enforcement (fail closed on contamination or unknown status) is applied by the leakage gate, not by this schema. This schema is the single source of truth for both the Python and TypeScript autocontext packages.
+ */
+export interface IntegrityMetadata {
+  /**
+   * Schema version for forward compatibility. Always 1 for this revision.
+   */
+  schema_version: 1;
+  /**
+   * Identifier of the run this integrity record describes.
+   */
+  run_id: string;
+  /**
+   * Run mode: verified fails closed on leakage, exploratory is marked non-promotion-grade.
+   */
+  mode: "verified" | "exploratory";
+  /**
+   * Source ids the proposer or evaluator may read.
+   */
+  allowed_sources: string[];
+  /**
+   * Source ids that must never be read, for example holdout or test-split sources.
+   */
+  forbidden_sources: string[];
+  /**
+   * Subset of sources whose status must be known-clean for a verified run to advance.
+   */
+  required_sources: string[];
+  /**
+   * Web-access policy: blocked forbids all web reads, allowlist permits only listed hosts, open permits any.
+   */
+  web_policy: "blocked" | "allowlist" | "open";
+  /**
+   * Hosts permitted when web_policy is allowlist. Optional; omitted or empty means no host is permitted.
+   */
+  web_allowlist?: string[] | null;
+  /**
+   * Benchmark or test split manifest ids in play for this run.
+   */
+  split_ids: string[];
+  /**
+   * Where proposer prompts came from. Verified mode requires it non-empty (gate-enforced, not schema).
+   */
+  prompt_provenance?: string | null;
+  /**
+   * What the runtime or adapter can enforce, for example filesystem sandboxing or network blocking.
+   */
+  adapter_capabilities: string[];
+  /**
+   * Computed leakage status: clean, contaminated, or unknown when it cannot be proven clean.
+   */
+  leakage_status: "clean" | "contaminated" | "unknown";
+  /**
+   * Human-readable reasons for a contaminated or unknown status. Empty when clean.
+   */
+  contamination_reasons: string[];
+}
+
 // ---- promotion-score.schema.json ----
 /**
  * Computed harness-promotion score for a single candidate (AC-877). Combines the dense quality signal with the sparse per-case success rate, marginal token cost, error rate, and score variance under a named, versioned set of weights. This is the artifact the promotion gate reads to decide whether a candidate advances. Shared source of truth for both the Python and TypeScript autocontext packages.
