@@ -10,8 +10,25 @@ invokes it.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from autocontext.harness_optimization.leakage import LeakageAudit
+
+if TYPE_CHECKING:
+    from autocontext.config.settings import AppSettings
+
+
+def leakage_gate_active_for(settings: AppSettings, scenario_name: str) -> bool:
+    """True iff the leakage gate is globally enabled AND the scenario is allowlisted.
+
+    The allowlist is the comma-separated ``harness_leakage_gate_scenarios``
+    setting; an empty allowlist means no scenario is active even when the global
+    flag is on. This is the sole opt-in decision: callers check it and only run
+    the leakage audit + gate when it returns True.
+    """
+
+    allowlist = {s.strip() for s in settings.harness_leakage_gate_scenarios.split(",") if s.strip()}
+    return settings.harness_leakage_gate_enabled and scenario_name in allowlist
 
 
 @dataclass(frozen=True, slots=True)
