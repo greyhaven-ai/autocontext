@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autocontext.dev/schema/harness-optimization/frontier-mechanism.json",
+  "title": "FrontierMechanism",
+  "description": "A promoted mechanism on the harness-optimization frontier (AC-880). It records a candidate that passed the promotion gate, its lineage parent, the surfaces it affects, the regression risks it carries, and how many generations of support it has. This is the archived record of what advanced. Shared source of truth for both the Python and TypeScript autocontext packages.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "mechanism_id",
+    "candidate_evidence_id",
+    "mechanism_name",
+    "mechanism_type",
+    "target_surface",
+    "gate_decision",
+    "affected_surfaces",
+    "regression_risks",
+    "support_count",
+    "promoted_at_generation"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Schema version for forward compatibility. Always 1 for this revision."
+    },
+    "mechanism_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable unique identifier for this frontier mechanism."
+    },
+    "candidate_evidence_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Identifier of the candidate evidence record this mechanism was promoted from."
+    },
+    "parent_frontier_id": {
+      "type": "string",
+      "description": "Identifier of the frontier this mechanism descends from. Empty for a root frontier."
+    },
+    "mechanism_name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human-readable name of the promoted mechanism."
+    },
+    "mechanism_type": {
+      "type": "string",
+      "enum": [
+        "deterministic_code",
+        "prompt_playbook",
+        "tool_wrapper",
+        "context_policy",
+        "judge_policy",
+        "mixed"
+      ],
+      "description": "Category of mechanism being changed."
+    },
+    "target_surface": {
+      "type": "string",
+      "enum": [
+        "prompt",
+        "tool",
+        "harness_validator",
+        "runtime_adapter",
+        "artifact_landing",
+        "evaluator",
+        "routing",
+        "docs"
+      ],
+      "description": "The surface of the harness this mechanism targets."
+    },
+    "gate_decision": {
+      "type": "string",
+      "description": "The advancement decision that promoted this mechanism."
+    },
+    "affected_surfaces": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Surfaces this mechanism touches beyond its primary target."
+    },
+    "regression_risks": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Known regression risks this mechanism carries forward."
+    },
+    "support_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of runs or generations that support this mechanism."
+    },
+    "promoted_at_generation": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Generation index at which this mechanism was promoted."
+    }
+  }
+}

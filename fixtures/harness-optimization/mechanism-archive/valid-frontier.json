@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "mechanism_id": "frontier-ac880-001",
+  "candidate_evidence_id": "candidate-ac876-042",
+  "parent_frontier_id": "frontier-ac880-000",
+  "mechanism_name": "retry-on-truncated-output guard",
+  "mechanism_type": "deterministic_code",
+  "target_surface": "harness_validator",
+  "gate_decision": "advance",
+  "affected_surfaces": ["harness_validator", "evaluator"],
+  "regression_risks": ["adds one retry on legitimately empty outputs"],
+  "support_count": 4,
+  "promoted_at_generation": 7
+}
