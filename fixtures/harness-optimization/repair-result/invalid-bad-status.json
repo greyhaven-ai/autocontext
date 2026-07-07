@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "repair_name": "loop_guard",
+  "status": "bogus",
+  "reason": "The status value is not one of applied, skipped, or not_applicable.",
+  "parity": {
+    "python": "implemented",
+    "typescript": "pending",
+    "schema_hash": "abc123"
+  }
+}

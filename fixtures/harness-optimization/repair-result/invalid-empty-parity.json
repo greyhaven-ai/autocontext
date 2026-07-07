@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "repair_name": "tool_call_json",
+  "status": "applied",
+  "reason": "The parity block is empty; python, typescript, and schema_hash are all required.",
+  "target": "run_python",
+  "parity": {}
+}

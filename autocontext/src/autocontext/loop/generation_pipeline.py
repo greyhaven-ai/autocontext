@@ -22,6 +22,7 @@ from autocontext.loop.stage_helpers.tournament_prep import _build_empty_tourname
 from autocontext.loop.stage_preflight import stage_preflight
 from autocontext.loop.stage_prevalidation import stage_prevalidation
 from autocontext.loop.stage_probe import stage_probe
+from autocontext.loop.stage_repair import stage_repair
 from autocontext.loop.stage_staged_validation import stage_staged_validation
 from autocontext.loop.stage_tree_search import stage_tree_search
 from autocontext.loop.stage_types import GenerationContext
@@ -453,6 +454,10 @@ class GenerationPipeline:
                         role, message = chat_request
                         response = self._chat_with_agent_fn(role, message, ctx.prompts, ctx.tool_context)
                         self._controller.respond_chat(role, response)
+
+                # Stage 2.25: Opt-in deterministic repair gate (default off => no-op)
+                if not _over_budget(ctx) and not _phase_exhausted(scaffolding_started_at, scaffolding_budget):
+                    ctx = stage_repair(ctx, events=self._events)
 
                 # Stage 2.3: Staged validation (progressive checks before tournament)
                 if not _over_budget(ctx) and not _phase_exhausted(scaffolding_started_at, scaffolding_budget):

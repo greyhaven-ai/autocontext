@@ -3,7 +3,8 @@ import type { ErrorObject, ValidateFunction } from "ajv";
 import addFormats from "ajv-formats";
 import candidateEvidenceSchema from "./json-schemas/candidate-evidence.schema.json" with { type: "json" };
 import promotionScoreSchema from "./json-schemas/promotion-score.schema.json" with { type: "json" };
-import type { CandidateEvidence, PromotionScore } from "./generated-types.js";
+import repairResultSchema from "./json-schemas/repair-result.schema.json" with { type: "json" };
+import type { CandidateEvidence, PromotionScore, RepairResult } from "./generated-types.js";
 
 // Shared validation-result shape (matches the production-traces contract).
 export type ValidationResult =
@@ -20,6 +21,7 @@ addFormatsFn(ajv);
 // Register the schemas once at module init so $refs resolve.
 ajv.addSchema(candidateEvidenceSchema as object);
 ajv.addSchema(promotionScoreSchema as object);
+ajv.addSchema(repairResultSchema as object);
 
 const candidateEvidenceValidator = ajv.getSchema(
   "https://autocontext.dev/schema/harness-optimization/candidate-evidence.json",
@@ -27,6 +29,10 @@ const candidateEvidenceValidator = ajv.getSchema(
 
 const promotionScoreValidator = ajv.getSchema(
   "https://autocontext.dev/schema/harness-optimization/promotion-score.json",
+)!;
+
+const repairResultValidator = ajv.getSchema(
+  "https://autocontext.dev/schema/harness-optimization/repair-result.json",
 )!;
 
 function toResult(validate: ValidateFunction, input: unknown): ValidationResult {
@@ -49,5 +55,9 @@ export function validatePromotionScore(input: unknown): ValidationResult {
   return toResult(promotionScoreValidator, input);
 }
 
+export function validateRepairResult(input: unknown): ValidationResult {
+  return toResult(repairResultValidator, input);
+}
+
 // Type-level assertion — if a TS type drifts from its schema this won't compile.
-export type _TypeCheck = CandidateEvidence | PromotionScore;
+export type _TypeCheck = CandidateEvidence | PromotionScore | RepairResult;

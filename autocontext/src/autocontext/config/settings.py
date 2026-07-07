@@ -525,6 +525,15 @@ class AppSettings(BaseModel):
         default=True,
         description="Use staged validation pipeline for pre-tournament checks",
     )
+    # Opt-in harness repair gates (AC-878)
+    harness_repair_gates_enabled: bool = Field(
+        default=False,
+        description="Opt-in deterministic harness repair gates (AC-878)",
+    )
+    harness_repair_gate_scenarios: str = Field(
+        default="",
+        description="Comma-separated scenario allowlist for repair gates; empty = none",
+    )
     # Pre-flight harness synthesis (AC-150)
     harness_preflight_enabled: bool = Field(
         default=False,

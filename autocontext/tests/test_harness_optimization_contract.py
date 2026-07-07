@@ -18,6 +18,7 @@ from pydantic import ValidationError
 from autocontext.harness_optimization.contract.models import (
     CandidateEvidence,
     PromotionScore,
+    RepairResult,
 )
 
 # Walk up to the repo root: autocontext/tests/ -> autocontext/ -> <repo root>.
@@ -202,3 +203,94 @@ def test_shared_promotion_score_fixture_directory_contains_the_expected_set() ->
     # here instead of being silently ignored.
     names = {p.name for p in PROMOTION_SCORE_FIXTURES_DIR.glob("*.json")}
     assert names == EXPECTED_PROMOTION_SCORE_FIXTURES | {"score-cases.json"}
+
+
+# --- Shared repair-result contract fixtures (mirrors candidate-evidence) --------
+
+REPAIR_RESULT_FIXTURES_DIR = REPO_ROOT / "fixtures" / "harness-optimization" / "repair-result"
+
+# The contract fixtures validated by both packages.
+EXPECTED_REPAIR_RESULT_FIXTURES = {
+    "valid-applied.json",
+    "valid-skipped.json",
+    "invalid-missing-status.json",
+    "invalid-bad-status.json",
+    "invalid-empty-parity.json",
+}
+
+
+def _repair_result_fixtures(prefix: str) -> list[Path]:
+    assert REPAIR_RESULT_FIXTURES_DIR.is_dir(), f"expected fixtures dir at {REPAIR_RESULT_FIXTURES_DIR}"
+    return sorted(REPAIR_RESULT_FIXTURES_DIR.glob(f"{prefix}*.json"))
+
+
+def _valid_repair_result() -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "repair_name": "tool_call_json",
+        "status": "applied",
+        "reason": "The tool call arguments were not valid JSON; re-serialized before dispatch.",
+        "target": "run_python",
+        "before": {"valid": False},
+        "after": {"valid": True},
+        "parity": {
+            "python": "implemented",
+            "typescript": "implemented",
+            "schema_hash": "abc123",
+        },
+    }
+
+
+def test_valid_repair_result_round_trips() -> None:
+    data = _valid_repair_result()
+    model = RepairResult(**data)
+    dumped = model.model_dump(exclude_none=True)
+    assert dumped == data
+
+
+def test_repair_result_missing_status_raises() -> None:
+    data = _valid_repair_result()
+    del data["status"]
+    with pytest.raises(ValidationError):
+        RepairResult(**data)
+
+
+def test_repair_result_bad_status_raises() -> None:
+    data = _valid_repair_result()
+    data["status"] = "bogus"
+    with pytest.raises(ValidationError):
+        RepairResult(**data)
+
+
+def test_repair_result_extra_field_raises() -> None:
+    data = _valid_repair_result()
+    data["unexpected_field"] = "nope"
+    with pytest.raises(ValidationError):
+        RepairResult(**data)
+
+
+def test_repair_result_empty_parity_raises() -> None:
+    data = _valid_repair_result()
+    data["parity"] = {}
+    with pytest.raises(ValidationError):
+        RepairResult(**data)
+
+
+@pytest.mark.parametrize("fixture", _repair_result_fixtures("valid-"), ids=lambda p: p.name)
+def test_shared_valid_repair_result_fixtures_construct(fixture: Path) -> None:
+    data = json.loads(fixture.read_text())
+    RepairResult(**data)
+
+
+@pytest.mark.parametrize("fixture", _repair_result_fixtures("invalid-"), ids=lambda p: p.name)
+def test_shared_invalid_repair_result_fixtures_raise(fixture: Path) -> None:
+    data = json.loads(fixture.read_text())
+    with pytest.raises(ValidationError):
+        RepairResult(**data)
+
+
+def test_shared_repair_result_fixture_directory_contains_the_expected_set() -> None:
+    # Set-membership guard over EVERY .json in the directory: a stray or dropped
+    # .json fails here instead of being silently ignored.
+    names = {p.name for p in REPAIR_RESULT_FIXTURES_DIR.glob("*.json")}
+    assert names == EXPECTED_REPAIR_RESULT_FIXTURES

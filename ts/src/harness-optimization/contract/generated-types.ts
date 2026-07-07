@@ -195,3 +195,59 @@ export interface PromotionScore {
     schema_hash: string;
   };
 }
+
+// ---- repair-result.schema.json ----
+/**
+ * Outcome of a single deterministic repair applied (or not applied) to a harness surface (AC-878). A repair is a named, auditable mechanism that fixes a known failure mode (for example tool_call_json, artifact_landing, finish_guard, loop_guard); this record captures whether it fired, why, what it targeted, and the before/after metadata a reviewer needs to trust the gate. This schema is the single source of truth for both the Python and TypeScript autocontext packages.
+ */
+export interface RepairResult {
+  /**
+   * Schema version for forward compatibility. Always 1 for this revision.
+   */
+  schema_version: 1;
+  /**
+   * Human-readable name of the repair mechanism, e.g. tool_call_json or finish_guard.
+   */
+  repair_name: string;
+  /**
+   * Whether the repair fired: applied, skipped, or not_applicable to this input.
+   */
+  status: "applied" | "skipped" | "not_applicable";
+  /**
+   * Human-auditable explanation of why the repair was applied or skipped.
+   */
+  reason: string;
+  /**
+   * What was repaired: a path, a tool name, or empty when nothing was targeted.
+   */
+  target?: string;
+  /**
+   * Pre-repair metadata, e.g. {"valid": false}.
+   */
+  before?: {
+    [k: string]: unknown;
+  };
+  /**
+   * Post-repair metadata, e.g. {"valid": true}.
+   */
+  after?: {
+    [k: string]: unknown;
+  };
+  /**
+   * Cross-language parity status for this candidate.
+   */
+  parity: {
+    /**
+     * Implementation status of this candidate in the Python package.
+     */
+    python: "implemented" | "pending" | "n_a";
+    /**
+     * Implementation status of this candidate in the TypeScript package.
+     */
+    typescript: "implemented" | "pending" | "n_a";
+    /**
+     * Content hash of the shared schema the two implementations agree on.
+     */
+    schema_hash: string;
+  };
+}
