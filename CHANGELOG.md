@@ -17,6 +17,7 @@ All notable changes to this project will be documented in this file.
 - harness optimization protocol: opt-in deterministic repair gates (artifact landing, tool-call json, finish guard, loop guard) with python/typescript parity (AC-878)
 - harness optimization protocol: post-proposal holdout-leakage audit (clean/contaminated/unknown over forbidden-source, forbidden-split, and web-policy passes) and verified/exploratory fail-closed gate with python/typescript parity (AC-879)
 - harness optimization protocol: in-memory mechanism archive of promoted (frontier) and gated-out (orphan) mechanisms with candidate-evidence and parent-frontier lineage, reuse-ranked orphan rescue/prune, and a bounded ranked proposer digest with python/typescript parity (AC-880)
+- harness optimization protocol: noise calibration report (sample-variance noise floor, recommended margin and cost-clamped trial count, sparse-metric-too-noisy flag) with an opt-in caller-gated citation of the current margin against the noise floor in the advancement rationale and python/typescript parity (AC-881)
 
 ## [0.11.0] - 2026-07-02
 
