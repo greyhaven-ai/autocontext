@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "candidate_id": "cand-full-002",
+  "parent_frontier_id": "frontier-001",
+  "mechanism_name": "require-target-theorem-present",
+  "mechanism_type": "mixed",
+  "target_surface": "evaluator",
+  "changes": "Add a post-compile check that the named theorem exists in the output, plus a playbook note describing the failure mode.",
+  "changed_artifacts": ["src/autocontext/loop/loop_driver.py", "knowledge/lean/playbook.md"],
+  "fix_cases": ["divergence-empty-file", "truncated-claude-p-output"],
+  "regression_cases": ["convective_eq_fderiv", "divergence-integrability"],
+  "observed": "Dry-run over the divergence seed now fails the compile-only oracle as expected.",
+  "validation_plan": "Re-run the divergence seed and confirm the empty-file case now fails, then replay the 60 banked sub-lemmas for regressions.",
+  "cost_expectation": {
+    "extra_tokens": 1200,
+    "extra_calls": 1,
+    "extra_seconds": 4.5
+  },
+  "leakage_scope": ["public-fixtures", "banked-sub-lemmas"],
+  "parity": {
+    "python": "implemented",
+    "typescript": "implemented",
+    "schema_hash": "9f8e7d6c5b4a"
+  }
+}
