@@ -150,7 +150,12 @@ describe("TypeScript type assertion budget", () => {
     // GenerationRunner phase decomposition, and others) landed through main
     // between the last bump and this baseline pass. Same "bump, don't
     // reverse-engineer" policy as above.
-    expect(total).toBeLessThanOrEqual(1045);
+    // Bumped to 1062 (AC-876..882) when the harness-optimization protocol
+    // cluster landed: seven contract artifacts under harness-optimization/,
+    // whose AJV validators use the same ajv CJS-default-interop cast pattern
+    // already sanctioned above, plus manifest/fixture field-access casts in
+    // the cross-package parity tests. Same "bump, don't reverse-engineer" policy.
+    expect(total).toBeLessThanOrEqual(1062);
   });
 
   it("mission/store.ts should use row types instead of inline casts", () => {
