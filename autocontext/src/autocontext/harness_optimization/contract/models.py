@@ -31,23 +31,23 @@ class Parity(BaseModel):
         extra='forbid',
     )
     python: Annotated[
-        Literal['implemented', 'pending', 'n_a'] | None,
+        Literal['implemented', 'pending', 'n_a'],
         Field(
             description='Implementation status of this candidate in the Python package.'
         ),
-    ] = None
+    ]
     typescript: Annotated[
-        Literal['implemented', 'pending', 'n_a'] | None,
+        Literal['implemented', 'pending', 'n_a'],
         Field(
             description='Implementation status of this candidate in the TypeScript package.'
         ),
-    ] = None
+    ]
     schema_hash: Annotated[
-        str | None,
+        str,
         Field(
             description='Content hash of the shared schema the two implementations agree on.'
         ),
-    ] = None
+    ]
 
 
 class CandidateEvidence(BaseModel):

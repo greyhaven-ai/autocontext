@@ -22,6 +22,7 @@ const EXPECTED_FIXTURES = new Set([
   "invalid-missing-hypothesis.json",
   "invalid-bad-mechanism-type.json",
   "invalid-extra-field.json",
+  "invalid-empty-parity.json",
 ]);
 
 function fixtures(prefix: string): string[] {
@@ -47,6 +48,7 @@ const validCandidate: CandidateEvidence = {
   parity: {
     python: "implemented",
     typescript: "pending",
+    schema_hash: "abc123",
   },
 };
 

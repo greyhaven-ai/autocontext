@@ -25,6 +25,10 @@ export function readCandidateEvidence(path: string): CandidateEvidence {
  * and a trailing newline. Parent directories are created as needed.
  */
 export function writeCandidateEvidence(evidence: CandidateEvidence, path: string): void {
+  const result = validateCandidateEvidence(evidence);
+  if (!result.valid) {
+    throw new Error(`invalid CandidateEvidence for ${path}: ${result.errors.join("; ")}`);
+  }
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(evidence, null, 2)}\n`);
 }

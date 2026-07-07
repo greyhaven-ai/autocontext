@@ -28,6 +28,7 @@ EXPECTED_FIXTURES = {
     "invalid-missing-hypothesis.json",
     "invalid-bad-mechanism-type.json",
     "invalid-extra-field.json",
+    "invalid-empty-parity.json",
 }
 
 

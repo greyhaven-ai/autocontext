@@ -90,14 +90,14 @@ export interface CandidateEvidence {
     /**
      * Implementation status of this candidate in the Python package.
      */
-    python?: "implemented" | "pending" | "n_a";
+    python: "implemented" | "pending" | "n_a";
     /**
      * Implementation status of this candidate in the TypeScript package.
      */
-    typescript?: "implemented" | "pending" | "n_a";
+    typescript: "implemented" | "pending" | "n_a";
     /**
      * Content hash of the shared schema the two implementations agree on.
      */
-    schema_hash?: string;
+    schema_hash: string;
   };
 }

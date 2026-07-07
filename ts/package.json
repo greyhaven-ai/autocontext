@@ -109,6 +109,10 @@
       "types": "./dist/agent-runtime/index.d.ts",
       "import": "./dist/agent-runtime/index.js"
     },
+    "./harness-optimization/evidence": {
+      "import": "./dist/harness-optimization/evidence.js",
+      "types": "./dist/harness-optimization/evidence.d.ts"
+    },
     "./detectors/openai-python": {
       "types": "./dist/control-plane/instrument/detectors/openai-python/index.d.ts",
       "import": "./dist/control-plane/instrument/detectors/openai-python/index.js",

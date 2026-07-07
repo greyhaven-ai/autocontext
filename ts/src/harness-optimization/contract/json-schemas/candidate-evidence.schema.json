@@ -126,6 +126,7 @@
     "parity": {
       "type": "object",
       "additionalProperties": false,
+      "required": ["python", "typescript", "schema_hash"],
       "properties": {
         "python": {
           "type": "string",
