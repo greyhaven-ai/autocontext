@@ -553,6 +553,104 @@ A shared fixture
 set of score series and the report each should produce, which both packages load
 to prove they compute identical statistics, recommendations, and rendered text.
 
+## Cross-package parity (AC-882)
+
+Every artifact above is generated once and consumed twice: a python pydantic
+model and a TypeScript interface plus AJV validator, from the same canonical
+schema. That only stays honest if both packages are proven to agree on real
+records. `fixtures/harness-optimization/parity-manifest.json` is the single
+source that lists all seven artifacts (candidate-evidence, promotion-score,
+repair-result, integrity-metadata, frontier-mechanism, orphan-mechanism, and
+calibration-report) together with each one's schema file and its clean and
+invalid fixtures. Both packages iterate that one manifest: the python suite at
+`autocontext/tests/harness_optimization/test_parity_suite.py` and the TypeScript
+suite at `ts/tests/harness-optimization/parity-suite.test.ts`. For every artifact
+in the manifest, every clean fixture must validate and every invalid fixture must
+be rejected, in BOTH languages. A record that one side accepts and the other
+rejects fails the build.
+
+### The membership guard
+
+The manifest cannot be allowed to fall behind the schemas. Both suites carry a
+membership guard that reads `ts/src/harness-optimization/contract/json-schemas`
+and asserts that every `*.schema.json` file (except the `_aggregate` bundle) has
+a manifest entry. Adding a new schema without a manifest entry, or without at
+least one clean and one invalid fixture, fails CI, so a future artifact cannot
+ship contract types without also shipping cross-language parity fixtures.
+
+### What parity guarantees
+
+The parity coverage is split across two kinds of fixture:
+
+- **Structure**: python and TS agree on the schema, the required fields, and the
+  enum values. This is enforced upstream by the byte-diff drift gate
+  (`npm run check:harness-optimization-schemas`), which regenerates both packages'
+  types and the synced python schemas and fails on any hand-edit, and downstream
+  by the manifest's clean and invalid fixtures validating identically on both
+  sides.
+- **Arithmetic**: python and TS agree on the numeric computations. The promotion
+  score and beat decisions are pinned by
+  `fixtures/harness-optimization/promotion-score/score-cases.json`, and the
+  calibration statistics and rendered citations by
+  `fixtures/harness-optimization/calibration-cases/calibration-cases.json`. Both
+  packages load these numeric fixtures and must reproduce the pinned values within
+  a 1e-9 tolerance.
+
+### Intentionally unsupported behavior
+
+Parity is a claim about the contract and the pure computations, not about every
+pipeline hook. Some behavior is python-side only by design, and the parity suite
+does not assert a TS equivalent for it:
+
+- TS runners and adapters may DECLARE source policy and contamination status
+  (they carry the IntegrityMetadata fields), but they do not enforce every
+  python-only hook, per AC-879. The leakage audit and gate functions exist in both
+  languages, but their wiring into a live run is python-side.
+- The leakage stage (`autocontext/src/autocontext/loop/stage_leakage.py`) and the
+  calibration citation in `evaluate_advancement` are python-side pipeline wirings.
+  Both are opt-in and default-off, and there is no TS pipeline equivalent to
+  mirror. The shared, mirrored surface is the pure `audit_leakage` /
+  `evaluate_leakage_gate` and `compute_calibration` functions and their fixtures,
+  not the python loop that calls them.
+
+### Verifying parity
+
+Run all three from their package directories:
+
+```bash
+cd autocontext && uv run pytest
+cd ts && npm test
+cd ts && npm run lint
+```
+
+## Adding a new protocol artifact
+
+A new artifact follows the same contract pattern end to end. The steps, in order:
+
+1. Author the JSON schema under
+   `ts/src/harness-optimization/contract/json-schemas/`.
+2. Add one `$ref` to `_aggregate.schema.json` so the new schema joins the bundle.
+3. Regenerate both packages' types:
+   `node scripts/generate-harness-optimization-types.mjs` then
+   `node scripts/sync-python-harness-optimization-schemas.mjs`.
+4. Wire the AJV validator and its `_TypeCheck` member in `validators.ts`.
+5. Add at least one clean and one invalid fixture under
+   `fixtures/harness-optimization/<artifact>/`.
+6. Add a `parity-manifest.json` entry (name, schema id, schema file, and the
+   clean and invalid fixture paths).
+7. Add the pydantic model to `test_parity_suite.py`'s `MODELS` map and the
+   validator to `parity-suite.test.ts`'s `VALIDATORS` map.
+8. Run the pre-merge gate:
+   - `uv run --frozen ruff check src tests`
+   - `uv run --frozen pytest tests/test_module_size_limits.py tests/test_gate_taxonomy.py tests/harness_optimization`
+   - `npm run check:harness-optimization-schemas`
+   - `npx vitest run tests/harness-optimization`
+   - `npm run lint`
+
+The membership guard means skipping steps 5 through 7 is caught by the build: a
+schema with no manifest entry, or a manifest artifact with no model or validator
+map member, fails the parity suite.
+
 ## The contract pattern
 
 This is the foundation artifact. The later protocol artifacts follow the same
