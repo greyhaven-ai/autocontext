@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "candidate_id": "c",
+  "weight_version": "w",
+  "components": {
+    "dense_quality_score": 0.0,
+    "sparse_success_rate": 0.0,
+    "tokens_per_million": 0.0,
+    "error_rate": 0.0,
+    "score_variance": 0.0
+  },
+  "weights": {
+    "sparse_success_weight": 0.0,
+    "token_cost_weight": 0.0,
+    "error_weight": 0.0,
+    "variance_weight": 0.0
+  },
+  "score": 0.0,
+  "parity": {
+    "python": "pending",
+    "typescript": "pending",
+    "schema_hash": "0"
+  }
+}

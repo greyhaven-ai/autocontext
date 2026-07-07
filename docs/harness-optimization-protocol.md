@@ -85,6 +85,81 @@ console.log(evidence.candidate_id, evidence.mechanism_type);
 writeCandidateEvidence(evidence, "out/candidate.json"); // 2-space indent + trailing newline
 ```
 
+## Promotion score (AC-877)
+
+Once candidates have been evaluated, the promotion gate needs a single comparable
+number per candidate. The **PromotionScore** artifact carries that number together
+with the raw components it was computed from, the named weight set (and its
+version), and the same cross-language parity block as CandidateEvidence. Its schema
+lives at `ts/src/harness-optimization/contract/json-schemas/promotion-score.schema.json`
+and generates both packages' types under the same drift gate.
+
+The score is a fresh blend of five components under four named weights:
+
+```
+score = dense_quality_score
+      + sparse_success_weight * sparse_success_rate
+      - token_cost_weight     * tokens_per_million
+      - error_weight          * error_rate
+      - variance_weight       * score_variance
+```
+
+Dense quality is the reward, the weighted sparse success rate adds to it, and the
+weighted token cost, error rate, and score variance are penalties. The scorer is a
+pure function of components and weights, so the same inputs always produce the same
+number. A shared numeric fixture
+(`fixtures/harness-optimization/promotion-score/score-cases.json`) pins the exact
+expected scores and beat decisions, and both packages load it to prove they compute
+identical results.
+
+### The never-stale rule
+
+A candidate beats an incumbent only when its score exceeds the incumbent's by more
+than a margin, and the comparison always recomputes BOTH scores from raw components
+under the SAME weight version. Never compare a fresh challenger score against a
+stored incumbent score: a stored score may have been computed under an older weight
+version, and mixing weight versions makes the comparison meaningless. `beats_incumbent`
+(Python) and `beatsIncumbent` (TypeScript) enforce this by taking components (not
+scores) and rescoring both sides in place. The threshold is strict: a challenger
+whose recomputed margin exactly equals the minimum margin does not beat the incumbent.
+
+### Tuning the weights
+
+The weights are the policy knob, and they carry a version tag precisely so a
+retune is an explicit, recorded event rather than a silent drift. When the dev set
+is small, sparse per-case success is noisy: a couple of extra solved cases can swing
+`sparse_success_rate` sharply, so a large `sparse_success_weight` lets sparse success
+dominate a blend that should still be anchored by the dense quality signal. Keep the
+sparse weight modest relative to the dense signal on small dev sets, and only raise
+it once the case count is large enough for the success rate to be stable. Bump the
+`weight_version` whenever any weight changes so that no incumbent recorded under the
+old weights is ever compared under the new ones.
+
+### Reading and validating the artifact
+
+Both packages validate a PromotionScore against the shared schema and expose the
+pure scorer. Python:
+
+```python
+from autocontext.harness_optimization.contract.models import PromotionScore
+from autocontext.harness_optimization.scoring import beats_incumbent, harness_promotion_score
+
+score = PromotionScore(**data)  # raises ValidationError on an invalid record
+fresh = harness_promotion_score(score.components, score.weights)
+advances = beats_incumbent(challenger.components, incumbent.components, weights, min_margin=0.05)
+```
+
+TypeScript:
+
+```ts
+import { validatePromotionScore } from "autoctx/harness-optimization/contract/validators";
+import { beatsIncumbent, harnessPromotionScore } from "autoctx/harness-optimization/scoring";
+
+const result = validatePromotionScore(data); // { valid: false, errors } on an invalid record
+const fresh = harnessPromotionScore(components, weights);
+const advances = beatsIncumbent(challengerComponents, incumbentComponents, weights, 0.05);
+```
+
 ## The contract pattern
 
 This is the foundation artifact. The later protocol artifacts follow the same

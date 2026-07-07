@@ -139,7 +139,7 @@ def _evaluate_harness_promotion(inputs: HarnessPromotionInputs) -> AdvancementRa
         metadata["incumbent_components"] = None
         return AdvancementRationale(
             decision="advance",
-            reason=(f"No incumbent — challenger promotable at score {challenger_score:.4f} (weights {weight_version})"),
+            reason=(f"No incumbent: challenger promotable at score {challenger_score:.4f} (weights {weight_version})"),
             component_scores=components,
             binding_checks=["harness_promotion_score"],
             proxy_signals=[],
@@ -151,7 +151,7 @@ def _evaluate_harness_promotion(inputs: HarnessPromotionInputs) -> AdvancementRa
     incumbent_score = harness_promotion_score(incumbent, weights)
     margin = challenger_score - incumbent_score
     # Decision comes from the shared never-stale primitive, which recomputes
-    # both scores under the same weights — identical to the margin above.
+    # both scores under the same weights, identical to the margin above.
     advances = beats_incumbent(challenger, incumbent, weights, inputs.min_margin)
 
     components["incumbent_score"] = incumbent_score

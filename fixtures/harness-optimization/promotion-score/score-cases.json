@@ -187,6 +187,31 @@
       },
       "min_margin": 0.05,
       "expected_beats": true
+    },
+    {
+      "name": "boundary tie: recomputed diff exactly equals min_margin does not beat (strict greater-than, not >=)",
+      "challenger": {
+        "dense_quality_score": 0.75,
+        "sparse_success_rate": 0.5,
+        "tokens_per_million": 0.25,
+        "error_rate": 0.0,
+        "score_variance": 0.0
+      },
+      "incumbent": {
+        "dense_quality_score": 0.5,
+        "sparse_success_rate": 0.5,
+        "tokens_per_million": 0.25,
+        "error_rate": 0.0,
+        "score_variance": 0.0
+      },
+      "weights": {
+        "sparse_success_weight": 1.0,
+        "token_cost_weight": 1.0,
+        "error_weight": 1.0,
+        "variance_weight": 1.0
+      },
+      "min_margin": 0.25,
+      "expected_beats": false
     }
   ]
 }

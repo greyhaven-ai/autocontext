@@ -1,6 +1,40 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, test, expect } from "vitest";
 import { validatePromotionScore } from "../../src/harness-optimization/contract/validators.js";
 import type { PromotionScore } from "../../src/harness-optimization/contract/generated-types.js";
+
+// Walk up to the repo root: ts/tests/harness-optimization/ -> ts/tests/ -> ts/ -> <repo root>.
+const FIXTURES_DIR = join(
+  import.meta.dirname,
+  "..",
+  "..",
+  "..",
+  "fixtures",
+  "harness-optimization",
+  "promotion-score",
+);
+
+// The contract fixtures validated by both packages. score-cases.json also lives in
+// this directory (the SCORER numeric fixture) and is deliberately excluded here: it
+// matches neither the valid- nor invalid- prefix.
+const EXPECTED_FIXTURES = new Set([
+  "valid-full.json",
+  "valid-minimal.json",
+  "invalid-missing-component.json",
+  "invalid-empty-parity.json",
+  "invalid-extra-field.json",
+]);
+
+function fixtures(prefix: string): string[] {
+  return readdirSync(FIXTURES_DIR)
+    .filter((name) => name.startsWith(prefix) && name.endsWith(".json"))
+    .sort();
+}
+
+function loadFixture(name: string): unknown {
+  return JSON.parse(readFileSync(join(FIXTURES_DIR, name), "utf8"));
+}
 
 // A minimal fully-valid PromotionScore used as the fixture-of-record.
 const validScore: PromotionScore = {
@@ -71,5 +105,25 @@ describe("validatePromotionScore", () => {
     };
     const result = validatePromotionScore(outOfRange);
     expect(result.valid).toBe(false);
+  });
+});
+
+describe("shared repo-root promotion-score fixtures", () => {
+  test.each(fixtures("valid-"))("%s validates", (name) => {
+    const result = validatePromotionScore(loadFixture(name));
+    expect(result.valid).toBe(true);
+  });
+
+  test.each(fixtures("invalid-"))("%s fails validation", (name) => {
+    const result = validatePromotionScore(loadFixture(name));
+    expect(result.valid).toBe(false);
+  });
+
+  test("the fixtures directory contains exactly the expected contract set", () => {
+    // Set-membership guard over the valid-/invalid- contract fixtures only, so a
+    // dropped or renamed contract fixture fails here while score-cases.json (the
+    // scorer numeric fixture) is left untouched.
+    const names = new Set([...fixtures("valid-"), ...fixtures("invalid-")]);
+    expect(names).toEqual(EXPECTED_FIXTURES);
   });
 });

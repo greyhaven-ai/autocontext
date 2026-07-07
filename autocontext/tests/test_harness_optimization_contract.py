@@ -159,3 +159,46 @@ def test_promotion_score_empty_parity_raises() -> None:
     data["parity"] = {}
     with pytest.raises(ValidationError):
         PromotionScore(**data)
+
+
+# --- Shared promotion-score contract fixtures (mirrors candidate-evidence) -----
+
+PROMOTION_SCORE_FIXTURES_DIR = REPO_ROOT / "fixtures" / "harness-optimization" / "promotion-score"
+
+# The contract fixtures validated by both packages. score-cases.json also lives in
+# this directory (it is the SCORER numeric fixture, loaded by the scoring tests) and
+# is deliberately excluded here: it matches neither the valid- nor invalid- prefix.
+EXPECTED_PROMOTION_SCORE_FIXTURES = {
+    "valid-full.json",
+    "valid-minimal.json",
+    "invalid-missing-component.json",
+    "invalid-empty-parity.json",
+    "invalid-extra-field.json",
+}
+
+
+def _promotion_score_fixtures(prefix: str) -> list[Path]:
+    assert PROMOTION_SCORE_FIXTURES_DIR.is_dir(), f"expected fixtures dir at {PROMOTION_SCORE_FIXTURES_DIR}"
+    return sorted(PROMOTION_SCORE_FIXTURES_DIR.glob(f"{prefix}*.json"))
+
+
+@pytest.mark.parametrize("fixture", _promotion_score_fixtures("valid-"), ids=lambda p: p.name)
+def test_shared_valid_promotion_score_fixtures_construct(fixture: Path) -> None:
+    data = json.loads(fixture.read_text())
+    PromotionScore(**data)
+
+
+@pytest.mark.parametrize("fixture", _promotion_score_fixtures("invalid-"), ids=lambda p: p.name)
+def test_shared_invalid_promotion_score_fixtures_raise(fixture: Path) -> None:
+    data = json.loads(fixture.read_text())
+    with pytest.raises(ValidationError):
+        PromotionScore(**data)
+
+
+def test_shared_promotion_score_fixture_directory_contains_the_expected_set() -> None:
+    # Set-membership guard over the valid-/invalid- contract fixtures only, so a
+    # dropped or renamed contract fixture fails here while score-cases.json (the
+    # scorer numeric fixture) is left untouched.
+    names = {p.name for p in _promotion_score_fixtures("valid-")}
+    names |= {p.name for p in _promotion_score_fixtures("invalid-")}
+    assert names == EXPECTED_PROMOTION_SCORE_FIXTURES
