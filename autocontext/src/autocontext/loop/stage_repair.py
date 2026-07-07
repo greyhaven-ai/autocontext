@@ -13,18 +13,18 @@ on the :class:`GenerationContext` and runs the gate, which emits one
 channel. The stage is deterministic and never fabricates task content: it only
 runs the pure repairs and records their structural decisions.
 
-The lone recorded-state input wired today is a raw tool-call JSON string the
-competitor stage may attach under ``ctx.current_strategy["__tool_call_json__"]``;
-when present and structurally repairable, the repaired string is recorded back
-onto the same key so downstream consumers see valid JSON. Richer inputs
-(artifact-landing relocation, finish-claim validation) and the runtime
-parse-seam wiring are follow-ups tracked with the deferred artifact-reassembly
-work in ``docs/harness-optimization-protocol.md``.
+The lone recorded-state input this stage reads is a raw tool-call JSON string
+under ``ctx.current_strategy["__tool_call_json__"]``; when present and
+structurally repairable, the repaired string is recorded back onto the same key
+so downstream consumers see valid JSON. No production stage attaches this key
+yet, so the stage is opt-in telemetry until a producer is added (a documented
+follow-up). Richer inputs (artifact-landing relocation, finish-claim validation)
+and the runtime parse-seam wiring are follow-ups tracked with the deferred
+artifact-reassembly work in ``docs/harness-optimization-protocol.md``.
 """
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING
 
 from autocontext.harness_optimization.repair_gate import (
@@ -36,8 +36,6 @@ from autocontext.loop.stage_types import GenerationContext
 
 if TYPE_CHECKING:
     from autocontext.loop.events import EventStreamEmitter
-
-logger = logging.getLogger(__name__)
 
 _RAW_TOOL_CALL_KEY = "__tool_call_json__"
 

@@ -23,15 +23,17 @@ import {
 } from "../control-plane/contract-probes/index.js";
 
 /**
- * Fresh cross-language parity stamp for a TypeScript-implemented repair.
+ * Fresh cross-language parity stamp for the shipped parity repairs.
  *
- * Python parity is pending until its mirror lands (here it already has); the
- * schema hash is empty because these repairs share the RepairResult schema,
- * whose hash is stamped by the sync tooling, not per-call. This mirrors the
- * Python `_parity()` helper with the implemented/pending sides flipped.
+ * All three repairs in this module (repairToolCallJson / repairArtifactLanding
+ * / finishGuard) have a shipped Python mirror, so both sides stamp
+ * "implemented"; the emitted parity subfield is therefore identical across
+ * languages. The schema hash is empty because these repairs share the
+ * RepairResult schema, whose hash is stamped by the sync tooling, not per-call.
+ * This mirrors the Python `_parity()` helper.
  */
 function parity(): RepairResult["parity"] {
-  return { python: "pending", typescript: "implemented", schema_hash: "" };
+  return { python: "implemented", typescript: "implemented", schema_hash: "" };
 }
 
 // ---------------------------------------------------------------------------

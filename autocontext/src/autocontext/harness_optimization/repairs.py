@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import re
+from typing import Literal
 
 from autocontext.control_plane.contract_probes._base import (
     ArtifactContractProbeInputs,
@@ -32,16 +33,21 @@ from autocontext.control_plane.contract_probes._base import (
 )
 from autocontext.harness_optimization.contract.models import Parity, RepairResult
 
+ParityStatus = Literal["implemented", "pending", "n_a"]
 
-def _parity() -> Parity:
+
+def _parity(ts: ParityStatus = "implemented") -> Parity:
     """Fresh cross-language parity stamp for a Python-implemented repair.
 
-    TypeScript parity is pending until the mirror lands; the schema hash is
-    empty here because these repairs share the RepairResult schema, whose hash
-    is stamped by the sync tooling, not per-call.
+    The three parity repairs (``tool_call_json`` / ``artifact_landing`` /
+    ``finish_guard``) have a shipped TypeScript mirror, so they default to
+    ``typescript="implemented"``; the Python-only ``loop_guard`` passes
+    ``ts="pending"`` because it has no mirror yet. The schema hash is empty
+    here because these repairs share the RepairResult schema, whose hash is
+    stamped by the sync tooling, not per-call.
     """
 
-    return Parity(python="implemented", typescript="pending", schema_hash="")
+    return Parity(python="implemented", typescript=ts, schema_hash="")
 
 
 # ---------------------------------------------------------------------------
@@ -366,7 +372,7 @@ def loop_guard(*, recent_actions: list[str], max_repeat: int) -> RepairResult:
             target=recent_actions[-1],
             before={"repeat_count": trailing},
             after={"loop_break": True},
-            parity=_parity(),
+            parity=_parity(ts="pending"),
         )
 
     return RepairResult(
@@ -377,7 +383,7 @@ def loop_guard(*, recent_actions: list[str], max_repeat: int) -> RepairResult:
         target="",
         before={"repeat_count": trailing},
         after={"loop_break": False},
-        parity=_parity(),
+        parity=_parity(ts="pending"),
     )
 
 
