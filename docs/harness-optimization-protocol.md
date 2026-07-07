@@ -371,7 +371,10 @@ surface fields it carries a `failure_family` (why the surface rejected it), a
 `rejection_reason`, a `retry_count`, and an optional `rescued_into_frontier_id`.
 Both schemas generate the TypeScript interface, the Python pydantic model, and a
 `validateFrontierMechanism` / `validateOrphanMechanism` validator, so the two
-languages can never disagree on a record.
+languages can never disagree on a record. Optional fields follow an omit-none
+serialization convention: Python callers dump records with `exclude_none` so an
+absent optional is omitted from the shared shape rather than emitted as `null`,
+which keeps the TypeScript AJV validation happy.
 
 Every record carries the same two lineage fields that tie the archive back to the
 rest of the protocol. `candidate_evidence_id` points at the CandidateEvidence
@@ -422,7 +425,8 @@ ascending sort over a four-part key:
 3. **retry_count ascending**: among equally supported orphans, the one that needed
    fewer retries is the cleaner candidate.
 4. **mechanism_id ascending**: a stable tiebreak so both languages produce the
-   identical order.
+   identical order. `mechanism_id` is assumed ASCII so the cross-language string
+   comparison in the tiebreak orders identically in Python and TypeScript.
 
 `prune_orphans` uses exactly this order, so pruning keeps the orphans a proposer
 is most likely to reuse and discards the stale, low-support, many-retry tail.

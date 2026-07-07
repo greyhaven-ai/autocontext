@@ -52,6 +52,26 @@ def test_archive_case(case: dict[str, Any]) -> None:
         assert [m.mechanism_id for m in result["frontier"]] == case["expected_frontier_ids"]
         assert [m.mechanism_id for m in result["orphans"]] == case["expected_orphan_ids"]
 
+    elif op == "query_by_failure_family":
+        result = query(archive, failure_family=case["failure_family"])
+        # failure_family narrows orphans only; the frontier stays whole.
+        assert [m.mechanism_id for m in result["frontier"]] == case["expected_frontier_ids"]
+        assert [m.mechanism_id for m in result["orphans"]] == case["expected_orphan_ids"]
+
+    elif op == "query_by_surface":
+        result = query(archive, target_surface=case["target_surface"])
+        assert [m.mechanism_id for m in result["frontier"]] == case["expected_frontier_ids"]
+        assert [m.mechanism_id for m in result["orphans"]] == case["expected_orphan_ids"]
+
+    elif op == "rescue_noop":
+        rescued = rescue_orphan(archive, case["orphan_id"], case["into_frontier_id"])
+        # An unknown orphan id leaves the archive unchanged: identical ids and no
+        # new rescued_into_frontier_id set on anyone.
+        assert [m.mechanism_id for m in rescued.orphans] == case["expected_orphan_ids"]
+        before = {m.mechanism_id: m.rescued_into_frontier_id for m in archive.orphans}
+        after = {m.mechanism_id: m.rescued_into_frontier_id for m in rescued.orphans}
+        assert after == before
+
     elif op == "rank_orphans":
         ranked = rank_orphans(archive.orphans)
         assert [m.mechanism_id for m in ranked] == case["expected_order"]
@@ -92,6 +112,20 @@ def test_archive_case(case: dict[str, Any]) -> None:
         rendered_orphan_names = [ln.split(" [", 1)[0].removeprefix("  - ") for ln in orphan_items]
         assert rendered_orphan_names == expected_names
 
+        # With max_entries=1 each section holds at most one item and the orphan
+        # section is exactly the top-ranked not-rescued orphan. This fails if the
+        # per-section cap is ever dropped.
+        if max_entries == 1:
+            assert len(frontier_items) <= 1
+            assert len(orphan_items) <= 1
+            assert case["expected_orphan_ids_in_order"] == ["orphan-ac880-A"]
+            assert rendered_orphan_names == [id_to_name["orphan-ac880-A"]]
+
+        # When the fixture pins the exact string, the render must match it
+        # character-for-character (parity with the TypeScript renderer).
+        if "expected_digest" in case:
+            assert digest == case["expected_digest"]
+
         # Rescued orphans are excluded entirely from the reusable section.
         orphan_section = "\n".join(lines[orphan_start:])
         for excluded_id in case["expected_excludes"]:
@@ -99,3 +133,10 @@ def test_archive_case(case: dict[str, Any]) -> None:
 
     else:  # pragma: no cover - guards against an unhandled fixture op
         pytest.fail(f"unhandled op: {op}")
+
+
+def test_digest_headers_only_for_non_positive_max_entries() -> None:
+    # Mirrors the TypeScript suite: a non-positive max_entries emits the section
+    # headers with no items.
+    digest = render_archive_digest(_seed_archive(), max_entries=0)
+    assert digest == "mechanism archive digest\nfrontier:\norphans (reusable):"

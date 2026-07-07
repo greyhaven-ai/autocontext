@@ -149,7 +149,55 @@
       "expected_frontier_count": 2,
       "expected_orphan_ids_in_order": ["orphan-ac880-A", "orphan-ac880-C", "orphan-ac880-B"],
       "expected_excludes": ["orphan-ac880-D"],
+      "expected_header": "mechanism archive digest",
+      "expected_digest": "mechanism archive digest\nfrontier:\n  - retry-on-truncated-output guard [harness_validator] support=4\n  - structured finish-guard playbook [prompt] support=3\norphans (reusable):\n  - prompt hint for empty-tool-call retry [empty-tool-call] support=3\n  - tighter finish-guard prompt [empty-tool-call] support=3\n  - aggressive context pruning [context-loss] support=1"
+    },
+    {
+      "name": "digest truncates each section to a single entry when max_entries is 1",
+      "op": "digest",
+      "max_entries": 1,
+      "expected_frontier_count": 1,
+      "expected_orphan_ids_in_order": ["orphan-ac880-A"],
+      "expected_excludes": ["orphan-ac880-D"],
       "expected_header": "mechanism archive digest"
+    },
+    {
+      "name": "query by failure_family filters orphans only and leaves the frontier whole",
+      "op": "query_by_failure_family",
+      "failure_family": "empty-tool-call",
+      "expected_frontier_ids": ["frontier-ac880-001", "frontier-ac880-002"],
+      "expected_orphan_ids": ["orphan-ac880-A", "orphan-ac880-C"]
+    },
+    {
+      "name": "query by target_surface filters both lists",
+      "op": "query_by_surface",
+      "target_surface": "prompt",
+      "expected_frontier_ids": ["frontier-ac880-002"],
+      "expected_orphan_ids": ["orphan-ac880-A", "orphan-ac880-C"]
+    },
+    {
+      "name": "rescue with an unknown orphan id leaves the archive unchanged",
+      "op": "rescue_noop",
+      "orphan_id": "orphan-ac880-UNKNOWN",
+      "into_frontier_id": "frontier-ac880-001",
+      "expected_orphan_ids": [
+        "orphan-ac880-A",
+        "orphan-ac880-B",
+        "orphan-ac880-C",
+        "orphan-ac880-D"
+      ]
+    },
+    {
+      "name": "prune with a zero bound keeps no orphans",
+      "op": "prune",
+      "max_orphans": 0,
+      "expected_surviving_ids": []
+    },
+    {
+      "name": "prune with a negative bound clamps to zero orphans",
+      "op": "prune",
+      "max_orphans": -1,
+      "expected_surviving_ids": []
     }
   ]
 }
