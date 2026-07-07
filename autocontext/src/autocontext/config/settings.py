@@ -542,6 +542,10 @@ class AppSettings(BaseModel):
         default="",
         description="Comma-separated scenario allowlist for the leakage gate; empty = none",
     )
+    harness_calibration_enabled: bool = Field(
+        default=False,
+        description="Opt-in noise calibration citation in advancement rationale (AC-881)",
+    )
     # Pre-flight harness synthesis (AC-150)
     harness_preflight_enabled: bool = Field(
         default=False,

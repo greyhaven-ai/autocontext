@@ -15,12 +15,16 @@ Key types:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
+from autocontext.harness_optimization.calibration import cite_margin_vs_noise
 from autocontext.harness_optimization.contract.models import Components, Weights
 from autocontext.harness_optimization.scoring import beats_incumbent, harness_promotion_score
+
+if TYPE_CHECKING:
+    from autocontext.harness_optimization.contract.models import CalibrationReport
 
 # Thresholds
 _ERROR_RATE_THRESHOLD = 0.2
@@ -188,7 +192,7 @@ def _evaluate_harness_promotion(inputs: HarnessPromotionInputs) -> AdvancementRa
     )
 
 
-def evaluate_advancement(
+def _evaluate_advancement_core(
     metrics: AdvancementMetrics,
     *,
     min_delta: float = 0.005,
@@ -200,7 +204,7 @@ def evaluate_advancement(
 
     Multi-objective evaluation considering:
     1. Score delta (binding)
-    2. Error rate (binding — vetoes advance)
+    2. Error rate (binding, vetoes advance)
     3. Confidence / sample agreement (risk flag)
     4. Resolved truth score (binding when present, overrides proxy)
     5. Score variance (risk flag)
@@ -320,3 +324,38 @@ def evaluate_advancement(
         proxy_signals=proxy_signals,
         risk_flags=risk_flags,
     )
+
+
+def evaluate_advancement(
+    metrics: AdvancementMetrics,
+    *,
+    min_delta: float = 0.005,
+    max_retries: int = 3,
+    retry_count: int = 0,
+    harness_promotion: HarnessPromotionInputs | None = None,
+    calibration: CalibrationReport | None = None,
+) -> AdvancementRationale:
+    """Evaluate advancement, optionally citing the margin against the noise floor.
+
+    Delegates the whole decision to :func:`_evaluate_advancement_core`, so every
+    decision path (advance, retry, rollback, harness-promotion) is scored exactly
+    as before. This wrapper only adds an opt-in, caller-gated post-processing step:
+
+    Noise calibration citation (AC-881): when the caller passes a
+    ``calibration`` report, a single one-line citation of whether the current
+    margin is above or below the estimated noise floor is appended to the
+    rationale's ``proxy_signals``, and nothing else changes. When ``calibration``
+    is ``None`` (the default) the returned rationale is byte-identical to the core
+    evaluation. The caller decides whether to build a report and pass it (gated by
+    ``harness_calibration_enabled``); this function never reads settings.
+    """
+    rationale = _evaluate_advancement_core(
+        metrics,
+        min_delta=min_delta,
+        max_retries=max_retries,
+        retry_count=retry_count,
+        harness_promotion=harness_promotion,
+    )
+    if calibration is not None:
+        rationale = rationale.model_copy(update={"proxy_signals": [*rationale.proxy_signals, cite_margin_vs_noise(calibration)]})
+    return rationale

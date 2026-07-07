@@ -6,6 +6,8 @@ AdvancementContract, evaluate_advancement.
 
 from __future__ import annotations
 
+from typing import Any
+
 # ===========================================================================
 # AdvancementMetrics
 # ===========================================================================
@@ -316,3 +318,63 @@ class TestHarnessPromotionDisabledPathUnchanged:
         default = evaluate_advancement(metrics, min_delta=0.005)
         explicit = evaluate_advancement(metrics, min_delta=0.005, harness_promotion=None)
         assert default.to_dict() == explicit.to_dict()
+
+
+# ===========================================================================
+# AC-881: the opt-in calibration citation must leave the default
+# (no-report) behavior byte-unchanged and only append one proxy signal.
+# ===========================================================================
+
+
+def _sample_metrics() -> Any:
+    from autocontext.harness.pipeline.advancement import AdvancementMetrics
+
+    return AdvancementMetrics(
+        best_score=0.85,
+        mean_score=0.80,
+        previous_best=0.70,
+        score_variance=0.005,
+        sample_count=5,
+        confidence=0.9,
+        error_rate=0.0,
+    )
+
+
+class TestCalibrationCitation:
+    def test_calibration_none_equals_omitting_it(self) -> None:
+        """Passing calibration=None is byte-identical to omitting it."""
+        from autocontext.harness.pipeline.advancement import evaluate_advancement
+
+        metrics = _sample_metrics()
+        default = evaluate_advancement(metrics, min_delta=0.005)
+        explicit_none = evaluate_advancement(metrics, min_delta=0.005, calibration=None)
+        assert default.to_dict() == explicit_none.to_dict()
+
+    def test_calibration_report_appends_citation_last(self) -> None:
+        """A calibration report appends its citation as the last proxy signal only."""
+        from autocontext.harness.pipeline.advancement import evaluate_advancement
+        from autocontext.harness_optimization.calibration import (
+            cite_margin_vs_noise,
+            compute_calibration,
+        )
+
+        metrics = _sample_metrics()
+        report = compute_calibration(
+            [0.80, 0.82, 0.79, 0.81, 0.83],
+            scenario_id="grid_ctf",
+            current_min_delta=0.005,
+            max_trials=32,
+        )
+
+        baseline = evaluate_advancement(metrics, min_delta=0.005)
+        cited = evaluate_advancement(metrics, min_delta=0.005, calibration=report)
+
+        citation = cite_margin_vs_noise(report)
+        # The citation is the LAST proxy signal, and it is the ONLY difference.
+        assert cited.proxy_signals == [*baseline.proxy_signals, citation]
+        assert cited.proxy_signals[-1] == citation
+
+        baseline_dict = baseline.to_dict()
+        cited_dict = cited.to_dict()
+        baseline_dict["proxy_signals"] = cited_dict["proxy_signals"]
+        assert baseline_dict == cited_dict

@@ -457,6 +457,102 @@ most-reusable first, a rescue sets the frontier id and sinks the rescued orphan 
 the tail of the reuse order, prune keeps the top-ranked orphans, and the digest
 renders the same bounded, ranked proposer feed on both sides.
 
+## Noise calibration (AC-881)
+
+A harness optimization gate advances a candidate when its margin over the
+incumbent clears a threshold. But a margin is only meaningful relative to the
+noise in the score series that produced it. A 0.01 improvement is real signal on
+a metric whose runs vary by 0.002 and pure chance on a metric whose runs vary by
+0.05. **Noise calibration** turns a raw score series into an estimate of that
+noise floor so a gate can state, in its own rationale, whether the current margin
+sits above or below the noise it is competing with.
+
+### The report
+
+`compute_calibration` (Python in
+`autocontext/src/autocontext/harness_optimization/calibration.py`, mirrored in
+TypeScript at `ts/src/harness-optimization/calibration.ts`) takes a score series
+plus the scenario id, the currently configured promotion margin
+(`current_min_delta`), and a cost-budget ceiling on trials (`max_trials`), and
+returns a `CalibrationReport`. Its fields are:
+
+- `scenario_id`, `sample_size` (n): identity and how many samples fed the estimate.
+- `mean`, `variance`, `std_dev`: the series centre and spread.
+- `standard_error`: the standard error of the mean, the noise on the headline number.
+- `recommended_min_delta`: the margin a gate should require to beat the noise.
+- `recommended_trial_count`: how many trials to run so the current margin is
+  resolvable, clamped to the cost budget.
+- `current_min_delta`: the margin currently configured, echoed back for the citation.
+- `margin_vs_noise`: `above_noise` or `below_noise`.
+- `sparse_metric_too_noisy`: whether the sparse headline metric is too noisy to gate on.
+
+### The formulas
+
+The arithmetic is fixed so the Python and TypeScript ports agree to 1e-9:
+
+- **Sample variance** uses `ddof=1` (divide by `n - 1`), and is 0 when `n < 2`.
+  `std_dev` is its square root.
+- **standard_error** is `std_dev / sqrt(n)`, and is 0 when `n < 2`.
+- **recommended_min_delta** is `noise_multiplier * standard_error` (default
+  multiplier 2.0), so the recommended margin is two standard errors of the mean.
+- **recommended_trial_count** is `clamp(ceil((std_dev / current_min_delta) ** 2), 1, max_trials)`.
+  The `(std_dev / current_min_delta) ** 2` term is how many samples it takes for
+  the standard error to shrink below the margin the gate wants to resolve. The
+  clamp keeps that in `[1, max_trials]` so the cost budget is respected and an
+  expensive run is never silently increased past its ceiling. When
+  `current_min_delta` or `std_dev` is 0 the count falls back to `max_trials`.
+
+With fewer than 2 samples the report has zero variance and cites `above_noise` as an
+"insufficient data" degenerate case, so a single-sample or empty series never reads
+as a real margin over the noise floor. autocontext assumes mechanism scores are
+finite and bounded; extreme overflow inputs are out of scope for the calibration
+arithmetic.
+
+### Reading the report
+
+Two fields carry the decision-relevant signal:
+
+- **margin_vs_noise** is `above_noise` when `current_min_delta >= recommended_min_delta`
+  and `below_noise` otherwise. A `below_noise` margin means the gate is trying to
+  resolve a difference smaller than the noise on the metric, so a passing candidate
+  may just be a lucky draw. `cite_margin_vs_noise` renders this as a single line,
+  for example `margin 0.005000 is below_noise (recommended >= 0.017889)`.
+- **sparse_metric_too_noisy** is set when the coefficient of variation of the mean
+  (`standard_error / abs(mean)`) exceeds a threshold (default 0.25), or when the
+  mean is 0 but the standard error is not. It flags that the sparse headline metric
+  is too noisy to gate on directly.
+
+### Sparse headline versus dense verifier
+
+A sparse headline metric (for example a single pass/fail success rate over a
+handful of runs) has few effective samples, so its standard error stays large and
+`margin_vs_noise` easily reads `below_noise`. A dense verifier metric (per-step or
+per-check scores aggregated over many observations) has many more effective
+samples for the same wall-clock cost, so its noise floor is far lower and small
+real improvements become resolvable. When `sparse_metric_too_noisy` is set, treat
+the sparse metric as secondary and optimize a denser verifier signal instead: the
+sparse headline is too noisy to gate on at the current sample size, and pushing on
+it risks advancing on noise. The dense signal gives the gate a margin it can
+actually trust, and the sparse metric can be checked as a secondary confirmation.
+
+### Caller-gated citation
+
+The citation is opt-in and caller-gated, so the default gate behavior is
+unchanged. `evaluate_advancement` gains a trailing keyword-only `calibration`
+parameter; when a caller passes a `CalibrationReport`, the one-line
+`cite_margin_vs_noise` string is appended to the rationale's `proxy_signals` and
+nothing else changes. When it is omitted (the default) the rationale is
+byte-identical to before. The caller decides whether to build a report and pass
+it, gated by the `harness_calibration_enabled` setting (default off);
+`evaluate_advancement` itself never reads settings.
+
+### The worked cases
+
+A shared fixture
+(`fixtures/harness-optimization/calibration-cases/calibration-cases.json`) pins a
+set of score series and the report each should produce, which both packages load
+to prove they compute identical statistics, recommendations, and rendered text.
+
 ## The contract pattern
 
 This is the foundation artifact. The later protocol artifacts follow the same

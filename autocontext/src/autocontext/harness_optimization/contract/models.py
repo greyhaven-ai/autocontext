@@ -567,3 +567,64 @@ class OrphanMechanism(BaseModel):
             description='Frontier id a later combination rescued this into. Empty while still orphaned.'
         ),
     ] = None
+
+
+class CalibrationReport(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    schema_version: Annotated[
+        Literal[1],
+        Field(
+            description='Schema version for forward compatibility. Always 1 for this revision.'
+        ),
+    ]
+    scenario_id: Annotated[
+        str,
+        Field(
+            description='Scenario or family the score series came from.', min_length=1
+        ),
+    ]
+    sample_size: Annotated[
+        int, Field(description='Number of score samples in the series (n).', ge=0)
+    ]
+    mean: Annotated[float, Field(description='Mean of the score series.')]
+    variance: Annotated[
+        float, Field(description='Sample variance (ddof=1); 0 when n<2.', ge=0.0)
+    ]
+    std_dev: Annotated[
+        float, Field(description='Standard deviation, sqrt of the variance.', ge=0.0)
+    ]
+    standard_error: Annotated[
+        float,
+        Field(description='Standard error, std_dev over sqrt(n); 0 when n<2.', ge=0.0),
+    ]
+    recommended_min_delta: Annotated[
+        float,
+        Field(
+            description='Recommended margin: noise_multiplier times standard_error.',
+            ge=0.0,
+        ),
+    ]
+    recommended_trial_count: Annotated[
+        int,
+        Field(
+            description='Trials so the mean SE falls under current_min_delta, capped by budget.',
+            ge=1,
+        ),
+    ]
+    current_min_delta: Annotated[
+        float, Field(description='The promotion margin currently configured.')
+    ]
+    margin_vs_noise: Annotated[
+        Literal['above_noise', 'below_noise'],
+        Field(
+            description='Whether the current margin sits above or below the noise floor.'
+        ),
+    ]
+    sparse_metric_too_noisy: Annotated[
+        bool, Field(description='True when the sparse metric is too noisy to gate on.')
+    ]
+    notes: Annotated[
+        str | None, Field(description='Optional human-readable rationale for audit.')
+    ] = None

@@ -18,6 +18,7 @@ from autocontext.harness.evaluation.types import EvaluationResult, EvaluationSum
 from autocontext.harness.pipeline.advancement import AdvancementMetrics, evaluate_advancement
 from autocontext.harness.pipeline.gate import BackpressureGate
 from autocontext.harness.pipeline.trend_gate import ScoreHistory, TrendAwareGate
+from autocontext.harness_optimization.calibration import compute_calibration, render_calibration_report
 from autocontext.knowledge.harness_quality import compute_harness_quality
 from autocontext.knowledge.rapid_gate import rapid_gate
 from autocontext.loop.annealing import AnnealingSchedule, annealing_random_value, evaluate_annealing
@@ -92,6 +93,9 @@ def resolve_gate_decision(
     annealing_seed: int = 0,
     generation: int = 1,
     annealing_roll: float | None = None,
+    calibration_enabled: bool = False,
+    calibration_scenario_id: str = "",
+    calibration_max_trials: int = 1,
 ) -> GateDecisionResult:
     """Select gate mode (rapid/trend-aware/standard) and evaluate decision.
 
@@ -119,20 +123,24 @@ def resolve_gate_decision(
 
     if use_rapid:
         result = (rapid_gate_fn or rapid_gate)(tournament_best_score, previous_best)
-        return with_annealing(GateDecisionResult(
-            decision=result.decision,
-            delta=result.delta,
-            reason=result.reason,
-            is_rapid=True,
-        ))
+        return with_annealing(
+            GateDecisionResult(
+                decision=result.decision,
+                delta=result.delta,
+                reason=result.reason,
+                is_rapid=True,
+            )
+        )
 
     if gate is None:
-        return with_annealing(GateDecisionResult(
-            decision="rollback",
-            delta=delta,
-            reason="no gate configured",
-            is_rapid=False,
-        ))
+        return with_annealing(
+            GateDecisionResult(
+                decision="rollback",
+                delta=delta,
+                reason="no gate configured",
+                is_rapid=False,
+            )
+        )
 
     if isinstance(gate, TrendAwareGate):
         threshold_probe = gate.evaluate(
@@ -158,12 +166,14 @@ def resolve_gate_decision(
     if not isinstance(threshold, (int, float)):
         compatibility_decision = getattr(threshold_probe, "decision", None)
         if compatibility_decision in {"advance", "retry", "rollback"}:
-            return with_annealing(GateDecisionResult(
-                decision=compatibility_decision,
-                delta=delta,
-                reason=str(getattr(threshold_probe, "reason", "gate decision")),
-                is_rapid=False,
-            ))
+            return with_annealing(
+                GateDecisionResult(
+                    decision=compatibility_decision,
+                    delta=delta,
+                    reason=str(getattr(threshold_probe, "reason", "gate decision")),
+                    is_rapid=False,
+                )
+            )
         raw_min_delta = getattr(gate, "min_delta", 0.005)
         threshold = float(raw_min_delta) if isinstance(raw_min_delta, (int, float)) else 0.005
 
@@ -174,23 +184,40 @@ def resolve_gate_decision(
         tournament_results=tournament_results,
         custom_metrics=custom_metrics,
     )
+    calibration_report = None
+    if calibration_enabled:
+        scores = [result.score for result in tournament_results]
+        calibration_report = compute_calibration(
+            scores,
+            scenario_id=calibration_scenario_id,
+            current_min_delta=float(threshold),
+            max_trials=calibration_max_trials,
+        )
     rationale = evaluate_advancement(
         advancement_metrics,
         min_delta=threshold,
         max_retries=max_retries,
         retry_count=retry_count,
+        calibration=calibration_report,
     )
 
-    return with_annealing(GateDecisionResult(
-        decision=rationale.decision,
-        delta=advancement_metrics.delta,
-        reason=rationale.reason,
-        is_rapid=False,
-        metadata={
-            "threshold": threshold,
-            "advancement_rationale": rationale.to_dict(),
-        },
-    ))
+    metadata: dict[str, Any] = {
+        "threshold": threshold,
+        "advancement_rationale": rationale.to_dict(),
+    }
+    if calibration_report is not None:
+        metadata["calibration_report"] = calibration_report.model_dump()
+        metadata["calibration_summary"] = render_calibration_report(calibration_report)
+
+    return with_annealing(
+        GateDecisionResult(
+            decision=rationale.decision,
+            delta=advancement_metrics.delta,
+            reason=rationale.reason,
+            is_rapid=False,
+            metadata=metadata,
+        )
+    )
 
 
 def build_retry_prompt(
@@ -211,8 +238,7 @@ def build_retry_prompt(
     Extracted from the retry branch in stage_tournament's while loop.
     """
     prompt = (
-        base_prompt
-        + f"\n\n--- RETRY ATTEMPT {attempt} ---\n"
+        base_prompt + f"\n\n--- RETRY ATTEMPT {attempt} ---\n"
         f"Your previous strategy scored {tournament_best_score:.4f} "
         f"but needed delta >= {min_delta} over {previous_best:.4f}.\n"
     )

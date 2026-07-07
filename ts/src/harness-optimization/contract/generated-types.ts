@@ -11,6 +11,65 @@ export interface HarnessOptimizationContracts {
   [k: string]: unknown;
 }
 
+// ---- calibration-report.schema.json ----
+/**
+ * Noise calibration for a harness score series (AC-881). Summarises a scenario's score samples (mean, variance, standard error) and recommends a promotion margin and trial count so the configured gate sits above measurement noise. Flags when a sparse metric is too noisy to gate on. Shared source of truth for both the Python and TypeScript autocontext packages.
+ */
+export interface CalibrationReport {
+  /**
+   * Schema version for forward compatibility. Always 1 for this revision.
+   */
+  schema_version: 1;
+  /**
+   * Scenario or family the score series came from.
+   */
+  scenario_id: string;
+  /**
+   * Number of score samples in the series (n).
+   */
+  sample_size: number;
+  /**
+   * Mean of the score series.
+   */
+  mean: number;
+  /**
+   * Sample variance (ddof=1); 0 when n<2.
+   */
+  variance: number;
+  /**
+   * Standard deviation, sqrt of the variance.
+   */
+  std_dev: number;
+  /**
+   * Standard error, std_dev over sqrt(n); 0 when n<2.
+   */
+  standard_error: number;
+  /**
+   * Recommended margin: noise_multiplier times standard_error.
+   */
+  recommended_min_delta: number;
+  /**
+   * Trials so the mean SE falls under current_min_delta, capped by budget.
+   */
+  recommended_trial_count: number;
+  /**
+   * The promotion margin currently configured.
+   */
+  current_min_delta: number;
+  /**
+   * Whether the current margin sits above or below the noise floor.
+   */
+  margin_vs_noise: "above_noise" | "below_noise";
+  /**
+   * True when the sparse metric is too noisy to gate on.
+   */
+  sparse_metric_too_noisy: boolean;
+  /**
+   * Optional human-readable rationale for audit.
+   */
+  notes?: string;
+}
+
 // ---- candidate-evidence.schema.json ----
 /**
  * Canonical evidence record for a single harness-optimization candidate (AC-876). A candidate is a proposed mechanism change to some target surface, carrying the hypothesis, the concrete changes, the fix and regression cases it is expected to move, its cost expectation, and its cross-language parity status. This schema is the single source of truth for both the Python and TypeScript autocontext packages.

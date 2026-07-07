@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autocontext.dev/schema/harness-optimization/calibration-report.json",
+  "title": "CalibrationReport",
+  "description": "Noise calibration for a harness score series (AC-881). Summarises a scenario's score samples (mean, variance, standard error) and recommends a promotion margin and trial count so the configured gate sits above measurement noise. Flags when a sparse metric is too noisy to gate on. Shared source of truth for both the Python and TypeScript autocontext packages.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "scenario_id",
+    "sample_size",
+    "mean",
+    "variance",
+    "std_dev",
+    "standard_error",
+    "recommended_min_delta",
+    "recommended_trial_count",
+    "current_min_delta",
+    "margin_vs_noise",
+    "sparse_metric_too_noisy"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Schema version for forward compatibility. Always 1 for this revision."
+    },
+    "scenario_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Scenario or family the score series came from."
+    },
+    "sample_size": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of score samples in the series (n)."
+    },
+    "mean": {
+      "type": "number",
+      "description": "Mean of the score series."
+    },
+    "variance": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Sample variance (ddof=1); 0 when n<2."
+    },
+    "std_dev": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Standard deviation, sqrt of the variance."
+    },
+    "standard_error": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Standard error, std_dev over sqrt(n); 0 when n<2."
+    },
+    "recommended_min_delta": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Recommended margin: noise_multiplier times standard_error."
+    },
+    "recommended_trial_count": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Trials so the mean SE falls under current_min_delta, capped by budget."
+    },
+    "current_min_delta": {
+      "type": "number",
+      "description": "The promotion margin currently configured."
+    },
+    "margin_vs_noise": {
+      "type": "string",
+      "enum": ["above_noise", "below_noise"],
+      "description": "Whether the current margin sits above or below the noise floor."
+    },
+    "sparse_metric_too_noisy": {
+      "type": "boolean",
+      "description": "True when the sparse metric is too noisy to gate on."
+    },
+    "notes": {
+      "type": "string",
+      "description": "Optional human-readable rationale for audit."
+    }
+  }
+}
