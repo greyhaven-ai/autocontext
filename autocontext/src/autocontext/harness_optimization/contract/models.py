@@ -4,9 +4,19 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, RootModel
+
+
+class HarnessOptimizationContracts(RootModel[Any]):
+    root: Annotated[
+        Any,
+        Field(
+            description='Codegen-only aggregate root; $refs each artifact so one models.py is emitted. Not a runtime schema.',
+            title='HarnessOptimizationContracts',
+        ),
+    ]
 
 
 class CostExpectation(BaseModel):
@@ -156,6 +166,92 @@ class CandidateEvidence(BaseModel):
             description='What data the proposer was allowed to inspect, for leakage auditing.'
         ),
     ] = None
+    parity: Annotated[
+        Parity, Field(description='Cross-language parity status for this candidate.')
+    ]
+
+
+class Components(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    dense_quality_score: Annotated[
+        float,
+        Field(description='Dense quality signal, typically a judge or rubric score.'),
+    ]
+    sparse_success_rate: Annotated[
+        float,
+        Field(
+            description='Fraction of target cases the candidate resolved, in [0, 1].',
+            ge=0.0,
+            le=1.0,
+        ),
+    ]
+    tokens_per_million: Annotated[
+        float,
+        Field(description='Marginal token cost expressed per million tokens.', ge=0.0),
+    ]
+    error_rate: Annotated[
+        float,
+        Field(description='Fraction of runs that errored, in [0, 1].', ge=0.0, le=1.0),
+    ]
+    score_variance: Annotated[
+        float, Field(description='Variance of the score across samples.', ge=0.0)
+    ]
+
+
+class Weights(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    sparse_success_weight: Annotated[
+        float, Field(description='Weight applied to the sparse success rate.', ge=0.0)
+    ]
+    token_cost_weight: Annotated[
+        float, Field(description='Weight applied to the marginal token cost.', ge=0.0)
+    ]
+    error_weight: Annotated[
+        float, Field(description='Weight applied to the error rate.', ge=0.0)
+    ]
+    variance_weight: Annotated[
+        float, Field(description='Weight applied to the score variance.', ge=0.0)
+    ]
+
+
+class PromotionScore(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    schema_version: Annotated[
+        Literal[1],
+        Field(
+            description='Schema version for forward compatibility. Always 1 for this revision.'
+        ),
+    ]
+    candidate_id: Annotated[
+        str,
+        Field(
+            description='Stable unique identifier of the candidate this score belongs to.',
+            min_length=1,
+        ),
+    ]
+    weight_version: Annotated[
+        str,
+        Field(
+            description='Version tag of the weight set used to compute this score.',
+            min_length=1,
+        ),
+    ]
+    components: Annotated[
+        Components,
+        Field(
+            description='The measured components that feed the weighted promotion score.'
+        ),
+    ]
+    weights: Annotated[
+        Weights, Field(description='The named weights applied to each component.')
+    ]
+    score: Annotated[float, Field(description='The computed harness promotion score.')]
     parity: Annotated[
         Parity, Field(description='Cross-language parity status for this candidate.')
     ]

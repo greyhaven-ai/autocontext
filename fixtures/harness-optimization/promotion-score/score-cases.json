@@ -1,0 +1,217 @@
+{
+  "_comment": "Ground-truth numeric fixture for the AC-877 harness promotion scorer. Loaded by BOTH the Python and TypeScript test suites to prove the two implementations compute identical scores. expected_score / expected_beats are computed by hand from the formula: dense_quality_score + sparse_success_weight*sparse_success_rate - token_cost_weight*tokens_per_million - error_weight*error_rate - variance_weight*score_variance.",
+  "score_cases": [
+    {
+      "name": "plain positive case",
+      "components": {
+        "dense_quality_score": 0.8,
+        "sparse_success_rate": 0.5,
+        "tokens_per_million": 0.1,
+        "error_rate": 0.02,
+        "score_variance": 0.01
+      },
+      "weights": {
+        "sparse_success_weight": 1.0,
+        "token_cost_weight": 0.5,
+        "error_weight": 2.0,
+        "variance_weight": 1.0
+      },
+      "expected_score": 1.2
+    },
+    {
+      "name": "cost regression pulls score negative",
+      "components": {
+        "dense_quality_score": 0.9,
+        "sparse_success_rate": 0.4,
+        "tokens_per_million": 5.0,
+        "error_rate": 0.0,
+        "score_variance": 0.0
+      },
+      "weights": {
+        "sparse_success_weight": 0.5,
+        "token_cost_weight": 1.0,
+        "error_weight": 1.0,
+        "variance_weight": 1.0
+      },
+      "expected_score": -3.9
+    },
+    {
+      "name": "high variance pulls score down",
+      "components": {
+        "dense_quality_score": 1.0,
+        "sparse_success_rate": 0.5,
+        "tokens_per_million": 0.2,
+        "error_rate": 0.05,
+        "score_variance": 2.0
+      },
+      "weights": {
+        "sparse_success_weight": 1.0,
+        "token_cost_weight": 1.0,
+        "error_weight": 1.0,
+        "variance_weight": 3.0
+      },
+      "expected_score": -4.75
+    },
+    {
+      "name": "high error rate penalizes score",
+      "components": {
+        "dense_quality_score": 0.7,
+        "sparse_success_rate": 0.8,
+        "tokens_per_million": 0.1,
+        "error_rate": 0.9,
+        "score_variance": 0.02
+      },
+      "weights": {
+        "sparse_success_weight": 1.0,
+        "token_cost_weight": 1.0,
+        "error_weight": 5.0,
+        "variance_weight": 1.0
+      },
+      "expected_score": -3.12
+    },
+    {
+      "name": "zero weights: score equals dense quality score",
+      "components": {
+        "dense_quality_score": 0.65,
+        "sparse_success_rate": 0.9,
+        "tokens_per_million": 3.0,
+        "error_rate": 0.5,
+        "score_variance": 1.0
+      },
+      "weights": {
+        "sparse_success_weight": 0.0,
+        "token_cost_weight": 0.0,
+        "error_weight": 0.0,
+        "variance_weight": 0.0
+      },
+      "expected_score": 0.65
+    }
+  ],
+  "beats_cases": [
+    {
+      "name": "challenger clearly beats by more than the margin",
+      "challenger": {
+        "dense_quality_score": 1.0,
+        "sparse_success_rate": 0.6,
+        "tokens_per_million": 0.1,
+        "error_rate": 0.01,
+        "score_variance": 0.01
+      },
+      "incumbent": {
+        "dense_quality_score": 0.8,
+        "sparse_success_rate": 0.5,
+        "tokens_per_million": 0.2,
+        "error_rate": 0.05,
+        "score_variance": 0.02
+      },
+      "weights": {
+        "sparse_success_weight": 1.0,
+        "token_cost_weight": 0.5,
+        "error_weight": 2.0,
+        "variance_weight": 1.0
+      },
+      "min_margin": 0.1,
+      "expected_beats": true
+    },
+    {
+      "name": "challenger ahead but within the margin: no beat",
+      "challenger": {
+        "dense_quality_score": 1.05,
+        "sparse_success_rate": 0.5,
+        "tokens_per_million": 0.1,
+        "error_rate": 0.02,
+        "score_variance": 0.01
+      },
+      "incumbent": {
+        "dense_quality_score": 1.0,
+        "sparse_success_rate": 0.5,
+        "tokens_per_million": 0.1,
+        "error_rate": 0.02,
+        "score_variance": 0.01
+      },
+      "weights": {
+        "sparse_success_weight": 1.0,
+        "token_cost_weight": 1.0,
+        "error_weight": 1.0,
+        "variance_weight": 1.0
+      },
+      "min_margin": 0.1,
+      "expected_beats": false
+    },
+    {
+      "name": "challenger worse than incumbent: no beat",
+      "challenger": {
+        "dense_quality_score": 0.5,
+        "sparse_success_rate": 0.4,
+        "tokens_per_million": 0.5,
+        "error_rate": 0.1,
+        "score_variance": 0.1
+      },
+      "incumbent": {
+        "dense_quality_score": 0.9,
+        "sparse_success_rate": 0.5,
+        "tokens_per_million": 0.1,
+        "error_rate": 0.02,
+        "score_variance": 0.01
+      },
+      "weights": {
+        "sparse_success_weight": 1.0,
+        "token_cost_weight": 1.0,
+        "error_weight": 1.0,
+        "variance_weight": 1.0
+      },
+      "min_margin": 0.0,
+      "expected_beats": false
+    },
+    {
+      "name": "recompute-both: incumbent has higher dense quality but its heavy token cost, rescored under these shared weights, lets the challenger win",
+      "challenger": {
+        "dense_quality_score": 0.9,
+        "sparse_success_rate": 0.5,
+        "tokens_per_million": 0.1,
+        "error_rate": 0.02,
+        "score_variance": 0.01
+      },
+      "incumbent": {
+        "dense_quality_score": 1.5,
+        "sparse_success_rate": 0.5,
+        "tokens_per_million": 1.0,
+        "error_rate": 0.02,
+        "score_variance": 0.01
+      },
+      "weights": {
+        "sparse_success_weight": 1.0,
+        "token_cost_weight": 1.0,
+        "error_weight": 1.0,
+        "variance_weight": 1.0
+      },
+      "min_margin": 0.05,
+      "expected_beats": true
+    },
+    {
+      "name": "boundary tie: recomputed diff exactly equals min_margin does not beat (strict greater-than, not >=)",
+      "challenger": {
+        "dense_quality_score": 0.75,
+        "sparse_success_rate": 0.5,
+        "tokens_per_million": 0.25,
+        "error_rate": 0.0,
+        "score_variance": 0.0
+      },
+      "incumbent": {
+        "dense_quality_score": 0.5,
+        "sparse_success_rate": 0.5,
+        "tokens_per_million": 0.25,
+        "error_rate": 0.0,
+        "score_variance": 0.0
+      },
+      "weights": {
+        "sparse_success_weight": 1.0,
+        "token_cost_weight": 1.0,
+        "error_weight": 1.0,
+        "variance_weight": 1.0
+      },
+      "min_margin": 0.25,
+      "expected_beats": false
+    }
+  ]
+}

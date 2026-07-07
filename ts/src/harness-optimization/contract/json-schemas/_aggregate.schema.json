@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autocontext.dev/schema/harness-optimization/_aggregate.json",
+  "title": "HarnessOptimizationContracts",
+  "description": "Codegen-only aggregate root; $refs each artifact so one models.py is emitted. Not a runtime schema.",
+  "$defs": {
+    "CandidateEvidence": {
+      "$ref": "https://autocontext.dev/schema/harness-optimization/candidate-evidence.json"
+    },
+    "PromotionScore": {
+      "$ref": "https://autocontext.dev/schema/harness-optimization/promotion-score.json"
+    }
+  }
+}

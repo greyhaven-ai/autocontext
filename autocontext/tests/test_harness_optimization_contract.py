@@ -15,7 +15,10 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from autocontext.harness_optimization.contract.models import CandidateEvidence
+from autocontext.harness_optimization.contract.models import (
+    CandidateEvidence,
+    PromotionScore,
+)
 
 # Walk up to the repo root: autocontext/tests/ -> autocontext/ -> <repo root>.
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -101,3 +104,101 @@ def test_shared_fixture_directory_contains_the_expected_set() -> None:
     # Set-membership guard: a dropped or renamed fixture fails here.
     names = {p.name for p in FIXTURES_DIR.glob("*.json")}
     assert names == EXPECTED_FIXTURES
+
+
+def _valid_promotion_score() -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "candidate_id": "cand-001",
+        "weight_version": "w-2026-07",
+        "components": {
+            "dense_quality_score": 0.82,
+            "sparse_success_rate": 0.6,
+            "tokens_per_million": 1200.0,
+            "error_rate": 0.05,
+            "score_variance": 0.01,
+        },
+        "weights": {
+            "sparse_success_weight": 1.0,
+            "token_cost_weight": 0.2,
+            "error_weight": 0.5,
+            "variance_weight": 0.1,
+        },
+        "score": 0.71,
+        "parity": {
+            "python": "implemented",
+            "typescript": "pending",
+            "schema_hash": "abc123",
+        },
+    }
+
+
+def test_valid_promotion_score_round_trips() -> None:
+    data = _valid_promotion_score()
+    model = PromotionScore(**data)
+    dumped = model.model_dump(exclude_none=True)
+    assert dumped == data
+
+
+def test_promotion_score_missing_required_component_raises() -> None:
+    data = _valid_promotion_score()
+    del data["components"]["error_rate"]
+    with pytest.raises(ValidationError):
+        PromotionScore(**data)
+
+
+def test_promotion_score_extra_field_raises() -> None:
+    data = _valid_promotion_score()
+    data["unexpected_field"] = "nope"
+    with pytest.raises(ValidationError):
+        PromotionScore(**data)
+
+
+def test_promotion_score_empty_parity_raises() -> None:
+    data = _valid_promotion_score()
+    data["parity"] = {}
+    with pytest.raises(ValidationError):
+        PromotionScore(**data)
+
+
+# --- Shared promotion-score contract fixtures (mirrors candidate-evidence) -----
+
+PROMOTION_SCORE_FIXTURES_DIR = REPO_ROOT / "fixtures" / "harness-optimization" / "promotion-score"
+
+# The contract fixtures validated by both packages. score-cases.json also lives in
+# this directory (it is the SCORER numeric fixture, loaded by the scoring tests) and
+# is deliberately excluded here: it matches neither the valid- nor invalid- prefix.
+EXPECTED_PROMOTION_SCORE_FIXTURES = {
+    "valid-full.json",
+    "valid-minimal.json",
+    "invalid-missing-component.json",
+    "invalid-empty-parity.json",
+    "invalid-extra-field.json",
+}
+
+
+def _promotion_score_fixtures(prefix: str) -> list[Path]:
+    assert PROMOTION_SCORE_FIXTURES_DIR.is_dir(), f"expected fixtures dir at {PROMOTION_SCORE_FIXTURES_DIR}"
+    return sorted(PROMOTION_SCORE_FIXTURES_DIR.glob(f"{prefix}*.json"))
+
+
+@pytest.mark.parametrize("fixture", _promotion_score_fixtures("valid-"), ids=lambda p: p.name)
+def test_shared_valid_promotion_score_fixtures_construct(fixture: Path) -> None:
+    data = json.loads(fixture.read_text())
+    PromotionScore(**data)
+
+
+@pytest.mark.parametrize("fixture", _promotion_score_fixtures("invalid-"), ids=lambda p: p.name)
+def test_shared_invalid_promotion_score_fixtures_raise(fixture: Path) -> None:
+    data = json.loads(fixture.read_text())
+    with pytest.raises(ValidationError):
+        PromotionScore(**data)
+
+
+def test_shared_promotion_score_fixture_directory_contains_the_expected_set() -> None:
+    # Set-membership guard over EVERY .json in the directory: the five valid-/invalid-
+    # contract fixtures plus score-cases.json (the scorer numeric fixture). Globbing all
+    # files (not just the valid-/invalid- prefixes) means a stray or dropped .json fails
+    # here instead of being silently ignored.
+    names = {p.name for p in PROMOTION_SCORE_FIXTURES_DIR.glob("*.json")}
+    assert names == EXPECTED_PROMOTION_SCORE_FIXTURES | {"score-cases.json"}

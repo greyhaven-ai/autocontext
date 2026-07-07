@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "candidate_id": "cand-full-002",
+  "weight_version": "w-2026-07",
+  "components": {
+    "dense_quality_score": 0.82,
+    "sparse_success_rate": 0.6,
+    "tokens_per_million": 0.5,
+    "error_rate": 0.05,
+    "score_variance": 0.01
+  },
+  "weights": {
+    "sparse_success_weight": 1.0,
+    "token_cost_weight": 0.2,
+    "error_weight": 0.5,
+    "variance_weight": 0.1
+  },
+  "score": 1.294,
+  "parity": {
+    "python": "implemented",
+    "typescript": "implemented",
+    "schema_hash": "9f8e7d6c5b4a"
+  },
+  "surprise": true
+}

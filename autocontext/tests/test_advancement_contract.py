@@ -38,8 +38,11 @@ class TestAdvancementMetrics:
         from autocontext.harness.pipeline.advancement import AdvancementMetrics
 
         m = AdvancementMetrics(
-            best_score=0.72, mean_score=0.68, previous_best=0.70,
-            score_variance=0.02, sample_count=3,
+            best_score=0.72,
+            mean_score=0.68,
+            previous_best=0.70,
+            score_variance=0.02,
+            sample_count=3,
         )
         assert abs(m.delta - 0.02) < 0.001
 
@@ -47,9 +50,13 @@ class TestAdvancementMetrics:
         from autocontext.harness.pipeline.advancement import AdvancementMetrics
 
         m = AdvancementMetrics(
-            best_score=0.9, mean_score=0.85, previous_best=0.8,
-            score_variance=0.005, sample_count=5,
-            confidence=0.95, resolved_truth_score=0.88,
+            best_score=0.9,
+            mean_score=0.85,
+            previous_best=0.8,
+            score_variance=0.005,
+            sample_count=5,
+            confidence=0.95,
+            resolved_truth_score=0.88,
             previous_resolved_truth_score=0.84,
         )
         d = m.to_dict()
@@ -115,9 +122,13 @@ class TestEvaluateAdvancement:
         )
 
         metrics = AdvancementMetrics(
-            best_score=0.85, mean_score=0.80, previous_best=0.70,
-            score_variance=0.005, sample_count=5,
-            confidence=0.9, error_rate=0.0,
+            best_score=0.85,
+            mean_score=0.80,
+            previous_best=0.70,
+            score_variance=0.005,
+            sample_count=5,
+            confidence=0.9,
+            error_rate=0.0,
         )
         rationale = evaluate_advancement(metrics, min_delta=0.005)
         assert rationale.decision == "advance"
@@ -129,8 +140,11 @@ class TestEvaluateAdvancement:
         )
 
         metrics = AdvancementMetrics(
-            best_score=0.60, mean_score=0.55, previous_best=0.70,
-            score_variance=0.01, sample_count=5,
+            best_score=0.60,
+            mean_score=0.55,
+            previous_best=0.70,
+            score_variance=0.01,
+            sample_count=5,
         )
         rationale = evaluate_advancement(metrics, min_delta=0.005)
         assert rationale.decision == "rollback"
@@ -142,8 +156,11 @@ class TestEvaluateAdvancement:
         )
 
         metrics = AdvancementMetrics(
-            best_score=0.705, mean_score=0.69, previous_best=0.70,
-            score_variance=0.02, sample_count=3,
+            best_score=0.705,
+            mean_score=0.69,
+            previous_best=0.70,
+            score_variance=0.02,
+            sample_count=3,
         )
         rationale = evaluate_advancement(metrics, min_delta=0.01)
         assert rationale.decision in ("retry", "rollback")
@@ -155,8 +172,11 @@ class TestEvaluateAdvancement:
         )
 
         metrics = AdvancementMetrics(
-            best_score=0.85, mean_score=0.80, previous_best=0.70,
-            score_variance=0.005, sample_count=5,
+            best_score=0.85,
+            mean_score=0.80,
+            previous_best=0.70,
+            score_variance=0.005,
+            sample_count=5,
             error_rate=0.4,  # 40% errors
         )
         rationale = evaluate_advancement(metrics, min_delta=0.005)
@@ -170,8 +190,11 @@ class TestEvaluateAdvancement:
         )
 
         metrics = AdvancementMetrics(
-            best_score=0.85, mean_score=0.80, previous_best=0.70,
-            score_variance=0.05, sample_count=2,
+            best_score=0.85,
+            mean_score=0.80,
+            previous_best=0.70,
+            score_variance=0.05,
+            sample_count=2,
             confidence=0.3,
         )
         rationale = evaluate_advancement(metrics, min_delta=0.005)
@@ -185,8 +208,11 @@ class TestEvaluateAdvancement:
         )
 
         metrics = AdvancementMetrics(
-            best_score=0.90, mean_score=0.85, previous_best=0.70,
-            score_variance=0.005, sample_count=5,
+            best_score=0.90,
+            mean_score=0.85,
+            previous_best=0.70,
+            score_variance=0.005,
+            sample_count=5,
             search_proxy_score=0.90,
             resolved_truth_score=0.55,  # truth says much worse
             previous_resolved_truth_score=0.70,
@@ -202,8 +228,11 @@ class TestEvaluateAdvancement:
         )
 
         metrics = AdvancementMetrics(
-            best_score=0.90, mean_score=0.85, previous_best=0.70,
-            score_variance=0.005, sample_count=5,
+            best_score=0.90,
+            mean_score=0.85,
+            previous_best=0.70,
+            score_variance=0.005,
+            sample_count=5,
             search_proxy_score=0.90,
             resolved_truth_score=0.55,
         )
@@ -218,9 +247,72 @@ class TestEvaluateAdvancement:
         )
 
         metrics = AdvancementMetrics(
-            best_score=0.85, mean_score=0.80, previous_best=0.70,
-            score_variance=0.005, sample_count=5,
+            best_score=0.85,
+            mean_score=0.80,
+            previous_best=0.70,
+            score_variance=0.005,
+            sample_count=5,
         )
         rationale = evaluate_advancement(metrics, min_delta=0.005)
         assert len(rationale.component_scores) > 0
         assert "score_delta" in rationale.component_scores
+
+
+# ===========================================================================
+# AC-877: the opt-in harness-promotion path must leave the default
+# (protocol-disabled) behavior byte-unchanged.
+# ===========================================================================
+
+
+class TestHarnessPromotionDisabledPathUnchanged:
+    def test_disabled_path_matches_pre_change_golden(self) -> None:
+        """With harness_promotion unset the rationale is exactly as before."""
+        from autocontext.harness.pipeline.advancement import (
+            AdvancementMetrics,
+            evaluate_advancement,
+        )
+
+        metrics = AdvancementMetrics(
+            best_score=0.85,
+            mean_score=0.80,
+            previous_best=0.70,
+            score_variance=0.005,
+            sample_count=5,
+            confidence=0.9,
+            error_rate=0.0,
+        )
+        rationale = evaluate_advancement(metrics, min_delta=0.005)
+
+        assert rationale.to_dict() == {
+            "decision": "advance",
+            "reason": "Score improved by 0.1500 (>= 0.005)",
+            "component_scores": {
+                "score_delta": 0.15,
+                "error_rate": 0.0,
+                "confidence": 0.9,
+                "sample_agreement": 1.0,
+                "score_variance": 0.005,
+            },
+            "binding_checks": ["score_delta"],
+            "proxy_signals": [],
+            "risk_flags": [],
+            "metadata": {},
+        }
+
+    def test_explicit_none_equals_default(self) -> None:
+        """Passing harness_promotion=None is identical to omitting it."""
+        from autocontext.harness.pipeline.advancement import (
+            AdvancementMetrics,
+            evaluate_advancement,
+        )
+
+        metrics = AdvancementMetrics(
+            best_score=0.60,
+            mean_score=0.55,
+            previous_best=0.70,
+            score_variance=0.01,
+            sample_count=5,
+        )
+        default = evaluate_advancement(metrics, min_delta=0.005)
+        explicit = evaluate_advancement(metrics, min_delta=0.005, harness_promotion=None)
+        assert default.to_dict() == explicit.to_dict()

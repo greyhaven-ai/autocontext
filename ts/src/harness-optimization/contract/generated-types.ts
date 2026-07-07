@@ -3,6 +3,14 @@
 // Regenerate with: node scripts/generate-harness-optimization-types.mjs
 // CI gate: node scripts/generate-harness-optimization-types.mjs --check
 
+// ---- _aggregate.schema.json ----
+/**
+ * Codegen-only aggregate root; $refs each artifact so one models.py is emitted. Not a runtime schema.
+ */
+export interface HarnessOptimizationContracts {
+  [k: string]: unknown;
+}
+
 // ---- candidate-evidence.schema.json ----
 /**
  * Canonical evidence record for a single harness-optimization candidate (AC-876). A candidate is a proposed mechanism change to some target surface, carrying the hypothesis, the concrete changes, the fix and regression cases it is expected to move, its cost expectation, and its cross-language parity status. This schema is the single source of truth for both the Python and TypeScript autocontext packages.
@@ -83,6 +91,92 @@ export interface CandidateEvidence {
    * What data the proposer was allowed to inspect, for leakage auditing.
    */
   leakage_scope?: string[];
+  /**
+   * Cross-language parity status for this candidate.
+   */
+  parity: {
+    /**
+     * Implementation status of this candidate in the Python package.
+     */
+    python: "implemented" | "pending" | "n_a";
+    /**
+     * Implementation status of this candidate in the TypeScript package.
+     */
+    typescript: "implemented" | "pending" | "n_a";
+    /**
+     * Content hash of the shared schema the two implementations agree on.
+     */
+    schema_hash: string;
+  };
+}
+
+// ---- promotion-score.schema.json ----
+/**
+ * Computed harness-promotion score for a single candidate (AC-877). Combines the dense quality signal with the sparse per-case success rate, marginal token cost, error rate, and score variance under a named, versioned set of weights. This is the artifact the promotion gate reads to decide whether a candidate advances. Shared source of truth for both the Python and TypeScript autocontext packages.
+ */
+export interface PromotionScore {
+  /**
+   * Schema version for forward compatibility. Always 1 for this revision.
+   */
+  schema_version: 1;
+  /**
+   * Stable unique identifier of the candidate this score belongs to.
+   */
+  candidate_id: string;
+  /**
+   * Version tag of the weight set used to compute this score.
+   */
+  weight_version: string;
+  /**
+   * The measured components that feed the weighted promotion score.
+   */
+  components: {
+    /**
+     * Dense quality signal, typically a judge or rubric score.
+     */
+    dense_quality_score: number;
+    /**
+     * Fraction of target cases the candidate resolved, in [0, 1].
+     */
+    sparse_success_rate: number;
+    /**
+     * Marginal token cost expressed per million tokens.
+     */
+    tokens_per_million: number;
+    /**
+     * Fraction of runs that errored, in [0, 1].
+     */
+    error_rate: number;
+    /**
+     * Variance of the score across samples.
+     */
+    score_variance: number;
+  };
+  /**
+   * The named weights applied to each component.
+   */
+  weights: {
+    /**
+     * Weight applied to the sparse success rate.
+     */
+    sparse_success_weight: number;
+    /**
+     * Weight applied to the marginal token cost.
+     */
+    token_cost_weight: number;
+    /**
+     * Weight applied to the error rate.
+     */
+    error_weight: number;
+    /**
+     * Weight applied to the score variance.
+     */
+    variance_weight: number;
+  };
+  /**
+   * The computed harness promotion score.
+   */
+  score: number;
   /**
    * Cross-language parity status for this candidate.
    */
