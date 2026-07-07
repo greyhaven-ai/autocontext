@@ -12,6 +12,9 @@
     },
     "RepairResult": {
       "$ref": "https://autocontext.dev/schema/harness-optimization/repair-result.json"
+    },
+    "IntegrityMetadata": {
+      "$ref": "https://autocontext.dev/schema/harness-optimization/integrity-metadata.json"
     }
   }
 }
