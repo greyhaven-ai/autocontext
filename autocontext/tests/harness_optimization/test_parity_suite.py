@@ -28,11 +28,23 @@ def _load(rel: str) -> dict:
 
 def test_manifest_covers_every_schema() -> None:
     schema_files = {p.name for p in SCHEMA_DIR.glob("*.schema.json") if p.name != "_aggregate.schema.json"}
-    manifest_files = {a["schema_file"] for a in MANIFEST["artifacts"]}
+    manifest_file_list = [a["schema_file"] for a in MANIFEST["artifacts"]]
+    manifest_files = set(manifest_file_list)
+    assert len(manifest_file_list) == len(manifest_files), (
+        f"parity manifest has a duplicate schema_file entry: {manifest_file_list}"
+    )
     assert manifest_files == schema_files, (
         f"parity manifest out of sync with schemas: missing {schema_files - manifest_files}, "
         f"extra {manifest_files - schema_files}"
     )
+
+
+def test_manifest_schema_id_matches_schema_file() -> None:
+    for a in MANIFEST["artifacts"]:
+        schema = json.loads((SCHEMA_DIR / a["schema_file"]).read_text())
+        assert a["schema_id"] == schema["$id"], (
+            f"{a['name']} manifest schema_id {a['schema_id']} does not match {a['schema_file']} $id {schema['$id']}"
+        )
 
 
 def test_every_artifact_has_clean_and_invalid() -> None:

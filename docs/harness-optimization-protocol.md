@@ -630,7 +630,7 @@ A new artifact follows the same contract pattern end to end. The steps, in order
 1. Author the JSON schema under
    `ts/src/harness-optimization/contract/json-schemas/`.
 2. Add one `$ref` to `_aggregate.schema.json` so the new schema joins the bundle.
-3. Regenerate both packages' types:
+3. Regenerate both packages' types (from `ts/`):
    `node scripts/generate-harness-optimization-types.mjs` then
    `node scripts/sync-python-harness-optimization-schemas.mjs`.
 4. Wire the AJV validator and its `_TypeCheck` member in `validators.ts`.
@@ -641,11 +641,11 @@ A new artifact follows the same contract pattern end to end. The steps, in order
 7. Add the pydantic model to `test_parity_suite.py`'s `MODELS` map and the
    validator to `parity-suite.test.ts`'s `VALIDATORS` map.
 8. Run the pre-merge gate:
-   - `uv run --frozen ruff check src tests`
-   - `uv run --frozen pytest tests/test_module_size_limits.py tests/test_gate_taxonomy.py tests/harness_optimization`
-   - `npm run check:harness-optimization-schemas`
-   - `npx vitest run tests/harness-optimization`
-   - `npm run lint`
+   - from `autocontext/`: `uv run --frozen ruff check src tests`
+   - from `autocontext/`: `uv run --frozen pytest tests/test_module_size_limits.py tests/test_gate_taxonomy.py tests/harness_optimization`
+   - from `ts/`: `npm run check:harness-optimization-schemas`
+   - from `ts/`: `npx vitest run tests/harness-optimization`
+   - from `ts/`: `npm run lint`
 
 The membership guard means skipping steps 5 through 7 is caught by the build: a
 schema with no manifest entry, or a manifest artifact with no model or validator

@@ -39,6 +39,13 @@ describe("harness-optimization parity suite", () => {
     expect(manifestFiles).toEqual(schemaFiles);
   });
 
+  it("manifest schema_id matches each schema file $id", () => {
+    for (const a of manifest.artifacts) {
+      const schema = JSON.parse(readFileSync(join(SCHEMA_DIR, a.schema_file), "utf8"));
+      expect(a.schema_id).toBe(schema.$id);
+    }
+  });
+
   for (const a of manifest.artifacts) {
     it(`${a.name}: clean fixtures validate, invalid rejected`, () => {
       expect(a.valid.length).toBeGreaterThan(0);
