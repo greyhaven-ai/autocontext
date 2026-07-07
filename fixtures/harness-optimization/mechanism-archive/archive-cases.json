@@ -1,0 +1,152 @@
+{
+  "seed": {
+    "frontier": [
+      {
+        "schema_version": 1,
+        "mechanism_id": "frontier-ac880-001",
+        "candidate_evidence_id": "candidate-ac876-042",
+        "parent_frontier_id": "frontier-ac880-000",
+        "mechanism_name": "retry-on-truncated-output guard",
+        "mechanism_type": "deterministic_code",
+        "target_surface": "harness_validator",
+        "gate_decision": "advance",
+        "affected_surfaces": ["harness_validator", "evaluator"],
+        "regression_risks": ["adds one retry on legitimately empty outputs"],
+        "support_count": 4,
+        "promoted_at_generation": 7
+      },
+      {
+        "schema_version": 1,
+        "mechanism_id": "frontier-ac880-002",
+        "candidate_evidence_id": "candidate-ac876-051",
+        "parent_frontier_id": "frontier-ac880-001",
+        "mechanism_name": "structured finish-guard playbook",
+        "mechanism_type": "prompt_playbook",
+        "target_surface": "prompt",
+        "gate_decision": "advance",
+        "affected_surfaces": ["prompt"],
+        "regression_risks": ["may over-truncate long legitimate plans"],
+        "support_count": 3,
+        "promoted_at_generation": 9
+      }
+    ],
+    "orphans": [
+      {
+        "schema_version": 1,
+        "mechanism_id": "orphan-ac880-A",
+        "candidate_evidence_id": "candidate-ac876-080",
+        "parent_frontier_id": "frontier-ac880-001",
+        "mechanism_name": "prompt hint for empty-tool-call retry",
+        "mechanism_type": "prompt_playbook",
+        "target_surface": "prompt",
+        "gate_decision": "retry",
+        "failure_family": "empty-tool-call",
+        "rejection_reason": "helped fix cases but did not clear the delta gate on its own",
+        "retry_count": 0,
+        "support_count": 3,
+        "rescued_into_frontier_id": ""
+      },
+      {
+        "schema_version": 1,
+        "mechanism_id": "orphan-ac880-B",
+        "candidate_evidence_id": "candidate-ac876-081",
+        "parent_frontier_id": "frontier-ac880-001",
+        "mechanism_name": "aggressive context pruning",
+        "mechanism_type": "deterministic_code",
+        "target_surface": "harness_validator",
+        "gate_decision": "rollback",
+        "failure_family": "context-loss",
+        "rejection_reason": "regressed two holdout traces beyond the delta gate",
+        "retry_count": 2,
+        "support_count": 1,
+        "rescued_into_frontier_id": ""
+      },
+      {
+        "schema_version": 1,
+        "mechanism_id": "orphan-ac880-C",
+        "candidate_evidence_id": "candidate-ac876-082",
+        "parent_frontier_id": "frontier-ac880-001",
+        "mechanism_name": "tighter finish-guard prompt",
+        "mechanism_type": "prompt_playbook",
+        "target_surface": "prompt",
+        "gate_decision": "retry",
+        "failure_family": "empty-tool-call",
+        "rejection_reason": "matched frontier on fix cases but not clearly better",
+        "retry_count": 1,
+        "support_count": 3,
+        "rescued_into_frontier_id": ""
+      },
+      {
+        "schema_version": 1,
+        "mechanism_id": "orphan-ac880-D",
+        "candidate_evidence_id": "candidate-ac876-083",
+        "parent_frontier_id": "frontier-ac880-002",
+        "mechanism_name": "tool-call json repair wrapper",
+        "mechanism_type": "tool_wrapper",
+        "target_surface": "tool",
+        "gate_decision": "reject",
+        "failure_family": "malformed-tool-json",
+        "rejection_reason": "superseded by a combined wrapper that was promoted later",
+        "retry_count": 0,
+        "support_count": 5,
+        "rescued_into_frontier_id": "frontier-ac880-002"
+      }
+    ]
+  },
+  "cases": [
+    {
+      "name": "add_orphan appends and grows the count",
+      "op": "add_orphan",
+      "orphan": {
+        "schema_version": 1,
+        "mechanism_id": "orphan-ac880-E",
+        "candidate_evidence_id": "candidate-ac876-090",
+        "parent_frontier_id": "frontier-ac880-002",
+        "mechanism_name": "speculative judge-policy relaxation",
+        "mechanism_type": "judge_policy",
+        "target_surface": "evaluator",
+        "gate_decision": "retry",
+        "failure_family": "judge-variance",
+        "rejection_reason": "raised variance beyond the gate",
+        "retry_count": 0,
+        "support_count": 2,
+        "rescued_into_frontier_id": ""
+      },
+      "expected_orphan_count": 5,
+      "expected_added_orphan_id": "orphan-ac880-E"
+    },
+    {
+      "name": "query by mechanism_type prompt_playbook filters both lists",
+      "op": "query_by_type",
+      "mechanism_type": "prompt_playbook",
+      "expected_frontier_ids": ["frontier-ac880-002"],
+      "expected_orphan_ids": ["orphan-ac880-A", "orphan-ac880-C"]
+    },
+    {
+      "name": "rank_orphans orders most reusable first",
+      "op": "rank_orphans",
+      "expected_order": ["orphan-ac880-A", "orphan-ac880-C", "orphan-ac880-B", "orphan-ac880-D"]
+    },
+    {
+      "name": "rescue sets frontier id and sinks the orphan to last",
+      "op": "rescue",
+      "orphan_id": "orphan-ac880-A",
+      "into_frontier_id": "frontier-ac880-001",
+      "expected_rescued_into_frontier_id": "frontier-ac880-001",
+      "expected_order": ["orphan-ac880-C", "orphan-ac880-B", "orphan-ac880-D", "orphan-ac880-A"],
+      "expected_last_orphan_id": "orphan-ac880-A"
+    },
+    {
+      "name": "prune keeps the top-ranked orphans (task 3 extends)",
+      "op": "prune",
+      "max_orphans": 2,
+      "expected_surviving_ids": ["orphan-ac880-A", "orphan-ac880-C"]
+    },
+    {
+      "name": "digest placeholder (task 4 extends)",
+      "op": "digest",
+      "max_entries": 3,
+      "expected_named_ids": ["orphan-ac880-A", "orphan-ac880-C", "orphan-ac880-B"]
+    }
+  ]
+}
