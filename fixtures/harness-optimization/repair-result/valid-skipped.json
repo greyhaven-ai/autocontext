@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "repair_name": "artifact_landing",
+  "status": "skipped",
+  "reason": "The artifact already landed at the expected path; no relocation was needed.",
+  "target": "",
+  "parity": {
+    "python": "implemented",
+    "typescript": "pending",
+    "schema_hash": "abc123"
+  }
+}

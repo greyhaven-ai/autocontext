@@ -9,6 +9,9 @@
     },
     "PromotionScore": {
       "$ref": "https://autocontext.dev/schema/harness-optimization/promotion-score.json"
+    },
+    "RepairResult": {
+      "$ref": "https://autocontext.dev/schema/harness-optimization/repair-result.json"
     }
   }
 }

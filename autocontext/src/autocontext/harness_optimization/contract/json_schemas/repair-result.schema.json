@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autocontext.dev/schema/harness-optimization/repair-result.json",
+  "title": "RepairResult",
+  "description": "Outcome of a single deterministic repair applied (or not applied) to a harness surface (AC-878). A repair is a named, auditable mechanism that fixes a known failure mode (for example tool_call_json, artifact_landing, finish_guard, loop_guard); this record captures whether it fired, why, what it targeted, and the before/after metadata a reviewer needs to trust the gate. This schema is the single source of truth for both the Python and TypeScript autocontext packages.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "repair_name", "status", "reason", "parity"],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Schema version for forward compatibility. Always 1 for this revision."
+    },
+    "repair_name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human-readable name of the repair mechanism, e.g. tool_call_json or finish_guard."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["applied", "skipped", "not_applicable"],
+      "description": "Whether the repair fired: applied, skipped, or not_applicable to this input."
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human-auditable explanation of why the repair was applied or skipped."
+    },
+    "target": {
+      "type": "string",
+      "description": "What was repaired: a path, a tool name, or empty when nothing was targeted."
+    },
+    "before": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Pre-repair metadata, e.g. {\"valid\": false}."
+    },
+    "after": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Post-repair metadata, e.g. {\"valid\": true}."
+    },
+    "parity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["python", "typescript", "schema_hash"],
+      "properties": {
+        "python": {
+          "type": "string",
+          "enum": ["implemented", "pending", "n_a"],
+          "description": "Implementation status of this candidate in the Python package."
+        },
+        "typescript": {
+          "type": "string",
+          "enum": ["implemented", "pending", "n_a"],
+          "description": "Implementation status of this candidate in the TypeScript package."
+        },
+        "schema_hash": {
+          "type": "string",
+          "description": "Content hash of the shared schema the two implementations agree on."
+        }
+      },
+      "description": "Cross-language parity status for this candidate."
+    }
+  }
+}

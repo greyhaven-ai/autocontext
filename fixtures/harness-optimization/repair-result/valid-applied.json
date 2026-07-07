@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "repair_name": "tool_call_json",
+  "status": "applied",
+  "reason": "The tool call arguments were not valid JSON; re-serialized the object before dispatch.",
+  "target": "run_python",
+  "before": {
+    "valid": false,
+    "raw": "{'threshold': 0.9,}"
+  },
+  "after": {
+    "valid": true,
+    "raw": "{\"threshold\": 0.9}"
+  },
+  "parity": {
+    "python": "implemented",
+    "typescript": "implemented",
+    "schema_hash": "9f8e7d6c5b4a"
+  }
+}

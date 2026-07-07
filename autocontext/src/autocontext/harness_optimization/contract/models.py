@@ -255,3 +255,52 @@ class PromotionScore(BaseModel):
     parity: Annotated[
         Parity, Field(description='Cross-language parity status for this candidate.')
     ]
+
+
+class RepairResult(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    schema_version: Annotated[
+        Literal[1],
+        Field(
+            description='Schema version for forward compatibility. Always 1 for this revision.'
+        ),
+    ]
+    repair_name: Annotated[
+        str,
+        Field(
+            description='Human-readable name of the repair mechanism, e.g. tool_call_json or finish_guard.',
+            min_length=1,
+        ),
+    ]
+    status: Annotated[
+        Literal['applied', 'skipped', 'not_applicable'],
+        Field(
+            description='Whether the repair fired: applied, skipped, or not_applicable to this input.'
+        ),
+    ]
+    reason: Annotated[
+        str,
+        Field(
+            description='Human-auditable explanation of why the repair was applied or skipped.',
+            min_length=1,
+        ),
+    ]
+    target: Annotated[
+        str | None,
+        Field(
+            description='What was repaired: a path, a tool name, or empty when nothing was targeted.'
+        ),
+    ] = None
+    before: Annotated[
+        dict[str, Any] | None,
+        Field(description='Pre-repair metadata, e.g. {"valid": false}.'),
+    ] = None
+    after: Annotated[
+        dict[str, Any] | None,
+        Field(description='Post-repair metadata, e.g. {"valid": true}.'),
+    ] = None
+    parity: Annotated[
+        Parity, Field(description='Cross-language parity status for this candidate.')
+    ]
