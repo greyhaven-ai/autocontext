@@ -1,0 +1,80 @@
+{
+  "description": "Cross-package parity manifest for harness-optimization contract artifacts (AC-882). Both the Python and TypeScript packages iterate this list: every clean fixture must validate and every invalid fixture must be rejected in both languages, and a membership guard fails CI if any schema in ts/src/harness-optimization/contract/json-schemas has no entry here. Paths are relative to the repo-root fixtures/ directory.",
+  "artifacts": [
+    {
+      "name": "candidate-evidence",
+      "schema_id": "https://autocontext.dev/schema/harness-optimization/candidate-evidence.json",
+      "schema_file": "candidate-evidence.schema.json",
+      "valid": [
+        "harness-optimization/candidate-evidence/valid-full.json",
+        "harness-optimization/candidate-evidence/valid-minimal.json"
+      ],
+      "invalid": [
+        "harness-optimization/candidate-evidence/invalid-bad-mechanism-type.json",
+        "harness-optimization/candidate-evidence/invalid-empty-parity.json",
+        "harness-optimization/candidate-evidence/invalid-extra-field.json",
+        "harness-optimization/candidate-evidence/invalid-missing-hypothesis.json"
+      ]
+    },
+    {
+      "name": "promotion-score",
+      "schema_id": "https://autocontext.dev/schema/harness-optimization/promotion-score.json",
+      "schema_file": "promotion-score.schema.json",
+      "valid": [
+        "harness-optimization/promotion-score/valid-full.json",
+        "harness-optimization/promotion-score/valid-minimal.json"
+      ],
+      "invalid": [
+        "harness-optimization/promotion-score/invalid-empty-parity.json",
+        "harness-optimization/promotion-score/invalid-extra-field.json",
+        "harness-optimization/promotion-score/invalid-missing-component.json"
+      ]
+    },
+    {
+      "name": "repair-result",
+      "schema_id": "https://autocontext.dev/schema/harness-optimization/repair-result.json",
+      "schema_file": "repair-result.schema.json",
+      "valid": [
+        "harness-optimization/repair-result/valid-applied.json",
+        "harness-optimization/repair-result/valid-skipped.json"
+      ],
+      "invalid": [
+        "harness-optimization/repair-result/invalid-bad-status.json",
+        "harness-optimization/repair-result/invalid-empty-parity.json",
+        "harness-optimization/repair-result/invalid-missing-status.json"
+      ]
+    },
+    {
+      "name": "integrity-metadata",
+      "schema_id": "https://autocontext.dev/schema/harness-optimization/integrity-metadata.json",
+      "schema_file": "integrity-metadata.schema.json",
+      "valid": ["harness-optimization/integrity-metadata/valid-verified-clean.json"],
+      "invalid": ["harness-optimization/integrity-metadata/invalid-missing-mode.json"]
+    },
+    {
+      "name": "frontier-mechanism",
+      "schema_id": "https://autocontext.dev/schema/harness-optimization/frontier-mechanism.json",
+      "schema_file": "frontier-mechanism.schema.json",
+      "valid": ["harness-optimization/mechanism-archive/valid-frontier.json"],
+      "invalid": [
+        "harness-optimization/mechanism-archive/invalid-frontier-missing-support-count.json"
+      ]
+    },
+    {
+      "name": "orphan-mechanism",
+      "schema_id": "https://autocontext.dev/schema/harness-optimization/orphan-mechanism.json",
+      "schema_file": "orphan-mechanism.schema.json",
+      "valid": ["harness-optimization/mechanism-archive/valid-orphan.json"],
+      "invalid": [
+        "harness-optimization/mechanism-archive/invalid-orphan-missing-failure-family.json"
+      ]
+    },
+    {
+      "name": "calibration-report",
+      "schema_id": "https://autocontext.dev/schema/harness-optimization/calibration-report.json",
+      "schema_file": "calibration-report.schema.json",
+      "valid": ["harness-optimization/calibration-report/valid-report.json"],
+      "invalid": ["harness-optimization/calibration-report/invalid-missing-standard-error.json"]
+    }
+  ]
+}
