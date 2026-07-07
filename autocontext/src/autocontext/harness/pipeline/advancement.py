@@ -14,9 +14,13 @@ Key types:
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 from pydantic import BaseModel, Field
+
+from autocontext.harness_optimization.contract.models import Components, Weights
+from autocontext.harness_optimization.scoring import beats_incumbent, harness_promotion_score
 
 # Thresholds
 _ERROR_RATE_THRESHOLD = 0.2
@@ -77,12 +81,120 @@ class AdvancementRationale(BaseModel):
         return cls.model_validate(data)
 
 
+@dataclass(slots=True)
+class HarnessPromotionInputs:
+    """Opt-in inputs for the recompute-both harness promotion gate (AC-877).
+
+    Carries only RAW component metrics (never a stored score) for the
+    challenger and the optional incumbent, plus the weights and their
+    version tag. The gate recomputes BOTH scores from these components
+    under the SAME current weights, so a stale stored score can never
+    enter the comparison.
+
+    Stale-weight safety: if the incumbent's components were recorded under
+    an older weight version, they are STILL re-scored under the current
+    ``weights`` here (because the score is derived from raw components, not
+    read from storage). There is no code path where a stored score computed
+    under an old weight version is compared against a fresh challenger score.
+    """
+
+    challenger_components: Components
+    weights: Weights
+    weight_version: str
+    min_margin: float = 0.0
+    incumbent_components: Components | None = None
+
+
+def _evaluate_harness_promotion(inputs: HarnessPromotionInputs) -> AdvancementRationale:
+    """Recompute-both, weight-versioned promotion gate (AC-877).
+
+    Recomputes the challenger score (and the incumbent score when present)
+    from raw components under ``inputs.weights`` and advances only when the
+    challenger beats the incumbent by more than ``inputs.min_margin``. A
+    challenger with no incumbent is promotable.
+    """
+    challenger = inputs.challenger_components
+    weights = inputs.weights
+    weight_version = inputs.weight_version
+    challenger_score = harness_promotion_score(challenger, weights)
+
+    components: dict[str, float] = {
+        "challenger_score": challenger_score,
+        "dense_quality_score": challenger.dense_quality_score,
+        "sparse_success_rate": challenger.sparse_success_rate,
+        "tokens_per_million": challenger.tokens_per_million,
+        "error_rate": challenger.error_rate,
+        "score_variance": challenger.score_variance,
+    }
+    metadata: dict[str, Any] = {
+        "harness_promotion": True,
+        "weight_version": weight_version,
+        "min_margin": inputs.min_margin,
+        "challenger_components": challenger.model_dump(),
+        "weights": weights.model_dump(),
+    }
+
+    if inputs.incumbent_components is None:
+        components["promotion_margin"] = challenger_score
+        metadata["incumbent_components"] = None
+        return AdvancementRationale(
+            decision="advance",
+            reason=(f"No incumbent — challenger promotable at score {challenger_score:.4f} (weights {weight_version})"),
+            component_scores=components,
+            binding_checks=["harness_promotion_score"],
+            proxy_signals=[],
+            risk_flags=[],
+            metadata=metadata,
+        )
+
+    incumbent = inputs.incumbent_components
+    incumbent_score = harness_promotion_score(incumbent, weights)
+    margin = challenger_score - incumbent_score
+    # Decision comes from the shared never-stale primitive, which recomputes
+    # both scores under the same weights — identical to the margin above.
+    advances = beats_incumbent(challenger, incumbent, weights, inputs.min_margin)
+
+    components["incumbent_score"] = incumbent_score
+    components["promotion_margin"] = margin
+    metadata["incumbent_components"] = incumbent.model_dump()
+
+    if advances:
+        return AdvancementRationale(
+            decision="advance",
+            reason=(
+                f"Challenger promotion score {challenger_score:.4f} beats incumbent "
+                f"{incumbent_score:.4f} by {margin:.4f} (> margin {inputs.min_margin}, "
+                f"weights {weight_version})"
+            ),
+            component_scores=components,
+            binding_checks=["harness_promotion_score"],
+            proxy_signals=[],
+            risk_flags=[],
+            metadata=metadata,
+        )
+
+    return AdvancementRationale(
+        decision="rollback",
+        reason=(
+            f"Challenger promotion score {challenger_score:.4f} does not beat incumbent "
+            f"{incumbent_score:.4f} by enough (margin {margin:.4f} <= {inputs.min_margin}, "
+            f"weights {weight_version})"
+        ),
+        component_scores=components,
+        binding_checks=["harness_promotion_score"],
+        proxy_signals=[],
+        risk_flags=["promotion_margin_below_threshold"],
+        metadata=metadata,
+    )
+
+
 def evaluate_advancement(
     metrics: AdvancementMetrics,
     *,
     min_delta: float = 0.005,
     max_retries: int = 3,
     retry_count: int = 0,
+    harness_promotion: HarnessPromotionInputs | None = None,
 ) -> AdvancementRationale:
     """Evaluate whether a generation should advance, retry, or rollback.
 
@@ -92,7 +204,15 @@ def evaluate_advancement(
     3. Confidence / sample agreement (risk flag)
     4. Resolved truth score (binding when present, overrides proxy)
     5. Score variance (risk flag)
+
+    Opt-in harness-promotion path (AC-877): when ``harness_promotion`` is
+    provided, the decision is driven by the recompute-both, weight-versioned
+    promotion gate instead. When it is ``None`` (the default), this function
+    behaves exactly as before and ``metrics`` alone drives the decision.
     """
+    if harness_promotion is not None:
+        return _evaluate_harness_promotion(harness_promotion)
+
     risk_flags: list[str] = []
     binding_checks: list[str] = ["score_delta"]
     proxy_signals: list[str] = []
