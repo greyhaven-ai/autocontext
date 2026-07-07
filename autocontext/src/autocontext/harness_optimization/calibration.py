@@ -1,0 +1,80 @@
+"""Noise calibration engine for the harness optimization loop.
+
+Pure functions that turn a score series into a :class:`CalibrationReport`.
+The float formulas here are mirrored by the TypeScript port and must agree to
+1e-9, so the arithmetic order below is intentional and should not be changed.
+"""
+
+from __future__ import annotations
+
+import math
+from collections.abc import Sequence
+from typing import Literal
+
+from autocontext.harness_optimization.contract.models import CalibrationReport
+
+
+def compute_calibration(
+    scores: Sequence[float],
+    *,
+    scenario_id: str,
+    current_min_delta: float,
+    max_trials: int,
+    noise_multiplier: float = 2.0,
+    noisy_cv_threshold: float = 0.25,
+) -> CalibrationReport:
+    """Compute noise statistics and gating recommendations for a score series.
+
+    Args:
+        scores: Observed scores for the scenario.
+        scenario_id: Scenario or family the series came from.
+        current_min_delta: The promotion margin currently configured.
+        max_trials: Cost budget ceiling on recommended trial count.
+        noise_multiplier: Multiplier on the standard error for the recommended margin.
+        noisy_cv_threshold: Coefficient-of-variation threshold above which the
+            sparse metric is judged too noisy to gate on.
+
+    Returns:
+        A :class:`CalibrationReport` describing the noise floor and recommendations.
+    """
+    n = len(scores)
+    mean = sum(scores) / n if n > 0 else 0.0
+    variance = sum((x - mean) ** 2 for x in scores) / (n - 1) if n >= 2 else 0.0
+    std_dev = math.sqrt(variance)
+    standard_error = std_dev / math.sqrt(n) if n >= 2 else 0.0
+    recommended_min_delta = noise_multiplier * standard_error
+
+    if current_min_delta > 0 and std_dev > 0:
+        k = math.ceil((std_dev / current_min_delta) ** 2)
+    else:
+        k = max_trials
+    recommended_trial_count = max(1, min(k, max_trials))
+
+    margin_vs_noise: Literal["above_noise", "below_noise"] = (
+        "above_noise" if current_min_delta >= recommended_min_delta else "below_noise"
+    )
+
+    if abs(mean) > 0:
+        sparse_metric_too_noisy = standard_error / abs(mean) > noisy_cv_threshold
+    elif standard_error > 0:
+        sparse_metric_too_noisy = True
+    else:
+        sparse_metric_too_noisy = False
+
+    notes = f"SE={standard_error:.4f} over n={n}; margin {margin_vs_noise}"
+
+    return CalibrationReport(
+        schema_version=1,
+        scenario_id=scenario_id,
+        sample_size=n,
+        mean=mean,
+        variance=variance,
+        std_dev=std_dev,
+        standard_error=standard_error,
+        recommended_min_delta=recommended_min_delta,
+        recommended_trial_count=recommended_trial_count,
+        current_min_delta=current_min_delta,
+        margin_vs_noise=margin_vs_noise,
+        sparse_metric_too_noisy=sparse_metric_too_noisy,
+        notes=notes,
+    )
