@@ -348,6 +348,111 @@ counts, and gate decisions:
   languages parse to `docs.example.com`, so the audit is `clean` and the gate
   advances it promotion-grade.
 
+## Mechanism archive (AC-880)
+
+A harness optimization run produces two kinds of mechanism over time: the ones
+that cleared the promotion gate and now define the working harness, and the ones
+that were gated out. Throwing the second kind away loses real signal. A mechanism
+that was rolled back at generation 5 because it regressed a holdout trace can be
+exactly the piece a later candidate needs once a neighbouring surface has moved.
+The **mechanism archive** keeps both kinds so the proposer can learn from the full
+history, not just the surviving frontier.
+
+The archive keeps two record types, each generated from its own canonical schema
+under the same drift gate as the rest of the protocol. A **FrontierMechanism**
+(`ts/src/harness-optimization/contract/json-schemas/frontier-mechanism.schema.json`)
+is a mechanism that was promoted: it carries its `gate_decision`, the
+`affected_surfaces` it touches, the `regression_risks` it accepted, a
+`support_count` of how many candidates lean on it, and the
+`promoted_at_generation` it entered the frontier. An **OrphanMechanism**
+(`ts/src/harness-optimization/contract/json-schemas/orphan-mechanism.schema.json`)
+is a mechanism that was rejected or not promoted: alongside the same identity and
+surface fields it carries a `failure_family` (why the surface rejected it), a
+`rejection_reason`, a `retry_count`, and an optional `rescued_into_frontier_id`.
+Both schemas generate the TypeScript interface, the Python pydantic model, and a
+`validateFrontierMechanism` / `validateOrphanMechanism` validator, so the two
+languages can never disagree on a record.
+
+Every record carries the same two lineage fields that tie the archive back to the
+rest of the protocol. `candidate_evidence_id` points at the CandidateEvidence
+(AC-876) the mechanism was born from, so a promoted or orphaned mechanism can be
+traced to the hypothesis and changes that proposed it. `parent_frontier_id` points
+at the frontier mechanism this one was built on, so the archive records a lineage
+of successive changes rather than a flat list. An orphan preserves both fields
+after rollback, which is what makes it rescuable later: it still knows where it
+came from and what it was trying to extend.
+
+### The engine
+
+The archive is a pure in-memory value with no IO. `MechanismArchive` holds two
+immutable tuples, `frontier` and `orphans`, and every operation returns a new
+archive rather than mutating in place. The engine surface (Python in
+`autocontext/src/autocontext/harness_optimization/mechanism_archive.py`, mirrored
+in TypeScript at `ts/src/harness-optimization/mechanism-archive.ts`) is:
+
+- **add_frontier** / **addFrontier**: append a promoted mechanism to the frontier.
+- **add_orphan** / **addOrphan**: append a gated-out mechanism to the orphans.
+  Adding a frontier never removes an orphan and adding an orphan never touches the
+  frontier, so the two lists accumulate independently.
+- **rescue_orphan** / **rescueOrphan**: mark an orphan as rescued into a named
+  later frontier mechanism. The orphan stays in `orphans` with its
+  `rescued_into_frontier_id` set, so the rescue is auditable and history is
+  preserved rather than rewritten. An unknown id returns the archive unchanged.
+- **query** / **query**: filter both lists by any combination of `mechanism_type`,
+  `target_surface`, and `failure_family`. The first two facets narrow frontier and
+  orphans alike; `failure_family` narrows orphans only, since the frontier has no
+  failure family. A missing facet applies no filter.
+- **rank_orphans** / **rankOrphans**: order orphans most-reusable first (see below).
+- **prune_orphans** / **pruneOrphans**: keep the top `max_orphans` orphans by reuse
+  rank, in rank order, so a long-running archive stays bounded without dropping the
+  most reusable history. A negative bound clamps to zero.
+- **render_archive_digest** / **renderArchiveDigest**: render a bounded, ranked
+  summary for proposer prompts (see below).
+
+### The ranking rule
+
+`rank_orphans` orders orphans so the most reusable ones come first, by an
+ascending sort over a four-part key:
+
+1. **not-rescued before rescued**: an orphan that has not yet been rescued is a
+   live reuse opportunity and sorts ahead of one already folded into a frontier. A
+   missing or empty `rescued_into_frontier_id` counts as not-rescued.
+2. **support_count descending**: an orphan that more candidates leaned on is more
+   likely to be worth reviving. A missing support_count counts as 0.
+3. **retry_count ascending**: among equally supported orphans, the one that needed
+   fewer retries is the cleaner candidate.
+4. **mechanism_id ascending**: a stable tiebreak so both languages produce the
+   identical order.
+
+`prune_orphans` uses exactly this order, so pruning keeps the orphans a proposer
+is most likely to reuse and discards the stale, low-support, many-retry tail.
+
+### The bounded proposer digest
+
+`render_archive_digest` turns the archive into the string that actually reaches a
+proposer prompt. It is deliberately bounded and ranked so the proposer sees
+evidence-backed mechanisms above stale or noisy ones and never sees more than
+`max_entries` entries per section. The digest has a fixed shape a TypeScript port
+reproduces character-for-character: a header line, a `frontier:` section listing up
+to `max_entries` frontier mechanisms in frontier order, then an
+`orphans (reusable):` section listing up to `max_entries` not-rescued orphans in
+`rank_orphans` order. Rescued orphans are excluded from the reusable section
+because they already live in the frontier lineage, and a non-positive `max_entries`
+emits the section headers with no items. The bound is the point: a proposer prompt
+gets the highest-support frontier and the most reusable orphans, capped, instead of
+an unbounded dump that would bury the signal.
+
+### The worked cases
+
+A shared fixture
+(`fixtures/harness-optimization/mechanism-archive/archive-cases.json`) pins a seed
+archive plus a set of cases that both packages load to prove they compute
+identical results: appending an orphan grows the orphan list, a `mechanism_type`
+query filters both lists together, `rank_orphans` orders the seed orphans
+most-reusable first, a rescue sets the frontier id and sinks the rescued orphan to
+the tail of the reuse order, prune keeps the top-ranked orphans, and the digest
+renders the same bounded, ranked proposer feed on both sides.
+
 ## The contract pattern
 
 This is the foundation artifact. The later protocol artifacts follow the same
