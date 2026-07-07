@@ -127,6 +127,33 @@ def prune_orphans(orphans: tuple[OrphanMechanism, ...], max_orphans: int) -> tup
     return rank_orphans(orphans)[:max_orphans]
 
 
+def render_archive_digest(archive: MechanismArchive, *, max_entries: int) -> str:
+    """Render a bounded, ranked digest of the archive for proposer prompts.
+
+    The digest has a fixed shape so a TypeScript port can reproduce it
+    character-for-character: a header line, a `frontier:` section listing up to
+    `max_entries` frontier mechanisms in frontier order, then an
+    `orphans (reusable):` section listing up to `max_entries` not-rescued
+    orphans in `rank_orphans` order. Rescued orphans are excluded from the
+    reusable section. A non-positive `max_entries` emits the section headers
+    with no items. Missing support_count counts as 0.
+    """
+
+    cap = max(max_entries, 0)
+
+    lines = ["mechanism archive digest", "frontier:"]
+    for front in archive.frontier[:cap]:
+        lines.append(f"  - {front.mechanism_name} [{front.target_surface}] support={front.support_count}")
+
+    lines.append("orphans (reusable):")
+    reusable = tuple(m for m in rank_orphans(archive.orphans) if not _is_rescued(m))
+    for orphan in reusable[:cap]:
+        support = orphan.support_count or 0
+        lines.append(f"  - {orphan.mechanism_name} [{orphan.failure_family}] support={support}")
+
+    return "\n".join(lines)
+
+
 __all__ = [
     "MechanismArchive",
     "QueryResult",
@@ -135,5 +162,6 @@ __all__ = [
     "prune_orphans",
     "query",
     "rank_orphans",
+    "render_archive_digest",
     "rescue_orphan",
 ]

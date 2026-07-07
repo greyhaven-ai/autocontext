@@ -143,10 +143,13 @@
       "expected_surviving_ids": ["orphan-ac880-A", "orphan-ac880-C"]
     },
     {
-      "name": "digest placeholder (task 4 extends)",
+      "name": "digest renders a bounded ranked proposer feed",
       "op": "digest",
       "max_entries": 3,
-      "expected_named_ids": ["orphan-ac880-A", "orphan-ac880-C", "orphan-ac880-B"]
+      "expected_frontier_count": 2,
+      "expected_orphan_ids_in_order": ["orphan-ac880-A", "orphan-ac880-C", "orphan-ac880-B"],
+      "expected_excludes": ["orphan-ac880-D"],
+      "expected_header": "mechanism archive digest"
     }
   ]
 }

@@ -14,6 +14,7 @@ from autocontext.harness_optimization.mechanism_archive import (
     prune_orphans,
     query,
     rank_orphans,
+    render_archive_digest,
     rescue_orphan,
 )
 
@@ -68,7 +69,33 @@ def test_archive_case(case: dict[str, Any]) -> None:
         assert [m.mechanism_id for m in pruned] == case["expected_surviving_ids"]
 
     elif op == "digest":
-        pytest.skip("digest is driven by task 4")
+        max_entries = case["max_entries"]
+        digest = render_archive_digest(archive, max_entries=max_entries)
+        assert isinstance(digest, str)
+        assert case["expected_header"] in digest
+        lines = digest.splitlines()
+
+        # Split into the frontier and orphan sections by their headers.
+        frontier_start = lines.index("frontier:")
+        orphan_start = lines.index("orphans (reusable):")
+        frontier_items = [ln for ln in lines[frontier_start + 1 : orphan_start] if ln.startswith("  - ")]
+        orphan_items = [ln for ln in lines[orphan_start + 1 :] if ln.startswith("  - ")]
+
+        # Boundedness: never more than max_entries items per section.
+        assert len(frontier_items) <= max_entries
+        assert len(orphan_items) <= max_entries
+        assert len(frontier_items) == case["expected_frontier_count"]
+
+        # The orphan section lists exactly the expected ids in rank order.
+        id_to_name = {o["mechanism_id"]: o["mechanism_name"] for o in _FIXTURE["seed"]["orphans"]}
+        expected_names = [id_to_name[i] for i in case["expected_orphan_ids_in_order"]]
+        rendered_orphan_names = [ln.split(" [", 1)[0].removeprefix("  - ") for ln in orphan_items]
+        assert rendered_orphan_names == expected_names
+
+        # Rescued orphans are excluded entirely from the reusable section.
+        orphan_section = "\n".join(lines[orphan_start:])
+        for excluded_id in case["expected_excludes"]:
+            assert id_to_name[excluded_id] not in orphan_section
 
     else:  # pragma: no cover - guards against an unhandled fixture op
         pytest.fail(f"unhandled op: {op}")
