@@ -1,0 +1,103 @@
+{
+  "_comment": "Shared AC-878 repair-decision fixture. Loaded by BOTH the Python and TypeScript repair tests. Each case's `expected` block asserts the status, and where given a relocation `target` and a stable `reason_contains` substring. The two languages produce IDENTICAL reason strings, so the substring holds on both sides and proves parity + replayability over cached inputs. Artifact contract fields use snake_case; the TS test maps them to the camelCase probe inputs.",
+  "tool_call": [
+    {
+      "name": "valid_json_is_not_applicable",
+      "raw": "{\"tool\": \"read\", \"path\": \"a.py\"}",
+      "expected": { "status": "not_applicable", "reason_contains": "already valid json" }
+    },
+    {
+      "name": "trailing_comma_before_closer_is_applied",
+      "raw": "{\"tool\": \"read\", \"path\": \"a.py\",}",
+      "expected": { "status": "applied", "reason_contains": "removed trailing comma before closer" }
+    },
+    {
+      "name": "string_internal_comma_is_already_valid",
+      "raw": "{\"note\": \"a,}\"}",
+      "expected": { "status": "not_applicable", "reason_contains": "already valid json" }
+    },
+    {
+      "name": "single_unclosed_brace_with_string_internal_comma_is_applied",
+      "raw": "{\"note\": \"a,}\"",
+      "expected": {
+        "status": "applied",
+        "reason_contains": "closed a single truncated brace/bracket"
+      }
+    },
+    {
+      "name": "two_unclosed_openers_is_ambiguous_skipped",
+      "raw": "{\"a\": {\"b\": 1",
+      "expected": { "status": "skipped", "reason_contains": "ambiguous or unrecoverable" }
+    },
+    {
+      "name": "garbage_is_skipped",
+      "raw": "not json at all",
+      "expected": { "status": "skipped", "reason_contains": "ambiguous or unrecoverable" }
+    }
+  ],
+  "artifact_landing": [
+    {
+      "name": "contract_passes_is_not_applicable",
+      "expected_contract": {
+        "path": "out.json",
+        "content": "{\"ok\": true}",
+        "required_json_fields": ["ok"]
+      },
+      "produced": {},
+      "expected": {
+        "status": "not_applicable",
+        "reason_contains": "already satisfies the contract"
+      }
+    },
+    {
+      "name": "right_content_wrong_path_is_relocated",
+      "expected_contract": {
+        "path": "expected.md",
+        "content": "TODO placeholder",
+        "required_substrings": ["FINAL ANSWER"]
+      },
+      "produced": {
+        "expected.md": "TODO placeholder",
+        "scratch.md": "still thinking, no answer here",
+        "actual.md": "the FINAL ANSWER is 42"
+      },
+      "expected": { "status": "applied", "target": "actual.md", "reason_contains": "relocate" }
+    },
+    {
+      "name": "no_matching_content_is_skipped",
+      "expected_contract": {
+        "path": "expected.md",
+        "content": "TODO placeholder",
+        "required_substrings": ["FINAL ANSWER"]
+      },
+      "produced": {
+        "a.md": "nothing useful",
+        "b.md": "also nothing"
+      },
+      "expected": { "status": "skipped", "reason_contains": "no produced artifact matches" }
+    }
+  ],
+  "finish_guard": [
+    {
+      "name": "completion_ok_is_not_applicable",
+      "claimed_done": true,
+      "completion_ok": true,
+      "reason_if_not": "",
+      "expected": { "status": "not_applicable", "reason_contains": "no unmet completion claim" }
+    },
+    {
+      "name": "not_claimed_is_not_applicable",
+      "claimed_done": false,
+      "completion_ok": false,
+      "reason_if_not": "tests still failing",
+      "expected": { "status": "not_applicable", "reason_contains": "no unmet completion claim" }
+    },
+    {
+      "name": "claimed_but_not_ok_is_applied",
+      "claimed_done": true,
+      "completion_ok": false,
+      "reason_if_not": "tests still failing",
+      "expected": { "status": "applied", "reason_contains": "finish rejected: tests still failing" }
+    }
+  ]
+}

@@ -8,6 +8,10 @@ against the generated schema model.
 from __future__ import annotations
 
 import json
+from pathlib import Path
+from typing import Any
+
+import pytest
 
 from autocontext.control_plane.contract_probes._base import ArtifactContractProbeInputs
 from autocontext.harness_optimization.contract.models import RepairResult
@@ -266,4 +270,71 @@ def test_loop_guard_below_threshold_is_not_applicable() -> None:
 def test_loop_guard_empty_actions_is_not_applicable() -> None:
     result = loop_guard(recent_actions=[], max_repeat=3)
     assert result.status == "not_applicable"
+    _roundtrip(result)
+
+
+# ---------------------------------------------------------------------------
+# shared cross-language parity fixture (AC-878)
+# ---------------------------------------------------------------------------
+#
+# The SAME repo-root fixture is loaded by the TypeScript suite
+# (``ts/tests/harness-optimization/repairs.test.ts``). Both languages assert the
+# same status (and relocation target / reason substring) for every recorded
+# input, which is what proves the two implementations make identical repair
+# decisions on identical inputs. The reason strings are IDENTICAL across
+# languages, so the ``reason_contains`` substring holds on both sides.
+
+# Walk up to the repo root: autocontext/tests/ -> autocontext/ -> <repo root>.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_REPAIR_FIXTURE = _REPO_ROOT / "fixtures" / "harness-optimization" / "repair-cases" / "repair-cases.json"
+
+_REPAIR_CASES = json.loads(_REPAIR_FIXTURE.read_text())
+
+
+def _assert_decision(status: str, reason: str, target: str, expected: dict[str, Any]) -> None:
+    assert status == expected["status"]
+    if "reason_contains" in expected:
+        assert expected["reason_contains"] in reason
+    if "target" in expected:
+        assert target == expected["target"]
+
+
+def _artifact_inputs(contract: dict[str, Any]) -> ArtifactContractProbeInputs:
+    kwargs: dict[str, Any] = {"path": contract["path"], "content": contract["content"]}
+    if "expected_line_ending" in contract:
+        kwargs["expected_line_ending"] = contract["expected_line_ending"]
+    if "required_substrings" in contract:
+        kwargs["required_substrings"] = tuple(contract["required_substrings"])
+    if "forbidden_substrings" in contract:
+        kwargs["forbidden_substrings"] = tuple(contract["forbidden_substrings"])
+    if "required_json_fields" in contract:
+        kwargs["required_json_fields"] = tuple(contract["required_json_fields"])
+    return ArtifactContractProbeInputs(**kwargs)
+
+
+@pytest.mark.parametrize("case", _REPAIR_CASES["tool_call"], ids=lambda c: c["name"])
+def test_shared_fixture_tool_call(case: dict[str, Any]) -> None:
+    _value, result = repair_tool_call_json(case["raw"])
+    _assert_decision(result.status, result.reason, result.target, case["expected"])
+    _roundtrip(result)
+
+
+@pytest.mark.parametrize("case", _REPAIR_CASES["artifact_landing"], ids=lambda c: c["name"])
+def test_shared_fixture_artifact_landing(case: dict[str, Any]) -> None:
+    _path, result = repair_artifact_landing(
+        expected=_artifact_inputs(case["expected_contract"]),
+        produced=dict(case["produced"]),
+    )
+    _assert_decision(result.status, result.reason, result.target, case["expected"])
+    _roundtrip(result)
+
+
+@pytest.mark.parametrize("case", _REPAIR_CASES["finish_guard"], ids=lambda c: c["name"])
+def test_shared_fixture_finish_guard(case: dict[str, Any]) -> None:
+    result = finish_guard(
+        claimed_done=case["claimed_done"],
+        completion_ok=case["completion_ok"],
+        reason_if_not=case["reason_if_not"],
+    )
+    _assert_decision(result.status, result.reason, result.target, case["expected"])
     _roundtrip(result)
