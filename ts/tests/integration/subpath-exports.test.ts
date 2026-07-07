@@ -72,14 +72,18 @@ describe("SDK dist files exist after build", () => {
       if (r1.status !== 0) throw new Error("tsc build failed");
     }
     if (!existsSync(cjsEntry)) {
-      const r2 = spawnSync(
-        "node",
-        ["scripts/build-production-traces-sdk-cjs.mjs"],
-        { cwd: ROOT, stdio: "inherit" },
-      );
+      const r2 = spawnSync("node", ["scripts/build-production-traces-sdk-cjs.mjs"], {
+        cwd: ROOT,
+        stdio: "inherit",
+      });
       if (r2.status !== 0) throw new Error("cjs build failed");
     }
-  });
+    // This hook runs a full `npx tsc` emit plus the cjs build script when dist
+    // is absent (the ts-test CI job does not pre-build). Those real builds take
+    // far longer than vitest's default 10s hookTimeout, so give the hook a
+    // generous override, matching the "real npm run build" guidance in
+    // vitest.config.ts. Well under the job's 20-minute wall-clock.
+  }, 300_000);
 
   test("ESM entry exists", () => {
     expect(existsSync(join(ROOT, "dist", "production-traces", "sdk", "index.js"))).toBe(true);
@@ -90,7 +94,9 @@ describe("SDK dist files exist after build", () => {
   });
 
   test("CJS entry exists", () => {
-    expect(existsSync(join(ROOT, "dist", "cjs", "production-traces", "sdk", "index.cjs"))).toBe(true);
+    expect(existsSync(join(ROOT, "dist", "cjs", "production-traces", "sdk", "index.cjs"))).toBe(
+      true,
+    );
   });
 });
 
