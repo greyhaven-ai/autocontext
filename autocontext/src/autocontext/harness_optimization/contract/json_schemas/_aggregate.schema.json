@@ -15,6 +15,12 @@
     },
     "IntegrityMetadata": {
       "$ref": "https://autocontext.dev/schema/harness-optimization/integrity-metadata.json"
+    },
+    "FrontierMechanism": {
+      "$ref": "https://autocontext.dev/schema/harness-optimization/frontier-mechanism.json"
+    },
+    "OrphanMechanism": {
+      "$ref": "https://autocontext.dev/schema/harness-optimization/orphan-mechanism.json"
     }
   }
 }

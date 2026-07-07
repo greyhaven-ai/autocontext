@@ -110,6 +110,63 @@ export interface CandidateEvidence {
   };
 }
 
+// ---- frontier-mechanism.schema.json ----
+/**
+ * A promoted mechanism on the harness-optimization frontier (AC-880). It records a candidate that passed the promotion gate, its lineage parent, the surfaces it affects, the regression risks it carries, and how many generations of support it has. This is the archived record of what advanced. Shared source of truth for both the Python and TypeScript autocontext packages.
+ */
+export interface FrontierMechanism {
+  /**
+   * Schema version for forward compatibility. Always 1 for this revision.
+   */
+  schema_version: 1;
+  /**
+   * Stable unique identifier for this frontier mechanism.
+   */
+  mechanism_id: string;
+  /**
+   * Identifier of the candidate evidence record this mechanism was promoted from.
+   */
+  candidate_evidence_id: string;
+  /**
+   * Identifier of the frontier this mechanism descends from. Empty for a root frontier.
+   */
+  parent_frontier_id?: string;
+  /**
+   * Human-readable name of the promoted mechanism.
+   */
+  mechanism_name: string;
+  /**
+   * Category of mechanism being changed.
+   */
+  mechanism_type:
+    "deterministic_code" | "prompt_playbook" | "tool_wrapper" | "context_policy" | "judge_policy" | "mixed";
+  /**
+   * The surface of the harness this mechanism targets.
+   */
+  target_surface:
+    "prompt" | "tool" | "harness_validator" | "runtime_adapter" | "artifact_landing" | "evaluator" | "routing" | "docs";
+  /**
+   * The advancement decision that promoted this mechanism.
+   */
+  gate_decision: string;
+  /**
+   * Surfaces this mechanism touches beyond its primary target.
+   */
+  affected_surfaces: string[];
+  /**
+   * Known regression risks this mechanism carries forward.
+   */
+  regression_risks: string[];
+  /**
+   * Number of runs or generations that support this mechanism.
+   */
+  support_count: number;
+  /**
+   * Generation index at which this mechanism was promoted.
+   */
+  promoted_at_generation: number;
+}
+
 // ---- integrity-metadata.schema.json ----
 /**
  * Declared integrity scope for a harness-optimization run (AC-879). It records which sources the proposer and evaluator were allowed to read, which are forbidden (holdout, test splits), the web-access policy, the benchmark split manifest in play, and the computed leakage status so a reviewer can prove a candidate was proposed without touching held-out evidence. Verified-mode enforcement (fail closed on contamination or unknown status) is applied by the leakage gate, not by this schema. This schema is the single source of truth for both the Python and TypeScript autocontext packages.
@@ -167,6 +224,67 @@ export interface IntegrityMetadata {
    * Human-readable reasons for a contaminated or unknown status. Empty when clean.
    */
   contamination_reasons: string[];
+}
+
+// ---- orphan-mechanism.schema.json ----
+/**
+ * A rejected or rolled-back mechanism in the harness-optimization archive (AC-880). It records a candidate that failed the promotion gate, the failure family it belongs to, why it was rejected, how many times it was retried, and whether a later combination rescued it. This is the archived record of what did not advance. Shared source of truth for both the Python and TypeScript autocontext packages.
+ */
+export interface OrphanMechanism {
+  /**
+   * Schema version for forward compatibility. Always 1 for this revision.
+   */
+  schema_version: 1;
+  /**
+   * Stable unique identifier for this orphan mechanism.
+   */
+  mechanism_id: string;
+  /**
+   * Identifier of the candidate evidence record this mechanism came from.
+   */
+  candidate_evidence_id: string;
+  /**
+   * Identifier of the frontier this mechanism descends from. Empty for a root candidate.
+   */
+  parent_frontier_id?: string;
+  /**
+   * Human-readable name of the orphaned mechanism.
+   */
+  mechanism_name: string;
+  /**
+   * Category of mechanism being changed.
+   */
+  mechanism_type:
+    "deterministic_code" | "prompt_playbook" | "tool_wrapper" | "context_policy" | "judge_policy" | "mixed";
+  /**
+   * The surface of the harness this mechanism targets.
+   */
+  target_surface:
+    "prompt" | "tool" | "harness_validator" | "runtime_adapter" | "artifact_landing" | "evaluator" | "routing" | "docs";
+  /**
+   * The gate outcome for this mechanism, such as retry, rollback, or reject.
+   */
+  gate_decision: string;
+  /**
+   * The family of failure this mechanism belongs to, for clustering orphans.
+   */
+  failure_family: string;
+  /**
+   * Human-readable reason this mechanism was not promoted.
+   */
+  rejection_reason: string;
+  /**
+   * Number of times this mechanism was retried before being orphaned.
+   */
+  retry_count: number;
+  /**
+   * Number of runs or generations that support this mechanism.
+   */
+  support_count?: number;
+  /**
+   * Frontier id a later combination rescued this into. Empty while still orphaned.
+   */
+  rescued_into_frontier_id?: string;
 }
 
 // ---- promotion-score.schema.json ----

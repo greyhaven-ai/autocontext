@@ -384,3 +384,186 @@ class IntegrityMetadata(BaseModel):
             description='Human-readable reasons for a contaminated or unknown status. Empty when clean.'
         ),
     ]
+
+
+class FrontierMechanism(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    schema_version: Annotated[
+        Literal[1],
+        Field(
+            description='Schema version for forward compatibility. Always 1 for this revision.'
+        ),
+    ]
+    mechanism_id: Annotated[
+        str,
+        Field(
+            description='Stable unique identifier for this frontier mechanism.',
+            min_length=1,
+        ),
+    ]
+    candidate_evidence_id: Annotated[
+        str,
+        Field(
+            description='Identifier of the candidate evidence record this mechanism was promoted from.',
+            min_length=1,
+        ),
+    ]
+    parent_frontier_id: Annotated[
+        str | None,
+        Field(
+            description='Identifier of the frontier this mechanism descends from. Empty for a root frontier.'
+        ),
+    ] = None
+    mechanism_name: Annotated[
+        str,
+        Field(
+            description='Human-readable name of the promoted mechanism.', min_length=1
+        ),
+    ]
+    mechanism_type: Annotated[
+        Literal[
+            'deterministic_code',
+            'prompt_playbook',
+            'tool_wrapper',
+            'context_policy',
+            'judge_policy',
+            'mixed',
+        ],
+        Field(description='Category of mechanism being changed.'),
+    ]
+    target_surface: Annotated[
+        Literal[
+            'prompt',
+            'tool',
+            'harness_validator',
+            'runtime_adapter',
+            'artifact_landing',
+            'evaluator',
+            'routing',
+            'docs',
+        ],
+        Field(description='The surface of the harness this mechanism targets.'),
+    ]
+    gate_decision: Annotated[
+        str, Field(description='The advancement decision that promoted this mechanism.')
+    ]
+    affected_surfaces: Annotated[
+        list[str],
+        Field(description='Surfaces this mechanism touches beyond its primary target.'),
+    ]
+    regression_risks: Annotated[
+        list[str],
+        Field(description='Known regression risks this mechanism carries forward.'),
+    ]
+    support_count: Annotated[
+        int,
+        Field(
+            description='Number of runs or generations that support this mechanism.',
+            ge=0,
+        ),
+    ]
+    promoted_at_generation: Annotated[
+        int,
+        Field(
+            description='Generation index at which this mechanism was promoted.', ge=0
+        ),
+    ]
+
+
+class OrphanMechanism(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    schema_version: Annotated[
+        Literal[1],
+        Field(
+            description='Schema version for forward compatibility. Always 1 for this revision.'
+        ),
+    ]
+    mechanism_id: Annotated[
+        str,
+        Field(
+            description='Stable unique identifier for this orphan mechanism.',
+            min_length=1,
+        ),
+    ]
+    candidate_evidence_id: Annotated[
+        str,
+        Field(
+            description='Identifier of the candidate evidence record this mechanism came from.',
+            min_length=1,
+        ),
+    ]
+    parent_frontier_id: Annotated[
+        str | None,
+        Field(
+            description='Identifier of the frontier this mechanism descends from. Empty for a root candidate.'
+        ),
+    ] = None
+    mechanism_name: Annotated[
+        str,
+        Field(
+            description='Human-readable name of the orphaned mechanism.', min_length=1
+        ),
+    ]
+    mechanism_type: Annotated[
+        Literal[
+            'deterministic_code',
+            'prompt_playbook',
+            'tool_wrapper',
+            'context_policy',
+            'judge_policy',
+            'mixed',
+        ],
+        Field(description='Category of mechanism being changed.'),
+    ]
+    target_surface: Annotated[
+        Literal[
+            'prompt',
+            'tool',
+            'harness_validator',
+            'runtime_adapter',
+            'artifact_landing',
+            'evaluator',
+            'routing',
+            'docs',
+        ],
+        Field(description='The surface of the harness this mechanism targets.'),
+    ]
+    gate_decision: Annotated[
+        str,
+        Field(
+            description='The gate outcome for this mechanism, such as retry, rollback, or reject.'
+        ),
+    ]
+    failure_family: Annotated[
+        str,
+        Field(
+            description='The family of failure this mechanism belongs to, for clustering orphans.'
+        ),
+    ]
+    rejection_reason: Annotated[
+        str, Field(description='Human-readable reason this mechanism was not promoted.')
+    ]
+    retry_count: Annotated[
+        int,
+        Field(
+            description='Number of times this mechanism was retried before being orphaned.',
+            ge=0,
+        ),
+    ]
+    support_count: Annotated[
+        int | None,
+        Field(
+            description='Number of runs or generations that support this mechanism.',
+            ge=0,
+        ),
+    ] = None
+    rescued_into_frontier_id: Annotated[
+        str | None,
+        Field(
+            description='Frontier id a later combination rescued this into. Empty while still orphaned.'
+        ),
+    ] = None

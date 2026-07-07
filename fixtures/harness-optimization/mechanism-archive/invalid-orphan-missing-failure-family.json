@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "mechanism_id": "orphan-ac880-014",
+  "candidate_evidence_id": "candidate-ac876-089",
+  "parent_frontier_id": "frontier-ac880-001",
+  "mechanism_name": "aggressive prompt truncation",
+  "mechanism_type": "prompt_playbook",
+  "target_surface": "prompt",
+  "gate_decision": "reject",
+  "rejection_reason": "regressed holdout traces beyond the delta gate",
+  "retry_count": 1
+}

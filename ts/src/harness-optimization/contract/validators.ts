@@ -5,9 +5,13 @@ import candidateEvidenceSchema from "./json-schemas/candidate-evidence.schema.js
 import promotionScoreSchema from "./json-schemas/promotion-score.schema.json" with { type: "json" };
 import repairResultSchema from "./json-schemas/repair-result.schema.json" with { type: "json" };
 import integrityMetadataSchema from "./json-schemas/integrity-metadata.schema.json" with { type: "json" };
+import frontierMechanismSchema from "./json-schemas/frontier-mechanism.schema.json" with { type: "json" };
+import orphanMechanismSchema from "./json-schemas/orphan-mechanism.schema.json" with { type: "json" };
 import type {
   CandidateEvidence,
+  FrontierMechanism,
   IntegrityMetadata,
+  OrphanMechanism,
   PromotionScore,
   RepairResult,
 } from "./generated-types.js";
@@ -29,6 +33,8 @@ ajv.addSchema(candidateEvidenceSchema as object);
 ajv.addSchema(promotionScoreSchema as object);
 ajv.addSchema(repairResultSchema as object);
 ajv.addSchema(integrityMetadataSchema as object);
+ajv.addSchema(frontierMechanismSchema as object);
+ajv.addSchema(orphanMechanismSchema as object);
 
 const candidateEvidenceValidator = ajv.getSchema(
   "https://autocontext.dev/schema/harness-optimization/candidate-evidence.json",
@@ -44,6 +50,14 @@ const repairResultValidator = ajv.getSchema(
 
 const integrityMetadataValidator = ajv.getSchema(
   "https://autocontext.dev/schema/harness-optimization/integrity-metadata.json",
+)!;
+
+const frontierMechanismValidator = ajv.getSchema(
+  "https://autocontext.dev/schema/harness-optimization/frontier-mechanism.json",
+)!;
+
+const orphanMechanismValidator = ajv.getSchema(
+  "https://autocontext.dev/schema/harness-optimization/orphan-mechanism.json",
 )!;
 
 function toResult(validate: ValidateFunction, input: unknown): ValidationResult {
@@ -74,5 +88,19 @@ export function validateIntegrityMetadata(input: unknown): ValidationResult {
   return toResult(integrityMetadataValidator, input);
 }
 
+export function validateFrontierMechanism(input: unknown): ValidationResult {
+  return toResult(frontierMechanismValidator, input);
+}
+
+export function validateOrphanMechanism(input: unknown): ValidationResult {
+  return toResult(orphanMechanismValidator, input);
+}
+
 // Type-level assertion — if a TS type drifts from its schema this won't compile.
-export type _TypeCheck = CandidateEvidence | PromotionScore | RepairResult | IntegrityMetadata;
+export type _TypeCheck =
+  | CandidateEvidence
+  | PromotionScore
+  | RepairResult
+  | IntegrityMetadata
+  | FrontierMechanism
+  | OrphanMechanism;

@@ -16,6 +16,7 @@ All notable changes to this project will be documented in this file.
 - harness optimization protocol: fresh blended promotion score with recompute-both semantics and python/typescript parity (AC-877)
 - harness optimization protocol: opt-in deterministic repair gates (artifact landing, tool-call json, finish guard, loop guard) with python/typescript parity (AC-878)
 - harness optimization protocol: post-proposal holdout-leakage audit (clean/contaminated/unknown over forbidden-source, forbidden-split, and web-policy passes) and verified/exploratory fail-closed gate with python/typescript parity (AC-879)
+- harness optimization protocol: in-memory mechanism archive of promoted (frontier) and gated-out (orphan) mechanisms with candidate-evidence and parent-frontier lineage, reuse-ranked orphan rescue/prune, and a bounded ranked proposer digest with python/typescript parity (AC-880)
 
 ## [0.11.0] - 2026-07-02
 
