@@ -309,6 +309,78 @@ class TestResolveGateDecision:
         rationale = result.metadata["advancement_rationale"]
         assert "resolved truth present without prior truth baseline" in rationale["risk_flags"]
 
+    def test_calibration_disabled_by_default_is_byte_unchanged(self) -> None:
+        # Golden: with calibration off (the default) the metadata carries only the
+        # pre-AC-881 keys and proxy_signals is exactly what evaluate_advancement emits.
+        from autocontext.harness.pipeline.gate import BackpressureGate
+        from autocontext.loop.tournament_helpers import resolve_gate_decision
+
+        gate = BackpressureGate(min_delta=0.005)
+        kwargs: dict[str, Any] = dict(
+            tournament_best_score=0.75,
+            tournament_mean_score=0.72,
+            tournament_results=[_make_eval_result(0.75), _make_eval_result(0.69)],
+            previous_best=0.70,
+            gate=gate,
+            score_history=[0.5, 0.6, 0.7],
+            gate_decision_history=["advance", "advance"],
+            retry_count=0,
+            max_retries=3,
+            use_rapid=False,
+            custom_metrics=None,
+        )
+        result = resolve_gate_decision(**kwargs)
+        assert set(result.metadata.keys()) == {"threshold", "advancement_rationale"}
+        assert "calibration_report" not in result.metadata
+        assert "calibration_summary" not in result.metadata
+
+        default_off = resolve_gate_decision(**kwargs, calibration_enabled=False)
+        assert default_off.metadata == result.metadata
+        assert (
+            default_off.metadata["advancement_rationale"]["proxy_signals"]
+            == result.metadata["advancement_rationale"]["proxy_signals"]
+        )
+
+    def test_calibration_enabled_surfaces_report_and_citation(self) -> None:
+        from autocontext.harness.pipeline.gate import BackpressureGate
+        from autocontext.harness_optimization.calibration import (
+            cite_margin_vs_noise,
+            compute_calibration,
+            render_calibration_report,
+        )
+        from autocontext.loop.tournament_helpers import resolve_gate_decision
+
+        gate = BackpressureGate(min_delta=0.005)
+        result = resolve_gate_decision(
+            tournament_best_score=0.75,
+            tournament_mean_score=0.72,
+            tournament_results=[_make_eval_result(0.75), _make_eval_result(0.69)],
+            previous_best=0.70,
+            gate=gate,
+            score_history=[0.5, 0.6, 0.7],
+            gate_decision_history=["advance", "advance"],
+            retry_count=0,
+            max_retries=3,
+            use_rapid=False,
+            custom_metrics=None,
+            calibration_enabled=True,
+            calibration_scenario_id="grid_ctf",
+            calibration_max_trials=5,
+        )
+        assert "calibration_report" in result.metadata
+        assert "calibration_summary" in result.metadata
+
+        threshold = result.metadata["threshold"]
+        report = compute_calibration(
+            [0.75, 0.69],
+            scenario_id="grid_ctf",
+            current_min_delta=float(threshold),
+            max_trials=5,
+        )
+        assert result.metadata["calibration_summary"] == render_calibration_report(report)
+        proxy_signals = result.metadata["advancement_rationale"]["proxy_signals"]
+        assert proxy_signals[-1] == cite_margin_vs_noise(report)
+
 
 # ===========================================================================
 # build_retry_prompt

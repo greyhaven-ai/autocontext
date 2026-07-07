@@ -460,6 +460,9 @@ def _apply_novelty_and_cost_adjustments(
         annealing_enabled=settings.experimental_annealing_enabled,
         annealing_seed=settings.seed_base,
         generation=ctx.generation,
+        calibration_enabled=ctx.settings.harness_calibration_enabled,
+        calibration_scenario_id=ctx.scenario_name,
+        calibration_max_trials=ctx.settings.matches_per_generation,
     )
     gate_decision, gate_reason = gate_result.decision, gate_result.reason
     generation_cost_usd = float(ctx.cost_control_metadata.get("generation_cost_usd", 0.0) or 0.0)

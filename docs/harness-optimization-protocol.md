@@ -502,6 +502,12 @@ The arithmetic is fixed so the Python and TypeScript ports agree to 1e-9:
   expensive run is never silently increased past its ceiling. When
   `current_min_delta` or `std_dev` is 0 the count falls back to `max_trials`.
 
+With fewer than 2 samples the report has zero variance and cites `above_noise` as an
+"insufficient data" degenerate case, so a single-sample or empty series never reads
+as a real margin over the noise floor. autocontext assumes mechanism scores are
+finite and bounded; extreme overflow inputs are out of scope for the calibration
+arithmetic.
+
 ### Reading the report
 
 Two fields carry the decision-relevant signal:

@@ -35,6 +35,8 @@ export function computeCalibration(
 ): CalibrationReport {
   const noiseMultiplier = opts.noiseMultiplier ?? 2.0;
   const noisyCvThreshold = opts.noisyCvThreshold ?? 0.25;
+  // Clamp the budget to at least 1 so a degenerate 0/negative budget yields a sane count of 1.
+  const maxTrials = Math.max(1, opts.maxTrials);
 
   const n = scores.length;
   const mean = n > 0 ? scores.reduce((acc, x) => acc + x, 0) / n : 0;
@@ -47,9 +49,9 @@ export function computeCalibration(
   if (opts.currentMinDelta > 0 && stdDev > 0) {
     k = Math.ceil((stdDev / opts.currentMinDelta) ** 2);
   } else {
-    k = opts.maxTrials;
+    k = maxTrials;
   }
-  const recommendedTrialCount = Math.max(1, Math.min(k, opts.maxTrials));
+  const recommendedTrialCount = Math.max(1, Math.min(k, maxTrials));
 
   const marginVsNoise: "above_noise" | "below_noise" =
     opts.currentMinDelta >= recommendedMinDelta ? "above_noise" : "below_noise";

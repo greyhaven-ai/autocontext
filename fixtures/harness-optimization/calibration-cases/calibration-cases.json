@@ -16,7 +16,9 @@
         "recommended_trial_count": 1,
         "margin_vs_noise": "above_noise",
         "sparse_metric_too_noisy": false
-      }
+      },
+      "expected_rendered": "calibration report: grid_ctf\nsamples: 5\nmean: 0.804000\nstd_dev: 0.011402\nstandard_error: 0.005099\nrecommended_min_delta: 0.010198\nrecommended_trial_count: 1\ncurrent_min_delta: 0.050000\nmargin: above_noise",
+      "expected_citation": "margin 0.050000 is above_noise (recommended >= 0.010198)"
     },
     {
       "name": "high_noise",
@@ -34,7 +36,9 @@
         "recommended_trial_count": 5,
         "margin_vs_noise": "below_noise",
         "sparse_metric_too_noisy": true
-      }
+      },
+      "expected_rendered": "calibration report: othello\nsamples: 6\nmean: 0.566667\nstd_dev: 0.379034\nstandard_error: 0.154740\nrecommended_min_delta: 0.309480\nrecommended_trial_count: 5\ncurrent_min_delta: 0.020000\nmargin: below_noise\nsparse metric too noisy: optimize a denser verifier signal instead",
+      "expected_citation": "margin 0.020000 is below_noise (recommended >= 0.309480)"
     },
     {
       "name": "single",

@@ -49,6 +49,15 @@ describe("calibration parity", () => {
       expect(Math.abs(report.current_min_delta - c.current_min_delta)).toBeLessThanOrEqual(TOL);
       expect(report.margin_vs_noise).toBe(e.margin_vs_noise);
       expect(report.sparse_metric_too_noisy).toBe(e.sparse_metric_too_noisy);
+
+      // When a case pins the exact rendered/citation text, both languages compare
+      // to the same shared literal so any Python-vs-TS text drift fails a test.
+      if (c.expected_rendered !== undefined) {
+        expect(renderCalibrationReport(report)).toBe(c.expected_rendered);
+      }
+      if (c.expected_citation !== undefined) {
+        expect(citeMarginVsNoise(report)).toBe(c.expected_citation);
+      }
     });
   }
 

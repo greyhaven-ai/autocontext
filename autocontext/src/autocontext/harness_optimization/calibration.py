@@ -37,6 +37,8 @@ def compute_calibration(
     Returns:
         A :class:`CalibrationReport` describing the noise floor and recommendations.
     """
+    # Clamp the budget to at least 1 so a degenerate 0/negative budget yields a sane count of 1.
+    max_trials = max(1, max_trials)
     n = len(scores)
     mean = sum(scores) / n if n > 0 else 0.0
     variance = sum((x - mean) ** 2 for x in scores) / (n - 1) if n >= 2 else 0.0

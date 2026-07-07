@@ -42,6 +42,13 @@ def test_calibration_cases_match_fixture(case: dict[str, Any]) -> None:
         actual = getattr(report, field)
         assert abs(actual - expected[field]) <= 1e-9, field
 
+    # When a case pins the exact rendered/citation text, both languages compare to
+    # the same shared literal so any Python-vs-TS text drift fails a test.
+    if "expected_rendered" in case:
+        assert render_calibration_report(report) == case["expected_rendered"]
+    if "expected_citation" in case:
+        assert cite_margin_vs_noise(report) == case["expected_citation"]
+
 
 def test_report_metadata_and_notes() -> None:
     report = compute_calibration(
