@@ -21,6 +21,9 @@
     },
     "OrphanMechanism": {
       "$ref": "https://autocontext.dev/schema/harness-optimization/orphan-mechanism.json"
+    },
+    "CalibrationReport": {
+      "$ref": "https://autocontext.dev/schema/harness-optimization/calibration-report.json"
     }
   }
 }

@@ -7,7 +7,9 @@ import repairResultSchema from "./json-schemas/repair-result.schema.json" with {
 import integrityMetadataSchema from "./json-schemas/integrity-metadata.schema.json" with { type: "json" };
 import frontierMechanismSchema from "./json-schemas/frontier-mechanism.schema.json" with { type: "json" };
 import orphanMechanismSchema from "./json-schemas/orphan-mechanism.schema.json" with { type: "json" };
+import calibrationReportSchema from "./json-schemas/calibration-report.schema.json" with { type: "json" };
 import type {
+  CalibrationReport,
   CandidateEvidence,
   FrontierMechanism,
   IntegrityMetadata,
@@ -35,6 +37,7 @@ ajv.addSchema(repairResultSchema as object);
 ajv.addSchema(integrityMetadataSchema as object);
 ajv.addSchema(frontierMechanismSchema as object);
 ajv.addSchema(orphanMechanismSchema as object);
+ajv.addSchema(calibrationReportSchema as object);
 
 const candidateEvidenceValidator = ajv.getSchema(
   "https://autocontext.dev/schema/harness-optimization/candidate-evidence.json",
@@ -58,6 +61,10 @@ const frontierMechanismValidator = ajv.getSchema(
 
 const orphanMechanismValidator = ajv.getSchema(
   "https://autocontext.dev/schema/harness-optimization/orphan-mechanism.json",
+)!;
+
+const calibrationReportValidator = ajv.getSchema(
+  "https://autocontext.dev/schema/harness-optimization/calibration-report.json",
 )!;
 
 function toResult(validate: ValidateFunction, input: unknown): ValidationResult {
@@ -96,6 +103,10 @@ export function validateOrphanMechanism(input: unknown): ValidationResult {
   return toResult(orphanMechanismValidator, input);
 }
 
+export function validateCalibrationReport(input: unknown): ValidationResult {
+  return toResult(calibrationReportValidator, input);
+}
+
 // Type-level assertion — if a TS type drifts from its schema this won't compile.
 export type _TypeCheck =
   | CandidateEvidence
@@ -103,4 +114,5 @@ export type _TypeCheck =
   | RepairResult
   | IntegrityMetadata
   | FrontierMechanism
-  | OrphanMechanism;
+  | OrphanMechanism
+  | CalibrationReport;

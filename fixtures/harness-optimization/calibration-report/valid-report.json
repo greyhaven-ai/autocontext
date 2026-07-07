@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "scenario_id": "grid_ctf",
+  "sample_size": 5,
+  "mean": 0.8,
+  "variance": 0.0025,
+  "std_dev": 0.05,
+  "standard_error": 0.02236,
+  "recommended_min_delta": 0.04472,
+  "recommended_trial_count": 3,
+  "current_min_delta": 0.05,
+  "margin_vs_noise": "above_noise",
+  "sparse_metric_too_noisy": false,
+  "notes": "Current margin 0.05 exceeds 2x the standard error, so promotions sit above the noise floor."
+}
