@@ -113,6 +113,14 @@
       "import": "./dist/harness-optimization/evidence.js",
       "types": "./dist/harness-optimization/evidence.d.ts"
     },
+    "./harness-optimization/scoring": {
+      "import": "./dist/harness-optimization/scoring.js",
+      "types": "./dist/harness-optimization/scoring.d.ts"
+    },
+    "./harness-optimization/contract/validators": {
+      "import": "./dist/harness-optimization/contract/validators.js",
+      "types": "./dist/harness-optimization/contract/validators.d.ts"
+    },
     "./detectors/openai-python": {
       "types": "./dist/control-plane/instrument/detectors/openai-python/index.d.ts",
       "import": "./dist/control-plane/instrument/detectors/openai-python/index.js",

@@ -119,11 +119,12 @@ describe("shared repo-root promotion-score fixtures", () => {
     expect(result.valid).toBe(false);
   });
 
-  test("the fixtures directory contains exactly the expected contract set", () => {
-    // Set-membership guard over the valid-/invalid- contract fixtures only, so a
-    // dropped or renamed contract fixture fails here while score-cases.json (the
-    // scorer numeric fixture) is left untouched.
-    const names = new Set([...fixtures("valid-"), ...fixtures("invalid-")]);
-    expect(names).toEqual(EXPECTED_FIXTURES);
+  test("the fixtures directory contains exactly the expected file set", () => {
+    // Set-membership guard over EVERY .json in the directory: the five valid-/invalid-
+    // contract fixtures plus score-cases.json (the scorer numeric fixture). Globbing all
+    // files (not just the valid-/invalid- prefixes) means a stray or dropped .json fails
+    // here instead of being silently ignored.
+    const allJson = new Set(readdirSync(FIXTURES_DIR).filter((name) => name.endsWith(".json")));
+    expect(allJson).toEqual(new Set([...EXPECTED_FIXTURES, "score-cases.json"]));
   });
 });

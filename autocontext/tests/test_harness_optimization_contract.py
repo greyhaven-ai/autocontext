@@ -196,9 +196,9 @@ def test_shared_invalid_promotion_score_fixtures_raise(fixture: Path) -> None:
 
 
 def test_shared_promotion_score_fixture_directory_contains_the_expected_set() -> None:
-    # Set-membership guard over the valid-/invalid- contract fixtures only, so a
-    # dropped or renamed contract fixture fails here while score-cases.json (the
-    # scorer numeric fixture) is left untouched.
-    names = {p.name for p in _promotion_score_fixtures("valid-")}
-    names |= {p.name for p in _promotion_score_fixtures("invalid-")}
-    assert names == EXPECTED_PROMOTION_SCORE_FIXTURES
+    # Set-membership guard over EVERY .json in the directory: the five valid-/invalid-
+    # contract fixtures plus score-cases.json (the scorer numeric fixture). Globbing all
+    # files (not just the valid-/invalid- prefixes) means a stray or dropped .json fails
+    # here instead of being silently ignored.
+    names = {p.name for p in PROMOTION_SCORE_FIXTURES_DIR.glob("*.json")}
+    assert names == EXPECTED_PROMOTION_SCORE_FIXTURES | {"score-cases.json"}

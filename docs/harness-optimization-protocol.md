@@ -135,6 +135,10 @@ it once the case count is large enough for the success rate to be stable. Bump t
 `weight_version` whenever any weight changes so that no incumbent recorded under the
 old weights is ever compared under the new ones.
 
+The python advancement gate's harness-promotion path is opt-in (`harness_promotion`
+defaults to `None`) and is not yet wired into the live tournament loop; that
+live-loop wiring lands with a later issue.
+
 ### Reading and validating the artifact
 
 Both packages validate a PromotionScore against the shared schema and expose the
