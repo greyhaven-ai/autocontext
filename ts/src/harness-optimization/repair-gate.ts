@@ -116,6 +116,8 @@ export function finishGuardStep(ctx: RepairContext): RepairResult {
   });
 }
 
+// loop_guard is intentionally omitted from the default set: it has no TypeScript
+// mirror yet, and the default set is kept identical across languages.
 export const DEFAULT_REPAIRS: readonly RepairStep[] = [
   repairToolCallJsonStep,
   repairArtifactLandingStep,
@@ -143,12 +145,21 @@ export class RepairGate {
     this.#channel = channel;
   }
 
-  run(_scenarioName: string, context: RepairContext): RepairResult[] {
+  /**
+   * Invoke each enabled repair over `context`, emitting an event each.
+   *
+   * The emitted payload is `{ scenario, result }`: the RepairResult stays a
+   * self-contained, schema-valid object under `result`, and the scenario rides
+   * alongside as a sibling so consumers can attribute the repair without
+   * polluting the RepairResult schema. Mirrors the Python `RepairGate.run`.
+   */
+  run(scenarioName: string, context: RepairContext): RepairResult[] {
     const results: RepairResult[] = [];
     for (const repair of this.#repairs) {
       const result = repair(context);
       const event = result.status === "applied" ? "repair_applied" : "repair_skipped";
-      this.#emitter.emit(event, result as unknown as Record<string, unknown>, this.#channel);
+      const payload = { scenario: scenarioName, result } as unknown as Record<string, unknown>;
+      this.#emitter.emit(event, payload, this.#channel);
       results.push(result);
     }
     return results;

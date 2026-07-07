@@ -7,6 +7,13 @@ import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { promisify } from "node:util";
 import { which } from "../util.js";
+import type { EventStreamEmitter } from "../loop/events.js";
+import {
+  RepairGate,
+  repairGateActiveFor,
+  type RepairContext,
+  type RepairGateConfig,
+} from "../harness-optimization/repair-gate.js";
 import type { AgentOutput, AgentRuntime } from "./base.js";
 
 const execFileAsync = promisify(execFile);
@@ -22,13 +29,18 @@ export interface ClaudeCLIConfig {
   systemPrompt?: string;
   appendSystemPrompt?: string;
   extraArgs?: string[];
+  // Opt-in AC-878 repair gate. All three must be present AND the gate active for
+  // `repairScenario` for a malformed CLI JSON envelope to be structurally
+  // repaired before the raw-text fallback. Absent (the default) => the parse
+  // path is byte-unchanged.
+  repairGate?: RepairGateConfig;
+  repairScenario?: string;
+  repairEmitter?: EventStreamEmitter;
 }
 
 export class ClaudeCLIRuntime implements AgentRuntime {
   readonly name = "ClaudeCLI";
-  #config: Required<
-    Pick<ClaudeCLIConfig, "model" | "permissionMode" | "timeout">
-  > &
+  #config: Required<Pick<ClaudeCLIConfig, "model" | "permissionMode" | "timeout">> &
     ClaudeCLIConfig;
   #totalCost = 0;
   #claudePath: string | null;
@@ -76,10 +88,7 @@ export class ClaudeCLIRuntime implements AgentRuntime {
     return this.#invoke(revisionPrompt, args);
   }
 
-  #buildArgs(
-    system?: string,
-    schema?: Record<string, unknown>,
-  ): string[] {
+  #buildArgs(system?: string, schema?: Record<string, unknown>): string[] {
     const args = ["-p", "--output-format", "json"];
 
     args.push("--model", this.#config.model);
@@ -147,31 +156,77 @@ export class ClaudeCLIRuntime implements AgentRuntime {
 
   #parseOutput(raw: string): AgentOutput {
     try {
-      const data = JSON.parse(raw);
-      const cost = data.total_cost_usd;
-      if (cost != null) this.#totalCost += cost;
-
-      const modelUsage = data.modelUsage ?? {};
-      const model = Object.keys(modelUsage)[0];
-
-      return {
-        text: data.result ?? "",
-        structured: data.structured_output,
-        costUsd: cost,
-        model,
-        sessionId: data.session_id,
-        metadata: {
-          durationMs: data.duration_ms,
-          durationApiMs: data.duration_api_ms,
-          numTurns: data.num_turns,
-          isError: data.is_error ?? false,
-          usage: data.usage ?? {},
-        },
-      };
+      return this.#buildOutput(JSON.parse(raw));
     } catch {
+      // Opt-in AC-878 seam: try a structural repair of the malformed envelope
+      // before falling back to raw text. Default (no repair config) => the gate
+      // is never consulted and this is byte-identical to the old fallback.
+      const repaired = this.#tryRepairEnvelope(raw);
+      if (repaired !== null) {
+        try {
+          return this.#buildOutput(JSON.parse(repaired));
+        } catch {
+          // repaired string still did not parse; fall through to text fallback.
+        }
+      }
       return { text: raw.trim() };
     }
   }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  #buildOutput(data: any): AgentOutput {
+    const cost = data.total_cost_usd;
+    if (cost != null) this.#totalCost += cost;
+
+    const modelUsage = data.modelUsage ?? {};
+    const model = Object.keys(modelUsage)[0];
+
+    return {
+      text: data.result ?? "",
+      structured: data.structured_output,
+      costUsd: cost,
+      model,
+      sessionId: data.session_id,
+      metadata: {
+        durationMs: data.duration_ms,
+        durationApiMs: data.duration_api_ms,
+        numTurns: data.num_turns,
+        isError: data.is_error ?? false,
+        usage: data.usage ?? {},
+      },
+    };
+  }
+
+  #tryRepairEnvelope(raw: string): string | null {
+    return repairCliEnvelope(raw, {
+      gate: this.#config.repairGate,
+      scenario: this.#config.repairScenario,
+      emitter: this.#config.repairEmitter,
+    });
+  }
+}
+
+/**
+ * Run the opt-in AC-878 repair gate over a malformed CLI JSON envelope, returning
+ * the structurally repaired string or null. Returns null (a no-op) unless all
+ * three repair fields are present AND `repairGateActiveFor` says the gate is
+ * active for the scenario, so the default parse path stays byte-unchanged. When
+ * active it runs the gate over the raw string and emits one event per repair.
+ */
+export function repairCliEnvelope(
+  raw: string,
+  opts: {
+    gate?: RepairGateConfig;
+    scenario?: string;
+    emitter?: EventStreamEmitter;
+  },
+): string | null {
+  const { gate, scenario, emitter } = opts;
+  if (gate === undefined || scenario === undefined || emitter === undefined) return null;
+  if (!repairGateActiveFor(gate, scenario)) return null;
+  const ctx: RepairContext = { toolCallJson: raw };
+  new RepairGate(emitter).run(scenario, ctx);
+  return ctx.repairedToolCallJson ?? null;
 }
 
 export function createSessionRuntime(opts?: {

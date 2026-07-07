@@ -87,8 +87,9 @@ def test_run_emits_repair_applied_with_schema_valid_payload(tmp_path: Path) -> N
     assert len(capture.events) == 1
     event, payload = capture.events[0]
     assert event == "repair_applied"
-    # The emitted payload is the RepairResult dump and re-validates against it.
-    revalidated = RepairResult.model_validate(payload)
+    # The scenario rides alongside the RepairResult dump, which re-validates.
+    assert payload["scenario"] == "grid_ctf"
+    revalidated = RepairResult.model_validate(payload["result"])
     assert revalidated.status == "applied"
     assert revalidated.repair_name == "tool_call_json"
 
@@ -101,7 +102,8 @@ def test_run_emits_repair_skipped_for_ambiguous_input(tmp_path: Path) -> None:
 
     assert results[0].status == "skipped"
     assert [e for e, _ in capture.events] == ["repair_skipped"]
-    RepairResult.model_validate(capture.events[0][1])
+    assert capture.events[0][1]["scenario"] == "grid_ctf"
+    RepairResult.model_validate(capture.events[0][1]["result"])
 
 
 def test_run_emits_repair_skipped_for_not_applicable_absent_input(tmp_path: Path) -> None:
@@ -112,7 +114,7 @@ def test_run_emits_repair_skipped_for_not_applicable_absent_input(tmp_path: Path
 
     assert results[0].status == "not_applicable"
     assert [e for e, _ in capture.events] == ["repair_skipped"]
-    RepairResult.model_validate(capture.events[0][1])
+    RepairResult.model_validate(capture.events[0][1]["result"])
 
 
 def test_run_applies_artifact_relocation_and_emits_applied(tmp_path: Path) -> None:
@@ -132,7 +134,7 @@ def test_run_applies_artifact_relocation_and_emits_applied(tmp_path: Path) -> No
     assert results[0].status == "applied"
     assert ctx.relocation_target == "tmp/report.md"
     assert [e for e, _ in capture.events] == ["repair_applied"]
-    RepairResult.model_validate(capture.events[0][1])
+    RepairResult.model_validate(capture.events[0][1]["result"])
 
 
 def test_run_emits_one_event_per_enabled_repair(tmp_path: Path) -> None:
@@ -144,4 +146,5 @@ def test_run_emits_one_event_per_enabled_repair(tmp_path: Path) -> None:
     assert len(results) == len(DEFAULT_REPAIRS) == 3
     assert len(capture.events) == 3
     for _event, payload in capture.events:
-        RepairResult.model_validate(payload)
+        assert payload["scenario"] == "grid_ctf"
+        RepairResult.model_validate(payload["result"])

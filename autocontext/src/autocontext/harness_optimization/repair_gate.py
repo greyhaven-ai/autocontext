@@ -121,6 +121,8 @@ def finish_guard_step(ctx: RepairContext) -> RepairResult:
     )
 
 
+# loop_guard is intentionally omitted from the default set: it has no TypeScript
+# mirror yet, and the default set is kept identical across languages.
 DEFAULT_REPAIRS: tuple[RepairStep, ...] = (
     repair_tool_call_json_step,
     repair_artifact_landing_step,
@@ -142,12 +144,19 @@ class RepairGate:
     channel: str = REPAIR_CHANNEL
 
     def run(self, scenario_name: str, context: RepairContext) -> list[RepairResult]:
-        """Invoke each enabled repair over ``context``, emitting an event each."""
+        """Invoke each enabled repair over ``context``, emitting an event each.
+
+        The emitted payload is ``{"scenario": scenario_name, "result": <dump>}``:
+        the RepairResult dump stays a self-contained, schema-valid object under
+        ``result``, and the scenario rides alongside as a sibling so consumers
+        can attribute the repair without polluting the RepairResult schema.
+        """
 
         results: list[RepairResult] = []
         for repair in self.repairs:
             result = repair(context)
             event = "repair_applied" if result.status == "applied" else "repair_skipped"
-            self.emitter.emit(event, result.model_dump(mode="json"), channel=self.channel)
+            payload = {"scenario": scenario_name, "result": result.model_dump(mode="json")}
+            self.emitter.emit(event, payload, channel=self.channel)
             results.append(result)
         return results

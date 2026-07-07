@@ -24,6 +24,7 @@ fixes that cannot change task content:
 from __future__ import annotations
 
 import json
+import re
 
 from autocontext.control_plane.contract_probes._base import (
     ArtifactContractProbeInputs,
@@ -58,7 +59,11 @@ def _strip_code_fence(raw: str) -> str | None:
     stripped = raw.strip()
     if not stripped.startswith("```"):
         return None
-    lines = stripped.splitlines()
+    # Split only on \n / \r\n / \r so a fence body containing a vertical tab or
+    # U+2028 stays one line, matching the TypeScript stripCodeFence regex. Plain
+    # str.splitlines() would additionally split on the full Unicode line-boundary
+    # set and diverge from the TS mirror.
+    lines = re.split(r"\r\n|\r|\n", stripped)
     if len(lines) < 2:
         return None
     if not lines[0].startswith("```"):

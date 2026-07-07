@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file.
 - ambient trainer plan 5b: linux trl sft-trainer backend over the curated dataset, whole-run budget deadline, and charter name-collision guard
 - harness optimization protocol: candidate-evidence contract with python and typescript parity (AC-876)
 - harness optimization protocol: fresh blended promotion score with recompute-both semantics and python/typescript parity (AC-877)
+- harness optimization protocol: opt-in deterministic repair gates (artifact landing, tool-call json, finish guard, loop guard) with python/typescript parity (AC-878)
 
 ## [0.11.0] - 2026-07-02
 

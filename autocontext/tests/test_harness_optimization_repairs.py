@@ -16,6 +16,7 @@ import pytest
 from autocontext.control_plane.contract_probes._base import ArtifactContractProbeInputs
 from autocontext.harness_optimization.contract.models import RepairResult
 from autocontext.harness_optimization.repairs import (
+    _strip_code_fence,
     finish_guard,
     loop_guard,
     repair_artifact_landing,
@@ -92,6 +93,16 @@ def test_tool_call_fence_wrapping_trailing_comma_is_repaired() -> None:
     assert value is not None
     assert json.loads(value) == {"a": 1}
     _roundtrip(result)
+
+
+@pytest.mark.parametrize("sep", ["\x0b", "\u2028"])
+def test_strip_code_fence_body_is_one_line_across_unicode_separators(sep: str) -> None:
+    # A fence body containing a vertical tab (U+000B) or U+2028 LINE SEPARATOR is
+    # ONE line: Python's str.splitlines() would split on these, the TS regex
+    # (\r\n|\r|\n) does not. The narrowed split keeps both languages stripping
+    # the fence identically, preserving the body verbatim.
+    body = f"alpha{sep}beta"
+    assert _strip_code_fence(f"```\n{body}\n```") == body
 
 
 def test_tool_call_truncated_single_unclosed_object_is_closed() -> None:

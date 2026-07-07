@@ -77,7 +77,8 @@ describe("RepairGate.run", () => {
     expect(ctx.repairedToolCallJson).toBe('{"a": 1}');
     expect(captured).toHaveLength(1);
     expect(captured[0].event).toBe("repair_applied");
-    expect(validateRepairResult(captured[0].payload).valid).toBe(true);
+    expect(captured[0].payload.scenario).toBe("grid_ctf");
+    expect(validateRepairResult(captured[0].payload.result).valid).toBe(true);
   });
 
   test("emits repair_skipped for an ambiguous input", () => {
@@ -88,7 +89,8 @@ describe("RepairGate.run", () => {
 
     expect(results[0].status).toBe("skipped");
     expect(captured.map((c) => c.event)).toEqual(["repair_skipped"]);
-    expect(validateRepairResult(captured[0].payload).valid).toBe(true);
+    expect(captured[0].payload.scenario).toBe("grid_ctf");
+    expect(validateRepairResult(captured[0].payload.result).valid).toBe(true);
   });
 
   test("emits repair_skipped (not_applicable) for absent input", () => {
@@ -99,7 +101,7 @@ describe("RepairGate.run", () => {
 
     expect(results[0].status).toBe("not_applicable");
     expect(captured.map((c) => c.event)).toEqual(["repair_skipped"]);
-    expect(validateRepairResult(captured[0].payload).valid).toBe(true);
+    expect(validateRepairResult(captured[0].payload.result).valid).toBe(true);
   });
 
   test("applies artifact relocation and emits repair_applied", () => {
@@ -119,7 +121,7 @@ describe("RepairGate.run", () => {
     expect(results[0].status).toBe("applied");
     expect(ctx.relocationTarget).toBe("tmp/report.md");
     expect(captured.map((c) => c.event)).toEqual(["repair_applied"]);
-    expect(validateRepairResult(captured[0].payload).valid).toBe(true);
+    expect(validateRepairResult(captured[0].payload.result).valid).toBe(true);
   });
 
   test("emits one event per enabled repair", () => {
@@ -132,7 +134,8 @@ describe("RepairGate.run", () => {
     expect(DEFAULT_REPAIRS.length).toBe(3);
     expect(captured).toHaveLength(3);
     for (const c of captured) {
-      expect(validateRepairResult(c.payload).valid).toBe(true);
+      expect(c.payload.scenario).toBe("grid_ctf");
+      expect(validateRepairResult(c.payload.result).valid).toBe(true);
     }
   });
 });

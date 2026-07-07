@@ -164,6 +164,79 @@ const fresh = harnessPromotionScore(components, weights);
 const advances = beatsIncumbent(challengerComponents, incumbentComponents, weights, 0.05);
 ```
 
+## Repair gates (AC-878)
+
+Some harness failures are not a reasoning problem: a tool-call JSON is malformed,
+an artifact landed at the wrong path, a run claims done without meeting its
+completion conditions, or an agent is stuck repeating one no-op action. A
+**repair gate** fixes these deterministically, before the candidate is scored.
+
+A repair gate is different from the other two ways autocontext recovers a run:
+
+- A **prompt playbook** teaches the model, in natural language, how to avoid a
+  failure next time. It is advisory and its effect is probabilistic.
+- A **model retry** re-runs the model (often with feedback). It costs another
+  generation and its result is non-deterministic.
+- A **repair gate** is a pure, bounded function over recorded state. It never
+  calls a model, never reads answer hints, never touches the filesystem, and is
+  fully replayable: the same recorded state always yields the same decision. It
+  only ever applies _structural_ fixes that cannot change task content.
+
+Because a repair gate cannot invent task content, it is safe to run on every
+candidate once enabled. Each repair inspects the state it is handed, decides
+whether a known failure mode is present, and returns a schema-valid
+**RepairResult** (`status` is `applied`, `skipped`, or `not_applicable`). The
+gate owns any side effect the decision implies (recording the repaired string,
+recording a relocation target); the repairs themselves only decide.
+
+### The repairs
+
+- **tool_call_json**: restructures malformed tool-call JSON: strips a code
+  fence, drops a trailing comma before a closer, closes a single truncated
+  brace/bracket. It is string-aware and never guesses or alters a field value.
+- **artifact_landing**: detects "right content, wrong path" by matching existing
+  produced content against the expected contract, and returns the correct path as
+  a relocation target. It never fabricates artifact content.
+- **finish_guard**: rejects a done claim whose completion conditions are not met.
+  It validates completion; it never fabricates completion.
+- **loop_guard**: detects a stuck run of identical trailing actions and signals a
+  break. Python-only for now: it is intentionally omitted from the default repair
+  set so the default set stays identical across Python and TypeScript until the
+  TypeScript mirror lands.
+
+### Opt-in flags (default off)
+
+The gate is off by default and changes nothing about a default run. Two settings
+turn it on, and BOTH must agree before any repair runs:
+
+- `harness_repair_gates_enabled` (bool, default `false`): the global switch.
+- `harness_repair_gate_scenarios` (comma-separated allowlist, default empty): the
+  scenarios the gate is active for. An empty allowlist means no scenario is active
+  even when the global flag is on.
+
+`repair_gate_active_for(settings, scenario)` (Python) and
+`repairGateActiveFor(config, scenario)` (TypeScript) are the sole opt-in decision.
+Callers check it and only build and run a gate when it returns true, so with the
+flags off the wired seams are byte-unchanged no-ops. The seams wired today are the
+pre-validation `stage_repair` in the Python generation pipeline (before staged
+validation) and the malformed-envelope path in the TypeScript `ClaudeCLIRuntime`
+parse step; both are guarded by the active-for check.
+
+### Events
+
+The gate emits exactly one event per repair on the `repair` channel:
+`repair_applied` when a repair's status is `applied`, and `repair_skipped` for
+both `skipped` and `not_applicable`. The payload is `{ "scenario": <name>,
+"result": <RepairResult> }`: the RepairResult stays a self-contained, schema-valid
+object under `result`, and the scenario rides alongside as a sibling so consumers
+can attribute the repair without changing the RepairResult schema.
+
+### Deferred: artifact reassembly
+
+A fifth repair, reassembling a partially written artifact from a recorded
+tool-call trace, is deliberately deferred: it needs a recorded tool-call trace
+that the harness does not yet capture. It is a follow-up, not part of this gate.
+
 ## The contract pattern
 
 This is the foundation artifact. The later protocol artifacts follow the same
