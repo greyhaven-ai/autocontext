@@ -2,10 +2,15 @@
 
 Every trained candidate is judged on its target's held-out eval suite by the anchor model
 (the one guardrail model the charter cannot retrain), and a drift canary probes that anchor
-for position bias. Both results are written back onto the candidate's registry metadata under
+for position bias. Both results are written back onto the record's registry metadata under
 "eval" without ever changing its activation_state: this stage measures, it does not promote.
-A candidate stays a "candidate" here; promotion (which refuses a drift-flagged candidate) is a
-later slice that reads this eval block.
+
+The active incumbent is re-scored too, but only when its eval fingerprint is stale (the anchor,
+rubric, or suite changed). This is what keeps a rotated charter anchor from freezing promotion
+forever (AC-883): otherwise the incumbent's eval stays under the old anchor, never matches new
+candidates, and the promote stage refuses the cross-anchor comparison on every cycle. A record
+keeps its activation_state here; promotion (which refuses a drift-flagged candidate) is a later
+slice that reads this eval block.
 
 The scorer and drift probe are injected so CI runs deterministic fakes; the defaults build a
 real anchor-model LLMJudge and position-bias probe. In this slice the injected scorer receives
@@ -132,7 +137,13 @@ class EvaluateStage:
         processed = 0
         errors = 0
         for record in self.registry.list_all():
-            if record.activation_state != "candidate":
+            # score candidates and re-score the active incumbent. an incumbent is only actually
+            # re-evaluated when its eval fingerprint is stale (the anchor, rubric, or suite changed):
+            # the fingerprint gate below skips a still-current incumbent, so there is no churn. this
+            # is what keeps a rotated charter anchor from freezing promotion forever (AC-883): without
+            # it the incumbent's eval stays under the old anchor, never matches new candidates, and the
+            # promote stage refuses the cross-anchor comparison on every subsequent cycle.
+            if record.activation_state not in ("candidate", "active"):
                 continue
             target = self._target_for(ctx, record)
             if target is None:

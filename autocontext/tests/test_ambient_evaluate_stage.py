@@ -8,6 +8,7 @@ from typing import Any
 
 from autocontext.ambient.charter import Charter, CharterAnchor, CharterBudgets, CharterSource, CharterTarget
 from autocontext.ambient.evaluate import EvaluateStage, eval_fingerprint
+from autocontext.ambient.promote import PromoteStage
 from autocontext.ambient.queue import AmbientQueue
 from autocontext.ambient.stage import StageContext
 from autocontext.execution.bias_probes import BiasProbeResult
@@ -204,9 +205,10 @@ def test_already_evaluated_candidate_with_current_fingerprint_is_skipped(tmp_pat
     assert _events(tmp_path) == []
 
 
-def test_non_candidate_records_are_ignored(tmp_path: Path) -> None:
+def test_disabled_records_are_ignored(tmp_path: Path) -> None:
     registry = ModelRegistry(tmp_path / "registry")
-    _candidate(registry, "active-1", "competitor-local", activation_state="active")
+    # only candidate and active records are scored; a disabled/deprecated record is left alone.
+    _candidate(registry, "disabled-1", "competitor-local", activation_state="disabled")
     _seed_suite(tmp_path / "suites", "anchor-v1", [("p1", "r1")])
     charter = _charter([_target("competitor-local", "anchor-v1")])
     stage = _stage(tmp_path, registry, _FixedScorer(0.9), magnitude=0.1)
@@ -214,8 +216,49 @@ def test_non_candidate_records_are_ignored(tmp_path: Path) -> None:
     result = stage.run_once(_ctx(tmp_path, charter))
 
     assert (result.processed, result.errors) == (0, 0)
-    reloaded = registry.load("active-1")
+    reloaded = registry.load("disabled-1")
     assert reloaded is not None and "eval" not in reloaded.metadata
+
+
+def test_active_incumbent_rescored_when_anchor_changes(tmp_path: Path) -> None:
+    # AC-883: when the charter anchor rotates, the active incumbent's eval was scored under the old
+    # anchor and never matches new candidates, freezing promotion forever. the evaluate stage now
+    # re-scores the incumbent under the current anchor so candidate vs incumbent is apples-to-apples.
+    registry = ModelRegistry(tmp_path / "registry")
+    stale = {"anchor_model": "claude-old", "score": 0.4, "fingerprint": "stale-old-anchor-fp"}
+    _candidate(registry, "inc-1", "competitor-local", activation_state="active", metadata={"eval": stale})
+    _seed_suite(tmp_path / "suites", "anchor-v1", [("p1", "r1"), ("p2", "r2")])
+    charter = _charter([_target("competitor-local", "anchor-v1")])
+    stage = _stage(tmp_path, registry, _MapScorer({"p1": 0.7, "p2": 0.9}), magnitude=0.1)
+
+    result = stage.run_once(_ctx(tmp_path, charter))
+
+    assert (result.processed, result.errors) == (1, 0)
+    reloaded = registry.load("inc-1")
+    assert reloaded is not None
+    assert reloaded.activation_state == "active"  # re-scoring never changes activation state
+    eval_meta = reloaded.metadata["eval"]
+    assert eval_meta["anchor_model"] == "claude-sonnet-5"
+    assert eval_meta["score"] == 0.8
+    assert eval_meta["fingerprint"] == eval_fingerprint(charter.anchor, "anchor-v1")
+
+
+def test_active_incumbent_with_current_fingerprint_is_not_rescored(tmp_path: Path) -> None:
+    # a still-current incumbent must not be re-scored every cycle (no churn); the fingerprint gate skips it.
+    registry = ModelRegistry(tmp_path / "registry")
+    charter = _charter([_target("competitor-local", "anchor-v1")])
+    current = eval_fingerprint(charter.anchor, "anchor-v1")
+    stored = {"anchor_model": "claude-sonnet-5", "score": 0.6, "fingerprint": current}
+    _candidate(registry, "inc-1", "competitor-local", activation_state="active", metadata={"eval": stored})
+    _seed_suite(tmp_path / "suites", "anchor-v1", [("p1", "r1")])
+    stage = _stage(tmp_path, registry, _FixedScorer(0.9), magnitude=0.1)
+
+    result = stage.run_once(_ctx(tmp_path, charter))
+
+    assert (result.processed, result.errors) == (0, 0)
+    reloaded = registry.load("inc-1")
+    assert reloaded is not None and reloaded.metadata["eval"] == stored  # untouched
+    assert _events(tmp_path) == []
 
 
 def test_candidate_with_unknown_target_is_skipped_silently(tmp_path: Path) -> None:
@@ -322,7 +365,8 @@ def test_all_no_suite_run_never_probes(tmp_path: Path) -> None:
 
 def test_all_skipped_run_never_probes(tmp_path: Path) -> None:
     registry = ModelRegistry(tmp_path / "registry")
-    _candidate(registry, "active-1", "competitor-local", activation_state="active")
+    # a disabled record is never scored, so nothing is eligible and the probe provider stays unbuilt.
+    _candidate(registry, "disabled-1", "competitor-local", activation_state="disabled")
     _seed_suite(tmp_path / "suites", "anchor-v1", [("p1", "r1")])
     charter = _charter([_target("competitor-local", "anchor-v1")])
     probe = _CountingProbe(0.1)
@@ -491,3 +535,75 @@ def test_drift_probe_memoized_across_reevaluations(tmp_path: Path) -> None:
     b = registry.load("cand-b")
     assert a is not None and a.metadata["eval"]["score"] == 0.9
     assert b is not None and b.metadata["eval"]["score"] == 0.9
+
+
+def test_anchor_rotation_deadlock_is_broken_by_incumbent_reeval(tmp_path: Path) -> None:
+    # AC-883 end to end: after the charter anchor rotates, the evaluate stage re-scores the stale
+    # incumbent under the new anchor, so the promote stage sees matching anchors, compares on merits
+    # (no promote_anchor_mismatch), and a better candidate is finally promotable again.
+    registry = ModelRegistry(tmp_path / "registry")
+    # full autonomy so the promote stage auto-activates rather than parking the winner for approval.
+    charter = Charter(
+        tier="oss",
+        autonomy="full",  # type: ignore[arg-type]
+        sources=[CharterSource(name="native", kind="autocontext")],
+        targets=[_target("competitor-local", "anchor-v1")],
+        budgets=CharterBudgets(gpu_hours_per_window=10.0, window_hours=24, disk_quota_gb=1.0),
+        anchor=CharterAnchor(provider="anthropic", model="claude-sonnet-5", rubric="Score 0 to 1."),
+    )
+    current_fp = eval_fingerprint(charter.anchor, "anchor-v1")
+    # incumbent scored under the OLD anchor (stale fingerprint) -> re-scored to 0.8 under the new one.
+    _candidate(
+        registry,
+        "inc-1",
+        "competitor-local",
+        activation_state="active",
+        metadata={
+            "eval": {
+                "anchor_model": "claude-old",
+                "score": 0.6,
+                "fingerprint": "old-anchor-fp",
+                "from_candidate_generation": True,
+                "drift_ok": True,
+            }
+        },
+    )
+    # candidate already scored under the CURRENT anchor -> evaluate skips it, keeping its 0.9.
+    _candidate(
+        registry,
+        "cand-1",
+        "competitor-local",
+        metadata={
+            "eval": {
+                "anchor_model": "claude-sonnet-5",
+                "score": 0.9,
+                "fingerprint": current_fp,
+                "from_candidate_generation": True,
+                "drift_ok": True,
+            }
+        },
+    )
+    _seed_suite(tmp_path / "suites", "anchor-v1", [("p1", "r1")])
+
+    evaluate = EvaluateStage(
+        name="evaluate",
+        registry=registry,
+        suites_dir=tmp_path / "suites",
+        judge_factory=lambda anchor: _FixedScorer(0.8),
+        probe_fn=_probe(0.1),
+        now_fn=lambda: _NOW,
+        scores_candidate_generation=True,
+    )
+    evaluate.run_once(_ctx(tmp_path, charter))
+
+    reanchored = registry.load("inc-1")
+    assert reanchored is not None
+    assert reanchored.metadata["eval"]["anchor_model"] == "claude-sonnet-5"  # re-scored under new anchor
+
+    PromoteStage(name="promote", registry=registry, now_fn=lambda: _NOW).run_once(_ctx(tmp_path, charter))
+
+    promoted = registry.load("cand-1")
+    incumbent = registry.load("inc-1")
+    assert promoted is not None and promoted.activation_state == "active"  # 0.9 beat the re-scored 0.8
+    assert incumbent is not None and incumbent.activation_state == "disabled"
+    assert not any(e["event"] == "promote_anchor_mismatch" for e in _events(tmp_path))
