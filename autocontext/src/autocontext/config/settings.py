@@ -593,6 +593,10 @@ class AppSettings(BaseModel):
     architect_base_url: str = Field(default="", description="Base URL override for architect role")
     # MLX local model inference (AC-182)
     mlx_model_path: str = Field(default="", description="Path to trained MLX model checkpoint directory")
+    ambient_serving_manifest_path: Path | None = Field(
+        default=None,
+        description="Ambient per-role serving manifest; when set, promote writes it and the serving resolver reads it (AC-893)",
+    )
     mlx_temperature: float = Field(default=0.8, ge=0.0, le=2.0, description="Sampling temperature for MLX model")
     mlx_max_tokens: int = Field(default=512, ge=1, description="Max generation tokens for MLX model")
     # OpenClaw agent adapter (AC-193)

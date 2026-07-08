@@ -95,5 +95,7 @@ def build_stages(
         generate_fn=generate_fn,
         generation_config_id=gen_config_id,
     )
-    stages["promote"] = PromoteStage(name="promote", registry=registry)
+    stages["promote"] = PromoteStage(
+        name="promote", registry=registry, serving_manifest_path=settings.ambient_serving_manifest_path
+    )
     return stages

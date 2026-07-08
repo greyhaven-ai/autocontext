@@ -326,3 +326,67 @@ def test_no_candidates_is_quiet(tmp_path: Path) -> None:
 
     assert (result.processed, result.errors) == (0, 0)
     assert _events(tmp_path) == []
+
+
+# --- serving manifest bridge (AC-893) ----------------------------------------------------------
+
+
+def _scoped_target(name: str, selector: str) -> CharterTarget:
+    return CharterTarget(
+        name=name,
+        kind="role",
+        selector=selector,
+        base_model="tiny",
+        min_dataset_records=5,
+        eval_suite="anchor-v1",
+    )
+
+
+def test_promote_writes_serving_manifest_for_scoped_selector(tmp_path: Path) -> None:
+    from autocontext.ambient.serving_manifest import lookup_serving_entry
+
+    registry = ModelRegistry(tmp_path / "registry")
+    _record(registry, "cand-1", "competitor-local", state="candidate", eval_meta=_eval(0.8))
+    charter = _charter([_scoped_target("competitor-local", "competitor@grid_ctf")])
+    manifest_path = tmp_path / "serving.json"
+    stage = PromoteStage(name="promote", registry=registry, now_fn=lambda: _NOW, serving_manifest_path=manifest_path)
+
+    result = stage.run_once(_ctx(tmp_path, charter))
+
+    assert (result.processed, result.errors) == (1, 0)
+    entry = lookup_serving_entry(manifest_path, scenario="grid_ctf", role="competitor")
+    assert entry == {"target_name": "competitor-local", "artifact_id": "cand-1", "backend": "mlx"}
+
+
+def test_promote_writes_bare_selector_under_wildcard(tmp_path: Path) -> None:
+    from autocontext.ambient.serving_manifest import lookup_serving_entry
+
+    registry = ModelRegistry(tmp_path / "registry")
+    _record(registry, "cand-1", "competitor-local", state="candidate", eval_meta=_eval(0.8))
+    charter = _charter([_scoped_target("competitor-local", "competitor")])
+    manifest_path = tmp_path / "serving.json"
+    stage = PromoteStage(name="promote", registry=registry, now_fn=lambda: _NOW, serving_manifest_path=manifest_path)
+
+    result = stage.run_once(_ctx(tmp_path, charter))
+
+    assert (result.processed, result.errors) == (1, 0)
+    # a bare-role selector serves every scenario, so it lands in the "*" bucket and answers for any.
+    entry = lookup_serving_entry(manifest_path, scenario="othello", role="competitor")
+    assert entry == {"target_name": "competitor-local", "artifact_id": "cand-1", "backend": "mlx"}
+
+
+def test_promote_default_none_writes_no_manifest(tmp_path: Path) -> None:
+    registry = ModelRegistry(tmp_path / "registry")
+    _record(registry, "cand-1", "competitor-local", state="candidate", eval_meta=_eval(0.8))
+    charter = _charter([_scoped_target("competitor-local", "competitor@grid_ctf")])
+    manifest_path = tmp_path / "serving.json"
+    # default serving_manifest_path is None: promote must not write the manifest.
+    stage = PromoteStage(name="promote", registry=registry, now_fn=lambda: _NOW)
+
+    result = stage.run_once(_ctx(tmp_path, charter))
+
+    # existing promote behavior is unchanged and nothing is written.
+    assert (result.processed, result.errors) == (1, 0)
+    promoted = registry.load("cand-1")
+    assert promoted is not None and promoted.activation_state == "active"
+    assert not manifest_path.exists()
