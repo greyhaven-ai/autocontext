@@ -57,9 +57,9 @@ export interface CalibrationReport {
    */
   current_min_delta: number;
   /**
-   * Whether the current margin sits above or below the noise floor.
+   * Margin vs the noise floor: above_noise, below_noise, or insufficient_data when n<2 gives no variance estimate.
    */
-  margin_vs_noise: "above_noise" | "below_noise";
+  margin_vs_noise: "above_noise" | "below_noise" | "insufficient_data";
   /**
    * True when the sparse metric is too noisy to gate on.
    */

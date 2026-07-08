@@ -2,7 +2,13 @@
   "cases": [
     {
       "name": "low_noise",
-      "scores": [0.8, 0.82, 0.79, 0.81, 0.8],
+      "scores": [
+        0.8,
+        0.82,
+        0.79,
+        0.81,
+        0.8
+      ],
       "scenario_id": "grid_ctf",
       "current_min_delta": 0.05,
       "max_trials": 10,
@@ -22,7 +28,14 @@
     },
     {
       "name": "high_noise",
-      "scores": [0.2, 0.9, 0.4, 0.95, 0.1, 0.85],
+      "scores": [
+        0.2,
+        0.9,
+        0.4,
+        0.95,
+        0.1,
+        0.85
+      ],
       "scenario_id": "othello",
       "current_min_delta": 0.02,
       "max_trials": 5,
@@ -42,7 +55,9 @@
     },
     {
       "name": "single",
-      "scores": [0.7],
+      "scores": [
+        0.7
+      ],
       "scenario_id": "grid_ctf",
       "current_min_delta": 0.05,
       "max_trials": 8,
@@ -54,7 +69,7 @@
         "standard_error": 0.0,
         "recommended_min_delta": 0.0,
         "recommended_trial_count": 8,
-        "margin_vs_noise": "above_noise",
+        "margin_vs_noise": "insufficient_data",
         "sparse_metric_too_noisy": false
       }
     },
@@ -72,7 +87,7 @@
         "standard_error": 0.0,
         "recommended_min_delta": 0.0,
         "recommended_trial_count": 8,
-        "margin_vs_noise": "above_noise",
+        "margin_vs_noise": "insufficient_data",
         "sparse_metric_too_noisy": false
       }
     }

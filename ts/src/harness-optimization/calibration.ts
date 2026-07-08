@@ -53,8 +53,15 @@ export function computeCalibration(
   }
   const recommendedTrialCount = Math.max(1, Math.min(k, maxTrials));
 
-  const marginVsNoise: "above_noise" | "below_noise" =
-    opts.currentMinDelta >= recommendedMinDelta ? "above_noise" : "below_noise";
+  // With fewer than 2 samples there is no variance estimate (standardError and recommendedMinDelta
+  // are 0), so any positive currentMinDelta would look "above_noise". Report insufficient_data
+  // instead, so calibration never falsely reassures that the margin cleared noise.
+  const marginVsNoise: "above_noise" | "below_noise" | "insufficient_data" =
+    n < 2
+      ? "insufficient_data"
+      : opts.currentMinDelta >= recommendedMinDelta
+        ? "above_noise"
+        : "below_noise";
 
   let sparseMetricTooNoisy: boolean;
   if (Math.abs(mean) > 0) {

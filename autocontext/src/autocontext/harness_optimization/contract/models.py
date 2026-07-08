@@ -617,9 +617,9 @@ class CalibrationReport(BaseModel):
         float, Field(description='The promotion margin currently configured.')
     ]
     margin_vs_noise: Annotated[
-        Literal['above_noise', 'below_noise'],
+        Literal['above_noise', 'below_noise', 'insufficient_data'],
         Field(
-            description='Whether the current margin sits above or below the noise floor.'
+            description='Margin vs the noise floor: above_noise, below_noise, or insufficient_data when n<2 gives no variance estimate.'
         ),
     ]
     sparse_metric_too_noisy: Annotated[
