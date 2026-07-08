@@ -96,12 +96,13 @@ class PromoteStage:
         # persist the probation marker while best is still a candidate; activate flips it to active
         # and demotes the incumbent to disabled, kept warm as the rollback target.
         self.registry.register(best)
-        self.registry.activate(best.artifact_id)
 
         if self.serving_manifest_path is not None:
             # the registry slots the ambient record under the target name (AC-884), but generation
             # resolves by the real scenario, so record the (scenario, role) -> target bridge. A bare
-            # role selector serves every scenario, held under the "*" bucket.
+            # role selector serves every scenario, held under the "*" bucket. Write the bridge BEFORE
+            # flipping the record active: a manifest-write failure then leaves the candidate
+            # un-activated (retried next cycle) rather than active-but-unrouted with no bridge.
             role, scenario = split_role_selector(target.selector)
             write_serving_entry(
                 self.serving_manifest_path,
@@ -111,6 +112,8 @@ class PromoteStage:
                 artifact_id=best.artifact_id,
                 backend=best.backend,
             )
+
+        self.registry.activate(best.artifact_id)
 
         ctx.emitter.emit(
             "promote_activated",

@@ -86,8 +86,9 @@ def test_manifest_hit_resolves_ambient_record_by_target_name(monkeypatch: pytest
     assert client.provider_name == "mlx:competitor"
     # the ambient bridge resolved by the target name, not the real scenario.
     assert queried == ["competitor-local"]
-    # and the built client is cached.
-    assert orch._routed_clients[("mlx", None, "grid_ctf", "competitor")] is client
+    # and the built client is cached under a key that includes the served model id (the ambient
+    # checkpoint), so a later route to a different model does not return this stale client.
+    assert orch._routed_clients[("mlx", None, "/ckpt/amb-1", "grid_ctf", "competitor")] is client
 
 
 def test_no_manifest_path_falls_back_to_scenario_keyed(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -149,3 +150,45 @@ def test_manifest_miss_for_role_falls_back_to_scenario_keyed(monkeypatch: pytest
     assert isinstance(client, _FakeClient) and client.tag == "local"
     # no ambient target-name lookup (role missed); only the real scenario was queried.
     assert queried == ["grid_ctf"]
+
+
+def test_route_change_serves_new_model_not_stale_cached_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    # AC-893 review P2-2: two full checkpoints for the same (scenario, role) must not collide in the
+    # routed-client cache. A fallback client is served first; once the manifest routes the role to a
+    # different ambient checkpoint, the resolver must serve the NEW model, not the cached fallback.
+    import autocontext.training.model_registry as mr
+
+    manifest_path = tmp_path / "serving.json"
+
+    def fake_resolve(registry: Any, *, scenario: str, backend: str, runtime_type: str) -> Any:
+        # ambient target-name slot resolves to /ckpt/ambient; the real scenario resolves to /ckpt/local.
+        if scenario == "competitor-local":
+            return _record("competitor-local", "ambient")
+        return _record(scenario, "local") if backend == "opd" else None
+
+    # each build tags the client with the plan's served model so we can tell them apart.
+    monkeypatch.setattr(mr, "resolve_model", fake_resolve)
+    monkeypatch.setattr(mr, "ModelRegistry", lambda root: object())
+    monkeypatch.setattr(sbc, "build_planned_client", lambda plan, settings: _FakeClient(plan.model))
+
+    settings = AppSettings(
+        agent_provider="mlx", mlx_model_path="", knowledge_root=tmp_path, ambient_serving_manifest_path=manifest_path
+    )
+    orch = _FakeOrch(settings)
+
+    # 1) no manifest entry yet -> fallback resolves by real scenario -> /ckpt/local.
+    first = sbc.scenario_bound_mlx_client(orch, "competitor", scenario_name="grid_ctf")
+    assert isinstance(first, _FakeClient) and first.tag == "/ckpt/local"
+
+    # 2) manifest now routes the role to the ambient target -> /ckpt/ambient (a DIFFERENT full checkpoint).
+    write_serving_entry(
+        manifest_path,
+        scenario="grid_ctf",
+        role="competitor",
+        target_name="competitor-local",
+        artifact_id="ambient",
+        backend="mlx",
+    )
+    second = sbc.scenario_bound_mlx_client(orch, "competitor", scenario_name="grid_ctf")
+    assert isinstance(second, _FakeClient) and second.tag == "/ckpt/ambient"  # NOT the stale /ckpt/local
+    assert second is not first

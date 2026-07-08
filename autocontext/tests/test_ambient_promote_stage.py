@@ -390,3 +390,25 @@ def test_promote_default_none_writes_no_manifest(tmp_path: Path) -> None:
     promoted = registry.load("cand-1")
     assert promoted is not None and promoted.activation_state == "active"
     assert not manifest_path.exists()
+
+
+def test_promote_does_not_activate_when_manifest_write_fails(monkeypatch: Any, tmp_path: Path) -> None:
+    # AC-893 review P2-1: the routing bridge is written BEFORE activation, so a manifest-write
+    # failure leaves the candidate un-activated (retried next cycle) rather than active-but-unrouted.
+    import autocontext.ambient.promote as promote_mod
+
+    registry = ModelRegistry(tmp_path / "registry")
+    _record(registry, "cand-1", "competitor-local", state="candidate", eval_meta=_eval(0.8))
+    charter = _charter([_scoped_target("competitor-local", "competitor@grid_ctf")])
+
+    def boom(*args: Any, **kwargs: Any) -> None:
+        raise OSError("manifest disk full")
+
+    monkeypatch.setattr(promote_mod, "write_serving_entry", boom)
+    stage = PromoteStage(name="promote", registry=registry, now_fn=lambda: _NOW, serving_manifest_path=tmp_path / "serving.json")
+
+    result = stage.run_once(_ctx(tmp_path, charter))
+
+    assert (result.processed, result.errors) == (0, 1)  # the write failure surfaced as a target error
+    reloaded = registry.load("cand-1")
+    assert reloaded is not None and reloaded.activation_state == "candidate"  # NOT activated

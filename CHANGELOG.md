@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Ambient per-role live-serving bridge (opt-in, AC-893): the promote stage writes a serving manifest mapping (real scenario, role) to the promoted ambient target, and the serving resolver reads it so a promoted model reaches its role in a live run (ambient candidates are slotted by target name, but generation resolves by real scenario). Off by default; enable by pointing BOTH the ambient daemon and the generation-loop process at one shared file via `AUTOCONTEXT_AMBIENT_SERVING_MANIFEST_PATH`.
 - `autoctx ambient` foundation: a charter-driven resident daemon skeleton (interview wizard, autonomy dial with guardrail floors, durable stage queue, five stages with auto-pause breakers, status/run/once cli). Stages are no-ops pending the ingest, curation, and training plans (docs/ambient-trainer-design.md).
 - The ambient ingest stage is live: charter-enabled sources (autocontext-native runs, jsonl trace feeds) flow through the redaction gate into an append-only trace store with per-source cursors and disk-quota retention; the llm proxy tap follows in the next slice.
 - ambient trainer plan 3: curate and advise stages (agent-output ingestion, guarded per-target datasets, heuristic charter proposals, proposal approval cli)

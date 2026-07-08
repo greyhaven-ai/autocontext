@@ -167,9 +167,12 @@ def scenario_bound_mlx_client(orch: AgentOrchestrator, role: str, *, scenario_na
     while ``mlxlm`` / ``opd`` adapters rebuild ``MLXLMClient(base, adapter, score_conditioned=...)``.
     Returns ``None`` when nothing is resolvable, so the caller falls back to the default client.
     """
-    key: tuple[str, str | None, str, str]
+    # The served model id is part of the cache key: the serving manifest (AC-893) can route the same
+    # (scenario, role) to different full checkpoints over time (e.g. a fallback vs an ambient model),
+    # so a key without the model would keep serving the stale cached client.
+    key: tuple[str, str | None, str, str, str]
     if orch.settings.mlx_model_path:
-        key = ("mlx", None, scenario_name, role)
+        key = ("mlx", None, orch.settings.mlx_model_path, scenario_name, role)
         cached = orch._routed_clients.get(key)
         if cached is not None:
             return cached
@@ -189,7 +192,7 @@ def scenario_bound_mlx_client(orch: AgentOrchestrator, role: str, *, scenario_na
     if plan is None:
         return None
 
-    key = (plan.kind, plan.adapter_path, scenario_name, role)
+    key = (plan.kind, plan.adapter_path, plan.model, scenario_name, role)
     cached = orch._routed_clients.get(key)
     if cached is not None:
         return cached

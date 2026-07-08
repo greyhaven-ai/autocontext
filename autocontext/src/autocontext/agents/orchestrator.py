@@ -150,7 +150,10 @@ class AgentOrchestrator:
         self.settings = settings
         self._artifacts = artifacts
         self._harness_coverage_cache: dict[str, HarnessCoverage | None] = {}
-        self._routed_clients: dict[tuple[str, str | None, str | None, str | None], LanguageModelClient] = {}
+        # Keyed by a routing tuple whose shape varies by resolver (role-provider routing uses
+        # (provider, model, scenario, role); the mlx/ambient path adds the served model id, AC-893),
+        # so the key is a variable-length tuple of optional strings.
+        self._routed_clients: dict[tuple[str | None, ...], LanguageModelClient] = {}
         self._disposable_client_ids: set[int] = set()
         runtime = SubagentRuntime(client=self.client)
         self.competitor = CompetitorRunner(runtime, settings.model_competitor)
