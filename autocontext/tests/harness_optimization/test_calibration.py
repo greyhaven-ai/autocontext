@@ -123,3 +123,17 @@ def test_cite_margin_vs_noise_format() -> None:
     assert citation == (
         f"margin {report.current_min_delta:.6f} is {report.margin_vs_noise} (recommended >= {report.recommended_min_delta:.6f})"
     )
+
+
+def test_under_sampled_series_is_insufficient_data_not_above_noise() -> None:
+    # AC-881 review: with n < 2 there is no variance estimate, so a positive current_min_delta must
+    # NOT be reported as "above_noise" (which would falsely reassure the operator that the margin
+    # cleared noise). Both n=1 and n=0 report insufficient_data.
+    one = compute_calibration([0.9], scenario_id="s", current_min_delta=0.05, max_trials=8)
+    assert one.margin_vs_noise == "insufficient_data"
+    assert one.standard_error == 0.0
+    none = compute_calibration([], scenario_id="s", current_min_delta=0.05, max_trials=8)
+    assert none.margin_vs_noise == "insufficient_data"
+    # a well-sampled series still classifies normally
+    many = compute_calibration([0.80, 0.81, 0.79, 0.80, 0.82], scenario_id="s", current_min_delta=0.5, max_trials=8)
+    assert many.margin_vs_noise in ("above_noise", "below_noise")

@@ -70,8 +70,12 @@
     },
     "margin_vs_noise": {
       "type": "string",
-      "enum": ["above_noise", "below_noise"],
-      "description": "Whether the current margin sits above or below the noise floor."
+      "enum": [
+        "above_noise",
+        "below_noise",
+        "insufficient_data"
+      ],
+      "description": "Margin vs noise floor: above_noise, below_noise, or insufficient_data (n<2 = no variance estimate)."
     },
     "sparse_metric_too_noisy": {
       "type": "boolean",

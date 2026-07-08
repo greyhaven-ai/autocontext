@@ -52,9 +52,14 @@ def compute_calibration(
         k = max_trials
     recommended_trial_count = max(1, min(k, max_trials))
 
-    margin_vs_noise: Literal["above_noise", "below_noise"] = (
-        "above_noise" if current_min_delta >= recommended_min_delta else "below_noise"
-    )
+    # With fewer than 2 samples there is no variance estimate: standard_error and
+    # recommended_min_delta are 0, so any positive current_min_delta would look "above_noise". Report
+    # insufficient_data instead, so calibration never falsely reassures that the margin cleared noise.
+    margin_vs_noise: Literal["above_noise", "below_noise", "insufficient_data"]
+    if n < 2:
+        margin_vs_noise = "insufficient_data"
+    else:
+        margin_vs_noise = "above_noise" if current_min_delta >= recommended_min_delta else "below_noise"
 
     if abs(mean) > 0:
         sparse_metric_too_noisy = standard_error / abs(mean) > noisy_cv_threshold
