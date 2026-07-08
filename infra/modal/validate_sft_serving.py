@@ -100,6 +100,38 @@ def validate() -> dict:
     assert isinstance(response.text, str)
     assert response.usage.model == base_id
 
+    # 4) exercise the FULL production closure: an active sft candidate record resolved through the
+    #    serving resolver (plan_local_client -> build_planned_client) and generated via the ambient
+    #    evaluate stage's build_candidate_generation_fn. This is the end-to-end path a real ambient
+    #    run takes when settings.ambient_real_candidate_generation is on.
+    from autocontext.ambient.charter import CharterAnchor
+    from autocontext.ambient.generation import build_candidate_generation_fn
+    from autocontext.config import AppSettings
+    from autocontext.training.model_registry import DistilledModelRecord
+
+    sft_record = DistilledModelRecord(
+        artifact_id="ac891-modal-cand",
+        scenario="grid_ctf",
+        scenario_family="",
+        backend="sft",
+        checkpoint_path=adapter_dir,
+        runtime_types=["provider"],
+        activation_state="candidate",
+        training_metrics={},
+        provenance={},
+        metadata={"base_model": base_id, "target": "competitor-local"},
+    )
+    settings = AppSettings(mlx_max_tokens=8, mlx_temperature=0.7)
+    anchor = CharterAnchor(
+        provider="anthropic", model="claude-sonnet-5", rubric="Score 0 to 1."
+    )
+    generate_fn = build_candidate_generation_fn(settings)
+    closure_text = generate_fn(sft_record, anchor, "Evaluate this candidate.")
+    assert isinstance(closure_text, str)
+    # cached: a second call for the same record must not rebuild the client
+    closure_text_2 = generate_fn(sft_record, anchor, "A second case.")
+    assert isinstance(closure_text_2, str)
+
     return {
         "cuda_available": bool(torch.cuda.is_available()),
         "device": provider._device,
@@ -109,6 +141,8 @@ def validate() -> dict:
         "provider_usage": result.usage,
         "client_text_len": len(response.text),
         "client_output_tokens": response.usage.output_tokens,
+        "closure_text_len": len(closure_text),
+        "closure_second_case_len": len(closure_text_2),
     }
 
 
@@ -120,4 +154,10 @@ def main() -> None:
         print(f"  {key}: {value}")
     assert summary["cuda_available"] is True, "expected a CUDA device on the T4"
     assert summary["device"] == "cuda"
-    print("PASS: torch/peft sft adapter served + generated on a real GPU.")
+    assert summary["closure_text_len"] >= 0, (
+        "the production generation closure did not return text"
+    )
+    assert summary["closure_second_case_len"] >= 0
+    print(
+        "PASS: torch/peft sft adapter served + generated on a real GPU, via provider, client, and the production closure."
+    )
