@@ -40,7 +40,20 @@ agent-sdk = ["claude-agent-sdk>=0.1.0"]
 monty = ["pydantic-monty>=0.0.7"]
 mlx = ["mlx>=0.30.0", "rustbpe>=0.1.0", "tiktoken>=0.11.0", "safetensors>=0.4.0", "numpy>=1.24.0"]
 mlxlm = ["mlx-lm>=0.20.0"]
-cuda = ["torch>=2.0.0"]
+# The linux/cuda path for sft: BOTH the TRL SFT training backend (_SFT_RUNTIME_DEPS in
+# training/autoresearch/sft_backend.py) and the torch/peft serving provider
+# (providers/sft_torch_provider.py) need this full stack, so autocontext[cuda] installs it all.
+# Previously only torch was here, so autocontext[cuda] hit ModuleNotFoundError on transformers/peft
+# and silently fell back to the frontier client.
+cuda = [
+    "torch>=2.0.0",
+    "transformers>=4.40.0",
+    "peft>=0.10.0",
+    "accelerate>=0.29.0",
+    "trl>=0.9.0",
+    "datasets>=2.18.0",
+    "safetensors>=0.4.0",
+]
 openai = ["openai>=1.0.0"]
 all = ["autocontext[mcp,agent-sdk,monty,openai,browser,primeintellect]"]
 
