@@ -33,12 +33,22 @@ _UNTRUSTED_GUARDRAIL = (
 )
 
 
+def _defang_untrusted(content: str) -> str:
+    """Neutralise forged fence markers so attacker text cannot close our region early."""
+    return content.replace(_UNTRUSTED_BEGIN, "(begin untrusted reference").replace(_UNTRUSTED_END, "(end untrusted reference")
+
+
 def _fence_untrusted(label: str, content: str) -> str:
     """Wrap attacker-influenceable text so an embedded 'ignore previous
     instructions' reads as data, not a directive. Any forged fence markers in
     the content are defanged so they cannot close our region early."""
-    safe = content.replace(_UNTRUSTED_BEGIN, "(begin untrusted reference").replace(_UNTRUSTED_END, "(end untrusted reference")
-    return f"{_UNTRUSTED_BEGIN}: {label}]\n{safe}\n{_UNTRUSTED_END}: {label}]"
+    return f"{_UNTRUSTED_BEGIN}: {label}]\n{_defang_untrusted(content)}\n{_UNTRUSTED_END}: {label}]"
+
+
+# Context components whose value is fenced (and therefore defanged) before it reaches the
+# prompt. The context-selection audit must normalise these the same way, or a component
+# carrying a forged fence marker reads as "not selected" when it was in fact displayed.
+_FENCED_COMPONENT_KEYS = frozenset({"playbook", "hints", "dead_ends"})
 
 
 @dataclass(frozen=True)
@@ -72,7 +82,17 @@ def _selected_context_components(
     roles: Mapping[str, str],
 ) -> dict[str, str]:
     role_text = "\n\n".join(roles.values())
-    return {key: value for key, value in components.items() if isinstance(value, str) and value.strip() and value in role_text}
+    selected: dict[str, str] = {}
+    for key, value in components.items():
+        if not isinstance(value, str) or not value.strip():
+            continue
+        # fenced components are defanged before emission, so match the displayed (defanged)
+        # form against the prompt; otherwise a forged fence marker in the value would make an
+        # emitted component read as "not selected".
+        probe = _defang_untrusted(value) if key in _FENCED_COMPONENT_KEYS else value
+        if probe in role_text:
+            selected[key] = value
+    return selected
 
 
 # Analyst/architect constraint bullets shared with rlm/prompts.py — keep in sync
