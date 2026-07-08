@@ -26,6 +26,7 @@ from autocontext.ambient.serving import resolve_active_serving
 from autocontext.ambient.stage import STAGE_NAMES, StageContext
 from autocontext.ambient.stage_factory import build_stages
 from autocontext.ambient.training_backend import TrainOutcome
+from autocontext.config.settings import AppSettings
 from autocontext.execution.bias_probes import BiasProbeResult
 from autocontext.harness.core.events import EventStreamEmitter
 from autocontext.training.model_registry import ModelRegistry
@@ -173,6 +174,7 @@ def test_miniature_ingest_through_serving(tmp_path: Path, monkeypatch: Any) -> N
         artifacts_dir=tmp_path / "artifacts",
         checkpoints_dir=tmp_path / "checkpoints",
         suites_dir=tmp_path / "suites",
+        settings=AppSettings(),
     )
     # the train stage's now_fn is left at default (real clock); its budget gate compares hours, not
     # timestamps, so it stays deterministic. only evaluate needs a fixed clock for its eval block.

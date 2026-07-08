@@ -25,7 +25,7 @@ import time
 from pathlib import Path
 
 from autocontext.agents.llm_client import MLXLMClient
-from autocontext.agents.scenario_bound_clients import _build_planned_client, _resolve_local_record, plan_local_client
+from autocontext.agents.scenario_bound_clients import build_planned_client, _resolve_local_record, plan_local_client
 from autocontext.config.settings import AppSettings
 from autocontext.scenarios import SCENARIO_REGISTRY
 from autocontext.training.autoresearch.mlxlm_backend import (
@@ -187,7 +187,7 @@ def main() -> None:
 
         # --- run N+1: the auto-served adapter is the agent -----------------------------------
         banner("RUN N+1 — the auto-resolved served adapter proposes strategies")
-        served_client = _build_planned_client(plan, settings)  # the bridge's real client construction
+        served_client = build_planned_client(plan, settings)  # the bridge's real client construction
         after = measure(served_client, scenario, task_prompt, n=N_SAMPLES)
         print_measure("served adapter", after)
 

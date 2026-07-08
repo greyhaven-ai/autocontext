@@ -103,6 +103,10 @@ class Charter(BaseModel):
     budgets: CharterBudgets
     guardrails: GuardrailConfig = Field(default_factory=GuardrailConfig)
     anchor: CharterAnchor = Field(default_factory=CharterAnchor)
+    # When True the evaluate stage scores each candidate's real model generation (which is what makes
+    # it promotable); when False it scores the placeholder reference text. This is a policy decision,
+    # so it lives in the charter (the only policy input) rather than an env/settings behavior flag.
+    real_candidate_generation: bool = False
 
     @model_validator(mode="after")
     def _full_box_requires_hosted(self) -> Charter:

@@ -51,8 +51,11 @@ def _daemon(
     checkpoints_dir: Path,
     suites_dir: Path,
 ) -> AmbientDaemon:
+    from autocontext.config import load_settings
+
     charter = load_charter(charter_path)
     emitter = EventStreamEmitter(events_path)
+    settings = load_settings()
     stages = build_stages(
         charter,
         db_path=db_path,
@@ -65,6 +68,7 @@ def _daemon(
         artifacts_dir=artifacts_dir,
         checkpoints_dir=checkpoints_dir,
         suites_dir=suites_dir,
+        settings=settings,
     )
     return AmbientDaemon(
         charter=charter,
