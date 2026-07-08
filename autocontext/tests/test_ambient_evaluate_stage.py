@@ -551,7 +551,9 @@ def test_anchor_rotation_deadlock_is_broken_by_incumbent_reeval(tmp_path: Path) 
         budgets=CharterBudgets(gpu_hours_per_window=10.0, window_hours=24, disk_quota_gb=1.0),
         anchor=CharterAnchor(provider="anthropic", model="claude-sonnet-5", rubric="Score 0 to 1."),
     )
-    current_fp = eval_fingerprint(charter.anchor, "anchor-v1")
+    # the stage below runs in real-generation mode (scores_candidate_generation=True), so the
+    # candidate's already-current fingerprint must carry that same mode to be correctly skipped.
+    current_fp = eval_fingerprint(charter.anchor, "anchor-v1", True)
     # incumbent scored under the OLD anchor (stale fingerprint) -> re-scored to 0.8 under the new one.
     _candidate(
         registry,
@@ -607,3 +609,82 @@ def test_anchor_rotation_deadlock_is_broken_by_incumbent_reeval(tmp_path: Path) 
     assert promoted is not None and promoted.activation_state == "active"  # 0.9 beat the re-scored 0.8
     assert incumbent is not None and incumbent.activation_state == "disabled"
     assert not any(e["event"] == "promote_anchor_mismatch" for e in _events(tmp_path))
+
+
+class _RecordingScorer:
+    """A scorer that records the (prompt, output) pairs it judged, to prove WHAT was scored."""
+
+    def __init__(self, value: float) -> None:
+        self.value = value
+        self.seen: list[tuple[str, str]] = []
+
+    def score(self, prompt: str, output: str) -> float:
+        self.seen.append((prompt, output))
+        return self.value
+
+
+def test_generate_fn_scores_real_candidate_generation_not_reference(tmp_path: Path) -> None:
+    # AC-891: with a generate_fn wired, the scorer judges the candidate's real generation (not the
+    # placeholder reference), and the eval is stamped from_candidate_generation True (promotable).
+    registry = ModelRegistry(tmp_path / "registry")
+    _candidate(registry, "cand-1", "competitor-local")
+    _seed_suite(tmp_path / "suites", "anchor-v1", [("p1", "REFERENCE-TEXT")])
+    charter = _charter([_target("competitor-local", "anchor-v1")])
+    scorer = _RecordingScorer(0.7)
+    gen_calls: list[tuple[str, str, str]] = []
+
+    def fake_generate(record: DistilledModelRecord, anchor: CharterAnchor, prompt: str) -> str:
+        gen_calls.append((record.artifact_id, anchor.model, prompt))
+        return f"GENERATED::{prompt}"
+
+    stage = EvaluateStage(
+        name="evaluate",
+        registry=registry,
+        suites_dir=tmp_path / "suites",
+        judge_factory=lambda anchor: scorer,
+        probe_fn=_probe(0.1),
+        now_fn=lambda: _NOW,
+        generate_fn=fake_generate,
+    )
+
+    result = stage.run_once(_ctx(tmp_path, charter))
+
+    assert (result.processed, result.errors) == (1, 0)
+    assert gen_calls == [("cand-1", "claude-sonnet-5", "p1")]
+    assert scorer.seen == [("p1", "GENERATED::p1")]  # the generation was scored, NOT "REFERENCE-TEXT"
+    eval_meta = registry.load("cand-1").metadata["eval"]  # type: ignore[union-attr]
+    assert eval_meta["score"] == 0.7
+    assert eval_meta["from_candidate_generation"] is True
+    assert eval_meta["fingerprint"] == eval_fingerprint(charter.anchor, "anchor-v1", True)
+
+
+def test_wiring_real_generation_retriggers_a_placeholder_scored_candidate(tmp_path: Path) -> None:
+    # AC-891 fingerprint fix: a candidate scored in placeholder mode is re-evaluated once real
+    # generation is wired, even though the anchor and suite are unchanged.
+    registry = ModelRegistry(tmp_path / "registry")
+    charter = _charter([_target("competitor-local", "anchor-v1")])
+    placeholder_fp = eval_fingerprint(charter.anchor, "anchor-v1")  # scg=False (placeholder mode)
+    _candidate(
+        registry,
+        "cand-1",
+        "competitor-local",
+        metadata={"eval": {"score": 0.3, "fingerprint": placeholder_fp, "from_candidate_generation": False}},
+    )
+    _seed_suite(tmp_path / "suites", "anchor-v1", [("p1", "ref")])
+    stage = EvaluateStage(
+        name="evaluate",
+        registry=registry,
+        suites_dir=tmp_path / "suites",
+        judge_factory=lambda anchor: _FixedScorer(0.9),
+        probe_fn=_probe(0.1),
+        now_fn=lambda: _NOW,
+        generate_fn=lambda record, anchor, prompt: f"gen::{prompt}",
+    )
+
+    result = stage.run_once(_ctx(tmp_path, charter))
+
+    assert (result.processed, result.errors) == (1, 0)  # re-evaluated despite same anchor + suite
+    eval_meta = registry.load("cand-1").metadata["eval"]  # type: ignore[union-attr]
+    assert eval_meta["score"] == 0.9
+    assert eval_meta["from_candidate_generation"] is True
+    assert eval_meta["fingerprint"] == eval_fingerprint(charter.anchor, "anchor-v1", True)
