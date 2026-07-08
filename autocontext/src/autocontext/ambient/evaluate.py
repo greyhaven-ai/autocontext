@@ -38,16 +38,19 @@ def _default_now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def eval_fingerprint(anchor: CharterAnchor, eval_suite: str) -> str:
+def eval_fingerprint(anchor: CharterAnchor, eval_suite: str, scores_candidate_generation: bool = False) -> str:
     """A stable identity for the evaluation config a candidate was scored under.
 
-    Combines the frozen anchor (provider, model, rubric) with the target's eval suite name. A
-    candidate whose stored fingerprint no longer matches the current one was scored under a stale
-    config (the charter anchor, its rubric, or the suite changed), so it must be re-evaluated rather
-    than left stuck with a score computed under the old config.
+    Combines the frozen anchor (provider, model, rubric), the target's eval suite name, and whether
+    the score judged the candidate's real generation or the placeholder reference text. A candidate
+    whose stored fingerprint no longer matches the current one was scored under a stale config (the
+    charter anchor, its rubric, the suite, OR the placeholder-vs-real-generation mode changed), so it
+    must be re-evaluated rather than left stuck with a score computed under the old config. Including
+    the generation mode is what makes flipping real candidate generation on re-trigger evaluation
+    (AC-891) even when the anchor and suite are unchanged.
     """
     rubric_hash = hashlib.sha256(anchor.rubric.encode()).hexdigest()[:16]
-    return "|".join([anchor.provider, anchor.model, rubric_hash, eval_suite])
+    return "|".join([anchor.provider, anchor.model, rubric_hash, eval_suite, f"scg={scores_candidate_generation}"])
 
 
 class _Scorer(Protocol):
@@ -104,9 +107,21 @@ class EvaluateStage:
     now_fn: Callable[[], str] = _default_now
     # False because the default judge_factory scores the eval suite's reference text (a placeholder),
     # not the candidate model's own generation. it becomes True only once a real candidate-generation
-    # scorer is wired (plan 5b, or a test that stands in for it). the promote stage refuses to activate
-    # a candidate whose eval was a placeholder, so this flag is what makes a candidate promotable.
+    # scorer is wired (via generate_fn below, or a test that stands in for it). the promote stage
+    # refuses to activate a candidate whose eval was a placeholder, so this flag is what makes a
+    # candidate promotable.
     scores_candidate_generation: bool = False
+    # Real candidate-generation seam (AC-891): when set, the candidate's model is served for each
+    # eval case and the scorer judges that real generation (record, anchor, prompt) -> output text,
+    # instead of the placeholder reference. Its presence flips the run into real-generation mode, so
+    # from_candidate_generation is stamped True and the candidate becomes promotable. Injected as a
+    # fake in tests; a production run wires a factory that builds the served client from the record.
+    generate_fn: Callable[[DistilledModelRecord, CharterAnchor, str], str] | None = None
+
+    @property
+    def _scores_real_generation(self) -> bool:
+        """Whether this cycle scores the candidate's real generation (vs the placeholder reference)."""
+        return self.generate_fn is not None or self.scores_candidate_generation
 
     def run_once(self, ctx: StageContext) -> StageResult:
         anchor = ctx.charter.anchor
@@ -152,7 +167,7 @@ class EvaluateStage:
                 continue
             # the fingerprint is per-target because the eval suite is per-target, while the anchor is
             # charter-wide; compute it here where the target (and its suite) are known.
-            fingerprint = eval_fingerprint(anchor, target.eval_suite)
+            fingerprint = eval_fingerprint(anchor, target.eval_suite, self._scores_real_generation)
             existing = record.metadata.get("eval")
             if existing and existing.get("fingerprint") == fingerprint:
                 # already scored under the CURRENT config: skip. if the fingerprint differs (the
@@ -192,10 +207,15 @@ class EvaluateStage:
             )
             return 0
 
-        # v1 stand-in: the injected scorer receives (case.prompt, case.reference); plan 5b wires the
-        # candidate model's real generation as the scored output.
+        # Real-generation mode (generate_fn set) serves the candidate's model and scores that output;
+        # otherwise the scorer judges the placeholder reference text (v1 stand-in). Either way the
+        # scorer receives (case.prompt, output).
         scorer = get_scorer()
-        scores = [scorer.score(case.prompt, case.reference) for case in suite.cases]
+        if self.generate_fn is not None:
+            outputs = [self.generate_fn(record, anchor, case.prompt) for case in suite.cases]
+        else:
+            outputs = [case.reference for case in suite.cases]
+        scores = [scorer.score(case.prompt, output) for case, output in zip(suite.cases, outputs, strict=True)]
         avg_score = sum(scores) / len(scores)
 
         # the drift canary depends only on the anchor, so this returns the same memoized probe for
@@ -211,7 +231,7 @@ class EvaluateStage:
             "evaluated_at": self.now_fn(),
             # whether the score judged the candidate's real generation or a placeholder (reference
             # text). the promote stage only activates a candidate when this is True.
-            "from_candidate_generation": self.scores_candidate_generation,
+            "from_candidate_generation": self._scores_real_generation,
             # identity of the config this score was computed under; a later cycle re-evaluates when
             # the current fingerprint no longer matches this one.
             "fingerprint": fingerprint,
