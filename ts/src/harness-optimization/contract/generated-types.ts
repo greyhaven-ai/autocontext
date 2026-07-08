@@ -57,7 +57,7 @@ export interface CalibrationReport {
    */
   current_min_delta: number;
   /**
-   * Margin vs the noise floor: above_noise, below_noise, or insufficient_data when n<2 gives no variance estimate.
+   * Margin vs noise floor: above_noise, below_noise, or insufficient_data (n<2 = no variance estimate).
    */
   margin_vs_noise: "above_noise" | "below_noise" | "insufficient_data";
   /**

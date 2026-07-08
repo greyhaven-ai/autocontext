@@ -619,7 +619,7 @@ class CalibrationReport(BaseModel):
     margin_vs_noise: Annotated[
         Literal['above_noise', 'below_noise', 'insufficient_data'],
         Field(
-            description='Margin vs the noise floor: above_noise, below_noise, or insufficient_data when n<2 gives no variance estimate.'
+            description='Margin vs noise floor: above_noise, below_noise, or insufficient_data (n<2 = no variance estimate).'
         ),
     ]
     sparse_metric_too_noisy: Annotated[
