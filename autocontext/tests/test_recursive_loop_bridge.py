@@ -105,6 +105,17 @@ def test_unknown_backend_falls_back() -> None:
     assert plan_local_client(_record(backend="something-else")) is None
 
 
+def test_sft_adapter_routes_to_torch_client_plan() -> None:
+    # The torch/peft SFT LoRA adapter routes to the torch client (kind="sft"), base + adapter.
+    plan = plan_local_client(_record(backend="sft", checkpoint="/adapters/sft", metadata={"base_model": "Qwen/Qwen2.5-1.5B"}))
+    assert plan == LocalClientPlan(kind="sft", model="Qwen/Qwen2.5-1.5B", adapter_path="/adapters/sft", score_conditioned=False)
+
+
+def test_sft_adapter_without_base_model_is_unservable() -> None:
+    # Like mlxlm: an adapter without its base model falls back rather than serving something broken.
+    assert plan_local_client(_record(backend="sft", metadata={})) is None
+
+
 # --- _resolve_local_record: which active model wins -----------------------------------------
 
 
