@@ -105,7 +105,7 @@ def _resolve_local_record(settings: AppSettings, scenario_name: str) -> Distille
     return None
 
 
-def _build_planned_client(plan: LocalClientPlan, settings: AppSettings) -> LanguageModelClient:
+def build_planned_client(plan: LocalClientPlan, settings: AppSettings) -> LanguageModelClient:
     """Construct the MLX / MLXLM / SFT-torch client described by ``plan`` (loads the model)."""
     if plan.kind == "sft":
         # Lazy import keeps torch (the optional ``cuda`` extra) out of module import time; a
@@ -168,7 +168,7 @@ def scenario_bound_mlx_client(orch: AgentOrchestrator, role: str, *, scenario_na
     if cached is not None:
         return cached
     try:
-        client = _build_planned_client(plan, orch.settings)
+        client = build_planned_client(plan, orch.settings)
     except Exception:
         logger.debug("agents.scenario_bound_clients: planned client build failed", exc_info=True)
         return None

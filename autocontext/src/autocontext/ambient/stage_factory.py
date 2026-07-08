@@ -9,6 +9,7 @@ from autocontext.ambient.charter import Charter
 from autocontext.ambient.curate import CurateStage
 from autocontext.ambient.datasets import DatasetStore
 from autocontext.ambient.evaluate import EvaluateStage
+from autocontext.ambient.generation import build_candidate_generation_fn
 from autocontext.ambient.ingest import IngestStage
 from autocontext.ambient.promote import PromoteStage
 from autocontext.ambient.sources.agent_outputs import AgentOutputsSource
@@ -19,6 +20,7 @@ from autocontext.ambient.stage import STAGE_NAMES, NoOpStage, Stage
 from autocontext.ambient.trace_store import TraceStore
 from autocontext.ambient.train import TrainStage
 from autocontext.ambient.usage import UsageLedger
+from autocontext.config import AppSettings
 from autocontext.harness.core.events import EventStreamEmitter
 from autocontext.training.model_registry import ModelRegistry
 
@@ -35,6 +37,7 @@ def build_stages(
     artifacts_dir: Path,
     checkpoints_dir: Path,
     suites_dir: Path,
+    settings: AppSettings,
 ) -> dict[str, Stage]:
     sources: list[TraceSource] = []
     unsupported: list[tuple[str, str]] = []
@@ -75,6 +78,9 @@ def build_stages(
         artifacts_root=artifacts_dir,
         checkpoints_root=checkpoints_dir,
     )
-    stages["evaluate"] = EvaluateStage(name="evaluate", registry=registry, suites_dir=suites_dir)
+    # opt-in real candidate generation (AC-891): when enabled, serve each candidate's model and
+    # score its real output; otherwise leave generate_fn None so evaluate keeps placeholder scoring.
+    generate_fn = build_candidate_generation_fn(settings) if settings.ambient_real_candidate_generation else None
+    stages["evaluate"] = EvaluateStage(name="evaluate", registry=registry, suites_dir=suites_dir, generate_fn=generate_fn)
     stages["promote"] = PromoteStage(name="promote", registry=registry)
     return stages

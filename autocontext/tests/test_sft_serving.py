@@ -4,7 +4,7 @@ Plan 5b added a TRL SFTTrainer backend emitting a torch/peft LoRA adapter, but t
 serving resolver only recognized mlx adapters, so an active ``sft`` record fell back to the
 frontier client. These tests pin the wiring that makes the resolver recognize + build a torch
 client for sft records, exercised without ever importing torch: the pure routing decision, the
-resolver search order, the ``_build_planned_client`` sft branch (with a fake client), and the
+resolver search order, the ``build_planned_client`` sft branch (with a fake client), and the
 torch-absent construction guard the resolver caller relies on to fall back safely.
 """
 
@@ -16,8 +16,8 @@ import pytest
 
 from autocontext.agents.scenario_bound_clients import (
     LocalClientPlan,
-    _build_planned_client,
     _resolve_local_record,
+    build_planned_client,
 )
 from autocontext.config.settings import AppSettings
 
@@ -44,7 +44,7 @@ def test_resolve_local_record_search_order_includes_sft(monkeypatch: pytest.Monk
     assert queried == ["opd", "mlxlm", "grpo", "sft", "mlx"]
 
 
-# --- _build_planned_client: the sft branch builds the torch client --------------------------
+# --- build_planned_client: the sft branch builds the torch client --------------------------
 
 
 def test_build_planned_client_sft_constructs_torch_client(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -67,7 +67,7 @@ def test_build_planned_client_sft_constructs_torch_client(monkeypatch: pytest.Mo
     plan = LocalClientPlan(kind="sft", model="Qwen/Qwen2.5-1.5B", adapter_path="/adapters/sft", score_conditioned=False)
     settings = AppSettings(agent_provider="mlx", mlx_model_path="", mlx_temperature=0.7, mlx_max_tokens=256)
 
-    client = _build_planned_client(plan, settings)
+    client = build_planned_client(plan, settings)
     assert isinstance(client, _FakeSftTorchClient)
     assert captured == {
         "model": "Qwen/Qwen2.5-1.5B",
