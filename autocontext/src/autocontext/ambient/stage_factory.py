@@ -9,7 +9,7 @@ from autocontext.ambient.charter import Charter
 from autocontext.ambient.curate import CurateStage
 from autocontext.ambient.datasets import DatasetStore
 from autocontext.ambient.evaluate import EvaluateStage
-from autocontext.ambient.generation import build_candidate_generation_fn
+from autocontext.ambient.generation import build_candidate_generation_fn, generation_config_id
 from autocontext.ambient.ingest import IngestStage
 from autocontext.ambient.promote import PromoteStage
 from autocontext.ambient.sources.agent_outputs import AgentOutputsSource
@@ -78,9 +78,22 @@ def build_stages(
         artifacts_root=artifacts_dir,
         checkpoints_root=checkpoints_dir,
     )
-    # opt-in real candidate generation (AC-891): when enabled, serve each candidate's model and
-    # score its real output; otherwise leave generate_fn None so evaluate keeps placeholder scoring.
-    generate_fn = build_candidate_generation_fn(settings) if settings.ambient_real_candidate_generation else None
-    stages["evaluate"] = EvaluateStage(name="evaluate", registry=registry, suites_dir=suites_dir, generate_fn=generate_fn)
+    # opt-in real candidate generation (AC-891): a charter policy decision (the charter is the only
+    # policy input). when enabled, serve each candidate's model and score its real output, and fold
+    # the generation config into the eval fingerprint so changing it re-triggers evaluation rather
+    # than skipping candidates on stale scores; otherwise leave generate_fn None (placeholder scoring).
+    if charter.real_candidate_generation:
+        generate_fn = build_candidate_generation_fn(settings)
+        gen_config_id = generation_config_id(settings)
+    else:
+        generate_fn = None
+        gen_config_id = ""
+    stages["evaluate"] = EvaluateStage(
+        name="evaluate",
+        registry=registry,
+        suites_dir=suites_dir,
+        generate_fn=generate_fn,
+        generation_config_id=gen_config_id,
+    )
     stages["promote"] = PromoteStage(name="promote", registry=registry)
     return stages

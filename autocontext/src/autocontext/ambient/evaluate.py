@@ -38,7 +38,12 @@ def _default_now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def eval_fingerprint(anchor: CharterAnchor, eval_suite: str, scores_candidate_generation: bool = False) -> str:
+def eval_fingerprint(
+    anchor: CharterAnchor,
+    eval_suite: str,
+    scores_candidate_generation: bool = False,
+    generation_config: str = "",
+) -> str:
     """A stable identity for the evaluation config a candidate was scored under.
 
     Combines the frozen anchor (provider, model, rubric), the target's eval suite name, and whether
@@ -50,7 +55,16 @@ def eval_fingerprint(anchor: CharterAnchor, eval_suite: str, scores_candidate_ge
     (AC-891) even when the anchor and suite are unchanged.
     """
     rubric_hash = hashlib.sha256(anchor.rubric.encode()).hexdigest()[:16]
-    return "|".join([anchor.provider, anchor.model, rubric_hash, eval_suite, f"scg={scores_candidate_generation}"])
+    return "|".join(
+        [
+            anchor.provider,
+            anchor.model,
+            rubric_hash,
+            eval_suite,
+            f"scg={scores_candidate_generation}",
+            f"gc={generation_config}",
+        ]
+    )
 
 
 class _Scorer(Protocol):
@@ -117,6 +131,11 @@ class EvaluateStage:
     # from_candidate_generation is stamped True and the candidate becomes promotable. Injected as a
     # fake in tests; a production run wires a factory that builds the served client from the record.
     generate_fn: Callable[[DistilledModelRecord, CharterAnchor, str], str] | None = None
+    # An identity for the generation config (sampling settings) real generation scores under, folded
+    # into the eval fingerprint so changing the config re-triggers evaluation (AC-891). Empty in
+    # placeholder mode (no effect); the factory sets it from the generation settings when wiring
+    # generate_fn.
+    generation_config_id: str = ""
 
     @property
     def _scores_real_generation(self) -> bool:
@@ -167,7 +186,7 @@ class EvaluateStage:
                 continue
             # the fingerprint is per-target because the eval suite is per-target, while the anchor is
             # charter-wide; compute it here where the target (and its suite) are known.
-            fingerprint = eval_fingerprint(anchor, target.eval_suite, self._scores_real_generation)
+            fingerprint = eval_fingerprint(anchor, target.eval_suite, self._scores_real_generation, self.generation_config_id)
             existing = record.metadata.get("eval")
             if existing and existing.get("fingerprint") == fingerprint:
                 # already scored under the CURRENT config: skip. if the fingerprint differs (the

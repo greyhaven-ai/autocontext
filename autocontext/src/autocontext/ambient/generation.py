@@ -15,6 +15,7 @@ not promotable), the correct behavior.
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
@@ -27,31 +28,49 @@ if TYPE_CHECKING:
     from autocontext.training.model_registry import DistilledModelRecord
 
 
+def generation_config_id(settings: AppSettings) -> str:
+    """A stable identity for the generation config the closure below scores under.
+
+    Real generation output depends on the sampling settings the closure passes to the served client
+    (max tokens, temperature), so this id is folded into the eval fingerprint: changing a generation
+    setting changes the id, which re-triggers evaluation rather than leaving candidates skipped on a
+    stale score. Keep this in sync with the settings that build_candidate_generation_fn actually uses.
+    """
+    return hashlib.sha256(f"mt={settings.mlx_max_tokens}|t={settings.mlx_temperature}".encode()).hexdigest()[:16]
+
+
 def build_candidate_generation_fn(
     settings: AppSettings,
 ) -> Callable[[DistilledModelRecord, CharterAnchor, str], str]:
     """Build the evaluate stage's real candidate-generation closure.
 
-    The returned closure serves the candidate's model and generates for one eval case. The built
-    client (and its served model id) is cached per record.artifact_id so the model is loaded once
-    and reused across every eval case for that candidate. An unservable record (no local client
-    plan) raises; a runtime-absent client build propagates for the stage to record as a failure.
+    The returned closure serves the candidate's model and generates for one eval case. It holds a
+    SINGLE-SLOT client cache: only the most-recently-served candidate's client is kept resident, so
+    at most one model is loaded at a time. The evaluate stage scores all of a candidate's cases
+    before moving to the next, so this reuses the client across a candidate's cases without pinning
+    every candidate's model for the daemon's lifetime; when the next candidate is served the previous
+    client is dropped (a promoted or disabled candidate's model does not leak). An unservable record
+    (no local client plan) raises; a runtime-absent client build propagates for the stage to record
+    as a failure.
     """
-    # artifact_id -> (served client, model id to pass to generate). The plan's model is the
-    # checkpoint path (full checkpoint) or the base model id (adapter), so it is cached alongside
+    # single slot: {} or {artifact_id: (served client, model id to pass to generate)}. The plan's
+    # model is the checkpoint path (full checkpoint) or the base model id (adapter), cached alongside
     # the client rather than recomputed per call.
-    cache: dict[str, tuple[LanguageModelClient, str]] = {}
+    slot: dict[str, tuple[LanguageModelClient, str]] = {}
 
     def generate(record: DistilledModelRecord, anchor: CharterAnchor, prompt: str) -> str:
         del anchor  # the anchor is the frozen judge, not the served candidate; unused here
-        cached = cache.get(record.artifact_id)
+        cached = slot.get(record.artifact_id)
         if cached is None:
             plan = plan_local_client(record)
             if plan is None:
                 raise RuntimeError(f"record {record.artifact_id} is not servable (no local client plan)")
             client = build_planned_client(plan, settings)
-            cached = (client, plan.model)
-            cache[record.artifact_id] = cached
+            # drop the previous candidate's client before caching the new one, so at most one served
+            # model is resident at a time (bounded eviction for the resident daemon).
+            slot.clear()
+            slot[record.artifact_id] = (client, plan.model)
+            cached = slot[record.artifact_id]
         client, model = cached
         resp = client.generate(
             model=model,

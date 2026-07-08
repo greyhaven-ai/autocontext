@@ -595,10 +595,6 @@ class AppSettings(BaseModel):
     mlx_model_path: str = Field(default="", description="Path to trained MLX model checkpoint directory")
     mlx_temperature: float = Field(default=0.8, ge=0.0, le=2.0, description="Sampling temperature for MLX model")
     mlx_max_tokens: int = Field(default=512, ge=1, description="Max generation tokens for MLX model")
-    ambient_real_candidate_generation: bool = Field(
-        default=False,
-        description="Wire real candidate generation into the ambient evaluate stage; off = placeholder scoring (AC-891)",
-    )
     # OpenClaw agent adapter (AC-193)
     openclaw_runtime_kind: str = Field(
         default="factory",

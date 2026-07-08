@@ -688,3 +688,36 @@ def test_wiring_real_generation_retriggers_a_placeholder_scored_candidate(tmp_pa
     assert eval_meta["score"] == 0.9
     assert eval_meta["from_candidate_generation"] is True
     assert eval_meta["fingerprint"] == eval_fingerprint(charter.anchor, "anchor-v1", True)
+
+
+def test_generation_config_change_retriggers_a_real_generation_candidate(tmp_path: Path) -> None:
+    # AC-891 P2-2: a candidate scored under one generation config is re-evaluated when the config
+    # changes, even with the same anchor and suite, because generation_config_id folds into the
+    # fingerprint. Without it, changing sampling settings would skip candidates on stale scores.
+    registry = ModelRegistry(tmp_path / "registry")
+    charter = _charter([_target("competitor-local", "anchor-v1")])
+    old_fp = eval_fingerprint(charter.anchor, "anchor-v1", True, "cfg-OLD")
+    _candidate(
+        registry,
+        "cand-1",
+        "competitor-local",
+        metadata={"eval": {"score": 0.2, "fingerprint": old_fp, "from_candidate_generation": True}},
+    )
+    _seed_suite(tmp_path / "suites", "anchor-v1", [("p1", "ref")])
+    stage = EvaluateStage(
+        name="evaluate",
+        registry=registry,
+        suites_dir=tmp_path / "suites",
+        judge_factory=lambda anchor: _FixedScorer(0.9),
+        probe_fn=_probe(0.1),
+        now_fn=lambda: _NOW,
+        generate_fn=lambda record, anchor, prompt: f"gen::{prompt}",
+        generation_config_id="cfg-NEW",
+    )
+
+    result = stage.run_once(_ctx(tmp_path, charter))
+
+    assert (result.processed, result.errors) == (1, 0)  # re-evaluated under the new generation config
+    eval_meta = registry.load("cand-1").metadata["eval"]  # type: ignore[union-attr]
+    assert eval_meta["score"] == 0.9
+    assert eval_meta["fingerprint"] == eval_fingerprint(charter.anchor, "anchor-v1", True, "cfg-NEW")

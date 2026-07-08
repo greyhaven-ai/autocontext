@@ -24,7 +24,7 @@ import time
 from pathlib import Path
 
 from autocontext.agents.llm_client import MLXLMClient
-from autocontext.agents.scenario_bound_clients import _build_planned_client, _resolve_local_record, plan_local_client
+from autocontext.agents.scenario_bound_clients import build_planned_client, _resolve_local_record, plan_local_client
 from autocontext.config.settings import AppSettings
 from autocontext.scenarios import SCENARIO_REGISTRY
 from autocontext.training.autoresearch.mlxlm_backend import DEFAULT_BASE_MODEL, run_mlxlm_training, scenario_task_prompt
@@ -153,7 +153,7 @@ def main() -> None:
             # The bridge: resolve the just-activated adapter purely from the registry and serve it.
             resolved = _resolve_local_record(settings, SCENARIO)
             assert resolved is not None and resolved.artifact_id == record.artifact_id
-            client = _build_planned_client(plan_local_client(resolved), settings)
+            client = build_planned_client(plan_local_client(resolved), settings)
 
             geng = propose_and_score(client, scenario, task_prompt, n=PROPOSALS_PER_GEN)
             pool.extend(geng)

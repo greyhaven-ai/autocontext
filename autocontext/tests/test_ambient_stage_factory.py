@@ -20,9 +20,10 @@ from autocontext.harness.core.events import EventStreamEmitter
 _SETTINGS = AppSettings()
 
 
-def _charter(sources: list[CharterSource], tier: str = "oss") -> Charter:
+def _charter(sources: list[CharterSource], tier: str = "oss", real_candidate_generation: bool = False) -> Charter:
     return Charter(
         tier=tier,  # type: ignore[arg-type]
+        real_candidate_generation=real_candidate_generation,
         sources=sources,
         targets=[
             CharterTarget(
@@ -195,8 +196,11 @@ def test_build_stages_wires_real_evaluate_and_promote_sharing_registry(tmp_path:
     assert promote.registry is train.registry  # type: ignore[attr-defined]
 
 
-def _build_evaluate(tmp_path: Path, settings: AppSettings) -> EvaluateStage:
-    charter = _charter(sources=[CharterSource(name="native", kind="autocontext")])
+def _build_evaluate(tmp_path: Path, settings: AppSettings, real_generation: bool = False) -> EvaluateStage:
+    charter = _charter(
+        sources=[CharterSource(name="native", kind="autocontext")],
+        real_candidate_generation=real_generation,
+    )
     stages = build_stages(
         charter,
         db_path=tmp_path / "ambient.sqlite3",
@@ -218,14 +222,23 @@ def _build_evaluate(tmp_path: Path, settings: AppSettings) -> EvaluateStage:
 
 def test_evaluate_has_no_generate_fn_when_real_generation_off(tmp_path: Path) -> None:
     """Opt-out (the default): the evaluate stage keeps placeholder reference scoring, no generate_fn."""
-    settings = AppSettings(ambient_real_candidate_generation=False)
-    evaluate = _build_evaluate(tmp_path, settings)
+    evaluate = _build_evaluate(tmp_path, AppSettings(), real_generation=False)
     assert evaluate.generate_fn is None
+    assert evaluate.generation_config_id == ""  # placeholder mode folds nothing into the fingerprint
 
 
 def test_evaluate_wires_real_generation_when_opted_in(tmp_path: Path) -> None:
-    """Opt-in: the factory wires a real candidate-generation closure into the evaluate stage."""
-    settings = AppSettings(ambient_real_candidate_generation=True)
-    evaluate = _build_evaluate(tmp_path, settings)
+    """Opt-in (charter policy): the factory wires a real candidate-generation closure into evaluate."""
+    evaluate = _build_evaluate(tmp_path, AppSettings(), real_generation=True)
     assert evaluate.generate_fn is not None
     assert callable(evaluate.generate_fn)
+    # the generation config is folded into the fingerprint so changing sampling settings re-triggers eval.
+    assert evaluate.generation_config_id != ""
+
+
+def test_generation_config_id_changes_with_sampling_settings(tmp_path: Path) -> None:
+    # AC-891 P2-2: two charters that differ only in generation settings must produce different
+    # generation_config_id (so the eval fingerprint changes and candidates are not skipped on stale scores).
+    a = _build_evaluate(tmp_path, AppSettings(mlx_max_tokens=64), real_generation=True)
+    b = _build_evaluate(tmp_path, AppSettings(mlx_max_tokens=128), real_generation=True)
+    assert a.generation_config_id != b.generation_config_id

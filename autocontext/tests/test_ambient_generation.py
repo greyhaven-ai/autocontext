@@ -79,6 +79,36 @@ def test_generation_serves_generates_and_caches_client_per_record(monkeypatch: p
     assert len(built_plans) == 2
 
 
+def test_generation_cache_is_single_slot_and_evicts_previous_candidate(monkeypatch: pytest.MonkeyPatch) -> None:
+    # AC-891 P2-1: the closure holds at most ONE served client. Revisiting an earlier candidate after
+    # a different one rebuilds it, proving the previous candidate's model is dropped (not pinned for
+    # the daemon's lifetime).
+    import autocontext.ambient.generation as gen
+
+    built: list[str] = []
+
+    monkeypatch.setattr(
+        gen,
+        "plan_local_client",
+        lambda record: LocalClientPlan(
+            kind="mlx", model="served-" + record.artifact_id, adapter_path=None, score_conditioned=False
+        ),
+    )
+
+    def fake_build(plan: LocalClientPlan, settings: AppSettings) -> _FakeClient:
+        built.append(plan.model)
+        return _FakeClient()
+
+    monkeypatch.setattr(gen, "build_planned_client", fake_build)
+
+    fn = gen.build_candidate_generation_fn(AppSettings())
+    anchor = CharterAnchor()
+    fn(_record("a"), anchor, "1")  # build a
+    fn(_record("b"), anchor, "2")  # build b, evict a
+    fn(_record("a"), anchor, "3")  # a was evicted -> build a again
+    assert built == ["served-a", "served-b", "served-a"]  # a rebuilt: at most one resident client
+
+
 def test_generation_passes_served_model_and_sampling_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     """generate is called with the plan's served model, settings' mlx max_tokens, and the eval role."""
     import autocontext.ambient.generation as gen
