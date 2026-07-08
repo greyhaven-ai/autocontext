@@ -29,10 +29,14 @@ logger = logging.getLogger(__name__)
 
 # Backends whose checkpoint is a standalone model served directly by MLXClient
 # (from-scratch GPT / full fine-tunes), vs. backends whose checkpoint is a LoRA
-# adapter that must be loaded on top of its base model via MLXLMClient.
+# adapter that must be loaded on top of its base model.
 _FULL_CHECKPOINT_BACKENDS = {"mlx"}
-# mlx-lm LoRA adapter backends served as base + adapter via MLXLMClient.
-_ADAPTER_BACKENDS = {"mlxlm", "opd", "grpo"}
+# mlx-lm LoRA adapter backends served as base + adapter via MLXLMClient (Apple Silicon).
+_MLX_ADAPTER_BACKENDS = {"mlxlm", "opd", "grpo"}
+# torch/peft LoRA adapter backends served as base + adapter via SftTorchClient (CUDA, cuda extra).
+_TORCH_ADAPTER_BACKENDS = {"sft"}
+# All LoRA adapter backends: they need the base model recorded at publish time to be servable.
+_ADAPTER_BACKENDS = _MLX_ADAPTER_BACKENDS | _TORCH_ADAPTER_BACKENDS
 
 
 @dataclass(frozen=True)
@@ -43,7 +47,7 @@ class LocalClientPlan:
     base model id (adapter); ``adapter_path`` and ``score_conditioned`` apply to adapters.
     """
 
-    kind: str  # "mlx" | "mlxlm"
+    kind: str  # "mlx" | "mlxlm" | "sft"
     model: str
     adapter_path: str | None
     score_conditioned: bool
@@ -53,10 +57,11 @@ def plan_local_client(record: DistilledModelRecord) -> LocalClientPlan | None:
     """Decide which local client serves a trained record (pure; no model loading).
 
     Full-checkpoint backends (``mlx``) serve their checkpoint directly. Adapter backends
-    (``mlxlm`` / ``opd``) need the base model they trained against (recorded in metadata at
-    publish time) and the score-conditioning flag so inference re-applies the quality prefix.
-    Returns ``None`` for an unknown backend or an adapter record missing its base model, so
-    the caller falls back to the default client rather than serving something broken.
+    (``mlxlm`` / ``opd`` / ``sft``) need the base model they trained against (recorded in metadata
+    at publish time); mlx adapters also carry the score-conditioning flag so inference re-applies
+    the quality prefix, while torch/peft ``sft`` adapters serve via ``SftTorchClient``. Returns
+    ``None`` for an unknown backend or an adapter record missing its base model, so the caller
+    falls back to the default client rather than serving something broken.
     """
     backend = (record.backend or "").lower()
     if backend in _ADAPTER_BACKENDS:
@@ -64,8 +69,9 @@ def plan_local_client(record: DistilledModelRecord) -> LocalClientPlan | None:
         if not base_model:
             logger.debug("agents.scenario_bound_clients: adapter record %s has no base_model", record.artifact_id)
             return None
+        kind = "sft" if backend in _TORCH_ADAPTER_BACKENDS else "mlxlm"
         return LocalClientPlan(
-            kind="mlxlm",
+            kind=kind,
             model=base_model,
             adapter_path=record.checkpoint_path,
             score_conditioned=bool(record.metadata.get("score_conditioned")),
@@ -88,7 +94,7 @@ def _resolve_local_record(settings: AppSettings, scenario_name: str) -> Distille
     except Exception:
         logger.debug("agents.scenario_bound_clients: could not open model registry", exc_info=True)
         return None
-    for backend in ("opd", "mlxlm", "grpo", "mlx"):
+    for backend in ("opd", "mlxlm", "grpo", "sft", "mlx"):
         try:
             record = resolve_model(registry, scenario=scenario_name, backend=backend, runtime_type="provider")
         except Exception:
@@ -100,7 +106,18 @@ def _resolve_local_record(settings: AppSettings, scenario_name: str) -> Distille
 
 
 def _build_planned_client(plan: LocalClientPlan, settings: AppSettings) -> LanguageModelClient:
-    """Construct the MLX/MLXLM client described by ``plan`` (loads the model)."""
+    """Construct the MLX / MLXLM / SFT-torch client described by ``plan`` (loads the model)."""
+    if plan.kind == "sft":
+        # Lazy import keeps torch (the optional ``cuda`` extra) out of module import time; a
+        # torch-absent environment raises here and the caller falls back to the frontier client.
+        from autocontext.agents.sft_torch_client import SftTorchClient
+
+        return SftTorchClient(
+            plan.model,
+            adapter_path=plan.adapter_path,
+            temperature=settings.mlx_temperature,
+            max_tokens=settings.mlx_max_tokens,
+        )
     if plan.kind == "mlxlm":
         return MLXLMClient(
             plan.model,
