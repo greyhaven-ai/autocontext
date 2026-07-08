@@ -113,6 +113,9 @@ def test_run_emits_repair_skipped_for_not_applicable_absent_input(tmp_path: Path
     results = gate.run("grid_ctf", ctx)
 
     assert results[0].status == "not_applicable"
+    # a normal skipped event for a both-languages repair is implemented/implemented, not a parity gap.
+    assert results[0].parity.python == "implemented"
+    assert results[0].parity.typescript == "implemented"
     assert [e for e, _ in capture.events] == ["repair_skipped"]
     RepairResult.model_validate(capture.events[0][1]["result"])
 

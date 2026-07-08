@@ -73,7 +73,10 @@ function absentResult(repairName: string, reason: string): RepairResult {
     target: "",
     before: { present: false },
     after: { present: false },
-    parity: { python: "pending", typescript: "implemented", schema_hash: "" },
+    // These absent-input repairs (tool_call_json, artifact_landing, finish_guard) are implemented in
+    // BOTH languages, so parity is implemented/implemented, matching their applied and not_applicable
+    // results. Stamping python "pending" made a normal skipped event look like a parity gap.
+    parity: { python: "implemented", typescript: "implemented", schema_hash: "" },
   };
 }
 

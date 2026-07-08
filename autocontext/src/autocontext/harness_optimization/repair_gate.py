@@ -83,7 +83,11 @@ def _absent_result(repair_name: str, reason: str) -> RepairResult:
         target="",
         before={"present": False},
         after={"present": False},
-        parity=Parity(python="implemented", typescript="pending", schema_hash=""),
+        # These absent-input repairs (tool_call_json, artifact_landing, finish_guard) are implemented
+        # in BOTH languages, so their parity is implemented/implemented, the same as their applied and
+        # not_applicable results. Stamping the other language "pending" made a normal skipped event
+        # look like a parity gap in audit output. loop_guard (Python-only) never uses this helper.
+        parity=Parity(python="implemented", typescript="implemented", schema_hash=""),
     )
 
 

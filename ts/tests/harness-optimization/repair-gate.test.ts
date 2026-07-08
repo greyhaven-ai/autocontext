@@ -100,6 +100,12 @@ describe("RepairGate.run", () => {
     const results = g.run("grid_ctf", ctx);
 
     expect(results[0].status).toBe("not_applicable");
+    // a normal skipped event for a both-languages repair is implemented/implemented, not a parity gap.
+    expect(results[0].parity).toEqual({
+      python: "implemented",
+      typescript: "implemented",
+      schema_hash: "",
+    });
     expect(captured.map((c) => c.event)).toEqual(["repair_skipped"]);
     expect(validateRepairResult(captured[0].payload.result).valid).toBe(true);
   });
