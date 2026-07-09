@@ -163,6 +163,11 @@ def test_isolation_survives_the_hook_wrapper() -> None:
     _assert_isolated(recorder)
 
 
+def test_structural_role_isolation_is_on_by_default() -> None:
+    # ERP-67 Stage 4: isolation defaults on; the flag remains the escape hatch.
+    assert AppSettings(agent_provider="deterministic").structural_role_isolation is True
+
+
 def test_flag_off_uses_flat_single_prompt_path() -> None:
     recorder = _RecordingCapableClient()
     settings = AppSettings(agent_provider="deterministic", structural_role_isolation=False)

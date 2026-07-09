@@ -135,8 +135,33 @@ role-reassignment, fake-system-prompt, tool-call injection. Under the flag,
 assert the injected text appears **only** in the user turn and never in the
 system turn, and does not change the agent's actions.
 
-**Stage 4 — flip the default** once Stage 2/3 have soaked, keeping the flag as
-an escape hatch.
+**Stage 4 — flip the default** (done). `structural_role_isolation` now defaults
+to `True`, keeping the flag as an escape hatch (set `False` to revert instantly —
+no code change, byte-identical legacy behaviour).
+
+### Stage 4 soak runbook
+
+The flip only changes behaviour for **role-capable** backends (Anthropic, Agent
+SDK); every other backend and any unsafe/rewritten prompt already falls back to
+the exact flat prompt, and the offline `DeterministicDevClient` used in CI is
+incapable — so the test suite exercises the flat path and cannot detect a
+quality shift. Validate on real capable runs:
+
+1. Pick a representative scenario (or a few) and a fixed generation budget/seed.
+2. Run the normal generation/eval loop **twice** on a capable backend — once with
+   `structural_role_isolation=True` (default) and once `=False` (env/config
+   override) — and capture the existing tournament scores / evaluation summaries.
+3. Compare score distributions (mean/median, and any regression gate you already
+   use). Treat a material regression as a signal to keep the flag off for that
+   backend and investigate the prompt-shape change.
+4. If parity holds, leave the default on. If not, set `structural_role_isolation
+= false` in config to revert — the flag is the kill-switch, no redeploy of code
+   needed.
+
+Note: the **behavioural** adversarial claim (a capable model _ignores_ injected
+content, not merely receives it in the user turn) is not covered by the Stage 3
+placement tests and should be part of this soak — seed an injected scenario and
+confirm the agent's actions are unchanged versus the clean run.
 
 ## Risks / notes
 

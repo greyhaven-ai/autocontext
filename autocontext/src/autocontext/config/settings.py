@@ -98,15 +98,19 @@ class AppSettings(BaseModel):
     soft_hints_enabled: bool = False
     hint_style: Literal["default", "structural", "solution_like"] = "default"
     structural_role_isolation: bool = Field(
-        default=False,
+        default=True,
         description=(
-            "ERP-67: deliver the untrusted reference block (playbook / coach hints / "
-            "dead-ends) in a separate user turn from the trusted system prompt for "
-            "role-capable backends (Anthropic, Agent SDK), instead of one flat prompt. "
-            "Applies to competitor/analyst/architect/coach on both the direct and "
-            "pipeline execution paths; single-prompt / runtime-bridge backends and "
-            "unsafe (hook-/mutation-rewritten) prompts fall back to the exact flat "
-            "prompt. Off = byte-identical legacy behaviour."
+            "ERP-67 (Stage 4: on by default): deliver the untrusted reference block "
+            "(playbook / coach hints / dead-ends) in a separate user turn from the "
+            "trusted system prompt for role-capable backends (Anthropic, Agent SDK), "
+            "instead of one flat prompt. Applies to competitor/analyst/architect/coach "
+            "on both the direct and pipeline execution paths; single-prompt / "
+            "runtime-bridge backends and unsafe (hook-/mutation-rewritten) prompts fall "
+            "back to the exact flat prompt (byte-identical legacy behaviour). This is a "
+            "prompt-injection defense; it moves attacker-influenceable content out of "
+            "the system turn. Set False to revert to the flat prompt if a score-parity "
+            "soak shows a quality regression on a capable backend (see the runbook in "
+            "docs/erp-67-structural-role-isolation-design.md)."
         ),
     )
     evidence_freshness_enabled: bool = Field(
