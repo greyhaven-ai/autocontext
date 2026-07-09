@@ -14,6 +14,7 @@ TYPESCRIPT_TO_PYTHON_BASELINES: dict[str, tuple[str, ...]] = {
         "014_scoring_backend_metadata.sql",
         "015_match_replay.sql",
     ),
+    "014_generation_evaluator_epoch.sql": ("016_generation_evaluator_epoch.sql",),
 }
 
 PYTHON_TO_TYPESCRIPT_BASELINES: dict[str, tuple[str, ...]] = {
