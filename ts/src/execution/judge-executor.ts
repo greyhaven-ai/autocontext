@@ -32,9 +32,7 @@ export class JudgeExecutor {
       : { ...state };
 
     // Validate context
-    const contextErrors = this.task.validateContext
-      ? this.task.validateContext(preparedState)
-      : [];
+    const contextErrors = this.task.validateContext ? this.task.validateContext(preparedState) : [];
 
     if (contextErrors.length > 0) {
       return {
@@ -42,6 +40,8 @@ export class JudgeExecutor {
         reasoning: `Context validation failed: ${contextErrors.join("; ")}`,
         dimensionScores: {},
         internalRetries: 0,
+        // AC-885: no judge ran on a context-validation failure, so there is no epoch.
+        evaluatorEpoch: null,
       };
     }
 

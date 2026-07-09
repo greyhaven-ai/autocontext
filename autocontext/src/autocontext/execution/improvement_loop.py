@@ -236,6 +236,7 @@ class ImprovementLoop:
                 reasoning=(f"{judge_result.reasoning}\n\nObjective Verification Feedback:\n{context}"),
                 dimension_scores=judge_result.dimension_scores,
                 internal_retries=judge_result.internal_retries,
+                evaluator_epoch=judge_result.evaluator_epoch,
             )
 
         def _emit_final(final_result: ImprovementResult) -> ImprovementResult:
@@ -317,6 +318,7 @@ class ImprovementLoop:
                                 score=last_good_result.score,
                                 reasoning=last_good_result.reasoning,
                                 dimension_scores=last_good_result.dimension_scores,
+                                evaluator_epoch=last_good_result.evaluator_epoch,
                             ),
                         )
                         revised = self.task.revise_output(
@@ -427,6 +429,7 @@ class ImprovementLoop:
                         reasoning=result.reasoning + annotation,
                         dimension_scores=result.dimension_scores,
                         internal_retries=result.internal_retries,
+                        evaluator_epoch=result.evaluator_epoch,
                     )
                     effective_score = 0.0
                     round_result.score = 0.0
@@ -639,6 +642,7 @@ class ImprovementLoop:
                         reasoning=result.reasoning + dim_annotation,
                         dimension_scores=result.dimension_scores,
                         internal_retries=result.internal_retries,
+                        evaluator_epoch=result.evaluator_epoch,
                     )
                 revision_result = _apply_revision_feedback(current_output, revision_result)
                 revised = self.task.revise_output(current_output, revision_result, state)

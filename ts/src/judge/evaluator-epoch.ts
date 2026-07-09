@@ -34,3 +34,27 @@ export function computeEvaluatorEpoch(
 export function areComparable(a: string | null | undefined, b: string | null | undefined): boolean {
   return (a ?? null) === (b ?? null);
 }
+
+export interface EpochBaselineDecision {
+  rebaseline: boolean;
+  staleEpoch: string | null;
+}
+
+/**
+ * Decide whether a round's epoch forces the improve loop to re-baseline.
+ * Parity with Python resolve_epoch_rebaseline.
+ *
+ * The first round (hasBaseline false) establishes the baseline and never re-baselines. When a
+ * baseline exists and the round's epoch is not comparable to it, the prior baseline is stale and is
+ * excluded so the loop re-baselines under the round's epoch.
+ */
+export function resolveEpochRebaseline(
+  baselineEpoch: string | null,
+  roundEpoch: string | null,
+  hasBaseline: boolean,
+): EpochBaselineDecision {
+  if (!hasBaseline || areComparable(baselineEpoch, roundEpoch)) {
+    return { rebaseline: false, staleEpoch: null };
+  }
+  return { rebaseline: true, staleEpoch: baselineEpoch };
+}

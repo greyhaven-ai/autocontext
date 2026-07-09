@@ -26,7 +26,12 @@ describe("task runner workflows", () => {
   it("builds revision prompts and normalizes judge results", async () => {
     const prompt = buildSimpleAgentTaskRevisionPrompt({
       output: "Draft answer",
-      judgeResult: { score: 0.45, reasoning: "Need more detail", dimensionScores: {}, internalRetries: 0 },
+      judgeResult: {
+        score: 0.45,
+        reasoning: "Need more detail",
+        dimensionScores: {},
+        internalRetries: 0,
+      },
       taskPrompt: "Summarize the outage",
       revisionPrompt: "Add owner and severity.",
     });
@@ -60,6 +65,7 @@ describe("task runner workflows", () => {
       reasoning: "Great",
       dimensionScores: { quality: 0.9 },
       internalRetries: 0,
+      evaluatorEpoch: null,
     });
   });
 });

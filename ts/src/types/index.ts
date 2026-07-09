@@ -74,6 +74,9 @@ export const AgentTaskResultSchema = z.object({
   reasoning: z.string(),
   dimensionScores: z.record(z.number().min(0).max(1)).default({}),
   internalRetries: z.number().int().min(0).default(0),
+  // AC-885: evaluator epoch carried from the judge so the improve loop refuses to
+  // compare scores across evaluator changes. null for legacy/delegated results.
+  evaluatorEpoch: z.string().nullable().default(null),
 });
 
 export type AgentTaskResult = z.infer<typeof AgentTaskResultSchema>;
@@ -166,6 +169,8 @@ export const RoundResultSchema = z.object({
   worstDimension: z.string().nullish(),
   worstDimensionScore: z.number().nullish(),
   roundDurationMs: z.number().int().min(0).nullish(),
+  // AC-885: evaluator epoch of the round's score (see AgentTaskResultSchema).
+  evaluatorEpoch: z.string().nullable().default(null),
 });
 
 export type RoundResult = z.infer<typeof RoundResultSchema>;
@@ -191,6 +196,8 @@ export const ImprovementResultSchema = z.object({
   totalInternalRetries: z.number().int().min(0).default(0),
   durationMs: z.number().int().min(0).nullish(),
   judgeCalls: z.number().int().min(0).default(0),
+  // AC-885: evaluator epoch of the winning (best) round (see AgentTaskResultSchema).
+  evaluatorEpoch: z.string().nullable().default(null),
 });
 
 export type ImprovementResult = z.infer<typeof ImprovementResultSchema>;

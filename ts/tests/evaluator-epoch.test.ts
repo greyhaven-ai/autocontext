@@ -1,7 +1,11 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { areComparable, computeEvaluatorEpoch } from "../src/judge/evaluator-epoch.js";
+import {
+  areComparable,
+  computeEvaluatorEpoch,
+  resolveEpochRebaseline,
+} from "../src/judge/evaluator-epoch.js";
 
 const fixturePath = join(
   import.meta.dirname,
@@ -33,5 +37,28 @@ describe("evaluator-epoch parity", () => {
     expect(areComparable("x", "y")).toBe(false);
     expect(areComparable(null, null)).toBe(true);
     expect(areComparable(null, "x")).toBe(false);
+  });
+});
+
+describe("resolveEpochRebaseline", () => {
+  it("never re-baselines the first round", () => {
+    expect(resolveEpochRebaseline(null, "e1", false)).toEqual({
+      rebaseline: false,
+      staleEpoch: null,
+    });
+  });
+
+  it("does not re-baseline when the round epoch matches the baseline", () => {
+    expect(resolveEpochRebaseline("e1", "e1", true)).toEqual({
+      rebaseline: false,
+      staleEpoch: null,
+    });
+  });
+
+  it("re-baselines and reports the stale epoch when the round epoch differs", () => {
+    expect(resolveEpochRebaseline("e1", "e2", true)).toEqual({
+      rebaseline: true,
+      staleEpoch: "e1",
+    });
   });
 });
