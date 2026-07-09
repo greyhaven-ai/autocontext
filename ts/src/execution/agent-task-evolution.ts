@@ -289,6 +289,8 @@ export class AgentTaskEvolutionRunner {
       reasoning: evaluation.reasoning,
       dimensionScores: evaluation.dimensionScores ?? {},
       internalRetries: 0,
+      // AC-885: evolution-mode evaluation does not carry a judge epoch.
+      evaluatorEpoch: null,
     };
 
     const lesson = accumulateLessons(judgeResult, state.generation + 1, evaluation.lessonSignal);

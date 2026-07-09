@@ -12,6 +12,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from autocontext.execution.evaluator_epoch import EVALUATOR_EPOCH_REBASELINE, resolve_epoch_rebaseline
 from autocontext.execution.improvement_events import ImprovementLoopEvent
 from autocontext.execution.output_cleaner import clean_revision_output
 from autocontext.execution.output_verifier import OutputVerifier
@@ -63,6 +64,7 @@ class RoundResult:
     worst_dimension: str | None = None
     worst_dimension_score: float | None = None
     round_duration_ms: int | None = None
+    evaluator_epoch: str | None = None
 
 
 @dataclass(slots=True)
@@ -84,6 +86,7 @@ class ImprovementResult:
     pareto_frontier: list[dict[str, Any]] = field(default_factory=list)
     actionable_side_info: list[dict[str, Any]] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
+    evaluator_epoch: str | None = None
 
     @property
     def improved(self) -> bool:
@@ -167,6 +170,10 @@ class ImprovementLoop:
         best_output = current_output
         best_score = 0.0
         best_round = 1
+        # AC-885: the evaluator epoch of the running baseline. When a later round's
+        # epoch is not comparable, the prior baseline is stale and the loop re-baselines.
+        baseline_epoch: str | None = None
+        has_baseline = False
         # AC-756 (reviewer P2): track whether the round that produced
         # best_score also satisfied dimension_threshold, so the fallthrough
         # met_threshold mirrors the full early-return predicate
@@ -229,6 +236,7 @@ class ImprovementLoop:
                 reasoning=(f"{judge_result.reasoning}\n\nObjective Verification Feedback:\n{context}"),
                 dimension_scores=judge_result.dimension_scores,
                 internal_retries=judge_result.internal_retries,
+                evaluator_epoch=judge_result.evaluator_epoch,
             )
 
         def _emit_final(final_result: ImprovementResult) -> ImprovementResult:
@@ -310,6 +318,7 @@ class ImprovementLoop:
                                 score=last_good_result.score,
                                 reasoning=last_good_result.reasoning,
                                 dimension_scores=last_good_result.dimension_scores,
+                                evaluator_epoch=last_good_result.evaluator_epoch,
                             ),
                         )
                         revised = self.task.revise_output(
@@ -329,6 +338,33 @@ class ImprovementLoop:
             # Successful judge evaluation
             consecutive_failures = 0
             last_good_result = round_result
+
+            # AC-885: refuse to compare across evaluator epochs. When this round's evaluator differs
+            # from the running baseline's, the prior baseline is stale: exclude it and re-baseline
+            # under this round's epoch (extends the AC-750 "only a legitimate round is a baseline"
+            # rule). last_unvetoed_score is reset so the max_score_delta check does not fire across
+            # the epoch boundary; best_score is reset so a stale-epoch best cannot win. The
+            # near-threshold/plateau stability state (threshold_met_round, prev_valid_score,
+            # plateau_count) is also reset so a prior-epoch threshold-met round cannot confirm a
+            # new-epoch round as "confirmed stable" and stop the loop early.
+            round_result.evaluator_epoch = result.evaluator_epoch
+            _epoch_decision = resolve_epoch_rebaseline(baseline_epoch, result.evaluator_epoch, has_baseline)
+            if _epoch_decision.rebaseline:
+                self._on_event(
+                    ImprovementLoopEvent(
+                        event=EVALUATOR_EPOCH_REBASELINE,
+                        round=round_num,
+                        stale_epoch=_epoch_decision.stale_epoch,
+                        new_epoch=result.evaluator_epoch,
+                    )
+                )
+                last_unvetoed_score = None
+                best_score = float("-inf")
+                threshold_met_round = None
+                prev_valid_score = None
+                plateau_count = 0
+            baseline_epoch = result.evaluator_epoch
+            has_baseline = True
 
             # Compute worst dimension for this round
             if result.dimension_scores:
@@ -399,6 +435,7 @@ class ImprovementLoop:
                         reasoning=result.reasoning + annotation,
                         dimension_scores=result.dimension_scores,
                         internal_retries=result.internal_retries,
+                        evaluator_epoch=result.evaluator_epoch,
                     )
                     effective_score = 0.0
                     round_result.score = 0.0
@@ -525,6 +562,7 @@ class ImprovementLoop:
                     # Threshold was met on a previous round too — confirmed stable
                     logger.info("quality threshold %.2f confirmed stable at round %d", self.quality_threshold, round_num)
                     duration_ms = int((time.monotonic() - loop_start) * 1000)
+                    best_epoch = next((r.evaluator_epoch for r in rounds if r.round_number == best_round), None)
                     return _emit_final(
                         ImprovementResult(
                             rounds=rounds,
@@ -544,6 +582,7 @@ class ImprovementLoop:
                                 for c in _pareto_frontier.candidates
                             ],
                             actionable_side_info=[a.to_dict() for a in _collected_asi],
+                            evaluator_epoch=best_epoch,
                         )
                     )
 
@@ -560,6 +599,7 @@ class ImprovementLoop:
                     # Clearly above threshold — stop immediately
                     logger.info("quality threshold %.2f met at round %d", self.quality_threshold, round_num)
                     duration_ms = int((time.monotonic() - loop_start) * 1000)
+                    best_epoch = next((r.evaluator_epoch for r in rounds if r.round_number == best_round), None)
                     return _emit_final(
                         ImprovementResult(
                             rounds=rounds,
@@ -579,6 +619,7 @@ class ImprovementLoop:
                                 for c in _pareto_frontier.candidates
                             ],
                             actionable_side_info=[a.to_dict() for a in _collected_asi],
+                            evaluator_epoch=best_epoch,
                         )
                     )
             else:
@@ -607,6 +648,7 @@ class ImprovementLoop:
                         reasoning=result.reasoning + dim_annotation,
                         dimension_scores=result.dimension_scores,
                         internal_retries=result.internal_retries,
+                        evaluator_epoch=result.evaluator_epoch,
                     )
                 revision_result = _apply_revision_feedback(current_output, revision_result)
                 revised = self.task.revise_output(current_output, revision_result, state)
@@ -618,6 +660,7 @@ class ImprovementLoop:
                 current_output = revised
 
         duration_ms = int((time.monotonic() - loop_start) * 1000)
+        best_epoch = next((r.evaluator_epoch for r in rounds if r.round_number == best_round), None)
         # AC-756: `met_threshold` semantically means "did the best output
         # we produced clear the quality bar?". Mirror the early-return
         # predicate -- score >= quality_threshold AND dimension_threshold
@@ -645,5 +688,6 @@ class ImprovementLoop:
                     for c in _pareto_frontier.candidates
                 ],
                 actionable_side_info=[a.to_dict() for a in _collected_asi],
+                evaluator_epoch=best_epoch,
             )
         )

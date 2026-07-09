@@ -1,0 +1,28 @@
+{
+  "cases": [
+    {
+      "rubric_text": "score correctness on a 0-1 scale",
+      "judge_provider": "anthropic",
+      "judge_model": "claude-sonnet-4-5",
+      "expected_epoch_id": "6a9695e3aa29f107dfdb4ce9452a80353d080504e9613e89efcffb8b3fd185de"
+    },
+    {
+      "rubric_text": "score correctness on a 0-1 scale",
+      "judge_provider": "openai",
+      "judge_model": "claude-sonnet-4-5",
+      "expected_epoch_id": "d94f46bd144980ed32b1e7a459b84840106db04a6ff5ad8acbba1130a4067a45"
+    },
+    {
+      "rubric_text": "évaluer la justesse, précision et complétude, 正確さ",
+      "judge_provider": "anthropic",
+      "judge_model": "claude-sonnet-4-5",
+      "expected_epoch_id": "2965b2c9ff18c13d692f967eda40cf646591d4479bd29245cf95a3d8f25f298d"
+    },
+    {
+      "rubric_text": "score correctness on a 0-1 scale",
+      "judge_provider": "anthropic",
+      "judge_model": "gpt-5",
+      "expected_epoch_id": "583123d44130c1381c99eb4f8d23d60ac5cf618824311142c1864e5a326d76c7"
+    }
+  ]
+}

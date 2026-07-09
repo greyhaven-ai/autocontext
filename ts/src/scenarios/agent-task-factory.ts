@@ -46,7 +46,11 @@ export function createAgentTask(opts: AgentTaskFactoryOpts): AgentTaskInterface 
     },
 
     initialState(seed?: number): Record<string, unknown> {
-      const state: Record<string, unknown> = { taskName: name, outputFormat: spec.outputFormat, seed: seed ?? null };
+      const state: Record<string, unknown> = {
+        taskName: name,
+        outputFormat: spec.outputFormat,
+        seed: seed ?? null,
+      };
       if (spec.sampleInput) {
         state.sampleInput = spec.sampleInput;
       }
@@ -83,6 +87,8 @@ export function createAgentTask(opts: AgentTaskFactoryOpts): AgentTaskInterface 
         reasoning: result.reasoning,
         dimensionScores: result.dimensionScores ?? {},
         internalRetries: result.internalRetries ?? 0,
+        // AC-885: carry the judge's evaluator epoch so the improve loop can detect epoch changes.
+        evaluatorEpoch: result.evaluatorEpoch ?? null,
       };
     },
 
@@ -114,7 +120,8 @@ export function createAgentTask(opts: AgentTaskFactoryOpts): AgentTaskInterface 
       if (!provider || (!spec.revisionPrompt && spec.maxRounds <= 1)) {
         return output;
       }
-      const revisionInstructions = spec.revisionPrompt ?? "Revise the output based on the feedback.";
+      const revisionInstructions =
+        spec.revisionPrompt ?? "Revise the output based on the feedback.";
       const prompt = [
         `Original output:\n${output}`,
         `\nJudge score: ${judgeResult.score}`,

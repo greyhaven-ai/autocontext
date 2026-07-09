@@ -73,6 +73,49 @@ describe("task runner config workflow", () => {
     expect(payload.rlm_sessions).toEqual([{ phase: "generate", content: "draft" }]);
   });
 
+  it("carries the evaluator epoch lineage per round and at the top level (AC-885)", () => {
+    const payload = JSON.parse(serializeTaskResult({
+      rounds: [
+        {
+          roundNumber: 1,
+          output: "draft",
+          score: 0.5,
+          reasoning: "ok",
+          dimensionScores: {},
+          isRevision: false,
+          judgeFailed: false,
+          evaluatorEpoch: "e1",
+        },
+        {
+          roundNumber: 2,
+          output: "best",
+          score: 0.9,
+          reasoning: "great",
+          dimensionScores: {},
+          isRevision: true,
+          judgeFailed: false,
+          evaluatorEpoch: "e2",
+        },
+      ],
+      bestOutput: "best",
+      bestScore: 0.9,
+      bestRound: 2,
+      totalRounds: 2,
+      metThreshold: true,
+      judgeFailures: 0,
+      terminationReason: "threshold_met",
+      dimensionTrajectory: {},
+      totalInternalRetries: 0,
+      evaluatorEpoch: "e2",
+    }));
+
+    expect(payload.rounds.map((r: { evaluator_epoch: string }) => r.evaluator_epoch)).toEqual([
+      "e1",
+      "e2",
+    ]);
+    expect(payload.evaluator_epoch).toBe("e2");
+  });
+
   it("builds snake_case enqueue config fields only for provided values", () => {
     expect(buildEnqueueTaskConfig({
       taskPrompt: "Prompt",

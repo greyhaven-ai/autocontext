@@ -883,6 +883,26 @@ class TestSerialization:
         data = json.loads(serialized)
         assert "duration_ms" not in data
 
+    def test_serialize_result_includes_evaluator_epoch(self):
+        """AC-885: the epoch lineage must ride on the persisted task-result JSON,
+        both per round and at the top level (no-migration plan)."""
+        result = ImprovementResult(
+            rounds=[
+                RoundResult(round_number=1, output="out1", score=0.5, reasoning="ok", evaluator_epoch="e1"),
+                RoundResult(round_number=2, output="out2", score=0.9, reasoning="great", evaluator_epoch="e2"),
+            ],
+            best_output="out2",
+            best_score=0.9,
+            best_round=2,
+            total_rounds=2,
+            met_threshold=True,
+            evaluator_epoch="e2",
+        )
+        serialized = _serialize_result(result)
+        data = json.loads(serialized)
+        assert [r["evaluator_epoch"] for r in data["rounds"]] == ["e1", "e2"]
+        assert data["evaluator_epoch"] == "e2"
+
     def test_serialize_evolution_result_includes_optimizer_surface(self):
         from autocontext.execution.agent_task_evolution import AgentTaskTrajectory
 

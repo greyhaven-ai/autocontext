@@ -60,8 +60,8 @@ export function evaluatePlateauState(opts: {
   minRounds: number;
 }): { plateauCount: number; shouldStop: boolean } {
   if (
-    opts.prevValidScore !== null
-    && Math.abs(opts.score - opts.prevValidScore) < PLATEAU_EPSILON
+    opts.prevValidScore !== null &&
+    Math.abs(opts.score - opts.prevValidScore) < PLATEAU_EPSILON
   ) {
     const plateauCount = opts.plateauCount + 1;
     return {
@@ -95,9 +95,9 @@ export function evaluateThresholdState(opts: {
   }
 
   if (
-    opts.effectiveScore >= opts.qualityThreshold
-    && opts.roundNum >= opts.minRounds
-    && dimensionsSatisfied
+    opts.effectiveScore >= opts.qualityThreshold &&
+    opts.roundNum >= opts.minRounds &&
+    dimensionsSatisfied
   ) {
     const nearThreshold = opts.effectiveScore < opts.qualityThreshold + NEAR_THRESHOLD_MARGIN;
 
@@ -160,5 +160,7 @@ export function buildRevisionFeedbackResult(opts: {
     reasoning: `${opts.result.reasoning}\n\nDimension Scores:\n${dimensionLines.join("\n")}`,
     dimensionScores: opts.result.dimensionScores,
     internalRetries: opts.result.internalRetries,
+    // AC-885: preserve the evaluator epoch through the enriched revision feedback.
+    evaluatorEpoch: opts.result.evaluatorEpoch ?? null,
   };
 }

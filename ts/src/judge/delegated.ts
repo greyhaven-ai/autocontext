@@ -43,6 +43,7 @@ function toJudgeResult(
     parseMethod,
     internalRetries: 0,
     dimensionsWereGenerated: false,
+    evaluatorEpoch: null,
   };
 }
 
@@ -98,10 +99,7 @@ export class SequentialDelegatedJudge implements JudgeInterface {
   readonly rubric: string;
   readonly #results: DelegatedResult[];
 
-  constructor(
-    results: DelegatedResult[],
-    rubric = "(delegated sequence — externally evaluated)",
-  ) {
+  constructor(results: DelegatedResult[], rubric = "(delegated sequence — externally evaluated)") {
     this.#results = results;
     this.rubric = rubric;
   }

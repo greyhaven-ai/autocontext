@@ -22,12 +22,14 @@ export interface EvaluateSimpleAgentTaskOpts {
 export async function evaluateSimpleAgentTaskOutput(
   opts: EvaluateSimpleAgentTaskOpts,
 ): Promise<AgentTaskResult> {
-  const judge = opts.judgeOverride ?? new LLMJudge({
-    provider: opts.provider,
-    model: opts.model,
-    rubric: opts.rubric,
-    hookBus: opts.hookBus ?? null,
-  });
+  const judge =
+    opts.judgeOverride ??
+    new LLMJudge({
+      provider: opts.provider,
+      model: opts.model,
+      rubric: opts.rubric,
+      hookBus: opts.hookBus ?? null,
+    });
   const result = await judge.evaluate({
     taskPrompt: opts.taskPrompt,
     agentOutput: opts.output,
@@ -41,6 +43,8 @@ export async function evaluateSimpleAgentTaskOutput(
     reasoning: result.reasoning,
     dimensionScores: result.dimensionScores,
     internalRetries: result.internalRetries ?? 0,
+    // AC-885: carry the judge's evaluator epoch so the improve loop can detect epoch changes.
+    evaluatorEpoch: result.evaluatorEpoch ?? null,
   };
 }
 
@@ -141,8 +145,9 @@ export function buildSimpleAgentTaskRevisionPrompt(opts: {
   referenceContext?: string;
   requiredConcepts?: string[];
 }): string {
-  const instruction = opts.revisionPrompt
-    ?? "Revise the following output based on the judge's feedback. Maintain what works, fix what doesn't.";
+  const instruction =
+    opts.revisionPrompt ??
+    "Revise the following output based on the judge's feedback. Maintain what works, fix what doesn't.";
 
   return [
     instruction,
@@ -153,7 +158,9 @@ export function buildSimpleAgentTaskRevisionPrompt(opts: {
     buildRequiredConceptsBlock(opts.requiredConcepts),
     `## Task\n${opts.taskPrompt}`,
     "Produce an improved version:",
-  ].filter((value) => value.length > 0).join("\n\n");
+  ]
+    .filter((value) => value.length > 0)
+    .join("\n\n");
 }
 
 export async function reviseSimpleAgentTaskOutput(opts: {

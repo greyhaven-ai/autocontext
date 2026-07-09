@@ -20,6 +20,10 @@ All notable changes to this project will be documented in this file.
 - harness optimization protocol: in-memory mechanism archive of promoted (frontier) and gated-out (orphan) mechanisms with candidate-evidence and parent-frontier lineage, reuse-ranked orphan rescue/prune, and a bounded ranked proposer digest with python/typescript parity (AC-880)
 - harness optimization protocol: noise calibration report (sample-variance noise floor, recommended margin and cost-clamped trial count, sparse-metric-too-noisy flag) with an opt-in caller-gated citation of the current margin against the noise floor in the advancement rationale and python/typescript parity (AC-881)
 - harness optimization protocol: cross-package parity fixtures driven by a single manifest that both packages iterate (every clean fixture validates and every invalid fixture is rejected in python and typescript), a membership guard that fails ci when a schema has no manifest entry, plus a cross-package parity doc section and a new-artifact release checklist (AC-882)
+- AC-885: evaluator-epoch identity for LLM-judge scores. Judge results carry a content-addressed
+  `evaluator_epoch` (rubric plus judge provider and model), and the improvement loop re-baselines
+  instead of comparing a round against a baseline scored under a different evaluator, emitting an
+  `evaluator_epoch_rebaseline` event. Python and TypeScript share a parity-pinned epoch hash.
 
 ## [0.11.0] - 2026-07-02
 

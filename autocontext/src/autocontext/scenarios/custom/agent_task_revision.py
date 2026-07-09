@@ -170,6 +170,7 @@ def patch_legacy_generated_evaluate_output(
             reasoning=result.reasoning,
             dimension_scores=result.dimension_scores,
             internal_retries=result.internal_retries,
+            evaluator_epoch=result.evaluator_epoch,
         )
 
     cls.evaluate_output = _patched_evaluate_output

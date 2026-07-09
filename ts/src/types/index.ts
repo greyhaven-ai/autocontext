@@ -52,17 +52,15 @@ export const JudgeResultSchema = z.object({
   reasoning: z.string(),
   dimensionScores: z.record(z.number().min(0).max(1)).default({}),
   rawResponses: z.array(z.string()).default([]),
-  parseMethod: z.enum([
-    "raw_json",
-    "code_block",
-    "markers",
-    "plaintext",
-    "none",
-    "delegated",
-    "callback",
-  ]).default("none"),
+  parseMethod: z
+    .enum(["raw_json", "code_block", "markers", "plaintext", "none", "delegated", "callback"])
+    .default("none"),
   internalRetries: z.number().int().min(0).default(0),
   dimensionsWereGenerated: z.boolean().default(false),
+  // AC-885: content-addressed identity of the evaluator (rubric + judge) that produced this
+  // score; null for legacy/delegated results. Always present so baselines never silently
+  // compare across evaluator changes.
+  evaluatorEpoch: z.string().nullable().default(null),
 });
 
 export type JudgeResult = z.infer<typeof JudgeResultSchema>;
@@ -76,6 +74,9 @@ export const AgentTaskResultSchema = z.object({
   reasoning: z.string(),
   dimensionScores: z.record(z.number().min(0).max(1)).default({}),
   internalRetries: z.number().int().min(0).default(0),
+  // AC-885: evaluator epoch carried from the judge so the improve loop refuses to
+  // compare scores across evaluator changes. null for legacy/delegated results.
+  evaluatorEpoch: z.string().nullable().default(null),
 });
 
 export type AgentTaskResult = z.infer<typeof AgentTaskResultSchema>;
@@ -168,6 +169,8 @@ export const RoundResultSchema = z.object({
   worstDimension: z.string().nullish(),
   worstDimensionScore: z.number().nullish(),
   roundDurationMs: z.number().int().min(0).nullish(),
+  // AC-885: evaluator epoch of the round's score (see AgentTaskResultSchema).
+  evaluatorEpoch: z.string().nullable().default(null),
 });
 
 export type RoundResult = z.infer<typeof RoundResultSchema>;
@@ -193,6 +196,8 @@ export const ImprovementResultSchema = z.object({
   totalInternalRetries: z.number().int().min(0).default(0),
   durationMs: z.number().int().min(0).nullish(),
   judgeCalls: z.number().int().min(0).default(0),
+  // AC-885: evaluator epoch of the winning (best) round (see AgentTaskResultSchema).
+  evaluatorEpoch: z.string().nullable().default(null),
 });
 
 export type ImprovementResult = z.infer<typeof ImprovementResultSchema>;
@@ -201,12 +206,7 @@ export type ImprovementResult = z.infer<typeof ImprovementResultSchema>;
 // Notification types
 // ---------------------------------------------------------------------------
 
-export const EventTypeSchema = z.enum([
-  "threshold_met",
-  "regression",
-  "completion",
-  "failure",
-]);
+export const EventTypeSchema = z.enum(["threshold_met", "regression", "completion", "failure"]);
 export type EventType = z.infer<typeof EventTypeSchema>;
 
 export const NotificationEventSchema = z.object({

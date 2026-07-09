@@ -1,8 +1,4 @@
-import type {
-  AgentTaskResult,
-  ImprovementResult,
-  RoundResult,
-} from "../types/index.js";
+import type { AgentTaskResult, ImprovementResult, RoundResult } from "../types/index.js";
 
 function findWorstDimension(dimensionScores: Record<string, number>): {
   worstDimension: string | undefined;
@@ -47,6 +43,8 @@ export function buildRoundResult(opts: {
     worstDimension: worstDimension.worstDimension,
     worstDimensionScore: worstDimension.worstDimensionScore,
     roundDurationMs: opts.roundDurationMs,
+    // AC-885: carry the round's evaluator epoch (null for legacy/delegated results).
+    evaluatorEpoch: opts.result.evaluatorEpoch ?? null,
   };
 }
 
@@ -63,6 +61,7 @@ export function buildImprovementResult(opts: {
   totalInternalRetries: number;
   durationMs: number;
   judgeCalls: number;
+  evaluatorEpoch?: string | null;
 }): ImprovementResult {
   return {
     rounds: opts.rounds,
@@ -77,5 +76,7 @@ export function buildImprovementResult(opts: {
     totalInternalRetries: opts.totalInternalRetries,
     durationMs: opts.durationMs,
     judgeCalls: opts.judgeCalls,
+    // AC-885: evaluator epoch of the winning (best) round; null when unknown.
+    evaluatorEpoch: opts.evaluatorEpoch ?? null,
   };
 }

@@ -93,12 +93,14 @@ class TestImproveCommand:
                 reasoning="Needs work",
                 dimension_scores={"quality": 0.2},
                 internal_retries=0,
+                evaluator_epoch=None,
             ),
             SimpleNamespace(
                 score=0.95,
                 reasoning="Looks good",
                 dimension_scores={"quality": 0.95},
                 internal_retries=0,
+                evaluator_epoch=None,
             ),
         ]
 

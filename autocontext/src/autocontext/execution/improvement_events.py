@@ -57,3 +57,6 @@ class ImprovementLoopEvent:
     output: str | None = None
     checkpoint_ok: bool | None = None
     checkpoint_exit_code: int | None = None
+    # AC-885: emitted with event="evaluator_epoch_rebaseline".
+    stale_epoch: str | None = None
+    new_epoch: str | None = None

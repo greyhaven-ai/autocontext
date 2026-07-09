@@ -4,6 +4,7 @@ import { parseJudgeResponse } from "./parse.js";
 import type { ParseMethod } from "./parse.js";
 import { checkRubricCoherence } from "./rubric-coherence.js";
 import { compileRubricSpec, type RubricSpec } from "./rubric-spec.js";
+import { computeEvaluatorEpoch } from "./evaluator-epoch.js";
 
 export const DEFAULT_FACTUAL_CONFIDENCE = 0.5;
 
@@ -17,10 +18,7 @@ export interface LLMJudgeOpts {
   hookBus?: HookBus | null;
 }
 
-export function detectGeneratedDimensions(
-  dimensionKeys: string[],
-  rubric: string,
-): boolean {
+export function detectGeneratedDimensions(dimensionKeys: string[], rubric: string): boolean {
   if (dimensionKeys.length === 0) return false;
   const rubricLower = rubric.toLowerCase();
   const rubricWords = new Set(rubricLower.split(/\W+/).filter(Boolean));
@@ -44,6 +42,7 @@ export class LLMJudge {
   #rubricWarnings: string[];
   #hookBus: HookBus | null;
   #typedDimensionIds: string[];
+  #evaluatorEpoch: string | null;
 
   constructor(opts: LLMJudgeOpts) {
     this.#provider = opts.provider;
@@ -66,10 +65,25 @@ export class LLMJudge {
     } else {
       this.#rubricWarnings = [];
     }
+
+    // AC-885: content-addressed identity of this evaluator (rubric + judge). The epoch for the
+    // constructor model is computed once here; stamped on every JudgeResult so downstream baselines
+    // never silently compare across evaluator changes. When a BEFORE_JUDGE hook swaps the model at
+    // evaluate() time, the stamped epoch reflects the effective model instead (see evaluate).
+    // Degrades to null on any failure rather than breaking scoring.
+    this.#evaluatorEpoch = this.epochForModel(this.model);
   }
 
   get rubricWarnings(): string[] {
     return this.#rubricWarnings;
+  }
+
+  private epochForModel(model: string): string | null {
+    try {
+      return computeEvaluatorEpoch(this.rubric, this.#provider.name, model).epochId;
+    } catch {
+      return null;
+    }
   }
 
   async evaluate(opts: {
@@ -102,7 +116,10 @@ export class LLMJudge {
     const effectivePinnedDimensions = opts.pinnedDimensions?.length
       ? opts.pinnedDimensions
       : this.#typedDimensionIds;
-    const userPrompt = this.buildJudgePrompt({ ...opts, pinnedDimensions: effectivePinnedDimensions });
+    const userPrompt = this.buildJudgePrompt({
+      ...opts,
+      pinnedDimensions: effectivePinnedDimensions,
+    });
 
     const scores: number[] = [];
     const reasonings: string[] = [];
@@ -110,6 +127,10 @@ export class LLMJudge {
     const rawResponses: string[] = [];
     let totalInternalRetries = 0;
     let lastParseMethod: ParseMethod = "none";
+    // AC-885: the epoch must reflect the model actually sent to the provider, which a BEFORE_JUDGE
+    // hook may change. Capture the first sample's effective (post-hook) model; if samples resolve
+    // different models (pathological), the first one is chosen deterministically.
+    let effectiveModel: string | null = null;
 
     for (let s = 0; s < this.#samples; s++) {
       let score = 0;
@@ -138,6 +159,9 @@ export class LLMJudge {
         const finalSystemPrompt = readString(before.payload.systemPrompt) ?? systemPrompt;
         const finalUserPrompt = readString(before.payload.userPrompt) ?? userPrompt;
         const finalModel = readString(before.payload.model) ?? this.model;
+        if (effectiveModel === null) {
+          effectiveModel = finalModel;
+        }
         const finalTemperature = readNumber(before.payload.temperature) ?? this.#temperature;
         const result = await this.#provider.complete({
           systemPrompt: finalSystemPrompt,
@@ -207,11 +231,15 @@ export class LLMJudge {
         effectivePinnedDimensions.map((dimensionId) => [dimensionId, avgDims[dimensionId] ?? 0]),
       );
     } else {
-      dimensionsWereGenerated = detectGeneratedDimensions(
-        Object.keys(avgDims),
-        this.rubric,
-      );
+      dimensionsWereGenerated = detectGeneratedDimensions(Object.keys(avgDims), this.rubric);
     }
+
+    // Reuse the constructor epoch in the common (no-hook) case where the effective model is
+    // unchanged; recompute only when a hook swapped the model.
+    const stampedEpoch =
+      effectiveModel === null || effectiveModel === this.model
+        ? this.#evaluatorEpoch
+        : this.epochForModel(effectiveModel);
 
     return {
       score: avgScore,
@@ -221,6 +249,7 @@ export class LLMJudge {
       parseMethod: lastParseMethod,
       internalRetries: totalInternalRetries,
       dimensionsWereGenerated,
+      evaluatorEpoch: stampedEpoch,
     };
   }
 
@@ -268,8 +297,8 @@ export class LLMJudge {
       const dimList = opts.pinnedDimensions.join(", ");
       parts.push(
         `\n## Required Dimensions\n` +
-        `You MUST use exactly these dimension names in your scoring: ${dimList}\n` +
-        `Do not add, remove, or rename dimensions. Score each one between 0.0 and 1.0.\n`,
+          `You MUST use exactly these dimension names in your scoring: ${dimList}\n` +
+          `Do not add, remove, or rename dimensions. Score each one between 0.0 and 1.0.\n`,
       );
     }
 

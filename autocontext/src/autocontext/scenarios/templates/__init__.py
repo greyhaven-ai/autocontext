@@ -175,6 +175,7 @@ class _TemplateAgentTask(AgentTaskInterface):
                 if evaluator_guardrail is not None
                 else None
             ),
+            evaluator_epoch=result.evaluator_epoch,
         )
 
     def get_rubric(self) -> str:
@@ -436,6 +437,7 @@ class TemplateAgentTask(AgentTaskInterface):
                 if evaluator_guardrail is not None
                 else None
             ),
+            evaluator_epoch=result.evaluator_epoch,
         )
 
     def get_rubric(self) -> str:

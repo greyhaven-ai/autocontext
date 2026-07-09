@@ -14,6 +14,7 @@ import {
   updateDimensionTrajectory,
 } from "./improvement-loop-policy.js";
 import { buildImprovementResult, buildRoundResult } from "./improvement-loop-result.js";
+import { EVALUATOR_EPOCH_REBASELINE, resolveEpochRebaseline } from "../judge/evaluator-epoch.js";
 
 export { isImproved, isParseFailure } from "./improvement-loop-detection.js";
 
@@ -74,6 +75,10 @@ export class ImprovementLoop {
     let pinnedDimensions: string[] | undefined;
     let prevValidScore: number | null = null;
     let plateauCount = 0;
+    // AC-885: evaluator epoch of the running baseline. When a later round's epoch is not
+    // comparable, the prior baseline is stale and the loop re-baselines.
+    let baselineEpoch: string | null = null;
+    let hasBaseline = false;
 
     for (let roundNum = 1; roundNum <= this.#maxRounds; roundNum++) {
       const roundStart = performance.now();
@@ -115,6 +120,8 @@ export class ImprovementLoop {
             reasoning: lastGoodResult.reasoning,
             dimensionScores: lastGoodResult.dimensionScores,
             internalRetries: 0,
+            // AC-885: carry the last good round's epoch through the failure-path feedback.
+            evaluatorEpoch: lastGoodResult.evaluatorEpoch ?? null,
           };
           this.#timeBudget?.check(`round ${roundNum} revision`);
           const revised = await this.#task.reviseOutput(currentOutput, feedbackResult, opts.state);
@@ -130,6 +137,31 @@ export class ImprovementLoop {
       consecutiveFailures = 0;
       const previousValidRound = lastGoodResult;
       lastGoodResult = roundResult;
+
+      // AC-885: refuse to compare across evaluator epochs. When this round's evaluator differs
+      // from the running baseline's, the prior baseline is stale: exclude it and re-baseline under
+      // this round's epoch. prevValidScore (the delta baseline threaded into applyScoreDeltaPolicy)
+      // is reset so the maxScoreDelta check does not fire across the epoch boundary; bestScore is
+      // reset so a stale-epoch best cannot win. The near-threshold/plateau stability state
+      // (thresholdMetRound, plateauCount) is also reset so a prior-epoch threshold-met round cannot
+      // confirm a new-epoch round as "confirmed stable" and stop the loop early. Mirrors Python
+      // resolve_epoch_rebaseline.
+      const roundEpoch = result.evaluatorEpoch ?? null;
+      const epochDecision = resolveEpochRebaseline(baselineEpoch, roundEpoch, hasBaseline);
+      if (epochDecision.rebaseline) {
+        // The TS loop has no event sink, so the rebaseline is surfaced via console.warn -- the same
+        // channel the score-delta warning uses. The token EVALUATOR_EPOCH_REBASELINE mirrors the
+        // Python event name so downstream log consumers can pattern-match on it.
+        console.warn(
+          `${EVALUATOR_EPOCH_REBASELINE} (round ${roundNum}: stale epoch ${epochDecision.staleEpoch} -> new epoch ${roundEpoch})`,
+        );
+        prevValidScore = null;
+        bestScore = Number.NEGATIVE_INFINITY;
+        thresholdMetRound = null;
+        plateauCount = 0;
+      }
+      baselineEpoch = roundEpoch;
+      hasBaseline = true;
 
       if (pinnedDimensions === undefined && Object.keys(result.dimensionScores).length > 0) {
         pinnedDimensions = Object.keys(result.dimensionScores).sort();
@@ -209,6 +241,7 @@ export class ImprovementLoop {
           totalInternalRetries,
           durationMs: Math.round(performance.now() - loopStart),
           judgeCalls,
+          evaluatorEpoch: bestRoundEpoch(rounds, bestRound),
         });
       }
 
@@ -241,6 +274,15 @@ export class ImprovementLoop {
       totalInternalRetries,
       durationMs: Math.round(performance.now() - loopStart),
       judgeCalls,
+      evaluatorEpoch: bestRoundEpoch(rounds, bestRound),
     });
   }
+}
+
+/** AC-885: evaluator epoch of the round that produced best_score (null when not found). */
+function bestRoundEpoch(
+  rounds: ReturnType<typeof buildRoundResult>[],
+  bestRound: number,
+): string | null {
+  return rounds.find((r) => r.roundNumber === bestRound)?.evaluatorEpoch ?? null;
 }

@@ -14,6 +14,8 @@ class AgentTaskResult:
     dimension_scores: dict[str, float] = field(default_factory=dict)
     internal_retries: int = 0
     evaluator_guardrail: dict[str, Any] | None = None
+    # AC-885: evaluator epoch that produced this score (None for non-judge or legacy paths).
+    evaluator_epoch: str | None = None
 
 
 class AgentTaskInterface(ABC):
