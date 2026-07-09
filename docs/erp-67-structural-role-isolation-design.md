@@ -147,21 +147,21 @@ system turn, and does not change the agent's actions.
 **Stage 4 — flip the default** — **NOT done; blocked.** The default stays
 `False`. Two hard prerequisites must land first:
 
-**Prerequisite A — complete the trust classification (correctness bug).** The
-Stage 1 split currently routes only the ERP-59 fenced fields (playbook / coach
-hints / dead-ends) to `untrusted_reference` and leaves everything else in
-`system`. But much of that "everything else" is **not** operator-controlled —
-prior analyst output, coach-generated lessons, architect-generated tool context,
-session reports, evidence manifests, and editable role notebooks are all
-model-, user-, or document-derived, i.e. attacker-influenceable (second-order
-stored injection). Today those sit in the flat user prompt; enabling isolation
-would **promote them to system authority** — strictly worse. Before default-on,
-every non-operator component must be provenance-classified and routed to the
-untrusted turn, leaving only truly operator-controlled text (scenario rules,
-strategy interface, evaluation criteria, role task, constraints, the guardrail,
-simplicity guidance, hint policy) in `system` — with adversarial sentinels
-covering each newly-classified component. Until then the flag is opt-in and,
-frankly, not yet a net security win when enabled.
+**Prerequisite A — complete the trust classification (correctness bug).** _Done._
+The split originally routed only the ERP-59 fenced fields (playbook / coach hints
+/ dead-ends) to `untrusted_reference` and left everything else in `system` — but
+much of that was model-, user-, or document-derived (prior analyst output, coach
+lessons, architect-generated tool context, session reports, evidence manifests,
+editable notebooks, task observation, environment snapshot, trajectory, etc.),
+i.e. attacker-influenceable second-order injection. Enabling isolation would have
+_promoted_ it to system authority — strictly worse. The split now keeps **only
+operator-authored** text in `system` (the system-turn guardrail, scenario rules,
+strategy interface, evaluation criteria, role task, role constraints, hint
+policy, simplicity guidance) and routes **everything else** to the untrusted user
+turn. Adversarial sentinel tests cover each shared derived component and the
+role-specific ones (`tests/test_prompt_parts_isolation.py`). `flat` is unchanged
+and byte-identical. So isolation-on is now a net security win; only the soak
+below gates default-on.
 
 **Prerequisite B — a capable-backend soak with an objective gate.** CI's offline
 `DeterministicDevClient` is incapable, so the suite exercises the flat path and
