@@ -31,6 +31,18 @@ class _RecordingClient(LanguageModelClient):
         return ModelResponse(text="multi", usage=RoleUsage(0, 0, 0, model))
 
 
+class _FallbackClient(LanguageModelClient):
+    """Single-prompt backend: overrides only `generate`, inheriting the base
+    `generate_multiturn` fallback that flattens system+user into one prompt."""
+
+    def __init__(self) -> None:
+        self.generate_calls: list[dict[str, object]] = []
+
+    def generate(self, *, model, prompt, max_tokens, temperature, role=""):  # type: ignore[no-untyped-def]
+        self.generate_calls.append({"prompt": prompt, "role": role})
+        return ModelResponse(text="fallback", usage=RoleUsage(0, 0, 0, model))
+
+
 def _task(**overrides: object) -> SubagentTask:
     base: dict[str, object] = {
         "role": "competitor",
@@ -81,3 +93,18 @@ def test_system_defaults_empty_so_existing_call_sites_are_unchanged() -> None:
     client = _RecordingClient()
     SubagentRuntime(client).run_task(task)
     assert len(client.generate_calls) == 1 and not client.multiturn_calls
+
+
+def test_fallback_backend_preserves_role_through_base_generate_multiturn() -> None:
+    # A single-prompt client that inherits the base generate_multiturn fallback
+    # must still receive the task role on its generate() — role-preservation must
+    # hold on the flattened path, not only when a client overrides multiturn.
+    client = _FallbackClient()
+    exec_result = SubagentRuntime(client).run_task(_task(role="coach", system="SYSTEM"))
+    assert len(client.generate_calls) == 1
+    assert client.generate_calls[0]["role"] == "coach"
+    # Flattened content still carries both the system turn and the user body.
+    assert "SYSTEM" in str(client.generate_calls[0]["prompt"])
+    assert "USER-BODY untrusted reference here" in str(client.generate_calls[0]["prompt"])
+    assert exec_result.role == "coach"
+    assert exec_result.content == "fallback"
