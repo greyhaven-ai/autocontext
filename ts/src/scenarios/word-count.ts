@@ -49,6 +49,7 @@ export class WordCountTask {
       parseMethod: "deterministic" as "raw_json",
       internalRetries: 0,
       dimensionsWereGenerated: false,
+      evaluatorEpoch: null,
     };
   }
 }

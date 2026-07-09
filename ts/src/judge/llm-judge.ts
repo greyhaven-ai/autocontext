@@ -4,6 +4,7 @@ import { parseJudgeResponse } from "./parse.js";
 import type { ParseMethod } from "./parse.js";
 import { checkRubricCoherence } from "./rubric-coherence.js";
 import { compileRubricSpec, type RubricSpec } from "./rubric-spec.js";
+import { computeEvaluatorEpoch } from "./evaluator-epoch.js";
 
 export const DEFAULT_FACTUAL_CONFIDENCE = 0.5;
 
@@ -17,10 +18,7 @@ export interface LLMJudgeOpts {
   hookBus?: HookBus | null;
 }
 
-export function detectGeneratedDimensions(
-  dimensionKeys: string[],
-  rubric: string,
-): boolean {
+export function detectGeneratedDimensions(dimensionKeys: string[], rubric: string): boolean {
   if (dimensionKeys.length === 0) return false;
   const rubricLower = rubric.toLowerCase();
   const rubricWords = new Set(rubricLower.split(/\W+/).filter(Boolean));
@@ -44,6 +42,7 @@ export class LLMJudge {
   #rubricWarnings: string[];
   #hookBus: HookBus | null;
   #typedDimensionIds: string[];
+  #evaluatorEpoch: string | null;
 
   constructor(opts: LLMJudgeOpts) {
     this.#provider = opts.provider;
@@ -65,6 +64,19 @@ export class LLMJudge {
       this.#rubricWarnings = result.warnings;
     } else {
       this.#rubricWarnings = [];
+    }
+
+    // AC-885: content-addressed identity of this evaluator (rubric + judge). Computed once and
+    // stamped on every JudgeResult so downstream baselines never silently compare across
+    // evaluator changes. Degrades to null on any failure rather than breaking scoring.
+    try {
+      this.#evaluatorEpoch = computeEvaluatorEpoch(
+        this.rubric,
+        this.#provider.name,
+        this.model,
+      ).epochId;
+    } catch {
+      this.#evaluatorEpoch = null;
     }
   }
 
@@ -102,7 +114,10 @@ export class LLMJudge {
     const effectivePinnedDimensions = opts.pinnedDimensions?.length
       ? opts.pinnedDimensions
       : this.#typedDimensionIds;
-    const userPrompt = this.buildJudgePrompt({ ...opts, pinnedDimensions: effectivePinnedDimensions });
+    const userPrompt = this.buildJudgePrompt({
+      ...opts,
+      pinnedDimensions: effectivePinnedDimensions,
+    });
 
     const scores: number[] = [];
     const reasonings: string[] = [];
@@ -207,10 +222,7 @@ export class LLMJudge {
         effectivePinnedDimensions.map((dimensionId) => [dimensionId, avgDims[dimensionId] ?? 0]),
       );
     } else {
-      dimensionsWereGenerated = detectGeneratedDimensions(
-        Object.keys(avgDims),
-        this.rubric,
-      );
+      dimensionsWereGenerated = detectGeneratedDimensions(Object.keys(avgDims), this.rubric);
     }
 
     return {
@@ -221,6 +233,7 @@ export class LLMJudge {
       parseMethod: lastParseMethod,
       internalRetries: totalInternalRetries,
       dimensionsWereGenerated,
+      evaluatorEpoch: this.#evaluatorEpoch,
     };
   }
 
@@ -268,8 +281,8 @@ export class LLMJudge {
       const dimList = opts.pinnedDimensions.join(", ");
       parts.push(
         `\n## Required Dimensions\n` +
-        `You MUST use exactly these dimension names in your scoring: ${dimList}\n` +
-        `Do not add, remove, or rename dimensions. Score each one between 0.0 and 1.0.\n`,
+          `You MUST use exactly these dimension names in your scoring: ${dimList}\n` +
+          `Do not add, remove, or rename dimensions. Score each one between 0.0 and 1.0.\n`,
       );
     }
 

@@ -58,6 +58,7 @@ class JudgeResult:
     internal_retries: int = 0
     dimensions_were_generated: bool = False
     disagreement: DisagreementMetrics | None = None
+    evaluator_epoch: str | None = None
 
 
 _RESULT_START = "<!-- JUDGE_RESULT_START -->"
@@ -195,6 +196,17 @@ class LLMJudge:
         self.samples = max(1, samples)
         self.temperature = temperature
         self.hook_bus = hook_bus
+
+        # AC-885: content-addressed identity of this evaluator (rubric + judge). Computed once;
+        # stamped on every JudgeResult so downstream baselines never silently compare across
+        # evaluator changes. Degrades to None on any failure rather than breaking scoring.
+        from autocontext.execution.evaluator_epoch import compute_evaluator_epoch
+
+        try:
+            self._evaluator_epoch: str | None = compute_evaluator_epoch(self.rubric, self.provider.name, self.model).epoch_id
+        except Exception:  # pragma: no cover - defensive; epoch is non-critical metadata
+            logger.debug("evaluator_epoch computation failed", exc_info=True)
+            self._evaluator_epoch = None
 
         # Backward-compatible property
         self.llm_fn = llm_fn
@@ -387,6 +399,7 @@ class LLMJudge:
             internal_retries=total_internal_retries,
             dimensions_were_generated=dimensions_were_generated,
             disagreement=disagreement,
+            evaluator_epoch=self._evaluator_epoch,
         )
 
     def _build_judge_prompt(

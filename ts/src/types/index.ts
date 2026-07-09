@@ -52,17 +52,15 @@ export const JudgeResultSchema = z.object({
   reasoning: z.string(),
   dimensionScores: z.record(z.number().min(0).max(1)).default({}),
   rawResponses: z.array(z.string()).default([]),
-  parseMethod: z.enum([
-    "raw_json",
-    "code_block",
-    "markers",
-    "plaintext",
-    "none",
-    "delegated",
-    "callback",
-  ]).default("none"),
+  parseMethod: z
+    .enum(["raw_json", "code_block", "markers", "plaintext", "none", "delegated", "callback"])
+    .default("none"),
   internalRetries: z.number().int().min(0).default(0),
   dimensionsWereGenerated: z.boolean().default(false),
+  // AC-885: content-addressed identity of the evaluator (rubric + judge) that produced this
+  // score; null for legacy/delegated results. Always present so baselines never silently
+  // compare across evaluator changes.
+  evaluatorEpoch: z.string().nullable().default(null),
 });
 
 export type JudgeResult = z.infer<typeof JudgeResultSchema>;
@@ -201,12 +199,7 @@ export type ImprovementResult = z.infer<typeof ImprovementResultSchema>;
 // Notification types
 // ---------------------------------------------------------------------------
 
-export const EventTypeSchema = z.enum([
-  "threshold_met",
-  "regression",
-  "completion",
-  "failure",
-]);
+export const EventTypeSchema = z.enum(["threshold_met", "regression", "completion", "failure"]);
 export type EventType = z.infer<typeof EventTypeSchema>;
 
 export const NotificationEventSchema = z.object({
