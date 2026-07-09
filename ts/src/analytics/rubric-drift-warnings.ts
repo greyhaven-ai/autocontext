@@ -43,6 +43,7 @@ export function makeWarning(
     affectedScenarios,
     affectedProviders,
     affectedReleases,
+    mixedEpoch: snapshot.mixedEpoch,
     metadata: {},
   };
 }

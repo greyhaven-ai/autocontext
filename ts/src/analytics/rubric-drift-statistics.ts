@@ -67,11 +67,15 @@ export function computeRubricSnapshot(
       release: opts.release ?? "",
       scenarioFamily: opts.scenarioFamily ?? "",
       agentProvider: opts.agentProvider ?? "",
+      evaluatorEpochs: [],
+      mixedEpoch: false,
       metadata: { scenarios },
     };
   }
 
   const scores = facets.map((facet) => facet.bestScore);
+  const epochs = [...new Set(facets.map((facet) => facet.evaluatorEpoch).filter((epoch): epoch is string => epoch != null))].sort();
+  const mixedEpoch = epochs.length > 1;
   const timestamps = facets
     .map((facet) => facet.createdAt ?? "")
     .filter((timestamp) => timestamp.length > 0)
@@ -115,6 +119,8 @@ export function computeRubricSnapshot(
     release: opts.release ?? "",
     scenarioFamily: opts.scenarioFamily ?? "",
     agentProvider: opts.agentProvider ?? "",
+    evaluatorEpochs: epochs,
+    mixedEpoch,
     metadata: { scenarios },
   };
 }

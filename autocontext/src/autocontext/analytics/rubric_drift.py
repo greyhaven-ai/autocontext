@@ -46,6 +46,8 @@ class RubricSnapshot(BaseModel):
     release: str
     scenario_family: str
     agent_provider: str
+    evaluator_epochs: list[str] = Field(default_factory=list)
+    mixed_epoch: bool = False
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -107,6 +109,7 @@ class DriftWarning(BaseModel):
     affected_scenarios: list[str]
     affected_providers: list[str]
     affected_releases: list[str]
+    mixed_epoch: bool = False
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -157,6 +160,8 @@ class RubricDriftMonitor:
             )
 
         scores = [f.best_score for f in facets]
+        epochs = sorted({f.evaluator_epoch for f in facets if f.evaluator_epoch is not None})
+        mixed_epoch = len(epochs) > 1
         timestamps = sorted(f.created_at for f in facets if f.created_at)
         window_start = timestamps[0] if timestamps else ""
         window_end = timestamps[-1] if timestamps else ""
@@ -213,6 +218,8 @@ class RubricDriftMonitor:
             release=release,
             scenario_family=scenario_family,
             agent_provider=agent_provider,
+            evaluator_epochs=epochs,
+            mixed_epoch=mixed_epoch,
             metadata={"scenarios": scenarios},
         )
 
@@ -354,6 +361,9 @@ class RubricDriftMonitor:
                 thresholds.max_rollback_rate,
                 scenarios, providers, releases,
             ))
+
+        for warning in warnings:
+            warning.mixed_epoch = current.mixed_epoch
 
         return warnings
 
