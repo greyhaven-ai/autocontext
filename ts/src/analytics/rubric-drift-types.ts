@@ -10,6 +10,7 @@ export interface RunFacetLike {
   delightSignals?: DelightSignalLike[];
   retries?: number;
   rollbacks?: number;
+  evaluatorEpoch?: string | null;
 }
 
 export interface RubricSnapshot {
@@ -31,6 +32,9 @@ export interface RubricSnapshot {
   release: string;
   scenarioFamily: string;
   agentProvider: string;
+  evaluatorEpochs: string[];
+  mixedEpoch: boolean;
+  hasUnknownEpoch: boolean;
   metadata: Record<string, unknown>;
 }
 
@@ -56,6 +60,7 @@ export interface DriftWarning {
   affectedScenarios: string[];
   affectedProviders: string[];
   affectedReleases: string[];
+  mixedEpoch: boolean;
   metadata: Record<string, unknown>;
 }
 

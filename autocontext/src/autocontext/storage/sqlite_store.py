@@ -121,6 +121,7 @@ class SQLiteStore(
         dimension_summary_json: str | None = None,
         scoring_backend: str = "elo",
         rating_uncertainty: float | None = None,
+        evaluator_epoch: str | None = None,
     ) -> None:
         with self.connect() as conn:
             conn.execute(
@@ -128,9 +129,9 @@ class SQLiteStore(
                 INSERT INTO generations(
                     run_id, generation_index, mean_score, best_score, elo, wins, losses,
                     gate_decision, status, duration_seconds, dimension_summary_json,
-                    scoring_backend, rating_uncertainty
+                    scoring_backend, rating_uncertainty, evaluator_epoch
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(run_id, generation_index) DO UPDATE SET
                     mean_score = excluded.mean_score,
                     best_score = excluded.best_score,
@@ -143,6 +144,7 @@ class SQLiteStore(
                     dimension_summary_json = excluded.dimension_summary_json,
                     scoring_backend = excluded.scoring_backend,
                     rating_uncertainty = excluded.rating_uncertainty,
+                    evaluator_epoch = excluded.evaluator_epoch,
                     updated_at = datetime('now')
                 """,
                 (
@@ -159,6 +161,7 @@ class SQLiteStore(
                     dimension_summary_json,
                     scoring_backend,
                     rating_uncertainty,
+                    evaluator_epoch,
                 ),
             )
 

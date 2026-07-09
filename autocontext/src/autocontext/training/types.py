@@ -1,4 +1,5 @@
 """Training data types for strategy-level export."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -16,6 +17,7 @@ class TrainingRecord:
     score: float
     gate_decision: str
     context: dict[str, Any] = field(default_factory=dict)
+    evaluator_epoch: str | None = None
 
 
 @dataclass(slots=True)

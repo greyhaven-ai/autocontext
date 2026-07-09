@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -55,7 +55,9 @@ describe("storage migration workflow", () => {
     migrateDatabase(db, MIGRATIONS_DIR);
     migrateDatabase(db, MIGRATIONS_DIR);
 
-    const versions = db.prepare("SELECT filename FROM schema_version ORDER BY filename").all() as Array<{ filename: string }>;
+    const versions = db
+      .prepare("SELECT filename FROM schema_version ORDER BY filename")
+      .all() as Array<{ filename: string }>;
     expect(versions.length).toBeGreaterThan(0);
     expect(new Set(versions.map((row) => row.filename)).size).toBe(versions.length);
   });
@@ -73,6 +75,44 @@ describe("storage migration workflow", () => {
     }
   });
 
+  function applyEveryPythonMigration(target: Database.Database): void {
+    target.exec(
+      `CREATE TABLE schema_migrations (
+         version TEXT PRIMARY KEY,
+         applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+       )`,
+    );
+    const insert = target.prepare("INSERT INTO schema_migrations(version) VALUES (?)");
+    const pythonFiles = readdirSync(PYTHON_MIGRATIONS_DIR)
+      .filter((file) => file.endsWith(".sql"))
+      .sort();
+    for (const pythonMigration of pythonFiles) {
+      target.exec(readFileSync(join(PYTHON_MIGRATIONS_DIR, pythonMigration), "utf8"));
+      insert.run(pythonMigration);
+    }
+  }
+
+  it("migrates a fully Python-owned database without duplicating the evaluator epoch column", () => {
+    applyEveryPythonMigration(db);
+    expect(
+      db
+        .prepare("SELECT version FROM schema_migrations WHERE version = ?")
+        .get("016_generation_evaluator_epoch.sql"),
+    ).toEqual({ version: "016_generation_evaluator_epoch.sql" });
+
+    expect(() => migrateDatabase(db, MIGRATIONS_DIR)).not.toThrow();
+
+    const evaluatorEpochColumns = (
+      db.prepare("PRAGMA table_info(generations)").all() as Array<{ name: string }>
+    ).filter((column) => column.name === "evaluator_epoch");
+    expect(evaluatorEpochColumns).toHaveLength(1);
+    expect(
+      db
+        .prepare("SELECT filename FROM schema_version WHERE filename = ?")
+        .get("014_generation_evaluator_epoch.sql"),
+    ).toEqual({ filename: "014_generation_evaluator_epoch.sql" });
+  });
+
   it("marks TypeScript migrations applied when Python already owns the equivalent schema", () => {
     db.exec(
       `CREATE TABLE schema_migrations (
@@ -80,8 +120,9 @@ describe("storage migration workflow", () => {
          applied_at TEXT NOT NULL DEFAULT (datetime('now'))
        )`,
     );
-    const pythonMigrations = [...new Set(Object.values(TYPESCRIPT_TO_PYTHON_MIGRATION_BASELINES).flat())]
-      .sort();
+    const pythonMigrations = [
+      ...new Set(Object.values(TYPESCRIPT_TO_PYTHON_MIGRATION_BASELINES).flat()),
+    ].sort();
     const insert = db.prepare("INSERT INTO schema_migrations(version) VALUES (?)");
     for (const pythonMigration of pythonMigrations) {
       db.exec(readFileSync(join(PYTHON_MIGRATIONS_DIR, pythonMigration), "utf8"));
@@ -138,7 +179,9 @@ describe("storage migration workflow", () => {
         (row) => row.version,
       ),
     );
-    for (const pythonMigration of TYPESCRIPT_TO_PYTHON_MIGRATION_BASELINES["009_generation_loop.sql"]) {
+    for (const pythonMigration of TYPESCRIPT_TO_PYTHON_MIGRATION_BASELINES[
+      "009_generation_loop.sql"
+    ]) {
       expect(appliedPython.has(pythonMigration)).toBe(true);
     }
   });
@@ -175,6 +218,9 @@ describe("storage migration workflow", () => {
          '2026-04-25T00:00:00.000Z',
          '2026-04-25T00:00:01.000Z'
        );
+       CREATE TABLE generations (
+         generation_id TEXT PRIMARY KEY
+       );
        CREATE TABLE schema_version (
          filename TEXT PRIMARY KEY,
          applied_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -192,7 +238,8 @@ describe("storage migration workflow", () => {
       status: "queued",
     });
     expect(
-      db.prepare("SELECT filename FROM schema_version WHERE filename = ?")
+      db
+        .prepare("SELECT filename FROM schema_version WHERE filename = ?")
         .get("013_runs_status_default_parity.sql"),
     ).toEqual({ filename: "013_runs_status_default_parity.sql" });
   });

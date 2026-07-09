@@ -22,6 +22,7 @@ _BOOTSTRAP_MIGRATIONS = (
     "013_generation_dimension_summary.sql",
     "014_scoring_backend_metadata.sql",
     "015_match_replay.sql",
+    "016_generation_evaluator_epoch.sql",
 )
 
 
@@ -74,6 +75,7 @@ def bootstrap_core_schema(conn: sqlite3.Connection) -> None:
             dimension_summary_json TEXT DEFAULT NULL,
             scoring_backend TEXT NOT NULL DEFAULT 'elo',
             rating_uncertainty REAL DEFAULT NULL,
+            evaluator_epoch TEXT DEFAULT NULL,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at TEXT NOT NULL DEFAULT (datetime('now')),
             PRIMARY KEY (run_id, generation_index),

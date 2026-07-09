@@ -109,6 +109,7 @@ class RunFacet(BaseModel):
     delight_signals: list[DelightSignal]
     events: list[RunEvent]
     metadata: dict[str, Any] = Field(default_factory=dict)
+    evaluator_epoch: str | None = None
     created_at: str = ""
 
     def to_dict(self) -> dict[str, Any]:

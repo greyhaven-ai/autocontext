@@ -46,6 +46,9 @@ class RubricSnapshot(BaseModel):
     release: str
     scenario_family: str
     agent_provider: str
+    evaluator_epochs: list[str] = Field(default_factory=list)
+    mixed_epoch: bool = False
+    has_unknown_epoch: bool = False
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -54,6 +57,17 @@ class RubricSnapshot(BaseModel):
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> RubricSnapshot:
         return cls.model_validate(data)
+
+
+def _combined_mixed(a: RubricSnapshot, b: RubricSnapshot) -> bool:
+    """True when two snapshots together span more than one evaluator class.
+
+    Known epochs come from the union of each snapshot's evaluator_epochs; the
+    unknown (None) class is counted once if either snapshot carries a null epoch.
+    """
+    return len(set(a.evaluator_epochs) | set(b.evaluator_epochs)) + (
+        1 if (a.has_unknown_epoch or b.has_unknown_epoch) else 0
+    ) > 1
 
 
 class DimensionDriftSnapshot(BaseModel):
@@ -107,6 +121,7 @@ class DriftWarning(BaseModel):
     affected_scenarios: list[str]
     affected_providers: list[str]
     affected_releases: list[str]
+    mixed_epoch: bool = False
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -157,6 +172,9 @@ class RubricDriftMonitor:
             )
 
         scores = [f.best_score for f in facets]
+        epochs = sorted({f.evaluator_epoch for f in facets if f.evaluator_epoch is not None})
+        has_unknown_epoch = any(f.evaluator_epoch is None for f in facets)
+        mixed_epoch = len(epochs) + (1 if has_unknown_epoch else 0) > 1
         timestamps = sorted(f.created_at for f in facets if f.created_at)
         window_start = timestamps[0] if timestamps else ""
         window_end = timestamps[-1] if timestamps else ""
@@ -213,6 +231,9 @@ class RubricDriftMonitor:
             release=release,
             scenario_family=scenario_family,
             agent_provider=agent_provider,
+            evaluator_epochs=epochs,
+            mixed_epoch=mixed_epoch,
+            has_unknown_epoch=has_unknown_epoch,
             metadata={"scenarios": scenarios},
         )
 
@@ -282,10 +303,11 @@ class RubricDriftMonitor:
             ))
 
         # Score inflation — baseline comparison
+        inflation_warning: DriftWarning | None = None
         if baseline is not None:
             delta = current.mean_score - baseline.mean_score
             if delta > thresholds.max_score_inflation:
-                warnings.append(self._make_warning(
+                inflation_warning = self._make_warning(
                     now, "score_inflation", "high",
                     f"Mean score increased by {delta:.2f} from baseline "
                     f"({baseline.mean_score:.2f} → {current.mean_score:.2f})",
@@ -293,7 +315,8 @@ class RubricDriftMonitor:
                     "mean_score_delta", delta,
                     thresholds.max_score_inflation,
                     scenarios, providers, releases,
-                ))
+                )
+                warnings.append(inflation_warning)
 
         # Perfect rate
         if current.perfect_score_rate > thresholds.max_perfect_rate:
@@ -354,6 +377,14 @@ class RubricDriftMonitor:
                 thresholds.max_rollback_rate,
                 scenarios, providers, releases,
             ))
+
+        for warning in warnings:
+            warning.mixed_epoch = current.mixed_epoch
+
+        # The baseline-derived inflation warning is a cross-snapshot comparison,
+        # so it must reflect the epochs of BOTH snapshots, not current alone.
+        if baseline is not None and inflation_warning is not None:
+            inflation_warning.mixed_epoch = _combined_mixed(current, baseline)
 
         return warnings
 

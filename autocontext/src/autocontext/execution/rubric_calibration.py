@@ -248,6 +248,7 @@ class CalibrationReport(BaseModel):
     variance: JudgeVarianceResult
     calibrated: bool
     metadata: dict[str, Any] = Field(default_factory=dict)
+    evaluator_epoch: str | None = None
 
     def summary(self) -> str:
         lines = [
@@ -359,6 +360,7 @@ def run_judge_calibration(
     human_scores: list[float] = []
     judge_means: list[float] = []
     per_anchor_variance: dict[str, dict[str, Any]] = {}
+    calibration_epoch: str | None = None
 
     for anchor in calibration_set.anchors:
         leave_one_out = [
@@ -376,6 +378,8 @@ def run_judge_calibration(
                 calibration_examples=leave_one_out if leave_one_out else None,
             )
             repeated_scores.append(result.score)
+            if calibration_epoch is None:
+                calibration_epoch = result.evaluator_epoch
 
         variance = measure_judge_variance(repeated_scores)
         per_anchor_variance[anchor.anchor_id] = variance.to_dict()
@@ -400,4 +404,5 @@ def run_judge_calibration(
             "per_anchor_variance": per_anchor_variance,
             "cross_domain_normalization": "explicit second phase",
         },
+        evaluator_epoch=calibration_epoch,
     )

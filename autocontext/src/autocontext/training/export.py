@@ -82,6 +82,7 @@ def export_training_data(
                 score=gen["best_score"],
                 gate_decision=gate,
                 context=context,
+                evaluator_epoch=gen.get("evaluator_epoch"),
             )
 
             if include_matches:

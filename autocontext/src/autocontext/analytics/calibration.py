@@ -35,6 +35,7 @@ class CalibrationSample(BaseModel):
     best_score: float = 0.0
     score_delta: float = 0.0
     playbook_mutation_size: int = 0
+    evaluator_epoch: str | None = None
     created_at: str = ""
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -77,6 +78,7 @@ class CalibrationRound(BaseModel):
     outcomes: list[CalibrationOutcome] = Field(default_factory=list)
     status: str = "pending"  # pending, in_progress, completed
     summary: str = ""
+    mixed_epoch: bool = False
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -85,6 +87,16 @@ class CalibrationRound(BaseModel):
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> CalibrationRound:
         return cls.model_validate(data)
+
+
+def compute_round_mixed_epoch(samples: list[CalibrationSample]) -> bool:
+    """True when the samples span more than one evaluator class.
+
+    None (unknown/legacy) is its own class comparable only with None, so it is
+    NOT filtered out: a known epoch mixed with None spans two classes and is
+    flagged, while an all-None or empty aggregate is not.
+    """
+    return len({s.evaluator_epoch for s in samples}) > 1
 
 
 class SpotCheckSampler:
@@ -168,6 +180,7 @@ class SpotCheckSampler:
                 best_score=facet.best_score,
                 score_delta=round(score_delta, 4),
                 playbook_mutation_size=0,
+                evaluator_epoch=facet.evaluator_epoch,
                 created_at=now,
             )
             scored.append((risk_score, sample))
