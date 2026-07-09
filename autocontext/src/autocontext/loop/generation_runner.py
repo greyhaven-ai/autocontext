@@ -18,6 +18,7 @@ from autocontext.analytics.calibration import (
     CalibrationRound,
     CalibrationStore,
     SpotCheckSampler,
+    compute_round_mixed_epoch,
 )
 from autocontext.analytics.clustering import PatternClusterer
 from autocontext.analytics.correlation import CorrelationStore
@@ -489,6 +490,7 @@ class GenerationRunner:
                 samples=samples,
                 outcomes=[],
                 status="pending",
+                mixed_epoch=compute_round_mixed_epoch(samples),
                 summary=(
                     f"{len(samples)} high-risk sample(s) selected from "
                     f"{len(relevant_facets)} run(s); warnings: {', '.join(warning_types)}"
