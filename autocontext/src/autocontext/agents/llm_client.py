@@ -20,6 +20,9 @@ logger = logging.getLogger(__name__)
 
 
 class AnthropicClient(LanguageModelClient):
+    # Real message roles: generate_multiturn passes system + messages to the API.
+    supports_structural_isolation = True
+
     def __init__(
         self,
         api_key: str,

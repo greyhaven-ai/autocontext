@@ -13,7 +13,7 @@ from autocontext.knowledge.semantic_compaction_benchmark import (
 )
 from autocontext.loop.levy_scout import LevyScoutConfig, render_levy_scout_guidance
 from autocontext.loop.stage_helpers.context_loaders import _hint_style
-from autocontext.prompts.templates import PromptBundle, build_prompt_bundle
+from autocontext.prompts.templates import PromptBundle, PromptPartsBundle, build_prompt_bundle
 from autocontext.storage.context_selection_store import persist_context_selection_decision
 from autocontext.util.json_io import write_json
 
@@ -109,11 +109,7 @@ def _evidence_source_run_ids(ctx: GenerationContext, *, artifacts: ArtifactStore
     if not snapshots_dir.is_dir():
         return []
     try:
-        return sorted(
-            path.name
-            for path in snapshots_dir.iterdir()
-            if path.is_dir() and path.name != ctx.run_id
-        )
+        return sorted(path.name for path in snapshots_dir.iterdir() if path.is_dir() and path.name != ctx.run_id)
     except OSError:
         return []
 
@@ -230,11 +226,7 @@ def _as_str(value: Any) -> str:
 def _as_str_dict(value: Any) -> dict[str, str] | None:
     if not isinstance(value, dict):
         return None
-    return {
-        str(key): str(item)
-        for key, item in value.items()
-        if isinstance(key, str) and isinstance(item, str)
-    }
+    return {str(key): str(item) for key, item in value.items() if isinstance(key, str) and isinstance(item, str)}
 
 
 def prepare_generation_prompts(
@@ -273,7 +265,7 @@ def prepare_generation_prompts(
     evidence_manifests: dict[str, str] | None,
     evidence_cache_hits: int,
     evidence_cache_lookups: int,
-) -> tuple[PromptBundle, dict[str, Any] | None]:
+) -> tuple[PromptBundle, dict[str, Any] | None, PromptPartsBundle | None]:
     prompt_kwargs: dict[str, Any] = {
         "scenario_rules": scenario_rules,
         "strategy_interface": strategy_interface,
@@ -345,9 +337,12 @@ def prepare_generation_prompts(
     context_budget_telemetry: list[dict[str, Any]] = []
     prompt_kwargs["context_component_sink"] = selected_context_components.update
     prompt_kwargs["context_budget_telemetry_sink"] = lambda telemetry: context_budget_telemetry.append(telemetry.to_dict())
+    captured_parts: list[PromptPartsBundle] = []
+    prompt_kwargs["prompt_parts_sink"] = captured_parts.append
     compaction_cache_before = prompt_compaction_cache_stats()
     build_start = time.perf_counter()
     prompts = build_prompt_bundle(**prompt_kwargs)
+    parts = captured_parts[-1] if captured_parts else None
     semantic_build_latency_ms = (time.perf_counter() - build_start) * 1000.0
     compaction_cache_after = prompt_compaction_cache_stats()
     _persist_generation_context_selection(
@@ -362,12 +357,13 @@ def prepare_generation_prompts(
         evidence_cache_lookups=evidence_cache_lookups,
     )
     if not ctx.settings.semantic_compaction_benchmark_enabled:
-        return prompts, None
+        return prompts, None, parts
 
     baseline_start = time.perf_counter()
     baseline_prompt_kwargs = dict(prompt_kwargs)
     baseline_prompt_kwargs.pop("context_component_sink", None)
     baseline_prompt_kwargs.pop("context_budget_telemetry_sink", None)
+    baseline_prompt_kwargs.pop("prompt_parts_sink", None)
     budget_only_prompts = build_prompt_bundle(**baseline_prompt_kwargs, semantic_compaction=False)
     budget_only_build_latency_ms = (time.perf_counter() - baseline_start) * 1000.0
     benchmark_report = build_semantic_compaction_benchmark_report(
@@ -385,13 +381,10 @@ def prepare_generation_prompts(
     )
     report_payload = benchmark_report.to_dict()
     report_path = (
-        artifacts.knowledge_root
-        / ctx.scenario_name
-        / "semantic_compaction_reports"
-        / f"{ctx.run_id}_gen_{ctx.generation}.json"
+        artifacts.knowledge_root / ctx.scenario_name / "semantic_compaction_reports" / f"{ctx.run_id}_gen_{ctx.generation}.json"
     )
     write_json(report_path, report_payload)
-    return prompts, report_payload
+    return prompts, report_payload, parts
 
 
 def _persist_generation_context_selection(

@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from autocontext.harness.pipeline.holdout import HoldoutResult
     from autocontext.knowledge.tuning import TuningConfig
     from autocontext.loop.fixture_loader import Fixture
-    from autocontext.prompts.templates import PromptBundle
+    from autocontext.prompts.templates import PromptBundle, PromptPartsBundle
     from autocontext.scenarios.base import ScenarioInterface
 
 
@@ -40,6 +40,11 @@ class GenerationContext:
 
     # Stage outputs (populated progressively by stages)
     prompts: PromptBundle | None = None
+    # ERP-67 Stage 2b: the per-role (system, untrusted_reference, flat) split for
+    # `prompts`. Set only when it is safe to isolate — None when harness mutations
+    # rewrote the flat prompts (the split would be stale). Consumed by
+    # run_generation under settings.structural_role_isolation.
+    parts: PromptPartsBundle | None = None
     outputs: AgentOutputs | None = None
     tournament: EvaluationSummary | None = None
     gate_decision: str = ""

@@ -125,7 +125,7 @@ class ArchitectRunner:
         self.runtime = runtime
         self.model = model
 
-    def run(self, prompt: str) -> RoleExecution:
+    def run(self, prompt: str, *, system: str = "") -> RoleExecution:
         return self.runtime.run_task(
             SubagentTask(
                 role="architect",
@@ -133,5 +133,6 @@ class ArchitectRunner:
                 prompt=prompt,
                 max_tokens=1600,
                 temperature=0.4,
+                system=system,
             )
         )
