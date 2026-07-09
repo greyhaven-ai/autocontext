@@ -36,7 +36,56 @@ function makeEpochSwapTask(): AgentTaskInterface {
   };
 }
 
+/**
+ * Every round barely meets the 0.9 threshold (0.91), but round 1 is scored under
+ * epoch e1 and rounds 2+ under epoch e2. Reproduces the reviewer's case: a
+ * prior-epoch threshold-met round must not confirm a new-epoch round as stable.
+ */
+function makeThresholdEpochSwapTask(): AgentTaskInterface {
+  let n = 0;
+  return {
+    getTaskPrompt: () => "do it",
+    getRubric: () => "rubric",
+    initialState: () => ({}),
+    describeTask: () => "t",
+    evaluateOutput: async (): Promise<AgentTaskResult> => {
+      n += 1;
+      const epoch = n === 1 ? "e1" : "e2";
+      return {
+        score: 0.91,
+        reasoning: epoch,
+        dimensionScores: {},
+        internalRetries: 0,
+        evaluatorEpoch: epoch,
+      };
+    },
+    reviseOutput: async (out) => `${out} r`,
+  };
+}
+
 describe("ImprovementLoop evaluator-epoch re-baseline (AC-885)", () => {
+  it("resets the near-threshold stability tracker on rebaseline so a prior-epoch threshold-met cannot confirm a new-epoch round", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const loop = new ImprovementLoop({
+        task: makeThresholdEpochSwapTask(),
+        maxRounds: 3,
+        qualityThreshold: 0.9,
+        minRounds: 1,
+        maxScoreDelta: 1.0,
+      });
+      const result = await loop.run({ initialOutput: "seed output", state: {} });
+
+      // WITHOUT the fix, round 1's e1 threshold-met confirms round 2's e2 round as
+      // "confirmed stable" and the loop stops at round 2. WITH the fix, round 2 is the
+      // first threshold-met of epoch e2, so the loop must continue past round 2.
+      expect(result.totalRounds).toBe(3);
+      expect(result.rounds.map((r) => r.evaluatorEpoch)).toEqual(["e1", "e2", "e2"]);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   it("re-baselines on an epoch change, excludes the stale best, and fires no cross-epoch delta warning", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {

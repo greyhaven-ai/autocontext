@@ -66,22 +66,24 @@ export class LLMJudge {
       this.#rubricWarnings = [];
     }
 
-    // AC-885: content-addressed identity of this evaluator (rubric + judge). Computed once and
-    // stamped on every JudgeResult so downstream baselines never silently compare across
-    // evaluator changes. Degrades to null on any failure rather than breaking scoring.
-    try {
-      this.#evaluatorEpoch = computeEvaluatorEpoch(
-        this.rubric,
-        this.#provider.name,
-        this.model,
-      ).epochId;
-    } catch {
-      this.#evaluatorEpoch = null;
-    }
+    // AC-885: content-addressed identity of this evaluator (rubric + judge). The epoch for the
+    // constructor model is computed once here; stamped on every JudgeResult so downstream baselines
+    // never silently compare across evaluator changes. When a BEFORE_JUDGE hook swaps the model at
+    // evaluate() time, the stamped epoch reflects the effective model instead (see evaluate).
+    // Degrades to null on any failure rather than breaking scoring.
+    this.#evaluatorEpoch = this.epochForModel(this.model);
   }
 
   get rubricWarnings(): string[] {
     return this.#rubricWarnings;
+  }
+
+  private epochForModel(model: string): string | null {
+    try {
+      return computeEvaluatorEpoch(this.rubric, this.#provider.name, model).epochId;
+    } catch {
+      return null;
+    }
   }
 
   async evaluate(opts: {
@@ -125,6 +127,10 @@ export class LLMJudge {
     const rawResponses: string[] = [];
     let totalInternalRetries = 0;
     let lastParseMethod: ParseMethod = "none";
+    // AC-885: the epoch must reflect the model actually sent to the provider, which a BEFORE_JUDGE
+    // hook may change. Capture the first sample's effective (post-hook) model; if samples resolve
+    // different models (pathological), the first one is chosen deterministically.
+    let effectiveModel: string | null = null;
 
     for (let s = 0; s < this.#samples; s++) {
       let score = 0;
@@ -153,6 +159,9 @@ export class LLMJudge {
         const finalSystemPrompt = readString(before.payload.systemPrompt) ?? systemPrompt;
         const finalUserPrompt = readString(before.payload.userPrompt) ?? userPrompt;
         const finalModel = readString(before.payload.model) ?? this.model;
+        if (effectiveModel === null) {
+          effectiveModel = finalModel;
+        }
         const finalTemperature = readNumber(before.payload.temperature) ?? this.#temperature;
         const result = await this.#provider.complete({
           systemPrompt: finalSystemPrompt,
@@ -225,6 +234,13 @@ export class LLMJudge {
       dimensionsWereGenerated = detectGeneratedDimensions(Object.keys(avgDims), this.rubric);
     }
 
+    // Reuse the constructor epoch in the common (no-hook) case where the effective model is
+    // unchanged; recompute only when a hook swapped the model.
+    const stampedEpoch =
+      effectiveModel === null || effectiveModel === this.model
+        ? this.#evaluatorEpoch
+        : this.epochForModel(effectiveModel);
+
     return {
       score: avgScore,
       reasoning: reasonings.join("\n---\n"),
@@ -233,7 +249,7 @@ export class LLMJudge {
       parseMethod: lastParseMethod,
       internalRetries: totalInternalRetries,
       dimensionsWereGenerated,
-      evaluatorEpoch: this.#evaluatorEpoch,
+      evaluatorEpoch: stampedEpoch,
     };
   }
 

@@ -69,6 +69,7 @@ def _serialize_result(
                 "reasoning": r.reasoning,
                 "dimension_scores": r.dimension_scores,
                 "is_revision": r.is_revision,
+                "evaluator_epoch": r.evaluator_epoch,
             }
         )
     data: dict[str, Any] = {
@@ -77,6 +78,7 @@ def _serialize_result(
         "best_round": result.best_round,
         "total_rounds": result.total_rounds,
         "met_threshold": result.met_threshold,
+        "evaluator_epoch": result.evaluator_epoch,
     }
     if result.duration_ms is not None:
         data["duration_ms"] = result.duration_ms

@@ -343,7 +343,10 @@ class ImprovementLoop:
             # from the running baseline's, the prior baseline is stale: exclude it and re-baseline
             # under this round's epoch (extends the AC-750 "only a legitimate round is a baseline"
             # rule). last_unvetoed_score is reset so the max_score_delta check does not fire across
-            # the epoch boundary; best_score is reset so a stale-epoch best cannot win.
+            # the epoch boundary; best_score is reset so a stale-epoch best cannot win. The
+            # near-threshold/plateau stability state (threshold_met_round, prev_valid_score,
+            # plateau_count) is also reset so a prior-epoch threshold-met round cannot confirm a
+            # new-epoch round as "confirmed stable" and stop the loop early.
             round_result.evaluator_epoch = result.evaluator_epoch
             _epoch_decision = resolve_epoch_rebaseline(baseline_epoch, result.evaluator_epoch, has_baseline)
             if _epoch_decision.rebaseline:
@@ -357,6 +360,9 @@ class ImprovementLoop:
                 )
                 last_unvetoed_score = None
                 best_score = float("-inf")
+                threshold_met_round = None
+                prev_valid_score = None
+                plateau_count = 0
             baseline_epoch = result.evaluator_epoch
             has_baseline = True
 

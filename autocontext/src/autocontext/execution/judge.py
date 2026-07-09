@@ -197,16 +197,12 @@ class LLMJudge:
         self.temperature = temperature
         self.hook_bus = hook_bus
 
-        # AC-885: content-addressed identity of this evaluator (rubric + judge). Computed once;
-        # stamped on every JudgeResult so downstream baselines never silently compare across
-        # evaluator changes. Degrades to None on any failure rather than breaking scoring.
-        from autocontext.execution.evaluator_epoch import compute_evaluator_epoch
-
-        try:
-            self._evaluator_epoch: str | None = compute_evaluator_epoch(self.rubric, self.provider.name, self.model).epoch_id
-        except Exception:  # pragma: no cover - defensive; epoch is non-critical metadata
-            logger.debug("evaluator_epoch computation failed", exc_info=True)
-            self._evaluator_epoch = None
+        # AC-885: content-addressed identity of this evaluator (rubric + judge). The epoch for the
+        # constructor model is computed once here; stamped on every JudgeResult so downstream
+        # baselines never silently compare across evaluator changes. When a BEFORE_JUDGE hook swaps
+        # the model at evaluate() time, the stamped epoch reflects the effective model instead (see
+        # evaluate). Degrades to None on any failure rather than breaking scoring.
+        self._evaluator_epoch: str | None = self._epoch_for_model(self.model)
 
         # Backward-compatible property
         self.llm_fn = llm_fn
@@ -224,6 +220,19 @@ class LLMJudge:
     def rubric_warnings(self) -> list[str]:
         """Warnings from rubric coherence pre-check (empty if not enabled)."""
         return self._rubric_warnings
+
+    def _epoch_for_model(self, model: str) -> str | None:
+        """Compute the evaluator epoch for *model* (with this judge's rubric + provider).
+
+        Degrades to None on any failure rather than breaking scoring.
+        """
+        from autocontext.execution.evaluator_epoch import compute_evaluator_epoch
+
+        try:
+            return compute_evaluator_epoch(self.rubric, self.provider.name, model).epoch_id
+        except Exception:  # pragma: no cover - defensive; epoch is non-critical metadata
+            logger.debug("evaluator_epoch computation failed", exc_info=True)
+            return None
 
     def evaluate(
         self,
@@ -269,6 +278,10 @@ class LLMJudge:
         total_internal_retries = 0
         last_parse_method: ParseMethod = "none"
         hook_bus = self.hook_bus or get_current_hook_bus()
+        # AC-885: the epoch must reflect the model actually sent to the provider, which a
+        # BEFORE_JUDGE hook may change. Capture the first sample's effective (post-hook) model; if
+        # samples resolve different models (pathological), the first one is chosen deterministically.
+        effective_model: str | None = None
 
         for sample_index in range(self.samples):
             dims: dict[str, float] = {}
@@ -294,10 +307,13 @@ class LLMJudge:
                     before_judge = hook_bus.emit(HookEvents.BEFORE_JUDGE, request)
                     before_judge.raise_if_blocked()
                     request = before_judge.payload
+                resolved_model = str(request.get("model", self.model))
+                if effective_model is None:
+                    effective_model = resolved_model
                 result = self.provider.complete(
                     system_prompt=str(request.get("system_prompt", system_prompt)),
                     user_prompt=str(request.get("user_prompt", user_prompt)),
-                    model=str(request.get("model", self.model)),
+                    model=resolved_model,
                     temperature=_coerce_float(request.get("temperature"), self.temperature),
                 )
                 response = result.text
@@ -390,6 +406,13 @@ class LLMJudge:
                 self.rubric,
             )
 
+        # Reuse the constructor epoch in the common (no-hook) case where the effective model is
+        # unchanged; recompute only when a hook swapped the model.
+        if effective_model is None or effective_model == self.model:
+            stamped_epoch = self._evaluator_epoch
+        else:
+            stamped_epoch = self._epoch_for_model(effective_model)
+
         return JudgeResult(
             score=avg_score,
             reasoning=combined_reasoning,
@@ -399,7 +422,7 @@ class LLMJudge:
             internal_retries=total_internal_retries,
             dimensions_were_generated=dimensions_were_generated,
             disagreement=disagreement,
-            evaluator_epoch=self._evaluator_epoch,
+            evaluator_epoch=stamped_epoch,
         )
 
     def _build_judge_prompt(

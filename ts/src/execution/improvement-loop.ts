@@ -142,7 +142,10 @@ export class ImprovementLoop {
       // from the running baseline's, the prior baseline is stale: exclude it and re-baseline under
       // this round's epoch. prevValidScore (the delta baseline threaded into applyScoreDeltaPolicy)
       // is reset so the maxScoreDelta check does not fire across the epoch boundary; bestScore is
-      // reset so a stale-epoch best cannot win. Mirrors Python resolve_epoch_rebaseline.
+      // reset so a stale-epoch best cannot win. The near-threshold/plateau stability state
+      // (thresholdMetRound, plateauCount) is also reset so a prior-epoch threshold-met round cannot
+      // confirm a new-epoch round as "confirmed stable" and stop the loop early. Mirrors Python
+      // resolve_epoch_rebaseline.
       const roundEpoch = result.evaluatorEpoch ?? null;
       const epochDecision = resolveEpochRebaseline(baselineEpoch, roundEpoch, hasBaseline);
       if (epochDecision.rebaseline) {
@@ -154,6 +157,8 @@ export class ImprovementLoop {
         );
         prevValidScore = null;
         bestScore = Number.NEGATIVE_INFINITY;
+        thresholdMetRound = null;
+        plateauCount = 0;
       }
       baselineEpoch = roundEpoch;
       hasBaseline = true;
