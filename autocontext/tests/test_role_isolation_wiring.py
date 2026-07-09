@@ -9,6 +9,8 @@ runner stays on the single-prompt path — byte-identical behaviour.
 
 from __future__ import annotations
 
+import contextlib
+
 from autocontext.agents.analyst import AnalystRunner
 from autocontext.agents.architect import ArchitectRunner
 from autocontext.agents.competitor import CompetitorRunner
@@ -74,3 +76,49 @@ def test_runners_without_system_stay_on_single_prompt_path() -> None:
     assert not client.multiturn_calls
     assert client.generate_calls[0]["prompt"] == "just a flat prompt"
     assert client.generate_calls[0]["role"] == "analyst"
+
+
+class _CapableClient(_RecordingClient):
+    supports_structural_isolation = True
+
+
+class _FakeOrch:
+    """Minimal orchestrator surface build_role_handler needs."""
+
+    def __init__(self, client: LanguageModelClient) -> None:
+        runtime = SubagentRuntime(client)
+        self.competitor = CompetitorRunner(runtime, "m")
+        self.analyst = AnalystRunner(runtime, "m")
+        self.architect = ArchitectRunner(runtime, "m")
+
+    @contextlib.contextmanager
+    def _use_role_runtime(self, *args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+        yield
+
+
+def _handler(client: LanguageModelClient):  # type: ignore[no-untyped-def]
+    from autocontext.agents.pipeline_adapter import build_role_handler
+
+    return build_role_handler(
+        _FakeOrch(client),  # type: ignore[arg-type]
+        system_map={"analyst": "SYS trusted"},
+        flat_map={"analyst": "FLAT legacy prompt"},
+    )
+
+
+def test_handler_isolates_only_for_capable_clients() -> None:
+    client = _CapableClient()
+    _handler(client)("analyst", "UNTRUSTED user turn", {})
+    # capable backend → real system/user split, untrusted stays in the user turn.
+    assert client.multiturn_calls and not client.generate_calls
+    call = client.multiturn_calls[0]
+    assert call["system"] == "SYS trusted"
+    assert call["messages"] == [{"role": "user", "content": "UNTRUSTED user turn"}]
+
+
+def test_handler_falls_back_to_flat_for_incapable_clients() -> None:
+    client = _RecordingClient()  # supports_structural_isolation defaults False
+    _handler(client)("analyst", "UNTRUSTED user turn", {})
+    # incapable backend → exact legacy flat prompt, no system turn, no reordering.
+    assert client.generate_calls and not client.multiturn_calls
+    assert client.generate_calls[0]["prompt"] == "FLAT legacy prompt"

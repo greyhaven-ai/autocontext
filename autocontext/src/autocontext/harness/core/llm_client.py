@@ -6,6 +6,13 @@ from autocontext.harness.core.types import ModelResponse
 
 
 class LanguageModelClient:
+    # ERP-67: True only for backends whose generate_multiturn genuinely routes a
+    # separate system turn (real message roles). Default False → the base
+    # generate_multiturn flattens system+user, so structural isolation must NOT
+    # be applied (the flat prompt is preserved instead). Wrappers inherit False
+    # unless they explicitly forward the capability.
+    supports_structural_isolation: bool = False
+
     def generate(
         self,
         *,

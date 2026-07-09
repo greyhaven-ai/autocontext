@@ -390,7 +390,7 @@ def stage_knowledge_setup(
             logger.warning("failed to materialize evidence workspace for %s", ctx.scenario_name, exc_info=True)
     runtime_profile = resolve_harness_runtime_profile(ctx.settings)
     tool_context = render_harness_tool_context(runtime_profile, tool_context)
-    prompts, semantic_benchmark_payload = prepare_generation_prompts(
+    prompts, semantic_benchmark_payload, prompt_parts = prepare_generation_prompts(
         ctx,
         artifacts=artifacts,
         scenario_rules=scenario.describe_rules(),
@@ -430,6 +430,10 @@ def stage_knowledge_setup(
 
     ctx.applied_competitor_hints = "" if ablation else coach_hints_for_prompt
     ctx.prompts = prompts
+    # ERP-67 Stage 2b: the parts split is derived from the pre-mutation prompts,
+    # so drop it when harness mutations rewrote the flat prompts — structural
+    # isolation then safely no-ops to the (mutated) flat path.
+    ctx.parts = None if active_harness_mutations else prompt_parts
     ctx.evidence_manifest = evidence_manifest
     ctx.semantic_compaction_benchmark = semantic_benchmark_payload
     ctx.strategy_interface = strategy_interface
@@ -486,6 +490,7 @@ def stage_agent_generation(
             scenario_rules=ctx.scenario.describe_rules(),
             current_strategy=ctx.current_strategy or None,
             generation_deadline=generation_deadline,
+            parts=ctx.parts,
         )
 
     selected_strategy = outputs.strategy

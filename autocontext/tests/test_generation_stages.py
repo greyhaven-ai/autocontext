@@ -239,9 +239,9 @@ class TestStageKnowledgeSetup:
 
         from autocontext.prompts.templates import PromptBundle
 
-        def fake_prepare_generation_prompts(*args: object, **kwargs: object) -> tuple[PromptBundle, None]:
+        def fake_prepare_generation_prompts(*args: object, **kwargs: object) -> tuple[PromptBundle, None, None]:
             captured["context_budget_tokens"] = kwargs["context_budget_tokens"]
-            return PromptBundle(competitor="c", analyst="a", coach="co", architect="ar"), None
+            return PromptBundle(competitor="c", analyst="a", coach="co", architect="ar"), None, None
 
         with patch(
             "autocontext.loop.stages.prepare_generation_prompts",

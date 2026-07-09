@@ -628,12 +628,15 @@ class AgentOrchestrator:
             "coach": prompts.coach,
         }
 
-        # ERP-67 Stage 2b: when structural isolation is on, deliver the untrusted
-        # reference as the user turn and the trusted instructions as the system
-        # turn for the cleanly-mappable roles (competitor/analyst/architect). Only
-        # isolation_safe roles are split; coach (mid-flight enriched) and the
-        # translator stay on the flat single-prompt path. Off → maps unchanged.
+        # ERP-67 Stage 2b: when structural isolation is on, offer the untrusted
+        # reference as a user turn and the trusted instructions as a system turn
+        # for the cleanly-mappable roles (competitor/analyst/architect). The
+        # handler applies the split only for role-capable clients and otherwise
+        # falls back to `flat_map` (byte-identical legacy). Only isolation_safe
+        # roles are offered; coach (mid-flight enriched) and translator stay
+        # flat. Off / no parts → maps unchanged, legacy behaviour.
         system_map: dict[str, str] = {}
+        flat_map: dict[str, str] = {}
         if self.settings.structural_role_isolation and parts is not None:
             role_parts = {
                 "competitor": parts.competitor,
@@ -643,7 +646,9 @@ class AgentOrchestrator:
             for role, rp in role_parts.items():
                 if not rp.isolation_safe:
                     continue
-                system_map[role] = rp.system + (cadence_skip if role == "architect" else "")
+                suffix = cadence_skip if role == "architect" else ""
+                system_map[role] = rp.system + suffix
+                flat_map[role] = rp.flat + suffix
                 prompt_map[role] = rp.untrusted_reference
 
         handler = build_role_handler(
@@ -654,6 +659,7 @@ class AgentOrchestrator:
             strategy_interface=strategy_interface,
             generation_deadline=generation_deadline,
             system_map=system_map,
+            flat_map=flat_map,
         )
         engine = PipelineEngine(dag, handler, max_workers=2)
         results = engine.execute(prompt_map, on_role_event=on_role_event)
