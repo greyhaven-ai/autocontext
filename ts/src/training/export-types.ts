@@ -6,6 +6,7 @@ export interface TrainingRecord {
   score: number;
   gate_decision: string;
   context: Record<string, unknown>;
+  evaluator_epoch: string | null;
 }
 
 export interface MatchRecord {

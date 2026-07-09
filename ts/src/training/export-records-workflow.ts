@@ -78,6 +78,7 @@ export function buildTrainingExportRecordsForRun(opts: {
         hints,
         trajectory: buildTrajectorySnippet(generations, generation.generation_index),
       },
+      evaluator_epoch: generation.evaluator_epoch ?? null,
     };
     const generationRecords: TrainingExportRecord[] = [record];
 

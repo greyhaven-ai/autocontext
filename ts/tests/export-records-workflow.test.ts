@@ -69,4 +69,42 @@ describe("training export records workflow", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it("carries evaluator_epoch from the generation row onto the exported record", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ac-export-epoch-"));
+    try {
+      const store = new SQLiteStore(join(dir, "test.db"));
+      store.migrate(join(process.cwd(), "migrations"));
+      const artifacts = new ArtifactStore({
+        runsRoot: join(dir, "runs"),
+        knowledgeRoot: join(dir, "knowledge"),
+      });
+
+      store.createRun("run-1", "grid_ctf", 1, "local");
+      store.upsertGeneration("run-1", 1, {
+        meanScore: 0.9,
+        bestScore: 0.9,
+        elo: 1000,
+        wins: 1,
+        losses: 0,
+        gateDecision: "advance",
+        status: "completed",
+        evaluatorEpoch: "e-1",
+      });
+      store.appendAgentOutput("run-1", 1, "competitor", '{"aggression":0.5}');
+
+      const records = buildTrainingExportRecordsForRun({
+        store,
+        artifacts,
+        run: { run_id: "run-1", scenario: "grid_ctf" },
+      });
+
+      expect(records).toHaveLength(1);
+      expect(records[0]).toMatchObject({ evaluator_epoch: "e-1" });
+
+      store.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
