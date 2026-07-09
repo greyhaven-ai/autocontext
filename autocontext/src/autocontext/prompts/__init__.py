@@ -1,5 +1,5 @@
 from .context_budget import ContextBudget, ContextBudgetPolicy, ContextBudgetResult, ContextBudgetTelemetry, estimate_tokens
-from .templates import PromptBundle, build_prompt_bundle
+from .templates import PromptBundle, PromptPartsBundle, RolePromptParts, build_prompt_bundle
 
 __all__ = [
     "ContextBudget",
@@ -7,6 +7,8 @@ __all__ = [
     "ContextBudgetResult",
     "ContextBudgetTelemetry",
     "PromptBundle",
+    "PromptPartsBundle",
+    "RolePromptParts",
     "build_prompt_bundle",
     "estimate_tokens",
 ]

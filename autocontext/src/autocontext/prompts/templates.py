@@ -59,6 +59,37 @@ class PromptBundle:
     architect: str
 
 
+@dataclass(frozen=True)
+class RolePromptParts:
+    """A role prompt separated into trusted `system` and `untrusted_reference`
+    (attacker-influenceable playbook / coach hints / dead-ends), plus the exact
+    `flat` string the transport currently sends. Stage 1 of ERP-67: the split is
+    exposed for consumers but `flat` remains byte-identical to today's prompt, so
+    behaviour is unchanged until a later stage threads system/user message roles.
+
+    `isolation_safe` is False when a `HookEvents.CONTEXT` hook rewrote this role's
+    final prompt: the pre-hook (system, untrusted_reference) split can no longer be
+    trusted to match `flat`, so consumers MUST use `flat` (or the safe fallback
+    below) rather than re-isolating stale content. In that case `system` is empty
+    and `untrusted_reference` holds the full post-hook prompt, which degrades to
+    the single-prompt transport path — nothing the hook redacted is reintroduced,
+    and no untrusted content is promoted into a system turn.
+    """
+
+    system: str
+    untrusted_reference: str
+    flat: str
+    isolation_safe: bool = True
+
+
+@dataclass(frozen=True)
+class PromptPartsBundle:
+    competitor: RolePromptParts
+    analyst: RolePromptParts
+    coach: RolePromptParts
+    architect: RolePromptParts
+
+
 def _prompt_bundle_roles(bundle: PromptBundle) -> dict[str, str]:
     return {
         "competitor": bundle.competitor,
@@ -171,6 +202,7 @@ def build_prompt_bundle(
     simplicity_mode: str = "off",
     hint_style: str = "default",
     scout_mutation_guidance: str = "",
+    prompt_parts_sink: Callable[[PromptPartsBundle], None] | None = None,
 ) -> PromptBundle:
     _nb = dict(notebook_contexts or {})
     _evidence = dict(evidence_manifests or {})
@@ -308,7 +340,10 @@ def build_prompt_bundle(
     analyst_evidence_block = f"{analyst_evidence_manifest}\n\n" if analyst_evidence_manifest else ""
     architect_evidence_block = f"{architect_evidence_manifest}\n\n" if architect_evidence_manifest else ""
     playbook_fenced = _fence_untrusted("current playbook", f"Current playbook:\n{current_playbook}")
-    base_context = (
+    # Segmented so the untrusted blocks (playbook, dead-ends) can be isolated
+    # for prompt_parts_sink (ERP-67 Stage 1). The concatenation below is
+    # byte-identical to the previous single f-string — flat behaviour unchanged.
+    _base_context_head = (
         f"{_UNTRUSTED_GUARDRAIL}"
         f"Scenario rules:\n{scenario_rules}\n\n"
         f"Strategy interface:\n{strategy_interface}\n\n"
@@ -317,7 +352,9 @@ def build_prompt_bundle(
         f"Observation state:\n{observation.state}\n\n"
         f"Constraints:\n{observation.constraints}\n\n"
         f"{snapshot_block}"
-        f"{playbook_fenced}\n\n"
+    )
+    _playbook_block = f"{playbook_fenced}\n\n"
+    _base_context_mid = (
         f"{lessons_block}"
         f"{analysis_block}"
         f"{replay_block}"
@@ -325,12 +362,13 @@ def build_prompt_bundle(
         f"Previous generation summary:\n{previous_summary}\n"
         f"{trajectory_block}"
         f"{registry_block}"
-        f"{dead_ends_block}"
-        f"{progress_block}"
-        f"{experiment_log_block}"
-        f"{protocol_block}"
-        f"{session_reports_block}"
     )
+    _base_context_tail = f"{progress_block}{experiment_log_block}{protocol_block}{session_reports_block}"
+    base_context = _base_context_head + _playbook_block + _base_context_mid + dead_ends_block + _base_context_tail
+    # Trusted (system) vs untrusted (attacker-influenceable) portions of the
+    # shared base context, used only to build the prompt-parts split.
+    base_context_trusted = _base_context_head + _base_context_mid + _base_context_tail
+    base_context_untrusted = _playbook_block + dead_ends_block
     hints_block = ""
     if coach_competitor_hints:
         _hints_fenced = _fence_untrusted("coach hints", f"Coach hints for competitor:\n{coach_competitor_hints}")
@@ -365,6 +403,51 @@ def build_prompt_bundle(
         if is_action_plan_interface(strategy_interface)
         else "Describe your strategy reasoning and recommend specific parameter values."
     )
+    analyst_task = (
+        "Analyze strengths/failures and return markdown with sections: Findings, Root Causes, Actionable Recommendations."
+    )
+    coach_task = (
+        "You are the playbook coach. Produce THREE structured sections:\n\n"
+        "1. A COMPLETE replacement playbook between markers. Consolidate all prior guidance, "
+        "deduplicate, and remove stale advice. This replaces the current playbook entirely.\n\n"
+        "<!-- PLAYBOOK_START -->\n"
+        "(Your consolidated playbook here: Strategy Updates, Prompt Optimizations, "
+        "Next Generation Checklist)\n"
+        "<!-- PLAYBOOK_END -->\n\n"
+        "2. Operational lessons learned between markers. Each lesson should be a concrete, "
+        "prescriptive rule derived from what worked or failed.\n\n"
+        "<!-- LESSONS_START -->\n"
+        "(e.g. '- When aggression > 0.8 with defense < 0.4, scores drop.')\n"
+        "<!-- LESSONS_END -->\n\n" + coach_hint_instruction
+    )
+    architect_task = (
+        "Propose infrastructure/tooling improvements in markdown with sections: "
+        "Observed Bottlenecks, Tool Proposals, Impact Hypothesis. "
+        "Then append a JSON code block with shape "
+        '{"tools":[{"name":"<snake_case>","description":"<text>","code":"<python code>"}]}. '
+        "If no new tools, return tools as empty array."
+        " You may CREATE new tools or UPDATE existing tools by using the same name.\n\n"
+        "Additionally, you may propose harness validators — executable Python checks "
+        "that run against each strategy BEFORE tournament matches. Each validator must "
+        "define `validate_strategy(strategy: dict, scenario) -> tuple[bool, list[str]]`. "
+        "Wrap harness specs between markers:\n\n"
+        "<!-- HARNESS_START -->\n"
+        '{"harness":[{"name":"<snake_case>","description":"<text>",'
+        '"code":"def validate_strategy(strategy, scenario):\\n    ..."}]}\n'
+        "<!-- HARNESS_END -->\n\n"
+        "If no harness validators, omit the HARNESS markers entirely.\n\n"
+        "Additionally, you may propose harness mutations — lightweight prompt, "
+        "context, completion, or tool-usage adjustments that carry forward to future generations. "
+        "Wrap mutation specs between markers:\n\n"
+        "<!-- MUTATIONS_START -->\n"
+        '{"mutations":[{"type":"prompt_fragment","target_role":"<competitor|analyst|coach|architect>",'
+        '"content":"<text>","rationale":"<why>"},{"type":"context_policy","component":"<component>",'
+        '"content":"<policy>","rationale":"<why>"},{"type":"completion_check","content":"<check>",'
+        '"rationale":"<why>"},{"type":"tool_instruction","tool_name":"<tool_name>",'
+        '"content":"<instruction>","rationale":"<why>"}]}\n'
+        "<!-- MUTATIONS_END -->\n\n"
+        "If no harness mutations, omit the MUTATIONS markers entirely."
+    )
 
     bundle = PromptBundle(
         competitor=base_context + hints_block + scout_block + competitor_nb + competitor_constraint + competitor_task,
@@ -374,61 +457,21 @@ def build_prompt_bundle(
         + analyst_attribution_block
         + analyst_nb
         + analyst_constraint
-        + ("Analyze strengths/failures and return markdown with sections: Findings, Root Causes, Actionable Recommendations."),
+        + analyst_task,
         coach=base_context
         + coach_attribution_block
         + coach_hint_feedback_block
         + coach_nb
         + coach_constraint
         + hint_policy_block
-        + (
-            "You are the playbook coach. Produce THREE structured sections:\n\n"
-            "1. A COMPLETE replacement playbook between markers. Consolidate all prior guidance, "
-            "deduplicate, and remove stale advice. This replaces the current playbook entirely.\n\n"
-            "<!-- PLAYBOOK_START -->\n"
-            "(Your consolidated playbook here: Strategy Updates, Prompt Optimizations, "
-            "Next Generation Checklist)\n"
-            "<!-- PLAYBOOK_END -->\n\n"
-            "2. Operational lessons learned between markers. Each lesson should be a concrete, "
-            "prescriptive rule derived from what worked or failed.\n\n"
-            "<!-- LESSONS_START -->\n"
-            "(e.g. '- When aggression > 0.8 with defense < 0.4, scores drop.')\n"
-            "<!-- LESSONS_END -->\n\n" + coach_hint_instruction
-        ),
+        + coach_task,
         architect=base_context
         + architect_evidence_block
         + tool_usage_block
         + architect_attribution_block
         + architect_nb
         + architect_constraint
-        + (
-            "Propose infrastructure/tooling improvements in markdown with sections: "
-            "Observed Bottlenecks, Tool Proposals, Impact Hypothesis. "
-            "Then append a JSON code block with shape "
-            '{"tools":[{"name":"<snake_case>","description":"<text>","code":"<python code>"}]}. '
-            "If no new tools, return tools as empty array."
-            " You may CREATE new tools or UPDATE existing tools by using the same name.\n\n"
-            "Additionally, you may propose harness validators — executable Python checks "
-            "that run against each strategy BEFORE tournament matches. Each validator must "
-            "define `validate_strategy(strategy: dict, scenario) -> tuple[bool, list[str]]`. "
-            "Wrap harness specs between markers:\n\n"
-            "<!-- HARNESS_START -->\n"
-            '{"harness":[{"name":"<snake_case>","description":"<text>",'
-            '"code":"def validate_strategy(strategy, scenario):\\n    ..."}]}\n'
-            "<!-- HARNESS_END -->\n\n"
-            "If no harness validators, omit the HARNESS markers entirely.\n\n"
-            "Additionally, you may propose harness mutations — lightweight prompt, "
-            "context, completion, or tool-usage adjustments that carry forward to future generations. "
-            "Wrap mutation specs between markers:\n\n"
-            "<!-- MUTATIONS_START -->\n"
-            '{"mutations":[{"type":"prompt_fragment","target_role":"<competitor|analyst|coach|architect>",'
-            '"content":"<text>","rationale":"<why>"},{"type":"context_policy","component":"<component>",'
-            '"content":"<policy>","rationale":"<why>"},{"type":"completion_check","content":"<check>",'
-            '"rationale":"<why>"},{"type":"tool_instruction","tool_name":"<tool_name>",'
-            '"content":"<instruction>","rationale":"<why>"}]}\n'
-            "<!-- MUTATIONS_END -->\n\n"
-            "If no harness mutations, omit the MUTATIONS markers entirely."
-        ),
+        + architect_task,
     )
     final_bundle = PromptBundle(
         competitor=append_simplicity_guidance(bundle.competitor, simplicity_mode),
@@ -436,6 +479,11 @@ def build_prompt_bundle(
         coach=append_simplicity_guidance(bundle.coach, simplicity_mode),
         architect=append_simplicity_guidance(bundle.architect, simplicity_mode),
     )
+    # Snapshot before the CONTEXT hook may rewrite role prompts. The prompt-parts
+    # split is derived from pre-hook variables, so a role the hook rewrites can no
+    # longer be trusted to match `flat` — compared per role below to mark parts
+    # unsafe and fall back rather than reintroducing hook-redacted content.
+    pre_hook_bundle = final_bundle
     if hook_bus is not None:
         context_event = hook_bus.emit(
             HookEvents.CONTEXT,
@@ -459,6 +507,82 @@ def build_prompt_bundle(
             _selected_context_components(
                 context_components,
                 _prompt_bundle_roles(final_bundle),
+            )
+        )
+    if prompt_parts_sink is not None:
+        # ERP-67 Stage 1: expose the trusted `system` / untrusted-reference split
+        # per role. `flat` stays the exact string the transport sends today; the
+        # split is additive and behaviour-preserving. Simplicity guidance is
+        # trusted operator text, so it belongs in `system`.
+        competitor_system = append_simplicity_guidance(
+            base_context_trusted + scout_block + competitor_nb + competitor_constraint + competitor_task,
+            simplicity_mode,
+        )
+        analyst_system = append_simplicity_guidance(
+            base_context_trusted
+            + analyst_evidence_block
+            + analyst_feedback_block
+            + analyst_attribution_block
+            + analyst_nb
+            + analyst_constraint
+            + analyst_task,
+            simplicity_mode,
+        )
+        coach_system = append_simplicity_guidance(
+            base_context_trusted
+            + coach_attribution_block
+            + coach_hint_feedback_block
+            + coach_nb
+            + coach_constraint
+            + hint_policy_block
+            + coach_task,
+            simplicity_mode,
+        )
+        architect_system = append_simplicity_guidance(
+            base_context_trusted
+            + architect_evidence_block
+            + tool_usage_block
+            + architect_attribution_block
+            + architect_nb
+            + architect_constraint
+            + architect_task,
+            simplicity_mode,
+        )
+
+        def _role_parts(system: str, untrusted: str, pre_hook: str, final: str) -> RolePromptParts:
+            # If a CONTEXT hook rewrote this role's prompt, the pre-hook split is
+            # stale — fall back to the post-hook `flat` so nothing the hook
+            # redacted is reintroduced and no untrusted content lands in `system`.
+            if final == pre_hook:
+                return RolePromptParts(system=system, untrusted_reference=untrusted, flat=final, isolation_safe=True)
+            return RolePromptParts(system="", untrusted_reference=final, flat=final, isolation_safe=False)
+
+        prompt_parts_sink(
+            PromptPartsBundle(
+                competitor=_role_parts(
+                    competitor_system,
+                    base_context_untrusted + hints_block,
+                    pre_hook_bundle.competitor,
+                    final_bundle.competitor,
+                ),
+                analyst=_role_parts(
+                    analyst_system,
+                    base_context_untrusted,
+                    pre_hook_bundle.analyst,
+                    final_bundle.analyst,
+                ),
+                coach=_role_parts(
+                    coach_system,
+                    base_context_untrusted,
+                    pre_hook_bundle.coach,
+                    final_bundle.coach,
+                ),
+                architect=_role_parts(
+                    architect_system,
+                    base_context_untrusted,
+                    pre_hook_bundle.architect,
+                    final_bundle.architect,
+                ),
             )
         )
     return final_bundle
