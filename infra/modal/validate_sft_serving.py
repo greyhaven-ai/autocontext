@@ -132,6 +132,80 @@ def validate() -> dict:
     closure_text_2 = generate_fn(sft_record, anchor, "A second case.")
     assert isinstance(closure_text_2, str)
 
+    # 5) exercise the AC-893 per-role serving-manifest bridge end to end. The ambient trainer slots
+    #    a promoted per-role model under scenario = target.name (AC-884 anti-collision), and the
+    #    serving manifest carries the (real-scenario, role) -> target bridge the promote stage wrote.
+    #    _resolve_ambient_record must read the manifest, resolve the record slotted under the target
+    #    name, and the serving resolver must load + generate on the GPU. This is the live-serving path
+    #    a generation-loop role takes when settings.ambient_serving_manifest_path is configured.
+    from autocontext.agents.scenario_bound_clients import (
+        _resolve_ambient_record,
+        build_planned_client,
+        plan_local_client,
+    )
+    from autocontext.ambient.serving_manifest import (
+        lookup_serving_entry,
+        write_serving_entry,
+    )
+    from autocontext.training.model_registry import ModelRegistry
+
+    knowledge_root = Path(tempfile.mkdtemp())
+    manifest_path = Path(tempfile.mkdtemp()) / "serving-manifest.json"
+    target_name = "competitor-local"
+    real_scenario = "grid_ctf"
+    role = "competitor"
+
+    served_registry = ModelRegistry(knowledge_root)
+    promoted = DistilledModelRecord(
+        artifact_id="ac893-modal-served",
+        scenario=target_name,  # ambient slots the promoted model under the target name, not the scenario
+        scenario_family="",
+        backend="sft",
+        checkpoint_path=adapter_dir,
+        runtime_types=["provider"],
+        activation_state="candidate",
+        training_metrics={},
+        provenance={},
+        metadata={"base_model": base_id, "target": target_name},
+    )
+    served_registry.register(promoted)
+    served_registry.activate(promoted.artifact_id)
+    write_serving_entry(
+        manifest_path,
+        scenario=real_scenario,
+        role=role,
+        target_name=target_name,
+        artifact_id=promoted.artifact_id,
+        backend="sft",
+    )
+    # the manifest bridge answers for the real (scenario, role), not the target name
+    assert (
+        lookup_serving_entry(manifest_path, scenario=real_scenario, role=role)
+        is not None
+    )
+
+    served_settings = AppSettings(
+        knowledge_root=knowledge_root,
+        ambient_serving_manifest_path=manifest_path,
+        mlx_max_tokens=8,
+        mlx_temperature=0.7,
+    )
+    resolved = _resolve_ambient_record(served_settings, real_scenario, role)
+    assert resolved is not None, "serving manifest did not resolve the promoted record"
+    assert resolved.artifact_id == promoted.artifact_id, (
+        "resolved the wrong artifact via the manifest"
+    )
+    served_plan = plan_local_client(resolved)
+    assert served_plan is not None and served_plan.kind == "sft"
+    served_client = build_planned_client(served_plan, served_settings)
+    served_response = served_client.generate(
+        model=served_plan.model,
+        prompt="Served via the manifest.",
+        max_tokens=8,
+        temperature=0.7,
+    )
+    assert isinstance(served_response.text, str)
+
     return {
         "cuda_available": bool(torch.cuda.is_available()),
         "device": provider._device,
@@ -143,6 +217,8 @@ def validate() -> dict:
         "client_output_tokens": response.usage.output_tokens,
         "closure_text_len": len(closure_text),
         "closure_second_case_len": len(closure_text_2),
+        "served_artifact": resolved.artifact_id,
+        "served_via_manifest_text_len": len(served_response.text),
     }
 
 
@@ -158,6 +234,13 @@ def main() -> None:
         "the production generation closure did not return text"
     )
     assert summary["closure_second_case_len"] >= 0
+    assert summary["served_artifact"] == "ac893-modal-served", (
+        "the AC-893 serving manifest did not resolve the promoted per-role record"
+    )
+    assert summary["served_via_manifest_text_len"] >= 0, (
+        "the manifest-resolved model did not serve/generate"
+    )
     print(
-        "PASS: torch/peft sft adapter served + generated on a real GPU, via provider, client, and the production closure."
+        "PASS: torch/peft sft adapter served + generated on a real GPU, via provider, client, "
+        "the production closure, and the AC-893 per-role serving-manifest bridge."
     )
