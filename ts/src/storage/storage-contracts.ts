@@ -52,6 +52,7 @@ export interface GenerationRow {
   dimension_summary_json: string | null;
   scoring_backend: string;
   rating_uncertainty: number | null;
+  evaluator_epoch: string | null;
   created_at: string;
   updated_at: string;
 }

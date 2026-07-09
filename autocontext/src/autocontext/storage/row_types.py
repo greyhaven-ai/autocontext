@@ -35,6 +35,7 @@ class GenerationMetricsRow(TypedDict):
     duration_seconds: float | None
     scoring_backend: str | None
     rating_uncertainty: float | None
+    evaluator_epoch: str | None
     dimension_summary_json: str | None
     created_at: str
     updated_at: str

@@ -10,6 +10,7 @@ export interface UpsertGenerationRecordOpts {
   dimensionSummaryJson?: string | null;
   scoringBackend?: string;
   ratingUncertainty?: number | null;
+  evaluatorEpoch?: string | null;
 }
 
 export interface RecordMatchRecordOpts {
