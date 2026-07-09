@@ -133,6 +133,18 @@ unless the charter's priority says training wins.
   vllm provider path routes role traffic. The previous checkpoint stays warm
   through a probation window (charter-defined: N runs or M days within
   quality-delta and error-rate bounds); rollback is one registry flip.
+- **Per-role live-serving bridge (opt-in, AC-893)**: ambient candidates are
+  slotted in the registry by target name (so activation never cross-demotes a
+  sibling, AC-884), but the generation loop resolves a local model by the real
+  scenario. The bridge is a serving manifest that the promote stage writes on
+  activation ((real scenario, role) -> target/artifact/backend) and the serving
+  resolver reads before its scenario-keyed lookup. It is off by default. To turn
+  it on, set the SAME manifest path for BOTH sides via
+  `AUTOCONTEXT_AMBIENT_SERVING_MANIFEST_PATH`: the ambient daemon (which runs the
+  promote stage) and the generation-loop process (which resolves the served
+  client) must point at one shared file, or the bridge writes and reads never
+  meet. A bare-role selector (`competitor`) serves every scenario; a scoped
+  selector (`competitor@grid_ctf`) serves only that scenario.
 - **Frontier fraction**: the router keeps the charter's minimum share of role
   traffic on frontier APIs so the reference distribution never dries up and a
   live comparison population always exists.

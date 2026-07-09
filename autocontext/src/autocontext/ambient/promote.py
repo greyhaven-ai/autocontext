@@ -17,9 +17,12 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 
 from autocontext.ambient.charter import CharterTarget
+from autocontext.ambient.eligibility import split_role_selector
 from autocontext.ambient.policy import decide
+from autocontext.ambient.serving_manifest import write_serving_entry
 from autocontext.ambient.stage import StageContext, StageResult
 from autocontext.training.model_registry import DistilledModelRecord, ModelRegistry
 
@@ -33,6 +36,10 @@ class PromoteStage:
     name: str
     registry: ModelRegistry
     now_fn: Callable[[], str] = _default_now
+    # opt-in (AC-893): when set, record the (real_scenario, role) -> ambient target mapping so the
+    # serving resolver can bridge to a model slotted under the target name (AC-884 anti-collision).
+    # None (the default) leaves the promote path byte-unchanged: nothing is written.
+    serving_manifest_path: Path | None = None
 
     def run_once(self, ctx: StageContext) -> StageResult:
         processed = 0
@@ -89,6 +96,23 @@ class PromoteStage:
         # persist the probation marker while best is still a candidate; activate flips it to active
         # and demotes the incumbent to disabled, kept warm as the rollback target.
         self.registry.register(best)
+
+        if self.serving_manifest_path is not None:
+            # the registry slots the ambient record under the target name (AC-884), but generation
+            # resolves by the real scenario, so record the (scenario, role) -> target bridge. A bare
+            # role selector serves every scenario, held under the "*" bucket. Write the bridge BEFORE
+            # flipping the record active: a manifest-write failure then leaves the candidate
+            # un-activated (retried next cycle) rather than active-but-unrouted with no bridge.
+            role, scenario = split_role_selector(target.selector)
+            write_serving_entry(
+                self.serving_manifest_path,
+                scenario=scenario or "*",
+                role=role,
+                target_name=target.name,
+                artifact_id=best.artifact_id,
+                backend=best.backend,
+            )
+
         self.registry.activate(best.artifact_id)
 
         ctx.emitter.emit(

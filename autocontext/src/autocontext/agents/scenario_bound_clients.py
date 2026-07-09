@@ -105,6 +105,32 @@ def _resolve_local_record(settings: AppSettings, scenario_name: str) -> Distille
     return None
 
 
+def _resolve_ambient_record(settings: AppSettings, scenario_name: str, role: str) -> DistilledModelRecord | None:
+    """Ambient per-role record for (scenario, role) via the serving manifest, or ``None`` (AC-893).
+
+    The ambient trainer slots a promoted per-role model under ``scenario = target.name`` (AC-884
+    anti-collision), so resolving by the real scenario never finds it. When the opt-in serving
+    manifest is configured, it carries the (scenario, role) -> target bridge the promote stage wrote,
+    so we resolve the record slotted under the target name. Off (path None) or any error returns
+    ``None`` so the caller falls through to the existing scenario-keyed resolution.
+    """
+    manifest_path = settings.ambient_serving_manifest_path
+    if manifest_path is None:
+        return None
+    from autocontext.ambient.serving_manifest import lookup_serving_entry
+    from autocontext.training.model_registry import ModelRegistry, resolve_model
+
+    try:
+        entry = lookup_serving_entry(manifest_path, scenario=scenario_name, role=role)
+        if entry is None:
+            return None
+        registry = ModelRegistry(settings.knowledge_root)
+        return resolve_model(registry, scenario=entry["target_name"], backend=entry["backend"], runtime_type="provider")
+    except Exception:
+        logger.debug("agents.scenario_bound_clients: ambient serving-manifest resolve failed", exc_info=True)
+        return None
+
+
 def build_planned_client(plan: LocalClientPlan, settings: AppSettings) -> LanguageModelClient:
     """Construct the MLX / MLXLM / SFT-torch client described by ``plan`` (loads the model)."""
     if plan.kind == "sft":
@@ -141,9 +167,12 @@ def scenario_bound_mlx_client(orch: AgentOrchestrator, role: str, *, scenario_na
     while ``mlxlm`` / ``opd`` adapters rebuild ``MLXLMClient(base, adapter, score_conditioned=...)``.
     Returns ``None`` when nothing is resolvable, so the caller falls back to the default client.
     """
-    key: tuple[str, str | None, str, str]
+    # The served model id is part of the cache key: the serving manifest (AC-893) can route the same
+    # (scenario, role) to different full checkpoints over time (e.g. a fallback vs an ambient model),
+    # so a key without the model would keep serving the stale cached client.
+    key: tuple[str, str | None, str, str, str]
     if orch.settings.mlx_model_path:
-        key = ("mlx", None, scenario_name, role)
+        key = ("mlx", None, orch.settings.mlx_model_path, scenario_name, role)
         cached = orch._routed_clients.get(key)
         if cached is not None:
             return cached
@@ -156,14 +185,14 @@ def scenario_bound_mlx_client(orch: AgentOrchestrator, role: str, *, scenario_na
         orch._routed_clients[key] = client
         return client
 
-    record = _resolve_local_record(orch.settings, scenario_name)
+    record = _resolve_ambient_record(orch.settings, scenario_name, role) or _resolve_local_record(orch.settings, scenario_name)
     if record is None:
         return None
     plan = plan_local_client(record)
     if plan is None:
         return None
 
-    key = (plan.kind, plan.adapter_path, scenario_name, role)
+    key = (plan.kind, plan.adapter_path, plan.model, scenario_name, role)
     cached = orch._routed_clients.get(key)
     if cached is not None:
         return cached
