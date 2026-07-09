@@ -154,6 +154,7 @@ def generate_agent_task_class(spec: AgentTaskSpec, name: str = "custom_agent_tas
                         if evaluator_guardrail is not None
                         else None
                     ),
+                    evaluator_epoch=result.evaluator_epoch,
                 )
 
             def get_rubric(self) -> str:

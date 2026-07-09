@@ -250,6 +250,7 @@ class SimpleAgentTask(AgentTaskInterface):
             dimension_scores=judge_result.dimension_scores,
             internal_retries=judge_result.internal_retries,
             evaluator_guardrail=(evaluator_guardrail.to_dict() if evaluator_guardrail is not None else None),
+            evaluator_epoch=judge_result.evaluator_epoch,
         )
 
     def generate_output(self, state: dict) -> str:
