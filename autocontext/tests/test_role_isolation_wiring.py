@@ -13,8 +13,11 @@ import contextlib
 
 from autocontext.agents.analyst import AnalystRunner
 from autocontext.agents.architect import ArchitectRunner
+from autocontext.agents.coach import CoachRunner
 from autocontext.agents.competitor import CompetitorRunner
 from autocontext.agents.subagent_runtime import SubagentRuntime
+from autocontext.extensions.hooks import HookBus
+from autocontext.extensions.llm import HookedLanguageModelClient
 from autocontext.harness.core.llm_client import LanguageModelClient
 from autocontext.harness.core.types import ModelResponse, RoleUsage
 
@@ -122,3 +125,35 @@ def test_handler_falls_back_to_flat_for_incapable_clients() -> None:
     # incapable backend → exact legacy flat prompt, no system turn, no reordering.
     assert client.generate_calls and not client.multiturn_calls
     assert client.generate_calls[0]["prompt"] == "FLAT legacy prompt"
+
+
+def test_coach_forwards_system_as_isolated_turn() -> None:
+    runtime, client = _runtime()
+    CoachRunner(runtime, "m").run("UNTRUSTED body", system="TRUSTED system")
+    call = client.multiturn_calls[0]
+    assert call["system"] == "TRUSTED system"
+    assert call["messages"] == [{"role": "user", "content": "UNTRUSTED body"}]
+    assert call["role"] == "coach"
+
+
+def test_coach_without_system_stays_flat() -> None:
+    runtime, client = _runtime()
+    CoachRunner(runtime, "m").run("flat coach prompt")
+    assert client.generate_calls and not client.multiturn_calls
+    assert client.generate_calls[0]["prompt"] == "flat coach prompt"
+
+
+def test_hook_wrapper_forwards_capability_so_production_isolates() -> None:
+    # GenerationRunner always wraps the client for hooks; the wrapper must expose
+    # the inner client's capability or every production role falls back to flat.
+    capable = HookedLanguageModelClient(_CapableClient(), HookBus())
+    assert capable.supports_structural_isolation is True
+    incapable = HookedLanguageModelClient(_RecordingClient(), HookBus())
+    assert incapable.supports_structural_isolation is False
+
+
+def test_agent_sdk_client_advertises_structural_isolation() -> None:
+    from autocontext.agents.agent_sdk_client import AgentSdkClient
+
+    # Routes system via ClaudeAgentOptions.system_prompt → genuinely role-capable.
+    assert AgentSdkClient.supports_structural_isolation is True

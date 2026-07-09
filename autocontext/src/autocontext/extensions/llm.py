@@ -16,6 +16,11 @@ class HookedLanguageModelClient(LanguageModelClient):
         self.inner = inner
         self.hook_bus = hook_bus
         self.provider_name = provider_name or inner.__class__.__name__
+        # Forward explicitly — __getattr__ can't (the base defines this as a real
+        # attribute, so lookup never misses). Without this, structural isolation
+        # (ERP-67) silently no-ops whenever a client is wrapped for hooks, which
+        # GenerationRunner always does.
+        self.supports_structural_isolation = bool(getattr(inner, "supports_structural_isolation", False))
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self.inner, name)

@@ -16,13 +16,36 @@ from typing import TYPE_CHECKING, Any
 from autocontext.agents.architect import parse_architect_harness_specs, parse_architect_tool_specs
 from autocontext.agents.coach import parse_coach_sections
 from autocontext.agents.parsers import parse_analyst_output, parse_architect_output, parse_coach_output, parse_competitor_output
+from autocontext.agents.role_isolation import resolve_role_turn
 from autocontext.agents.types import AgentOutputs, RoleExecution
 
 if TYPE_CHECKING:
     from autocontext.agents.orchestrator import AgentOrchestrator
-    from autocontext.prompts.templates import PromptBundle
+    from autocontext.prompts.templates import PromptBundle, PromptPartsBundle, RolePromptParts
 
 NotifyFn = Callable[[str, str], None]
+
+
+def _direct_turn(
+    orchestrator: AgentOrchestrator,
+    rp: RolePromptParts | None,
+    runner: object,
+    flat_prompt: str,
+    *,
+    suffix: str = "",
+) -> tuple[str, str]:
+    """Resolve (user_prompt, system) for a direct-path role.
+
+    Returns the legacy ``flat_prompt`` with no system turn unless structural
+    isolation is enabled and parts are available, in which case it defers to
+    ``resolve_role_turn`` (which itself falls back to flat for unsafe splits or
+    incapable clients). Must be called inside the role's ``_use_role_runtime``
+    scope so the resolved client's capability is what's checked.
+    """
+    if not orchestrator.settings.structural_role_isolation or rp is None:
+        return flat_prompt, ""
+    client = getattr(getattr(runner, "runtime", None), "client", None)
+    return resolve_role_turn(rp, client, suffix=suffix)
 
 
 def _run_competitor_phase(
@@ -37,6 +60,7 @@ def _run_competitor_phase(
     current_strategy: dict[str, Any] | None,
     generation_deadline: float | None,
     notify: NotifyFn,
+    parts: PromptPartsBundle | None = None,
 ) -> tuple[str, RoleExecution]:
     """Run the Competitor role, choosing RLM vs direct execution."""
     settings = orchestrator.settings
@@ -70,10 +94,12 @@ def _run_competitor_phase(
     else:
         notify("competitor", "started")
         competitor_prompt = prompts.competitor
+        code_suffix = ""
         if settings.code_strategies_enabled:
             from autocontext.prompts.templates import code_strategy_competitor_suffix
 
-            competitor_prompt += code_strategy_competitor_suffix(strategy_interface)
+            code_suffix = code_strategy_competitor_suffix(strategy_interface)
+            competitor_prompt += code_suffix
         with orchestrator._use_role_runtime(
             "competitor",
             orchestrator.competitor,
@@ -81,7 +107,17 @@ def _run_competitor_phase(
             scenario_name=scenario_name,
             generation_deadline=generation_deadline,
         ):
-            raw_text, competitor_exec = orchestrator.competitor.run(competitor_prompt, tool_context=tool_context)
+            user_prompt, system = _direct_turn(
+                orchestrator,
+                parts.competitor if parts else None,
+                orchestrator.competitor,
+                competitor_prompt,
+                suffix=code_suffix,
+            )
+            if system:
+                raw_text, competitor_exec = orchestrator.competitor.run(user_prompt, tool_context=tool_context, system=system)
+            else:
+                raw_text, competitor_exec = orchestrator.competitor.run(user_prompt, tool_context=tool_context)
         notify("competitor", "completed")
 
     return raw_text, competitor_exec
@@ -125,12 +161,21 @@ def _run_analyst_coach_architect(
     scenario_rules: str,
     generation_deadline: float | None,
     notify: NotifyFn,
+    parts: PromptPartsBundle | None = None,
+    architect_cadence: str = "",
 ) -> tuple[RoleExecution, RoleExecution, RoleExecution]:
     """Run Analyst, Coach, and Architect, choosing RLM vs threaded execution.
 
     Returns (analyst_exec, coach_exec, architect_exec).
     """
     settings = orchestrator.settings
+
+    def _coach_turn(base_prompt: str, analyst_content: str) -> tuple[str, str]:
+        # Resolve the coach turn, then enrich the (untrusted or flat) user base
+        # with the analyst's findings — enrichment always rides the user turn.
+        base, system = _direct_turn(orchestrator, parts.coach if parts else None, orchestrator.coach, base_prompt)
+        return orchestrator._enrich_coach_prompt(base, analyst_content), system
+
     if settings.rlm_enabled and orchestrator._rlm_loader is not None and settings.agent_provider != "agent_sdk":
         notify("analyst", "started")
         notify("architect", "started")
@@ -145,7 +190,6 @@ def _run_analyst_coach_architect(
         notify("analyst", "completed")
         notify("architect", "completed")
         notify("coach", "started")
-        enriched_coach_prompt = orchestrator._enrich_coach_prompt(prompts.coach, analyst_exec.content)
         with ThreadPoolExecutor(max_workers=1) as pool:
             with orchestrator._use_role_runtime(
                 "coach",
@@ -154,7 +198,9 @@ def _run_analyst_coach_architect(
                 scenario_name=scenario_name,
                 generation_deadline=generation_deadline,
             ):
-                coach_future = pool.submit(orchestrator.coach.run, enriched_coach_prompt)
+                enriched_coach_prompt, coach_system = _coach_turn(prompts.coach, analyst_exec.content)
+                coach_kwargs = {"system": coach_system} if coach_system else {}
+                coach_future = pool.submit(orchestrator.coach.run, enriched_coach_prompt, **coach_kwargs)
                 coach_exec = coach_future.result()
         notify("coach", "completed")
     else:
@@ -167,9 +213,14 @@ def _run_analyst_coach_architect(
             scenario_name=scenario_name,
             generation_deadline=generation_deadline,
         ):
-            analyst_exec = orchestrator.analyst.run(prompts.analyst)
+            analyst_user, analyst_system = _direct_turn(
+                orchestrator, parts.analyst if parts else None, orchestrator.analyst, prompts.analyst
+            )
+            if analyst_system:
+                analyst_exec = orchestrator.analyst.run(analyst_user, system=analyst_system)
+            else:
+                analyst_exec = orchestrator.analyst.run(analyst_user)
         notify("analyst", "completed")
-        enriched_coach_prompt = orchestrator._enrich_coach_prompt(prompts.coach, analyst_exec.content)
         notify("coach", "started")
         notify("architect", "started")
         with (
@@ -188,9 +239,19 @@ def _run_analyst_coach_architect(
                 generation_deadline=generation_deadline,
             ),
         ):
+            enriched_coach_prompt, coach_system = _coach_turn(prompts.coach, analyst_exec.content)
+            architect_user, architect_system = _direct_turn(
+                orchestrator,
+                parts.architect if parts else None,
+                orchestrator.architect,
+                architect_prompt,
+                suffix=architect_cadence,
+            )
+            coach_kwargs = {"system": coach_system} if coach_system else {}
+            architect_kwargs = {"system": architect_system} if architect_system else {}
             with ThreadPoolExecutor(max_workers=2) as pool:
-                coach_future = pool.submit(orchestrator.coach.run, enriched_coach_prompt)
-                architect_future = pool.submit(orchestrator.architect.run, architect_prompt)
+                coach_future = pool.submit(orchestrator.coach.run, enriched_coach_prompt, **coach_kwargs)
+                architect_future = pool.submit(orchestrator.architect.run, architect_user, **architect_kwargs)
                 coach_exec = coach_future.result()
                 notify("coach", "completed")
                 architect_exec = architect_future.result()

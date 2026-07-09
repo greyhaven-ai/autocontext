@@ -120,9 +120,6 @@ def build_role_handler(
                 return orch.architect.run(user_prompt)
         elif name == "coach":
             analyst_exec = completed.get("analyst")
-            enriched = prompt
-            if analyst_exec:
-                enriched = orch._enrich_coach_prompt(prompt, analyst_exec.content)
             with orch._use_role_runtime(
                 "coach",
                 orch.coach,
@@ -130,6 +127,14 @@ def build_role_handler(
                 scenario_name=scenario_name,
                 generation_deadline=generation_deadline,
             ):
+                # Resolve the coach base (untrusted user turn or flat) first, then
+                # append the analyst findings — enrichment rides the user turn.
+                user_base, system = _resolve_turn("coach", orch.coach, prompt)
+                enriched = user_base
+                if analyst_exec:
+                    enriched = orch._enrich_coach_prompt(user_base, analyst_exec.content)
+                if system:
+                    return orch.coach.run(enriched, system=system)
                 return orch.coach.run(enriched)
         else:
             raise ValueError(f"Unknown role: {name}")

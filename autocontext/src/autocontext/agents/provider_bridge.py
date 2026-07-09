@@ -139,35 +139,24 @@ class RuntimeSessionRecordingClient(LanguageModelClient):
         self.session = session
         self.role = role
         self.cwd = cwd
+        # Forward explicitly — __getattr__ never fires for this inherited base
+        # attribute, so without this a session-recorded capable client (the normal
+        # run path) reports False and ERP-67 isolation no-ops.
+        self.supports_structural_isolation = bool(getattr(inner, "supports_structural_isolation", False))
 
     def __getattr__(self, name: str) -> object:
         return getattr(self.inner, name)
 
-    def generate(
-        self,
-        *,
-        model: str,
-        prompt: str,
-        max_tokens: int,
-        temperature: float,
-        role: str = "",
-    ) -> ModelResponse:
+    def _record(self, *, prompt: str, model: str, resolved_role: str, call: Callable[[], ModelResponse]) -> ModelResponse:
         from autocontext.session.runtime_session import RuntimeSessionPromptHandlerOutput
 
         response: ModelResponse | None = None
         failure: Exception | None = None
-        resolved_role = role or self.role
 
         def handler(_input: object) -> RuntimeSessionPromptHandlerOutput:
             nonlocal response, failure
             try:
-                response = self.inner.generate(
-                    model=model,
-                    prompt=prompt,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                    role=resolved_role,
-                )
+                response = call()
             except Exception as exc:
                 failure = exc
                 raise
@@ -181,12 +170,7 @@ class RuntimeSessionRecordingClient(LanguageModelClient):
                 ),
             )
 
-        result = self.session.submit_prompt(
-            prompt=prompt,
-            handler=handler,
-            role=resolved_role,
-            cwd=self.cwd,
-        )
+        result = self.session.submit_prompt(prompt=prompt, handler=handler, role=resolved_role, cwd=self.cwd)
         if result.is_error:
             raise failure or RuntimeError(result.error)
         if response is None:
@@ -203,6 +187,58 @@ class RuntimeSessionRecordingClient(LanguageModelClient):
         metadata = dict(response.metadata)
         metadata["runtimeSessionId"] = self.session.session_id
         return ModelResponse(text=response.text, usage=response.usage, metadata=metadata)
+
+    def generate(
+        self,
+        *,
+        model: str,
+        prompt: str,
+        max_tokens: int,
+        temperature: float,
+        role: str = "",
+    ) -> ModelResponse:
+        resolved_role = role or self.role
+        return self._record(
+            prompt=prompt,
+            model=model,
+            resolved_role=resolved_role,
+            call=lambda: self.inner.generate(
+                model=model,
+                prompt=prompt,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                role=resolved_role,
+            ),
+        )
+
+    def generate_multiturn(
+        self,
+        *,
+        model: str,
+        system: str,
+        messages: list[dict[str, str]],
+        max_tokens: int,
+        temperature: float,
+        role: str = "",
+    ) -> ModelResponse:
+        # Record the flattened turns for the session log/replay, but call the
+        # inner client's real generate_multiturn so a capable backend keeps the
+        # untrusted content in a separate user turn (ERP-67 structural isolation).
+        resolved_role = role or self.role
+        recorded = system + "\n\n" + "\n\n".join(m["content"] for m in messages if m.get("role") == "user")
+        return self._record(
+            prompt=recorded,
+            model=model,
+            resolved_role=resolved_role,
+            call=lambda: self.inner.generate_multiturn(
+                model=model,
+                system=system,
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                role=resolved_role,
+            ),
+        )
 
     def close(self) -> None:
         close = getattr(self.inner, "close", None)

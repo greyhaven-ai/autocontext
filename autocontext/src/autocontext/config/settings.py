@@ -100,10 +100,13 @@ class AppSettings(BaseModel):
     structural_role_isolation: bool = Field(
         default=False,
         description=(
-            "ERP-67 Stage 2b: deliver the untrusted reference block (playbook / coach "
-            "hints / dead-ends) in a separate user turn from the trusted system prompt "
-            "for role-capable backends, instead of one flat prompt. Off = byte-identical "
-            "legacy behaviour. Pipeline path, competitor/analyst/architect only for now."
+            "ERP-67: deliver the untrusted reference block (playbook / coach hints / "
+            "dead-ends) in a separate user turn from the trusted system prompt for "
+            "role-capable backends (Anthropic, Agent SDK), instead of one flat prompt. "
+            "Applies to competitor/analyst/architect/coach on both the direct and "
+            "pipeline execution paths; single-prompt / runtime-bridge backends and "
+            "unsafe (hook-/mutation-rewritten) prompts fall back to the exact flat "
+            "prompt. Off = byte-identical legacy behaviour."
         ),
     )
     evidence_freshness_enabled: bool = Field(

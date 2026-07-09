@@ -49,6 +49,10 @@ class AgentSdkConfig:
 class AgentSdkClient(LanguageModelClient):
     """LLM client backed by claude_agent_sdk.query()."""
 
+    # generate_multiturn routes `system` through ClaudeAgentOptions.system_prompt,
+    # a genuine system/user separation → real message-role isolation (ERP-67).
+    supports_structural_isolation = True
+
     def __init__(self, config: AgentSdkConfig | None = None) -> None:
         self._config = config or AgentSdkConfig()
 
