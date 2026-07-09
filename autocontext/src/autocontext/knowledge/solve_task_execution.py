@@ -318,6 +318,7 @@ def run_task_like_scenario(
         gate_decision=result.termination_reason,
         status="completed",
         duration_seconds=(result.duration_ms / 1000.0) if result.duration_ms is not None else None,
+        evaluator_epoch=result.evaluator_epoch,
     )
     sqlite.mark_run_completed(active_run_id)
     if settings.cross_run_inheritance and not settings.ablation_no_feedback:

@@ -365,6 +365,7 @@ def _run_agent_task(
         gate_decision=effective_termination_reason,
         status="completed",
         duration_seconds=(result.duration_ms / 1000.0) if result.duration_ms is not None else None,
+        evaluator_epoch=result.evaluator_epoch,
     )
 
     return AgentTaskRunSummary(
