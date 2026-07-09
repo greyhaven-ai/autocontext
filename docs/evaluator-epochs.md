@@ -125,10 +125,15 @@ read-through of the stamped `generations` value, so an exported training example
 of the score it was selected on. `MatchRecord` is left unstamped, matching the tournament decision.
 
 **The `mixed_epoch` flag.** Two derived records aggregate across many samples, and an aggregate can
-span more than one evaluator. `CalibrationSample.evaluator_epoch` records each sample's epoch, and
-`CalibrationRound.mixed_epoch` is set when the round's samples do not all share one epoch. The same
-shape carries to rubric drift: `RubricSnapshot.evaluator_epochs` lists the epochs present in the
-snapshot and `RubricSnapshot.mixed_epoch` (with `DriftWarning.mixed_epoch`) flags the mixed case.
+span more than one evaluator class. Following the comparability rule above, `None` (unknown / legacy)
+is its own class, comparable only with `None`: `mixed_epoch` is set whenever an aggregate spans more
+than one class, so a known epoch mixed with a null is flagged, while an all-null or empty aggregate is
+not. `CalibrationSample.evaluator_epoch` records each sample's epoch, and
+`CalibrationRound.mixed_epoch` is set when the round's samples span more than one class. The same
+shape carries to rubric drift: `RubricSnapshot.evaluator_epochs` lists the known epochs present in the
+snapshot, `RubricSnapshot.has_unknown_epoch` records whether any null-epoch facet is present, and
+`RubricSnapshot.mixed_epoch` (with `DriftWarning.mixed_epoch`) flags the mixed case. A baseline
+comparison warning reflects the classes of both snapshots, not the current snapshot alone.
 These fields record lineage only. They do not change any arithmetic: the calibration means and the
 drift statistics are computed exactly as before (pinned by a byte-identical-mean regression), and
 the flag is a lineage annotation, not a filter. Enforcement (refusing to aggregate across epochs, or

@@ -34,6 +34,7 @@ export interface RubricSnapshot {
   agentProvider: string;
   evaluatorEpochs: string[];
   mixedEpoch: boolean;
+  hasUnknownEpoch: boolean;
   metadata: Record<string, unknown>;
 }
 

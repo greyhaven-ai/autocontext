@@ -48,6 +48,17 @@ export function makeWarning(
   };
 }
 
+/**
+ * True when two snapshots together span more than one evaluator class. Known
+ * epochs come from the union of each snapshot's evaluatorEpochs; the unknown
+ * (null) class is counted once if either snapshot carries a null epoch.
+ */
+export function combinedMixed(a: RubricSnapshot, b: RubricSnapshot): boolean {
+  const knownEpochs = new Set([...a.evaluatorEpochs, ...b.evaluatorEpochs]);
+  const unknownClass = a.hasUnknownEpoch || b.hasUnknownEpoch ? 1 : 0;
+  return knownEpochs.size + unknownClass > 1;
+}
+
 export function detectRubricDrift(
   current: RubricSnapshot,
   thresholds: DriftThresholds,
@@ -76,7 +87,7 @@ export function detectRubricDrift(
   if (baseline) {
     const delta = current.meanScore - baseline.meanScore;
     if (delta > thresholds.maxScoreInflation) {
-      warnings.push(makeWarning(
+      const inflationWarning = makeWarning(
         now,
         "score_inflation",
         "high",
@@ -85,7 +96,11 @@ export function detectRubricDrift(
         "mean_score_delta",
         delta,
         thresholds.maxScoreInflation,
-      ));
+      );
+      // The baseline-derived inflation warning is a cross-snapshot comparison,
+      // so it must reflect the epochs of BOTH snapshots, not current alone.
+      inflationWarning.mixedEpoch = combinedMixed(current, baseline);
+      warnings.push(inflationWarning);
     }
   }
 

@@ -90,9 +90,13 @@ class CalibrationRound(BaseModel):
 
 
 def compute_round_mixed_epoch(samples: list[CalibrationSample]) -> bool:
-    """True when the samples span more than one distinct non-null evaluator epoch."""
-    epochs = {s.evaluator_epoch for s in samples if s.evaluator_epoch is not None}
-    return len(epochs) > 1
+    """True when the samples span more than one evaluator class.
+
+    None (unknown/legacy) is its own class comparable only with None, so it is
+    NOT filtered out: a known epoch mixed with None spans two classes and is
+    flagged, while an all-None or empty aggregate is not.
+    """
+    return len({s.evaluator_epoch for s in samples}) > 1
 
 
 class SpotCheckSampler:
