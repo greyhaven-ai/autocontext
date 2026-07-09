@@ -16,6 +16,12 @@ class SubagentTask:
     prompt: str
     max_tokens: int
     temperature: float
+    # ERP-67 structural role isolation: when set, `prompt` is the untrusted user
+    # turn and `system` is the trusted system turn, delivered via
+    # `generate_multiturn` so role-capable backends keep untrusted content out of
+    # the system prompt. Empty (the default, and every call site today) → the
+    # single-prompt `generate` path, byte-identical to prior behaviour.
+    system: str = ""
 
 
 class SubagentRuntime:
@@ -25,13 +31,23 @@ class SubagentRuntime:
         self.client = client
 
     def run_task(self, task: SubagentTask) -> RoleExecution:
-        response = self.client.generate(
-            model=task.model,
-            prompt=task.prompt,
-            max_tokens=task.max_tokens,
-            temperature=task.temperature,
-            role=task.role,
-        )
+        if task.system:
+            response = self.client.generate_multiturn(
+                model=task.model,
+                system=task.system,
+                messages=[{"role": "user", "content": task.prompt}],
+                max_tokens=task.max_tokens,
+                temperature=task.temperature,
+                role=task.role,
+            )
+        else:
+            response = self.client.generate(
+                model=task.model,
+                prompt=task.prompt,
+                max_tokens=task.max_tokens,
+                temperature=task.temperature,
+                role=task.role,
+            )
         return RoleExecution(
             role=task.role,
             content=response.text.strip(),

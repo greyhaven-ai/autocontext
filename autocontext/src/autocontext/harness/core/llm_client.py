@@ -32,4 +32,10 @@ class LanguageModelClient:
         Default implementation concatenates into a single-turn call for backwards compat.
         """
         combined = system + "\n\n" + "\n\n".join(m["content"] for m in messages if m["role"] == "user")
-        return self.generate(model=model, prompt=combined, max_tokens=max_tokens, temperature=temperature)
+        return self.generate(
+            model=model,
+            prompt=combined,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            role=role,
+        )
