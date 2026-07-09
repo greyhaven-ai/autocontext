@@ -98,19 +98,24 @@ class AppSettings(BaseModel):
     soft_hints_enabled: bool = False
     hint_style: Literal["default", "structural", "solution_like"] = "default"
     structural_role_isolation: bool = Field(
-        default=True,
+        default=False,
         description=(
-            "ERP-67 (Stage 4: on by default): deliver the untrusted reference block "
-            "(playbook / coach hints / dead-ends) in a separate user turn from the "
-            "trusted system prompt for role-capable backends (Anthropic, Agent SDK), "
-            "instead of one flat prompt. Applies to competitor/analyst/architect/coach "
-            "on both the direct and pipeline execution paths; single-prompt / "
-            "runtime-bridge backends and unsafe (hook-/mutation-rewritten) prompts fall "
-            "back to the exact flat prompt (byte-identical legacy behaviour). This is a "
-            "prompt-injection defense; it moves attacker-influenceable content out of "
-            "the system turn. Set False to revert to the flat prompt if a score-parity "
-            "soak shows a quality regression on a capable backend (see the runbook in "
-            "docs/erp-67-structural-role-isolation-design.md)."
+            "ERP-67 (opt-in; NOT yet safe to default-on): for role-capable backends "
+            "(Anthropic, Agent SDK), deliver the fenced untrusted blocks in a separate "
+            "user turn from the trusted system prompt instead of one flat prompt; "
+            "incapable / runtime-bridge backends and unsafe prompts fall back to the "
+            "exact flat prompt (byte-identical). Env override: "
+            "AUTOCONTEXT_STRUCTURAL_ROLE_ISOLATION=true (restart the worker/server to "
+            "reload). Kept OFF by default: the current split only routes playbook / "
+            "coach hints / dead-ends to the untrusted turn, while other "
+            "attacker-influenceable, model/user/document-derived context (analyst "
+            "output, coach lessons, architect tool context, session reports, evidence, "
+            "notebooks) is still classified as system — so enabling this today would "
+            "PROMOTE that second-order-injectable content to system authority. "
+            "Default-on is blocked on completing the trust classification (route all "
+            "non-operator components to the untrusted turn) AND a capable-backend "
+            "score-parity + behavioral adversarial soak. See "
+            "docs/erp-67-structural-role-isolation-design.md."
         ),
     )
     evidence_freshness_enabled: bool = Field(

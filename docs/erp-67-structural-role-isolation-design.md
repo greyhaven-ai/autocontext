@@ -1,9 +1,18 @@
 # Structural role-message isolation for untrusted content — design (ERP-67)
 
-**Status:** design / staged plan. No behavioural code in this PR — it records
-the real call path, the contract, and a staged, feature-flagged rollout for a
-large cross-cutting change. Follow-up to **ERP-59** (shipped: in-band guardrail
-preamble + `[BEGIN/END UNTRUSTED REFERENCE]` fencing in `build_prompt_bundle`).
+**Status (updated):** Stages 1–3 implemented and merged (behind the
+`structural_role_isolation` flag, **default off**). Stage 4 (default-on) is
+**blocked** — see "Stage 4" below. This document began as a design/staged plan;
+the sections below now mix the original plan with the as-built state, noted
+where they differ. Follow-up to **ERP-59** (shipped: in-band guardrail preamble +
+`[BEGIN/END UNTRUSTED REFERENCE]` fencing in `build_prompt_bundle`).
+
+> **As-built note on the call path (below):** the original text says
+> `SubagentTask` has no system/user seam. That was the pre-Stage-2 state. As
+> built, `SubagentTask` now carries an optional `system` and `SubagentRuntime`
+> routes it via `generate_multiturn` for role-capable clients (Stage 2); the
+> orchestrator resolves each role's turn via `resolve_role_turn` on both the
+> direct and pipeline paths (Stage 2b/2c).
 
 ## Problem
 
@@ -135,33 +144,52 @@ role-reassignment, fake-system-prompt, tool-call injection. Under the flag,
 assert the injected text appears **only** in the user turn and never in the
 system turn, and does not change the agent's actions.
 
-**Stage 4 — flip the default** (done). `structural_role_isolation` now defaults
-to `True`, keeping the flag as an escape hatch (set `False` to revert instantly —
-no code change, byte-identical legacy behaviour).
+**Stage 4 — flip the default** — **NOT done; blocked.** The default stays
+`False`. Two hard prerequisites must land first:
 
-### Stage 4 soak runbook
+**Prerequisite A — complete the trust classification (correctness bug).** The
+Stage 1 split currently routes only the ERP-59 fenced fields (playbook / coach
+hints / dead-ends) to `untrusted_reference` and leaves everything else in
+`system`. But much of that "everything else" is **not** operator-controlled —
+prior analyst output, coach-generated lessons, architect-generated tool context,
+session reports, evidence manifests, and editable role notebooks are all
+model-, user-, or document-derived, i.e. attacker-influenceable (second-order
+stored injection). Today those sit in the flat user prompt; enabling isolation
+would **promote them to system authority** — strictly worse. Before default-on,
+every non-operator component must be provenance-classified and routed to the
+untrusted turn, leaving only truly operator-controlled text (scenario rules,
+strategy interface, evaluation criteria, role task, constraints, the guardrail,
+simplicity guidance, hint policy) in `system` — with adversarial sentinels
+covering each newly-classified component. Until then the flag is opt-in and,
+frankly, not yet a net security win when enabled.
 
-The flip only changes behaviour for **role-capable** backends (Anthropic, Agent
-SDK); every other backend and any unsafe/rewritten prompt already falls back to
-the exact flat prompt, and the offline `DeterministicDevClient` used in CI is
-incapable — so the test suite exercises the flat path and cannot detect a
-quality shift. Validate on real capable runs:
+**Prerequisite B — a capable-backend soak with an objective gate.** CI's offline
+`DeterministicDevClient` is incapable, so the suite exercises the flat path and
+cannot detect a quality shift; validation must run on a real capable backend.
+Gate:
 
-1. Pick a representative scenario (or a few) and a fixed generation budget/seed.
-2. Run the normal generation/eval loop **twice** on a capable backend — once with
-   `structural_role_isolation=True` (default) and once `=False` (env/config
-   override) — and capture the existing tournament scores / evaluation summaries.
-3. Compare score distributions (mean/median, and any regression gate you already
-   use). Treat a material regression as a signal to keep the flag off for that
-   backend and investigate the prompt-shape change.
-4. If parity holds, leave the default on. If not, set `structural_role_isolation
-= false` in config to revert — the flag is the kill-switch, no redeploy of code
-   needed.
+- **Setup:** one representative scenario set; **fixed** provider + model +
+  temperature (0.0) + generation budget; **≥ 20 paired seeds** (same seed list
+  for on and off).
+- **Commands:** run the standard eval loop twice per seed —
+  `AUTOCONTEXT_STRUCTURAL_ROLE_ISOLATION=false` then `=true` — capturing the
+  existing tournament score / evaluation summary per run.
+- **Acceptance:** paired per-seed score deltas; require the mean delta within
+  **±2%** of the off baseline and no statistically-significant regression (paired
+  t-test / Wilcoxon, p > 0.05) after accounting for run-to-run noise measured
+  from off-vs-off repeats.
+- **Behavioural:** additionally seed an injected scenario and confirm the agent's
+  parsed **actions/strategy** are unchanged vs the clean run on the capable
+  backend (Stage 3 covers message _placement_ only, not behaviour).
+- **Record:** persist the paired results + verdict to a checked-in report (e.g.
+  `docs/erp-67-stage4-soak-<date>.md`) and link it from the flip PR.
 
-Note: the **behavioural** adversarial claim (a capable model _ignores_ injected
-content, not merely receives it in the user turn) is not covered by the Stage 3
-placement tests and should be part of this soak — seed an injected scenario and
-confirm the agent's actions are unchanged versus the clean run.
+**Rollback / escape hatch (real surface).** There is no user config-file loader
+for this field; `load_settings()` reads env + presets. To toggle:
+`AUTOCONTEXT_STRUCTURAL_ROLE_ISOLATION=true|false`. It takes effect on the **next
+settings load**, so a running worker/server must be **restarted** to pick it up.
+When the default is eventually flipped, add the change + this env var to
+`.env.example`, `autocontext/README.md`, and `CHANGELOG.md`.
 
 ## Risks / notes
 
