@@ -560,6 +560,7 @@ class AgentOrchestrator:
             current_strategy,
             generation_deadline,
             _notify,
+            parts=parts,
         )
 
         strategy, translator_exec = _run_translator_phase(
@@ -572,9 +573,8 @@ class AgentOrchestrator:
             _notify,
         )
 
-        architect_prompt = prompts.architect
-        if generation_index % self.settings.architect_every_n_gens != 0:
-            architect_prompt += _ARCHITECT_CADENCE_SKIP
+        architect_cadence = _ARCHITECT_CADENCE_SKIP if generation_index % self.settings.architect_every_n_gens != 0 else ""
+        architect_prompt = prompts.architect + architect_cadence
 
         analyst_exec, coach_exec, architect_exec = _run_analyst_coach_architect(
             self,
@@ -587,6 +587,8 @@ class AgentOrchestrator:
             scenario_rules,
             generation_deadline,
             _notify,
+            parts=parts,
+            architect_cadence=architect_cadence,
         )
 
         return _assemble_agent_outputs(
