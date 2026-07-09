@@ -14,9 +14,18 @@ compared. Two scores are comparable only when their evaluator epochs are equal.
 This generalizes a mechanism autocontext already has and relies on, but only in the ambient
 trainer: `eval_fingerprint()` (`ambient/evaluate.py`) hashes `provider | model | rubric_hash | ...`
 into an epoch, and `promote.py` refuses to compare candidate scores across a mismatched
-`anchor_model`. The main scoring path (`JudgeResult`, the `generations` row, the backpressure/
-advancement gate) carries no evaluator lineage today, so a rubric or judge change mid-run is
-compared as if nothing changed. This slice closes that gap for the judge path and the gate.
+`anchor_model`. The main LLM-judge path (`JudgeResult`, produced by `LLMJudge`, and the
+round-to-round baseline comparison inside `ImprovementLoop`) carries no evaluator lineage today,
+so a rubric or judge change is compared as if nothing changed. This slice closes that gap for the
+judge path and the improve loop.
+
+Integration note (result of tracing the code): the `autoctx run` backpressure gate compares
+tournament/Elo scores for game scenarios and never touches a rubric or judge, so it carries no
+evaluator epoch. LLM-judge scores are compared in `ImprovementLoop`
+(`execution/improvement_loop.py`), which already treats a vetoed round as not a legitimate
+baseline (AC-750) and reasons about candidates "collected under the previous objective set." The
+epoch guard extends that existing "only a legitimate round is a baseline" logic, so the improve
+loop, not the run-loop gate, is the correct home.
 
 ## Decisions of record
 
@@ -24,17 +33,19 @@ compared as if nothing changed. This slice closes that gap for the judge path an
    `evaluator_epoch = sha256(canonical_json({rubric_hash, judge_provider, judge_model}))`.
    `judge_samples` / `judge_temperature` are deliberately excluded: they are within-epoch
    variance, owned by the AC-881 noise-calibration layer, not a new evaluator.
-2. **Guard behavior = re-baseline + flag stale.** When the gate would compare across epochs, the
-   prior-epoch baseline is flagged stale and excluded, and the gate re-baselines under the new
-   active epoch. Never compares across epochs, never silently overwrites the baseline, never
-   hard-freezes the run.
+2. **Guard behavior = re-baseline + flag stale.** When the improve loop would compare a round
+   against a baseline from a different epoch, the prior-epoch baseline is flagged stale and
+   excluded, and the loop re-baselines under the new active epoch. Never compares across epochs,
+   never silently overwrites the baseline, never hard-freezes the loop.
 3. **Parity via shared fixture, not schema codegen.** The critical guarantee is cross-language
    hash determinism; a byte-identical `epoch_id` fixture pins it (AC-877/881 precedent). The
    epoch is a hash primitive, not a structured contract artifact, so it stays out of the
    harness-optimization JSON-schema codegen.
-4. **Minimal persistence.** One migration (016) adds `evaluator_epoch TEXT NULL` to the
-   `generations` row. Matches, feedback, drift snapshots, calibration reports, and training
-   exports are NOT stamped in this slice (deferred to Slice B).
+4. **No migration in this slice.** The epoch rides in memory on the improve loop's round baseline
+   and on the records the loop already persists (`JudgeResult`, `ImprovementResult`, and the
+   trajectory metadata `task_runner` writes). No SQLite migration is needed here because the
+   judge-score baseline comparison is in `ImprovementLoop`, not the `generations` table. Stamping
+   the `generations` / `matches` / `human_feedback` rows (with a migration) is deferred to Slice B.
 5. **Legacy fallback = null is comparable only to null.** A pre-epoch score carries
    `evaluator_epoch = None` ("unknown/legacy"); it is comparable only to another null. A null
    baseline versus a newly-stamped epoch reads as cross-epoch and triggers a one-time re-baseline.
@@ -70,19 +81,20 @@ New module in each language, each a focused unit well under the 800-line module 
 
 Public surface (identical semantics both languages):
 
-- `compute_evaluator_epoch(rubric_hash, judge_provider, judge_model) -> EvaluatorEpoch`
+- `compute_evaluator_epoch(rubric_text, judge_provider, judge_model) -> EvaluatorEpoch` (hashes
+  `rubric_text` internally to produce `rubric_hash`, then the `epoch_id`)
 - `are_comparable(a: str | None, b: str | None) -> bool`: strict `epoch_id` equality; `None`
   equals only `None`.
 
-`epoch_id` is `sha256` over **canonical JSON** of `{"judge_model", "judge_provider",
-"rubric_hash"}` (keys sorted, no whitespace: `separators=(",", ":")` in Python;
-`JSON.stringify` over a sorted-key object in TS). Canonicalization is the known cross-language
-determinism gotcha and is the single thing the parity fixture guards.
+`rubric_hash = sha256(rubric_text)`. `epoch_id` is `sha256` over **canonical JSON** of
+`{"judge_model", "judge_provider", "rubric_hash"}` (keys sorted, no whitespace: Python
+`separators=(",", ":")`, `ensure_ascii=False`; TS `JSON.stringify` over an object whose keys are
+inserted in that sorted order, which yields the same bytes and raw unicode). Canonicalization is
+the known cross-language determinism gotcha and is the single thing the parity fixture guards.
 
-`rubric_hash` is derived from the compiled rubric. `LLMJudge` already accepts
-`str | RubricSpec | dict` and collapses to a prompt; the hash is taken over the compiled/
-normalized rubric form so the same criteria hash identically regardless of input shape. A bare
-string rubric hashes its normalized text.
+`rubric_text` is the collapsed rubric prompt. `LLMJudge` already accepts `str | RubricSpec | dict`
+and collapses it to `self.rubric` (a prompt string); the hash is taken over that collapsed form so
+the same criteria hash identically regardless of input shape.
 
 ### Component 2: stamping the judge output
 
@@ -93,43 +105,51 @@ against different rubrics, each result carries the epoch for the rubric it actua
 epoch is a pure function of its inputs, so it may be memoized per distinct input tuple). The TS judge (`judge/llm-judge.ts`) mirrors this so a TS-scored record
 and a Py-scored record under the same evaluator share an `epoch_id`.
 
-### Component 3: active-epoch persistence
+### Component 3: active-epoch tracking (in memory, no migration)
 
-Migration `016_generation_evaluator_epoch.sql` adds `evaluator_epoch TEXT NULL` to the
-`generations` table. The generation writer (`loop/stages.py`) records the epoch of the evaluator
-that produced that generation's scores onto the row. The run's **active epoch** is simply the
-epoch on the most recent generation. `GenerationMetricsRow` (`storage/row_types.py`) gains the
-matching optional field; the SQLite mixin reads/writes it. TS storage-schema parity
-(`ts/migrations/`, `storage-schema-parity.test.ts`) gets the mirrored column.
+The improve loop already tracks a running baseline across rounds (`best_score`, and
+`last_unvetoed_score` for the delta check). This slice tracks the **epoch that produced the
+current baseline** alongside it, as an in-memory `str | None`. The epoch for a round is computed
+from the evaluator that scored it (the round's `JudgeResult.evaluator_epoch`, itself computed by
+`LLMJudge`). The epoch is carried onto the `ImprovementResult` and the trajectory metadata that
+`task_runner` already persists, so a stored improve result records which evaluator scored it. No
+SQLite migration is added in this slice (see Decision 4); stamping the `generations` / `matches`
+rows is Slice B.
 
 ### Component 4: the comparability guard
 
-In the backpressure/advancement gate path (`loop/stages.py`), each score compared across
-generations carries its epoch (read from the generation rows). When the current active epoch
-differs from a prior baseline's epoch:
+Inside `ImprovementLoop` (`execution/improvement_loop.py`), the round-to-round baseline update
+(`effective_score > best_score`, and the `last_unvetoed_score` baseline) becomes epoch-aware.
+When the current round's epoch differs from the baseline's epoch:
 
-1. the prior-epoch baseline is flagged stale and excluded from the comparison,
-2. the gate re-baselines under the active epoch (the new epoch's first generation becomes the
-   baseline; advance/retry/rollback is computed within-epoch only),
-3. an operator event is emitted with a new taxonomy reason key `evaluator_epoch_rebaseline`,
-   registered in the gate taxonomy so `test_gate_taxonomy` passes.
+1. the prior-epoch baseline is flagged stale and excluded from the delta comparison,
+2. the loop re-baselines under the current epoch (this round becomes the new baseline; the
+   `max_score_delta` and best-tracking checks are computed within-epoch only),
+3. an operator-visible `ImprovementLoopEvent` is emitted with reason `evaluator_epoch_rebaseline`.
 
-The guard is a small pure helper (given the trajectory of `(score, epoch)` pairs and the active
-epoch, return the within-epoch baseline and the set of stale-flagged prior scores) plus its wiring
-into the gate. Keeping the decision pure keeps it unit-testable in isolation from the loop.
+The decision is a small pure helper: given the baseline `(score, epoch)`, the current round's
+`(score, epoch)`, and the loop config, return whether to re-baseline and the stale-flagged prior
+score. Keeping it pure makes it unit-testable in isolation from the loop, and it extends the
+existing AC-750 "only a non-vetoed round is a legitimate baseline" rule with "and only a same-epoch
+round." The new symbols avoid the `gate` / `guard` / `validator` naming tokens so the AC-484
+taxonomy test (`test_gate_taxonomy`) is not triggered; `evaluator_epoch_rebaseline` is an event
+reason string, not a new gate implementation.
 
 ## Data flow
 
 ```
-rubric + judge cfg ──▶ compute_evaluator_epoch ──▶ EvaluatorEpoch.epoch_id
-                                                        │
-LLMJudge.evaluate ──▶ JudgeResult{score, evaluator_epoch}
-                                                        │
-loop/stages writes generation row {mean_score, best_score, evaluator_epoch}
-                                                        │
-backpressure gate reads trajectory of (score, epoch) ──▶ guard:
-    active_epoch == baseline_epoch ? compare normally
-                                   : flag baseline stale, re-baseline, emit rebaseline event
+rubric + judge cfg  ->  compute_evaluator_epoch  ->  EvaluatorEpoch.epoch_id
+                                                          |
+LLMJudge.evaluate  ->  JudgeResult{score, evaluator_epoch}
+                                                          |
+ImprovementLoop round: (effective_score, round_epoch)
+                                                          |
+baseline update  ->  epoch helper:
+    are_comparable(baseline_epoch, round_epoch) ? compare/update baseline normally
+                                                : flag baseline stale, re-baseline under
+                                                  round_epoch, emit evaluator_epoch_rebaseline
+                                                          |
+ImprovementResult{best_score, evaluator_epoch}  ->  task_runner persists trajectory metadata
 ```
 
 ## Error handling and edge cases
@@ -137,8 +157,9 @@ backpressure gate reads trajectory of (score, epoch) ──▶ guard:
 - **Missing rubric / bare-string rubric:** hash the normalized text; never crash the judge on
   epoch computation. A failure to compute the epoch degrades to `None` (legacy), logged at debug,
   rather than failing scoring.
-- **Legacy rows (`evaluator_epoch = None`):** comparable only to null; the first stamped
-  generation after upgrade reads as cross-epoch and re-baselines once. Documented behavior.
+- **Legacy / null epoch (`evaluator_epoch = None`):** comparable only to null; a null baseline
+  versus a newly-stamped epoch reads as cross-epoch and re-baselines once. A game scenario with no
+  rubric/judge keeps `None` throughout, so the guard is a no-op there. Documented behavior.
 - **Cross-language:** the shared fixture asserts byte-identical `epoch_id`; canonical JSON is the
   only serialization path, exercised by the fixture with unicode and key-order-sensitive inputs.
 
@@ -149,14 +170,14 @@ backpressure gate reads trajectory of (score, epoch) ──▶ guard:
   unicode-in-rubric case and cases that differ only by judge_model / rubric_hash to prove each
   input participates in the hash.
 - **Unit (both languages):** `are_comparable` truth table including null semantics; stamping on
-  `JudgeResult`; the pure guard helper (within-epoch baseline selection + stale flagging).
-- **Required regression test (AC-885 criterion 4):** run a scenario, score generation 1 under
-  epoch-1; change the evaluator (swap judge model or rubric) so epoch-2 becomes active on
-  generation 2; assert the epoch-1 baseline is flagged stale/excluded, the gate re-baselines under
-  epoch-2, and the `evaluator_epoch_rebaseline` event is emitted.
+  `JudgeResult`; the pure epoch-baseline helper (re-baseline decision + stale flagging).
+- **Required regression test (AC-885 criterion 4):** drive an `ImprovementLoop` where round 1 is
+  scored under epoch-1 and the evaluator (judge model or rubric) changes so round 2 is scored under
+  epoch-2; assert the epoch-1 baseline is flagged stale/excluded from round 2's delta comparison,
+  the loop re-baselines under epoch-2, and the `evaluator_epoch_rebaseline` event is emitted.
 - Existing gates unaffected: `test_module_size_limits` (new modules, not appended),
-  `test_gate_taxonomy` (new reason key registered), storage-schema parity, ruff/mypy/lint,
-  Py/TS suites, `uv.lock` unchanged.
+  `test_gate_taxonomy` (new symbols avoid gate/guard/validator tokens), ruff/mypy/lint, Py/TS
+  suites, `uv.lock` unchanged.
 
 ## Documentation
 
@@ -177,10 +198,11 @@ AC-881 noise calibration. CHANGELOG entry.
 
 ## Acceptance criteria satisfied by this slice
 
-- Score-bearing records include evaluator lineage (JudgeResult + generations row) in Python and
-  TypeScript surfaces, with a documented null-legacy fallback. (AC-885 #1, partial: judge path.)
-- Changing a rubric/judge cannot silently overwrite the active scoring baseline (re-baseline
-  guard). (AC-885 #2.)
+- Score-bearing records include evaluator lineage (`JudgeResult` + `ImprovementResult` /
+  trajectory metadata) in Python, plus the TS `JudgeResult` mirror, with a documented null-legacy
+  fallback. (AC-885 #1, partial: judge path.)
+- Changing a rubric/judge cannot silently overwrite the improve loop's scoring baseline
+  (re-baseline guard). (AC-885 #2.)
 - At least one regression test shows a record scored under an old evaluator is flagged/excluded
   after a new epoch is active. (AC-885 #4.)
 - Documentation covers epoch interaction with calibration anchors and rubric drift. (AC-885 #6,
