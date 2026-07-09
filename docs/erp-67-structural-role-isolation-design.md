@@ -36,14 +36,23 @@ Two structural facts:
    `SubagentTask` carries a single `prompt: str`; `SubagentRuntime.run_task`
    calls `client.generate(prompt=…)`. There is nowhere to put "untrusted data
    as a distinct turn" without changing this transport.
-2. **A role seam exists but is unused on this path.** `LanguageModelClient`
-   already declares `generate_multiturn(system, messages=[…])`, and the
-   separate `LLMProvider.complete(system_prompt, user_prompt)` abstraction
-   (providers/base.py) exists — but it's used for _judging_, not role
-   execution, and every concrete adapter flattens `generate_multiturn` back
-   into a single string anyway (e.g. `OpenClawClient.generate_multiturn` →
-   `system + "\n\n" + user_parts`; `cli_role_runtime._llm_fn` →
-   `f"{system}\n\n{user}"`).
+2. **A role seam exists and several adapters already honour it, but the main
+   path does not use it.** `LanguageModelClient` declares
+   `generate_multiturn(system, messages=[…])`, and the separate
+   `LLMProvider.complete(system_prompt, user_prompt)` abstraction
+   (providers/base.py) exists. Some concrete adapters already send the seam
+   structurally: `AnthropicClient.generate_multiturn` passes `system=` and
+   `messages=` straight to the API, and `AgentSdkClient` sets
+   `options.system_prompt` separately from the user prompt.
+   `LLMProvider.complete` is on the role-execution path too (via
+   `ProviderBridgeClient`), not only judging. The real gap is narrower than
+   "no seam anywhere": the single-`prompt` `SubagentTask` path never fills the
+   system turn, and the flattening adapters collapse it back to one string
+   (`OpenClawClient.generate_multiturn` yields `system + "\n\n" + user_parts`;
+   `cli_role_runtime._llm_fn` yields `f"{system}\n\n{user}"`; and
+   `ProviderBridgeClient.generate` currently calls `complete(system_prompt="")`).
+   Stage 2 therefore populates these existing role-capable paths rather than
+   inventing a new transport.
 
 ### Blast radius
 
@@ -57,12 +66,27 @@ Two structural facts:
 - **openclaw/**: `OpenClawClient`
 - **extensions/llm.py**, plus recording/session wrappers
 
-Only some backends can honour real message roles: **Anthropic / OpenAI-style
-APIs** take a `system` param + `messages[]`; **CLI runtimes** (claude_cli,
-codex_cli, pi_cli, hermes) and **OpenClaw** take a single prompt string and
-physically cannot separate roles — they must fall back to the ERP-59 in-band
-fence. So this is "isolate where the backend supports it, fence everywhere
-else", not a universal win.
+Backends split into three tiers by how much of the role seam they can carry:
+
+- **Full message roles**: **Anthropic / OpenAI-style APIs** (`AnthropicClient`,
+  `direct_api`) take a `system` param plus `messages[]`, and `AgentSdkClient`
+  takes a separate `system_prompt`. These carry the trusted-system vs
+  untrusted-user split cleanly.
+- **System-prompt split only**: `ClaudeCLIRuntime.generate(system=…)` threads
+  `--system-prompt` separately from the user prompt, so it preserves the key
+  trusted/untrusted seam even though it cannot replay arbitrary message
+  history. Partial support, not fallback-only.
+- **Single prompt**: `pi_cli` and `hermes_cli` flatten `f"{system}\n\n{prompt}"`,
+  `codex_cli` drops `system` altogether, and **OpenClaw** takes one string.
+  These must fall back to the ERP-59 in-band fence.
+
+One wiring caveat: even where the runtime supports a system split,
+`RuntimeBridgeClient.generate` currently calls `runtime.generate(prompt)`
+without threading `system`, so claude_cli's capability is not exercised on the
+role path yet. That wiring is part of the Stage 2 work, not a missing backend
+feature. So this remains "isolate where the backend supports it, fence
+everywhere else", with more backends in the supported column than a first pass
+suggests.
 
 ## Contract
 
@@ -98,8 +122,12 @@ Add `system` + `messages` to `SubagentTask`; `SubagentRuntime.run_task` prefers
 `generate_multiturn` when `settings.structural_role_isolation` is on and the
 client advertises role support (a capability flag / `supports_roles`
 attribute), else falls back to today's `generate(prompt=…)`. Implement real
-role emission in the role-capable clients first (`AnthropicClient`,
-`agent_sdk_client`, direct_api). CLI/OpenClaw keep flattening (documented).
+role emission in the full-message-role clients first (`AnthropicClient`,
+`agent_sdk_client`, direct_api), then thread `system` through
+`RuntimeBridgeClient.generate` so `ClaudeCLIRuntime`'s existing
+`--system-prompt` split (partial support) is exercised on the role path. The
+remaining single-prompt backends (`pi_cli`, `hermes_cli`, `codex_cli`,
+OpenClaw) keep flattening and lean on the ERP-59 in-band fence (documented).
 
 **Stage 3 — adversarial eval.**
 Extend `tests/test_prompt_injection_boundary.py` with structural variants:
