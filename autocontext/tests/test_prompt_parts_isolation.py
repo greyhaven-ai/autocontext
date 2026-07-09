@@ -17,6 +17,7 @@ Invariants asserted here:
 from __future__ import annotations
 
 import autocontext.agents  # noqa: F401  # break circular import with prompts.templates
+from autocontext.extensions import HookBus, HookEvents, HookResult
 from autocontext.prompts.templates import (
     PromptPartsBundle,
     RolePromptParts,
@@ -106,3 +107,51 @@ def test_sink_is_optional() -> None:
         available_tools="tools",
     )
     assert _PLAYBOOK in bundle.competitor
+
+
+def test_parts_are_isolation_safe_without_a_hook() -> None:
+    parts, _ = _build()
+    for role in (parts.competitor, parts.analyst, parts.coach, parts.architect):
+        assert role.isolation_safe is True
+
+
+def _redacting_hook_bus() -> HookBus:
+    """A CONTEXT hook that redacts every role's final prompt — the reviewer's
+    scenario for PR #1201: the split must not leak content the hook removed."""
+    bus = HookBus()
+
+    def _redact(event: object) -> HookResult:
+        redacted = {role: "REDACTED" for role in ("competitor", "analyst", "coach", "architect")}
+        return HookResult(payload={"roles": redacted})
+
+    bus.on(HookEvents.CONTEXT, _redact)
+    return bus
+
+
+def test_hook_rewritten_roles_do_not_leak_redacted_content() -> None:
+    captured: dict[str, PromptPartsBundle] = {}
+    build_prompt_bundle(
+        scenario_rules="rules",
+        strategy_interface="interface",
+        evaluation_criteria="criteria",
+        previous_summary="summary",
+        observation=_observation(),
+        current_playbook=_PLAYBOOK,
+        available_tools="tools",
+        coach_competitor_hints=_HINTS,
+        dead_ends=_DEAD_ENDS,
+        hook_bus=_redacting_hook_bus(),
+        prompt_parts_sink=lambda parts: captured.__setitem__("parts", parts),
+    )
+    parts = captured["parts"]
+    for role in (parts.competitor, parts.analyst, parts.coach, parts.architect):
+        # Hook redacted the prompt: the split is untrustworthy and must fall back.
+        assert role.isolation_safe is False
+        assert role.flat == "REDACTED"
+        assert role.system == ""
+        assert role.untrusted_reference == "REDACTED"
+        # Content the hook removed must NOT reappear via the split.
+        assert _PLAYBOOK not in role.system
+        assert _PLAYBOOK not in role.untrusted_reference
+        assert _DEAD_ENDS not in role.untrusted_reference
+        assert _HINTS not in role.untrusted_reference

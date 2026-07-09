@@ -66,11 +66,20 @@ class RolePromptParts:
     `flat` string the transport currently sends. Stage 1 of ERP-67: the split is
     exposed for consumers but `flat` remains byte-identical to today's prompt, so
     behaviour is unchanged until a later stage threads system/user message roles.
+
+    `isolation_safe` is False when a `HookEvents.CONTEXT` hook rewrote this role's
+    final prompt: the pre-hook (system, untrusted_reference) split can no longer be
+    trusted to match `flat`, so consumers MUST use `flat` (or the safe fallback
+    below) rather than re-isolating stale content. In that case `system` is empty
+    and `untrusted_reference` holds the full post-hook prompt, which degrades to
+    the single-prompt transport path — nothing the hook redacted is reintroduced,
+    and no untrusted content is promoted into a system turn.
     """
 
     system: str
     untrusted_reference: str
     flat: str
+    isolation_safe: bool = True
 
 
 @dataclass(frozen=True)
@@ -470,6 +479,11 @@ def build_prompt_bundle(
         coach=append_simplicity_guidance(bundle.coach, simplicity_mode),
         architect=append_simplicity_guidance(bundle.architect, simplicity_mode),
     )
+    # Snapshot before the CONTEXT hook may rewrite role prompts. The prompt-parts
+    # split is derived from pre-hook variables, so a role the hook rewrites can no
+    # longer be trusted to match `flat` — compared per role below to mark parts
+    # unsafe and fall back rather than reintroducing hook-redacted content.
+    pre_hook_bundle = final_bundle
     if hook_bus is not None:
         context_event = hook_bus.emit(
             HookEvents.CONTEXT,
@@ -534,27 +548,40 @@ def build_prompt_bundle(
             + architect_task,
             simplicity_mode,
         )
+
+        def _role_parts(system: str, untrusted: str, pre_hook: str, final: str) -> RolePromptParts:
+            # If a CONTEXT hook rewrote this role's prompt, the pre-hook split is
+            # stale — fall back to the post-hook `flat` so nothing the hook
+            # redacted is reintroduced and no untrusted content lands in `system`.
+            if final == pre_hook:
+                return RolePromptParts(system=system, untrusted_reference=untrusted, flat=final, isolation_safe=True)
+            return RolePromptParts(system="", untrusted_reference=final, flat=final, isolation_safe=False)
+
         prompt_parts_sink(
             PromptPartsBundle(
-                competitor=RolePromptParts(
-                    system=competitor_system,
-                    untrusted_reference=base_context_untrusted + hints_block,
-                    flat=final_bundle.competitor,
+                competitor=_role_parts(
+                    competitor_system,
+                    base_context_untrusted + hints_block,
+                    pre_hook_bundle.competitor,
+                    final_bundle.competitor,
                 ),
-                analyst=RolePromptParts(
-                    system=analyst_system,
-                    untrusted_reference=base_context_untrusted,
-                    flat=final_bundle.analyst,
+                analyst=_role_parts(
+                    analyst_system,
+                    base_context_untrusted,
+                    pre_hook_bundle.analyst,
+                    final_bundle.analyst,
                 ),
-                coach=RolePromptParts(
-                    system=coach_system,
-                    untrusted_reference=base_context_untrusted,
-                    flat=final_bundle.coach,
+                coach=_role_parts(
+                    coach_system,
+                    base_context_untrusted,
+                    pre_hook_bundle.coach,
+                    final_bundle.coach,
                 ),
-                architect=RolePromptParts(
-                    system=architect_system,
-                    untrusted_reference=base_context_untrusted,
-                    flat=final_bundle.architect,
+                architect=_role_parts(
+                    architect_system,
+                    base_context_untrusted,
+                    pre_hook_bundle.architect,
+                    final_bundle.architect,
                 ),
             )
         )
