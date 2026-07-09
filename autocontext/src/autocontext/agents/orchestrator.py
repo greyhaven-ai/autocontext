@@ -644,6 +644,7 @@ class AgentOrchestrator:
                 "competitor": parts.competitor,
                 "analyst": parts.analyst,
                 "architect": parts.architect,
+                "coach": parts.coach,
             }
             for role, rp in role_parts.items():
                 if not rp.isolation_safe:
