@@ -92,6 +92,49 @@ There is no SQLite migration in this slice. The epoch rides in memory on the loo
 and on the records the loop already persists. Stamping the `generations` / `matches` /
 `human_feedback` rows with a migration is deferred to Slice B.
 
+## Persisted and derived lineage (Slice B)
+
+Slice 1 kept the epoch in memory on the loop's round baseline. Slice B writes it down: the epoch
+that produced a score now rides on the persisted rows and on the records derived from them, so
+lineage survives a process restart and travels with exports. The stamping rule is uniform
+throughout: only a genuine LLM-judge score carries an epoch. Tournament-scored and human-scored
+records stay `None`, exactly as the null-legacy fallback prescribes (a game score has no rubric and
+no judge, so it has no evaluator identity to record).
+
+**The `generations` column.** Migration 016 (Python) and migration 014 (TypeScript) add a nullable
+`evaluator_epoch` column to `generations`, byte-identical across the two schemas per the parity
+constraint. Python stamps it only at the two agent-task write sites (`cli._run_agent_task` and
+`solve_task_execution`), reading `ImprovementResult.evaluator_epoch`. The tournament write site and
+the `matches` rows are deliberately left null: those are Elo scores, not judge scores. The
+TypeScript `generations` column is always null in practice, because the TypeScript package has no
+agent-task-direct write path that produces a judge score. The column exists in the TypeScript schema
+for parity (so the two migrations stay in lockstep and a future TypeScript writer has the slot), but
+nothing populates it today. That asymmetry is intentional and load-bearing: it keeps the schemas
+equal without inventing a TypeScript write site that does not exist.
+
+**`rubric_calibration`.** `run_judge_calibration` threads the judge's own epoch onto
+`CalibrationReport.evaluator_epoch`, taken from the judge result it already computed. The calibration
+report is a judge score by construction, so it always has an epoch to record.
+
+**`RunFacet`.** A run facet sources its `evaluator_epoch` from the best-scoring generation row's
+epoch, the same row whose score the facet already surfaces. If that row is a tournament or legacy
+row, the facet epoch is `None`, consistent with the row it points at.
+
+**Training-export read-through.** `TrainingRecord.evaluator_epoch` (Python and TypeScript) is a
+read-through of the stamped `generations` value, so an exported training example carries the lineage
+of the score it was selected on. `MatchRecord` is left unstamped, matching the tournament decision.
+
+**The `mixed_epoch` flag.** Two derived records aggregate across many samples, and an aggregate can
+span more than one evaluator. `CalibrationSample.evaluator_epoch` records each sample's epoch, and
+`CalibrationRound.mixed_epoch` is set when the round's samples do not all share one epoch. The same
+shape carries to rubric drift: `RubricSnapshot.evaluator_epochs` lists the epochs present in the
+snapshot and `RubricSnapshot.mixed_epoch` (with `DriftWarning.mixed_epoch`) flags the mixed case.
+These fields record lineage only. They do not change any arithmetic: the calibration means and the
+drift statistics are computed exactly as before (pinned by a byte-identical-mean regression), and
+the flag is a lineage annotation, not a filter. Enforcement (refusing to aggregate across epochs, or
+partitioning by epoch before the math) is deferred to a later slice; Slice B's job is to make the
+mixing visible, not to act on it.
+
 ## Relationship to the ambient `eval_fingerprint` / `anchor_model`
 
 autocontext already had this mechanism, but only in the ambient trainer. `eval_fingerprint()`
@@ -108,11 +151,13 @@ within-epoch variance rather than deciding cross-epoch comparability.
 
 ## Deferred slices
 
-This slice is the first of four. The rest are explicitly deferred, not dropped:
+This slice is the first of four. Slice B is now shipped (see "Persisted and derived lineage" above).
+The remaining slices are explicitly deferred, not dropped:
 
-- **Slice B (stamp the rest):** matches, `human_feedback`, calibration reports, rubric-drift
-  snapshots, and training-export examples carry the epoch, with the broader migration and parity
-  surface that implies.
+- **Slice B (stamp the rest, shipped):** the `generations` column, calibration reports, rubric-drift
+  snapshots, and training-export examples carry the epoch, with the migration and parity surface
+  that implies. Tournament-scored `matches` and human-scored `human_feedback` records are left
+  unstamped by design.
 - **Slice C (epoch lifecycle):** candidate-to-active epoch promotion with promotion metadata
   (source patch, calibration anchors used, alignment / bias / variance deltas, human-review
   requirement, decision); generalizes `promote.py`'s cross-anchor refusal.

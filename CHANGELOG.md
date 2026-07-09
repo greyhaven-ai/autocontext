@@ -24,6 +24,10 @@ All notable changes to this project will be documented in this file.
   `evaluator_epoch` (rubric plus judge provider and model), and the improvement loop re-baselines
   instead of comparing a round against a baseline scored under a different evaluator, emitting an
   `evaluator_epoch_rebaseline` event. Python and TypeScript share a parity-pinned epoch hash.
+- AC-885 Slice B: evaluator-epoch lineage on persisted and derived records. Judge-scored generation
+  rows carry `evaluator_epoch`; run facets, training exports, calibration reports, and rubric-drift
+  snapshots read it through, with a `mixed_epoch` flag when an aggregate spans more than one
+  evaluator. Tournament-scored and human-scored records are left unstamped.
 
 ## [0.11.0] - 2026-07-02
 
