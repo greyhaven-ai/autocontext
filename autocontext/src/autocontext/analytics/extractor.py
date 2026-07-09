@@ -41,6 +41,12 @@ class FacetExtractor:
         best_score = max((g.get("best_score") or 0.0 for g in generations), default=0.0)
         best_elo = max((g.get("elo") or 0.0 for g in generations), default=0.0)
 
+        # Epoch of the best-scoring generation row (null if no rows or no epoch)
+        best_gen = max(
+            generations, key=lambda g: g.get("best_score") or 0.0, default=None
+        )
+        best_epoch = best_gen.get("evaluator_epoch") if best_gen is not None else None
+
         # Duration
         total_duration = sum(g.get("duration_seconds") or 0.0 for g in generations)
 
@@ -91,6 +97,7 @@ class FacetExtractor:
             delight_signals=delight_signals,
             events=[],
             metadata=run.get("metadata", {}),
+            evaluator_epoch=best_epoch,
             created_at=datetime.now(UTC).isoformat(),
         )
 
