@@ -9,7 +9,7 @@ class AnalystRunner:
         self.runtime = runtime
         self.model = model
 
-    def run(self, prompt: str) -> RoleExecution:
+    def run(self, prompt: str, *, system: str = "") -> RoleExecution:
         return self.runtime.run_task(
             SubagentTask(
                 role="analyst",
@@ -17,5 +17,6 @@ class AnalystRunner:
                 prompt=prompt,
                 max_tokens=1200,
                 temperature=0.2,
+                system=system,
             )
         )

@@ -1,4 +1,5 @@
 """Adapter building a harness PipelineEngine from autocontext orchestrator components."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -20,13 +21,15 @@ def build_mts_dag() -> RoleDAG:
     competitor -> translator -> analyst -> coach
                              -> architect (parallel with analyst; coach depends on analyst)
     """
-    return RoleDAG([
-        RoleSpec(name="competitor"),
-        RoleSpec(name="translator", depends_on=("competitor",)),
-        RoleSpec(name="analyst", depends_on=("translator",)),
-        RoleSpec(name="architect", depends_on=("translator",)),
-        RoleSpec(name="coach", depends_on=("analyst",)),
-    ])
+    return RoleDAG(
+        [
+            RoleSpec(name="competitor"),
+            RoleSpec(name="translator", depends_on=("competitor",)),
+            RoleSpec(name="analyst", depends_on=("translator",)),
+            RoleSpec(name="architect", depends_on=("translator",)),
+            RoleSpec(name="coach", depends_on=("analyst",)),
+        ]
+    )
 
 
 def build_role_handler(
@@ -36,8 +39,15 @@ def build_role_handler(
     tool_context: str = "",
     strategy_interface: str = "",
     generation_deadline: float | None = None,
+    system_map: dict[str, str] | None = None,
 ) -> RoleHandler:
-    """Build a RoleHandler callable that delegates to the orchestrator's role runners."""
+    """Build a RoleHandler callable that delegates to the orchestrator's role runners.
+
+    ``system_map`` (ERP-67 Stage 2b) maps a role name to a trusted system prompt.
+    When present for a role, ``prompt`` is the untrusted user turn and the mapped
+    value is the system turn; absent/empty → the legacy single-prompt path.
+    """
+    systems = system_map or {}
 
     def handler(name: str, prompt: str, completed: dict[str, RoleExecution]) -> RoleExecution:
         if name == "competitor":
@@ -48,7 +58,9 @@ def build_role_handler(
                 scenario_name=scenario_name,
                 generation_deadline=generation_deadline,
             ):
-                _raw_text, exec_result = orch.competitor.run(prompt, tool_context=tool_context)
+                _raw_text, exec_result = orch.competitor.run(
+                    prompt, tool_context=tool_context, system=systems.get("competitor", "")
+                )
                 return exec_result
         elif name == "translator":
             competitor_exec = completed.get("competitor")
@@ -70,7 +82,7 @@ def build_role_handler(
                 scenario_name=scenario_name,
                 generation_deadline=generation_deadline,
             ):
-                return orch.analyst.run(prompt)
+                return orch.analyst.run(prompt, system=systems.get("analyst", ""))
         elif name == "architect":
             with orch._use_role_runtime(
                 "architect",
@@ -79,7 +91,7 @@ def build_role_handler(
                 scenario_name=scenario_name,
                 generation_deadline=generation_deadline,
             ):
-                return orch.architect.run(prompt)
+                return orch.architect.run(prompt, system=systems.get("architect", ""))
         elif name == "coach":
             analyst_exec = completed.get("analyst")
             enriched = prompt

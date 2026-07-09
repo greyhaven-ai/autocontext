@@ -35,7 +35,7 @@ from autocontext.execution.harness_coverage import HarnessCoverage
 from autocontext.extensions import HookBus, wrap_language_model_client
 from autocontext.harness.orchestration.dag import RoleDAG
 from autocontext.harness.orchestration.types import RoleSpec
-from autocontext.prompts.templates import PromptBundle
+from autocontext.prompts.templates import PromptBundle, PromptPartsBundle
 
 if TYPE_CHECKING:
     from autocontext.agents.role_router import ProviderConfig
@@ -529,6 +529,7 @@ class AgentOrchestrator:
         scenario_rules: str = "",
         current_strategy: dict[str, Any] | None = None,
         generation_deadline: float | None = None,
+        parts: PromptPartsBundle | None = None,
     ) -> AgentOutputs:
         # Feature-gated pipeline codepath (skips RLM path when active)
         if self.settings.use_pipeline_engine and not (self.settings.rlm_enabled and self._rlm_loader is not None):
@@ -540,6 +541,7 @@ class AgentOrchestrator:
                 strategy_interface,
                 on_role_event,
                 generation_deadline,
+                parts=parts,
             )
 
         def _notify(role: str, status: str) -> None:
@@ -607,6 +609,7 @@ class AgentOrchestrator:
         strategy_interface: str,
         on_role_event: Callable[[str, str], None] | None,
         generation_deadline: float | None = None,
+        parts: PromptPartsBundle | None = None,
     ) -> AgentOutputs:
         """Execute the 5-role generation via PipelineEngine."""
         from autocontext.agents.pipeline_adapter import build_mts_dag, build_role_handler
@@ -614,9 +617,8 @@ class AgentOrchestrator:
 
         dag = build_mts_dag()
 
-        architect_prompt = prompts.architect
-        if generation_index % self.settings.architect_every_n_gens != 0:
-            architect_prompt += _ARCHITECT_CADENCE_SKIP
+        cadence_skip = _ARCHITECT_CADENCE_SKIP if generation_index % self.settings.architect_every_n_gens != 0 else ""
+        architect_prompt = prompts.architect + cadence_skip
 
         prompt_map = {
             "competitor": prompts.competitor,
@@ -626,6 +628,24 @@ class AgentOrchestrator:
             "coach": prompts.coach,
         }
 
+        # ERP-67 Stage 2b: when structural isolation is on, deliver the untrusted
+        # reference as the user turn and the trusted instructions as the system
+        # turn for the cleanly-mappable roles (competitor/analyst/architect). Only
+        # isolation_safe roles are split; coach (mid-flight enriched) and the
+        # translator stay on the flat single-prompt path. Off → maps unchanged.
+        system_map: dict[str, str] = {}
+        if self.settings.structural_role_isolation and parts is not None:
+            role_parts = {
+                "competitor": parts.competitor,
+                "analyst": parts.analyst,
+                "architect": parts.architect,
+            }
+            for role, rp in role_parts.items():
+                if not rp.isolation_safe:
+                    continue
+                system_map[role] = rp.system + (cadence_skip if role == "architect" else "")
+                prompt_map[role] = rp.untrusted_reference
+
         handler = build_role_handler(
             self,
             generation=generation_index,
@@ -633,6 +653,7 @@ class AgentOrchestrator:
             tool_context=tool_context,
             strategy_interface=strategy_interface,
             generation_deadline=generation_deadline,
+            system_map=system_map,
         )
         engine = PipelineEngine(dag, handler, max_workers=2)
         results = engine.execute(prompt_map, on_role_event=on_role_event)

@@ -19,6 +19,7 @@ class CompetitorRunner:
         tool_context: str = "",
         *,
         temperature: float | None = None,
+        system: str = "",
     ) -> tuple[str, RoleExecution]:
         final_prompt = prompt
         if tool_context:
@@ -30,6 +31,7 @@ class CompetitorRunner:
                 prompt=final_prompt,
                 max_tokens=800,
                 temperature=0.2 if temperature is None else temperature,
+                system=system,
             )
         )
         return execution.content, execution

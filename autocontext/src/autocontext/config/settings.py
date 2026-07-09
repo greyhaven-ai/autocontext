@@ -97,6 +97,15 @@ class AppSettings(BaseModel):
     )
     soft_hints_enabled: bool = False
     hint_style: Literal["default", "structural", "solution_like"] = "default"
+    structural_role_isolation: bool = Field(
+        default=False,
+        description=(
+            "ERP-67 Stage 2b: deliver the untrusted reference block (playbook / coach "
+            "hints / dead-ends) in a separate user turn from the trusted system prompt "
+            "for role-capable backends, instead of one flat prompt. Off = byte-identical "
+            "legacy behaviour. Pipeline path, competitor/analyst/architect only for now."
+        ),
+    )
     evidence_freshness_enabled: bool = Field(
         default=True,
         description="Demote stale hints, lessons, and notebook context during prompt assembly",
