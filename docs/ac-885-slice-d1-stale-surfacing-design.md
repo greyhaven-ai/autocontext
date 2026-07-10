@@ -71,7 +71,7 @@ artifacts is deferred to D2.
   ```
   Rows lacking an `evaluator_epoch` key (e.g. a legacy caller) are treated as `evaluator_epoch = None`.
 
-### D1.2: plumbing — carry the epoch through reads
+### D1.2: plumbing (carry the epoch through reads)
 
 - `SQLiteStore.run_status()` (`storage/sqlite_store.py`): add `evaluator_epoch, quarantined` to the
   SELECT column list. The returned dicts gain both keys. This is additive; existing consumers ignore
