@@ -31,3 +31,6 @@ def test_clear_quarantine_scoped_by_scenario(tmp_path: Path) -> None:
     assert cleared == 1
     assert store.get_generation_metrics("run-a")[0]["quarantined"] is None
     assert store.get_generation_metrics("run-b")[0]["quarantined"] in (1, True)  # untouched
+    # FIX 6: the count reflects only rows ACTUALLY unquarantined. A second consecutive call finds
+    # nothing still quarantined for the epoch, so it clears (and counts) zero, not the matched row.
+    assert store.clear_quarantine_for_epoch("grid_ctf", "epoch-x") == 0

@@ -208,6 +208,22 @@ class EvaluatorEpochRegistry:
         with self._scenario_lock(scenario):
             self._activate_locked(scenario, epoch_id, promotion=promotion)
 
+    def stamp_promotion(self, scenario: str, epoch_id: str, *, promotion: dict[str, Any]) -> None:
+        """Stamp ``promotion`` metadata on a record WITHOUT changing its activation_state.
+
+        Reloads the record fresh under the scenario lock (no-op if it vanished) and writes only the
+        promotion field, preserving whatever ``activation_state`` is on disk. Used by the pending-review
+        and rejected paths: those must not clobber a concurrent promotion that already activated the
+        candidate (a stale in-memory record would otherwise revert it to ``candidate``, leaving the
+        scenario with zero active epochs).
+        """
+        with self._scenario_lock(scenario):
+            record = self.load(scenario, epoch_id)
+            if record is None:
+                return
+            record.promotion = promotion
+            self.register(record)
+
     def observe(
         self,
         scenario: str,

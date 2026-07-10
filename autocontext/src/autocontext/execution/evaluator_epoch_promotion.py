@@ -54,6 +54,7 @@ def _promotion_metadata(
     return {
         "source_patch": None,
         "calibration_anchors": report.num_anchors if report is not None else 0,
+        "calibration_anchor_ids": report.anchor_ids if report is not None else [],
         "alignment_delta": (
             {
                 "mean_absolute_error": alignment.mean_absolute_error,
@@ -80,6 +81,7 @@ def promote_evaluator_epoch(
     scenario: str,
     candidate_epoch_id: str,
     *,
+    target_name: str,
     calibration_report: CalibrationReport | None,
     tolerance: AlignmentTolerance,
     charter: Charter,
@@ -87,19 +89,41 @@ def promote_evaluator_epoch(
     sqlite: _QuarantineClearer | None = None,
     now_fn: Callable[[], str] = _default_now,
 ) -> PromotionOutcome:
+    # ``scenario`` keys the registry/sqlite; ``target_name`` names the charter target the autonomy
+    # policy is looked up by. They are deliberately separate: a valid charter forbids a target name
+    # colliding with a registered scenario, so passing ``scenario`` into ``decide`` would KeyError.
     candidate = registry.load(scenario, candidate_epoch_id)
-    if candidate is None or candidate.activation_state == "active":
-        return PromotionOutcome("noop", "candidate missing or already active", candidate)
+    if candidate is None:
+        return PromotionOutcome("noop", "candidate missing", candidate)
+    if candidate.activation_state == "active":
+        # Already active: a prior promotion may have activated the epoch but crashed before clearing
+        # its quarantine. Reconcile the clear so a retry is not a dead noop that strands rows.
+        if sqlite is not None:
+            sqlite.clear_quarantine_for_epoch(scenario, candidate_epoch_id)
+            return PromotionOutcome("activated", "already active; quarantine reconciled", candidate)
+        return PromotionOutcome("noop", "already active", candidate)
 
     now = now_fn()
-    calibration_passes = calibration_report is not None and bool(tolerance.check(calibration_report.alignment).get("passes"))
+    # Only trust a calibration report whose lineage matches THIS candidate: same evaluator epoch and
+    # same domain. A report tagged another epoch (or domain) must contribute no calibration evidence,
+    # so full autonomy cannot activate an uncalibrated evaluator off a passing but unrelated report.
+    valid_report = (
+        calibration_report
+        if (
+            calibration_report is not None
+            and calibration_report.evaluator_epoch == candidate_epoch_id
+            and calibration_report.domain == scenario
+        )
+        else None
+    )
+    calibration_passes = valid_report is not None and bool(tolerance.check(valid_report.alignment).get("passes"))
     incumbent = registry.active_for(scenario)
     previous_active = incumbent.epoch_id if incumbent is not None else ""
-    policy = decide(charter, "promote_epoch", scenario)
+    policy = decide(charter, "promote_epoch", target_name)
 
     def _activate(decision: ReviewerDecision | None, requires_review: bool) -> PromotionOutcome:
         meta = _promotion_metadata(
-            calibration_report,
+            valid_report,
             requires_review=requires_review,
             decision=decision,
             previous_active=previous_active,
@@ -114,21 +138,19 @@ def promote_evaluator_epoch(
         if reviewer_decision.outcome == "approved":
             return _activate(reviewer_decision, requires_review=policy.requires_approval)
         # rejected: record the decision, do not activate
-        candidate.promotion = _promotion_metadata(
-            calibration_report,
+        meta = _promotion_metadata(
+            valid_report,
             requires_review=policy.requires_approval,
             decision=reviewer_decision,
             previous_active=previous_active,
             now=now,
         )
-        registry.register(candidate)
+        registry.stamp_promotion(scenario, candidate_epoch_id, promotion=meta)
         return PromotionOutcome("rejected", "reviewer rejected", registry.load(scenario, candidate_epoch_id))
 
     if policy.requires_approval:
-        candidate.promotion = _promotion_metadata(
-            calibration_report, requires_review=True, decision=None, previous_active=previous_active, now=now
-        )
-        registry.register(candidate)
+        meta = _promotion_metadata(valid_report, requires_review=True, decision=None, previous_active=previous_active, now=now)
+        registry.stamp_promotion(scenario, candidate_epoch_id, promotion=meta)
         return PromotionOutcome("pending_review", policy.reason, registry.load(scenario, candidate_epoch_id))
 
     # autonomy full: decide on calibration

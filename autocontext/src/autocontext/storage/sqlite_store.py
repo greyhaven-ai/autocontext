@@ -177,7 +177,8 @@ class SQLiteStore(
         with self.connect() as conn:
             cur = conn.execute(
                 "UPDATE generations SET quarantined = NULL "
-                "WHERE evaluator_epoch = ? AND run_id IN (SELECT run_id FROM runs WHERE scenario = ?)",
+                "WHERE evaluator_epoch = ? AND quarantined IS NOT NULL "
+                "AND run_id IN (SELECT run_id FROM runs WHERE scenario = ?)",
                 (epoch_id, scenario),
             )
             return cur.rowcount

@@ -207,6 +207,37 @@ def test_promote_missing_epoch_is_noop(tmp_path) -> None:
     assert reg.active_for("grid_ctf").epoch_id == e1.epoch_id  # unchanged
 
 
+def test_stamp_promotion_preserves_activation_state(tmp_path) -> None:
+    from autocontext.execution.evaluator_epoch import compute_evaluator_epoch
+    from autocontext.execution.evaluator_epoch_registry import EvaluatorEpochRegistry
+
+    reg = EvaluatorEpochRegistry(tmp_path)
+    e1 = compute_evaluator_epoch("rub1", "anthropic", "m")
+    e2 = compute_evaluator_epoch("rub2", "anthropic", "m")
+    reg.observe("grid_ctf", e1, now_fn=lambda: "t0")  # active bootstrap
+    reg.observe("grid_ctf", e2, now_fn=lambda: "t1")  # candidate
+    # Simulate a concurrent promotion that already activated e2 (demoting e1).
+    reg.promote("grid_ctf", e2.epoch_id, promotion={"promoted_at": "t2"})
+    # A stale pending/rejected write must stamp metadata WITHOUT reverting e2 to candidate.
+    reg.stamp_promotion("grid_ctf", e2.epoch_id, promotion={"requires_review": True})
+    rec = reg.load("grid_ctf", e2.epoch_id)
+    assert rec.activation_state == "active"  # preserved, not reverted to candidate
+    assert rec.promotion == {"requires_review": True}
+    active = reg.active_for("grid_ctf")
+    assert active is not None and active.epoch_id == e2.epoch_id  # scenario keeps an active epoch
+
+
+def test_stamp_promotion_missing_epoch_is_noop(tmp_path) -> None:
+    from autocontext.execution.evaluator_epoch import compute_evaluator_epoch
+    from autocontext.execution.evaluator_epoch_registry import EvaluatorEpochRegistry
+
+    reg = EvaluatorEpochRegistry(tmp_path)
+    e1 = compute_evaluator_epoch("rub1", "anthropic", "m")
+    reg.observe("grid_ctf", e1, now_fn=lambda: "t0")
+    reg.stamp_promotion("grid_ctf", "f" * 64, promotion={"x": 1})  # nonexistent id
+    assert reg.active_for("grid_ctf").epoch_id == e1.epoch_id  # unchanged
+
+
 def test_concurrent_first_observe_yields_single_active(tmp_path) -> None:
     import concurrent.futures
 

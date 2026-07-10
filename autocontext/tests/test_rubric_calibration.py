@@ -32,6 +32,7 @@ def _judge_response(score: float, reasoning: str = "aligned") -> str:
     }
     return f"<!-- JUDGE_RESULT_START -->\n{json.dumps(payload)}\n<!-- JUDGE_RESULT_END -->"
 
+
 # ===========================================================================
 # CalibrationAnchor
 # ===========================================================================
@@ -458,3 +459,5 @@ class TestRunJudgeCalibration:
         assert report.num_anchors == 2
         assert report.alignment.num_pairs == 2
         assert "per_anchor_variance" in report.metadata
+        # FIX 5: the report records the anchor identities used, matching the calibration inputs.
+        assert report.anchor_ids == ["1", "2"]
