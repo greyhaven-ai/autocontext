@@ -12,6 +12,21 @@ from autocontext.scenarios.base import ScenarioInterface
 _GENERATED_PACKAGE_NAME = "autocontext.scenarios.custom.generated"
 
 
+def is_generated_scenario(scenario: object) -> bool:
+    """True if ``scenario`` was loaded from the generated/custom package.
+
+    Custom scenarios — produced by the ``solve`` LLM path or template codegen —
+    are loaded under ``autocontext.scenarios.custom.generated.*``. Their contract
+    (rules / interface / criteria) is model-generated and therefore
+    attacker-influenceable, so it must NOT receive system authority under ERP-67
+    structural isolation (ERP-73). Built-in, code-authored scenarios live in other
+    modules and are operator-authored. Fail-safe: anything we cannot positively
+    identify as built-in is treated as generated (untrusted).
+    """
+    module = getattr(type(scenario), "__module__", "") or ""
+    return module.startswith(_GENERATED_PACKAGE_NAME)
+
+
 def _ensure_generated_package(custom_dir: Path) -> None:
     package = sys.modules.get(_GENERATED_PACKAGE_NAME)
     custom_dir_str = str(custom_dir)
@@ -84,6 +99,4 @@ def load_custom_scenario(
         ):
             return attr
 
-    raise ImportError(
-        f"no {interface_class.__name__} subclass with name='{name}' found in {module_name}"
-    )
+    raise ImportError(f"no {interface_class.__name__} subclass with name='{name}' found in {module_name}")

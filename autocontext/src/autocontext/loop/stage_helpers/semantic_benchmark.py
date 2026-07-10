@@ -339,6 +339,12 @@ def prepare_generation_prompts(
     prompt_kwargs["context_budget_telemetry_sink"] = lambda telemetry: context_budget_telemetry.append(telemetry.to_dict())
     captured_parts: list[PromptPartsBundle] = []
     prompt_kwargs["prompt_parts_sink"] = captured_parts.append
+    # ERP-73: the scenario contract (rules / interface / criteria) is trusted for
+    # structural isolation only when it is a built-in, operator-authored scenario.
+    # solve/codegen-generated scenarios are attacker-influenceable → untrusted turn.
+    from autocontext.scenarios.custom.loader import is_generated_scenario
+
+    prompt_kwargs["scenario_contract_trusted"] = not is_generated_scenario(ctx.scenario)
     compaction_cache_before = prompt_compaction_cache_stats()
     build_start = time.perf_counter()
     prompts = build_prompt_bundle(**prompt_kwargs)
