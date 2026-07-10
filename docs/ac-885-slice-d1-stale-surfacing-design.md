@@ -38,7 +38,12 @@ artifacts is deferred to D2.
    `active_for`. The HTTP warning mirrors the existing `stale_score` notebook-warning shape
    (`{warning_type, description, ...}`). The classification names sit alongside the analytics
    `mixed_epoch` concept rather than replacing it.
-5. **Read-only.** No write path, no judge call, no re-score. D1 only reads the registry and renders.
+5. **No score write, no re-score.** D1 adds no scoring, judge call, promotion, or score mutation; it
+   reads the active epoch and renders. Note that "read" here goes through `EvaluatorEpochRegistry`
+   construction and `active_for`, which per that class's own pre-existing contract may create the
+   `_evaluator_epochs` directory, open a per-scenario lock file, take an exclusive `flock` for the
+   duration of the read, and self-heal a multiple-active state by demoting duplicates. D1 newly routes
+   `show`/`status`/`GET /runs/{id}/status` through that path; it does not itself write scores or epochs.
 
 ## Architecture
 

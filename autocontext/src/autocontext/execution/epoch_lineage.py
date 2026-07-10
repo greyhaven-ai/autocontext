@@ -1,8 +1,9 @@
 """Registry-aware epoch-lineage annotation for operator read surfaces (AC-885 Slice D1).
 
 Separate from the leaf ``evaluator_epoch`` module because it depends on the registry (which imports
-the classifier), so co-locating would cycle. Read-only: reads the scenario's active epoch and
-classifies each status row.
+the classifier), so co-locating would cycle. Adds no score, judge call, or promotion: it reads the
+scenario's active epoch (via ``EvaluatorEpochRegistry.active_for``, whose own contract may lock and
+self-heal a multiple-active state) and classifies each status row.
 """
 
 from __future__ import annotations
