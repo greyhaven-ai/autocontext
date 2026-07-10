@@ -50,6 +50,7 @@ from autocontext.execution.agent_task_completion import (
     build_evaluator_guardrail_payload,
     compute_effective_met_threshold,
 )
+from autocontext.execution.evaluator_epoch_registry import observe_epoch_quarantined
 from autocontext.execution.improvement_loop import ImprovementLoop
 from autocontext.extensions import active_hook_bus
 from autocontext.loop.generation_runner import GenerationRunner
@@ -353,6 +354,8 @@ def _run_agent_task(
         "max_rounds" if result.met_threshold and not effective_met_threshold else result.termination_reason
     )
 
+    epoch_id = getattr(result, "evaluator_epoch", None)
+    quarantined = observe_epoch_quarantined(settings.knowledge_root / "_evaluator_epochs", scenario_name, epoch_id)
     sqlite.append_agent_output(active_run_id, 1, "competitor", result.best_output)
     sqlite.upsert_generation(
         active_run_id,
@@ -365,7 +368,8 @@ def _run_agent_task(
         gate_decision=effective_termination_reason,
         status="completed",
         duration_seconds=(result.duration_ms / 1000.0) if result.duration_ms is not None else None,
-        evaluator_epoch=getattr(result, "evaluator_epoch", None),
+        evaluator_epoch=epoch_id,
+        quarantined=quarantined,
     )
 
     return AgentTaskRunSummary(

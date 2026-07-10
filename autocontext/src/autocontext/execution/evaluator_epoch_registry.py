@@ -25,6 +25,22 @@ def _default_now() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def observe_epoch_quarantined(root: Path, scenario: str, epoch_id: str | None) -> bool | None:
+    """Observe ``epoch_id`` for ``scenario`` and report whether its scores are quarantined.
+
+    Shared by the agent-task score write sites. Returns ``None`` when ``epoch_id`` is ``None``
+    (tournament/no-judge: there is nothing to observe). Otherwise it records/bootstraps the epoch via
+    :meth:`EvaluatorEpochRegistry.observe_id` and returns ``True`` when the epoch is not the
+    scenario's active one: a candidate or disabled epoch's scores are quarantined, the bootstrap or
+    active epoch's are not.
+    """
+    if epoch_id is None:
+        return None
+    registry = EvaluatorEpochRegistry(root)
+    record = registry.observe_id(scenario, epoch_id)
+    return record.activation_state != "active"
+
+
 class EvaluatorEpochRecord(BaseModel):
     scenario: str
     epoch_id: str
@@ -121,6 +137,37 @@ class EvaluatorEpochRegistry:
             rubric_hash=epoch.rubric_hash,
             judge_provider=epoch.judge_provider,
             judge_model=epoch.judge_model,
+            activation_state=state,
+            created_at=now_fn(),
+        )
+        self.register(record)
+        return record
+
+    def observe_id(
+        self,
+        scenario: str,
+        epoch_id: str,
+        *,
+        now_fn: Callable[[], str] = _default_now,
+    ) -> EvaluatorEpochRecord:
+        """Run the same mechanical trigger as :meth:`observe`, keyed only on ``epoch_id``.
+
+        Used at score write sites where only the epoch id string is authoritative (the judge
+        internals that produced it are not recomputed, since a BEFORE_JUDGE hook may have mutated
+        them). The rubric_hash/judge_provider/judge_model are stored empty and backfilled in Slice C2
+        when calibration runs. First id for a scenario auto-activates; a new id mints a candidate; a
+        known id is returned unchanged.
+        """
+        existing = self.load(scenario, epoch_id)
+        if existing is not None:
+            return existing
+        state = "active" if self.active_for(scenario) is None else "candidate"
+        record = EvaluatorEpochRecord(
+            scenario=scenario,
+            epoch_id=epoch_id,
+            rubric_hash="",
+            judge_provider="",
+            judge_model="",
             activation_state=state,
             created_at=now_fn(),
         )

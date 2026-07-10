@@ -65,6 +65,33 @@ def test_activate_missing_epoch_leaves_prior_active(tmp_path) -> None:
     assert reg.load("grid_ctf", e1.epoch_id).activation_state == "active"
 
 
+def test_observe_id_first_epoch_bootstraps_active(tmp_path) -> None:
+    reg = EvaluatorEpochRegistry(tmp_path)
+    rec = reg.observe_id("grid_ctf", "e-1", now_fn=lambda: "t0")
+    assert rec.activation_state == "active"
+    assert reg.active_for("grid_ctf").epoch_id == "e-1"
+    # only the id is known at this call site; components backfill in C2
+    assert rec.rubric_hash == ""
+    assert rec.judge_provider == ""
+    assert rec.judge_model == ""
+
+
+def test_observe_id_new_id_mints_candidate(tmp_path) -> None:
+    reg = EvaluatorEpochRegistry(tmp_path)
+    reg.observe_id("grid_ctf", "e-1", now_fn=lambda: "t0")
+    rec = reg.observe_id("grid_ctf", "e-2", now_fn=lambda: "t1")
+    assert rec.activation_state == "candidate"
+    assert reg.active_for("grid_ctf").epoch_id == "e-1"  # active unchanged
+
+
+def test_observe_id_same_id_is_noop(tmp_path) -> None:
+    reg = EvaluatorEpochRegistry(tmp_path)
+    reg.observe_id("grid_ctf", "e-1", now_fn=lambda: "t0")
+    rec = reg.observe_id("grid_ctf", "e-1", now_fn=lambda: "t1")
+    assert rec.activation_state == "active"
+    assert len(reg.list_for_scenario("grid_ctf")) == 1
+
+
 def test_prefix_sharing_scenarios_do_not_leak(tmp_path) -> None:
     reg = EvaluatorEpochRegistry(tmp_path)
     e1, e2 = _epoch("rubric one"), _epoch("rubric two")
