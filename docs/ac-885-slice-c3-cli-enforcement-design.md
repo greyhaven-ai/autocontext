@@ -18,7 +18,7 @@ consumer that excludes quarantined scores from trusted training-data export.
 1. **The CLI is a human-override trigger.** `autoctx epoch approve`/`reject` build a
    `ReviewerDecision` and call `promote_evaluator_epoch` with `calibration_report=None` (the human
    is the authority; C2 records the decision and, per the C2 fix, contributes no misleading
-   calibration evidence). The charter is loaded (from `--charter` or a settings default) to supply
+   calibration evidence). The charter is loaded (a required `--charter` option) to supply
    the `decide()` autonomy read and to resolve the policy `target_name`.
 2. **Scenario and policy target_name are distinct (C2 lesson).** The CLI has the real scenario (the
    registry/SQLite key); it resolves the charter `target_name` by matching each target's
@@ -61,7 +61,7 @@ New module `autocontext/src/autocontext/cli_epoch.py`, registered on the main Ty
   all scenarios when `--scenario` is omitted, by scanning the registry root's scenario subdirs).
 - `epoch approve <scenario> <epoch_id> [--by USER] [--charter PATH]` and
   `epoch reject <scenario> <epoch_id> [--by USER] [--charter PATH]`:
-  1. Load the charter (`--charter` or settings default via `load_charter`).
+  1. Load the charter (the required `--charter` option) via `load_charter`.
   2. `target_name = _resolve_charter_target(charter, scenario)`; error clearly if no target's
      selector scenario matches.
   3. Build `ReviewerDecision(outcome="approved"|"rejected", reviewed_by=USER, reviewed_at=now)`.
@@ -98,7 +98,7 @@ training export: export_training_data(..., include_quarantined=False)
 - **Missing candidate epoch:** `promote_evaluator_epoch` returns `noop`; the CLI prints it and exits
   non-zero so a script sees the failure.
 - **No charter configured:** `approve`/`reject` require a charter (for `decide` + target
-  resolution); error if neither `--charter` nor a settings default is present. `list` does not need
+  resolution); `--charter` is a required option for approve/reject, and the target selector must be scenario-scoped (`role@scenario`). `list` does not need
   a charter.
 - **Registry IO failure in the CLI:** surfaces as a CLI error (operator-facing, unlike the
   score-persist hot path which fails closed); the operator retries.

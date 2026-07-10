@@ -29,7 +29,7 @@ sources:
 targets:
   - name: competitor-local
     kind: role
-    selector: competitor@grid_ctf
+    selector: competitor@{selector_scenario}
     base_model: Qwen/Qwen2.5-3B-Instruct
     min_dataset_records: 10
     eval_suite: grid_ctf_holdout
@@ -40,9 +40,9 @@ budgets:
 """
 
 
-def _charter_file(tmp_path: Path) -> Path:
+def _charter_file(tmp_path: Path, selector_scenario: str = "grid_ctf") -> Path:
     path = tmp_path / "ambient-charter.yaml"
-    path.write_text(_CHARTER_YAML, encoding="utf-8")
+    path.write_text(_CHARTER_YAML.format(selector_scenario=selector_scenario), encoding="utf-8")
     return path
 
 
@@ -108,6 +108,7 @@ def test_epoch_approve_missing_candidate_exits_nonzero(tmp_path: Path, monkeypat
     )
     assert result.exit_code != 0
 
+
 def test_epoch_list_all_scenarios(tmp_path: Path, monkeypatch) -> None:
     # bare `epoch list` (no --scenario) enumerates every scenario subdir under the registry root.
     reg, _active, candidate = _seed(tmp_path)
@@ -116,3 +117,17 @@ def test_epoch_list_all_scenarios(tmp_path: Path, monkeypatch) -> None:
     assert listed.exit_code == 0, listed.output
     assert candidate in listed.stdout
 
+
+def test_epoch_approve_no_matching_target_errors(tmp_path: Path, monkeypatch) -> None:
+    # a charter whose only target selects a DIFFERENT scenario cannot resolve target_name for _SCENARIO;
+    # approve must error clearly (non-zero) and not mutate the registry.
+    reg, active, candidate = _seed(tmp_path)
+    _env(monkeypatch, tmp_path)
+    charter = _charter_file(tmp_path, selector_scenario="othello")  # does not match _SCENARIO
+    result = runner.invoke(
+        app,
+        ["epoch", "approve", _SCENARIO, candidate, "--by", "jay", "--charter", str(charter)],
+    )
+    assert result.exit_code != 0
+    # registry unchanged: the candidate is still a candidate, prior active preserved
+    assert reg.active_for(_SCENARIO).epoch_id == active
