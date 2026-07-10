@@ -51,6 +51,7 @@ describe("export-training-data command workflow", () => {
         output: "/tmp/export.jsonl",
         "include-matches": true,
         "kept-only": true,
+        "include-quarantined": true,
       }),
     ).toEqual({
       runId: "run-123",
@@ -59,7 +60,12 @@ describe("export-training-data command workflow", () => {
       output: "/tmp/export.jsonl",
       includeMatches: true,
       keptOnly: true,
+      includeQuarantined: true,
     });
+  });
+
+  it("defaults include-quarantined to false when the flag is absent", () => {
+    expect(planExportTrainingDataCommand({ "run-id": "run-123" }).includeQuarantined).toBe(false);
   });
 
   it("renders progress updates for start and generation phases", () => {
@@ -120,6 +126,7 @@ describe("export-training-data command workflow", () => {
         output: undefined,
         includeMatches: true,
         keptOnly: false,
+        includeQuarantined: true,
       },
       store: { kind: "store" },
       artifacts: { kind: "artifacts" },
@@ -134,6 +141,7 @@ describe("export-training-data command workflow", () => {
         scenario: undefined,
         includeMatches: true,
         keptOnly: false,
+        includeQuarantined: true,
         onProgress: expect.any(Function),
       }),
     );
@@ -159,6 +167,7 @@ describe("export-training-data command workflow", () => {
         output: "/tmp/export.jsonl",
         includeMatches: false,
         keptOnly: true,
+        includeQuarantined: false,
       },
       store: { kind: "store" },
       artifacts: { kind: "artifacts" },

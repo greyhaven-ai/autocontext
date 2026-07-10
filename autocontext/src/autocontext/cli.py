@@ -23,6 +23,7 @@ from autocontext.agents.orchestrator import AgentOrchestrator
 from autocontext.cli_ambient import ambient_app
 from autocontext.cli_analytics import register_analytics_command
 from autocontext.cli_capabilities import register_capabilities_command
+from autocontext.cli_epoch import epoch_app
 from autocontext.cli_hermes import register_hermes_command
 from autocontext.cli_improve import register_improve_command
 from autocontext.cli_investigate import run_investigate_command
@@ -699,6 +700,7 @@ def _serve_mcp() -> None:
 
 app.add_typer(_serve_app, name="serve")
 app.add_typer(ambient_app, name="ambient")
+app.add_typer(epoch_app, name="epoch")
 
 
 @app.command()

@@ -1,4 +1,5 @@
 """Strategy-level training data export iterator (AC-170, AC-171)."""
+
 from __future__ import annotations
 
 import json
@@ -17,6 +18,7 @@ def export_training_data(
     scenario: str | None = None,
     include_matches: bool = False,
     kept_only: bool = False,
+    include_quarantined: bool = False,
 ) -> Iterator[TrainingRecord | MatchRecord]:
     """Stream strategy-level training records from SQLite.
 
@@ -36,6 +38,9 @@ def export_training_data(
         generation's tournament matches.
     kept_only:
         When ``True``, only yield generations where ``gate_decision == 'advance'``.
+    include_quarantined:
+        When ``True``, also yield generations whose ``quarantined`` marker is set
+        (scored under an unpromoted evaluator epoch). Excluded by default.
 
     Yields
     ------
@@ -53,6 +58,13 @@ def export_training_data(
         hints = artifacts.read_hints(run_scenario)
 
         generations = sqlite.get_generation_metrics(rid)
+        # Trajectory context must not embed scores from generations excluded as
+        # untrusted: a quarantined evaluator score would otherwise leak into every
+        # later trusted record via its `context.trajectory`. Filter the trajectory
+        # source with the same quarantine policy that gates the strategy records.
+        trajectory_generations = (
+            generations if include_quarantined else [g for g in generations if not bool(g.get("quarantined"))]
+        )
         # Build a lookup of competitor outputs for this run
         competitor_outputs = _get_competitor_outputs(sqlite, rid)
 
@@ -63,27 +75,33 @@ def export_training_data(
             if kept_only and gate != "advance":
                 continue
 
-            strategy = competitor_outputs.get(gen_idx, "")
+            # Quarantined generations are scored under an unpromoted evaluator epoch,
+            # so their strategy record is not trusted training data. Their tournament
+            # matches carry no evaluator epoch, so they are still emitted.
+            skip_record = (not include_quarantined) and bool(gen.get("quarantined"))
 
-            # Build trajectory up to this generation
-            trajectory = _build_trajectory_snippet(generations, gen_idx)
+            if not skip_record:
+                strategy = competitor_outputs.get(gen_idx, "")
 
-            context: dict[str, Any] = {
-                "playbook": playbook,
-                "hints": hints,
-                "trajectory": trajectory,
-            }
+                # Build trajectory up to this generation (from trusted gens only)
+                trajectory = _build_trajectory_snippet(trajectory_generations, gen_idx)
 
-            yield TrainingRecord(
-                run_id=rid,
-                scenario=run_scenario,
-                generation_index=gen_idx,
-                strategy=strategy,
-                score=gen["best_score"],
-                gate_decision=gate,
-                context=context,
-                evaluator_epoch=gen.get("evaluator_epoch"),
-            )
+                context: dict[str, Any] = {
+                    "playbook": playbook,
+                    "hints": hints,
+                    "trajectory": trajectory,
+                }
+
+                yield TrainingRecord(
+                    run_id=rid,
+                    scenario=run_scenario,
+                    generation_index=gen_idx,
+                    strategy=strategy,
+                    score=gen["best_score"],
+                    gate_decision=gate,
+                    context=context,
+                    evaluator_epoch=gen.get("evaluator_epoch"),
+                )
 
             if include_matches:
                 yield from _iter_matches(sqlite, rid, gen_idx)
@@ -193,7 +211,4 @@ def _extract_states(replay_json: str) -> list[dict[str, Any]]:
         return []
     if not isinstance(replay, list):
         return []
-    return [
-        entry["state"] for entry in replay
-        if isinstance(entry, dict) and "state" in entry
-    ]
+    return [entry["state"] for entry in replay if isinstance(entry, dict) and "state" in entry]

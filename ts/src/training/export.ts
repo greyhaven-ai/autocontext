@@ -14,10 +14,7 @@ import {
   emitTrainingExportProgress,
   resolveTrainingExportRuns,
 } from "./export-records-workflow.js";
-import type {
-  ExportOpts,
-  TrainingExportRecord,
-} from "./export-types.js";
+import type { ExportOpts, TrainingExportRecord } from "./export-types.js";
 
 export type {
   ExportOpts,
@@ -60,6 +57,7 @@ export function exportTrainingData(
       run,
       keptOnly: opts.keptOnly,
       includeMatches: opts.includeMatches,
+      includeQuarantined: opts.includeQuarantined,
       onGenerationRecords: (generationIndex, generationRecords) => {
         records.push(...generationRecords);
         emitTrainingExportProgress(opts.onProgress, {

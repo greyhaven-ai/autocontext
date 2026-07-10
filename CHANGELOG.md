@@ -36,6 +36,10 @@ All notable changes to this project will be documented in this file.
   calibration alignment tolerance and the autonomy dial whether to activate a candidate epoch,
   records promotion and human-decision metadata, and retroactively clears the quarantine on the
   promoted epoch's prior scores. The trigger (CLI/stage) and the promote.py generalization follow.
+- AC-885 Slice C3: evaluator-epoch promotion trigger and first enforcement. An `autoctx epoch`
+  CLI lists candidate epochs and approves/rejects them (a human-override trigger for the promotion
+  workflow), and `export_training_data` now excludes quarantined scores by default (pass
+  `include_quarantined=True` to keep them), so training data is not drawn from unpromoted evaluators.
 
 ## [0.11.0] - 2026-07-02
 
