@@ -13,8 +13,6 @@ from autocontext.analytics.artifact_rendering import render_scenario_curation_ht
 from autocontext.consultation.runner import ConsultationRunner
 from autocontext.consultation.types import ConsultationRequest as ConsReq
 from autocontext.consultation.types import ConsultationTrigger
-from autocontext.execution.epoch_lineage import annotate_status_rows
-from autocontext.execution.evaluator_epoch_registry import EvaluatorEpochRegistry
 from autocontext.knowledge.context_selection_report import build_context_selection_report
 from autocontext.notebook.context_provider import NotebookContextProvider
 from autocontext.notebook.types import SessionNotebook
@@ -23,6 +21,7 @@ from autocontext.providers.registry import create_provider
 from autocontext.providers.retry import RetryProvider
 from autocontext.server.background_session_api import background_session_router
 from autocontext.server.changelog import build_changelog
+from autocontext.server.run_status_lineage import build_run_status_generations
 from autocontext.server.trace_gate_review_api import InvalidHarnessChangeProposalError, build_run_trace_gate_review
 from autocontext.server.writeup import generate_writeup, generate_writeup_html
 from autocontext.session.runtime_events import RuntimeSessionEventStore
@@ -61,13 +60,6 @@ def _get_artifacts(request: Request) -> ArtifactStore:
     if settings is None:
         raise HTTPException(status_code=500, detail="Application settings are not configured")
     return artifact_store_from_settings(settings)
-
-
-def _get_epoch_registry(request: Request) -> EvaluatorEpochRegistry:
-    settings = getattr(request.app.state, "app_settings", None)
-    if settings is None:
-        raise HTTPException(status_code=500, detail="Application settings are not configured")
-    return EvaluatorEpochRegistry(settings.knowledge_root / "_evaluator_epochs")
 
 
 def _build_effective_notebook_preview(
@@ -418,37 +410,7 @@ def run_status(run_id: str, request: Request) -> dict[str, Any]:
             (run_id,),
         ).fetchall()
 
-    generations = []
-    for g in gen_rows:
-        gd = dict(g)
-        generations.append(
-            {
-                "generation": gd["generation_index"],
-                "mean_score": gd["mean_score"],
-                "best_score": gd["best_score"],
-                "elo": gd["elo"],
-                "wins": gd["wins"],
-                "losses": gd["losses"],
-                "gate_decision": gd["gate_decision"],
-                "status": gd["status"],
-                "duration_seconds": gd["duration_seconds"],
-                "evaluator_epoch": gd["evaluator_epoch"],
-                "quarantined": bool(gd["quarantined"]),
-            }
-        )
-
-    generations, active_id = annotate_status_rows(generations, run_dict["scenario"], _get_epoch_registry(request))
-    warnings = [
-        {
-            "warning_type": "stale_epoch",
-            "generation": g["generation"],
-            "evaluator_epoch": g["evaluator_epoch"],
-            "active_evaluator_epoch": active_id,
-            "description": f"generation {g['generation']} scored under a stale evaluator epoch",
-        }
-        for g in generations
-        if g["evaluator_epoch_status"] == "stale"
-    ]
+    generations, active_id, warnings = build_run_status_generations(gen_rows, run_dict["scenario"], request)
 
     runtime_store = _get_runtime_session_store(request)
     try:
