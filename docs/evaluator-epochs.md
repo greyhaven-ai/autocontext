@@ -249,6 +249,58 @@ it (a CLI subcommand or an ambient stage that runs a calibration and then promot
 as is generalizing `promote.py`'s cross-anchor refusal onto this path. Slice C2 makes promotion
 decidable and recordable; wiring it into an operator-facing entry point is the next sub-slice.
 
+## Trigger and enforcement (Slice C3)
+
+Slice C2 made promotion a pure, recordable operation but left it without an operator-facing entry
+point, and Slice C1's `quarantined` marker was still recorded but not acted on. Slice C3 supplies
+both: a human trigger for the promotion workflow, and the first enforcement that consumes the marker.
+
+**The `autoctx epoch` CLI (the human trigger).** `autocontext/src/autocontext/cli_epoch.py` adds an
+`autoctx epoch` command group with three subcommands:
+
+- `epoch list [--scenario NAME]` prints the evaluator-epoch records (candidate, active, disabled) as
+  JSON, over one scenario or all scenarios in the registry. It is read-only: it surfaces the
+  candidates awaiting a decision without changing anything.
+- `epoch approve SCENARIO EPOCH_ID --charter PATH [--by WHO]` approves a candidate and activates it.
+- `epoch reject SCENARIO EPOCH_ID --charter PATH [--by WHO]` rejects a candidate; it stays a
+  candidate and its scores stay quarantined (rejection is "not now," not "never," per Slice C2).
+
+Both approve and reject are **pure human overrides**. They call `promote_evaluator_epoch` with
+`calibration_report=None` and a `ReviewerDecision` carrying the outcome, the reviewer identity
+(`--by`, defaulting to `operator`), and the timestamp. Because the human is the higher authority
+(the C2 rule), an approval activates the candidate on the reviewer's word alone, with no calibration
+evidence supplied on this path, and the decision is recorded on the epoch record so the override is
+visible after the fact. This is the operator's manual trigger, distinct from an ambient stage that
+would run a calibration and promote autonomously.
+
+**Charter-based target_name resolution (distinct from the scenario key).** The `SCENARIO` argument is
+the registry and sqlite key (for example `grid_ctf`). The promotion policy, however, is looked up by
+the charter target NAME, and the two are deliberately distinct keys. The CLI resolves the target name
+from the scenario by scanning the charter's targets and matching each target's selector through
+`split_role_selector`: the target whose selector binds the given scenario supplies the target name
+passed into `promote_evaluator_epoch`. A valid charter forbids a target name that collides with a
+registered scenario, so passing the scenario in as the target name would raise inside the autonomy
+`decide` call; resolving through the selector keeps the two key spaces separate (the C2 lesson). If no
+charter target selects the scenario, the command fails with a clear error rather than guessing.
+
+**Training-export quarantine exclusion (the first enforcement).** `export_training_data` (Python) and
+its TypeScript mirror now exclude quarantined generation scores by default. The parameter is
+`include_quarantined`, defaulting to `False`: a generation whose Slice C1 `quarantined` marker is set
+(a score produced under a non-active, unpromoted evaluator epoch) is skipped, so training data is not
+drawn from an evaluator the scenario has not promoted. Passing `include_quarantined=True`
+(`includeQuarantined` in TypeScript) restores the old behavior and keeps the quarantined rows. This is
+the enforcement Slice C1 deferred: the marker recorded on the row now changes what the export yields.
+
+Matches are NOT affected by this exclusion. A tournament match carries no evaluator epoch (it is an
+Elo score, not a judge score, so it has no evaluator identity to quarantine), so `include_matches`
+emissions are unchanged; only judge-scored generations can carry a `quarantined` marker and only they
+are filtered.
+
+**What remains deferred.** The other enforcement consumer, the ambient-promote refusal (an ambient
+promote stage declining to act on a quarantined-only signal), is still deferred, as is generalizing
+`promote.py`'s cross-anchor refusal onto this path. Slice C3 lands the operator-facing trigger and the
+training-export enforcement; the autonomous ambient trigger and the remaining refusals follow later.
+
 ## Relationship to the ambient `eval_fingerprint` / `anchor_model`
 
 autocontext already had this mechanism, but only in the ambient trainer. `eval_fingerprint()`
