@@ -32,6 +32,10 @@ All notable changes to this project will be documented in this file.
   candidate/active/disabled epochs; the first epoch a scenario sees auto-activates and a subsequent
   different epoch mints a candidate whose generation scores are marked `quarantined`. Promotion and
   enforcement follow in later sub-slices.
+- AC-885 Slice C2: evaluator-epoch promotion workflow. `promote_evaluator_epoch` decides via
+  calibration alignment tolerance and the autonomy dial whether to activate a candidate epoch,
+  records promotion and human-decision metadata, and retroactively clears the quarantine on the
+  promoted epoch's prior scores. The trigger (CLI/stage) and the promote.py generalization follow.
 
 ## [0.11.0] - 2026-07-02
 
