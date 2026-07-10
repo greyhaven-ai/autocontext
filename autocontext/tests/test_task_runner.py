@@ -898,10 +898,11 @@ class TestSerialization:
             met_threshold=True,
             evaluator_epoch="e2",
         )
-        serialized = _serialize_result(result)
+        serialized = _serialize_result(result, quarantined=True)
         data = json.loads(serialized)
         assert [r["evaluator_epoch"] for r in data["rounds"]] == ["e1", "e2"]
         assert data["evaluator_epoch"] == "e2"
+        assert data["quarantined"] is True
 
     def test_serialize_evolution_result_includes_optimizer_surface(self):
         from autocontext.execution.agent_task_evolution import AgentTaskTrajectory
@@ -939,12 +940,47 @@ class TestSerialization:
             ),
         ]
 
-        serialized = _serialize_evolution_result(trajectory, generation_results)
+        serialized = _serialize_evolution_result(trajectory, generation_results, evaluator_epoch="e-best", quarantined=True)
         data = json.loads(serialized)
 
         assert data["pareto_frontier"][0]["candidate_id"] == "round-2"
         assert data["actionable_side_info"][0]["example_id"] == "round-2-quality"
         assert data["generations"][0]["pareto_frontier"][0]["candidate_id"] == "round-1"
+        # AC-885 Slice C1 (Fix 5): the multi-generation queue JSON must carry epoch + quarantine.
+        assert data["evaluator_epoch"] == "e-best"
+        assert data["quarantined"] is True
+
+    def test_run_once_observes_epoch_and_stamps_quarantine_on_queue_json(self, store, tmp_path):
+        """Fix 5: the always-on TaskRunner queue surface must observe the evaluator epoch and carry
+        the resulting quarantine marker on the persisted result JSON (it does not write generations)."""
+        settings = AppSettings(knowledge_root=tmp_path / "knowledge")
+
+        # First task for the scenario bootstraps its active epoch -> not quarantined.
+        provider = _MockProvider(["candidate output", _judge_response(0.9)])
+        store.enqueue_task(
+            "t-epoch-1",
+            "epoch_scn",
+            config={"task_prompt": "do the thing", "rubric": "Rubric A", "max_rounds": 1},
+        )
+        result = TaskRunner(store=store, provider=provider, settings=settings).run_once()
+        assert result is not None
+        payload = json.loads(result["result_json"])
+        assert "quarantined" in payload
+        assert not payload["quarantined"], "bootstrap/active epoch score must not be quarantined"
+        assert payload["evaluator_epoch"], "the observed epoch id must ride on the queue JSON"
+        assert (settings.knowledge_root / "_evaluator_epochs").exists(), "registry must have recorded"
+
+        # Second task, SAME scenario, DIFFERENT rubric -> a new (candidate) epoch -> quarantined.
+        provider2 = _MockProvider(["candidate output 2", _judge_response(0.9)])
+        store.enqueue_task(
+            "t-epoch-2",
+            "epoch_scn",
+            config={"task_prompt": "do the thing", "rubric": "Rubric B is different", "max_rounds": 1},
+        )
+        result2 = TaskRunner(store=store, provider=provider2, settings=settings).run_once()
+        assert result2 is not None
+        payload2 = json.loads(result2["result_json"])
+        assert payload2["quarantined"] is True, "a non-active (candidate) epoch's score must be quarantined"
 
 
 # ---------------------------------------------------------------------------

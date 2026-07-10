@@ -11,6 +11,7 @@ from typing import Any
 from autocontext.agents.provider_bridge import configured_role_provider
 from autocontext.agents.role_runtime_overrides import settings_for_budgeted_role_call
 from autocontext.config.settings import AppSettings
+from autocontext.execution.evaluator_epoch_registry import observe_epoch_quarantined
 from autocontext.execution.improvement_loop import ImprovementLoop
 from autocontext.extensions import HookBus, HookEvents, active_hook_bus
 from autocontext.loop.runner_hooks import (
@@ -306,6 +307,8 @@ def run_task_like_scenario(
             logger.debug("RUN_END hook failed after solve run failure", exc_info=True)
         raise
 
+    epoch_id = getattr(result, "evaluator_epoch", None)
+    quarantined = observe_epoch_quarantined(settings.knowledge_root / "_evaluator_epochs", scenario_name, epoch_id)
     sqlite.append_agent_output(active_run_id, 1, "competitor", result.best_output)
     sqlite.upsert_generation(
         active_run_id,
@@ -318,7 +321,8 @@ def run_task_like_scenario(
         gate_decision=result.termination_reason,
         status="completed",
         duration_seconds=(result.duration_ms / 1000.0) if result.duration_ms is not None else None,
-        evaluator_epoch=getattr(result, "evaluator_epoch", None),
+        evaluator_epoch=epoch_id,
+        quarantined=quarantined,
     )
     sqlite.mark_run_completed(active_run_id)
     if settings.cross_run_inheritance and not settings.ablation_no_feedback:

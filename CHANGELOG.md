@@ -28,6 +28,10 @@ All notable changes to this project will be documented in this file.
   rows carry `evaluator_epoch`; run facets, training exports, calibration reports, and rubric-drift
   snapshots read it through, with a `mixed_epoch` flag when an aggregate spans more than one
   evaluator. Tournament-scored and human-scored records are left unstamped.
+- AC-885 Slice C1: evaluator-epoch lifecycle foundation. A per-scenario registry records
+  candidate/active/disabled epochs; the first epoch a scenario sees auto-activates and a subsequent
+  different epoch mints a candidate whose generation scores are marked `quarantined`. Promotion and
+  enforcement follow in later sub-slices.
 
 ## [0.11.0] - 2026-07-02
 

@@ -82,6 +82,8 @@ def test_agent_task_run_persists_generation_epoch(tmp_path) -> None:
     settings.extensions = None
     settings.simplicity_mode = "off"
     settings.agent_provider = "anthropic"
+    # real path so the evaluator-epoch registry (observe wiring) writes under tmp, not a MagicMock dir
+    settings.knowledge_root = tmp_path / "knowledge"
 
     with (
         patch.object(store, "upsert_generation", _spy),

@@ -12,9 +12,9 @@ export function upsertGenerationRecord(
     `INSERT INTO generations(
        run_id, generation_index, mean_score, best_score, elo, wins, losses,
        gate_decision, status, duration_seconds, dimension_summary_json,
-       scoring_backend, rating_uncertainty, evaluator_epoch
+       scoring_backend, rating_uncertainty, evaluator_epoch, quarantined
      )
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(run_id, generation_index) DO UPDATE SET
        mean_score = excluded.mean_score,
        best_score = excluded.best_score,
@@ -27,7 +27,8 @@ export function upsertGenerationRecord(
        dimension_summary_json = excluded.dimension_summary_json,
        scoring_backend = excluded.scoring_backend,
        rating_uncertainty = excluded.rating_uncertainty,
-       evaluator_epoch = excluded.evaluator_epoch,
+       evaluator_epoch = COALESCE(excluded.evaluator_epoch, evaluator_epoch),
+       quarantined = COALESCE(excluded.quarantined, quarantined),
        updated_at = datetime('now')`,
   ).run(
     runId,
@@ -44,6 +45,7 @@ export function upsertGenerationRecord(
     opts.scoringBackend ?? "elo",
     opts.ratingUncertainty ?? null,
     opts.evaluatorEpoch ?? null,
+    opts.quarantined ?? null,
   );
 }
 

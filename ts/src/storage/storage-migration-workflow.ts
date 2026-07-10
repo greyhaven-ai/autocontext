@@ -21,6 +21,7 @@ export const TYPESCRIPT_TO_PYTHON_MIGRATION_BASELINES: Record<string, readonly s
   "012_consultation_log.sql": ["010_consultation_log.sql"],
   "012_research_hub.sql": ["012_research_hub.sql"],
   "014_generation_evaluator_epoch.sql": ["016_generation_evaluator_epoch.sql"],
+  "015_generation_quarantined.sql": ["017_generation_quarantined.sql"],
 };
 
 const TYPESCRIPT_BASELINE_SCHEMA_RECONCILIATION: Record<string, readonly string[]> = {

@@ -23,6 +23,7 @@ _BOOTSTRAP_MIGRATIONS = (
     "014_scoring_backend_metadata.sql",
     "015_match_replay.sql",
     "016_generation_evaluator_epoch.sql",
+    "017_generation_quarantined.sql",
 )
 
 
@@ -76,6 +77,7 @@ def bootstrap_core_schema(conn: sqlite3.Connection) -> None:
             scoring_backend TEXT NOT NULL DEFAULT 'elo',
             rating_uncertainty REAL DEFAULT NULL,
             evaluator_epoch TEXT DEFAULT NULL,
+            quarantined INTEGER DEFAULT NULL,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at TEXT NOT NULL DEFAULT (datetime('now')),
             PRIMARY KEY (run_id, generation_index),

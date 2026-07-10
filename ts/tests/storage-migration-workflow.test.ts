@@ -111,6 +111,16 @@ describe("storage migration workflow", () => {
         .prepare("SELECT filename FROM schema_version WHERE filename = ?")
         .get("014_generation_evaluator_epoch.sql"),
     ).toEqual({ filename: "014_generation_evaluator_epoch.sql" });
+
+    const quarantinedColumns = (
+      db.prepare("PRAGMA table_info(generations)").all() as Array<{ name: string }>
+    ).filter((column) => column.name === "quarantined");
+    expect(quarantinedColumns).toHaveLength(1);
+    expect(
+      db
+        .prepare("SELECT filename FROM schema_version WHERE filename = ?")
+        .get("015_generation_quarantined.sql"),
+    ).toEqual({ filename: "015_generation_quarantined.sql" });
   });
 
   it("marks TypeScript migrations applied when Python already owns the equivalent schema", () => {
