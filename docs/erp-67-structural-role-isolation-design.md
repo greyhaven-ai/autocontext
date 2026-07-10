@@ -1,9 +1,18 @@
 # Structural role-message isolation for untrusted content — design (ERP-67)
 
-**Status:** design / staged plan. No behavioural code in this PR — it records
-the real call path, the contract, and a staged, feature-flagged rollout for a
-large cross-cutting change. Follow-up to **ERP-59** (shipped: in-band guardrail
-preamble + `[BEGIN/END UNTRUSTED REFERENCE]` fencing in `build_prompt_bundle`).
+**Status (updated):** Stages 1–3 implemented and merged (behind the
+`structural_role_isolation` flag, **default off**). Stage 4 (default-on) is
+**blocked** — see "Stage 4" below. This document began as a design/staged plan;
+the sections below now mix the original plan with the as-built state, noted
+where they differ. Follow-up to **ERP-59** (shipped: in-band guardrail preamble +
+`[BEGIN/END UNTRUSTED REFERENCE]` fencing in `build_prompt_bundle`).
+
+> **As-built note on the call path (below):** the original text says
+> `SubagentTask` has no system/user seam. That was the pre-Stage-2 state. As
+> built, `SubagentTask` now carries an optional `system` and `SubagentRuntime`
+> routes it via `generate_multiturn` for role-capable clients (Stage 2); the
+> orchestrator resolves each role's turn via `resolve_role_turn` on both the
+> direct and pipeline paths (Stage 2b/2c).
 
 ## Problem
 
@@ -88,15 +97,23 @@ feature. So this remains "isolate where the backend supports it, fence
 everywhere else", with more backends in the supported column than a first pass
 suggests.
 
-## Contract
+## Contract (as built)
 
-Extend the prompt contract so each role produces **two parts** instead of one
-flat string:
+Each role produces **two parts** instead of one flat string, classified by
+provenance (not by "is it context"):
 
-- `system` — operator instructions: scenario rules, strategy interface,
-  evaluation criteria, role task, constraints, the ERP-59 guardrail. Trusted.
-- `untrusted_reference` — the fenced attacker-influenceable blocks (playbook,
-  coach hints, dead-ends) and any future document-derived context.
+- `system` — **operator/code-authored instructions ONLY**: the system-turn
+  guardrail, role task, role constraints, hint policy, simplicity guidance, the
+  deterministic scout guidance, and the scenario contract (rules / interface /
+  criteria) **only when the caller asserts `scenario_contract_trusted=True`**
+  (the `solve` path generates the contract with an LLM, so it defaults to
+  untrusted).
+- `untrusted_reference` — **everything else**: the task observation, environment
+  snapshot, playbook, coach hints, dead-ends, prior analysis, coach lessons,
+  architect tool context, evidence manifests, session reports, notebooks,
+  trajectory, registry, replay, summary, progress, experiment log, research
+  protocol, and (by default) the scenario contract. The ERP-59 fences remain on
+  playbook / hints / dead-ends for the in-band (flat) path.
 
 Transport rule:
 
@@ -129,14 +146,60 @@ role emission in the full-message-role clients first (`AnthropicClient`,
 remaining single-prompt backends (`pi_cli`, `hermes_cli`, `codex_cli`,
 OpenClaw) keep flattening and lean on the ERP-59 in-band fence (documented).
 
-**Stage 3 — adversarial eval.**
-Extend `tests/test_prompt_injection_boundary.py` with structural variants:
-role-reassignment, fake-system-prompt, tool-call injection. Under the flag,
-assert the injected text appears **only** in the user turn and never in the
-system turn, and does not change the agent's actions.
+**Stage 3 — adversarial eval (as built: placement only).**
+`tests/test_prompt_injection_isolation.py` seeds injection variants
+(instruction-override, role-reassignment, fake-system-prompt, tool-call) and
+asserts, through the real transport, that the injected text appears **only** in
+the user turn and never in the system turn. It verifies **placement**, not
+behaviour — the "injection does not change the agent's actions" check needs real
+model runs and is part of the Stage 4 soak below, not this stage.
 
-**Stage 4 — flip the default** once Stage 2/3 have soaked, keeping the flag as
-an escape hatch.
+**Stage 4 — flip the default** — **NOT done; blocked.** The default stays
+`False`. Two hard prerequisites must land first:
+
+**Prerequisite A — complete the trust classification (correctness bug).** _Done._
+The split originally routed only the ERP-59 fenced fields (playbook / coach hints
+/ dead-ends) to `untrusted_reference` and left everything else in `system` — but
+much of that was model-, user-, or document-derived (prior analyst output, coach
+lessons, architect-generated tool context, session reports, evidence manifests,
+editable notebooks, task observation, environment snapshot, trajectory, etc.),
+i.e. attacker-influenceable second-order injection. Enabling isolation would have
+_promoted_ it to system authority — strictly worse. The split now keeps **only
+operator-authored** text in `system` (the system-turn guardrail, scenario rules,
+strategy interface, evaluation criteria, role task, role constraints, hint
+policy, simplicity guidance) and routes **everything else** to the untrusted user
+turn. Adversarial sentinel tests cover each shared derived component and the
+role-specific ones (`tests/test_prompt_parts_isolation.py`). `flat` is unchanged
+and byte-identical. So isolation-on is now a net security win; only the soak
+below gates default-on.
+
+**Prerequisite B — a capable-backend soak with an objective gate.** CI's offline
+`DeterministicDevClient` is incapable, so the suite exercises the flat path and
+cannot detect a quality shift; validation must run on a real capable backend.
+Gate:
+
+- **Setup:** one representative scenario set; **fixed** provider + model +
+  temperature (0.0) + generation budget; **≥ 20 paired seeds** (same seed list
+  for on and off).
+- **Commands:** run the standard eval loop twice per seed —
+  `AUTOCONTEXT_STRUCTURAL_ROLE_ISOLATION=false` then `=true` — capturing the
+  existing tournament score / evaluation summary per run.
+- **Acceptance:** paired per-seed score deltas; require the mean delta within
+  **±2%** of the off baseline and no statistically-significant regression (paired
+  t-test / Wilcoxon, p > 0.05) after accounting for run-to-run noise measured
+  from off-vs-off repeats.
+- **Behavioural:** additionally seed an injected scenario and confirm the agent's
+  parsed **actions/strategy** are unchanged vs the clean run on the capable
+  backend (Stage 3 covers message _placement_ only, not behaviour).
+- **Record:** persist the paired results + verdict to a checked-in report (e.g.
+  `docs/erp-67-stage4-soak-<date>.md`) and link it from the flip PR.
+
+**Rollback / escape hatch (real surface).** There is no user config-file loader
+for this field; `load_settings()` reads env + presets. To toggle:
+`AUTOCONTEXT_STRUCTURAL_ROLE_ISOLATION=true|false`. It takes effect on the **next
+settings load**, so a running worker/server must be **restarted** to pick it up.
+When the default is eventually flipped, add the change + this env var to
+`.env.example`, `autocontext/README.md`, and `CHANGELOG.md`.
 
 ## Risks / notes
 
@@ -151,9 +214,22 @@ an escape hatch.
 - **~hundreds of tests** construct `SubagentTask`/call `generate`; keep the
   single-prompt path as the default until Stage 4 to avoid a mass test rewrite.
 
-## Recommendation
+## Status summary (as built)
 
-Do **Stage 1 now** (cheap, behaviour-preserving, unblocks the rest) as its own
-PR. Gate Stages 2–4 behind `structural_role_isolation` and land them
-incrementally with score-parity checks. ERP-59's in-band fence remains the
-belt; structural isolation is the belt-and-braces for role-capable backends.
+Stages 1–3 are merged behind `structural_role_isolation` (**default off**), and
+the trust classification (Prerequisite A) is complete: only operator/code-
+authored instructions reach the system turn; all model/user/document/environment-
+derived context — including the scenario contract unless
+`scenario_contract_trusted=True` — goes to the untrusted user turn. `flat` is
+byte-identical, so the flag-off / incapable path is unchanged. ERP-59's in-band
+fence remains the belt for single-prompt backends; structural isolation is the
+belt-and-braces for role-capable ones (Anthropic, Agent SDK).
+
+**Remaining before default-on:** Prerequisite B — the capable-backend soak
+(score parity + behavioural injected-vs-clean check) with the gate defined above.
+Two doc/plumbing follow-ups: thread `scenario_contract_trusted=True` from callers
+that use verified operator-authored (non-generated) scenarios so their contract
+regains system authority; and, if any component/CONTEXT_COMPONENTS hook is ever
+allowed to rewrite a field that lands in the system turn, invalidate the split
+(`isolation_safe=False`) — today the system turn holds only code constants, so
+no such hook path exists.

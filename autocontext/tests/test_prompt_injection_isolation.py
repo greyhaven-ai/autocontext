@@ -163,6 +163,14 @@ def test_isolation_survives_the_hook_wrapper() -> None:
     _assert_isolated(recorder)
 
 
+def test_structural_role_isolation_defaults_off_pending_full_classification() -> None:
+    # ERP-67: stays opt-in until every non-operator (model/user/document-derived)
+    # component is routed to the untrusted turn AND a capable-backend soak is run.
+    # Enabling it today would promote second-order-injectable derived context
+    # (analyst output, lessons, tool context, notebooks, evidence) to system authority.
+    assert AppSettings(agent_provider="deterministic").structural_role_isolation is False
+
+
 def test_flag_off_uses_flat_single_prompt_path() -> None:
     recorder = _RecordingCapableClient()
     settings = AppSettings(agent_provider="deterministic", structural_role_isolation=False)

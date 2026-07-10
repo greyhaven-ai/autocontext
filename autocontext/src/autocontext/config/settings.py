@@ -100,13 +100,21 @@ class AppSettings(BaseModel):
     structural_role_isolation: bool = Field(
         default=False,
         description=(
-            "ERP-67: deliver the untrusted reference block (playbook / coach hints / "
-            "dead-ends) in a separate user turn from the trusted system prompt for "
-            "role-capable backends (Anthropic, Agent SDK), instead of one flat prompt. "
-            "Applies to competitor/analyst/architect/coach on both the direct and "
-            "pipeline execution paths; single-prompt / runtime-bridge backends and "
-            "unsafe (hook-/mutation-rewritten) prompts fall back to the exact flat "
-            "prompt. Off = byte-identical legacy behaviour."
+            "ERP-67 (opt-in; NOT yet safe to default-on): for role-capable backends "
+            "(Anthropic, Agent SDK), deliver the fenced untrusted blocks in a separate "
+            "user turn from the trusted system prompt instead of one flat prompt; "
+            "incapable / runtime-bridge backends and unsafe prompts fall back to the "
+            "exact flat prompt (byte-identical). Env override: "
+            "AUTOCONTEXT_STRUCTURAL_ROLE_ISOLATION=true (restart the worker/server to "
+            "reload). The trust classification is complete: only operator-authored "
+            "text (scenario rules, strategy interface, evaluation criteria, role task, "
+            "constraints, guardrail, hint policy, simplicity guidance) is in the system "
+            "turn; all model/user/document/environment-derived context (task "
+            "observation, analyst output, lessons, tools, session reports, evidence, "
+            "notebooks, etc.) is in the untrusted user turn. Still OFF by default "
+            "pending a capable-backend score-parity + behavioral adversarial soak "
+            "(the prompt-shape change can shift model output). See "
+            "docs/erp-67-structural-role-isolation-design.md for the soak gate."
         ),
     )
     evidence_freshness_enabled: bool = Field(
