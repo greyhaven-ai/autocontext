@@ -52,21 +52,23 @@ AUTOCONTEXT_AGENT_PROVIDER=codex AUTOCONTEXT_CODEX_MODEL=o4-mini uv run autoctx 
 
 ## Common commands
 
-| Command                                                                                | Purpose                                                |
-| -------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| `uv run autoctx solve "..." --iterations 3`                                            | Generate and run a scenario from a plain-language goal |
-| `uv run autoctx run <scenario> --iterations 3`                                         | Improve an existing scenario                           |
-| `uv run autoctx simulate --description "..."`                                          | Create/replay/compare modeled-world simulations        |
-| `uv run autoctx investigate --description "..."`                                       | Run synthetic or iterative investigations              |
-| `uv run autoctx list` / `status <run_id>` / `show <run_id>`                            | Inspect runs                                           |
-| `uv run autoctx replay <run_id> --generation 1`                                        | Replay a generation before accepting knowledge         |
-| `uv run autoctx queue add --task-prompt "..." --rubric "..."`                          | Queue evaluation/improvement work                      |
-| `uv run autoctx serve --host 127.0.0.1 --port 8000`                                    | Start the local HTTP API                               |
-| `uv run autoctx worker --poll-interval 5 --concurrency 2`                              | Process queued tasks beside the API server             |
-| `uv run autoctx mcp-serve`                                                             | Expose the MCP tool surface                            |
-| `uv run autoctx export-training-data --scenario <name> --all-runs --output data.jsonl` | Build a training corpus                                |
-| `uv run autoctx train --scenario <name> --data data.jsonl --time-budget 300`           | Run the local training hook                            |
-| `uv run autoctx hermes inspect --json`                                                 | Inspect Hermes Curator state                           |
+| Command                                                                                | Purpose                                                                                                |
+| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `uv run autoctx solve "..." --iterations 3`                                            | Generate and run a scenario from a plain-language goal                                                 |
+| `uv run autoctx run <scenario> --iterations 3`                                         | Improve an existing scenario                                                                           |
+| `uv run autoctx simulate --description "..."`                                          | Create/replay/compare modeled-world simulations                                                        |
+| `uv run autoctx investigate --description "..."`                                       | Run synthetic or iterative investigations                                                              |
+| `uv run autoctx list` / `status <run_id>` / `show <run_id>`                            | Inspect runs                                                                                           |
+| `uv run autoctx replay <run_id> --generation 1`                                        | Replay a generation before accepting knowledge                                                         |
+| `uv run autoctx queue add --task-prompt "..." --rubric "..."`                          | Queue evaluation/improvement work                                                                      |
+| `uv run autoctx serve --host 127.0.0.1 --port 8000`                                    | Start the local HTTP API                                                                               |
+| `uv run autoctx worker --poll-interval 5 --concurrency 2`                              | Process queued tasks beside the API server                                                             |
+| `uv run autoctx mcp-serve`                                                             | Expose the MCP tool surface                                                                            |
+| `uv run autoctx export-training-data --scenario <name> --all-runs --output data.jsonl` | Build a training corpus (quarantined scores excluded by default; `--include-quarantined` to keep them) |
+| `uv run autoctx train --scenario <name> --data data.jsonl --time-budget 300`           | Run the local training hook                                                                            |
+| `uv run autoctx epoch list [--scenario <name>]`                                        | List evaluator-epoch registry records (candidate/active)                                               |
+| `uv run autoctx epoch approve <scenario> <epoch_id> --charter ambient-charter.yaml`    | Approve a candidate evaluator epoch and clear its quarantine                                           |
+| `uv run autoctx hermes inspect --json`                                                 | Inspect Hermes Curator state                                                                           |
 
 Saved custom scenarios under `knowledge/_custom_scenarios/` can be rerun and benchmarked by name after their `spec.json` is persisted.
 

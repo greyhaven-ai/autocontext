@@ -86,6 +86,7 @@ export async function cmdExportTrainingData(dbPath: string): Promise<void> {
       output: { type: "string", short: "o" },
       "include-matches": { type: "boolean" },
       "kept-only": { type: "boolean" },
+      "include-quarantined": { type: "boolean" },
       help: { type: "boolean", short: "h" },
     },
   });

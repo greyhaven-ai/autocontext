@@ -77,3 +77,27 @@ def test_quarantined_matches_survive_exclusion(tmp_path: Path) -> None:
 
     assert {r.generation_index for r in training} == {2}  # quarantined gen 1 record excluded
     assert any(m.generation_index == 1 and m.seed == 7 for m in matches)  # its match survives
+
+
+def _trajectory_indices(record: TrainingRecord) -> set[int]:
+    return {entry["generation_index"] for entry in record.context["trajectory"]}
+
+
+def test_quarantined_score_does_not_leak_into_trusted_trajectory(tmp_path: Path) -> None:
+    # Excluding the quarantined generation's own record is not enough: its score must also not
+    # ride along inside a later trusted record's trajectory context (the central enforcement leak).
+    store, artifacts = _setup(tmp_path)
+    recs = [r for r in export_training_data(store, artifacts, run_id="run-1") if isinstance(r, TrainingRecord)]
+    gen2 = next(r for r in recs if r.generation_index == 2)
+    assert _trajectory_indices(gen2) == {2}  # quarantined gen 1 absent from the trusted trajectory
+
+
+def test_include_quarantined_restores_trajectory(tmp_path: Path) -> None:
+    store, artifacts = _setup(tmp_path)
+    recs = [
+        r
+        for r in export_training_data(store, artifacts, run_id="run-1", include_quarantined=True)
+        if isinstance(r, TrainingRecord)
+    ]
+    gen2 = next(r for r in recs if r.generation_index == 2)
+    assert _trajectory_indices(gen2) == {1, 2}  # opt-in keeps the quarantined generation in context

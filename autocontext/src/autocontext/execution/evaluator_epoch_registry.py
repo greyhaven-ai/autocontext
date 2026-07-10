@@ -152,6 +152,17 @@ class EvaluatorEpochRegistry:
             out.append(EvaluatorEpochRecord.model_validate(json.loads(path.read_text())))
         return out
 
+    def snapshot_for_scenario(self, scenario: str) -> list[EvaluatorEpochRecord]:
+        """Lock-held snapshot of a scenario's records for operator reads.
+
+        Promotion writes the demoted incumbent and the newly-active candidate as separate atomic
+        files, so an unlocked ``list_for_scenario`` mid-promotion can observe a transient zero-active
+        (or double-active) state. Taking the scenario lock returns a snapshot consistent with the
+        registry's read-decide-write critical section.
+        """
+        with self._scenario_lock(scenario):
+            return self.list_for_scenario(scenario)
+
     def _active_for_locked(self, scenario: str) -> EvaluatorEpochRecord | None:
         """Return the single active record, self-healing a multiple-active state.
 

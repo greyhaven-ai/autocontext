@@ -232,4 +232,64 @@ describe("training export records workflow", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it("keeps a quarantined score out of a later trusted record's trajectory context", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ac-export-quarantine-trajectory-"));
+    try {
+      const store = new SQLiteStore(join(dir, "test.db"));
+      store.migrate(join(process.cwd(), "migrations"));
+      const artifacts = new ArtifactStore({
+        runsRoot: join(dir, "runs"),
+        knowledgeRoot: join(dir, "knowledge"),
+      });
+
+      store.createRun("run-1", "grid_ctf", 2, "local");
+      store.upsertGeneration("run-1", 1, {
+        meanScore: 0.9,
+        bestScore: 0.9,
+        elo: 0,
+        wins: 0,
+        losses: 0,
+        gateDecision: "completed",
+        status: "completed",
+        evaluatorEpoch: "e-2",
+        quarantined: 1,
+      });
+      store.appendAgentOutput("run-1", 1, "competitor", '{"aggression":0.5}');
+      store.upsertGeneration("run-1", 2, {
+        meanScore: 0.8,
+        bestScore: 0.8,
+        elo: 0,
+        wins: 0,
+        losses: 0,
+        gateDecision: "advance",
+        status: "completed",
+        evaluatorEpoch: "e-1",
+      });
+      store.appendAgentOutput("run-1", 2, "competitor", '{"aggression":0.9}');
+
+      const run = { run_id: "run-1", scenario: "grid_ctf" };
+      const trajectoryIndices = (records: ReturnType<typeof buildTrainingExportRecordsForRun>) => {
+        const gen2 = records.find(
+          (r) => (r as { generation_index: number }).generation_index === 2,
+        ) as { context: { trajectory: Array<{ generation_index: number }> } };
+        return gen2.context.trajectory.map((entry) => entry.generation_index).sort();
+      };
+
+      // Default: the quarantined generation 1 must be absent from the trusted generation 2 trajectory.
+      expect(
+        trajectoryIndices(buildTrainingExportRecordsForRun({ store, artifacts, run })),
+      ).toEqual([2]);
+      // Opt-in restores the quarantined generation to the trajectory context.
+      expect(
+        trajectoryIndices(
+          buildTrainingExportRecordsForRun({ store, artifacts, run, includeQuarantined: true }),
+        ),
+      ).toEqual([1, 2]);
+
+      store.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

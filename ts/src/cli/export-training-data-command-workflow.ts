@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 export const EXPORT_TRAINING_DATA_HELP_TEXT = [
-  "autoctx export-training-data --run-id <id> [--scenario <name> --all-runs] [--output <file>] [--include-matches] [--kept-only]",
+  "autoctx export-training-data --run-id <id> [--scenario <name> --all-runs] [--output <file>] [--include-matches] [--kept-only] [--include-quarantined]",
   "",
   "Exports training data as JSONL with Python-compatible snake_case fields.",
   "",
@@ -16,6 +16,7 @@ export interface ExportTrainingDataCommandValues {
   output?: string;
   "include-matches"?: boolean;
   "kept-only"?: boolean;
+  "include-quarantined"?: boolean;
 }
 
 export interface ExportTrainingDataCommandPlan {
@@ -25,6 +26,7 @@ export interface ExportTrainingDataCommandPlan {
   output?: string;
   includeMatches: boolean;
   keptOnly: boolean;
+  includeQuarantined: boolean;
 }
 
 export interface ExportTrainingDataProgress {
@@ -55,6 +57,7 @@ export function planExportTrainingDataCommand(
     output: values.output,
     includeMatches: !!values["include-matches"],
     keptOnly: !!values["kept-only"],
+    includeQuarantined: !!values["include-quarantined"],
   };
 }
 
@@ -75,11 +78,7 @@ function writeOutputFileWithParents(path: string, content: string): void {
   writeFileSync(path, content, "utf-8");
 }
 
-export function executeExportTrainingDataCommandWorkflow<
-  TStore,
-  TArtifacts,
-  TRecord,
->(opts: {
+export function executeExportTrainingDataCommandWorkflow<TStore, TArtifacts, TRecord>(opts: {
   plan: ExportTrainingDataCommandPlan;
   store: TStore;
   artifacts: TArtifacts;
@@ -91,6 +90,7 @@ export function executeExportTrainingDataCommandWorkflow<
       scenario?: string;
       includeMatches: boolean;
       keptOnly: boolean;
+      includeQuarantined: boolean;
       onProgress: (progress: ExportTrainingDataProgress) => void;
     },
   ) => TRecord[];
@@ -105,6 +105,7 @@ export function executeExportTrainingDataCommandWorkflow<
     scenario: opts.plan.scenario,
     includeMatches: opts.plan.includeMatches,
     keptOnly: opts.plan.keptOnly,
+    includeQuarantined: opts.plan.includeQuarantined,
     onProgress: (progress) => {
       const line = renderExportTrainingDataProgress(progress);
       if (line) {

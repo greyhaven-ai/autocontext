@@ -26,6 +26,7 @@ def _write_json_stderr(message: str) -> None:
 
 console = Console()
 
+
 def _resolve_export_artifact_roots(
     *,
     settings: AppSettings,
@@ -65,6 +66,7 @@ def _resolve_export_artifact_roots(
         Path(claude_skills_path) if claude_skills_path is not None else base_claude_skills_path,
     )
 
+
 def export_training_data_cmd(
     run_id: str | None = typer.Option(None, "--run-id", help="Export a specific run"),
     scenario: str | None = typer.Option(None, "--scenario", help="Export all runs for a scenario"),
@@ -72,6 +74,11 @@ def export_training_data_cmd(
     output: str = typer.Option("", "--output", help="Output JSONL file path"),
     include_matches: bool = typer.Option(False, "--include-matches", help="Include per-match records"),
     kept_only: bool = typer.Option(False, "--kept-only", help="Only export generations that advanced"),
+    include_quarantined: bool = typer.Option(
+        False,
+        "--include-quarantined",
+        help="Include generations scored under an unpromoted evaluator epoch (excluded by default)",
+    ),
     db_path: str | None = typer.Option(None, "--db-path", help="Override database path"),
     runs_root: str | None = typer.Option(None, "--runs-root", help="Override runs root for artifact lookup"),
     knowledge_root: str | None = typer.Option(None, "--knowledge-root", help="Override knowledge root for playbooks and hints"),
@@ -131,11 +138,13 @@ def export_training_data_cmd(
             scenario=scenario,
             include_matches=include_matches,
             kept_only=kept_only,
+            include_quarantined=include_quarantined,
         ):
             f.write(json.dumps(dataclasses.asdict(record)) + "\n")
             count += 1
 
     console.print(f"[green]Exported {count} record(s) to {output_path}[/green]")
+
 
 def export_cmd(
     run_id_text: str | None = typer.Argument(None, help="Run id to export"),
@@ -268,6 +277,7 @@ def export_cmd(
     else:
         console.print(f"[green]Exported {scenario_name} package to {output_path}[/green]")
         console.print(f"[dim]best_score={pkg.best_score:.4f} lessons={len(pkg.lessons)} harness={len(pkg.harness)}[/dim]")
+
 
 def import_package_cmd(
     package_file: str = typer.Argument(..., help="Path to the strategy package JSON file"),

@@ -16,7 +16,7 @@ from typing import Annotated, Literal
 
 import typer
 
-from autocontext.ambient.charter import Charter
+from autocontext.ambient.charter import Charter, CharterTarget
 from autocontext.ambient.charter_io import load_charter
 from autocontext.ambient.eligibility import split_role_selector
 from autocontext.config import load_settings
@@ -39,18 +39,40 @@ def _all_scenarios(registry: EvaluatorEpochRegistry) -> list[str]:
     return sorted(p.name for p in root.iterdir() if p.is_dir()) if root.exists() else []
 
 
+def _target_binds_scenario(target: CharterTarget, scenario: str) -> bool:
+    """Whether a charter target's selector binds the given scenario.
+
+    Selector semantics differ by target kind (a role selector uses ``role@scenario`` notation, a
+    task-family selector is the scenario string itself), so parsing every selector as a role
+    selector wrongly drops valid ``task_family`` targets whose selector has no ``@``.
+    """
+    if target.kind == "task_family":
+        return target.selector == scenario
+    # role: a scoped ``role@scenario`` binds only its named scenario; a bare ``role`` binds every one.
+    _, target_scenario = split_role_selector(target.selector)
+    return target_scenario is None or target_scenario == scenario
+
+
 def _resolve_charter_target(charter: Charter, scenario: str) -> str:
     """Return the charter target NAME whose selector binds the given scenario.
 
     The promotion policy is looked up by charter target name, not by scenario; these are distinct
     keys. A valid charter forbids a target name that collides with a registered scenario, so passing
     the scenario in as the target name would raise inside ``decide``.
+
+    Exactly one target must bind the scenario: zero is unresolvable, and more than one is ambiguous
+    (silently promoting under the first target's autonomy would be a fail-open policy choice), so
+    both raise rather than guess.
     """
-    for target in charter.targets:
-        _, target_scenario = split_role_selector(target.selector)
-        if target_scenario == scenario:
-            return target.name
-    raise typer.BadParameter(f"no charter target selects scenario {scenario!r}")
+    matches = [t.name for t in charter.targets if _target_binds_scenario(t, scenario)]
+    if not matches:
+        raise typer.BadParameter(f"no charter target selects scenario {scenario!r}")
+    if len(matches) > 1:
+        raise typer.BadParameter(
+            f"charter is ambiguous for scenario {scenario!r}: targets {sorted(matches)!r} all bind it; "
+            "scope their selectors (role@scenario) so exactly one target selects the scenario"
+        )
+    return matches[0]
 
 
 @epoch_app.command("list")
@@ -60,7 +82,7 @@ def list_epochs(
     """List evaluator-epoch records (candidate/active/disabled) as JSON."""
     registry = _registry_for(load_settings())
     scenarios = [scenario] if scenario else _all_scenarios(registry)
-    records = [rec.model_dump(mode="json") for name in scenarios for rec in registry.list_for_scenario(name)]
+    records = [rec.model_dump(mode="json") for name in scenarios for rec in registry.snapshot_for_scenario(name)]
     typer.echo(json.dumps(records, indent=2))
 
 
@@ -82,8 +104,14 @@ def _decide(scenario: str, epoch_id: str, outcome: Literal["approved", "rejected
         reviewer_decision=decision,
         sqlite=store,
     )
+    # The outcome must match the requested action. Because C2 reconciles an already-active
+    # epoch as ``activated`` (to repair a crashed quarantine-clear), a bare "not noop" check would
+    # let ``epoch reject <active-id>`` exit 0 reporting ``activated``. Require approve -> activated
+    # and reject -> rejected; any other outcome (noop, activated-on-reject, pending_review, blocked)
+    # is a non-zero failure so an operator never reads a contradictory result as success.
+    expected = {"approved": "activated", "rejected": "rejected"}[outcome]
     typer.echo(json.dumps({"outcome": result.outcome, "reason": result.reason}, indent=2))
-    if result.outcome == "noop":
+    if result.outcome != expected:
         raise typer.Exit(code=1)
 
 

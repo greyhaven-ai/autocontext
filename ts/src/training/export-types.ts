@@ -23,6 +23,7 @@ export interface ExportOpts {
   scenario?: string;
   keptOnly?: boolean;
   includeMatches?: boolean;
+  includeQuarantined?: boolean;
   onProgress?: (progress: ExportProgress) => void;
 }
 

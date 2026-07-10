@@ -32,7 +32,7 @@ consumer that excludes quarantined scores from trusted training-data export.
 4. **The ambient-promote refusal stays deferred.** Refusing a model scored under a non-active
    evaluator epoch needs the `promote.py` generalization (the ambient evaluate stage stamping
    evaluator_epoch on model eval metadata), a separate follow-on. C3 does not touch `promote.py`.
-5. **Registry access via the C1/C2 lock-held API only.** The CLI reads via `list_for_scenario` /
+5. **Registry access via the C1/C2 lock-held API only.** The CLI reads via `snapshot_for_scenario` /
    `active_for` and mutates only via `promote_evaluator_epoch` (which uses `registry.promote` /
    `stamp_promotion` under the per-scenario lock). No direct unlocked writes.
 
@@ -55,12 +55,13 @@ include_matches=False, kept_only=False, include_quarantined=False)`: in the `Tra
 New module `autocontext/src/autocontext/cli_epoch.py`, registered on the main Typer `app`
 (`cli.py` is near the module-size cap, so the commands live in their own module):
 
-- `epoch list [--scenario S] [--charter PATH]`: enumerate registry records (scenario, epoch_id,
-  activation_state, and the promotion block when present) as JSON to stdout. Reads via
-  `EvaluatorEpochRegistry(settings.knowledge_root / "_evaluator_epochs").list_for_scenario(...)` (or
-  all scenarios when `--scenario` is omitted, by scanning the registry root's scenario subdirs).
-- `epoch approve <scenario> <epoch_id> [--by USER] [--charter PATH]` and
-  `epoch reject <scenario> <epoch_id> [--by USER] [--charter PATH]`:
+- `epoch list [--scenario S]`: enumerate registry records (scenario, epoch_id,
+  activation_state, and the promotion block when present) as JSON to stdout. Reads via a lock-held
+  `EvaluatorEpochRegistry(settings.knowledge_root / "_evaluator_epochs").snapshot_for_scenario(...)`
+  (or all scenarios when `--scenario` is omitted, by scanning the registry root's scenario subdirs).
+  `list` takes no `--charter` (it neither promotes nor resolves an autonomy target).
+- `epoch approve <scenario> <epoch_id> --charter PATH [--by USER]` and
+  `epoch reject <scenario> <epoch_id> --charter PATH [--by USER]` (`--charter` is required):
   1. Load the charter (the required `--charter` option) via `load_charter`.
   2. `target_name = _resolve_charter_target(charter, scenario)`; error clearly if no target's
      selector scenario matches.
@@ -78,9 +79,9 @@ charter=charter, reviewer_decision=decision, sqlite=SQLiteStore(settings.db_path
 
 ```
 operator: autoctx epoch list --scenario grid_ctf
-   -> EvaluatorEpochRegistry.list_for_scenario -> JSON of candidate/active/disabled records
+   -> EvaluatorEpochRegistry.snapshot_for_scenario -> JSON of candidate/active/disabled records
 
-operator: autoctx epoch approve grid_ctf <epoch> --by jay
+operator: autoctx epoch approve grid_ctf <epoch> --charter ambient-charter.yaml --by jay
    -> load_charter -> _resolve_charter_target(charter, "grid_ctf") -> "competitor-local"
    -> promote_evaluator_epoch(reg, scenario="grid_ctf", epoch, target_name="competitor-local",
         calibration_report=None, reviewer_decision=approved, sqlite=...)

@@ -370,6 +370,104 @@
       },
       "flags": [],
       "output_contract": "json"
+    },
+    {
+      "id": "epoch.list",
+      "path": ["epoch", "list"],
+      "summary": "List evaluator-epoch registry records (candidate/active/disabled) and their promotion metadata as JSON.",
+      "audience": "advanced",
+      "maturity": "experimental",
+      "domain_concept": null,
+      "aliases": [],
+      "runtime_support": {
+        "python": {
+          "status": "yes"
+        },
+        "typescript": {
+          "status": "intentional_gap",
+          "reason": "The evaluator-epoch promotion CLI is a Python-only operator surface in AC-885 Slice C3; the TS package has no epoch registry command yet."
+        }
+      },
+      "flags": [
+        {
+          "name": "scenario",
+          "type": "string",
+          "aliases": [],
+          "required": false,
+          "description": "Limit output to a single scenario; omit to list every scenario's records."
+        }
+      ],
+      "output_contract": "json"
+    },
+    {
+      "id": "epoch.approve",
+      "path": ["epoch", "approve"],
+      "summary": "Approve a candidate evaluator epoch (human override) and activate it, clearing quarantine on its scores.",
+      "audience": "advanced",
+      "maturity": "experimental",
+      "domain_concept": null,
+      "aliases": [],
+      "runtime_support": {
+        "python": {
+          "status": "yes"
+        },
+        "typescript": {
+          "status": "intentional_gap",
+          "reason": "The evaluator-epoch promotion CLI is a Python-only operator surface in AC-885 Slice C3; the TS package has no epoch registry command yet."
+        }
+      },
+      "flags": [
+        {
+          "name": "charter",
+          "type": "string",
+          "aliases": [],
+          "required": true,
+          "description": "Path to the ambient charter yaml; required to resolve the autonomy target for the scenario."
+        },
+        {
+          "name": "by",
+          "type": "string",
+          "aliases": [],
+          "required": false,
+          "description": "Reviewer identity recorded on the promotion decision."
+        }
+      ],
+      "output_contract": "json"
+    },
+    {
+      "id": "epoch.reject",
+      "path": ["epoch", "reject"],
+      "summary": "Reject a candidate evaluator epoch; it stays a candidate and its scores stay quarantined.",
+      "audience": "advanced",
+      "maturity": "experimental",
+      "domain_concept": null,
+      "aliases": [],
+      "runtime_support": {
+        "python": {
+          "status": "yes"
+        },
+        "typescript": {
+          "status": "intentional_gap",
+          "reason": "The evaluator-epoch promotion CLI is a Python-only operator surface in AC-885 Slice C3; the TS package has no epoch registry command yet."
+        }
+      },
+      "flags": [
+        {
+          "name": "charter",
+          "type": "string",
+          "aliases": [],
+          "required": true,
+          "description": "Path to the ambient charter yaml; required to resolve the autonomy target for the scenario."
+        },
+        {
+          "name": "by",
+          "type": "string",
+          "aliases": [],
+          "required": false,
+          "description": "Reviewer identity recorded on the promotion decision."
+        }
+      ],
+      "output_contract": "json"
     }
   ]
 }

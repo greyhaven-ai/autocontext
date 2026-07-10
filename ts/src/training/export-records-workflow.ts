@@ -58,6 +58,13 @@ export function buildTrainingExportRecordsForRun(opts: {
   const hints = extractTrainingHints(playbook);
   const promptContext = resolveTrainingPromptContext(opts.artifacts, opts.run.scenario);
   const generations = opts.store.getGenerations(opts.run.run_id);
+  // Trajectory context must not embed scores from generations excluded as untrusted:
+  // a quarantined evaluator score would otherwise leak into every later trusted record
+  // via its context.trajectory. Filter the trajectory source with the same quarantine
+  // policy that gates the strategy records.
+  const trajectoryGenerations = opts.includeQuarantined
+    ? generations
+    : generations.filter((generation) => !generation.quarantined);
 
   for (const generation of generations) {
     if (opts.keptOnly && generation.gate_decision !== "advance") {
@@ -84,7 +91,7 @@ export function buildTrainingExportRecordsForRun(opts: {
           ...promptContext,
           playbook,
           hints,
-          trajectory: buildTrajectorySnippet(generations, generation.generation_index),
+          trajectory: buildTrajectorySnippet(trajectoryGenerations, generation.generation_index),
         },
         evaluator_epoch: generation.evaluator_epoch ?? null,
       };

@@ -1,4 +1,5 @@
 """Strategy-level training data export iterator (AC-170, AC-171)."""
+
 from __future__ import annotations
 
 import json
@@ -57,6 +58,13 @@ def export_training_data(
         hints = artifacts.read_hints(run_scenario)
 
         generations = sqlite.get_generation_metrics(rid)
+        # Trajectory context must not embed scores from generations excluded as
+        # untrusted: a quarantined evaluator score would otherwise leak into every
+        # later trusted record via its `context.trajectory`. Filter the trajectory
+        # source with the same quarantine policy that gates the strategy records.
+        trajectory_generations = (
+            generations if include_quarantined else [g for g in generations if not bool(g.get("quarantined"))]
+        )
         # Build a lookup of competitor outputs for this run
         competitor_outputs = _get_competitor_outputs(sqlite, rid)
 
@@ -75,8 +83,8 @@ def export_training_data(
             if not skip_record:
                 strategy = competitor_outputs.get(gen_idx, "")
 
-                # Build trajectory up to this generation
-                trajectory = _build_trajectory_snippet(generations, gen_idx)
+                # Build trajectory up to this generation (from trusted gens only)
+                trajectory = _build_trajectory_snippet(trajectory_generations, gen_idx)
 
                 context: dict[str, Any] = {
                     "playbook": playbook,
@@ -203,7 +211,4 @@ def _extract_states(replay_json: str) -> list[dict[str, Any]]:
         return []
     if not isinstance(replay, list):
         return []
-    return [
-        entry["state"] for entry in replay
-        if isinstance(entry, dict) and "state" in entry
-    ]
+    return [entry["state"] for entry in replay if isinstance(entry, dict) and "state" in entry]
