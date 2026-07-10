@@ -74,7 +74,7 @@ def test_show_json_flags_stale_generation(tmp_path: Path, monkeypatch) -> None:
     gen = payload["generations"][0]
     assert gen["evaluator_epoch"] == e1
     assert gen["evaluator_epoch_status"] == "stale"
-    assert gen["quarantined"] in (False, True)
+    assert gen["quarantined"] is False
 
 
 def test_status_json_flags_stale_generation(tmp_path: Path, monkeypatch) -> None:
@@ -89,7 +89,7 @@ def test_status_json_flags_stale_generation(tmp_path: Path, monkeypatch) -> None
     gen = payload["generations"][0]
     assert gen["evaluator_epoch"] == e1
     assert gen["evaluator_epoch_status"] == "stale"
-    assert gen["quarantined"] in (False, True)
+    assert gen["quarantined"] is False
 
 
 def test_show_json_no_active_epoch(tmp_path: Path, monkeypatch) -> None:
@@ -103,3 +103,29 @@ def test_show_json_no_active_epoch(tmp_path: Path, monkeypatch) -> None:
     assert payload["active_evaluator_epoch"] is None
     gen = payload["generations"][0]
     assert gen["evaluator_epoch_status"] == "no_active_epoch"
+
+
+def test_show_rich_flags_stale_generation(tmp_path: Path, monkeypatch) -> None:
+    """Non-JSON ``show`` prints the stale warning line and a ``stale`` Lineage cell."""
+    _env(monkeypatch, tmp_path)
+    e1, e2 = _seed_epochs(tmp_path)
+    _seed_run(tmp_path, "run-stale", e1)
+
+    result = runner.invoke(app, ["show", "run-stale"])
+    assert result.exit_code == 0, result.output
+    normalized = " ".join(result.output.split())
+    assert "stale" in normalized
+    assert "Warning" in normalized
+    assert f"active epoch {e2[:8]}" in normalized
+
+
+def test_status_rich_no_active_epoch(tmp_path: Path, monkeypatch) -> None:
+    """Non-JSON ``status`` on a scenario with no registered active epoch prints no stale warning."""
+    _env(monkeypatch, tmp_path)
+    # No epochs registered for the scenario -> nothing to compare against.
+    _seed_run(tmp_path, "run-bare", "e1")
+
+    result = runner.invoke(app, ["status", "run-bare"])
+    assert result.exit_code == 0, result.output
+    assert "Run Status: run-bare" in result.output
+    assert "Warning" not in result.output
