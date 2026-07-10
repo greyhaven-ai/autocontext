@@ -168,6 +168,20 @@ class SQLiteStore(
                 ),
             )
 
+    def clear_quarantine_for_epoch(self, scenario: str, epoch_id: str) -> int:
+        """Clear the quarantine marker on a scenario's generation rows scored under ``epoch_id``.
+
+        Scoped by scenario (via the runs table) so a content-hash epoch shared across scenarios only
+        clears the promoted scenario's rows. Returns the number of rows cleared.
+        """
+        with self.connect() as conn:
+            cur = conn.execute(
+                "UPDATE generations SET quarantined = NULL "
+                "WHERE evaluator_epoch = ? AND run_id IN (SELECT run_id FROM runs WHERE scenario = ?)",
+                (epoch_id, scenario),
+            )
+            return cur.rowcount
+
     def update_generation_duration(
         self,
         run_id: str,
