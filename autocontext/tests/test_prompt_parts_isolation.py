@@ -178,20 +178,21 @@ _SHARED_DERIVED = {
     "score_trajectory": "S-TRAJECTORY",
     "experiment_log": "S-EXPERIMENTLOG",
 }
-# Operator-authored — MUST stay in the system turn.
-_OPERATOR = {
-    "scenario_rules": "OP-RULES",
-    "strategy_interface": "OP-INTERFACE",
-    "evaluation_criteria": "OP-CRITERIA",
+# Scenario contract — trusted ONLY when the caller asserts it; the solve path
+# generates these with an LLM, so they default to the untrusted turn.
+_CONTRACT = {
+    "scenario_rules": "CT-RULES",
+    "strategy_interface": "CT-INTERFACE",
+    "evaluation_criteria": "CT-CRITERIA",
 }
 
 
-def _build_classified() -> PromptPartsBundle:
+def _build_classified(*, scenario_contract_trusted: bool = False) -> PromptPartsBundle:
     captured: dict[str, PromptPartsBundle] = {}
     build_prompt_bundle(
-        scenario_rules=_OPERATOR["scenario_rules"],
-        strategy_interface=_OPERATOR["strategy_interface"],
-        evaluation_criteria=_OPERATOR["evaluation_criteria"],
+        scenario_rules=_CONTRACT["scenario_rules"],
+        strategy_interface=_CONTRACT["strategy_interface"],
+        evaluation_criteria=_CONTRACT["evaluation_criteria"],
         previous_summary="summary",
         observation=Observation(narrative="OBS-NARRATIVE derived", state={}, constraints=[]),
         current_playbook=_SHARED_DERIVED["current_playbook"],
@@ -205,12 +206,14 @@ def _build_classified() -> PromptPartsBundle:
         score_trajectory=_SHARED_DERIVED["score_trajectory"],
         experiment_log=_SHARED_DERIVED["experiment_log"],
         architect_tool_usage_report="A-TOOLUSAGE",
+        scout_mutation_guidance="SCOUT-GUIDANCE instruction: mutate toward corners",
         notebook_contexts={
             "competitor": "NB-COMPETITOR",
             "analyst": "NB-ANALYST",
             "coach": "NB-COACH",
             "architect": "NB-ARCHITECT",
         },
+        scenario_contract_trusted=scenario_contract_trusted,
         prompt_parts_sink=lambda parts: captured.__setitem__("parts", parts),
     )
     return captured["parts"]
@@ -227,11 +230,30 @@ def test_all_derived_context_is_in_the_untrusted_turn_not_system() -> None:
         assert "OBS-NARRATIVE" not in role.system
 
 
-def test_operator_authored_context_stays_in_system() -> None:
-    parts = _build_classified()
+def test_generated_scenario_contract_defaults_to_the_untrusted_turn() -> None:
+    # The solve path generates rules/interface/criteria with an LLM; without an
+    # explicit trusted assertion they must NOT get system authority.
+    parts = _build_classified()  # scenario_contract_trusted defaults False
     for role in (parts.competitor, parts.analyst, parts.coach, parts.architect):
-        for sentinel in _OPERATOR.values():
+        for sentinel in _CONTRACT.values():
+            assert sentinel in role.untrusted_reference, f"{sentinel} missing from untrusted turn"
+            assert sentinel not in role.system, f"{sentinel} leaked into the system turn"
+
+
+def test_operator_asserted_contract_is_trusted_in_system() -> None:
+    parts = _build_classified(scenario_contract_trusted=True)
+    for role in (parts.competitor, parts.analyst, parts.coach, parts.architect):
+        for sentinel in _CONTRACT.values():
             assert sentinel in role.system, f"{sentinel} missing from the system turn"
+            assert sentinel not in role.untrusted_reference
+
+
+def test_scout_guidance_is_a_trusted_system_instruction() -> None:
+    # Deterministic code-authored scout instructions must stay authoritative
+    # (system turn), not land in the guarded user turn the guardrail says to ignore.
+    parts = _build_classified()
+    assert "SCOUT-GUIDANCE" in parts.competitor.system
+    assert "SCOUT-GUIDANCE" not in parts.competitor.untrusted_reference
 
 
 def test_role_specific_derived_context_is_untrusted_and_scoped() -> None:

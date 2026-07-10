@@ -97,15 +97,23 @@ feature. So this remains "isolate where the backend supports it, fence
 everywhere else", with more backends in the supported column than a first pass
 suggests.
 
-## Contract
+## Contract (as built)
 
-Extend the prompt contract so each role produces **two parts** instead of one
-flat string:
+Each role produces **two parts** instead of one flat string, classified by
+provenance (not by "is it context"):
 
-- `system` — operator instructions: scenario rules, strategy interface,
-  evaluation criteria, role task, constraints, the ERP-59 guardrail. Trusted.
-- `untrusted_reference` — the fenced attacker-influenceable blocks (playbook,
-  coach hints, dead-ends) and any future document-derived context.
+- `system` — **operator/code-authored instructions ONLY**: the system-turn
+  guardrail, role task, role constraints, hint policy, simplicity guidance, the
+  deterministic scout guidance, and the scenario contract (rules / interface /
+  criteria) **only when the caller asserts `scenario_contract_trusted=True`**
+  (the `solve` path generates the contract with an LLM, so it defaults to
+  untrusted).
+- `untrusted_reference` — **everything else**: the task observation, environment
+  snapshot, playbook, coach hints, dead-ends, prior analysis, coach lessons,
+  architect tool context, evidence manifests, session reports, notebooks,
+  trajectory, registry, replay, summary, progress, experiment log, research
+  protocol, and (by default) the scenario contract. The ERP-59 fences remain on
+  playbook / hints / dead-ends for the in-band (flat) path.
 
 Transport rule:
 
@@ -138,11 +146,13 @@ role emission in the full-message-role clients first (`AnthropicClient`,
 remaining single-prompt backends (`pi_cli`, `hermes_cli`, `codex_cli`,
 OpenClaw) keep flattening and lean on the ERP-59 in-band fence (documented).
 
-**Stage 3 — adversarial eval.**
-Extend `tests/test_prompt_injection_boundary.py` with structural variants:
-role-reassignment, fake-system-prompt, tool-call injection. Under the flag,
-assert the injected text appears **only** in the user turn and never in the
-system turn, and does not change the agent's actions.
+**Stage 3 — adversarial eval (as built: placement only).**
+`tests/test_prompt_injection_isolation.py` seeds injection variants
+(instruction-override, role-reassignment, fake-system-prompt, tool-call) and
+asserts, through the real transport, that the injected text appears **only** in
+the user turn and never in the system turn. It verifies **placement**, not
+behaviour — the "injection does not change the agent's actions" check needs real
+model runs and is part of the Stage 4 soak below, not this stage.
 
 **Stage 4 — flip the default** — **NOT done; blocked.** The default stays
 `False`. Two hard prerequisites must land first:
@@ -204,9 +214,22 @@ When the default is eventually flipped, add the change + this env var to
 - **~hundreds of tests** construct `SubagentTask`/call `generate`; keep the
   single-prompt path as the default until Stage 4 to avoid a mass test rewrite.
 
-## Recommendation
+## Status summary (as built)
 
-Do **Stage 1 now** (cheap, behaviour-preserving, unblocks the rest) as its own
-PR. Gate Stages 2–4 behind `structural_role_isolation` and land them
-incrementally with score-parity checks. ERP-59's in-band fence remains the
-belt; structural isolation is the belt-and-braces for role-capable backends.
+Stages 1–3 are merged behind `structural_role_isolation` (**default off**), and
+the trust classification (Prerequisite A) is complete: only operator/code-
+authored instructions reach the system turn; all model/user/document/environment-
+derived context — including the scenario contract unless
+`scenario_contract_trusted=True` — goes to the untrusted user turn. `flat` is
+byte-identical, so the flag-off / incapable path is unchanged. ERP-59's in-band
+fence remains the belt for single-prompt backends; structural isolation is the
+belt-and-braces for role-capable ones (Anthropic, Agent SDK).
+
+**Remaining before default-on:** Prerequisite B — the capable-backend soak
+(score parity + behavioural injected-vs-clean check) with the gate defined above.
+Two doc/plumbing follow-ups: thread `scenario_contract_trusted=True` from callers
+that use verified operator-authored (non-generated) scenarios so their contract
+regains system authority; and, if any component/CONTEXT_COMPONENTS hook is ever
+allowed to rewrite a field that lands in the system turn, invalidate the split
+(`isolation_safe=False`) — today the system turn holds only code constants, so
+no such hook path exists.

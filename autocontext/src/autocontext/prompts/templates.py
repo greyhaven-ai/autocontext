@@ -218,6 +218,7 @@ def build_prompt_bundle(
     hint_style: str = "default",
     scout_mutation_guidance: str = "",
     prompt_parts_sink: Callable[[PromptPartsBundle], None] | None = None,
+    scenario_contract_trusted: bool = False,
 ) -> PromptBundle:
     _nb = dict(notebook_contexts or {})
     _evidence = dict(evidence_manifests or {})
@@ -389,13 +390,19 @@ def build_prompt_bundle(
     # protocol, and session reports — is model-, user-, document-, or
     # environment-derived (second-order-injectable) and belongs in the untrusted
     # user turn.
-    operator_header = (
-        f"{_SYSTEM_TURN_GUARDRAIL}"
+    #
+    # The scenario contract (rules / interface / criteria) is trusted ONLY when
+    # the caller asserts it (`scenario_contract_trusted`). The public `solve`
+    # path GENERATES these fields with an LLM, so they default to the untrusted
+    # turn (task-defining data, not authoritative instructions) — fail-safe.
+    _contract = (
         f"Scenario rules:\n{scenario_rules}\n\n"
         f"Strategy interface:\n{strategy_interface}\n\n"
         f"Evaluation criteria:\n{evaluation_criteria}\n\n"
     )
+    operator_header = f"{_SYSTEM_TURN_GUARDRAIL}{_contract if scenario_contract_trusted else ''}"
     shared_untrusted = (
+        f"{'' if scenario_contract_trusted else _contract}"
         f"Observation narrative:\n{observation.narrative}\n\n"
         f"Observation state:\n{observation.state}\n\n"
         f"Constraints:\n{observation.constraints}\n\n"
@@ -553,8 +560,11 @@ def build_prompt_bundle(
         # derived blocks (evidence, tool-usage, attributions, feedback,
         # notebooks, scout guidance, hints) — goes in the untrusted user turn.
         # `flat` is unchanged and byte-identical.
+        # scout_mutation_guidance is deterministic, code-authored instruction text
+        # (render_levy_scout_guidance) — a trusted directive, so it stays in the
+        # system turn rather than the guarded user turn.
         competitor_system = append_simplicity_guidance(
-            operator_header + competitor_constraint + competitor_task,
+            operator_header + scout_block + competitor_constraint + competitor_task,
             simplicity_mode,
         )
         analyst_system = append_simplicity_guidance(
@@ -569,7 +579,7 @@ def build_prompt_bundle(
             operator_header + architect_constraint + architect_task,
             simplicity_mode,
         )
-        competitor_untrusted = shared_untrusted + scout_block + competitor_nb + hints_block
+        competitor_untrusted = shared_untrusted + competitor_nb + hints_block
         analyst_untrusted = (
             shared_untrusted + analyst_evidence_block + analyst_feedback_block + analyst_attribution_block + analyst_nb
         )
