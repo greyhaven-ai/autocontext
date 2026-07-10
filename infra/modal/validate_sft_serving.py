@@ -132,6 +132,92 @@ def validate() -> dict:
     closure_text_2 = generate_fn(sft_record, anchor, "A second case.")
     assert isinstance(closure_text_2, str)
 
+    # 5) exercise the AC-893 per-role serving-manifest bridge end to end. The ambient trainer slots
+    #    a promoted per-role model under scenario = target.name (AC-884 anti-collision), and the
+    #    serving manifest carries the (real-scenario, role) -> target bridge the promote stage wrote.
+    #    _resolve_ambient_record must read the manifest, resolve the record slotted under the target
+    #    name, and the serving resolver must load + generate on the GPU. This is the live-serving path
+    #    a generation-loop role takes when settings.ambient_serving_manifest_path is configured.
+    from autocontext.agents.scenario_bound_clients import (
+        _resolve_ambient_record,
+    )
+    from autocontext.ambient.serving_manifest import (
+        lookup_serving_entry,
+        write_serving_entry,
+    )
+    from autocontext.training.model_registry import ModelRegistry
+
+    knowledge_root = Path(tempfile.mkdtemp())
+    manifest_path = Path(tempfile.mkdtemp()) / "serving-manifest.json"
+    target_name = "competitor-local"
+    real_scenario = "grid_ctf"
+    role = "competitor"
+
+    served_registry = ModelRegistry(knowledge_root)
+    promoted = DistilledModelRecord(
+        artifact_id="ac893-modal-served",
+        scenario=target_name,  # ambient slots the promoted model under the target name, not the scenario
+        scenario_family="",
+        backend="sft",
+        checkpoint_path=adapter_dir,
+        runtime_types=["provider"],
+        activation_state="candidate",
+        training_metrics={},
+        provenance={},
+        metadata={"base_model": base_id, "target": target_name},
+    )
+    served_registry.register(promoted)
+    served_registry.activate(promoted.artifact_id)
+    write_serving_entry(
+        manifest_path,
+        scenario=real_scenario,
+        role=role,
+        target_name=target_name,
+        artifact_id=promoted.artifact_id,
+        backend="sft",
+    )
+    # the manifest bridge answers for the real (scenario, role), not the target name
+    assert (
+        lookup_serving_entry(manifest_path, scenario=real_scenario, role=role)
+        is not None
+    )
+
+    # Exercise the REAL production role-routing entry point, not the private resolver helpers: in
+    # production the serving-manifest bridge is reached only for agent_provider "mlx" through
+    # AgentOrchestrator -> scenario_bound_mlx_client. A config that leaves agent_provider at its
+    # "anthropic" default never enters the bridge (returns None), so it could pass while live
+    # generation never selects the promoted model.
+    from autocontext.agents.llm_client import DeterministicDevClient
+    from autocontext.agents.orchestrator import AgentOrchestrator
+    from autocontext.agents.scenario_bound_clients import scenario_bound_mlx_client
+
+    served_settings = AppSettings(
+        agent_provider="mlx",
+        knowledge_root=knowledge_root,
+        ambient_serving_manifest_path=manifest_path,
+        mlx_max_tokens=8,
+        mlx_temperature=0.7,
+    )
+    # Confirm the manifest resolves the promoted per-role record (complements the routing check).
+    resolved = _resolve_ambient_record(served_settings, real_scenario, role)
+    assert resolved is not None, "serving manifest did not resolve the promoted record"
+    assert resolved.artifact_id == promoted.artifact_id, (
+        "resolved the wrong artifact via the manifest"
+    )
+
+    orch = AgentOrchestrator(client=DeterministicDevClient(), settings=served_settings)
+    served_client = scenario_bound_mlx_client(orch, role, scenario_name=real_scenario)
+    assert served_client is not None, (
+        "the production mlx role path did not resolve the manifest-backed served model"
+    )
+    # Reach the RESOLVED client's own provider (through the hook wrapper's __getattr__ delegation) so
+    # the device assertion covers the manifest-resolved client, not the unrelated step-2 provider.
+    served_device = served_client._provider._device
+    served_response = served_client.generate(
+        model=base_id, prompt="Served via the manifest.", max_tokens=8, temperature=0.7
+    )
+    assert isinstance(served_response.text, str)
+
     return {
         "cuda_available": bool(torch.cuda.is_available()),
         "device": provider._device,
@@ -143,6 +229,9 @@ def validate() -> dict:
         "client_output_tokens": response.usage.output_tokens,
         "closure_text_len": len(closure_text),
         "closure_second_case_len": len(closure_text_2),
+        "served_artifact": resolved.artifact_id,
+        "served_device": served_device,
+        "served_output_tokens": served_response.usage.output_tokens,
     }
 
 
@@ -158,6 +247,17 @@ def main() -> None:
         "the production generation closure did not return text"
     )
     assert summary["closure_second_case_len"] >= 0
+    assert summary["served_artifact"] == "ac893-modal-served", (
+        "the AC-893 serving manifest did not resolve the promoted per-role record"
+    )
+    assert summary["served_device"] == "cuda", (
+        "the manifest-resolved client did not run on CUDA"
+    )
+    assert summary["served_output_tokens"] > 0, (
+        "the manifest-resolved model generated no tokens"
+    )
     print(
-        "PASS: torch/peft sft adapter served + generated on a real GPU, via provider, client, and the production closure."
+        "PASS: torch/peft sft adapter served + generated on a real GPU, via provider, client, "
+        "the production closure, and the AC-893 per-role serving-manifest bridge routed through the "
+        "production mlx role path (device cuda, positive output tokens)."
     )
