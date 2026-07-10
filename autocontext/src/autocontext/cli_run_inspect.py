@@ -28,10 +28,52 @@ from typing import TYPE_CHECKING, Any
 import typer
 from rich.table import Table
 
+from autocontext.execution.epoch_lineage import annotate_status_rows
+from autocontext.execution.evaluator_epoch_registry import EvaluatorEpochRegistry
+
 if TYPE_CHECKING:
     from rich.console import Console
 
+    from autocontext.config.settings import AppSettings
+
 _TERMINAL_STATUSES = frozenset({"completed", "failed", "succeeded", "errored"})
+
+# AC-885 Slice D1: map the four-state lineage classification to a compact rich "Lineage" cell.
+_LINEAGE_LABELS = {"current": "ok", "stale": "stale", "unknown": "legacy", "no_active_epoch": "-"}
+
+
+def annotate_run_status_rows(
+    settings: AppSettings,
+    scenario: str | None,
+    rows: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], str | None]:
+    """Annotate run_status rows with epoch lineage (AC-885 Slice D1).
+
+    Shared by ``show`` and ``status`` so the registry root is constructed in one place. Builds the
+    per-scenario epoch registry under ``settings.knowledge_root / "_evaluator_epochs"`` (same root as
+    ``cli_epoch``) and delegates to ``annotate_status_rows``. Read-only.
+    """
+    registry = EvaluatorEpochRegistry(settings.knowledge_root / "_evaluator_epochs")
+    return annotate_status_rows(rows, scenario, registry)
+
+
+def _lineage_cell(row: dict[str, Any]) -> str:
+    """Render the ``Lineage`` column value, marking quarantined rows."""
+    label = _LINEAGE_LABELS.get(row.get("evaluator_epoch_status", ""), "-")
+    if row.get("quarantined"):
+        label = f"{label}+quarantined"
+    return label
+
+
+def _stale_warning_line(rows: list[dict[str, Any]], active_epoch_id: str | None) -> str | None:
+    """Return a single warning line if any row is stale or quarantined, else None."""
+    flagged = [r for r in rows if r.get("evaluator_epoch_status") == "stale" or r.get("quarantined")]
+    if not flagged:
+        return None
+    active8 = active_epoch_id[:8] if active_epoch_id else "none"
+    return (
+        f"[yellow]Warning: {len(flagged)} generation(s) scored under a stale evaluator epoch; active epoch {active8}...[/yellow]"
+    )
 
 
 def _cli_attr(dependency_module: str, name: str) -> Any:
@@ -89,11 +131,14 @@ def register_run_inspect_commands(
                     console.print(f"[red]{message}[/red]")
                 raise typer.Exit(code=1)
 
+        rows, active_epoch_id = annotate_run_status_rows(settings, run.get("scenario"), rows)
+
         if json_output:
             payload: dict[str, Any] = {
                 "run_id": run_id,
                 "scenario": run.get("scenario"),
                 "status": run.get("status"),
+                "active_evaluator_epoch": active_epoch_id,
                 "generations": [
                     {
                         "generation": r["generation_index"],
@@ -104,6 +149,9 @@ def register_run_inspect_commands(
                         "losses": r["losses"],
                         "gate_decision": r["gate_decision"],
                         "status": r["status"],
+                        "evaluator_epoch": r.get("evaluator_epoch"),
+                        "evaluator_epoch_status": r["evaluator_epoch_status"],
+                        "quarantined": bool(r.get("quarantined")),
                     }
                     for r in rows
                 ],
@@ -124,6 +172,7 @@ def register_run_inspect_commands(
         table.add_column("L")
         table.add_column("Gate")
         table.add_column("Status")
+        table.add_column("Lineage")
         for row in rows:
             table.add_row(
                 str(row["generation_index"]),
@@ -134,8 +183,12 @@ def register_run_inspect_commands(
                 str(row["losses"]),
                 row["gate_decision"],
                 row["status"],
+                _lineage_cell(row),
             )
         console.print(table)
+        warning = _stale_warning_line(rows, active_epoch_id)
+        if warning is not None:
+            console.print(warning)
 
     @app.command()
     def watch(
