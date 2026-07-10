@@ -11,6 +11,7 @@ export interface UpsertGenerationRecordOpts {
   scoringBackend?: string;
   ratingUncertainty?: number | null;
   evaluatorEpoch?: string | null;
+  quarantined?: number | null;
 }
 
 export interface RecordMatchRecordOpts {

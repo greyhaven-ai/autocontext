@@ -53,6 +53,7 @@ export interface GenerationRow {
   scoring_backend: string;
   rating_uncertainty: number | null;
   evaluator_epoch: string | null;
+  quarantined: number | null;
   created_at: string;
   updated_at: string;
 }
