@@ -140,8 +140,6 @@ def validate() -> dict:
     #    a generation-loop role takes when settings.ambient_serving_manifest_path is configured.
     from autocontext.agents.scenario_bound_clients import (
         _resolve_ambient_record,
-        build_planned_client,
-        plan_local_client,
     )
     from autocontext.ambient.serving_manifest import (
         lookup_serving_entry,
@@ -184,25 +182,39 @@ def validate() -> dict:
         is not None
     )
 
+    # Exercise the REAL production role-routing entry point, not the private resolver helpers: in
+    # production the serving-manifest bridge is reached only for agent_provider "mlx" through
+    # AgentOrchestrator -> scenario_bound_mlx_client. A config that leaves agent_provider at its
+    # "anthropic" default never enters the bridge (returns None), so it could pass while live
+    # generation never selects the promoted model.
+    from autocontext.agents.llm_client import DeterministicDevClient
+    from autocontext.agents.orchestrator import AgentOrchestrator
+    from autocontext.agents.scenario_bound_clients import scenario_bound_mlx_client
+
     served_settings = AppSettings(
+        agent_provider="mlx",
         knowledge_root=knowledge_root,
         ambient_serving_manifest_path=manifest_path,
         mlx_max_tokens=8,
         mlx_temperature=0.7,
     )
+    # Confirm the manifest resolves the promoted per-role record (complements the routing check).
     resolved = _resolve_ambient_record(served_settings, real_scenario, role)
     assert resolved is not None, "serving manifest did not resolve the promoted record"
     assert resolved.artifact_id == promoted.artifact_id, (
         "resolved the wrong artifact via the manifest"
     )
-    served_plan = plan_local_client(resolved)
-    assert served_plan is not None and served_plan.kind == "sft"
-    served_client = build_planned_client(served_plan, served_settings)
+
+    orch = AgentOrchestrator(client=DeterministicDevClient(), settings=served_settings)
+    served_client = scenario_bound_mlx_client(orch, role, scenario_name=real_scenario)
+    assert served_client is not None, (
+        "the production mlx role path did not resolve the manifest-backed served model"
+    )
+    # Reach the RESOLVED client's own provider (through the hook wrapper's __getattr__ delegation) so
+    # the device assertion covers the manifest-resolved client, not the unrelated step-2 provider.
+    served_device = served_client._provider._device
     served_response = served_client.generate(
-        model=served_plan.model,
-        prompt="Served via the manifest.",
-        max_tokens=8,
-        temperature=0.7,
+        model=base_id, prompt="Served via the manifest.", max_tokens=8, temperature=0.7
     )
     assert isinstance(served_response.text, str)
 
@@ -218,7 +230,8 @@ def validate() -> dict:
         "closure_text_len": len(closure_text),
         "closure_second_case_len": len(closure_text_2),
         "served_artifact": resolved.artifact_id,
-        "served_via_manifest_text_len": len(served_response.text),
+        "served_device": served_device,
+        "served_output_tokens": served_response.usage.output_tokens,
     }
 
 
@@ -237,10 +250,14 @@ def main() -> None:
     assert summary["served_artifact"] == "ac893-modal-served", (
         "the AC-893 serving manifest did not resolve the promoted per-role record"
     )
-    assert summary["served_via_manifest_text_len"] >= 0, (
-        "the manifest-resolved model did not serve/generate"
+    assert summary["served_device"] == "cuda", (
+        "the manifest-resolved client did not run on CUDA"
+    )
+    assert summary["served_output_tokens"] > 0, (
+        "the manifest-resolved model generated no tokens"
     )
     print(
         "PASS: torch/peft sft adapter served + generated on a real GPU, via provider, client, "
-        "the production closure, and the AC-893 per-role serving-manifest bridge."
+        "the production closure, and the AC-893 per-role serving-manifest bridge routed through the "
+        "production mlx role path (device cuda, positive output tokens)."
     )
