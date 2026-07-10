@@ -140,6 +140,47 @@ the flag is a lineage annotation, not a filter. Enforcement (refusing to aggrega
 partitioning by epoch before the math) is deferred to a later slice; Slice B's job is to make the
 mixing visible, not to act on it.
 
+## Epoch lifecycle (Slice C1)
+
+Slice B recorded which epoch produced a score. Slice C decides what to do about it: which epoch a
+scenario currently trusts, and which epochs are merely candidates awaiting promotion. Slice C1 lays
+the foundation for that decision. It builds the per-scenario registry, the mechanical trigger that
+populates it, and the marker on scores that a non-active epoch produces. The enforcement that
+consumes the marker and the promotion workflow that clears it arrive in later sub-slices (see below).
+
+**The per-scenario registry.** `EvaluatorEpochRegistry`
+(`autocontext/src/autocontext/execution/evaluator_epoch_registry.py`) holds one record per (scenario,
+epoch) pair, stored file-per-record under a per-scenario subdirectory, mirroring how the model
+registry keeps its records. Each `EvaluatorEpochRecord` carries the epoch identity (the `epoch_id`
+plus the rubric hash and judge provider and model that produced it) and an `activation_state` in
+`{candidate, active, disabled}`. The invariant is one active epoch per scenario: `active_for` returns
+it, and `activate` promotes a target epoch while demoting the prior active one to disabled. The
+demotion is a state change, not a delete, so a rollback is reversible, and `activate` loads the
+target first and no-ops on a missing id so a bad id can never leave a scenario with zero active
+epochs.
+
+**The mechanical observe trigger.** `observe` (and its id-only convenience `observe_id`, keyed on the
+`epoch_id` string alone) is the only way epochs enter the registry, and its rule is purely
+mechanical: the first epoch a scenario ever sees auto-activates (the bootstrap epoch becomes active
+with no ceremony), and any subsequent, different epoch is registered as a candidate. A known epoch is
+returned unchanged. The trigger is keyed per scenario, so two scenarios bootstrap independently. No
+score is compared and no judgment is made here; the registry simply records what it has seen and
+which epoch was first.
+
+**The `quarantined` marker.** A generation score produced under an epoch that is not the scenario's
+active one is stamped `quarantined` on its `generations` row (the nullable `quarantined` column added
+by migration 017 in Python and migration 015 in TypeScript, byte-identical across the two schemas per
+the parity constraint). The two agent-task write sites call the `observe_epoch_quarantined` helper,
+which observes the score's epoch and reports whether it is non-active: a candidate or disabled epoch's
+scores are marked quarantined, while the bootstrap or active epoch's scores are not. A score with no
+epoch (tournament or legacy, epoch `None`) has nothing to observe and is never quarantined.
+
+The marker is recorded here, not yet acted on. Slice C1 makes the fact visible on the row; it does
+not change any loop or aggregation behavior. The enforcement that consumes the marker (ambient-promote
+refusal and progression exclusion of quarantined scores) and the promotion workflow that turns a
+candidate into the active epoch (and so clears the quarantine going forward) arrive in Slices C2 and
+C3.
+
 ## Relationship to the ambient `eval_fingerprint` / `anchor_model`
 
 autocontext already had this mechanism, but only in the ambient trainer. `eval_fingerprint()`
@@ -165,6 +206,9 @@ The remaining slices are explicitly deferred, not dropped:
   unstamped by design.
 - **Slice C (epoch lifecycle):** candidate-to-active epoch promotion with promotion metadata
   (source patch, calibration anchors used, alignment / bias / variance deltas, human-review
-  requirement, decision); generalizes `promote.py`'s cross-anchor refusal.
+  requirement, decision); generalizes `promote.py`'s cross-anchor refusal. C1 (the per-scenario
+  registry, the mechanical observe trigger, and the `quarantined` marker) is shipped (see "Epoch
+  lifecycle (Slice C1)" above); the enforcement that consumes the marker and the promotion workflow
+  land in C2 and C3.
 - **Slice D (surfacing + lazy re-score):** stale-epoch warnings in CLI / status / replay, REST /
   API, and dashboard, plus lazy revalidation of raw artifacts when a stale scored record is touched.
