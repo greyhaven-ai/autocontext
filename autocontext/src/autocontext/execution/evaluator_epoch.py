@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
+from typing import Literal
 
 EVALUATOR_EPOCH_REBASELINE = "evaluator_epoch_rebaseline"
 
@@ -47,6 +48,23 @@ def compute_evaluator_epoch(rubric_text: str, judge_provider: str, judge_model: 
 def are_comparable(a: str | None, b: str | None) -> bool:
     """Two epoch ids are comparable only when equal; ``None`` (legacy/unknown) equals only ``None``."""
     return a == b
+
+
+EpochLineageStatus = Literal["current", "stale", "unknown", "no_active_epoch"]
+
+
+def classify_epoch_lineage(row_epoch: str | None, active_epoch: str | None) -> EpochLineageStatus:
+    """Classify a score row's epoch against the scenario's active epoch.
+
+    ``no_active_epoch``: the scenario has no promoted active epoch (nothing to compare against, e.g. a
+    game/no-judge run). ``unknown``: an active epoch exists but the row has no lineage (legacy/pre-slice
+    row); not asserted stale. ``current`` / ``stale``: both epochs known, equal vs different.
+    """
+    if active_epoch is None:
+        return "no_active_epoch"
+    if row_epoch is None:
+        return "unknown"
+    return "current" if are_comparable(row_epoch, active_epoch) else "stale"
 
 
 @dataclass(frozen=True, slots=True)
