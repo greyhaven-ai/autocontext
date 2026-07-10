@@ -7,7 +7,7 @@ from typing import Literal
 
 from autocontext.ambient.charter import AutonomyLevel, Charter, CharterBudgets
 
-Action = Literal["train", "promote"]
+Action = Literal["train", "promote", "promote_epoch"]
 
 
 @dataclass(slots=True)
