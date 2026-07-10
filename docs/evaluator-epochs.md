@@ -181,6 +181,74 @@ refusal and progression exclusion of quarantined scores) and the promotion workf
 candidate into the active epoch (and so clears the quarantine going forward) arrive in Slices C2 and
 C3.
 
+## Promotion (Slice C2)
+
+Slice C1 left the registry able to record a candidate epoch but with no way to promote one. Slice C2
+adds the promotion decision itself: given a candidate epoch and the calibration evidence for it,
+decide whether to activate it, and if so record why and clean up after the activation. The operation
+is `promote_evaluator_epoch(...)` in
+`autocontext/src/autocontext/execution/evaluator_epoch_promotion.py`. It is pure with respect to
+scoring: the caller supplies the `CalibrationReport` (produced by `run_judge_calibration`), the
+`AlignmentTolerance`, and the scenario `Charter`, and the operation reads and writes only the registry
+(and, on activation, the quarantine).
+
+**The decision matrix.** Two inputs drive the outcome: whether the candidate's calibration alignment
+passes the supplied tolerance (`tolerance.check(report.alignment)["passes"]`), and the autonomy dial
+for the `promote_epoch` action (`decide(charter, "promote_epoch", scenario)`). The dial has the usual
+three positions: propose and train require human approval, full is autonomous. The operation returns
+one of five outcomes:
+
+1. `noop`: the candidate id is missing from the registry or is already the active epoch, so there is
+   nothing to promote.
+2. `pending_review`: the autonomy dial requires approval and no reviewer decision was supplied yet.
+   The candidate stays a candidate, its promotion metadata (with `requires_review` true and no
+   decision) is recorded so a reviewer can see the calibration evidence, and the active pointer is
+   untouched.
+3. `activated`: either the autonomy dial is full and the calibration passes tolerance, or a reviewer
+   approved the promotion. The candidate becomes the active epoch (the prior active one is demoted to
+   disabled by the registry, reversibly), the promotion metadata is stamped, and the quarantine on the
+   promoted epoch's prior scores is cleared (see below).
+4. `blocked`: the autonomy dial is full but the calibration did not pass tolerance, so the operation
+   refuses to activate. The candidate stays a candidate.
+5. `rejected`: a reviewer supplied a rejecting decision. The decision is recorded on the candidate but
+   it is not activated.
+
+**The recorded human decision.** When a reviewer weighs in, the operation records a `ReviewerDecision`
+(outcome `approved` or `rejected`, plus `reviewed_by` and `reviewed_at`) inside the promotion metadata
+alongside the calibration deltas (alignment mean-absolute-error, bias, correlation, and the variance
+delta), the anchor count, the `requires_review` flag, the promotion timestamp, and the previous active
+epoch id. So a promotion carries both the machine evidence (calibration) and the human evidence
+(who decided, when, and which way) in one record.
+
+Two behaviors surfaced in review are worth stating plainly:
+
+- **A reviewer-approved promotion overrides the calibration decision.** If a reviewer approves, the
+  candidate is activated even when the calibration did not pass tolerance: the human is the higher
+  authority. The calibration deltas are still recorded in the promotion metadata, so an override is
+  visible after the fact (you can see that a human promoted an epoch whose calibration was out of
+  tolerance), not silently discarded.
+- **A reviewer-rejected epoch stays a candidate, it is not disabled.** A rejection records the decision
+  and leaves the epoch in state `candidate`, so it remains re-promotable later (a better calibration
+  run, or a reviewer changing their mind, can promote it) and its scores stay quarantined in the
+  meantime. Rejection is "not now," not "never."
+
+**Retroactive quarantine clearing.** When an epoch is activated, its prior scores were stamped
+`quarantined` while it was a candidate (per Slice C1). Those markers are now stale: the epoch is the
+active one, so its scores are canonical. The operation clears them retroactively via
+`SQLiteStore.clear_quarantine_for_epoch(scenario, epoch_id)`, a scenario-scoped `UPDATE` that unmarks
+only the promoted epoch's rows under that scenario and leaves every other scenario's rows untouched.
+Clearing runs only on the `activated` outcome; `pending_review`, `blocked`, `rejected`, and `noop`
+leave the quarantine in place. The clear is a documented limitation in one respect: it clears the
+persisted `generations` rows in SQLite, but it does not retroactively rewrite the TaskRunner
+task-queue-JSON snapshot, so a score that was serialized into that snapshot as quarantined keeps its
+stale marker there. The SQLite row is the source of truth for enforcement; the JSON snapshot is a
+point-in-time artifact and is not reconciled.
+
+**What is deferred.** Slice C2 is the promotion decision as a pure operation. The trigger that calls
+it (a CLI subcommand or an ambient stage that runs a calibration and then promotes) is deferred to C3,
+as is generalizing `promote.py`'s cross-anchor refusal onto this path. Slice C2 makes promotion
+decidable and recordable; wiring it into an operator-facing entry point is the next sub-slice.
+
 ## Relationship to the ambient `eval_fingerprint` / `anchor_model`
 
 autocontext already had this mechanism, but only in the ambient trainer. `eval_fingerprint()`

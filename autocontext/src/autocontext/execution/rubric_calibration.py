@@ -148,14 +148,16 @@ def compute_alignment(
     """Compute alignment between human and judge scores."""
     if not human_scores and not judge_scores:
         return AlignmentResult(
-            mean_absolute_error=0.0, bias=0.0, correlation=0.0,
-            num_pairs=0, per_anchor_errors=[],
+            mean_absolute_error=0.0,
+            bias=0.0,
+            correlation=0.0,
+            num_pairs=0,
+            per_anchor_errors=[],
         )
 
     if len(human_scores) != len(judge_scores):
         raise ValueError(
-            "human_scores and judge_scores must have the same length; "
-            f"got {len(human_scores)} and {len(judge_scores)}",
+            f"human_scores and judge_scores must have the same length; got {len(human_scores)} and {len(judge_scores)}",
         )
 
     hs = human_scores
@@ -218,19 +220,11 @@ class AlignmentTolerance(BaseModel):
         violations: list[str] = []
 
         if alignment.mean_absolute_error > self.max_mean_absolute_error:
-            violations.append(
-                f"mean_absolute_error {alignment.mean_absolute_error:.4f} "
-                f"> max {self.max_mean_absolute_error:.4f}"
-            )
+            violations.append(f"mean_absolute_error {alignment.mean_absolute_error:.4f} > max {self.max_mean_absolute_error:.4f}")
         if abs(alignment.bias) > self.max_bias:
-            violations.append(
-                f"bias {alignment.bias:.4f} > max {self.max_bias:.4f}"
-            )
+            violations.append(f"bias {alignment.bias:.4f} > max {self.max_bias:.4f}")
         if alignment.correlation < self.min_correlation and alignment.num_pairs >= 3:
-            violations.append(
-                f"correlation {alignment.correlation:.4f} "
-                f"< min {self.min_correlation:.4f}"
-            )
+            violations.append(f"correlation {alignment.correlation:.4f} < min {self.min_correlation:.4f}")
 
         return {
             "passes": len(violations) == 0,
@@ -249,6 +243,7 @@ class CalibrationReport(BaseModel):
     calibrated: bool
     metadata: dict[str, Any] = Field(default_factory=dict)
     evaluator_epoch: str | None = None
+    anchor_ids: list[str] = Field(default_factory=list)
 
     def summary(self) -> str:
         lines = [
@@ -363,11 +358,7 @@ def run_judge_calibration(
     calibration_epoch: str | None = None
 
     for anchor in calibration_set.anchors:
-        leave_one_out = [
-            example
-            for example in calibration_examples
-            if str(example.get("id")) != anchor.anchor_id
-        ]
+        leave_one_out = [example for example in calibration_examples if str(example.get("id")) != anchor.anchor_id]
         repeated_scores: list[float] = []
         for _ in range(max(1, repeat_judgments)):
             result = judge.evaluate(
@@ -405,4 +396,5 @@ def run_judge_calibration(
             "cross_domain_normalization": "explicit second phase",
         },
         evaluator_epoch=calibration_epoch,
+        anchor_ids=[anchor.anchor_id for anchor in calibration_set.anchors],
     )
