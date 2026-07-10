@@ -10,21 +10,26 @@ from typing import Any
 from autocontext.scenarios.base import ScenarioInterface
 
 _GENERATED_PACKAGE_NAME = "autocontext.scenarios.custom.generated"
+# First-party, code-authored built-in scenarios live under this package but NOT
+# under `.custom.` (which holds solve/codegen-generated scenarios and loaders).
+_BUILTIN_PACKAGE_PREFIX = "autocontext.scenarios."
+_CUSTOM_PACKAGE_PREFIX = "autocontext.scenarios.custom."
 
 
-def is_generated_scenario(scenario: object) -> bool:
-    """True if ``scenario`` was loaded from the generated/custom package.
+def is_operator_authored_scenario(scenario: object) -> bool:
+    """True ONLY for first-party, code-authored built-in scenarios.
 
-    Custom scenarios — produced by the ``solve`` LLM path or template codegen —
-    are loaded under ``autocontext.scenarios.custom.generated.*``. Their contract
-    (rules / interface / criteria) is model-generated and therefore
-    attacker-influenceable, so it must NOT receive system authority under ERP-67
-    structural isolation (ERP-73). Built-in, code-authored scenarios live in other
-    modules and are operator-authored. Fail-safe: anything we cannot positively
-    identify as built-in is treated as generated (untrusted).
+    Contract trust for ERP-67 structural isolation keys off this: a built-in
+    scenario's contract (rules / interface / criteria) is operator-authored and
+    may hold system authority; everything else must not. This positively
+    identifies built-ins (module under ``autocontext.scenarios.`` but not
+    ``autocontext.scenarios.custom.``), so it is **fail-safe** — generated/custom
+    scenarios, third-party or consumer-repo scenarios, ``__main__``, dynamically
+    loaded modules, and anything without a recognisable module are all treated as
+    untrusted (returns False).
     """
     module = getattr(type(scenario), "__module__", "") or ""
-    return module.startswith(_GENERATED_PACKAGE_NAME)
+    return module.startswith(_BUILTIN_PACKAGE_PREFIX) and not module.startswith(_CUSTOM_PACKAGE_PREFIX)
 
 
 def _ensure_generated_package(custom_dir: Path) -> None:

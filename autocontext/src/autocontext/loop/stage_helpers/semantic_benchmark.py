@@ -309,6 +309,13 @@ def prepare_generation_prompts(
             generation=ctx.generation,
         ),
     }
+    # ERP-73: fields that build_prompt_bundle may place in the trusted system turn.
+    # A CONTEXT_COMPONENTS hook can rewrite any prompt field; if it rewrites one of
+    # these, the value is hook-derived (attacker-influenceable) even for a built-in
+    # scenario, so structural isolation is invalidated for this generation below.
+    _system_eligible_fields = ("scenario_rules", "strategy_interface", "evaluation_criteria", "scout_mutation_guidance")
+    _pre_hook_system_fields = {k: prompt_kwargs.get(k, "") for k in _system_eligible_fields}
+    system_fields_hook_rewritten = False
     hook_bus = ctx.hook_bus
     if hook_bus is not None:
         context_components = hook_bus.emit(
@@ -325,6 +332,9 @@ def prepare_generation_prompts(
         if isinstance(maybe_components, dict):
             prompt_kwargs.update(maybe_components)
         prompt_kwargs["hook_bus"] = hook_bus
+        system_fields_hook_rewritten = any(
+            prompt_kwargs.get(k, "") != _pre_hook_system_fields[k] for k in _system_eligible_fields
+        )
     prompt_kwargs["compaction_entry_context"] = {
         "scenario": ctx.scenario_name,
         "run_id": ctx.run_id,
@@ -339,16 +349,22 @@ def prepare_generation_prompts(
     prompt_kwargs["context_budget_telemetry_sink"] = lambda telemetry: context_budget_telemetry.append(telemetry.to_dict())
     captured_parts: list[PromptPartsBundle] = []
     prompt_kwargs["prompt_parts_sink"] = captured_parts.append
-    # ERP-73: the scenario contract (rules / interface / criteria) is trusted for
-    # structural isolation only when it is a built-in, operator-authored scenario.
-    # solve/codegen-generated scenarios are attacker-influenceable → untrusted turn.
-    from autocontext.scenarios.custom.loader import is_generated_scenario
+    # ERP-73: the scenario contract (rules / interface / criteria) may hold system
+    # authority only for built-in, operator-authored scenarios (positively
+    # identified; fail-safe untrusted otherwise). solve/codegen-generated,
+    # third-party, and unknown scenarios keep their contract in the untrusted turn.
+    from autocontext.scenarios.custom.loader import is_operator_authored_scenario
 
-    prompt_kwargs["scenario_contract_trusted"] = not is_generated_scenario(ctx.scenario)
+    prompt_kwargs["scenario_contract_trusted"] = is_operator_authored_scenario(ctx.scenario)
     compaction_cache_before = prompt_compaction_cache_stats()
     build_start = time.perf_counter()
     prompts = build_prompt_bundle(**prompt_kwargs)
     parts = captured_parts[-1] if captured_parts else None
+    if system_fields_hook_rewritten:
+        # A CONTEXT_COMPONENTS hook rewrote a system-eligible field; the split would
+        # promote hook-derived text to system authority, so disable isolation for
+        # this generation (fall back to the flat prompt).
+        parts = None
     semantic_build_latency_ms = (time.perf_counter() - build_start) * 1000.0
     compaction_cache_after = prompt_compaction_cache_stats()
     _persist_generation_context_selection(
