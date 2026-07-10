@@ -54,6 +54,8 @@ export interface RunInspectionGeneration {
   gate_decision: string;
   status: string;
   duration_seconds: number | null;
+  evaluator_epoch: string | null;
+  quarantined: number | null;
   created_at: string;
   updated_at: string;
 }
