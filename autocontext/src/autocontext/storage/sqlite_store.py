@@ -145,8 +145,8 @@ class SQLiteStore(
                     dimension_summary_json = excluded.dimension_summary_json,
                     scoring_backend = excluded.scoring_backend,
                     rating_uncertainty = excluded.rating_uncertainty,
-                    evaluator_epoch = excluded.evaluator_epoch,
-                    quarantined = excluded.quarantined,
+                    evaluator_epoch = COALESCE(excluded.evaluator_epoch, evaluator_epoch),
+                    quarantined = COALESCE(excluded.quarantined, quarantined),
                     updated_at = datetime('now')
                 """,
                 (

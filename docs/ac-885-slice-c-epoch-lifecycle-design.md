@@ -65,13 +65,16 @@ Literal["candidate","active","disabled"]`, `created_at`, `promotion: dict | None
   for scenario -> register active (bootstrap); epoch == active -> return it; new epoch -> register
   candidate. `active_for(scenario) -> EvaluatorEpochRecord | None`; `list_for_scenario`; `register`;
   `activate(scenario, epoch_id)` (demote-not-delete). Pure, deterministic, no LLM.
-- `observe` is called at the scenario-aware layer (improve loop / task_runner / ambient evaluate)
-  where both the scenario and the score's epoch are known. A score whose epoch is not the active
-  one is stamped `quarantined = True`.
-- Persistence: a nullable `quarantined` marker rides the Slice B `generations` lineage (a
-  `generations.quarantined` boolean column, Python migration + TS parity column, always null on the
-  TS side per the Slice B asymmetry). In-memory results (`ImprovementResult`) carry a `quarantined`
-  flag too.
+- In C1, `observe` (via the shared id-keyed `observe_epoch_quarantined` helper) is called at the
+  three score-write surfaces where both the scenario and the score's epoch are known: the CLI direct
+  agent-task write site, the `solve` generation write site, and the always-on TaskRunner queue-result
+  path. A score whose epoch is not the active one is stamped `quarantined = True`.
+- Persistence: for the CLI and `solve` surfaces the marker rides the Slice B `generations` lineage (a
+  nullable `generations.quarantined` boolean column, Python migration + TS parity column, always null
+  on the TS side per the Slice B asymmetry). The TaskRunner surface does NOT write the `generations`
+  table; it writes task-queue result JSON, so C1 carries the `quarantined` marker (and the epoch) as a
+  top-level field of that JSON via `_serialize_result` / `_serialize_evolution_result`. C1 does NOT add
+  a `quarantined` flag to the in-memory `ImprovementResult`.
 
 ### C2: promotion workflow, metadata, promote.py generalization
 
@@ -115,8 +118,9 @@ score produced (scenario known, epoch from Slice 1)
 - **Bootstrap (no active epoch):** the first observed epoch auto-activates; its scores are not
   quarantined.
 - **Reappearing epoch:** an epoch that was previously active then superseded is still a known
-  record; if it is currently disabled and reappears, it is treated as a candidate again (its state
-  is looked up by `(scenario, epoch_id)`), not re-bootstrapped.
+  record; if it is currently disabled and reappears, `observe` returns that known record UNCHANGED
+  (still disabled), looked up by `(scenario, epoch_id)`, rather than re-bootstrapping it or
+  re-minting it as a candidate. Its scores stay quarantined because disabled is not the active epoch.
 - **Tournament / no-rubric scenarios:** produce no judge epoch (null); `observe` is a noop for a
   null epoch, and such scores are never quarantined.
 - **Legacy scores (pre-Slice-C):** carry `quarantined = None`/false and are treated as trusted

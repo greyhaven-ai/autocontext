@@ -33,6 +33,7 @@ from autocontext.execution.agent_task_evolution import (
     AgentTaskGenerationEvaluation,
     AgentTaskTrajectory,
 )
+from autocontext.execution.evaluator_epoch_registry import observe_epoch_quarantined
 from autocontext.execution.evaluator_guardrail import evaluate_evaluator_guardrail
 from autocontext.execution.improvement_loop import ImprovementLoop, ImprovementResult
 from autocontext.execution.judge import LLMJudge
@@ -58,6 +59,7 @@ def _serialize_result(
     objective_guardrail: dict[str, Any] | None = None,
     evaluator_guardrail: dict[str, Any] | None = None,
     rubric_calibration: dict[str, Any] | None = None,
+    quarantined: bool | None = None,
 ) -> str:
     """Serialize an ImprovementResult to JSON."""
     rounds = []
@@ -79,6 +81,7 @@ def _serialize_result(
         "total_rounds": result.total_rounds,
         "met_threshold": result.met_threshold,
         "evaluator_epoch": result.evaluator_epoch,
+        "quarantined": quarantined,
     }
     if result.duration_ms is not None:
         data["duration_ms"] = result.duration_ms
@@ -109,6 +112,8 @@ def _serialize_evolution_result(
     evaluator_guardrail: dict[str, Any] | None = None,
     met_threshold: bool | None = None,
     rubric_calibration: dict[str, Any] | None = None,
+    evaluator_epoch: str | None = None,
+    quarantined: bool | None = None,
 ) -> str:
     """Serialize a multi-generation AgentTask evolution run to JSON."""
     final_rounds: list[dict[str, Any]] = []
@@ -149,6 +154,8 @@ def _serialize_evolution_result(
             met_threshold if met_threshold is not None else any(result.met_threshold for result in generation_results)
         ),
         "total_rounds": sum(result.total_rounds for result in generation_results),
+        "evaluator_epoch": evaluator_epoch,
+        "quarantined": quarantined,
     }
     if objective_verification is not None:
         data["objective_verification"] = objective_verification
@@ -302,6 +309,7 @@ class TaskRunner:
         notifier: Notifier | None = None,
         concurrency: int = 1,
         browser_context_service: QueuedTaskBrowserContextService | None = None,
+        settings: AppSettings | None = None,
     ) -> None:
         self.store = store
         self.provider = provider
@@ -311,8 +319,20 @@ class TaskRunner:
         self.notifier = notifier
         self.concurrency = max(1, concurrency)
         self.browser_context_service = browser_context_service
+        self.settings = settings
         self._shutdown = False
         self._tasks_processed = 0
+
+    def _observe_epoch_quarantine(self, scenario: str, epoch_id: str | None) -> bool | None:
+        """Observe the task's evaluator epoch and report whether its score is quarantined.
+
+        The queue result JSON is the always-on surface for TaskRunner (it does not write the
+        ``generations`` table); this is where its scores enter the epoch lifecycle. Requires
+        ``settings`` for the registry root; without it the marker is simply omitted.
+        """
+        if self.settings is None:
+            return None
+        return observe_epoch_quarantined(self.settings.knowledge_root / "_evaluator_epochs", scenario, epoch_id)
 
     def run(self) -> int:
         """Main loop. Returns the number of tasks processed.
@@ -480,6 +500,8 @@ class TaskRunner:
                 )
                 result.met_threshold = effective_met_threshold
 
+                epoch_id = getattr(result, "evaluator_epoch", None)
+                quarantined = self._observe_epoch_quarantine(spec_name, epoch_id)
                 self.store.complete_task(
                     task_id=task_id,
                     best_score=result.best_score,
@@ -492,6 +514,7 @@ class TaskRunner:
                         objective_guardrail,
                         evaluator_guardrail,
                         rubric_calibration,
+                        quarantined=quarantined,
                     ),
                 )
 
@@ -601,6 +624,15 @@ class TaskRunner:
             )
         )
 
+        best_generation = max(
+            ordered_results,
+            key=lambda result: result.best_score,
+        )
+        # The multi-generation aggregate persists best_generation's score; carry its epoch so the
+        # queue result JSON (and the returned result) keep the epoch + quarantine lineage.
+        epoch_id = best_generation.evaluator_epoch
+        quarantined = self._observe_epoch_quarantine(spec_name, epoch_id)
+
         self.store.complete_task(
             task_id=task_id,
             best_score=best_score,
@@ -615,13 +647,11 @@ class TaskRunner:
                 evaluator_guardrail,
                 effective_met_threshold,
                 rubric_calibration,
+                evaluator_epoch=epoch_id,
+                quarantined=quarantined,
             ),
         )
 
-        best_generation = max(
-            ordered_results,
-            key=lambda result: result.best_score,
-        )
         return ImprovementResult(
             rounds=best_generation.rounds,
             best_output=best_output,
@@ -635,6 +665,7 @@ class TaskRunner:
             duration_ms=sum(result.duration_ms or 0 for result in ordered_results),
             judge_calls=sum(result.judge_calls for result in ordered_results),
             dimension_trajectory={},
+            evaluator_epoch=epoch_id,
         )
 
     def _finalize_task_output(
@@ -777,6 +808,7 @@ def create_task_runner_from_settings(
         notifier=notifier,
         concurrency=concurrency,
         browser_context_service=browser_context_service,
+        settings=settings,
     )
 
 

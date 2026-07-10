@@ -16,6 +16,7 @@ a chosen ``evaluator_epoch``. The registry root is pointed at ``tmp_path`` via
 
 from __future__ import annotations
 
+import hashlib
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
@@ -26,6 +27,10 @@ from autocontext.execution.improvement_loop import ImprovementResult
 from autocontext.storage.sqlite_store import SQLiteStore
 
 MIGRATIONS = Path(__file__).resolve().parent.parent / "migrations"
+
+# Production epoch ids are sha256 hex digests; the id-keyed observe path rejects anything else.
+EPOCH_1 = hashlib.sha256(b"e-1").hexdigest()
+EPOCH_2 = hashlib.sha256(b"e-2").hexdigest()
 
 
 class _StubAgentTask:
@@ -95,16 +100,16 @@ def test_active_epoch_not_quarantined_new_epoch_quarantined(tmp_path) -> None:
     settings.agent_provider = "anthropic"
     settings.knowledge_root = tmp_path / "knowledge"
 
-    # First run: epoch e-1 bootstraps the scenario's active epoch.
-    _run_once(store, settings, epoch="e-1", run_id="run-e1")
+    # First run: EPOCH_1 bootstraps the scenario's active epoch.
+    _run_once(store, settings, epoch=EPOCH_1, run_id="run-e1")
     row1 = store.get_generation("run-e1", 1)
     assert row1 is not None
-    assert row1["evaluator_epoch"] == "e-1"
+    assert row1["evaluator_epoch"] == EPOCH_1
     assert not row1["quarantined"], "bootstrap/active epoch must not be quarantined"
 
-    # Second run: epoch e-2 is a candidate for the same scenario -> quarantined.
-    _run_once(store, settings, epoch="e-2", run_id="run-e2")
+    # Second run: EPOCH_2 is a candidate for the same scenario -> quarantined.
+    _run_once(store, settings, epoch=EPOCH_2, run_id="run-e2")
     row2 = store.get_generation("run-e2", 1)
     assert row2 is not None
-    assert row2["evaluator_epoch"] == "e-2"
+    assert row2["evaluator_epoch"] == EPOCH_2
     assert row2["quarantined"], "a non-active (candidate) epoch's score must be quarantined"

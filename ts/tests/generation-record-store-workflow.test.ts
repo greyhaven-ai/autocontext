@@ -84,6 +84,48 @@ describe("generation record store workflow", () => {
     });
   });
 
+  it("preserves quarantined and evaluator_epoch when a later upsert omits them", () => {
+    createRunRecord(db, "run-1", "grid_ctf", 3, "local");
+    upsertGenerationRecord(db, "run-1", 1, {
+      meanScore: 0.6,
+      bestScore: 0.7,
+      elo: 1050,
+      wins: 3,
+      losses: 2,
+      gateDecision: "advance",
+      status: "completed",
+      evaluatorEpoch: "epoch-abc",
+      quarantined: 1,
+    });
+    // Re-upsert the SAME row omitting quarantined + evaluatorEpoch (both default to null).
+    upsertGenerationRecord(db, "run-1", 1, {
+      meanScore: 0.8,
+      bestScore: 0.9,
+      elo: 1100,
+      wins: 4,
+      losses: 2,
+      gateDecision: "advance",
+      status: "completed",
+    });
+    let row = getGenerationRecords<GenerationRow>(db, "run-1")[0];
+    expect(row.quarantined).toBe(1); // COALESCE keeps the stored marker, not the incoming null
+    expect(row.evaluator_epoch).toBe("epoch-abc");
+
+    // An explicit falsy 0 IS distinguishable from omitted-null and overwrites.
+    upsertGenerationRecord(db, "run-1", 1, {
+      meanScore: 0.8,
+      bestScore: 0.9,
+      elo: 1100,
+      wins: 4,
+      losses: 2,
+      gateDecision: "advance",
+      status: "completed",
+      quarantined: 0,
+    });
+    row = getGenerationRecords<GenerationRow>(db, "run-1")[0];
+    expect(row.quarantined).toBe(0);
+  });
+
   it("records matches and agent outputs and returns best/generation-scoped lookups", () => {
     createRunRecord(db, "run-1", "grid_ctf", 3, "local");
     upsertGenerationRecord(db, "run-1", 1, {
@@ -116,7 +158,9 @@ describe("generation record store workflow", () => {
     expect(getAgentOutputRecords<AgentOutputRow>(db, "run-1", 1)[0]).toMatchObject({
       role: "competitor",
     });
-    expect(getBestGenerationForScenarioRecord<GenerationRow & { run_id: string }>(db, "grid_ctf")).toMatchObject({
+    expect(
+      getBestGenerationForScenarioRecord<GenerationRow & { run_id: string }>(db, "grid_ctf"),
+    ).toMatchObject({
       run_id: "run-1",
       best_score: 0.7,
     });
