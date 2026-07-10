@@ -175,6 +175,25 @@ class EvaluatorEpochRegistry:
         with self._scenario_lock(scenario):
             return self._active_for_locked(scenario)
 
+    def _activate_locked(self, scenario: str, epoch_id: str, *, promotion: dict[str, Any] | None = None) -> None:
+        """Load-target-first activation under an already-held scenario lock (see activate/promote).
+
+        Shared critical section so activate and promote cannot diverge: load the target FIRST (no-op
+        if missing), demote any prior active to disabled, set the target active, and optionally stamp
+        its promotion metadata, all via atomic writes.
+        """
+        target = self.load(scenario, epoch_id)
+        if target is None:
+            return
+        current = self._active_for_locked(scenario)
+        if current is not None and current.epoch_id != epoch_id:
+            current.activation_state = "disabled"
+            self.register(current)
+        target.activation_state = "active"
+        if promotion is not None:
+            target.promotion = promotion
+        self.register(target)
+
     def activate(self, scenario: str, epoch_id: str) -> None:
         """Promote ``epoch_id`` to active, demoting any prior active to disabled.
 
@@ -182,15 +201,12 @@ class EvaluatorEpochRegistry:
         unchanged (no-op) so a bad id can never leave the scenario with zero active epochs.
         """
         with self._scenario_lock(scenario):
-            target = self.load(scenario, epoch_id)
-            if target is None:
-                return
-            current = self._active_for_locked(scenario)
-            if current is not None and current.epoch_id != epoch_id:
-                current.activation_state = "disabled"
-                self.register(current)
-            target.activation_state = "active"
-            self.register(target)
+            self._activate_locked(scenario, epoch_id)
+
+    def promote(self, scenario: str, epoch_id: str, *, promotion: dict[str, Any]) -> None:
+        """Activate ``epoch_id`` and stamp its promotion metadata, atomically under the scenario lock."""
+        with self._scenario_lock(scenario):
+            self._activate_locked(scenario, epoch_id, promotion=promotion)
 
     def observe(
         self,
