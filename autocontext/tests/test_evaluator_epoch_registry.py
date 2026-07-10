@@ -103,3 +103,15 @@ def test_prefix_sharing_scenarios_do_not_leak(tmp_path) -> None:
     assert reg.active_for("grid_ctf_").epoch_id == e2.epoch_id
     # each scenario bootstrapped its own first epoch to active independently
     assert reg.observe("grid_ctf_", e2, now_fn=lambda: "t2").activation_state == "active"
+
+
+def test_observe_epoch_quarantined_degrades_on_registry_io_failure(tmp_path) -> None:
+    from autocontext.execution.evaluator_epoch_registry import observe_epoch_quarantined
+
+    # None epoch is never observed.
+    assert observe_epoch_quarantined(tmp_path / "reg", "grid_ctf", None) is None
+    # A root that is an existing FILE makes the registry mkdir fail; the marker must degrade to
+    # None (score persistence must never abort on a non-critical lineage failure), not raise.
+    bad_root = tmp_path / "afile"
+    bad_root.write_text("x")
+    assert observe_epoch_quarantined(bad_root, "grid_ctf", "e-1") is None

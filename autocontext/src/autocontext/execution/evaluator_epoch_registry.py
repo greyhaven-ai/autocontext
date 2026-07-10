@@ -9,6 +9,7 @@ JSON store and its demote-not-delete rollback. See docs/ac-885-slice-c-epoch-lif
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -17,6 +18,8 @@ from typing import Any
 from pydantic import BaseModel
 
 from autocontext.execution.evaluator_epoch import EvaluatorEpoch
+
+logger = logging.getLogger(__name__)
 
 _VALID_STATES = frozenset({"candidate", "active", "disabled"})
 
@@ -33,12 +36,20 @@ def observe_epoch_quarantined(root: Path, scenario: str, epoch_id: str | None) -
     :meth:`EvaluatorEpochRegistry.observe_id` and returns ``True`` when the epoch is not the
     scenario's active one: a candidate or disabled epoch's scores are quarantined, the bootstrap or
     active epoch's are not.
+
+    Registry IO sits on the score-persist path, but the quarantine marker is non-critical lineage
+    metadata: any registry failure (unwritable root, a corrupt record) degrades to ``None`` (not
+    quarantined) rather than aborting persistence of an otherwise-complete run's score.
     """
     if epoch_id is None:
         return None
-    registry = EvaluatorEpochRegistry(root)
-    record = registry.observe_id(scenario, epoch_id)
-    return record.activation_state != "active"
+    try:
+        registry = EvaluatorEpochRegistry(root)
+        record = registry.observe_id(scenario, epoch_id)
+        return record.activation_state != "active"
+    except Exception:  # pragma: no cover - defensive; the marker must never break score persistence
+        logger.debug("evaluator_epoch_registry: observe failed for scenario %s", scenario, exc_info=True)
+        return None
 
 
 class EvaluatorEpochRecord(BaseModel):
