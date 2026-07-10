@@ -13,6 +13,8 @@ from autocontext.analytics.artifact_rendering import render_scenario_curation_ht
 from autocontext.consultation.runner import ConsultationRunner
 from autocontext.consultation.types import ConsultationRequest as ConsReq
 from autocontext.consultation.types import ConsultationTrigger
+from autocontext.execution.epoch_lineage import annotate_status_rows
+from autocontext.execution.evaluator_epoch_registry import EvaluatorEpochRegistry
 from autocontext.knowledge.context_selection_report import build_context_selection_report
 from autocontext.notebook.context_provider import NotebookContextProvider
 from autocontext.notebook.types import SessionNotebook
@@ -59,6 +61,13 @@ def _get_artifacts(request: Request) -> ArtifactStore:
     if settings is None:
         raise HTTPException(status_code=500, detail="Application settings are not configured")
     return artifact_store_from_settings(settings)
+
+
+def _get_epoch_registry(request: Request) -> EvaluatorEpochRegistry:
+    settings = getattr(request.app.state, "app_settings", None)
+    if settings is None:
+        raise HTTPException(status_code=500, detail="Application settings are not configured")
+    return EvaluatorEpochRegistry(settings.knowledge_root / "_evaluator_epochs")
 
 
 def _build_effective_notebook_preview(
@@ -320,6 +329,7 @@ def get_run_runtime_session(run_id: str, request: Request) -> dict[str, Any]:
     finally:
         runtime_store.close()
 
+
 # ---------------------------------------------------------------------------
 # Run endpoints (read-only)
 # ---------------------------------------------------------------------------
@@ -403,7 +413,7 @@ def run_status(run_id: str, request: Request) -> dict[str, Any]:
     with store.connect() as conn:
         gen_rows = conn.execute(
             "SELECT generation_index, mean_score, best_score, elo, wins, losses, "
-            "gate_decision, status, duration_seconds "
+            "gate_decision, status, duration_seconds, evaluator_epoch, quarantined "
             "FROM generations WHERE run_id = ? ORDER BY generation_index ASC",
             (run_id,),
         ).fetchall()
@@ -422,8 +432,23 @@ def run_status(run_id: str, request: Request) -> dict[str, Any]:
                 "gate_decision": gd["gate_decision"],
                 "status": gd["status"],
                 "duration_seconds": gd["duration_seconds"],
+                "evaluator_epoch": gd["evaluator_epoch"],
+                "quarantined": bool(gd["quarantined"]),
             }
         )
+
+    generations, active_id = annotate_status_rows(generations, run_dict["scenario"], _get_epoch_registry(request))
+    warnings = [
+        {
+            "warning_type": "stale_epoch",
+            "generation": g["generation"],
+            "evaluator_epoch": g["evaluator_epoch"],
+            "active_evaluator_epoch": active_id,
+            "description": f"generation {g['generation']} scored under a stale evaluator epoch",
+        }
+        for g in generations
+        if g["evaluator_epoch_status"] == "stale"
+    ]
 
     runtime_store = _get_runtime_session_store(request)
     try:
@@ -438,6 +463,8 @@ def run_status(run_id: str, request: Request) -> dict[str, Any]:
         "status": run_dict["status"],
         "created_at": run_dict["created_at"],
         "generations": generations,
+        "active_evaluator_epoch": active_id,
+        "warnings": warnings,
         **runtime_session_discovery,
     }
 
