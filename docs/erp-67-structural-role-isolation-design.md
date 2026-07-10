@@ -225,11 +225,22 @@ byte-identical, so the flag-off / incapable path is unchanged. ERP-59's in-band
 fence remains the belt for single-prompt backends; structural isolation is the
 belt-and-braces for role-capable ones (Anthropic, Agent SDK).
 
+**Contract provenance (ERP-73, done).** The scenario contract is trusted (system
+turn) only when `prepare_generation_prompts` passes
+`scenario_contract_trusted=True`, which it derives from
+`is_operator_authored_scenario(ctx.scenario)` — a **positive** check for
+first-party built-in scenarios (module under `autocontext.scenarios.` but not
+`.custom.`). Everything else — solve/codegen-generated, third-party /
+consumer-repo, `__main__`, dynamically loaded, unknown — is fail-safe untrusted.
+
+**Component-hook rewrites (ERP-73, done).** The `CONTEXT_COMPONENTS` hook runs
+before prompt assembly and can replace _any_ field, including system-eligible
+ones (`scenario_rules`, `strategy_interface`, `evaluation_criteria`,
+`scout_mutation_guidance`) — so it is NOT true that "only code constants reach
+the system turn." `prepare_generation_prompts` snapshots those fields before the
+hook and, if any are rewritten, **drops the split for that generation** (falls
+back to the flat prompt) so hook-derived text cannot gain system authority.
+
 **Remaining before default-on:** Prerequisite B — the capable-backend soak
 (score parity + behavioural injected-vs-clean check) with the gate defined above.
-Two doc/plumbing follow-ups: thread `scenario_contract_trusted=True` from callers
-that use verified operator-authored (non-generated) scenarios so their contract
-regains system authority; and, if any component/CONTEXT_COMPONENTS hook is ever
-allowed to rewrite a field that lands in the system turn, invalidate the split
-(`isolation_safe=False`) — today the system turn holds only code constants, so
-no such hook path exists.
+Needs real model runs.
