@@ -73,11 +73,12 @@ tolerance.check(calibration_report.alignment)["passes"]`.
 candidate_epoch_id, promotion=metadata)`, then if `sqlite` is not None call
      `sqlite.clear_quarantine_for_epoch(scenario, candidate_epoch_id)`. Return `activated`.
 
-- Promotion metadata dict: `{ "source_patch": None, "calibration_anchors": [...],
+- Promotion metadata dict: `{ "source_patch": None, "calibration_anchors": <num_anchors count>,
 "alignment_delta": {"mean_absolute_error", "bias", "correlation"}, "variance_delta": {...},
 "requires_review": bool, "decision": {"reviewed_by", "reviewed_at", "outcome"} | None,
 "promoted_at": now, "previous_active": <prior active epoch_id or ""> }`. `calibration_anchors`
-  and the deltas come from the `CalibrationReport` (`alignment`, `variance`, `num_anchors`).
+  is the `CalibrationReport.num_anchors` count (0 when no report), and the deltas come from the
+  report's `alignment` and `variance`.
 
 ### Registry `promote`
 
@@ -122,7 +123,7 @@ candidate epoch (C1) + CalibrationReport (caller ran run_judge_calibration, epoc
 - **Missing / already-active candidate:** `noop`.
 - **No calibration report (None):** cannot auto-promote; under autonomy `full` returns `blocked`;
   under `propose`/`train` still returns `pending_review` (a human may approve without calibration,
-  but the metadata records `calibration_anchors: []`).
+  but the metadata records `calibration_anchors: 0`).
 - **Reviewer rejects:** the record stays candidate/disabled; the rejection decision is recorded so a
   later cycle does not re-prompt blindly (the caller/C3 decides re-review policy).
 - **Concurrency:** `registry.promote` holds the per-scenario lock; two concurrent promotions of the
