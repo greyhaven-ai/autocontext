@@ -356,6 +356,58 @@ prior slices, not an oversight.
 raw artifact and recomputing its score when a stale scored record is actually touched, is Slice D2
 and is not implemented here.
 
+## On-demand re-score (Slice D2a)
+
+Slice D1 surfaced whether a generation's score is stale relative to its scenario's active evaluator
+epoch, but stopped at surfacing: it did not re-score anything. Slice D2a adds the re-score /
+revalidation path itself, report-only: `autoctx rescore <run_id> [--generation N] [--json]`
+(`autocontext/src/autocontext/cli_rescore.py`) re-runs the CURRENT evaluator against a stale
+generation's ORIGINAL stored competitor artifact and reports what it scores today, without touching
+the database.
+
+**Why the current evaluator, not the historical one.** The registry stores only the active
+`epoch_id`, not the rubric text, provider, or model behind it, so a historical active rubric cannot
+be reconstructed. Re-score therefore always runs under the scenario's CURRENT evaluator (its current
+`spec.judge_rubric` plus the configured judge provider and model) and reports whether the freshly
+computed epoch matches the registry's active epoch (`new_matches_active`). That is the
+operator-meaningful question, and it fails safe even when the current spec has drifted from the
+active epoch: the re-score still runs, and the report shows the mismatch explicitly rather than
+hiding it.
+
+**What it does.** By default the command targets every stale generation in the run (its own epoch
+known and different from the scenario's active epoch); `--generation N` targets one specific
+generation regardless of staleness, bounding LLM cost to what the operator actually asks for. For
+each target it re-scores the ORIGINAL stored competitor artifact through the scenario task's own
+`evaluate_output`, the same path a fresh run scores through, and reports the original score/epoch
+next to the new score/epoch, plus `was_stale`, `new_matches_active`, and `score_delta`.
+
+**The five fail-safe statuses.** Every generation report carries exactly one of:
+
+- `revalidated`: re-scored successfully under the current evaluator.
+- `skipped_no_artifact`: no stored competitor output for this generation.
+- `skipped_no_active_epoch`: the scenario has no promoted active evaluator epoch to compare against.
+- `skipped_no_evaluator`: the scenario has no reconstructable rubric judge (a game or non-agent-task
+  scenario), or the evaluator produced no epoch.
+- `error`: the evaluator raised (for example a provider error); the message is carried in the
+  report, and other generations still report normally.
+
+Only a missing run is a hard failure (exit 1, matching `show`); every other failure mode degrades to
+a per-generation skip and the command still exits 0.
+
+**It writes nothing.** No `upsert_generation`, no registry write, no quarantine clear, anywhere in
+this path. The command fetches, re-scores in memory, and prints, either a Rich table or a `--json`
+payload of `{run_id, scenario, active_evaluator_epoch, generations: [...]}`.
+
+**Python-only.** Like the `epoch` CLI, `rescore` depends on the Python-only LLM-judge and
+evaluator-epoch registry path, so it has no TypeScript equivalent; this is a documented intentional
+gap in `docs/cli-contract.json`, not an oversight.
+
+**What remains deferred.** Persisting a re-score (an `--apply` flag that writes the fresh score
+somewhere durable, backed by a net-new `generation_score_revisions`-style table so the original
+score's lineage is not clobbered) is Slice D2b. Auto-re-scoring on every read (`show`/`status`) was
+considered and rejected: it would fire paid LLM calls on reads and make them slow and
+nondeterministic, which is why `rescore` is an explicit operator-triggered command instead.
+
 ## Relationship to the ambient `eval_fingerprint` / `anchor_model`
 
 autocontext already had this mechanism, but only in the ambient trainer. `eval_fingerprint()`
@@ -386,7 +438,9 @@ The remaining slices are explicitly deferred, not dropped:
   lifecycle (Slice C1)" above); the enforcement that consumes the marker and the promotion workflow
   land in C2 and C3.
 - **Slice D (surfacing + lazy re-score):** stale-epoch warnings in CLI / status / replay, REST /
-  API, and dashboard, plus lazy revalidation of raw artifacts when a stale scored record is touched.
+  API, and dashboard, plus revalidation of raw artifacts when a stale scored record is touched.
   D1 (read-only surfacing: the four-state classification, the `show` / `status` / `run_status`
-  fields, and the `stale_epoch` HTTP warning) is shipped, see "Slice D1: stale surfacing" above. D2
-  (lazy re-score / revalidation of raw artifacts) remains.
+  fields, and the `stale_epoch` HTTP warning) is shipped, see "Slice D1: stale surfacing" above. D2a
+  (the on-demand, report-only `autoctx rescore` command) is shipped, see "On-demand re-score (Slice
+  D2a)" above. D2b (persisting a re-score behind an `--apply` flag and a score-revisions table)
+  remains.
