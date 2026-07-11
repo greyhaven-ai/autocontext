@@ -40,6 +40,15 @@ All notable changes to this project will be documented in this file.
   CLI lists candidate epochs and approves/rejects them (a human-override trigger for the promotion
   workflow), and `export_training_data` now excludes quarantined scores by default (pass
   `include_quarantined=True` to keep them), so training data is not drawn from unpromoted evaluators.
+- AC-885 Slice D1: read-only stale-epoch surfacing. A four-state `classify_epoch_lineage` (`current`,
+  `stale`, `unknown`, `no_active_epoch`) and a registry-aware `annotate_status_rows` flag generation
+  scores against the scenario's active evaluator epoch; `show` and `status` (`--json` and the rich
+  table) gain per-generation `evaluator_epoch`, `evaluator_epoch_status`, and `quarantined` plus a
+  top-level `active_evaluator_epoch`, and the cockpit `GET /api/cockpit/runs/{run_id}/status` adds the same
+  fields plus a `stale_epoch` warning per stale generation. TypeScript DTOs now carry the persisted
+  `evaluator_epoch`/`quarantined` fields but do not classify staleness (the registry stays
+  Python-only, a documented gap consistent with prior sub-slices). Lazy re-score of stale records
+  remains deferred to Slice D2.
 
 ## [0.11.0] - 2026-07-02
 

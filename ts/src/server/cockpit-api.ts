@@ -305,6 +305,8 @@ function formatGenerationStatus(generation: GenerationRow): Record<string, unkno
     gate_decision: generation.gate_decision,
     status: generation.status,
     duration_seconds: generation.duration_seconds,
+    evaluator_epoch: generation.evaluator_epoch ?? null,
+    quarantined: generation.quarantined ?? null,
   };
 }
 

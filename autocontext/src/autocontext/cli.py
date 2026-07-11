@@ -33,7 +33,12 @@ from autocontext.cli_package_commands import register_package_commands
 from autocontext.cli_probes import register_probes_command
 from autocontext.cli_queue import register_queue_command
 from autocontext.cli_role_runtime import resolve_role_runtime
-from autocontext.cli_run_inspect import register_run_inspect_commands
+from autocontext.cli_run_inspect import (
+    _lineage_cell,
+    _stale_warning_line,
+    annotate_run_status_rows,
+    register_run_inspect_commands,
+)
 from autocontext.cli_runtime_overrides import (
     apply_judge_runtime_overrides,
     format_runtime_provider_error,
@@ -572,6 +577,10 @@ def status(
     store = _sqlite_from_settings(settings)
     rows = store.run_status(run_id)
 
+    run = store.get_run(run_id)
+    scenario = run.get("scenario") if run else None
+    rows, active_epoch_id = annotate_run_status_rows(settings, scenario, rows)
+
     if json_output:
         generations = []
         for row in rows:
@@ -585,9 +594,21 @@ def status(
                     "losses": row["losses"],
                     "gate_decision": row["gate_decision"],
                     "status": row["status"],
+                    "evaluator_epoch": row.get("evaluator_epoch"),
+                    "evaluator_epoch_status": row["evaluator_epoch_status"],
+                    "quarantined": bool(row.get("quarantined")),
                 }
             )
-        sys.stdout.write(json.dumps({"run_id": run_id, "generations": generations}) + "\n")
+        sys.stdout.write(
+            json.dumps(
+                {
+                    "run_id": run_id,
+                    "active_evaluator_epoch": active_epoch_id,
+                    "generations": generations,
+                }
+            )
+            + "\n"
+        )
     else:
         table = Table(title=f"Run Status: {run_id}")
         table.add_column("Gen")
@@ -598,6 +619,7 @@ def status(
         table.add_column("L")
         table.add_column("Gate")
         table.add_column("Status")
+        table.add_column("Lineage")
         for row in rows:
             table.add_row(
                 str(row["generation_index"]),
@@ -608,8 +630,12 @@ def status(
                 str(row["losses"]),
                 row["gate_decision"],
                 row["status"],
+                _lineage_cell(row),
             )
         console.print(table)
+        warning = _stale_warning_line(rows, active_epoch_id)
+        if warning is not None:
+            console.print(warning)
 
 
 def _run_http_serve(host: str, port: int) -> None:

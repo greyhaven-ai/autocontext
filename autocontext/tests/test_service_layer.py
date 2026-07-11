@@ -62,6 +62,8 @@ class TestRunStatus:
                 "losses": 1,
                 "gate_decision": "advance",
                 "status": "completed",
+                "evaluator_epoch": None,
+                "quarantined": None,
             },
             {
                 "generation_index": 2,
@@ -72,6 +74,8 @@ class TestRunStatus:
                 "losses": 2,
                 "gate_decision": "retry",
                 "status": "running",
+                "evaluator_epoch": None,
+                "quarantined": None,
             },
         ]
 

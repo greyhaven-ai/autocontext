@@ -21,6 +21,7 @@ from autocontext.providers.registry import create_provider
 from autocontext.providers.retry import RetryProvider
 from autocontext.server.background_session_api import background_session_router
 from autocontext.server.changelog import build_changelog
+from autocontext.server.run_status_lineage import build_run_status_generations
 from autocontext.server.trace_gate_review_api import InvalidHarnessChangeProposalError, build_run_trace_gate_review
 from autocontext.server.writeup import generate_writeup, generate_writeup_html
 from autocontext.session.runtime_events import RuntimeSessionEventStore
@@ -320,6 +321,7 @@ def get_run_runtime_session(run_id: str, request: Request) -> dict[str, Any]:
     finally:
         runtime_store.close()
 
+
 # ---------------------------------------------------------------------------
 # Run endpoints (read-only)
 # ---------------------------------------------------------------------------
@@ -403,27 +405,12 @@ def run_status(run_id: str, request: Request) -> dict[str, Any]:
     with store.connect() as conn:
         gen_rows = conn.execute(
             "SELECT generation_index, mean_score, best_score, elo, wins, losses, "
-            "gate_decision, status, duration_seconds "
+            "gate_decision, status, duration_seconds, evaluator_epoch, quarantined "
             "FROM generations WHERE run_id = ? ORDER BY generation_index ASC",
             (run_id,),
         ).fetchall()
 
-    generations = []
-    for g in gen_rows:
-        gd = dict(g)
-        generations.append(
-            {
-                "generation": gd["generation_index"],
-                "mean_score": gd["mean_score"],
-                "best_score": gd["best_score"],
-                "elo": gd["elo"],
-                "wins": gd["wins"],
-                "losses": gd["losses"],
-                "gate_decision": gd["gate_decision"],
-                "status": gd["status"],
-                "duration_seconds": gd["duration_seconds"],
-            }
-        )
+    generations, active_id, warnings = build_run_status_generations(gen_rows, run_dict["scenario"], request)
 
     runtime_store = _get_runtime_session_store(request)
     try:
@@ -438,6 +425,8 @@ def run_status(run_id: str, request: Request) -> dict[str, Any]:
         "status": run_dict["status"],
         "created_at": run_dict["created_at"],
         "generations": generations,
+        "active_evaluator_epoch": active_id,
+        "warnings": warnings,
         **runtime_session_discovery,
     }
 

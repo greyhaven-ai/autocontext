@@ -28,6 +28,8 @@ const generations = [
     gate_decision: "advance",
     status: "completed",
     duration_seconds: 1,
+    evaluator_epoch: null,
+    quarantined: null,
     created_at: "2026-04-30T00:00:10Z",
     updated_at: "2026-04-30T00:00:20Z",
   },
@@ -39,6 +41,8 @@ const generations = [
     gate_decision: "advance",
     status: "completed",
     duration_seconds: 1,
+    evaluator_epoch: "epoch-2",
+    quarantined: 1,
     created_at: "2026-04-30T00:00:30Z",
     updated_at: "2026-04-30T00:00:40Z",
   },
@@ -104,6 +108,24 @@ describe("run inspection command workflow", () => {
     );
 
     expect(payload.runtime_session.session_id).toBe("run:run-123:runtime");
+  });
+
+  it("carries evaluator_epoch and quarantined lineage fields in show JSON", () => {
+    const payload = JSON.parse(
+      renderRunShow(run, generations, { best: true, json: true }, runtimeSession),
+    );
+
+    expect(payload.generation.evaluator_epoch).toBe("epoch-2");
+    expect(payload.generation.quarantined).toBe(1);
+  });
+
+  it("carries null lineage fields through show JSON", () => {
+    const payload = JSON.parse(
+      renderRunShow(run, generations, { generation: "1", json: true }, runtimeSession),
+    );
+
+    expect(payload.generation.evaluator_epoch).toBeNull();
+    expect(payload.generation.quarantined).toBeNull();
   });
 
   it("validates watch intervals", () => {

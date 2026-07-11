@@ -280,7 +280,7 @@ class TestStatusJson:
 
         assert result.exit_code == 0, result.output
         data = json.loads(result.output.strip())
-        assert data == {"run_id": "missing-run", "generations": []}
+        assert data == {"run_id": "missing-run", "generations": [], "active_evaluator_epoch": None}
 
     def test_status_json_is_valid_json(self, tmp_path: Path) -> None:
         """status --json output should be parseable as JSON without error."""

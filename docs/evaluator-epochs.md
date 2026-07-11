@@ -301,6 +301,61 @@ promote stage declining to act on a quarantined-only signal), is still deferred,
 `promote.py`'s cross-anchor refusal onto this path. Slice C3 lands the operator-facing trigger and the
 training-export enforcement; the autonomous ambient trigger and the remaining refusals follow later.
 
+## Slice D1: stale surfacing
+
+Slices 1 through C3 built the epoch identity, the persisted lineage, the per-scenario registry, and
+the promotion workflow, but every read surface still dropped `evaluator_epoch` and `quarantined`
+before it reached an operator. Slice D1 closes that gap, read-only: an operator looking at a
+finished run can now see whether a generation's score is still comparable to the scenario's active
+evaluator epoch. It does not re-score or revalidate anything; that lazy re-score of raw artifacts is
+deferred to D2 (see "Deferred slices" below).
+
+**The four-state classification.** `classify_epoch_lineage(row_epoch, active_epoch)`
+(`execution/evaluator_epoch.py`) is a pure function returning one of `current`, `stale`, `unknown`,
+`no_active_epoch`:
+
+- `no_active_epoch`: the scenario has no promoted active epoch (nothing to compare against, for
+  example a game or no-judge run). Nothing is asserted.
+- `unknown`: an active epoch exists, but the row carries no epoch of its own. This is a legacy or
+  pre-slice row, not a stale one, and it is deliberately not flagged: a `None` row epoch is `unknown`,
+  never `stale`, so old runs and tournament scores are not flooded with false warnings.
+- `current`: both epochs are known and equal (per `are_comparable`).
+- `stale`: both epochs are known and different. This is the only warning-worthy state.
+
+A registry-aware `annotate_status_rows(rows, scenario, registry)` (new module
+`execution/epoch_lineage.py`, kept separate from the leaf `evaluator_epoch.py` because it depends on
+`EvaluatorEpochRegistry` and co-locating would cycle) reads the scenario's active epoch once, then
+classifies each row and returns annotated copies without mutating the input.
+
+**Fields added to the read surfaces.** `SQLiteStore.run_status()` now carries `evaluator_epoch` and
+`quarantined` in every generation row it returns, which is the single plumbing fix that feeds the CLI
+`show` and `status` commands. Both commands' `--json` output gains, per generation,
+`evaluator_epoch`, `evaluator_epoch_status`, and `quarantined` (as a bool), plus a top-level
+`active_evaluator_epoch`. The rich table gains a compact `Lineage` column rendering `ok` (current),
+`stale`, `legacy` (unknown), or `-` (no active epoch), with quarantined rows marked; when any row is
+stale or quarantined, a single yellow warning line prints after the table naming the active epoch's
+short prefix.
+
+**The HTTP `stale_epoch` warning.** `GET /api/cockpit/runs/{run_id}/status` (the cockpit API) carries the same
+per-generation fields plus `active_evaluator_epoch`, and adds a `warnings` list with one entry per
+stale generation, shaped like the existing `stale_score` warning:
+
+```
+{"warning_type": "stale_epoch", "generation": ..., "evaluator_epoch": ..., "active_evaluator_epoch": ..., "description": "..."}
+```
+
+**Python-full, TS-field-only.** The evaluator-epoch registry is Python-only (the C1/C2/C3 sections
+above each mark the TS side an intentional gap), so TS has no active epoch to classify against. Slice
+D1 fixes the TS DTO mappers (`RunInspectionGeneration` in `run-inspection-command-workflow.ts`, and
+`formatGenerationStatus` in `cockpit-api.ts`) to stop dropping the persisted `evaluator_epoch` and
+`quarantined` fields, so the shape is at parity. The stale-vs-active classification and the
+`stale_epoch` warning stay Python-only: this is a documented, intentional gap consistent with the
+prior slices, not an oversight.
+
+**What remains deferred.** Slice D1 is read-only surfacing. Lazy re-score, that is, revalidating a
+raw artifact and recomputing its score when a stale scored record is actually touched, is Slice D2
+and is not implemented here.
+
 ## Relationship to the ambient `eval_fingerprint` / `anchor_model`
 
 autocontext already had this mechanism, but only in the ambient trainer. `eval_fingerprint()`
@@ -332,3 +387,6 @@ The remaining slices are explicitly deferred, not dropped:
   land in C2 and C3.
 - **Slice D (surfacing + lazy re-score):** stale-epoch warnings in CLI / status / replay, REST /
   API, and dashboard, plus lazy revalidation of raw artifacts when a stale scored record is touched.
+  D1 (read-only surfacing: the four-state classification, the `show` / `status` / `run_status`
+  fields, and the `stale_epoch` HTTP warning) is shipped, see "Slice D1: stale surfacing" above. D2
+  (lazy re-score / revalidation of raw artifacts) remains.

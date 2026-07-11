@@ -762,7 +762,8 @@ class SQLiteStore(
         with self.connect() as conn:
             rows = conn.execute(
                 """
-                SELECT generation_index, mean_score, best_score, elo, wins, losses, gate_decision, status
+                SELECT generation_index, mean_score, best_score, elo, wins, losses, gate_decision, status,
+                       evaluator_epoch, quarantined
                 FROM generations
                 WHERE run_id = ?
                 ORDER BY generation_index

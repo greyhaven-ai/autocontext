@@ -963,10 +963,41 @@ describe("HTTP API — cockpit", () => {
           generation: 1,
           best_score: 0.7,
           elo: 1050,
+          evaluator_epoch: null,
+          quarantined: null,
         }),
       ],
     });
     expectTestRunRuntimeSessionDiscovery(body);
+  });
+
+  it("GET /api/cockpit/runs/:run_id/status carries evaluator_epoch and quarantined lineage", async () => {
+    const { SQLiteStore } = await import("../src/storage/index.js");
+    const store = new SQLiteStore(join(dir, "test.db"));
+    store.upsertGeneration("test-run-1", 1, {
+      meanScore: 0.65,
+      bestScore: 0.7,
+      elo: 1050,
+      wins: 3,
+      losses: 2,
+      gateDecision: "advance",
+      status: "completed",
+      evaluatorEpoch: "epoch-abc",
+      quarantined: 1,
+    });
+
+    const { status, body } = await fetchJson(`${baseUrl}/api/cockpit/runs/test-run-1/status`);
+
+    expect(status).toBe(200);
+    expect(body).toMatchObject({
+      generations: [
+        expect.objectContaining({
+          generation: 1,
+          evaluator_epoch: "epoch-abc",
+          quarantined: 1,
+        }),
+      ],
+    });
   });
 
   it("GET /api/cockpit/runs/:run_id/context-selection returns telemetry cards", async () => {
