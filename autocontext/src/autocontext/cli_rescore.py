@@ -31,6 +31,20 @@ _console = Console()
 ScoreFn = Callable[[str], tuple[float | None, str | None]]
 
 
+def _emit_error(message: str, json_output: bool) -> None:
+    """Report a not-found error via the CLI's JSON-or-Rich convention.
+
+    Under ``--json`` this writes ``{"error": message}`` to stderr (matching ``_write_json_stderr`` in
+    ``cli``, replicated here to avoid importing ``cli`` at module load, which would cycle).
+    """
+    if json_output:
+        import sys
+
+        sys.stderr.write(json.dumps({"error": message}) + "\n")
+    else:
+        _console.print(f"[red]{message}[/red]")
+
+
 def _store(settings: AppSettings) -> SQLiteStore:
     from pathlib import Path
 
@@ -124,11 +138,7 @@ def rescore_command(
     store = _store(settings)
     run = store.get_run(run_id)
     if run is None:
-        message = f"run {run_id!r} not found"
-        if json_output:
-            typer.echo(message, err=True)
-        else:
-            _console.print(f"[red]{message}[/red]")
+        _emit_error(f"run {run_id!r} not found", json_output)
         raise typer.Exit(code=1)
 
     scenario = run.get("scenario")
@@ -137,14 +147,12 @@ def rescore_command(
 
     rows = store.run_status(run_id)
     if generation is not None and not any(r["generation_index"] == generation for r in rows):
-        message = f"run {run_id!r} has no generation {generation}"
-        if json_output:
-            typer.echo(message, err=True)
-        else:
-            _console.print(f"[red]{message}[/red]")
+        _emit_error(f"run {run_id!r} has no generation {generation}", json_output)
         raise typer.Exit(code=1)
 
     targets = _select_rows(rows, generation, active_epoch)
+    # One competitor output per generation on the solve path. If a generation has more than one
+    # (a tournament re-append), keep the last by rowid, matching training-export's _get_competitor_outputs.
     artifacts = {o["generation_index"]: o["content"] for o in store.get_agent_outputs_by_role(run_id, "competitor")}
 
     reports = [

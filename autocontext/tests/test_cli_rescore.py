@@ -125,6 +125,9 @@ def test_rescore_missing_run(tmp_path: Path, monkeypatch) -> None:
     _env(monkeypatch, tmp_path)
     result = runner.invoke(app, ["rescore", "does-not-exist", "--json"])
     assert result.exit_code == 1
+    # --json errors emit a JSON object, not a bare string (matches sibling --json commands).
+    assert '"error"' in result.output
+    assert json.loads(result.output.strip()) == {"error": "run 'does-not-exist' not found"}
 
 
 def test_rescore_non_agent_task_no_evaluator(tmp_path: Path, monkeypatch) -> None:
