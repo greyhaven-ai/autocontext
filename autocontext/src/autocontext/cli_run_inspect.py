@@ -66,14 +66,24 @@ def _lineage_cell(row: dict[str, Any]) -> str:
 
 
 def _stale_warning_line(rows: list[dict[str, Any]], active_epoch_id: str | None) -> str | None:
-    """Return a single warning line if any row is stale or quarantined, else None."""
-    flagged = [r for r in rows if r.get("evaluator_epoch_status") == "stale" or r.get("quarantined")]
-    if not flagged:
+    """Return a single warning line if any row is stale or quarantined, else None.
+
+    Stale and quarantined are distinct states and are reported separately: a stale row's epoch differs
+    from the active epoch, while a quarantined row was scored under an unpromoted epoch. A row can be
+    ``current`` yet quarantined (a promotion activated the epoch before quarantine cleanup ran), or
+    quarantined with no active epoch, so quarantine must not be folded into the "stale" wording.
+    """
+    stale = [r for r in rows if r.get("evaluator_epoch_status") == "stale"]
+    quarantined = [r for r in rows if r.get("quarantined")]
+    if not stale and not quarantined:
         return None
     active8 = active_epoch_id[:8] if active_epoch_id else "none"
-    return (
-        f"[yellow]Warning: {len(flagged)} generation(s) scored under a stale evaluator epoch; active epoch {active8}...[/yellow]"
-    )
+    parts: list[str] = []
+    if stale:
+        parts.append(f"{len(stale)} generation(s) scored under a stale evaluator epoch")
+    if quarantined:
+        parts.append(f"{len(quarantined)} generation(s) quarantined (scored under an unpromoted epoch)")
+    return f"[yellow]Warning: {'; '.join(parts)}; active epoch {active8}...[/yellow]"
 
 
 def _cli_attr(dependency_module: str, name: str) -> Any:

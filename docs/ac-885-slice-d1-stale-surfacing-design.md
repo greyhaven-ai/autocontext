@@ -43,7 +43,7 @@ artifacts is deferred to D2.
    construction and `active_for`, which per that class's own pre-existing contract may create the
    `_evaluator_epochs` directory, open a per-scenario lock file, take an exclusive `flock` for the
    duration of the read, and self-heal a multiple-active state by demoting duplicates. D1 newly routes
-   `show`/`status`/`GET /runs/{id}/status` through that path; it does not itself write scores or epochs.
+   `show`/`status`/`GET /api/cockpit/runs/{id}/status` through that path; it does not itself write scores or epochs.
 
 ## Architecture
 
@@ -95,7 +95,7 @@ hand); `status` must additionally call `store.get_run(run_id)` to obtain the sce
   quarantined, print a single yellow warning line after the table naming the active epoch (short
   8-char prefix) so the operator knows the numbers are not directly comparable.
 
-### D1.4: Python HTTP render (`GET /runs/{run_id}/status`)
+### D1.4: Python HTTP render (`GET /api/cockpit/runs/{run_id}/status`)
 
 `server/cockpit_api.py` already has the run's scenario. Add `_get_epoch_registry(request)` (mirrors
 `_get_artifacts`, builds the registry from `app.state.app_settings.knowledge_root`). Extend the inline
@@ -123,7 +123,7 @@ operator: autoctx show <run_id> --json
        -> active = registry.active_for(scenario); each row.evaluator_epoch_status = classify(...)
   -> JSON: generations[].{evaluator_epoch, evaluator_epoch_status, quarantined}, active_evaluator_epoch
 
-GET /runs/{id}/status
+GET /api/cockpit/runs/{id}/status
   -> same annotate -> generations[] + active_evaluator_epoch + warnings[stale_epoch...]
 ```
 
@@ -135,8 +135,11 @@ GET /runs/{id}/status
   not counted as stale, no warning.
 - **Registry read failure** in the CLI/HTTP: surfaces as the normal command/endpoint error; this is an
   operator read path, not the score-persist hot path, so it does not need to fail closed.
-- **`status` without a run** / unknown scenario: `get_run` returns None -> existing not-found handling;
-  when scenario is None, annotation yields `no_active_epoch` for all rows.
+- **`show` on a missing run:** returns the existing not-found error (prints the message, exits 1).
+- **`status` on a missing run:** preserves the pre-D1 behavior of exiting 0 with an empty `generations`
+  list. `get_run` returns None so `scenario` is None, `active_evaluator_epoch` is null, and there are no
+  rows to classify. `status` deliberately does NOT raise not-found (a fresh-workspace bootstrap must not
+  crash); `show` is the not-found surface.
 
 ## Testing
 
@@ -147,7 +150,7 @@ GET /runs/{id}/status
 - **Regression (AC requirement):** seed a generation under epoch e1 (active in the registry), promote
   e2 active, assert `show`/`status` (and the HTTP handler) flag the e1 generation `stale` and report
   `active_evaluator_epoch == e2`.
-- HTTP: `GET /runs/{id}/status` includes the fields, `active_evaluator_epoch`, and a `stale_epoch`
+- HTTP: `GET /api/cockpit/runs/{id}/status` includes the fields, `active_evaluator_epoch`, and a `stale_epoch`
   warning when a generation is stale.
 - TS: `RunInspectionGeneration` / `formatGenerationStatus` now carry `evaluator_epoch` + `quarantined`.
 - Existing gates: module-size, gate-taxonomy, ruff/mypy, tsc/lint, cli-contract parity (unchanged: no

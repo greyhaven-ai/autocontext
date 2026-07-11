@@ -129,3 +129,36 @@ def test_status_rich_no_active_epoch(tmp_path: Path, monkeypatch) -> None:
     assert result.exit_code == 0, result.output
     assert "Run Status: run-bare" in result.output
     assert "Warning" not in result.output
+
+
+def test_current_but_quarantined_warns_quarantined_not_stale(tmp_path: Path, monkeypatch) -> None:
+    """A generation whose epoch IS the active one but is still quarantined (a promotion activated the
+    epoch before quarantine cleanup ran) must warn as quarantined, never as scored under a stale epoch."""
+    _env(monkeypatch, tmp_path)
+    _e1, e2 = _seed_epochs(tmp_path)  # e2 is the active epoch
+    store = _store(tmp_path)
+    store.create_run("run-q", _SCENARIO, 1, "local")
+    store.upsert_generation(
+        "run-q",
+        1,
+        mean_score=0.5,
+        best_score=0.6,
+        elo=1000.0,
+        wins=1,
+        losses=0,
+        gate_decision="pass",
+        status="completed",
+        evaluator_epoch=e2,  # same as active -> classifies current
+        quarantined=True,
+    )
+
+    result = runner.invoke(app, ["show", "run-q"])
+    assert result.exit_code == 0, result.output
+    normalized = " ".join(result.output.split())
+    assert "quarantined" in normalized
+    assert "stale evaluator epoch" not in normalized  # a current row must not be described as stale
+
+    payload = json.loads(runner.invoke(app, ["show", "run-q", "--json"]).output)
+    gen = payload["generations"][0]
+    assert gen["evaluator_epoch_status"] == "current"
+    assert gen["quarantined"] is True

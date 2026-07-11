@@ -336,7 +336,7 @@ classifies each row and returns annotated copies without mutating the input.
 stale or quarantined, a single yellow warning line prints after the table naming the active epoch's
 short prefix.
 
-**The HTTP `stale_epoch` warning.** `GET /runs/{run_id}/status` (the cockpit API) carries the same
+**The HTTP `stale_epoch` warning.** `GET /api/cockpit/runs/{run_id}/status` (the cockpit API) carries the same
 per-generation fields plus `active_evaluator_epoch`, and adds a `warnings` list with one entry per
 stale generation, shaped like the existing `stale_score` warning:
 

@@ -44,7 +44,7 @@ All notable changes to this project will be documented in this file.
   `stale`, `unknown`, `no_active_epoch`) and a registry-aware `annotate_status_rows` flag generation
   scores against the scenario's active evaluator epoch; `show` and `status` (`--json` and the rich
   table) gain per-generation `evaluator_epoch`, `evaluator_epoch_status`, and `quarantined` plus a
-  top-level `active_evaluator_epoch`, and the cockpit `GET /runs/{run_id}/status` adds the same
+  top-level `active_evaluator_epoch`, and the cockpit `GET /api/cockpit/runs/{run_id}/status` adds the same
   fields plus a `stale_epoch` warning per stale generation. TypeScript DTOs now carry the persisted
   `evaluator_epoch`/`quarantined` fields but do not classify staleness (the registry stays
   Python-only, a documented gap consistent with prior sub-slices). Lazy re-score of stale records
