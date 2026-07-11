@@ -10,7 +10,9 @@ Scope: sub-slice D2a of Slice D. Slice 1, B, C1, C2, C3, D1 are merged (#1204, #
 D1 surfaced whether a generation's score is stale relative to its scenario's active evaluator epoch.
 The last AC-885 thread is a re-score / revalidation path: re-run the current evaluator against a stale
 generation's ORIGINAL artifact and report what it scores today. D2a delivers that path report-only: it
-performs no database writes and does not overwrite any score. Persisting a re-score (which needs
+writes no score, generation, or evaluator-epoch lineage data, and does not create a database for a
+missing run. (Like every inspect command it opens the existing store, and it runs the configured
+evaluator hooks so the re-score is faithful; it persists no score.) Persisting a re-score (which needs
 net-new schema to avoid clobbering the original score's lineage) is deferred to D2b.
 
 ## Constraints that shaped the design (from the code map)
@@ -30,17 +32,25 @@ net-new schema to avoid clobbering the original score's lineage) is deferred to 
 1. **Explicit trigger, not auto-on-read.** A new `autoctx rescore <run_id> [--generation N]` command.
    Auto-re-scoring on every `show`/`status` would fire paid LLM calls on reads and make them slow and
    nondeterministic. The operator "touches" a stale record by invoking `rescore`.
-2. **Read-only.** No `upsert_generation`, no registry write, no quarantine clear. D2a fetches, re-scores
-   in memory, and prints. (`evaluate_output` itself performs no DB write.)
-3. **Faithful re-score via the scenario's own evaluator.** The re-score reuses the scenario task's
-   `evaluate_output`, the same path a fresh run scores through (it builds the `LLMJudge` from
-   `spec.judge_rubric` + `settings.judge_model` + provider and stamps the epoch). D2a does not
-   re-implement scoring.
+2. **Writes no score or lineage.** No `upsert_generation`, no registry activation/promotion, no
+   quarantine clear. D2a fetches, re-scores in memory, and prints. It opens only an EXISTING store
+   (a missing database is reported as not-found, never created), matching the migrate-on-read
+   convention of the other inspect commands; the registry `active_for` read may self-heal a corrupt
+   multiple-active state (its own contract), and running the evaluator hooks (below) can have their
+   configured side effects. No score, generation, or evaluator-epoch lineage is persisted by D2a.
+3. **Faithful re-score via the scenario's own evaluator, hooks and all.** The re-score reuses the
+   scenario task's `evaluate_output`, the same path a fresh run scores through (it builds the
+   `LLMJudge` from `spec.judge_rubric` + `settings.judge_model` + provider and stamps the epoch), run
+   inside the configured hook bus (`initialize_hook_bus` + `active_hook_bus`) so BEFORE_JUDGE /
+   AFTER_JUDGE hooks reproduce the production evaluator. Custom agent tasks are loaded from the
+   configured `settings.knowledge_root` first (the import-time registry only scans a relative
+   `knowledge/`). D2a does not re-implement scoring.
 4. **Default target is the run's stale generations;** `--generation N` targets one specific generation
    regardless of staleness. This bounds LLM cost (re-scoring only what is stale) unless the operator
    asks for a specific generation.
-5. **Fail-safe, never crash.** Every failure mode degrades to a per-generation skip with a reason and
-   exit 0. Only a missing run is a not-found error (exit 1), matching `show`.
+5. **Fail-safe, never crash.** Every failure mode (no artifact, no active epoch, no evaluator, a scorer
+   or evaluator-construction exception) degrades to a per-generation skip/`error` with a reason and
+   exit 0. Only a missing run or a missing `--generation N` is a not-found error (exit 1), matching `show`.
 
 ## Architecture
 
@@ -76,8 +86,8 @@ def revalidate_one(
 ```
 
 `revalidate_one` skip precedence: `active_epoch is None` -> `skipped_no_active_epoch`; `score_fn is None`
-(scenario has no reconstructable rubric judge) -> `skipped_no_evaluator`; falsy `artifact` ->
-`skipped_no_artifact`; `score_fn` raises -> `error` (message carries the exception); `score_fn` returns
+(scenario has no reconstructable rubric judge) -> `skipped_no_evaluator`; a `None` `artifact` (no stored
+competitor output; an empty string is still a real artifact and is re-scored) -> `skipped_no_artifact`; `score_fn` raises -> `error` (message carries the exception); `score_fn` returns
 a `None` epoch -> `skipped_no_evaluator`; otherwise -> `revalidated`. The derived fields (`was_stale`,
 `new_matches_active`, `score_delta`) are computed once from the inputs. `score_fn` is injected so the
 core is pure and fully unit-testable with a fake scorer (no providers, no network, no paid calls).
@@ -92,9 +102,11 @@ core is pure and fully unit-testable with a fake scorer (no providers, no networ
 3. `rows = store.run_status(run_id)` (carries `evaluator_epoch` since D1). Select targets: the row for
    `--generation N` if given, else rows that are stale (`evaluator_epoch != active_epoch`, both
    non-null).
-4. Build the score function: `score_fn = _build_score_fn(scenario, settings)`, which returns `None`
-   when the scenario is not an agent-task (game scenario, unregistered), else a closure over the
-   scenario task:
+4. Build the score function (only when an active epoch and targets exist, and after the generation
+   check, so setup cost and failures stay inside the fail-safe boundary; a construction failure becomes
+   a per-generation `error`): `score_fn = _build_score_fn(scenario, settings)` loads custom scenarios
+   from `settings.knowledge_root`, returns `None` when the scenario is not an agent-task (game scenario,
+   unregistered), else a closure that runs `task.evaluate_output` inside the configured hook bus:
    ```python
    cls = SCENARIO_REGISTRY[scenario]; task = cls()
    state = task.prepare_context(task.initial_state())

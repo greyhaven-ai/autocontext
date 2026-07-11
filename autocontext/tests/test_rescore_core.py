@@ -41,11 +41,16 @@ def test_no_evaluator_when_new_epoch_none() -> None:
     assert r.status == "skipped_no_evaluator"
 
 
-def test_no_artifact_skips() -> None:
-    r = revalidate_one(1, 0.8, "e1", "e2", "", _score_fn_ok(0.6, "e2"))
+def test_no_artifact_skips_only_when_none() -> None:
+    # Only a MISSING artifact (None) skips; an empty-string output is a real artifact that was judged.
+    r = revalidate_one(1, 0.8, "e1", "e2", None, _score_fn_ok(0.6, "e2"))
     assert r.status == "skipped_no_artifact"
-    r2 = revalidate_one(1, 0.8, "e1", "e2", None, _score_fn_ok(0.6, "e2"))
-    assert r2.status == "skipped_no_artifact"
+
+
+def test_empty_string_artifact_is_revalidated() -> None:
+    r = revalidate_one(1, 0.8, "e1", "e2", "", _score_fn_ok(0.6, "e2"))
+    assert r.status == "revalidated"
+    assert r.new_score == 0.6
 
 
 def test_scorer_error_captured() -> None:

@@ -394,8 +394,11 @@ next to the new score/epoch, plus `was_stale`, `new_matches_active`, and `score_
 Only a missing run is a hard failure (exit 1, matching `show`); every other failure mode degrades to
 a per-generation skip and the command still exits 0.
 
-**It writes nothing.** No `upsert_generation`, no registry write, no quarantine clear, anywhere in
-this path. The command fetches, re-scores in memory, and prints, either a Rich table or a `--json`
+**It writes no score or lineage.** No `upsert_generation`, no registry activation/promotion, no
+quarantine clear, anywhere in this path. It opens only an existing store (a missing database is
+reported as not-found, never created) and runs the configured evaluator hooks so the re-score matches
+production. The command fetches, re-scores in memory, and prints, either a Rich table (which surfaces
+the old / new epoch and a warning when the fresh epoch does not match the active one) or a `--json`
 payload of `{run_id, scenario, active_evaluator_epoch, generations: [...]}`.
 
 **Python-only.** Like the `epoch` CLI, `rescore` depends on the Python-only LLM-judge and

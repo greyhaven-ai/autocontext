@@ -95,7 +95,7 @@ def revalidate_one(
         return _result(generation_index, "skipped_no_active_epoch", "scenario has no active evaluator epoch", **common)
     if score_fn is None:
         return _result(generation_index, "skipped_no_evaluator", "scenario has no reconstructable rubric judge", **common)
-    if not artifact:
+    if artifact is None:
         return _result(generation_index, "skipped_no_artifact", "no stored competitor output for this generation", **common)
     try:
         new_score, new_epoch = score_fn(artifact)

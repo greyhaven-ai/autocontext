@@ -1,9 +1,12 @@
 """``autoctx rescore <run_id> [--generation N] [--json]`` (AC-885 Slice D2a).
 
 Re-score a stale generation's ORIGINAL competitor artifact under the CURRENT evaluator and report the
-old-vs-new score + epoch. Report-only: this command writes nothing (no upsert_generation, no registry
-write, no quarantine clear). Re-scoring goes through the scenario task's own ``evaluate_output`` (the
-production path), so the score is faithful; the whole thing is fail-safe via ``revalidate_one``.
+old-vs-new score + epoch. This command writes no score, generation, or evaluator-epoch lineage data: it
+performs no ``upsert_generation``, no registry activation/promotion, and no quarantine clear. (Like every
+other inspect command it opens the existing sqlite store, and it runs the configured evaluator hooks so
+the re-score reproduces the production evaluator; it does not create a database for a missing run.)
+Re-scoring goes through the scenario task's own ``evaluate_output`` (the production path) inside the
+configured hook bus, so the score is faithful; the whole thing is fail-safe via ``revalidate_one``.
 """
 
 from __future__ import annotations
@@ -45,18 +48,26 @@ def _emit_error(message: str, json_output: bool) -> None:
         _console.print(f"[red]{message}[/red]")
 
 
-def _store(settings: AppSettings) -> SQLiteStore:
+def _open_store(settings: AppSettings) -> SQLiteStore | None:
+    """Open the existing sqlite store read side, or None when the database does not exist.
+
+    Report-only: a missing-run invocation must not CREATE a database. Returning None lets the caller
+    surface not-found without materializing an empty store (migrate is applied only to a database that
+    already exists, where it is idempotent and writes nothing new).
+    """
     from pathlib import Path
 
     from autocontext.storage.sqlite_store import SQLiteStore
 
+    if not settings.db_path.exists():
+        return None
     store = SQLiteStore(settings.db_path)
     store.migrate(Path(__file__).resolve().parents[2] / "migrations")
     return store
 
 
 def _active_epoch(settings: AppSettings, scenario: str | None) -> str | None:
-    """Return the active evaluator epoch id for ``scenario`` (registry read-only), or None."""
+    """Return the active evaluator epoch id for ``scenario`` (registry read), or None."""
     if not scenario:
         return None
     registry = EvaluatorEpochRegistry(settings.knowledge_root / "_evaluator_epochs")
@@ -67,22 +78,51 @@ def _active_epoch(settings: AppSettings, scenario: str | None) -> str | None:
 def _build_score_fn(scenario: str, settings: AppSettings) -> ScoreFn | None:
     """Build a re-scoring closure over the scenario task's own ``evaluate_output``.
 
-    Returns None when the scenario is not an agent-task (no reconstructable rubric judge). Imports
-    ``_is_agent_task`` lazily from ``cli`` to avoid a circular import (``cli`` imports this module to
-    register the command).
+    Returns None when the scenario is not an agent-task (no reconstructable rubric judge). Custom agent
+    tasks are loaded from the CONFIGURED ``settings.knowledge_root`` first (the import-time registry only
+    scans a relative ``knowledge/``, so a non-default root would otherwise miss them). The closure
+    evaluates inside the configured hook bus so BEFORE_JUDGE / AFTER_JUDGE hooks reproduce the production
+    evaluator (a hook can change the effective model, and therefore the stamped epoch, or the response).
+    Imports ``_is_agent_task`` lazily from ``cli`` to avoid a circular import.
     """
     from autocontext.cli import _is_agent_task
+    from autocontext.extensions import active_hook_bus
+    from autocontext.loop.runner_hooks import initialize_hook_bus
+    from autocontext.scenarios.custom.registry import load_all_custom_scenarios
 
+    SCENARIO_REGISTRY.update(load_all_custom_scenarios(settings.knowledge_root))
     if not _is_agent_task(scenario):
         return None
     task = SCENARIO_REGISTRY[scenario]()
     state = task.prepare_context(task.initial_state())
+    hook_bus, _loaded_extensions = initialize_hook_bus(settings)
 
     def score_fn(artifact: str) -> tuple[float | None, str | None]:
-        result = task.evaluate_output(artifact, state)
+        with active_hook_bus(hook_bus):
+            result = task.evaluate_output(artifact, state)
         return result.score, result.evaluator_epoch
 
     return score_fn
+
+
+def _resolve_score_fn(scenario: str | None, settings: AppSettings) -> ScoreFn | None:
+    """Build the score fn, converting any construction failure into a per-generation ``error``.
+
+    ``_build_score_fn`` can raise while loading a custom scenario or preparing its context. Rather than
+    letting that escape as an uncaught exit, return a closure that raises inside ``revalidate_one`` so the
+    failure is reported per generation (fail-safe boundary) instead of crashing the command.
+    """
+    if not scenario:
+        return None
+    try:
+        return _build_score_fn(scenario, settings)
+    except Exception as exc:  # noqa: BLE001 - convert setup failure into a per-generation error status
+        message = f"evaluator construction failed: {exc}"
+
+        def failing(artifact: str) -> tuple[float | None, str | None]:
+            raise RuntimeError(message)
+
+        return failing
 
 
 def _is_stale(row: dict[str, Any], active_epoch: str | None) -> bool:
@@ -107,6 +147,10 @@ def _select_rows(
     return [r for r in rows if _is_stale(r, active_epoch)]
 
 
+def _epoch8(epoch: str | None) -> str:
+    return epoch[:8] if epoch else "-"
+
+
 def _print_table(reports: list[GenerationRevalidation], active_epoch: str | None) -> None:
     active8 = active_epoch[:8] if active_epoch else "none"
     table = Table(title=f"Re-score (active epoch {active8}...)")
@@ -116,14 +160,37 @@ def _print_table(reports: list[GenerationRevalidation], active_epoch: str | None
     table.add_column("New score", justify="right")
     table.add_column("Delta", justify="right")
     table.add_column("Stale")
+    table.add_column("Old epoch")
+    table.add_column("New epoch")
+    table.add_column("Matches active")
     for rep in reports:
         old = "-" if rep.original_score is None else f"{rep.original_score:.3f}"
         new = "-" if rep.new_score is None else f"{rep.new_score:.3f}"
         delta = "-" if rep.score_delta is None else f"{rep.score_delta:+.3f}"
-        table.add_row(str(rep.generation_index), rep.status, old, new, delta, "yes" if rep.was_stale else "no")
+        matches = "yes" if rep.new_matches_active else ("no" if rep.new_epoch is not None else "-")
+        table.add_row(
+            str(rep.generation_index),
+            rep.status,
+            old,
+            new,
+            delta,
+            "yes" if rep.was_stale else "no",
+            _epoch8(rep.original_epoch),
+            _epoch8(rep.new_epoch),
+            matches,
+        )
     _console.print(table)
     revalidated = sum(1 for r in reports if r.status == "revalidated")
-    _console.print(f"[dim]{revalidated} of {len(reports)} generation(s) re-scored; nothing was written.[/dim]")
+    _console.print(
+        f"[dim]{revalidated} of {len(reports)} generation(s) re-scored; no score, generation, or lineage data was written.[/dim]"
+    )
+    drifted = [r for r in reports if r.status == "revalidated" and not r.new_matches_active]
+    if drifted:
+        _console.print(
+            f"[yellow]Warning: {len(drifted)} re-scored generation(s) produced an epoch that does NOT "
+            f"match the active epoch {active8}...; the current scenario spec has drifted from the active "
+            "evaluator, so these fresh scores are not under the active epoch.[/yellow]"
+        )
 
 
 def rescore_command(
@@ -135,22 +202,24 @@ def rescore_command(
 ) -> None:
     """Re-score stale generations under the current evaluator and report drift (read-only)."""
     settings = load_settings()
-    store = _store(settings)
-    run = store.get_run(run_id)
-    if run is None:
+    store = _open_store(settings)
+    if store is None or store.get_run(run_id) is None:
         _emit_error(f"run {run_id!r} not found", json_output)
         raise typer.Exit(code=1)
 
-    scenario = run.get("scenario")
-    active_epoch = _active_epoch(settings, scenario)
-    score_fn = _build_score_fn(scenario, settings) if scenario else None
-
+    run = store.get_run(run_id)
+    scenario = run.get("scenario") if run else None
     rows = store.run_status(run_id)
     if generation is not None and not any(r["generation_index"] == generation for r in rows):
         _emit_error(f"run {run_id!r} has no generation {generation}", json_output)
         raise typer.Exit(code=1)
 
+    active_epoch = _active_epoch(settings, scenario)
     targets = _select_rows(rows, generation, active_epoch)
+    # Reconstruct the evaluator only when it can actually be used (an active epoch exists and there are
+    # targets), and after the generation check, so construction cost and failures stay inside the
+    # fail-safe boundary. Setup failures become per-generation ``error`` reports (see _resolve_score_fn).
+    score_fn = _resolve_score_fn(scenario, settings) if (active_epoch is not None and targets) else None
     # One competitor output per generation on the solve path. If a generation has more than one
     # (a tournament re-append), keep the last by rowid, matching training-export's _get_competitor_outputs.
     artifacts = {o["generation_index"]: o["content"] for o in store.get_agent_outputs_by_role(run_id, "competitor")}

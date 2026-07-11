@@ -141,3 +141,126 @@ def test_rescore_non_agent_task_no_evaluator(tmp_path: Path, monkeypatch) -> Non
     assert result.exit_code == 0, result.output
     gen = json.loads(result.stdout)["generations"][0]
     assert gen["status"] == "skipped_no_evaluator"
+
+
+def test_rescore_missing_run_does_not_create_db(tmp_path: Path, monkeypatch) -> None:
+    # Report-only: a missing-run invocation against a nonexistent database must NOT materialize one.
+    _env(monkeypatch, tmp_path)
+    db_path = tmp_path / "t.sqlite3"
+    assert not db_path.exists()
+    result = runner.invoke(app, ["rescore", "does-not-exist"])
+    assert result.exit_code == 1
+    assert not db_path.exists()  # no database was created
+
+
+def test_rescore_build_failure_is_per_generation_error(tmp_path: Path, monkeypatch) -> None:
+    # A _build_score_fn failure (custom-task load / prepare_context) must become a per-generation
+    # `error` report, not an uncaught exit, and other flow stays fail-safe (exit 0).
+    _env(monkeypatch, tmp_path)
+    _e1, _e2 = _seed_epochs_active_e2(tmp_path)
+    _seed_generation(tmp_path, "run-buildfail", _e1, with_output=True)
+
+    def boom(scenario, settings):  # noqa: ANN001, ANN202
+        raise RuntimeError("spec load blew up")
+
+    monkeypatch.setattr("autocontext.cli_rescore._build_score_fn", boom)
+    result = runner.invoke(app, ["rescore", "run-buildfail", "--json"])
+    assert result.exit_code == 0, result.output
+    gen = json.loads(result.stdout)["generations"][0]
+    assert gen["status"] == "error"
+    assert "spec load blew up" in gen["reason"]
+
+
+def test_rescore_rich_surfaces_epoch_drift_warning(tmp_path: Path, monkeypatch) -> None:
+    # When the current evaluator produces an epoch that does NOT match the active epoch, the rich
+    # (non-JSON) output must surface the drift, not silently show `revalidated`.
+    _env(monkeypatch, tmp_path)
+    _e1, _e2 = _seed_epochs_active_e2(tmp_path)
+    _seed_generation(tmp_path, "run-drift", _e1, with_output=True)
+    # Fresh score under a DIFFERENT epoch than active (spec has drifted).
+    monkeypatch.setattr("autocontext.cli_rescore._build_score_fn", _fixed_build(0.5, "e_drifted_epoch"))
+
+    result = runner.invoke(app, ["rescore", "run-drift"])
+    assert result.exit_code == 0, result.output
+    normalized = " ".join(result.output.split())
+    assert "Warning" in normalized
+    assert "does NOT match the active epoch" in normalized
+
+
+def test_rescore_loads_custom_scenarios_from_configured_root(tmp_path: Path, monkeypatch) -> None:
+    # _build_score_fn must load custom agent tasks from settings.knowledge_root (not the import-time
+    # relative knowledge/), so a non-default-root deployment resolves its own scenarios.
+    _env(monkeypatch, tmp_path)
+    _e1, e2 = _seed_epochs_active_e2(tmp_path)
+    _seed_generation(tmp_path, "run-custom", _e1, with_output=True)
+
+    seen_roots: list[Path] = []
+
+    def spy_loader(knowledge_root: Path):
+        seen_roots.append(knowledge_root)
+        return {}
+
+    # Let the REAL _build_score_fn run; patch only its inner dependencies.
+    monkeypatch.setattr("autocontext.scenarios.custom.registry.load_all_custom_scenarios", spy_loader)
+    monkeypatch.setattr("autocontext.cli._is_agent_task", lambda name: False)
+
+    result = runner.invoke(app, ["rescore", "run-custom", "--json"])
+    assert result.exit_code == 0, result.output
+    assert seen_roots == [tmp_path / "knowledge"]  # loaded from the CONFIGURED root
+    gen = json.loads(result.stdout)["generations"][0]
+    assert gen["status"] == "skipped_no_evaluator"
+
+
+class _FakeAgentTask:
+    """Minimal agent-task double whose evaluate_output records the active hook bus at call time."""
+
+    hook_active_during_eval = False
+    eval_epoch = "e2-fake"
+
+    def initial_state(self, seed=None):  # noqa: ANN001, ANN201
+        return {}
+
+    def prepare_context(self, state):  # noqa: ANN001, ANN201
+        return state
+
+    def get_task_prompt(self, state):  # noqa: ANN001, ANN201
+        return "task"
+
+    def get_rubric(self):  # noqa: ANN201
+        return "rubric"
+
+    def describe_task(self):  # noqa: ANN201
+        return "fake"
+
+    def evaluate_output(self, output, state, **kwargs):  # noqa: ANN001, ANN003, ANN201
+        from autocontext.extensions import get_current_hook_bus
+        from autocontext.scenarios.agent_task import AgentTaskResult
+
+        type(self).hook_active_during_eval = get_current_hook_bus() is not None
+        return AgentTaskResult(score=0.42, reasoning="r", evaluator_epoch=type(self).eval_epoch)
+
+
+def test_rescore_evaluates_inside_hook_bus(tmp_path: Path, monkeypatch) -> None:
+    # The re-score must run inside the configured hook bus so BEFORE/AFTER_JUDGE hooks reproduce the
+    # production evaluator. Assert evaluate_output sees an active hook bus.
+    _env(monkeypatch, tmp_path)
+    _e1, e2 = _seed_epochs_active_e2(tmp_path)
+    _FakeAgentTask.eval_epoch = e2
+    _FakeAgentTask.hook_active_during_eval = False
+    _seed_generation(tmp_path, "run-hooks", _e1, with_output=True)
+
+    from autocontext.scenarios import SCENARIO_REGISTRY
+
+    monkeypatch.setitem(SCENARIO_REGISTRY, _SCENARIO, _FakeAgentTask)
+    monkeypatch.setattr("autocontext.cli._is_agent_task", lambda name: True)
+    monkeypatch.setattr("autocontext.scenarios.custom.registry.load_all_custom_scenarios", lambda root: {})
+    # A real (empty) hook bus so get_current_hook_bus() is not None inside active_hook_bus.
+    from autocontext.extensions import HookBus
+
+    monkeypatch.setattr("autocontext.loop.runner_hooks.initialize_hook_bus", lambda settings: (HookBus(), []))
+
+    result = runner.invoke(app, ["rescore", "run-hooks", "--json"])
+    assert result.exit_code == 0, result.output
+    gen = json.loads(result.stdout)["generations"][0]
+    assert gen["status"] == "revalidated"
+    assert _FakeAgentTask.hook_active_during_eval is True
