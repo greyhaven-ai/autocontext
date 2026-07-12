@@ -93,9 +93,28 @@ class TestHelloMsg:
         restored = HelloMsg(**d)
         assert restored == msg
 
+    def test_transcript_capability_is_explicit(self) -> None:
+        msg = HelloMsg(
+            transcript_protocol_version=1,
+            capabilities=["run_transcript_v1"],
+        )
+        assert msg.model_dump() == {
+            "type": "hello",
+            "protocol_version": PROTOCOL_VERSION,
+            "transcript_protocol_version": 1,
+            "capabilities": ["run_transcript_v1"],
+        }
+
 
 class TestServerMessageRoundTrip:
     """Verify every server message type can be serialized and deserialized."""
+
+    def test_unset_transcript_metadata_does_not_change_legacy_wire_shape(self) -> None:
+        assert EventMsg(event="run_started", payload={"run_id": "r1"}).model_dump() == {
+            "type": "event",
+            "event": "run_started",
+            "payload": {"run_id": "r1"},
+        }
 
     @pytest.mark.parametrize(
         "model,kwargs",
@@ -165,6 +184,20 @@ class TestClientMessageParsing:
     def test_valid_messages(self, raw: dict, expected_type: type) -> None:
         msg = parse_client_message(raw)
         assert isinstance(msg, expected_type)
+
+    def test_run_command_correlation_fields_are_additive(self) -> None:
+        msg = parse_client_message(
+            {
+                "type": "start_run",
+                "scenario": "grid_ctf",
+                "generations": 3,
+                "client_run_id": "client-run-1",
+                "command_id": "command-start-1",
+            }
+        )
+        assert isinstance(msg, StartRunCmd)
+        assert msg.client_run_id == "client-run-1"
+        assert msg.command_id == "command-start-1"
 
     def test_unknown_type_rejected(self) -> None:
         with pytest.raises(ValidationError):

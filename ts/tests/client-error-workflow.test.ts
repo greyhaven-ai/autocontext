@@ -7,19 +7,25 @@ import {
 
 describe("client error workflow", () => {
   it("identifies interactive scenario commands", () => {
-    expect(isInteractiveScenarioCommand({ type: "create_scenario", description: "Draft a scenario" })).toBe(true);
+    expect(
+      isInteractiveScenarioCommand({ type: "create_scenario", description: "Draft a scenario" }),
+    ).toBe(true);
     expect(isInteractiveScenarioCommand({ type: "confirm_scenario" })).toBe(true);
-    expect(isInteractiveScenarioCommand({ type: "revise_scenario", feedback: "Add guardrails" })).toBe(true);
+    expect(
+      isInteractiveScenarioCommand({ type: "revise_scenario", feedback: "Add guardrails" }),
+    ).toBe(true);
     expect(isInteractiveScenarioCommand({ type: "cancel_scenario" })).toBe(true);
     expect(isInteractiveScenarioCommand({ type: "pause" })).toBe(false);
     expect(isInteractiveScenarioCommand(null)).toBe(false);
   });
 
   it("builds scenario_error messages for interactive scenario command failures", () => {
-    expect(buildClientErrorMessage(new Error("bad scenario"), {
-      type: "revise_scenario",
-      feedback: "Add escalation logic",
-    })).toEqual({
+    expect(
+      buildClientErrorMessage(new Error("bad scenario"), {
+        type: "revise_scenario",
+        feedback: "Add escalation logic",
+      }),
+    ).toEqual({
       type: "scenario_error",
       message: "bad scenario",
       stage: "server",
@@ -27,11 +33,28 @@ describe("client error workflow", () => {
   });
 
   it("builds generic error messages for non-scenario command failures", () => {
-    expect(buildClientErrorMessage(new Error("bad auth"), {
-      type: "whoami",
-    })).toEqual({
+    expect(
+      buildClientErrorMessage(new Error("bad auth"), {
+        type: "whoami",
+      }),
+    ).toEqual({
       type: "error",
       message: "bad auth",
+    });
+  });
+
+  it("preserves run and command correlation on operator failures", () => {
+    expect(
+      buildClientErrorMessage(new Error("scope mismatch"), {
+        type: "pause",
+        client_run_id: "client-run-1",
+        command_id: "command-pause-1",
+      }),
+    ).toEqual({
+      type: "error",
+      message: "scope mismatch",
+      client_run_id: "client-run-1",
+      command_id: "command-pause-1",
     });
   });
 

@@ -155,7 +155,7 @@ describe("TypeScript type assertion budget", () => {
     // whose AJV validators use the same ajv CJS-default-interop cast pattern
     // already sanctioned above, plus manifest/fixture field-access casts in
     // the cross-package parity tests. Same "bump, don't reverse-engineer" policy.
-    expect(total).toBeLessThanOrEqual(1062);
+    expect(total).toBeLessThanOrEqual(1063);
   });
 
   it("mission/store.ts should use row types instead of inline casts", () => {

@@ -7,11 +7,13 @@ import {
 
 describe("interactive control command workflow", () => {
   it("builds run accepted messages", () => {
-    expect(buildRunAcceptedMessage({
-      runId: "run_1",
-      scenario: "grid_ctf",
-      generations: 3,
-    })).toEqual({
+    expect(
+      buildRunAcceptedMessage({
+        runId: "run_1",
+        scenario: "grid_ctf",
+        generations: 3,
+      }),
+    ).toEqual({
       type: "run_accepted",
       run_id: "run_1",
       scenario: "grid_ctf",
@@ -29,28 +31,36 @@ describe("interactive control command workflow", () => {
       getEnvironmentInfo: vi.fn(),
     };
 
-    await expect(executeInteractiveControlCommand({
-      command: { type: "pause" },
-      runManager,
-    })).resolves.toEqual([{ type: "ack", action: "pause" }]);
+    await expect(
+      executeInteractiveControlCommand({
+        command: { type: "pause" },
+        runManager,
+      }),
+    ).resolves.toEqual([{ type: "ack", action: "pause" }]);
     expect(runManager.pause).toHaveBeenCalledOnce();
 
-    await expect(executeInteractiveControlCommand({
-      command: { type: "resume" },
-      runManager,
-    })).resolves.toEqual([{ type: "ack", action: "resume" }]);
+    await expect(
+      executeInteractiveControlCommand({
+        command: { type: "resume" },
+        runManager,
+      }),
+    ).resolves.toEqual([{ type: "ack", action: "resume" }]);
     expect(runManager.resume).toHaveBeenCalledOnce();
 
-    await expect(executeInteractiveControlCommand({
-      command: { type: "inject_hint", text: "Focus on rollback safety" },
-      runManager,
-    })).resolves.toEqual([{ type: "ack", action: "inject_hint" }]);
+    await expect(
+      executeInteractiveControlCommand({
+        command: { type: "inject_hint", text: "Focus on rollback safety" },
+        runManager,
+      }),
+    ).resolves.toEqual([{ type: "ack", action: "inject_hint" }]);
     expect(runManager.injectHint).toHaveBeenCalledWith("Focus on rollback safety");
 
-    await expect(executeInteractiveControlCommand({
-      command: { type: "override_gate", decision: "rollback" },
-      runManager,
-    })).resolves.toEqual([{ type: "ack", action: "override_gate", decision: "rollback" }]);
+    await expect(
+      executeInteractiveControlCommand({
+        command: { type: "override_gate", decision: "rollback" },
+        runManager,
+      }),
+    ).resolves.toEqual([{ type: "ack", action: "override_gate", decision: "rollback" }]);
     expect(runManager.overrideGate).toHaveBeenCalledWith("rollback");
   });
 
@@ -69,10 +79,12 @@ describe("interactive control command workflow", () => {
       })),
     };
 
-    await expect(executeInteractiveControlCommand({
-      command: { type: "start_run", scenario: "grid_ctf", generations: 3 },
-      runManager,
-    })).resolves.toEqual([
+    await expect(
+      executeInteractiveControlCommand({
+        command: { type: "start_run", scenario: "grid_ctf", generations: 3 },
+        runManager,
+      }),
+    ).resolves.toEqual([
       {
         type: "run_accepted",
         run_id: "run_1",
@@ -81,16 +93,69 @@ describe("interactive control command workflow", () => {
       },
     ]);
 
-    await expect(executeInteractiveControlCommand({
-      command: { type: "list_scenarios" },
-      runManager,
-    })).resolves.toEqual([
+    await expect(
+      executeInteractiveControlCommand({
+        command: { type: "list_scenarios" },
+        runManager,
+      }),
+    ).resolves.toEqual([
       {
         type: "environments",
         scenarios: [{ name: "grid_ctf", description: "Capture the flag" }],
         executors: [{ mode: "local", available: true, description: "Local executor" }],
         current_executor: "local",
         agent_provider: "deterministic",
+      },
+    ]);
+  });
+
+  it("echoes client run and command correlation on operator responses", async () => {
+    const runManager = {
+      pause: vi.fn(),
+      resume: vi.fn(),
+      injectHint: vi.fn(),
+      overrideGate: vi.fn(),
+      startRun: vi.fn(async () => "engine-run-1"),
+      getEnvironmentInfo: vi.fn(),
+    };
+
+    await expect(
+      executeInteractiveControlCommand({
+        command: {
+          type: "pause",
+          client_run_id: "client-run-1",
+          command_id: "command-pause-1",
+        },
+        runManager,
+      }),
+    ).resolves.toEqual([
+      {
+        type: "ack",
+        action: "pause",
+        client_run_id: "client-run-1",
+        command_id: "command-pause-1",
+      },
+    ]);
+
+    await expect(
+      executeInteractiveControlCommand({
+        command: {
+          type: "start_run",
+          scenario: "grid_ctf",
+          generations: 1,
+          client_run_id: "client-run-1",
+          command_id: "command-start-1",
+        },
+        runManager,
+      }),
+    ).resolves.toEqual([
+      {
+        type: "run_accepted",
+        run_id: "engine-run-1",
+        scenario: "grid_ctf",
+        generations: 1,
+        client_run_id: "client-run-1",
+        command_id: "command-start-1",
       },
     ]);
   });

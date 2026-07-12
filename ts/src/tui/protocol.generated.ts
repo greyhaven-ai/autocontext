@@ -41,15 +41,27 @@ export const StrategyParamSchema = z.object({
 export const HelloMsgSchema = z.object({
   type: z.literal("hello"),
   protocol_version: z.number().int().optional(),
+  transcript_protocol_version: z.number().int().optional().nullable(),
+  capabilities: z.array(z.string()).optional().nullable(),
 }).strict();
 
 export const EventMsgSchema = z.object({
+  client_run_id: z.string().optional().nullable(),
+  event_id: z.string().optional().nullable(),
+  sequence: z.number().int().optional().nullable(),
+  run_id: z.string().optional().nullable(),
+  occurred_at: z.union([z.string(), z.number()]).optional().nullable(),
   type: z.literal("event"),
   event: z.string(),
   payload: z.record(z.unknown()),
 }).strict();
 
 export const StateMsgSchema = z.object({
+  client_run_id: z.string().optional().nullable(),
+  event_id: z.string().optional().nullable(),
+  sequence: z.number().int().optional().nullable(),
+  run_id: z.string().optional().nullable(),
+  occurred_at: z.union([z.string(), z.number()]).optional().nullable(),
   type: z.literal("state"),
   paused: z.boolean(),
   generation: z.number().int().optional(),
@@ -57,9 +69,15 @@ export const StateMsgSchema = z.object({
 }).strict();
 
 export const ChatResponseMsgSchema = z.object({
+  client_run_id: z.string().optional().nullable(),
+  event_id: z.string().optional().nullable(),
+  sequence: z.number().int().optional().nullable(),
+  run_id: z.string().optional().nullable(),
+  occurred_at: z.union([z.string(), z.number()]).optional().nullable(),
   type: z.literal("chat_response"),
   role: z.string(),
   text: z.string(),
+  command_id: z.string().optional().nullable(),
 }).strict();
 
 export const EnvironmentsMsgSchema = z.object({
@@ -71,21 +89,38 @@ export const EnvironmentsMsgSchema = z.object({
 }).strict();
 
 export const RunAcceptedMsgSchema = z.object({
-  type: z.literal("run_accepted"),
+  client_run_id: z.string().optional().nullable(),
+  event_id: z.string().optional().nullable(),
+  sequence: z.number().int().optional().nullable(),
   run_id: z.string(),
+  occurred_at: z.union([z.string(), z.number()]).optional().nullable(),
+  type: z.literal("run_accepted"),
   scenario: z.string(),
   generations: z.number().int(),
+  command_id: z.string().optional().nullable(),
 }).strict();
 
 export const AckMsgSchema = z.object({
+  client_run_id: z.string().optional().nullable(),
+  event_id: z.string().optional().nullable(),
+  sequence: z.number().int().optional().nullable(),
+  run_id: z.string().optional().nullable(),
+  occurred_at: z.union([z.string(), z.number()]).optional().nullable(),
   type: z.literal("ack"),
   action: z.string(),
   decision: z.string().optional().nullable(),
+  command_id: z.string().optional().nullable(),
 }).strict();
 
 export const ErrorMsgSchema = z.object({
+  client_run_id: z.string().optional().nullable(),
+  event_id: z.string().optional().nullable(),
+  sequence: z.number().int().optional().nullable(),
+  run_id: z.string().optional().nullable(),
+  occurred_at: z.union([z.string(), z.number()]).optional().nullable(),
   type: z.literal("error"),
   message: z.string(),
+  command_id: z.string().optional().nullable(),
 }).strict();
 
 export const ScenarioGeneratingMsgSchema = z.object({
@@ -117,6 +152,11 @@ export const ScenarioErrorMsgSchema = z.object({
 }).strict();
 
 export const MonitorAlertMsgSchema = z.object({
+  client_run_id: z.string().optional().nullable(),
+  event_id: z.string().optional().nullable(),
+  sequence: z.number().int().optional().nullable(),
+  run_id: z.string().optional().nullable(),
+  occurred_at: z.union([z.string(), z.number()]).optional().nullable(),
   type: z.literal("monitor_alert"),
   alert_id: z.string(),
   condition_id: z.string(),
@@ -131,30 +171,42 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [HelloMsgSchema,
 // --- Client -> Server messages ---
 
 export const PauseCmdSchema = z.object({
+  client_run_id: z.string().optional().nullable(),
+  command_id: z.string().optional().nullable(),
   type: z.literal("pause"),
 }).strict();
 
 export const ResumeCmdSchema = z.object({
+  client_run_id: z.string().optional().nullable(),
+  command_id: z.string().optional().nullable(),
   type: z.literal("resume"),
 }).strict();
 
 export const InjectHintCmdSchema = z.object({
+  client_run_id: z.string().optional().nullable(),
+  command_id: z.string().optional().nullable(),
   type: z.literal("inject_hint"),
   text: z.string().min(1),
 }).strict();
 
 export const OverrideGateCmdSchema = z.object({
+  client_run_id: z.string().optional().nullable(),
+  command_id: z.string().optional().nullable(),
   type: z.literal("override_gate"),
   decision: z.enum(["advance", "retry", "rollback"]),
 }).strict();
 
 export const ChatAgentCmdSchema = z.object({
+  client_run_id: z.string().optional().nullable(),
+  command_id: z.string().optional().nullable(),
   type: z.literal("chat_agent"),
   role: z.string(),
   message: z.string().min(1),
 }).strict();
 
 export const StartRunCmdSchema = z.object({
+  client_run_id: z.string().optional().nullable(),
+  command_id: z.string().optional().nullable(),
   type: z.literal("start_run"),
   scenario: z.string(),
   generations: z.number().int().gt(0),

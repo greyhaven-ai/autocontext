@@ -4,6 +4,8 @@
 
 export {
   PROTOCOL_VERSION,
+  TRANSCRIPT_PROTOCOL_VERSION,
+  SERVER_CAPABILITIES,
   HelloMsgSchema,
   EventMsgSchema,
   StateMsgSchema,
@@ -23,6 +25,7 @@ export {
   OverrideGateCmdSchema,
   ChatAgentCmdSchema,
   StartRunCmdSchema,
+  ResumeRunCmdSchema,
   ListScenariosCmdSchema,
   CreateScenarioCmdSchema,
   ConfirmScenarioCmdSchema,
@@ -40,7 +43,12 @@ export {
 } from "./protocol.js";
 export type { ServerMessage, ClientMessage } from "./protocol.js";
 
-export { handleTuiLogin, handleTuiLogout, handleTuiSwitchProvider, handleTuiWhoami } from "./tui-auth.js";
+export {
+  handleTuiLogin,
+  handleTuiLogout,
+  handleTuiSwitchProvider,
+  handleTuiWhoami,
+} from "./tui-auth.js";
 export type { TuiLoginResult, TuiAuthStatus } from "./tui-auth.js";
 
 export { RunManager } from "./run-manager.js";

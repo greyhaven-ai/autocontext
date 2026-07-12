@@ -2,6 +2,23 @@
   "version": 1,
   "contract": "interactive WebSocket protocol surface shared by Python and TypeScript with runtime-only extensions marked explicitly",
   "protocol_version": 1,
+  "transcript_extension": {
+    "capability": "run_transcript_v1",
+    "transcript_protocol_version": 1,
+    "opt_in_query": "transcript_protocol_version=1",
+    "legacy_default": true,
+    "resume_command": "resume_run",
+    "identity_fields": ["client_run_id", "event_id", "sequence", "occurred_at"],
+    "retention": {
+      "bounded": true,
+      "max_age_days": 7,
+      "max_file_bytes": 33554432,
+      "max_frames": 20000,
+      "max_frames_per_run": 2000,
+      "max_commands": 20000,
+      "idempotency_horizon": "same as retained command and response records"
+    }
+  },
   "endpoints": [
     {
       "path": "/ws/interactive",
@@ -83,6 +100,10 @@
     }
   ],
   "typescript_only_client_messages": [
+    {
+      "type": "resume_run",
+      "reason": "TypeScript durable run transcript resume/backfill extension"
+    },
     {
       "type": "login",
       "reason": "TypeScript TUI provider-auth workflow"

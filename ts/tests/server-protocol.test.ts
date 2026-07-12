@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
+import { z } from "zod";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -38,6 +39,52 @@ interface BufferedSocket {
   ) => Promise<Record<string, unknown>>;
   close: () => void;
 }
+
+const LegacyHelloSchema = z
+  .object({ type: z.literal("hello"), protocol_version: z.number().int().optional() })
+  .strict();
+
+const LegacyRunMessageSchema = z.discriminatedUnion("type", [
+  z
+    .object({ type: z.literal("event"), event: z.string(), payload: z.record(z.unknown()) })
+    .strict(),
+  z
+    .object({
+      type: z.literal("state"),
+      paused: z.boolean(),
+      generation: z.number().int().optional(),
+      phase: z.string().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("run_accepted"),
+      run_id: z.string(),
+      scenario: z.string(),
+      generations: z.number().int(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("ack"),
+      action: z.string(),
+      decision: z.string().optional().nullable(),
+    })
+    .strict(),
+  z.object({ type: z.literal("chat_response"), role: z.string(), text: z.string() }).strict(),
+  z.object({ type: z.literal("error"), message: z.string() }).strict(),
+  z
+    .object({
+      type: z.literal("monitor_alert"),
+      alert_id: z.string(),
+      condition_id: z.string(),
+      condition_name: z.string(),
+      condition_type: z.string(),
+      scope: z.string(),
+      detail: z.string(),
+    })
+    .strict(),
+]);
 
 async function openSocket(url: string): Promise<BufferedSocket> {
   const { WebSocket } = await import("ws");
@@ -132,6 +179,7 @@ describe("Protocol types", () => {
     const mod = await import("../src/server/protocol.js");
     expect(mod.PauseCmdSchema).toBeDefined();
     expect(mod.ResumeCmdSchema).toBeDefined();
+    expect(mod.ResumeRunCmdSchema).toBeDefined();
     expect(mod.StartRunCmdSchema).toBeDefined();
     expect(mod.InjectHintCmdSchema).toBeDefined();
     expect(mod.OverrideGateCmdSchema).toBeDefined();
@@ -150,9 +198,39 @@ describe("Protocol types", () => {
       type: "start_run",
       scenario: "grid_ctf",
       generations: 3,
+      client_run_id: "client-run-1",
+      command_id: "command-start-1",
     });
     expect(cmd.scenario).toBe("grid_ctf");
     expect(cmd.generations).toBe(3);
+    expect(cmd.client_run_id).toBe("client-run-1");
+    expect(cmd.command_id).toBe("command-start-1");
+  });
+
+  it("advertises and validates transcript resume metadata without bumping protocol v1", async () => {
+    const { HelloMsgSchema, ResumeRunCmdSchema } = await import("../src/server/protocol.js");
+    expect(
+      HelloMsgSchema.parse({
+        type: "hello",
+        protocol_version: 1,
+        transcript_protocol_version: 1,
+        capabilities: ["run_transcript_v1"],
+      }),
+    ).toMatchObject({
+      protocol_version: 1,
+      transcript_protocol_version: 1,
+    });
+    expect(
+      ResumeRunCmdSchema.parse({
+        type: "resume_run",
+        client_run_id: "client-run-1",
+        after_sequence: 7,
+        command_id: "command-resume-1",
+      }),
+    ).toMatchObject({
+      after_sequence: 7,
+      client_run_id: "client-run-1",
+    });
   });
 
   it("parseClientMessage dispatches correctly", async () => {
@@ -489,59 +567,72 @@ describe("InteractiveServer", () => {
     const socket = await openSocket(server.url);
 
     try {
-      expect((await socket.waitFor((msg) => msg.type === "hello")).protocol_version).toBe(1);
+      const hello = await socket.waitFor((msg) => msg.type === "hello");
+      expect(LegacyHelloSchema.parse(hello).protocol_version).toBe(1);
       expect((await socket.waitFor((msg) => msg.type === "environments")).type).toBe(
         "environments",
       );
-      expect((await socket.waitFor((msg) => msg.type === "state")).paused).toBe(false);
+      const initialState = await socket.waitFor((msg) => msg.type === "state");
+      expect(LegacyRunMessageSchema.parse(initialState)).toMatchObject({ paused: false });
 
       socket.send({ type: "pause" });
       expect(
-        (await socket.waitFor((msg) => msg.type === "state" && msg.paused === true)).paused,
-      ).toBe(true);
+        LegacyRunMessageSchema.parse(
+          await socket.waitFor((msg) => msg.type === "state" && msg.paused === true),
+        ),
+      ).toMatchObject({ paused: true });
       expect(
-        (await socket.waitFor((msg) => msg.type === "ack" && msg.action === "pause")).action,
-      ).toBe("pause");
+        LegacyRunMessageSchema.parse(
+          await socket.waitFor((msg) => msg.type === "ack" && msg.action === "pause"),
+        ),
+      ).toMatchObject({ action: "pause" });
 
       socket.send({ type: "resume" });
-      expect(
-        (await socket.waitFor((msg) => msg.type === "state" && msg.paused === false)).paused,
-      ).toBe(false);
-      expect(
-        (await socket.waitFor((msg) => msg.type === "ack" && msg.action === "resume")).action,
-      ).toBe("resume");
+      LegacyRunMessageSchema.parse(
+        await socket.waitFor((msg) => msg.type === "state" && msg.paused === false),
+      );
+      LegacyRunMessageSchema.parse(
+        await socket.waitFor((msg) => msg.type === "ack" && msg.action === "resume"),
+      );
 
       socket.send({ type: "inject_hint", text: "Hold the center lane." });
-      expect(
-        (await socket.waitFor((msg) => msg.type === "ack" && msg.action === "inject_hint")).action,
-      ).toBe("inject_hint");
+      LegacyRunMessageSchema.parse(
+        await socket.waitFor((msg) => msg.type === "ack" && msg.action === "inject_hint"),
+      );
 
       socket.send({ type: "override_gate", decision: "rollback" });
       expect(
-        (await socket.waitFor((msg) => msg.type === "ack" && msg.action === "override_gate"))
-          .decision,
-      ).toBe("rollback");
+        LegacyRunMessageSchema.parse(
+          await socket.waitFor((msg) => msg.type === "ack" && msg.action === "override_gate"),
+        ),
+      ).toMatchObject({ decision: "rollback" });
 
       socket.send({ type: "chat_agent", role: "analyst", message: "What changed?" });
-      expect((await socket.waitFor((msg) => msg.type === "chat_response")).text).toContain(
+      const chatResponse = LegacyRunMessageSchema.parse(
+        await socket.waitFor((msg) => msg.type === "chat_response"),
+      );
+      expect(chatResponse.type === "chat_response" ? chatResponse.text : "").toContain(
         "## Findings",
       );
 
       socket.send({ type: "start_run", scenario: "grid_ctf", generations: 1 });
-      const accepted = await socket.waitFor((msg) => msg.type === "run_accepted");
-      expect(accepted.scenario).toBe("grid_ctf");
-      expect(
-        (await socket.waitFor((msg) => msg.type === "event" && msg.event === "run_started")).event,
-      ).toBe("run_started");
-
-      const gateEvent = await socket.waitFor(
-        (msg) => msg.type === "event" && msg.event === "gate_decided",
+      const accepted = LegacyRunMessageSchema.parse(
+        await socket.waitFor((msg) => msg.type === "run_accepted"),
       );
+      if (accepted.type !== "run_accepted") throw new Error("expected run acceptance");
+      expect(accepted.scenario).toBe("grid_ctf");
+      LegacyRunMessageSchema.parse(
+        await socket.waitFor((msg) => msg.type === "event" && msg.event === "run_started"),
+      );
+
+      const gateEvent = LegacyRunMessageSchema.parse(
+        await socket.waitFor((msg) => msg.type === "event" && msg.event === "gate_decided"),
+      );
+      if (gateEvent.type !== "event") throw new Error("expected gate event");
       expect((gateEvent.payload as Record<string, unknown>).decision).toBe("rollback");
-      expect(
-        (await socket.waitFor((msg) => msg.type === "event" && msg.event === "run_completed"))
-          .event,
-      ).toBe("run_completed");
+      LegacyRunMessageSchema.parse(
+        await socket.waitFor((msg) => msg.type === "event" && msg.event === "run_completed"),
+      );
 
       const promptPath = join(
         dir,
@@ -557,6 +648,228 @@ describe("InteractiveServer", () => {
       await server.stop();
     }
   }, 15000);
+
+  it("retains stable run frames for correlated reconnect and restart backfill", async () => {
+    const { RunManager, InteractiveServer } = await import("../src/server/index.js");
+    const managerOpts = {
+      dbPath: join(dir, "test.db"),
+      migrationsDir: join(__dirname, "..", "migrations"),
+      runsRoot: join(dir, "runs"),
+      knowledgeRoot: join(dir, "knowledge"),
+      providerType: "deterministic",
+    };
+    const firstManager = new RunManager(managerOpts);
+    const firstServer = new InteractiveServer({ runManager: firstManager, port: 0 });
+    await firstServer.start();
+
+    const transcriptUrl = `${firstServer.url}?transcript_protocol_version=1`;
+    const socket = await openSocket(transcriptUrl);
+    const reconnect = await openSocket(transcriptUrl);
+    const otherScope = await openSocket(transcriptUrl);
+    let pauseAck: Record<string, unknown> | null = null;
+    let resumeAck: Record<string, unknown> | null = null;
+
+    try {
+      const hello = await socket.waitFor((msg) => msg.type === "hello");
+      expect(hello).toMatchObject({
+        protocol_version: 1,
+        transcript_protocol_version: 1,
+        capabilities: ["run_transcript_v1"],
+      });
+      await socket.waitFor((msg) => msg.type === "environments");
+      await socket.waitFor((msg) => msg.type === "state");
+
+      socket.send({
+        type: "start_run",
+        scenario: "grid_ctf",
+        generations: 1,
+        client_run_id: "client-run-1",
+        command_id: "command-start-1",
+      });
+      const accepted = await socket.waitFor((msg) => msg.type === "run_accepted");
+      const started = await socket.waitFor(
+        (msg) => msg.type === "event" && msg.event === "run_started",
+      );
+      const completed = await socket.waitFor(
+        (msg) => msg.type === "event" && msg.event === "run_completed",
+      );
+      firstManager.events.emit(
+        "monitor_alert",
+        {
+          alert_id: "alert-1",
+          condition_id: "condition-1",
+          condition_name: "Run safety",
+          condition_type: "process_exit",
+          scope: `run:${String(accepted.run_id)}`,
+          detail: "Authorization: Bearer should-not-be-retained",
+        },
+        "monitor",
+      );
+      const monitor = await socket.waitFor((msg) => msg.type === "monitor_alert");
+      expect(monitor.detail).toBe("[Redacted]");
+
+      firstManager.events.emit("future_run_checkpoint", {
+        run_id: accepted.run_id,
+        raw_internal_prompt: "must-not-cross-the-wire",
+      });
+      const futureCheckpoint = await socket.waitFor(
+        (msg) => msg.type === "event" && msg.event === "future_run_checkpoint",
+      );
+      expect(futureCheckpoint).toMatchObject({
+        client_run_id: "client-run-1",
+        payload: {},
+      });
+      expect(JSON.stringify(futureCheckpoint)).not.toContain("must-not-cross-the-wire");
+
+      await expect(
+        otherScope.waitFor((msg) => msg.client_run_id === "client-run-1", 250),
+      ).rejects.toThrow(/Timed out/);
+
+      for (const frame of [accepted, started, completed, monitor, futureCheckpoint]) {
+        expect(frame.client_run_id).toBe("client-run-1");
+        expect(frame.run_id).toBe(accepted.run_id);
+        expect(frame.event_id).toMatch(/^[0-9a-f-]{36}$/);
+        expect(frame.sequence).toEqual(expect.any(Number));
+        expect(Number.isFinite(Date.parse(String(frame.occurred_at)))).toBe(true);
+      }
+      expect(accepted.command_id).toBe("command-start-1");
+
+      socket.send({
+        type: "chat_agent",
+        role: "analyst",
+        message: "What changed?",
+        client_run_id: "client-run-1",
+        command_id: "command-chat-1",
+      });
+      const chat = await socket.waitFor(
+        (msg) => msg.type === "chat_response" && msg.command_id === "command-chat-1",
+      );
+      expect(chat.client_run_id).toBe("client-run-1");
+
+      socket.send({
+        type: "pause",
+        client_run_id: "client-run-1",
+        command_id: "command-pause-1",
+      });
+      pauseAck = await socket.waitFor(
+        (msg) => msg.type === "ack" && msg.command_id === "command-pause-1",
+      );
+      expect(pauseAck.client_run_id).toBe("client-run-1");
+
+      socket.send({
+        type: "pause",
+        client_run_id: "client-run-1",
+        command_id: "command-pause-1",
+      });
+      expect(
+        await socket.waitFor((msg) => msg.type === "ack" && msg.command_id === "command-pause-1"),
+      ).toEqual(pauseAck);
+
+      for (const connection of [reconnect, otherScope]) {
+        await connection.waitFor((msg) => msg.type === "hello");
+        await connection.waitFor((msg) => msg.type === "environments");
+        await connection.waitFor((msg) => msg.type === "state");
+      }
+      reconnect.send({
+        type: "resume_run",
+        client_run_id: "client-run-1",
+        after_sequence: Number(completed.sequence),
+        command_id: "command-backfill-1",
+      });
+      expect(await reconnect.waitFor((msg) => msg.event_id === chat.event_id)).toEqual(chat);
+      expect(await reconnect.waitFor((msg) => msg.event_id === pauseAck.event_id)).toEqual(
+        pauseAck,
+      );
+      resumeAck = await reconnect.waitFor(
+        (msg) => msg.type === "ack" && msg.command_id === "command-backfill-1",
+      );
+      expect(resumeAck).toMatchObject({
+        action: "resume_run",
+        client_run_id: "client-run-1",
+      });
+
+      otherScope.send({
+        type: "resume_run",
+        client_run_id: "client-run-2",
+        after_sequence: 0,
+        command_id: "command-backfill-2",
+      });
+      await otherScope.waitFor(
+        (msg) => msg.type === "ack" && msg.command_id === "command-backfill-2",
+      );
+      socket.send({
+        type: "resume",
+        client_run_id: "client-run-1",
+        command_id: "command-client-1-only",
+      });
+      await socket.waitFor(
+        (msg) => msg.type === "ack" && msg.command_id === "command-client-1-only",
+      );
+      await expect(
+        otherScope.waitFor((msg) => msg.command_id === "command-client-1-only", 250),
+      ).rejects.toThrow(/Timed out/);
+
+      socket.send({
+        type: "start_run",
+        scenario: "grid_ctf",
+        generations: 1,
+        client_run_id: "client-run-1",
+        command_id: "command-start-1",
+      });
+      expect(await socket.waitFor((msg) => msg.event_id === accepted.event_id)).toEqual(accepted);
+      expect(firstManager.getState().active).toBe(false);
+
+      socket.send({
+        type: "start_run",
+        scenario: "grid_ctf",
+        generations: 1,
+        client_run_id: "client-run-1",
+        command_id: "command-start-conflict",
+      });
+      expect(
+        await socket.waitFor(
+          (msg) => msg.type === "error" && msg.command_id === "command-start-conflict",
+        ),
+      ).toMatchObject({
+        client_run_id: "client-run-1",
+        message: expect.stringContaining("existing run"),
+      });
+      expect(firstManager.getState().active).toBe(false);
+    } finally {
+      socket.close();
+      reconnect.close();
+      otherScope.close();
+      await firstServer.stop();
+    }
+
+    if (!pauseAck || !resumeAck) throw new Error("expected retained acknowledgements");
+
+    const secondManager = new RunManager(managerOpts);
+    const secondServer = new InteractiveServer({ runManager: secondManager, port: 0 });
+    await secondServer.start();
+    const restarted = await openSocket(`${secondServer.url}?transcript_protocol_version=1`);
+    try {
+      await restarted.waitFor((msg) => msg.type === "hello");
+      await restarted.waitFor((msg) => msg.type === "environments");
+      await restarted.waitFor((msg) => msg.type === "state");
+      restarted.send({
+        type: "resume_run",
+        client_run_id: "client-run-1",
+        after_sequence: Number(pauseAck.sequence) - 1,
+        command_id: "command-restart-backfill",
+      });
+      expect(await restarted.waitFor((msg) => msg.event_id === pauseAck.event_id)).toEqual(
+        pauseAck,
+      );
+      const restartAck = await restarted.waitFor(
+        (msg) => msg.type === "ack" && msg.command_id === "command-restart-backfill",
+      );
+      expect(Number(restartAck.sequence)).toBeGreaterThan(Number(resumeAck.sequence));
+    } finally {
+      restarted.close();
+      await secondServer.stop();
+    }
+  }, 20000);
 
   it("creates, revises, confirms, and catalogs custom scenarios through the live server", async () => {
     const { RunManager, InteractiveServer } = await import("../src/server/index.js");

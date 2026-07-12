@@ -1,4 +1,9 @@
-import { PROTOCOL_VERSION, type ServerMessage } from "./protocol.js";
+import {
+  PROTOCOL_VERSION,
+  SERVER_CAPABILITIES,
+  TRANSCRIPT_PROTOCOL_VERSION,
+  type ServerMessage,
+} from "./protocol.js";
 import type { EnvironmentInfo, RunManagerState } from "./run-manager.js";
 
 export function buildEnvironmentMessage(environment: EnvironmentInfo): ServerMessage {
@@ -23,9 +28,17 @@ export function buildStateMessage(state: RunManagerState): ServerMessage {
 export function buildSessionBootstrapMessages(
   environment: EnvironmentInfo,
   state: RunManagerState,
+  opts: { runTranscript?: boolean } = {},
 ): ServerMessage[] {
   return [
-    { type: "hello", protocol_version: PROTOCOL_VERSION },
+    opts.runTranscript
+      ? {
+          type: "hello",
+          protocol_version: PROTOCOL_VERSION,
+          transcript_protocol_version: TRANSCRIPT_PROTOCOL_VERSION,
+          capabilities: [...SERVER_CAPABILITIES],
+        }
+      : { type: "hello", protocol_version: PROTOCOL_VERSION },
     buildEnvironmentMessage(environment),
     buildStateMessage(state),
   ];

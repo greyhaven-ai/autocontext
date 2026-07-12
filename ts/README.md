@@ -82,6 +82,39 @@ autoctx mcp-serve
 
 The MCP server exposes 40+ tools across scenarios, runs, knowledge, evaluation, feedback, solve (`solve_scenario`, `solve_status`, `solve_result`), sandbox (`sandbox_create`, `sandbox_run`, `sandbox_status`, ...), export, and discovery (`capabilities`). Python and TypeScript share the same high-level vocabulary; parity details are tracked in [../docs/scenario-parity-matrix.md](../docs/scenario-parity-matrix.md).
 
+### Interactive run transcript extension
+
+The TypeScript `/ws/interactive` server keeps the base WebSocket
+`protocol_version` at `1`. Plain `/ws/interactive` connections retain the exact
+legacy v1 hello and run-frame shapes. Clients explicitly opt into durable
+transcripts with `/ws/interactive?transcript_protocol_version=1`; that connection
+advertises `transcript_protocol_version: 1` and the `run_transcript_v1` capability.
+Clients may attach a stable `client_run_id` and `command_id` to `start_run`,
+operator-control, and chat commands. Run-scoped responses then include stable
+`event_id`, monotonic `sequence`, `client_run_id`, and `occurred_at` fields.
+
+Reconnect with:
+
+```json
+{
+  "type": "resume_run",
+  "client_run_id": "control-plane-run-id",
+  "after_sequence": 42,
+  "command_id": "resume-attempt-id"
+}
+```
+
+The server replays the exact retained wire frames after that cursor and finishes
+with a correlated `ack`. Frames and request fingerprints are synchronously
+persisted before side effects or delivery under
+`runs/_interactive/run-transcript.ndjson`, survive server restarts, and only store
+an allowlisted, size-bounded, redacted presentation payload. Retention is bounded
+by age, file bytes, global/per-run frame counts, and command count; command
+idempotency has the same finite horizon as its retained request and response.
+Compaction uses an fsync-backed atomic replacement. The Python server accepts the
+additive metadata fields for schema compatibility but does not advertise this
+TypeScript-only retention capability.
+
 ## Library usage
 
 ```ts
