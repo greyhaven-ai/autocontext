@@ -468,6 +468,34 @@
         }
       ],
       "output_contract": "json"
+    },
+    {
+      "id": "rescore",
+      "path": ["rescore"],
+      "summary": "Re-score a run's stale generations under the current evaluator and report drift, read-only.",
+      "audience": "advanced",
+      "maturity": "experimental",
+      "domain_concept": null,
+      "aliases": [],
+      "runtime_support": {
+        "python": {
+          "status": "yes"
+        },
+        "typescript": {
+          "status": "intentional_gap",
+          "reason": "on-demand re-score depends on the Python-only LLM-judge and evaluator-epoch registry path; no TypeScript equivalent (matches the epoch CLI)."
+        }
+      },
+      "flags": [
+        {
+          "name": "generation",
+          "type": "int",
+          "aliases": [],
+          "required": false,
+          "description": "Re-score a single generation by index (default: all stale generations)."
+        }
+      ],
+      "output_contract": "json"
     }
   ]
 }

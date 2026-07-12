@@ -32,6 +32,7 @@ from autocontext.cli_new_scenario import register_new_scenario_command
 from autocontext.cli_package_commands import register_package_commands
 from autocontext.cli_probes import register_probes_command
 from autocontext.cli_queue import register_queue_command
+from autocontext.cli_rescore import rescore_command
 from autocontext.cli_role_runtime import resolve_role_runtime
 from autocontext.cli_run_inspect import (
     _lineage_cell,
@@ -1228,6 +1229,7 @@ register_self_improve_command(app, console)
 register_share_command(app, console=console)
 register_train_command(app, console)
 register_worker_command(app, console=console)
+app.command("rescore")(rescore_command)
 
 
 if __name__ == "__main__":

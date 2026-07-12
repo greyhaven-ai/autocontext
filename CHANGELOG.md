@@ -49,6 +49,12 @@ All notable changes to this project will be documented in this file.
   `evaluator_epoch`/`quarantined` fields but do not classify staleness (the registry stays
   Python-only, a documented gap consistent with prior sub-slices). Lazy re-score of stale records
   remains deferred to Slice D2.
+- AC-885 Slice D2a: on-demand re-score (report-only). A new `autoctx rescore <run_id> [--generation N]`
+  command re-runs the current evaluator against a stale generation's original stored competitor
+  artifact and reports the old-vs-new score and epoch, including whether the fresh epoch matches the
+  scenario's active one. It writes nothing (no `upsert_generation`, no registry write, no quarantine
+  clear) and degrades every failure mode (no artifact, no active epoch, no evaluator, a scorer error)
+  to a per-generation skip status rather than crashing. Persisting a re-score is deferred to Slice D2b.
 
 ## [0.11.0] - 2026-07-02
 
