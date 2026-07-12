@@ -7,10 +7,12 @@ import {
 
 describe("chat agent command workflow", () => {
   it("builds chat response messages", () => {
-    expect(buildChatResponseMessage({
-      role: "analyst",
-      text: "## Findings\n- Issue found",
-    })).toEqual({
+    expect(
+      buildChatResponseMessage({
+        role: "analyst",
+        text: "## Findings\n- Issue found",
+      }),
+    ).toEqual({
       type: "chat_response",
       role: "analyst",
       text: "## Findings\n- Issue found",
@@ -22,14 +24,16 @@ describe("chat agent command workflow", () => {
       chatAgent: vi.fn(async () => "## Findings\n- Issue found"),
     };
 
-    await expect(executeChatAgentCommand({
-      command: {
-        type: "chat_agent",
-        role: "analyst",
-        message: "What changed?",
-      },
-      runManager,
-    })).resolves.toEqual([
+    await expect(
+      executeChatAgentCommand({
+        command: {
+          type: "chat_agent",
+          role: "analyst",
+          message: "What changed?",
+        },
+        runManager,
+      }),
+    ).resolves.toEqual([
       {
         type: "chat_response",
         role: "analyst",
@@ -38,5 +42,32 @@ describe("chat agent command workflow", () => {
     ]);
 
     expect(runManager.chatAgent).toHaveBeenCalledWith("analyst", "What changed?");
+  });
+
+  it("echoes run and command correlation on chat responses", async () => {
+    const runManager = {
+      chatAgent: vi.fn(async () => "Correlated response"),
+    };
+
+    await expect(
+      executeChatAgentCommand({
+        command: {
+          type: "chat_agent",
+          role: "analyst",
+          message: "What changed?",
+          client_run_id: "client-run-1",
+          command_id: "command-chat-1",
+        },
+        runManager,
+      }),
+    ).resolves.toEqual([
+      {
+        type: "chat_response",
+        role: "analyst",
+        text: "Correlated response",
+        client_run_id: "client-run-1",
+        command_id: "command-chat-1",
+      },
+    ]);
   });
 });

@@ -44,7 +44,34 @@ describe("websocket session bootstrap", () => {
 
   it("builds the initial websocket bootstrap sequence in protocol order", () => {
     expect(buildSessionBootstrapMessages(environment, state)).toEqual([
-      { type: "hello", protocol_version: 1 },
+      {
+        type: "hello",
+        protocol_version: 1,
+      },
+      {
+        type: "environments",
+        scenarios: [{ name: "grid_ctf", description: "Capture the flag" }],
+        executors: [{ mode: "local", available: true, description: "Local executor" }],
+        current_executor: "local",
+        agent_provider: "deterministic",
+      },
+      {
+        type: "state",
+        paused: false,
+        generation: undefined,
+        phase: undefined,
+      },
+    ]);
+  });
+
+  it("advertises transcript capability only after explicit opt-in", () => {
+    expect(buildSessionBootstrapMessages(environment, state, { runTranscript: true })).toEqual([
+      {
+        type: "hello",
+        protocol_version: 1,
+        transcript_protocol_version: 1,
+        capabilities: ["run_transcript_v1"],
+      },
       {
         type: "environments",
         scenarios: [{ name: "grid_ctf", description: "Capture the flag" }],

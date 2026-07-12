@@ -10,6 +10,7 @@ import {
 } from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
 import type { AddressInfo } from "node:net";
+import { join } from "node:path";
 import { URL } from "node:url";
 import { MissionEventEmitter } from "../mission/events.js";
 import { CampaignManager } from "../mission/campaign.js";
@@ -58,8 +59,13 @@ import { tryKnowledgeRoutes } from "./routes/knowledge-routes.js";
 import { tryScenarioSimulationRoutes } from "./routes/scenario-simulation-routes.js";
 import { tryCampaignRoutes } from "./routes/campaign-routes.js";
 import { tryMissionRoutes } from "./routes/mission-routes.js";
-import { parseClientMessage } from "./protocol.js";
+import {
+  parseClientMessage,
+  TRANSCRIPT_PROTOCOL_QUERY_PARAM,
+  TRANSCRIPT_PROTOCOL_QUERY_VALUE,
+} from "./protocol.js";
 import type { ClientMessage, ServerMessage } from "./protocol.js";
+import { RunTranscriptStore, type RetainedRunFrame } from "./run-transcript-store.js";
 import type { RunManager } from "./run-manager.js";
 import type { RunManagerState } from "./run-manager.js";
 import type { EventCallback } from "../loop/events.js";
@@ -97,6 +103,22 @@ export class InteractiveServer {
   readonly #missionEvents: MissionEventEmitter;
   readonly #host: string;
   readonly #requestedPort: number;
+  readonly #runTranscripts: RunTranscriptStore;
+  readonly #interactiveClients = new Set<WebSocket>();
+  readonly #transcriptClients = new Set<WebSocket>();
+  readonly #clientRunScopes = new Map<WebSocket, string>();
+  readonly #onRunEvent: EventCallback = (event, payload, record) => {
+    this.#broadcastRunEvent(event, payload, record?.ts);
+  };
+  readonly #onRunState = (state: RunManagerState) => {
+    this.#broadcastRunState(state);
+  };
+  #pendingStart: {
+    clientRunId: string | null;
+    runTranscript: boolean;
+    ws: WebSocket;
+  } | null = null;
+  #runSubscriptionsActive = false;
   #solveManager: SolveManager | null = null;
   #solveStore: SQLiteStore | null = null;
   #solveProvider: LLMProvider | null = null;
@@ -116,6 +138,9 @@ export class InteractiveServer {
     this.#campaignManager = new CampaignManager(this.#missionManager);
     this.#host = opts.host ?? "127.0.0.1";
     this.#requestedPort = opts.port ?? 8000;
+    this.#runTranscripts = new RunTranscriptStore(
+      join(this.#runManager.getRunsRoot(), "_interactive", "run-transcript.ndjson"),
+    );
     // Dashboard removed (AC-467)
   }
 
@@ -144,13 +169,17 @@ export class InteractiveServer {
 
     const wsServer = new WebSocketServer({ noServer: true });
     httpServer.on("upgrade", (req, socket, head) => {
-      if (req.url === "/ws/interactive") {
+      const requestUrl = new URL(req.url ?? "/", "http://localhost");
+      if (requestUrl.pathname === "/ws/interactive") {
+        const runTranscript =
+          requestUrl.searchParams.get(TRANSCRIPT_PROTOCOL_QUERY_PARAM) ===
+          TRANSCRIPT_PROTOCOL_QUERY_VALUE;
         wsServer.handleUpgrade(req, socket, head, (ws: WebSocket) => {
-          this.#attachClient(ws);
+          this.#attachClient(ws, runTranscript);
         });
         return;
       }
-      if (req.url === "/ws/events") {
+      if (requestUrl.pathname === "/ws/events") {
         wsServer.handleUpgrade(req, socket, head, (ws: WebSocket) => {
           this.#attachEventStreamClient(ws);
         });
@@ -176,6 +205,7 @@ export class InteractiveServer {
     this.#httpServer = httpServer;
     this.#wsServer = wsServer;
     this.#boundPort = (httpServer.address() as AddressInfo).port;
+    this.#subscribeToRunUpdates();
     return this.#boundPort;
   }
 
@@ -421,6 +451,7 @@ export class InteractiveServer {
     this.#wsServer = null;
     this.#httpServer = null;
     this.#boundPort = 0;
+    this.#unsubscribeFromRunUpdates();
 
     if (wsServer) {
       for (const client of wsServer.clients) {
@@ -458,19 +489,16 @@ export class InteractiveServer {
     this.#solveProvider?.close?.();
     this.#solveProvider = null;
     this.#solveManager = null;
+    this.#interactiveClients.clear();
+    this.#transcriptClients.clear();
+    this.#clientRunScopes.clear();
+    this.#pendingStart = null;
   }
 
-  #attachClient(ws: WebSocket): void {
+  #attachClient(ws: WebSocket, runTranscript: boolean): void {
     const env = this.#runManager.getEnvironmentInfo();
-    const eventCallback: EventCallback = (event, payload) => {
-      this.#send(ws, { type: "event", event, payload });
-    };
-    const stateCallback = (state: RunManagerState) => {
-      this.#sendState(ws, state);
-    };
-
-    this.#runManager.subscribeEvents(eventCallback);
-    this.#runManager.subscribeState(stateCallback);
+    this.#interactiveClients.add(ws);
+    if (runTranscript) this.#transcriptClients.add(ws);
 
     const unsubscribeMissionProgress = subscribeToMissionProgressEvents({
       missionEvents: this.#missionEvents,
@@ -481,7 +509,17 @@ export class InteractiveServer {
       },
     });
 
-    for (const message of buildSessionBootstrapMessages(env, this.#runManager.getState())) {
+    const state = this.#runManager.getState();
+    for (const message of buildSessionBootstrapMessages(env, state, { runTranscript })) {
+      if (message.type !== "state") {
+        this.#send(ws, message);
+        continue;
+      }
+      const clientRunId = state.runId ? this.#runTranscripts.resolveClientRunId(state.runId) : null;
+      if (runTranscript && clientRunId) {
+        this.#send(ws, { type: "state", paused: state.paused });
+        continue;
+      }
       this.#send(ws, message);
     }
 
@@ -491,13 +529,30 @@ export class InteractiveServer {
         parsedMessage = this.#parseMessage(data.toString());
         await this.#handleClientMessage(ws, parsedMessage);
       } catch (err) {
-        this.#send(ws, buildClientErrorMessage(err, parsedMessage));
+        const response = buildClientErrorMessage(err, parsedMessage);
+        const clientRunId = readClientRunId(parsedMessage);
+        const commandId = readCommandId(parsedMessage);
+        if (
+          clientRunId &&
+          commandId &&
+          parsedMessage &&
+          this.#runTranscripts.canCompleteCommand({
+            clientRunId,
+            commandId,
+            command: parsedMessage,
+          })
+        ) {
+          this.#sendRunResponse(ws, response, clientRunId, parsedMessage);
+        } else {
+          this.#sendLegacyOrCurrent(ws, response);
+        }
       }
     });
 
     ws.on("close", () => {
-      this.#runManager.unsubscribeEvents(eventCallback);
-      this.#runManager.unsubscribeState(stateCallback);
+      this.#interactiveClients.delete(ws);
+      this.#transcriptClients.delete(ws);
+      this.#clientRunScopes.delete(ws);
       unsubscribeMissionProgress();
     });
   }
@@ -547,12 +602,38 @@ export class InteractiveServer {
   }
 
   async #handleClientMessage(ws: WebSocket, msg: ClientMessage): Promise<void> {
+    if (
+      !this.#transcriptClients.has(ws) &&
+      (msg.type === "resume_run" || readClientRunId(msg) || readCommandId(msg))
+    ) {
+      throw new Error("run transcript commands require ?transcript_protocol_version=1");
+    }
     switch (msg.type) {
+      case "resume_run": {
+        this.#resumeRunTranscript(ws, msg);
+        return;
+      }
+      case "start_run": {
+        await this.#startRun(ws, msg);
+        return;
+      }
       case "pause":
       case "resume":
       case "inject_hint":
-      case "override_gate":
-      case "start_run":
+      case "override_gate": {
+        const clientRunId = this.#resolveCommandScope(msg.client_run_id);
+        if (clientRunId) {
+          this.#bindClientScope(ws, clientRunId);
+        }
+        if (!this.#beginDurableCommand(ws, msg, clientRunId)) return;
+        for (const response of await executeInteractiveControlCommand({
+          command: msg,
+          runManager: this.#runManager,
+        })) {
+          this.#sendRunResponse(ws, response, clientRunId, msg);
+        }
+        return;
+      }
       case "list_scenarios": {
         for (const response of await executeInteractiveControlCommand({
           command: msg,
@@ -563,11 +644,16 @@ export class InteractiveServer {
         return;
       }
       case "chat_agent": {
+        const clientRunId = this.#resolveCommandScope(msg.client_run_id);
+        if (clientRunId) {
+          this.#bindClientScope(ws, clientRunId);
+        }
+        if (!this.#beginDurableCommand(ws, msg, clientRunId)) return;
         for (const response of await executeChatAgentCommand({
           command: msg,
           runManager: this.#runManager,
         })) {
-          this.#send(ws, response);
+          this.#sendRunResponse(ws, response, clientRunId, msg);
         }
         return;
       }
@@ -599,8 +685,268 @@ export class InteractiveServer {
     }
   }
 
-  #sendState(ws: WebSocket, state: RunManagerState): void {
-    this.#send(ws, buildStateMessage(state));
+  async #startRun(
+    ws: WebSocket,
+    command: Extract<ClientMessage, { type: "start_run" }>,
+  ): Promise<void> {
+    const requestedClientRunId = command.client_run_id ?? null;
+    if (requestedClientRunId) {
+      this.#bindClientScope(ws, requestedClientRunId);
+      if (!this.#beginDurableCommand(ws, command, requestedClientRunId)) return;
+      const accepted = this.#runTranscripts.latestFrameOfType(requestedClientRunId, "run_accepted");
+      if (accepted) {
+        throw new Error("client_run_id is already associated with an existing run");
+      }
+    }
+    if (this.#pendingStart) {
+      throw new Error("A run start is already being processed");
+    }
+    if (this.#runManager.getState().active) {
+      throw new Error("A run is already active");
+    }
+
+    this.#pendingStart = {
+      clientRunId: requestedClientRunId,
+      runTranscript: this.#transcriptClients.has(ws),
+      ws,
+    };
+    try {
+      const responses = await executeInteractiveControlCommand({
+        command,
+        runManager: this.#runManager,
+      });
+      for (const response of responses) {
+        if (response.type !== "run_accepted") {
+          this.#send(ws, response);
+          continue;
+        }
+        const clientRunId = this.#pendingStart.clientRunId ?? response.run_id;
+        this.#runTranscripts.registerRun(clientRunId, response.run_id);
+        if (this.#pendingStart.runTranscript) {
+          this.#bindClientScope(ws, clientRunId);
+        }
+        this.#sendRunResponse(ws, response, clientRunId, command);
+      }
+    } finally {
+      this.#pendingStart = null;
+    }
+  }
+
+  #resumeRunTranscript(
+    ws: WebSocket,
+    command: Extract<ClientMessage, { type: "resume_run" }>,
+  ): void {
+    this.#bindClientScope(ws, command.client_run_id);
+    const commandResult = command.command_id
+      ? this.#runTranscripts.beginCommand({
+          clientRunId: command.client_run_id,
+          commandId: command.command_id,
+          command,
+        })
+      : ({ outcome: "proceed" } as const);
+    if (commandResult.outcome === "conflict") {
+      this.#sendCommandError(
+        ws,
+        command,
+        "command_id is already associated with a different request",
+      );
+      return;
+    }
+    if (commandResult.outcome === "pending") {
+      this.#sendCommandError(
+        ws,
+        command,
+        "command outcome is pending or unknown; refusing to repeat side effects",
+      );
+      return;
+    }
+    const frames = this.#runTranscripts.framesAfter(command.client_run_id, command.after_sequence);
+    for (const frame of frames) {
+      this.#sendWire(ws, frame.wire);
+    }
+    if (commandResult.outcome === "completed") {
+      if (!frames.some((frame) => frame.eventId === commandResult.frame.eventId)) {
+        this.#sendWire(ws, commandResult.frame.wire);
+      }
+      return;
+    }
+    this.#sendRunResponse(
+      ws,
+      { type: "ack", action: "resume_run", command_id: command.command_id },
+      command.client_run_id,
+      command,
+    );
+  }
+
+  #resolveCommandScope(requestedClientRunId?: string): string | null {
+    const state = this.#runManager.getState();
+    const activeClientRunId = state.runId
+      ? this.#runTranscripts.resolveClientRunId(state.runId)
+      : null;
+    if (!requestedClientRunId) return activeClientRunId;
+    if (!activeClientRunId || activeClientRunId !== requestedClientRunId) {
+      throw new Error("client_run_id does not match the current engine run");
+    }
+    return requestedClientRunId;
+  }
+
+  #broadcastRunEvent(event: string, payload: Record<string, unknown>, occurredAt?: string): void {
+    const message = buildInteractiveEventMessage(event, payload);
+    this.#broadcastLegacy(message);
+    const state = this.#runManager.getState();
+    const runId = readEventRunId(event, payload) ?? (state.active ? state.runId : null);
+    let clientRunId = runId ? this.#runTranscripts.resolveClientRunId(runId) : null;
+    if (!clientRunId && runId && this.#pendingStart) {
+      clientRunId = this.#pendingStart.clientRunId ?? runId;
+      this.#pendingStart.clientRunId = clientRunId;
+      this.#runTranscripts.registerRun(clientRunId, runId);
+      if (this.#pendingStart.runTranscript) {
+        this.#bindClientScope(this.#pendingStart.ws, clientRunId);
+      }
+    }
+    if (!clientRunId) return;
+    const frame = this.#runTranscripts.record({
+      clientRunId,
+      message,
+      occurredAt,
+      runId,
+    });
+    if (frame) {
+      this.#broadcastRetainedFrame(frame);
+    }
+  }
+
+  #broadcastRunState(state: RunManagerState): void {
+    const runId = state.runId;
+    let clientRunId = runId ? this.#runTranscripts.resolveClientRunId(runId) : null;
+    if (state.active && runId && this.#pendingStart) {
+      clientRunId = this.#pendingStart.clientRunId ?? runId;
+      this.#pendingStart.clientRunId = clientRunId;
+      this.#runTranscripts.registerRun(clientRunId, runId);
+      if (this.#pendingStart.runTranscript) {
+        this.#bindClientScope(this.#pendingStart.ws, clientRunId);
+      }
+    }
+    const message = buildStateMessage(state);
+    this.#broadcastLegacy(message);
+    if (!clientRunId) {
+      for (const client of this.#transcriptClients) {
+        if (!this.#clientRunScopes.has(client)) this.#send(client, message);
+      }
+      return;
+    }
+    const frame = this.#runTranscripts.record({
+      clientRunId,
+      message,
+      runId,
+    });
+    if (frame) this.#broadcastRetainedFrame(frame);
+  }
+
+  #sendRunResponse(
+    ws: WebSocket,
+    message: ServerMessage,
+    clientRunId: string | null,
+    command?: ClientMessage,
+  ): void {
+    if (!this.#transcriptClients.has(ws)) {
+      this.#sendLegacy(ws, message);
+      return;
+    }
+    if (!clientRunId) {
+      this.#send(ws, message);
+      return;
+    }
+    const commandId = readCommandId(command ?? null) ?? undefined;
+    const runId = readServerMessageRunId(message) ?? this.#runTranscripts.resolveRunId(clientRunId);
+    const frame = this.#runTranscripts.record({
+      clientRunId,
+      commandId,
+      message,
+      runId,
+    });
+    if (frame) {
+      if (
+        command &&
+        commandId &&
+        this.#runTranscripts.canCompleteCommand({
+          clientRunId,
+          commandId,
+          command,
+        })
+      ) {
+        this.#runTranscripts.completeCommand({
+          clientRunId,
+          commandId,
+          command,
+          frame,
+        });
+      }
+      this.#sendWire(ws, frame.wire);
+      return;
+    }
+    this.#send(ws, message);
+  }
+
+  #beginDurableCommand(ws: WebSocket, command: ClientMessage, clientRunId: string | null): boolean {
+    const commandId = readCommandId(command);
+    if (!this.#transcriptClients.has(ws) || !clientRunId || !commandId) return true;
+    const result = this.#runTranscripts.beginCommand({
+      clientRunId,
+      commandId,
+      command,
+    });
+    if (result.outcome === "proceed") return true;
+    if (result.outcome === "completed") {
+      this.#sendWire(ws, result.frame.wire);
+      return false;
+    }
+    const message =
+      result.outcome === "conflict"
+        ? "command_id is already associated with a different request"
+        : "command outcome is pending or unknown; refusing to repeat side effects";
+    this.#sendCommandError(ws, command, message);
+    return false;
+  }
+
+  #sendCommandError(ws: WebSocket, command: ClientMessage, message: string): void {
+    this.#send(ws, {
+      type: "error",
+      message,
+      ...(readClientRunId(command) ? { client_run_id: readClientRunId(command) ?? undefined } : {}),
+      ...(readCommandId(command) ? { command_id: readCommandId(command) ?? undefined } : {}),
+    });
+  }
+
+  #broadcastRetainedFrame(frame: RetainedRunFrame): void {
+    for (const client of this.#transcriptClients) {
+      const scope = this.#clientRunScopes.get(client);
+      if (scope === frame.clientRunId) this.#sendWire(client, frame.wire);
+    }
+  }
+
+  #broadcastLegacy(message: ServerMessage): void {
+    for (const client of this.#interactiveClients) {
+      if (!this.#transcriptClients.has(client)) this.#sendLegacy(client, message);
+    }
+  }
+
+  #bindClientScope(ws: WebSocket, clientRunId: string): void {
+    this.#clientRunScopes.set(ws, clientRunId);
+  }
+
+  #subscribeToRunUpdates(): void {
+    if (this.#runSubscriptionsActive) return;
+    this.#runSubscriptionsActive = true;
+    this.#runManager.subscribeEvents(this.#onRunEvent);
+    this.#runManager.subscribeState(this.#onRunState);
+  }
+
+  #unsubscribeFromRunUpdates(): void {
+    if (!this.#runSubscriptionsActive) return;
+    this.#runSubscriptionsActive = false;
+    this.#runManager.unsubscribeEvents(this.#onRunEvent);
+    this.#runManager.unsubscribeState(this.#onRunState);
   }
 
   #send(ws: WebSocket, msg: ServerMessage): void {
@@ -608,6 +954,23 @@ export class InteractiveServer {
       return;
     }
     ws.send(JSON.stringify(msg));
+  }
+
+  #sendLegacy(ws: WebSocket, message: ServerMessage): void {
+    this.#send(ws, legacyRunMessage(message));
+  }
+
+  #sendLegacyOrCurrent(ws: WebSocket, message: ServerMessage): void {
+    if (this.#transcriptClients.has(ws)) {
+      this.#send(ws, message);
+      return;
+    }
+    this.#sendLegacy(ws, message);
+  }
+
+  #sendWire(ws: WebSocket, wire: string): void {
+    if (ws.readyState !== WebSocket.OPEN) return;
+    ws.send(wire);
   }
 
   #parseMessage(raw: string): ClientMessage {
@@ -636,5 +999,99 @@ function isTrustedLocalOrigin(origin: string, host: string): boolean {
     return parsed.protocol === "http:" && allowedHosts.has(parsed.hostname);
   } catch {
     return false;
+  }
+}
+
+function buildInteractiveEventMessage(
+  event: string,
+  payload: Record<string, unknown>,
+): ServerMessage {
+  if (event === "monitor_alert") {
+    return {
+      type: "monitor_alert",
+      alert_id: stringField(payload.alert_id),
+      condition_id: stringField(payload.condition_id),
+      condition_name: stringField(payload.condition_name),
+      condition_type: stringField(payload.condition_type),
+      scope: stringField(payload.scope),
+      detail: stringField(payload.detail),
+    };
+  }
+  return { type: "event", event, payload };
+}
+
+function readClientRunId(message: ClientMessage | null): string | null {
+  if (!message || !("client_run_id" in message)) return null;
+  return message.client_run_id ?? null;
+}
+
+function readCommandId(message: ClientMessage | null): string | undefined {
+  if (!message || !("command_id" in message)) return undefined;
+  return message.command_id;
+}
+
+function readEventRunId(event: string, payload: Record<string, unknown>): string | null {
+  if (typeof payload.run_id === "string" && payload.run_id.length > 0) return payload.run_id;
+  if (event === "monitor_alert" && typeof payload.scope === "string") {
+    return payload.scope.startsWith("run:") ? payload.scope.slice("run:".length) || null : null;
+  }
+  return null;
+}
+
+function readServerMessageRunId(message: ServerMessage): string | null {
+  if ("run_id" in message && typeof message.run_id === "string" && message.run_id.length > 0) {
+    return message.run_id;
+  }
+  if (message.type === "event") return readEventRunId(message.event, message.payload);
+  if (message.type === "monitor_alert" && message.scope.startsWith("run:")) {
+    return message.scope.slice("run:".length) || null;
+  }
+  return null;
+}
+
+function stringField(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function legacyRunMessage(message: ServerMessage): ServerMessage {
+  switch (message.type) {
+    case "event":
+      return { type: "event", event: message.event, payload: message.payload };
+    case "state":
+      return {
+        type: "state",
+        paused: message.paused,
+        ...(message.generation === undefined ? {} : { generation: message.generation }),
+        ...(message.phase === undefined ? {} : { phase: message.phase }),
+      };
+    case "run_accepted":
+      return {
+        type: "run_accepted",
+        run_id: message.run_id,
+        scenario: message.scenario,
+        generations: message.generations,
+      };
+    case "ack":
+      return {
+        type: "ack",
+        action: message.action,
+        ...(message.decision === undefined ? {} : { decision: message.decision }),
+      };
+    case "chat_response":
+      return { type: "chat_response", role: message.role, text: message.text };
+    case "error":
+      return { type: "error", message: message.message };
+    case "monitor_alert":
+      return {
+        type: "monitor_alert",
+        alert_id: message.alert_id,
+        condition_id: message.condition_id,
+        condition_name: message.condition_name,
+        condition_type: message.condition_type,
+        scope: message.scope,
+        detail: message.detail,
+      };
+    default:
+      return message;
   }
 }

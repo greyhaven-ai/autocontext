@@ -15,6 +15,10 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 PROTOCOL_VERSION = 1
 
+
+def _is_none(value: object) -> bool:
+    return value is None
+
 # ---------------------------------------------------------------------------
 # Nested / shared models
 # ---------------------------------------------------------------------------
@@ -61,6 +65,23 @@ class ScoringComponent(BaseModel):
     weight: float
 
 
+class RunMessageMetadata(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    client_run_id: str | None = Field(default=None, exclude_if=_is_none)
+    event_id: str | None = Field(default=None, exclude_if=_is_none)
+    sequence: int | None = Field(default=None, exclude_if=_is_none)
+    run_id: str | None = Field(default=None, exclude_if=_is_none)
+    occurred_at: str | float | None = Field(default=None, exclude_if=_is_none)
+
+
+class RunCommandMetadata(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    client_run_id: str | None = None
+    command_id: str | None = None
+
+
 # ---------------------------------------------------------------------------
 # Server -> Client messages
 # ---------------------------------------------------------------------------
@@ -71,9 +92,11 @@ class HelloMsg(BaseModel):
 
     type: Literal["hello"] = "hello"
     protocol_version: int = PROTOCOL_VERSION
+    transcript_protocol_version: int | None = Field(default=None, exclude_if=_is_none)
+    capabilities: list[str] | None = Field(default=None, exclude_if=_is_none)
 
 
-class EventMsg(BaseModel):
+class EventMsg(RunMessageMetadata):
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["event"] = "event"
@@ -81,7 +104,7 @@ class EventMsg(BaseModel):
     payload: dict[str, Any]
 
 
-class StateMsg(BaseModel):
+class StateMsg(RunMessageMetadata):
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["state"] = "state"
@@ -90,12 +113,13 @@ class StateMsg(BaseModel):
     phase: str = ""
 
 
-class ChatResponseMsg(BaseModel):
+class ChatResponseMsg(RunMessageMetadata):
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["chat_response"] = "chat_response"
     role: str
     text: str
+    command_id: str | None = Field(default=None, exclude_if=_is_none)
 
 
 class EnvironmentsMsg(BaseModel):
@@ -108,28 +132,31 @@ class EnvironmentsMsg(BaseModel):
     agent_provider: str
 
 
-class RunAcceptedMsg(BaseModel):
+class RunAcceptedMsg(RunMessageMetadata):
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["run_accepted"] = "run_accepted"
     run_id: str
     scenario: str
     generations: int
+    command_id: str | None = Field(default=None, exclude_if=_is_none)
 
 
-class AckMsg(BaseModel):
+class AckMsg(RunMessageMetadata):
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["ack"] = "ack"
     action: str
     decision: str | None = None
+    command_id: str | None = Field(default=None, exclude_if=_is_none)
 
 
-class ErrorMsg(BaseModel):
+class ErrorMsg(RunMessageMetadata):
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["error"] = "error"
     message: str
+    command_id: str | None = Field(default=None, exclude_if=_is_none)
 
 
 class ScenarioGeneratingMsg(BaseModel):
@@ -168,7 +195,7 @@ class ScenarioErrorMsg(BaseModel):
     stage: str
 
 
-class MonitorAlertMsg(BaseModel):
+class MonitorAlertMsg(RunMessageMetadata):
     """Pushed to WebSocket clients when a monitor condition fires (AC-209)."""
 
     model_config = ConfigDict(extra="forbid")
@@ -205,33 +232,33 @@ ServerMessage = Annotated[
 # ---------------------------------------------------------------------------
 
 
-class PauseCmd(BaseModel):
+class PauseCmd(RunCommandMetadata):
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["pause"] = "pause"
 
 
-class ResumeCmd(BaseModel):
+class ResumeCmd(RunCommandMetadata):
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["resume"] = "resume"
 
 
-class InjectHintCmd(BaseModel):
+class InjectHintCmd(RunCommandMetadata):
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["inject_hint"] = "inject_hint"
     text: str = Field(min_length=1)
 
 
-class OverrideGateCmd(BaseModel):
+class OverrideGateCmd(RunCommandMetadata):
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["override_gate"] = "override_gate"
     decision: Literal["advance", "retry", "rollback"]
 
 
-class ChatAgentCmd(BaseModel):
+class ChatAgentCmd(RunCommandMetadata):
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["chat_agent"] = "chat_agent"
@@ -239,7 +266,7 @@ class ChatAgentCmd(BaseModel):
     message: str = Field(min_length=1)
 
 
-class StartRunCmd(BaseModel):
+class StartRunCmd(RunCommandMetadata):
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["start_run"] = "start_run"

@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- TypeScript interactive runs now support an explicit opt-in, capability-versioned durable transcript with stable client/run/event identity, monotonic source sequencing, crash-safe request fingerprints, correlated operator commands, bounded/redacted exact-frame retention, atomic compaction, and `resume_run` reconnect/backfill across server restarts while plain connections remain strict v1-compatible (ERP-88).
 - Ambient per-role live-serving bridge (opt-in, AC-893): the promote stage writes a serving manifest mapping (real scenario, role) to the promoted ambient target, and the serving resolver reads it so a promoted model reaches its role in a live run (ambient candidates are slotted by target name, but generation resolves by real scenario). Off by default; enable by pointing BOTH the ambient daemon and the generation-loop process at one shared file via `AUTOCONTEXT_AMBIENT_SERVING_MANIFEST_PATH`.
 - `autoctx ambient` foundation: a charter-driven resident daemon skeleton (interview wizard, autonomy dial with guardrail floors, durable stage queue, five stages with auto-pause breakers, status/run/once cli). Stages are no-ops pending the ingest, curation, and training plans (docs/ambient-trainer-design.md).
 - The ambient ingest stage is live: charter-enabled sources (autocontext-native runs, jsonl trace feeds) flow through the redaction gate into an append-only trace store with per-source cursors and disk-quota retention; the llm proxy tap follows in the next slice.

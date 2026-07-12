@@ -6,6 +6,10 @@
 import { z } from "zod";
 
 export const PROTOCOL_VERSION = 1;
+export const TRANSCRIPT_PROTOCOL_VERSION = 1;
+export const TRANSCRIPT_PROTOCOL_QUERY_PARAM = "transcript_protocol_version";
+export const TRANSCRIPT_PROTOCOL_QUERY_VALUE = String(TRANSCRIPT_PROTOCOL_VERSION);
+export const SERVER_CAPABILITIES = ["run_transcript_v1"] as const;
 
 const protocolObject = <T extends z.ZodRawShape>(shape: T) => z.object(shape).strict();
 
@@ -47,6 +51,7 @@ export const PYTHON_SHARED_CLIENT_MESSAGE_TYPES = [
 ] as const;
 
 export const TYPESCRIPT_ONLY_CLIENT_MESSAGE_TYPES = [
+  "resume_run",
   "login",
   "logout",
   "switch_provider",
@@ -93,6 +98,19 @@ export const ScoringComponentSchema = protocolObject({
   weight: z.number(),
 });
 
+const RunMessageMetadataSchema = {
+  client_run_id: z.string().min(1).max(200).optional(),
+  event_id: z.string().min(1).optional(),
+  sequence: z.number().int().nonnegative().optional(),
+  run_id: z.string().min(1).optional(),
+  occurred_at: z.union([z.string(), z.number()]).optional(),
+} as const;
+
+const RunCommandMetadataSchema = {
+  client_run_id: z.string().min(1).max(200).optional(),
+  command_id: z.string().min(1).max(200).optional(),
+} as const;
+
 // ---------------------------------------------------------------------------
 // Server → Client messages
 // ---------------------------------------------------------------------------
@@ -100,12 +118,15 @@ export const ScoringComponentSchema = protocolObject({
 export const HelloMsgSchema = protocolObject({
   type: z.literal("hello"),
   protocol_version: z.number().int().optional(),
+  transcript_protocol_version: z.number().int().positive().optional(),
+  capabilities: z.array(z.string()).optional(),
 });
 
 export const EventMsgSchema = protocolObject({
   type: z.literal("event"),
   event: z.string(),
   payload: z.record(z.unknown()),
+  ...RunMessageMetadataSchema,
 });
 
 export const StateMsgSchema = protocolObject({
@@ -113,12 +134,15 @@ export const StateMsgSchema = protocolObject({
   paused: z.boolean(),
   generation: z.number().int().optional(),
   phase: z.string().optional(),
+  ...RunMessageMetadataSchema,
 });
 
 export const ChatResponseMsgSchema = protocolObject({
   type: z.literal("chat_response"),
   role: z.string(),
   text: z.string(),
+  command_id: z.string().min(1).max(200).optional(),
+  ...RunMessageMetadataSchema,
 });
 
 export const EnvironmentsMsgSchema = protocolObject({
@@ -131,20 +155,26 @@ export const EnvironmentsMsgSchema = protocolObject({
 
 export const RunAcceptedMsgSchema = protocolObject({
   type: z.literal("run_accepted"),
+  ...RunMessageMetadataSchema,
   run_id: z.string(),
   scenario: z.string(),
   generations: z.number().int(),
+  command_id: z.string().min(1).max(200).optional(),
 });
 
 export const AckMsgSchema = protocolObject({
   type: z.literal("ack"),
   action: z.string(),
   decision: z.string().optional().nullable(),
+  command_id: z.string().min(1).max(200).optional(),
+  ...RunMessageMetadataSchema,
 });
 
 export const ErrorMsgSchema = protocolObject({
   type: z.literal("error"),
   message: z.string(),
+  command_id: z.string().min(1).max(200).optional(),
+  ...RunMessageMetadataSchema,
 });
 
 export const ScenarioGeneratingMsgSchema = protocolObject({
@@ -183,6 +213,7 @@ export const MonitorAlertMsgSchema = protocolObject({
   condition_type: z.string(),
   scope: z.string(),
   detail: z.string(),
+  ...RunMessageMetadataSchema,
 });
 
 // Mission progress (AC-414)
@@ -216,23 +247,32 @@ export const AuthStatusMsgSchema = protocolObject({
 // Client → Server commands
 // ---------------------------------------------------------------------------
 
-export const PauseCmdSchema = protocolObject({ type: z.literal("pause") });
-export const ResumeCmdSchema = protocolObject({ type: z.literal("resume") });
+export const PauseCmdSchema = protocolObject({
+  type: z.literal("pause"),
+  ...RunCommandMetadataSchema,
+});
+export const ResumeCmdSchema = protocolObject({
+  type: z.literal("resume"),
+  ...RunCommandMetadataSchema,
+});
 
 export const InjectHintCmdSchema = protocolObject({
   type: z.literal("inject_hint"),
   text: z.string().min(1),
+  ...RunCommandMetadataSchema,
 });
 
 export const OverrideGateCmdSchema = protocolObject({
   type: z.literal("override_gate"),
   decision: z.enum(["advance", "retry", "rollback"]),
+  ...RunCommandMetadataSchema,
 });
 
 export const ChatAgentCmdSchema = protocolObject({
   type: z.literal("chat_agent"),
   role: z.string(),
   message: z.string().min(1),
+  ...RunCommandMetadataSchema,
 });
 
 export const StartRunCmdSchema = protocolObject({
@@ -240,6 +280,14 @@ export const StartRunCmdSchema = protocolObject({
   scenario: z.string(),
   generations: z.number().int().positive(),
   require_playbook_approval: z.boolean().default(false),
+  ...RunCommandMetadataSchema,
+});
+
+export const ResumeRunCmdSchema = protocolObject({
+  type: z.literal("resume_run"),
+  client_run_id: z.string().min(1).max(200),
+  after_sequence: z.number().int().nonnegative(),
+  command_id: z.string().min(1).max(200).optional(),
 });
 
 export const ListScenariosCmdSchema = protocolObject({
@@ -321,6 +369,7 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   ConfirmScenarioCmdSchema,
   ReviseScenarioCmdSchema,
   CancelScenarioCmdSchema,
+  ResumeRunCmdSchema,
   LoginCmdSchema,
   LogoutCmdSchema,
   SwitchProviderCmdSchema,
