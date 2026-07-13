@@ -45,6 +45,9 @@ def _make_store_stub(run_row: dict[str, Any] | None, generations: list[dict[str,
         def run_status(self, _run_id: str) -> list[dict[str, Any]]:
             return generations
 
+        def latest_active_revisions(self, _run_id: str, _active_epoch: str | None) -> dict[int, Any]:
+            return {}
+
         def close(self) -> None:
             pass
 

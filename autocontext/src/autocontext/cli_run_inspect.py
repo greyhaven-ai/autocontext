@@ -28,13 +28,14 @@ from typing import TYPE_CHECKING, Any
 import typer
 from rich.table import Table
 
-from autocontext.execution.epoch_lineage import annotate_status_rows
+from autocontext.execution.epoch_lineage import annotate_status_rows, revision_fields
 from autocontext.execution.evaluator_epoch_registry import EvaluatorEpochRegistry
 
 if TYPE_CHECKING:
     from rich.console import Console
 
     from autocontext.config.settings import AppSettings
+    from autocontext.storage.sqlite_store import SQLiteStore
 
 _TERMINAL_STATUSES = frozenset({"completed", "failed", "succeeded", "errored"})
 
@@ -46,15 +47,25 @@ def annotate_run_status_rows(
     settings: AppSettings,
     scenario: str | None,
     rows: list[dict[str, Any]],
+    store: SQLiteStore,
+    run_id: str,
 ) -> tuple[list[dict[str, Any]], str | None]:
-    """Annotate run_status rows with epoch lineage (AC-885 Slice D1).
+    """Annotate run_status rows with epoch lineage (AC-885 Slice D1) + recorded re-scores (Slice D2c).
 
     Shared by ``show`` and ``status`` so the registry root is constructed in one place. Builds the
     per-scenario epoch registry under ``settings.knowledge_root / "_evaluator_epochs"`` (same root as
-    ``cli_epoch``) and delegates to ``annotate_status_rows``. Read-only.
+    ``cli_epoch``) and delegates to ``annotate_status_rows``. Then merges the latest active-epoch re-score
+    per generation (recorded by ``rescore --apply``) onto each row via ``revision_fields``. Read-only.
+
+    ``store.latest_active_revisions`` returns ``{}`` when ``active_epoch_id`` is None, so every row still
+    gains the null-revision fields, keeping the surfaced shape consistent. Inputs are not mutated.
     """
     registry = EvaluatorEpochRegistry(settings.knowledge_root / "_evaluator_epochs")
-    return annotate_status_rows(rows, scenario, registry)
+    rows, active_epoch_id = annotate_status_rows(rows, scenario, registry)
+    revs = store.latest_active_revisions(run_id, active_epoch_id)
+    for row in rows:
+        row.update(revision_fields(revs.get(row["generation_index"])))
+    return rows, active_epoch_id
 
 
 def _lineage_cell(row: dict[str, Any]) -> str:
@@ -63,6 +74,23 @@ def _lineage_cell(row: dict[str, Any]) -> str:
     if row.get("quarantined"):
         label = f"{label}+quarantined"
     return label
+
+
+def _revised_cell(row: dict[str, Any]) -> str:
+    """Render the compact ``Revised`` column value: the latest active-epoch re-score, or ``-`` (AC-885 D2c)."""
+    revised = row.get("revised_score")
+    return f"{revised:.4f}" if revised is not None else "-"
+
+
+def _revised_note_line(rows: list[dict[str, Any]]) -> str | None:
+    """Return a single note line if any row carries an active-epoch re-score, else None (AC-885 D2c)."""
+    revised = [r for r in rows if r.get("has_active_revision")]
+    if not revised:
+        return None
+    return (
+        f"[cyan]{len(revised)} generation(s) have an active-epoch re-score recorded via `rescore --apply`; "
+        "the live score of record is unchanged.[/cyan]"
+    )
 
 
 def _stale_warning_line(rows: list[dict[str, Any]], active_epoch_id: str | None) -> str | None:
@@ -141,7 +169,7 @@ def register_run_inspect_commands(
                     console.print(f"[red]{message}[/red]")
                 raise typer.Exit(code=1)
 
-        rows, active_epoch_id = annotate_run_status_rows(settings, run.get("scenario"), rows)
+        rows, active_epoch_id = annotate_run_status_rows(settings, run.get("scenario"), rows, store, run_id)
 
         if json_output:
             payload: dict[str, Any] = {
@@ -162,6 +190,10 @@ def register_run_inspect_commands(
                         "evaluator_epoch": r.get("evaluator_epoch"),
                         "evaluator_epoch_status": r["evaluator_epoch_status"],
                         "quarantined": bool(r.get("quarantined")),
+                        "has_active_revision": r["has_active_revision"],
+                        "revised_score": r.get("revised_score"),
+                        "revised_by": r.get("revised_by"),
+                        "revised_at": r.get("revised_at"),
                     }
                     for r in rows
                 ],
@@ -183,6 +215,7 @@ def register_run_inspect_commands(
         table.add_column("Gate")
         table.add_column("Status")
         table.add_column("Lineage")
+        table.add_column("Revised")
         for row in rows:
             table.add_row(
                 str(row["generation_index"]),
@@ -194,11 +227,15 @@ def register_run_inspect_commands(
                 row["gate_decision"],
                 row["status"],
                 _lineage_cell(row),
+                _revised_cell(row),
             )
         console.print(table)
         warning = _stale_warning_line(rows, active_epoch_id)
         if warning is not None:
             console.print(warning)
+        note = _revised_note_line(rows)
+        if note is not None:
+            console.print(note)
 
     @app.command()
     def watch(
