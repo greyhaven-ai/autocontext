@@ -56,6 +56,15 @@ All notable changes to this project will be documented in this file.
   scenario's active one. It writes nothing (no `upsert_generation`, no registry write, no quarantine
   clear) and degrades every failure mode (no artifact, no active epoch, no evaluator, a scorer error)
   to a per-generation skip status rather than crashing. Persisting a re-score is deferred to Slice D2b.
+- AC-885 Slice D2b: persisting a re-score. `autoctx rescore` gains an `--apply` flag (plus `--by` for
+  reviewer attribution) that promotes a matching re-score onto the generation: it updates `best_score`
+  and `evaluator_epoch` and clears quarantine, while archiving the original `(score, epoch,
+quarantined)` into a new `generation_score_revisions` table so nothing is silently lost. Only
+  `revalidated` generations whose fresh epoch equals the scenario's active epoch are promoted; a
+  drifted re-score is still reported but never written, and the default (no `--apply`) stays
+  report-only. The table is Python-written and TypeScript-schema-parity only (byte-identical
+  migrations, no TypeScript write path), matching the existing `rescore`/`epoch` asymmetry. This
+  closes the AC-885 re-score thread.
 
 ## [0.11.0] - 2026-07-02
 

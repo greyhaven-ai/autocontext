@@ -493,6 +493,20 @@
           "aliases": [],
           "required": false,
           "description": "Re-score a single generation by index (default: all stale generations)."
+        },
+        {
+          "name": "apply",
+          "type": "bool",
+          "aliases": [],
+          "required": false,
+          "description": "Promote matching active-epoch re-scores onto the generation and clear quarantine, archiving the original."
+        },
+        {
+          "name": "by",
+          "type": "string",
+          "aliases": [],
+          "required": false,
+          "description": "Reviewer identity recorded on applied revisions."
         }
       ],
       "output_contract": "json"

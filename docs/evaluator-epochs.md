@@ -394,22 +394,22 @@ next to the new score/epoch, plus `was_stale`, `new_matches_active`, and `score_
 Only a missing run is a hard failure (exit 1, matching `show`); every other failure mode degrades to
 a per-generation skip and the command still exits 0.
 
-**It writes no score or lineage.** No `upsert_generation`, no registry activation/promotion, no
-quarantine clear, anywhere in this path. It opens only an existing store (a missing database is
-reported as not-found, never created) and runs the configured evaluator hooks so the re-score matches
-production. The command fetches, re-scores in memory, and prints, either a Rich table (which surfaces
-the old / new epoch and a warning when the fresh epoch does not match the active one) or a `--json`
-payload of `{run_id, scenario, active_evaluator_epoch, generations: [...]}`.
+**It writes nothing without `--apply`.** No `upsert_generation`, no registry activation/promotion, no
+quarantine clear, anywhere in this path by default. It opens only an existing store (a missing database
+is reported as not-found, never created) and runs the configured evaluator hooks so the re-score
+matches production. The command fetches, re-scores in memory, and prints, either a Rich table (which
+surfaces the old / new epoch and a warning when the fresh epoch does not match the active one) or a
+`--json` payload of `{run_id, scenario, active_evaluator_epoch, generations: [...]}`. Persisting a
+matching re-score is opt-in via `--apply`, see "Persisting a re-score (Slice D2b)" below.
 
 **Python-only.** Like the `epoch` CLI, `rescore` depends on the Python-only LLM-judge and
 evaluator-epoch registry path, so it has no TypeScript equivalent; this is a documented intentional
 gap in `docs/cli-contract.json`, not an oversight.
 
-**What remains deferred.** Persisting a re-score (an `--apply` flag that writes the fresh score
-somewhere durable, backed by a net-new `generation_score_revisions`-style table so the original
-score's lineage is not clobbered) is Slice D2b. Auto-re-scoring on every read (`show`/`status`) was
-considered and rejected: it would fire paid LLM calls on reads and make them slow and
-nondeterministic, which is why `rescore` is an explicit operator-triggered command instead.
+**What remains deferred.** Auto-re-scoring on every read (`show`/`status`) was considered and
+rejected: it would fire paid LLM calls on reads and make them slow and nondeterministic, which is why
+`rescore` is an explicit operator-triggered command instead. Persisting a re-score is no longer
+deferred, see "Persisting a re-score (Slice D2b)" below.
 
 ## Relationship to the ambient `eval_fingerprint` / `anchor_model`
 
@@ -424,6 +424,43 @@ a rubric or judge change was compared as if nothing had changed. The ambient fin
 evaluator epoch are the same pattern applied in two places; this slice closes the gap on the judge
 path and the improve loop. It stays distinct from AC-881 noise calibration, which measures
 within-epoch variance rather than deciding cross-epoch comparability.
+
+## Persisting a re-score (Slice D2b)
+
+Slice D2a re-scored a stale generation and reported the result, without touching the database. Slice
+D2b adds the persistence path: an `--apply` flag on `autoctx rescore <run_id> [--generation N] --apply
+[--by REVIEWER]` that promotes a matching fresh re-score onto the generation as its score of record,
+while archiving the original so nothing is silently lost.
+
+**Who gets promoted.** Only generations whose D2a report status is `revalidated` AND whose fresh epoch
+equals the scenario's active epoch (`new_matches_active`) are ever written. A drifted re-score (fresh
+epoch does not match the active one, because the current spec no longer reproduces it) is reported
+with the D2a drift warning but never promoted: the operator must reconcile the spec with the active
+epoch first, or promote a new epoch via `autoctx epoch`. Skipped and error generations are likewise
+never written.
+
+**What promotion does.** For each qualifying generation, `--apply` archives the original `(score,
+epoch, quarantined)` into a new `generation_score_revisions` table, then updates the generation's
+`best_score` and `evaluator_epoch` to the fresh values and clears its `quarantined` marker, all in one
+atomic, per-`(run_id, generation_index)` transaction. `mean_score`, `elo`, and tournament counters are
+left untouched, only `best_score` is the score of record that `show`/`status`/`run_status` and
+training-export surface. The generation immediately reads back as `current` rather than `stale`.
+
+**`--by`** records a reviewer identity on the archived revision, so a promotion is attributable.
+
+**Output.** `--json` gains a top-level `applied` list of promoted generation indices and each
+generation entry gains an `applied` boolean; the Rich table gains an `Applied` column, and the summary
+line reports how many generations were promoted versus re-scored.
+
+**Python-written, TypeScript schema-parity only.** `generation_score_revisions` exists in both
+packages' migrations (Python `018_generation_score_revisions.sql` and TypeScript
+`016_generation_score_revisions.sql`, byte-identical) so cross-package databases stay
+schema-compatible, but only the Python `rescore --apply` path writes to it, matching the `rescore` /
+`epoch` CLI's existing Python-only asymmetry: TypeScript carries no `--apply` equivalent.
+
+**Not in this slice.** Reading from the archive (a `revisions`/history CLI or API view), and reverting
+a promotion from the archive back onto the generation, are future work; the table is queryable today
+but nothing yet consumes it beyond the archive itself.
 
 ## Deferred slices
 
@@ -440,10 +477,11 @@ The remaining slices are explicitly deferred, not dropped:
   registry, the mechanical observe trigger, and the `quarantined` marker) is shipped (see "Epoch
   lifecycle (Slice C1)" above); the enforcement that consumes the marker and the promotion workflow
   land in C2 and C3.
-- **Slice D (surfacing + lazy re-score):** stale-epoch warnings in CLI / status / replay, REST /
-  API, and dashboard, plus revalidation of raw artifacts when a stale scored record is touched.
-  D1 (read-only surfacing: the four-state classification, the `show` / `status` / `run_status`
+- **Slice D (surfacing + lazy re-score, fully shipped):** stale-epoch warnings in CLI / status /
+  replay, REST / API, and dashboard, plus revalidation of raw artifacts when a stale scored record is
+  touched. D1 (read-only surfacing: the four-state classification, the `show` / `status` / `run_status`
   fields, and the `stale_epoch` HTTP warning) is shipped, see "Slice D1: stale surfacing" above. D2a
   (the on-demand, report-only `autoctx rescore` command) is shipped, see "On-demand re-score (Slice
-  D2a)" above. D2b (persisting a re-score behind an `--apply` flag and a score-revisions table)
-  remains.
+  D2a)" above. D2b (persisting a re-score behind an `--apply` flag and a `generation_score_revisions`
+  table) is shipped, see "Persisting a re-score (Slice D2b)" above. Slice D, and the AC-885 re-score
+  thread it closes, is done.
