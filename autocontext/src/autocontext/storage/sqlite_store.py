@@ -183,7 +183,7 @@ class SQLiteStore(
             )
             return cur.rowcount
 
-    def persist_rescore_revision(
+    def record_rescore_revision(
         self,
         run_id: str,
         generation_index: int,
@@ -192,42 +192,25 @@ class SQLiteStore(
         *,
         created_by: str | None = None,
     ) -> bool:
-        """Promote a re-score onto a generation, archiving the original. Returns False if the row is absent.
+        """Append an audit revision recording a re-score. Returns False if the generation is absent.
 
-        Atomic per-(run_id, generation_index): read the current generation; insert an archive row into
-        ``generation_score_revisions`` (revision_* = the new values, previous_* = the archived original);
-        update the generation's ``best_score``, ``evaluator_epoch``, and clear ``quarantined``. No other row
-        or column is touched.
+        Append-only and non-destructive: this records the fresh ``(revision_epoch, revision_score)`` and
+        archives the generation's CURRENT ``(evaluator_epoch, best_score, quarantined)`` as the ``previous_*``
+        values, in a single atomic ``INSERT ... SELECT`` (so there is no read-then-write gap and no
+        concurrent writer can be lost). It does NOT modify the ``generations`` row, its quarantine marker, or
+        any derived table (``knowledge_snapshots`` etc.); the live score of record is left untouched. The
+        ``SELECT`` matches no row when the generation does not exist, so nothing is inserted (returns False).
         """
         with self.connect() as conn:
-            row = conn.execute(
-                "SELECT best_score, evaluator_epoch, quarantined FROM generations WHERE run_id = ? AND generation_index = ?",
-                (run_id, generation_index),
-            ).fetchone()
-            if row is None:
-                return False
-            conn.execute(
+            cur = conn.execute(
                 "INSERT INTO generation_score_revisions "
                 "(run_id, generation_index, revision_epoch, revision_score, previous_epoch, "
                 " previous_score, previous_quarantined, created_by) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    run_id,
-                    generation_index,
-                    new_epoch,
-                    new_score,
-                    row["evaluator_epoch"],
-                    row["best_score"],
-                    row["quarantined"],
-                    created_by,
-                ),
+                "SELECT ?, ?, ?, ?, evaluator_epoch, best_score, quarantined, ? "
+                "FROM generations WHERE run_id = ? AND generation_index = ?",
+                (run_id, generation_index, new_epoch, new_score, created_by, run_id, generation_index),
             )
-            conn.execute(
-                "UPDATE generations SET best_score = ?, evaluator_epoch = ?, quarantined = NULL "
-                "WHERE run_id = ? AND generation_index = ?",
-                (new_score, new_epoch, run_id, generation_index),
-            )
-            return True
+            return cur.rowcount > 0
 
     def list_rescore_revisions(
         self,

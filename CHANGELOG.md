@@ -57,14 +57,17 @@ All notable changes to this project will be documented in this file.
   clear) and degrades every failure mode (no artifact, no active epoch, no evaluator, a scorer error)
   to a per-generation skip status rather than crashing. Persisting a re-score is deferred to Slice D2b.
 - AC-885 Slice D2b: persisting a re-score. `autoctx rescore` gains an `--apply` flag (plus `--by` for
-  reviewer attribution) that promotes a matching re-score onto the generation: it updates `best_score`
-  and `evaluator_epoch` and clears quarantine, while archiving the original `(score, epoch,
-quarantined)` into a new `generation_score_revisions` table so nothing is silently lost. Only
-  `revalidated` generations whose fresh epoch equals the scenario's active epoch are promoted; a
-  drifted re-score is still reported but never written, and the default (no `--apply`) stays
-  report-only. The table is Python-written and TypeScript-schema-parity only (byte-identical
-  migrations, no TypeScript write path), matching the existing `rescore`/`epoch` asymmetry. This
-  closes the AC-885 re-score thread.
+  reviewer attribution) that records a matching re-score as an append-only audit revision in a new
+  `generation_score_revisions` table: the fresh `(revision_epoch, revision_score)` with the
+  generation's current `(evaluator_epoch, best_score, quarantined)` archived as the `previous_*`
+  columns, in a single atomic `INSERT ... SELECT`. It is deliberately non-destructive: it never changes
+  the live `generations` score, its quarantine marker, or the `knowledge_snapshots` cache, so it cannot
+  poison training-export or cross-run rankings (an earlier promote-onto-the-row design was revised to
+  append-only after review found concurrency and derived-state consistency hazards). Only `revalidated`
+  generations whose fresh epoch equals the scenario's active epoch are recorded; a drifted re-score is
+  reported but never written, and the default (no `--apply`) stays report-only. The table is
+  Python-written and TypeScript-schema-parity only (byte-identical migrations, no TypeScript write
+  path), matching the existing `rescore`/`epoch` asymmetry. This closes the AC-885 re-score thread.
 
 ## [0.11.0] - 2026-07-02
 

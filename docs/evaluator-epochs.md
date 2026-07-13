@@ -429,32 +429,36 @@ within-epoch variance rather than deciding cross-epoch comparability.
 
 Slice D2a re-scored a stale generation and reported the result, without touching the database. Slice
 D2b adds the persistence path: an `--apply` flag on `autoctx rescore <run_id> [--generation N] --apply
-[--by REVIEWER]` that promotes a matching fresh re-score onto the generation as its score of record,
-while archiving the original so nothing is silently lost.
+[--by REVIEWER]` that records a matching fresh re-score as an APPEND-ONLY audit revision. It is
+deliberately non-destructive: it never changes the live score of record, so it cannot poison
+training-export or cross-run rankings. (An earlier draft of this slice promoted the re-score onto the
+`generations` row; review found that mutating the live row plus its derived state, quarantine and the
+`knowledge_snapshots` cache that drives inheritance / search / skill export, introduced concurrency and
+consistency hazards, so the design was revised to append-only. Making reads prefer a revision is a
+possible future slice.)
 
-**Who gets promoted.** Only generations whose D2a report status is `revalidated` AND whose fresh epoch
+**Who gets recorded.** Only generations whose D2a report status is `revalidated` AND whose fresh epoch
 equals the scenario's active epoch (`new_matches_active`) are ever written. A drifted re-score (fresh
 epoch does not match the active one, because the current spec no longer reproduces it) is reported
-with the D2a drift warning but never promoted: the operator must reconcile the spec with the active
+with the D2a drift warning but never recorded: the operator must reconcile the spec with the active
 epoch first, or promote a new epoch via `autoctx epoch`. Skipped and error generations are likewise
 never written.
 
-**What promotion does.** For each qualifying generation, `--apply` archives the original `(score,
-epoch, quarantined)` into a new `generation_score_revisions` table, then updates the generation's
-`best_score` and `evaluator_epoch` to the fresh values and clears its `quarantined` marker, all in one
-atomic, per-`(run_id, generation_index)` transaction. `mean_score`, `elo`, and tournament counters are
-left untouched, only `best_score` is the score of record that `show`/`status`/`run_status` and
-training-export surface. The generation immediately reads back as `current` rather than `stale`.
-Because only `best_score` moves, a promoted `best_score` can end up below the run-time `mean_score` if
-the current evaluator scores the artifact lower than the original run did; that is expected (the
-promoted `best_score` is the post-re-score value of record, not the run's original sample statistics,
-which the archive preserves).
+**What recording does.** For each qualifying generation, `--apply` appends one row to a new
+`generation_score_revisions` table capturing the fresh `(revision_epoch, revision_score)` and archiving
+the generation's CURRENT `(evaluator_epoch, best_score, quarantined)` as the `previous_*` columns, in a
+single atomic `INSERT ... SELECT` (so there is no read-then-write gap and no concurrent writer can be
+lost). It does NOT modify the `generations` row, its quarantine marker, `knowledge_snapshots`, or any
+other table: the live `best_score` that `show` / `status` / `run_status` and training-export surface is
+left exactly as it was. Re-applying appends another revision (full history); because the generation is
+never mutated, each revision archives the same unchanged current values.
 
-**`--by`** records a reviewer identity on the archived revision, so a promotion is attributable.
+**`--by`** records a reviewer identity on the audit revision, so a recorded re-score is attributable.
 
-**Output.** `--json` gains a top-level `applied` list of promoted generation indices and each
-generation entry gains an `applied` boolean; the Rich table gains an `Applied` column, and the summary
-line reports how many generations were promoted versus re-scored.
+**Output.** `--json` gains a top-level `applied` list of recorded generation indices and each
+generation entry gains an `applied` boolean (true when a revision was recorded); the Rich table gains a
+`Recorded` column, and the summary line reports how many audit revisions were recorded, noting the live
+score of record was not changed.
 
 **Python-written, TypeScript schema-parity only.** `generation_score_revisions` exists in both
 packages' migrations (Python `018_generation_score_revisions.sql` and TypeScript
@@ -462,9 +466,9 @@ packages' migrations (Python `018_generation_score_revisions.sql` and TypeScript
 schema-compatible, but only the Python `rescore --apply` path writes to it, matching the `rescore` /
 `epoch` CLI's existing Python-only asymmetry: TypeScript carries no `--apply` equivalent.
 
-**Not in this slice.** Reading from the archive (a `revisions`/history CLI or API view), and reverting
-a promotion from the archive back onto the generation, are future work; the table is queryable today
-but nothing yet consumes it beyond the archive itself.
+**Not in this slice.** Reading from the archive (a `revisions`/history CLI or API view), and teaching
+reads/exports to prefer the latest active-epoch revision over the live score, are future work; the
+table is queryable today but nothing yet consumes it beyond the archive itself.
 
 ## Deferred slices
 

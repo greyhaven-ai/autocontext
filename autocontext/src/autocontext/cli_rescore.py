@@ -2,12 +2,14 @@
 
 Re-score a stale generation's ORIGINAL competitor artifact under the CURRENT evaluator and report the
 old-vs-new score + epoch. Without ``--apply`` this command writes nothing: no ``upsert_generation``, no
-registry activation/promotion, no quarantine clear. With ``--apply`` (Slice D2b) it promotes matching
-re-scores (``revalidated`` generations whose fresh epoch equals the active epoch), updating each
-generation's ``best_score``/``evaluator_epoch`` and clearing its quarantine, and archives the original
-into ``generation_score_revisions``. Drifted, skipped, and error generations are never promoted. (Like
-every other inspect command it opens the existing sqlite store, and it runs the configured evaluator hooks
-so the re-score reproduces the production evaluator; it does not create a database for a missing run.)
+registry write, no quarantine clear. With ``--apply`` (Slice D2b) it APPENDS an audit revision to
+``generation_score_revisions`` for each matching re-score (``revalidated`` generations whose fresh epoch
+equals the active epoch): the fresh score and its epoch, with the generation's current values archived as
+the ``previous_*`` columns. It does NOT modify the ``generations`` row, its quarantine marker, or any
+derived table (``knowledge_snapshots`` etc.): the live score of record is left untouched, so this cannot
+poison training-export or cross-run rankings. Drifted, skipped, and error generations are never recorded.
+(Like every other inspect command it opens the existing sqlite store, and it runs the configured evaluator
+hooks so the re-score reproduces the production evaluator; it does not create a database for a missing run.)
 Re-scoring goes through the scenario task's own ``evaluate_output`` (the production path) inside the
 configured hook bus, so the score is faithful; the whole thing is fail-safe via ``revalidate_one``.
 """
@@ -166,7 +168,7 @@ def _print_table(reports: list[GenerationRevalidation], active_epoch: str | None
     table.add_column("Old epoch")
     table.add_column("New epoch")
     table.add_column("Matches active")
-    table.add_column("Applied")
+    table.add_column("Recorded")
     for rep in reports:
         old = "-" if rep.original_score is None else f"{rep.original_score:.3f}"
         new = "-" if rep.new_score is None else f"{rep.new_score:.3f}"
@@ -187,7 +189,7 @@ def _print_table(reports: list[GenerationRevalidation], active_epoch: str | None
     _console.print(table)
     revalidated = sum(1 for r in reports if r.status == "revalidated")
     if applied:
-        written = f"{len(applied)} re-score(s) promoted onto their generation(s) and the original(s) archived"
+        written = f"{len(applied)} audit revision(s) recorded (the live score of record was NOT changed)"
     else:
         written = "no score, generation, or lineage data was written"
     _console.print(f"[dim]{revalidated} of {len(reports)} generation(s) re-scored; {written}.[/dim]")
@@ -209,9 +211,9 @@ def rescore_command(
     apply: bool = typer.Option(
         False,
         "--apply",
-        help="Persist re-scores that match the active epoch: promote them onto the generation and clear quarantine",
+        help="Record active-epoch re-scores as audit revisions (does NOT change the live score or quarantine)",
     ),
-    by: str = typer.Option("", "--by", help="Reviewer identity recorded on applied revisions"),
+    by: str = typer.Option("", "--by", help="Reviewer identity recorded on the audit revisions"),
 ) -> None:
     """Re-score stale generations under the current evaluator and report drift (read-only without --apply)."""
     settings = load_settings()
@@ -249,14 +251,15 @@ def rescore_command(
         for r in targets
     ]
 
-    # Promote matching re-scores only under --apply (default writes nothing). A report is promotable when
-    # it is ``revalidated`` AND its fresh epoch equals the active epoch (``new_matches_active``) with a
-    # concrete score/epoch. Drifted, skipped, and error generations are never written.
+    # Record matching re-scores as audit revisions only under --apply (default writes nothing). A report is
+    # recordable when it is ``revalidated`` AND its fresh epoch equals the active epoch (``new_matches_active``)
+    # with a concrete score/epoch. Drifted, skipped, and error generations are never recorded. Recording is
+    # append-only: it never touches the live ``generations`` row, its quarantine marker, or derived tables.
     applied: list[int] = []
     if apply:
         for rep in reports:
             if rep.status == "revalidated" and rep.new_matches_active and rep.new_score is not None and rep.new_epoch is not None:
-                if store.persist_rescore_revision(
+                if store.record_rescore_revision(
                     run_id, rep.generation_index, rep.new_score, rep.new_epoch, created_by=by or None
                 ):
                     applied.append(rep.generation_index)

@@ -472,7 +472,7 @@
     {
       "id": "rescore",
       "path": ["rescore"],
-      "summary": "Re-score a run's stale generations under the current evaluator and report drift, read-only.",
+      "summary": "Re-score a run's stale generations under the current evaluator and report drift; read-only unless --apply, which appends audit revisions without changing the live score.",
       "audience": "advanced",
       "maturity": "experimental",
       "domain_concept": null,

@@ -221,10 +221,10 @@ def _read_revisions(tmp_path: Path, run_id: str, generation_index: int) -> list[
         return [dict(r) for r in rows]
 
 
-def test_rescore_apply_promotes_matching(tmp_path: Path, monkeypatch) -> None:
-    # --apply on a stale generation whose re-score matches the active epoch promotes it: the generation
-    # row is updated (best_score/epoch, quarantine cleared), the original is archived, and the output
-    # marks it applied.
+def test_rescore_apply_records_matching_audit_revision(tmp_path: Path, monkeypatch) -> None:
+    # --apply on a stale generation whose re-score matches the active epoch APPENDS an audit revision:
+    # the generation row is left UNCHANGED (append-only), the revision archives the current values, and
+    # the output marks it recorded.
     _env(monkeypatch, tmp_path)
     e1, e2 = _seed_epochs_active_e2(tmp_path)
     _seed_generation(tmp_path, "run-apply", e1, with_output=True)
@@ -240,9 +240,10 @@ def test_rescore_apply_promotes_matching(tmp_path: Path, monkeypatch) -> None:
     store = _store(tmp_path)
     row = store.get_generation("run-apply", 1)
     assert row is not None
-    assert row["best_score"] == 0.55
-    assert row["evaluator_epoch"] == e2
-    assert row["quarantined"] is None
+    # The live score of record is NOT changed by --apply (append-only audit).
+    assert row["best_score"] == 0.6
+    assert row["evaluator_epoch"] == e1
+    assert row["quarantined"] is None  # as seeded; --apply never touches the quarantine marker
 
     revisions = _read_revisions(tmp_path, "run-apply", 1)
     assert len(revisions) == 1
