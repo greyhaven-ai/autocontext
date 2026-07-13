@@ -35,7 +35,7 @@ HTTP cockpit `run_status`). This closes the D2b loop and is read-only, no new sc
 ### D2c.1: the store read + the pure field helper
 
 - `SQLiteStore.latest_active_revisions(run_id, active_epoch) -> dict[int, GenerationScoreRevisionRow]`:
-  one query returning, per `generation_index`, the most recent (`ORDER BY id DESC`, keep first)
+  one query returning, per `generation_index`, the most recent (highest `id`)
   revision whose `revision_epoch == active_epoch` for the run. Empty dict when `active_epoch` is None or
   no revisions match.
 - A pure `revision_fields(revision: GenerationScoreRevisionRow | None) -> dict[str, Any]` (in
