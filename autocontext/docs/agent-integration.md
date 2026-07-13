@@ -73,6 +73,7 @@ JSON output shape:
 ```json
 {
   "run_id": "abc123",
+  "active_evaluator_epoch": "e2sha256...",
   "generations": [
     {
       "generation": 1,
@@ -82,11 +83,27 @@ JSON output shape:
       "wins": 3,
       "losses": 2,
       "gate_decision": "advance",
-      "status": "completed"
+      "status": "completed",
+      "evaluator_epoch": "e1sha256...",
+      "evaluator_epoch_status": "stale",
+      "quarantined": false,
+      "has_active_revision": true,
+      "revised_score": 0.55,
+      "revised_by": "jay",
+      "revised_at": "2026-07-13T19:12:05Z"
     }
   ]
 }
 ```
+
+The evaluator-epoch lineage fields (AC-885) are Python-only and always present. `active_evaluator_epoch`
+(top level) is the scenario's active evaluator epoch, or null. Per generation, `evaluator_epoch` is the
+epoch that produced `best_score` and `evaluator_epoch_status` classifies it against the active epoch
+(`current` / `stale` / `unknown` / `no_active_epoch`). When `autoctx rescore --apply` has recorded a
+re-score under the active epoch, `has_active_revision` is true and `revised_score` / `revised_by` /
+`revised_at` describe it. `revised_score` SUPPLEMENTS `best_score` (the unchanged score of record), it
+does not replace it; the fields are null when no active-epoch revision exists. `show --json` carries the
+same fields (its top-level payload also includes `scenario` and `status`).
 
 The TypeScript CLI also includes an optional `runtime_session` object in
 `status`, `show`, and `watch --json` output when a CLI-backed provider run has a
@@ -680,8 +697,8 @@ Key environment variables:
 | `AUTOCONTEXT_LEAN_TOOL_ALLOWLIST`                                    | Comma-separated tool-affordance allowlist exported in the lean profile metadata                                                                                                                                                                                                                     |
 | `AUTOCONTEXT_EXTENSIONS`                                             | Comma-separated Python modules or `.py` files that register runtime hooks                                                                                                                                                                                                                           |
 | `AUTOCONTEXT_EXTENSION_FAIL_FAST`                                    | Stop the run when an extension hook raises instead of recording a non-fatal hook error                                                                                                                                                                                                              |
-| `AUTOCONTEXT_PANEL_ROLES`                                            | Experimental comma-separated roles that run through panel mode, for example `analyst,coach`; disabled by default                                                                                                                                                                                   |
-| `AUTOCONTEXT_PANEL_PARTICIPANTS`                                     | Experimental panel participants as `role=provider:model,provider:model`, with `;` between role specs                                                                                                                                                                                               |
+| `AUTOCONTEXT_PANEL_ROLES`                                            | Experimental comma-separated roles that run through panel mode, for example `analyst,coach`; disabled by default                                                                                                                                                                                    |
+| `AUTOCONTEXT_PANEL_PARTICIPANTS`                                     | Experimental panel participants as `role=provider:model,provider:model`, with `;` between role specs                                                                                                                                                                                                |
 | `AUTOCONTEXT_PANEL_SYNTHESIZER_PROVIDER`                             | Optional synthesizer provider; falls back to the role provider when blank                                                                                                                                                                                                                           |
 | `AUTOCONTEXT_PANEL_SYNTHESIZER_MODEL`                                | Optional synthesizer model; falls back to the role model when blank                                                                                                                                                                                                                                 |
 

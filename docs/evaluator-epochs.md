@@ -492,9 +492,10 @@ under a since-superseded epoch are ignored). With no active epoch, nothing is su
 
 **The live score is unchanged.** `show` / `status` / `run_status` still report the generation's original
 `best_score` and `evaluator_epoch` as the score of record: a stale generation stays stale. The revision
-is shown alongside it (a `Revised` column in the rich table, plus a one-line note when any generation in
-the run has a recorded active-epoch re-score), never in place of it. This is a pure read enrichment, in
-keeping with D2b's append-only, non-destructive design.
+is shown alongside it (a `Revised` column in the rich table, plus a one-line note when any DISPLAYED
+generation has a recorded active-epoch re-score; `show --best` / `--generation N` filter the rows before
+annotation, so the note reflects only the generations shown), never in place of it. This is a pure read
+enrichment, in keeping with D2b's append-only, non-destructive design.
 
 **Read-only and Python-only.** No writes: this slice only reads the `generation_score_revisions` table
 that D2b's `rescore --apply` writes. Like the rest of the rescore/registry path, the revision data lives
