@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from autocontext.storage.bootstrap_schema import bootstrap_core_schema, default_migrations_dir
-from autocontext.storage.row_types import GenerationMetricsRow, RunRow
+from autocontext.storage.row_types import GenerationMetricsRow, GenerationScoreRevisionRow, RunRow
 from autocontext.storage.sqlite_migrations import apply_python_migration_files
 from autocontext.storage.sqlite_store_consultations import SQLiteConsultationStoreMixin
 from autocontext.storage.sqlite_store_hub import SQLiteHubStoreMixin
@@ -182,6 +182,68 @@ class SQLiteStore(
                 (epoch_id, scenario),
             )
             return cur.rowcount
+
+    def persist_rescore_revision(
+        self,
+        run_id: str,
+        generation_index: int,
+        new_score: float,
+        new_epoch: str,
+        *,
+        created_by: str | None = None,
+    ) -> bool:
+        """Promote a re-score onto a generation, archiving the original. Returns False if the row is absent.
+
+        Atomic per-(run_id, generation_index): read the current generation; insert an archive row into
+        ``generation_score_revisions`` (revision_* = the new values, previous_* = the archived original);
+        update the generation's ``best_score``, ``evaluator_epoch``, and clear ``quarantined``. No other row
+        or column is touched.
+        """
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT best_score, evaluator_epoch, quarantined FROM generations WHERE run_id = ? AND generation_index = ?",
+                (run_id, generation_index),
+            ).fetchone()
+            if row is None:
+                return False
+            conn.execute(
+                "INSERT INTO generation_score_revisions "
+                "(run_id, generation_index, revision_epoch, revision_score, previous_epoch, "
+                " previous_score, previous_quarantined, created_by) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    run_id,
+                    generation_index,
+                    new_epoch,
+                    new_score,
+                    row["evaluator_epoch"],
+                    row["best_score"],
+                    row["quarantined"],
+                    created_by,
+                ),
+            )
+            conn.execute(
+                "UPDATE generations SET best_score = ?, evaluator_epoch = ?, quarantined = NULL "
+                "WHERE run_id = ? AND generation_index = ?",
+                (new_score, new_epoch, run_id, generation_index),
+            )
+            return True
+
+    def list_rescore_revisions(
+        self,
+        run_id: str,
+        generation_index: int,
+    ) -> list[GenerationScoreRevisionRow]:
+        """Return the archived score revisions for a generation, oldest first."""
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT id, run_id, generation_index, revision_epoch, revision_score, "
+                "previous_epoch, previous_score, previous_quarantined, created_by, created_at "
+                "FROM generation_score_revisions "
+                "WHERE run_id = ? AND generation_index = ? ORDER BY id",
+                (run_id, generation_index),
+            ).fetchall()
+            return [cast(GenerationScoreRevisionRow, dict(row)) for row in rows]
 
     def update_generation_duration(
         self,

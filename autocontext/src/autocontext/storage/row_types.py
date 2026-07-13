@@ -42,6 +42,21 @@ class GenerationMetricsRow(TypedDict):
     updated_at: str
 
 
+class GenerationScoreRevisionRow(TypedDict):
+    """Row from the ``generation_score_revisions`` table (AC-885)."""
+
+    id: int
+    run_id: str
+    generation_index: int
+    revision_epoch: str
+    revision_score: float
+    previous_epoch: str | None
+    previous_score: float | None
+    previous_quarantined: int | None
+    created_by: str | None
+    created_at: str
+
+
 class MatchRow(TypedDict):
     """Row from the ``matches`` table."""
 
