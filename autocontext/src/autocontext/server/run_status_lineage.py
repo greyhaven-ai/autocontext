@@ -12,8 +12,9 @@ from typing import Any
 
 from fastapi import HTTPException, Request
 
-from autocontext.execution.epoch_lineage import annotate_status_rows
+from autocontext.execution.epoch_lineage import annotate_status_rows, revision_fields
 from autocontext.execution.evaluator_epoch_registry import EvaluatorEpochRegistry
+from autocontext.storage.sqlite_store import SQLiteStore
 
 
 def _epoch_registry_from_request(request: Request) -> EvaluatorEpochRegistry:
@@ -27,6 +28,8 @@ def build_run_status_generations(
     gen_rows: list[Any],
     scenario: str | None,
     request: Request,
+    store: SQLiteStore,
+    run_id: str,
 ) -> tuple[list[dict[str, Any]], str | None, list[dict[str, Any]]]:
     """Return (generation dicts with lineage, active epoch id, stale-epoch warnings).
 
@@ -54,6 +57,9 @@ def build_run_status_generations(
         )
 
     generations, active_id = annotate_status_rows(generations, scenario, _epoch_registry_from_request(request))
+    revs = store.latest_active_revisions(run_id, active_id)
+    for g in generations:
+        g.update(revision_fields(revs.get(g["generation"])))
     warnings = [
         {
             "warning_type": "stale_epoch",

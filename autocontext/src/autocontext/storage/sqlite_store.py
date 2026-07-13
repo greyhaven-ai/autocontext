@@ -228,6 +228,28 @@ class SQLiteStore(
             ).fetchall()
             return [cast(GenerationScoreRevisionRow, dict(row)) for row in rows]
 
+    def latest_active_revisions(self, run_id: str, active_epoch: str | None) -> dict[int, GenerationScoreRevisionRow]:
+        """Return, per generation_index, the LATEST revision recorded under ``active_epoch`` for the run.
+
+        Only revisions whose ``revision_epoch`` equals ``active_epoch`` are considered; the most recent
+        (highest ``id``) wins. Empty when ``active_epoch`` is None or nothing matches. Read-only.
+        """
+        if active_epoch is None:
+            return {}
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT id, run_id, generation_index, revision_epoch, revision_score, "
+                "previous_epoch, previous_score, previous_quarantined, created_by, created_at "
+                "FROM generation_score_revisions "
+                "WHERE run_id = ? AND revision_epoch = ? ORDER BY id ASC",
+                (run_id, active_epoch),
+            ).fetchall()
+        # ASC then overwrite -> the highest-id (latest) revision per generation wins.
+        latest: dict[int, GenerationScoreRevisionRow] = {}
+        for row in rows:
+            latest[int(row["generation_index"])] = cast(GenerationScoreRevisionRow, dict(row))
+        return latest
+
     def update_generation_duration(
         self,
         run_id: str,

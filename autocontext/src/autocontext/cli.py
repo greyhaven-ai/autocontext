@@ -36,6 +36,8 @@ from autocontext.cli_rescore import rescore_command
 from autocontext.cli_role_runtime import resolve_role_runtime
 from autocontext.cli_run_inspect import (
     _lineage_cell,
+    _revised_cell,
+    _revised_note_line,
     _stale_warning_line,
     annotate_run_status_rows,
     register_run_inspect_commands,
@@ -580,7 +582,7 @@ def status(
 
     run = store.get_run(run_id)
     scenario = run.get("scenario") if run else None
-    rows, active_epoch_id = annotate_run_status_rows(settings, scenario, rows)
+    rows, active_epoch_id = annotate_run_status_rows(settings, scenario, rows, store, run_id)
 
     if json_output:
         generations = []
@@ -598,6 +600,10 @@ def status(
                     "evaluator_epoch": row.get("evaluator_epoch"),
                     "evaluator_epoch_status": row["evaluator_epoch_status"],
                     "quarantined": bool(row.get("quarantined")),
+                    "has_active_revision": row["has_active_revision"],
+                    "revised_score": row.get("revised_score"),
+                    "revised_by": row.get("revised_by"),
+                    "revised_at": row.get("revised_at"),
                 }
             )
         sys.stdout.write(
@@ -621,6 +627,7 @@ def status(
         table.add_column("Gate")
         table.add_column("Status")
         table.add_column("Lineage")
+        table.add_column("Revised")
         for row in rows:
             table.add_row(
                 str(row["generation_index"]),
@@ -632,11 +639,15 @@ def status(
                 row["gate_decision"],
                 row["status"],
                 _lineage_cell(row),
+                _revised_cell(row),
             )
         console.print(table)
         warning = _stale_warning_line(rows, active_epoch_id)
         if warning is not None:
             console.print(warning)
+        note = _revised_note_line(rows)
+        if note is not None:
+            console.print(note)
 
 
 def _run_http_serve(host: str, port: int) -> None:

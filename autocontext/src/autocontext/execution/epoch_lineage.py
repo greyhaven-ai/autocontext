@@ -8,10 +8,13 @@ self-heal a multiple-active state) and classifies each status row.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from autocontext.execution.evaluator_epoch import classify_epoch_lineage
 from autocontext.execution.evaluator_epoch_registry import EvaluatorEpochRegistry
+
+if TYPE_CHECKING:
+    from autocontext.storage.row_types import GenerationScoreRevisionRow
 
 
 def annotate_status_rows(
@@ -32,3 +35,13 @@ def annotate_status_rows(
         copy["evaluator_epoch_status"] = classify_epoch_lineage(copy.get("evaluator_epoch"), active_id)
         annotated.append(copy)
     return annotated, active_id
+
+
+def revision_fields(revision: GenerationScoreRevisionRow | None) -> dict[str, Any]:
+    """Shape the four surfacing fields for a generation's latest active-epoch revision (or absence)."""
+    return {
+        "has_active_revision": revision is not None,
+        "revised_score": revision["revision_score"] if revision is not None else None,
+        "revised_by": revision["created_by"] if revision is not None else None,
+        "revised_at": revision["created_at"] if revision is not None else None,
+    }

@@ -466,9 +466,41 @@ packages' migrations (Python `018_generation_score_revisions.sql` and TypeScript
 schema-compatible, but only the Python `rescore --apply` path writes to it, matching the `rescore` /
 `epoch` CLI's existing Python-only asymmetry: TypeScript carries no `--apply` equivalent.
 
-**Not in this slice.** Reading from the archive (a `revisions`/history CLI or API view), and teaching
-reads/exports to prefer the latest active-epoch revision over the live score, are future work; the
-table is queryable today but nothing yet consumes it beyond the archive itself.
+**Not in this slice.** Reading the latest active-epoch revision inline is now shipped, see "Surfacing
+recorded re-scores (Slice D2c)" below. A full revision-history dump (a `revisions`/history CLI or API
+view listing every recorded revision, not just the latest active-epoch one) and teaching reads/exports
+to prefer the latest active-epoch revision over the live score (a trust change) remain future work.
+
+## Surfacing recorded re-scores (Slice D2c)
+
+Slice D2b records a matching re-score as an append-only audit revision, but nothing read it back: an
+operator looking at a stale run could not see that a re-score had already been recorded. Slice D2c
+closes that loop by surfacing, per generation, the latest recorded active-epoch revision inline in the
+run views operators already use: `autoctx show`, `autoctx status`, and the HTTP cockpit
+`GET /api/cockpit/runs/{run_id}/status`. It is read-only, adds no new command or flag, and changes no
+schema.
+
+**What's surfaced.** Every generation dict gains four fields: `has_active_revision` (bool),
+`revised_score`, `revised_by`, `revised_at`. When no active-epoch revision has been recorded for that
+generation (the common case), the three value fields are null and `has_active_revision` is `false`, so
+the JSON shape does not vary by whether a revision exists.
+
+**Only the latest active-epoch revision is surfaced.** For each generation, the LATEST revision whose
+`revision_epoch` equals the scenario's current active epoch is looked up (a `generation_score_revisions`
+row can accumulate several revisions if `rescore --apply` is run more than once, and revisions recorded
+under a since-superseded epoch are ignored). With no active epoch, nothing is surfaced.
+
+**The live score is unchanged.** `show` / `status` / `run_status` still report the generation's original
+`best_score` and `evaluator_epoch` as the score of record: a stale generation stays stale. The revision
+is shown alongside it (a `Revised` column in the rich table, plus a one-line note when any DISPLAYED
+generation has a recorded active-epoch re-score; `show --best` / `--generation N` filter the rows before
+annotation, so the note reflects only the generations shown), never in place of it. This is a pure read
+enrichment, in keeping with D2b's append-only, non-destructive design.
+
+**Read-only and Python-only.** No writes: this slice only reads the `generation_score_revisions` table
+that D2b's `rescore --apply` writes. Like the rest of the rescore/registry path, the revision data lives
+in a Python-written table that the TypeScript `run_status` does not query, so there is no TypeScript
+change; this is the same Python-only asymmetry documented for D1 and D2b.
 
 ## Deferred slices
 

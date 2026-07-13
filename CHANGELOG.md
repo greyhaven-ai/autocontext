@@ -68,6 +68,12 @@ All notable changes to this project will be documented in this file.
   reported but never written, and the default (no `--apply`) stays report-only. The table is
   Python-written and TypeScript-schema-parity only (byte-identical migrations, no TypeScript write
   path), matching the existing `rescore`/`epoch` asymmetry. This closes the AC-885 re-score thread.
+- AC-885 Slice D2c: surfacing recorded re-scores. `autoctx show`, `autoctx status`, and the cockpit
+  `GET /api/cockpit/runs/{run_id}/status` now surface a generation's latest active-epoch re-score
+  recorded via `rescore --apply` (`has_active_revision`, `revised_score`, `revised_by`, `revised_at`)
+  alongside the unchanged live score. Only the latest revision recorded under the scenario's current
+  active epoch is surfaced; the live score of record is untouched. Read-only, Python-only, no new
+  command, flag, or schema.
 
 ## [0.11.0] - 2026-07-02
 
