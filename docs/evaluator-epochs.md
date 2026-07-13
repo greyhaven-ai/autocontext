@@ -445,6 +445,10 @@ epoch, quarantined)` into a new `generation_score_revisions` table, then updates
 atomic, per-`(run_id, generation_index)` transaction. `mean_score`, `elo`, and tournament counters are
 left untouched, only `best_score` is the score of record that `show`/`status`/`run_status` and
 training-export surface. The generation immediately reads back as `current` rather than `stale`.
+Because only `best_score` moves, a promoted `best_score` can end up below the run-time `mean_score` if
+the current evaluator scores the artifact lower than the original run did; that is expected (the
+promoted `best_score` is the post-re-score value of record, not the run's original sample statistics,
+which the archive preserves).
 
 **`--by`** records a reviewer identity on the archived revision, so a promotion is attributable.
 
