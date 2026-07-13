@@ -16,6 +16,7 @@ TYPESCRIPT_TO_PYTHON_BASELINES: dict[str, tuple[str, ...]] = {
     ),
     "014_generation_evaluator_epoch.sql": ("016_generation_evaluator_epoch.sql",),
     "015_generation_quarantined.sql": ("017_generation_quarantined.sql",),
+    "016_generation_score_revisions.sql": ("018_generation_score_revisions.sql",),
 }
 
 PYTHON_TO_TYPESCRIPT_BASELINES: dict[str, tuple[str, ...]] = {

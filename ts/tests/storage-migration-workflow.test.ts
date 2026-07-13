@@ -123,6 +123,41 @@ describe("storage migration workflow", () => {
     ).toEqual({ filename: "015_generation_quarantined.sql" });
   });
 
+  it("migrates a fully Python-owned database without duplicating the score revisions table", () => {
+    applyEveryPythonMigration(db);
+    expect(
+      db
+        .prepare("SELECT version FROM schema_migrations WHERE version = ?")
+        .get("018_generation_score_revisions.sql"),
+    ).toEqual({ version: "018_generation_score_revisions.sql" });
+
+    expect(() => migrateDatabase(db, MIGRATIONS_DIR)).not.toThrow();
+
+    const scoreRevisionTables = db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+      .all("generation_score_revisions") as Array<{ name: string }>;
+    expect(scoreRevisionTables).toHaveLength(1);
+    expect(
+      db
+        .prepare("SELECT filename FROM schema_version WHERE filename = ?")
+        .get("016_generation_score_revisions.sql"),
+    ).toEqual({ filename: "016_generation_score_revisions.sql" });
+  });
+
+  it("creates the score revisions table exactly once on a fresh TypeScript migrate", () => {
+    migrateDatabase(db, MIGRATIONS_DIR);
+
+    const scoreRevisionTables = db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+      .all("generation_score_revisions") as Array<{ name: string }>;
+    expect(scoreRevisionTables).toHaveLength(1);
+    expect(
+      db
+        .prepare("SELECT version FROM schema_migrations WHERE version = ?")
+        .get("018_generation_score_revisions.sql"),
+    ).toEqual({ version: "018_generation_score_revisions.sql" });
+  });
+
   it("marks TypeScript migrations applied when Python already owns the equivalent schema", () => {
     db.exec(
       `CREATE TABLE schema_migrations (

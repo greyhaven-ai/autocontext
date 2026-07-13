@@ -1,10 +1,15 @@
-"""``autoctx rescore <run_id> [--generation N] [--json]`` (AC-885 Slice D2a).
+"""``autoctx rescore <run_id> [--generation N] [--json] [--apply] [--by WHO]`` (AC-885 Slice D2a/D2b).
 
 Re-score a stale generation's ORIGINAL competitor artifact under the CURRENT evaluator and report the
-old-vs-new score + epoch. This command writes no score, generation, or evaluator-epoch lineage data: it
-performs no ``upsert_generation``, no registry activation/promotion, and no quarantine clear. (Like every
-other inspect command it opens the existing sqlite store, and it runs the configured evaluator hooks so
-the re-score reproduces the production evaluator; it does not create a database for a missing run.)
+old-vs-new score + epoch. Without ``--apply`` this command writes nothing: no ``upsert_generation``, no
+registry write, no quarantine clear. With ``--apply`` (Slice D2b) it APPENDS an audit revision to
+``generation_score_revisions`` for each matching re-score (``revalidated`` generations whose fresh epoch
+equals the active epoch): the fresh score and its epoch, with the generation's current values archived as
+the ``previous_*`` columns. It does NOT modify the ``generations`` row, its quarantine marker, or any
+derived table (``knowledge_snapshots`` etc.): the live score of record is left untouched, so this cannot
+poison training-export or cross-run rankings. Drifted, skipped, and error generations are never recorded.
+(Like every other inspect command it opens the existing sqlite store, and it runs the configured evaluator
+hooks so the re-score reproduces the production evaluator; it does not create a database for a missing run.)
 Re-scoring goes through the scenario task's own ``evaluate_output`` (the production path) inside the
 configured hook bus, so the score is faithful; the whole thing is fail-safe via ``revalidate_one``.
 """
@@ -151,7 +156,7 @@ def _epoch8(epoch: str | None) -> str:
     return epoch[:8] if epoch else "-"
 
 
-def _print_table(reports: list[GenerationRevalidation], active_epoch: str | None) -> None:
+def _print_table(reports: list[GenerationRevalidation], active_epoch: str | None, applied: list[int]) -> None:
     active8 = active_epoch[:8] if active_epoch else "none"
     table = Table(title=f"Re-score (active epoch {active8}...)")
     table.add_column("Gen", justify="right")
@@ -163,6 +168,7 @@ def _print_table(reports: list[GenerationRevalidation], active_epoch: str | None
     table.add_column("Old epoch")
     table.add_column("New epoch")
     table.add_column("Matches active")
+    table.add_column("Recorded")
     for rep in reports:
         old = "-" if rep.original_score is None else f"{rep.original_score:.3f}"
         new = "-" if rep.new_score is None else f"{rep.new_score:.3f}"
@@ -178,12 +184,15 @@ def _print_table(reports: list[GenerationRevalidation], active_epoch: str | None
             _epoch8(rep.original_epoch),
             _epoch8(rep.new_epoch),
             matches,
+            "yes" if rep.generation_index in applied else "-",
         )
     _console.print(table)
     revalidated = sum(1 for r in reports if r.status == "revalidated")
-    _console.print(
-        f"[dim]{revalidated} of {len(reports)} generation(s) re-scored; no score, generation, or lineage data was written.[/dim]"
-    )
+    if applied:
+        written = f"{len(applied)} audit revision(s) recorded (the live score of record was NOT changed)"
+    else:
+        written = "no score, generation, or lineage data was written"
+    _console.print(f"[dim]{revalidated} of {len(reports)} generation(s) re-scored; {written}.[/dim]")
     drifted = [r for r in reports if r.status == "revalidated" and not r.new_matches_active]
     if drifted:
         _console.print(
@@ -199,8 +208,14 @@ def rescore_command(
         None, "--generation", min=1, help="Re-score a single generation by index (default: all stale rows)"
     ),
     json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
+    apply: bool = typer.Option(
+        False,
+        "--apply",
+        help="Record active-epoch re-scores as audit revisions (does NOT change the live score or quarantine)",
+    ),
+    by: str = typer.Option("", "--by", help="Reviewer identity recorded on the audit revisions"),
 ) -> None:
-    """Re-score stale generations under the current evaluator and report drift (read-only)."""
+    """Re-score stale generations under the current evaluator and report drift (read-only without --apply)."""
     settings = load_settings()
     store = _open_store(settings)
     if store is None or store.get_run(run_id) is None:
@@ -236,14 +251,28 @@ def rescore_command(
         for r in targets
     ]
 
+    # Record matching re-scores as audit revisions only under --apply (default writes nothing). A report is
+    # recordable when it is ``revalidated`` AND its fresh epoch equals the active epoch (``new_matches_active``)
+    # with a concrete score/epoch. Drifted, skipped, and error generations are never recorded. Recording is
+    # append-only: it never touches the live ``generations`` row, its quarantine marker, or derived tables.
+    applied: list[int] = []
+    if apply:
+        for rep in reports:
+            if rep.status == "revalidated" and rep.new_matches_active and rep.new_score is not None and rep.new_epoch is not None:
+                if store.record_rescore_revision(
+                    run_id, rep.generation_index, rep.new_score, rep.new_epoch, created_by=by or None
+                ):
+                    applied.append(rep.generation_index)
+
     if json_output:
         payload = {
             "run_id": run_id,
             "scenario": scenario,
             "active_evaluator_epoch": active_epoch,
-            "generations": [asdict(rep) for rep in reports],
+            "applied": applied,
+            "generations": [{**asdict(rep), "applied": rep.generation_index in applied} for rep in reports],
         }
         typer.echo(json.dumps(payload))
         return
 
-    _print_table(reports, active_epoch)
+    _print_table(reports, active_epoch, applied)

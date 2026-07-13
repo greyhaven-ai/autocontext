@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from autocontext.storage.bootstrap_schema import bootstrap_core_schema, default_migrations_dir
-from autocontext.storage.row_types import GenerationMetricsRow, RunRow
+from autocontext.storage.row_types import GenerationMetricsRow, GenerationScoreRevisionRow, RunRow
 from autocontext.storage.sqlite_migrations import apply_python_migration_files
 from autocontext.storage.sqlite_store_consultations import SQLiteConsultationStoreMixin
 from autocontext.storage.sqlite_store_hub import SQLiteHubStoreMixin
@@ -182,6 +182,51 @@ class SQLiteStore(
                 (epoch_id, scenario),
             )
             return cur.rowcount
+
+    def record_rescore_revision(
+        self,
+        run_id: str,
+        generation_index: int,
+        new_score: float,
+        new_epoch: str,
+        *,
+        created_by: str | None = None,
+    ) -> bool:
+        """Append an audit revision recording a re-score. Returns False if the generation is absent.
+
+        Append-only and non-destructive: this records the fresh ``(revision_epoch, revision_score)`` and
+        archives the generation's CURRENT ``(evaluator_epoch, best_score, quarantined)`` as the ``previous_*``
+        values, in a single atomic ``INSERT ... SELECT`` (so there is no read-then-write gap and no
+        concurrent writer can be lost). It does NOT modify the ``generations`` row, its quarantine marker, or
+        any derived table (``knowledge_snapshots`` etc.); the live score of record is left untouched. The
+        ``SELECT`` matches no row when the generation does not exist, so nothing is inserted (returns False).
+        """
+        with self.connect() as conn:
+            cur = conn.execute(
+                "INSERT INTO generation_score_revisions "
+                "(run_id, generation_index, revision_epoch, revision_score, previous_epoch, "
+                " previous_score, previous_quarantined, created_by) "
+                "SELECT ?, ?, ?, ?, evaluator_epoch, best_score, quarantined, ? "
+                "FROM generations WHERE run_id = ? AND generation_index = ?",
+                (run_id, generation_index, new_epoch, new_score, created_by, run_id, generation_index),
+            )
+            return cur.rowcount > 0
+
+    def list_rescore_revisions(
+        self,
+        run_id: str,
+        generation_index: int,
+    ) -> list[GenerationScoreRevisionRow]:
+        """Return the archived score revisions for a generation, oldest first."""
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT id, run_id, generation_index, revision_epoch, revision_score, "
+                "previous_epoch, previous_score, previous_quarantined, created_by, created_at "
+                "FROM generation_score_revisions "
+                "WHERE run_id = ? AND generation_index = ? ORDER BY id",
+                (run_id, generation_index),
+            ).fetchall()
+            return [cast(GenerationScoreRevisionRow, dict(row)) for row in rows]
 
     def update_generation_duration(
         self,
