@@ -410,7 +410,7 @@ def run_status(run_id: str, request: Request) -> dict[str, Any]:
             (run_id,),
         ).fetchall()
 
-    generations, active_id, warnings = build_run_status_generations(gen_rows, run_dict["scenario"], request)
+    generations, active_id, warnings = build_run_status_generations(gen_rows, run_dict["scenario"], request, store, run_id)
 
     runtime_store = _get_runtime_session_store(request)
     try:
