@@ -3,6 +3,7 @@ export const SCHEMA_PARITY_SHARED_TABLES = [
   "agent_role_metrics",
   "consultation_log",
   "generation_recovery",
+  "generation_score_revisions",
   "generations",
   "hub_packages",
   "hub_promotions",
@@ -27,7 +28,4 @@ export const SCHEMA_PARITY_PYTHON_ONLY_TABLES = [
 
 export const SCHEMA_PARITY_TYPESCRIPT_ONLY_TABLES = [] as const;
 
-export const SCHEMA_PARITY_LEDGER_TABLES = [
-  "schema_migrations",
-  "schema_version",
-] as const;
+export const SCHEMA_PARITY_LEDGER_TABLES = ["schema_migrations", "schema_version"] as const;
