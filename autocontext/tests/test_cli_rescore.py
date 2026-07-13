@@ -211,6 +211,107 @@ def test_rescore_loads_custom_scenarios_from_configured_root(tmp_path: Path, mon
     assert gen["status"] == "skipped_no_evaluator"
 
 
+def _read_revisions(tmp_path: Path, run_id: str, generation_index: int) -> list[dict]:
+    store = _store(tmp_path)
+    with store.connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM generation_score_revisions WHERE run_id = ? AND generation_index = ? ORDER BY id",
+            (run_id, generation_index),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def test_rescore_apply_promotes_matching(tmp_path: Path, monkeypatch) -> None:
+    # --apply on a stale generation whose re-score matches the active epoch promotes it: the generation
+    # row is updated (best_score/epoch, quarantine cleared), the original is archived, and the output
+    # marks it applied.
+    _env(monkeypatch, tmp_path)
+    e1, e2 = _seed_epochs_active_e2(tmp_path)
+    _seed_generation(tmp_path, "run-apply", e1, with_output=True)
+    monkeypatch.setattr("autocontext.cli_rescore._build_score_fn", _fixed_build(0.55, e2))
+
+    result = runner.invoke(app, ["rescore", "run-apply", "--apply", "--json"])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert payload["applied"] == [1]
+    gen = payload["generations"][0]
+    assert gen["applied"] is True
+
+    store = _store(tmp_path)
+    row = store.get_generation("run-apply", 1)
+    assert row is not None
+    assert row["best_score"] == 0.55
+    assert row["evaluator_epoch"] == e2
+    assert row["quarantined"] is None
+
+    revisions = _read_revisions(tmp_path, "run-apply", 1)
+    assert len(revisions) == 1
+    assert revisions[0]["revision_epoch"] == e2
+    assert revisions[0]["revision_score"] == 0.55
+    assert revisions[0]["previous_epoch"] == e1
+    assert revisions[0]["previous_score"] == 0.6
+
+
+def test_rescore_apply_skips_drifted(tmp_path: Path, monkeypatch) -> None:
+    # --apply on a DRIFTED re-score (fresh epoch != active) writes nothing: the generation row is
+    # unchanged, no revision is written, and the report shows applied=false + new_matches_active=false.
+    _env(monkeypatch, tmp_path)
+    e1, _e2 = _seed_epochs_active_e2(tmp_path)
+    _seed_generation(tmp_path, "run-drift-apply", e1, with_output=True)
+    monkeypatch.setattr("autocontext.cli_rescore._build_score_fn", _fixed_build(0.5, "e_other"))
+
+    result = runner.invoke(app, ["rescore", "run-drift-apply", "--apply", "--json"])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert payload["applied"] == []
+    gen = payload["generations"][0]
+    assert gen["applied"] is False
+    assert gen["new_matches_active"] is False
+
+    store = _store(tmp_path)
+    row = store.get_generation("run-drift-apply", 1)
+    assert row is not None
+    assert row["best_score"] == 0.6  # unchanged
+    assert row["evaluator_epoch"] == e1  # unchanged
+    assert _read_revisions(tmp_path, "run-drift-apply", 1) == []
+
+
+def test_rescore_without_apply_writes_nothing(tmp_path: Path, monkeypatch) -> None:
+    # No --apply must write nothing even when the re-score matches the active epoch (D2a preserved).
+    _env(monkeypatch, tmp_path)
+    e1, e2 = _seed_epochs_active_e2(tmp_path)
+    _seed_generation(tmp_path, "run-noapply", e1, with_output=True)
+    monkeypatch.setattr("autocontext.cli_rescore._build_score_fn", _fixed_build(0.55, e2))
+
+    result = runner.invoke(app, ["rescore", "run-noapply", "--json"])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert payload["applied"] == []
+    gen = payload["generations"][0]
+    assert gen["applied"] is False
+
+    store = _store(tmp_path)
+    row = store.get_generation("run-noapply", 1)
+    assert row is not None
+    assert row["best_score"] == 0.6  # unchanged
+    assert row["evaluator_epoch"] == e1  # unchanged
+    assert _read_revisions(tmp_path, "run-noapply", 1) == []
+
+
+def test_rescore_apply_records_by(tmp_path: Path, monkeypatch) -> None:
+    # --by is recorded on the revision's created_by.
+    _env(monkeypatch, tmp_path)
+    e1, e2 = _seed_epochs_active_e2(tmp_path)
+    _seed_generation(tmp_path, "run-by", e1, with_output=True)
+    monkeypatch.setattr("autocontext.cli_rescore._build_score_fn", _fixed_build(0.55, e2))
+
+    result = runner.invoke(app, ["rescore", "run-by", "--apply", "--by", "jay", "--json"])
+    assert result.exit_code == 0, result.output
+    revisions = _read_revisions(tmp_path, "run-by", 1)
+    assert len(revisions) == 1
+    assert revisions[0]["created_by"] == "jay"
+
+
 class _FakeAgentTask:
     """Minimal agent-task double whose evaluate_output records the active hook bus at call time."""
 
