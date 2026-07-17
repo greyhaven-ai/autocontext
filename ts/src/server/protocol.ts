@@ -173,10 +173,10 @@ export const AckMsgSchema = protocolObject({
 });
 
 export const RunStoppedMsgSchema = protocolObject({
-  ...RunMessageMetadataSchema,
   type: z.literal("run_stopped"),
   command_id: z.string().nullish(),
   reason: z.string().nullish(),
+  ...RunMessageMetadataSchema,
 });
 
 export const ErrorMsgSchema = protocolObject({
@@ -266,9 +266,9 @@ export const ResumeCmdSchema = protocolObject({
 });
 
 export const StopRunCmdSchema = protocolObject({
-  ...RunCommandMetadataSchema,
   type: z.literal("stop_run"),
   reason: z.string().nullish(),
+  ...RunCommandMetadataSchema,
 });
 
 export const InjectHintCmdSchema = protocolObject({
