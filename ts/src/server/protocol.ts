@@ -21,6 +21,7 @@ export const PYTHON_SHARED_SERVER_MESSAGE_TYPES = [
   "environments",
   "run_accepted",
   "ack",
+  "run_stopped",
   "error",
   "scenario_generating",
   "scenario_preview",
@@ -39,6 +40,7 @@ export const SERVER_MESSAGE_TYPES = [
 export const PYTHON_SHARED_CLIENT_MESSAGE_TYPES = [
   "pause",
   "resume",
+  "stop_run",
   "inject_hint",
   "override_gate",
   "chat_agent",
@@ -170,6 +172,13 @@ export const AckMsgSchema = protocolObject({
   ...RunMessageMetadataSchema,
 });
 
+export const RunStoppedMsgSchema = protocolObject({
+  ...RunMessageMetadataSchema,
+  type: z.literal("run_stopped"),
+  command_id: z.string().nullish(),
+  reason: z.string().nullish(),
+});
+
 export const ErrorMsgSchema = protocolObject({
   type: z.literal("error"),
   message: z.string(),
@@ -254,6 +263,12 @@ export const PauseCmdSchema = protocolObject({
 export const ResumeCmdSchema = protocolObject({
   type: z.literal("resume"),
   ...RunCommandMetadataSchema,
+});
+
+export const StopRunCmdSchema = protocolObject({
+  ...RunCommandMetadataSchema,
+  type: z.literal("stop_run"),
+  reason: z.string().nullish(),
 });
 
 export const InjectHintCmdSchema = protocolObject({
@@ -347,6 +362,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   EnvironmentsMsgSchema,
   RunAcceptedMsgSchema,
   AckMsgSchema,
+  RunStoppedMsgSchema,
   ErrorMsgSchema,
   ScenarioGeneratingMsgSchema,
   ScenarioPreviewMsgSchema,
@@ -360,6 +376,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
 export const ClientMessageSchema = z.discriminatedUnion("type", [
   PauseCmdSchema,
   ResumeCmdSchema,
+  StopRunCmdSchema,
   InjectHintCmdSchema,
   OverrideGateCmdSchema,
   ChatAgentCmdSchema,

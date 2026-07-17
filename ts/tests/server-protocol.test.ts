@@ -252,6 +252,30 @@ describe("Protocol types", () => {
       OverrideGateCmdSchema.parse({ type: "override_gate", decision: "invalid" }),
     ).toThrow();
   });
+
+  it("ClientMessageSchema parses a stop_run command (AC-894)", async () => {
+    const { ClientMessageSchema } = await import("../src/server/protocol.js");
+    const msg = ClientMessageSchema.parse({
+      type: "stop_run",
+      command_id: "c1",
+      client_run_id: "r1",
+      reason: "x",
+    });
+    expect(msg.type).toBe("stop_run");
+  });
+
+  it("ServerMessageSchema parses a run_stopped receipt (AC-894)", async () => {
+    const { ServerMessageSchema } = await import("../src/server/protocol.js");
+    const msg = ServerMessageSchema.parse({ type: "run_stopped", command_id: "c1" });
+    expect(msg.type).toBe("run_stopped");
+  });
+
+  it("shared parity lists include stop_run and run_stopped (AC-894)", async () => {
+    const { PYTHON_SHARED_CLIENT_MESSAGE_TYPES, PYTHON_SHARED_SERVER_MESSAGE_TYPES } =
+      await import("../src/server/protocol.js");
+    expect(PYTHON_SHARED_CLIENT_MESSAGE_TYPES).toContain("stop_run");
+    expect(PYTHON_SHARED_SERVER_MESSAGE_TYPES).toContain("run_stopped");
+  });
 });
 
 // ---------------------------------------------------------------------------

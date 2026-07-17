@@ -74,6 +74,9 @@ All notable changes to this project will be documented in this file.
   alongside the unchanged live score. Only the latest revision recorded under the scenario's current
   active epoch is surfaced; the live score of record is untouched. Read-only, Python-only, no new
   command, flag, or schema.
+- AC-894 Slice A1: the interactive-run protocol gains a `stop_run` client command and a `run_stopped`
+  terminal server receipt (wire contract only). Cooperative-stop behavior and the `safe_run_stop_v1`
+  capability follow in the engine slices.
 
 ## [0.11.0] - 2026-07-02
 
