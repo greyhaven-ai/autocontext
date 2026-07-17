@@ -19,6 +19,7 @@ PROTOCOL_VERSION = 1
 def _is_none(value: object) -> bool:
     return value is None
 
+
 # ---------------------------------------------------------------------------
 # Nested / shared models
 # ---------------------------------------------------------------------------
@@ -151,6 +152,14 @@ class AckMsg(RunMessageMetadata):
     command_id: str | None = Field(default=None, exclude_if=_is_none)
 
 
+class RunStoppedMsg(RunMessageMetadata):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["run_stopped"] = "run_stopped"
+    command_id: str | None = Field(default=None, exclude_if=_is_none)
+    reason: str | None = Field(default=None, exclude_if=_is_none)
+
+
 class ErrorMsg(RunMessageMetadata):
     model_config = ConfigDict(extra="forbid")
 
@@ -217,6 +226,7 @@ ServerMessage = Annotated[
     | EnvironmentsMsg
     | RunAcceptedMsg
     | AckMsg
+    | RunStoppedMsg
     | ErrorMsg
     | ScenarioGeneratingMsg
     | ScenarioPreviewMsg
@@ -242,6 +252,13 @@ class ResumeCmd(RunCommandMetadata):
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["resume"] = "resume"
+
+
+class StopCmd(RunCommandMetadata):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["stop_run"] = "stop_run"
+    reason: str | None = Field(default=None, exclude_if=_is_none)
 
 
 class InjectHintCmd(RunCommandMetadata):
@@ -310,6 +327,7 @@ class CancelScenarioCmd(BaseModel):
 ClientMessage = Annotated[
     PauseCmd
     | ResumeCmd
+    | StopCmd
     | InjectHintCmd
     | OverrideGateCmd
     | ChatAgentCmd

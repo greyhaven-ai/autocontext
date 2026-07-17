@@ -69,6 +69,7 @@
     "environments",
     "run_accepted",
     "ack",
+    "run_stopped",
     "error",
     "scenario_generating",
     "scenario_preview",
@@ -79,6 +80,7 @@
   "shared_client_messages": [
     "pause",
     "resume",
+    "stop_run",
     "inject_hint",
     "override_gate",
     "chat_agent",

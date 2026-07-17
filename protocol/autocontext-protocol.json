@@ -750,6 +750,106 @@
         "title": "RunAcceptedMsg",
         "type": "object"
       },
+      "RunStoppedMsg": {
+        "additionalProperties": false,
+        "properties": {
+          "client_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Client Run Id"
+          },
+          "event_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Event Id"
+          },
+          "sequence": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sequence"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Run Id"
+          },
+          "occurred_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Occurred At"
+          },
+          "type": {
+            "const": "run_stopped",
+            "default": "run_stopped",
+            "title": "Type",
+            "type": "string"
+          },
+          "command_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Command Id"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Reason"
+          }
+        },
+        "title": "RunStoppedMsg",
+        "type": "object"
+      },
       "ScenarioErrorMsg": {
         "additionalProperties": false,
         "properties": {
@@ -1048,6 +1148,7 @@
         "hello": "#/$defs/HelloMsg",
         "monitor_alert": "#/$defs/MonitorAlertMsg",
         "run_accepted": "#/$defs/RunAcceptedMsg",
+        "run_stopped": "#/$defs/RunStoppedMsg",
         "scenario_error": "#/$defs/ScenarioErrorMsg",
         "scenario_generating": "#/$defs/ScenarioGeneratingMsg",
         "scenario_preview": "#/$defs/ScenarioPreviewMsg",
@@ -1077,6 +1178,9 @@
       },
       {
         "$ref": "#/$defs/AckMsg"
+      },
+      {
+        "$ref": "#/$defs/RunStoppedMsg"
       },
       {
         "$ref": "#/$defs/ErrorMsg"
@@ -1453,6 +1557,55 @@
         ],
         "title": "StartRunCmd",
         "type": "object"
+      },
+      "StopCmd": {
+        "additionalProperties": false,
+        "properties": {
+          "client_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Client Run Id"
+          },
+          "command_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Command Id"
+          },
+          "type": {
+            "const": "stop_run",
+            "default": "stop_run",
+            "title": "Type",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Reason"
+          }
+        },
+        "title": "StopCmd",
+        "type": "object"
       }
     },
     "discriminator": {
@@ -1467,7 +1620,8 @@
         "pause": "#/$defs/PauseCmd",
         "resume": "#/$defs/ResumeCmd",
         "revise_scenario": "#/$defs/ReviseScenarioCmd",
-        "start_run": "#/$defs/StartRunCmd"
+        "start_run": "#/$defs/StartRunCmd",
+        "stop_run": "#/$defs/StopCmd"
       },
       "propertyName": "type"
     },
@@ -1477,6 +1631,9 @@
       },
       {
         "$ref": "#/$defs/ResumeCmd"
+      },
+      {
+        "$ref": "#/$defs/StopCmd"
       },
       {
         "$ref": "#/$defs/InjectHintCmd"

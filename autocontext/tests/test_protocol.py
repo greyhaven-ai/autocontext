@@ -37,6 +37,7 @@ from autocontext.server.protocol import (
     RunAcceptedMsg,
     RunCompletedPayload,
     RunStartedPayload,
+    RunStoppedMsg,
     ScenarioErrorMsg,
     ScenarioGeneratingMsg,
     ScenarioInfo,
@@ -45,6 +46,7 @@ from autocontext.server.protocol import (
     ScoringComponent,
     StartRunCmd,
     StateMsg,
+    StopCmd,
     StrategyParam,
     TournamentCompletedPayload,
     TournamentStartedPayload,
@@ -179,6 +181,7 @@ class TestClientMessageParsing:
             ({"type": "confirm_scenario"}, ConfirmScenarioCmd),
             ({"type": "revise_scenario", "feedback": "change X"}, ReviseScenarioCmd),
             ({"type": "cancel_scenario"}, CancelScenarioCmd),
+            ({"type": "stop_run"}, StopCmd),
         ],
     )
     def test_valid_messages(self, raw: dict, expected_type: type) -> None:
@@ -301,3 +304,43 @@ class TestNestedModels:
     def test_scoring_component(self) -> None:
         comp = ScoringComponent(name="s", description="score", weight=0.5)
         assert comp.model_dump() == {"name": "s", "description": "score", "weight": 0.5}
+
+
+class TestStopProtocol:
+    """AC-894 Slice A1: stop_run client command + run_stopped server receipt."""
+
+    def test_stop_run_parses_to_stop_cmd(self) -> None:
+        msg = parse_client_message({"type": "stop_run"})
+        assert isinstance(msg, StopCmd)
+        assert msg.type == "stop_run"
+
+    def test_stop_run_fields_round_trip(self) -> None:
+        msg = parse_client_message(
+            {
+                "type": "stop_run",
+                "reason": "operator abort",
+                "command_id": "c1",
+                "client_run_id": "r1",
+            }
+        )
+        assert isinstance(msg, StopCmd)
+        assert msg.reason == "operator abort"
+        assert msg.command_id == "c1"
+        assert msg.client_run_id == "r1"
+
+    def test_run_stopped_dump_includes_set_optional_fields(self) -> None:
+        d = RunStoppedMsg(command_id="c1", reason="x").model_dump()
+        assert d["type"] == "run_stopped"
+        assert d["command_id"] == "c1"
+        assert d["reason"] == "x"
+
+    def test_run_stopped_dump_excludes_unset_optional_fields(self) -> None:
+        d = RunStoppedMsg().model_dump()
+        assert d["type"] == "run_stopped"
+        assert "command_id" not in d
+        assert "reason" not in d
+
+    def test_schema_export_contains_new_literals(self) -> None:
+        serialized = json.dumps(export_json_schema())
+        assert "stop_run" in serialized
+        assert "run_stopped" in serialized
