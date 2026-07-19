@@ -42,7 +42,7 @@ def test_release_manifest_renders_whats_new_asset() -> None:
 def test_pi_version_syncs_install_snippets() -> None:
     sync = _load_sync_module()
     manifest = sync.ReleaseManifest(
-        core_version="0.11.0",
+        core_version="0.12.0",
         pi_version="0.9.0",
         pi_autoctx_dependency="^0.9.0",
         whats_new=("**One** thing.",),
@@ -69,6 +69,6 @@ def test_release_manifest_checks_package_version_files() -> None:
 
     issues = sync.check_release_surfaces(manifest)
 
-    assert "autocontext/src/autocontext/__init__.py version 0.11.0 != manifest 9.9.9" in issues
+    assert "autocontext/src/autocontext/__init__.py version 0.12.0 != manifest 9.9.9" in issues
     assert "pi/package.json version 0.9.0 != manifest 0.8.0" in issues
     assert "pi/package.json autoctx dependency ^0.11.0 != manifest ^0.9.0" in issues
