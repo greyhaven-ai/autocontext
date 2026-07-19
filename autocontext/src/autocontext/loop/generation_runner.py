@@ -1147,7 +1147,16 @@ class GenerationRunner:
                     if self.controller.stop_requested():
                         command_id, reason = self.controller.stop_details()
                         if self.sqlite.mark_run_stopped(active_run_id):
-                            self.events.emit("run_stopped", {"command_id": command_id, "reason": reason})
+                            self.events.emit(
+                                "run_stopped",
+                                {
+                                    "run_id": active_run_id,
+                                    "command_id": command_id,
+                                    "reason": reason,
+                                    "completed_generations": completed,
+                                    "best_score": previous_best,
+                                },
+                            )
                         stopped = True
                         break
                     hint = self.controller.take_hint()

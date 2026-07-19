@@ -20,6 +20,7 @@ from autocontext.server.monitor_api import monitor_router
 from autocontext.server.notebook_api import notebook_router
 from autocontext.server.openclaw_api import router as openclaw_router
 from autocontext.server.protocol import (
+    SERVER_CAPABILITIES,
     AckMsg,
     CancelScenarioCmd,
     ChatAgentCmd,
@@ -37,6 +38,7 @@ from autocontext.server.protocol import (
     ResumeCmd,
     ReviseScenarioCmd,
     RunAcceptedMsg,
+    RunStoppedPayload,
     ScenarioErrorMsg,
     ScenarioGeneratingMsg,
     ScenarioPreviewMsg,
@@ -53,6 +55,8 @@ from autocontext.storage import SQLiteStore
 from autocontext.util.json_io import read_json
 
 logger = logging.getLogger(__name__)
+
+
 def _build_scenario_creator(app_settings: object) -> object | None:
     try:
         from autocontext.agents.llm_client import build_client_from_settings
@@ -263,7 +267,7 @@ def create_app(
         await websocket.accept()
 
         # Protocol version handshake -- always first message
-        await websocket.send_json(HelloMsg().model_dump())
+        await websocket.send_json(HelloMsg(capabilities=SERVER_CAPABILITIES).model_dump())
 
         if controller is None or events is None:
             await websocket.send_json(ErrorMsg(message="Interactive mode not available. Start with 'autoctx tui'.").model_dump())
@@ -279,7 +283,17 @@ def create_app(
         event_loop = asyncio.get_event_loop()
 
         def _on_event(event: str, payload: dict[str, Any]) -> None:
-            msg = EventMsg(event=event, payload=payload)
+            if event == "run_stopped":
+                receipt = RunStoppedPayload(
+                    run_id=payload["run_id"],
+                    reason="operator",
+                    command_id=payload["command_id"],
+                    completed_generations=payload["completed_generations"],
+                    best_score=payload.get("best_score"),
+                )
+                msg = EventMsg(event=event, payload=receipt.model_dump())
+            else:
+                msg = EventMsg(event=event, payload=payload)
             event_loop.call_soon_threadsafe(send_queue.put_nowait, msg.model_dump())
 
         events.subscribe(_on_event)
@@ -319,13 +333,27 @@ def create_app(
                             await websocket.send_json(StateMsg(paused=False).model_dump())
 
                         case StopCmd(client_run_id=client_run_id, command_id=command_id):
-                            await websocket.send_json(
-                                ErrorMsg(
-                                    message="safe_run_stop_v1 is not supported by the Python interactive server.",
-                                    client_run_id=client_run_id,
-                                    command_id=command_id,
-                                ).model_dump()
-                            )
+                            outcome = run_manager.stop_run(client_run_id, command_id, None) if run_manager else "not_active"
+                            if outcome in ("accepted", "duplicate"):
+                                await websocket.send_json(
+                                    AckMsg(action="stop", client_run_id=client_run_id, command_id=command_id).model_dump()
+                                )
+                            elif outcome == "scope_mismatch":
+                                await websocket.send_json(
+                                    ErrorMsg(
+                                        message="stop targets a different run than the active one",
+                                        client_run_id=client_run_id,
+                                        command_id=command_id,
+                                    ).model_dump()
+                                )
+                            else:  # not_active
+                                await websocket.send_json(
+                                    ErrorMsg(
+                                        message="no active run to stop",
+                                        client_run_id=client_run_id,
+                                        command_id=command_id,
+                                    ).model_dump()
+                                )
 
                         case InjectHintCmd(text=text):
                             if text:
@@ -352,6 +380,7 @@ def create_app(
                                         scenario,
                                         generations,
                                         require_playbook_approval=start_cmd.require_playbook_approval,
+                                        client_run_id=start_cmd.client_run_id,
                                     )
                                     await websocket.send_json(
                                         RunAcceptedMsg(run_id=rid, scenario=scenario, generations=generations).model_dump()
@@ -385,6 +414,7 @@ def create_app(
                                 continue
 
                             from autocontext.scenarios.custom.creator import ScenarioCreator
+
                             creator: ScenarioCreator = scenario_creator  # type: ignore[assignment]
                             name = creator.derive_name(description)
                             await websocket.send_json(ScenarioGeneratingMsg(name=name).model_dump())
@@ -395,22 +425,19 @@ def create_app(
                                 await websocket.send_json(_build_scenario_preview_msg(spec).model_dump())
                             except Exception as exc:
                                 logger.warning("scenario generation failed", exc_info=True)
-                                await websocket.send_json(
-                                    ScenarioErrorMsg(message=str(exc), stage="generation").model_dump()
-                                )
+                                await websocket.send_json(ScenarioErrorMsg(message=str(exc), stage="generation").model_dump())
 
                         case ConfirmScenarioCmd():
                             current_spec = pending_spec.get("current")
                             if current_spec is None:
                                 await websocket.send_json(
-                                    ScenarioErrorMsg(
-                                        message="No pending scenario to confirm.", stage="validation"
-                                    ).model_dump()
+                                    ScenarioErrorMsg(message="No pending scenario to confirm.", stage="validation").model_dump()
                                 )
                                 continue
 
                             from autocontext.scenarios import SCENARIO_REGISTRY
                             from autocontext.scenarios.custom.creator import ScenarioCreator
+
                             creator = scenario_creator  # type: ignore[assignment]
 
                             try:
@@ -427,17 +454,13 @@ def create_app(
                                     await websocket.send_json(_build_environments_msg(env_info).model_dump())
                             except Exception as exc:
                                 logger.warning("scenario build/validate failed", exc_info=True)
-                                await websocket.send_json(
-                                    ScenarioErrorMsg(message=str(exc), stage="validation").model_dump()
-                                )
+                                await websocket.send_json(ScenarioErrorMsg(message=str(exc), stage="validation").model_dump())
 
                         case ReviseScenarioCmd(feedback=feedback):
                             current_spec = pending_spec.get("current")
                             if current_spec is None:
                                 await websocket.send_json(
-                                    ScenarioErrorMsg(
-                                        message="No pending scenario to revise.", stage="generation"
-                                    ).model_dump()
+                                    ScenarioErrorMsg(message="No pending scenario to revise.", stage="generation").model_dump()
                                 )
                                 continue
 
@@ -445,6 +468,7 @@ def create_app(
                                 continue
 
                             from autocontext.scenarios.custom.creator import ScenarioCreator
+
                             creator = scenario_creator  # type: ignore[assignment]
 
                             try:
@@ -453,9 +477,7 @@ def create_app(
                                 await websocket.send_json(_build_scenario_preview_msg(revised).model_dump())
                             except Exception as exc:
                                 logger.warning("scenario revision failed", exc_info=True)
-                                await websocket.send_json(
-                                    ScenarioErrorMsg(message=str(exc), stage="generation").model_dump()
-                                )
+                                await websocket.send_json(ScenarioErrorMsg(message=str(exc), stage="generation").model_dump())
 
                         case CancelScenarioCmd():
                             pending_spec.clear()

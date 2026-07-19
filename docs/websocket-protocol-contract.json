@@ -21,7 +21,7 @@
   },
   "safe_stop_extension": {
     "capability": "safe_run_stop_v1",
-    "advertised_runtimes": ["typescript"],
+    "advertised_runtimes": ["typescript", "python"],
     "requires_transcript_protocol_version": 1,
     "command": "stop",
     "required_command_fields": ["client_run_id", "command_id"],
@@ -29,7 +29,7 @@
     "terminal_event": "run_stopped",
     "terminal_reason": "operator",
     "terminal_arbitration": "first_terminal_outcome_wins",
-    "python_support": "schema_only"
+    "python_support": "supported"
   },
   "endpoints": [
     {

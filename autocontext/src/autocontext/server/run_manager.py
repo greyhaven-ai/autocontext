@@ -4,7 +4,7 @@ import logging
 import threading
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from autocontext.config import AppSettings, load_settings
 from autocontext.loop.controller import LoopController
@@ -13,6 +13,8 @@ from autocontext.loop.generation_runner import GenerationRunner
 from autocontext.scenarios import SCENARIO_REGISTRY
 
 logger = logging.getLogger(__name__)
+
+StopOutcome = Literal["accepted", "duplicate", "scope_mismatch", "not_active"]
 
 
 class RunManager:
@@ -24,11 +26,25 @@ class RunManager:
         self.settings = settings or load_settings()
         self._thread: threading.Thread | None = None
         self._active = False
+        self._active_client_run_id: str | None = None
+        self._processed_stop_command_ids: set[str] = set()
         self._migrations_dir = Path(__file__).resolve().parents[2] / "migrations"
 
     @property
     def is_active(self) -> bool:
         return self._active
+
+    def stop_run(self, client_run_id: str | None, command_id: str | None, reason: str | None) -> StopOutcome:
+        if not self._active:
+            return "not_active"
+        if client_run_id is not None and client_run_id != self._active_client_run_id:
+            return "scope_mismatch"
+        if command_id is not None and command_id in self._processed_stop_command_ids:
+            return "duplicate"
+        if command_id is not None:
+            self._processed_stop_command_ids.add(command_id)
+        self.controller.request_stop(command_id, reason)
+        return "accepted"
 
     def list_scenarios(self) -> list[str]:
         return sorted(SCENARIO_REGISTRY.keys())
@@ -89,6 +105,7 @@ class RunManager:
         run_id: str | None = None,
         *,
         require_playbook_approval: bool = False,
+        client_run_id: str | None = None,
     ) -> str:
         if self._active:
             raise RuntimeError("A run is already active. Wait for it to finish or stop it.")
@@ -103,6 +120,8 @@ class RunManager:
         # Share the event emitter so subscribers get events from this run
         runner.events = self.events
         self._active = True
+        self._active_client_run_id = client_run_id
+        self._processed_stop_command_ids = set()
 
         def _target() -> None:
             try:
@@ -117,6 +136,8 @@ class RunManager:
                 logger.exception("Run %s failed", actual_run_id)
             finally:
                 self._active = False
+                self._active_client_run_id = None
+                self._processed_stop_command_ids.clear()
 
         self._thread = threading.Thread(target=_target, daemon=True)
         self._thread.start()
