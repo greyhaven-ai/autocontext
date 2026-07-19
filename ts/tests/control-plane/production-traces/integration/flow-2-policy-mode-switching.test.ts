@@ -61,7 +61,7 @@ describe("Flow 2 — policy-mode switching (on-export ↔ on-ingest)", () => {
       date: "2026-04-17",
     });
     const ing1 = await runProductionTracesCommand(
-      ["ingest", "--output", "json"],
+      ["ingest", "--skip-retention", "--output", "json"],
       { cwd: tmp },
     );
     expect(ing1.exitCode).toBe(0);
@@ -95,7 +95,7 @@ describe("Flow 2 — policy-mode switching (on-export ↔ on-ingest)", () => {
       date: "2026-04-17",
     });
     const ing2 = await runProductionTracesCommand(
-      ["ingest", "--output", "json"],
+      ["ingest", "--skip-retention", "--output", "json"],
       { cwd: tmp },
     );
     expect(ing2.exitCode).toBe(0);

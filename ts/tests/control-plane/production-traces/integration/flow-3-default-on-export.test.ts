@@ -53,7 +53,7 @@ describe("Flow 3 — default on-export mode applies placeholders at export bound
 
     await seedTracesInRegistry(tmp, { traces: [trace], batchId: "batch-flow3" });
     const ing = await runProductionTracesCommand(
-      ["ingest", "--output", "json"],
+      ["ingest", "--skip-retention", "--output", "json"],
       { cwd: tmp },
     );
     expect(ing.exitCode).toBe(0);

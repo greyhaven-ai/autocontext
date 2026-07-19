@@ -53,7 +53,10 @@ describe("AC-606: OpenAI + Anthropic traces through ingest → build-dataset", (
     writeIncomingBatch(cwd, TEST_DATE, "openai-batch", openaiTraces);
     writeIncomingBatch(cwd, TEST_DATE, "anthropic-batch", anthropicTraces);
 
-    const ingestResult = await runProductionTracesCommand(["ingest"], { cwd });
+    const ingestResult = await runProductionTracesCommand(
+      ["ingest", "--skip-retention"],
+      { cwd },
+    );
     expect(ingestResult.exitCode).toBe(0);
   }
 

@@ -82,7 +82,7 @@ describe("ingest + redaction integration", () => {
     const trace = makeTrace();
     writeBatch(cwd, "batch-default", [trace]);
 
-    const report = await ingestBatches(cwd, {});
+    const report = await ingestBatches(cwd, { retention: "skip" });
     expect(report.tracesIngested).toBe(1);
 
     const stored = JSON.parse(
@@ -113,7 +113,7 @@ describe("ingest + redaction integration", () => {
       const trace = makeTrace();
       writeBatch(cwd, "batch-oni", [trace]);
 
-      const report = await ingestBatches(cwd, {});
+      const report = await ingestBatches(cwd, { retention: "skip" });
       expect(report.tracesIngested).toBe(1);
 
       const stored = JSON.parse(
@@ -156,7 +156,7 @@ describe("ingest + redaction integration", () => {
     });
     writeBatch(cwd, "batch-client", [trace]);
 
-    const report = await ingestBatches(cwd, {});
+    const report = await ingestBatches(cwd, { retention: "skip" });
     expect(report.tracesIngested).toBe(1);
 
     const stored = JSON.parse(
@@ -183,6 +183,8 @@ describe("ingest + redaction integration", () => {
     const trace = makeTrace();
     writeBatch(cwd, "batch-broken-policy", [trace]);
 
-    await expect(ingestBatches(cwd, {})).rejects.toThrow(/redaction-policy/i);
+    await expect(ingestBatches(cwd, { retention: "skip" })).rejects.toThrow(
+      /redaction-policy/i,
+    );
   });
 });

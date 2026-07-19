@@ -30,7 +30,7 @@ async function seedTraces(n: number, taskType = "checkout"): Promise<void> {
     }),
   );
   writeIncomingBatch(cwd, TEST_DATE, "batch-bd", traces);
-  await runProductionTracesCommand(["ingest"], { cwd });
+  await runProductionTracesCommand(["ingest", "--skip-retention"], { cwd });
 }
 
 describe("autoctx production-traces build-dataset", () => {
@@ -201,7 +201,7 @@ describe("autoctx production-traces build-dataset", () => {
       );
       writeIncomingBatch(cwd, TEST_DATE, "batch-openai", openaiTraces);
       writeIncomingBatch(cwd, TEST_DATE, "batch-anthropic", anthropicTraces);
-      await runProductionTracesCommand(["ingest"], { cwd });
+      await runProductionTracesCommand(["ingest", "--skip-retention"], { cwd });
 
       const r = await runProductionTracesCommand(
         [
@@ -238,7 +238,7 @@ describe("autoctx production-traces build-dataset", () => {
         }),
       );
       writeIncomingBatch(cwd, TEST_DATE, "batch-anth", anthropicTraces);
-      await runProductionTracesCommand(["ingest"], { cwd });
+      await runProductionTracesCommand(["ingest", "--skip-retention"], { cwd });
 
       const r = await runProductionTracesCommand(
         [
@@ -281,7 +281,7 @@ describe("autoctx production-traces build-dataset", () => {
         }),
       ];
       writeIncomingBatch(cwd, TEST_DATE, "batch-mixed", traces);
-      await runProductionTracesCommand(["ingest"], { cwd });
+      await runProductionTracesCommand(["ingest", "--skip-retention"], { cwd });
     }
 
     test("--app filters to matching appId only", async () => {
