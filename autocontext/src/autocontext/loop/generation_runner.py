@@ -1139,10 +1139,17 @@ class GenerationRunner:
                     ", ".join(existing_harness),
                 )
 
+        stopped = False
         try:
             for generation in range(1, generations + 1):
                 if self.controller:
                     self.controller.wait_if_paused()
+                    if self.controller.stop_requested():
+                        command_id, reason = self.controller.stop_details()
+                        if self.sqlite.mark_run_stopped(active_run_id):
+                            self.events.emit("run_stopped", {"command_id": command_id, "reason": reason})
+                        stopped = True
+                        break
                     hint = self.controller.take_hint()
                     if hint:
                         coach_competitor_hints += f"\n\n[User guidance]: {hint}"
@@ -1305,13 +1312,14 @@ class GenerationRunner:
                             )
                     except Exception:
                         logger.debug("loop.generation_runner: suppressed Exception", exc_info=True)
-            self.sqlite.mark_run_completed(active_run_id)
-            if completed > 0:
-                self.artifacts.mutation_log.create_checkpoint(
-                    scenario_name,
-                    generation=completed,
-                    run_id=active_run_id,
-                )
+            if not stopped:
+                self.sqlite.mark_run_completed(active_run_id)
+                if completed > 0:
+                    self.artifacts.mutation_log.create_checkpoint(
+                        scenario_name,
+                        generation=completed,
+                        run_id=active_run_id,
+                    )
             self.artifacts.flush_writes()
         except BaseException as exc:
             try:
