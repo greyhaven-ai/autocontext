@@ -134,7 +134,8 @@ export class RunTranscriptStore {
     this.path = path;
     this.#policy = validatePolicy({ ...RUN_TRANSCRIPT_RETENTION, ...policy });
     const requiresCompaction = this.#loadBoundedTail();
-    this.#enforceRetention(requiresCompaction);
+    const reconciledStopCommand = this.#reconcileStopCommandTerminalFrames();
+    this.#enforceRetention(requiresCompaction || reconciledStopCommand);
   }
 
   record(opts: {
@@ -426,6 +427,48 @@ export class RunTranscriptStore {
       if (frame) return frame;
     }
     return null;
+  }
+
+  #reconcileStopCommandTerminalFrames(): boolean {
+    let changed = false;
+    for (const [key, command] of this.#commands) {
+      const expectedCommand: Extract<ClientMessage, { type: "stop" }> = {
+        type: "stop",
+        client_run_id: command.clientRunId,
+        command_id: command.commandId,
+      };
+      if (command.fingerprint !== fingerprintCommand(expectedCommand)) continue;
+
+      const expectedRunId = this.#runIdByClientRunId.get(command.clientRunId);
+      if (!expectedRunId) continue;
+      const existingResponse = command.responseEventId
+        ? this.#frameByEventId(command.responseEventId)
+        : null;
+      const matchesTerminal = (frame: RetainedRunFrame): boolean => {
+        if (frame.runId !== expectedRunId) return false;
+        const payload = readRunStoppedPayload(frame.message);
+        return (
+          payload?.runId === expectedRunId &&
+          payload.commandId === command.commandId
+        );
+      };
+      if (existingResponse && matchesTerminal(existingResponse)) continue;
+
+      const minimumSequence = existingResponse?.sequence ?? 0;
+      const terminal = (this.#framesByClientRunId.get(command.clientRunId) ?? []).find((frame) => {
+        return frame.sequence > minimumSequence && matchesTerminal(frame);
+      });
+      if (!terminal) continue;
+
+      this.#commands.set(key, {
+        ...command,
+        occurredAt: terminal.occurredAt,
+        responseEventId: terminal.eventId,
+        status: "completed",
+      });
+      changed = true;
+    }
+    return changed;
   }
 
   #appendLine(line: string): void {

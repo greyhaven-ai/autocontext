@@ -535,6 +535,57 @@ describe("RunTranscriptStore", () => {
     ).toMatchObject({ outcome: "completed", frame: { wire: terminal.wire } });
   });
 
+  it("reconciles an exact stop retry after a crash before terminal promotion", () => {
+    for (const state of ["acknowledged", "pending"] as const) {
+      const { path, store } = makeStore();
+      const clientRunId = `client-crash-${state}`;
+      const commandId = `command-crash-${state}`;
+      const runId = `engine-crash-${state}`;
+      const command = stopCommand(clientRunId, commandId);
+      store.registerRun(clientRunId, runId);
+      store.beginCommand({ clientRunId, commandId, command });
+
+      if (state === "acknowledged") {
+        const acknowledgement = store.record({
+          clientRunId,
+          commandId,
+          runId,
+          message: { type: "ack", action: "stop", decision: "requested" },
+        });
+        if (!acknowledgement) throw new Error("expected retained stop acknowledgement");
+        store.completeCommand({
+          clientRunId,
+          commandId,
+          command,
+          frame: acknowledgement,
+        });
+      }
+
+      const terminal = recordRunStopped(store, {
+        clientRunId,
+        commandId,
+        completedGenerations: 2,
+        bestScore: 0.87,
+        runId,
+      });
+      if (!terminal) throw new Error("expected retained run_stopped frame");
+
+      const reloaded = new RunTranscriptStore(path);
+      expect(
+        reloaded.beginCommand({ clientRunId, commandId, command }),
+      ).toMatchObject({
+        outcome: "completed",
+        frame: { eventId: terminal.eventId, wire: terminal.wire },
+      });
+      expect(
+        new RunTranscriptStore(path).beginCommand({ clientRunId, commandId, command }),
+      ).toMatchObject({
+        outcome: "completed",
+        frame: { eventId: terminal.eventId, wire: terminal.wire },
+      });
+    }
+  });
+
   it("refuses stop-terminal promotion across fingerprints, scopes, or invalid frames", () => {
     const { store } = makeStore();
     const command = stopCommand("client-primary", "command-primary");
