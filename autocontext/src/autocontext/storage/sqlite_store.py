@@ -775,9 +775,22 @@ class SQLiteStore(
             ).fetchone()
             return row["cnt"] if row else 0
 
+    def mark_run_stopped(self, run_id: str) -> bool:
+        """First-wins stop transition: only a still-running run can be stopped. Returns True if it won the race."""
+        with self.connect() as conn:
+            cur = conn.execute(
+                "UPDATE runs SET status = 'stopped', updated_at = datetime('now') WHERE run_id = ? AND status = 'running'",
+                (run_id,),
+            )
+            return cur.rowcount > 0
+
     def mark_run_completed(self, run_id: str) -> None:
         with self.connect() as conn:
-            conn.execute("UPDATE runs SET status = 'completed', updated_at = datetime('now') WHERE run_id = ?", (run_id,))
+            conn.execute(
+                "UPDATE runs SET status = 'completed', updated_at = datetime('now') "
+                "WHERE run_id = ? AND (status IS NULL OR status != 'stopped')",
+                (run_id,),
+            )
 
     def mark_run_failed(self, run_id: str) -> None:
         with self.connect() as conn:
