@@ -617,6 +617,48 @@ export class InteractiveServer {
         await this.#startRun(ws, msg);
         return;
       }
+      case "stop": {
+        const clientRunId = msg.client_run_id;
+        const existingCommand = this.#runTranscripts.inspectCommand({
+          clientRunId,
+          commandId: msg.command_id,
+          command: msg,
+        });
+        if (existingCommand) {
+          const state = this.#runManager.getState();
+          const activeClientRunId =
+            state.active && state.runId
+              ? this.#runTranscripts.resolveClientRunId(state.runId)
+              : null;
+          if (existingCommand.outcome === "completed" && activeClientRunId === clientRunId) {
+            this.#bindClientScope(ws, clientRunId);
+          }
+          this.#beginDurableCommand(ws, msg, clientRunId);
+          return;
+        }
+        this.#resolveCommandScope(clientRunId);
+        this.#bindClientScope(ws, clientRunId);
+        if (!this.#beginDurableCommand(ws, msg, clientRunId)) return;
+        const runId = this.#runTranscripts.resolveRunId(clientRunId);
+        if (!runId) {
+          throw new Error("client_run_id is not associated with an engine run");
+        }
+        const decision = this.#runManager.stop(runId, msg.command_id);
+        this.#sendRunResponse(
+          ws,
+          {
+            type: "ack",
+            action: "stop",
+            decision,
+            client_run_id: clientRunId,
+            command_id: msg.command_id,
+            run_id: runId,
+          },
+          clientRunId,
+          msg,
+        );
+        return;
+      }
       case "pause":
       case "resume":
       case "inject_hint":
@@ -812,6 +854,26 @@ export class InteractiveServer {
       runId,
     });
     if (frame) {
+      if (event === "run_stopped") {
+        const commandId = payload.command_id;
+        if (typeof commandId === "string" && commandId.length > 0) {
+          try {
+            this.#runTranscripts.promoteStopCommandTerminalFrame({
+              clientRunId,
+              commandId,
+              command: {
+                type: "stop",
+                client_run_id: clientRunId,
+                command_id: commandId,
+              },
+              frame,
+            });
+          } finally {
+            this.#broadcastRetainedFrame(frame);
+          }
+          return;
+        }
+      }
       this.#broadcastRetainedFrame(frame);
     }
   }

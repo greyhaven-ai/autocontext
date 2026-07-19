@@ -39,7 +39,11 @@ import {
   type EventType,
   type Notifier,
 } from "../notifications/index.js";
-import type { LoopController } from "./controller.js";
+import {
+  isRunStopRequestedError,
+  type LoopController,
+  type RunStopRequestedError,
+} from "./controller.js";
 import type { EventStreamEmitter } from "./events.js";
 import { StagnationDetector } from "./stagnation.js";
 import {
@@ -280,8 +284,13 @@ export class GenerationRunner {
         orchestration = await this.runGeneration(runId, orchestration);
       }
 
+      this.#controller?.throwIfStopRequested();
       return await this.finalizeSuccessfulRun(runId, orchestration);
     } catch (error) {
+      const stopRequest = this.resolveStopRequest(error);
+      if (stopRequest) {
+        return this.handleRunStop(runId, stopRequest);
+      }
       return await this.handleRunFailure(runId, orchestration, error);
     }
   }
@@ -290,7 +299,7 @@ export class GenerationRunner {
     runId: RunId,
     orchestration: GenerationLoopOrchestration,
   ): Promise<GenerationLoopOrchestration> {
-    await this.#controller?.waitIfPaused();
+    await this.#controller?.waitAtBoundary();
     const generationBudget = new SolveGenerationBudget({
       scenarioName: this.#scenario.name,
       budgetSeconds: this.#generationTimeBudgetSeconds,
@@ -313,38 +322,43 @@ export class GenerationRunner {
             this.runGenerationAttempt(attemptOrchestration, runId, generation),
         }),
       );
+      generationBudget.check("generation lifecycle");
+      orchestration = lifecycle.orchestration;
+      this.#runState = orchestration.runState;
+      for (const event of lifecycle.events) {
+        this.emit(event.event, event.payload);
+      }
+
+      this.#journal.persistGeneration(runId, lifecycle.generation, lifecycle.finalizedAttempt);
+      generationBudget.check("generation persistence");
+      await this.#controller?.waitAtBoundary();
+      await this.runSupportRoles(runId, lifecycle.generation, lifecycle.finalizedAttempt);
+      generationBudget.check("support roles");
+      await this.#controller?.waitAtBoundary();
+      await this.applyAdvancedFeatures(
+        runId,
+        lifecycle.generation,
+        lifecycle.finalizedAttempt,
+        lifecycle.phaseState.previousBestForGeneration,
+      );
+      generationBudget.check("advanced generation features");
+      await this.#controller?.waitAtBoundary();
+      lifecycle = completeGenerationLifecycleWorkflow(lifecycle);
+      orchestration = lifecycle.orchestration;
+      this.emit("generation_completed", orchestration.events.generationCompleted!);
     } catch (error) {
+      const stopRequest = this.resolveStopRequest(error);
       this.emitHook(HookEvents.GENERATION_END, {
         run_id: runId,
         scenario: this.#scenario.name,
         generation: activeGeneration,
-        status: "failed",
-        error: error instanceof Error ? error.message : String(error),
+        status: stopRequest ? "stopped" : "failed",
+        ...(stopRequest
+          ? {}
+          : { error: error instanceof Error ? error.message : String(error) }),
       });
-      throw error;
+      throw stopRequest ?? error;
     }
-    generationBudget.check("generation lifecycle");
-    orchestration = lifecycle.orchestration;
-    this.#runState = orchestration.runState;
-    for (const event of lifecycle.events) {
-      this.emit(event.event, event.payload);
-    }
-
-    this.#journal.persistGeneration(runId, lifecycle.generation, lifecycle.finalizedAttempt);
-    generationBudget.check("generation persistence");
-    await this.#controller?.waitIfPaused();
-    await this.runSupportRoles(runId, lifecycle.generation, lifecycle.finalizedAttempt);
-    generationBudget.check("support roles");
-    await this.applyAdvancedFeatures(
-      runId,
-      lifecycle.generation,
-      lifecycle.finalizedAttempt,
-      lifecycle.phaseState.previousBestForGeneration,
-    );
-    generationBudget.check("advanced generation features");
-    lifecycle = completeGenerationLifecycleWorkflow(lifecycle);
-    orchestration = lifecycle.orchestration;
-    this.emit("generation_completed", orchestration.events.generationCompleted!);
     this.emitHook(HookEvents.GENERATION_END, {
       run_id: runId,
       scenario: this.#scenario.name,
@@ -366,7 +380,7 @@ export class GenerationRunner {
     attemptOrchestration: GenerationAttemptOrchestration;
     events: GenerationLoopEventSequenceItem[];
   }> {
-    await this.#controller?.waitIfPaused();
+    await this.#controller?.waitAtBoundary();
     const competitorPrompt = this.buildCompetitorPrompt(runId, generation);
     return runGenerationAttemptWorkflow(
       createGenerationAttemptWorkflow({
@@ -379,7 +393,7 @@ export class GenerationRunner {
         currentElo: this.#runState!.currentElo,
         executeCompetitor: () => this.completeRole("competitor", competitorPrompt),
         beforeTournament: async () => {
-          await this.#controller?.waitIfPaused();
+          await this.#controller?.waitAtBoundary();
         },
         executeTournament: ({ strategy: nextStrategy, tournamentOptions }) =>
           new TournamentRunner(this.#scenario, tournamentOptions).run(nextStrategy),
@@ -452,6 +466,28 @@ export class GenerationRunner {
     };
   }
 
+  private handleRunStop(runId: RunId, stopRequest: RunStopRequestedError): never {
+    const trajectory = this.#store.getScoreTrajectory(runId);
+    const bestScore = trajectory.reduce(
+      (best, row) => Math.max(best, row.best_score),
+      Number.NEGATIVE_INFINITY,
+    );
+    const progress = {
+      completedGenerations: trajectory.length,
+      ...(Number.isFinite(bestScore) ? { bestScore } : {}),
+    };
+    this.#store.updateRunStatus(runId, "stopped");
+    this.emitHook(HookEvents.RUN_END, {
+      run_id: runId,
+      scenario: this.#scenario.name,
+      status: "stopped",
+      completed_generations: progress.completedGenerations,
+      ...(progress.bestScore === undefined ? {} : { best_score: progress.bestScore }),
+      elo: this.#runState?.currentElo ?? 1000,
+    });
+    throw stopRequest.withProgress(progress);
+  }
+
   private async handleRunFailure(
     runId: RunId,
     orchestration: GenerationLoopOrchestration,
@@ -478,6 +514,11 @@ export class GenerationRunner {
       error: error instanceof Error ? error.message : String(error),
     });
     throw error;
+  }
+
+  private resolveStopRequest(error: unknown): RunStopRequestedError | null {
+    if (isRunStopRequestedError(error)) return error;
+    return this.#controller?.getStopRequest() ?? null;
   }
 
   private buildCompetitorPrompt(runId: RunId, generation: number): string {

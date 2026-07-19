@@ -19,7 +19,6 @@ PROTOCOL_VERSION = 1
 def _is_none(value: object) -> bool:
     return value is None
 
-
 # ---------------------------------------------------------------------------
 # Nested / shared models
 # ---------------------------------------------------------------------------
@@ -152,14 +151,6 @@ class AckMsg(RunMessageMetadata):
     command_id: str | None = Field(default=None, exclude_if=_is_none)
 
 
-class RunStoppedMsg(RunMessageMetadata):
-    model_config = ConfigDict(extra="forbid")
-
-    type: Literal["run_stopped"] = "run_stopped"
-    command_id: str | None = Field(default=None, exclude_if=_is_none)
-    reason: str | None = Field(default=None, exclude_if=_is_none)
-
-
 class ErrorMsg(RunMessageMetadata):
     model_config = ConfigDict(extra="forbid")
 
@@ -226,7 +217,6 @@ ServerMessage = Annotated[
     | EnvironmentsMsg
     | RunAcceptedMsg
     | AckMsg
-    | RunStoppedMsg
     | ErrorMsg
     | ScenarioGeneratingMsg
     | ScenarioPreviewMsg
@@ -257,8 +247,9 @@ class ResumeCmd(RunCommandMetadata):
 class StopCmd(RunCommandMetadata):
     model_config = ConfigDict(extra="forbid")
 
-    type: Literal["stop_run"] = "stop_run"
-    reason: str | None = Field(default=None, exclude_if=_is_none)
+    type: Literal["stop"] = "stop"
+    client_run_id: str = Field(min_length=1, max_length=200)
+    command_id: str = Field(min_length=1, max_length=200)
 
 
 class InjectHintCmd(RunCommandMetadata):
@@ -452,6 +443,16 @@ class RunCompletedPayload(BaseModel):
     elo: float
     session_report_path: str | None
     dead_ends_found: int
+
+
+class RunStoppedPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str
+    reason: Literal["operator"]
+    command_id: str = Field(min_length=1, max_length=200)
+    completed_generations: int = Field(ge=0)
+    best_score: float | None = Field(default=None, exclude_if=_is_none)
 
 
 # ---------------------------------------------------------------------------

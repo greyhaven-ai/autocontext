@@ -9,7 +9,7 @@ export const PROTOCOL_VERSION = 1;
 export const TRANSCRIPT_PROTOCOL_VERSION = 1;
 export const TRANSCRIPT_PROTOCOL_QUERY_PARAM = "transcript_protocol_version";
 export const TRANSCRIPT_PROTOCOL_QUERY_VALUE = String(TRANSCRIPT_PROTOCOL_VERSION);
-export const SERVER_CAPABILITIES = ["run_transcript_v1"] as const;
+export const SERVER_CAPABILITIES = ["run_transcript_v1", "safe_run_stop_v1"] as const;
 
 const protocolObject = <T extends z.ZodRawShape>(shape: T) => z.object(shape).strict();
 
@@ -21,7 +21,6 @@ export const PYTHON_SHARED_SERVER_MESSAGE_TYPES = [
   "environments",
   "run_accepted",
   "ack",
-  "run_stopped",
   "error",
   "scenario_generating",
   "scenario_preview",
@@ -40,7 +39,7 @@ export const SERVER_MESSAGE_TYPES = [
 export const PYTHON_SHARED_CLIENT_MESSAGE_TYPES = [
   "pause",
   "resume",
-  "stop_run",
+  "stop",
   "inject_hint",
   "override_gate",
   "chat_agent",
@@ -100,28 +99,17 @@ export const ScoringComponentSchema = protocolObject({
   weight: z.number(),
 });
 
-// Identifier fields mirror the canonical Python contract (str | None) and the generated schema
-// (z.string().optional().nullable()): nullable and unbounded, so the server accepts the explicit-null
-// (Python's RunCommandMetadata has no exclude_if, so StopCmd()/PauseCmd() serialize null ids) and
-// unbounded identifiers a conforming client may serialize. Null is normalized to undefined on parse so
-// consumers keep a `string | undefined` type. Any server-side length hardening must be a deliberate
-// contract-level decision, not a silent mirror divergence.
-const optionalIdentifier = z
-  .string()
-  .nullish()
-  .transform((value) => value ?? undefined);
-
 const RunMessageMetadataSchema = {
-  client_run_id: optionalIdentifier,
-  event_id: optionalIdentifier,
+  client_run_id: z.string().min(1).max(200).optional(),
+  event_id: z.string().min(1).optional(),
   sequence: z.number().int().nonnegative().optional(),
-  run_id: optionalIdentifier,
+  run_id: z.string().min(1).optional(),
   occurred_at: z.union([z.string(), z.number()]).optional(),
 } as const;
 
 const RunCommandMetadataSchema = {
-  client_run_id: optionalIdentifier,
-  command_id: optionalIdentifier,
+  client_run_id: z.string().min(1).max(200).optional(),
+  command_id: z.string().min(1).max(200).optional(),
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -180,13 +168,6 @@ export const AckMsgSchema = protocolObject({
   action: z.string(),
   decision: z.string().optional().nullable(),
   command_id: z.string().min(1).max(200).optional(),
-  ...RunMessageMetadataSchema,
-});
-
-export const RunStoppedMsgSchema = protocolObject({
-  type: z.literal("run_stopped"),
-  command_id: z.string().nullish(),
-  reason: z.string().nullish(),
   ...RunMessageMetadataSchema,
 });
 
@@ -276,10 +257,10 @@ export const ResumeCmdSchema = protocolObject({
   ...RunCommandMetadataSchema,
 });
 
-export const StopRunCmdSchema = protocolObject({
-  type: z.literal("stop_run"),
-  reason: z.string().nullish(),
-  ...RunCommandMetadataSchema,
+export const StopCmdSchema = protocolObject({
+  type: z.literal("stop"),
+  client_run_id: z.string().min(1).max(200),
+  command_id: z.string().min(1).max(200),
 });
 
 export const InjectHintCmdSchema = protocolObject({
@@ -373,7 +354,6 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   EnvironmentsMsgSchema,
   RunAcceptedMsgSchema,
   AckMsgSchema,
-  RunStoppedMsgSchema,
   ErrorMsgSchema,
   ScenarioGeneratingMsgSchema,
   ScenarioPreviewMsgSchema,
@@ -387,7 +367,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
 export const ClientMessageSchema = z.discriminatedUnion("type", [
   PauseCmdSchema,
   ResumeCmdSchema,
-  StopRunCmdSchema,
+  StopCmdSchema,
   InjectHintCmdSchema,
   OverrideGateCmdSchema,
   ChatAgentCmdSchema,

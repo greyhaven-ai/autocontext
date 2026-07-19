@@ -179,6 +179,7 @@ describe("Protocol types", () => {
     const mod = await import("../src/server/protocol.js");
     expect(mod.PauseCmdSchema).toBeDefined();
     expect(mod.ResumeCmdSchema).toBeDefined();
+    expect(mod.StopCmdSchema).toBeDefined();
     expect(mod.ResumeRunCmdSchema).toBeDefined();
     expect(mod.StartRunCmdSchema).toBeDefined();
     expect(mod.InjectHintCmdSchema).toBeDefined();
@@ -214,7 +215,7 @@ describe("Protocol types", () => {
         type: "hello",
         protocol_version: 1,
         transcript_protocol_version: 1,
-        capabilities: ["run_transcript_v1"],
+        capabilities: ["run_transcript_v1", "safe_run_stop_v1"],
       }),
     ).toMatchObject({
       protocol_version: 1,
@@ -251,57 +252,6 @@ describe("Protocol types", () => {
     expect(() =>
       OverrideGateCmdSchema.parse({ type: "override_gate", decision: "invalid" }),
     ).toThrow();
-  });
-
-  it("ClientMessageSchema parses a stop_run command (AC-894)", async () => {
-    const { ClientMessageSchema } = await import("../src/server/protocol.js");
-    const msg = ClientMessageSchema.parse({
-      type: "stop_run",
-      command_id: "c1",
-      client_run_id: "r1",
-      reason: "x",
-    });
-    expect(msg.type).toBe("stop_run");
-  });
-
-  it("ServerMessageSchema parses a run_stopped receipt (AC-894)", async () => {
-    const { ServerMessageSchema } = await import("../src/server/protocol.js");
-    const msg = ServerMessageSchema.parse({ type: "run_stopped", command_id: "c1" });
-    expect(msg.type).toBe("run_stopped");
-  });
-
-  it("shared parity lists include stop_run and run_stopped (AC-894)", async () => {
-    const { PYTHON_SHARED_CLIENT_MESSAGE_TYPES, PYTHON_SHARED_SERVER_MESSAGE_TYPES } =
-      await import("../src/server/protocol.js");
-    expect(PYTHON_SHARED_CLIENT_MESSAGE_TYPES).toContain("stop_run");
-    expect(PYTHON_SHARED_SERVER_MESSAGE_TYPES).toContain("run_stopped");
-  });
-
-  it("accepts the null/empty/unbounded identifiers the Python contract emits (AC-894 parity)", async () => {
-    const { ClientMessageSchema, ServerMessageSchema } = await import("../src/server/protocol.js");
-    // Python's StopCmd()/PauseCmd() serialize absent identifiers as explicit null; the mirror must accept
-    // them (the metadata schema mirrors str | None / z.string().optional().nullable(), not min(1).max(200)).
-    const nulls = ClientMessageSchema.parse({
-      type: "stop_run",
-      command_id: null,
-      client_run_id: null,
-    });
-    expect(nulls.type).toBe("stop_run");
-    const pauseNulls = ClientMessageSchema.parse({
-      type: "pause",
-      command_id: null,
-      client_run_id: null,
-    });
-    expect(pauseNulls.type).toBe("pause");
-    // Empty and long identifiers are within the (unbounded) contract.
-    expect(ClientMessageSchema.parse({ type: "stop_run", command_id: "" }).type).toBe("stop_run");
-    expect(ClientMessageSchema.parse({ type: "stop_run", command_id: "c".repeat(300) }).type).toBe(
-      "stop_run",
-    );
-    // Server messages carry the same nullable metadata.
-    expect(
-      ServerMessageSchema.parse({ type: "run_stopped", client_run_id: null, run_id: null }).type,
-    ).toBe("run_stopped");
   });
 });
 
@@ -700,6 +650,251 @@ describe("InteractiveServer", () => {
     }
   }, 15000);
 
+  it("stops a paused run once and promotes command retries to the retained terminal receipt", async () => {
+    const customDir = join(dir, "knowledge", "_custom_scenarios", "saved_stop_task");
+    mkdirSync(customDir, { recursive: true });
+    writeFileSync(join(customDir, "scenario_type.txt"), "agent_task", "utf-8");
+    writeFileSync(
+      join(customDir, "spec.json"),
+      JSON.stringify({
+        name: "saved_stop_task",
+        taskPrompt: "Summarize incidents.",
+        rubric: "Evaluate summary quality.",
+        description: "A stoppable custom task.",
+      }),
+      "utf-8",
+    );
+
+    const { RunManager, InteractiveServer } = await import("../src/server/index.js");
+    const { DeterministicProvider } = await import("../src/providers/deterministic.js");
+    const deterministicProvider = new DeterministicProvider();
+    let releaseProviderGate: (() => void) | null = null;
+    const providerGate = new Promise<void>((resolve) => {
+      releaseProviderGate = resolve;
+    });
+    let providerGatePending = true;
+    const gatedProvider = {
+      name: deterministicProvider.name,
+      defaultModel: () => deterministicProvider.defaultModel(),
+      complete: async (opts: Parameters<DeterministicProvider["complete"]>[0]) => {
+        if (providerGatePending) {
+          providerGatePending = false;
+          await providerGate;
+        }
+        return deterministicProvider.complete(opts);
+      },
+    };
+    const managerOpts = {
+      dbPath: join(dir, "test.db"),
+      migrationsDir: join(__dirname, "..", "migrations"),
+      runsRoot: join(dir, "runs"),
+      knowledgeRoot: join(dir, "knowledge"),
+      providerType: "deterministic",
+      deps: {
+        resolveProviderBundle: () => ({
+          defaultProvider: gatedProvider,
+          defaultConfig: {
+            providerType: "deterministic",
+            apiKey: "",
+            baseUrl: "",
+            model: "deterministic-dev",
+          },
+          roleProviders: {},
+          roleModels: {},
+        }),
+      },
+    };
+    const mgr = new RunManager(managerOpts);
+    const seenEvents: Array<{ event: string; payload: Record<string, unknown> }> = [];
+    mgr.subscribeEvents((event, payload) => {
+      seenEvents.push({ event, payload });
+    });
+    mgr.pause();
+
+    const server = new InteractiveServer({ runManager: mgr, port: 0 });
+    await server.start();
+    const socket = await openSocket(`${server.url}?transcript_protocol_version=1`);
+    let terminalReceipt: Record<string, unknown> | null = null;
+
+    try {
+      await socket.waitFor((msg) => msg.type === "hello");
+      await socket.waitFor((msg) => msg.type === "environments");
+      await socket.waitFor((msg) => msg.type === "state");
+
+      socket.send({
+        type: "start_run",
+        scenario: "saved_stop_task",
+        generations: 3,
+        client_run_id: "client-stop-run",
+        command_id: "command-start-stop-run",
+      });
+      const accepted = await socket.waitFor((msg) => msg.type === "run_accepted");
+      await socket.waitFor((msg) => msg.type === "event" && msg.event === "run_started");
+
+      socket.send({
+        type: "stop",
+        client_run_id: "stale-client-run",
+        command_id: "command-stale-stop",
+      });
+      expect(
+        await socket.waitFor(
+          (msg) => msg.type === "error" && msg.command_id === "command-stale-stop",
+        ),
+      ).toMatchObject({
+        client_run_id: "stale-client-run",
+        message: expect.stringContaining("does not match"),
+      });
+      expect(mgr.getState().active).toBe(true);
+      mgr.events.emit("future_run_checkpoint", {
+        run_id: accepted.run_id,
+      });
+      expect(
+        await socket.waitFor(
+          (msg) => msg.type === "event" && msg.event === "future_run_checkpoint",
+        ),
+      ).toMatchObject({
+        client_run_id: "client-stop-run",
+      });
+
+      const stopCommand = {
+        type: "stop",
+        client_run_id: "client-stop-run",
+        command_id: "command-stop-run",
+      };
+      socket.send(stopCommand);
+      const acknowledgement = await socket.waitFor(
+        (msg) => msg.type === "ack" && msg.command_id === "command-stop-run",
+      );
+      const terminal = await socket.waitFor(
+        (msg) => msg.type === "event" && msg.event === "run_stopped",
+      );
+      terminalReceipt = terminal;
+
+      expect(acknowledgement).toMatchObject({
+        action: "stop",
+        client_run_id: "client-stop-run",
+        command_id: "command-stop-run",
+        decision: "requested",
+        run_id: accepted.run_id,
+      });
+      expect(terminal).toMatchObject({
+        client_run_id: "client-stop-run",
+        run_id: accepted.run_id,
+        payload: {
+          command_id: "command-stop-run",
+          completed_generations: 0,
+          reason: "operator",
+          run_id: accepted.run_id,
+        },
+      });
+      expect(Number(acknowledgement.sequence)).toBeLessThan(Number(terminal.sequence));
+      await waitForCondition(() => !mgr.getState().active);
+      expect(mgr.stop(String(accepted.run_id), "command-after-terminal")).toBe(
+        "already_terminal",
+      );
+      expect(seenEvents.filter((entry) => entry.event === "run_stopped")).toHaveLength(1);
+      expect(
+        seenEvents.some(
+          (entry) => entry.event === "run_completed" || entry.event === "run_failed",
+        ),
+      ).toBe(false);
+
+      socket.send(stopCommand);
+      expect(
+        await socket.waitFor((msg) => msg.event_id === terminal.event_id),
+      ).toEqual(terminal);
+      expect(seenEvents.filter((entry) => entry.event === "run_stopped")).toHaveLength(1);
+
+      socket.send({
+        type: "resume_run",
+        client_run_id: "client-stop-run",
+        after_sequence: 0,
+        command_id: "command-replay-stop-run",
+      });
+      expect(
+        await socket.waitFor((msg) => msg.event_id === acknowledgement.event_id),
+      ).toEqual(acknowledgement);
+      expect(
+        await socket.waitFor((msg) => msg.event_id === terminal.event_id),
+      ).toEqual(terminal);
+
+      socket.send({
+        type: "start_run",
+        scenario: "saved_stop_task",
+        generations: 1,
+        client_run_id: "client-stop-run-2",
+        command_id: "command-start-stop-run-2",
+      });
+      const secondAccepted = await socket.waitFor(
+        (msg) => msg.type === "run_accepted" && msg.client_run_id === "client-stop-run-2",
+      );
+      await socket.waitFor(
+        (msg) =>
+          msg.type === "event" &&
+          msg.event === "run_started" &&
+          msg.client_run_id === "client-stop-run-2",
+      );
+
+      socket.send(stopCommand);
+      expect(
+        await socket.waitFor((msg) => msg.event_id === terminal.event_id),
+      ).toEqual(terminal);
+      mgr.events.emit("future_run_checkpoint", {
+        run_id: secondAccepted.run_id,
+      });
+      expect(
+        await socket.waitFor(
+          (msg) =>
+            msg.type === "event" &&
+            msg.event === "future_run_checkpoint" &&
+            msg.run_id === secondAccepted.run_id,
+        ),
+      ).toMatchObject({
+        client_run_id: "client-stop-run-2",
+      });
+      const release = releaseProviderGate;
+      if (!release) throw new Error("expected provider gate resolver");
+      release();
+      await socket.waitFor(
+        (msg) =>
+          msg.type === "event" &&
+          msg.event === "run_completed" &&
+          msg.client_run_id === "client-stop-run-2",
+      );
+      await waitForCondition(() => !mgr.getState().active);
+    } finally {
+      socket.close();
+      await server.stop();
+    }
+
+    if (!terminalReceipt) throw new Error("expected retained stop terminal receipt");
+    const restartedManager = new RunManager(managerOpts);
+    const restartedServer = new InteractiveServer({
+      runManager: restartedManager,
+      port: 0,
+    });
+    await restartedServer.start();
+    const restartedSocket = await openSocket(
+      `${restartedServer.url}?transcript_protocol_version=1`,
+    );
+    try {
+      await restartedSocket.waitFor((msg) => msg.type === "hello");
+      await restartedSocket.waitFor((msg) => msg.type === "environments");
+      await restartedSocket.waitFor((msg) => msg.type === "state");
+      restartedSocket.send({
+        type: "stop",
+        client_run_id: "client-stop-run",
+        command_id: "command-stop-run",
+      });
+      expect(
+        await restartedSocket.waitFor((msg) => msg.event_id === terminalReceipt.event_id),
+      ).toEqual(terminalReceipt);
+    } finally {
+      restartedSocket.close();
+      await restartedServer.stop();
+    }
+  }, 15000);
+
   it("retains stable run frames for correlated reconnect and restart backfill", async () => {
     const { RunManager, InteractiveServer } = await import("../src/server/index.js");
     const managerOpts = {
@@ -725,7 +920,7 @@ describe("InteractiveServer", () => {
       expect(hello).toMatchObject({
         protocol_version: 1,
         transcript_protocol_version: 1,
-        capabilities: ["run_transcript_v1"],
+        capabilities: ["run_transcript_v1", "safe_run_stop_v1"],
       });
       await socket.waitFor((msg) => msg.type === "environments");
       await socket.waitFor((msg) => msg.type === "state");
@@ -744,6 +939,22 @@ describe("InteractiveServer", () => {
       const completed = await socket.waitFor(
         (msg) => msg.type === "event" && msg.event === "run_completed",
       );
+      socket.send({
+        type: "stop",
+        client_run_id: "client-run-1",
+        command_id: "command-stop-completed-run",
+      });
+      expect(
+        await socket.waitFor(
+          (msg) => msg.type === "ack" && msg.command_id === "command-stop-completed-run",
+        ),
+      ).toMatchObject({
+        action: "stop",
+        decision: "already_terminal",
+      });
+      await expect(
+        socket.waitFor((msg) => msg.type === "event" && msg.event === "run_stopped", 150),
+      ).rejects.toThrow(/Timed out/);
       firstManager.events.emit(
         "monitor_alert",
         {

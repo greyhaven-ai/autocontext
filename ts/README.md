@@ -88,7 +88,8 @@ The TypeScript `/ws/interactive` server keeps the base WebSocket
 `protocol_version` at `1`. Plain `/ws/interactive` connections retain the exact
 legacy v1 hello and run-frame shapes. Clients explicitly opt into durable
 transcripts with `/ws/interactive?transcript_protocol_version=1`; that connection
-advertises `transcript_protocol_version: 1` and the `run_transcript_v1` capability.
+advertises `transcript_protocol_version: 1` plus the `run_transcript_v1` and
+`safe_run_stop_v1` capabilities.
 Clients may attach a stable `client_run_id` and `command_id` to `start_run`,
 operator-control, and chat commands. Run-scoped responses then include stable
 `event_id`, monotonic `sequence`, `client_run_id`, and `occurred_at` fields.
@@ -114,6 +115,34 @@ idempotency has the same finite horizon as its retained request and response.
 Compaction uses an fsync-backed atomic replacement. The Python server accepts the
 additive metadata fields for schema compatibility but does not advertise this
 TypeScript-only retention capability.
+
+To stop the currently bound run, send a retry-stable command:
+
+```json
+{
+  "type": "stop",
+  "client_run_id": "control-plane-run-id",
+  "command_id": "stop-attempt-id"
+}
+```
+
+The TypeScript server synchronously persists and returns a correlated `ack`
+before the stop can take effect. Stop is cooperative: a paused run wakes
+immediately, while an in-flight provider or scenario operation finishes before
+the next safe boundary. Completed generations, artifacts, metrics, and
+transcript frames remain available. The terminal receipt is a retained
+`run_stopped` event carrying the engine `run_id`, `reason: "operator"`, the
+originating `command_id`, `completed_generations`, and optional `best_score`.
+Whichever terminal outcome occurs first wins, so a natural completion or failure
+cannot later become stopped, and a stop-first run cannot later emit completed or
+failed.
+
+Retries with the same command ID never repeat the side effect. Before the
+terminal event exists they replay the exact acknowledgement; afterwards they
+replay the exact terminal receipt. Cursor replay retains both ordered frames.
+This idempotency guarantee shares the transcript's finite retention horizon.
+Python validates the additive stop schema for parity but returns a correlated
+unsupported-capability error and does not advertise `safe_run_stop_v1`.
 
 ## Library usage
 

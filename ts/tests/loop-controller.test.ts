@@ -72,6 +72,69 @@ describe("LoopController", () => {
     await Promise.all([p1, p2]);
     expect(count).toBe(2);
   });
+
+  it("should wake a paused boundary when stop is requested", async () => {
+    const {
+      LoopController,
+      RunStopRequestedError,
+    } = await import("../src/loop/controller.js");
+    const ctrl = new LoopController();
+    ctrl.pause();
+
+    const boundary = ctrl.waitAtBoundary();
+    expect(ctrl.requestStop("run_123", "cmd_stop_1")).toBe("requested");
+
+    await expect(boundary).rejects.toMatchObject({
+      name: RunStopRequestedError.name,
+      runId: "run_123",
+      commandId: "cmd_stop_1",
+      completedGenerations: 0,
+    });
+    expect(ctrl.isPaused()).toBe(false);
+  });
+
+  it("should keep the first stop request when commands are retried", async () => {
+    const { LoopController } = await import("../src/loop/controller.js");
+    const ctrl = new LoopController();
+
+    expect(ctrl.requestStop("run_123", "cmd_stop_1")).toBe("requested");
+    expect(ctrl.requestStop("run_123", "cmd_stop_1")).toBe("already_requested");
+    expect(ctrl.requestStop("run_123", "cmd_stop_2")).toBe("already_requested");
+    expect(ctrl.getStopRequest()).toMatchObject({
+      runId: "run_123",
+      commandId: "cmd_stop_1",
+    });
+  });
+
+  it("should reset the stop request before a reused controller starts a new run", async () => {
+    const { LoopController } = await import("../src/loop/controller.js");
+    const ctrl = new LoopController();
+    ctrl.requestStop("run_123", "cmd_stop_1");
+
+    ctrl.beginRun();
+
+    expect(ctrl.isStopRequested()).toBe(false);
+    expect(ctrl.getStopRequest()).toBeNull();
+    await expect(ctrl.waitAtBoundary()).resolves.toBeUndefined();
+  });
+
+  it("should enrich a stop request with durable run progress", async () => {
+    const { LoopController } = await import("../src/loop/controller.js");
+    const ctrl = new LoopController();
+    ctrl.requestStop("run_123", "cmd_stop_1");
+
+    expect(() => {
+      ctrl.throwIfStopRequested({
+        completedGenerations: 4,
+        bestScore: 0.875,
+      });
+    }).toThrowError(expect.objectContaining({
+      runId: "run_123",
+      commandId: "cmd_stop_1",
+      completedGenerations: 4,
+      bestScore: 0.875,
+    }));
+  });
 });
 
 describe("LoopController gate override", () => {

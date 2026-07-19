@@ -28,6 +28,7 @@ import {
 } from "./active-run-lifecycle.js";
 import {
   buildRunEventStatePatch,
+  isTerminalRunPhase,
   mergeRunManagerState,
   notifyRunStateSubscribers,
 } from "./run-state-workflow.js";
@@ -87,6 +88,8 @@ export class RunManager {
   readonly #controller = new LoopController();
   readonly #events: EventStreamEmitter;
   readonly #stateSubscribers: Array<(state: RunManagerState) => void> = [];
+  #completedGenerations = 0;
+  #bestScore: number | null = null;
   #state: RunManagerState = {
     active: false,
     paused: false,
@@ -116,6 +119,7 @@ export class RunManager {
       humanizeName: (name) => this.#humanizeName(name),
     });
     this.#events.subscribe((event, payload) => {
+      this.#applyEventProgress(event, payload);
       this.#applyEventState(event, payload);
     });
     this.#reloadCustomScenarios();
@@ -216,6 +220,21 @@ export class RunManager {
     this.#updateState({ paused: false });
   }
 
+  stop(runId: string, commandId: string): "already_requested" | "already_terminal" | "requested" {
+    const state = this.getState();
+    if (state.runId !== runId) {
+      throw new Error("run_id does not match the current engine run");
+    }
+    if (!this.#active || isTerminalRunPhase(state.phase)) {
+      return "already_terminal";
+    }
+    const decision = this.#controller.requestStop(runId, commandId);
+    if (decision === "requested") {
+      this.#updateState({ paused: false, phase: "stopping" });
+    }
+    return decision;
+  }
+
   injectHint(text: string): void {
     this.#controller.injectHint(text);
   }
@@ -256,6 +275,9 @@ export class RunManager {
     });
 
     const id = runId ?? `tui_${Date.now().toString(16).slice(-8)}`;
+    this.#controller.beginRun();
+    this.#completedGenerations = 0;
+    this.#bestScore = null;
     this.#active = true;
     this.#updateState(buildQueuedRunStatePatch({
       runId: id,
@@ -272,9 +294,9 @@ export class RunManager {
       const scenarioInstance = resolveBuiltInGameScenario({
         scenarioName: plan.scenarioName,
       });
-      void createManagedRunExecution({
-        runId: id,
-        execute: () => executeBuiltInGameStartRun({
+      this.#startManagedExecution(
+        id,
+        () => executeBuiltInGameStartRun({
           runId: id,
           scenarioName: plan.scenarioName,
           generations,
@@ -286,15 +308,7 @@ export class RunManager {
           events: this.#events,
           scenario: scenarioInstance,
         }),
-        events: this.#events,
-        getPaused: () => this.#controller.isPaused(),
-        setActive: (active) => {
-          this.#active = active;
-        },
-        updateState: (patch) => {
-          this.#updateState(patch);
-        },
-      });
+      );
       return id;
     }
 
@@ -304,9 +318,9 @@ export class RunManager {
         settings,
         this.#runtimeSessionOptsForRun(id, plan.scenarioName),
       );
-      void createManagedRunExecution({
-        runId: id,
-        execute: async () => {
+      this.#startManagedExecution(
+        id,
+        async () => {
           try {
             await executeAgentTaskCustomStartRun({
               runId: id,
@@ -322,21 +336,13 @@ export class RunManager {
             providerBundle.close?.();
           }
         },
-        events: this.#events,
-        getPaused: () => this.#controller.isPaused(),
-        setActive: (active) => {
-          this.#active = active;
-        },
-        updateState: (patch) => {
-          this.#updateState(patch);
-        },
-      });
+      );
       return id;
     }
 
-    void createManagedRunExecution({
-      runId: id,
-      execute: () => executeGeneratedCustomStartRun({
+    this.#startManagedExecution(
+      id,
+      () => executeGeneratedCustomStartRun({
         runId: id,
         scenarioName: plan.scenarioName,
         entry: plan.entry,
@@ -346,15 +352,7 @@ export class RunManager {
         controller: this.#controller,
         events: this.#events,
       }),
-      events: this.#events,
-      getPaused: () => this.#controller.isPaused(),
-      setActive: (active) => {
-        this.#active = active;
-      },
-      updateState: (patch) => {
-        this.#updateState(patch);
-      },
-    });
+    );
 
     return id;
   }
@@ -423,6 +421,41 @@ export class RunManager {
 
   buildProvider(role?: GenerationRole) {
     return this.#providerSession.buildProvider(role, loadSettings());
+  }
+
+  #startManagedExecution(runId: string, execute: () => Promise<void>): void {
+    void createManagedRunExecution({
+      runId,
+      execute,
+      events: this.#events,
+      getPaused: () => this.#controller.isPaused(),
+      getRunPhase: () => this.#state.phase,
+      getStopProgress: () => ({
+        completedGenerations: this.#completedGenerations,
+        ...(this.#bestScore === null ? {} : { bestScore: this.#bestScore }),
+      }),
+      getStopRequest: () => this.#controller.getStopRequest(),
+      setActive: (active) => {
+        this.#active = active;
+      },
+      updateState: (patch) => {
+        this.#updateState(patch);
+      },
+    });
+  }
+
+  #applyEventProgress(event: string, payload: Record<string, unknown>): void {
+    if (event !== "generation_completed") return;
+    const generation = payload.generation;
+    if (typeof generation === "number" && Number.isInteger(generation)) {
+      this.#completedGenerations = Math.max(this.#completedGenerations, generation);
+    }
+    const bestScore = payload.best_score;
+    if (typeof bestScore === "number" && Number.isFinite(bestScore)) {
+      this.#bestScore = this.#bestScore === null
+        ? bestScore
+        : Math.max(this.#bestScore, bestScore);
+    }
   }
 
   #applyEventState(event: string, payload: Record<string, unknown>): void {

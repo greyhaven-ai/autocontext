@@ -1,5 +1,9 @@
 import type { RunManagerState } from "./run-manager.js";
 
+export function isTerminalRunPhase(phase: string | null): boolean {
+  return phase === "completed" || phase === "failed" || phase === "stopped";
+}
+
 export function buildRunEventStatePatch(
   event: string,
   payload: Record<string, unknown>,
@@ -32,6 +36,8 @@ export function buildRunEventStatePatch(
       return { phase: "completed" };
     case "run_failed":
       return { phase: "failed" };
+    case "run_stopped":
+      return { phase: "stopped" };
     default:
       return null;
   }

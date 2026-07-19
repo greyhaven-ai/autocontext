@@ -93,6 +93,8 @@ export type BeginCommandResult =
   | { outcome: "pending" }
   | { outcome: "proceed" };
 
+export type ExistingCommandResult = Exclude<BeginCommandResult, { outcome: "proceed" }>;
+
 export interface RunTranscriptRetentionPolicy {
   loadTailBytes: number;
   maxAgeMs: number;
@@ -183,18 +185,11 @@ export class RunTranscriptStore {
     commandId: string;
     command: ClientMessage;
   }): BeginCommandResult {
+    const existingResult = this.inspectCommand(opts);
+    if (existingResult) return existingResult;
+
     const key = commandKey(opts.clientRunId, opts.commandId);
     const fingerprint = fingerprintCommand(opts.command);
-    const existing = this.#commands.get(key);
-    if (existing) {
-      if (existing.fingerprint !== fingerprint) return { outcome: "conflict" };
-      if (existing.status === "completed" && existing.responseEventId) {
-        const frame = this.#frameByEventId(existing.responseEventId);
-        if (frame) return { outcome: "completed", frame };
-      }
-      return { outcome: "pending" };
-    }
-
     const record: CommandRecord = {
       clientRunId: opts.clientRunId,
       commandId: opts.commandId,
@@ -206,6 +201,23 @@ export class RunTranscriptStore {
     this.#commands.set(key, record);
     this.#enforceRetention(false);
     return { outcome: "proceed" };
+  }
+
+  inspectCommand(opts: {
+    clientRunId: string;
+    commandId: string;
+    command: ClientMessage;
+  }): ExistingCommandResult | null {
+    const existing = this.#commands.get(commandKey(opts.clientRunId, opts.commandId));
+    if (!existing) return null;
+    if (existing.fingerprint !== fingerprintCommand(opts.command)) {
+      return { outcome: "conflict" };
+    }
+    if (existing.status === "completed" && existing.responseEventId) {
+      const frame = this.#frameByEventId(existing.responseEventId);
+      if (frame) return { outcome: "completed", frame };
+    }
+    return { outcome: "pending" };
   }
 
   canCompleteCommand(opts: {
@@ -240,6 +252,65 @@ export class RunTranscriptStore {
     this.#appendLine(serializeCommand(completed));
     this.#commands.set(key, completed);
     this.#enforceRetention(false);
+  }
+
+  promoteStopCommandTerminalFrame(opts: {
+    clientRunId: string;
+    commandId: string;
+    command: Extract<ClientMessage, { type: "stop" }>;
+    frame: RetainedRunFrame;
+  }): RetainedRunFrame {
+    if (
+      opts.command.client_run_id !== opts.clientRunId ||
+      opts.command.command_id !== opts.commandId
+    ) {
+      throw new Error("stop command correlation does not match the requested command scope");
+    }
+
+    const key = commandKey(opts.clientRunId, opts.commandId);
+    const existing = this.#commands.get(key);
+    if (!existing || existing.fingerprint !== fingerprintCommand(opts.command)) {
+      throw new Error("stop command fingerprint does not match the recorded request");
+    }
+
+    const retained = this.#frameByEventId(opts.frame.eventId);
+    if (!retained || retained.wire !== opts.frame.wire) {
+      throw new Error("run_stopped terminal frame is not retained by this transcript");
+    }
+    if (retained.clientRunId !== opts.clientRunId) {
+      throw new Error("run_stopped terminal frame belongs to a different client run");
+    }
+
+    const expectedRunId = this.#runIdByClientRunId.get(opts.clientRunId);
+    const payload = readRunStoppedPayload(retained.message);
+    if (
+      !expectedRunId ||
+      retained.runId !== expectedRunId ||
+      !payload ||
+      payload.runId !== expectedRunId ||
+      payload.commandId !== opts.commandId
+    ) {
+      throw new Error("run_stopped terminal frame does not match the stop command scope");
+    }
+
+    if (existing.status === "completed" && existing.responseEventId) {
+      if (existing.responseEventId === retained.eventId) return retained;
+      const existingResponse = this.#frameByEventId(existing.responseEventId);
+      if (existingResponse && readRunStoppedPayload(existingResponse.message)) {
+        throw new Error("stop command is already promoted to a different terminal frame");
+      }
+    }
+
+    const completed: CommandRecord = {
+      ...existing,
+      occurredAt: new Date().toISOString(),
+      responseEventId: retained.eventId,
+      status: "completed",
+    };
+    this.#appendLine(serializeCommand(completed));
+    this.#commands.set(key, completed);
+    this.#enforceRetention(false);
+    return retained;
   }
 
   framesAfter(clientRunId: string, afterSequence: number): RetainedRunFrame[] {
@@ -693,8 +764,10 @@ function supportsCommandId(message: ServerMessage): message is CommandResponseMe
 }
 
 function readCommandId(message: ServerMessage): string | null {
-  if (!supportsCommandId(message)) return null;
-  return message.command_id ?? null;
+  if (supportsCommandId(message)) return message.command_id ?? null;
+  if (message.type !== "event" || message.event !== "run_stopped") return null;
+  const commandId = message.payload.command_id;
+  return typeof commandId === "string" && commandId.length > 0 ? commandId : null;
 }
 
 function readRunId(message: ServerMessage): string | null {
@@ -709,6 +782,41 @@ function readRunId(message: ServerMessage): string | null {
     return message.scope.slice("run:".length) || null;
   }
   return null;
+}
+
+interface RunStoppedPayload {
+  bestScore?: number;
+  commandId: string;
+  completedGenerations: number;
+  runId: string;
+}
+
+function readRunStoppedPayload(message: ServerMessage): RunStoppedPayload | null {
+  if (message.type !== "event" || message.event !== "run_stopped") return null;
+  const runId = message.payload.run_id;
+  const reason = message.payload.reason;
+  const commandId = message.payload.command_id;
+  const completedGenerations = message.payload.completed_generations;
+  const bestScore = message.payload.best_score;
+  if (
+    typeof runId !== "string" ||
+    runId.length === 0 ||
+    reason !== "operator" ||
+    typeof commandId !== "string" ||
+    commandId.length === 0 ||
+    typeof completedGenerations !== "number" ||
+    !Number.isInteger(completedGenerations) ||
+    completedGenerations < 0 ||
+    (bestScore !== undefined && (typeof bestScore !== "number" || !Number.isFinite(bestScore)))
+  ) {
+    return null;
+  }
+  return {
+    runId,
+    commandId,
+    completedGenerations,
+    ...(bestScore === undefined ? {} : { bestScore }),
+  };
 }
 
 function parseJsonRecord(value: string): Record<string, unknown> | null {

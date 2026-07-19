@@ -21,6 +21,7 @@ export {
   MonitorAlertMsgSchema,
   PauseCmdSchema,
   ResumeCmdSchema,
+  StopCmdSchema,
   InjectHintCmdSchema,
   OverrideGateCmdSchema,
   ChatAgentCmdSchema,

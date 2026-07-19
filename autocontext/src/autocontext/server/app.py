@@ -44,6 +44,7 @@ from autocontext.server.protocol import (
     ScoringComponent,
     StartRunCmd,
     StateMsg,
+    StopCmd,
     StrategyParam,
     parse_client_message,
 )
@@ -316,6 +317,15 @@ def create_app(
                         case ResumeCmd():
                             controller.resume()
                             await websocket.send_json(StateMsg(paused=False).model_dump())
+
+                        case StopCmd(client_run_id=client_run_id, command_id=command_id):
+                            await websocket.send_json(
+                                ErrorMsg(
+                                    message="safe_run_stop_v1 is not supported by the Python interactive server.",
+                                    client_run_id=client_run_id,
+                                    command_id=command_id,
+                                ).model_dump()
+                            )
 
                         case InjectHintCmd(text=text):
                             if text:

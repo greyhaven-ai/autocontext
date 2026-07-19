@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { AppSettings } from "../src/config/index.js";
+import { LoopController } from "../src/loop/controller.js";
 import type { CustomScenarioEntry } from "../src/scenarios/custom-loader.js";
 import type { ScenarioFamilyName } from "../src/scenarios/families.js";
 import type { RoleProviderBundle } from "../src/providers/index.js";
@@ -159,7 +160,7 @@ describe("run start workflow", () => {
         runsRoot: "/tmp/runs",
         knowledgeRoot: "/tmp/knowledge",
       },
-      controller: { isPaused: () => false } as never,
+      controller: new LoopController(),
       events: {} as never,
       deps: {
         resolveScenarioClass: () => FakeScenario as never,
@@ -196,7 +197,7 @@ describe("run start workflow", () => {
       family: "simulation",
       generations: 2,
       knowledgeRoot: "/tmp/knowledge",
-      controller: { waitIfPaused: async () => {} } as never,
+      controller: new LoopController(),
       events: events as never,
       deps: {
         executeGeneratedScenarioEntry: vi
@@ -233,6 +234,66 @@ describe("run start workflow", () => {
     expect(completed?.payload.dead_ends_found).toBe(0);
   });
 
+  it("retains a completed generated-custom checkpoint when stop races natural completion", async () => {
+    const emitted: Array<{ event: string; payload: Record<string, unknown> }> = [];
+    const controller = new LoopController();
+    const executeGeneratedScenarioEntry = vi.fn(async () => {
+      controller.requestStop("run_generated_stop", "stop-generated-1");
+      return {
+        family: "simulation" as ScenarioFamilyName,
+        stepsExecuted: 4,
+        finalState: {},
+        records: [],
+        score: 0.73,
+        reasoning: "durable first checkpoint",
+        dimensionScores: {},
+      };
+    });
+
+    await expect(executeGeneratedCustomStartRun({
+      runId: "run_generated_stop",
+      scenarioName: "saved_sim",
+      entry: {
+        name: "saved_sim",
+        type: "simulation",
+        spec: { max_steps: 4 },
+        path: "/tmp/saved_sim",
+        hasGeneratedSource: true,
+      },
+      family: "simulation",
+      generations: 2,
+      knowledgeRoot: "/tmp/knowledge",
+      controller,
+      events: {
+        emit: (event: string, payload: Record<string, unknown>) => {
+          emitted.push({ event, payload });
+        },
+      } as never,
+      deps: { executeGeneratedScenarioEntry },
+    })).rejects.toMatchObject({
+      name: "RunStopRequestedError",
+      runId: "run_generated_stop",
+      commandId: "stop-generated-1",
+      completedGenerations: 1,
+      bestScore: 0.73,
+    });
+
+    expect(executeGeneratedScenarioEntry).toHaveBeenCalledOnce();
+    expect(emitted.filter((entry) => entry.event === "generation_completed")).toEqual([
+      {
+        event: "generation_completed",
+        payload: expect.objectContaining({
+          run_id: "run_generated_stop",
+          generation: 1,
+          best_score: 0.73,
+          steps_executed: 4,
+        }),
+      },
+    ]);
+    expect(emitted.some((entry) => entry.event === "run_completed")).toBe(false);
+    expect(emitted.some((entry) => entry.event === "run_failed")).toBe(false);
+  });
+
   it("executes saved agent-task runs and emits lifecycle events", async () => {
     const emitted: Array<{ event: string; payload: Record<string, unknown> }> = [];
     const events = {
@@ -258,7 +319,7 @@ describe("run start workflow", () => {
       generations: 2,
       provider: { name: "test", defaultModel: () => "test", complete: vi.fn() },
       settings: makeSettings(),
-      controller: { waitIfPaused: async () => {} } as never,
+      controller: new LoopController(),
       events: events as never,
       deps: { executeAgentTaskSolve: executeAgentTaskSolve as never },
     });
@@ -285,6 +346,91 @@ describe("run start workflow", () => {
     expect(completed?.payload.elo).toBe(1000);
     expect(completed?.payload.session_report_path).toBeNull();
     expect(completed?.payload.dead_ends_found).toBe(0);
+  });
+
+  it("retains completed agent-task rounds when stop races natural completion", async () => {
+    const emitted: Array<{ event: string; payload: Record<string, unknown> }> = [];
+    const controller = new LoopController();
+    const executeAgentTaskSolve = vi.fn(async () => {
+      controller.requestStop("run_task_stop", "stop-task-1");
+      return {
+        progress: 2,
+        result: { best_score: 0.88, scenario_name: "saved_task" },
+      };
+    });
+
+    await expect(executeAgentTaskCustomStartRun({
+      runId: "run_task_stop",
+      scenarioName: "saved_task",
+      entry: {
+        name: "saved_task",
+        type: "agent_task",
+        spec: { taskPrompt: "Do work", judgeRubric: "Do it well" },
+        path: "/tmp/saved_task",
+        hasGeneratedSource: false,
+      },
+      generations: 2,
+      provider: { name: "test", defaultModel: () => "test", complete: vi.fn() },
+      settings: makeSettings(),
+      controller,
+      events: {
+        emit: (event: string, payload: Record<string, unknown>) => {
+          emitted.push({ event, payload });
+        },
+      } as never,
+      deps: { executeAgentTaskSolve: executeAgentTaskSolve as never },
+    })).rejects.toMatchObject({
+      name: "RunStopRequestedError",
+      runId: "run_task_stop",
+      commandId: "stop-task-1",
+      completedGenerations: 2,
+      bestScore: 0.88,
+    });
+
+    expect(emitted.filter((entry) => entry.event === "generation_completed")).toHaveLength(2);
+    expect(emitted.some((entry) => entry.event === "run_completed")).toBe(false);
+    expect(emitted.some((entry) => entry.event === "run_failed")).toBe(false);
+  });
+
+  it("prefers an agent-task stop request over a concurrent provider failure", async () => {
+    const emitted: Array<{ event: string; payload: Record<string, unknown> }> = [];
+    const controller = new LoopController();
+
+    await expect(executeAgentTaskCustomStartRun({
+      runId: "run_task_stop_failure",
+      scenarioName: "saved_task",
+      entry: {
+        name: "saved_task",
+        type: "agent_task",
+        spec: { taskPrompt: "Do work", judgeRubric: "Do it well" },
+        path: "/tmp/saved_task",
+        hasGeneratedSource: false,
+      },
+      generations: 1,
+      provider: { name: "test", defaultModel: () => "test", complete: vi.fn() },
+      settings: makeSettings(),
+      controller,
+      events: {
+        emit: (event: string, payload: Record<string, unknown>) => {
+          emitted.push({ event, payload });
+        },
+      } as never,
+      deps: {
+        executeAgentTaskSolve: vi.fn(async () => {
+          controller.requestStop("run_task_stop_failure", "stop-task-failure-1");
+          throw new Error("provider disconnected");
+        }) as never,
+      },
+    })).rejects.toMatchObject({
+      name: "RunStopRequestedError",
+      runId: "run_task_stop_failure",
+      commandId: "stop-task-failure-1",
+      completedGenerations: 0,
+    });
+
+    expect(emitted.some((entry) => entry.event === "generation_completed")).toBe(false);
+    expect(emitted.some((entry) => entry.event === "run_completed")).toBe(false);
+    expect(emitted.some((entry) => entry.event === "run_failed")).toBe(false);
   });
 
   it("emits extension lifecycle hooks for saved agent-task runs", async () => {
@@ -329,7 +475,7 @@ describe("run start workflow", () => {
           extensions: extensionPath,
           extensionFailFast: true,
         },
-        controller: { waitIfPaused: async () => {} } as never,
+        controller: new LoopController(),
         events: { emit: vi.fn() } as never,
         deps: { executeAgentTaskSolve: executeAgentTaskSolve as never },
       });
@@ -385,7 +531,7 @@ describe("run start workflow", () => {
           extensions: extensionPath,
           extensionFailFast: true,
         },
-        controller: { waitIfPaused: async () => {} } as never,
+        controller: new LoopController(),
         events: { emit: vi.fn() } as never,
         deps: {
           executeAgentTaskSolve: vi.fn(async () => {
@@ -401,6 +547,71 @@ describe("run start workflow", () => {
         "run_end",
       ]);
       expect(readLifecycleStatuses()).toEqual(["", "", "failed", "failed"]);
+    } finally {
+      vi.unstubAllGlobals();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("pairs stopped lifecycle hooks when an agent-task provider fails after stop", async () => {
+    const root = mkdtempSync(join(tmpdir(), "autoctx-agent-task-hooks-"));
+    vi.stubGlobal("__autoctxLifecycleEvents", []);
+    try {
+      const extensionPath = join(root, "lifecycle-stop.mjs");
+      writeFileSync(
+        extensionPath,
+        `
+          export function register(api) {
+            api.on("*", (event) => {
+              globalThis.__autoctxLifecycleEvents.push({
+                name: event.name,
+                status: event.payload.status ?? "",
+                generation: event.payload.generation ?? 0
+              });
+            });
+          }
+        `,
+        "utf-8",
+      );
+      const controller = new LoopController();
+
+      await expect(executeAgentTaskCustomStartRun({
+        runId: "run_task_hooks_stopped",
+        scenarioName: "saved_task",
+        entry: {
+          name: "saved_task",
+          type: "agent_task",
+          spec: { taskPrompt: "Do work", judgeRubric: "Do it well" },
+          path: "/tmp/saved_task",
+          hasGeneratedSource: false,
+        },
+        generations: 1,
+        provider: { name: "test", defaultModel: () => "test", complete: vi.fn() },
+        settings: {
+          ...makeSettings(),
+          extensions: extensionPath,
+          extensionFailFast: true,
+        },
+        controller,
+        events: { emit: vi.fn() } as never,
+        deps: {
+          executeAgentTaskSolve: vi.fn(async () => {
+            controller.requestStop("run_task_hooks_stopped", "stop-task-hooks-1");
+            throw new Error("provider disconnected");
+          }) as never,
+        },
+      })).rejects.toMatchObject({
+        name: "RunStopRequestedError",
+        commandId: "stop-task-hooks-1",
+      });
+
+      expect(readLifecycleEventNames()).toEqual([
+        "run_start",
+        "generation_start",
+        "generation_end",
+        "run_end",
+      ]);
+      expect(readLifecycleStatuses()).toEqual(["", "", "stopped", "stopped"]);
     } finally {
       vi.unstubAllGlobals();
       rmSync(root, { recursive: true, force: true });

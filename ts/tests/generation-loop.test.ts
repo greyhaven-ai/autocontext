@@ -328,6 +328,89 @@ describe("GenerationRunner", () => {
     store.close();
   });
 
+  it("retains a persisted generation when stop is observed at the next safe boundary", async () => {
+    const { LoopController } = await import("../src/loop/controller.js");
+    const { EventStreamEmitter } = await import("../src/loop/events.js");
+    const { GenerationRunner } = await import("../src/loop/generation-runner.js");
+    const { DeterministicProvider } = await import("../src/providers/deterministic.js");
+    const { GridCtfScenario } = await import("../src/scenarios/grid-ctf.js");
+    const { SQLiteStore } = await import("../src/storage/index.js");
+
+    class StopAfterPersistenceController extends LoopController {
+      readonly #hasPersistedGeneration: () => boolean;
+
+      constructor(hasPersistedGeneration: () => boolean) {
+        super();
+        this.#hasPersistedGeneration = hasPersistedGeneration;
+      }
+
+      override async waitAtBoundary(): Promise<void> {
+        if (this.#hasPersistedGeneration()) {
+          this.requestStop("test-run-stop", "stop-built-in-1");
+        }
+        await super.waitAtBoundary();
+      }
+    }
+
+    const dbPath = join(dir, "stopped.db");
+    const store = new SQLiteStore(dbPath);
+    store.migrate(join(__dirname, "..", "migrations"));
+    const events = new EventStreamEmitter(join(dir, "stopped-events.ndjson"));
+    const emitted: string[] = [];
+    events.subscribe((event) => {
+      emitted.push(event);
+    });
+    const { HookBus, HookEvents } = await import("../src/extensions/index.js");
+    const hookBus = new HookBus();
+    const terminalHooks: Array<{ name: string; status: unknown }> = [];
+    hookBus.on(HookEvents.GENERATION_END, (event) => {
+      terminalHooks.push({ name: event.name, status: event.payload.status });
+      return undefined;
+    });
+    hookBus.on(HookEvents.RUN_END, (event) => {
+      terminalHooks.push({ name: event.name, status: event.payload.status });
+      return undefined;
+    });
+
+    const runner = new GenerationRunner({
+      provider: new DeterministicProvider(),
+      scenario: new GridCtfScenario(),
+      store,
+      runsRoot: join(dir, "runs"),
+      knowledgeRoot: join(dir, "knowledge"),
+      matchesPerGeneration: 2,
+      maxRetries: 0,
+      minDelta: 0.0,
+      controller: new StopAfterPersistenceController(
+        () => store.getGenerations("test-run-stop").length > 0,
+      ),
+      events,
+      hookBus,
+    });
+
+    await expect(runner.run("test-run-stop", 2)).rejects.toMatchObject({
+      name: "RunStopRequestedError",
+      runId: "test-run-stop",
+      commandId: "stop-built-in-1",
+      completedGenerations: 1,
+      bestScore: expect.any(Number),
+    });
+
+    expect(store.getRun("test-run-stop")?.status).toBe("stopped");
+    expect(store.getGenerations("test-run-stop")).toHaveLength(1);
+    expect(store.getScoreTrajectory("test-run-stop")).toHaveLength(1);
+    expect(store.getMatchesForRun("test-run-stop")).toHaveLength(2);
+    expect(emitted).not.toContain("generation_completed");
+    expect(emitted).not.toContain("run_completed");
+    expect(emitted).not.toContain("run_failed");
+    expect(terminalHooks).toEqual([
+      { name: "generation_end", status: "stopped" },
+      { name: "run_end", status: "stopped" },
+    ]);
+
+    store.close();
+  });
+
   it("persists matches to storage", async () => {
     const { GenerationRunner } = await import("../src/loop/generation-runner.js");
     const { DeterministicProvider } = await import("../src/providers/deterministic.js");

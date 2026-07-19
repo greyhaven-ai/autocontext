@@ -13,6 +13,8 @@ import {
   PYTHON_SHARED_SERVER_MESSAGE_TYPES,
   ScenarioErrorMsgSchema,
   SERVER_MESSAGE_TYPES,
+  SERVER_CAPABILITIES,
+  StopCmdSchema,
   TYPESCRIPT_ONLY_CLIENT_MESSAGE_TYPES,
   TYPESCRIPT_ONLY_SERVER_MESSAGE_TYPES,
   parseClientMessage,
@@ -35,6 +37,16 @@ type EventStreamEnvelopeContract = {
 type WebSocketProtocolContract = {
   event_stream_envelope: EventStreamEnvelopeContract;
   protocol_version: number;
+  safe_stop_extension: {
+    advertised_runtimes: ["typescript"];
+    capability: "safe_run_stop_v1";
+    command: "stop";
+    python_support: "schema_only";
+    required_command_fields: ["client_run_id", "command_id"];
+    requires_transcript_protocol_version: 1;
+    terminal_arbitration: "first_terminal_outcome_wins";
+    terminal_event: "run_stopped";
+  };
   shared_client_messages: string[];
   shared_server_messages: string[];
   top_level_unknown_field_policy: "forbid";
@@ -70,6 +82,43 @@ describe("WebSocket protocol shared contract", () => {
     expect(CONTRACT.top_level_unknown_field_policy).toBe("forbid");
 
     expect(() => parseClientMessage({ type: "pause", unexpected: true })).toThrow();
+  });
+
+  it("keeps safe stop strict, shared, and advertised only by TypeScript", () => {
+    expect(CONTRACT.safe_stop_extension).toMatchObject({
+      advertised_runtimes: ["typescript"],
+      capability: "safe_run_stop_v1",
+      command: "stop",
+      python_support: "schema_only",
+      required_command_fields: ["client_run_id", "command_id"],
+      requires_transcript_protocol_version: 1,
+      terminal_arbitration: "first_terminal_outcome_wins",
+      terminal_event: "run_stopped",
+    });
+    expect(SERVER_CAPABILITIES).toContain("safe_run_stop_v1");
+    expect(StopCmdSchema.parse({
+      type: "stop",
+      client_run_id: "client-run-1",
+      command_id: "command-stop-1",
+    })).toEqual({
+      type: "stop",
+      client_run_id: "client-run-1",
+      command_id: "command-stop-1",
+    });
+    expect(() => StopCmdSchema.parse({
+      type: "stop",
+      command_id: "command-stop-1",
+    })).toThrow();
+    expect(() => StopCmdSchema.parse({
+      type: "stop",
+      client_run_id: "client-run-1",
+    })).toThrow();
+    expect(() => StopCmdSchema.parse({
+      type: "stop",
+      client_run_id: "client-run-1",
+      command_id: "command-stop-1",
+      unexpected: true,
+    })).toThrow();
   });
 
   it("keeps representative shared payload shapes aligned with Python's generated schema", () => {
