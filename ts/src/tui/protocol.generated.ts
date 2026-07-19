@@ -112,6 +112,17 @@ export const AckMsgSchema = z.object({
   command_id: z.string().optional().nullable(),
 }).strict();
 
+export const RunStoppedMsgSchema = z.object({
+  client_run_id: z.string().optional().nullable(),
+  event_id: z.string().optional().nullable(),
+  sequence: z.number().int().optional().nullable(),
+  run_id: z.string().optional().nullable(),
+  occurred_at: z.union([z.string(), z.number()]).optional().nullable(),
+  type: z.literal("run_stopped"),
+  command_id: z.string().optional().nullable(),
+  reason: z.string().optional().nullable(),
+}).strict();
+
 export const ErrorMsgSchema = z.object({
   client_run_id: z.string().optional().nullable(),
   event_id: z.string().optional().nullable(),
@@ -166,7 +177,7 @@ export const MonitorAlertMsgSchema = z.object({
   detail: z.string(),
 }).strict();
 
-export const ServerMessageSchema = z.discriminatedUnion("type", [HelloMsgSchema, EventMsgSchema, StateMsgSchema, ChatResponseMsgSchema, EnvironmentsMsgSchema, RunAcceptedMsgSchema, AckMsgSchema, ErrorMsgSchema, ScenarioGeneratingMsgSchema, ScenarioPreviewMsgSchema, ScenarioReadyMsgSchema, ScenarioErrorMsgSchema, MonitorAlertMsgSchema]);
+export const ServerMessageSchema = z.discriminatedUnion("type", [HelloMsgSchema, EventMsgSchema, StateMsgSchema, ChatResponseMsgSchema, EnvironmentsMsgSchema, RunAcceptedMsgSchema, AckMsgSchema, RunStoppedMsgSchema, ErrorMsgSchema, ScenarioGeneratingMsgSchema, ScenarioPreviewMsgSchema, ScenarioReadyMsgSchema, ScenarioErrorMsgSchema, MonitorAlertMsgSchema]);
 
 // --- Client -> Server messages ---
 
@@ -180,6 +191,13 @@ export const ResumeCmdSchema = z.object({
   client_run_id: z.string().optional().nullable(),
   command_id: z.string().optional().nullable(),
   type: z.literal("resume"),
+}).strict();
+
+export const StopCmdSchema = z.object({
+  client_run_id: z.string().optional().nullable(),
+  command_id: z.string().optional().nullable(),
+  type: z.literal("stop_run"),
+  reason: z.string().optional().nullable(),
 }).strict();
 
 export const InjectHintCmdSchema = z.object({
@@ -235,7 +253,7 @@ export const CancelScenarioCmdSchema = z.object({
   type: z.literal("cancel_scenario"),
 }).strict();
 
-export const ClientMessageSchema = z.discriminatedUnion("type", [PauseCmdSchema, ResumeCmdSchema, InjectHintCmdSchema, OverrideGateCmdSchema, ChatAgentCmdSchema, StartRunCmdSchema, ListScenariosCmdSchema, CreateScenarioCmdSchema, ConfirmScenarioCmdSchema, ReviseScenarioCmdSchema, CancelScenarioCmdSchema]);
+export const ClientMessageSchema = z.discriminatedUnion("type", [PauseCmdSchema, ResumeCmdSchema, StopCmdSchema, InjectHintCmdSchema, OverrideGateCmdSchema, ChatAgentCmdSchema, StartRunCmdSchema, ListScenariosCmdSchema, CreateScenarioCmdSchema, ConfirmScenarioCmdSchema, ReviseScenarioCmdSchema, CancelScenarioCmdSchema]);
 
 /** Parse a raw JSON string from the server into a typed message. Returns null on failure. */
 export function parseServerMessage(raw: string) {

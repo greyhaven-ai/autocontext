@@ -252,6 +252,57 @@ describe("Protocol types", () => {
       OverrideGateCmdSchema.parse({ type: "override_gate", decision: "invalid" }),
     ).toThrow();
   });
+
+  it("ClientMessageSchema parses a stop_run command (AC-894)", async () => {
+    const { ClientMessageSchema } = await import("../src/server/protocol.js");
+    const msg = ClientMessageSchema.parse({
+      type: "stop_run",
+      command_id: "c1",
+      client_run_id: "r1",
+      reason: "x",
+    });
+    expect(msg.type).toBe("stop_run");
+  });
+
+  it("ServerMessageSchema parses a run_stopped receipt (AC-894)", async () => {
+    const { ServerMessageSchema } = await import("../src/server/protocol.js");
+    const msg = ServerMessageSchema.parse({ type: "run_stopped", command_id: "c1" });
+    expect(msg.type).toBe("run_stopped");
+  });
+
+  it("shared parity lists include stop_run and run_stopped (AC-894)", async () => {
+    const { PYTHON_SHARED_CLIENT_MESSAGE_TYPES, PYTHON_SHARED_SERVER_MESSAGE_TYPES } =
+      await import("../src/server/protocol.js");
+    expect(PYTHON_SHARED_CLIENT_MESSAGE_TYPES).toContain("stop_run");
+    expect(PYTHON_SHARED_SERVER_MESSAGE_TYPES).toContain("run_stopped");
+  });
+
+  it("accepts the null/empty/unbounded identifiers the Python contract emits (AC-894 parity)", async () => {
+    const { ClientMessageSchema, ServerMessageSchema } = await import("../src/server/protocol.js");
+    // Python's StopCmd()/PauseCmd() serialize absent identifiers as explicit null; the mirror must accept
+    // them (the metadata schema mirrors str | None / z.string().optional().nullable(), not min(1).max(200)).
+    const nulls = ClientMessageSchema.parse({
+      type: "stop_run",
+      command_id: null,
+      client_run_id: null,
+    });
+    expect(nulls.type).toBe("stop_run");
+    const pauseNulls = ClientMessageSchema.parse({
+      type: "pause",
+      command_id: null,
+      client_run_id: null,
+    });
+    expect(pauseNulls.type).toBe("pause");
+    // Empty and long identifiers are within the (unbounded) contract.
+    expect(ClientMessageSchema.parse({ type: "stop_run", command_id: "" }).type).toBe("stop_run");
+    expect(ClientMessageSchema.parse({ type: "stop_run", command_id: "c".repeat(300) }).type).toBe(
+      "stop_run",
+    );
+    // Server messages carry the same nullable metadata.
+    expect(
+      ServerMessageSchema.parse({ type: "run_stopped", client_run_id: null, run_id: null }).type,
+    ).toBe("run_stopped");
+  });
 });
 
 // ---------------------------------------------------------------------------
