@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.12.0] - 2026-07-19
 
 ### Added
 
@@ -659,7 +659,9 @@ A new cross-runtime parity audit (`test_cli_contract_parity.py` + `cli-contract-
 - FastAPI dashboard with WebSocket events.
 - CLI via Typer (Python) and `parseArgs` (TypeScript).
 
-[Unreleased]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.10.0...HEAD
+[Unreleased]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.12.0...HEAD
+[0.12.0]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.11.0...py-v0.12.0
+[0.11.0]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.10.0...py-v0.11.0
 [0.10.0]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.9.0...py-v0.10.0
 [0.9.0]: https://github.com/greyhaven-ai/autocontext/compare/pi-v0.8.0...py-v0.9.0
 [pi-v0.8.0]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.8.0...pi-v0.8.0

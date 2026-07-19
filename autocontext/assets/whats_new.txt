@@ -1,3 +1,3 @@
-**Guardrail parity** fixes the CLI agent-task path so it applies the same guardrail-adjusted score threshold as the task runner, evaluated against the fully prepared task state.
-**Branded id types** add `RunId`, `ScenarioName`, and `DbPath` to the TypeScript package root; `GenerationRunner.run` now takes a `RunId` (construct with `asRunId`), a compile-time-only change.
-**Dependency refresh** clears every critical and high security advisory across the Python and TypeScript packages, including the anthropic sdk, urllib3, starlette, and vitest lines.
+**Safe active-run stopping** lets TypeScript transcript clients stop running or paused work at cooperative boundaries, retain completed generations and best score, and replay an idempotent durable terminal receipt after reconnect or restart.
+**Durable interactive transcripts** add stable run, command, event, and sequence identity with bounded redacted retention plus exact reconnect backfill across server restarts.
+**Ambient live serving** connects promoted per-role targets to live generation through a shared opt-in serving manifest, closing the resident trainer loop from evaluation to serving.
