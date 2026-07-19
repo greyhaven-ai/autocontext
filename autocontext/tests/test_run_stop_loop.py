@@ -51,6 +51,8 @@ def test_stop_before_first_boundary_marks_stopped(tmp_path: Path) -> None:
     assert len(stop_events) == 1
     assert stop_events[0]["command_id"] == "c1"
     assert stop_events[0]["reason"] == "operator requested"
+    # A stopped run must not also emit a terminal run_completed (first terminal wins).
+    assert not any(event == "run_completed" for event, _ in recorded)
 
 
 def test_run_completes_when_no_stop_requested(tmp_path: Path) -> None:
@@ -99,3 +101,5 @@ def test_stop_from_paused_wakes_loop_and_stops(tmp_path: Path) -> None:
     stop_events = [payload for event, payload in recorded if event == "run_stopped"]
     assert len(stop_events) == 1
     assert stop_events[0]["command_id"] == "c2"
+    # A stopped run must not also emit a terminal run_completed (first terminal wins).
+    assert not any(event == "run_completed" for event, _ in recorded)

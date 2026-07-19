@@ -1389,25 +1389,28 @@ class GenerationRunner:
                 rating_uncertainty=challenger_uncertainty,
             )
 
-        self.events.emit(
-            "run_completed",
-            {
-                "run_id": active_run_id,
-                "completed_generations": completed,
-                "best_score": previous_best,
-                "elo": challenger_elo,
-                "session_report_path": session_report_path,
-                "dead_ends_found": dead_ends_found,
-            },
-        )
-        emit_run_completed(
-            self,
-            run_id=active_run_id,
-            scenario=scenario_name,
-            completed_generations=completed,
-            best_score=previous_best,
-            elo=challenger_elo,
-            session_report_path=session_report_path,
-            dead_ends_found=dead_ends_found,
-        )
+        if not stopped:
+            # A stopped run already emitted its terminal run_stopped receipt; do
+            # not also emit run_completed (first terminal outcome wins).
+            self.events.emit(
+                "run_completed",
+                {
+                    "run_id": active_run_id,
+                    "completed_generations": completed,
+                    "best_score": previous_best,
+                    "elo": challenger_elo,
+                    "session_report_path": session_report_path,
+                    "dead_ends_found": dead_ends_found,
+                },
+            )
+            emit_run_completed(
+                self,
+                run_id=active_run_id,
+                scenario=scenario_name,
+                completed_generations=completed,
+                best_score=previous_best,
+                elo=challenger_elo,
+                session_report_path=session_report_path,
+                dead_ends_found=dead_ends_found,
+            )
         return RunSummary(active_run_id, scenario_name, completed, previous_best, challenger_elo)
