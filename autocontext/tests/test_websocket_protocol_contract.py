@@ -57,6 +57,21 @@ def test_python_protocol_forbids_unknown_top_level_client_fields() -> None:
         parse_client_message({"type": "pause", "unexpected": True})
 
 
+def test_safe_stop_capability_is_typescript_only_with_shared_schema() -> None:
+    contract = _contract()
+    safe_stop = contract["safe_stop_extension"]
+
+    assert safe_stop["capability"] == "safe_run_stop_v1"
+    assert safe_stop["advertised_runtimes"] == ["typescript"]
+    assert safe_stop["requires_transcript_protocol_version"] == 1
+    assert safe_stop["command"] == "stop"
+    assert safe_stop["required_command_fields"] == ["client_run_id", "command_id"]
+    assert safe_stop["terminal_event"] == "run_stopped"
+    assert safe_stop["terminal_arbitration"] == "first_terminal_outcome_wins"
+    assert safe_stop["python_support"] == "schema_only"
+    assert "stop" in contract["shared_client_messages"]
+
+
 def test_python_event_stream_envelope_matches_shared_contract(tmp_path: Path) -> None:
     contract = _contract()["event_stream_envelope"]
     event_path = tmp_path / "events.ndjson"

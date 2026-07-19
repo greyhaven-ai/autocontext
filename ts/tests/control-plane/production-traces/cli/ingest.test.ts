@@ -24,7 +24,7 @@ describe("autoctx production-traces ingest", () => {
     writeIncomingBatch(cwd, TEST_DATE, "batch-ok", [makeTrace(), makeTrace()]);
 
     const r = await runProductionTracesCommand(
-      ["ingest", "--output", "json"],
+      ["ingest", "--skip-retention", "--output", "json"],
       { cwd },
     );
     expect(r.exitCode).toBe(0);
@@ -41,7 +41,7 @@ describe("autoctx production-traces ingest", () => {
     writeIncomingBatch(cwd, TEST_DATE, "batch-dry", [makeTrace()]);
 
     const r = await runProductionTracesCommand(
-      ["ingest", "--dry-run", "--output", "json"],
+      ["ingest", "--skip-retention", "--dry-run", "--output", "json"],
       { cwd },
     );
     expect(r.exitCode).toBe(0);
@@ -57,7 +57,10 @@ describe("autoctx production-traces ingest", () => {
     writeIncomingBatch(cwd, TEST_DATE, "batch-locked", [makeTrace()]);
     const holder = acquireLock(cwd);
     try {
-      const r = await runProductionTracesCommand(["ingest"], { cwd });
+      const r = await runProductionTracesCommand(
+        ["ingest", "--skip-retention"],
+        { cwd },
+      );
       expect(r.exitCode).toBe(10);
     } finally {
       holder.release();
@@ -76,7 +79,7 @@ describe("autoctx production-traces ingest", () => {
     );
 
     const r = await runProductionTracesCommand(
-      ["ingest", "--output", "json"],
+      ["ingest", "--skip-retention", "--output", "json"],
       { cwd },
     );
     // One line error + one success => spec §9.7 partial-success (exit 2).
@@ -97,7 +100,7 @@ describe("autoctx production-traces ingest", () => {
     );
 
     const r = await runProductionTracesCommand(
-      ["ingest", "--strict", "--output", "json"],
+      ["ingest", "--skip-retention", "--strict", "--output", "json"],
       { cwd },
     );
     expect(r.exitCode).toBe(1);

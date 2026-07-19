@@ -8,7 +8,12 @@ export type { HypothesisNode } from "./hypothesis-tree.js";
 export { EventStreamEmitter } from "./events.js";
 export type { EventCallback } from "./events.js";
 
-export { LoopController } from "./controller.js";
+export {
+  isRunStopRequestedError,
+  LoopController,
+  RunStopRequestedError,
+} from "./controller.js";
+export type { RunStopProgress } from "./controller.js";
 
 export { BackpressureGate, TrendAwareGate } from "./backpressure.js";
 export type { GateDecision, ScoreHistory, TrendAwareGateOpts } from "./backpressure.js";

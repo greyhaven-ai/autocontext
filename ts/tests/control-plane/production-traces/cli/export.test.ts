@@ -11,7 +11,7 @@ let cwd: string;
 async function seed(count = 2): Promise<void> {
   const traces = Array.from({ length: count }, () => makeTrace({ traceId: newProductionTraceId() }));
   writeIncomingBatch(cwd, TEST_DATE, "batch-exp", traces);
-  await runProductionTracesCommand(["ingest"], { cwd });
+  await runProductionTracesCommand(["ingest", "--skip-retention"], { cwd });
 }
 
 beforeEach(() => {

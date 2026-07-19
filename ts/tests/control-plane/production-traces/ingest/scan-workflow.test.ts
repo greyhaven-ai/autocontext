@@ -76,7 +76,7 @@ describe("ingestBatches", () => {
     const traces = [makeTrace(), makeTrace(), makeTrace(), makeTrace(), makeTrace()];
     writeBatch(cwd, "batch-1", traces.map((t) => JSON.stringify(t)));
 
-    const report = await ingestBatches(cwd, {});
+    const report = await ingestBatches(cwd, { retention: "skip" });
 
     expect(report.batchesProcessed).toBe(1);
     expect(report.batchesSucceeded).toBe(1);
@@ -118,7 +118,7 @@ describe("ingestBatches", () => {
     ];
     writeBatch(cwd, "batch-partial", lines);
 
-    const report = await ingestBatches(cwd, {});
+    const report = await ingestBatches(cwd, { retention: "skip" });
 
     expect(report.batchesProcessed).toBe(1);
     expect(report.batchesSucceeded).toBe(1);
@@ -155,7 +155,7 @@ describe("ingestBatches", () => {
     ];
     writeBatch(cwd, "batch-strict", lines);
 
-    const report = await ingestBatches(cwd, { strict: true });
+    const report = await ingestBatches(cwd, { strict: true, retention: "skip" });
 
     expect(report.batchesProcessed).toBe(1);
     expect(report.batchesSucceeded).toBe(0);
@@ -181,13 +181,13 @@ describe("ingestBatches", () => {
     const lines = traces.map((t) => JSON.stringify(t));
     writeBatch(cwd, "batch-a", lines);
 
-    const first = await ingestBatches(cwd, {});
+    const first = await ingestBatches(cwd, { retention: "skip" });
     expect(first.tracesIngested).toBe(3);
 
     // Put the SAME batch back into incoming/ (simulating a retry/re-drop).
     writeBatch(cwd, "batch-a", lines);
 
-    const second = await ingestBatches(cwd, {});
+    const second = await ingestBatches(cwd, { retention: "skip" });
     expect(second.batchesProcessed).toBe(1);
     // Zero newly-ingested, everything was deduped.
     expect(second.tracesIngested).toBe(0);
@@ -203,7 +203,7 @@ describe("ingestBatches", () => {
     const traces = [makeTrace(), makeTrace()];
     writeBatch(cwd, "batch-dry", traces.map((t) => JSON.stringify(t)));
 
-    const report = await ingestBatches(cwd, { dryRun: true });
+    const report = await ingestBatches(cwd, { dryRun: true, retention: "skip" });
 
     expect(report.batchesProcessed).toBe(1);
     expect(report.tracesIngested).toBe(2);
@@ -229,7 +229,10 @@ describe("ingestBatches", () => {
 
     writeBatch(cwd, "batch-new", [JSON.stringify(newTrace)]);
 
-    const report = await ingestBatches(cwd, { since: "2026-04-16T00:00:00.000Z" });
+    const report = await ingestBatches(cwd, {
+      since: "2026-04-16T00:00:00.000Z",
+      retention: "skip",
+    });
 
     // Only the new batch processed.
     expect(report.batchesProcessed).toBe(1);
@@ -244,19 +247,19 @@ describe("ingestBatches", () => {
   test("lock contention: ingestBatches fails cleanly (does not hang) when lock held", async () => {
     const handle = acquireLock(cwd);
     try {
-      await expect(ingestBatches(cwd, {})).rejects.toThrow(/lock/i);
+      await expect(ingestBatches(cwd, { retention: "skip" })).rejects.toThrow(/lock/i);
     } finally {
       handle.release();
     }
     // After release, a fresh ingest should succeed.
     writeBatch(cwd, "batch-after", [JSON.stringify(makeTrace())]);
-    const report = await ingestBatches(cwd, {});
+    const report = await ingestBatches(cwd, { retention: "skip" });
     expect(report.tracesIngested).toBe(1);
   });
 
   test("empty batch file is processed without error", async () => {
     writeBatch(cwd, "batch-empty", []);
-    const report = await ingestBatches(cwd, {});
+    const report = await ingestBatches(cwd, { retention: "skip" });
     expect(report.batchesProcessed).toBe(1);
     expect(report.tracesIngested).toBe(0);
     expect(report.linesRejected).toBe(0);
@@ -265,7 +268,7 @@ describe("ingestBatches", () => {
   });
 
   test("no incoming/<date>/ directory → zero-batch report, no error", async () => {
-    const report = await ingestBatches(cwd, {});
+    const report = await ingestBatches(cwd, { retention: "skip" });
     expect(report.batchesProcessed).toBe(0);
     expect(report.tracesIngested).toBe(0);
   });
@@ -284,7 +287,7 @@ describe("ingestBatches", () => {
           const localCwd = mkdtempSync(join(tmpdir(), "autocontext-p3-"));
           try {
             writeBatch(localCwd, "batch-p3", traces.map((t) => JSON.stringify(t)));
-            const r1 = await ingestBatches(localCwd, {});
+            const r1 = await ingestBatches(localCwd, { retention: "skip" });
             expect(r1.tracesIngested).toBe(traces.length);
 
             // Snapshot on-disk state after first run.
@@ -293,7 +296,7 @@ describe("ingestBatches", () => {
             // Re-drop the same batch and run again — second run should be a no-op
             // for the dedupe pipeline.
             writeBatch(localCwd, "batch-p3", traces.map((t) => JSON.stringify(t)));
-            const r2 = await ingestBatches(localCwd, {});
+            const r2 = await ingestBatches(localCwd, { retention: "skip" });
 
             expect(r2.tracesIngested).toBe(0);
             expect(r2.duplicatesSkipped).toBe(traces.length);

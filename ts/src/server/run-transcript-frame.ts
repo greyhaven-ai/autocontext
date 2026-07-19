@@ -105,6 +105,13 @@ const EVENT_PAYLOAD_FIELDS: Readonly<Record<string, readonly string[]>> = {
     "dead_ends_found",
   ],
   run_failed: ["run_id", "generation", "error"],
+  run_stopped: [
+    "run_id",
+    "reason",
+    "command_id",
+    "completed_generations",
+    "best_score",
+  ],
   run_started: ["run_id", "scenario", "target_generations"],
   tournament_completed: [
     "run_id",

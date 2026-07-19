@@ -19,6 +19,18 @@
       "idempotency_horizon": "same as retained command and response records"
     }
   },
+  "safe_stop_extension": {
+    "capability": "safe_run_stop_v1",
+    "advertised_runtimes": ["typescript"],
+    "requires_transcript_protocol_version": 1,
+    "command": "stop",
+    "required_command_fields": ["client_run_id", "command_id"],
+    "ack_action": "stop",
+    "terminal_event": "run_stopped",
+    "terminal_reason": "operator",
+    "terminal_arbitration": "first_terminal_outcome_wins",
+    "python_support": "schema_only"
+  },
   "endpoints": [
     {
       "path": "/ws/interactive",
@@ -69,7 +81,6 @@
     "environments",
     "run_accepted",
     "ack",
-    "run_stopped",
     "error",
     "scenario_generating",
     "scenario_preview",
@@ -80,7 +91,7 @@
   "shared_client_messages": [
     "pause",
     "resume",
-    "stop_run",
+    "stop",
     "inject_hint",
     "override_gate",
     "chat_agent",

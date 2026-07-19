@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { RunStopRequestedError } from "../src/loop/controller.js";
 import {
   buildIdleRunStatePatch,
   buildQueuedRunStatePatch,
@@ -82,5 +83,63 @@ describe("active run lifecycle", () => {
       generation: null,
       phase: null,
     });
+  });
+
+  it("emits one stopped terminal with retained progress instead of run_failed", async () => {
+    const emit = vi.fn();
+    const updateState = vi.fn();
+    const setActive = vi.fn();
+    const stopRequest = new RunStopRequestedError({
+      runId: "run_stop_1",
+      commandId: "cmd_stop_1",
+      progress: {
+        completedGenerations: 2,
+        bestScore: 0.6,
+      },
+    });
+
+    await createManagedRunExecution({
+      runId: "run_stop_1",
+      execute: async () => {
+        throw new Error("provider failed after stop");
+      },
+      events: { emit },
+      getPaused: () => false,
+      getStopRequest: () => stopRequest,
+      getStopProgress: () => ({
+        completedGenerations: 3,
+        bestScore: 0.75,
+      }),
+      setActive,
+      updateState,
+    });
+
+    expect(emit).toHaveBeenCalledOnce();
+    expect(emit).toHaveBeenCalledWith("run_stopped", {
+      run_id: "run_stop_1",
+      reason: "operator",
+      command_id: "cmd_stop_1",
+      completed_generations: 3,
+      best_score: 0.75,
+    });
+    expect(emit).not.toHaveBeenCalledWith("run_failed", expect.anything());
+  });
+
+  it("does not replace an observed terminal event with a later failure", async () => {
+    const emit = vi.fn();
+
+    await createManagedRunExecution({
+      runId: "run_terminal_1",
+      execute: async () => {
+        throw new Error("late provider failure");
+      },
+      events: { emit },
+      getPaused: () => false,
+      getRunPhase: () => "stopped",
+      setActive: vi.fn(),
+      updateState: vi.fn(),
+    });
+
+    expect(emit).not.toHaveBeenCalled();
   });
 });

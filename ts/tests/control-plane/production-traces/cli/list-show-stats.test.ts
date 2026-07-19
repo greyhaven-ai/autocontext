@@ -22,7 +22,10 @@ async function seedIngested(batchTag: string, count = 3): Promise<void> {
     }),
   );
   writeIncomingBatch(cwd, TEST_DATE, batchTag, traces);
-  const r = await runProductionTracesCommand(["ingest", "--output", "json"], { cwd });
+  const r = await runProductionTracesCommand(
+    ["ingest", "--skip-retention", "--output", "json"],
+    { cwd },
+  );
   if (r.exitCode !== 0) {
     throw new Error(`seedIngested: ingest failed: exit=${r.exitCode} stderr=${r.stderr}`);
   }
@@ -90,7 +93,7 @@ describe("autoctx production-traces show", () => {
   test("shows a known trace by id", async () => {
     const id = newProductionTraceId();
     writeIncomingBatch(cwd, TEST_DATE, "batch-show", [makeTrace({ traceId: id })]);
-    await runProductionTracesCommand(["ingest"], { cwd });
+    await runProductionTracesCommand(["ingest", "--skip-retention"], { cwd });
 
     const r = await runProductionTracesCommand(
       ["show", id, "--output", "json"],
@@ -118,7 +121,7 @@ describe("autoctx production-traces show", () => {
     await runProductionTracesCommand(["init"], { cwd });
     const id = newProductionTraceId();
     writeIncomingBatch(cwd, TEST_DATE, "batch-show-ae", [makeTrace({ traceId: id })]);
-    await runProductionTracesCommand(["ingest"], { cwd });
+    await runProductionTracesCommand(["ingest", "--skip-retention"], { cwd });
 
     const r = await runProductionTracesCommand(
       ["show", id, "--as-exported", "--output", "json"],

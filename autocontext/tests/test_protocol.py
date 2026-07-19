@@ -37,7 +37,7 @@ from autocontext.server.protocol import (
     RunAcceptedMsg,
     RunCompletedPayload,
     RunStartedPayload,
-    RunStoppedMsg,
+    RunStoppedPayload,
     ScenarioErrorMsg,
     ScenarioGeneratingMsg,
     ScenarioInfo,
@@ -172,6 +172,14 @@ class TestClientMessageParsing:
         [
             ({"type": "pause"}, PauseCmd),
             ({"type": "resume"}, ResumeCmd),
+            (
+                {
+                    "type": "stop",
+                    "client_run_id": "client-run-1",
+                    "command_id": "command-stop-1",
+                },
+                StopCmd,
+            ),
             ({"type": "inject_hint", "text": "try X"}, InjectHintCmd),
             ({"type": "override_gate", "decision": "advance"}, OverrideGateCmd),
             ({"type": "chat_agent", "role": "analyst", "message": "hello"}, ChatAgentCmd),
@@ -181,7 +189,6 @@ class TestClientMessageParsing:
             ({"type": "confirm_scenario"}, ConfirmScenarioCmd),
             ({"type": "revise_scenario", "feedback": "change X"}, ReviseScenarioCmd),
             ({"type": "cancel_scenario"}, CancelScenarioCmd),
-            ({"type": "stop_run"}, StopCmd),
         ],
     )
     def test_valid_messages(self, raw: dict, expected_type: type) -> None:
@@ -201,6 +208,25 @@ class TestClientMessageParsing:
         assert isinstance(msg, StartRunCmd)
         assert msg.client_run_id == "client-run-1"
         assert msg.command_id == "command-start-1"
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            {"type": "stop", "command_id": "command-stop-1"},
+            {"type": "stop", "client_run_id": "client-run-1"},
+            {"type": "stop", "client_run_id": "", "command_id": "command-stop-1"},
+            {"type": "stop", "client_run_id": "client-run-1", "command_id": ""},
+            {
+                "type": "stop",
+                "client_run_id": "client-run-1",
+                "command_id": "command-stop-1",
+                "unexpected": True,
+            },
+        ],
+    )
+    def test_stop_requires_strict_correlation_fields(self, raw: dict[str, object]) -> None:
+        with pytest.raises(ValidationError):
+            parse_client_message(raw)
 
     def test_unknown_type_rejected(self) -> None:
         with pytest.raises(ValidationError):
@@ -279,6 +305,16 @@ class TestEventPayloads:
                     "dead_ends_found": 0,
                 },
             ),
+            (
+                RunStoppedPayload,
+                {
+                    "run_id": "r1",
+                    "reason": "operator",
+                    "command_id": "command-stop-1",
+                    "completed_generations": 3,
+                    "best_score": 0.8,
+                },
+            ),
         ],
     )
     def test_validates(self, model: type, kwargs: dict) -> None:
@@ -290,6 +326,37 @@ class TestEventPayloads:
     def test_extra_fields_rejected(self) -> None:
         with pytest.raises(ValidationError):
             RunStartedPayload(run_id="r1", scenario="grid_ctf", extra="bad")  # type: ignore[call-arg]
+
+    def test_run_stopped_payload_omits_an_unavailable_best_score(self) -> None:
+        payload = RunStoppedPayload(
+            run_id="r1",
+            reason="operator",
+            command_id="command-stop-1",
+            completed_generations=0,
+        )
+
+        assert payload.model_dump() == {
+            "run_id": "r1",
+            "reason": "operator",
+            "command_id": "command-stop-1",
+            "completed_generations": 0,
+        }
+
+    def test_run_stopped_payload_requires_correlation_and_rejects_extra_fields(self) -> None:
+        with pytest.raises(ValidationError):
+            RunStoppedPayload(  # type: ignore[call-arg]
+                run_id="r1",
+                reason="operator",
+                completed_generations=0,
+            )
+        with pytest.raises(ValidationError):
+            RunStoppedPayload(
+                run_id="r1",
+                reason="operator",
+                command_id="command-stop-1",
+                completed_generations=0,
+                extra="bad",  # type: ignore[call-arg]
+            )
 
 
 class TestNestedModels:
@@ -304,43 +371,3 @@ class TestNestedModels:
     def test_scoring_component(self) -> None:
         comp = ScoringComponent(name="s", description="score", weight=0.5)
         assert comp.model_dump() == {"name": "s", "description": "score", "weight": 0.5}
-
-
-class TestStopProtocol:
-    """AC-894 Slice A1: stop_run client command + run_stopped server receipt."""
-
-    def test_stop_run_parses_to_stop_cmd(self) -> None:
-        msg = parse_client_message({"type": "stop_run"})
-        assert isinstance(msg, StopCmd)
-        assert msg.type == "stop_run"
-
-    def test_stop_run_fields_round_trip(self) -> None:
-        msg = parse_client_message(
-            {
-                "type": "stop_run",
-                "reason": "operator abort",
-                "command_id": "c1",
-                "client_run_id": "r1",
-            }
-        )
-        assert isinstance(msg, StopCmd)
-        assert msg.reason == "operator abort"
-        assert msg.command_id == "c1"
-        assert msg.client_run_id == "r1"
-
-    def test_run_stopped_dump_includes_set_optional_fields(self) -> None:
-        d = RunStoppedMsg(command_id="c1", reason="x").model_dump()
-        assert d["type"] == "run_stopped"
-        assert d["command_id"] == "c1"
-        assert d["reason"] == "x"
-
-    def test_run_stopped_dump_excludes_unset_optional_fields(self) -> None:
-        d = RunStoppedMsg().model_dump()
-        assert d["type"] == "run_stopped"
-        assert "command_id" not in d
-        assert "reason" not in d
-
-    def test_schema_export_contains_new_literals(self) -> None:
-        serialized = json.dumps(export_json_schema())
-        assert "stop_run" in serialized
-        assert "run_stopped" in serialized

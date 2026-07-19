@@ -48,6 +48,20 @@ describe("run state workflow", () => {
     })).toEqual({
       phase: "completed",
     });
+
+    expect(buildRunEventStatePatch("run_stopped", {
+      run_id: "run_1",
+      command_id: "cmd_stop_1",
+    }, {
+      active: true,
+      paused: false,
+      runId: "run_1",
+      scenario: "grid_ctf",
+      generation: 3,
+      phase: "support",
+    })).toEqual({
+      phase: "stopped",
+    });
   });
 
   it("returns null for events that do not affect run state", () => {

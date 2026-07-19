@@ -80,7 +80,10 @@ describe("production-traces MCP tools", () => {
       }),
     ];
     writeIncomingBatch(cwd, TEST_DATE, "mcp-filter-batch", traces);
-    const ingest = await runProductionTracesCommand(["ingest"], { cwd });
+    const ingest = await runProductionTracesCommand(
+      ["ingest", "--skip-retention"],
+      { cwd },
+    );
     expect(ingest.exitCode).toBe(0);
 
     const server = createFakeServer();

@@ -1,5 +1,11 @@
 import type { EventStreamEmitter } from "../loop/events.js";
+import {
+  isRunStopRequestedError,
+  type RunStopProgress,
+  type RunStopRequestedError,
+} from "../loop/controller.js";
 import type { RunManagerState } from "./run-manager.js";
+import { isTerminalRunPhase } from "./run-state-workflow.js";
 
 export function buildQueuedRunStatePatch(opts: {
   runId: string;
@@ -30,16 +36,39 @@ export async function createManagedRunExecution(opts: {
   execute: () => Promise<void>;
   events: Pick<EventStreamEmitter, "emit">;
   getPaused: () => boolean;
+  getRunPhase?: () => string | null;
+  getStopProgress?: () => RunStopProgress;
+  getStopRequest?: () => RunStopRequestedError | null;
   setActive: (active: boolean) => void;
   updateState: (patch: Partial<RunManagerState>) => void;
 }): Promise<void> {
   try {
     await opts.execute();
-  } catch (err) {
-    opts.events.emit("run_failed", {
-      run_id: opts.runId,
-      error: err instanceof Error ? err.message : String(err),
-    });
+  } catch (error) {
+    if (!isTerminalRunPhase(opts.getRunPhase?.() ?? null)) {
+      const stopRequest = isRunStopRequestedError(error)
+        ? error
+        : opts.getStopRequest?.() ?? null;
+      if (stopRequest) {
+        const progress = opts.getStopProgress?.() ?? {
+          completedGenerations: stopRequest.completedGenerations,
+          ...(stopRequest.bestScore === undefined ? {} : { bestScore: stopRequest.bestScore }),
+        };
+        const stopped = stopRequest.withProgress(progress);
+        opts.events.emit("run_stopped", {
+          run_id: opts.runId,
+          reason: "operator",
+          command_id: stopped.commandId,
+          completed_generations: stopped.completedGenerations,
+          ...(stopped.bestScore === undefined ? {} : { best_score: stopped.bestScore }),
+        });
+      } else {
+        opts.events.emit("run_failed", {
+          run_id: opts.runId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
   } finally {
     opts.setActive(false);
     opts.updateState(buildIdleRunStatePatch(opts.getPaused()));

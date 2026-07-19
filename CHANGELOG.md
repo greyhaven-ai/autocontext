@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- TypeScript interactive transcripts now advertise `safe_run_stop_v1`: a required-ID, run-bound stop command wakes paused runs, takes effect at cooperative boundaries, preserves completed work, emits one retained `run_stopped` terminal receipt, and promotes retries from the synchronous acknowledgement to that terminal receipt; Python keeps wire-schema parity and returns an explicit correlated unsupported-capability error (AC-894).
 - TypeScript interactive runs now support an explicit opt-in, capability-versioned durable transcript with stable client/run/event identity, monotonic source sequencing, crash-safe request fingerprints, correlated operator commands, bounded/redacted exact-frame retention, atomic compaction, and `resume_run` reconnect/backfill across server restarts while plain connections remain strict v1-compatible (ERP-88).
 - Ambient per-role live-serving bridge (opt-in, AC-893): the promote stage writes a serving manifest mapping (real scenario, role) to the promoted ambient target, and the serving resolver reads it so a promoted model reaches its role in a live run (ambient candidates are slotted by target name, but generation resolves by real scenario). Off by default; enable by pointing BOTH the ambient daemon and the generation-loop process at one shared file via `AUTOCONTEXT_AMBIENT_SERVING_MANIFEST_PATH`.
 - `autoctx ambient` foundation: a charter-driven resident daemon skeleton (interview wizard, autonomy dial with guardrail floors, durable stage queue, five stages with auto-pause breakers, status/run/once cli). Stages are no-ops pending the ingest, curation, and training plans (docs/ambient-trainer-design.md).
@@ -74,9 +75,6 @@ All notable changes to this project will be documented in this file.
   alongside the unchanged live score. Only the latest revision recorded under the scenario's current
   active epoch is surfaced; the live score of record is untouched. Read-only, Python-only, no new
   command, flag, or schema.
-- AC-894 Slice A1: the interactive-run protocol gains a `stop_run` client command and a `run_stopped`
-  terminal server receipt (wire contract only). Cooperative-stop behavior and the `safe_run_stop_v1`
-  capability follow in the engine slices.
 
 ## [0.11.0] - 2026-07-02
 

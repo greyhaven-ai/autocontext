@@ -2,7 +2,10 @@ import { join } from "node:path";
 
 import type { AppSettings } from "../config/index.js";
 import { asDbPath, asRunId } from "../domain/ids.js";
-import type { LoopController } from "../loop/controller.js";
+import {
+  isRunStopRequestedError,
+  type LoopController,
+} from "../loop/controller.js";
 import type { EventStreamEmitter } from "../loop/events.js";
 import { GenerationRunner } from "../loop/generation-runner.js";
 import type { RoleProviderBundle } from "../providers/index.js";
@@ -267,111 +270,179 @@ export async function executeAgentTaskCustomStartRun(opts: {
     family: "agent_task",
     saved_custom: true,
   });
-  await opts.controller.waitIfPaused();
-  emitHook(hookBus, HookEvents.GENERATION_START, {
-    run_id: opts.runId,
-    scenario: opts.scenarioName,
-    generation: 1,
-    family: "agent_task",
-    saved_custom: true,
-  });
-  opts.events.emit("generation_started", { run_id: opts.runId, generation: 1 });
-
-  let result;
+  let activeGeneration: number | null = null;
+  let completedGenerations = 0;
+  let bestScore: number | undefined;
   try {
-    result = await executeTask({
-      provider: opts.provider,
-      created: {
-        name: opts.scenarioName,
-        spec: opts.entry.spec,
-      },
-      generations: opts.generations,
-      ...(hookBus ? { hookBus } : {}),
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    emitHook(hookBus, HookEvents.GENERATION_END, {
+    await opts.controller.waitAtBoundary();
+    emitHook(hookBus, HookEvents.GENERATION_START, {
       run_id: opts.runId,
       scenario: opts.scenarioName,
       generation: 1,
-      status: "failed",
       family: "agent_task",
       saved_custom: true,
-      error: message,
+    });
+    activeGeneration = 1;
+    opts.events.emit("generation_started", { run_id: opts.runId, generation: 1 });
+
+    let result: Awaited<ReturnType<typeof executeAgentTaskSolve>>;
+    try {
+      result = await executeTask({
+        provider: opts.provider,
+        created: {
+          name: opts.scenarioName,
+          spec: opts.entry.spec,
+        },
+        generations: opts.generations,
+        ...(hookBus ? { hookBus } : {}),
+      });
+    } catch (error) {
+      const stopRequest = isRunStopRequestedError(error)
+        ? error
+        : opts.controller.getStopRequest();
+      if (stopRequest) {
+        throw stopRequest;
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      emitHook(hookBus, HookEvents.GENERATION_END, {
+        run_id: opts.runId,
+        scenario: opts.scenarioName,
+        generation: 1,
+        status: "failed",
+        family: "agent_task",
+        saved_custom: true,
+        error: message,
+      });
+      activeGeneration = null;
+      emitHook(hookBus, HookEvents.RUN_END, {
+        run_id: opts.runId,
+        scenario: opts.scenarioName,
+        status: "failed",
+        completed_generations: 0,
+        best_score: 0,
+        elo: 1000,
+        family: "agent_task",
+        saved_custom: true,
+        error: message,
+      });
+      throw error;
+    }
+    bestScore = readBestScore(result.result);
+    completedGenerations = normalizeCompletedGenerations(result.progress);
+
+    for (let generation = 1; generation <= completedGenerations; generation++) {
+      if (generation > 1) {
+        emitHook(hookBus, HookEvents.GENERATION_START, {
+          run_id: opts.runId,
+          scenario: opts.scenarioName,
+          generation,
+          family: "agent_task",
+          saved_custom: true,
+        });
+        activeGeneration = generation;
+        opts.events.emit("generation_started", { run_id: opts.runId, generation });
+      }
+      opts.events.emit("generation_completed", {
+        run_id: opts.runId,
+        generation,
+        mean_score: bestScore,
+        best_score: bestScore,
+        elo: 1000,
+        gate_decision: "advance",
+        family: "agent_task",
+        rounds_completed: completedGenerations,
+      });
+      activeGeneration = null;
+      emitHook(hookBus, HookEvents.GENERATION_END, {
+        run_id: opts.runId,
+        scenario: opts.scenarioName,
+        generation,
+        status: "completed",
+        mean_score: bestScore,
+        best_score: bestScore,
+        elo: 1000,
+        gate_decision: "advance",
+        family: "agent_task",
+        saved_custom: true,
+        rounds_completed: completedGenerations,
+      });
+    }
+    if (activeGeneration !== null) {
+      const completedGeneration = activeGeneration;
+      activeGeneration = null;
+      emitHook(hookBus, HookEvents.GENERATION_END, {
+        run_id: opts.runId,
+        scenario: opts.scenarioName,
+        generation: completedGeneration,
+        status: "completed",
+        mean_score: bestScore,
+        best_score: bestScore,
+        elo: 1000,
+        gate_decision: "advance",
+        family: "agent_task",
+        saved_custom: true,
+        rounds_completed: completedGenerations,
+      });
+    }
+    opts.controller.throwIfStopRequested({
+      completedGenerations,
+      bestScore,
+    });
+    opts.events.emit("run_completed", {
+      run_id: opts.runId,
+      completed_generations: completedGenerations,
+      best_score: bestScore,
+      elo: 1000,
+      session_report_path: null,
+      dead_ends_found: 0,
+      family: "agent_task",
+      saved_custom: true,
     });
     emitHook(hookBus, HookEvents.RUN_END, {
       run_id: opts.runId,
       scenario: opts.scenarioName,
-      status: "failed",
-      completed_generations: 0,
-      best_score: 0,
+      status: "completed",
+      completed_generations: completedGenerations,
+      best_score: bestScore,
       elo: 1000,
+      session_report_path: null,
+      dead_ends_found: 0,
       family: "agent_task",
       saved_custom: true,
-      error: message,
     });
-    throw error;
-  }
-  const bestScore = readBestScore(result.result);
-  const completedGenerations = normalizeCompletedGenerations(result.progress);
-
-  for (let generation = 1; generation <= completedGenerations; generation++) {
-    if (generation > 1) {
-      emitHook(hookBus, HookEvents.GENERATION_START, {
+  } catch (error) {
+    const stopRequest = isRunStopRequestedError(error)
+      ? error
+      : opts.controller.getStopRequest();
+    if (!stopRequest) {
+      throw error;
+    }
+    const stopped = stopRequest.withProgress({
+      completedGenerations,
+      ...(bestScore === undefined ? {} : { bestScore }),
+    });
+    if (activeGeneration !== null) {
+      emitHook(hookBus, HookEvents.GENERATION_END, {
         run_id: opts.runId,
         scenario: opts.scenarioName,
-        generation,
+        generation: activeGeneration,
+        status: "stopped",
         family: "agent_task",
         saved_custom: true,
       });
-      opts.events.emit("generation_started", { run_id: opts.runId, generation });
     }
-    opts.events.emit("generation_completed", {
-      run_id: opts.runId,
-      generation,
-      mean_score: bestScore,
-      best_score: bestScore,
-      elo: 1000,
-      gate_decision: "advance",
-      family: "agent_task",
-      rounds_completed: completedGenerations,
-    });
-    emitHook(hookBus, HookEvents.GENERATION_END, {
+    emitHook(hookBus, HookEvents.RUN_END, {
       run_id: opts.runId,
       scenario: opts.scenarioName,
-      generation,
-      status: "completed",
-      mean_score: bestScore,
-      best_score: bestScore,
+      status: "stopped",
+      completed_generations: stopped.completedGenerations,
+      ...(stopped.bestScore === undefined ? {} : { best_score: stopped.bestScore }),
       elo: 1000,
-      gate_decision: "advance",
       family: "agent_task",
       saved_custom: true,
-      rounds_completed: completedGenerations,
     });
+    throw stopped;
   }
-  opts.events.emit("run_completed", {
-    run_id: opts.runId,
-    completed_generations: completedGenerations,
-    best_score: bestScore,
-    elo: 1000,
-    session_report_path: null,
-    dead_ends_found: 0,
-    family: "agent_task",
-    saved_custom: true,
-  });
-  emitHook(hookBus, HookEvents.RUN_END, {
-    run_id: opts.runId,
-    scenario: opts.scenarioName,
-    status: "completed",
-    completed_generations: completedGenerations,
-    best_score: bestScore,
-    elo: 1000,
-    session_report_path: null,
-    dead_ends_found: 0,
-    family: "agent_task",
-    saved_custom: true,
-  });
 }
 
 export interface GeneratedCustomStartRunDeps {
@@ -416,19 +487,38 @@ export async function executeGeneratedCustomStartRun(opts: {
   });
 
   let bestScoreOverall = 0;
+  let completedGenerations = 0;
   for (let generation = 1; generation <= opts.generations; generation++) {
-    await opts.controller.waitIfPaused();
+    await opts.controller.waitAtBoundary({
+      completedGenerations,
+      ...(completedGenerations === 0 ? {} : { bestScore: bestScoreOverall }),
+    });
     opts.events.emit("generation_started", { run_id: opts.runId, generation });
 
-    const result = await executeScenario({
-      customDir,
-      name: opts.scenarioName,
-      family: opts.family,
-      seed: generation,
-      ...(typeof maxSteps === "number" ? { maxSteps } : {}),
-    });
+    let result: Awaited<ReturnType<typeof executeGeneratedScenarioEntry>>;
+    try {
+      result = await executeScenario({
+        customDir,
+        name: opts.scenarioName,
+        family: opts.family,
+        seed: generation,
+        ...(typeof maxSteps === "number" ? { maxSteps } : {}),
+      });
+    } catch (error) {
+      const stopRequest = isRunStopRequestedError(error)
+        ? error
+        : opts.controller.getStopRequest();
+      if (stopRequest) {
+        throw stopRequest.withProgress({
+          completedGenerations,
+          ...(completedGenerations === 0 ? {} : { bestScore: bestScoreOverall }),
+        });
+      }
+      throw error;
+    }
 
     bestScoreOverall = Math.max(bestScoreOverall, result.score);
+    completedGenerations = generation;
     opts.events.emit("generation_completed", {
       run_id: opts.runId,
       generation,
@@ -440,11 +530,19 @@ export async function executeGeneratedCustomStartRun(opts: {
       steps_executed: result.stepsExecuted,
       reasoning: result.reasoning,
     });
+    opts.controller.throwIfStopRequested({
+      completedGenerations,
+      bestScore: bestScoreOverall,
+    });
   }
 
+  opts.controller.throwIfStopRequested({
+    completedGenerations,
+    ...(completedGenerations === 0 ? {} : { bestScore: bestScoreOverall }),
+  });
   opts.events.emit("run_completed", {
     run_id: opts.runId,
-    completed_generations: opts.generations,
+    completed_generations: completedGenerations,
     best_score: bestScoreOverall,
     elo: 1000,
     session_report_path: null,

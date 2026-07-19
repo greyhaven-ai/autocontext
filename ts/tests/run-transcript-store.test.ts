@@ -15,6 +15,41 @@ function makeStore(): { dir: string; path: string; store: RunTranscriptStore } {
   return { dir, path, store: new RunTranscriptStore(path) };
 }
 
+function stopCommand(clientRunId: string, commandId: string) {
+  return {
+    type: "stop",
+    client_run_id: clientRunId,
+    command_id: commandId,
+  } as const;
+}
+
+function recordRunStopped(
+  store: RunTranscriptStore,
+  opts: {
+    bestScore?: number;
+    clientRunId: string;
+    commandId: string;
+    completedGenerations: number;
+    runId: string;
+  },
+) {
+  return store.record({
+    clientRunId: opts.clientRunId,
+    runId: opts.runId,
+    message: {
+      type: "event",
+      event: "run_stopped",
+      payload: {
+        run_id: opts.runId,
+        reason: "operator",
+        command_id: opts.commandId,
+        completed_generations: opts.completedGenerations,
+        ...(opts.bestScore === undefined ? {} : { best_score: opts.bestScore }),
+      },
+    },
+  });
+}
+
 afterEach(() => {
   for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
@@ -170,6 +205,49 @@ describe("RunTranscriptStore", () => {
     });
     expect(frame?.wire).not.toContain("private raw prompt");
     expect(store.hasFrames("client-run-1")).toBe(true);
+  });
+
+  it("sanitizes and reloads correlated run_stopped terminal receipts", () => {
+    const { path, store } = makeStore();
+    const frame = store.record({
+      clientRunId: "client-stopped",
+      runId: "engine-stopped",
+      message: {
+        type: "event",
+        event: "run_stopped",
+        payload: {
+          run_id: "engine-stopped",
+          reason: "operator",
+          command_id: "command-stop",
+          completed_generations: 3,
+          best_score: 0.91,
+          private_trace: "must-not-be-retained",
+        },
+      },
+    });
+    if (!frame) throw new Error("expected retained run_stopped frame");
+
+    expect(frame.message).toMatchObject({
+      type: "event",
+      event: "run_stopped",
+      payload: {
+        run_id: "engine-stopped",
+        reason: "operator",
+        command_id: "command-stop",
+        completed_generations: 3,
+        best_score: 0.91,
+      },
+    });
+    if (frame.message.type !== "event") throw new Error("expected event frame");
+    expect(frame.message.payload.private_trace).toBeUndefined();
+    expect(store.findCommandFrame("client-stopped", "command-stop")?.wire).toBe(frame.wire);
+
+    const reloaded = new RunTranscriptStore(path);
+    expect(reloaded.findCommandFrame("client-stopped", "command-stop")?.wire).toBe(frame.wire);
+    expect(reloaded.framesAfter("client-stopped", 0).map((item) => item.wire)).toEqual([
+      frame.wire,
+    ]);
+    expect(readFileSync(path, "utf-8")).not.toContain("must-not-be-retained");
   });
 
   it("bounds deeply nested retained records before writing them", () => {
@@ -338,6 +416,265 @@ describe("RunTranscriptStore", () => {
     expect(readFileSync(path, "utf-8")).not.toContain("do this once");
   });
 
+  it("promotes a completed stop acknowledgement to its terminal response", () => {
+    const { path, store } = makeStore();
+    const command = stopCommand("client-stop", "command-stop");
+    store.registerRun("client-stop", "engine-stop");
+    expect(
+      store.inspectCommand({
+        clientRunId: "client-stop",
+        commandId: "command-stop",
+        command,
+      }),
+    ).toBeNull();
+    expect(
+      store.beginCommand({
+        clientRunId: "client-stop",
+        commandId: "command-stop",
+        command,
+      }),
+    ).toEqual({ outcome: "proceed" });
+
+    const acknowledgement = store.record({
+      clientRunId: "client-stop",
+      commandId: "command-stop",
+      runId: "engine-stop",
+      message: { type: "ack", action: "stop", decision: "requested" },
+    });
+    if (!acknowledgement) throw new Error("expected retained stop acknowledgement");
+    store.completeCommand({
+      clientRunId: "client-stop",
+      commandId: "command-stop",
+      command,
+      frame: acknowledgement,
+    });
+
+    const terminal = recordRunStopped(store, {
+      clientRunId: "client-stop",
+      commandId: "command-stop",
+      completedGenerations: 2,
+      bestScore: 0.84,
+      runId: "engine-stop",
+    });
+    if (!terminal) throw new Error("expected retained run_stopped frame");
+
+    expect(
+      store.promoteStopCommandTerminalFrame({
+        clientRunId: "client-stop",
+        commandId: "command-stop",
+        command,
+        frame: terminal,
+      }).wire,
+    ).toBe(terminal.wire);
+    expect(
+      store.beginCommand({
+        clientRunId: "client-stop",
+        commandId: "command-stop",
+        command,
+      }),
+    ).toMatchObject({ outcome: "completed", frame: { wire: terminal.wire } });
+    expect(store.framesAfter("client-stop", 0).map((frame) => frame.wire)).toEqual([
+      acknowledgement.wire,
+      terminal.wire,
+    ]);
+    expect(
+      store.framesAfter("client-stop", acknowledgement.sequence).map((frame) => frame.wire),
+    ).toEqual([terminal.wire]);
+
+    const reloaded = new RunTranscriptStore(path);
+    expect(
+      reloaded.inspectCommand({
+        clientRunId: "client-stop",
+        commandId: "command-stop",
+        command,
+      }),
+    ).toMatchObject({ outcome: "completed", frame: { wire: terminal.wire } });
+    expect(
+      reloaded.beginCommand({
+        clientRunId: "client-stop",
+        commandId: "command-stop",
+        command,
+      }),
+    ).toMatchObject({ outcome: "completed", frame: { wire: terminal.wire } });
+    expect(reloaded.framesAfter("client-stop", 0).map((frame) => frame.wire)).toEqual([
+      acknowledgement.wire,
+      terminal.wire,
+    ]);
+  });
+
+  it("promotes a pending stop directly when its terminal receipt is already durable", () => {
+    const { path, store } = makeStore();
+    const command = stopCommand("client-pending-stop", "command-pending-stop");
+    store.registerRun("client-pending-stop", "engine-pending-stop");
+    store.beginCommand({
+      clientRunId: "client-pending-stop",
+      commandId: "command-pending-stop",
+      command,
+    });
+    const terminal = recordRunStopped(store, {
+      clientRunId: "client-pending-stop",
+      commandId: "command-pending-stop",
+      completedGenerations: 0,
+      runId: "engine-pending-stop",
+    });
+    if (!terminal) throw new Error("expected retained run_stopped frame");
+
+    store.promoteStopCommandTerminalFrame({
+      clientRunId: "client-pending-stop",
+      commandId: "command-pending-stop",
+      command,
+      frame: terminal,
+    });
+
+    expect(
+      new RunTranscriptStore(path).beginCommand({
+        clientRunId: "client-pending-stop",
+        commandId: "command-pending-stop",
+        command,
+      }),
+    ).toMatchObject({ outcome: "completed", frame: { wire: terminal.wire } });
+  });
+
+  it("reconciles an exact stop retry after a crash before terminal promotion", () => {
+    for (const state of ["acknowledged", "pending"] as const) {
+      const { path, store } = makeStore();
+      const clientRunId = `client-crash-${state}`;
+      const commandId = `command-crash-${state}`;
+      const runId = `engine-crash-${state}`;
+      const command = stopCommand(clientRunId, commandId);
+      store.registerRun(clientRunId, runId);
+      store.beginCommand({ clientRunId, commandId, command });
+
+      if (state === "acknowledged") {
+        const acknowledgement = store.record({
+          clientRunId,
+          commandId,
+          runId,
+          message: { type: "ack", action: "stop", decision: "requested" },
+        });
+        if (!acknowledgement) throw new Error("expected retained stop acknowledgement");
+        store.completeCommand({
+          clientRunId,
+          commandId,
+          command,
+          frame: acknowledgement,
+        });
+      }
+
+      const terminal = recordRunStopped(store, {
+        clientRunId,
+        commandId,
+        completedGenerations: 2,
+        bestScore: 0.87,
+        runId,
+      });
+      if (!terminal) throw new Error("expected retained run_stopped frame");
+
+      const reloaded = new RunTranscriptStore(path);
+      expect(
+        reloaded.beginCommand({ clientRunId, commandId, command }),
+      ).toMatchObject({
+        outcome: "completed",
+        frame: { eventId: terminal.eventId, wire: terminal.wire },
+      });
+      expect(
+        new RunTranscriptStore(path).beginCommand({ clientRunId, commandId, command }),
+      ).toMatchObject({
+        outcome: "completed",
+        frame: { eventId: terminal.eventId, wire: terminal.wire },
+      });
+    }
+  });
+
+  it("refuses stop-terminal promotion across fingerprints, scopes, or invalid frames", () => {
+    const { store } = makeStore();
+    const command = stopCommand("client-primary", "command-primary");
+    store.registerRun("client-primary", "engine-primary");
+    store.registerRun("client-other", "engine-other");
+    store.beginCommand({
+      clientRunId: "client-primary",
+      commandId: "command-primary",
+      command,
+    });
+    const acknowledgement = store.record({
+      clientRunId: "client-primary",
+      commandId: "command-primary",
+      runId: "engine-primary",
+      message: { type: "ack", action: "stop", decision: "requested" },
+    });
+    if (!acknowledgement) throw new Error("expected retained stop acknowledgement");
+    store.completeCommand({
+      clientRunId: "client-primary",
+      commandId: "command-primary",
+      command,
+      frame: acknowledgement,
+    });
+
+    const terminal = recordRunStopped(store, {
+      clientRunId: "client-primary",
+      commandId: "command-primary",
+      completedGenerations: 1,
+      runId: "engine-primary",
+    });
+    const otherScopeTerminal = recordRunStopped(store, {
+      clientRunId: "client-other",
+      commandId: "command-primary",
+      completedGenerations: 1,
+      runId: "engine-other",
+    });
+    const wrongCommandTerminal = recordRunStopped(store, {
+      clientRunId: "client-primary",
+      commandId: "different-command",
+      completedGenerations: 1,
+      runId: "engine-primary",
+    });
+    if (!terminal || !otherScopeTerminal || !wrongCommandTerminal) {
+      throw new Error("expected retained terminal frames");
+    }
+
+    const changedCommand = { ...command, unexpected: true } as typeof command;
+    expect(() =>
+      store.promoteStopCommandTerminalFrame({
+        clientRunId: "client-primary",
+        commandId: "command-primary",
+        command: changedCommand,
+        frame: terminal,
+      }),
+    ).toThrow(/fingerprint/);
+    expect(() =>
+      store.promoteStopCommandTerminalFrame({
+        clientRunId: "client-primary",
+        commandId: "command-primary",
+        command,
+        frame: otherScopeTerminal,
+      }),
+    ).toThrow(/different client run/);
+    expect(() =>
+      store.promoteStopCommandTerminalFrame({
+        clientRunId: "client-primary",
+        commandId: "command-primary",
+        command,
+        frame: wrongCommandTerminal,
+      }),
+    ).toThrow(/does not match/);
+    expect(() =>
+      store.promoteStopCommandTerminalFrame({
+        clientRunId: "client-primary",
+        commandId: "command-primary",
+        command,
+        frame: { ...terminal, eventId: "not-retained" },
+      }),
+    ).toThrow(/not retained/);
+
+    expect(
+      store.beginCommand({
+        clientRunId: "client-primary",
+        commandId: "command-primary",
+        command,
+      }),
+    ).toMatchObject({ outcome: "completed", frame: { wire: acknowledgement.wire } });
+  });
+
   it("prunes by per-run and global limits and compacts atomically", () => {
     const { path } = makeStore();
     const store = new RunTranscriptStore(path, {
@@ -407,6 +744,66 @@ describe("RunTranscriptStore", () => {
       new RunTranscriptStore(path, policy).beginCommand({
         clientRunId: "client-evicted",
         commandId: "command-evicted",
+        command,
+      }),
+    ).toEqual({ outcome: "pending" });
+  });
+
+  it("keeps promoted stop idempotency bounded by terminal-frame retention", () => {
+    const { path } = makeStore();
+    const policy = { maxFrames: 1, maxFramesPerRun: 1 };
+    const store = new RunTranscriptStore(path, policy);
+    const command = stopCommand("client-retained-stop", "command-retained-stop");
+    store.registerRun("client-retained-stop", "engine-retained-stop");
+    store.beginCommand({
+      clientRunId: "client-retained-stop",
+      commandId: "command-retained-stop",
+      command,
+    });
+    const acknowledgement = store.record({
+      clientRunId: "client-retained-stop",
+      commandId: "command-retained-stop",
+      runId: "engine-retained-stop",
+      message: { type: "ack", action: "stop", decision: "requested" },
+    });
+    if (!acknowledgement) throw new Error("expected retained stop acknowledgement");
+    store.completeCommand({
+      clientRunId: "client-retained-stop",
+      commandId: "command-retained-stop",
+      command,
+      frame: acknowledgement,
+    });
+    const terminal = recordRunStopped(store, {
+      clientRunId: "client-retained-stop",
+      commandId: "command-retained-stop",
+      completedGenerations: 1,
+      runId: "engine-retained-stop",
+    });
+    if (!terminal) throw new Error("expected retained run_stopped frame");
+    store.promoteStopCommandTerminalFrame({
+      clientRunId: "client-retained-stop",
+      commandId: "command-retained-stop",
+      command,
+      frame: terminal,
+    });
+    expect(
+      store.beginCommand({
+        clientRunId: "client-retained-stop",
+        commandId: "command-retained-stop",
+        command,
+      }),
+    ).toMatchObject({ outcome: "completed", frame: { wire: terminal.wire } });
+
+    store.record({
+      clientRunId: "client-retained-stop",
+      runId: "engine-retained-stop",
+      message: { type: "state", paused: false, phase: "stopped" },
+    });
+
+    expect(
+      new RunTranscriptStore(path, policy).beginCommand({
+        clientRunId: "client-retained-stop",
+        commandId: "command-retained-stop",
         command,
       }),
     ).toEqual({ outcome: "pending" });

@@ -66,7 +66,7 @@ maybeDescribe("Flow 1 — Python emit → TS ingest → build-dataset → Founda
 
       // --- Step 2: TS ingest ---
       const ingest = await runProductionTracesCommand(
-        ["ingest", "--output", "json"],
+        ["ingest", "--skip-retention", "--output", "json"],
         { cwd: tmp },
       );
       expect(ingest.exitCode).toBe(0);
