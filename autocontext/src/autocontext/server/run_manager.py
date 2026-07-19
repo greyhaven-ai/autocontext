@@ -119,9 +119,12 @@ class RunManager:
         runner.controller = self.controller
         # Share the event emitter so subscribers get events from this run
         runner.events = self.events
-        self._active = True
+        # The controller is reused across runs; clear any prior run's stop state
+        # so a stop that terminated an earlier run cannot leak into this one.
+        self.controller.clear_stop()
         self._active_client_run_id = client_run_id
         self._processed_stop_command_ids = set()
+        self._active = True
 
         def _target() -> None:
             try:
@@ -135,9 +138,11 @@ class RunManager:
             except Exception:
                 logger.exception("Run %s failed", actual_run_id)
             finally:
-                self._active = False
+                # Clear run-scoped state before flipping _active off last, so a
+                # concurrent start_run cannot observe this run's stale scope.
                 self._active_client_run_id = None
                 self._processed_stop_command_ids.clear()
+                self._active = False
 
         self._thread = threading.Thread(target=_target, daemon=True)
         self._thread.start()

@@ -84,3 +84,10 @@ class LoopController:
     def stop_details(self) -> tuple[str | None, str | None]:
         with self._lock:
             return self._stop_command_id, self._stop_reason
+
+    def clear_stop(self) -> None:
+        """Reset stop state so a reused controller does not leak a prior run's stop."""
+        with self._lock:
+            self._stop_requested = False
+            self._stop_command_id = None
+            self._stop_reason = None

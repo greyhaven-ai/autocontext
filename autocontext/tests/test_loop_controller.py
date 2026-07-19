@@ -142,3 +142,27 @@ def test_request_stop_wakes_paused_waiter() -> None:
     t.join(timeout=2.0)
     assert not t.is_alive()
     assert unblocked.is_set()
+
+
+def test_clear_stop_resets_stop_state() -> None:
+    ctrl = LoopController()
+    ctrl.request_stop("c1", "abort")
+    assert ctrl.stop_requested()
+    assert ctrl.stop_details() == ("c1", "abort")
+
+    ctrl.clear_stop()
+    assert not ctrl.stop_requested()
+    assert ctrl.stop_details() == (None, None)
+
+
+def test_clear_stop_lets_a_reused_controller_stop_again() -> None:
+    # A controller reused across runs must be able to stop a later run after a
+    # prior stop was cleared (guards against a leaked stop flag).
+    ctrl = LoopController()
+    ctrl.request_stop("first", "one")
+    ctrl.clear_stop()
+    assert not ctrl.stop_requested()
+
+    ctrl.request_stop("second", "two")
+    assert ctrl.stop_requested()
+    assert ctrl.stop_details() == ("second", "two")
