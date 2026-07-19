@@ -100,17 +100,28 @@ export const ScoringComponentSchema = protocolObject({
   weight: z.number(),
 });
 
+// Identifier fields mirror the canonical Python contract (str | None) and the generated schema
+// (z.string().optional().nullable()): nullable and unbounded, so the server accepts the explicit-null
+// (Python's RunCommandMetadata has no exclude_if, so StopCmd()/PauseCmd() serialize null ids) and
+// unbounded identifiers a conforming client may serialize. Null is normalized to undefined on parse so
+// consumers keep a `string | undefined` type. Any server-side length hardening must be a deliberate
+// contract-level decision, not a silent mirror divergence.
+const optionalIdentifier = z
+  .string()
+  .nullish()
+  .transform((value) => value ?? undefined);
+
 const RunMessageMetadataSchema = {
-  client_run_id: z.string().min(1).max(200).optional(),
-  event_id: z.string().min(1).optional(),
+  client_run_id: optionalIdentifier,
+  event_id: optionalIdentifier,
   sequence: z.number().int().nonnegative().optional(),
-  run_id: z.string().min(1).optional(),
+  run_id: optionalIdentifier,
   occurred_at: z.union([z.string(), z.number()]).optional(),
 } as const;
 
 const RunCommandMetadataSchema = {
-  client_run_id: z.string().min(1).max(200).optional(),
-  command_id: z.string().min(1).max(200).optional(),
+  client_run_id: optionalIdentifier,
+  command_id: optionalIdentifier,
 } as const;
 
 // ---------------------------------------------------------------------------

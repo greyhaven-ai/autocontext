@@ -276,6 +276,33 @@ describe("Protocol types", () => {
     expect(PYTHON_SHARED_CLIENT_MESSAGE_TYPES).toContain("stop_run");
     expect(PYTHON_SHARED_SERVER_MESSAGE_TYPES).toContain("run_stopped");
   });
+
+  it("accepts the null/empty/unbounded identifiers the Python contract emits (AC-894 parity)", async () => {
+    const { ClientMessageSchema, ServerMessageSchema } = await import("../src/server/protocol.js");
+    // Python's StopCmd()/PauseCmd() serialize absent identifiers as explicit null; the mirror must accept
+    // them (the metadata schema mirrors str | None / z.string().optional().nullable(), not min(1).max(200)).
+    const nulls = ClientMessageSchema.parse({
+      type: "stop_run",
+      command_id: null,
+      client_run_id: null,
+    });
+    expect(nulls.type).toBe("stop_run");
+    const pauseNulls = ClientMessageSchema.parse({
+      type: "pause",
+      command_id: null,
+      client_run_id: null,
+    });
+    expect(pauseNulls.type).toBe("pause");
+    // Empty and long identifiers are within the (unbounded) contract.
+    expect(ClientMessageSchema.parse({ type: "stop_run", command_id: "" }).type).toBe("stop_run");
+    expect(ClientMessageSchema.parse({ type: "stop_run", command_id: "c".repeat(300) }).type).toBe(
+      "stop_run",
+    );
+    // Server messages carry the same nullable metadata.
+    expect(
+      ServerMessageSchema.parse({ type: "run_stopped", client_run_id: null, run_id: null }).type,
+    ).toBe("run_stopped");
+  });
 });
 
 // ---------------------------------------------------------------------------

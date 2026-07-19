@@ -38,7 +38,9 @@ TS), not here, a server should never claim a capability it cannot honor.
 2. **Terminal receipt as a server message.** `RunStoppedMsg(RunMessageMetadata)` with
    `type: Literal["run_stopped"] = "run_stopped"` is added to the `ServerMessage` union. It carries
    `command_id: str | None` (to correlate with the stop command that caused it) and `reason: str | None`.
-   It is the durable terminal receipt A2/A3 emit when a stop wins the terminal race.
+   It is the terminal receipt that A2/A3 emit when a stop wins the terminal race. A1 only DEFINES this
+   type; making it DURABLE (persisted and replayable) is engine behavior and lands in A3 (see below):
+   A1 wiring nothing means the TS transcript layer does not yet retain it, which is expected.
 3. **Protocol is generated, parity is gated.** After editing `protocol.py`, run
    `scripts/generate_protocol.py` to regenerate the `.generated.ts` + JSON; never hand-edit the generated
    file. Add the two schemas to the hand-authored Zod mirror and the two new literals to the
@@ -114,6 +116,14 @@ capability follow in the engine slices.
   stop check, the first-terminal-wins status CAS, command dispatch + ack + `run_stopped` receipt,
   idempotent dedup + run-scope validation, and the `safe_run_stop_v1` capability advertisement, on the
   Python side (A2) and the TypeScript side (A3).
+- **A3 must make `run_stopped` durable** (required for it to be replayable and for dedup to complete on
+  the terminal result, not only the earlier ack): add a `run_stopped` case to
+  `sanitizeRunTranscriptMessageInternal` (`ts/src/server/run-transcript-frame.ts`), add `"run_stopped"`
+  to `RETAINED_MESSAGE_TYPES` (`ts/src/server/run-transcript-store.ts`), and ensure the stop command's
+  durable dedup is completed by the terminal `run_stopped` frame (via `completeCommand` /
+  command_id correlation), so a retried/reconnected stop replays the terminal receipt rather than only
+  the acknowledgement. (Confirmed today: without this, `RunTranscriptStore.record({message: {type:
+"run_stopped", ...}})` returns null and persists no frame.)
 
 ## Acceptance criteria advanced by this slice
 
