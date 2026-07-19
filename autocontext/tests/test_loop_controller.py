@@ -108,3 +108,37 @@ def test_hint_last_wins() -> None:
     ctrl.inject_hint("first hint")
     ctrl.inject_hint("second hint")
     assert ctrl.take_hint() == "second hint"
+
+
+def test_fresh_controller_has_no_stop_request() -> None:
+    ctrl = LoopController()
+    assert ctrl.stop_requested() is False
+    assert ctrl.stop_details() == (None, None)
+
+
+def test_request_stop_sets_flag_and_details() -> None:
+    ctrl = LoopController()
+    ctrl.request_stop("c1", "abort")
+    assert ctrl.stop_requested() is True
+    assert ctrl.stop_details() == ("c1", "abort")
+
+
+def test_request_stop_wakes_paused_waiter() -> None:
+    ctrl = LoopController()
+    ctrl.pause()
+    unblocked = threading.Event()
+
+    def worker() -> None:
+        ctrl.wait_if_paused()
+        unblocked.set()
+
+    t = threading.Thread(target=worker, daemon=True)
+    t.start()
+
+    # Worker should still be blocked (small window, not racy on a wall clock).
+    assert not unblocked.wait(0.1)
+
+    ctrl.request_stop("c1", "x")
+    t.join(timeout=2.0)
+    assert not t.is_alive()
+    assert unblocked.is_set()
