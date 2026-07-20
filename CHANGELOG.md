@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+
+- The TypeScript package no longer declares `openai` and `@anthropic-ai/sdk` as both hard `dependencies` and optional peers. They are now optional `peerDependencies` (with `devDependencies` for tests and scripts), matching how the integrations load them (guarded, absence-tolerant). The `@anthropic-ai/sdk` peer range is aligned to the documented `>=0.18 <2` compatibility contract (the prior `^0.32` only permitted `0.32.x`). Consumers that do not use the OpenAI or Anthropic integrations no longer pull the SDKs transitively (AC-858).
+
 ## [0.12.0] - 2026-07-19
 
 ### Added
