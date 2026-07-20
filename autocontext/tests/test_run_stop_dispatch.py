@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from unittest.mock import MagicMock
 
 from autocontext.harness.core.controller import LoopController
@@ -17,6 +18,7 @@ def _make_manager(tmp_path) -> tuple[RunManager, MagicMock]:
     manager._active = False
     manager._active_client_run_id = None
     manager._processed_stop_command_ids = set()
+    manager._lock = threading.Lock()
     return manager, controller
 
 

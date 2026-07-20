@@ -28,6 +28,10 @@ class RunManager:
         self._active = False
         self._active_client_run_id: str | None = None
         self._processed_stop_command_ids: set[str] = set()
+        # Serializes the run lifecycle transition (start / teardown) against
+        # stop validation + controller mutation, so a stop for an old run cannot
+        # validate, then land on the reused controller after a new run started.
+        self._lock = threading.Lock()
         self._migrations_dir = Path(__file__).resolve().parents[2] / "migrations"
 
     @property
@@ -35,16 +39,17 @@ class RunManager:
         return self._active
 
     def stop_run(self, client_run_id: str | None, command_id: str | None, reason: str | None) -> StopOutcome:
-        if not self._active:
-            return "not_active"
-        if client_run_id is not None and client_run_id != self._active_client_run_id:
-            return "scope_mismatch"
-        if command_id is not None and command_id in self._processed_stop_command_ids:
-            return "duplicate"
-        if command_id is not None:
-            self._processed_stop_command_ids.add(command_id)
-        self.controller.request_stop(command_id, reason)
-        return "accepted"
+        with self._lock:
+            if not self._active:
+                return "not_active"
+            if client_run_id is not None and client_run_id != self._active_client_run_id:
+                return "scope_mismatch"
+            if command_id is not None and command_id in self._processed_stop_command_ids:
+                return "duplicate"
+            if command_id is not None:
+                self._processed_stop_command_ids.add(command_id)
+            self.controller.request_stop(command_id, reason)
+            return "accepted"
 
     def list_scenarios(self) -> list[str]:
         return sorted(SCENARIO_REGISTRY.keys())
@@ -107,8 +112,6 @@ class RunManager:
         require_playbook_approval: bool = False,
         client_run_id: str | None = None,
     ) -> str:
-        if self._active:
-            raise RuntimeError("A run is already active. Wait for it to finish or stop it.")
         if scenario not in SCENARIO_REGISTRY:
             supported = ", ".join(sorted(SCENARIO_REGISTRY.keys()))
             raise ValueError(f"Unknown scenario '{scenario}'. Available: {supported}")
@@ -119,12 +122,19 @@ class RunManager:
         runner.controller = self.controller
         # Share the event emitter so subscribers get events from this run
         runner.events = self.events
-        # The controller is reused across runs; clear any prior run's stop state
-        # so a stop that terminated an earlier run cannot leak into this one.
-        self.controller.clear_stop()
-        self._active_client_run_id = client_run_id
-        self._processed_stop_command_ids = set()
-        self._active = True
+
+        with self._lock:
+            if self._active:
+                raise RuntimeError("A run is already active. Wait for it to finish or stop it.")
+            # The controller is reused across runs; clear any prior run's stop state
+            # so a stop that terminated an earlier run cannot leak into this one.
+            self.controller.clear_stop()
+            # StopCmd always carries a non-empty client_run_id, but StartRunCmd may
+            # omit it. Fall back to the server run id (returned in run_accepted) so an
+            # unscoped run is still addressable for stop instead of always mismatching.
+            self._active_client_run_id = client_run_id or actual_run_id
+            self._processed_stop_command_ids = set()
+            self._active = True
 
         def _target() -> None:
             try:
@@ -138,11 +148,12 @@ class RunManager:
             except Exception:
                 logger.exception("Run %s failed", actual_run_id)
             finally:
-                # Clear run-scoped state before flipping _active off last, so a
-                # concurrent start_run cannot observe this run's stale scope.
-                self._active_client_run_id = None
-                self._processed_stop_command_ids.clear()
-                self._active = False
+                with self._lock:
+                    # Clear run-scoped state before flipping _active off last, so a
+                    # concurrent start_run cannot observe this run's stale scope.
+                    self._active_client_run_id = None
+                    self._processed_stop_command_ids.clear()
+                    self._active = False
 
         self._thread = threading.Thread(target=_target, daemon=True)
         self._thread.start()

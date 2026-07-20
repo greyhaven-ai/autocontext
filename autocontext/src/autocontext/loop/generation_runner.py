@@ -1079,13 +1079,18 @@ class GenerationRunner:
                 agent_provider=self.settings.agent_provider,
             )
         else:
+            # A stopped run is terminal (first-terminal-outcome-wins): refuse to
+            # resume it into 'running', which would let it later be marked
+            # 'completed' and overwrite the terminal outcome. Restart under a new id.
+            if str(existing_run.get("status") or "") == "stopped":
+                raise ValueError(f"run '{active_run_id}' was stopped and is terminal; start a new run id to continue")
             self._recover_stale_run_state(active_run_id)
             refreshed_run = self.sqlite.get_run(active_run_id) or existing_run
             target_generations = max(
                 self._int_value(refreshed_run.get("target_generations"), generations),
                 generations,
             )
-            if str(refreshed_run.get("status") or "") != "completed":
+            if str(refreshed_run.get("status") or "") not in ("completed", "stopped"):
                 self.sqlite.mark_run_running(active_run_id, target_generations=target_generations)
         (
             previous_best,
@@ -1094,7 +1099,10 @@ class GenerationRunner:
             score_history,
             gate_decision_history,
         ) = self._hydrate_run_state(active_run_id)
-        completed = 0
+        # Seed from durable progress so a resumed run's counters (and the
+        # run_stopped / run_completed receipts) reflect total completed
+        # generations, not just those executed in this invocation.
+        completed = self.sqlite.count_completed_generations(active_run_id)
         self.events.emit(
             "run_started",
             {"run_id": active_run_id, "scenario": scenario_name, "target_generations": target_generations},

@@ -266,8 +266,12 @@ def create_app(
     async def ws_interactive(websocket: WebSocket) -> None:
         await websocket.accept()
 
-        # Protocol version handshake -- always first message
-        await websocket.send_json(HelloMsg(capabilities=SERVER_CAPABILITIES).model_dump())
+        # Protocol version handshake -- always first message. Only advertise
+        # safe_run_stop_v1 when a RunManager is wired: it is the component that
+        # honors stop, so paths without one (e.g. `autoctx run --serve`) must not
+        # claim a capability they cannot service.
+        hello_capabilities = list(SERVER_CAPABILITIES) if run_manager is not None else None
+        await websocket.send_json(HelloMsg(capabilities=hello_capabilities).model_dump())
 
         if controller is None or events is None:
             await websocket.send_json(ErrorMsg(message="Interactive mode not available. Start with 'autoctx tui'.").model_dump())

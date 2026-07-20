@@ -103,3 +103,20 @@ def test_stop_from_paused_wakes_loop_and_stops(tmp_path: Path) -> None:
     assert stop_events[0]["command_id"] == "c2"
     # A stopped run must not also emit a terminal run_completed (first terminal wins).
     assert not any(event == "run_completed" for event, _ in recorded)
+
+
+def test_run_refuses_to_resume_a_stopped_run(tmp_path: Path) -> None:
+    import pytest
+
+    runner = _make_runner(tmp_path)
+    run_id = "already_stopped"
+    runner.sqlite.create_run(run_id, "grid_ctf", 1, runner.settings.executor_mode)
+    assert runner.sqlite.mark_run_stopped(run_id)
+
+    # Resuming a terminal stopped run must raise, not reopen it to running.
+    with pytest.raises(ValueError, match="terminal"):
+        runner.run(scenario_name="grid_ctf", generations=1, run_id=run_id)
+
+    # Status stays stopped.
+    run = runner.sqlite.get_run(run_id)
+    assert run is not None and run["status"] == "stopped"

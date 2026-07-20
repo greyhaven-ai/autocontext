@@ -85,6 +85,19 @@ class SQLiteStore(
             ).fetchone()
             return dict(row) if row else None
 
+    def count_completed_generations(self, run_id: str) -> int:
+        """Return the durable count of completed generations for a run.
+
+        Used so a receipt (e.g. run_stopped) reports total persisted progress
+        rather than only the generations executed in the current invocation.
+        """
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM generations WHERE run_id = ? AND status = 'completed'",
+                (run_id,),
+            ).fetchone()
+            return int(row["n"]) if row else 0
+
     def update_generation_status(
         self,
         run_id: str,

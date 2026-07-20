@@ -38,14 +38,18 @@ type WebSocketProtocolContract = {
   event_stream_envelope: EventStreamEnvelopeContract;
   protocol_version: number;
   safe_stop_extension: {
-    advertised_runtimes: ["typescript"];
+    advertised_runtimes: string[];
     capability: "safe_run_stop_v1";
     command: "stop";
-    python_support: "schema_only";
+    python_support: "supported";
+    base_idempotency: "live";
     required_command_fields: ["client_run_id", "command_id"];
-    requires_transcript_protocol_version: 1;
     terminal_arbitration: "first_terminal_outcome_wins";
     terminal_event: "run_stopped";
+    durable_reconnect_replay: {
+      requires_transcript_protocol_version: 1;
+      advertised_runtimes: ["typescript"];
+    };
   };
   shared_client_messages: string[];
   shared_server_messages: string[];
@@ -84,71 +88,94 @@ describe("WebSocket protocol shared contract", () => {
     expect(() => parseClientMessage({ type: "pause", unexpected: true })).toThrow();
   });
 
-  it("keeps safe stop strict, shared, and advertised only by TypeScript", () => {
+  it("keeps safe stop strict and shared, with durable reconnect replay gated on transcript", () => {
     expect(CONTRACT.safe_stop_extension).toMatchObject({
-      advertised_runtimes: ["typescript"],
+      advertised_runtimes: ["typescript", "python"],
       capability: "safe_run_stop_v1",
       command: "stop",
-      python_support: "schema_only",
+      python_support: "supported",
+      base_idempotency: "live",
       required_command_fields: ["client_run_id", "command_id"],
-      requires_transcript_protocol_version: 1,
       terminal_arbitration: "first_terminal_outcome_wins",
       terminal_event: "run_stopped",
     });
+    // The base cooperative stop is advertised by both runtimes; only durable
+    // reconnect-after-terminal replay remains transcript-gated and TypeScript-only.
+    expect(CONTRACT.safe_stop_extension.durable_reconnect_replay).toMatchObject({
+      requires_transcript_protocol_version: 1,
+      advertised_runtimes: ["typescript"],
+    });
     expect(SERVER_CAPABILITIES).toContain("safe_run_stop_v1");
-    expect(StopCmdSchema.parse({
-      type: "stop",
-      client_run_id: "client-run-1",
-      command_id: "command-stop-1",
-    })).toEqual({
+    expect(
+      StopCmdSchema.parse({
+        type: "stop",
+        client_run_id: "client-run-1",
+        command_id: "command-stop-1",
+      }),
+    ).toEqual({
       type: "stop",
       client_run_id: "client-run-1",
       command_id: "command-stop-1",
     });
-    expect(() => StopCmdSchema.parse({
-      type: "stop",
-      command_id: "command-stop-1",
-    })).toThrow();
-    expect(() => StopCmdSchema.parse({
-      type: "stop",
-      client_run_id: "client-run-1",
-    })).toThrow();
-    expect(() => StopCmdSchema.parse({
-      type: "stop",
-      client_run_id: "client-run-1",
-      command_id: "command-stop-1",
-      unexpected: true,
-    })).toThrow();
+    expect(() =>
+      StopCmdSchema.parse({
+        type: "stop",
+        command_id: "command-stop-1",
+      }),
+    ).toThrow();
+    expect(() =>
+      StopCmdSchema.parse({
+        type: "stop",
+        client_run_id: "client-run-1",
+      }),
+    ).toThrow();
+    expect(() =>
+      StopCmdSchema.parse({
+        type: "stop",
+        client_run_id: "client-run-1",
+        command_id: "command-stop-1",
+        unexpected: true,
+      }),
+    ).toThrow();
   });
 
   it("keeps representative shared payload shapes aligned with Python's generated schema", () => {
-    expect(AckMsgSchema.parse({ type: "ack", action: "override_gate", decision: null }).decision)
-      .toBeNull();
-    expect(() => ChatAgentCmdSchema.parse({
-      type: "chat_agent",
-      role: "analyst",
-      message: "",
-    })).toThrow();
-    expect(() => ExecutorResourcesSchema.parse({
-      docker_image: "python:3.11",
-      cpu_cores: 1.5,
-      memory_gb: 2,
-      disk_gb: 5,
-      timeout_minutes: 30,
-    })).toThrow();
-    expect(() => ScenarioErrorMsgSchema.parse({
-      type: "scenario_error",
-      message: "missing stage",
-    })).toThrow();
-    expect(() => MonitorAlertMsgSchema.parse({
-      type: "monitor_alert",
-      alert_id: "a1",
-      condition_id: "c1",
-      condition_name: "threshold",
-      condition_type: "metric_threshold",
-      scope: "run:r1",
-      detail: { reason: "too high" },
-    })).toThrow();
+    expect(
+      AckMsgSchema.parse({ type: "ack", action: "override_gate", decision: null }).decision,
+    ).toBeNull();
+    expect(() =>
+      ChatAgentCmdSchema.parse({
+        type: "chat_agent",
+        role: "analyst",
+        message: "",
+      }),
+    ).toThrow();
+    expect(() =>
+      ExecutorResourcesSchema.parse({
+        docker_image: "python:3.11",
+        cpu_cores: 1.5,
+        memory_gb: 2,
+        disk_gb: 5,
+        timeout_minutes: 30,
+      }),
+    ).toThrow();
+    expect(() =>
+      ScenarioErrorMsgSchema.parse({
+        type: "scenario_error",
+        message: "missing stage",
+      }),
+    ).toThrow();
+    expect(() =>
+      MonitorAlertMsgSchema.parse({
+        type: "monitor_alert",
+        alert_id: "a1",
+        condition_id: "c1",
+        condition_name: "threshold",
+        condition_type: "metric_threshold",
+        scope: "run:r1",
+        detail: { reason: "too high" },
+      }),
+    ).toThrow();
   });
 
   it("requires runtime-only messages to carry an explicit reason", () => {

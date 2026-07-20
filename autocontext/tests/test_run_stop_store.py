@@ -60,3 +60,24 @@ def test_mark_run_completed_still_completes_running_run(tmp_path: Path) -> None:
     run = store.get_run("r1")
     assert run is not None
     assert run["status"] == "completed"
+
+
+def test_stopped_is_a_terminal_watch_status() -> None:
+    from autocontext.cli_run_inspect import _TERMINAL_STATUSES
+
+    # autoctx watch must stop polling a stopped run.
+    assert "stopped" in _TERMINAL_STATUSES
+
+
+def test_count_completed_generations(tmp_path: Path) -> None:
+    store = _make_store(tmp_path)
+    run_id = "r_count"
+    store.create_run(run_id, "grid_ctf", 3, "local")
+    assert store.count_completed_generations(run_id) == 0
+
+    store.upsert_generation(run_id, 1, 0.5, 0.5, 1000.0, 1, 0, "advance", "completed")
+    store.upsert_generation(run_id, 2, 0.6, 0.6, 1010.0, 1, 0, "advance", "completed")
+    store.upsert_generation(run_id, 3, 0.4, 0.6, 1005.0, 0, 1, "retry", "failed")
+
+    # Only completed generations count; failed/running do not.
+    assert store.count_completed_generations(run_id) == 2

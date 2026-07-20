@@ -141,8 +141,11 @@ Retries with the same command ID never repeat the side effect. Before the
 terminal event exists they replay the exact acknowledgement; afterwards they
 replay the exact terminal receipt. Cursor replay retains both ordered frames.
 This idempotency guarantee shares the transcript's finite retention horizon.
-Python validates the additive stop schema for parity but returns a correlated
-unsupported-capability error and does not advertise `safe_run_stop_v1`.
+Python advertises the base `safe_run_stop_v1` capability and honors cooperative
+stop with live (within-run) idempotency: duplicate or reconnected commands are
+deduplicated while the run is active. Durable reconnect-after-terminal replay of
+the acknowledgement and terminal receipt remains TypeScript-only because it
+depends on the transcript's retention horizon.
 
 ## Library usage
 

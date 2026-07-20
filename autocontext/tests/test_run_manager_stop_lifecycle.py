@@ -53,3 +53,30 @@ def test_start_run_clears_a_leaked_stop_from_a_prior_run(tmp_path: Path) -> None
     assert not any(event == "run_stopped" for event, _ in recorded)
     # And the controller's stop flag was reset at start.
     assert not controller.stop_requested()
+
+
+def test_start_run_without_client_id_is_addressable_by_run_id(tmp_path: Path) -> None:
+    # StartRunCmd may omit client_run_id, but StopCmd always requires one. The
+    # run must still be stoppable via the server run id returned in run_accepted.
+    settings = _make_settings(tmp_path)
+    controller = LoopController()
+    events = EventStreamEmitter(settings.event_stream_path)
+    manager = RunManager(controller, events, settings)
+
+    # Park the run at its first boundary so it stays active while we address it.
+    controller.pause()
+    run_id = manager.start_run("grid_ctf", generations=1)  # no client_run_id
+    try:
+        # The active scope falls back to the returned run id.
+        assert manager._active_client_run_id == run_id
+        # A stop scoped to that run id is accepted (not scope_mismatch).
+        assert manager.stop_run(run_id, "cmd-1", None) == "accepted"
+    finally:
+        controller.resume()
+    assert manager._thread is not None
+    manager._thread.join(timeout=30.0)
+    assert not manager._thread.is_alive()
+
+    store = SQLiteStore(settings.db_path)
+    run = store.get_run(run_id)
+    assert run is not None and run["status"] == "stopped"

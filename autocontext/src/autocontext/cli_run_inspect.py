@@ -37,7 +37,7 @@ if TYPE_CHECKING:
     from autocontext.config.settings import AppSettings
     from autocontext.storage.sqlite_store import SQLiteStore
 
-_TERMINAL_STATUSES = frozenset({"completed", "failed", "succeeded", "errored"})
+_TERMINAL_STATUSES = frozenset({"completed", "failed", "succeeded", "errored", "stopped"})
 
 # AC-885 Slice D1: map the four-state lineage classification to a compact rich "Lineage" cell.
 _LINEAGE_LABELS = {"current": "ok", "stale": "stale", "unknown": "legacy", "no_active_epoch": "-"}

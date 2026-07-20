@@ -63,12 +63,17 @@ def test_safe_stop_capability_advertised_by_python_and_typescript() -> None:
 
     assert safe_stop["capability"] == "safe_run_stop_v1"
     assert safe_stop["advertised_runtimes"] == ["typescript", "python"]
-    assert safe_stop["requires_transcript_protocol_version"] == 1
     assert safe_stop["command"] == "stop"
     assert safe_stop["required_command_fields"] == ["client_run_id", "command_id"]
     assert safe_stop["terminal_event"] == "run_stopped"
     assert safe_stop["terminal_arbitration"] == "first_terminal_outcome_wins"
+    assert safe_stop["base_idempotency"] == "live"
     assert safe_stop["python_support"] == "supported"
+    # Base cooperative stop is shared; durable reconnect-after-terminal replay
+    # stays transcript-gated and TypeScript-only.
+    durable = safe_stop["durable_reconnect_replay"]
+    assert durable["requires_transcript_protocol_version"] == 1
+    assert durable["advertised_runtimes"] == ["typescript"]
     assert "stop" in contract["shared_client_messages"]
 
 

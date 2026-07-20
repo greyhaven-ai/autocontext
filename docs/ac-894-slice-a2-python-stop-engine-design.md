@@ -1,17 +1,31 @@
 # AC-894 Slice A2: Python cooperative-stop engine
 
 Date: 2026-07-19
-Status: approved in brainstorming; pending written review
+Status: implemented (PR #1221)
 Linear: AC-894 (Add cooperative, idempotent active-run stopping)
-Scope: second of three slices. A1 (wire protocol) is merged (#1218). A2 = the Python cooperative-stop engine (this slice). A3 = the TypeScript engine.
+Scope: A2 = the Python cooperative-stop engine. A1 (wire protocol) is merged (#1218). The TypeScript
+safe-stop engine already shipped ahead of this slice (it carries the transcript-backed durable variant).
+
+> Post-implementation corrections (this doc predated the final wire shape; the as-built contract wins):
+>
+> - The wire command is `stop` (type `"stop"`), not `stop_run`. The acknowledgement is `AckMsg(action="stop")`.
+> - The receipt is an `EventMsg` with `event="run_stopped"` whose payload conforms to `RunStoppedPayload`
+>   (`run_id`, `reason="operator"`, `command_id`, `completed_generations`, optional `best_score`). There is
+>   no distinct `RunStoppedMsg` type; `reason` on the wire is the literal `"operator"` while the operator's
+>   free-form reason stays internal.
+> - The capability is decoupled from the transcript: the base `safe_run_stop_v1` (cooperative + live,
+>   within-run idempotency) is advertised by both Python and TypeScript; durable reconnect-after-terminal
+>   replay of the ack/receipt requires `run_transcript_v1` and is TypeScript-only. Python advertises the
+>   base capability in `hello` only when a `RunManager` is wired.
 
 ## Purpose
 
-A1 defined the `stop_run` command + `run_stopped` receipt on the wire. A2 makes the Python interactive
+A1 defined the `stop` command + `run_stopped` receipt on the wire. A2 makes the Python interactive
 WS server actually honor a stop: cooperatively stop an active run at a generation boundary, wake it if
 paused, deduplicate retries, reject stops that target another run, emit a correlated ack plus a terminal
 `run_stopped` receipt, and make stop-vs-completion deterministic (first terminal outcome wins) while
-preserving the durable per-generation results. It advertises `safe_run_stop_v1` on the Python `hello`.
+preserving the durable per-generation results. It advertises the base `safe_run_stop_v1` on the Python
+`hello` when a `RunManager` is present.
 
 ## Context (from the code map)
 
