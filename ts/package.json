@@ -190,7 +190,7 @@
     "access": "public"
   },
   "peerDependencies": {
-    "@anthropic-ai/sdk": "^0.32",
+    "@anthropic-ai/sdk": ">=0.18 <2",
     "openai": "^4"
   },
   "peerDependenciesMeta": {
@@ -202,17 +202,18 @@
     }
   },
   "devDependencies": {
+    "@anthropic-ai/sdk": "^0.91.1",
     "@apidevtools/json-schema-ref-parser": "^15.3.5",
     "@types/better-sqlite3": "^7.6.0",
     "@types/react": "^18.3.0",
     "@types/ws": "^8.5.13",
     "fast-check": "^4.7.0",
     "json-schema-to-typescript": "^15.0.4",
+    "openai": "^4",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.91.1",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "ajv": "^8.18.0",
     "ajv-formats": "^3.0.1",
@@ -221,7 +222,6 @@
     "ignore": "5.3.2",
     "ink": "^5.1.0",
     "ink-text-input": "^6.0.0",
-    "openai": "^4",
     "react": "^18.3.1",
     "secure-exec": "^0.1.0",
     "tree-sitter": "0.21.1",

@@ -14,6 +14,19 @@ npm install -g autoctx
 
 Important: use `autoctx`, not `autocontext`. `autocontext` on npm is a different package and not this project.
 
+### Optional provider SDKs
+
+The OpenAI and Anthropic integrations (`autoctx/integrations/openai`, `autoctx/integrations/anthropic`) and their detectors treat the provider SDKs as optional peer dependencies, so installing `autoctx` does not pull them in. Install the one you use alongside `autoctx`:
+
+```bash
+# Anthropic integration and the Anthropic examples below
+npm install autoctx @anthropic-ai/sdk
+# OpenAI integration
+npm install autoctx openai
+```
+
+(Bun: `bun add autoctx @anthropic-ai/sdk` or `bun add autoctx openai`.) The integrations degrade gracefully when the SDK is absent, but any example that imports a provider SDK requires it to be installed.
+
 From a checkout:
 
 ```bash
@@ -179,6 +192,8 @@ import { connectMcpRuntimeTools } from "autoctx/runtimes/mcp";
 ```
 
 ## Production traces
+
+Requires the optional `@anthropic-ai/sdk` peer (`npm install @anthropic-ai/sdk`, or `openai` for the OpenAI integration). See [Optional provider SDKs](#optional-provider-sdks).
 
 ```ts
 import Anthropic from "@anthropic-ai/sdk";
