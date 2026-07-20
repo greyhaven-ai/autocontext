@@ -3,10 +3,8 @@
  */
 export {
   RATIONALE_PROMPT,
-  FILE_OPT_OUT_TIP_PROMPT,
   SESSION_SUMMARY_PROMPT,
   type RationaleContext,
-  type FileOptOutTipContext,
   type SessionSummaryContext,
 } from "./prompts.js";
 

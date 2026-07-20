@@ -1,9 +1,9 @@
 /**
  * Public barrel for A2-I `autoctx instrument` tool infrastructure.
  *
- * Layers 1 + 2 + 3 + 4 + 5 + 6 + 7 — contract + scanner + safety + registry +
- * planner + pipeline + cli. (Layer 8 — LLM enhancer — lands next; its hooks
- * are wired as no-ops in pipeline/pr-body-renderer.ts with TODO markers.)
+ * Layers 1 through 8: contract, scanner, safety, registry, planner, pipeline,
+ * cli, and the LLM enhancer. The enhancer wires `enhance()` at the two
+ * implemented narrative sites in pipeline/pr-body-renderer.ts.
  *
  * Name-collision resolution:
  *   - `parseDirectives` is exported from BOTH `safety/` (canonical Buffer form)
