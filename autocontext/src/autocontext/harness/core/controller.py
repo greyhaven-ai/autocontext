@@ -17,6 +17,9 @@ class LoopController:
         self._pending_hint: str | None = None
         self._pending_chat: queue.Queue[tuple[str, str]] = queue.Queue()
         self._chat_responses: queue.Queue[tuple[str, str]] = queue.Queue()
+        self._stop_requested = False
+        self._stop_command_id: str | None = None
+        self._stop_reason: str | None = None
 
     def pause(self) -> None:
         self._pause_event.clear()
@@ -66,3 +69,25 @@ class LoopController:
 
     def respond_chat(self, role: str, response: str) -> None:
         self._chat_responses.put((role, response))
+
+    def request_stop(self, command_id: str | None = None, reason: str | None = None) -> None:
+        with self._lock:
+            self._stop_requested = True
+            self._stop_command_id = command_id
+            self._stop_reason = reason
+        self._pause_event.set()  # wake a thread parked in wait_if_paused()
+
+    def stop_requested(self) -> bool:
+        with self._lock:
+            return self._stop_requested
+
+    def stop_details(self) -> tuple[str | None, str | None]:
+        with self._lock:
+            return self._stop_command_id, self._stop_reason
+
+    def clear_stop(self) -> None:
+        """Reset stop state so a reused controller does not leak a prior run's stop."""
+        with self._lock:
+            self._stop_requested = False
+            self._stop_command_id = None
+            self._stop_reason = None

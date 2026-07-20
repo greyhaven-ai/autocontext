@@ -21,15 +21,20 @@
   },
   "safe_stop_extension": {
     "capability": "safe_run_stop_v1",
-    "advertised_runtimes": ["typescript"],
-    "requires_transcript_protocol_version": 1,
+    "advertised_runtimes": ["typescript", "python"],
     "command": "stop",
     "required_command_fields": ["client_run_id", "command_id"],
     "ack_action": "stop",
     "terminal_event": "run_stopped",
     "terminal_reason": "operator",
     "terminal_arbitration": "first_terminal_outcome_wins",
-    "python_support": "schema_only"
+    "base_idempotency": "live",
+    "python_support": "supported",
+    "durable_reconnect_replay": {
+      "requires_transcript_protocol_version": 1,
+      "advertised_runtimes": ["typescript"],
+      "note": "Reconnect-after-terminal replay of the acknowledgement and terminal receipt requires run_transcript_v1 and is TypeScript-only. The base cooperative stop advertised by both runtimes offers live (within-run) idempotency: duplicate or reconnected commands are deduplicated while the run is active, but once the run reaches a terminal state a later command is answered as not-active rather than replayed."
+    }
   },
   "endpoints": [
     {

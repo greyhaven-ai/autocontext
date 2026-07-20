@@ -15,9 +15,12 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 PROTOCOL_VERSION = 1
 
+SERVER_CAPABILITIES = ["safe_run_stop_v1"]
+
 
 def _is_none(value: object) -> bool:
     return value is None
+
 
 # ---------------------------------------------------------------------------
 # Nested / shared models

@@ -85,6 +85,19 @@ class SQLiteStore(
             ).fetchone()
             return dict(row) if row else None
 
+    def count_completed_generations(self, run_id: str) -> int:
+        """Return the durable count of completed generations for a run.
+
+        Used so a receipt (e.g. run_stopped) reports total persisted progress
+        rather than only the generations executed in the current invocation.
+        """
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM generations WHERE run_id = ? AND status = 'completed'",
+                (run_id,),
+            ).fetchone()
+            return int(row["n"]) if row else 0
+
     def update_generation_status(
         self,
         run_id: str,
@@ -775,9 +788,22 @@ class SQLiteStore(
             ).fetchone()
             return row["cnt"] if row else 0
 
+    def mark_run_stopped(self, run_id: str) -> bool:
+        """First-wins stop transition: only a still-running run can be stopped. Returns True if it won the race."""
+        with self.connect() as conn:
+            cur = conn.execute(
+                "UPDATE runs SET status = 'stopped', updated_at = datetime('now') WHERE run_id = ? AND status = 'running'",
+                (run_id,),
+            )
+            return cur.rowcount > 0
+
     def mark_run_completed(self, run_id: str) -> None:
         with self.connect() as conn:
-            conn.execute("UPDATE runs SET status = 'completed', updated_at = datetime('now') WHERE run_id = ?", (run_id,))
+            conn.execute(
+                "UPDATE runs SET status = 'completed', updated_at = datetime('now') "
+                "WHERE run_id = ? AND (status IS NULL OR status != 'stopped')",
+                (run_id,),
+            )
 
     def mark_run_failed(self, run_id: str) -> None:
         with self.connect() as conn:

@@ -1079,13 +1079,18 @@ class GenerationRunner:
                 agent_provider=self.settings.agent_provider,
             )
         else:
+            # A stopped run is terminal (first-terminal-outcome-wins): refuse to
+            # resume it into 'running', which would let it later be marked
+            # 'completed' and overwrite the terminal outcome. Restart under a new id.
+            if str(existing_run.get("status") or "") == "stopped":
+                raise ValueError(f"run '{active_run_id}' was stopped and is terminal; start a new run id to continue")
             self._recover_stale_run_state(active_run_id)
             refreshed_run = self.sqlite.get_run(active_run_id) or existing_run
             target_generations = max(
                 self._int_value(refreshed_run.get("target_generations"), generations),
                 generations,
             )
-            if str(refreshed_run.get("status") or "") != "completed":
+            if str(refreshed_run.get("status") or "") not in ("completed", "stopped"):
                 self.sqlite.mark_run_running(active_run_id, target_generations=target_generations)
         (
             previous_best,
@@ -1139,10 +1144,29 @@ class GenerationRunner:
                     ", ".join(existing_harness),
                 )
 
+        stopped = False
         try:
             for generation in range(1, generations + 1):
                 if self.controller:
                     self.controller.wait_if_paused()
+                    if self.controller.stop_requested():
+                        command_id, reason = self.controller.stop_details()
+                        if self.sqlite.mark_run_stopped(active_run_id):
+                            self.events.emit(
+                                "run_stopped",
+                                {
+                                    "run_id": active_run_id,
+                                    "command_id": command_id,
+                                    "reason": reason,
+                                    # Report durable progress so a resumed-then-stopped
+                                    # run's receipt is not undercounted by the
+                                    # invocation-local counter.
+                                    "completed_generations": self.sqlite.count_completed_generations(active_run_id),
+                                    "best_score": previous_best,
+                                },
+                            )
+                        stopped = True
+                        break
                     hint = self.controller.take_hint()
                     if hint:
                         coach_competitor_hints += f"\n\n[User guidance]: {hint}"
@@ -1305,13 +1329,14 @@ class GenerationRunner:
                             )
                     except Exception:
                         logger.debug("loop.generation_runner: suppressed Exception", exc_info=True)
-            self.sqlite.mark_run_completed(active_run_id)
-            if completed > 0:
-                self.artifacts.mutation_log.create_checkpoint(
-                    scenario_name,
-                    generation=completed,
-                    run_id=active_run_id,
-                )
+            if not stopped:
+                self.sqlite.mark_run_completed(active_run_id)
+                if completed > 0:
+                    self.artifacts.mutation_log.create_checkpoint(
+                        scenario_name,
+                        generation=completed,
+                        run_id=active_run_id,
+                    )
             self.artifacts.flush_writes()
         except BaseException as exc:
             try:
@@ -1381,25 +1406,28 @@ class GenerationRunner:
                 rating_uncertainty=challenger_uncertainty,
             )
 
-        self.events.emit(
-            "run_completed",
-            {
-                "run_id": active_run_id,
-                "completed_generations": completed,
-                "best_score": previous_best,
-                "elo": challenger_elo,
-                "session_report_path": session_report_path,
-                "dead_ends_found": dead_ends_found,
-            },
-        )
-        emit_run_completed(
-            self,
-            run_id=active_run_id,
-            scenario=scenario_name,
-            completed_generations=completed,
-            best_score=previous_best,
-            elo=challenger_elo,
-            session_report_path=session_report_path,
-            dead_ends_found=dead_ends_found,
-        )
+        if not stopped:
+            # A stopped run already emitted its terminal run_stopped receipt; do
+            # not also emit run_completed (first terminal outcome wins).
+            self.events.emit(
+                "run_completed",
+                {
+                    "run_id": active_run_id,
+                    "completed_generations": completed,
+                    "best_score": previous_best,
+                    "elo": challenger_elo,
+                    "session_report_path": session_report_path,
+                    "dead_ends_found": dead_ends_found,
+                },
+            )
+            emit_run_completed(
+                self,
+                run_id=active_run_id,
+                scenario=scenario_name,
+                completed_generations=completed,
+                best_score=previous_best,
+                elo=challenger_elo,
+                session_report_path=session_report_path,
+                dead_ends_found=dead_ends_found,
+            )
         return RunSummary(active_run_id, scenario_name, completed, previous_best, challenger_elo)
