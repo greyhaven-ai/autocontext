@@ -280,7 +280,7 @@ export async function renderPrBody(inputs: PrBodyInputs): Promise<string> {
 }
 
 // ---------------------------------------------------------------------------
-// Default narrative templates (the three LLM enhancement sites)
+// Default narrative templates (the two LLM enhancement sites)
 // ---------------------------------------------------------------------------
 
 /**
