@@ -1099,10 +1099,7 @@ class GenerationRunner:
             score_history,
             gate_decision_history,
         ) = self._hydrate_run_state(active_run_id)
-        # Seed from durable progress so a resumed run's counters (and the
-        # run_stopped / run_completed receipts) reflect total completed
-        # generations, not just those executed in this invocation.
-        completed = self.sqlite.count_completed_generations(active_run_id)
+        completed = 0
         self.events.emit(
             "run_started",
             {"run_id": active_run_id, "scenario": scenario_name, "target_generations": target_generations},
@@ -1161,7 +1158,10 @@ class GenerationRunner:
                                     "run_id": active_run_id,
                                     "command_id": command_id,
                                     "reason": reason,
-                                    "completed_generations": completed,
+                                    # Report durable progress so a resumed-then-stopped
+                                    # run's receipt is not undercounted by the
+                                    # invocation-local counter.
+                                    "completed_generations": self.sqlite.count_completed_generations(active_run_id),
                                     "best_score": previous_best,
                                 },
                             )
