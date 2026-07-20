@@ -28,11 +28,17 @@ const PKG_LOCK = join(ROOT, "package-lock.json");
 const SUBPATH_SRC_DIRS = [
   join(ROOT, "src", "production-traces", "sdk"),
   join(ROOT, "src", "integrations", "openai"),
+  join(ROOT, "src", "integrations", "anthropic"),
   join(ROOT, "src", "control-plane", "instrument", "detectors", "openai-python"),
   join(ROOT, "src", "control-plane", "instrument", "detectors", "openai-ts"),
+  join(ROOT, "src", "control-plane", "instrument", "detectors", "anthropic-python"),
+  join(ROOT, "src", "control-plane", "instrument", "detectors", "anthropic-ts"),
 ];
 
-// Roots: production-traces/sdk direct deps + openai peer dep used by integrations/openai
+// Roots: production-traces/sdk direct deps + openai peer dep used by integrations/openai.
+// @anthropic-ai/sdk is intentionally absent: no shipped source imports or requires
+// it (the Anthropic integration processes provider data shapes), so its transitive
+// tree is not part of our runtime closure to audit.
 const SDK_RUNTIME_ROOTS = ["ajv", "ajv-formats", "ulid", "openai"];
 
 const TELEMETRY_IMPORT_RES = [

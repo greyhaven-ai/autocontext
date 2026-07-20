@@ -31,7 +31,9 @@ const SELF_PKG = join(ROOT, "package.json");
 const STRICT_HOOKS = ["preinstall", "install", "postinstall"];
 const SELF_ONLY_HOOKS = ["prepublish", "prepare"];
 
-// Roots: production-traces/sdk direct deps + openai peer dep used by integrations/openai
+// Roots: production-traces/sdk direct deps + openai peer dep used by integrations/openai.
+// @anthropic-ai/sdk is intentionally absent: no shipped source imports or requires it,
+// so its transitive tree is not part of our runtime closure to audit.
 const SDK_RUNTIME_ROOTS = ["ajv", "ajv-formats", "ulid", "openai"];
 
 function loadPkg(path) {

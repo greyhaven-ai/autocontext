@@ -106,6 +106,40 @@ const SUBPATH_CHECKS = [
     ],
     allowedBare: new Set([]),
   },
+  {
+    label: "integrations/anthropic",
+    dir: join(ROOT, "src", "integrations", "anthropic"),
+    allowedRelPrefixes: [
+      "./",
+      "../",
+      "../../production-traces/",
+    ],
+    // The Anthropic integration must NOT statically import @anthropic-ai/sdk;
+    // it processes provider data shapes so the SDK stays an optional peer.
+    allowedBare: new Set(["ulid"]),
+  },
+  {
+    label: "detectors/anthropic-python",
+    dir: join(ROOT, "src", "control-plane", "instrument", "detectors", "anthropic-python"),
+    allowedRelPrefixes: [
+      "./",
+      "../",
+      "../../",
+      "../../../",
+    ],
+    allowedBare: new Set([]),
+  },
+  {
+    label: "detectors/anthropic-ts",
+    dir: join(ROOT, "src", "control-plane", "instrument", "detectors", "anthropic-ts"),
+    allowedRelPrefixes: [
+      "./",
+      "../",
+      "../../",
+      "../../../",
+    ],
+    allowedBare: new Set([]),
+  },
 ];
 
 let failed = false;
