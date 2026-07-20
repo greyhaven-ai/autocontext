@@ -5,13 +5,12 @@
  * the output is machine-parseable by downstream CI-review tooling.
  *
  * LLM enhancement discipline (spec §10):
- *   - Three narrative sites total: per-call-site rationale, per-file opt-out
- *     tips, session summary.
- *   - A2-I wires a static default for EACH site. Layer 8 replaces the
- *     `defaultRationale`/`defaultSummary` calls with LLM-enhanced variants
- *     when `enhancer.enhance(default, ctx)` returns non-null; on any failure
- *     the default is used silently.
- *   - This file contains TODO markers at each site for the Layer 8 hookup.
+ *   - Two narrative sites are implemented: per-call-site rationale and session
+ *     summary. (Spec site 2, the per-file opt-out tip, is not implemented.)
+ *   - Each site computes a static default (`defaultRationale`/`defaultSummary`)
+ *     and passes it to `enhance({ defaultNarrative, ... })`, which returns the
+ *     LLM-enhanced variant when enabled and non-empty, or the default on any
+ *     failure or when disabled.
  *
  * Byte-determinism (spec §9.4):
  *   - `pr-body.md` is NOT byte-deterministic when LLM enhancement is enabled.
@@ -286,9 +285,8 @@ export async function renderPrBody(inputs: PrBodyInputs): Promise<string> {
 
 /**
  * Default single-paragraph session summary. Grouping by SDK keeps readers
- * oriented when multiple plugins ran in one invocation.
- *
- * TODO(A2-I Layer 8): replace with `enhancer.enhance(defaultSummary(ctx), ctx)`.
+ * oriented when multiple plugins ran in one invocation. Used as the
+ * `defaultNarrative` fallback for the session-summary enhancement site.
  */
 function defaultSummary(inputs: PrBodyInputs): string {
   const sdkCounts = new Map<string, number>();
@@ -307,9 +305,8 @@ function defaultSummary(inputs: PrBodyInputs): string {
 
 /**
  * Default per-call-site rationale. Spec §10.4 says narrative explains what
- * the change does + why; the default is terse-but-accurate.
- *
- * TODO(A2-I Layer 8): replace with `enhancer.enhance(defaultRationale(ctx), ctx)`.
+ * the change does + why; the default is terse-but-accurate. Used as the
+ * `defaultNarrative` fallback for the per-call-site rationale enhancement site.
  */
 function defaultRationale(file: PerFileDetailedEdits, edit: EditDescriptor): string {
   const sdk = file.sdkBreakdown[0]?.sdkName ?? "LLM client";

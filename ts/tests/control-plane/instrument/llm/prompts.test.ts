@@ -1,7 +1,6 @@
 import { describe, test, expect } from "vitest";
 import {
   RATIONALE_PROMPT,
-  FILE_OPT_OUT_TIP_PROMPT,
   SESSION_SUMMARY_PROMPT,
 } from "../../../../src/control-plane/instrument/llm/prompts.js";
 
@@ -31,29 +30,6 @@ describe("RATIONALE_PROMPT", () => {
     });
     expect(out).toMatch(/2-3 sentences/i);
     expect(out).toMatch(/no markdown|no preamble|no closing/i);
-  });
-});
-
-describe("FILE_OPT_OUT_TIP_PROMPT", () => {
-  test("includes heuristic signals and mentions both opt-out mechanisms", () => {
-    const out = FILE_OPT_OUT_TIP_PROMPT({
-      filePath: "tests/test_llm.py",
-      language: "python",
-      heuristicSignals: ["looks-like-test-file"],
-    });
-    expect(out).toContain("tests/test_llm.py");
-    expect(out).toContain("looks-like-test-file");
-    expect(out).toMatch(/\.gitignore|--exclude/);
-    expect(out).toMatch(/autocontext: off/);
-  });
-
-  test("handles empty heuristic signals list", () => {
-    const out = FILE_OPT_OUT_TIP_PROMPT({
-      filePath: "x.py",
-      language: "python",
-      heuristicSignals: [],
-    });
-    expect(out).toContain("none");
   });
 });
 
