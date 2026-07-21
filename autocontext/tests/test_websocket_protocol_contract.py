@@ -8,7 +8,12 @@ import pytest
 from pydantic import ValidationError
 
 from autocontext.harness.core.events import EventStreamEmitter
-from autocontext.server.protocol import PROTOCOL_VERSION, export_json_schema, parse_client_message
+from autocontext.server.protocol import (
+    PROTOCOL_VERSION,
+    SERVER_CAPABILITIES,
+    export_json_schema,
+    parse_client_message,
+)
 
 
 def _contract() -> dict[str, Any]:
@@ -75,6 +80,16 @@ def test_safe_stop_capability_advertised_by_python_and_typescript() -> None:
     assert durable["requires_transcript_protocol_version"] == 1
     assert durable["advertised_runtimes"] == ["typescript"]
     assert "stop" in contract["shared_client_messages"]
+
+
+def test_agent_task_plan_capability_remains_typescript_only() -> None:
+    extension = _contract()["agent_task_plan_extension"]
+
+    assert extension["capability"] == "agent_task_plan_v1"
+    assert extension["advertised_runtimes"] == ["typescript"]
+    assert extension["requires_transcript_protocol_version"] == 1
+    assert extension["python_support"] == "deferred_until_durable_transcript_metadata_is_available"
+    assert "agent_task_plan_v1" not in SERVER_CAPABILITIES
 
 
 def test_python_event_stream_envelope_matches_shared_contract(tmp_path: Path) -> None:

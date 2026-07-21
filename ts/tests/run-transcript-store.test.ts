@@ -55,6 +55,103 @@ afterEach(() => {
 });
 
 describe("RunTranscriptStore", () => {
+  it("retains complete long agent plans exactly across restart and replay", () => {
+    const { path, store } = makeStore();
+    const steps = Array.from({ length: 24 }, (_, index) => ({
+      id: `step-${index}`,
+      label: `Step ${index}`,
+      detail: index === 0 ? "token=super-secret-value" : `Detail ${index}`,
+      status: index === 0 ? ("in_progress" as const) : ("pending" as const),
+    }));
+    const frame = store.record({
+      clientRunId: "client-plan",
+      runId: "engine-plan",
+      occurredAt: "2026-07-21T15:00:00.000Z",
+      message: {
+        type: "event",
+        event: "task_plan_updated",
+        payload: {
+          run_id: "engine-plan",
+          plan_id: "plan-1",
+          version: 1,
+          plan_revision: 1,
+          update_kind: "initial",
+          active_step_id: "step-0",
+          summary: "Starting the full plan",
+          steps,
+        },
+      },
+    });
+
+    expect(frame).not.toBeNull();
+    const payload = frame?.message.type === "event" ? frame.message.payload : {};
+    expect(payload.steps).toHaveLength(24);
+    expect(JSON.stringify(payload)).not.toContain("super-secret-value");
+    expect(JSON.stringify(payload)).toContain("[Redacted]");
+
+    const reloaded = new RunTranscriptStore(path);
+    const replay = reloaded.framesAfter("client-plan", 0);
+    expect(replay).toHaveLength(1);
+    expect(replay.at(0)?.wire).toBe(frame?.wire);
+    expect(replay.at(0)?.message).toEqual(frame?.message);
+  });
+
+  it("drops oversized agent plans atomically instead of retaining a truncated shape", () => {
+    const { path, store } = makeStore();
+    const frame = store.record({
+      clientRunId: "client-oversized-plan",
+      runId: "engine-oversized-plan",
+      message: {
+        type: "event",
+        event: "task_plan_updated",
+        payload: {
+          run_id: "engine-oversized-plan",
+          plan_id: "plan-oversized",
+          version: 1,
+          plan_revision: 1,
+          update_kind: "initial",
+          active_step_id: "step-0",
+          steps: Array.from({ length: 20 }, (_, index) => ({
+            id: `step-${index}`,
+            label: `Step ${index}`,
+            detail: "x".repeat(600),
+            status: index === 0 ? "in_progress" : "pending",
+          })),
+        },
+      },
+    });
+
+    expect(frame).toBeNull();
+    expect(store.framesAfter("client-oversized-plan", 0)).toEqual([]);
+    expect(() => readFileSync(path, "utf-8")).toThrow();
+  });
+
+  it("drops agent plans whose payload run ID differs from the retained scope", () => {
+    const { path, store } = makeStore();
+
+    const frame = store.record({
+      clientRunId: "client-mismatched-plan",
+      runId: "engine-outer",
+      message: {
+        type: "event",
+        event: "task_plan_updated",
+        payload: {
+          run_id: "engine-inner",
+          plan_id: "plan-mismatch",
+          version: 1,
+          plan_revision: 1,
+          update_kind: "initial",
+          active_step_id: "inspect",
+          steps: [{ id: "inspect", label: "Inspect", status: "in_progress" }],
+        },
+      },
+    });
+
+    expect(frame).toBeNull();
+    expect(store.framesAfter("client-mismatched-plan", 0)).toEqual([]);
+    expect(() => readFileSync(path, "utf-8")).toThrow();
+  });
+
   it("assigns stable identity and persists presentation-safe exact wire frames", () => {
     const { path, store } = makeStore();
     store.registerRun("client-run-1", "engine-run-1");

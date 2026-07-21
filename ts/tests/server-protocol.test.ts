@@ -215,7 +215,7 @@ describe("Protocol types", () => {
         type: "hello",
         protocol_version: 1,
         transcript_protocol_version: 1,
-        capabilities: ["run_transcript_v1", "safe_run_stop_v1"],
+        capabilities: ["run_transcript_v1", "safe_run_stop_v1", "agent_task_plan_v1"],
       }),
     ).toMatchObject({
       protocol_version: 1,
@@ -920,7 +920,7 @@ describe("InteractiveServer", () => {
       expect(hello).toMatchObject({
         protocol_version: 1,
         transcript_protocol_version: 1,
-        capabilities: ["run_transcript_v1", "safe_run_stop_v1"],
+        capabilities: ["run_transcript_v1", "safe_run_stop_v1", "agent_task_plan_v1"],
       });
       await socket.waitFor((msg) => msg.type === "environments");
       await socket.waitFor((msg) => msg.type === "state");
@@ -936,9 +936,39 @@ describe("InteractiveServer", () => {
       const started = await socket.waitFor(
         (msg) => msg.type === "event" && msg.event === "run_started",
       );
+      const initialPlan = await socket.waitFor(
+        (msg) =>
+          msg.type === "event" &&
+          msg.event === "task_plan_updated" &&
+          (msg.payload as Record<string, unknown>).update_kind === "initial",
+      );
+      const terminalPlan = await socket.waitFor(
+        (msg) =>
+          msg.type === "event" &&
+          msg.event === "task_plan_updated" &&
+          (msg.payload as Record<string, unknown>).active_step_id === null,
+      );
       const completed = await socket.waitFor(
         (msg) => msg.type === "event" && msg.event === "run_completed",
       );
+      expect(initialPlan.payload).toMatchObject({
+        run_id: accepted.run_id,
+        version: 1,
+        plan_revision: 1,
+        update_kind: "initial",
+      });
+      expect(terminalPlan.payload).toMatchObject({
+        run_id: accepted.run_id,
+        active_step_id: null,
+      });
+      expect(Number(started.sequence)).toBeLessThan(Number(initialPlan.sequence));
+      expect(Number(initialPlan.sequence)).toBeLessThan(Number(terminalPlan.sequence));
+      expect(Number(terminalPlan.sequence)).toBeLessThan(Number(completed.sequence));
+      expect(
+        (terminalPlan.payload as { steps: { status: string }[] }).steps.some(
+          (step) => step.status === "in_progress",
+        ),
+      ).toBe(false);
       socket.send({
         type: "stop",
         client_run_id: "client-run-1",
@@ -987,7 +1017,15 @@ describe("InteractiveServer", () => {
         otherScope.waitFor((msg) => msg.client_run_id === "client-run-1", 250),
       ).rejects.toThrow(/Timed out/);
 
-      for (const frame of [accepted, started, completed, monitor, futureCheckpoint]) {
+      for (const frame of [
+        accepted,
+        started,
+        initialPlan,
+        terminalPlan,
+        completed,
+        monitor,
+        futureCheckpoint,
+      ]) {
         expect(frame.client_run_id).toBe("client-run-1");
         expect(frame.run_id).toBe(accepted.run_id);
         expect(frame.event_id).toMatch(/^[0-9a-f-]{36}$/);
@@ -1035,9 +1073,15 @@ describe("InteractiveServer", () => {
       reconnect.send({
         type: "resume_run",
         client_run_id: "client-run-1",
-        after_sequence: Number(completed.sequence),
+        after_sequence: Number(started.sequence),
         command_id: "command-backfill-1",
       });
+      expect(await reconnect.waitFor((msg) => msg.event_id === initialPlan.event_id)).toEqual(
+        initialPlan,
+      );
+      expect(await reconnect.waitFor((msg) => msg.event_id === terminalPlan.event_id)).toEqual(
+        terminalPlan,
+      );
       expect(await reconnect.waitFor((msg) => msg.event_id === chat.event_id)).toEqual(chat);
       expect(await reconnect.waitFor((msg) => msg.event_id === pauseAck.event_id)).toEqual(
         pauseAck,

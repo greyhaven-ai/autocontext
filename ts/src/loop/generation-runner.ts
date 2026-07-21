@@ -45,6 +45,10 @@ import {
   type RunStopRequestedError,
 } from "./controller.js";
 import type { EventStreamEmitter } from "./events.js";
+import {
+  createAgentTaskPlanPublisher,
+  type AgentTaskPlanPublisher,
+} from "./agent-task-plan.js";
 import { StagnationDetector } from "./stagnation.js";
 import {
   buildCompetitorPrompt,
@@ -88,6 +92,12 @@ import {
   type ExplorationSnapshot,
   type GuidanceChange,
 } from "../analytics/exploration-collapse-guard.js";
+
+const BUILT_IN_GAME_PLAN_STEPS = [
+  { id: "prepare_run", label: "Prepare the strategy context" },
+  { id: "iterate_strategies", label: "Generate, evaluate, and refine strategies" },
+  { id: "finalize_run", label: "Finalize run artifacts" },
+] as const;
 
 export interface GenerationRunnerOpts {
   provider: LLMProvider;
@@ -189,6 +199,8 @@ export class GenerationRunner {
   #loadedExtensions: string[];
   #runtimeSession?: RuntimeSession;
   #runState: GenerationRunState | null = null;
+  #taskPlan: AgentTaskPlanPublisher | null = null;
+  #taskPlanFinished = false;
 
   constructor(opts: GenerationRunnerOpts) {
     this.#provider = opts.provider;
@@ -279,12 +291,18 @@ export class GenerationRunner {
     this.#runState = orchestration.runState;
     try {
       this.emit("run_started", orchestration.events.runStarted!);
+      this.startTaskPlan(runId);
 
       while (hasRemainingGenerationCycles(orchestration.cycleState)) {
         orchestration = await this.runGeneration(runId, orchestration);
       }
 
       this.#controller?.throwIfStopRequested();
+      this.publishTaskPlan((taskPlan) => taskPlan.progress({
+        activeStepId: "finalize_run",
+        completedStepIds: ["prepare_run", "iterate_strategies"],
+        summary: "Strategy generations completed; finalizing run artifacts.",
+      }));
       return await this.finalizeSuccessfulRun(runId, orchestration);
     } catch (error) {
       const stopRequest = this.resolveStopRequest(error);
@@ -382,6 +400,15 @@ export class GenerationRunner {
   }> {
     await this.#controller?.waitAtBoundary();
     const competitorPrompt = this.buildCompetitorPrompt(runId, generation);
+    this.publishTaskPlan((taskPlan) => taskPlan.progress({
+      activeStepId: "iterate_strategies",
+      completedStepIds: ["prepare_run"],
+      stepDetails: {
+        iterate_strategies: {
+          detail: `Working on strategy generation ${generation}`,
+        },
+      },
+    }));
     return runGenerationAttemptWorkflow(
       createGenerationAttemptWorkflow({
         attemptOrchestration,
@@ -431,7 +458,6 @@ export class GenerationRunner {
     runId: RunId,
     orchestration: GenerationLoopOrchestration,
   ): Promise<RunResult> {
-    this.#store.updateRunStatus(runId, "completed");
     const sessionReportPath = this.#journal.persistSessionReport(runId, {
       runStartedAtMs: this.#runState!.startedAtMs,
       explorationMode: this.#explorationMode,
@@ -442,7 +468,6 @@ export class GenerationRunner {
       deadEndsFound: this.#journal.countDeadEnds(),
     });
     this.#runState = orchestration.runState;
-    this.emit("run_completed", orchestration.events.runCompleted!);
     this.emitHook(HookEvents.RUN_END, {
       run_id: runId,
       scenario: this.#scenario.name,
@@ -453,6 +478,9 @@ export class GenerationRunner {
       session_report_path: sessionReportPath,
       dead_ends_found: this.#journal.countDeadEnds(),
     });
+    this.#store.updateRunStatus(runId, "completed");
+    this.finishTaskPlan("completed", "Strategy run completed.");
+    this.emit("run_completed", orchestration.events.runCompleted!);
     await this.notify("completion", runId, this.#runState.bestScore, {
       roundCount: orchestration.cycleState.completedGenerations,
       metadata: { session_report_path: sessionReportPath },
@@ -476,8 +504,7 @@ export class GenerationRunner {
       completedGenerations: trajectory.length,
       ...(Number.isFinite(bestScore) ? { bestScore } : {}),
     };
-    this.#store.updateRunStatus(runId, "stopped");
-    this.emitHook(HookEvents.RUN_END, {
+    this.emitResolvedTerminalHook(HookEvents.RUN_END, {
       run_id: runId,
       scenario: this.#scenario.name,
       status: "stopped",
@@ -485,6 +512,8 @@ export class GenerationRunner {
       ...(progress.bestScore === undefined ? {} : { best_score: progress.bestScore }),
       elo: this.#runState?.currentElo ?? 1000,
     });
+    this.#store.updateRunStatus(runId, "stopped");
+    this.finishTaskPlan("interrupted", "Strategy run was interrupted.");
     throw stopRequest.withProgress(progress);
   }
 
@@ -498,9 +527,7 @@ export class GenerationRunner {
       error: error instanceof Error ? error.message : String(error),
     });
     this.#runState = orchestration.runState;
-    this.#store.updateRunStatus(runId, "failed");
-    this.emit("run_failed", orchestration.events.runFailed!);
-    this.emitHook(HookEvents.RUN_END, {
+    this.emitResolvedTerminalHook(HookEvents.RUN_END, {
       run_id: runId,
       scenario: this.#scenario.name,
       status: "failed",
@@ -509,6 +536,9 @@ export class GenerationRunner {
       elo: this.#runState.currentElo,
       error: error instanceof Error ? error.message : String(error),
     });
+    this.#store.updateRunStatus(runId, "failed");
+    this.finishTaskPlan("failed", "Strategy run failed before completion.");
+    this.emit("run_failed", orchestration.events.runFailed!);
     await this.notify("failure", runId, this.#runState.bestScore, {
       roundCount: this.#store.getScoreTrajectory(runId).length,
       error: error instanceof Error ? error.message : String(error),
@@ -883,6 +913,18 @@ export class GenerationRunner {
     if (outcome.freshStartHint) {
       this.#runState = queueFreshStartHint(this.#runState!, outcome.freshStartHint);
     }
+    if (attempt.gateDecision === "rollback" || outcome.freshStartHint) {
+      this.publishTaskPlan((taskPlan) => taskPlan.replan({
+        activeStepId: "iterate_strategies",
+        completedStepIds: ["prepare_run"],
+        summary: "Adjusting the strategy approach after a recovery signal.",
+        stepDetails: {
+          iterate_strategies: {
+            detail: `Revising the approach for generation ${gen}`,
+          },
+        },
+      }));
+    }
     this.persistExplorationCollapseGuard(runId, gen);
   }
 
@@ -967,8 +1009,62 @@ export class GenerationRunner {
     return event;
   }
 
+  private emitResolvedTerminalHook(
+    name: HookEvents,
+    payload: Record<string, unknown>,
+  ): void {
+    try {
+      this.emitHook(name, payload);
+    } catch {
+      // A hook cannot reclassify an already-resolved failed or stopped run.
+    }
+  }
+
   private emit(event: string, payload: Record<string, unknown>): void {
     this.#events?.emit(event, payload);
+  }
+
+  private startTaskPlan(runId: RunId): void {
+    this.#taskPlan = null;
+    this.#taskPlanFinished = false;
+    if (!this.#events) {
+      return;
+    }
+    try {
+      this.#taskPlan = createAgentTaskPlanPublisher({
+        runId,
+        steps: BUILT_IN_GAME_PLAN_STEPS,
+        events: this.#events,
+      });
+    } catch {
+      this.#taskPlan = null;
+    }
+    this.publishTaskPlan((taskPlan) => taskPlan.initial({
+      activeStepId: "prepare_run",
+      summary: "Preparing the strategy run.",
+    }));
+  }
+
+  private publishTaskPlan(action: (taskPlan: AgentTaskPlanPublisher) => boolean): void {
+    if (!this.#taskPlan || this.#taskPlanFinished) {
+      return;
+    }
+    try {
+      action(this.#taskPlan);
+    } catch {
+      // Task-plan telemetry must never alter run results.
+    }
+  }
+
+  private finishTaskPlan(
+    status: "completed" | "failed" | "interrupted",
+    summary: string,
+  ): void {
+    if (this.#taskPlanFinished) {
+      return;
+    }
+    this.publishTaskPlan((taskPlan) => taskPlan.terminal(status, { summary }));
+    this.#taskPlanFinished = true;
   }
 
   private emitRoleCompleted(

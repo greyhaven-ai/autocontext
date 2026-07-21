@@ -83,6 +83,52 @@ describe("ImprovementLoop", () => {
     expect(result.terminationReason).toBe("threshold_met");
   });
 
+  it("reports evaluation and revision boundaries without judge feedback", async () => {
+    const progress: Array<Record<string, unknown>> = [];
+    const task = makeFakeTask([
+      { score: 0.5, reasoning: "private judge feedback", dimensionScores: {} },
+      { score: 0.95, reasoning: "also private", dimensionScores: {} },
+    ]);
+    const loop = new ImprovementLoop({
+      task,
+      maxRounds: 2,
+      qualityThreshold: 0.9,
+      onProgress: (event) => {
+        progress.push(event);
+      },
+    });
+
+    await loop.run({ initialOutput: "test", state: {} });
+
+    expect(progress).toEqual([
+      { phase: "evaluation", status: "started", round: 1 },
+      { phase: "evaluation", status: "completed", round: 1 },
+      { phase: "revision", status: "started", round: 1 },
+      { phase: "revision", status: "completed", round: 1 },
+      { phase: "evaluation", status: "started", round: 2 },
+      { phase: "evaluation", status: "completed", round: 2 },
+    ]);
+    expect(JSON.stringify(progress)).not.toContain("private judge feedback");
+  });
+
+  it("keeps rejected async progress observers from changing loop results", async () => {
+    const loop = new ImprovementLoop({
+      task: makeFakeTask([
+        { score: 0.95, reasoning: "complete", dimensionScores: {} },
+      ]),
+      maxRounds: 1,
+      qualityThreshold: 0.9,
+      onProgress: async () => {
+        throw new Error("async telemetry unavailable");
+      },
+    });
+
+    const result = await loop.run({ initialOutput: "test", state: {} });
+
+    expect(result.bestScore).toBe(0.95);
+    expect(result.terminationReason).toBe("threshold_met");
+  });
+
   it("stops when output unchanged", async () => {
     const task = makeFakeTask(
       [{ score: 0.5, reasoning: "ok", dimensionScores: {} }],

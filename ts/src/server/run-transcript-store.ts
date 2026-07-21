@@ -16,6 +16,7 @@ import { dirname } from "node:path";
 import { z } from "zod";
 
 import {
+  AGENT_TASK_PLAN_EVENT_NAME,
   ServerMessageSchema,
   TRANSCRIPT_PROTOCOL_VERSION,
   type ClientMessage,
@@ -151,6 +152,13 @@ export class RunTranscriptStore {
 
     const existingRunId = this.#runIdByClientRunId.get(opts.clientRunId);
     const runId = opts.runId ?? existingRunId ?? readRunId(safeMessage);
+    if (
+      safeMessage.type === "event" &&
+      safeMessage.event === AGENT_TASK_PLAN_EVENT_NAME &&
+      safeMessage.payload.run_id !== runId
+    ) {
+      return null;
+    }
     this.#assertScopeAvailable(opts.clientRunId, runId);
 
     const sequence = (this.latestSequence(opts.clientRunId) ?? 0) + 1;

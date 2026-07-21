@@ -31,6 +31,11 @@ describe("agent-task solve execution", () => {
   });
 
   it("executes the agent-task solve workflow and builds the exported package", async () => {
+    const progressEvents: Array<{
+      phase: string;
+      status: string;
+      round?: number;
+    }> = [];
     const provider: LLMProvider = {
       name: "test-provider",
       defaultModel: () => "test-model",
@@ -106,12 +111,21 @@ describe("agent-task solve execution", () => {
       },
       generations: 2,
       generationTimeBudgetSeconds: 11,
+      onProgress: (progress) => {
+        progressEvents.push(progress);
+      },
       deps: {
         createTask: () => task,
         createLoop: (opts) => {
           expect(opts.timeBudget).toBeDefined();
           return {
-            run: vi.fn(async () => loopResult),
+            run: vi.fn(async () => {
+              opts.onProgress?.({ phase: "evaluation", status: "started", round: 1 });
+              opts.onProgress?.({ phase: "evaluation", status: "completed", round: 1 });
+              opts.onProgress?.({ phase: "revision", status: "started", round: 1 });
+              opts.onProgress?.({ phase: "revision", status: "completed", round: 1 });
+              return loopResult;
+            }),
           };
         },
       },
@@ -122,6 +136,66 @@ describe("agent-task solve execution", () => {
     expect(result.result.scenario_name).toBe("incident_triage");
     expect(result.result.best_score).toBe(0.93);
     expect(result.result.skill_markdown).toContain("Best round: 1");
+    expect(progressEvents).toEqual([
+      { phase: "context_preparation", status: "started" },
+      { phase: "context_preparation", status: "completed" },
+      { phase: "draft", status: "started" },
+      { phase: "draft", status: "completed" },
+      { phase: "evaluation", status: "started", round: 1 },
+      { phase: "evaluation", status: "completed", round: 1 },
+      { phase: "revision", status: "started", round: 1 },
+      { phase: "revision", status: "completed", round: 1 },
+      { phase: "finalization", status: "started" },
+      { phase: "finalization", status: "completed" },
+    ]);
+  });
+
+  it("keeps progress observer failures from changing solve results", async () => {
+    const provider: LLMProvider = {
+      name: "test-provider",
+      defaultModel: () => "test-model",
+      complete: vi.fn(async () => ({
+        text: "Initial response",
+        model: "test-model",
+        usage: {},
+      })),
+    };
+    const task: AgentTaskInterface & {
+      name: string;
+      spec: ReturnType<typeof buildAgentTaskSolveSpec>;
+    } = {
+      name: "observer_safety",
+      spec: buildAgentTaskSolveSpec({
+        taskPrompt: "Do work",
+        judgeRubric: "Evaluate work",
+      }, 1),
+      getTaskPrompt: () => "Do work",
+      getRubric: () => "Evaluate work",
+      describeTask: () => "Do work",
+      initialState: () => ({}),
+      validateContext: () => [],
+      evaluateOutput: async () => ({
+        score: 1,
+        reasoning: "complete",
+        dimensionScores: {},
+      }),
+    };
+
+    const result = await executeAgentTaskSolve({
+      provider,
+      created: {
+        name: "observer_safety",
+        spec: { taskPrompt: "Do work", judgeRubric: "Evaluate work" },
+      },
+      generations: 1,
+      onProgress: async () => {
+        throw new Error("telemetry unavailable");
+      },
+      deps: { createTask: () => task },
+    });
+
+    expect(result.progress).toBe(1);
+    expect(result.result.best_score).toBe(1);
   });
 
   it("lets the requested generation count override saved maxRounds", async () => {
