@@ -1,10 +1,9 @@
 {
-  "core_version": "0.12.0",
+  "core_version": "0.13.0",
   "pi_version": "0.9.0",
   "pi_autoctx_dependency": "^0.11.0",
   "whats_new": [
-    "**Safe active-run stopping** lets TypeScript transcript clients stop running or paused work at cooperative boundaries, retain completed generations and best score, and replay an idempotent durable terminal receipt after reconnect or restart.",
-    "**Durable interactive transcripts** add stable run, command, event, and sequence identity with bounded redacted retention plus exact reconnect backfill across server restarts.",
-    "**Ambient live serving** connects promoted per-role targets to live generation through a shared opt-in serving manifest, closing the resident trainer loop from evaluation to serving."
+    "**Python safe active-run stopping** brings `safe_run_stop_v1` to the Python interactive server: stop a running or paused run at a cooperative generation boundary, preserve completed generations and best score, and receive one correlated terminal receipt (first terminal outcome wins).",
+    "**Leaner TypeScript install:** the OpenAI and Anthropic SDKs are now optional peer dependencies, so installing `autoctx` no longer pulls them in transitively. Install the provider SDK you use, for example `npm install autoctx @anthropic-ai/sdk`."
   ]
 }
