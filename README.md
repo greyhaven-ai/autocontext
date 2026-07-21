@@ -27,9 +27,9 @@ autocontext is a harness for agent improvement. Give it a goal, it runs the task
 
 | Surface             | Command                               |
 | ------------------- | ------------------------------------- |
-| Python CLI          | `uv tool install autocontext==0.12.0` |
-| Python library/dev  | `uv pip install autocontext==0.12.0`  |
-| TypeScript/Node CLI | `bun add -g autoctx@0.12.0`           |
+| Python CLI          | `uv tool install autocontext==0.13.0` |
+| Python library/dev  | `uv pip install autocontext==0.13.0`  |
+| TypeScript/Node CLI | `bun add -g autoctx@0.13.0`           |
 | Pi extension        | `pi install npm:pi-autocontext@0.9.0` |
 
 The PyPI package is `autocontext`; the CLI is `autoctx`. The npm package is `autoctx` (not the unrelated `autocontext` npm package). Provider variables live in [`.env.example`](.env.example).
@@ -86,11 +86,10 @@ Everything is filesystem-first: inspect it, diff it, replay it, export it, or fe
 Python owns the full control-plane package; TypeScript owns several operator-facing surfaces, the TUI, and Node runtime adapters. Start with [autocontext/README.md](autocontext/README.md) or [ts/README.md](ts/README.md).
 
 <!-- autocontext-whats-new:start -->
-## What's New in 0.12.0
+## What's New in 0.13.0
 
-- **Safe active-run stopping** lets TypeScript transcript clients stop running or paused work at cooperative boundaries, retain completed generations and best score, and replay an idempotent durable terminal receipt after reconnect or restart.
-- **Durable interactive transcripts** add stable run, command, event, and sequence identity with bounded redacted retention plus exact reconnect backfill across server restarts.
-- **Ambient live serving** connects promoted per-role targets to live generation through a shared opt-in serving manifest, closing the resident trainer loop from evaluation to serving.
+- **Python safe active-run stopping** brings `safe_run_stop_v1` to the Python interactive server: stop a running or paused run at a cooperative generation boundary, preserve completed generations and best score, and receive one correlated terminal receipt (first terminal outcome wins).
+- **Leaner TypeScript install:** the OpenAI and Anthropic SDKs are now optional peer dependencies, so installing `autoctx` no longer pulls them in transitively. Install the provider SDK you use, for example `npm install autoctx @anthropic-ai/sdk`.
 <!-- autocontext-whats-new:end -->
 
 ## Scenario Families
