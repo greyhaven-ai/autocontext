@@ -3,7 +3,7 @@
 Two scores are comparable only when their epochs are equal. Changing the rubric text, the judge
 provider, or the judge model mints a new (non-comparable) epoch; sampling config does not (that is
 within-epoch variance owned by the AC-881 noise-calibration layer). This generalizes the ambient
-`eval_fingerprint` mechanism to the main LLM-judge path. See docs/ac-885-evaluator-epochs-design.md.
+`eval_fingerprint` mechanism to the main LLM-judge path. See docs/internal/ac-885-evaluator-epochs-design.md.
 """
 
 from __future__ import annotations

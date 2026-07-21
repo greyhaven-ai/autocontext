@@ -3,7 +3,7 @@
 One ACTIVE evaluator epoch per scenario. observe() is the mechanical trigger: the first epoch a
 scenario ever sees auto-activates (bootstrap); a subsequent, different epoch is registered as a
 candidate (its scores are quarantined until promoted). Mirrors ModelRegistry's file-per-record
-JSON store and its demote-not-delete rollback. See docs/ac-885-slice-c-epoch-lifecycle-design.md.
+JSON store and its demote-not-delete rollback. See docs/internal/ac-885-slice-c-epoch-lifecycle-design.md.
 """
 
 from __future__ import annotations

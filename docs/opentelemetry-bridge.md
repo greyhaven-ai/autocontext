@@ -145,7 +145,7 @@ analytics and the cross-runtime contract (see
 [concept-model.md](./concept-model.md) and the cross-runtime fixture at
 `fixtures/cross-runtime/trace-finding-report.json`).
 
-## Status (AC-682 slice 1)
+## Status
 
 - Shipped: bidirectional TS bridge + round-trip tests + this design
   note.

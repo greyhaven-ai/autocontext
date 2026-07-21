@@ -64,7 +64,7 @@ describe("deferred package topology", () => {
   });
 
   it("keeps agent app build targets on the umbrella runtime surface", () => {
-    const doc = readText(join(repoRoot, "docs", "core-control-package-split.md"));
+    const doc = readText(join(repoRoot, "docs", "internal", "core-control-package-split.md"));
 
     expect(doc).toContain("Status: **deferred**");
     expect(doc).toContain("## Agent App Build Targets");
@@ -73,7 +73,7 @@ describe("deferred package topology", () => {
   });
 
   it("uses AutoContext-native vocabulary in public runtime decision docs", () => {
-    for (const relativePath of ["docs/core-control-package-split.md", "docs/concept-model.md"]) {
+    for (const relativePath of ["docs/internal/core-control-package-split.md", "docs/concept-model.md"]) {
       expect(readText(join(repoRoot, relativePath))).not.toMatch(/\b[Ff]lue\b/);
     }
   });

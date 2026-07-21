@@ -1,6 +1,6 @@
 # Background Session Domain and Parity Contract
 
-This document is the Layer-0 domain model for the Open-Inspect-inspired background-session work. It is a planning and implementation guardrail for AC-778 and its child issues; it does not introduce hosted product behavior into the Apache repository.
+This document is the Layer-0 domain model for the Open-Inspect-inspired background-session work. It is a planning and implementation guardrail for the background-session work; it does not introduce hosted product behavior into the Apache repository.
 
 ## Strategic boundary
 
@@ -87,13 +87,13 @@ Each outcome serializes the same JSON fields in Python and TypeScript: `outcome_
 
 The OSS sandbox/warming slice defines adapter-neutral executor capability contracts only. A local or persistent-host executor may advertise no capabilities and still start with `boot_mode: "fresh"`. Remote adapters may optionally advertise any of:
 
-| Capability             | Meaning                                                                  | OSS behavior                                                                                                                 |
-| ---------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
-| `snapshot`             | Capture a reusable sandbox/workspace reference after setup or execution. | Contract shape and timeline events only; storage/provider implementation is adapter-owned.                                   |
+| Capability             | Meaning                                                                  | OSS behavior                                                                                                                                                |
+| ---------------------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `snapshot`             | Capture a reusable sandbox/workspace reference after setup or execution. | Contract shape and timeline events only; storage/provider implementation is adapter-owned.                                                                  |
 | `restore`              | Start from a previously captured snapshot reference.                     | Planner selects `boot_mode: "restored"` only when advertised and a snapshot ref is supplied; otherwise fail closed or degrade to fresh according to policy. |
-| `prebuild_repo_image`  | Build or select a repository image before session startup.               | Planner selects `boot_mode: "repo_image"` only when advertised; hosted image build queues remain product concerns.           |
-| `warm`                 | Prepare capacity or a paused sandbox before assignment.                  | Planner selects `boot_mode: "warmed"` only when advertised; proactive fleet warming remains product-owned.                   |
-| `resolve_tunnel_ports` | Map requested service ports to externally reachable tunnel endpoints.    | Contract exposes refs only; egress/tunnel policy is adapter-owned.                                                           |
+| `prebuild_repo_image`  | Build or select a repository image before session startup.               | Planner selects `boot_mode: "repo_image"` only when advertised; hosted image build queues remain product concerns.                                          |
+| `warm`                 | Prepare capacity or a paused sandbox before assignment.                  | Planner selects `boot_mode: "warmed"` only when advertised; proactive fleet warming remains product-owned.                                                  |
+| `resolve_tunnel_ports` | Map requested service ports to externally reachable tunnel endpoints.    | Contract exposes refs only; egress/tunnel policy is adapter-owned.                                                                                          |
 
 Unsupported required capabilities and missing required refs must never silently pretend success. `fail_closed` marks the startup plan terminal; `degrade_to_fresh` selects `boot_mode: "fresh"`, sets `degraded: true`, and records a sanitized session-status event. Timeline reason values are safe reason codes such as `unsupported_restore`, `missing_snapshot_ref`, or `adapter_error`; free-form adapter errors are dropped from summaries. The core `TaskRunner` should not depend on these optional methods. Provider-specific routing, snapshots, image caches, warm pools, tenant scheduling, quotas, billing, and fleet economics remain proprietary/deployment concerns.
 

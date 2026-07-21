@@ -1,6 +1,6 @@
 # Canonical Concept Model
 
-This document is the working source of truth for AC-429: aligning the product vocabulary across Python, TypeScript, CLI, MCP, API/TUI surfaces, docs, and storage.
+This document is the working source of truth for aligning the product vocabulary across Python, TypeScript, CLI, MCP, API/TUI surfaces, docs, and storage.
 
 It does two jobs:
 
@@ -13,7 +13,7 @@ The repo already has strong runtime primitives, but the vocabulary is not yet un
 
 - `Task` means at least three different things today: an agent-task spec, a queued evaluation job, and a generic prompt.
 - `Scenario` is sometimes a simulation environment and sometimes the saved wrapper around an agent task.
-- `Mission` is a shared control-plane concept in both TypeScript and Python; Python parity shipped under AC-697 (`autoctx mission create / run / status / list / pause / resume / cancel / artifacts`).
+- `Mission` is a shared control-plane concept in both TypeScript and Python; Python parity has shipped (`autoctx mission create / run / status / list / pause / resume / cancel / artifacts`).
 - `Campaign` now has partial TypeScript CLI/API/MCP support, but it is not yet a Python package surface.
 - `solve`, `sandbox`, `replay`, `playbook`, and `artifacts` are often presented like peer concepts even though they are better understood as operations or runtime outputs.
 
@@ -23,12 +23,12 @@ The repo already has strong runtime primitives, but the vocabulary is not yet un
 
 These are the nouns we should prefer in docs, APIs, and product copy when describing what the system helps a person do.
 
-| Concept    | Definition                                                                                                                  | Current status                                                                                                                                                                                |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Scenario` | A reusable environment, simulation, or evaluation context with stable rules and scoring.                                    | Implemented across Python, TypeScript, CLI, MCP, API/TUI surfaces, and docs.                                                                                                                  |
-| `Task`     | A user-authored unit of work or prompt-centric objective that can be evaluated directly or embedded inside another surface. | Partial: prompt-centric task support exists, but the name is still overloaded across agent-task specs, queued runtime jobs, and generic prompts.                                              |
-| `Mission`  | A long-running goal advanced step by step until a verifier says it is complete.                                             | Implemented across both TypeScript and Python (Python parity under AC-697: `autocontext.mission` package + `autoctx mission ...` CLI). MCP / API / TUI surfaces remain TypeScript-only today. |
-| `Campaign` | A planned grouping of missions, runs, and/or scenarios used to coordinate broader work over time.                           | Partially implemented through TypeScript CLI/API/MCP surfaces. Not yet a Python package surface.                                                                                              |
+| Concept    | Definition                                                                                                                  | Current status                                                                                                                                                                   |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Scenario` | A reusable environment, simulation, or evaluation context with stable rules and scoring.                                    | Implemented across Python, TypeScript, CLI, MCP, API/TUI surfaces, and docs.                                                                                                     |
+| `Task`     | A user-authored unit of work or prompt-centric objective that can be evaluated directly or embedded inside another surface. | Partial: prompt-centric task support exists, but the name is still overloaded across agent-task specs, queued runtime jobs, and generic prompts.                                 |
+| `Mission`  | A long-running goal advanced step by step until a verifier says it is complete.                                             | Implemented across both TypeScript and Python (Python parity: `autocontext.mission` package + `autoctx mission ...` CLI). MCP / API / TUI surfaces remain TypeScript-only today. |
+| `Campaign` | A planned grouping of missions, runs, and/or scenarios used to coordinate broader work over time.                           | Partially implemented through TypeScript CLI/API/MCP surfaces. Not yet a Python package surface.                                                                                 |
 
 ### Runtime concepts
 
@@ -116,7 +116,7 @@ Python and TypeScript command grants use the same runtime-session event vocabula
 ## Current Gaps And Risks
 
 - `Campaign` now has a TypeScript storage model plus API/MCP surfaces, but it still lacks a shared CLI workflow and Python package support.
-- Python and TypeScript both have strong `Scenario`, `Run`, and `Mission` surfaces. Python `Mission` parity shipped under AC-697 (`autocontext.mission` package + `autoctx mission ...` CLI); the MCP / API / TUI mission surfaces are TypeScript-only today.
+- Python and TypeScript both have strong `Scenario`, `Run`, and `Mission` surfaces. Python `Mission` parity has shipped (`autocontext.mission` package + `autoctx mission ...` CLI); the MCP / API / TUI mission surfaces are TypeScript-only today.
 - Queueing and evaluation code use `Task` for runtime jobs, which collides with the intended user-facing `Task` concept.
 - `Policy` exists in many specific forms, but not yet as a discoverable shared runtime concept.
 

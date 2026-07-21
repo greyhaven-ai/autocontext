@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 
 const repoRoot = join(import.meta.dirname, "..", "..");
 const conformanceDocPath = join(repoRoot, "docs", "fetch-conformance.md");
-const edgeDocPath = join(repoRoot, "docs", "edge-runtime-compatibility.md");
+const edgeDocPath = join(repoRoot, "docs", "internal", "edge-runtime-compatibility.md");
 const packagingDocPath = join(repoRoot, "docs", "generated-fetch-packaging.md");
 const tsReadmePath = join(repoRoot, "ts", "README.md");
 

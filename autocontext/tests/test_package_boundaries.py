@@ -33,7 +33,7 @@ def test_no_dual_license_metadata_was_added_for_deferred_split() -> None:
 
 
 def test_rights_audit_is_historical_context_only() -> None:
-    doc = (REPO_ROOT / "docs" / "contributor-rights-audit.md").read_text(encoding="utf-8")
+    doc = (REPO_ROOT / "docs" / "internal" / "contributor-rights-audit.md").read_text(encoding="utf-8")
 
     assert "historical snapshot" in doc
     assert "existing public repo code remains Apache-2.0" in doc
@@ -41,7 +41,7 @@ def test_rights_audit_is_historical_context_only() -> None:
 
 
 def test_knowledge_trace_boundary_map_is_deferred_not_a_manifest_plan() -> None:
-    doc = (REPO_ROOT / "docs" / "knowledge-production-trace-boundary-map.md").read_text(encoding="utf-8")
+    doc = (REPO_ROOT / "docs" / "internal" / "knowledge-production-trace-boundary-map.md").read_text(encoding="utf-8")
 
     assert "Status: **deferred**" in doc
     assert "future package hygiene" in doc

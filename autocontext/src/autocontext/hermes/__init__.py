@@ -2,7 +2,7 @@
 
 Scope: integration with NousResearch's Hermes agent and its Curator
 subsystem (inspect, ingest, export-skill, train-advisor; see
-docs/hermes-positioning.md). Read-only against Hermes/Curator state,
+docs/internal/hermes-positioning.md). Read-only against Hermes/Curator state,
 though export-skill writes a local skill file when an output path is
 supplied. Currently Python-only: no ts/ mirror exists for this package.
 

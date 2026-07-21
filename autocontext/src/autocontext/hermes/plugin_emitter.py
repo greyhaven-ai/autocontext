@@ -6,7 +6,7 @@ autocontext-shaped ProductionTrace JSONL from Hermes lifecycle
 hooks, without taking on a Hermes runtime dependency in
 autocontext's main package.
 
-The companion spike doc (``docs/hermes-plugin-emitter-spike.md``)
+The companion spike doc (``docs/internal/hermes-plugin-emitter-spike.md``)
 covers the design decision (implement / defer / avoid). This module
 is the worked example referenced from that doc.
 

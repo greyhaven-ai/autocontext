@@ -1,6 +1,6 @@
 # Goal Run Report
 
-AC-825 defines an outer goal loop as a shared Python/TypeScript artifact for continue-until-verified execution. Inner loop limits are checkpoint/cadence controls; goal completion is decided by verification or an explicit terminal condition.
+The outer goal loop is a shared Python/TypeScript artifact for continue-until-verified execution. Inner loop limits are checkpoint/cadence controls; goal completion is decided by verification or an explicit terminal condition.
 
 ## Contract
 
