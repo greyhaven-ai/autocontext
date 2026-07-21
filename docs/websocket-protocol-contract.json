@@ -19,6 +19,80 @@
       "idempotency_horizon": "same as retained command and response records"
     }
   },
+  "agent_task_plan_extension": {
+    "capability": "agent_task_plan_v1",
+    "advertised_runtimes": ["typescript"],
+    "requires_transcript_protocol_version": 1,
+    "event": "task_plan_updated",
+    "event_order": [
+      "run_started",
+      "task_plan_updated:initial",
+      "task_plan_updated:progress_or_replan",
+      "task_plan_updated:terminal_snapshot",
+      "run_completed_or_run_failed_or_run_stopped"
+    ],
+    "payload": {
+      "required_fields": [
+        "run_id",
+        "plan_id",
+        "version",
+        "plan_revision",
+        "update_kind",
+        "active_step_id",
+        "steps"
+      ],
+      "optional_fields": ["summary"],
+      "update_kinds": ["initial", "progress", "replan"],
+      "step_statuses": [
+        "pending",
+        "in_progress",
+        "completed",
+        "blocked",
+        "failed",
+        "skipped",
+        "interrupted"
+      ],
+      "step_count": { "minimum": 1, "maximum": 50 },
+      "id": {
+        "maximum_characters": 200,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+        "credential_shaped_values_allowed": false
+      },
+      "copy_limits": {
+        "label_characters": 160,
+        "detail_characters": 2000,
+        "summary_characters": 240,
+        "aggregate_characters": 20000,
+        "empty_or_whitespace_only_values_allowed": false
+      },
+      "full_snapshot": true,
+      "initial_version": 1,
+      "initial_plan_revision": 1,
+      "version_rule": "strictly_increases_for_every_update",
+      "progress_revision_rule": "unchanged",
+      "replan_revision_rule": "strictly_increases",
+      "completed_steps_are_sticky": true,
+      "active_step_rule": "zero_or_one_in_progress_step_exactly_matches_active_step_id",
+      "terminal_snapshot_rule": "active_step_id_is_null_and_no_step_is_in_progress"
+    },
+    "identity": {
+      "payload_run_id_matches_outer_run_id": true,
+      "stable_fields": ["run_id", "plan_id"],
+      "outer_transcript_fields": [
+        "client_run_id",
+        "event_id",
+        "sequence",
+        "occurred_at"
+      ]
+    },
+    "retention": {
+      "full_snapshot_or_drop": true,
+      "max_serialized_event_bytes": 12288,
+      "redacted_before_persistence": true,
+      "restart_replay": true
+    },
+    "python_support": "deferred_until_durable_transcript_metadata_is_available"
+  },
   "safe_stop_extension": {
     "capability": "safe_run_stop_v1",
     "advertised_runtimes": ["typescript", "python"],

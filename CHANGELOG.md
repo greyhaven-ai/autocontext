@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- TypeScript interactive runs now advertise `agent_task_plan_v1` to transcript clients and emit strict, redacted `task_plan_updated` snapshots as work moves through meaningful execution phases. Plans carry stable run/plan identity, monotonic versions and revisions, sticky completion, explicit replan receipts, terminal step state before the run terminal event, and exact durable replay across reconnects and server restarts. Python parity is deferred until its interactive server can supply the same durable transcript identity and replay guarantees (AC-896).
+
 ## [0.13.0] - 2026-07-20
 
 ### Added

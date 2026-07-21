@@ -5,11 +5,32 @@
 
 import { z } from "zod";
 
+import { AGENT_TASK_PLAN_CAPABILITY } from "../loop/agent-task-plan.js";
+
+export {
+  AGENT_TASK_PLAN_CAPABILITY,
+  AGENT_TASK_PLAN_EVENT_NAME,
+  AgentTaskPlanIdSchema,
+  AgentTaskPlanPayloadSchema,
+  AgentTaskPlanStepSchema,
+  AgentTaskPlanStepStatusSchema,
+  MAX_RETAINED_AGENT_TASK_PLAN_BYTES,
+} from "../loop/agent-task-plan.js";
+export type {
+  AgentTaskPlanPayload,
+  AgentTaskPlanStep,
+  AgentTaskPlanStepStatus,
+} from "../loop/agent-task-plan.js";
+
 export const PROTOCOL_VERSION = 1;
 export const TRANSCRIPT_PROTOCOL_VERSION = 1;
 export const TRANSCRIPT_PROTOCOL_QUERY_PARAM = "transcript_protocol_version";
 export const TRANSCRIPT_PROTOCOL_QUERY_VALUE = String(TRANSCRIPT_PROTOCOL_VERSION);
-export const SERVER_CAPABILITIES = ["run_transcript_v1", "safe_run_stop_v1"] as const;
+export const SERVER_CAPABILITIES = [
+  "run_transcript_v1",
+  "safe_run_stop_v1",
+  AGENT_TASK_PLAN_CAPABILITY,
+] as const;
 
 const protocolObject = <T extends z.ZodRawShape>(shape: T) => z.object(shape).strict();
 

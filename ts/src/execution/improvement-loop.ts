@@ -18,6 +18,16 @@ import { EVALUATOR_EPOCH_REBASELINE, resolveEpochRebaseline } from "../judge/eva
 
 export { isImproved, isParseFailure } from "./improvement-loop-detection.js";
 
+export interface ImprovementLoopProgress {
+  phase: "evaluation" | "revision";
+  status: "started" | "completed";
+  round: number;
+}
+
+export type ImprovementLoopProgressObserver = (
+  progress: ImprovementLoopProgress,
+) => void | Promise<void>;
+
 export interface ImprovementLoopOpts {
   task: AgentTaskInterface;
   maxRounds?: number;
@@ -27,6 +37,7 @@ export interface ImprovementLoopOpts {
   capScoreJumps?: boolean;
   dimensionThreshold?: number;
   timeBudget?: { check(phase: string): void };
+  onProgress?: ImprovementLoopProgressObserver;
 }
 
 export class ImprovementLoop {
@@ -38,6 +49,7 @@ export class ImprovementLoop {
   #capScoreJumps: boolean;
   #dimensionThreshold: number | null;
   #timeBudget: { check(phase: string): void } | null;
+  #onProgress: ImprovementLoopProgressObserver | null;
 
   constructor(opts: ImprovementLoopOpts) {
     this.#task = opts.task;
@@ -48,6 +60,7 @@ export class ImprovementLoop {
     this.#capScoreJumps = opts.capScoreJumps ?? false;
     this.#dimensionThreshold = opts.dimensionThreshold ?? null;
     this.#timeBudget = opts.timeBudget ?? null;
+    this.#onProgress = opts.onProgress ?? null;
   }
 
   async run(opts: {
@@ -83,6 +96,7 @@ export class ImprovementLoop {
     for (let roundNum = 1; roundNum <= this.#maxRounds; roundNum++) {
       const roundStart = performance.now();
       this.#timeBudget?.check(`round ${roundNum} evaluation`);
+      this.reportProgress({ phase: "evaluation", status: "started", round: roundNum });
       const result = await this.#task.evaluateOutput(currentOutput, opts.state, {
         referenceContext: opts.referenceContext,
         requiredConcepts: opts.requiredConcepts,
@@ -90,6 +104,7 @@ export class ImprovementLoop {
         pinnedDimensions,
       });
       this.#timeBudget?.check(`round ${roundNum} evaluation`);
+      this.reportProgress({ phase: "evaluation", status: "completed", round: roundNum });
       judgeCalls += 1;
       const roundMs = Math.round(performance.now() - roundStart);
       totalInternalRetries += result.internalRetries ?? 0;
@@ -124,8 +139,10 @@ export class ImprovementLoop {
             evaluatorEpoch: lastGoodResult.evaluatorEpoch ?? null,
           };
           this.#timeBudget?.check(`round ${roundNum} revision`);
+          this.reportProgress({ phase: "revision", status: "started", round: roundNum });
           const revised = await this.#task.reviseOutput(currentOutput, feedbackResult, opts.state);
           this.#timeBudget?.check(`round ${roundNum} revision`);
+          this.reportProgress({ phase: "revision", status: "completed", round: roundNum });
           const cleaned = cleanRevisionOutput(revised);
           if (cleaned !== currentOutput) {
             currentOutput = cleaned;
@@ -251,8 +268,10 @@ export class ImprovementLoop {
           previousValidRound: previousValidRound ?? undefined,
         });
         this.#timeBudget?.check(`round ${roundNum} revision`);
+        this.reportProgress({ phase: "revision", status: "started", round: roundNum });
         const revised = await this.#task.reviseOutput(currentOutput, revisionFeedback, opts.state);
         this.#timeBudget?.check(`round ${roundNum} revision`);
+        this.reportProgress({ phase: "revision", status: "completed", round: roundNum });
         const cleaned = cleanRevisionOutput(revised);
         if (cleaned === currentOutput) {
           terminationReason = "unchanged_output";
@@ -276,6 +295,15 @@ export class ImprovementLoop {
       judgeCalls,
       evaluatorEpoch: bestRoundEpoch(rounds, bestRound),
     });
+  }
+
+  private reportProgress(progress: ImprovementLoopProgress): void {
+    try {
+      const result = this.#onProgress?.(progress);
+      result?.catch(() => undefined);
+    } catch {
+      // Progress telemetry must never alter solve results.
+    }
   }
 }
 

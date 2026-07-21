@@ -34,6 +34,7 @@ This directory is the maintainer-facing landing page for repository docs. Use it
 
 ## Architecture And Parity
 
+- [Interactive WebSocket protocol contract](websocket-protocol-contract.json)
 - [Core/control package split](core-control-package-split.md)
 - [Strategy package import side-effect contract](strategy-package-import-contract.json)
 - [Generic edge runtime compatibility spike](edge-runtime-compatibility.md)

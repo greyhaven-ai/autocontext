@@ -102,7 +102,8 @@ The TypeScript `/ws/interactive` server keeps the base WebSocket
 legacy v1 hello and run-frame shapes. Clients explicitly opt into durable
 transcripts with `/ws/interactive?transcript_protocol_version=1`; that connection
 advertises `transcript_protocol_version: 1` plus the `run_transcript_v1` and
-`safe_run_stop_v1` capabilities.
+`safe_run_stop_v1` capabilities. TypeScript engines that publish live execution
+plans also advertise `agent_task_plan_v1` on the same transcript-enabled hello.
 Clients may attach a stable `client_run_id` and `command_id` to `start_run`,
 operator-control, and chat commands. Run-scoped responses then include stable
 `event_id`, monotonic `sequence`, `client_run_id`, and `occurred_at` fields.
@@ -128,6 +129,50 @@ idempotency has the same finite horizon as its retained request and response.
 Compaction uses an fsync-backed atomic replacement. The Python server accepts the
 additive metadata fields for schema compatibility but does not advertise this
 TypeScript-only retention capability.
+
+Transcript-enabled TypeScript runs expose their current semantic execution plan
+as `task_plan_updated` events. Every event is a complete snapshot rather than a
+patch, so a client can render the latest valid event directly:
+
+```json
+{
+  "type": "event",
+  "event": "task_plan_updated",
+  "run_id": "engine-run-id",
+  "client_run_id": "control-plane-run-id",
+  "event_id": "7db8149c-8302-45dc-98c8-6d8c11f34d27",
+  "sequence": 4,
+  "occurred_at": "2026-07-21T16:20:00.000Z",
+  "payload": {
+    "run_id": "engine-run-id",
+    "plan_id": "engine-run-id:task-plan",
+    "version": 2,
+    "plan_revision": 1,
+    "update_kind": "progress",
+    "active_step_id": "evaluate",
+    "steps": [
+      { "id": "draft", "label": "Draft the result", "status": "completed" },
+      { "id": "evaluate", "label": "Evaluate and refine", "status": "in_progress" },
+      { "id": "finalize", "label": "Finalize the result", "status": "pending" }
+    ]
+  }
+}
+```
+
+The initial snapshot uses version/revision `1/1`. Every update increments
+`version`; ordinary progress keeps `plan_revision` stable, while a `replan`
+increments it and includes a bounded summary. Completed steps never regress.
+Exactly one step may be `in_progress`, and it must match `active_step_id`;
+terminal snapshots use a null active step and mark unfinished work as failed,
+interrupted, or skipped before `run_completed`, `run_failed`, or `run_stopped`.
+Snapshots are redacted and validated atomically before persistence: an invalid or
+oversized plan is omitted rather than truncated into a misleading partial plan.
+The TypeScript producer limits the complete serialized event to 12 KiB so its
+escaped transcript record remains within the transcript's 32 KiB record ceiling.
+Cursor replay returns the exact retained snapshots with their original identity
+and ordering. See the
+[shared WebSocket contract](../docs/websocket-protocol-contract.json) for the
+machine-readable invariants. Python does not advertise this capability yet.
 
 To stop the currently bound run, send a retry-stable command:
 

@@ -6,6 +6,12 @@ export {
   PROTOCOL_VERSION,
   TRANSCRIPT_PROTOCOL_VERSION,
   SERVER_CAPABILITIES,
+  AGENT_TASK_PLAN_CAPABILITY,
+  AGENT_TASK_PLAN_EVENT_NAME,
+  AgentTaskPlanIdSchema,
+  AgentTaskPlanPayloadSchema,
+  AgentTaskPlanStepSchema,
+  AgentTaskPlanStepStatusSchema,
   HelloMsgSchema,
   EventMsgSchema,
   StateMsgSchema,
@@ -42,7 +48,13 @@ export {
   parseClientMessage,
   parseServerMessage,
 } from "./protocol.js";
-export type { ServerMessage, ClientMessage } from "./protocol.js";
+export type {
+  AgentTaskPlanPayload,
+  AgentTaskPlanStep,
+  AgentTaskPlanStepStatus,
+  ServerMessage,
+  ClientMessage,
+} from "./protocol.js";
 
 export {
   handleTuiLogin,

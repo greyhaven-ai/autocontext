@@ -35,6 +35,42 @@ type EventStreamEnvelopeContract = {
 };
 
 type WebSocketProtocolContract = {
+  agent_task_plan_extension: {
+    advertised_runtimes: ["typescript"];
+    capability: "agent_task_plan_v1";
+    event: "task_plan_updated";
+    requires_transcript_protocol_version: 1;
+    payload: {
+      completed_steps_are_sticky: true;
+      copy_limits: {
+        aggregate_characters: 20000;
+        detail_characters: 2000;
+        empty_or_whitespace_only_values_allowed: false;
+        label_characters: 160;
+        summary_characters: 240;
+      };
+      full_snapshot: true;
+      id: {
+        credential_shaped_values_allowed: false;
+        maximum_characters: 200;
+        pattern: string;
+      };
+      initial_plan_revision: 1;
+      initial_version: 1;
+      progress_revision_rule: "unchanged";
+      replan_revision_rule: "strictly_increases";
+      step_count: { maximum: 50; minimum: 1 };
+      terminal_snapshot_rule: string;
+      update_kinds: ["initial", "progress", "replan"];
+    };
+    python_support: "deferred_until_durable_transcript_metadata_is_available";
+    retention: {
+      full_snapshot_or_drop: true;
+      max_serialized_event_bytes: 12288;
+      redacted_before_persistence: true;
+      restart_replay: true;
+    };
+  };
   event_stream_envelope: EventStreamEnvelopeContract;
   protocol_version: number;
   safe_stop_extension: {
@@ -137,6 +173,45 @@ describe("WebSocket protocol shared contract", () => {
         unexpected: true,
       }),
     ).toThrow();
+  });
+
+  it("keeps agent task plans strict, replayable, and TypeScript-only", () => {
+    expect(CONTRACT.agent_task_plan_extension).toMatchObject({
+      advertised_runtimes: ["typescript"],
+      capability: "agent_task_plan_v1",
+      event: "task_plan_updated",
+      requires_transcript_protocol_version: 1,
+      payload: {
+        completed_steps_are_sticky: true,
+        copy_limits: {
+          aggregate_characters: 20_000,
+          detail_characters: 2_000,
+          empty_or_whitespace_only_values_allowed: false,
+          label_characters: 160,
+          summary_characters: 240,
+        },
+        full_snapshot: true,
+        id: {
+          credential_shaped_values_allowed: false,
+          maximum_characters: 200,
+          pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+        },
+        initial_plan_revision: 1,
+        initial_version: 1,
+        progress_revision_rule: "unchanged",
+        replan_revision_rule: "strictly_increases",
+        step_count: { maximum: 50, minimum: 1 },
+        update_kinds: ["initial", "progress", "replan"],
+      },
+      python_support: "deferred_until_durable_transcript_metadata_is_available",
+      retention: {
+        full_snapshot_or_drop: true,
+        max_serialized_event_bytes: 12_288,
+        redacted_before_persistence: true,
+        restart_replay: true,
+      },
+    });
+    expect(SERVER_CAPABILITIES).toContain("agent_task_plan_v1");
   });
 
   it("keeps representative shared payload shapes aligned with Python's generated schema", () => {

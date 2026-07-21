@@ -1,4 +1,7 @@
-import { ImprovementLoop } from "../execution/improvement-loop.js";
+import {
+  ImprovementLoop,
+  type ImprovementLoopProgressObserver,
+} from "../execution/improvement-loop.js";
 import { createAgentTask } from "../scenarios/agent-task-factory.js";
 import { AgentTaskSpecSchema, type AgentTaskSpec } from "../scenarios/agent-task-spec.js";
 import { SolveGenerationBudget } from "./solve-generation-budget.js";
@@ -93,6 +96,12 @@ export type AgentTaskSolveTask = AgentTaskInterface & {
   readonly spec: AgentTaskSpec;
 };
 
+export interface AgentTaskSolveProgress {
+  phase: "context_preparation" | "draft" | "evaluation" | "revision" | "finalization";
+  status: "started" | "completed";
+  round?: number;
+}
+
 export interface AgentTaskSolveLoop {
   run(opts: {
     initialOutput: string;
@@ -115,6 +124,7 @@ export interface AgentTaskSolveExecutionDeps {
     maxRounds: number;
     qualityThreshold: number;
     timeBudget?: SolveGenerationBudget;
+    onProgress?: ImprovementLoopProgressObserver;
   }) => AgentTaskSolveLoop;
 }
 
@@ -128,13 +138,27 @@ function defaultCreateLoop(opts: {
   maxRounds: number;
   qualityThreshold: number;
   timeBudget?: SolveGenerationBudget;
+  onProgress?: ImprovementLoopProgressObserver;
 }): AgentTaskSolveLoop {
   return new ImprovementLoop({
     task: opts.task,
     maxRounds: opts.maxRounds,
     qualityThreshold: opts.qualityThreshold,
     timeBudget: opts.timeBudget,
+    onProgress: opts.onProgress,
   });
+}
+
+function reportSolveProgress(
+  onProgress: ((progress: AgentTaskSolveProgress) => void | Promise<void>) | undefined,
+  progress: AgentTaskSolveProgress,
+): void {
+  try {
+    const result = onProgress?.(progress);
+    result?.catch(() => undefined);
+  } catch {
+    // Progress telemetry must never alter solve results.
+  }
 }
 
 export async function executeAgentTaskSolve(opts: {
@@ -143,6 +167,7 @@ export async function executeAgentTaskSolve(opts: {
   generations: number;
   generationTimeBudgetSeconds?: number | null;
   hookBus?: HookBus | null;
+  onProgress?: (progress: AgentTaskSolveProgress) => void | Promise<void>;
   deps?: AgentTaskSolveExecutionDeps;
 }): Promise<AgentTaskSolveExecutionResult> {
   const spec = buildAgentTaskSolveSpec(
@@ -168,9 +193,16 @@ export async function executeAgentTaskSolve(opts: {
     maxRounds: spec.maxRounds,
     qualityThreshold: spec.qualityThreshold,
     timeBudget,
+    onProgress: (progress) => {
+      reportSolveProgress(opts.onProgress, progress);
+    },
   });
 
   timeBudget.check("initial state");
+  reportSolveProgress(opts.onProgress, {
+    phase: "context_preparation",
+    status: "started",
+  });
   const initialState = task.prepareContext
     ? await task.prepareContext(task.initialState())
     : task.initialState();
@@ -182,8 +214,13 @@ export async function executeAgentTaskSolve(opts: {
   if (contextErrors.length > 0) {
     throw new Error(`agent_task context preparation failed: ${contextErrors.join("; ")}`);
   }
+  reportSolveProgress(opts.onProgress, {
+    phase: "context_preparation",
+    status: "completed",
+  });
 
   timeBudget.check("initial generation");
+  reportSolveProgress(opts.onProgress, { phase: "draft", status: "started" });
   const initialOutput = await completeWithProviderHooks({
     hookBus: opts.hookBus ?? null,
     provider: opts.provider,
@@ -192,6 +229,7 @@ export async function executeAgentTaskSolve(opts: {
     userPrompt: task.getTaskPrompt(initialState),
   });
   timeBudget.check("initial generation");
+  reportSolveProgress(opts.onProgress, { phase: "draft", status: "completed" });
 
   const result = await loop.run({
     initialOutput: initialOutput.text,
@@ -202,8 +240,9 @@ export async function executeAgentTaskSolve(opts: {
   });
   timeBudget.check("improvement loop");
 
+  reportSolveProgress(opts.onProgress, { phase: "finalization", status: "started" });
   const bestRound = result.rounds.find((round) => round.roundNumber === result.bestRound);
-  return {
+  const executionResult = {
     progress: result.totalRounds,
     result: buildAgentTaskSolvePackage({
       scenarioName: opts.created.name,
@@ -224,4 +263,6 @@ export async function executeAgentTaskSolve(opts: {
       contextPreparation: spec.contextPreparation ?? null,
     }),
   };
+  reportSolveProgress(opts.onProgress, { phase: "finalization", status: "completed" });
+  return executionResult;
 }
