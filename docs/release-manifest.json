@@ -1,9 +1,9 @@
 {
-  "core_version": "0.13.0",
+  "core_version": "0.14.0",
   "pi_version": "0.9.0",
   "pi_autoctx_dependency": "^0.11.0",
   "whats_new": [
-    "**Python safe active-run stopping** brings `safe_run_stop_v1` to the Python interactive server: stop a running or paused run at a cooperative generation boundary, preserve completed generations and best score, and receive one correlated terminal receipt (first terminal outcome wins).",
-    "**Leaner TypeScript install:** the OpenAI and Anthropic SDKs are now optional peer dependencies, so installing `autoctx` no longer pulls them in transitively. Install the provider SDK you use, for example `npm install autoctx @anthropic-ai/sdk`."
+    "**Live TypeScript task plans:** interactive runs now advertise `agent_task_plan_v1` and emit semantic `task_plan_updated` snapshots for initial planning, meaningful progress, replanning, completion, failure, and safe stop.",
+    "**Durable, privacy-safe replay:** task-plan snapshots use stable identity and monotonic revisions, redact credential-shaped values, reject malformed or oversized frames atomically, and restore exactly across reconnects and server restarts. Python producer parity remains explicitly deferred."
   ]
 }

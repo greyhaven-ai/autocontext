@@ -27,9 +27,9 @@ autocontext is a harness for agent improvement. Give it a goal, it runs the task
 
 | Surface             | Command                               |
 | ------------------- | ------------------------------------- |
-| Python CLI          | `uv tool install autocontext==0.13.0` |
-| Python library/dev  | `uv pip install autocontext==0.13.0`  |
-| TypeScript/Node CLI | `bun add -g autoctx@0.13.0`           |
+| Python CLI          | `uv tool install autocontext==0.14.0` |
+| Python library/dev  | `uv pip install autocontext==0.14.0`  |
+| TypeScript/Node CLI | `bun add -g autoctx@0.14.0`           |
 | Pi extension        | `pi install npm:pi-autocontext@0.9.0` |
 
 The PyPI package is `autocontext`; the CLI is `autoctx`. The npm package is `autoctx` (not the unrelated `autocontext` npm package). Provider variables live in [`.env.example`](.env.example).
@@ -86,10 +86,10 @@ Everything is filesystem-first: inspect it, diff it, replay it, export it, or fe
 Python owns the full control-plane package; TypeScript owns several operator-facing surfaces, the TUI, and Node runtime adapters. Start with [autocontext/README.md](autocontext/README.md) or [ts/README.md](ts/README.md).
 
 <!-- autocontext-whats-new:start -->
-## What's New in 0.13.0
+## What's New in 0.14.0
 
-- **Python safe active-run stopping** brings `safe_run_stop_v1` to the Python interactive server: stop a running or paused run at a cooperative generation boundary, preserve completed generations and best score, and receive one correlated terminal receipt (first terminal outcome wins).
-- **Leaner TypeScript install:** the OpenAI and Anthropic SDKs are now optional peer dependencies, so installing `autoctx` no longer pulls them in transitively. Install the provider SDK you use, for example `npm install autoctx @anthropic-ai/sdk`.
+- **Live TypeScript task plans:** interactive runs now advertise `agent_task_plan_v1` and emit semantic `task_plan_updated` snapshots for initial planning, meaningful progress, replanning, completion, failure, and safe stop.
+- **Durable, privacy-safe replay:** task-plan snapshots use stable identity and monotonic revisions, redact credential-shaped values, reject malformed or oversized frames atomically, and restore exactly across reconnects and server restarts. Python producer parity remains explicitly deferred.
 <!-- autocontext-whats-new:end -->
 
 ## Scenario Families
