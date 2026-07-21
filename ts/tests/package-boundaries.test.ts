@@ -70,7 +70,7 @@ describe("deferred package boundaries", () => {
   });
 
   it("keeps the rights audit as historical context instead of manifest state", () => {
-    const doc = readText(join(repoRoot, "docs", "contributor-rights-audit.md"));
+    const doc = readText(join(repoRoot, "docs", "internal", "contributor-rights-audit.md"));
 
     expect(doc).toContain("historical snapshot");
     expect(doc).toContain("existing public repo code remains Apache-2.0");
@@ -78,7 +78,7 @@ describe("deferred package boundaries", () => {
   });
 
   it("keeps knowledge and trace extraction deferred", () => {
-    const doc = readText(join(repoRoot, "docs", "knowledge-production-trace-boundary-map.md"));
+    const doc = readText(join(repoRoot, "docs", "internal", "knowledge-production-trace-boundary-map.md"));
 
     expect(doc).toContain("Status: **deferred**");
     expect(doc).toContain("future package hygiene");

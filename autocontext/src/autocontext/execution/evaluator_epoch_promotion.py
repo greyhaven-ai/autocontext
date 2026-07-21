@@ -3,7 +3,7 @@
 Decide via calibration tolerance + the autonomy dial whether to activate a candidate epoch, record
 the promotion + human-decision metadata, and clear the quarantine on the promoted epoch's prior
 scores. Pure: the caller supplies the CalibrationReport (from run_judge_calibration). The trigger
-(CLI/stage) and the promote.py generalization are deferred. See docs/ac-885-slice-c2-promotion-design.md.
+(CLI/stage) and the promote.py generalization are deferred. See docs/internal/ac-885-slice-c2-promotion-design.md.
 """
 
 from __future__ import annotations

@@ -1,7 +1,7 @@
 """curate's eligibility guardrails: quarantine, asymmetric trainability, selector match.
 
 These are the mechanical enforcement points for two charter guardrails
-(spec: docs/ambient-trainer-design.md, "Stage: Curate"): provenance
+(spec: docs/internal/ambient-trainer-design.md, "Stage: Curate"): provenance
 quarantine (fine-tune-produced records never feed the next lineage's
 training set; v1 quarantines all non-frontier provenance) and asymmetric
 trainability (datasets for evaluative roles need externally anchored

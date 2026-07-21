@@ -46,7 +46,7 @@ Use `--kind writeup` (the default) for a full trace-grounded summary with
 missing traces return a parseable payload such as
 `{"status":"failed","error":"...","trace_id":"..."}` and exit non-zero.
 
-### TypeScript: `autoctx trace-findings` (AC-679)
+### TypeScript: `autoctx trace-findings`
 
 The TypeScript package ships a parallel `autoctx trace-findings` command
 that operates on a `PublicTrace` JSON file (the data plane primitive that
@@ -72,7 +72,7 @@ autoctx trace-findings --help                        # Usage
 `PublicTraceSchema`. Loading by stored trace id (`--trace-id <id>` against
 the ProductionTrace store) is a follow-up slice.
 
-### Operator trace-gate review (AC-683)
+### Operator trace-gate review
 
 Cockpit and the terminal UI consume the same trace-finding report and harness-change proposal contracts instead of a TUI-only shape. The read model is available at `GET /api/cockpit/runs/:run_id/trace-gates` in both runtimes and in the TUI via `/findings <run-id>` or `/trace-gates <run-id>`.
 

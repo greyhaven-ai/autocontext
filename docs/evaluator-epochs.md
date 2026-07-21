@@ -1,7 +1,6 @@
 # Evaluator epochs
 
-**Status:** shipped (AC-885 Slice 1). Companion to the design note
-`docs/ac-885-evaluator-epochs-design.md`.
+**Status:** shipped.
 
 ## What an evaluator epoch is
 
@@ -39,7 +38,7 @@ The public surface, identical in both languages, lives in
 Only three inputs participate in the hash: the rubric content, the judge provider, and the judge
 model. Sampling configuration (`judge_samples`, `judge_temperature`) is deliberately excluded.
 Sampling is within-epoch variance: it is the same evaluator scored more or fewer times, owned by
-the AC-881 noise-calibration layer, not a different evaluator. Folding sampling into the epoch would
+the noise-calibration layer, not a different evaluator. Folding sampling into the epoch would
 fragment lineage on every temperature tweak and defeat the point. So a rubric edit or a judge-model
 swap re-baselines the loop; a sampling change does not.
 
@@ -81,11 +80,11 @@ across epochs and does not silently overwrite the baseline. Instead it:
 3. emits an operator-visible `ImprovementLoopEvent` with reason `evaluator_epoch_rebaseline`
    carrying `stale_epoch` and `new_epoch`.
 
-This extends the existing AC-750 rule ("only a non-vetoed round is a legitimate baseline") with
+This extends the existing rule ("only a non-vetoed round is a legitimate baseline") with
 "and only a same-epoch round." The decision is a small pure helper (`resolve_epoch_rebaseline`),
 unit-testable in isolation from the loop. The reason string
 `EVALUATOR_EPOCH_REBASELINE = "evaluator_epoch_rebaseline"` is an event reason, not a new gate: the
-new symbols deliberately avoid the `gate` / `guard` / `validator` naming tokens so the AC-484
+new symbols deliberately avoid the `gate` / `guard` / `validator` naming tokens so the
 taxonomy test is not triggered.
 
 There is no SQLite migration in this slice. The epoch rides in memory on the loop's round baseline
@@ -422,7 +421,7 @@ epoch generalizes the same idea (a content-addressed evaluator identity that sco
 comparable) and brings it to the main LLM-judge path, which previously carried no evaluator lineage:
 a rubric or judge change was compared as if nothing had changed. The ambient fingerprint and the
 evaluator epoch are the same pattern applied in two places; this slice closes the gap on the judge
-path and the improve loop. It stays distinct from AC-881 noise calibration, which measures
+path and the improve loop. It stays distinct from noise calibration, which measures
 within-epoch variance rather than deciding cross-epoch comparability.
 
 ## Persisting a re-score (Slice D2b)
@@ -523,5 +522,5 @@ The remaining slices are explicitly deferred, not dropped:
   fields, and the `stale_epoch` HTTP warning) is shipped, see "Slice D1: stale surfacing" above. D2a
   (the on-demand, report-only `autoctx rescore` command) is shipped, see "On-demand re-score (Slice
   D2a)" above. D2b (persisting a re-score behind an `--apply` flag and a `generation_score_revisions`
-  table) is shipped, see "Persisting a re-score (Slice D2b)" above. Slice D, and the AC-885 re-score
+  table) is shipped, see "Persisting a re-score (Slice D2b)" above. Slice D, and the re-score
   thread it closes, is done.

@@ -114,7 +114,7 @@ class AppSettings(BaseModel):
             "notebooks, etc.) is in the untrusted user turn. Still OFF by default "
             "pending a capable-backend score-parity + behavioral adversarial soak "
             "(the prompt-shape change can shift model output). See "
-            "docs/erp-67-structural-role-isolation-design.md for the soak gate."
+            "docs/internal/erp-67-structural-role-isolation-design.md for the soak gate."
         ),
     )
     evidence_freshness_enabled: bool = Field(

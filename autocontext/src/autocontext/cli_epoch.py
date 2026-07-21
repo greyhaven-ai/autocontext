@@ -4,7 +4,7 @@ The human trigger for the evaluator-epoch promotion workflow. approve/reject are
 overrides (``calibration_report=None``; the human is the authority, and C2 records the decision on
 the epoch record). ``scenario`` keys the registry + sqlite; the charter target name is resolved
 separately by selector (never conflate the two -- a valid charter forbids a target name that
-collides with a registered scenario). See docs/ac-885-slice-c3-cli-enforcement-design.md.
+collides with a registered scenario). See docs/internal/ac-885-slice-c3-cli-enforcement-design.md.
 """
 
 from __future__ import annotations

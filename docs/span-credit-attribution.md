@@ -1,4 +1,4 @@
-# Span-level credit attribution (AC-797)
+# Span-level credit attribution
 
 `context_attribution` defaults to `component`. Set `AUTOCONTEXT_CONTEXT_ATTRIBUTION=span` (or `contextAttribution: "span"` in TypeScript settings) to attach span-level attribution metadata to credit-assignment records.
 

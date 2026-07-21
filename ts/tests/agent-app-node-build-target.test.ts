@@ -103,7 +103,7 @@ describe("Node agent app build target", () => {
       'projectRoot: new URL("..", import.meta.url)',
     );
     expect(readFileSync(join(root, "dist-agent", "README.md"), "utf-8")).toContain(
-      "docs/core-control-package-split.md#agent-app-build-targets",
+      "docs/internal/core-control-package-split.md#agent-app-build-targets",
     );
   });
 

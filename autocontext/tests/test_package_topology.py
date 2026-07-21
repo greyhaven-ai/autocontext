@@ -47,7 +47,7 @@ def test_packages_directory_points_to_deferred_policy() -> None:
 
 
 def test_deferred_split_doc_keeps_active_package_surfaces() -> None:
-    doc = (REPO_ROOT / "docs" / "core-control-package-split.md").read_text(encoding="utf-8")
+    doc = (REPO_ROOT / "docs" / "internal" / "core-control-package-split.md").read_text(encoding="utf-8")
 
     assert "Status: **deferred**" in doc
     assert "## Agent App Build Targets" in doc

@@ -1,6 +1,6 @@
 # Negative Result Ledger
 
-AC-823 adds a durable ledger for failed, pruned, rejected, or refused branches. It keeps negative evidence inspectable instead of collapsing it into `dead_ends.md` prose.
+autocontext provides a durable ledger for failed, pruned, rejected, or refused branches. It keeps negative evidence inspectable instead of collapsing it into `dead_ends.md` prose.
 
 ## Contract
 

@@ -1,6 +1,6 @@
 # Exploration Collapse Guard
 
-AC-799 adds an experimental, opt-in guard for regretful-teacher and anti-exploration collapse.
+autocontext provides an experimental, opt-in guard for regretful-teacher and anti-exploration collapse.
 
 Enable generation-end advisory artifacts with:
 

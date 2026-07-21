@@ -1,6 +1,6 @@
 # Campaign Mode Report
 
-AC-824 defines campaign mode as a shared Python/TypeScript artifact for multi-branch runs. It makes the hypothesis tree operator-visible without adding hosted scheduling or proprietary orchestration.
+Campaign mode is a shared Python/TypeScript artifact for multi-branch runs. It makes the hypothesis tree operator-visible without adding hosted scheduling or proprietary orchestration.
 
 ## Contract
 

@@ -314,7 +314,7 @@ function renderNodeAgentReadme(): string {
     "Explicit handler env can be loaded with `AUTOCTX_ENV_FILE` (resolved from the source project root); the generated server does not capture the full host environment.",
     "Runtime-session events can be persisted with `AUTOCTX_SESSION_DB`.",
     "",
-    "Boundary reference: docs/core-control-package-split.md#agent-app-build-targets",
+    "Boundary reference: docs/internal/core-control-package-split.md#agent-app-build-targets",
     "",
   ].join("\n");
 }

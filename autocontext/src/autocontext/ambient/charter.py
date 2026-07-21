@@ -1,7 +1,7 @@
 """charter models: the ambient daemon's only policy input.
 
 Guardrail floors are enforced here so no charter file can disable them
-(spec: docs/ambient-trainer-design.md, "The charter").
+(spec: docs/internal/ambient-trainer-design.md, "The charter").
 """
 
 from __future__ import annotations

@@ -1,6 +1,6 @@
 # Run Utilization Report
 
-AC-822 adds a descriptive report for parallel autoresearch runs. It does not gate runs.
+autocontext provides a descriptive report for parallel autoresearch runs. It does not gate runs.
 
 ## Window semantics
 

@@ -20,7 +20,7 @@ so downstream consumers see valid JSON. No production stage attaches this key
 yet, so the stage is opt-in telemetry until a producer is added (a documented
 follow-up). Richer inputs (artifact-landing relocation, finish-claim validation)
 and the runtime parse-seam wiring are follow-ups tracked with the deferred
-artifact-reassembly work in ``docs/harness-optimization-protocol.md``.
+artifact-reassembly work in ``docs/internal/harness-optimization-protocol.md``.
 """
 
 from __future__ import annotations
