@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-07-21
+
 ### Added
 
 - TypeScript interactive runs now advertise `agent_task_plan_v1` to transcript clients and emit strict, redacted `task_plan_updated` snapshots as work moves through meaningful execution phases. Plans carry stable run/plan identity, monotonic versions and revisions, sticky completion, explicit replan receipts, terminal step state before the run terminal event, and exact durable replay across reconnects and server restarts. Python parity is deferred until its interactive server can supply the same durable transcript identity and replay guarantees (AC-896).
@@ -676,7 +678,9 @@ A new cross-runtime parity audit (`test_cli_contract_parity.py` + `cli-contract-
 - FastAPI dashboard with WebSocket events.
 - CLI via Typer (Python) and `parseArgs` (TypeScript).
 
-[Unreleased]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.12.0...HEAD
+[Unreleased]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.14.0...HEAD
+[0.14.0]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.13.0...py-v0.14.0
+[0.13.0]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.12.0...py-v0.13.0
 [0.12.0]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.11.0...py-v0.12.0
 [0.11.0]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.10.0...py-v0.11.0
 [0.10.0]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.9.0...py-v0.10.0
