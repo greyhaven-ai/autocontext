@@ -5,8 +5,25 @@
 
 import { z } from "zod";
 
+import { AGENT_PROGRESS_NOTE_CAPABILITY } from "../loop/agent-progress-note.js";
 import { AGENT_TASK_PLAN_CAPABILITY } from "../loop/agent-task-plan.js";
 
+export {
+  AGENT_PROGRESS_NOTE_CAPABILITY,
+  AGENT_PROGRESS_NOTE_EVENT_NAME,
+  AgentProgressNoteEvidenceTargetSchema,
+  AgentProgressNoteKindSchema,
+  AgentProgressNotePayloadSchema,
+  MAX_AGENT_PROGRESS_NOTE_EVIDENCE_TARGETS,
+  MAX_AGENT_PROGRESS_NOTE_ID_LENGTH,
+  MAX_AGENT_PROGRESS_NOTE_TEXT_LENGTH,
+  MAX_RETAINED_AGENT_PROGRESS_NOTE_BYTES,
+} from "../loop/agent-progress-note.js";
+export type {
+  AgentProgressNoteEvidenceTarget,
+  AgentProgressNoteKind,
+  AgentProgressNotePayload,
+} from "../loop/agent-progress-note.js";
 export {
   AGENT_TASK_PLAN_CAPABILITY,
   AGENT_TASK_PLAN_EVENT_NAME,
@@ -30,6 +47,7 @@ export const SERVER_CAPABILITIES = [
   "run_transcript_v1",
   "safe_run_stop_v1",
   AGENT_TASK_PLAN_CAPABILITY,
+  AGENT_PROGRESS_NOTE_CAPABILITY,
 ] as const;
 
 const protocolObject = <T extends z.ZodRawShape>(shape: T) => z.object(shape).strict();
