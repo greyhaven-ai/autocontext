@@ -92,6 +92,31 @@ def test_agent_task_plan_capability_remains_typescript_only() -> None:
     assert "agent_task_plan_v1" not in SERVER_CAPABILITIES
 
 
+def test_agent_progress_note_capability_remains_typescript_only() -> None:
+    extension = _contract()["agent_progress_note_extension"]
+
+    assert extension["capability"] == "agent_progress_notes_v1"
+    assert extension["advertised_runtimes"] == ["typescript"]
+    assert extension["requires_transcript_protocol_version"] == 1
+    assert extension["event"] == "agent_progress_note"
+    assert extension["payload"]["kinds"] == [
+        "intent",
+        "discovery",
+        "decision",
+        "verification",
+        "blocker",
+    ]
+    assert extension["payload"]["copy_limits"]["text_characters"] == 480
+    assert extension["payload"]["evidence_targets"]["maximum_items"] == 5
+    assert extension["payload"]["evidence_targets"]["id"]["maximum_characters"] == 200
+    assert extension["retention"]["max_serialized_event_bytes"] == 4096
+    assert extension["fixture"]["run_id"] == extension["fixture"]["payload"]["run_id"]
+    assert extension["python_support"] == (
+        "deferred_until_durable_transcript_metadata_is_available"
+    )
+    assert "agent_progress_notes_v1" not in SERVER_CAPABILITIES
+
+
 def test_python_event_stream_envelope_matches_shared_contract(tmp_path: Path) -> None:
     contract = _contract()["event_stream_envelope"]
     event_path = tmp_path / "events.ndjson"
