@@ -103,8 +103,7 @@ legacy v1 hello and run-frame shapes. Clients explicitly opt into durable
 transcripts with `/ws/interactive?transcript_protocol_version=1`; that connection
 advertises `transcript_protocol_version: 1` plus the `run_transcript_v1` and
 `safe_run_stop_v1` capabilities. TypeScript engines that publish live execution
-plans and progress notes also advertise `agent_task_plan_v1` and
-`agent_progress_notes_v1` on the same transcript-enabled hello.
+plans also advertise `agent_task_plan_v1` on the same transcript-enabled hello.
 Clients may attach a stable `client_run_id` and `command_id` to `start_run`,
 operator-control, and chat commands. Run-scoped responses then include stable
 `event_id`, monotonic `sequence`, `client_run_id`, and `occurred_at` fields.
@@ -174,57 +173,6 @@ Cursor replay returns the exact retained snapshots with their original identity
 and ordering. See the
 [shared WebSocket contract](../docs/websocket-protocol-contract.json) for the
 machine-readable invariants. Python does not advertise this capability yet.
-
-#### Agent progress notes
-
-Transcript-enabled TypeScript runs also emit concise semantic checkpoints as
-`agent_progress_note` events:
-
-```json
-{
-  "type": "event",
-  "event": "agent_progress_note",
-  "run_id": "engine-run-1",
-  "client_run_id": "control-run-1",
-  "event_id": "progress-event-1",
-  "sequence": 2,
-  "occurred_at": "2026-07-27T15:00:02.000Z",
-  "payload": {
-    "run_id": "engine-run-1",
-    "generation": 1,
-    "kind": "discovery",
-    "text": "The retained source confirms the release is reversible.",
-    "evidence_targets": [
-      { "kind": "action", "action_id": "inspect-release" },
-      {
-        "kind": "artifact",
-        "action_id": "inspect-release",
-        "artifact_id": "release-report"
-      }
-    ]
-  }
-}
-```
-
-The five kinds—`intent`, `discovery`, `decision`, `verification`, and
-`blocker`—are presentation checkpoints, not reasoning traces. `generation` is a
-nonnegative integer, and `text` is nonempty and at most 480 characters after
-safety redaction and re-bounding. Hidden reasoning, prompts, raw model/tool I/O,
-credentials, URLs, and selectors are never emitted.
-
-A note may cite at most five evidence targets. Action and artifact IDs are safe
-opaque identifiers of at most 200 characters. Every target must resolve to an
-earlier `action_detail` frame in the same retained client-run transcript, and an
-artifact must belong to its referenced action. One invalid or unresolved target
-drops the entire note rather than retaining partial evidence. Built-in producers
-omit evidence where no stable action IDs are available.
-
-Notes are validated and bounded to a 4 KiB serialized event before the raw event
-emitter sees them. Transcript delivery retains the exact wire frame, identity,
-and ordering for cursor replay across reconnects and server restarts, subject to
-the transcript's finite retention horizon. Python intentionally does not
-advertise `agent_progress_notes_v1` until it can provide the same durable
-metadata and replay guarantees.
 
 To stop the currently bound run, send a retry-stable command:
 

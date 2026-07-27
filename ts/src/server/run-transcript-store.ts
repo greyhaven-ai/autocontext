@@ -16,8 +16,6 @@ import { dirname } from "node:path";
 import { z } from "zod";
 
 import {
-  AGENT_PROGRESS_NOTE_EVENT_NAME,
-  AgentProgressNotePayloadSchema,
   AGENT_TASK_PLAN_EVENT_NAME,
   ServerMessageSchema,
   TRANSCRIPT_PROTOCOL_VERSION,
@@ -137,11 +135,8 @@ export class RunTranscriptStore {
     this.path = path;
     this.#policy = validatePolicy({ ...RUN_TRANSCRIPT_RETENTION, ...policy });
     const requiresCompaction = this.#loadBoundedTail();
-    const removedInvalidProgressNotes = this.#dropProgressNotesWithUnresolvedEvidence();
     const reconciledStopCommand = this.#reconcileStopCommandTerminalFrames();
-    this.#enforceRetention(
-      requiresCompaction || removedInvalidProgressNotes || reconciledStopCommand,
-    );
+    this.#enforceRetention(requiresCompaction || reconciledStopCommand);
   }
 
   record(opts: {
@@ -159,19 +154,12 @@ export class RunTranscriptStore {
     const runId = opts.runId ?? existingRunId ?? readRunId(safeMessage);
     if (
       safeMessage.type === "event" &&
-      isRunScopedPresentationEvent(safeMessage.event) &&
+      safeMessage.event === AGENT_TASK_PLAN_EVENT_NAME &&
       safeMessage.payload.run_id !== runId
     ) {
       return null;
     }
     this.#assertScopeAvailable(opts.clientRunId, runId);
-    if (
-      safeMessage.type === "event" &&
-      safeMessage.event === AGENT_PROGRESS_NOTE_EVENT_NAME &&
-      !this.#progressNoteEvidenceResolves(opts.clientRunId, runId, safeMessage.payload)
-    ) {
-      return null;
-    }
 
     const sequence = (this.latestSequence(opts.clientRunId) ?? 0) + 1;
     const eventId = randomUUID();
@@ -198,7 +186,7 @@ export class RunTranscriptStore {
     this.#appendLine(serializeFrame(frame));
     this.#addLoadedFrame(frame);
     this.#enforceRetention(false);
-    return this.#frameByEventId(eventId);
+    return frame;
   }
 
   beginCommand(opts: {
@@ -449,47 +437,6 @@ export class RunTranscriptStore {
     return null;
   }
 
-  #dropProgressNotesWithUnresolvedEvidence(): boolean {
-    let changed = false;
-    for (const [clientRunId, frames] of this.#framesByClientRunId) {
-      const retained: RetainedRunFrame[] = [];
-      const evidenceByRunId = new Map<string, EvidenceArtifactIndex>();
-      for (const frame of [...frames].sort((first, second) => first.sequence - second.sequence)) {
-        if (
-          frame.message.type === "event" &&
-          frame.message.event === AGENT_PROGRESS_NOTE_EVENT_NAME &&
-          (frame.message.payload.run_id !== frame.runId ||
-            !progressNoteEvidenceResolvesWithIndex(
-              frame.runId,
-              frame.message.payload,
-              frame.runId ? evidenceByRunId.get(frame.runId) : undefined,
-            ))
-        ) {
-          changed = true;
-          continue;
-        }
-        retained.push(frame);
-        indexActionDetailEvidence(frame, evidenceByRunId);
-      }
-      if (retained.length === 0) this.#framesByClientRunId.delete(clientRunId);
-      else this.#framesByClientRunId.set(clientRunId, retained);
-    }
-    if (changed) this.#rebuildScopeMaps();
-    return changed;
-  }
-
-  #progressNoteEvidenceResolves(
-    clientRunId: string,
-    runId: string | null | undefined,
-    payload: Record<string, unknown>,
-  ): boolean {
-    return progressNoteEvidenceResolves(
-      this.#framesByClientRunId.get(clientRunId) ?? [],
-      runId,
-      payload,
-    );
-  }
-
   #reconcileStopCommandTerminalFrames(): boolean {
     let changed = false;
     for (const [key, command] of this.#commands) {
@@ -508,7 +455,10 @@ export class RunTranscriptStore {
       const matchesTerminal = (frame: RetainedRunFrame): boolean => {
         if (frame.runId !== expectedRunId) return false;
         const payload = readRunStoppedPayload(frame.message);
-        return payload?.runId === expectedRunId && payload.commandId === command.commandId;
+        return (
+          payload?.runId === expectedRunId &&
+          payload.commandId === command.commandId
+        );
       };
       if (existingResponse && matchesTerminal(existingResponse)) continue;
 
@@ -541,7 +491,6 @@ export class RunTranscriptStore {
     const now = Date.now();
     const cutoff = now - this.#policy.maxAgeMs;
     let changed = false;
-    let framesPruned = false;
 
     for (const [clientRunId, original] of this.#framesByClientRunId) {
       const sorted = [...original].sort((first, second) => first.sequence - second.sequence);
@@ -550,10 +499,7 @@ export class RunTranscriptStore {
         (frame) => Date.parse(frame.occurredAt) >= cutoff || frame === newest,
       );
       const retained = retainedByAge.slice(-this.#policy.maxFramesPerRun);
-      if (retained.length !== original.length) {
-        changed = true;
-        framesPruned = true;
-      }
+      if (retained.length !== original.length) changed = true;
       if (retained.length === 0) this.#framesByClientRunId.delete(clientRunId);
       else this.#framesByClientRunId.set(clientRunId, retained);
     }
@@ -568,7 +514,6 @@ export class RunTranscriptStore {
       );
       this.#filterFrames((frame) => retainedIds.has(frame.eventId));
       changed = true;
-      framesPruned = true;
     }
 
     const commands = [...this.#commands.entries()].sort((first, second) =>
@@ -584,7 +529,6 @@ export class RunTranscriptStore {
     }
 
     if (this.#downgradeMissingCommandResponses()) changed = true;
-    if (framesPruned && this.#dropProgressNotesWithUnresolvedEvidence()) changed = true;
     this.#rebuildScopeMaps();
 
     let serialized = this.#serializedRecords();
@@ -606,7 +550,6 @@ export class RunTranscriptStore {
         if (!retained.has(`command:${key}`)) this.#commands.delete(key);
       }
       this.#downgradeMissingCommandResponses();
-      this.#dropProgressNotesWithUnresolvedEvidence();
       this.#rebuildScopeMaps();
       serialized = this.#serializedRecords();
       totalBytes = serialized.reduce(
@@ -724,75 +667,6 @@ export class RunTranscriptStore {
       throw new Error("engine run is already associated with a different client_run_id");
     }
   }
-}
-
-function isRunScopedPresentationEvent(event: string): boolean {
-  return event === AGENT_TASK_PLAN_EVENT_NAME || event === AGENT_PROGRESS_NOTE_EVENT_NAME;
-}
-
-type EvidenceArtifactIndex = Map<string, Set<string>>;
-
-function progressNoteEvidenceResolves(
-  earlierFrames: readonly RetainedRunFrame[],
-  runId: string | null | undefined,
-  payload: Record<string, unknown>,
-): boolean {
-  if (!runId) return false;
-  const evidenceByRunId = new Map<string, EvidenceArtifactIndex>();
-  for (const frame of earlierFrames) indexActionDetailEvidence(frame, evidenceByRunId);
-  return progressNoteEvidenceResolvesWithIndex(runId, payload, evidenceByRunId.get(runId));
-}
-
-function progressNoteEvidenceResolvesWithIndex(
-  runId: string | null | undefined,
-  payload: Record<string, unknown>,
-  artifactsByActionId: EvidenceArtifactIndex | undefined,
-): boolean {
-  const parsed = AgentProgressNotePayloadSchema.safeParse(payload);
-  if (!parsed.success || !runId || parsed.data.run_id !== runId) return false;
-  const targets = parsed.data.evidence_targets ?? [];
-  if (targets.length === 0) return true;
-  if (!artifactsByActionId) return false;
-
-  return targets.every((target) => {
-    const artifactIds = artifactsByActionId.get(target.action_id);
-    if (!artifactIds) return false;
-    if (target.kind === "action") return true;
-    return artifactIds.has(target.artifact_id);
-  });
-}
-
-function indexActionDetailEvidence(
-  frame: RetainedRunFrame,
-  evidenceByRunId: Map<string, EvidenceArtifactIndex>,
-): void {
-  if (!frame.runId || frame.message.type !== "event" || frame.message.event !== "action_detail") {
-    return;
-  }
-  const actionId =
-    readStableEventId(frame.message.payload.action_id) ??
-    readStableEventId(frame.message.payload.id);
-  if (!actionId) return;
-  const artifactsByActionId = evidenceByRunId.get(frame.runId) ?? new Map<string, Set<string>>();
-  const artifactIds = artifactsByActionId.get(actionId) ?? new Set<string>();
-  const artifacts = frame.message.payload.artifacts;
-  if (Array.isArray(artifacts)) {
-    for (const artifact of artifacts) {
-      if (!isRecord(artifact)) continue;
-      const artifactId = readStableEventId(artifact.artifact_id) ?? readStableEventId(artifact.id);
-      if (artifactId) artifactIds.add(artifactId);
-    }
-  }
-  artifactsByActionId.set(actionId, artifactIds);
-  evidenceByRunId.set(frame.runId, artifactsByActionId);
-}
-
-function readStableEventId(value: unknown): string | null {
-  return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function validatePolicy(policy: RunTranscriptRetentionPolicy): RunTranscriptRetentionPolicy {

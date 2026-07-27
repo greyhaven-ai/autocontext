@@ -84,14 +84,12 @@ describe("run start workflow", () => {
       hasGeneratedSource: false,
     };
 
-    expect(
-      resolveRunStartPlan({
-        scenario: "saved_task",
-        builtinScenarioNames: ["grid_ctf"],
-        customScenario: entry,
-        customScenarioFamily: "agent_task",
-      }),
-    ).toEqual({
+    expect(resolveRunStartPlan({
+      scenario: "saved_task",
+      builtinScenarioNames: ["grid_ctf"],
+      customScenario: entry,
+      customScenarioFamily: "agent_task",
+    })).toEqual({
       kind: "agent_task_custom",
       scenarioName: "saved_task",
       entry,
@@ -101,30 +99,14 @@ describe("run start workflow", () => {
   it("executes built-in game runs through the generation runner boundary", async () => {
     class FakeScenario {
       readonly name = "grid_ctf";
-      describeRules() {
-        return "Rules";
-      }
-      describeStrategyInterface() {
-        return "Strategy";
-      }
-      describeEvaluationCriteria() {
-        return "Criteria";
-      }
-      initialState() {
-        return {};
-      }
-      getObservation() {
-        return { narrative: "obs", state: {}, constraints: [] };
-      }
-      validateActions() {
-        return [true, "ok"] as [boolean, string];
-      }
-      step() {
-        return {};
-      }
-      isTerminal() {
-        return true;
-      }
+      describeRules() { return "Rules"; }
+      describeStrategyInterface() { return "Strategy"; }
+      describeEvaluationCriteria() { return "Criteria"; }
+      initialState() { return {}; }
+      getObservation() { return { narrative: "obs", state: {}, constraints: [] }; }
+      validateActions() { return [true, "ok"] as [boolean, string]; }
+      step() { return {}; }
+      isTerminal() { return true; }
       getResult() {
         return {
           score: 1,
@@ -133,23 +115,13 @@ describe("run start workflow", () => {
           replay: [],
           metrics: {},
           validationErrors: [],
-          get passedValidation() {
-            return true;
-          },
+          get passedValidation() { return true; },
         };
       }
-      replayToNarrative() {
-        return "narrative";
-      }
-      renderFrame() {
-        return {};
-      }
-      enumerateLegalActions() {
-        return null;
-      }
-      scoringDimensions() {
-        return null;
-      }
+      replayToNarrative() { return "narrative"; }
+      renderFrame() { return {}; }
+      enumerateLegalActions() { return null; }
+      scoringDimensions() { return null; }
       executeMatch() {
         return {
           score: 1,
@@ -158,9 +130,7 @@ describe("run start workflow", () => {
           replay: [],
           metrics: {},
           validationErrors: [],
-          get passedValidation() {
-            return true;
-          },
+          get passedValidation() { return true; },
         };
       }
     }
@@ -257,7 +227,9 @@ describe("run start workflow", () => {
     expect(emitted[0]?.event).toBe("run_started");
     expect(emitted.filter((entry) => entry.event === "generation_started")).toHaveLength(2);
     expect(emitted.filter((entry) => entry.event === "generation_completed")).toHaveLength(2);
-    const generatedPlanEvents = emitted.filter((entry) => entry.event === "task_plan_updated");
+    const generatedPlanEvents = emitted.filter(
+      (entry) => entry.event === "task_plan_updated",
+    );
     expect(generatedPlanEvents.at(0)?.payload.update_kind).toBe("initial");
     expect(generatedPlanEvents.at(-1)?.payload.active_step_id).toBeNull();
     expect(generatedPlanEvents.at(-1)?.payload.steps).toEqual(
@@ -266,25 +238,10 @@ describe("run start workflow", () => {
         expect.objectContaining({ id: "finalize_run", status: "completed" }),
       ]),
     );
-    expect(emitted.findIndex((entry) => entry.event === "task_plan_updated")).toBeGreaterThan(
-      emitted.findIndex((entry) => entry.event === "run_started"),
-    );
-    expect(emitted.findLastIndex((entry) => entry.event === "task_plan_updated")).toBeLessThan(
-      emitted.findIndex((entry) => entry.event === "run_completed"),
-    );
-    const progressNotes = emitted.filter((entry) => entry.event === "agent_progress_note");
-    expect(progressNotes.map((entry) => entry.payload.kind)).toEqual([
-      "intent",
-      "discovery",
-      "discovery",
-      "verification",
-    ]);
-    expect(progressNotes.map((entry) => entry.payload.generation)).toEqual([0, 1, 2, 2]);
-    expect(JSON.stringify(progressNotes)).not.toContain("first generation");
-    expect(JSON.stringify(progressNotes)).not.toContain("second generation");
-    expect(emitted.findLastIndex((entry) => entry.event === "agent_progress_note")).toBeLessThan(
-      emitted.findIndex((entry) => entry.event === "run_completed"),
-    );
+    expect(emitted.findIndex((entry) => entry.event === "task_plan_updated"))
+      .toBeGreaterThan(emitted.findIndex((entry) => entry.event === "run_started"));
+    expect(emitted.findLastIndex((entry) => entry.event === "task_plan_updated"))
+      .toBeLessThan(emitted.findIndex((entry) => entry.event === "run_completed"));
     const completed = emitted.find((entry) => entry.event === "run_completed");
     expect(completed?.payload.best_score).toBe(0.9);
     expect(completed?.payload.completed_generations).toBe(2);
@@ -309,29 +266,27 @@ describe("run start workflow", () => {
       };
     });
 
-    await expect(
-      executeGeneratedCustomStartRun({
-        runId: "run_generated_stop",
-        scenarioName: "saved_sim",
-        entry: {
-          name: "saved_sim",
-          type: "simulation",
-          spec: { max_steps: 4 },
-          path: "/tmp/saved_sim",
-          hasGeneratedSource: true,
+    await expect(executeGeneratedCustomStartRun({
+      runId: "run_generated_stop",
+      scenarioName: "saved_sim",
+      entry: {
+        name: "saved_sim",
+        type: "simulation",
+        spec: { max_steps: 4 },
+        path: "/tmp/saved_sim",
+        hasGeneratedSource: true,
+      },
+      family: "simulation",
+      generations: 2,
+      knowledgeRoot: "/tmp/knowledge",
+      controller,
+      events: {
+        emit: (event: string, payload: Record<string, unknown>) => {
+          emitted.push({ event, payload });
         },
-        family: "simulation",
-        generations: 2,
-        knowledgeRoot: "/tmp/knowledge",
-        controller,
-        events: {
-          emit: (event: string, payload: Record<string, unknown>) => {
-            emitted.push({ event, payload });
-          },
-        } as never,
-        deps: { executeGeneratedScenarioEntry },
-      }),
-    ).rejects.toMatchObject({
+      } as never,
+      deps: { executeGeneratedScenarioEntry },
+    })).rejects.toMatchObject({
       name: "RunStopRequestedError",
       runId: "run_generated_stop",
       commandId: "stop-generated-1",
@@ -362,50 +317,6 @@ describe("run start workflow", () => {
         expect.objectContaining({ id: "execute_scenario", status: "interrupted" }),
       ]),
     );
-    expect(
-      emitted
-        .filter((entry) => entry.event === "agent_progress_note")
-        .map((entry) => entry.payload.kind),
-    ).toEqual(["intent", "discovery"]);
-  });
-
-  it("publishes a static generated-custom blocker without raw failure details", async () => {
-    const emitted: Array<{ event: string; payload: Record<string, unknown> }> = [];
-
-    await expect(
-      executeGeneratedCustomStartRun({
-        runId: "run_generated_failed",
-        scenarioName: "saved_sim",
-        entry: {
-          name: "saved_sim",
-          type: "simulation",
-          spec: { max_steps: 4 },
-          path: "/tmp/saved_sim",
-          hasGeneratedSource: true,
-        },
-        family: "simulation",
-        generations: 1,
-        knowledgeRoot: "/tmp/knowledge",
-        controller: new LoopController(),
-        events: {
-          emit: (event: string, payload: Record<string, unknown>) => {
-            emitted.push({ event, payload });
-          },
-        } as never,
-        deps: {
-          executeGeneratedScenarioEntry: vi.fn(async () => {
-            throw new Error(
-              "provider failed at https://private.example.test with selector=#secret",
-            );
-          }),
-        },
-      }),
-    ).rejects.toThrow("provider failed");
-
-    const progressNotes = emitted.filter((entry) => entry.event === "agent_progress_note");
-    expect(progressNotes.map((entry) => entry.payload.kind)).toEqual(["intent", "blocker"]);
-    expect(JSON.stringify(progressNotes)).not.toContain("private.example.test");
-    expect(JSON.stringify(progressNotes)).not.toContain("#secret");
   });
 
   it("executes saved agent-task runs and emits lifecycle events", async () => {
@@ -454,9 +365,7 @@ describe("run start workflow", () => {
       { event: "generation_started", payload: { run_id: "run_task", generation: 2 } },
     ]);
     expect(emitted.filter((entry) => entry.event === "generation_completed")).toHaveLength(2);
-    expect(
-      emitted.find((entry) => entry.event === "generation_completed")?.payload.best_score,
-    ).toBe(0.82);
+    expect(emitted.find((entry) => entry.event === "generation_completed")?.payload.best_score).toBe(0.82);
     const completed = emitted.find((entry) => entry.event === "run_completed");
     expect(completed?.payload.completed_generations).toBe(2);
     expect(completed?.payload.best_score).toBe(0.82);
@@ -472,11 +381,6 @@ describe("run start workflow", () => {
         expect.objectContaining({ id: "finalize_result", status: "completed" }),
       ]),
     );
-    expect(
-      emitted
-        .filter((entry) => entry.event === "agent_progress_note")
-        .map((entry) => entry.payload.kind),
-    ).toEqual(["intent", "verification"]);
   });
 
   it("publishes saved task evaluation and revision progress as a semantic replan", async () => {
@@ -501,21 +405,20 @@ describe("run start workflow", () => {
         },
       } as never,
       deps: {
-        executeAgentTaskSolve: vi.fn(
-          async (solveOpts: { onProgress?: (progress: AgentTaskSolveProgress) => void }) => {
-            solveOpts.onProgress?.({ phase: "context_preparation", status: "completed" });
-            solveOpts.onProgress?.({ phase: "draft", status: "completed" });
-            solveOpts.onProgress?.({ phase: "evaluation", status: "started", round: 1 });
-            solveOpts.onProgress?.({ phase: "evaluation", status: "completed", round: 1 });
-            solveOpts.onProgress?.({ phase: "revision", status: "started", round: 1 });
-            solveOpts.onProgress?.({ phase: "revision", status: "completed", round: 1 });
-            solveOpts.onProgress?.({ phase: "finalization", status: "started" });
-            return {
-              progress: 1,
-              result: { best_score: 0.9, scenario_name: "saved_task" },
-            };
-          },
-        ) as never,
+        executeAgentTaskSolve: vi.fn(async (solveOpts: {
+          onProgress?: (progress: AgentTaskSolveProgress) => void;
+        }) => {
+          solveOpts.onProgress?.({ phase: "context_preparation", status: "completed" });
+          solveOpts.onProgress?.({ phase: "draft", status: "completed" });
+          solveOpts.onProgress?.({ phase: "evaluation", status: "started", round: 1 });
+          solveOpts.onProgress?.({ phase: "revision", status: "started", round: 1 });
+          solveOpts.onProgress?.({ phase: "revision", status: "completed", round: 1 });
+          solveOpts.onProgress?.({ phase: "finalization", status: "started" });
+          return {
+            progress: 1,
+            result: { best_score: 0.9, scenario_name: "saved_task" },
+          };
+        }) as never,
       },
     });
 
@@ -525,36 +428,19 @@ describe("run start workflow", () => {
       plan_revision: 1,
       active_step_id: "prepare_context",
     });
-    expect(
-      planEvents.find((entry) => entry.payload.update_kind === "replan")?.payload,
-    ).toMatchObject({
-      plan_revision: 2,
-      active_step_id: "improve_response",
-      summary: "Refining the response after evaluation round 1.",
-    });
+    expect(planEvents.find((entry) => entry.payload.update_kind === "replan")?.payload)
+      .toMatchObject({
+        plan_revision: 2,
+        active_step_id: "improve_response",
+        summary: "Refining the response after evaluation round 1.",
+      });
     expect(planEvents.at(-1)?.payload).toMatchObject({
       update_kind: "progress",
       plan_revision: 2,
       active_step_id: null,
     });
-    expect(emitted.findLastIndex((entry) => entry.event === "task_plan_updated")).toBeLessThan(
-      emitted.findIndex((entry) => entry.event === "run_completed"),
-    );
-    const progressNotes = emitted.filter((entry) => entry.event === "agent_progress_note");
-    expect(progressNotes.map((entry) => entry.payload.kind)).toEqual([
-      "intent",
-      "discovery",
-      "discovery",
-      "discovery",
-      "decision",
-      "verification",
-      "verification",
-    ]);
-    expect(progressNotes.at(3)?.payload.text).toContain("Evaluation round 1");
-    expect(progressNotes.at(4)?.payload.text).toContain("revision approach");
-    expect(emitted.findLastIndex((entry) => entry.event === "agent_progress_note")).toBeLessThan(
-      emitted.findIndex((entry) => entry.event === "run_completed"),
-    );
+    expect(emitted.findLastIndex((entry) => entry.event === "task_plan_updated"))
+      .toBeLessThan(emitted.findIndex((entry) => entry.event === "run_completed"));
   });
 
   it("turns a blocked saved-task completion hook into a failed terminal plan", async () => {
@@ -576,43 +462,41 @@ describe("run start workflow", () => {
         "utf-8",
       );
 
-      await expect(
-        executeAgentTaskCustomStartRun({
-          runId: "blocked-completion-run",
-          scenarioName: "saved_task",
-          entry: {
-            name: "saved_task",
-            type: "agent_task",
-            spec: { taskPrompt: "Do work", judgeRubric: "Do it well" },
-            path: "/tmp/saved_task",
-            hasGeneratedSource: false,
+      await expect(executeAgentTaskCustomStartRun({
+        runId: "blocked-completion-run",
+        scenarioName: "saved_task",
+        entry: {
+          name: "saved_task",
+          type: "agent_task",
+          spec: { taskPrompt: "Do work", judgeRubric: "Do it well" },
+          path: "/tmp/saved_task",
+          hasGeneratedSource: false,
+        },
+        generations: 1,
+        provider: { name: "test", defaultModel: () => "test", complete: vi.fn() },
+        settings: {
+          ...makeSettings(),
+          extensions: extensionPath,
+          extensionFailFast: true,
+        },
+        controller: new LoopController(),
+        events: {
+          emit: (event: string, payload: Record<string, unknown>) => {
+            emitted.push({ event, payload });
           },
-          generations: 1,
-          provider: { name: "test", defaultModel: () => "test", complete: vi.fn() },
-          settings: {
-            ...makeSettings(),
-            extensions: extensionPath,
-            extensionFailFast: true,
-          },
-          controller: new LoopController(),
-          events: {
-            emit: (event: string, payload: Record<string, unknown>) => {
-              emitted.push({ event, payload });
-            },
-          } as never,
-          deps: {
-            executeAgentTaskSolve: vi.fn(
-              async (solveOpts: { onProgress?: (progress: AgentTaskSolveProgress) => void }) => {
-                solveOpts.onProgress?.({ phase: "finalization", status: "started" });
-                return {
-                  progress: 1,
-                  result: { best_score: 0.9, scenario_name: "saved_task" },
-                };
-              },
-            ) as never,
-          },
-        }),
-      ).rejects.toThrow("completion policy rejected");
+        } as never,
+        deps: {
+          executeAgentTaskSolve: vi.fn(async (solveOpts: {
+            onProgress?: (progress: AgentTaskSolveProgress) => void;
+          }) => {
+            solveOpts.onProgress?.({ phase: "finalization", status: "started" });
+            return {
+              progress: 1,
+              result: { best_score: 0.9, scenario_name: "saved_task" },
+            };
+          }) as never,
+        },
+      })).rejects.toThrow("completion policy rejected");
 
       const terminalPlan = emitted
         .filter((entry) => entry.event === "task_plan_updated")
@@ -624,13 +508,6 @@ describe("run start workflow", () => {
         ]),
       );
       expect(emitted.some((entry) => entry.event === "run_completed")).toBe(false);
-      const progressNotes = emitted.filter((entry) => entry.event === "agent_progress_note");
-      expect(progressNotes.map((entry) => entry.payload.kind)).toEqual([
-        "intent",
-        "verification",
-        "blocker",
-      ]);
-      expect(JSON.stringify(progressNotes)).not.toContain("completion policy rejected");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -647,29 +524,27 @@ describe("run start workflow", () => {
       };
     });
 
-    await expect(
-      executeAgentTaskCustomStartRun({
-        runId: "run_task_stop",
-        scenarioName: "saved_task",
-        entry: {
-          name: "saved_task",
-          type: "agent_task",
-          spec: { taskPrompt: "Do work", judgeRubric: "Do it well" },
-          path: "/tmp/saved_task",
-          hasGeneratedSource: false,
+    await expect(executeAgentTaskCustomStartRun({
+      runId: "run_task_stop",
+      scenarioName: "saved_task",
+      entry: {
+        name: "saved_task",
+        type: "agent_task",
+        spec: { taskPrompt: "Do work", judgeRubric: "Do it well" },
+        path: "/tmp/saved_task",
+        hasGeneratedSource: false,
+      },
+      generations: 2,
+      provider: { name: "test", defaultModel: () => "test", complete: vi.fn() },
+      settings: makeSettings(),
+      controller,
+      events: {
+        emit: (event: string, payload: Record<string, unknown>) => {
+          emitted.push({ event, payload });
         },
-        generations: 2,
-        provider: { name: "test", defaultModel: () => "test", complete: vi.fn() },
-        settings: makeSettings(),
-        controller,
-        events: {
-          emit: (event: string, payload: Record<string, unknown>) => {
-            emitted.push({ event, payload });
-          },
-        } as never,
-        deps: { executeAgentTaskSolve: executeAgentTaskSolve as never },
-      }),
-    ).rejects.toMatchObject({
+      } as never,
+      deps: { executeAgentTaskSolve: executeAgentTaskSolve as never },
+    })).rejects.toMatchObject({
       name: "RunStopRequestedError",
       runId: "run_task_stop",
       commandId: "stop-task-1",
@@ -684,47 +559,42 @@ describe("run start workflow", () => {
       .filter((entry) => entry.event === "task_plan_updated")
       .at(-1)?.payload;
     expect(interruptedPlan?.steps).toEqual(
-      expect.arrayContaining([expect.objectContaining({ status: "interrupted" })]),
+      expect.arrayContaining([
+        expect.objectContaining({ status: "interrupted" }),
+      ]),
     );
-    expect(
-      emitted
-        .filter((entry) => entry.event === "agent_progress_note")
-        .map((entry) => entry.payload.kind),
-    ).toEqual(["intent"]);
   });
 
   it("prefers an agent-task stop request over a concurrent provider failure", async () => {
     const emitted: Array<{ event: string; payload: Record<string, unknown> }> = [];
     const controller = new LoopController();
 
-    await expect(
-      executeAgentTaskCustomStartRun({
-        runId: "run_task_stop_failure",
-        scenarioName: "saved_task",
-        entry: {
-          name: "saved_task",
-          type: "agent_task",
-          spec: { taskPrompt: "Do work", judgeRubric: "Do it well" },
-          path: "/tmp/saved_task",
-          hasGeneratedSource: false,
+    await expect(executeAgentTaskCustomStartRun({
+      runId: "run_task_stop_failure",
+      scenarioName: "saved_task",
+      entry: {
+        name: "saved_task",
+        type: "agent_task",
+        spec: { taskPrompt: "Do work", judgeRubric: "Do it well" },
+        path: "/tmp/saved_task",
+        hasGeneratedSource: false,
+      },
+      generations: 1,
+      provider: { name: "test", defaultModel: () => "test", complete: vi.fn() },
+      settings: makeSettings(),
+      controller,
+      events: {
+        emit: (event: string, payload: Record<string, unknown>) => {
+          emitted.push({ event, payload });
         },
-        generations: 1,
-        provider: { name: "test", defaultModel: () => "test", complete: vi.fn() },
-        settings: makeSettings(),
-        controller,
-        events: {
-          emit: (event: string, payload: Record<string, unknown>) => {
-            emitted.push({ event, payload });
-          },
-        } as never,
-        deps: {
-          executeAgentTaskSolve: vi.fn(async () => {
-            controller.requestStop("run_task_stop_failure", "stop-task-failure-1");
-            throw new Error("provider disconnected");
-          }) as never,
-        },
-      }),
-    ).rejects.toMatchObject({
+      } as never,
+      deps: {
+        executeAgentTaskSolve: vi.fn(async () => {
+          controller.requestStop("run_task_stop_failure", "stop-task-failure-1");
+          throw new Error("provider disconnected");
+        }) as never,
+      },
+    })).rejects.toMatchObject({
       name: "RunStopRequestedError",
       runId: "run_task_stop_failure",
       commandId: "stop-task-failure-1",
@@ -817,33 +687,31 @@ describe("run start workflow", () => {
         "utf-8",
       );
 
-      await expect(
-        executeAgentTaskCustomStartRun({
-          runId: "run_task_hooks_failed",
-          scenarioName: "saved_task",
-          entry: {
-            name: "saved_task",
-            type: "agent_task",
-            spec: { taskPrompt: "Do work", judgeRubric: "Do it well" },
-            path: "/tmp/saved_task",
-            hasGeneratedSource: false,
-          },
-          generations: 1,
-          provider: { name: "test", defaultModel: () => "test", complete: vi.fn() },
-          settings: {
-            ...makeSettings(),
-            extensions: extensionPath,
-            extensionFailFast: true,
-          },
-          controller: new LoopController(),
-          events: { emit: vi.fn() } as never,
-          deps: {
-            executeAgentTaskSolve: vi.fn(async () => {
-              throw new Error("agent task failed");
-            }) as never,
-          },
-        }),
-      ).rejects.toThrow("agent task failed");
+      await expect(executeAgentTaskCustomStartRun({
+        runId: "run_task_hooks_failed",
+        scenarioName: "saved_task",
+        entry: {
+          name: "saved_task",
+          type: "agent_task",
+          spec: { taskPrompt: "Do work", judgeRubric: "Do it well" },
+          path: "/tmp/saved_task",
+          hasGeneratedSource: false,
+        },
+        generations: 1,
+        provider: { name: "test", defaultModel: () => "test", complete: vi.fn() },
+        settings: {
+          ...makeSettings(),
+          extensions: extensionPath,
+          extensionFailFast: true,
+        },
+        controller: new LoopController(),
+        events: { emit: vi.fn() } as never,
+        deps: {
+          executeAgentTaskSolve: vi.fn(async () => {
+            throw new Error("agent task failed");
+          }) as never,
+        },
+      })).rejects.toThrow("agent task failed");
 
       expect(readLifecycleEventNames()).toEqual([
         "run_start",
@@ -891,34 +759,32 @@ describe("run start workflow", () => {
       );
       const controller = new LoopController();
 
-      await expect(
-        executeAgentTaskCustomStartRun({
-          runId: "run_task_hooks_stopped",
-          scenarioName: "saved_task",
-          entry: {
-            name: "saved_task",
-            type: "agent_task",
-            spec: { taskPrompt: "Do work", judgeRubric: "Do it well" },
-            path: "/tmp/saved_task",
-            hasGeneratedSource: false,
-          },
-          generations: 1,
-          provider: { name: "test", defaultModel: () => "test", complete: vi.fn() },
-          settings: {
-            ...makeSettings(),
-            extensions: extensionPath,
-            extensionFailFast: true,
-          },
-          controller,
-          events: { emit: vi.fn() } as never,
-          deps: {
-            executeAgentTaskSolve: vi.fn(async () => {
-              controller.requestStop("run_task_hooks_stopped", "stop-task-hooks-1");
-              throw new Error("provider disconnected");
-            }) as never,
-          },
-        }),
-      ).rejects.toMatchObject({
+      await expect(executeAgentTaskCustomStartRun({
+        runId: "run_task_hooks_stopped",
+        scenarioName: "saved_task",
+        entry: {
+          name: "saved_task",
+          type: "agent_task",
+          spec: { taskPrompt: "Do work", judgeRubric: "Do it well" },
+          path: "/tmp/saved_task",
+          hasGeneratedSource: false,
+        },
+        generations: 1,
+        provider: { name: "test", defaultModel: () => "test", complete: vi.fn() },
+        settings: {
+          ...makeSettings(),
+          extensions: extensionPath,
+          extensionFailFast: true,
+        },
+        controller,
+        events: { emit: vi.fn() } as never,
+        deps: {
+          executeAgentTaskSolve: vi.fn(async () => {
+            controller.requestStop("run_task_hooks_stopped", "stop-task-hooks-1");
+            throw new Error("provider disconnected");
+          }) as never,
+        },
+      })).rejects.toMatchObject({
         name: "RunStopRequestedError",
         commandId: "stop-task-hooks-1",
       });
