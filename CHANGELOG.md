@@ -4,10 +4,6 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### Added
-
-- TypeScript interactive runs now advertise `agent_progress_notes_v1` to transcript clients and emit concise, strict `agent_progress_note` updates for intent, discovery, decisions, verification, and blockers. Notes are safety-redacted and bounded before emission, may cite only earlier same-run durable action/artifact IDs, and replay with exact ordering and identity across reconnects and server restarts within the transcript's finite retention horizon. Python parity is deferred until it can provide the same durable transcript guarantees (AC-897).
-
 ## [0.14.0] - 2026-07-21
 
 ### Added

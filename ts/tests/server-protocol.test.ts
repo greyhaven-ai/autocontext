@@ -215,12 +215,7 @@ describe("Protocol types", () => {
         type: "hello",
         protocol_version: 1,
         transcript_protocol_version: 1,
-        capabilities: [
-          "run_transcript_v1",
-          "safe_run_stop_v1",
-          "agent_task_plan_v1",
-          "agent_progress_notes_v1",
-        ],
+        capabilities: ["run_transcript_v1", "safe_run_stop_v1", "agent_task_plan_v1"],
       }),
     ).toMatchObject({
       protocol_version: 1,
@@ -794,14 +789,20 @@ describe("InteractiveServer", () => {
       });
       expect(Number(acknowledgement.sequence)).toBeLessThan(Number(terminal.sequence));
       await waitForCondition(() => !mgr.getState().active);
-      expect(mgr.stop(String(accepted.run_id), "command-after-terminal")).toBe("already_terminal");
+      expect(mgr.stop(String(accepted.run_id), "command-after-terminal")).toBe(
+        "already_terminal",
+      );
       expect(seenEvents.filter((entry) => entry.event === "run_stopped")).toHaveLength(1);
       expect(
-        seenEvents.some((entry) => entry.event === "run_completed" || entry.event === "run_failed"),
+        seenEvents.some(
+          (entry) => entry.event === "run_completed" || entry.event === "run_failed",
+        ),
       ).toBe(false);
 
       socket.send(stopCommand);
-      expect(await socket.waitFor((msg) => msg.event_id === terminal.event_id)).toEqual(terminal);
+      expect(
+        await socket.waitFor((msg) => msg.event_id === terminal.event_id),
+      ).toEqual(terminal);
       expect(seenEvents.filter((entry) => entry.event === "run_stopped")).toHaveLength(1);
 
       socket.send({
@@ -810,10 +811,12 @@ describe("InteractiveServer", () => {
         after_sequence: 0,
         command_id: "command-replay-stop-run",
       });
-      expect(await socket.waitFor((msg) => msg.event_id === acknowledgement.event_id)).toEqual(
-        acknowledgement,
-      );
-      expect(await socket.waitFor((msg) => msg.event_id === terminal.event_id)).toEqual(terminal);
+      expect(
+        await socket.waitFor((msg) => msg.event_id === acknowledgement.event_id),
+      ).toEqual(acknowledgement);
+      expect(
+        await socket.waitFor((msg) => msg.event_id === terminal.event_id),
+      ).toEqual(terminal);
 
       socket.send({
         type: "start_run",
@@ -833,7 +836,9 @@ describe("InteractiveServer", () => {
       );
 
       socket.send(stopCommand);
-      expect(await socket.waitFor((msg) => msg.event_id === terminal.event_id)).toEqual(terminal);
+      expect(
+        await socket.waitFor((msg) => msg.event_id === terminal.event_id),
+      ).toEqual(terminal);
       mgr.events.emit("future_run_checkpoint", {
         run_id: secondAccepted.run_id,
       });
@@ -909,22 +914,13 @@ describe("InteractiveServer", () => {
     const otherScope = await openSocket(transcriptUrl);
     let pauseAck: Record<string, unknown> | null = null;
     let resumeAck: Record<string, unknown> | null = null;
-    let startedFrame: Record<string, unknown> | null = null;
-    let intentNoteFrame: Record<string, unknown> | null = null;
-    let discoveryNoteFrame: Record<string, unknown> | null = null;
-    let verificationNoteFrame: Record<string, unknown> | null = null;
 
     try {
       const hello = await socket.waitFor((msg) => msg.type === "hello");
       expect(hello).toMatchObject({
         protocol_version: 1,
         transcript_protocol_version: 1,
-        capabilities: [
-          "run_transcript_v1",
-          "safe_run_stop_v1",
-          "agent_task_plan_v1",
-          "agent_progress_notes_v1",
-        ],
+        capabilities: ["run_transcript_v1", "safe_run_stop_v1", "agent_task_plan_v1"],
       });
       await socket.waitFor((msg) => msg.type === "environments");
       await socket.waitFor((msg) => msg.type === "state");
@@ -946,37 +942,15 @@ describe("InteractiveServer", () => {
           msg.event === "task_plan_updated" &&
           (msg.payload as Record<string, unknown>).update_kind === "initial",
       );
-      const intentNote = await socket.waitFor(
-        (msg) =>
-          msg.type === "event" &&
-          msg.event === "agent_progress_note" &&
-          (msg.payload as Record<string, unknown>).kind === "intent",
-      );
-      const discoveryNote = await socket.waitFor(
-        (msg) =>
-          msg.type === "event" &&
-          msg.event === "agent_progress_note" &&
-          (msg.payload as Record<string, unknown>).kind === "discovery",
-      );
       const terminalPlan = await socket.waitFor(
         (msg) =>
           msg.type === "event" &&
           msg.event === "task_plan_updated" &&
           (msg.payload as Record<string, unknown>).active_step_id === null,
       );
-      const verificationNote = await socket.waitFor(
-        (msg) =>
-          msg.type === "event" &&
-          msg.event === "agent_progress_note" &&
-          (msg.payload as Record<string, unknown>).kind === "verification",
-      );
       const completed = await socket.waitFor(
         (msg) => msg.type === "event" && msg.event === "run_completed",
       );
-      startedFrame = started;
-      intentNoteFrame = intentNote;
-      discoveryNoteFrame = discoveryNote;
-      verificationNoteFrame = verificationNote;
       expect(initialPlan.payload).toMatchObject({
         run_id: accepted.run_id,
         version: 1,
@@ -987,28 +961,9 @@ describe("InteractiveServer", () => {
         run_id: accepted.run_id,
         active_step_id: null,
       });
-      expect(intentNote.payload).toMatchObject({
-        run_id: accepted.run_id,
-        generation: 0,
-        kind: "intent",
-      });
-      expect(discoveryNote.payload).toMatchObject({
-        run_id: accepted.run_id,
-        generation: 1,
-        kind: "discovery",
-      });
-      expect(verificationNote.payload).toMatchObject({
-        run_id: accepted.run_id,
-        generation: 1,
-        kind: "verification",
-      });
       expect(Number(started.sequence)).toBeLessThan(Number(initialPlan.sequence));
-      expect(Number(initialPlan.sequence)).toBeLessThan(Number(intentNote.sequence));
-      expect(Number(intentNote.sequence)).toBeLessThan(Number(discoveryNote.sequence));
-      expect(Number(discoveryNote.sequence)).toBeLessThan(Number(verificationNote.sequence));
       expect(Number(initialPlan.sequence)).toBeLessThan(Number(terminalPlan.sequence));
       expect(Number(terminalPlan.sequence)).toBeLessThan(Number(completed.sequence));
-      expect(Number(verificationNote.sequence)).toBeLessThan(Number(completed.sequence));
       expect(
         (terminalPlan.payload as { steps: { status: string }[] }).steps.some(
           (step) => step.status === "in_progress",
@@ -1066,10 +1021,7 @@ describe("InteractiveServer", () => {
         accepted,
         started,
         initialPlan,
-        intentNote,
-        discoveryNote,
         terminalPlan,
-        verificationNote,
         completed,
         monitor,
         futureCheckpoint,
@@ -1127,17 +1079,8 @@ describe("InteractiveServer", () => {
       expect(await reconnect.waitFor((msg) => msg.event_id === initialPlan.event_id)).toEqual(
         initialPlan,
       );
-      expect(await reconnect.waitFor((msg) => msg.event_id === intentNote.event_id)).toEqual(
-        intentNote,
-      );
-      expect(await reconnect.waitFor((msg) => msg.event_id === discoveryNote.event_id)).toEqual(
-        discoveryNote,
-      );
       expect(await reconnect.waitFor((msg) => msg.event_id === terminalPlan.event_id)).toEqual(
         terminalPlan,
-      );
-      expect(await reconnect.waitFor((msg) => msg.event_id === verificationNote.event_id)).toEqual(
-        verificationNote,
       );
       expect(await reconnect.waitFor((msg) => msg.event_id === chat.event_id)).toEqual(chat);
       expect(await reconnect.waitFor((msg) => msg.event_id === pauseAck.event_id)).toEqual(
@@ -1150,24 +1093,6 @@ describe("InteractiveServer", () => {
         action: "resume_run",
         client_run_id: "client-run-1",
       });
-      reconnect.send({
-        type: "resume_run",
-        client_run_id: "client-run-1",
-        after_sequence: Number(verificationNote.sequence),
-        command_id: "command-backfill-no-note-duplicates",
-      });
-      await reconnect.waitFor(
-        (msg) => msg.type === "ack" && msg.command_id === "command-backfill-no-note-duplicates",
-      );
-      await expect(
-        reconnect.waitFor(
-          (msg) =>
-            msg.type === "event" &&
-            msg.event === "agent_progress_note" &&
-            Number(msg.sequence) <= Number(verificationNote.sequence),
-          150,
-        ),
-      ).rejects.toThrow(/Timed out/);
 
       otherScope.send({
         type: "resume_run",
@@ -1223,16 +1148,7 @@ describe("InteractiveServer", () => {
       await firstServer.stop();
     }
 
-    if (
-      !pauseAck ||
-      !resumeAck ||
-      !startedFrame ||
-      !intentNoteFrame ||
-      !discoveryNoteFrame ||
-      !verificationNoteFrame
-    ) {
-      throw new Error("expected retained acknowledgements and progress notes");
-    }
+    if (!pauseAck || !resumeAck) throw new Error("expected retained acknowledgements");
 
     const secondManager = new RunManager(managerOpts);
     const secondServer = new InteractiveServer({ runManager: secondManager, port: 0 });
@@ -1245,18 +1161,9 @@ describe("InteractiveServer", () => {
       restarted.send({
         type: "resume_run",
         client_run_id: "client-run-1",
-        after_sequence: Number(startedFrame.sequence),
+        after_sequence: Number(pauseAck.sequence) - 1,
         command_id: "command-restart-backfill",
       });
-      expect(await restarted.waitFor((msg) => msg.event_id === intentNoteFrame.event_id)).toEqual(
-        intentNoteFrame,
-      );
-      expect(
-        await restarted.waitFor((msg) => msg.event_id === discoveryNoteFrame.event_id),
-      ).toEqual(discoveryNoteFrame);
-      expect(
-        await restarted.waitFor((msg) => msg.event_id === verificationNoteFrame.event_id),
-      ).toEqual(verificationNoteFrame);
       expect(await restarted.waitFor((msg) => msg.event_id === pauseAck.event_id)).toEqual(
         pauseAck,
       );

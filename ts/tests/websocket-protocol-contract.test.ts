@@ -4,9 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import { buildEventStreamEnvelope } from "../src/server/event-stream-envelope.js";
 import {
-  AGENT_PROGRESS_NOTE_CAPABILITY,
   AckMsgSchema,
-  AgentProgressNotePayloadSchema,
   CLIENT_MESSAGE_TYPES,
   ChatAgentCmdSchema,
   ExecutorResourcesSchema,
@@ -16,10 +14,6 @@ import {
   ScenarioErrorMsgSchema,
   SERVER_MESSAGE_TYPES,
   SERVER_CAPABILITIES,
-  MAX_AGENT_PROGRESS_NOTE_EVIDENCE_TARGETS,
-  MAX_AGENT_PROGRESS_NOTE_ID_LENGTH,
-  MAX_AGENT_PROGRESS_NOTE_TEXT_LENGTH,
-  MAX_RETAINED_AGENT_PROGRESS_NOTE_BYTES,
   StopCmdSchema,
   TYPESCRIPT_ONLY_CLIENT_MESSAGE_TYPES,
   TYPESCRIPT_ONLY_SERVER_MESSAGE_TYPES,
@@ -41,69 +35,6 @@ type EventStreamEnvelopeContract = {
 };
 
 type WebSocketProtocolContract = {
-  agent_progress_note_extension: {
-    advertised_runtimes: ["typescript"];
-    capability: "agent_progress_notes_v1";
-    event: "agent_progress_note";
-    fixture: {
-      client_run_id: string;
-      event: "agent_progress_note";
-      event_id: string;
-      occurred_at: string;
-      payload: Record<string, unknown>;
-      run_id: string;
-      sequence: number;
-      type: "event";
-    };
-    identity: {
-      payload_run_id_matches_outer_run_id: true;
-      outer_transcript_fields: string[];
-    };
-    payload: {
-      copy_limits: {
-        empty_or_whitespace_only_values_allowed: false;
-        text_characters: number;
-      };
-      evidence_targets: {
-        artifact_rule: string;
-        id: {
-          credential_shaped_values_allowed: false;
-          maximum_characters: number;
-          pattern: string;
-        };
-        identity_rule: string;
-        invalid_target_rule: string;
-        maximum_items: number;
-        resolution_rule: string;
-        unique: true;
-      };
-      generation: { integer: true; minimum: 0 };
-      kinds: ["intent", "discovery", "decision", "verification", "blocker"];
-      optional_fields: ["evidence_targets"];
-      required_fields: ["run_id", "generation", "kind", "text"];
-      unknown_field_policy: "forbid";
-    };
-    python_support: "deferred_until_durable_transcript_metadata_is_available";
-    requires_transcript_protocol_version: 1;
-    retention: {
-      exact_live_replay_parity: true;
-      finite_horizon: string;
-      full_note_or_drop: true;
-      max_serialized_event_bytes: number;
-      redacted_before_persistence: true;
-      restart_replay: true;
-    };
-    safety: {
-      agent_authored_summary_only: true;
-      credentials_allowed: false;
-      hidden_reasoning_allowed: false;
-      raw_model_or_tool_io_allowed: false;
-      raw_prompts_allowed: false;
-      redacted_and_rebounded_before_emission: true;
-      selectors_allowed: false;
-      urls_allowed: false;
-    };
-  };
   agent_task_plan_extension: {
     advertised_runtimes: ["typescript"];
     capability: "agent_task_plan_v1";
@@ -281,66 +212,6 @@ describe("WebSocket protocol shared contract", () => {
       },
     });
     expect(SERVER_CAPABILITIES).toContain("agent_task_plan_v1");
-  });
-
-  it("keeps agent progress notes strict, consumer-compatible, and TypeScript-only", () => {
-    const extension = CONTRACT.agent_progress_note_extension;
-    expect(extension).toMatchObject({
-      advertised_runtimes: ["typescript"],
-      capability: "agent_progress_notes_v1",
-      event: "agent_progress_note",
-      requires_transcript_protocol_version: 1,
-      payload: {
-        required_fields: ["run_id", "generation", "kind", "text"],
-        optional_fields: ["evidence_targets"],
-        unknown_field_policy: "forbid",
-        generation: { integer: true, minimum: 0 },
-        kinds: ["intent", "discovery", "decision", "verification", "blocker"],
-        copy_limits: {
-          text_characters: MAX_AGENT_PROGRESS_NOTE_TEXT_LENGTH,
-          empty_or_whitespace_only_values_allowed: false,
-        },
-        evidence_targets: {
-          maximum_items: MAX_AGENT_PROGRESS_NOTE_EVIDENCE_TARGETS,
-          unique: true,
-          identity_rule: "json_tuple_of_kind_action_id_and_optional_artifact_id",
-          id: {
-            maximum_characters: MAX_AGENT_PROGRESS_NOTE_ID_LENGTH,
-            pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
-            credential_shaped_values_allowed: false,
-          },
-          invalid_target_rule: "reject_the_entire_note",
-        },
-      },
-      identity: {
-        payload_run_id_matches_outer_run_id: true,
-      },
-      safety: {
-        agent_authored_summary_only: true,
-        hidden_reasoning_allowed: false,
-        raw_prompts_allowed: false,
-        raw_model_or_tool_io_allowed: false,
-        credentials_allowed: false,
-        urls_allowed: false,
-        selectors_allowed: false,
-        redacted_and_rebounded_before_emission: true,
-      },
-      retention: {
-        full_note_or_drop: true,
-        max_serialized_event_bytes: MAX_RETAINED_AGENT_PROGRESS_NOTE_BYTES,
-        redacted_before_persistence: true,
-        exact_live_replay_parity: true,
-        restart_replay: true,
-        finite_horizon: "same_as_the_retained_run_transcript",
-      },
-      python_support: "deferred_until_durable_transcript_metadata_is_available",
-    });
-    expect(extension.fixture.run_id).toBe(extension.fixture.payload.run_id);
-    expect(AgentProgressNotePayloadSchema.parse(extension.fixture.payload)).toEqual(
-      extension.fixture.payload,
-    );
-    expect(AGENT_PROGRESS_NOTE_CAPABILITY).toBe(extension.capability);
-    expect(SERVER_CAPABILITIES).toContain(AGENT_PROGRESS_NOTE_CAPABILITY);
   });
 
   it("keeps representative shared payload shapes aligned with Python's generated schema", () => {
