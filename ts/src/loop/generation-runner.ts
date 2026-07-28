@@ -45,10 +45,12 @@ import {
   type RunStopRequestedError,
 } from "./controller.js";
 import type { EventStreamEmitter } from "./events.js";
+import { createAgentTaskPlanPublisher, type AgentTaskPlanPublisher } from "./agent-task-plan.js";
 import {
-  createAgentTaskPlanPublisher,
-  type AgentTaskPlanPublisher,
-} from "./agent-task-plan.js";
+  createAgentProgressNotePublisher,
+  type AgentProgressNoteInput,
+  type AgentProgressNotePublisher,
+} from "./agent-progress-note.js";
 import { StagnationDetector } from "./stagnation.js";
 import {
   buildCompetitorPrompt,
@@ -201,6 +203,7 @@ export class GenerationRunner {
   #runState: GenerationRunState | null = null;
   #taskPlan: AgentTaskPlanPublisher | null = null;
   #taskPlanFinished = false;
+  #progressNotes: AgentProgressNotePublisher | null = null;
 
   constructor(opts: GenerationRunnerOpts) {
     this.#provider = opts.provider;
@@ -292,17 +295,20 @@ export class GenerationRunner {
     try {
       this.emit("run_started", orchestration.events.runStarted!);
       this.startTaskPlan(runId);
+      this.startProgressNotes(runId);
 
       while (hasRemainingGenerationCycles(orchestration.cycleState)) {
         orchestration = await this.runGeneration(runId, orchestration);
       }
 
       this.#controller?.throwIfStopRequested();
-      this.publishTaskPlan((taskPlan) => taskPlan.progress({
-        activeStepId: "finalize_run",
-        completedStepIds: ["prepare_run", "iterate_strategies"],
-        summary: "Strategy generations completed; finalizing run artifacts.",
-      }));
+      this.publishTaskPlan((taskPlan) =>
+        taskPlan.progress({
+          activeStepId: "finalize_run",
+          completedStepIds: ["prepare_run", "iterate_strategies"],
+          summary: "Strategy generations completed; finalizing run artifacts.",
+        }),
+      );
       return await this.finalizeSuccessfulRun(runId, orchestration);
     } catch (error) {
       const stopRequest = this.resolveStopRequest(error);
@@ -364,6 +370,11 @@ export class GenerationRunner {
       lifecycle = completeGenerationLifecycleWorkflow(lifecycle);
       orchestration = lifecycle.orchestration;
       this.emit("generation_completed", orchestration.events.generationCompleted!);
+      this.publishProgressNote({
+        generation: lifecycle.generation,
+        kind: "discovery",
+        text: `Generation ${lifecycle.generation} completed with a best score of ${lifecycle.finalizedAttempt.tournamentResult.bestScore.toFixed(3)}.`,
+      });
     } catch (error) {
       const stopRequest = this.resolveStopRequest(error);
       this.emitHook(HookEvents.GENERATION_END, {
@@ -371,9 +382,7 @@ export class GenerationRunner {
         scenario: this.#scenario.name,
         generation: activeGeneration,
         status: stopRequest ? "stopped" : "failed",
-        ...(stopRequest
-          ? {}
-          : { error: error instanceof Error ? error.message : String(error) }),
+        ...(stopRequest ? {} : { error: error instanceof Error ? error.message : String(error) }),
       });
       throw stopRequest ?? error;
     }
@@ -400,15 +409,17 @@ export class GenerationRunner {
   }> {
     await this.#controller?.waitAtBoundary();
     const competitorPrompt = this.buildCompetitorPrompt(runId, generation);
-    this.publishTaskPlan((taskPlan) => taskPlan.progress({
-      activeStepId: "iterate_strategies",
-      completedStepIds: ["prepare_run"],
-      stepDetails: {
-        iterate_strategies: {
-          detail: `Working on strategy generation ${generation}`,
+    this.publishTaskPlan((taskPlan) =>
+      taskPlan.progress({
+        activeStepId: "iterate_strategies",
+        completedStepIds: ["prepare_run"],
+        stepDetails: {
+          iterate_strategies: {
+            detail: `Working on strategy generation ${generation}`,
+          },
         },
-      },
-    }));
+      }),
+    );
     return runGenerationAttemptWorkflow(
       createGenerationAttemptWorkflow({
         attemptOrchestration,
@@ -480,6 +491,11 @@ export class GenerationRunner {
     });
     this.#store.updateRunStatus(runId, "completed");
     this.finishTaskPlan("completed", "Strategy run completed.");
+    this.publishProgressNote({
+      generation: orchestration.cycleState.completedGenerations,
+      kind: "verification",
+      text: `Verified ${orchestration.cycleState.completedGenerations} completed generations with a best score of ${this.#runState.bestScore.toFixed(3)}.`,
+    });
     this.emit("run_completed", orchestration.events.runCompleted!);
     await this.notify("completion", runId, this.#runState.bestScore, {
       roundCount: orchestration.cycleState.completedGenerations,
@@ -538,6 +554,11 @@ export class GenerationRunner {
     });
     this.#store.updateRunStatus(runId, "failed");
     this.finishTaskPlan("failed", "Strategy run failed before completion.");
+    this.publishProgressNote({
+      generation: orchestration.cycleState.completedGenerations,
+      kind: "blocker",
+      text: "The strategy run could not complete; retained progress remains available for review.",
+    });
     this.emit("run_failed", orchestration.events.runFailed!);
     await this.notify("failure", runId, this.#runState.bestScore, {
       roundCount: this.#store.getScoreTrajectory(runId).length,
@@ -914,16 +935,23 @@ export class GenerationRunner {
       this.#runState = queueFreshStartHint(this.#runState!, outcome.freshStartHint);
     }
     if (attempt.gateDecision === "rollback" || outcome.freshStartHint) {
-      this.publishTaskPlan((taskPlan) => taskPlan.replan({
-        activeStepId: "iterate_strategies",
-        completedStepIds: ["prepare_run"],
-        summary: "Adjusting the strategy approach after a recovery signal.",
-        stepDetails: {
-          iterate_strategies: {
-            detail: `Revising the approach for generation ${gen}`,
+      this.publishTaskPlan((taskPlan) =>
+        taskPlan.replan({
+          activeStepId: "iterate_strategies",
+          completedStepIds: ["prepare_run"],
+          summary: "Adjusting the strategy approach after a recovery signal.",
+          stepDetails: {
+            iterate_strategies: {
+              detail: `Revising the approach for generation ${gen}`,
+            },
           },
-        },
-      }));
+        }),
+      );
+      this.publishProgressNote({
+        generation: gen,
+        kind: "decision",
+        text: "A recovery signal changed the strategy approach for the next attempt.",
+      });
     }
     this.persistExplorationCollapseGuard(runId, gen);
   }
@@ -1009,10 +1037,7 @@ export class GenerationRunner {
     return event;
   }
 
-  private emitResolvedTerminalHook(
-    name: HookEvents,
-    payload: Record<string, unknown>,
-  ): void {
+  private emitResolvedTerminalHook(name: HookEvents, payload: Record<string, unknown>): void {
     try {
       this.emitHook(name, payload);
     } catch {
@@ -1039,10 +1064,40 @@ export class GenerationRunner {
     } catch {
       this.#taskPlan = null;
     }
-    this.publishTaskPlan((taskPlan) => taskPlan.initial({
-      activeStepId: "prepare_run",
-      summary: "Preparing the strategy run.",
-    }));
+    this.publishTaskPlan((taskPlan) =>
+      taskPlan.initial({
+        activeStepId: "prepare_run",
+        summary: "Preparing the strategy run.",
+      }),
+    );
+  }
+
+  private startProgressNotes(runId: RunId): void {
+    this.#progressNotes = null;
+    if (!this.#events) {
+      return;
+    }
+    try {
+      this.#progressNotes = createAgentProgressNotePublisher({
+        runId,
+        events: this.#events,
+      });
+    } catch {
+      this.#progressNotes = null;
+    }
+    this.publishProgressNote({
+      generation: 0,
+      kind: "intent",
+      text: "Prepare the run context, evaluate strategy generations, and verify the best result.",
+    });
+  }
+
+  private publishProgressNote(input: AgentProgressNoteInput): void {
+    try {
+      this.#progressNotes?.publish(input);
+    } catch {
+      // Progress-note telemetry must never alter run results.
+    }
   }
 
   private publishTaskPlan(action: (taskPlan: AgentTaskPlanPublisher) => boolean): void {
@@ -1056,10 +1111,7 @@ export class GenerationRunner {
     }
   }
 
-  private finishTaskPlan(
-    status: "completed" | "failed" | "interrupted",
-    summary: string,
-  ): void {
+  private finishTaskPlan(status: "completed" | "failed" | "interrupted", summary: string): void {
     if (this.#taskPlanFinished) {
       return;
     }

@@ -60,6 +60,7 @@ import { tryScenarioSimulationRoutes } from "./routes/scenario-simulation-routes
 import { tryCampaignRoutes } from "./routes/campaign-routes.js";
 import { tryMissionRoutes } from "./routes/mission-routes.js";
 import {
+  AGENT_PROGRESS_NOTE_EVENT_NAME,
   parseClientMessage,
   TRANSCRIPT_PROTOCOL_QUERY_PARAM,
   TRANSCRIPT_PROTOCOL_QUERY_VALUE,
@@ -565,6 +566,9 @@ export class InteractiveServer {
     };
 
     const eventCallback: EventCallback = (event, payload, record) => {
+      if (event === AGENT_PROGRESS_NOTE_EVENT_NAME) {
+        return;
+      }
       if (ws.readyState !== WebSocket.OPEN) {
         return;
       }
@@ -834,7 +838,9 @@ export class InteractiveServer {
 
   #broadcastRunEvent(event: string, payload: Record<string, unknown>, occurredAt?: string): void {
     const message = buildInteractiveEventMessage(event, payload);
-    this.#broadcastLegacy(message);
+    if (event !== AGENT_PROGRESS_NOTE_EVENT_NAME) {
+      this.#broadcastLegacy(message);
+    }
     const state = this.#runManager.getState();
     const runId = readEventRunId(event, payload) ?? (state.active ? state.runId : null);
     let clientRunId = runId ? this.#runTranscripts.resolveClientRunId(runId) : null;

@@ -152,6 +152,524 @@ describe("RunTranscriptStore", () => {
     expect(() => readFileSync(path, "utf-8")).toThrow();
   });
 
+  it("retains safe progress notes exactly across restart and replay", () => {
+    const { path, store } = makeStore();
+    const frame = store.record({
+      clientRunId: "client-progress",
+      runId: "engine-progress",
+      occurredAt: "2026-07-27T15:00:02.000Z",
+      message: {
+        type: "event",
+        event: "agent_progress_note",
+        payload: {
+          run_id: "engine-progress",
+          generation: 1,
+          kind: "discovery",
+          text: "The check used token=super-secret-value and found a reversible release.",
+        },
+      },
+    });
+
+    expect(frame).not.toBeNull();
+    expect(frame?.message).toMatchObject({
+      type: "event",
+      event: "agent_progress_note",
+      payload: {
+        run_id: "engine-progress",
+        generation: 1,
+        kind: "discovery",
+        text: "The check used [Redacted] and found a reversible release.",
+      },
+    });
+    expect(frame?.wire).not.toContain("super-secret-value");
+
+    const reloaded = new RunTranscriptStore(path);
+    const replay = reloaded.framesAfter("client-progress", 0);
+    expect(replay).toHaveLength(1);
+    expect(replay.at(0)?.wire).toBe(frame?.wire);
+    expect(replay.at(0)?.message).toEqual(frame?.message);
+  });
+
+  it("drops progress notes whose payload run ID differs from the retained scope", () => {
+    const { path, store } = makeStore();
+    const frame = store.record({
+      clientRunId: "client-mismatched-progress",
+      runId: "engine-outer",
+      message: {
+        type: "event",
+        event: "agent_progress_note",
+        payload: {
+          run_id: "engine-inner",
+          generation: 0,
+          kind: "intent",
+          text: "Prepare the run.",
+        },
+      },
+    });
+
+    expect(frame).toBeNull();
+    expect(store.framesAfter("client-mismatched-progress", 0)).toEqual([]);
+    expect(() => readFileSync(path, "utf-8")).toThrow();
+  });
+
+  it("resolves progress evidence only against earlier same-run actions and artifacts", () => {
+    const { path, store } = makeStore();
+    const action = store.record({
+      clientRunId: "client-evidence",
+      runId: "engine-evidence",
+      message: {
+        type: "event",
+        event: "action_detail",
+        payload: {
+          run_id: "engine-evidence",
+          action_id: "inspect-release",
+          name: "Inspect release",
+          artifacts: [{ artifact_id: "release-report", name: "Release report" }],
+        },
+      },
+    });
+    const note = store.record({
+      clientRunId: "client-evidence",
+      runId: "engine-evidence",
+      message: {
+        type: "event",
+        event: "agent_progress_note",
+        payload: {
+          run_id: "engine-evidence",
+          generation: 1,
+          kind: "verification",
+          text: "The release report confirms rollback readiness.",
+          evidence_targets: [
+            { kind: "action", action_id: "inspect-release" },
+            {
+              kind: "artifact",
+              action_id: "inspect-release",
+              artifact_id: "release-report",
+            },
+          ],
+        },
+      },
+    });
+
+    expect(action?.sequence).toBe(1);
+    expect(note?.sequence).toBe(2);
+    const reloaded = new RunTranscriptStore(path);
+    expect(reloaded.framesAfter("client-evidence", 0).map((frame) => frame.wire)).toEqual([
+      action?.wire,
+      note?.wire,
+    ]);
+
+    expect(
+      store.record({
+        clientRunId: "client-evidence",
+        runId: "engine-evidence",
+        message: {
+          type: "event",
+          event: "agent_progress_note",
+          payload: {
+            run_id: "engine-evidence",
+            generation: 1,
+            kind: "verification",
+            text: "This target is not retained.",
+            evidence_targets: [
+              {
+                kind: "artifact",
+                action_id: "inspect-release",
+                artifact_id: "missing-report",
+              },
+            ],
+          },
+        },
+      }),
+    ).toBeNull();
+    expect(
+      store.record({
+        clientRunId: "client-other",
+        runId: "engine-other",
+        message: {
+          type: "event",
+          event: "agent_progress_note",
+          payload: {
+            run_id: "engine-other",
+            generation: 1,
+            kind: "discovery",
+            text: "A same-named action from another run cannot be cited.",
+            evidence_targets: [{ kind: "action", action_id: "inspect-release" }],
+          },
+        },
+      }),
+    ).toBeNull();
+  });
+
+  it("rejects future or partially unresolved progress evidence atomically", () => {
+    const { store } = makeStore();
+    const future = store.record({
+      clientRunId: "client-future-evidence",
+      runId: "engine-future-evidence",
+      message: {
+        type: "event",
+        event: "agent_progress_note",
+        payload: {
+          run_id: "engine-future-evidence",
+          generation: 1,
+          kind: "discovery",
+          text: "Future actions are unavailable.",
+          evidence_targets: [{ kind: "action", action_id: "future-action" }],
+        },
+      },
+    });
+    expect(future).toBeNull();
+
+    store.record({
+      clientRunId: "client-future-evidence",
+      runId: "engine-future-evidence",
+      message: {
+        type: "event",
+        event: "action_detail",
+        payload: {
+          run_id: "engine-future-evidence",
+          action_id: "future-action",
+          name: "Now retained",
+        },
+      },
+    });
+    const partial = store.record({
+      clientRunId: "client-future-evidence",
+      runId: "engine-future-evidence",
+      message: {
+        type: "event",
+        event: "agent_progress_note",
+        payload: {
+          run_id: "engine-future-evidence",
+          generation: 1,
+          kind: "discovery",
+          text: "One valid target cannot preserve an invalid one.",
+          evidence_targets: [
+            { kind: "action", action_id: "future-action" },
+            { kind: "action", action_id: "missing-action" },
+          ],
+        },
+      },
+    });
+    expect(partial).toBeNull();
+    expect(store.framesAfter("client-future-evidence", 0)).toHaveLength(1);
+  });
+
+  it("drops an evidence note before evicting its cited action for a newer frame", () => {
+    const dir = mkdtempSync(join(tmpdir(), "autoctx-run-transcript-retention-"));
+    tempDirs.push(dir);
+    const path = join(dir, "_interactive", "run-transcript.ndjson");
+    const store = new RunTranscriptStore(path, { maxFramesPerRun: 2 });
+
+    store.record({
+      clientRunId: "client-retained-evidence",
+      runId: "engine-retained-evidence",
+      message: {
+        type: "event",
+        event: "action_detail",
+        payload: {
+          action_id: "inspect-release",
+          name: "Inspect release",
+        },
+      },
+    });
+    expect(
+      store.record({
+        clientRunId: "client-retained-evidence",
+        runId: "engine-retained-evidence",
+        message: {
+          type: "event",
+          event: "agent_progress_note",
+          payload: {
+            run_id: "engine-retained-evidence",
+            generation: 1,
+            kind: "verification",
+            text: "The retained action verifies the release.",
+            evidence_targets: [{ kind: "action", action_id: "inspect-release" }],
+          },
+        },
+      }),
+    ).not.toBeNull();
+    store.record({
+      clientRunId: "client-retained-evidence",
+      runId: "engine-retained-evidence",
+      message: { type: "state", paused: false, generation: 1 },
+    });
+
+    const retained = store.framesAfter("client-retained-evidence", 0);
+    expect(retained).toHaveLength(2);
+    expect(retained.map((frame) => frame.sequence)).toEqual([1, 3]);
+    expect(
+      retained.some(
+        (frame) => frame.message.type === "event" && frame.message.event === "agent_progress_note",
+      ),
+    ).toBe(false);
+    const reloaded = new RunTranscriptStore(path, { maxFramesPerRun: 2 });
+    expect(reloaded.framesAfter("client-retained-evidence", 0).map((frame) => frame.wire)).toEqual(
+      retained.map((frame) => frame.wire),
+    );
+  });
+
+  it("retains a bounded evidence closure when one-frame caps cannot fit the newest note", () => {
+    const dir = mkdtempSync(join(tmpdir(), "autoctx-run-transcript-retention-"));
+    tempDirs.push(dir);
+    const path = join(dir, "_interactive", "run-transcript.ndjson");
+    const policy = { maxFrames: 1, maxFramesPerRun: 1 };
+    const store = new RunTranscriptStore(path, policy);
+    const occurredAt = new Date().toISOString();
+
+    const action = store.record({
+      clientRunId: "client-single-frame-evidence",
+      runId: "engine-single-frame-evidence",
+      occurredAt,
+      message: {
+        type: "event",
+        event: "action_detail",
+        payload: {
+          action_id: "inspect-release",
+          name: "Inspect release",
+        },
+      },
+    });
+    const note = store.record({
+      clientRunId: "client-single-frame-evidence",
+      runId: "engine-single-frame-evidence",
+      occurredAt,
+      message: {
+        type: "event",
+        event: "agent_progress_note",
+        payload: {
+          run_id: "engine-single-frame-evidence",
+          generation: 1,
+          kind: "verification",
+          text: "The retained action verifies the release.",
+          evidence_targets: [{ kind: "action", action_id: "inspect-release" }],
+        },
+      },
+    });
+
+    expect(action?.sequence).toBe(1);
+    expect(note?.sequence).toBe(2);
+    expect(
+      store.framesAfter("client-single-frame-evidence", 0).map((frame) => frame.sequence),
+    ).toEqual([1, 2]);
+    expect(store.resolveClientRunId("engine-single-frame-evidence")).toBe(
+      "client-single-frame-evidence",
+    );
+
+    const state = store.record({
+      clientRunId: "client-single-frame-evidence",
+      runId: "engine-single-frame-evidence",
+      message: { type: "state", paused: false, generation: 1 },
+    });
+    expect(state?.sequence).toBe(3);
+    expect(
+      store.framesAfter("client-single-frame-evidence", 2).map((frame) => frame.sequence),
+    ).toEqual([3]);
+
+    const reloaded = new RunTranscriptStore(path, policy);
+    expect(reloaded.latestSequence("client-single-frame-evidence")).toBe(3);
+    expect(reloaded.resolveClientRunId("engine-single-frame-evidence")).toBe(
+      "client-single-frame-evidence",
+    );
+  });
+
+  it("retains the newest evidence closure as a bounded byte-cap overflow", () => {
+    const dir = mkdtempSync(join(tmpdir(), "autoctx-run-transcript-retention-"));
+    tempDirs.push(dir);
+    const path = join(dir, "_interactive", "run-transcript.ndjson");
+    const maxFileBytes = 1_024;
+    const policy = { loadTailBytes: maxFileBytes, maxFileBytes };
+    const store = new RunTranscriptStore(path, policy);
+    const occurredAt = Date.now();
+
+    const action = store.record({
+      clientRunId: "client-byte-limit-evidence",
+      runId: "engine-byte-limit-evidence",
+      occurredAt: new Date(occurredAt).toISOString(),
+      message: {
+        type: "event",
+        event: "action_detail",
+        payload: {
+          action_id: "inspect-byte-limit",
+          name: "Inspect byte limit",
+        },
+      },
+    });
+    const note = store.record({
+      clientRunId: "client-byte-limit-evidence",
+      runId: "engine-byte-limit-evidence",
+      occurredAt: new Date(occurredAt).toISOString(),
+      message: {
+        type: "event",
+        event: "agent_progress_note",
+        payload: {
+          run_id: "engine-byte-limit-evidence",
+          generation: 1,
+          kind: "verification",
+          text: "The retained action verifies the byte-limited transcript.",
+          evidence_targets: [{ kind: "action", action_id: "inspect-byte-limit" }],
+        },
+      },
+    });
+
+    expect(action?.sequence).toBe(1);
+    expect(note?.sequence).toBe(2);
+    expect(
+      store.framesAfter("client-byte-limit-evidence", 0).map((frame) => frame.sequence),
+    ).toEqual([1, 2]);
+    expect(statSync(path).size).toBeGreaterThan(maxFileBytes);
+    expect(store.resolveClientRunId("engine-byte-limit-evidence")).toBe(
+      "client-byte-limit-evidence",
+    );
+
+    const reloaded = new RunTranscriptStore(path, policy);
+    expect(
+      reloaded.framesAfter("client-byte-limit-evidence", 0).map((frame) => frame.sequence),
+    ).toEqual([1, 2]);
+    expect(reloaded.resolveClientRunId("engine-byte-limit-evidence")).toBe(
+      "client-byte-limit-evidence",
+    );
+
+    const state = reloaded.record({
+      clientRunId: "client-byte-limit-evidence",
+      runId: "engine-byte-limit-evidence",
+      occurredAt: new Date(occurredAt + 2).toISOString(),
+      message: { type: "state", paused: false, generation: 1 },
+    });
+    expect(state?.sequence).toBe(3);
+    expect(
+      reloaded.framesAfter("client-byte-limit-evidence", 2).map((frame) => frame.sequence),
+    ).toEqual([3]);
+  });
+
+  it("consistently retains same-millisecond evidence across global and byte caps", () => {
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      const dir = mkdtempSync(join(tmpdir(), "autoctx-run-transcript-retention-"));
+      tempDirs.push(dir);
+      const path = join(dir, "_interactive", "run-transcript.ndjson");
+      const maxFileBytes = 1_024;
+      const policy = {
+        loadTailBytes: maxFileBytes,
+        maxFileBytes,
+        maxFrames: 1,
+        maxFramesPerRun: 2,
+      };
+      const store = new RunTranscriptStore(path, policy);
+      const clientRunId = `client-same-millisecond-${attempt}`;
+      const runId = `engine-same-millisecond-${attempt}`;
+      const occurredAt = new Date().toISOString();
+
+      const action = store.record({
+        clientRunId,
+        runId,
+        occurredAt,
+        message: {
+          type: "event",
+          event: "action_detail",
+          payload: {
+            action_id: "inspect-same-millisecond",
+            name: "Inspect same-millisecond ordering",
+          },
+        },
+      });
+      const note = store.record({
+        clientRunId,
+        runId,
+        occurredAt,
+        message: {
+          type: "event",
+          event: "agent_progress_note",
+          payload: {
+            run_id: runId,
+            generation: 1,
+            kind: "verification",
+            text: "The retained action verifies deterministic same-millisecond ordering.",
+            evidence_targets: [{ kind: "action", action_id: "inspect-same-millisecond" }],
+          },
+        },
+      });
+
+      expect(action?.sequence).toBe(1);
+      expect(note?.sequence).toBe(2);
+      expect(store.framesAfter(clientRunId, 0).map((frame) => frame.sequence)).toEqual([1, 2]);
+      expect(statSync(path).size).toBeGreaterThan(maxFileBytes);
+      expect(
+        new RunTranscriptStore(path, policy)
+          .framesAfter(clientRunId, 0)
+          .map((frame) => frame.sequence),
+      ).toEqual([1, 2]);
+    }
+  });
+
+  it("keeps evidence and the newest sequence across the default per-run note limit", () => {
+    const dir = mkdtempSync(join(tmpdir(), "autoctx-run-transcript-retention-"));
+    tempDirs.push(dir);
+    const path = join(dir, "_interactive", "run-transcript.ndjson");
+    const store = new RunTranscriptStore(path);
+
+    store.record({
+      clientRunId: "client-high-volume-evidence",
+      runId: "engine-high-volume-evidence",
+      message: {
+        type: "event",
+        event: "action_detail",
+        payload: {
+          action_id: "shared-action",
+          name: "Shared evidence action",
+        },
+      },
+    });
+    for (let generation = 1; generation <= 2_000; generation += 1) {
+      store.record({
+        clientRunId: "client-high-volume-evidence",
+        runId: "engine-high-volume-evidence",
+        message: {
+          type: "event",
+          event: "agent_progress_note",
+          payload: {
+            run_id: "engine-high-volume-evidence",
+            generation,
+            kind: "discovery",
+            text: `Checkpoint ${generation} retained shared evidence.`,
+            evidence_targets: [{ kind: "action", action_id: "shared-action" }],
+          },
+        },
+      });
+    }
+
+    const retained = store.framesAfter("client-high-volume-evidence", 0);
+    expect(retained).toHaveLength(2_000);
+    expect(retained.at(0)?.sequence).toBe(1);
+    expect(retained.at(-1)?.sequence).toBe(2_001);
+    expect(retained.at(0)?.message.type === "event" ? retained.at(0)?.message.event : null).toBe(
+      "action_detail",
+    );
+    expect(store.resolveClientRunId("engine-high-volume-evidence")).toBe(
+      "client-high-volume-evidence",
+    );
+
+    const state = store.record({
+      clientRunId: "client-high-volume-evidence",
+      runId: "engine-high-volume-evidence",
+      message: { type: "state", paused: false, generation: 2_000 },
+    });
+    expect(state?.sequence).toBe(2_002);
+    expect(store.latestSequence("client-high-volume-evidence")).toBe(2_002);
+    expect(store.resolveClientRunId("engine-high-volume-evidence")).toBe(
+      "client-high-volume-evidence",
+    );
+
+    const reloaded = new RunTranscriptStore(path);
+    const replay = reloaded.framesAfter("client-high-volume-evidence", 0);
+    expect(replay).toHaveLength(2_000);
+    expect(replay.at(0)?.sequence).toBe(1);
+    expect(replay.at(-1)?.sequence).toBe(2_002);
+    expect(reloaded.resolveClientRunId("engine-high-volume-evidence")).toBe(
+      "client-high-volume-evidence",
+    );
+  });
+
   it("assigns stable identity and persists presentation-safe exact wire frames", () => {
     const { path, store } = makeStore();
     store.registerRun("client-run-1", "engine-run-1");
@@ -668,9 +1186,7 @@ describe("RunTranscriptStore", () => {
       if (!terminal) throw new Error("expected retained run_stopped frame");
 
       const reloaded = new RunTranscriptStore(path);
-      expect(
-        reloaded.beginCommand({ clientRunId, commandId, command }),
-      ).toMatchObject({
+      expect(reloaded.beginCommand({ clientRunId, commandId, command })).toMatchObject({
         outcome: "completed",
         frame: { eventId: terminal.eventId, wire: terminal.wire },
       });

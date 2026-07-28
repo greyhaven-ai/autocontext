@@ -1,5 +1,10 @@
 import type { ServerMessage } from "./protocol.js";
 import {
+  AGENT_PROGRESS_NOTE_EVENT_NAME,
+  isAgentProgressNotePayloadRetainable,
+  sanitizeAgentProgressNotePayload,
+} from "../loop/agent-progress-note.js";
+import {
   AGENT_TASK_PLAN_EVENT_NAME,
   isAgentTaskPlanPayloadRetainable,
   sanitizeAgentTaskPlanPayload,
@@ -91,13 +96,7 @@ const EVENT_PAYLOAD_FIELDS: Readonly<Record<string, readonly string[]>> = {
     "dead_ends_found",
   ],
   run_failed: ["run_id", "generation", "error"],
-  run_stopped: [
-    "run_id",
-    "reason",
-    "command_id",
-    "completed_generations",
-    "best_score",
-  ],
+  run_stopped: ["run_id", "reason", "command_id", "completed_generations", "best_score"],
   run_started: ["run_id", "scenario", "target_generations"],
   tournament_completed: [
     "run_id",
@@ -123,6 +122,16 @@ export function sanitizeRunTranscriptText(value: string): string {
 }
 
 export function sanitizeRunTranscriptMessage(message: ServerMessage): ServerMessage | null {
+  if (message.type === "event" && message.event === AGENT_PROGRESS_NOTE_EVENT_NAME) {
+    const payload = sanitizeAgentProgressNotePayload(message.payload);
+    if (!payload || !isAgentProgressNotePayloadRetainable(payload)) return null;
+    const safe: ServerMessage = {
+      type: "event",
+      event: AGENT_PROGRESS_NOTE_EVENT_NAME,
+      payload,
+    };
+    return safe;
+  }
   if (message.type === "event" && message.event === AGENT_TASK_PLAN_EVENT_NAME) {
     const payload = sanitizeAgentTaskPlanPayload(message.payload);
     if (!payload || !isAgentTaskPlanPayloadRetainable(payload)) return null;

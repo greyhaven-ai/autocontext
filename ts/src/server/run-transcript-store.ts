@@ -16,7 +16,10 @@ import { dirname } from "node:path";
 import { z } from "zod";
 
 import {
+  AGENT_PROGRESS_NOTE_EVENT_NAME,
+  AgentProgressNotePayloadSchema,
   AGENT_TASK_PLAN_EVENT_NAME,
+  MAX_AGENT_PROGRESS_NOTE_EVIDENCE_TARGETS,
   ServerMessageSchema,
   TRANSCRIPT_PROTOCOL_VERSION,
   type ClientMessage,
@@ -117,10 +120,12 @@ export const RUN_TRANSCRIPT_RETENTION: RunTranscriptRetentionPolicy = {
 };
 
 interface SerializedRecord {
+  clientRunId: string;
   commandKey?: string;
   eventId?: string;
   line: string;
   occurredAt: string;
+  sequence?: number;
 }
 
 export class RunTranscriptStore {
@@ -135,8 +140,11 @@ export class RunTranscriptStore {
     this.path = path;
     this.#policy = validatePolicy({ ...RUN_TRANSCRIPT_RETENTION, ...policy });
     const requiresCompaction = this.#loadBoundedTail();
+    const removedInvalidProgressNotes = this.#dropProgressNotesWithUnresolvedEvidence();
     const reconciledStopCommand = this.#reconcileStopCommandTerminalFrames();
-    this.#enforceRetention(requiresCompaction || reconciledStopCommand);
+    this.#enforceRetention(
+      requiresCompaction || removedInvalidProgressNotes || reconciledStopCommand,
+    );
   }
 
   record(opts: {
@@ -154,12 +162,19 @@ export class RunTranscriptStore {
     const runId = opts.runId ?? existingRunId ?? readRunId(safeMessage);
     if (
       safeMessage.type === "event" &&
-      safeMessage.event === AGENT_TASK_PLAN_EVENT_NAME &&
+      isRunScopedPresentationEvent(safeMessage.event) &&
       safeMessage.payload.run_id !== runId
     ) {
       return null;
     }
     this.#assertScopeAvailable(opts.clientRunId, runId);
+    if (
+      safeMessage.type === "event" &&
+      safeMessage.event === AGENT_PROGRESS_NOTE_EVENT_NAME &&
+      !this.#progressNoteEvidenceResolves(opts.clientRunId, runId, safeMessage.payload)
+    ) {
+      return null;
+    }
 
     const sequence = (this.latestSequence(opts.clientRunId) ?? 0) + 1;
     const eventId = randomUUID();
@@ -186,7 +201,7 @@ export class RunTranscriptStore {
     this.#appendLine(serializeFrame(frame));
     this.#addLoadedFrame(frame);
     this.#enforceRetention(false);
-    return frame;
+    return this.#frameByEventId(eventId);
   }
 
   beginCommand(opts: {
@@ -365,7 +380,11 @@ export class RunTranscriptStore {
   #loadBoundedTail(): boolean {
     if (!existsSync(this.path)) return false;
     const size = statSync(this.path).size;
-    const length = Math.min(size, this.#policy.loadTailBytes);
+    // Byte retention may keep one newest note plus its bounded evidence closure
+    // beyond the soft file cap, so tail loading must cover that same allowance.
+    const evidenceClosureBytes =
+      (MAX_AGENT_PROGRESS_NOTE_EVIDENCE_TARGETS + 1) * (this.#policy.maxRecordBytes + 1);
+    const length = Math.min(size, this.#policy.loadTailBytes + evidenceClosureBytes);
     const start = size - length;
     const descriptor = openSync(this.path, "r");
     const bytes = Buffer.alloc(length);
@@ -437,6 +456,31 @@ export class RunTranscriptStore {
     return null;
   }
 
+  #dropProgressNotesWithUnresolvedEvidence(): boolean {
+    let changed = false;
+    for (const [clientRunId, frames] of this.#framesByClientRunId) {
+      const analysis = analyzeProgressNoteEvidence(frames);
+      const retained = frames.filter((frame) => !analysis.invalidNoteIds.has(frame.eventId));
+      if (retained.length !== frames.length) changed = true;
+      if (retained.length === 0) this.#framesByClientRunId.delete(clientRunId);
+      else this.#framesByClientRunId.set(clientRunId, retained);
+    }
+    if (changed) this.#rebuildScopeMaps();
+    return changed;
+  }
+
+  #progressNoteEvidenceResolves(
+    clientRunId: string,
+    runId: string | null | undefined,
+    payload: Record<string, unknown>,
+  ): boolean {
+    return progressNoteEvidenceResolves(
+      this.#framesByClientRunId.get(clientRunId) ?? [],
+      runId,
+      payload,
+    );
+  }
+
   #reconcileStopCommandTerminalFrames(): boolean {
     let changed = false;
     for (const [key, command] of this.#commands) {
@@ -455,10 +499,7 @@ export class RunTranscriptStore {
       const matchesTerminal = (frame: RetainedRunFrame): boolean => {
         if (frame.runId !== expectedRunId) return false;
         const payload = readRunStoppedPayload(frame.message);
-        return (
-          payload?.runId === expectedRunId &&
-          payload.commandId === command.commandId
-        );
+        return payload?.runId === expectedRunId && payload.commandId === command.commandId;
       };
       if (existingResponse && matchesTerminal(existingResponse)) continue;
 
@@ -495,25 +536,33 @@ export class RunTranscriptStore {
     for (const [clientRunId, original] of this.#framesByClientRunId) {
       const sorted = [...original].sort((first, second) => first.sequence - second.sequence);
       const newest = sorted.at(-1);
-      const retainedByAge = sorted.filter(
+      const candidates = sorted.filter(
         (frame) => Date.parse(frame.occurredAt) >= cutoff || frame === newest,
       );
-      const retained = retainedByAge.slice(-this.#policy.maxFramesPerRun);
-      if (retained.length !== original.length) changed = true;
+      const requiresDependencyAwareSelection =
+        candidates.length !== sorted.length || sorted.length > this.#policy.maxFramesPerRun;
+      const retained = requiresDependencyAwareSelection
+        ? retainFramesWithinCountLimit({
+            frames: sorted,
+            limit: this.#policy.maxFramesPerRun,
+            prioritizedCandidates: [...candidates].reverse(),
+          })
+        : sorted;
+      if (!haveSameFrameIds(retained, original)) changed = true;
       if (retained.length === 0) this.#framesByClientRunId.delete(clientRunId);
       else this.#framesByClientRunId.set(clientRunId, retained);
     }
 
     const allFrames = this.#allFrames();
     if (allFrames.length > this.#policy.maxFrames) {
-      const retainedIds = new Set(
-        allFrames
-          .sort(compareFrameOccurrence)
-          .slice(-this.#policy.maxFrames)
-          .map((frame) => frame.eventId),
-      );
+      const retained = retainFramesWithinCountLimit({
+        frames: allFrames,
+        limit: this.#policy.maxFrames,
+        prioritizedCandidates: [...allFrames].sort(compareFrameOccurrence).reverse(),
+      });
+      const retainedIds = new Set(retained.map((frame) => frame.eventId));
       this.#filterFrames((frame) => retainedIds.has(frame.eventId));
-      changed = true;
+      if (!haveSameFrameIds(retained, allFrames)) changed = true;
     }
 
     const commands = [...this.#commands.entries()].sort((first, second) =>
@@ -537,14 +586,11 @@ export class RunTranscriptStore {
       0,
     );
     if (totalBytes > this.#policy.maxFileBytes) {
-      const retained = new Set<string>();
-      let retainedBytes = 0;
-      for (const record of [...serialized].reverse()) {
-        const bytes = Buffer.byteLength(record.line, "utf-8") + 1;
-        if (retainedBytes + bytes > this.#policy.maxFileBytes) continue;
-        retained.add(recordIdentity(record));
-        retainedBytes += bytes;
-      }
+      const retained = retainSerializedRecordsWithinByteLimit({
+        frames: this.#allFrames(),
+        limit: this.#policy.maxFileBytes,
+        records: serialized,
+      });
       this.#filterFrames((frame) => retained.has(`frame:${frame.eventId}`));
       for (const key of [...this.#commands.keys()]) {
         if (!retained.has(`command:${key}`)) this.#commands.delete(key);
@@ -568,22 +614,19 @@ export class RunTranscriptStore {
 
   #serializedRecords(): SerializedRecord[] {
     const frames: SerializedRecord[] = this.#allFrames().map((frame) => ({
+      clientRunId: frame.clientRunId,
       eventId: frame.eventId,
       line: serializeFrame(frame),
       occurredAt: frame.occurredAt,
+      sequence: frame.sequence,
     }));
     const commands: SerializedRecord[] = [...this.#commands.entries()].map(([key, command]) => ({
+      clientRunId: command.clientRunId,
       commandKey: key,
       line: serializeCommand(command),
       occurredAt: command.occurredAt,
     }));
-    return [...frames, ...commands].sort((first, second) => {
-      const occurrence = compareOccurredAt(first.occurredAt, second.occurredAt);
-      if (occurrence !== 0) return occurrence;
-      if (first.eventId && second.commandKey) return -1;
-      if (first.commandKey && second.eventId) return 1;
-      return recordIdentity(first).localeCompare(recordIdentity(second));
-    });
+    return [...frames, ...commands].sort(compareSerializedRecordOccurrence);
   }
 
   #compact(records: SerializedRecord[]): void {
@@ -667,6 +710,211 @@ export class RunTranscriptStore {
       throw new Error("engine run is already associated with a different client_run_id");
     }
   }
+}
+
+function isRunScopedPresentationEvent(event: string): boolean {
+  return event === AGENT_TASK_PLAN_EVENT_NAME || event === AGENT_PROGRESS_NOTE_EVENT_NAME;
+}
+
+interface EvidenceActionFrames {
+  artifactFrameById: Map<string, RetainedRunFrame>;
+  latestFrame: RetainedRunFrame;
+}
+
+type EvidenceFrameIndex = Map<string, EvidenceActionFrames>;
+
+interface ProgressNoteEvidenceAnalysis {
+  dependenciesByNoteId: Map<string, ReadonlySet<string>>;
+  invalidNoteIds: Set<string>;
+}
+
+function progressNoteEvidenceResolves(
+  earlierFrames: readonly RetainedRunFrame[],
+  runId: string | null | undefined,
+  payload: Record<string, unknown>,
+): boolean {
+  if (!runId) return false;
+  const evidenceByRunId = new Map<string, EvidenceFrameIndex>();
+  for (const frame of earlierFrames) indexActionDetailEvidence(frame, evidenceByRunId);
+  return (
+    progressNoteEvidenceDependenciesWithIndex(runId, payload, evidenceByRunId.get(runId)) !== null
+  );
+}
+
+function progressNoteEvidenceDependenciesWithIndex(
+  runId: string | null | undefined,
+  payload: Record<string, unknown>,
+  evidenceByActionId: EvidenceFrameIndex | undefined,
+): Set<string> | null {
+  const parsed = AgentProgressNotePayloadSchema.safeParse(payload);
+  if (!parsed.success || !runId || parsed.data.run_id !== runId) return null;
+  const targets = parsed.data.evidence_targets ?? [];
+  if (targets.length === 0) return new Set<string>();
+  if (!evidenceByActionId) return null;
+
+  const dependencies = new Set<string>();
+  const actionTargets = new Set<string>();
+  const actionsSatisfiedByArtifacts = new Set<string>();
+  for (const target of targets) {
+    const evidence = evidenceByActionId.get(target.action_id);
+    if (!evidence) return null;
+    if (target.kind === "action") {
+      actionTargets.add(target.action_id);
+      continue;
+    }
+    const artifactFrame = evidence.artifactFrameById.get(target.artifact_id);
+    if (!artifactFrame) return null;
+    dependencies.add(artifactFrame.eventId);
+    actionsSatisfiedByArtifacts.add(target.action_id);
+  }
+  for (const actionId of actionTargets) {
+    if (actionsSatisfiedByArtifacts.has(actionId)) continue;
+    const evidence = evidenceByActionId.get(actionId);
+    if (!evidence) return null;
+    dependencies.add(evidence.latestFrame.eventId);
+  }
+  return dependencies;
+}
+
+function indexActionDetailEvidence(
+  frame: RetainedRunFrame,
+  evidenceByRunId: Map<string, EvidenceFrameIndex>,
+): void {
+  if (!frame.runId || frame.message.type !== "event" || frame.message.event !== "action_detail") {
+    return;
+  }
+  const actionId =
+    readStableEventId(frame.message.payload.action_id) ??
+    readStableEventId(frame.message.payload.id);
+  if (!actionId) return;
+  const evidenceByActionId =
+    evidenceByRunId.get(frame.runId) ?? new Map<string, EvidenceActionFrames>();
+  const existing = evidenceByActionId.get(actionId);
+  const artifactFrameById = existing?.artifactFrameById ?? new Map<string, RetainedRunFrame>();
+  const artifacts = frame.message.payload.artifacts;
+  if (Array.isArray(artifacts)) {
+    for (const artifact of artifacts) {
+      if (!isRecord(artifact)) continue;
+      const artifactId = readStableEventId(artifact.artifact_id) ?? readStableEventId(artifact.id);
+      if (artifactId) artifactFrameById.set(artifactId, frame);
+    }
+  }
+  evidenceByActionId.set(actionId, { artifactFrameById, latestFrame: frame });
+  evidenceByRunId.set(frame.runId, evidenceByActionId);
+}
+
+function analyzeProgressNoteEvidence(
+  frames: readonly RetainedRunFrame[],
+): ProgressNoteEvidenceAnalysis {
+  const dependenciesByNoteId = new Map<string, ReadonlySet<string>>();
+  const invalidNoteIds = new Set<string>();
+  const evidenceByRunId = new Map<string, EvidenceFrameIndex>();
+  const sorted = [...frames].sort((first, second) => first.sequence - second.sequence);
+  for (const frame of sorted) {
+    if (frame.message.type === "event" && frame.message.event === AGENT_PROGRESS_NOTE_EVENT_NAME) {
+      const dependencies = progressNoteEvidenceDependenciesWithIndex(
+        frame.runId,
+        frame.message.payload,
+        frame.runId ? evidenceByRunId.get(frame.runId) : undefined,
+      );
+      if (dependencies === null) invalidNoteIds.add(frame.eventId);
+      else dependenciesByNoteId.set(frame.eventId, dependencies);
+      continue;
+    }
+    indexActionDetailEvidence(frame, evidenceByRunId);
+  }
+  return { dependenciesByNoteId, invalidNoteIds };
+}
+
+function retainFramesWithinCountLimit(opts: {
+  frames: readonly RetainedRunFrame[];
+  limit: number;
+  prioritizedCandidates: readonly RetainedRunFrame[];
+}): RetainedRunFrame[] {
+  const analysis = analyzeProgressNoteEvidence(opts.frames);
+  const frameById = new Map(opts.frames.map((frame) => [frame.eventId, frame]));
+  const retainedIds = new Set<string>();
+  for (const frame of opts.prioritizedCandidates) {
+    if (analysis.invalidNoteIds.has(frame.eventId)) continue;
+    const dependencyIds = analysis.dependenciesByNoteId.get(frame.eventId) ?? new Set<string>();
+    const requiredIds = new Set([frame.eventId, ...dependencyIds]);
+    if ([...requiredIds].some((eventId) => !frameById.has(eventId))) continue;
+    const missingIds = [...requiredIds].filter((eventId) => !retainedIds.has(eventId));
+    const exceedsLimit = retainedIds.size + missingIds.length > opts.limit;
+    // Keep the newest frame and its bounded evidence closure together instead of
+    // erasing the run's sequence high-water mark when the configured cap is smaller.
+    const isNewestEvidenceClosure = retainedIds.size === 0 && dependencyIds.size > 0;
+    if (exceedsLimit && !isNewestEvidenceClosure) continue;
+    for (const eventId of missingIds) retainedIds.add(eventId);
+  }
+  return opts.frames.filter((frame) => retainedIds.has(frame.eventId));
+}
+
+function retainSerializedRecordsWithinByteLimit(opts: {
+  frames: readonly RetainedRunFrame[];
+  limit: number;
+  records: readonly SerializedRecord[];
+}): Set<string> {
+  const analysis = analyzeProgressNoteEvidence(opts.frames);
+  const recordByIdentity = new Map(opts.records.map((record) => [recordIdentity(record), record]));
+  const newestFirst = [...opts.records].reverse();
+  const newestFrame = newestFirst.find((record) => record.eventId);
+  const prioritizedRecords = newestFrame
+    ? [newestFrame, ...newestFirst.filter((record) => record !== newestFrame)]
+    : newestFirst;
+  const retained = new Set<string>();
+  let retainedBytes = 0;
+  for (const record of prioritizedRecords) {
+    const identity = recordIdentity(record);
+    if (retained.has(identity)) continue;
+    const dependencies = record.eventId
+      ? (analysis.dependenciesByNoteId.get(record.eventId) ?? new Set<string>())
+      : new Set<string>();
+    const requiredIdentities = new Set([
+      identity,
+      ...[...dependencies].map((eventId) => `frame:${eventId}`),
+    ]);
+    const missing = [...requiredIdentities].filter((candidate) => !retained.has(candidate));
+    const missingRecords = missing.flatMap((candidate) => {
+      const required = recordByIdentity.get(candidate);
+      return required ? [required] : [];
+    });
+    if (missingRecords.length !== missing.length) continue;
+    const missingBytes = missingRecords.reduce(
+      (total, candidate) => total + serializedRecordBytes(candidate),
+      0,
+    );
+    const exceedsLimit = retainedBytes + missingBytes > opts.limit;
+    // Evidence targets and record sizes are independently bounded, so this soft-cap
+    // exception has a finite maximum while preserving the newest durable sequence.
+    const isNewestEvidenceClosure =
+      record.eventId === newestFrame?.eventId && dependencies.size > 0;
+    if (exceedsLimit && !isNewestEvidenceClosure) continue;
+    for (const candidate of missing) retained.add(candidate);
+    retainedBytes += missingBytes;
+  }
+  return retained;
+}
+
+function serializedRecordBytes(record: SerializedRecord): number {
+  return Buffer.byteLength(record.line, "utf-8") + 1;
+}
+
+function haveSameFrameIds(
+  first: readonly RetainedRunFrame[],
+  second: readonly RetainedRunFrame[],
+): boolean {
+  if (first.length !== second.length) return false;
+  const firstIds = new Set(first.map((frame) => frame.eventId));
+  return second.every((frame) => firstIds.has(frame.eventId));
+}
+
+function readStableEventId(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function validatePolicy(policy: RunTranscriptRetentionPolicy): RunTranscriptRetentionPolicy {
@@ -886,7 +1134,32 @@ function compareOccurredAt(first: string, second: string): number {
 
 function compareFrameOccurrence(first: RetainedRunFrame, second: RetainedRunFrame): number {
   const occurredAt = compareOccurredAt(first.occurredAt, second.occurredAt);
-  return occurredAt === 0 ? first.eventId.localeCompare(second.eventId) : occurredAt;
+  if (occurredAt !== 0) return occurredAt;
+  if (first.clientRunId === second.clientRunId && first.sequence !== second.sequence) {
+    return first.sequence - second.sequence;
+  }
+  return first.eventId.localeCompare(second.eventId);
+}
+
+function compareSerializedRecordOccurrence(
+  first: SerializedRecord,
+  second: SerializedRecord,
+): number {
+  const occurredAt = compareOccurredAt(first.occurredAt, second.occurredAt);
+  if (occurredAt !== 0) return occurredAt;
+  if (
+    first.eventId &&
+    second.eventId &&
+    first.clientRunId === second.clientRunId &&
+    first.sequence !== undefined &&
+    second.sequence !== undefined &&
+    first.sequence !== second.sequence
+  ) {
+    return first.sequence - second.sequence;
+  }
+  if (first.eventId && second.commandKey) return -1;
+  if (first.commandKey && second.eventId) return 1;
+  return recordIdentity(first).localeCompare(recordIdentity(second));
 }
 
 function recordIdentity(record: SerializedRecord): string {
