@@ -2,13 +2,14 @@ import { join } from "node:path";
 
 import type { AppSettings } from "../config/index.js";
 import { asDbPath, asRunId } from "../domain/ids.js";
-import {
-  isRunStopRequestedError,
-  type LoopController,
-} from "../loop/controller.js";
+import { isRunStopRequestedError, type LoopController } from "../loop/controller.js";
 import type { EventStreamEmitter } from "../loop/events.js";
 import { GenerationRunner } from "../loop/generation-runner.js";
 import { createAgentTaskPlanPublisher } from "../loop/agent-task-plan.js";
+import {
+  createAgentProgressNotePublisher,
+  type AgentProgressNoteInput,
+} from "../loop/agent-progress-note.js";
 import type { RoleProviderBundle } from "../providers/index.js";
 import { assertFamilyContract } from "../scenarios/family-interfaces.js";
 import type { ScenarioInterface } from "../scenarios/game-interface.js";
@@ -36,8 +37,9 @@ const GENERATED_CUSTOM_PLAN_STEPS = [
   { id: "finalize_run", label: "Finalize the run" },
 ] as const;
 
-type RuntimeTaskPlanPublisher = NonNullable<
-  ReturnType<typeof createAgentTaskPlanPublisher>
+type RuntimeTaskPlanPublisher = NonNullable<ReturnType<typeof createAgentTaskPlanPublisher>>;
+type RuntimeProgressNotePublisher = NonNullable<
+  ReturnType<typeof createAgentProgressNotePublisher>
 >;
 
 function createRuntimeTaskPlan(opts: {
@@ -66,65 +68,132 @@ function publishTaskPlan(
   }
 }
 
+function createRuntimeProgressNotes(opts: {
+  runId: string;
+  events: EventStreamEmitter;
+}): RuntimeProgressNotePublisher | null {
+  try {
+    return createAgentProgressNotePublisher(opts);
+  } catch {
+    return null;
+  }
+}
+
+function publishProgressNote(
+  progressNotes: RuntimeProgressNotePublisher | null,
+  input: AgentProgressNoteInput,
+): void {
+  try {
+    progressNotes?.publish(input);
+  } catch {
+    // Progress-note telemetry must never alter run results.
+  }
+}
+
 function reportSavedAgentTaskProgress(
   taskPlan: RuntimeTaskPlanPublisher | null,
+  progressNotes: RuntimeProgressNotePublisher | null,
   progress: AgentTaskSolveProgress,
 ): void {
-  if (!taskPlan) {
-    return;
-  }
   const iterativeDetail =
     progress.round === undefined
       ? "Evaluating the current response"
       : `Working through evaluation round ${progress.round}`;
   if (progress.phase === "context_preparation" && progress.status === "completed") {
-    publishTaskPlan(taskPlan, (publisher) => publisher.progress({
-      activeStepId: "draft_response",
-      completedStepIds: ["prepare_context"],
-    }));
+    publishTaskPlan(taskPlan, (publisher) =>
+      publisher.progress({
+        activeStepId: "draft_response",
+        completedStepIds: ["prepare_context"],
+      }),
+    );
+    publishProgressNote(progressNotes, {
+      generation: 0,
+      kind: "discovery",
+      text: "The task context is prepared for drafting.",
+    });
     return;
   }
   if (progress.phase === "draft" && progress.status === "completed") {
-    publishTaskPlan(taskPlan, (publisher) => publisher.progress({
-      activeStepId: "improve_response",
-      completedStepIds: ["prepare_context", "draft_response"],
-      stepDetails: { improve_response: { detail: iterativeDetail } },
-    }));
+    publishTaskPlan(taskPlan, (publisher) =>
+      publisher.progress({
+        activeStepId: "improve_response",
+        completedStepIds: ["prepare_context", "draft_response"],
+        stepDetails: { improve_response: { detail: iterativeDetail } },
+      }),
+    );
+    publishProgressNote(progressNotes, {
+      generation: 0,
+      kind: "discovery",
+      text: "The initial response is ready for evaluation.",
+    });
     return;
   }
   if (progress.phase === "evaluation") {
-    publishTaskPlan(taskPlan, (publisher) => publisher.progress({
-      activeStepId: "improve_response",
-      completedStepIds: ["prepare_context", "draft_response"],
-      stepDetails: { improve_response: { detail: iterativeDetail } },
-    }));
+    publishTaskPlan(taskPlan, (publisher) =>
+      publisher.progress({
+        activeStepId: "improve_response",
+        completedStepIds: ["prepare_context", "draft_response"],
+        stepDetails: { improve_response: { detail: iterativeDetail } },
+      }),
+    );
+    if (progress.status === "completed") {
+      publishProgressNote(progressNotes, {
+        generation: progress.round ?? 0,
+        kind: "discovery",
+        text:
+          progress.round === undefined
+            ? "Evaluation produced a retained result."
+            : `Evaluation round ${progress.round} produced a retained result.`,
+      });
+    }
     return;
   }
   if (progress.phase === "revision" && progress.status === "started") {
-    publishTaskPlan(taskPlan, (publisher) => publisher.replan({
-      activeStepId: "improve_response",
-      completedStepIds: ["prepare_context", "draft_response"],
-      summary:
+    publishTaskPlan(taskPlan, (publisher) =>
+      publisher.replan({
+        activeStepId: "improve_response",
+        completedStepIds: ["prepare_context", "draft_response"],
+        summary:
+          progress.round === undefined
+            ? "Refining the response after evaluation."
+            : `Refining the response after evaluation round ${progress.round}.`,
+        stepDetails: { improve_response: { detail: iterativeDetail } },
+      }),
+    );
+    publishProgressNote(progressNotes, {
+      generation: progress.round ?? 0,
+      kind: "decision",
+      text:
         progress.round === undefined
-          ? "Refining the response after evaluation."
-          : `Refining the response after evaluation round ${progress.round}.`,
-      stepDetails: { improve_response: { detail: iterativeDetail } },
-    }));
+          ? "Evaluation changed the response revision approach."
+          : `Evaluation round ${progress.round} changed the response revision approach.`,
+    });
     return;
   }
   if (progress.phase === "revision") {
-    publishTaskPlan(taskPlan, (publisher) => publisher.progress({
-      activeStepId: "improve_response",
-      completedStepIds: ["prepare_context", "draft_response"],
-      stepDetails: { improve_response: { detail: iterativeDetail } },
-    }));
+    publishTaskPlan(taskPlan, (publisher) =>
+      publisher.progress({
+        activeStepId: "improve_response",
+        completedStepIds: ["prepare_context", "draft_response"],
+        stepDetails: { improve_response: { detail: iterativeDetail } },
+      }),
+    );
     return;
   }
   if (progress.phase === "finalization") {
-    publishTaskPlan(taskPlan, (publisher) => publisher.progress({
-      activeStepId: "finalize_result",
-      completedStepIds: ["prepare_context", "draft_response", "improve_response"],
-    }));
+    publishTaskPlan(taskPlan, (publisher) =>
+      publisher.progress({
+        activeStepId: "finalize_result",
+        completedStepIds: ["prepare_context", "draft_response", "improve_response"],
+      }),
+    );
+    if (progress.status === "started") {
+      publishProgressNote(progressNotes, {
+        generation: progress.round ?? 0,
+        kind: "verification",
+        text: "The best retained response is ready for final verification.",
+      });
+    }
   }
 }
 
@@ -384,10 +453,21 @@ export async function executeAgentTaskCustomStartRun(opts: {
     steps: SAVED_AGENT_TASK_PLAN_STEPS,
     events: opts.events,
   });
-  publishTaskPlan(taskPlan, (publisher) => publisher.initial({
-    activeStepId: "prepare_context",
-    summary: "Preparing the saved agent task.",
-  }));
+  publishTaskPlan(taskPlan, (publisher) =>
+    publisher.initial({
+      activeStepId: "prepare_context",
+      summary: "Preparing the saved agent task.",
+    }),
+  );
+  const progressNotes = createRuntimeProgressNotes({
+    runId: opts.runId,
+    events: opts.events,
+  });
+  publishProgressNote(progressNotes, {
+    generation: 0,
+    kind: "intent",
+    text: "Prepare the task context, refine the response, and verify the best result.",
+  });
   let taskPlanFinished = false;
   const finishTaskPlan = (
     status: "completed" | "failed" | "interrupted",
@@ -425,13 +505,11 @@ export async function executeAgentTaskCustomStartRun(opts: {
         generations: opts.generations,
         ...(hookBus ? { hookBus } : {}),
         onProgress: (progress) => {
-          reportSavedAgentTaskProgress(taskPlan, progress);
+          reportSavedAgentTaskProgress(taskPlan, progressNotes, progress);
         },
       });
     } catch (error) {
-      const stopRequest = isRunStopRequestedError(error)
-        ? error
-        : opts.controller.getStopRequest();
+      const stopRequest = isRunStopRequestedError(error) ? error : opts.controller.getStopRequest();
       if (stopRequest) {
         throw stopRequest;
       }
@@ -536,13 +614,24 @@ export async function executeAgentTaskCustomStartRun(opts: {
       status: "completed",
     });
     finishTaskPlan("completed", "Saved agent task completed.");
+    publishProgressNote(progressNotes, {
+      generation: completedGenerations,
+      kind: "verification",
+      text:
+        bestScore === undefined
+          ? `Verified ${completedGenerations} completed task rounds and finalized the best retained result.`
+          : `Verified ${completedGenerations} completed task rounds with a best score of ${bestScore.toFixed(3)}.`,
+    });
     opts.events.emit("run_completed", completedPayload);
   } catch (error) {
-    const stopRequest = isRunStopRequestedError(error)
-      ? error
-      : opts.controller.getStopRequest();
+    const stopRequest = isRunStopRequestedError(error) ? error : opts.controller.getStopRequest();
     if (!stopRequest) {
       finishTaskPlan("failed", "Saved agent task failed before completion.");
+      publishProgressNote(progressNotes, {
+        generation: completedGenerations,
+        kind: "blocker",
+        text: "The saved agent task could not complete; retained progress remains available for review.",
+      });
       throw error;
     }
     const stopped = stopRequest.withProgress({
@@ -619,10 +708,21 @@ export async function executeGeneratedCustomStartRun(opts: {
     steps: GENERATED_CUSTOM_PLAN_STEPS,
     events: opts.events,
   });
-  publishTaskPlan(taskPlan, (publisher) => publisher.initial({
-    activeStepId: "execute_scenario",
-    summary: "Starting the generated scenario run.",
-  }));
+  publishTaskPlan(taskPlan, (publisher) =>
+    publisher.initial({
+      activeStepId: "execute_scenario",
+      summary: "Starting the generated scenario run.",
+    }),
+  );
+  const progressNotes = createRuntimeProgressNotes({
+    runId: opts.runId,
+    events: opts.events,
+  });
+  publishProgressNote(progressNotes, {
+    generation: 0,
+    kind: "intent",
+    text: "Execute the scenario generations, compare their scores, and verify the best result.",
+  });
   let taskPlanFinished = false;
   const finishTaskPlan = (
     status: "completed" | "failed" | "interrupted",
@@ -639,14 +739,16 @@ export async function executeGeneratedCustomStartRun(opts: {
   let completedGenerations = 0;
   try {
     for (let generation = 1; generation <= opts.generations; generation++) {
-      publishTaskPlan(taskPlan, (publisher) => publisher.progress({
-        activeStepId: "execute_scenario",
-        stepDetails: {
-          execute_scenario: {
-            detail: `Running generation ${generation} of ${opts.generations}`,
+      publishTaskPlan(taskPlan, (publisher) =>
+        publisher.progress({
+          activeStepId: "execute_scenario",
+          stepDetails: {
+            execute_scenario: {
+              detail: `Running generation ${generation} of ${opts.generations}`,
+            },
           },
-        },
-      }));
+        }),
+      );
       await opts.controller.waitAtBoundary({
         completedGenerations,
         ...(completedGenerations === 0 ? {} : { bestScore: bestScoreOverall }),
@@ -674,6 +776,11 @@ export async function executeGeneratedCustomStartRun(opts: {
         steps_executed: result.stepsExecuted,
         reasoning: result.reasoning,
       });
+      publishProgressNote(progressNotes, {
+        generation,
+        kind: "discovery",
+        text: `Generation ${generation} completed with a score of ${result.score.toFixed(3)}.`,
+      });
       opts.controller.throwIfStopRequested({
         completedGenerations,
         bestScore: bestScoreOverall,
@@ -684,16 +791,25 @@ export async function executeGeneratedCustomStartRun(opts: {
       completedGenerations,
       ...(completedGenerations === 0 ? {} : { bestScore: bestScoreOverall }),
     });
-    publishTaskPlan(taskPlan, (publisher) => publisher.progress({
-      activeStepId: "aggregate_results",
-      completedStepIds: ["execute_scenario"],
-      summary: "Scenario generations completed; aggregating results.",
-    }));
-    publishTaskPlan(taskPlan, (publisher) => publisher.progress({
-      activeStepId: "finalize_run",
-      completedStepIds: ["execute_scenario", "aggregate_results"],
-    }));
+    publishTaskPlan(taskPlan, (publisher) =>
+      publisher.progress({
+        activeStepId: "aggregate_results",
+        completedStepIds: ["execute_scenario"],
+        summary: "Scenario generations completed; aggregating results.",
+      }),
+    );
+    publishTaskPlan(taskPlan, (publisher) =>
+      publisher.progress({
+        activeStepId: "finalize_run",
+        completedStepIds: ["execute_scenario", "aggregate_results"],
+      }),
+    );
     finishTaskPlan("completed", "Generated scenario run completed.");
+    publishProgressNote(progressNotes, {
+      generation: completedGenerations,
+      kind: "verification",
+      text: `Verified ${completedGenerations} completed generations with a best score of ${bestScoreOverall.toFixed(3)}.`,
+    });
     opts.events.emit("run_completed", {
       run_id: opts.runId,
       completed_generations: completedGenerations,
@@ -705,9 +821,7 @@ export async function executeGeneratedCustomStartRun(opts: {
       generated_custom: true,
     });
   } catch (error) {
-    const stopRequest = isRunStopRequestedError(error)
-      ? error
-      : opts.controller.getStopRequest();
+    const stopRequest = isRunStopRequestedError(error) ? error : opts.controller.getStopRequest();
     if (stopRequest) {
       finishTaskPlan("interrupted", "Generated scenario run was interrupted.");
       throw stopRequest.withProgress({
@@ -716,6 +830,11 @@ export async function executeGeneratedCustomStartRun(opts: {
       });
     }
     finishTaskPlan("failed", "Generated scenario run failed before completion.");
+    publishProgressNote(progressNotes, {
+      generation: completedGenerations,
+      kind: "blocker",
+      text: "The generated scenario could not complete; retained progress remains available for review.",
+    });
     throw error;
   }
 }

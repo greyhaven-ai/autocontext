@@ -51,18 +51,20 @@ describe("GenerationRunner task plans", () => {
     }
 
     const planEvents = emitted.filter((entry) => entry.event === "task_plan_updated");
+    const progressNotes = emitted.filter((entry) => entry.event === "agent_progress_note");
     expect(emitted.at(0)?.event).toBe("run_started");
     expect(planEvents.at(0)?.payload).toMatchObject({
       update_kind: "initial",
       plan_revision: 1,
       active_step_id: "prepare_run",
     });
-    expect(planEvents.find((entry) => entry.payload.update_kind === "replan")?.payload)
-      .toMatchObject({
-        plan_revision: 2,
-        active_step_id: "iterate_strategies",
-        summary: "Adjusting the strategy approach after a recovery signal.",
-      });
+    expect(
+      planEvents.find((entry) => entry.payload.update_kind === "replan")?.payload,
+    ).toMatchObject({
+      plan_revision: 2,
+      active_step_id: "iterate_strategies",
+      summary: "Adjusting the strategy approach after a recovery signal.",
+    });
     expect(planEvents.at(-1)?.payload).toMatchObject({
       plan_revision: 2,
       active_step_id: null,
@@ -72,8 +74,24 @@ describe("GenerationRunner task plans", () => {
         expect.objectContaining({ id: "finalize_run", status: "completed" }),
       ]),
     );
-    expect(emitted.findLastIndex((entry) => entry.event === "task_plan_updated"))
-      .toBeLessThan(emitted.findIndex((entry) => entry.event === "run_completed"));
+    expect(emitted.findLastIndex((entry) => entry.event === "task_plan_updated")).toBeLessThan(
+      emitted.findIndex((entry) => entry.event === "run_completed"),
+    );
+    expect(progressNotes.map((entry) => entry.payload.kind)).toEqual([
+      "intent",
+      "decision",
+      "discovery",
+      "verification",
+    ]);
+    expect(progressNotes.at(0)?.payload).toMatchObject({
+      run_id: "built_in_plan",
+      generation: 0,
+    });
+    expect(progressNotes.at(1)?.payload.text).toContain("recovery signal");
+    expect(progressNotes.at(2)?.payload.text).toContain("best score");
+    expect(emitted.findLastIndex((entry) => entry.event === "agent_progress_note")).toBeLessThan(
+      emitted.findIndex((entry) => entry.event === "run_completed"),
+    );
   });
 
   it("publishes an interrupted terminal plan before propagating a stop", async () => {
@@ -88,10 +106,11 @@ describe("GenerationRunner task plans", () => {
     const hookBus = new HookBus();
     hookBus.on(
       HookEvents.RUN_END,
-      () => new HookResult({
-        block: true,
-        reason: "terminal hook cannot replace the resolved stop",
-      }),
+      () =>
+        new HookResult({
+          block: true,
+          reason: "terminal hook cannot replace the resolved stop",
+        }),
     );
     const runner = new GenerationRunner({
       provider: new DeterministicProvider(),
@@ -125,6 +144,11 @@ describe("GenerationRunner task plans", () => {
     );
     expect(emitted.some((entry) => entry.event === "run_completed")).toBe(false);
     expect(emitted.some((entry) => entry.event === "run_failed")).toBe(false);
+    expect(
+      emitted
+        .filter((entry) => entry.event === "agent_progress_note")
+        .map((entry) => entry.payload.kind),
+    ).toEqual(["intent"]);
   });
 
   it("turns a blocked completion hook into one failed terminal outcome", async () => {
@@ -166,14 +190,23 @@ describe("GenerationRunner task plans", () => {
       .at(-1)?.payload;
     expect(terminalPlan?.active_step_id).toBeNull();
     expect(terminalPlan?.steps).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ id: "finalize_run", status: "failed" }),
-      ]),
+      expect.arrayContaining([expect.objectContaining({ id: "finalize_run", status: "failed" })]),
     );
     expect(emitted.some((entry) => entry.event === "run_completed")).toBe(false);
     expect(emitted.filter((entry) => entry.event === "run_failed")).toHaveLength(1);
-    expect(emitted.findLastIndex((entry) => entry.event === "task_plan_updated"))
-      .toBeLessThan(emitted.findIndex((entry) => entry.event === "run_failed"));
+    expect(emitted.findLastIndex((entry) => entry.event === "task_plan_updated")).toBeLessThan(
+      emitted.findIndex((entry) => entry.event === "run_failed"),
+    );
+    const progressNotes = emitted.filter((entry) => entry.event === "agent_progress_note");
+    expect(progressNotes.map((entry) => entry.payload.kind)).toEqual([
+      "intent",
+      "discovery",
+      "blocker",
+    ]);
+    expect(JSON.stringify(progressNotes)).not.toContain("completion policy rejected");
+    expect(emitted.findLastIndex((entry) => entry.event === "agent_progress_note")).toBeLessThan(
+      emitted.findIndex((entry) => entry.event === "run_failed"),
+    );
   });
 });
 

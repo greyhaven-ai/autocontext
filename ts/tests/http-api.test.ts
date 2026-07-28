@@ -1930,6 +1930,11 @@ describe("HTTP API — dashboard event stream", () => {
             events: { emit: (event: string, payload: Record<string, unknown>) => void };
           }
         ).events;
+        events.emit("agent_progress_note", {
+          run_id: "ws-test",
+          note_id: "note-filtered",
+          text: "This transcript-only note must not reach the unversioned event stream.",
+        });
         events.emit("run_started", { run_id: "ws-test", scenario: "grid_ctf" });
       });
       ws.once("error", reject);
@@ -1937,6 +1942,7 @@ describe("HTTP API — dashboard event stream", () => {
     const payload = JSON.parse(raw) as Record<string, unknown>;
     expect(payload.event).toBe("run_started");
     expect(payload.v).toBe(1);
+    expect(payload.seq).toBe(1);
     expect(payload.channel).toBe("generation");
     expect((payload.payload as Record<string, unknown>).run_id).toBe("ws-test");
   }, 15000);
