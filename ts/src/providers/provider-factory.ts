@@ -154,6 +154,11 @@ export const OPENAI_COMPATIBLE_PROVIDER_DEFAULTS: Record<
     envVar: "AZURE_OPENAI_API_KEY",
     defaultModel: "gpt-4o",
   },
+  minimax: {
+    baseUrl: "https://api.minimax.io/v1",
+    envVar: "MINIMAX_API_KEY",
+    defaultModel: "MiniMax-M3",
+  },
 };
 
 export interface CreateProviderOpts {

@@ -214,6 +214,7 @@ describe("autoctx providers", () => {
     expect(Array.isArray(parsed)).toBe(true);
     expect(parsed.some((p) => p.id === "anthropic")).toBe(true);
     expect(parsed.some((p) => p.id === "gemini")).toBe(true);
+    expect(parsed.some((p) => p.id === "minimax")).toBe(true);
   });
 
   it("shows authenticated status for configured providers", async () => {

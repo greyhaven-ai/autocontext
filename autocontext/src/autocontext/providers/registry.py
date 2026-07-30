@@ -97,6 +97,22 @@ def create_provider(
             )
         )
 
+    if provider_type == "minimax":
+        from autocontext.providers.openai_compat import OpenAICompatibleProvider
+        from autocontext.providers.retry import RetryProvider
+
+        return RetryProvider(
+            OpenAICompatibleProvider(
+                api_key=(
+                    api_key
+                    or os.getenv("MINIMAX_API_KEY")
+                    or os.getenv("AUTOCONTEXT_MINIMAX_API_KEY")
+                ),
+                base_url=base_url or "https://api.minimax.io/v1",
+                default_model_name=model or "MiniMax-M3",
+            )
+        )
+
     if provider_type == "mlx":
         from autocontext.providers.mlx_provider import MLXProvider
 
@@ -104,7 +120,7 @@ def create_provider(
             raise ProviderError("MLX provider requires a model path (model_path). Set AUTOCONTEXT_MLX_MODEL_PATH.")
         return MLXProvider(model_path=model)
 
-    supported = "anthropic, openai, openai-compatible, openrouter, ollama, vllm, mlx"
+    supported = "anthropic, openai, openai-compatible, openrouter, ollama, vllm, minimax, mlx"
     raise ProviderError(f"Unknown provider type: {provider_type!r}. Supported: {supported}")
 
 
@@ -244,6 +260,8 @@ def get_provider(settings: AppSettings) -> LLMProvider:
     if not api_key:
         if provider_type in ("openai", "openai-compatible"):
             api_key = os.getenv("OPENAI_API_KEY")
+        elif provider_type == "minimax":
+            api_key = os.getenv("MINIMAX_API_KEY") or os.getenv("AUTOCONTEXT_MINIMAX_API_KEY")
         else:
             api_key = settings.anthropic_api_key or os.getenv("ANTHROPIC_API_KEY") or os.getenv("AUTOCONTEXT_ANTHROPIC_API_KEY")
 

@@ -685,7 +685,7 @@ def build_client_from_settings(
             temperature=settings.mlx_temperature,
             max_tokens=settings.mlx_max_tokens,
         )
-    if settings.agent_provider in ("openai", "openai-compatible", "ollama", "vllm"):
+    if settings.agent_provider in ("openai", "openai-compatible", "ollama", "vllm", "minimax"):
         from autocontext.agents.provider_bridge import ProviderBridgeClient
         from autocontext.providers.registry import create_provider
 

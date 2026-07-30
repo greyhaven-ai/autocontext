@@ -46,6 +46,10 @@ export const PROVIDER_MODELS: Record<string, KnownModel[]> = {
     { id: "gpt-4o", displayName: "GPT-4o (Azure)" },
     { id: "gpt-4o-mini", displayName: "GPT-4o Mini (Azure)" },
   ],
+  minimax: [
+    { id: "MiniMax-M3", displayName: "MiniMax M3" },
+    { id: "MiniMax-M2.7", displayName: "MiniMax M2.7" },
+  ],
 };
 
 export function getModelsForProvider(provider: string): KnownModel[] {

@@ -15,6 +15,9 @@ describe("provider factory workflow", () => {
     expect(
       createProvider({ providerType: "openrouter", apiKey: "router-key" }).defaultModel(),
     ).toBe("anthropic/claude-sonnet-4");
+    expect(createProvider({ providerType: "minimax", apiKey: "minimax-key" }).defaultModel()).toBe(
+      "MiniMax-M3",
+    );
   });
 
   it("creates runtime-backed and renamed provider families", () => {

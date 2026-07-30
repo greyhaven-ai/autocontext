@@ -18,6 +18,7 @@ const EXPECTED_PROVIDER_IDS = [
   "groq",
   "openrouter",
   "azure-openai",
+  "minimax",
   "ollama",
   "vllm",
   "hermes",
@@ -86,6 +87,9 @@ describe("Provider surface consistency", () => {
         baseUrl: "https://azure.example.com/openai/v1",
       }).defaultModel(),
     ).toBe("gpt-4o");
+    expect(createProvider({ providerType: "minimax", apiKey: "minimax-key" }).defaultModel()).toBe(
+      "MiniMax-M3",
+    );
   });
 
   it("KNOWN_PROVIDERS has entries for subscription-backed CLI runtimes and gateway providers", async () => {

@@ -48,6 +48,7 @@ export const KNOWN_PROVIDERS: KnownProvider[] = [
     envVar: "AZURE_OPENAI_API_KEY",
     requiresKey: true,
   },
+  { id: "minimax", displayName: "MiniMax", envVar: "MINIMAX_API_KEY", requiresKey: true },
   {
     id: "ollama",
     displayName: "Ollama",

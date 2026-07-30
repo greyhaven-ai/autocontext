@@ -154,6 +154,7 @@ describe("resolveProviderConfig env var alignment", () => {
       ["groq", "GROQ_API_KEY", "groq-key"],
       ["openrouter", "OPENROUTER_API_KEY", "openrouter-key"],
       ["azure-openai", "AZURE_OPENAI_API_KEY", "azure-key"],
+      ["minimax", "MINIMAX_API_KEY", "minimax-key"],
     ] as const;
 
     for (const [providerType, envVar, apiKey] of providerEnvPairs) {

@@ -10,6 +10,7 @@ export const SUPPORTED_PROVIDER_TYPES = [
   "groq",
   "openrouter",
   "azure-openai",
+  "minimax",
   "claude-cli",
   "codex",
   "pi",

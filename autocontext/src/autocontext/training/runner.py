@@ -331,7 +331,7 @@ class TrainingRunner:
             return self.config.agent_model
 
         settings = load_settings().model_copy(update={"agent_provider": self.config.agent_provider})
-        if self.config.agent_provider in {"openai", "openai-compatible", "ollama", "vllm"}:
+        if self.config.agent_provider in {"openai", "openai-compatible", "ollama", "vllm", "minimax"}:
             return settings.agent_default_model
         return settings.model_competitor
 

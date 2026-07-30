@@ -655,6 +655,13 @@ AUTOCONTEXT_COMPETITOR_PROVIDER=openai-compatible \
 AUTOCONTEXT_COMPETITOR_API_KEY=sk-role \
 AUTOCONTEXT_COMPETITOR_BASE_URL=http://localhost:8000/v1 \
 autoctx run my_task --json
+
+# MiniMax (OpenAI-compatible). Defaults to the global endpoint; point the base
+# URL at https://api.minimaxi.com/v1 to use the China endpoint instead.
+AUTOCONTEXT_AGENT_PROVIDER=minimax \
+MINIMAX_API_KEY=... \
+AUTOCONTEXT_AGENT_DEFAULT_MODEL=MiniMax-M3 \
+autoctx run my_task --json
 ```
 
 `ANTHROPIC_API_KEY` is the preferred Anthropic credential env var. `AUTOCONTEXT_ANTHROPIC_API_KEY` remains supported as a compatibility alias.

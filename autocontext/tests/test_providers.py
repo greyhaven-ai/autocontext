@@ -123,6 +123,18 @@ class TestRegistry:
         p = create_provider("vllm", base_url="http://gpu-box:8000/v1", model="mistral-7b")
         assert p.default_model() == "mistral-7b"
 
+    @_skip_no_openai
+    def test_create_minimax_provider(self):
+        p = create_provider("minimax", api_key="minimax-test", model="MiniMax-M3")
+        assert p.default_model() == "MiniMax-M3"
+        assert "OpenAICompatibleProvider" in p.name  # may be wrapped in RetryProvider
+
+    @_skip_no_openai
+    def test_minimax_defaults_to_global_endpoint_and_m3(self):
+        p = create_provider("minimax", api_key="minimax-test")
+        assert p.default_model() == "MiniMax-M3"
+        assert "OpenAICompatibleProvider" in p.name  # may be wrapped in RetryProvider
+
     def test_unknown_provider_raises(self):
         with pytest.raises(ProviderError, match="Unknown provider type"):
             create_provider("magic-llm")

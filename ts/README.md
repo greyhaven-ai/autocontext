@@ -51,7 +51,7 @@ AUTOCONTEXT_AGENT_PROVIDER=pi AUTOCONTEXT_PI_COMMAND=pi autoctx solve "..." --it
 
 `ANTHROPIC_API_KEY` is the preferred Anthropic credential env var; `AUTOCONTEXT_ANTHROPIC_API_KEY` remains supported as a compatibility alias.
 
-Supported providers: `anthropic`, `openai`, `openai-compatible`, `gemini`, `mistral`, `groq`, `openrouter`, `azure-openai`, `ollama`, `vllm`, `hermes`, `claude-cli`, `codex`, `pi`, `pi-rpc`, `deterministic`.
+Supported providers: `anthropic`, `openai`, `openai-compatible`, `gemini`, `mistral`, `groq`, `openrouter`, `azure-openai`, `minimax`, `ollama`, `vllm`, `hermes`, `claude-cli`, `codex`, `pi`, `pi-rpc`, `deterministic`.
 
 Provider routing details live in [../autocontext/docs/agent-integration.md](../autocontext/docs/agent-integration.md).
 

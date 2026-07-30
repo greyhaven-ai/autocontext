@@ -26,7 +26,7 @@ describe("Known providers registry", () => {
     expect(KNOWN_PROVIDERS.length).toBeGreaterThanOrEqual(9);
   });
 
-  it("includes anthropic, openai, gemini, mistral, groq, openrouter, azure-openai, ollama, vllm", async () => {
+  it("includes anthropic, openai, gemini, mistral, groq, openrouter, azure-openai, minimax, ollama, vllm", async () => {
     const { KNOWN_PROVIDERS } = await import("../src/config/credentials.js");
     const ids = KNOWN_PROVIDERS.map((p) => p.id);
     expect(ids).toContain("anthropic");
@@ -36,6 +36,7 @@ describe("Known providers registry", () => {
     expect(ids).toContain("groq");
     expect(ids).toContain("openrouter");
     expect(ids).toContain("azure-openai");
+    expect(ids).toContain("minimax");
     expect(ids).toContain("ollama");
     expect(ids).toContain("vllm");
   });
