@@ -192,3 +192,40 @@ class TestRollback:
         store.rollback(batch.id)
         history = store.load_history()
         assert len(history) == 2 and history[1].rollback_of == batch.id
+
+
+class TestOutcomeAndRender:
+    def test_mark_outcome_updates_entry(self, tmp_path) -> None:
+        store = HarnessEntryStore(tmp_path, now_iso=lambda: "T1")
+        created = store.apply([HarnessEdit(action="create", kind="policy", title="t", content="c")], scope="run")
+        entry_id = created.applied_edits[0].entry_id
+        marked = store.mark_outcome(entry_id, "refuted", evidence="score did not improve over 3 gens")
+        assert marked.outcome == "refuted" and marked.outcome_evidence.startswith("score did not")
+        assert marked.version == 2 and marked.updated_at == "T1"
+
+    def test_mark_outcome_unknown_id_raises(self, tmp_path) -> None:
+        store = HarnessEntryStore(tmp_path)
+        with pytest.raises(ValueError, match="unknown harness entry"):
+            store.mark_outcome("harness_nope", "confirmed")
+
+    def test_render_markdown_groups_by_kind_and_hides_refuted(self, tmp_path) -> None:
+        store = HarnessEntryStore(tmp_path)
+        store.apply(
+            [
+                HarnessEdit(action="create", kind="policy", id="harness_p1", title="P", content="line1\nline2",
+                            expected_outcome="score rises"),
+                HarnessEdit(action="create", kind="fact", id="harness_f1", title="F", content="fact"),
+                HarnessEdit(action="create", kind="fact", id="harness_f2", title="Bad", content="wrong"),
+            ],
+            scope="run",
+        )
+        store.mark_outcome("harness_f2", "refuted")
+        text = store.render_markdown()
+        assert "## Harness Entries" in text
+        assert "### Policies" in text and "### Facts" in text
+        assert "line1\n  line2" in text
+        assert "(expected: score rises)" in text
+        assert "Bad" not in text
+
+    def test_render_markdown_empty_store_is_empty_string(self, tmp_path) -> None:
+        assert HarnessEntryStore(tmp_path).render_markdown() == ""

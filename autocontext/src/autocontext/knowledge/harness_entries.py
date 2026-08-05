@@ -29,6 +29,13 @@ SCOPE_ORDER: dict[str, int] = {"run": 0, "scenario_family": 1, "global": 2}
 STATE_FILE_NAME = "harness_state.json"
 HISTORY_FILE_NAME = "harness_refinements.jsonl"
 
+KIND_HEADINGS: dict[str, str] = {
+    "policy": "Policies",
+    "fact": "Facts",
+    "procedure": "Procedures",
+    "delegation": "Delegations",
+}
+
 
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
@@ -151,6 +158,52 @@ class HarnessEntryStore:
             except (ValidationError, ValueError):
                 continue
         return out
+
+    def mark_outcome(
+        self,
+        entry_id: str,
+        outcome: Literal["confirmed", "refuted"],
+        *,
+        evidence: str = "",
+    ) -> HarnessEntry:
+        """Record a measured outcome for an entry's expected_outcome.
+
+        Outcome marks are measurements, not refinements: they update state
+        in place and are not recorded to the refinement history.
+        """
+        state = self._load_state()
+        existing = state.get(entry_id)
+        if existing is None:
+            raise ValueError(f"unknown harness entry: {entry_id}")
+        updated = existing.model_copy(deep=True)
+        updated.outcome = outcome
+        if evidence:
+            updated.outcome_evidence = evidence
+        updated.updated_at = self._now_iso()
+        updated.version += 1
+        state[entry_id] = updated
+        self._save_state(state)
+        return updated
+
+    def render_markdown(self, *, kinds: Sequence[HarnessEntryKind] | None = None) -> str:
+        """Markdown for prompt injection: grouped by kind, refuted entries excluded."""
+        selected: Sequence[str] = kinds if kinds is not None else list(KIND_HEADINGS)
+        sections: list[str] = []
+        for kind in selected:
+            visible = [entry for entry in self.entries() if entry.kind == kind and entry.outcome != "refuted"]
+            if not visible:
+                continue
+            lines = [f"### {KIND_HEADINGS[kind]}"]
+            for entry in visible:
+                content = entry.content.replace("\n", "\n  ")
+                line = f"- [{entry.id}] {entry.title}: {content}"
+                if entry.expected_outcome:
+                    line += f" (expected: {entry.expected_outcome})"
+                lines.append(line)
+            sections.append("\n".join(lines))
+        if not sections:
+            return ""
+        return "## Harness Entries\n\n" + "\n\n".join(sections) + "\n"
 
     def rollback(self, refinement_id: str) -> HarnessRefinement:
         """Invert a recorded refinement by restoring its before-snapshots."""
