@@ -134,3 +134,22 @@ class TestPersistenceHardening:
         store.apply([HarnessEdit(action="create", kind="fact", title="t2", content="c2")], scope="run", summary="two")
         history = store.load_history()
         assert [r.summary for r in history] == ["one", "two"]
+
+
+class TestScopeGuardrails:
+    def test_run_refinement_cannot_edit_global_entry(self, tmp_path) -> None:
+        store = HarnessEntryStore(tmp_path)
+        created = store.apply([HarnessEdit(action="create", kind="policy", title="g", content="c")], scope="global")
+        entry_id = created.applied_edits[0].entry_id
+        update = store.apply([HarnessEdit(action="update", kind="policy", id=entry_id, content="x")], scope="run")
+        assert not update.applied_edits[0].applied and update.applied_edits[0].error == "scope_readonly"
+        delete = store.apply([HarnessEdit(action="delete", kind="policy", id=entry_id)], scope="run")
+        assert not delete.applied_edits[0].applied and delete.applied_edits[0].error == "scope_readonly"
+        assert store.entries()[0].content == "c"
+
+    def test_global_refinement_can_edit_run_entry(self, tmp_path) -> None:
+        store = HarnessEntryStore(tmp_path)
+        created = store.apply([HarnessEdit(action="create", kind="fact", title="r", content="c")], scope="run")
+        entry_id = created.applied_edits[0].entry_id
+        update = store.apply([HarnessEdit(action="update", kind="fact", id=entry_id, content="x")], scope="global")
+        assert update.applied_edits[0].applied

@@ -182,6 +182,8 @@ class HarnessEntryStore:
         existing = state.get(edit.id)
         if existing is None:
             return AppliedHarnessEdit(edit=edit, entry_id=edit.id, applied=False, error="not_found")
+        if SCOPE_ORDER[existing.scope] > SCOPE_ORDER[scope]:
+            return AppliedHarnessEdit(edit=edit, entry_id=edit.id, applied=False, error="scope_readonly")
         before = existing.model_copy(deep=True)
         if edit.action == "delete":
             del state[edit.id]
