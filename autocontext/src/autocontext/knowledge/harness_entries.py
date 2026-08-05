@@ -152,6 +152,50 @@ class HarnessEntryStore:
                 continue
         return out
 
+    def rollback(self, refinement_id: str) -> HarnessRefinement:
+        """Invert a recorded refinement by restoring its before-snapshots."""
+        target = next((r for r in self.load_history() if r.id == refinement_id), None)
+        if target is None:
+            raise ValueError(f"unknown refinement: {refinement_id}")
+        state = self._load_state()
+        applied: list[AppliedHarnessEdit] = []
+        for item in reversed(target.applied_edits):
+            if not item.applied:
+                continue
+            reason = f"rollback of {refinement_id}"
+            if item.before is None:
+                removed = state.pop(item.entry_id, None)
+                edit = HarnessEdit(action="delete", kind=item.edit.kind, id=item.entry_id, reason=reason)
+                applied.append(
+                    AppliedHarnessEdit(
+                        edit=edit,
+                        entry_id=item.entry_id,
+                        applied=removed is not None,
+                        error="" if removed is not None else "not_found",
+                        before=removed,
+                    )
+                )
+            else:
+                restored = item.before.model_copy(deep=True)
+                previous = state.get(item.entry_id)
+                state[item.entry_id] = restored
+                action: Literal["create", "update"] = "update" if previous is not None else "create"
+                edit = HarnessEdit(action=action, kind=restored.kind, id=item.entry_id, reason=reason)
+                applied.append(
+                    AppliedHarnessEdit(edit=edit, entry_id=item.entry_id, applied=True, before=previous, after=restored)
+                )
+        refinement = HarnessRefinement(
+            id=f"refinement_{uuid.uuid4().hex[:8]}",
+            scope=target.scope,
+            summary=f"rollback of {refinement_id}",
+            applied_edits=applied,
+            rollback_of=refinement_id,
+            created_at=self._now_iso(),
+        )
+        self._save_state(state)
+        self._append_history(refinement)
+        return refinement
+
     def _apply_edit(
         self,
         state: dict[str, HarnessEntry],

@@ -153,3 +153,42 @@ class TestScopeGuardrails:
         entry_id = created.applied_edits[0].entry_id
         update = store.apply([HarnessEdit(action="update", kind="fact", id=entry_id, content="x")], scope="global")
         assert update.applied_edits[0].applied
+
+
+class TestRollback:
+    def test_rollback_inverts_create_update_delete(self, tmp_path) -> None:
+        store = HarnessEntryStore(tmp_path)
+        base = store.apply(
+            [
+                HarnessEdit(action="create", kind="fact", id="harness_keep", title="keep", content="v1"),
+                HarnessEdit(action="create", kind="fact", id="harness_gone", title="gone", content="v1"),
+            ],
+            scope="run",
+        )
+        assert all(item.applied for item in base.applied_edits)
+        batch = store.apply(
+            [
+                HarnessEdit(action="create", kind="policy", id="harness_new", title="new", content="c"),
+                HarnessEdit(action="update", kind="fact", id="harness_keep", content="v2"),
+                HarnessEdit(action="delete", kind="fact", id="harness_gone"),
+            ],
+            scope="run",
+        )
+        result = store.rollback(batch.id)
+        assert result.rollback_of == batch.id
+        by_id = {entry.id: entry for entry in store.entries()}
+        assert set(by_id) == {"harness_keep", "harness_gone"}
+        assert by_id["harness_keep"].content == "v1"
+        assert by_id["harness_gone"].content == "v1"
+
+    def test_rollback_unknown_id_raises(self, tmp_path) -> None:
+        store = HarnessEntryStore(tmp_path)
+        with pytest.raises(ValueError, match="unknown refinement"):
+            store.rollback("refinement_nope")
+
+    def test_rollback_is_itself_recorded(self, tmp_path) -> None:
+        store = HarnessEntryStore(tmp_path)
+        batch = store.apply([HarnessEdit(action="create", kind="fact", title="t", content="c")], scope="run")
+        store.rollback(batch.id)
+        history = store.load_history()
+        assert len(history) == 2 and history[1].rollback_of == batch.id
