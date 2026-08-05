@@ -6,6 +6,11 @@ a CRUD edit recorded to an append-only refinement history with
 before/after snapshots, so any refinement can be rolled back. Modeled on
 prime-agent's continual-harness refinement store; adds outcome marking so
 verifier-scored runs can confirm or refute an entry's expected outcome.
+
+The store assumes a single writer per root directory: writes are atomic
+but load-modify-save, so concurrent writers are last-writer-wins. State
+files are per-language (the TypeScript mirror writes camelCase fields)
+and are not interchangeable across the two runtimes.
 """
 
 from __future__ import annotations
@@ -116,7 +121,11 @@ class HarnessEntryStore:
         source: str = "",
         rollback_of: str = "",
     ) -> HarnessRefinement:
-        """Apply a batch of edits at one scope; record and return the refinement."""
+        """Apply a batch of edits at one scope; record and return the refinement.
+
+        An empty batch is a no-op: nothing is persisted and the returned
+        refinement is not recorded in history.
+        """
         state = self._load_state()
         applied = [self._apply_edit(state, edit, scope=scope, source=source) for edit in edits]
         refinement = HarnessRefinement(
@@ -127,8 +136,10 @@ class HarnessEntryStore:
             rollback_of=rollback_of,
             created_at=self._now_iso(),
         )
-        self._save_state(state)
+        if not edits:
+            return refinement
         self._append_history(refinement)
+        self._save_state(state)
         return refinement
 
     def entries(
@@ -164,17 +175,22 @@ class HarnessEntryStore:
         entry_id: str,
         outcome: Literal["confirmed", "refuted"],
         *,
+        scope: HarnessScope,
         evidence: str = "",
     ) -> HarnessEntry:
         """Record a measured outcome for an entry's expected_outcome.
 
         Outcome marks are measurements, not refinements: they update state
-        in place and are not recorded to the refinement history.
+        in place and are not recorded to the refinement history. The same
+        scope guardrail as ``apply`` holds: a narrower-scope caller cannot
+        mark a broader-scope entry.
         """
         state = self._load_state()
         existing = state.get(entry_id)
         if existing is None:
             raise ValueError(f"unknown harness entry: {entry_id}")
+        if SCOPE_ORDER[existing.scope] > SCOPE_ORDER[scope]:
+            raise ValueError(f"scope_readonly: {entry_id} is {existing.scope}-scoped")
         updated = existing.model_copy(deep=True)
         updated.outcome = outcome
         if evidence:
@@ -206,7 +222,13 @@ class HarnessEntryStore:
         return "## Harness Entries\n\n" + "\n\n".join(sections) + "\n"
 
     def rollback(self, refinement_id: str) -> HarnessRefinement:
-        """Invert a recorded refinement by restoring its before-snapshots."""
+        """Invert a recorded refinement by restoring its before-snapshots.
+
+        One-step semantics: snapshots are restored blindly, so edits made
+        to the same entries by later refinements are overwritten (lost
+        update). Outcome marks are measurements, not refinement effects,
+        so a current non-pending outcome survives the restore.
+        """
         target = next((r for r in self.load_history() if r.id == refinement_id), None)
         if target is None:
             raise ValueError(f"unknown refinement: {refinement_id}")
@@ -231,6 +253,9 @@ class HarnessEntryStore:
             else:
                 restored = item.before.model_copy(deep=True)
                 previous = state.get(item.entry_id)
+                if previous is not None and previous.outcome != "pending":
+                    restored.outcome = previous.outcome
+                    restored.outcome_evidence = previous.outcome_evidence
                 state[item.entry_id] = restored
                 action: Literal["create", "update"] = "update" if previous is not None else "create"
                 edit = HarnessEdit(action=action, kind=restored.kind, id=item.entry_id, reason=reason)
@@ -245,8 +270,8 @@ class HarnessEntryStore:
             rollback_of=refinement_id,
             created_at=self._now_iso(),
         )
-        self._save_state(state)
         self._append_history(refinement)
+        self._save_state(state)
         return refinement
 
     def _apply_edit(
@@ -311,11 +336,12 @@ class HarnessEntryStore:
         if not isinstance(entries_raw, dict):
             return {}
         entries: dict[str, HarnessEntry] = {}
-        for entry_id, data in entries_raw.items():
+        for data in entries_raw.values():
             try:
-                entries[entry_id] = HarnessEntry.model_validate(data)
+                parsed = HarnessEntry.model_validate(data)
             except ValidationError:
                 continue
+            entries[parsed.id] = parsed
         return entries
 
     def _save_state(self, entries: dict[str, HarnessEntry]) -> None:

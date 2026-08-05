@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { appendFileSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -228,7 +228,7 @@ describe("outcome and render", () => {
 
   it("markOutcome unknown id throws", () => {
     const store = new HarnessEntryStore(root);
-    expect(() => store.markOutcome("harness_nope", "confirmed")).toThrow(/unknown harness entry/);
+    expect(() => store.markOutcome("harness_nope", "confirmed", { scope: "run" })).toThrow(/unknown harness entry/);
   });
 
   it("renderMarkdown groups by kind and hides refuted", () => {
@@ -247,7 +247,7 @@ describe("outcome and render", () => {
       ],
       { scope: "run" },
     );
-    store.markOutcome("harness_f2", "refuted");
+    store.markOutcome("harness_f2", "refuted", { scope: "run" });
     const text = store.renderMarkdown();
     expect(text).toContain("## Harness Entries");
     expect(text).toContain("### Policies");
@@ -259,5 +259,78 @@ describe("outcome and render", () => {
 
   it("renderMarkdown on empty store is empty string", () => {
     expect(new HarnessEntryStore(root).renderMarkdown()).toBe("");
+  });
+});
+
+describe("review hardening (parity with Python TestReviewHardening)", () => {
+  it("markOutcome respects scope guardrail", () => {
+    const store = new HarnessEntryStore(root);
+    const created = store.apply([createEdit({ kind: "policy", title: "g" })], { scope: "global" });
+    const entryId = created.appliedEdits[0].entryId;
+    expect(() => store.markOutcome(entryId, "refuted", { scope: "run" })).toThrow(/scope_readonly/);
+    const marked = store.markOutcome(entryId, "refuted", { scope: "global" });
+    expect(marked.outcome).toBe("refuted");
+  });
+
+  it("rollback of a rollback restores the original", () => {
+    const store = new HarnessEntryStore(root);
+    store.apply([createEdit({ id: "harness_a", content: "v1" })], { scope: "run" });
+    const batch = store.apply([createEdit({ action: "update", id: "harness_a", content: "v2" })], { scope: "run" });
+    const first = store.rollback(batch.id);
+    expect(store.entries()[0].content).toBe("v1");
+    store.rollback(first.id);
+    expect(store.entries()[0].content).toBe("v2");
+  });
+
+  it("rollback preserves a marked outcome", () => {
+    const store = new HarnessEntryStore(root);
+    store.apply([createEdit({ kind: "policy", id: "harness_p", content: "v1" })], { scope: "run" });
+    const batch = store.apply([createEdit({ action: "update", kind: "policy", id: "harness_p", content: "v2" })], { scope: "run" });
+    store.markOutcome("harness_p", "refuted", { scope: "run", evidence: "did not deliver" });
+    store.rollback(batch.id);
+    const entry = store.entries()[0];
+    expect(entry.content).toBe("v1");
+    expect(entry.outcome).toBe("refuted");
+    expect(entry.outcomeEvidence).toBe("did not deliver");
+    expect(store.renderMarkdown()).not.toContain("harness_p");
+  });
+
+  it("rollback lost-update semantics pinned", () => {
+    const store = new HarnessEntryStore(root);
+    store.apply([createEdit({ id: "harness_a", content: "v1" })], { scope: "run" });
+    const mid = store.apply([createEdit({ action: "update", id: "harness_a", content: "v2" })], { scope: "run" });
+    store.apply([createEdit({ action: "update", id: "harness_a", content: "v3" })], { scope: "run" });
+    store.rollback(mid.id);
+    expect(store.entries()[0].content).toBe("v1");
+  });
+
+  it("empty apply is a no-op", () => {
+    const store = new HarnessEntryStore(root);
+    const refinement = store.apply([], { scope: "run" });
+    expect(refinement.appliedEdits).toEqual([]);
+    expect(existsSync(store.statePath)).toBe(false);
+    expect(store.loadHistory()).toEqual([]);
+  });
+
+  it("partial batch failure does not block others", () => {
+    const store = new HarnessEntryStore(root);
+    const batch = store.apply(
+      [
+        createEdit({ action: "update", id: "harness_nope", content: "x" }),
+        createEdit({ id: "harness_ok" }),
+      ],
+      { scope: "run" },
+    );
+    expect(batch.appliedEdits.map((item) => item.applied)).toEqual([false, true]);
+    expect(store.entries().map((entry) => entry.id)).toEqual(["harness_ok"]);
+  });
+
+  it("invalid entries in the state file are dropped on load", () => {
+    const store = new HarnessEntryStore(root);
+    store.apply([createEdit({ id: "harness_good" })], { scope: "run" });
+    const raw = JSON.parse(readFileSync(store.statePath, "utf8"));
+    raw.entries.harness_bad = { ...raw.entries.harness_good, id: "harness_bad", kind: "vibe" };
+    writeFileSync(store.statePath, JSON.stringify(raw), "utf8");
+    expect(store.entries().map((entry) => entry.id)).toEqual(["harness_good"]);
   });
 });

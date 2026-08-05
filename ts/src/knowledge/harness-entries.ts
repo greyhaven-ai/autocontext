@@ -8,6 +8,11 @@
  * before/after snapshots, so any refinement can be rolled back. Adds
  * outcome marking so verifier-scored runs can confirm or refute an entry's
  * expected outcome.
+ *
+ * The store assumes a single writer per root directory: writes are atomic
+ * but load-modify-save, so concurrent writers are last-writer-wins. State
+ * files are per-language (Python writes snake_case fields) and are not
+ * interchangeable across the two runtimes.
  */
 
 import {
@@ -143,11 +148,27 @@ function normalizeRefinement(raw: unknown): HarnessRefinement | undefined {
   const scope = raw.scope as HarnessScope;
   if (typeof raw.id !== "string" || raw.id === "" || !SCOPES.includes(scope)) return undefined;
   if (!Array.isArray(raw.appliedEdits)) return undefined;
+  const appliedEdits: AppliedHarnessEdit[] = [];
+  for (const item of raw.appliedEdits) {
+    if (!isRecord(item) || typeof item.entryId !== "string" || typeof item.applied !== "boolean")
+      return undefined;
+    let before: HarnessEntry | undefined;
+    let after: HarnessEntry | undefined;
+    if (item.before !== undefined && item.before !== null) {
+      before = normalizeEntry(item.before);
+      if (!before) return undefined;
+    }
+    if (item.after !== undefined && item.after !== null) {
+      after = normalizeEntry(item.after);
+      if (!after) return undefined;
+    }
+    appliedEdits.push({ ...(item as unknown as AppliedHarnessEdit), before, after });
+  }
   return {
     id: raw.id,
     scope,
     summary: typeof raw.summary === "string" ? raw.summary : "",
-    appliedEdits: raw.appliedEdits as AppliedHarnessEdit[],
+    appliedEdits,
     rollbackOf: typeof raw.rollbackOf === "string" ? raw.rollbackOf : "",
     createdAt: typeof raw.createdAt === "string" ? raw.createdAt : "",
   };
@@ -171,7 +192,12 @@ export class HarnessEntryStore {
     return join(this.root, HISTORY_FILE_NAME);
   }
 
-  /** Apply a batch of edits at one scope; record and return the refinement. */
+  /**
+   * Apply a batch of edits at one scope; record and return the refinement.
+   *
+   * An empty batch is a no-op: nothing is persisted and the returned
+   * refinement is not recorded in history.
+   */
   apply(edits: HarnessEdit[], opts: HarnessApplyOpts): HarnessRefinement {
     const state = this.loadState();
     const applied = edits.map((edit) => this.applyEdit(state, edit, opts.scope, opts.source ?? ""));
@@ -183,8 +209,9 @@ export class HarnessEntryStore {
       rollbackOf: opts.rollbackOf ?? "",
       createdAt: this.nowIso(),
     };
-    this.saveState(state);
+    if (edits.length === 0) return refinement;
     this.appendHistory(refinement);
+    this.saveState(state);
     return refinement;
   }
 
@@ -216,7 +243,14 @@ export class HarnessEntryStore {
     return out;
   }
 
-  /** Invert a recorded refinement by restoring its before-snapshots. */
+  /**
+   * Invert a recorded refinement by restoring its before-snapshots.
+   *
+   * One-step semantics: snapshots are restored blindly, so edits made to
+   * the same entries by later refinements are overwritten (lost update).
+   * Outcome marks are measurements, not refinement effects, so a current
+   * non-pending outcome survives the restore.
+   */
   rollback(refinementId: string): HarnessRefinement {
     const target = this.loadHistory().find((r) => r.id === refinementId);
     if (!target) {
@@ -248,6 +282,10 @@ export class HarnessEntryStore {
       } else {
         const restored: HarnessEntry = { ...item.before };
         const previous = state.get(item.entryId);
+        if (previous !== undefined && previous.outcome !== "pending") {
+          restored.outcome = previous.outcome;
+          restored.outcomeEvidence = previous.outcomeEvidence;
+        }
         state.set(item.entryId, restored);
         const action: HarnessEditAction = previous !== undefined ? "update" : "create";
         applied.push({
@@ -276,8 +314,8 @@ export class HarnessEntryStore {
       rollbackOf: refinementId,
       createdAt: this.nowIso(),
     };
-    this.saveState(state);
     this.appendHistory(refinement);
+    this.saveState(state);
     return refinement;
   }
 
@@ -285,17 +323,22 @@ export class HarnessEntryStore {
    * Record a measured outcome for an entry's expectedOutcome.
    *
    * Outcome marks are measurements, not refinements: they update state in
-   * place and are not recorded to the refinement history.
+   * place and are not recorded to the refinement history. The same scope
+   * guardrail as `apply` holds: a narrower-scope caller cannot mark a
+   * broader-scope entry.
    */
   markOutcome(
     entryId: string,
     outcome: "confirmed" | "refuted",
-    opts: { evidence?: string } = {},
+    opts: { scope: HarnessScope; evidence?: string },
   ): HarnessEntry {
     const state = this.loadState();
     const existing = state.get(entryId);
     if (!existing) {
       throw new Error(`unknown harness entry: ${entryId}`);
+    }
+    if (SCOPE_ORDER[existing.scope] > SCOPE_ORDER[opts.scope]) {
+      throw new Error(`scope_readonly: ${entryId} is ${existing.scope}-scoped`);
     }
     const updated: HarnessEntry = { ...existing, outcome };
     if (opts.evidence) updated.outcomeEvidence = opts.evidence;

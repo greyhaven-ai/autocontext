@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from pydantic import ValidationError
 
@@ -199,14 +201,14 @@ class TestOutcomeAndRender:
         store = HarnessEntryStore(tmp_path, now_iso=lambda: "T1")
         created = store.apply([HarnessEdit(action="create", kind="policy", title="t", content="c")], scope="run")
         entry_id = created.applied_edits[0].entry_id
-        marked = store.mark_outcome(entry_id, "refuted", evidence="score did not improve over 3 gens")
+        marked = store.mark_outcome(entry_id, "refuted", scope="run", evidence="score did not improve over 3 gens")
         assert marked.outcome == "refuted" and marked.outcome_evidence.startswith("score did not")
         assert marked.version == 2 and marked.updated_at == "T1"
 
     def test_mark_outcome_unknown_id_raises(self, tmp_path) -> None:
         store = HarnessEntryStore(tmp_path)
         with pytest.raises(ValueError, match="unknown harness entry"):
-            store.mark_outcome("harness_nope", "confirmed")
+            store.mark_outcome("harness_nope", "confirmed", scope="run")
 
     def test_render_markdown_groups_by_kind_and_hides_refuted(self, tmp_path) -> None:
         store = HarnessEntryStore(tmp_path)
@@ -219,7 +221,7 @@ class TestOutcomeAndRender:
             ],
             scope="run",
         )
-        store.mark_outcome("harness_f2", "refuted")
+        store.mark_outcome("harness_f2", "refuted", scope="run")
         text = store.render_markdown()
         assert "## Harness Entries" in text
         assert "### Policies" in text and "### Facts" in text
@@ -229,3 +231,70 @@ class TestOutcomeAndRender:
 
     def test_render_markdown_empty_store_is_empty_string(self, tmp_path) -> None:
         assert HarnessEntryStore(tmp_path).render_markdown() == ""
+
+
+class TestReviewHardening:
+    def test_mark_outcome_respects_scope_guardrail(self, tmp_path) -> None:
+        store = HarnessEntryStore(tmp_path)
+        created = store.apply([HarnessEdit(action="create", kind="policy", title="g", content="c")], scope="global")
+        entry_id = created.applied_edits[0].entry_id
+        with pytest.raises(ValueError, match="scope_readonly"):
+            store.mark_outcome(entry_id, "refuted", scope="run")
+        marked = store.mark_outcome(entry_id, "refuted", scope="global")
+        assert marked.outcome == "refuted"
+
+    def test_rollback_of_rollback_restores_original(self, tmp_path) -> None:
+        store = HarnessEntryStore(tmp_path)
+        store.apply([HarnessEdit(action="create", kind="fact", id="harness_a", title="t", content="v1")], scope="run")
+        batch = store.apply([HarnessEdit(action="update", kind="fact", id="harness_a", content="v2")], scope="run")
+        first = store.rollback(batch.id)
+        assert store.entries()[0].content == "v1"
+        store.rollback(first.id)
+        assert store.entries()[0].content == "v2"
+
+    def test_rollback_preserves_marked_outcome(self, tmp_path) -> None:
+        store = HarnessEntryStore(tmp_path)
+        store.apply([HarnessEdit(action="create", kind="policy", id="harness_p", title="t", content="v1")], scope="run")
+        batch = store.apply([HarnessEdit(action="update", kind="policy", id="harness_p", content="v2")], scope="run")
+        store.mark_outcome("harness_p", "refuted", scope="run", evidence="did not deliver")
+        store.rollback(batch.id)
+        entry = store.entries()[0]
+        assert entry.content == "v1"
+        assert entry.outcome == "refuted" and entry.outcome_evidence == "did not deliver"
+        assert "harness_p" not in store.render_markdown()
+
+    def test_rollback_lost_update_semantics_pinned(self, tmp_path) -> None:
+        store = HarnessEntryStore(tmp_path)
+        store.apply([HarnessEdit(action="create", kind="fact", id="harness_a", title="t", content="v1")], scope="run")
+        mid = store.apply([HarnessEdit(action="update", kind="fact", id="harness_a", content="v2")], scope="run")
+        store.apply([HarnessEdit(action="update", kind="fact", id="harness_a", content="v3")], scope="run")
+        store.rollback(mid.id)
+        assert store.entries()[0].content == "v1"
+
+    def test_empty_apply_is_a_no_op(self, tmp_path) -> None:
+        store = HarnessEntryStore(tmp_path)
+        refinement = store.apply([], scope="run")
+        assert refinement.applied_edits == []
+        assert not store.state_path.exists()
+        assert store.load_history() == []
+
+    def test_partial_batch_failure_does_not_block_others(self, tmp_path) -> None:
+        store = HarnessEntryStore(tmp_path)
+        batch = store.apply(
+            [
+                HarnessEdit(action="update", kind="fact", id="harness_nope", content="x"),
+                HarnessEdit(action="create", kind="fact", id="harness_ok", title="t", content="c"),
+            ],
+            scope="run",
+        )
+        assert [item.applied for item in batch.applied_edits] == [False, True]
+        assert [entry.id for entry in store.entries()] == ["harness_ok"]
+
+    def test_state_entries_rekeyed_by_entry_id(self, tmp_path) -> None:
+        store = HarnessEntryStore(tmp_path)
+        store.apply([HarnessEdit(action="create", kind="fact", id="harness_real", title="t", content="c")], scope="run")
+        raw = json.loads(store.state_path.read_text(encoding="utf-8"))
+        raw["entries"] = {"stale_key": raw["entries"]["harness_real"]}
+        store.state_path.write_text(json.dumps(raw), encoding="utf-8")
+        update = store.apply([HarnessEdit(action="update", kind="fact", id="harness_real", content="x")], scope="run")
+        assert update.applied_edits[0].applied
