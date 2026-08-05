@@ -9,6 +9,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from autocontext.knowledge.compaction import compact_prompt_component
+from autocontext.knowledge.harness_entries import HarnessEdit
 from autocontext.scenarios.agent_task import AgentTaskResult
 
 
@@ -125,6 +126,32 @@ def accumulate_lessons(
             parts.append(f"  Metrics: {', '.join(metric_strs)}")
 
     return "\n".join(parts)
+
+
+def lesson_edit(
+    judge_result: AgentTaskResult,
+    generation: int,
+    signal: LessonSignal | None = None,
+) -> HarnessEdit:
+    """Map a generation lesson onto a typed harness edit (AC-898).
+
+    Actionable signals (hint or plateau) become policy entries carrying a
+    falsifiable expected outcome; plain judge feedback becomes a fact.
+    """
+    actionable = signal is not None and bool(signal.hint or signal.plateau)
+    expected_outcome = ""
+    if signal is not None and signal.hint:
+        expected_outcome = f"Applying the hint should raise the best score above {judge_result.score:.2f}."
+    elif signal is not None and signal.plateau:
+        expected_outcome = "A structurally different approach should break the plateau."
+    return HarnessEdit(
+        action="create",
+        kind="policy" if actionable else "fact",
+        title=f"Generation {generation} lesson (score {judge_result.score:.2f})",
+        content=accumulate_lessons(judge_result, generation, signal=signal),
+        expected_outcome=expected_outcome,
+        reason=f"lesson accumulated at generation {generation}",
+    )
 
 
 def build_enriched_prompt(
