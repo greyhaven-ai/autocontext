@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from autocontext.storage.scenario_paths import resolve_scenario_root
-from autocontext.util.json_io import read_json, write_json
+from autocontext.util.json_io import read_json_guarded, write_json, write_text_atomic
 
 
 class LessonApprovalStore(Protocol):
@@ -116,10 +116,14 @@ def stage_pending_playbook(
 ) -> str:
     scenario_dir = resolve_scenario_root(knowledge_root, scenario_name)
     scenario_dir.mkdir(parents=True, exist_ok=True)
-    if _pending_md(scenario_dir).exists() or _pending_json(scenario_dir).exists():
+    if _pending_json(scenario_dir).exists():
         raise ValueError("pending playbook already exists; approve or reject it before staging another")
+    # An orphan pending.md without provenance is a torn earlier staging; the
+    # provenance file is the commit point, so clear the orphan and continue.
+    if _pending_md(scenario_dir).exists():
+        _pending_md(scenario_dir).unlink()
     normalized = content.strip() + "\n"
-    _pending_md(scenario_dir).write_text(normalized, encoding="utf-8")
+    write_text_atomic(_pending_md(scenario_dir), normalized)
     write_json(
         _pending_json(scenario_dir),
         {
@@ -139,7 +143,13 @@ def read_pending_playbook(knowledge_root: Path, scenario_name: str) -> dict[str,
     scenario_dir = resolve_scenario_root(knowledge_root, scenario_name)
     pending_path = _pending_md(scenario_dir)
     provenance_path = _pending_json(scenario_dir)
-    if not pending_path.exists() or not provenance_path.exists():
+    if not provenance_path.exists():
+        # Provenance is the commit point; a pending.md without it is a torn
+        # staging. Remove the orphan so the next staging is not wedged.
+        if pending_path.exists():
+            pending_path.unlink()
+        return {"has_pending": False, "content": "", "diff": "", "provenance": None}
+    if not pending_path.exists():
         return {"has_pending": False, "content": "", "diff": "", "provenance": None}
     content = pending_path.read_text(encoding="utf-8")
     live_path = scenario_dir / "playbook.md"
@@ -156,7 +166,7 @@ def read_pending_playbook(knowledge_root: Path, scenario_name: str) -> dict[str,
         "has_pending": True,
         "content": content,
         "diff": diff,
-        "provenance": read_json(provenance_path),
+        "provenance": read_json_guarded(provenance_path),
     }
 
 

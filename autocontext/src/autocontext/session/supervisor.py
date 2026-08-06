@@ -10,6 +10,7 @@ Domain concepts:
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -17,6 +18,10 @@ from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field
+
+from autocontext.util.json_io import write_text_atomic
+
+logger = logging.getLogger(__name__)
 
 
 def _now() -> str:
@@ -261,13 +266,23 @@ class SupervisorStore:
             sid: entry.model_dump()
             for sid, entry in supervisor._entries.items()
         }
-        self._path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        write_text_atomic(self._path, json.dumps(data, indent=2))
 
     def restore(self, supervisor: Supervisor) -> None:
         """Load persisted entries into the supervisor."""
         if not self._path.exists():
             return
-        raw = json.loads(self._path.read_text(encoding="utf-8"))
+        try:
+            raw = json.loads(self._path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            logger.warning("supervisor state unreadable, starting empty: %s", self._path)
+            return
+        if not isinstance(raw, dict):
+            return
         for sid, entry_data in raw.items():
-            entry = SupervisedEntry.model_validate(entry_data)
+            try:
+                entry = SupervisedEntry.model_validate(entry_data)
+            except ValueError:
+                logger.warning("skipping invalid supervisor entry %s in %s", sid, self._path)
+                continue
             supervisor._entries[sid] = entry

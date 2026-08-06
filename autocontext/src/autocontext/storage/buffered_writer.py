@@ -15,9 +15,9 @@ import queue
 import threading
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Literal
 
 from autocontext.util.json_io import write_text_atomic
-from typing import Any, Literal
 
 logger = logging.getLogger(__name__)
 

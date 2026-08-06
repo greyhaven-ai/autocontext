@@ -7,11 +7,14 @@ supporting listing and filtering by scenario, provider, etc.
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
 from autocontext.analytics.facets import RunFacet
-from autocontext.util.json_io import read_json
+from autocontext.util.json_io import read_json_guarded, write_text_atomic
+
+logger = logging.getLogger(__name__)
 
 _FACETS_DIR = "facets"
 
@@ -26,10 +29,7 @@ class FacetStore:
     def persist(self, facet: RunFacet) -> Path:
         """Persist a RunFacet as a JSON file. Returns the file path."""
         path = self.root / f"{facet.run_id}.json"
-        path.write_text(
-            json.dumps(facet.to_dict(), indent=2),
-            encoding="utf-8",
-        )
+        write_text_atomic(path, json.dumps(facet.to_dict(), indent=2))
         return path
 
     def load(self, run_id: str) -> RunFacet | None:
@@ -37,15 +37,27 @@ class FacetStore:
         path = self.root / f"{run_id}.json"
         if not path.exists():
             return None
-        data = read_json(path)
-        return RunFacet.from_dict(data)
+        data = read_json_guarded(path)
+        if not isinstance(data, dict):
+            return None
+        try:
+            return RunFacet.from_dict(data)
+        except ValueError:
+            return None
 
     def list_facets(self, scenario: str | None = None) -> list[RunFacet]:
         """List all persisted facets, optionally filtered by scenario."""
         facets: list[RunFacet] = []
         for path in sorted(self.root.glob("*.json")):
-            data = read_json(path)
-            facet = RunFacet.from_dict(data)
+            data = read_json_guarded(path)
+            if not isinstance(data, dict):
+                logger.warning("skipping unparseable facet file: %s", path)
+                continue
+            try:
+                facet = RunFacet.from_dict(data)
+            except ValueError:
+                logger.warning("skipping invalid facet file: %s", path)
+                continue
             if scenario is not None and facet.scenario != scenario:
                 continue
             facets.append(facet)
