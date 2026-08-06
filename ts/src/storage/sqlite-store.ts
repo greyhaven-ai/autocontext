@@ -36,6 +36,7 @@ import {
   failStoreTask,
   getStoreTask,
   listStoreTasks,
+  requeueStaleStoreTasks,
 } from "./storage-task-queue-facade.js";
 import {
   appendStoreAgentOutput,
@@ -148,8 +149,13 @@ export class SQLiteStore {
     );
   }
 
-  failTask(taskId: string, error: string): void {
-    failStoreTask(this.#db, taskId, error);
+  failTask(taskId: string, error: string, maxAttempts?: number, retryBackoffS?: number): void {
+    failStoreTask(this.#db, taskId, error, maxAttempts, retryBackoffS);
+  }
+
+  /** AC-906: return crash-stranded running tasks to pending; count returned. */
+  requeueStaleRunning(olderThanSeconds: number, maxAttempts?: number): number {
+    return requeueStaleStoreTasks(this.#db, olderThanSeconds, maxAttempts);
   }
 
   pendingTaskCount(): number {

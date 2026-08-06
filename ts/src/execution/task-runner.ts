@@ -175,6 +175,10 @@ export interface TaskRunnerOpts {
   browserContextService?: QueuedTaskBrowserContextService;
   pollInterval?: number;
   maxConsecutiveEmpty?: number;
+  /** AC-906: failed claims retry up to this many attempts before dead-lettering. */
+  maxAttempts?: number;
+  /** AC-906: running rows older than this are recovered to pending at startup. */
+  staleRunningAfterS?: number;
   concurrency?: number;
   hookBus?: HookBus | null;
 }
@@ -195,6 +199,8 @@ export class TaskRunner {
   #browserContextService?: QueuedTaskBrowserContextService;
   #pollInterval: number;
   #maxConsecutiveEmpty: number;
+  #maxAttempts: number;
+  #staleRunningAfterS: number;
   #concurrency: number;
   #hookBus: HookBus | null;
   #shutdown = false;
@@ -208,6 +214,8 @@ export class TaskRunner {
     this.#browserContextService = opts.browserContextService;
     this.#pollInterval = opts.pollInterval ?? 60;
     this.#maxConsecutiveEmpty = opts.maxConsecutiveEmpty ?? 0;
+    this.#maxAttempts = Math.max(1, opts.maxAttempts ?? 3);
+    this.#staleRunningAfterS = opts.staleRunningAfterS ?? 3600;
     this.#concurrency = Math.max(1, opts.concurrency ?? 1);
     this.#hookBus = opts.hookBus ?? null;
   }
@@ -229,12 +237,27 @@ export class TaskRunner {
     const tasks = await dequeueTaskBatch(this.#store, maxTasks);
     if (tasks.length === 0) return 0;
 
-    await Promise.all(tasks.map((task) => this.#processTask(task)));
-    this.#tasksProcessed += tasks.length;
+    // AC-906: allSettled so one rejected task (e.g. a throw from failTask
+    // itself) cannot tear down the batch and strand siblings in running.
+    // Return the CLAIMED count so an all-rejected batch does not read as an
+    // empty poll and exit the daemon early; only fulfilled tasks count as
+    // processed.
+    const outcomes = await Promise.allSettled(tasks.map((task) => this.#processTask(task)));
+    for (const [index, outcome] of outcomes.entries()) {
+      if (outcome.status === "rejected") {
+        console.error(`task ${tasks[index].id} processing rejected:`, outcome.reason);
+      }
+    }
+    this.#tasksProcessed += outcomes.filter((outcome) => outcome.status === "fulfilled").length;
     return tasks.length;
   }
 
   async run(): Promise<number> {
+    // AC-906: recover tasks stranded in running by a previous crash.
+    const recovered = await this.#store.requeueStaleRunning?.(this.#staleRunningAfterS, this.#maxAttempts);
+    if (recovered) {
+      console.warn(`recovered ${recovered} crash-stranded running task(s) to pending`);
+    }
     let consecutiveEmpty = 0;
 
     while (!this.#shutdown) {
@@ -265,6 +288,7 @@ export class TaskRunner {
     await executeQueuedTaskWorkflow({
       store: this.#store,
       task,
+      maxAttempts: this.#maxAttempts,
       provider: this.#provider,
       model: this.#model,
       knowledgeRoot: this.#knowledgeRoot,

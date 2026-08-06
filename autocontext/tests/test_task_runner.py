@@ -343,7 +343,8 @@ class TestTaskRunner:
                 return "fail"
 
         store.enqueue_task("t1", "spec", config={"task_prompt": "test", "rubric": "test"})
-        runner = TaskRunner(store=store, provider=FailProvider())
+        # AC-906: max_attempts=1 pins the legacy single-failure-terminal path
+        runner = TaskRunner(store=store, provider=FailProvider(), max_attempts=1)
         result = runner.run_once()
 
         assert result is not None
@@ -1271,9 +1272,15 @@ class TestTaskRunnerFactory:
                 store=store,
                 provider=provider,
             )
+        runner.retry_backoff_s = 0
 
+        # AC-906: failures retry up to max_attempts claims before
+        # dead-lettering; a deterministic failure drains the budget.
         result = runner.run_once()
-
+        assert result is not None
+        assert result["status"] == "pending"
+        for _ in range(2):
+            result = runner.run_once()
         assert result is not None
         assert result["status"] == "failed"
         assert "browser exploration is not configured" in (result["error"] or "")

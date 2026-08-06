@@ -34,8 +34,13 @@ class TaskQueueStore(Protocol):
     ) -> None:
         """Persist a successful task result."""
 
-    def fail_task(self, task_id: str, error: str) -> None:
-        """Persist a task failure."""
+    def fail_task(
+        self, task_id: str, error: str, *, max_attempts: int | None = None, retry_backoff_s: float = 30.0
+    ) -> None:
+        """Persist a task failure, or requeue it below the attempts limit."""
+
+    def requeue_stale_running(self, *, older_than_seconds: float, max_attempts: int | None = None) -> int:
+        """Return crash-stranded running tasks to pending; count returned."""
 
     def get_calibration_examples(self, scenario_name: str, limit: int = 5) -> list[dict[str, Any]]:
         """Return recent human-feedback anchors for judge calibration."""
