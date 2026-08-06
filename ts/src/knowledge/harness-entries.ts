@@ -9,6 +9,10 @@
  * outcome marking so verifier-scored runs can confirm or refute an entry's
  * expected outcome.
  *
+ * The scope guardrail (a narrower-scope caller cannot mutate broader-scope
+ * state) covers every write path: `apply`, `markOutcome`, and `rollback`
+ * (AC-907).
+ *
  * The store assumes a single writer per root directory: writes are atomic
  * but load-modify-save, so concurrent writers are last-writer-wins. State
  * files are per-language (Python writes snake_case fields) and are not
@@ -354,9 +358,15 @@ export class HarnessEntryStore {
    * non-pending outcome survives the restore.
    *
    * The same scope guardrail as `apply` and `markOutcome` holds (AC-907):
-   * a narrower-scope caller cannot roll back a broader-scope refinement.
-   * Checking the refinement's scope suffices because every entry a
-   * refinement touched has scope at or below the refinement's.
+   * a narrower-scope caller cannot roll back a broader-scope refinement
+   * (whole-refinement check), and each restore additionally verifies the
+   * CURRENT occupant of the entry id and the snapshot being restored.
+   * The per-entry checks matter because entry ids can be reused across
+   * scopes: an id deleted at run scope and recreated at global scope must
+   * not be deletable or overwritable by a run-scoped rollback. Blocked
+   * items are recorded with `error: "scope_readonly"` (the per-edit
+   * convention of `apply`) while the rest of the refinement still rolls
+   * back.
    */
   rollback(refinementId: string, opts: { scope: HarnessScope }): HarnessRefinement {
     const scope = requireScope(opts.scope);
@@ -372,6 +382,28 @@ export class HarnessEntryStore {
     const reason = `rollback of ${refinementId}`;
     for (const item of [...target.appliedEdits].reverse()) {
       if (!item.applied) continue;
+      const current = state.get(item.entryId);
+      const snapshot = item.before ?? undefined;
+      const blocked =
+        (current !== undefined && SCOPE_ORDER[current.scope] > SCOPE_ORDER[scope]) ||
+        (snapshot !== undefined && SCOPE_ORDER[snapshot.scope] > SCOPE_ORDER[scope]);
+      if (blocked) {
+        applied.push({
+          edit: {
+            action: snapshot === undefined ? "delete" : "update",
+            kind: item.edit.kind,
+            id: item.entryId,
+            title: "",
+            content: "",
+            expectedOutcome: "",
+            reason,
+          },
+          entryId: item.entryId,
+          applied: false,
+          error: "scope_readonly",
+        });
+        continue;
+      }
       if (item.before === undefined || item.before === null) {
         const removed = state.get(item.entryId);
         state.delete(item.entryId);

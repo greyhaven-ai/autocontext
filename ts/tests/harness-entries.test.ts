@@ -287,6 +287,38 @@ describe("review hardening (parity with Python TestReviewHardening)", () => {
     expect(store.entries()).toHaveLength(0);
   });
 
+  it("rollback delete path cannot remove a broader current occupant", () => {
+    // Id reuse across scopes must not let a narrow rollback delete broad state.
+    const store = new HarnessEntryStore(root);
+    const created = store.apply([createEdit({ id: "harness_x", content: "run-v" })], {
+      scope: "run",
+    });
+    store.apply([createEdit({ action: "delete", id: "harness_x" })], { scope: "run" });
+    store.apply([createEdit({ id: "harness_x", content: "global-v" })], { scope: "global" });
+    const result = store.rollback(created.id, { scope: "run" });
+    expect(result.appliedEdits[0].applied).toBe(false);
+    expect(result.appliedEdits[0].error).toBe("scope_readonly");
+    const entry = store.entries()[0];
+    expect(entry.scope).toBe("global");
+    expect(entry.content).toBe("global-v");
+  });
+
+  it("rollback restore path cannot overwrite a broader current occupant", () => {
+    const store = new HarnessEntryStore(root);
+    store.apply([createEdit({ id: "harness_x", content: "v1" })], { scope: "run" });
+    const updated = store.apply([createEdit({ action: "update", id: "harness_x", content: "v2" })], {
+      scope: "run",
+    });
+    store.apply([createEdit({ action: "delete", id: "harness_x" })], { scope: "run" });
+    store.apply([createEdit({ id: "harness_x", content: "global-v" })], { scope: "global" });
+    const result = store.rollback(updated.id, { scope: "run" });
+    expect(result.appliedEdits[0].applied).toBe(false);
+    expect(result.appliedEdits[0].error).toBe("scope_readonly");
+    const entry = store.entries()[0];
+    expect(entry.scope).toBe("global");
+    expect(entry.content).toBe("global-v");
+  });
+
   it("broader caller can roll back a narrower refinement", () => {
     const store = new HarnessEntryStore(root);
     const batch = store.apply([createEdit({ id: "harness_r", title: "r", content: "v1" })], {

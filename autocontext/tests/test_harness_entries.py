@@ -264,6 +264,43 @@ class TestReviewHardening:
         assert undone.rollback_of == batch.id
         assert store.entries() == []
 
+    def test_rollback_delete_path_cannot_remove_a_broader_current_occupant(self, tmp_path) -> None:
+        """Id reuse across scopes must not let a narrow rollback delete broad state."""
+        store = HarnessEntryStore(tmp_path)
+        created = store.apply(
+            [HarnessEdit(action="create", kind="fact", id="harness_x", title="t", content="run-v")], scope="run"
+        )
+        store.apply([HarnessEdit(action="delete", kind="fact", id="harness_x")], scope="run")
+        store.apply(
+            [HarnessEdit(action="create", kind="fact", id="harness_x", title="t", content="global-v")], scope="global"
+        )
+        result = store.rollback(created.id, scope="run")
+        blocked = result.applied_edits[0]
+        assert not blocked.applied and blocked.error == "scope_readonly"
+        entry = store.entries()[0]
+        assert entry.scope == "global" and entry.content == "global-v"
+
+    def test_rollback_restore_path_cannot_overwrite_a_broader_current_occupant(self, tmp_path) -> None:
+        store = HarnessEntryStore(tmp_path)
+        store.apply(
+            [HarnessEdit(action="create", kind="fact", id="harness_x", title="t", content="v1")], scope="run"
+        )
+        updated = store.apply([HarnessEdit(action="update", kind="fact", id="harness_x", content="v2")], scope="run")
+        store.apply([HarnessEdit(action="delete", kind="fact", id="harness_x")], scope="run")
+        store.apply(
+            [HarnessEdit(action="create", kind="fact", id="harness_x", title="t", content="global-v")], scope="global"
+        )
+        result = store.rollback(updated.id, scope="run")
+        blocked = result.applied_edits[0]
+        assert not blocked.applied and blocked.error == "scope_readonly"
+        entry = store.entries()[0]
+        assert entry.scope == "global" and entry.content == "global-v"
+
+    def test_rollback_rejects_unknown_scope_before_lookup(self, tmp_path) -> None:
+        store = HarnessEntryStore(tmp_path)
+        with pytest.raises(ValueError, match="unknown harness scope"):
+            store.rollback("refinement_whatever", scope="bogus")  # type: ignore[arg-type]
+
     def test_broader_caller_can_roll_back_narrower_refinement(self, tmp_path) -> None:
         store = HarnessEntryStore(tmp_path)
         batch = store.apply(

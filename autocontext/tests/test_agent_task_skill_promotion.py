@@ -170,7 +170,7 @@ class TestReviewHardening:
             [HarnessEdit(action="delete", kind="procedure", id=batch.applied_edits[0].entry_id)],
             scope="scenario_family",
         )
-        store.rollback(removed.id)
+        store.rollback(removed.id, scope="scenario_family")
         entry = store.entries(kind="procedure")[0]
         assert entry.reference is not None and entry.reference.source == SLOT
 
