@@ -480,6 +480,12 @@ export class HarnessEntryStore {
   ): AppliedHarnessEdit {
     if (edit.action === "create") {
       const entryId = edit.id || shortId("harness");
+      if (edit.reference !== undefined && edit.kind !== "procedure") {
+        // Runtime backstop for the compile-time contract: persisting a
+        // reference on a non-procedure entry would make normalizeEntry drop
+        // the entry silently on the next load.
+        return { edit, entryId, applied: false, error: "reference_requires_procedure" };
+      }
       if (state.has(entryId)) {
         return { edit, entryId, applied: false, error: "duplicate_id" };
       }
@@ -509,6 +515,12 @@ export class HarnessEntryStore {
     }
     if (SCOPE_ORDER[existing.scope] > SCOPE_ORDER[scope]) {
       return { edit, entryId: edit.id, applied: false, error: "scope_readonly" };
+    }
+    if (edit.reference !== undefined && edit.action === "update" && existing.kind !== "procedure") {
+      // The edit only declares its own kind; the target entry's actual kind
+      // decides whether a reference is legal. Without this check the entry
+      // persists invalid and normalizeEntry silently drops it on next load.
+      return { edit, entryId: edit.id, applied: false, error: "reference_requires_procedure" };
     }
     const before: HarnessEntry = { ...existing };
     if (edit.action === "delete") {

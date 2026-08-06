@@ -337,6 +337,12 @@ class HarnessEntryStore:
             return AppliedHarnessEdit(edit=edit, entry_id=edit.id, applied=False, error="not_found")
         if SCOPE_ORDER[existing.scope] > SCOPE_ORDER[scope]:
             return AppliedHarnessEdit(edit=edit, entry_id=edit.id, applied=False, error="scope_readonly")
+        if edit.reference is not None and edit.action == "update" and existing.kind != "procedure":
+            # The edit validator only sees the edit's DECLARED kind; the target
+            # entry's actual kind decides whether a reference is legal. Failing
+            # here keeps this a per-edit error instead of a batch-poisoning
+            # ValidationError when the mutated entry is re-validated.
+            return AppliedHarnessEdit(edit=edit, entry_id=edit.id, applied=False, error="reference_requires_procedure")
         before = existing.model_copy(deep=True)
         if edit.action == "delete":
             del state[edit.id]
