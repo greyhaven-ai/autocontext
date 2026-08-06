@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -16,6 +16,7 @@ from autocontext.execution.evaluator_epoch import EVALUATOR_EPOCH_REBASELINE, re
 from autocontext.execution.improvement_events import ImprovementLoopEvent
 from autocontext.execution.output_cleaner import clean_revision_output
 from autocontext.execution.output_verifier import OutputVerifier
+from autocontext.execution.verifier_cache import CachedVerdict, EvaluationCache, content_fingerprint
 from autocontext.scenarios.agent_task import AgentTaskInterface, AgentTaskResult
 
 logger = logging.getLogger(__name__)
@@ -122,6 +123,7 @@ class ImprovementLoop:
         output_checkpointer: OutputVerifier | None = None,
         on_event: Callable[[ImprovementLoopEvent], None] | None = None,
         metadata: dict[str, Any] | None = None,
+        required_targets: Sequence[str] | None = None,
     ) -> None:
         self.task = task
         self.max_rounds = max(1, max_rounds)
@@ -145,6 +147,11 @@ class ImprovementLoop:
         # can stream progress without waiting for the final result blob.
         self._on_event: Callable[[ImprovementLoopEvent], None] = on_event or (lambda _e: None)
         self.metadata = dict(metadata or {})
+        # AC-902: deterministic pre-judge guard. A required target string
+        # missing from the artifact is the Navier-Stokes FALSE-PASS failure
+        # (a truncated file compiles vacuously); it fails the round closed
+        # without spending a judge call.
+        self.required_targets: tuple[str, ...] = tuple(required_targets or ())
 
     def run(
         self,
@@ -242,6 +249,7 @@ class ImprovementLoop:
         def _emit_final(final_result: ImprovementResult) -> ImprovementResult:
             if self.metadata:
                 final_result.metadata.update(self.metadata)
+            final_result.metadata["verifier_cache"] = verdict_cache.stats()
             # AC-752: emit a single `final` event right before returning so
             # streaming consumers (CLI --ndjson) see the run's summary fields.
             self._on_event(
@@ -255,6 +263,8 @@ class ImprovementLoop:
             )
             return final_result
 
+        verdict_cache = EvaluationCache()
+        consecutive_cached_failures = 0
         for round_num in range(1, self.max_rounds + 1):
             logger.info("improvement loop round %d/%d", round_num, self.max_rounds)
             self._on_event(ImprovementLoopEvent(event="round_start", round=round_num))
@@ -265,20 +275,46 @@ class ImprovementLoop:
             self._on_event(ImprovementLoopEvent(event="revision_done", round=round_num, output=current_output))
 
             round_start = time.monotonic()
-            result = self.task.evaluate_output(
-                current_output,
-                state,
-                reference_context=reference_context,
-                required_concepts=required_concepts,
-                calibration_examples=calibration_examples,
-                pinned_dimensions=pinned_dimensions,
-            )
-            judge_calls += 1
+            # AC-902: byte-identical artifacts are never re-judged or
+            # re-verified; a missing required target fails closed for free.
+            fingerprint = content_fingerprint(current_output)
+            replayed_veto = False
+            missing_targets = [target for target in self.required_targets if target not in current_output]
+            cached_verdict = None if missing_targets else verdict_cache.get(fingerprint)
+            from_cache = cached_verdict is not None
+            if missing_targets:
+                result = AgentTaskResult(
+                    score=0.0,
+                    reasoning="required target(s) missing from output: " + ", ".join(missing_targets),
+                    dimension_scores={},
+                )
+                self._on_event(ImprovementLoopEvent(event="targets_missing", round=round_num, output=current_output))
+            elif cached_verdict is not None:
+                replayed_veto = cached_verdict.vetoed
+                result = AgentTaskResult(
+                    score=cached_verdict.score,
+                    reasoning=cached_verdict.reasoning,
+                    dimension_scores=dict(cached_verdict.dimension_scores),
+                    evaluator_epoch=cached_verdict.evaluator_epoch,
+                )
+                self._on_event(ImprovementLoopEvent(event="verifier_cache_hit", round=round_num, score=cached_verdict.score))
+            else:
+                result = self.task.evaluate_output(
+                    current_output,
+                    state,
+                    reference_context=reference_context,
+                    required_concepts=required_concepts,
+                    calibration_examples=calibration_examples,
+                    pinned_dimensions=pinned_dimensions,
+                )
+                judge_calls += 1
             round_ms = int((time.monotonic() - round_start) * 1000)
             total_internal_retries += result.internal_retries
             self._on_event(ImprovementLoopEvent(event="judge_done", round=round_num, score=result.score))
 
-            failed = _is_parse_failure(result.score, result.reasoning)
+            # a cached round replays a real verdict; its embedded verifier
+            # output must never be re-classified as a judge parse failure
+            failed = False if from_cache else _is_parse_failure(result.score, result.reasoning)
 
             round_result = RoundResult(
                 round_number=round_num,
@@ -291,6 +327,15 @@ class ImprovementLoop:
                 round_duration_ms=round_ms,
             )
             rounds.append(round_result)
+
+            if from_cache and cached_verdict is not None and not cached_verdict.passed:
+                consecutive_cached_failures += 1
+                if consecutive_cached_failures >= 2:
+                    logger.info("terminating: repeated artifacts keep failing unchanged")
+                    termination_reason = "unchanged_output"
+                    break
+            elif not failed:
+                consecutive_cached_failures = 0
 
             if failed:
                 judge_failures += 1
@@ -348,7 +393,13 @@ class ImprovementLoop:
             # plateau_count) is also reset so a prior-epoch threshold-met round cannot confirm a
             # new-epoch round as "confirmed stable" and stop the loop early.
             round_result.evaluator_epoch = result.evaluator_epoch
-            _epoch_decision = resolve_epoch_rebaseline(baseline_epoch, result.evaluator_epoch, has_baseline)
+            # AC-902: a synthesized targets-missing round is deterministic and
+            # epoch-less; letting it rebaseline would reset best_score and crown
+            # the known-bad artifact as best. Skip the AC-885 block entirely.
+            if missing_targets:
+                _epoch_decision = resolve_epoch_rebaseline(baseline_epoch, baseline_epoch, False)
+            else:
+                _epoch_decision = resolve_epoch_rebaseline(baseline_epoch, result.evaluator_epoch, has_baseline)
             if _epoch_decision.rebaseline:
                 self._on_event(
                     ImprovementLoopEvent(
@@ -363,8 +414,9 @@ class ImprovementLoop:
                 threshold_met_round = None
                 prev_valid_score = None
                 plateau_count = 0
-            baseline_epoch = result.evaluator_epoch
-            has_baseline = True
+            if not missing_targets:
+                baseline_epoch = result.evaluator_epoch
+                has_baseline = True
 
             # Compute worst dimension for this round
             if result.dimension_scores:
@@ -383,6 +435,12 @@ class ImprovementLoop:
                 dimension_trajectory[dim].append(dim_score)
 
             effective_score = result.score
+            # AC-902: the cache stores the ARTIFACT-INTRINSIC verdict. The
+            # fact-check penalty and veto zeroing depend only on the artifact
+            # and are folded in below; the delta-cap clamp depends on the
+            # previous round's baseline (evaluation context) and is re-derived
+            # at replay time instead of being frozen into the cache.
+            cacheable_score = result.score
 
             # Max score delta warning + optional cap (AC-750: compare against
             # the last non-vetoed score, not against post-veto zeros).
@@ -407,8 +465,11 @@ class ImprovementLoop:
                             ),
                         )
 
-            # Reference verification hook — apply score penalty if facts unverified
-            if effective_score > 0:
+            # Reference verification hook — apply score penalty if facts unverified.
+            # Cached rounds replay a verdict whose reasoning already embeds any
+            # fact-check annotation from the original round; re-running would
+            # duplicate the annotation and double-penalize.
+            if effective_score > 0 and not from_cache:
                 verify_result = self.task.verify_facts(current_output, state)
                 if verify_result is not None and not verify_result.get("verified", True):
                     issues = verify_result.get("issues", [])
@@ -416,6 +477,7 @@ class ImprovementLoop:
                         annotation = " | Fact-check issues: " + "; ".join(issues)
                         round_result.reasoning += annotation
                     effective_score = max(0.0, effective_score * 0.9)
+                    cacheable_score = max(0.0, cacheable_score * 0.9)
                     round_result.score = effective_score
 
             # AC-733: external-command verifier hook. Override the judge score
@@ -425,7 +487,7 @@ class ImprovementLoop:
             # next revision prompt sees the actual error rather than the
             # judge's prose impression.
             verifier_vetoed = False
-            if self.output_verifier is not None:
+            if self.output_verifier is not None and not from_cache and not missing_targets:
                 verifier_outcome = self.output_verifier.run(current_output)
                 if not verifier_outcome.ok:
                     annotation = "\n\nExternal Verifier Output:\n" + verifier_outcome.message
@@ -438,6 +500,7 @@ class ImprovementLoop:
                         evaluator_epoch=result.evaluator_epoch,
                     )
                     effective_score = 0.0
+                    cacheable_score = 0.0
                     round_result.score = 0.0
                     verifier_vetoed = True
                     logger.info(
@@ -452,6 +515,21 @@ class ImprovementLoop:
                         verifier_ok=verifier_outcome.ok,
                         verifier_exit_code=verifier_outcome.exit_code,
                     )
+                )
+
+            if not from_cache and not failed and not missing_targets:
+                # cached verdicts embed any verifier veto, so a later reuse of
+                # this fingerprint skips both the judge and the verifier.
+                verdict_cache.put(
+                    fingerprint,
+                    CachedVerdict(
+                        score=cacheable_score,
+                        reasoning=round_result.reasoning,
+                        dimension_scores=dict(result.dimension_scores),
+                        passed=cacheable_score >= self.quality_threshold,
+                        vetoed=verifier_vetoed,
+                        evaluator_epoch=result.evaluator_epoch,
+                    ),
                 )
 
             self._on_event(
@@ -549,7 +627,8 @@ class ImprovementLoop:
             prev_valid_score = result.score
             # AC-750: only the judge's view from a non-vetoed round counts as a
             # legitimate baseline for the next round's max_score_delta check.
-            if not verifier_vetoed:
+            # A cached replay of a vetoed round is still a veto.
+            if not verifier_vetoed and not replayed_veto:
                 last_unvetoed_score = result.score
 
             # `dims_ok` was computed up front (alongside best-tracking) so

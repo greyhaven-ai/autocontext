@@ -62,6 +62,7 @@ export function buildImprovementResult(opts: {
   durationMs: number;
   judgeCalls: number;
   evaluatorEpoch?: string | null;
+  verifierCache?: { hits: number; misses: number; entries: number };
 }): ImprovementResult {
   return {
     rounds: opts.rounds,
@@ -78,5 +79,6 @@ export function buildImprovementResult(opts: {
     judgeCalls: opts.judgeCalls,
     // AC-885: evaluator epoch of the winning (best) round; null when unknown.
     evaluatorEpoch: opts.evaluatorEpoch ?? null,
+    verifierCache: opts.verifierCache,
   };
 }

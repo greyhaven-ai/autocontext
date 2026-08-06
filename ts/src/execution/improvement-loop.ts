@@ -4,6 +4,7 @@
  */
 
 import type { AgentTaskInterface, AgentTaskResult, ImprovementResult } from "../types/index.js";
+import { EvaluationCache, contentFingerprint } from "./verifier-cache.js";
 import { cleanRevisionOutput } from "./output-cleaner.js";
 import { isImproved, isParseFailure } from "./improvement-loop-detection.js";
 import {
@@ -38,6 +39,9 @@ export interface ImprovementLoopOpts {
   dimensionThreshold?: number;
   timeBudget?: { check(phase: string): void };
   onProgress?: ImprovementLoopProgressObserver;
+  /** AC-902: target strings that must appear in the artifact; a missing
+   * target fails the round closed without consulting the judge. */
+  requiredTargets?: string[];
 }
 
 export class ImprovementLoop {
@@ -50,6 +54,7 @@ export class ImprovementLoop {
   #dimensionThreshold: number | null;
   #timeBudget: { check(phase: string): void } | null;
   #onProgress: ImprovementLoopProgressObserver | null;
+  #requiredTargets: string[];
 
   constructor(opts: ImprovementLoopOpts) {
     this.#task = opts.task;
@@ -58,6 +63,7 @@ export class ImprovementLoop {
     this.#minRounds = Math.max(1, opts.minRounds ?? 1);
     this.#maxScoreDelta = opts.maxScoreDelta ?? 0.5;
     this.#capScoreJumps = opts.capScoreJumps ?? false;
+    this.#requiredTargets = opts.requiredTargets ?? [];
     this.#dimensionThreshold = opts.dimensionThreshold ?? null;
     this.#timeBudget = opts.timeBudget ?? null;
     this.#onProgress = opts.onProgress ?? null;
@@ -92,24 +98,55 @@ export class ImprovementLoop {
     // comparable, the prior baseline is stale and the loop re-baselines.
     let baselineEpoch: string | null = null;
     let hasBaseline = false;
+    const verdictCache = new EvaluationCache();
+    let consecutiveCachedFailures = 0;
 
     for (let roundNum = 1; roundNum <= this.#maxRounds; roundNum++) {
       const roundStart = performance.now();
       this.#timeBudget?.check(`round ${roundNum} evaluation`);
       this.reportProgress({ phase: "evaluation", status: "started", round: roundNum });
-      const result = await this.#task.evaluateOutput(currentOutput, opts.state, {
-        referenceContext: opts.referenceContext,
-        requiredConcepts: opts.requiredConcepts,
-        calibrationExamples: opts.calibrationExamples,
-        pinnedDimensions,
-      });
+      // AC-902: byte-identical artifacts are never re-judged; a missing
+      // required target fails closed for free.
+      const fingerprint = contentFingerprint(currentOutput);
+      const missingTargets = this.#requiredTargets.filter(
+        (target) => !currentOutput.includes(target),
+      );
+      const cachedVerdict = missingTargets.length > 0 ? undefined : verdictCache.get(fingerprint);
+      const fromCache = cachedVerdict !== undefined;
+      let result: AgentTaskResult;
+      if (missingTargets.length > 0) {
+        result = {
+          score: 0,
+          reasoning: "required target(s) missing from output: " + missingTargets.join(", "),
+          dimensionScores: {},
+          internalRetries: 0,
+          evaluatorEpoch: null,
+        };
+      } else if (cachedVerdict !== undefined) {
+        result = {
+          score: cachedVerdict.score,
+          reasoning: cachedVerdict.reasoning,
+          dimensionScores: { ...cachedVerdict.dimensionScores },
+          internalRetries: 0,
+          evaluatorEpoch: cachedVerdict.evaluatorEpoch ?? null,
+        };
+      } else {
+        result = await this.#task.evaluateOutput(currentOutput, opts.state, {
+          referenceContext: opts.referenceContext,
+          requiredConcepts: opts.requiredConcepts,
+          calibrationExamples: opts.calibrationExamples,
+          pinnedDimensions,
+        });
+        judgeCalls += 1;
+      }
       this.#timeBudget?.check(`round ${roundNum} evaluation`);
       this.reportProgress({ phase: "evaluation", status: "completed", round: roundNum });
-      judgeCalls += 1;
       const roundMs = Math.round(performance.now() - roundStart);
       totalInternalRetries += result.internalRetries ?? 0;
 
-      const failed = isParseFailure(result.score, result.reasoning);
+      // a cached round replays a real verdict; its embedded output must
+      // never be re-classified as a judge parse failure
+      const failed = fromCache ? false : isParseFailure(result.score, result.reasoning);
       const roundResult = buildRoundResult({
         roundNumber: roundNum,
         output: currentOutput,
@@ -118,6 +155,16 @@ export class ImprovementLoop {
         roundDurationMs: roundMs,
       });
       rounds.push(roundResult);
+
+      if (fromCache && cachedVerdict !== undefined && !cachedVerdict.passed) {
+        consecutiveCachedFailures += 1;
+        if (consecutiveCachedFailures >= 2) {
+          terminationReason = "unchanged_output";
+          break;
+        }
+      } else if (!failed) {
+        consecutiveCachedFailures = 0;
+      }
 
       if (failed) {
         judgeFailures += 1;
@@ -164,7 +211,13 @@ export class ImprovementLoop {
       // confirm a new-epoch round as "confirmed stable" and stop the loop early. Mirrors Python
       // resolve_epoch_rebaseline.
       const roundEpoch = result.evaluatorEpoch ?? null;
-      const epochDecision = resolveEpochRebaseline(baselineEpoch, roundEpoch, hasBaseline);
+      // AC-902: a synthesized targets-missing round is deterministic and
+      // epoch-less; letting it rebaseline would reset bestScore and crown the
+      // known-bad artifact as best. Skip the AC-885 block entirely.
+      const epochDecision =
+        missingTargets.length > 0
+          ? resolveEpochRebaseline(baselineEpoch, baselineEpoch, false)
+          : resolveEpochRebaseline(baselineEpoch, roundEpoch, hasBaseline);
       if (epochDecision.rebaseline) {
         // The TS loop has no event sink, so the rebaseline is surfaced via console.warn -- the same
         // channel the score-delta warning uses. The token EVALUATOR_EPOCH_REBASELINE mirrors the
@@ -177,8 +230,10 @@ export class ImprovementLoop {
         thresholdMetRound = null;
         plateauCount = 0;
       }
-      baselineEpoch = roundEpoch;
-      hasBaseline = true;
+      if (missingTargets.length === 0) {
+        baselineEpoch = roundEpoch;
+        hasBaseline = true;
+      }
 
       if (pinnedDimensions === undefined && Object.keys(result.dimensionScores).length > 0) {
         pinnedDimensions = Object.keys(result.dimensionScores).sort();
@@ -197,8 +252,14 @@ export class ImprovementLoop {
         console.warn(scoreDeltaPolicy.warning);
       }
       let effectiveScore = scoreDeltaPolicy.effectiveScore;
+      // AC-902: the cache stores the ARTIFACT-INTRINSIC verdict. The
+      // fact-check penalty depends only on the artifact and is folded in
+      // below; the delta-cap clamp depends on the previous round's baseline
+      // (evaluation context) and is re-derived at replay time instead of
+      // being frozen into the cache.
+      let cacheableScore = result.score;
 
-      if (effectiveScore > 0 && this.#task.verifyFacts) {
+      if (effectiveScore > 0 && !fromCache && this.#task.verifyFacts) {
         this.#timeBudget?.check(`round ${roundNum} fact verification`);
         const verifyResult = await this.#task.verifyFacts(currentOutput, opts.state);
         this.#timeBudget?.check(`round ${roundNum} fact verification`);
@@ -208,8 +269,21 @@ export class ImprovementLoop {
             roundResult.reasoning += ` | Fact-check issues: ${issues.join("; ")}`;
           }
           effectiveScore = Math.max(0, effectiveScore * 0.9);
+          cacheableScore = Math.max(0, cacheableScore * 0.9);
           roundResult.score = effectiveScore;
         }
+      }
+
+      if (!fromCache && !failed && missingTargets.length === 0) {
+        // cached verdicts embed the fact-check penalty (artifact-intrinsic);
+        // the delta-cap is contextual and re-derived on replay
+        verdictCache.put(fingerprint, {
+          score: cacheableScore,
+          reasoning: roundResult.reasoning,
+          dimensionScores: { ...(result.dimensionScores ?? {}) },
+          passed: cacheableScore >= this.#qualityThreshold,
+          evaluatorEpoch: result.evaluatorEpoch ?? null,
+        });
       }
 
       if (effectiveScore > bestScore) {
@@ -259,6 +333,7 @@ export class ImprovementLoop {
           durationMs: Math.round(performance.now() - loopStart),
           judgeCalls,
           evaluatorEpoch: bestRoundEpoch(rounds, bestRound),
+          verifierCache: verdictCache.stats(),
         });
       }
 
@@ -294,6 +369,7 @@ export class ImprovementLoop {
       durationMs: Math.round(performance.now() - loopStart),
       judgeCalls,
       evaluatorEpoch: bestRoundEpoch(rounds, bestRound),
+      verifierCache: verdictCache.stats(),
     });
   }
 
