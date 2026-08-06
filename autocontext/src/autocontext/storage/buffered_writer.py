@@ -15,6 +15,8 @@ import queue
 import threading
 from dataclasses import dataclass
 from pathlib import Path
+
+from autocontext.util.json_io import write_text_atomic
 from typing import Any, Literal
 
 logger = logging.getLogger(__name__)
@@ -78,7 +80,7 @@ class BufferedWriter:
             with item.path.open("a", encoding="utf-8") as f:
                 f.write(item.content)
         else:
-            item.path.write_text(item.content, encoding="utf-8")
+            write_text_atomic(item.path, item.content)
 
     def write_text(self, path: Path, content: str) -> None:
         """Queue a text write (or write synchronously if not started)."""
