@@ -350,3 +350,126 @@ class TestRemainingStores:
         scenario_dir.mkdir(parents=True)
         (scenario_dir / "lessons.json").write_text('[{"wrong": "shape"}]', encoding="utf-8")
         assert store.read_lessons("grid_ctf") == []
+
+
+class TestArtifactReaderHardening:
+    def _store(self, tmp_path: Path):
+        from autocontext.storage.artifacts import ArtifactStore
+
+        return ArtifactStore(
+            runs_root=tmp_path / "runs",
+            knowledge_root=tmp_path / "knowledge",
+            skills_root=tmp_path / "skills",
+            claude_skills_path=tmp_path / ".claude" / "skills",
+        )
+
+    def test_corrupt_progress_returns_none(self, tmp_path) -> None:
+        store = self._store(tmp_path)
+        path = store._scenario_dir("grid_ctf") / "progress.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{not json", encoding="utf-8")
+        assert store.read_progress("grid_ctf") is None
+
+    def test_corrupt_progress_report_skipped_in_latest(self, tmp_path) -> None:
+        from autocontext.knowledge.normalized_metrics import (
+            CostEfficiency,
+            NormalizedProgress,
+            RunProgressReport,
+        )
+
+        store = self._store(tmp_path)
+        good = RunProgressReport(
+            run_id="run_good",
+            scenario="grid_ctf",
+            total_generations=1,
+            advances=1,
+            rollbacks=0,
+            retries=0,
+            progress=NormalizedProgress(
+                raw_score=0.5,
+                normalized_score=0.5,
+                score_floor=0.0,
+                score_ceiling=1.0,
+                pct_of_ceiling=50.0,
+            ),
+            cost=CostEfficiency(
+                total_input_tokens=1,
+                total_output_tokens=1,
+                total_tokens=2,
+                total_cost_usd=0.0,
+            ),
+        )
+        store.write_progress_report("grid_ctf", "run_good", good)
+        bad_path = store._progress_report_dir("grid_ctf") / "run_bad.json"
+        bad_path.write_text("{not json", encoding="utf-8")
+        reports = store.read_latest_progress_reports("grid_ctf", max_reports=5)
+        assert len(reports) == 1
+        assert store.read_progress_report("grid_ctf", "run_bad") is None
+
+    def test_corrupt_weakness_report_skipped_in_latest(self, tmp_path) -> None:
+        store = self._store(tmp_path)
+        wr_dir = store._weakness_dir("grid_ctf")
+        wr_dir.mkdir(parents=True, exist_ok=True)
+        (wr_dir / "run_bad.json").write_text("{not json", encoding="utf-8")
+        assert store.read_latest_weakness_reports("grid_ctf", max_reports=5) == []
+        assert store.read_weakness_report("grid_ctf", "run_bad") is None
+
+    def test_corrupt_harness_version_returns_empty(self, tmp_path) -> None:
+        store = self._store(tmp_path)
+        path = store._harness_version_path("grid_ctf")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{not json", encoding="utf-8")
+        assert store.get_harness_version("grid_ctf") == {}
+
+    def test_corrupt_notebook_returns_none(self, tmp_path) -> None:
+        store = self._store(tmp_path)
+        path = tmp_path / "runs" / "sessions" / "sess_1" / "notebook.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{not json", encoding="utf-8")
+        assert store.read_notebook("sess_1") is None
+
+    def test_wrong_typed_hint_state_falls_back(self, tmp_path) -> None:
+        import json as json_module
+
+        store = self._store(tmp_path)
+        path = store._hint_state_path("grid_ctf")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json_module.dumps({"policy": {"max_hints": "seven"}, "hints": "wrong"}), encoding="utf-8")
+        manager = store.read_hint_manager("grid_ctf")
+        assert manager is not None
+
+
+class TestReportStoreReaderHardening:
+    def test_campaign_report_corrupt_returns_none_and_latest_skips(self, tmp_path) -> None:
+        from autocontext.storage.campaign_mode_report_store import (
+            campaign_mode_report_path,
+            read_campaign_mode_report,
+            read_latest_campaign_mode_reports_markdown,
+        )
+
+        path = campaign_mode_report_path(tmp_path, "grid_ctf", "run_bad")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{not json", encoding="utf-8")
+        assert read_campaign_mode_report(tmp_path, "grid_ctf", "run_bad") is None
+        assert read_latest_campaign_mode_reports_markdown(tmp_path, "grid_ctf") == ""
+
+    def test_goal_run_report_corrupt_returns_none(self, tmp_path) -> None:
+        from autocontext.storage.goal_run_report_store import goal_run_report_path, read_goal_run_report
+
+        path = goal_run_report_path(tmp_path, "goal_1", "run_bad")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{not json", encoding="utf-8")
+        assert read_goal_run_report(tmp_path, "goal_1", "run_bad") is None
+
+    def test_negative_ledger_corrupt_returns_none_and_latest_skips(self, tmp_path) -> None:
+        from autocontext.storage.negative_result_ledger_store import (
+            negative_result_ledger_path,
+            read_latest_negative_result_ledgers_markdown,
+            read_negative_result_ledger,
+        )
+
+        path = negative_result_ledger_path(tmp_path, "grid_ctf", "run_bad")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{not json", encoding="utf-8")
+        assert read_negative_result_ledger(tmp_path, "grid_ctf", "run_bad") is None
+        assert read_latest_negative_result_ledgers_markdown(tmp_path, "grid_ctf") == ""

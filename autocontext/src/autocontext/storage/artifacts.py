@@ -39,7 +39,7 @@ from autocontext.storage.scenario_paths import (
     resolve_scenario_root,
     resolve_scenario_skill_dir,
 )
-from autocontext.util.json_io import read_json, write_json
+from autocontext.util.json_io import read_json, read_json_guarded, write_json
 
 logger = logging.getLogger(__name__)
 
@@ -296,11 +296,10 @@ class ArtifactStore(
         if hint_state.exists():
             try:
                 raw = read_json(hint_state)
-            except json.JSONDecodeError:
-                logger.warning("failed to parse hint state %s", hint_state, exc_info=True)
-            else:
                 if isinstance(raw, dict):
                     return HintManager.from_dict(raw, policy_override=effective_policy)
+            except (OSError, TypeError, ValueError):
+                logger.warning("failed to parse hint state %s", hint_state, exc_info=True)
 
         path = self._scenario_dir(scenario_name) / "hints.md"
         if path.exists():
@@ -386,7 +385,8 @@ class ArtifactStore(
         path = self._scenario_dir(scenario_name) / "progress.json"
         if not path.exists():
             return None
-        return read_json(path)  # type: ignore[no-any-return]
+        data = read_json_guarded(path)
+        return data if isinstance(data, dict) else None
 
     def read_latest_advance_analysis(self, scenario_name: str, current_gen: int) -> str:
         """Read the most recent analysis from a generation before current_gen."""
@@ -730,7 +730,19 @@ class ArtifactStore(
         path = self._progress_report_dir(scenario_name) / f"{run_id}.json"
         if not path.exists():
             return None
-        return self._load_progress_report(read_json(path))
+        return self._load_progress_report_guarded(path)
+
+    def _load_progress_report_guarded(self, path: Path) -> object | None:
+        """One corrupt report must not break prompt injection for the scenario."""
+        data = read_json_guarded(path)
+        if not isinstance(data, dict):
+            logger.warning("skipping unparseable progress report: %s", path)
+            return None
+        try:
+            return self._load_progress_report(data)
+        except (TypeError, ValueError):
+            logger.warning("skipping invalid progress report: %s", path)
+            return None
 
     def _load_progress_report(self, data: dict[str, Any]) -> object:
         if data.get("schema_version") == 1 and "progress_points" in data:
@@ -753,7 +765,9 @@ class ArtifactStore(
         files = sorted(pr_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
         reports: list[object] = []
         for path in files[:max_reports]:
-            reports.append(self._load_progress_report(read_json(path)))
+            report = self._load_progress_report_guarded(path)
+            if report is not None:
+                reports.append(report)
         return reports
 
     def read_latest_progress_reports_markdown(self, scenario_name: str, max_reports: int = 2) -> str:
@@ -785,8 +799,7 @@ class ArtifactStore(
         path = self._weakness_dir(scenario_name) / f"{run_id}.json"
         if not path.exists():
             return None
-        data = read_json(path)
-        return self._deserialize_weakness_report(data)
+        return self._deserialize_weakness_report_guarded(path)
 
     def read_latest_weakness_reports(
         self,
@@ -800,8 +813,9 @@ class ArtifactStore(
         files = sorted(wr_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
         reports: list[object] = []
         for path in files[:max_reports]:
-            data = read_json(path)
-            reports.append(self._deserialize_weakness_report(data))
+            report = self._deserialize_weakness_report_guarded(path)
+            if report is not None:
+                reports.append(report)
         return reports
 
     def read_latest_weakness_reports_markdown(self, scenario_name: str, max_reports: int = 2) -> str:
@@ -815,6 +829,18 @@ class ArtifactStore(
             if callable(to_markdown) and isinstance(markdown := to_markdown(), str):
                 markdown_parts.append(markdown)
         return "\n\n".join(markdown_parts)
+
+    def _deserialize_weakness_report_guarded(self, path: Path) -> object | None:
+        """One corrupt report must not break prompt injection for the scenario."""
+        data = read_json_guarded(path)
+        if not isinstance(data, dict):
+            logger.warning("skipping unparseable weakness report: %s", path)
+            return None
+        try:
+            return self._deserialize_weakness_report(data)
+        except (TypeError, ValueError):
+            logger.warning("skipping invalid weakness report: %s", path)
+            return None
 
     def _deserialize_weakness_report(self, data: dict[str, Any]) -> object:
         """Load either the legacy or trace-grounded weakness-report schema."""
@@ -862,7 +888,8 @@ class ArtifactStore(
         path = self._harness_version_path(scenario_name)
         if not path.exists():
             return {}
-        return read_json(path)  # type: ignore[no-any-return]
+        data = read_json_guarded(path)
+        return data if isinstance(data, dict) else {}
 
     def _update_harness_version(
         self,
@@ -932,7 +959,8 @@ class ArtifactStore(
         path = self.runs_root / "sessions" / session_id / "notebook.json"
         if not path.exists():
             return None
-        return read_json(path)  # type: ignore[no-any-return]
+        data = read_json_guarded(path)
+        return data if isinstance(data, dict) else None
 
     def write_notebook(self, session_id: str, notebook: dict[str, Any]) -> None:
         """Write notebook JSON to runs/sessions/<session_id>/notebook.json."""
@@ -988,4 +1016,5 @@ class ArtifactStore(
         session_path = self.generation_dir(run_id, generation) / f"{prefix}_session.json"
         if not session_path.exists():
             return None
-        return read_json(session_path)  # type: ignore[no-any-return]
+        data = read_json_guarded(session_path)
+        return data if isinstance(data, dict) else None
