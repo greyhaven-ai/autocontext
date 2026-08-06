@@ -109,7 +109,16 @@ def _serialize_result(
 def _workspace_factory_from_settings(
     settings: AppSettings | None,
 ) -> Callable[[], InterpreterWorkspace] | None:
-    """Build a workspace factory when the opt-in flag is set (AC-901)."""
+    """Build a workspace factory when the opt-in flag is set (AC-901).
+
+    Substrate-only wiring: the queued-task evaluate path (ImprovementLoop +
+    LLM judge) does not execute candidate code, so it passes no
+    workspace_evaluate_fn and the workspace stays empty there. Code-mode
+    consumers construct AgentTaskEvolutionRunner directly with a
+    workspace_evaluate_fn (see tests/test_workspace_benchmark.py and
+    examples/workspace_benchmark.py); wiring a code-executing queued-task
+    path is deferred follow-up work, noted on the Linear issue.
+    """
     if settings is None or not settings.workspace_interpreter_enabled:
         return None
     timeout = settings.workspace_interpreter_timeout_seconds

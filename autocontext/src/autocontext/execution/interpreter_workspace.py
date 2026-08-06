@@ -54,6 +54,11 @@ class InterpreterWorkspace:
     across :meth:`run` calls until :meth:`close`. Names starting with an
     underscore are treated as private scratch and excluded from
     :meth:`variables`, snapshots, and prompt rendering.
+
+    Caveat: off the main thread, ReplWorker enforces timeouts by abandoning
+    the executing daemon thread; a timed-out candidate may keep mutating
+    the persistent namespace in the background. On the main thread (the
+    normal runner path) timeouts are signal-based and this does not apply.
     """
 
     def __init__(
@@ -68,7 +73,20 @@ class InterpreterWorkspace:
         # (builtins, safe modules, text helpers, answer) is infrastructure.
         self._infra_keys = frozenset(self._worker.namespace)
         if seed:
-            self._worker.namespace.update(seed)
+            for name in seed:
+                if name in self._infra_keys or name.startswith("_"):
+                    raise ValueError(
+                        f"seed key {name!r} collides with workspace infrastructure or is private; "
+                        "choose a different variable name"
+                    )
+            # Deep-copied so candidate mutations never leak back into caller
+            # state; uncopyable values fall back to the shared reference
+            # (dropping an explicitly provided seed would be worse).
+            for name, value in seed.items():
+                try:
+                    self._worker.namespace[name] = copy.deepcopy(value)
+                except Exception:
+                    self._worker.namespace[name] = value
         self._closed = False
 
     def _ensure_open(self) -> None:
@@ -93,9 +111,17 @@ class InterpreterWorkspace:
             return self._worker.run_code(ReplCommand(code=code))
         except CodeTimeout as exc:
             return ReplResult(stdout="", error=f"CodeTimeout: {exc}", answer={})
+        except SystemExit as exc:
+            # ReplWorker's inner handler catches only Exception, so a
+            # candidate's `raise SystemExit(...)` would otherwise escape and
+            # kill the owning process (TaskRunner catches Exception only).
+            # KeyboardInterrupt is deliberately NOT contained: that is a
+            # genuine operator signal, not candidate behavior.
+            return ReplResult(stdout="", error=f"SystemExit: {exc}", answer={})
 
     def variables(self) -> list[WorkspaceVariable]:
         """Describe user variables (never their full contents), sorted by name."""
+        self._ensure_open()
         described: list[WorkspaceVariable] = []
         for name, value in self._user_items():
             try:
@@ -139,12 +165,20 @@ class InterpreterWorkspace:
 
         The second copy keeps lineages independent: restoring the same
         snapshot into several islands must never share mutable objects.
+        Copies are staged before any existing variable is deleted, so a
+        value whose deepcopy fails at restore time degrades to omission
+        instead of leaving a half-restored namespace.
         """
         self._ensure_open()
+        staged: dict[str, Any] = {}
+        for name, value in snap.variables.items():
+            try:
+                staged[name] = copy.deepcopy(value)
+            except Exception:
+                continue
         for name, _ in self._user_items():
             del self._worker.namespace[name]
-        for name, value in snap.variables.items():
-            self._worker.namespace[name] = copy.deepcopy(value)
+        self._worker.namespace.update(staged)
 
     def close(self) -> None:
         """Deterministic teardown: drop all namespace references. Idempotent."""

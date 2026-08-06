@@ -132,3 +132,55 @@ def test_timeout_configured_through_worker() -> None:
     ws = InterpreterWorkspace(timeout_seconds=0.2)
     result = ws.run("while True:\n    pass")
     assert result.error is not None
+
+
+def test_system_exit_from_candidate_is_contained() -> None:
+    ws = InterpreterWorkspace()
+    result = ws.run("raise SystemExit(3)")
+    assert result.error is not None and "SystemExit" in result.error
+    after = ws.run("1 + 1")
+    assert after.error is None and "2" in after.stdout
+
+
+def test_seed_values_do_not_alias_caller_state() -> None:
+    caller_pool = [1, 2, 3]
+    ws = InterpreterWorkspace(seed={"pool": caller_pool})
+    ws.run("pool.append(99)")
+    assert caller_pool == [1, 2, 3]
+
+
+def test_seed_keys_may_not_collide_with_infrastructure() -> None:
+    with pytest.raises(ValueError, match="answer"):
+        InterpreterWorkspace(seed={"answer": {}})
+    with pytest.raises(ValueError, match="_private"):
+        InterpreterWorkspace(seed={"_private": 1})
+
+
+def test_variables_and_render_raise_after_close() -> None:
+    ws = InterpreterWorkspace(seed={"pool": [1]})
+    ws.close()
+    with pytest.raises(RuntimeError, match="closed"):
+        ws.variables()
+    with pytest.raises(RuntimeError, match="closed"):
+        ws.render_markdown()
+
+
+def test_restore_is_two_phase_and_skips_uncopyable_values() -> None:
+    class ExplodesOnSecondDeepcopy:
+        def __init__(self) -> None:
+            self.copies = 0
+
+        def __deepcopy__(self, memo):
+            self.copies += 1
+            if self.copies > 1:
+                raise RuntimeError("stateful deepcopy")
+            return self
+
+    ws = InterpreterWorkspace(seed={"keep": [1]})
+    snap = WorkspaceSnapshot(variables={"bad": ExplodesOnSecondDeepcopy(), "good": [2]}, skipped=())
+    # First deepcopy of "bad" happens here and succeeds; the restore-time
+    # copy raises and must degrade to omission, not a partial namespace.
+    snap.variables["bad"].__deepcopy__({})
+    ws.restore(snap)
+    names = {v.name for v in ws.variables()}
+    assert names == {"good"}

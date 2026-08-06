@@ -343,6 +343,8 @@ def migrate_workspaces(
     """
     if not states or not workspaces:
         return
+    if len(workspaces) != len(states):
+        raise ValueError(f"expected {len(states)} workspaces, got {len(workspaces)}")
     champion_index = max(range(len(states)), key=lambda i: states[i].best_score)
     snapshot = workspaces[champion_index].snapshot()
     for i, (before, after) in enumerate(zip(states, migrated, strict=True)):
@@ -636,12 +638,17 @@ class AgentTaskEvolutionRunner:
             for _ in range(num_islands)
         ]
 
+        # Created inside the try so a factory failure mid-list still closes
+        # the workspaces already created.
+        created_workspaces: list[InterpreterWorkspace] = []
         workspaces: list[InterpreterWorkspace] | None = None
-        if self._workspace_factory is not None:
-            workspaces = [self._workspace_factory() for _ in range(num_islands)]
 
         best_per_gen: list[float] = []
         try:
+            if self._workspace_factory is not None:
+                for _ in range(num_islands):
+                    created_workspaces.append(self._workspace_factory())
+                workspaces = created_workspaces
             for gen in range(num_generations):
                 if workspaces is None:
                     states = [self.run_generation(s) for s in states]
@@ -654,9 +661,8 @@ class AgentTaskEvolutionRunner:
                         migrate_workspaces(states, migrated, workspaces)
                     states = migrated
         finally:
-            if workspaces is not None:
-                for ws in workspaces:
-                    ws.close()
+            for ws in created_workspaces:
+                ws.close()
 
         champion = max(states, key=lambda s: s.best_score)
         return AgentTaskTrajectory(
