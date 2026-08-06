@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from autocontext.agents.types import LlmFn
 from autocontext.cli_role_runtime import resolve_role_runtime
-from autocontext.config.settings import AppSettings
+from autocontext.config.settings import AppSettings, load_settings
 from autocontext.extensions import HookBus, active_hook_bus, wrap_language_model_client
 from autocontext.knowledge.export import SkillPackage, export_skill_package
 from autocontext.knowledge.solve_agent_task_design import (
@@ -447,7 +447,7 @@ def _llm_fn_from_client(client: Any, model: str) -> LlmFn:
         response = client.generate(
             model=model,
             prompt=f"{system}\n\n{user}",
-            max_tokens=1200,
+            max_tokens=load_settings().solve_designer_max_tokens,
             temperature=0.2,
             role="scenario_designer",
         )

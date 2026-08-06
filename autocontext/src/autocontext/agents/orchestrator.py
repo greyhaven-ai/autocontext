@@ -156,17 +156,23 @@ class AgentOrchestrator:
         self._routed_clients: dict[tuple[str | None, ...], LanguageModelClient] = {}
         self._disposable_client_ids: set[int] = set()
         runtime = SubagentRuntime(client=self.client)
-        self.competitor = CompetitorRunner(runtime, settings.model_competitor)
-        self.translator = StrategyTranslator(runtime, settings.model_translator)
-        self.analyst = AnalystRunner(runtime, settings.model_analyst)
-        self.coach = CoachRunner(runtime, settings.model_coach)
-        self.architect = ArchitectRunner(runtime, settings.model_architect)
+        self.competitor = CompetitorRunner(runtime, settings.model_competitor, settings.competitor_max_tokens)
+        self.translator = StrategyTranslator(runtime, settings.model_translator, settings.translator_max_tokens)
+        self.analyst = AnalystRunner(runtime, settings.model_analyst, settings.analyst_max_tokens)
+        self.coach = CoachRunner(runtime, settings.model_coach, settings.coach_max_tokens)
+        self.architect = ArchitectRunner(runtime, settings.model_architect, settings.architect_max_tokens)
         self.curator: KnowledgeCurator | None = None
         if settings.curator_enabled:
-            self.curator = KnowledgeCurator(runtime, settings.model_curator)
+            self.curator = KnowledgeCurator(
+                runtime,
+                settings.model_curator,
+                max_tokens=settings.curator_max_tokens,
+                rating_max_tokens=settings.curator_rating_max_tokens,
+                consolidation_max_tokens=settings.curator_consolidation_max_tokens,
+            )
         self.skeptic: SkepticAgent | None = None
         if settings.skeptic_enabled:
-            self.skeptic = SkepticAgent(runtime, settings.model_skeptic)
+            self.skeptic = SkepticAgent(runtime, settings.model_skeptic, settings.skeptic_max_tokens)
         self._role_clients: dict[str, LanguageModelClient] = {}
         self._active_generation_deadline: float | None = None
         self._role_router = RoleRouter(settings)

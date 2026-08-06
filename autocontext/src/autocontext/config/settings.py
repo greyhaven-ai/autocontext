@@ -325,6 +325,8 @@ class AppSettings(BaseModel):
     curator_consolidation_max_tokens: int = Field(default=4000, ge=256)
     skeptic_max_tokens: int = Field(default=2000, ge=256)
     scenario_designer_max_tokens: int = Field(default=3000, ge=256)
+    # solve-on-demand uses a deliberately tighter designer budget
+    solve_designer_max_tokens: int = Field(default=1200, ge=256)
     train_codegen_max_tokens: int = Field(default=8000, ge=256)
     # Multi-model provider settings.
     # Default "auto" (AC-586): inherit the judge provider from the effective
