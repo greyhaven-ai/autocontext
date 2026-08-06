@@ -512,11 +512,14 @@ export class HarnessEntryStore {
       const lines = [`### ${KIND_HEADINGS[kind]}`];
       for (const entry of visible) {
         const content = entry.content.replace(/\n/g, "\n  ");
-        // Titles render newline-inert (AC-908): a title containing a newline
-        // must not inject raw lines that could forge entries or headings.
+        // Titles, ids, and expected outcomes render newline-inert (AC-908):
+        // none may inject raw lines that could forge entries or headings.
+        // Content is indented rather than flattened, which demotes injected
+        // bullets to nested ones (surface narrowed, not closed).
         const title = entry.title.replace(/\n/g, " ");
-        let line = `- [${entry.id}] ${title}: ${content}`;
-        if (entry.expectedOutcome) line += ` (expected: ${entry.expectedOutcome})`;
+        const entryId = entry.id.replace(/\n/g, " ");
+        let line = `- [${entryId}] ${title}: ${content}`;
+        if (entry.expectedOutcome) line += ` (expected: ${entry.expectedOutcome.replace(/\n/g, " ")})`;
         lines.push(line);
       }
       sections.push(lines.join("\n"));

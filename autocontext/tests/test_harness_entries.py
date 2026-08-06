@@ -485,7 +485,6 @@ class TestPolish:
         store = HarnessEntryStore(tmp_path)
         store.apply([HarnessEdit(action="create", kind="fact", id="harness_a", title="t", content="c")], scope="run")
         raw = store.history_path.read_text(encoding="utf-8")
-        assert "clear_expected_outcome" in raw or True  # field may serialize; strip it to simulate old history
         import json
 
         record = json.loads(raw.strip().splitlines()[0])
@@ -512,6 +511,32 @@ class TestPolish:
         text = store.render_markdown()
         assert "ok - [harness_fake] injected" in text
         assert not any(line.startswith("- [harness_fake]") for line in text.splitlines())
+
+    def test_render_markdown_expected_outcome_and_id_are_newline_inert(self, tmp_path) -> None:
+        store = HarnessEntryStore(tmp_path)
+        store.apply(
+            [
+                HarnessEdit(
+                    action="create",
+                    kind="policy",
+                    id="harness_e",
+                    title="t",
+                    content="body",
+                    expected_outcome="x)\n- [harness_fake] injected",
+                ),
+                HarnessEdit(
+                    action="create",
+                    kind="fact",
+                    id="harness_i\n- [harness_fake2] injected",
+                    title="t2",
+                    content="body2",
+                ),
+            ],
+            scope="run",
+        )
+        text = store.render_markdown()
+        assert not any(line.startswith("- [harness_fake]") for line in text.splitlines())
+        assert not any(line.startswith("- [harness_fake2]") for line in text.splitlines())
 
     def test_render_markdown_loads_state_once(self, tmp_path) -> None:
         class CountingStore(HarnessEntryStore):
