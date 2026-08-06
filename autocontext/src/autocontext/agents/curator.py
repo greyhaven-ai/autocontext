@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass
 from importlib import import_module
@@ -24,12 +25,16 @@ _CONSOLIDATED_RE = re.compile(
 _REMOVED_RE = re.compile(r"<!--\s*LESSONS_REMOVED:\s*(\d+)\s*-->")
 
 
+logger = logging.getLogger(__name__)
+
+
 @dataclass(slots=True)
 class CuratorPlaybookDecision:
     decision: str  # "accept" | "reject" | "merge"
     playbook: str  # Resulting playbook content
     score: int  # Quality score 1-10
     reasoning: str
+    parse_success: bool = True
 
 
 @dataclass(slots=True)
@@ -42,7 +47,9 @@ class CuratorLessonResult:
 def parse_curator_playbook_decision(content: str) -> CuratorPlaybookDecision:
     """Parse structured curator playbook assessment output."""
     decision_match = _DECISION_RE.search(content)
-    decision = decision_match.group(1).lower() if decision_match else "accept"
+    # AC-904: no decision marker means the response is unparseable (often
+    # truncated); the quality gate must fail CLOSED, never accept-by-default.
+    decision = decision_match.group(1).lower() if decision_match else "reject"
 
     playbook_match = _PLAYBOOK_RE.search(content)
     playbook = playbook_match.group(1).strip() if playbook_match else ""
@@ -55,6 +62,7 @@ def parse_curator_playbook_decision(content: str) -> CuratorPlaybookDecision:
         playbook=playbook,
         score=score,
         reasoning=content,
+        parse_success=decision_match is not None,
     )
 
 
@@ -197,6 +205,7 @@ class KnowledgeCurator:
             if isinstance(decoded, dict):
                 payload = decoded
         except json.JSONDecodeError:
+            logger.warning("curator analyst-rating parse failed; using default scores", exc_info=True)
             payload = {}
         rating = AnalystRating.from_dict({"generation": generation, **payload})
         return rating, exec_result

@@ -1,4 +1,5 @@
 """Tests for KnowledgeCurator agent."""
+
 from __future__ import annotations
 
 from autocontext.agents.curator import (
@@ -84,21 +85,41 @@ def test_curator_merges() -> None:
 
 def test_curator_disabled_skips() -> None:
     """When curator is None, nothing happens."""
-    # Just testing that parse functions handle empty/missing markers gracefully
+    # AC-904: missing markers fail CLOSED (reject), never accept-by-default
     result = parse_curator_playbook_decision("No markers here")
-    assert result.decision == "accept"  # default fallback
+    assert result.decision == "reject"
+    assert result.parse_success is False
     assert result.score == 5  # default
 
 
 def test_deterministic_curator_branches() -> None:
     client = DeterministicDevClient()
     # Playbook quality
-    resp = client.generate(
-        model="test", prompt="You are a curator assessing playbook quality.", max_tokens=1000, temperature=0.3
-    )
+    resp = client.generate(model="test", prompt="You are a curator assessing playbook quality.", max_tokens=1000, temperature=0.3)
     assert "CURATOR_DECISION" in resp.text
     # Consolidation
-    resp2 = client.generate(
-        model="test", prompt="You are a curator consolidating lessons.", max_tokens=1000, temperature=0.3
-    )
+    resp2 = client.generate(model="test", prompt="You are a curator consolidating lessons.", max_tokens=1000, temperature=0.3)
     assert "CONSOLIDATED_LESSONS_START" in resp2.text
+
+
+class TestTruncationFailsClosed:
+    """AC-904: a response without decision markers must never accept-by-default."""
+
+    def test_missing_decision_marker_rejects(self) -> None:
+        decision = parse_curator_playbook_decision("The playbook looks fine to me, ship it")
+        assert decision.decision == "reject"
+        assert decision.parse_success is False
+
+    def test_truncated_mid_playbook_rejects(self) -> None:
+        content = "<!-- CURATOR_PLAYBOOK_START -->\npartial playbook cut off mid"
+        decision = parse_curator_playbook_decision(content)
+        assert decision.decision == "reject"
+        assert decision.parse_success is False
+
+    def test_explicit_decisions_still_parse(self) -> None:
+        for verdict in ("accept", "reject", "merge"):
+            content = f"<!-- CURATOR_DECISION: {verdict} -->\n<!-- CURATOR_SCORE: 7 -->"
+            decision = parse_curator_playbook_decision(content)
+            assert decision.decision == verdict
+            assert decision.parse_success is True
+            assert decision.score == 7
