@@ -52,6 +52,20 @@ const KINDS: HarnessEntryKind[] = ["policy", "fact", "procedure", "delegation"];
 const SCOPES: HarnessScope[] = ["run", "scenario_family", "global"];
 const OUTCOMES: HarnessOutcome[] = ["pending", "confirmed", "refuted"];
 
+/**
+ * Executable payload for a procedure entry (AC-899).
+ *
+ * A promoted skill carries real source code plus how to call it. Only the
+ * call pattern belongs in prompts; the source goes into execution assembly.
+ */
+export interface SkillReference {
+  language: "python";
+  entrypoint: string;
+  source: string;
+  callPattern: string;
+  argumentsDescription: Record<string, string>;
+}
+
 /** One typed, scoped, versioned harness entry. */
 export interface HarnessEntry {
   id: string;
@@ -66,6 +80,7 @@ export interface HarnessEntry {
   createdAt: string;
   updatedAt: string;
   version: number;
+  reference?: SkillReference;
 }
 
 /** A single create/update/delete request against the store. */
@@ -77,6 +92,7 @@ export interface HarnessEdit {
   content: string;
   expectedOutcome: string;
   reason: string;
+  reference?: SkillReference;
 }
 
 /** An edit plus what actually happened when it was applied. */
@@ -163,6 +179,26 @@ function normalizeEdit(raw: unknown): HarnessEdit | undefined {
   };
 }
 
+function normalizeSkillReference(raw: unknown): SkillReference | undefined {
+  if (!isRecord(raw)) return undefined;
+  if (raw.language !== "python") return undefined;
+  if (typeof raw.entrypoint !== "string" || raw.entrypoint === "") return undefined;
+  if (typeof raw.source !== "string" || raw.source === "") return undefined;
+  return {
+    language: "python",
+    entrypoint: raw.entrypoint,
+    source: raw.source,
+    callPattern: typeof raw.callPattern === "string" ? raw.callPattern : "",
+    argumentsDescription: isRecord(raw.argumentsDescription)
+      ? Object.fromEntries(
+          Object.entries(raw.argumentsDescription).filter(
+            (pair): pair is [string, string] => typeof pair[1] === "string",
+          ),
+        )
+      : {},
+  };
+}
+
 function normalizeEntry(raw: unknown): HarnessEntry | undefined {
   if (!isRecord(raw)) return undefined;
   const { kind, scope } = raw;
@@ -170,6 +206,11 @@ function normalizeEntry(raw: unknown): HarnessEntry | undefined {
   if (typeof raw.id !== "string" || raw.id === "") return undefined;
   if (!isKind(kind) || !isScope(scope) || !isOutcome(outcome)) return undefined;
   if (typeof raw.title !== "string" || typeof raw.content !== "string") return undefined;
+  let reference: SkillReference | undefined;
+  if (raw.reference !== undefined && raw.reference !== null) {
+    reference = normalizeSkillReference(raw.reference);
+    if (!reference) return undefined;
+  }
   return {
     id: raw.id,
     kind,
@@ -183,6 +224,7 @@ function normalizeEntry(raw: unknown): HarnessEntry | undefined {
     createdAt: typeof raw.createdAt === "string" ? raw.createdAt : "",
     updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : "",
     version: typeof raw.version === "number" ? raw.version : 1,
+    reference,
   };
 }
 
@@ -442,6 +484,7 @@ export class HarnessEntryStore {
         title: edit.title,
         content: edit.content,
         expectedOutcome: edit.expectedOutcome,
+        reference: edit.reference,
         outcome: "pending",
         outcomeEvidence: "",
         source,
@@ -469,6 +512,7 @@ export class HarnessEntryStore {
     if (edit.title) updated.title = edit.title;
     if (edit.content) updated.content = edit.content;
     if (edit.expectedOutcome) updated.expectedOutcome = edit.expectedOutcome;
+    if (edit.reference !== undefined) updated.reference = edit.reference;
     updated.updatedAt = this.nowIso();
     updated.version = existing.version + 1;
     state.set(edit.id, updated);

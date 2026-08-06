@@ -379,3 +379,52 @@ describe("review hardening (parity with Python TestReviewHardening)", () => {
     expect(store.entries().map((entry) => entry.id)).toEqual(["harness_good"]);
   });
 });
+
+describe("skill reference (AC-899)", () => {
+  const reference = {
+    language: "python" as const,
+    entrypoint: "priority",
+    source: "def priority(v):\n    return sum(v)",
+    callPattern: "priority(vector)",
+    argumentsDescription: {},
+  };
+
+  it("apply carries reference and round-trips through the store", () => {
+    const store = new HarnessEntryStore(root);
+    store.apply(
+      [{ ...createEdit({ kind: "procedure", id: "harness_skill", title: "Promoted skill: priority" }), reference }],
+      { scope: "scenario_family" },
+    );
+    const entry = new HarnessEntryStore(root).entries({ kind: "procedure" })[0];
+    expect(entry.reference?.entrypoint).toBe("priority");
+    expect(entry.reference?.source).toContain("def priority");
+  });
+
+  it("update replaces reference when provided", () => {
+    const store = new HarnessEntryStore(root);
+    store.apply([{ ...createEdit({ kind: "procedure", id: "harness_s" }), reference }], { scope: "run" });
+    store.apply(
+      [
+        {
+          ...createEdit({ action: "update", kind: "procedure", id: "harness_s" }),
+          reference: { ...reference, source: "def priority(v):\n    return max(v)" },
+        },
+      ],
+      { scope: "run" },
+    );
+    expect(store.entries()[0].reference?.source).toContain("max(v)");
+  });
+
+  it("invalid stored reference drops the entry on load", () => {
+    const store = new HarnessEntryStore(root);
+    store.apply([{ ...createEdit({ kind: "procedure", id: "harness_good" }), reference }], { scope: "run" });
+    const raw = JSON.parse(readFileSync(store.statePath, "utf8"));
+    raw.entries.harness_bad = {
+      ...raw.entries.harness_good,
+      id: "harness_bad",
+      reference: { language: "python", entrypoint: "", source: "" },
+    };
+    writeFileSync(store.statePath, JSON.stringify(raw), "utf8");
+    expect(store.entries().map((entry) => entry.id)).toEqual(["harness_good"]);
+  });
+});

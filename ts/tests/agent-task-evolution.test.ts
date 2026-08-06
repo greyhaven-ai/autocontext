@@ -4,8 +4,11 @@ import {
   buildEnrichedPrompt,
   AgentTaskEvolutionRunner,
   FunctionSlot,
+  detectPlateau,
   lessonEdit,
   migrateStates,
+  proposeSkillPromotion,
+  validateSkillPromotion,
   type AgentTaskGenerationEvaluation,
   type AgentTaskGenerationState,
   type LessonSignal,
@@ -311,5 +314,106 @@ describe("lessonEdit (parity with Python lesson_edit, AC-898)", () => {
     expect(edit.kind).toBe("fact");
     expect(edit.expectedOutcome).toBe("");
     expect(edit.title).toBe("Generation 1 lesson (score 0.70)");
+  });
+});
+
+describe("skill promotion (parity with Python, AC-899)", () => {
+  const SLOT = "def priority(v):\n    return sum(v)";
+
+  function state(scoreHistory: number[], bestOutput: string = SLOT): AgentTaskGenerationState {
+    return {
+      generation: scoreHistory.length,
+      bestOutput,
+      bestScore: scoreHistory[scoreHistory.length - 1] ?? 0,
+      playbook: "",
+      scoreHistory,
+      lessonHistory: [],
+      metadata: {},
+    };
+  }
+
+  it("detectPlateau mirrors Python", () => {
+    expect(detectPlateau([0.5, 0.949, 0.949, 0.949], { window: 3 })).toBe(true);
+    expect(detectPlateau([0.5, 0.6, 0.7, 0.8], { window: 3 })).toBe(false);
+    expect(detectPlateau([0.9, 0.9], { window: 3 })).toBe(false);
+  });
+
+  it("proposeSkillPromotion yields a procedure edit on plateau", () => {
+    const edit = proposeSkillPromotion(state([0.5, 0.949, 0.949, 0.949]), {
+      entrypoint: "priority",
+      callPattern: "priority(vector)",
+    });
+    expect(edit).not.toBeNull();
+    expect(edit?.kind).toBe("procedure");
+    expect(edit?.reference?.source).toBe(SLOT);
+    expect(edit?.expectedOutcome).toContain("0.95");
+    expect(edit?.reason).toContain("plateau");
+  });
+
+  it("proposeSkillPromotion returns null without plateau or champion", () => {
+    expect(proposeSkillPromotion(state([0.1, 0.5, 0.9]), { entrypoint: "priority" })).toBeNull();
+    expect(proposeSkillPromotion(state([0.9, 0.9, 0.9], "   "), { entrypoint: "priority" })).toBeNull();
+  });
+
+  it("assemble places skills before slot before harness; no-skills unchanged", () => {
+    const slotHarness = new FunctionSlot("HARNESS");
+    expect(slotHarness.assemble("SLOT")).toBe("SLOT\n\nHARNESS");
+    const helper = "def helper(x):\n    return x * 2";
+    const assembled = slotHarness.assemble("SLOT", { skills: [helper] });
+    expect(assembled.indexOf(helper)).toBeLessThan(assembled.indexOf("SLOT"));
+    expect(assembled.indexOf("SLOT")).toBeLessThan(assembled.indexOf("HARNESS"));
+  });
+
+  it("buildEnrichedPrompt lists call patterns, never bodies", () => {
+    const prompt = buildEnrichedPrompt({
+      taskPrompt: "Do the task",
+      playbook: "",
+      generation: 2,
+      bestOutput: "",
+      bestScore: 0.9,
+      skills: [
+        {
+          id: "harness_s",
+          kind: "procedure",
+          scope: "run",
+          title: "Promoted skill: priority",
+          content: "c",
+          expectedOutcome: "",
+          outcome: "pending",
+          outcomeEvidence: "",
+          source: "",
+          createdAt: "",
+          updatedAt: "",
+          version: 1,
+          reference: {
+            language: "python",
+            entrypoint: "priority",
+            source: SLOT,
+            callPattern: "priority(vector)",
+            argumentsDescription: {},
+          },
+        },
+      ],
+    });
+    expect(prompt).toContain("Available Skills");
+    expect(prompt).toContain("priority(vector)");
+    expect(prompt).not.toContain("def priority");
+  });
+
+  it("validateSkillPromotion requires reproducing the score", async () => {
+    const edit = proposeSkillPromotion(state([0.949, 0.949, 0.949]), { entrypoint: "priority" });
+    const slotHarness = new FunctionSlot("HARNESS");
+    const good = await validateSkillPromotion(edit!, slotHarness, async (program) => ({
+      output: program,
+      score: 0.949,
+      reasoning: "ok",
+    }), { bestScore: 0.949 });
+    expect(good).toBe(true);
+    const bad = await validateSkillPromotion(edit!, slotHarness, async (program) => ({
+      output: program,
+      score: 0.5,
+      reasoning: "regressed",
+    }), { bestScore: 0.949 });
+    expect(bad).toBe(false);
   });
 });
