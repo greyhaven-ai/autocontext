@@ -311,7 +311,6 @@ class AppSettings(OutputBudgetFields, BaseModel):
     judge_samples: int = Field(default=1, ge=1)
     judge_temperature: float = Field(default=0.0, ge=0.0)
     judge_max_tokens: int = Field(default=4096, ge=256)
-
     # Multi-model provider settings.
     # Default "auto" (AC-586): inherit the judge provider from the effective
     # runtime provider (role override first, then ``agent_provider``) when it's

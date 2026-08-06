@@ -84,7 +84,9 @@ class TestAgentWiring:
         runtime, captured = self._capture()
         curator = KnowledgeCurator(runtime, "m", max_tokens=3100, rating_max_tokens=1300, consolidation_max_tokens=4100)
         curator.assess_playbook_quality("old", "new", "trajectory", "analysis")
-        assert captured == [3100]
+        curator.rate_analyst_output("analysis", generation=1)
+        curator.consolidate_lessons(["a", "b"], 5, "trajectory")
+        assert captured == [3100, 1300, 4100]
 
     def test_orchestrator_wires_settings(self, monkeypatch) -> None:
         from autocontext.config.settings import load_settings

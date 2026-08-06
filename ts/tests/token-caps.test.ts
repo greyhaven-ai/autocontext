@@ -24,3 +24,37 @@ describe("clampOutputTokens", () => {
     expect(clampOutputTokens(5000, undefined)).toBe(5000);
   });
 });
+
+describe("provider-factory applies the clamp (AC-905)", () => {
+  it("anthropic path clamps the effective max_tokens", async () => {
+    const { createProvider } = await import("../src/providers/provider-factory.js");
+    const bodies: Array<Record<string, unknown>> = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return new Response(
+        JSON.stringify({
+          content: [{ type: "text", text: "ok" }],
+          model: "claude-3-haiku-20240307",
+          usage: { input_tokens: 1, output_tokens: 1 },
+        }),
+        { status: 200 },
+      );
+    }) as typeof fetch;
+    try {
+      const provider = createProvider({
+        providerType: "anthropic",
+        apiKey: "test-key",
+        model: "claude-3-haiku-20240307",
+      });
+      await provider.complete({
+        systemPrompt: "s",
+        userPrompt: "u",
+        maxTokens: 100_000,
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    expect(bodies[0].max_tokens).toBe(4096);
+  });
+});

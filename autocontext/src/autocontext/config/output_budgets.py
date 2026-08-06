@@ -28,3 +28,4 @@ class OutputBudgetFields(BaseModel):
     # solve-on-demand uses a deliberately tighter designer budget
     solve_designer_max_tokens: int = Field(default=1200, ge=256)
     train_codegen_max_tokens: int = Field(default=8000, ge=256)
+    hint_feedback_max_tokens: int = Field(default=400, ge=256)
