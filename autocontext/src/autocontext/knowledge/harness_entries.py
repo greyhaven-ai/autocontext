@@ -104,7 +104,14 @@ class HarnessEntry(BaseModel):
 
 
 class HarnessEdit(BaseModel):
-    """A single create/update/delete request against the store."""
+    """A single create/update/delete request against the store.
+
+    Update edits are partial: an empty ``title``, ``content``, or
+    ``expected_outcome`` means "leave unchanged", never "clear" (AC-908).
+    The one supported clear is ``clear_expected_outcome``, so an agent can
+    withdraw a falsifiable prediction; empty titles or content would be
+    junk states and have no clear flag.
+    """
 
     action: Literal["create", "update", "delete"]
     kind: HarnessEntryKind
@@ -112,6 +119,7 @@ class HarnessEdit(BaseModel):
     title: str = ""
     content: str = ""
     expected_outcome: str = ""
+    clear_expected_outcome: bool = False
     reason: str = ""
     reference: SkillReference | None = None
 
@@ -119,6 +127,10 @@ class HarnessEdit(BaseModel):
     def _reference_requires_procedure_edit(self) -> HarnessEdit:
         if self.reference is not None and self.kind != "procedure":
             raise ValueError("reference is only valid on procedure edits")
+        if self.clear_expected_outcome and self.action != "update":
+            raise ValueError("clear_expected_outcome is only valid on update edits")
+        if self.clear_expected_outcome and self.expected_outcome:
+            raise ValueError("clear_expected_outcome conflicts with expected_outcome")
         return self
 
 
@@ -251,17 +263,24 @@ class HarnessEntryStore:
         return updated
 
     def render_markdown(self, *, kinds: Sequence[HarnessEntryKind] | None = None) -> str:
-        """Markdown for prompt injection: grouped by kind, refuted entries excluded."""
+        """Markdown for prompt injection: grouped by kind, refuted entries excluded.
+
+        Titles are rendered newline-inert (AC-908): content gets indented,
+        and a title containing a newline must not inject raw lines that
+        could forge entries or headings.
+        """
         selected: Sequence[str] = kinds if kinds is not None else list(KIND_HEADINGS)
+        all_entries = self.entries()
         sections: list[str] = []
         for kind in selected:
-            visible = [entry for entry in self.entries() if entry.kind == kind and entry.outcome != "refuted"]
+            visible = [entry for entry in all_entries if entry.kind == kind and entry.outcome != "refuted"]
             if not visible:
                 continue
             lines = [f"### {KIND_HEADINGS[kind]}"]
             for entry in visible:
                 content = entry.content.replace("\n", "\n  ")
-                line = f"- [{entry.id}] {entry.title}: {content}"
+                title = entry.title.replace("\n", " ")
+                line = f"- [{entry.id}] {title}: {content}"
                 if entry.expected_outcome:
                     line += f" (expected: {entry.expected_outcome})"
                 lines.append(line)
@@ -396,6 +415,8 @@ class HarnessEntryStore:
             updated.content = edit.content
         if edit.expected_outcome:
             updated.expected_outcome = edit.expected_outcome
+        if edit.clear_expected_outcome:
+            updated.expected_outcome = ""
         if edit.reference is not None:
             updated.reference = edit.reference
         updated.updated_at = self._now_iso()

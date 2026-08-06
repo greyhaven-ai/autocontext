@@ -95,6 +95,13 @@ export interface HarnessEdit {
   title: string;
   content: string;
   expectedOutcome: string;
+  /**
+   * Update edits are partial: an empty title, content, or expectedOutcome
+   * means "leave unchanged", never "clear" (AC-908). The one supported
+   * clear is this flag, so an agent can withdraw a falsifiable prediction.
+   * Only valid on update edits; conflicts with a non-empty expectedOutcome.
+   */
+  clearExpectedOutcome?: boolean;
   reason: string;
   reference?: SkillReference;
 }
@@ -184,6 +191,7 @@ function normalizeEdit(raw: unknown): HarnessEdit | undefined {
     title: typeof raw.title === "string" ? raw.title : "",
     content: typeof raw.content === "string" ? raw.content : "",
     expectedOutcome: typeof raw.expectedOutcome === "string" ? raw.expectedOutcome : "",
+    clearExpectedOutcome: raw.clearExpectedOutcome === true,
     reason: typeof raw.reason === "string" ? raw.reason : "",
     reference,
   };
@@ -496,14 +504,18 @@ export class HarnessEntryStore {
   /** Markdown for prompt injection: grouped by kind, refuted entries excluded. */
   renderMarkdown(opts: { kinds?: HarnessEntryKind[] } = {}): string {
     const selected = opts.kinds ?? KINDS;
+    const allEntries = this.entries();
     const sections: string[] = [];
     for (const kind of selected) {
-      const visible = this.entries({ kind }).filter((entry) => entry.outcome !== "refuted");
+      const visible = allEntries.filter((entry) => entry.kind === kind && entry.outcome !== "refuted");
       if (visible.length === 0) continue;
       const lines = [`### ${KIND_HEADINGS[kind]}`];
       for (const entry of visible) {
         const content = entry.content.replace(/\n/g, "\n  ");
-        let line = `- [${entry.id}] ${entry.title}: ${content}`;
+        // Titles render newline-inert (AC-908): a title containing a newline
+        // must not inject raw lines that could forge entries or headings.
+        const title = entry.title.replace(/\n/g, " ");
+        let line = `- [${entry.id}] ${title}: ${content}`;
         if (entry.expectedOutcome) line += ` (expected: ${entry.expectedOutcome})`;
         lines.push(line);
       }
@@ -521,6 +533,11 @@ export class HarnessEntryStore {
   ): AppliedHarnessEdit {
     if (edit.action === "create") {
       const entryId = edit.id || shortId("harness");
+      if (edit.clearExpectedOutcome) {
+        // Python rejects this combination at model construction; TS edits
+        // are plain literals, so the per-edit error is the equivalent.
+        return { edit, entryId, applied: false, error: "clear_requires_update" };
+      }
       if (edit.reference !== undefined && edit.kind !== "procedure") {
         // Runtime backstop for the compile-time contract: persisting a
         // reference on a non-procedure entry would make normalizeEntry drop
@@ -565,13 +582,20 @@ export class HarnessEntryStore {
     }
     const before: HarnessEntry = { ...existing };
     if (edit.action === "delete") {
+      if (edit.clearExpectedOutcome) {
+        return { edit, entryId: edit.id, applied: false, error: "clear_requires_update" };
+      }
       state.delete(edit.id);
       return { edit, entryId: edit.id, applied: true, error: "", before };
+    }
+    if (edit.clearExpectedOutcome && edit.expectedOutcome) {
+      return { edit, entryId: edit.id, applied: false, error: "clear_conflicts_with_expected_outcome" };
     }
     const updated: HarnessEntry = { ...existing };
     if (edit.title) updated.title = edit.title;
     if (edit.content) updated.content = edit.content;
     if (edit.expectedOutcome) updated.expectedOutcome = edit.expectedOutcome;
+    if (edit.clearExpectedOutcome) updated.expectedOutcome = "";
     if (edit.reference !== undefined) updated.reference = edit.reference;
     updated.updatedAt = this.nowIso();
     updated.version = existing.version + 1;
