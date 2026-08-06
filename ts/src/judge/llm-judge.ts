@@ -14,6 +14,7 @@ export interface LLMJudgeOpts {
   rubric: string | RubricSpec;
   samples?: number;
   temperature?: number;
+  maxTokens?: number;
   checkCoherence?: boolean;
   hookBus?: HookBus | null;
 }
@@ -38,6 +39,7 @@ export class LLMJudge {
   readonly model: string;
   readonly rubric: string;
   #samples: number;
+  #maxTokens: number;
   #temperature: number;
   #rubricWarnings: string[];
   #hookBus: HookBus | null;
@@ -56,6 +58,7 @@ export class LLMJudge {
       this.#typedDimensionIds = [...compiledRubric.result_dimension_ids];
     }
     this.#samples = Math.max(1, opts.samples ?? 1);
+    this.#maxTokens = Math.max(256, opts.maxTokens ?? 4096);
     this.#temperature = opts.temperature ?? 0;
     this.#hookBus = opts.hookBus ?? null;
 
@@ -127,6 +130,8 @@ export class LLMJudge {
     const rawResponses: string[] = [];
     let totalInternalRetries = 0;
     let lastParseMethod: ParseMethod = "none";
+    const parseOks: boolean[] = [];
+    let lastStopReason: string | null = null;
     // AC-885: the epoch must reflect the model actually sent to the provider, which a BEFORE_JUDGE
     // hook may change. Capture the first sample's effective (post-hook) model; if samples resolve
     // different models (pathological), the first one is chosen deterministically.
@@ -168,7 +173,9 @@ export class LLMJudge {
           userPrompt: finalUserPrompt,
           model: finalModel,
           temperature: finalTemperature,
+          maxTokens: this.#maxTokens,
         });
+        lastStopReason = result.stopReason ?? null;
         const after = this.emitHook(HookEvents.AFTER_JUDGE, {
           provider: this.#provider.name,
           model: finalModel,
@@ -204,15 +211,37 @@ export class LLMJudge {
       scores.push(score);
       reasonings.push(reasoning);
       allDims.push(dims);
+      parseOks.push(sampleParseMethod !== "none");
       lastParseMethod = sampleParseMethod;
     }
 
-    const avgScore = scores.reduce((a, b) => a + b, 0) / scores.length;
+    // AC-904: an unparseable sample is an evaluation failure, not a zero.
+    // Exclude failed samples from the average when at least one parsed; when
+    // none parsed, name truncation explicitly if the provider said so.
+    const validIndices = scores.map((_, i) => i).filter((i) => parseOks[i]);
+    let effectiveScores = scores;
+    let effectiveReasonings = reasonings;
+    let effectiveDims = allDims;
+    if (validIndices.length > 0 && validIndices.length < scores.length) {
+      effectiveScores = validIndices.map((i) => scores[i]);
+      effectiveReasonings = validIndices.map((i) => reasonings[i]);
+      effectiveDims = validIndices.map((i) => allDims[i]);
+    } else if (
+      validIndices.length === 0 &&
+      (lastStopReason === "max_tokens" || lastStopReason === "length")
+    ) {
+      effectiveReasonings = [
+        `Failed to parse judge response: output truncated (stop_reason=${lastStopReason}); ` +
+          "no parseable score found",
+      ];
+    }
+
+    const avgScore = effectiveScores.reduce((a, b) => a + b, 0) / effectiveScores.length;
 
     let avgDims: Record<string, number> = {};
-    const allKeys = new Set(allDims.flatMap((d) => Object.keys(d)));
+    const allKeys = new Set(effectiveDims.flatMap((d) => Object.keys(d)));
     for (const key of allKeys) {
-      const vals = allDims.filter((d) => key in d).map((d) => d[key]);
+      const vals = effectiveDims.filter((d) => key in d).map((d) => d[key]);
       avgDims[key] = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
     }
 
@@ -243,7 +272,7 @@ export class LLMJudge {
 
     return {
       score: avgScore,
-      reasoning: reasonings.join("\n---\n"),
+      reasoning: effectiveReasonings.join("\n---\n"),
       dimensionScores: avgDims,
       rawResponses,
       parseMethod: lastParseMethod,

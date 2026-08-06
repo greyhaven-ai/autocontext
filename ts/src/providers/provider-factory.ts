@@ -53,6 +53,7 @@ export function createAnthropicProvider(opts: AnthropicProviderOpts): LLMProvide
         content: Array<{ type: string; text: string }>;
         model: string;
         usage: { input_tokens: number; output_tokens: number };
+        stop_reason?: string;
       };
 
       const text = data.content
@@ -64,6 +65,7 @@ export function createAnthropicProvider(opts: AnthropicProviderOpts): LLMProvide
         text,
         model: data.model,
         usage: { input: data.usage.input_tokens, output: data.usage.output_tokens },
+        stopReason: data.stop_reason,
       } satisfies CompletionResult;
     },
   };
@@ -107,7 +109,7 @@ export function createOpenAICompatibleProvider(opts: OpenAICompatibleProviderOpt
       }
 
       const data = (await res.json()) as {
-        choices: Array<{ message: { content: string } }>;
+        choices: Array<{ message: { content: string }; finish_reason?: string }>;
         model: string;
         usage: { prompt_tokens: number; completion_tokens: number };
       };
@@ -117,6 +119,7 @@ export function createOpenAICompatibleProvider(opts: OpenAICompatibleProviderOpt
         text,
         model: data.model,
         usage: { input: data.usage.prompt_tokens, output: data.usage.completion_tokens },
+        stopReason: data.choices[0]?.finish_reason,
       } satisfies CompletionResult;
     },
   };

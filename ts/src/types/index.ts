@@ -13,6 +13,9 @@ export const CompletionResultSchema = z.object({
   model: z.string().nullish(),
   usage: z.record(z.number()).default({}),
   costUsd: z.number().nullish(),
+  // AC-904: why generation stopped ("max_tokens"/"length" indicates
+  // truncation); absent when the provider does not report one.
+  stopReason: z.string().nullish(),
   metadata: z.record(z.unknown()).optional(),
 });
 
