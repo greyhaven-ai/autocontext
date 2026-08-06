@@ -18,20 +18,6 @@ export const ROLES = [
 
 export type Role = (typeof ROLES)[number];
 
-export interface RoleConfig {
-  maxTokens: number;
-  temperature: number;
-}
-
-export const ROLE_CONFIGS: Record<Role, RoleConfig> = {
-  competitor: { maxTokens: 800, temperature: 0.2 },
-  translator: { maxTokens: 400, temperature: 0.0 },
-  analyst: { maxTokens: 1200, temperature: 0.2 },
-  coach: { maxTokens: 2000, temperature: 0.4 },
-  architect: { maxTokens: 1600, temperature: 0.4 },
-  curator: { maxTokens: 1600, temperature: 0.2 },
-};
-
 // ---------------------------------------------------------------------------
 // Output contracts
 // ---------------------------------------------------------------------------

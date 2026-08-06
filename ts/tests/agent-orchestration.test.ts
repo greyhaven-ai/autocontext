@@ -20,13 +20,6 @@ describe("Role definitions", () => {
     expect(ROLES).toContain("curator");
   });
 
-  it("exports ROLE_CONFIGS with per-role settings", async () => {
-    const { ROLE_CONFIGS } = await import("../src/agents/roles.js");
-    expect(ROLE_CONFIGS.competitor.maxTokens).toBe(800);
-    expect(ROLE_CONFIGS.competitor.temperature).toBe(0.2);
-    expect(ROLE_CONFIGS.coach.maxTokens).toBe(2000);
-    expect(ROLE_CONFIGS.architect.temperature).toBe(0.4);
-  });
 });
 
 describe("Output parsing", () => {
