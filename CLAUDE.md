@@ -196,6 +196,7 @@ All config via `AUTOCONTEXT_*` env vars, loaded in `config/settings.py` as Pydan
 - **Knowledge**: `AUTOCONTEXT_CROSS_RUN_INHERITANCE`, `AUTOCONTEXT_PLAYBOOK_MAX_VERSIONS`, `AUTOCONTEXT_ABLATION_NO_FEEDBACK`
 - **RLM**: `AUTOCONTEXT_RLM_ENABLED`, `AUTOCONTEXT_RLM_BACKEND`, `AUTOCONTEXT_RLM_MAX_TURNS`, `AUTOCONTEXT_RLM_SUB_MODEL`
 - **Output budgets**: `AUTOCONTEXT_<ROLE>_MAX_TOKENS` per-role output-token budgets (competitor/translator/analyst/coach/architect/curator/skeptic + designer/codegen variants; see `config/output_budgets.py`)
+- **Workspace interpreter**: `AUTOCONTEXT_WORKSPACE_INTERPRETER_ENABLED` (opt-in persistent interpreter workspace for multi-generation runs; lifecycle isolation, not a security sandbox), `AUTOCONTEXT_WORKSPACE_INTERPRETER_TIMEOUT_SECONDS` (see `config/workspace_interpreter.py`)
 - **Judge**: `AUTOCONTEXT_JUDGE_PROVIDER`, `AUTOCONTEXT_JUDGE_MODEL`, `AUTOCONTEXT_JUDGE_SAMPLES`, `AUTOCONTEXT_JUDGE_TEMPERATURE`, `AUTOCONTEXT_JUDGE_MAX_TOKENS`, `AUTOCONTEXT_JUDGE_BASE_URL`, `AUTOCONTEXT_JUDGE_API_KEY`
 - **Pi**: `AUTOCONTEXT_PI_COMMAND`, `AUTOCONTEXT_PI_TIMEOUT`, `AUTOCONTEXT_PI_WORKSPACE`, `AUTOCONTEXT_PI_MODEL`
 - **Pi RPC**: `AUTOCONTEXT_PI_RPC_ENDPOINT`, `AUTOCONTEXT_PI_RPC_API_KEY`, `AUTOCONTEXT_PI_RPC_SESSION_PERSISTENCE`
