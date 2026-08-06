@@ -1272,6 +1272,7 @@ class TestTaskRunnerFactory:
                 store=store,
                 provider=provider,
             )
+        runner.retry_backoff_s = 0
 
         # AC-906: failures retry up to max_attempts claims before
         # dead-lettering; a deterministic failure drains the budget.

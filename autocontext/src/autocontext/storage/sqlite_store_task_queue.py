@@ -88,35 +88,51 @@ class SQLiteTaskQueueStoreMixin:
                 (best_score, best_output, total_rounds, 1 if met_threshold else 0, result_json, task_id),
             )
 
-    def requeue_stale_running(self, *, older_than_seconds: float) -> int:
+    def requeue_stale_running(self, *, older_than_seconds: float, max_attempts: int | None = None) -> int:
         """Return crash-stranded running tasks to pending (AC-906).
 
         A crash between claim and complete/fail leaves the row in
         ``running`` forever; runners call this at startup. The claim-time
-        attempts increment already counted the stranded execution, so the
-        dead-letter limit still applies across crash-loops.
+        attempts increment already counted the stranded execution, and with
+        ``max_attempts`` set a row at/above the budget dead-letters here
+        instead of requeueing, so a poison task that kills the process
+        cannot crash-loop forever.
         """
+        limit = max_attempts if max_attempts is not None else 2**31
         with self.connect() as conn:
             cursor = conn.execute(
                 """
                 UPDATE task_queue
-                SET status = 'pending',
+                SET status = CASE WHEN attempts >= ? THEN 'failed' ELSE 'pending' END,
+                    error = CASE
+                        WHEN attempts >= ? THEN COALESCE(error, 'crash-looped past the attempts limit')
+                        ELSE error
+                    END,
                     updated_at = datetime('now')
                 WHERE status = 'running'
                   AND started_at IS NOT NULL
                   AND (julianday('now') - julianday(started_at)) * 86400.0 >= ?
                 """,
-                (older_than_seconds,),
+                (limit, limit, older_than_seconds),
             )
             return int(cursor.rowcount)
 
-    def fail_task(self, task_id: str, error: str, *, max_attempts: int | None = None) -> None:
+    def fail_task(
+        self,
+        task_id: str,
+        error: str,
+        *,
+        max_attempts: int | None = None,
+        retry_backoff_s: float = 30.0,
+    ) -> None:
         """Mark a task as failed, or requeue it below the attempts limit.
 
         With ``max_attempts`` set, a task whose claim count is still below
-        the limit returns to ``pending`` (error recorded) for a later retry;
-        at or above the limit it dead-letters to ``failed``. ``None`` keeps
-        the legacy terminal behavior.
+        the limit returns to ``pending`` (error recorded) for a later retry
+        after a linear backoff of ``retry_backoff_s * attempts`` seconds
+        (capped at 300s), so a provider outage is not burned through in
+        seconds; at or above the limit it dead-letters to ``failed``.
+        ``None`` keeps the legacy terminal behavior.
         """
         if max_attempts is not None:
             with self.connect() as conn:
@@ -125,11 +141,15 @@ class SQLiteTaskQueueStoreMixin:
                     UPDATE task_queue
                     SET status = CASE WHEN attempts >= ? THEN 'failed' ELSE 'pending' END,
                         completed_at = CASE WHEN attempts >= ? THEN datetime('now') ELSE NULL END,
+                        scheduled_at = CASE
+                            WHEN attempts >= ? THEN scheduled_at
+                            ELSE datetime('now', '+' || CAST(min(300.0, ? * attempts) AS TEXT) || ' seconds')
+                        END,
                         updated_at = datetime('now'),
                         error = ?
                     WHERE id = ?
                     """,
-                    (max_attempts, max_attempts, error, task_id),
+                    (max_attempts, max_attempts, max_attempts, retry_backoff_s, error, task_id),
                 )
             return
         with self.connect() as conn:

@@ -42,15 +42,24 @@ export function dequeueTaskRecord<T>(db: Database.Database): T | null {
  * attempts increment already counted the stranded execution, so the
  * dead-letter limit still applies across crash-loops.
  */
-export function requeueStaleRunning(db: Database.Database, olderThanSeconds: number): number {
+export function requeueStaleRunning(
+  db: Database.Database,
+  olderThanSeconds: number,
+  maxAttempts?: number,
+): number {
+  const limit = maxAttempts ?? 2 ** 31;
   const result = db.prepare(
     `UPDATE task_queue
-     SET status = 'pending',
+     SET status = CASE WHEN attempts >= ? THEN 'failed' ELSE 'pending' END,
+         error = CASE
+           WHEN attempts >= ? THEN COALESCE(error, 'crash-looped past the attempts limit')
+           ELSE error
+         END,
          updated_at = datetime('now')
      WHERE status = 'running'
        AND started_at IS NOT NULL
        AND (julianday('now') - julianday(started_at)) * 86400.0 >= ?`,
-  ).run(olderThanSeconds);
+  ).run(limit, limit, olderThanSeconds);
   return result.changes;
 }
 
@@ -82,18 +91,25 @@ export function failTaskRecord(
   taskId: string,
   error: string,
   maxAttempts?: number,
+  retryBackoffS = 30,
 ): void {
   if (maxAttempts !== undefined) {
-    // AC-906: below the attempts limit the task requeues for a later retry;
-    // at or above it the task dead-letters to failed. Mirrors Python.
+    // AC-906: below the attempts limit the task requeues for a later retry
+    // after a linear backoff (capped at 300s) so an outage is not burned
+    // through in seconds; at or above it the task dead-letters. Mirrors
+    // Python's fail_task.
     db.prepare(
       `UPDATE task_queue
        SET status = CASE WHEN attempts >= ? THEN 'failed' ELSE 'pending' END,
            completed_at = CASE WHEN attempts >= ? THEN datetime('now') ELSE NULL END,
+           scheduled_at = CASE
+             WHEN attempts >= ? THEN scheduled_at
+             ELSE datetime('now', '+' || CAST(min(300.0, ? * attempts) AS TEXT) || ' seconds')
+           END,
            updated_at = datetime('now'),
            error = ?
        WHERE id = ?`,
-    ).run(maxAttempts, maxAttempts, error, taskId);
+    ).run(maxAttempts, maxAttempts, maxAttempts, retryBackoffS, error, taskId);
     return;
   }
   db.prepare(

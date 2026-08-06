@@ -311,6 +311,7 @@ class TaskRunner:
         browser_context_service: QueuedTaskBrowserContextService | None = None,
         settings: AppSettings | None = None,
         max_attempts: int = 3,
+        retry_backoff_s: float = 30.0,
         stale_running_after_s: float = 3600.0,
     ) -> None:
         self.store = store
@@ -325,6 +326,7 @@ class TaskRunner:
         # AC-906: transient failures retry up to max_attempts claims; a crash
         # between claim and completion is recovered at startup.
         self.max_attempts = max(1, max_attempts)
+        self.retry_backoff_s = retry_backoff_s
         self.stale_running_after_s = stale_running_after_s
         self._shutdown = False
         self._tasks_processed = 0
@@ -347,9 +349,13 @@ class TaskRunner:
         multiple tasks in parallel via a thread pool.
         """
         self._setup_signals()
-        recovered = self.store.requeue_stale_running(older_than_seconds=self.stale_running_after_s)
-        if recovered:
-            logger.info("recovered %d crash-stranded running task(s) to pending", recovered)
+        # AC-906: guarded so external store implementations that predate the
+        # protocol addition degrade gracefully instead of crashing at startup.
+        sweep = getattr(self.store, "requeue_stale_running", None)
+        if callable(sweep):
+            recovered = sweep(older_than_seconds=self.stale_running_after_s, max_attempts=self.max_attempts)
+            if recovered:
+                logger.info("recovered %d crash-stranded running task(s)", recovered)
         consecutive_empty = 0
 
         logger.info(
@@ -540,7 +546,9 @@ class TaskRunner:
         except Exception:
             logger.exception("task %s failed", task_id)
             error_msg = traceback.format_exc()
-            self.store.fail_task(task_id, error_msg, max_attempts=self.max_attempts)
+            self.store.fail_task(
+                task_id, error_msg, max_attempts=self.max_attempts, retry_backoff_s=self.retry_backoff_s
+            )
             self._emit_failure_event(task_id, spec_name, error_msg)
 
     def _run_task_multi_generation(

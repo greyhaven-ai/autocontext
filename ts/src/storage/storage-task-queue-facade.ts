@@ -8,6 +8,7 @@ import {
   enqueueTaskRecord,
   failTaskRecord,
   getTaskRecord,
+  requeueStaleRunning,
   listTaskRecords,
 } from "./task-queue-store.js";
 
@@ -52,8 +53,18 @@ export function failStoreTask(
   db: Database.Database,
   taskId: string,
   error: string,
+  maxAttempts?: number,
+  retryBackoffS?: number,
 ): void {
-  failTaskRecord(db, taskId, error);
+  failTaskRecord(db, taskId, error, maxAttempts, retryBackoffS);
+}
+
+export function requeueStaleStoreTasks(
+  db: Database.Database,
+  olderThanSeconds: number,
+  maxAttempts?: number,
+): number {
+  return requeueStaleRunning(db, olderThanSeconds, maxAttempts);
 }
 
 export function countPendingStoreTasks(

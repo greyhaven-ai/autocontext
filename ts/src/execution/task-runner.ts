@@ -239,15 +239,22 @@ export class TaskRunner {
 
     // AC-906: allSettled so one rejected task (e.g. a throw from failTask
     // itself) cannot tear down the batch and strand siblings in running.
+    // Return the CLAIMED count so an all-rejected batch does not read as an
+    // empty poll and exit the daemon early; only fulfilled tasks count as
+    // processed.
     const outcomes = await Promise.allSettled(tasks.map((task) => this.#processTask(task)));
-    const settledOk = outcomes.filter((outcome) => outcome.status === "fulfilled").length;
-    this.#tasksProcessed += settledOk;
-    return settledOk;
+    for (const [index, outcome] of outcomes.entries()) {
+      if (outcome.status === "rejected") {
+        console.error(`task ${tasks[index].id} processing rejected:`, outcome.reason);
+      }
+    }
+    this.#tasksProcessed += outcomes.filter((outcome) => outcome.status === "fulfilled").length;
+    return tasks.length;
   }
 
   async run(): Promise<number> {
     // AC-906: recover tasks stranded in running by a previous crash.
-    const recovered = await this.#store.requeueStaleRunning?.(this.#staleRunningAfterS);
+    const recovered = await this.#store.requeueStaleRunning?.(this.#staleRunningAfterS, this.#maxAttempts);
     if (recovered) {
       console.warn(`recovered ${recovered} crash-stranded running task(s) to pending`);
     }

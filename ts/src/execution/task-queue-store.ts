@@ -15,7 +15,7 @@ export interface TaskQueueWorkerStore {
   ): MaybePromise<void>;
   failTask(taskId: string, error: string, maxAttempts?: number): MaybePromise<void>;
   /** AC-906: return crash-stranded running tasks to pending; count returned. */
-  requeueStaleRunning?(olderThanSeconds: number): MaybePromise<number>;
+  requeueStaleRunning?(olderThanSeconds: number, maxAttempts?: number): MaybePromise<number>;
 }
 
 export interface TaskQueueEnqueueStore extends TaskQueueWorkerStore {

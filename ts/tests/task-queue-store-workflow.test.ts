@@ -101,7 +101,7 @@ describe("task queue reliability (AC-906)", () => {
     for (let attempt = 1; attempt <= 3; attempt++) {
       const claimed = dequeueTaskRecord(db);
       expect(claimed).not.toBeNull();
-      failTaskRecord(db, "t1", `error ${attempt}`, 3);
+      failTaskRecord(db, "t1", `error ${attempt}`, 3, 0);
       const row = db.prepare("SELECT status, error FROM task_queue WHERE id = 't1'").get() as {
         status: string;
         error: string;
@@ -126,5 +126,69 @@ describe("task queue reliability (AC-906)", () => {
     expect(requeueStaleRunning(db, 0)).toBe(1);
     const row = db.prepare("SELECT status FROM task_queue WHERE id = 't1'").get() as { status: string };
     expect(row.status).toBe("pending");
+  });
+});
+
+describe("task queue backoff, sweep dead-letter, and store wiring (AC-906 review)", () => {
+  let dir: string;
+  let db: Database.Database;
+  let dbPath: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "ac-task-queue-rev-"));
+    dbPath = join(dir, "test.db");
+    const store = new SQLiteStore(dbPath);
+    store.migrate(MIGRATIONS_DIR);
+    store.close();
+    db = new Database(dbPath);
+  });
+
+  afterEach(() => {
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("default backoff defers the next claim", () => {
+    enqueueTaskRecord(db, "t1", "spec", 0);
+    dequeueTaskRecord(db);
+    failTaskRecord(db, "t1", "blip", 3);
+    expect(dequeueTaskRecord(db)).toBeNull();
+    const row = db.prepare("SELECT status, scheduled_at FROM task_queue WHERE id = 't1'").get() as {
+      status: string;
+      scheduled_at: string | null;
+    };
+    expect(row.status).toBe("pending");
+    expect(row.scheduled_at).not.toBeNull();
+  });
+
+  it("sweep dead-letters a crash-looping task at the budget", () => {
+    enqueueTaskRecord(db, "t1", "spec", 0);
+    for (let i = 0; i < 3; i++) {
+      expect(dequeueTaskRecord(db)).not.toBeNull();
+      requeueStaleRunning(db, 0, 3);
+    }
+    const row = db.prepare("SELECT status, error FROM task_queue WHERE id = 't1'").get() as {
+      status: string;
+      error: string;
+    };
+    expect(row.status).toBe("failed");
+    expect(row.error).toContain("crash-looped");
+    expect(dequeueTaskRecord(db)).toBeNull();
+  });
+
+  it("SQLiteStore wires retries and stale recovery end to end", () => {
+    // review-caught Critical: the facade previously dropped maxAttempts and
+    // had no requeueStaleRunning, making the feature a production no-op
+    const store = new SQLiteStore(dbPath);
+    store.enqueueTask("t1", "spec");
+    store.dequeueTask();
+    store.failTask("t1", "transient blip", 3, 0);
+    const requeued = store.getTask("t1") as { status: string } | null;
+    expect(requeued?.status).toBe("pending");
+    store.dequeueTask();
+    expect(store.requeueStaleRunning(0, 3)).toBe(1);
+    const swept = store.getTask("t1") as { status: string } | null;
+    expect(swept?.status).toBe("pending");
+    store.close();
   });
 });

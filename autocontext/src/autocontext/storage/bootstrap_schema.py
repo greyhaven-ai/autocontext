@@ -184,6 +184,7 @@ def bootstrap_core_schema(conn: sqlite3.Connection) -> None:
             met_threshold INTEGER DEFAULT 0,
             result_json TEXT,
             error TEXT,
+            attempts INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
