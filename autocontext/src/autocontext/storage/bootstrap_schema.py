@@ -25,6 +25,7 @@ _BOOTSTRAP_MIGRATIONS = (
     "016_generation_evaluator_epoch.sql",
     "017_generation_quarantined.sql",
     "018_generation_score_revisions.sql",
+    "019_task_queue_attempts.sql",
 )
 
 
