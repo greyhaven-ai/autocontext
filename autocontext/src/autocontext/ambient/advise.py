@@ -13,11 +13,13 @@ from uuid import uuid4
 
 from pydantic import ValidationError
 
+from autocontext.ambient.advise_gate import run_advise_gate
 from autocontext.ambient.charter import Charter, CharterTarget
 from autocontext.ambient.eligibility import split_role_selector
 from autocontext.ambient.proposals import CharterProposal, ProposalStore
 from autocontext.ambient.stage import StageContext, StageResult
 from autocontext.ambient.trace_store import TraceStore
+from autocontext.providers.base import LLMProvider
 
 
 @dataclass(slots=True)
@@ -72,6 +74,9 @@ class AdviseStage:
     scan_limit: int = 2000
     min_traces: int = 50
     min_mean_score: float = 0.5
+    # AC-900: optional bounded review gate provider; consulted once per cycle
+    # when the charter configures advise_gate. Failure degrades to permit.
+    gate_provider: LLMProvider | None = None
 
     def run_once(self, ctx: StageContext) -> StageResult:
         store = ctx.proposal_store
@@ -92,13 +97,20 @@ class AdviseStage:
             best_score = payload.get("best_score")
             entry.score_total += float(best_score) if best_score is not None else 0.0
         role_coverage, covered = _covered_scenarios(ctx.charter, store)
-        emitted = 0
+        candidates: list[str] = []
         for scenario in sorted(stats):
             entry = stats[scenario]
             if entry.count < self.min_traces or entry.mean_score < self.min_mean_score:
                 continue
             if role_coverage or scenario in covered:
                 continue
+            candidates.append(scenario)
+        has_template = next(iter(ctx.charter.targets), None) is not None
+        if candidates and has_template and not self._gate_permits(ctx, stats, candidates):
+            return StageResult()
+        emitted = 0
+        for scenario in candidates:
+            entry = stats[scenario]
             template = next(iter(ctx.charter.targets), None)
             if template is None:
                 # a proposal must not invent a base model or eval suite; ask
@@ -152,3 +164,51 @@ class AdviseStage:
             )
             emitted += 1
         return StageResult(processed=emitted)
+
+    def _gate_permits(
+        self,
+        ctx: StageContext,
+        stats: dict[str, _ScenarioStats],
+        candidates: list[str],
+    ) -> bool:
+        """One bounded gate consultation per cycle (AC-900).
+
+        Reject filters this cycle's proposals with an audited rationale; any
+        gate failure PERMITS so the LLM-free path is never silently replaced.
+        """
+        gate = ctx.charter.advise_gate
+        if gate is None or self.gate_provider is None:
+            return True
+        summary_lines = [
+            "- scenario {}: {} eligible frontier traces, mean score {:.2f}".format(
+                " ".join(scenario.split()),
+                stats[scenario].count,
+                stats[scenario].mean_score,
+            )
+            for scenario in candidates
+        ]
+        evidence = (
+            "Candidate training-target proposals this advise cycle:\n" + "\n".join(summary_lines)
+        )
+        outcome = run_advise_gate(
+            self.gate_provider,
+            gate.model,
+            evidence,
+            max_output_tokens=gate.max_output_tokens,
+        )
+        decision = outcome.decision
+        if decision is None:
+            ctx.emitter.emit(
+                "advise_gate_degraded",
+                {"candidates": candidates, "reason": outcome.failure},
+                channel="ambient",
+            )
+            return True
+        if not decision.should_propose:
+            ctx.emitter.emit(
+                "advise_gate_rejected",
+                {"candidates": candidates, "rationale": decision.rationale},
+                channel="ambient",
+            )
+            return False
+        return True

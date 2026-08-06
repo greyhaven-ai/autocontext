@@ -92,6 +92,20 @@ class CharterBudgets(BaseModel):
     priority: Literal["serving", "training"] = "serving"
 
 
+class AdviseGateConfig(BaseModel):
+    """Bounded LLM review gate for advise proposals (AC-900).
+
+    The gate is an evaluative role: frozen under the charter's asymmetric
+    trainability posture and never a training target. Absence of this config
+    means the gate is off and advise behaves exactly as the LLM-free path.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    model: str = Field(min_length=1)
+    max_output_tokens: int = Field(default=512, ge=64, le=2048)
+
+
 class Charter(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -107,6 +121,9 @@ class Charter(BaseModel):
     # it promotable); when False it scores the placeholder reference text. This is a policy decision,
     # so it lives in the charter (the only policy input) rather than an env/settings behavior flag.
     real_candidate_generation: bool = False
+    # Optional bounded LLM review gate consulted once per advise cycle before
+    # proposals are emitted; None keeps today's LLM-free behavior (AC-900).
+    advise_gate: AdviseGateConfig | None = None
 
     @model_validator(mode="after")
     def _full_box_requires_hosted(self) -> Charter:
