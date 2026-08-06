@@ -69,7 +69,15 @@ def build_stages(
         unsupported=unsupported,
     )
     stages["curate"] = CurateStage(name="curate", trace_store=trace_store, dataset_store=dataset_store)
-    stages["advise"] = AdviseStage(name="advise", trace_store=trace_store)
+    # AC-900: the review gate provider is built only when the charter enables
+    # the gate; the provider comes from settings but the POLICY lives in the
+    # charter (the only policy input).
+    gate_provider = None
+    if charter.advise_gate is not None:
+        from autocontext.providers import get_provider
+
+        gate_provider = get_provider(settings)
+    stages["advise"] = AdviseStage(name="advise", trace_store=trace_store, gate_provider=gate_provider)
     stages["train"] = TrainStage(
         name="train",
         dataset_store=dataset_store,
