@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import logging
+
 from autocontext.agents.subagent_runtime import SubagentRuntime, SubagentTask
 from autocontext.agents.types import RoleExecution
 from autocontext.harness.core.output_parser import extract_delimited_section
+
+logger = logging.getLogger(__name__)
 
 
 def parse_coach_sections(content: str) -> tuple[str, str, str]:
@@ -15,9 +19,17 @@ def parse_coach_sections(content: str) -> tuple[str, str, str]:
     lessons = extract_delimited_section(content, "<!-- LESSONS_START -->", "<!-- LESSONS_END -->")
     hints = extract_delimited_section(content, "<!-- COMPETITOR_HINTS_START -->", "<!-- COMPETITOR_HINTS_END -->")
 
-    # Fallback: no playbook markers → entire content IS the playbook
     if playbook is None:
-        playbook = content.strip()
+        if "<!-- PLAYBOOK_START -->" in content:
+            # AC-904: START without END is the truncation signature; persisting
+            # the fragment would make a cut-off response the playbook. Fail
+            # closed by discarding the update.
+            logger.warning("coach output truncated: PLAYBOOK_START without PLAYBOOK_END; discarding update")
+            playbook = ""
+        else:
+            # Legacy fallback: no markers at all means the model ignored the
+            # format and the entire content is the playbook.
+            playbook = content.strip()
 
     return playbook, lessons or "", hints or ""
 

@@ -153,6 +153,7 @@ def patch_legacy_generated_evaluate_output(
             model=model,
             rubric=rubric,
             provider=provider,
+            max_tokens=settings.judge_max_tokens,
         )
         task_prompt = self.get_task_prompt(state)
         ref_ctx = reference_context or getattr(self, "_reference_context", None)

@@ -74,7 +74,7 @@ def _revise_strategy_for_validity_failure(
             revised_strategy, _ = agents.translator.translate(raw_text, ctx.strategy_interface)
         return revised_strategy
     except Exception:
-        logger.debug("validity retry competitor re-invocation failed", exc_info=True)
+        logger.warning("validity retry competitor re-invocation failed; strategy revision dropped", exc_info=True)
         return None
 
 

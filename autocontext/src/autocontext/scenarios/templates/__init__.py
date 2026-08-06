@@ -146,6 +146,7 @@ class _TemplateAgentTask(AgentTaskInterface):
             rubric=self._spec.judge_rubric,
             provider=provider,
             samples=judge_samples,
+            max_tokens=int(getattr(settings, "judge_max_tokens", 4096)),
             temperature=judge_temperature,
             disagreement_threshold=judge_disagreement_threshold,
         )
@@ -408,6 +409,7 @@ class TemplateAgentTask(AgentTaskInterface):
             rubric=self._rubric,
             provider=provider,
             samples=judge_samples,
+            max_tokens=int(getattr(settings, "judge_max_tokens", 4096)),
             temperature=judge_temperature,
             disagreement_threshold=judge_disagreement_threshold,
         )
