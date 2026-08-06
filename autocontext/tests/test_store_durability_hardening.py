@@ -184,3 +184,71 @@ class TestSnapshotRestore:
         (snapshot_dir / "hint_state.json").write_text("{not json", encoding="utf-8")
         assert store.restore_knowledge_snapshot("grid_ctf", "run_src") is True
         assert "snapshot playbook" in (scenario_dir / "playbook.md").read_text(encoding="utf-8")
+
+
+class TestMutationStores:
+    def test_harness_mutation_write_is_atomic(self, tmp_path, monkeypatch) -> None:
+        import os as os_module
+
+        from autocontext.harness.mutations.spec import HarnessMutation, MutationType
+        from autocontext.harness.mutations.store import MutationStore
+
+        replaced: list[str] = []
+        real_replace = os_module.replace
+
+        def spy(src, dst):  # type: ignore[no-untyped-def]
+            replaced.append(str(dst))
+            return real_replace(src, dst)
+
+        monkeypatch.setattr("autocontext.util.json_io.os.replace", spy)
+        store = MutationStore(tmp_path)
+        mutation = HarnessMutation(mutation_type=MutationType.PROMPT_FRAGMENT, content="c", generation=1)
+        store.save("grid_ctf", [mutation])
+        assert not list(tmp_path.rglob("*.tmp"))
+        assert len(store.load("grid_ctf")) == 1
+        assert any(dst.endswith("mutations.json") for dst in replaced)
+
+    def test_mutation_log_truncate_is_atomic_and_preserves_tail(self, tmp_path, monkeypatch) -> None:
+        from autocontext.knowledge.mutation_log import MutationEntry, MutationLog
+
+        log = MutationLog(tmp_path, max_entries=2)
+        for gen in range(1, 5):
+            log.append(
+                "grid_ctf",
+                MutationEntry.model_validate(
+                    {"mutation_type": "playbook_update", "generation": gen, "payload": {"summary": f"g{gen}"}}
+                ),
+            )
+        entries = log.read("grid_ctf")
+        assert [e.generation for e in entries] == [3, 4]
+        assert not list(tmp_path.rglob("*.tmp"))
+        import os as os_module
+
+        replaced: list[str] = []
+        real_replace = os_module.replace
+
+        def spy(src, dst):  # type: ignore[no-untyped-def]
+            replaced.append(str(dst))
+            return real_replace(src, dst)
+
+        monkeypatch.setattr("autocontext.util.json_io.os.replace", spy)
+        log.append(
+            "grid_ctf",
+            MutationEntry.model_validate(
+                {"mutation_type": "playbook_update", "generation": 5, "payload": {"summary": "g5"}}
+            ),
+        )
+        assert any(dst.endswith(".jsonl") for dst in replaced)
+
+    def test_mutation_log_read_skips_wrong_typed_line(self, tmp_path) -> None:
+        from autocontext.knowledge.mutation_log import MutationEntry, MutationLog
+
+        log = MutationLog(tmp_path, max_entries=10)
+        log.append(
+            "grid_ctf",
+            MutationEntry.model_validate({"mutation_type": "playbook_update", "generation": 1, "payload": {"summary": "ok"}}),
+        )
+        with log._log_path("grid_ctf").open("a", encoding="utf-8") as fh:
+            fh.write('{"mutation_type": "playbook_update", "generation": "not_an_int", "payload": {}}\n')
+        entries = log.read("grid_ctf")
+        assert [e.payload.get("summary") for e in entries] == ["ok"]
