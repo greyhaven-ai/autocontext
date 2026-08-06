@@ -177,7 +177,7 @@ class TestRollback:
             ],
             scope="run",
         )
-        result = store.rollback(batch.id)
+        result = store.rollback(batch.id, scope="run")
         assert result.rollback_of == batch.id
         by_id = {entry.id: entry for entry in store.entries()}
         assert set(by_id) == {"harness_keep", "harness_gone"}
@@ -187,12 +187,12 @@ class TestRollback:
     def test_rollback_unknown_id_raises(self, tmp_path) -> None:
         store = HarnessEntryStore(tmp_path)
         with pytest.raises(ValueError, match="unknown refinement"):
-            store.rollback("refinement_nope")
+            store.rollback("refinement_nope", scope="run")
 
     def test_rollback_is_itself_recorded(self, tmp_path) -> None:
         store = HarnessEntryStore(tmp_path)
         batch = store.apply([HarnessEdit(action="create", kind="fact", title="t", content="c")], scope="run")
-        store.rollback(batch.id)
+        store.rollback(batch.id, scope="run")
         history = store.load_history()
         assert len(history) == 2 and history[1].rollback_of == batch.id
 
@@ -250,13 +250,35 @@ class TestReviewHardening:
         marked = store.mark_outcome(entry_id, "refuted", scope="global")
         assert marked.outcome == "refuted"
 
+    def test_rollback_respects_scope_guardrail(self, tmp_path) -> None:
+        store = HarnessEntryStore(tmp_path)
+        batch = store.apply(
+            [HarnessEdit(action="create", kind="fact", id="harness_g", title="g", content="v1")], scope="global"
+        )
+        with pytest.raises(ValueError, match="scope_readonly"):
+            store.rollback(batch.id, scope="run")
+        # The rejected rollback mutated nothing: entry intact, no rollback recorded.
+        assert store.entries()[0].content == "v1"
+        assert len(store.load_history()) == 1
+        undone = store.rollback(batch.id, scope="global")
+        assert undone.rollback_of == batch.id
+        assert store.entries() == []
+
+    def test_broader_caller_can_roll_back_narrower_refinement(self, tmp_path) -> None:
+        store = HarnessEntryStore(tmp_path)
+        batch = store.apply(
+            [HarnessEdit(action="create", kind="fact", id="harness_r", title="r", content="v1")], scope="run"
+        )
+        store.rollback(batch.id, scope="global")
+        assert store.entries() == []
+
     def test_rollback_of_rollback_restores_original(self, tmp_path) -> None:
         store = HarnessEntryStore(tmp_path)
         store.apply([HarnessEdit(action="create", kind="fact", id="harness_a", title="t", content="v1")], scope="run")
         batch = store.apply([HarnessEdit(action="update", kind="fact", id="harness_a", content="v2")], scope="run")
-        first = store.rollback(batch.id)
+        first = store.rollback(batch.id, scope="run")
         assert store.entries()[0].content == "v1"
-        store.rollback(first.id)
+        store.rollback(first.id, scope="run")
         assert store.entries()[0].content == "v2"
 
     def test_rollback_preserves_marked_outcome(self, tmp_path) -> None:
@@ -264,7 +286,7 @@ class TestReviewHardening:
         store.apply([HarnessEdit(action="create", kind="policy", id="harness_p", title="t", content="v1")], scope="run")
         batch = store.apply([HarnessEdit(action="update", kind="policy", id="harness_p", content="v2")], scope="run")
         store.mark_outcome("harness_p", "refuted", scope="run", evidence="did not deliver")
-        store.rollback(batch.id)
+        store.rollback(batch.id, scope="run")
         entry = store.entries()[0]
         assert entry.content == "v1"
         assert entry.outcome == "refuted" and entry.outcome_evidence == "did not deliver"
@@ -275,7 +297,7 @@ class TestReviewHardening:
         store.apply([HarnessEdit(action="create", kind="fact", id="harness_a", title="t", content="v1")], scope="run")
         mid = store.apply([HarnessEdit(action="update", kind="fact", id="harness_a", content="v2")], scope="run")
         store.apply([HarnessEdit(action="update", kind="fact", id="harness_a", content="v3")], scope="run")
-        store.rollback(mid.id)
+        store.rollback(mid.id, scope="run")
         assert store.entries()[0].content == "v1"
 
     def test_empty_apply_is_a_no_op(self, tmp_path) -> None:

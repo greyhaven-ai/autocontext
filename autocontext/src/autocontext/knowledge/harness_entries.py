@@ -7,6 +7,10 @@ before/after snapshots, so any refinement can be rolled back. Modeled on
 prime-agent's continual-harness refinement store; adds outcome marking so
 verifier-scored runs can confirm or refute an entry's expected outcome.
 
+The scope guardrail (a narrower-scope caller cannot mutate broader-scope
+state) covers every write path: ``apply``, ``mark_outcome``, and
+``rollback`` (AC-907).
+
 The store assumes a single writer per root directory: writes are atomic
 but load-modify-save, so concurrent writers are last-writer-wins. State
 files are per-language (the TypeScript mirror writes camelCase fields)
@@ -251,17 +255,25 @@ class HarnessEntryStore:
             return ""
         return "## Harness Entries\n\n" + "\n\n".join(sections) + "\n"
 
-    def rollback(self, refinement_id: str) -> HarnessRefinement:
+    def rollback(self, refinement_id: str, *, scope: HarnessScope) -> HarnessRefinement:
         """Invert a recorded refinement by restoring its before-snapshots.
 
         One-step semantics: snapshots are restored blindly, so edits made
         to the same entries by later refinements are overwritten (lost
         update). Outcome marks are measurements, not refinement effects,
         so a current non-pending outcome survives the restore.
+
+        The same scope guardrail as ``apply`` and ``mark_outcome`` holds
+        (AC-907): a narrower-scope caller cannot roll back a broader-scope
+        refinement. Checking the refinement's scope suffices because every
+        entry a refinement touched has scope at or below the refinement's
+        (``apply`` creates at caller scope and rejects broader updates).
         """
         target = next((r for r in self.load_history() if r.id == refinement_id), None)
         if target is None:
             raise ValueError(f"unknown refinement: {refinement_id}")
+        if SCOPE_ORDER[target.scope] > SCOPE_ORDER[scope]:
+            raise ValueError(f"scope_readonly: {refinement_id} is {target.scope}-scoped")
         state = self._load_state()
         applied: list[AppliedHarnessEdit] = []
         for item in reversed(target.applied_edits):
