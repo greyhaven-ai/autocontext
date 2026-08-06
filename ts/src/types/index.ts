@@ -201,6 +201,10 @@ export const ImprovementResultSchema = z.object({
   judgeCalls: z.number().int().min(0).default(0),
   // AC-885: evaluator epoch of the winning (best) round (see AgentTaskResultSchema).
   evaluatorEpoch: z.string().nullable().default(null),
+  // AC-902: hit/miss accounting for the unchanged-artifact verdict cache.
+  verifierCache: z
+    .object({ hits: z.number().int(), misses: z.number().int(), entries: z.number().int() })
+    .optional(),
 });
 
 export type ImprovementResult = z.infer<typeof ImprovementResultSchema>;

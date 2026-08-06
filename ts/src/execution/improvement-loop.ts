@@ -4,6 +4,7 @@
  */
 
 import type { AgentTaskInterface, AgentTaskResult, ImprovementResult } from "../types/index.js";
+import { EvaluationCache, contentFingerprint } from "./verifier-cache.js";
 import { cleanRevisionOutput } from "./output-cleaner.js";
 import { isImproved, isParseFailure } from "./improvement-loop-detection.js";
 import {
@@ -38,6 +39,9 @@ export interface ImprovementLoopOpts {
   dimensionThreshold?: number;
   timeBudget?: { check(phase: string): void };
   onProgress?: ImprovementLoopProgressObserver;
+  /** AC-902: target strings that must appear in the artifact; a missing
+   * target fails the round closed without consulting the judge. */
+  requiredTargets?: string[];
 }
 
 export class ImprovementLoop {
@@ -50,6 +54,7 @@ export class ImprovementLoop {
   #dimensionThreshold: number | null;
   #timeBudget: { check(phase: string): void } | null;
   #onProgress: ImprovementLoopProgressObserver | null;
+  #requiredTargets: string[];
 
   constructor(opts: ImprovementLoopOpts) {
     this.#task = opts.task;
@@ -58,6 +63,7 @@ export class ImprovementLoop {
     this.#minRounds = Math.max(1, opts.minRounds ?? 1);
     this.#maxScoreDelta = opts.maxScoreDelta ?? 0.5;
     this.#capScoreJumps = opts.capScoreJumps ?? false;
+    this.#requiredTargets = opts.requiredTargets ?? [];
     this.#dimensionThreshold = opts.dimensionThreshold ?? null;
     this.#timeBudget = opts.timeBudget ?? null;
     this.#onProgress = opts.onProgress ?? null;
@@ -92,20 +98,47 @@ export class ImprovementLoop {
     // comparable, the prior baseline is stale and the loop re-baselines.
     let baselineEpoch: string | null = null;
     let hasBaseline = false;
+    const verdictCache = new EvaluationCache();
+    let consecutiveCachedFailures = 0;
 
     for (let roundNum = 1; roundNum <= this.#maxRounds; roundNum++) {
       const roundStart = performance.now();
       this.#timeBudget?.check(`round ${roundNum} evaluation`);
       this.reportProgress({ phase: "evaluation", status: "started", round: roundNum });
-      const result = await this.#task.evaluateOutput(currentOutput, opts.state, {
-        referenceContext: opts.referenceContext,
-        requiredConcepts: opts.requiredConcepts,
-        calibrationExamples: opts.calibrationExamples,
-        pinnedDimensions,
-      });
+      // AC-902: byte-identical artifacts are never re-judged; a missing
+      // required target fails closed for free.
+      const fingerprint = contentFingerprint(currentOutput);
+      const missingTargets = this.#requiredTargets.filter((target) => !currentOutput.includes(target));
+      const cachedVerdict = missingTargets.length > 0 ? undefined : verdictCache.get(fingerprint);
+      const fromCache = cachedVerdict !== undefined;
+      let result: AgentTaskResult;
+      if (missingTargets.length > 0) {
+        result = {
+          score: 0,
+          reasoning: "required target(s) missing from output: " + missingTargets.join(", "),
+          dimensionScores: {},
+          internalRetries: 0,
+          evaluatorEpoch: null,
+        };
+      } else if (cachedVerdict !== undefined) {
+        result = {
+          score: cachedVerdict.score,
+          reasoning: cachedVerdict.reasoning,
+          dimensionScores: { ...cachedVerdict.dimensionScores },
+          internalRetries: 0,
+          evaluatorEpoch: cachedVerdict.evaluatorEpoch ?? null,
+        };
+      } else {
+        result = await this.#task.evaluateOutput(currentOutput, opts.state, {
+          referenceContext: opts.referenceContext,
+          requiredConcepts: opts.requiredConcepts,
+          calibrationExamples: opts.calibrationExamples,
+          pinnedDimensions,
+        });
+        judgeCalls += 1;
+      }
       this.#timeBudget?.check(`round ${roundNum} evaluation`);
       this.reportProgress({ phase: "evaluation", status: "completed", round: roundNum });
-      judgeCalls += 1;
       const roundMs = Math.round(performance.now() - roundStart);
       totalInternalRetries += result.internalRetries ?? 0;
 
@@ -118,6 +151,26 @@ export class ImprovementLoop {
         roundDurationMs: roundMs,
       });
       rounds.push(roundResult);
+
+      if (fromCache && cachedVerdict !== undefined && !cachedVerdict.passed) {
+        consecutiveCachedFailures += 1;
+        if (consecutiveCachedFailures >= 2) {
+          terminationReason = "unchanged_output";
+          break;
+        }
+      } else if (!failed) {
+        consecutiveCachedFailures = 0;
+      }
+
+      if (!fromCache && !failed && missingTargets.length === 0) {
+        verdictCache.put(fingerprint, {
+          score: result.score,
+          reasoning: result.reasoning,
+          dimensionScores: { ...(result.dimensionScores ?? {}) },
+          passed: result.score >= this.#qualityThreshold,
+          evaluatorEpoch: result.evaluatorEpoch ?? null,
+        });
+      }
 
       if (failed) {
         judgeFailures += 1;
@@ -259,6 +312,7 @@ export class ImprovementLoop {
           durationMs: Math.round(performance.now() - loopStart),
           judgeCalls,
           evaluatorEpoch: bestRoundEpoch(rounds, bestRound),
+          verifierCache: verdictCache.stats(),
         });
       }
 
@@ -294,6 +348,7 @@ export class ImprovementLoop {
       durationMs: Math.round(performance.now() - loopStart),
       judgeCalls,
       evaluatorEpoch: bestRoundEpoch(rounds, bestRound),
+      verifierCache: verdictCache.stats(),
     });
   }
 
