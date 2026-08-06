@@ -100,10 +100,11 @@ class LessonStore:
             data = json.loads(raw)
             if not isinstance(data, list):
                 return []
+            lessons = [Lesson.from_dict(entry) for entry in data]
         except (OSError, TypeError, ValueError, json.JSONDecodeError):
             logger.debug("unable to read structured lessons for %s from %s", scenario, path)
             return []
-        return [Lesson.from_dict(entry) for entry in data]
+        return lessons
 
     def current_generation(self, scenario: str) -> int:
         """Best-effort current generation derived from structured lessons."""

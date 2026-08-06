@@ -8,6 +8,7 @@ from pathlib import Path
 
 from autocontext.blobstore.store import resolve_blob_path
 from autocontext.harness.mutations.spec import HarnessMutation
+from autocontext.util.json_io import write_text_atomic
 
 logger = logging.getLogger(__name__)
 
@@ -36,11 +37,11 @@ class MutationStore:
             versions_dir.mkdir(exist_ok=True)
             version_num = len(list(versions_dir.glob("mutations_v*.json"))) + 1
             archive_path = versions_dir / f"mutations_v{version_num}.json"
-            archive_path.write_text(mutations_path.read_text(encoding="utf-8"), encoding="utf-8")
+            write_text_atomic(archive_path, mutations_path.read_text(encoding="utf-8"))
 
         # Write current
         data = [m.to_dict() for m in mutations]
-        mutations_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        write_text_atomic(mutations_path, json.dumps(data, indent=2))
 
     def load(self, scenario_name: str) -> list[HarnessMutation]:
         """Load current mutations for a scenario."""
@@ -78,6 +79,6 @@ class MutationStore:
             return False
         latest_archive = versions[-1]
         current = scenario_dir / _MUTATIONS_FILENAME
-        current.write_text(latest_archive.read_text(encoding="utf-8"), encoding="utf-8")
+        write_text_atomic(current, latest_archive.read_text(encoding="utf-8"))
         latest_archive.unlink()
         return True

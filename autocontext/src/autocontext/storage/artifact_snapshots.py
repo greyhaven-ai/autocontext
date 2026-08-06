@@ -6,7 +6,7 @@ import hashlib
 from pathlib import Path
 from typing import Any, Protocol
 
-from autocontext.util.json_io import read_json
+from autocontext.util.json_io import read_json_guarded, write_text_atomic
 
 
 class SnapshotHost(Protocol):
@@ -30,22 +30,19 @@ class SnapshotMethods:
         playbook_path = scenario_dir / "playbook.md"
         if playbook_path.exists():
             playbook_content = playbook_path.read_text(encoding="utf-8")
-            (snapshot_dir / "playbook.md").write_text(playbook_content, encoding="utf-8")
+            write_text_atomic(snapshot_dir / "playbook.md", playbook_content)
 
         hints_path = scenario_dir / "hints.md"
         if hints_path.exists():
-            (snapshot_dir / "hints.md").write_text(hints_path.read_text(encoding="utf-8"), encoding="utf-8")
+            write_text_atomic(snapshot_dir / "hints.md", hints_path.read_text(encoding="utf-8"))
         hint_state_path = self._hint_state_path(scenario_name)
         if hint_state_path.exists():
-            (snapshot_dir / "hint_state.json").write_text(
-                hint_state_path.read_text(encoding="utf-8"),
-                encoding="utf-8",
-            )
+            write_text_atomic(snapshot_dir / "hint_state.json", hint_state_path.read_text(encoding="utf-8"))
 
         skill_dir = self._skill_dir(scenario_name)
         skill_path = skill_dir / "SKILL.md"
         if skill_path.exists():
-            (snapshot_dir / "SKILL.md").write_text(skill_path.read_text(encoding="utf-8"), encoding="utf-8")
+            write_text_atomic(snapshot_dir / "SKILL.md", skill_path.read_text(encoding="utf-8"))
 
         # Snapshot harness files
         h_dir = self.harness_dir(scenario_name)
@@ -54,10 +51,7 @@ class SnapshotMethods:
             harness_snapshot.mkdir(parents=True, exist_ok=True)
             for py_file in h_dir.glob("*.py"):
                 if py_file.is_file():
-                    (harness_snapshot / py_file.name).write_text(
-                        py_file.read_text(encoding="utf-8"),
-                        encoding="utf-8",
-                    )
+                    write_text_atomic(harness_snapshot / py_file.name, py_file.read_text(encoding="utf-8"))
 
         return hashlib.sha256(playbook_content.encode("utf-8")).hexdigest()[:16]
 
@@ -83,17 +77,16 @@ class SnapshotMethods:
             restored = True
         hint_state_snapshot = snapshot_dir / "hint_state.json"
         if hint_state_snapshot.exists():
-            self.write_json(
-                self._hint_state_path(scenario_name),
-                read_json(hint_state_snapshot),
-            )
-            restored = True
+            hint_state = read_json_guarded(hint_state_snapshot)
+            if isinstance(hint_state, dict):
+                self.write_json(self._hint_state_path(scenario_name), hint_state)
+                restored = True
 
         skill_snapshot = snapshot_dir / "SKILL.md"
         if skill_snapshot.exists():
             skill_dir = self._skill_dir(scenario_name)
             skill_dir.mkdir(parents=True, exist_ok=True)
-            (skill_dir / "SKILL.md").write_text(skill_snapshot.read_text(encoding="utf-8"), encoding="utf-8")
+            write_text_atomic(skill_dir / "SKILL.md", skill_snapshot.read_text(encoding="utf-8"))
             restored = True
 
         # Restore harness files from snapshot
@@ -103,10 +96,7 @@ class SnapshotMethods:
             h_dir.mkdir(parents=True, exist_ok=True)
             for py_file in harness_snapshot.glob("*.py"):
                 if py_file.is_file():
-                    (h_dir / py_file.name).write_text(
-                        py_file.read_text(encoding="utf-8"),
-                        encoding="utf-8",
-                    )
+                    write_text_atomic(h_dir / py_file.name, py_file.read_text(encoding="utf-8"))
             restored = True
 
         return restored

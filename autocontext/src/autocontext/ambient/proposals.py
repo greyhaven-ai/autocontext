@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any, Literal
 
@@ -62,11 +63,14 @@ class ProposalStore:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         prefix = ""
         if self.path.exists():
-            tail = self.path.read_bytes()[-1:]
-            if tail and tail != b"\n":
-                # a torn trailing line from a crash mid-append must not
-                # swallow the next record; start it on a fresh line
-                prefix = "\n"
+            with self.path.open("rb") as handle:
+                handle.seek(0, os.SEEK_END)
+                if handle.tell() > 0:
+                    handle.seek(-1, os.SEEK_END)
+                    if handle.read(1) != b"\n":
+                        # a torn trailing line from a crash mid-append must not
+                        # swallow the next record; start it on a fresh line
+                        prefix = "\n"
         with self.path.open("a", encoding="utf-8") as handle:
             handle.write(prefix + json.dumps(proposal.model_dump(mode="json")) + "\n")
 

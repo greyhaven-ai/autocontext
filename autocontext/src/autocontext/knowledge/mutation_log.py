@@ -14,17 +14,21 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from autocontext.util.json_io import write_text_atomic
+
 logger = logging.getLogger(__name__)
 
-MUTATION_TYPES = frozenset({
-    "schema_change",
-    "lesson_added",
-    "lesson_removed",
-    "playbook_updated",
-    "notebook_updated",
-    "run_outcome",
-    "checkpoint",
-})
+MUTATION_TYPES = frozenset(
+    {
+        "schema_change",
+        "lesson_added",
+        "lesson_removed",
+        "playbook_updated",
+        "notebook_updated",
+        "run_outcome",
+        "checkpoint",
+    }
+)
 
 
 def _now_iso() -> str:
@@ -97,7 +101,7 @@ class MutationLog:
                 continue
             try:
                 entry = MutationEntry.from_dict(json.loads(line))
-            except (json.JSONDecodeError, TypeError):
+            except (json.JSONDecodeError, TypeError, ValueError):
                 continue
             if mutation_types and entry.mutation_type not in mutation_types:
                 continue
@@ -109,7 +113,10 @@ class MutationLog:
         return entries
 
     def create_checkpoint(
-        self, scenario: str, generation: int, run_id: str,
+        self,
+        scenario: str,
+        generation: int,
+        run_id: str,
     ) -> Checkpoint:
         all_entries = self.read(scenario)
         entry_index = len(all_entries)  # index of the checkpoint entry about to be appended
@@ -180,10 +187,7 @@ class MutationLog:
 
         kept = all_entries[keep_from:]
         path = self._log_path(scenario)
-        path.write_text(
-            "".join(json.dumps(entry.to_dict()) + "\n" for entry in kept),
-            encoding="utf-8",
-        )
+        write_text_atomic(path, "".join(json.dumps(entry.to_dict()) + "\n" for entry in kept))
 
     def replay_summary(self, scenario: str, *, max_entries: int = 10) -> str:
         """Summarize recent mutations since the last checkpoint for prompt context."""
@@ -194,9 +198,7 @@ class MutationLog:
         lines = ["Context mutations since last checkpoint:"]
         for entry in replayed[-max_entries:]:
             detail = entry.description or entry.payload
-            lines.append(
-                f"- gen {entry.generation}: {entry.mutation_type} — {detail}"
-            )
+            lines.append(f"- gen {entry.generation}: {entry.mutation_type} — {detail}")
         return "\n".join(lines)
 
     def audit_summary(self, scenario: str) -> str:

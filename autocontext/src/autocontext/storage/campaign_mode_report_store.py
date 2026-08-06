@@ -7,7 +7,7 @@ from typing import Any, Protocol
 
 from autocontext.analytics.campaign_mode_report import CampaignModeReport
 from autocontext.storage.scenario_paths import normalize_scenario_name_segment
-from autocontext.util.json_io import read_json, write_json
+from autocontext.util.json_io import read_json_guarded, write_json
 
 
 class DictSerializable(Protocol):
@@ -42,9 +42,28 @@ def write_campaign_mode_report(knowledge_root: Path, scenario_name: str, run_id:
     return path
 
 
+def read_campaign_mode_report_path(path: Path) -> CampaignModeReport | None:
+    """Parse one report file; corrupt files degrade to None."""
+    data = read_json_guarded(path)
+    if not isinstance(data, dict):
+        return None
+    try:
+        return CampaignModeReport.from_dict(data)
+    except (TypeError, ValueError):
+        return None
+
+
 def read_campaign_mode_report(knowledge_root: Path, scenario_name: str, run_id: str) -> CampaignModeReport | None:
     path = campaign_mode_report_path(knowledge_root, scenario_name, run_id)
-    return CampaignModeReport.from_dict(read_json(path)) if path.exists() else None
+    if not path.exists():
+        return None
+    data = read_json_guarded(path)
+    if not isinstance(data, dict):
+        return None
+    try:
+        return CampaignModeReport.from_dict(data)
+    except (TypeError, ValueError):
+        return None
 
 
 def read_latest_campaign_mode_reports_markdown(
@@ -57,7 +76,12 @@ def read_latest_campaign_mode_reports_markdown(
     if not root.exists():
         return ""
     paths = sorted(root.glob("*.json"), key=lambda path: path.stat().st_mtime, reverse=True)[:max_reports]
-    return "\n\n".join(CampaignModeReport.from_dict(read_json(path)).to_markdown() for path in paths)
+    parts: list[str] = []
+    for path in paths:
+        report = read_campaign_mode_report_path(path)
+        if report is not None:
+            parts.append(report.to_markdown())
+    return "\n\n".join(parts)
 
 
 __all__ = [

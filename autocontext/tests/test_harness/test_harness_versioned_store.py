@@ -133,3 +133,30 @@ class TestVersionedFileStoreCustomNaming:
         for i in range(1, 5):
             store.write("playbook.md", f"v{i}")
         assert store.version_count("playbook.md") == 2
+
+
+class TestAtomicWrites:
+    """AC-903: live-file writes go through temp + os.replace."""
+
+    def test_write_leaves_no_temp_files(self, tmp_path: Path) -> None:
+        store = VersionedFileStore(root=tmp_path, max_versions=3)
+        store.write("playbook.md", "v1")
+        store.write("playbook.md", "v2")
+        leftovers = [p for p in tmp_path.rglob("*.tmp")]
+        assert leftovers == []
+        assert store.read("playbook.md") == "v2"
+
+    def test_write_uses_atomic_replace(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        import os as os_module
+
+        replaced: list[str] = []
+        real_replace = os_module.replace
+
+        def spy(src, dst):  # type: ignore[no-untyped-def]
+            replaced.append(str(dst))
+            return real_replace(src, dst)
+
+        monkeypatch.setattr("autocontext.util.json_io.os.replace", spy)
+        store = VersionedFileStore(root=tmp_path, max_versions=3)
+        store.write("playbook.md", "content")
+        assert str(tmp_path / "playbook.md") in replaced

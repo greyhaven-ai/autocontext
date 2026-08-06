@@ -22,7 +22,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from autocontext.util.json_io import read_json, write_json
+from autocontext.util.json_io import read_json_guarded, write_json, write_text_atomic
 
 _VALID_STATES = frozenset({"candidate", "active", "disabled", "deprecated"})
 
@@ -130,10 +130,22 @@ class ModelRegistry:
         path = self._dir / f"{artifact_id}.json"
         if not path.exists():
             return None
-        return DistilledModelRecord.from_dict(read_json(path))
+        return self._load_record(path)
 
     def list_all(self) -> list[DistilledModelRecord]:
-        return [DistilledModelRecord.from_dict(read_json(p)) for p in sorted(self._dir.glob("*.json"))]
+        records = (self._load_record(p) for p in sorted(self._dir.glob("*.json")))
+        return [record for record in records if record is not None]
+
+    @staticmethod
+    def _load_record(path: Path) -> DistilledModelRecord | None:
+        """One corrupt record must not break model resolution for the rest."""
+        data = read_json_guarded(path)
+        if not isinstance(data, dict):
+            return None
+        try:
+            return DistilledModelRecord.from_dict(data)
+        except ValueError:
+            return None
 
     def list_for_scenario(self, scenario: str) -> list[DistilledModelRecord]:
         return [r for r in self.list_all() if r.scenario == scenario]
@@ -261,10 +273,7 @@ def publish_training_output(
     if artifacts_root is not None:
         artifacts_dir = _artifact_dir(artifacts_root)
         artifacts_dir.mkdir(parents=True, exist_ok=True)
-        _artifact_path(artifacts_root, artifact_id).write_text(
-            published_artifact.model_dump_json(indent=2),
-            encoding="utf-8",
-        )
+        write_text_atomic(_artifact_path(artifacts_root, artifact_id), published_artifact.model_dump_json(indent=2))
 
     existing = registry.load(artifact_id)
     if existing is not None:

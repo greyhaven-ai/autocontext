@@ -6,7 +6,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Protocol
 
 from autocontext.analytics.goal_run_report import GoalRunReport
-from autocontext.util.json_io import read_json, write_json
+from autocontext.util.json_io import read_json_guarded, write_json
 
 
 class DictSerializable(Protocol):
@@ -44,7 +44,15 @@ def write_goal_run_report(knowledge_root: Path, goal_id: str, goal_run_id: str, 
 
 def read_goal_run_report(knowledge_root: Path, goal_id: str, goal_run_id: str) -> GoalRunReport | None:
     path = goal_run_report_path(knowledge_root, goal_id, goal_run_id)
-    return GoalRunReport.from_dict(read_json(path)) if path.exists() else None
+    if not path.exists():
+        return None
+    data = read_json_guarded(path)
+    if not isinstance(data, dict):
+        return None
+    try:
+        return GoalRunReport.from_dict(data)
+    except (TypeError, ValueError):
+        return None
 
 
 __all__ = [

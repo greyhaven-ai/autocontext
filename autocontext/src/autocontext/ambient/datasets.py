@@ -58,7 +58,19 @@ class DatasetStore:
     def append_records(self, target: str, records: list[dict[str, Any]]) -> int:
         if not records:
             return 0
-        with self.dataset_path(target).open("a", encoding="utf-8") as handle:
+        path = self.dataset_path(target)
+        prefix = ""
+        if path.exists():
+            with path.open("rb") as handle:
+                handle.seek(0, os.SEEK_END)
+                if handle.tell() > 0:
+                    handle.seek(-1, os.SEEK_END)
+                    if handle.read(1) != b"\n":
+                        # a torn trailing line from a crash mid-append must not
+                        # fuse with the next record; start it on a fresh line
+                        prefix = "\n"
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(prefix)
             for record in records:
                 handle.write(json.dumps(record) + "\n")
         return len(records)

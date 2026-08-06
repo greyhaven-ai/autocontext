@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from autocontext.util.json_io import write_text_atomic
+
 
 class VersionedFileStore:
     """Manages versioned text files with automatic archiving."""
@@ -45,10 +47,9 @@ class VersionedFileStore:
             existing = path.read_text(encoding="utf-8")
             existing_versions = sorted(versions_dir.glob(self._version_glob()))
             next_num = len(existing_versions) + 1
-            self._version_path(versions_dir, next_num).write_text(existing, encoding="utf-8")
+            write_text_atomic(self._version_path(versions_dir, next_num), existing)
             self._prune(versions_dir)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content, encoding="utf-8")
+        write_text_atomic(path, content)
 
     def read(self, name: str, default: str = "") -> str:
         """Read current version. Returns default if file doesn't exist."""
@@ -65,8 +66,7 @@ class VersionedFileStore:
             return False
         latest = versions[-1]
         path = self._root / name
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(latest.read_text(encoding="utf-8"), encoding="utf-8")
+        write_text_atomic(path, latest.read_text(encoding="utf-8"))
         latest.unlink()
         return True
 
