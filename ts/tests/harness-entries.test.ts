@@ -379,3 +379,93 @@ describe("review hardening (parity with Python TestReviewHardening)", () => {
     expect(store.entries().map((entry) => entry.id)).toEqual(["harness_good"]);
   });
 });
+
+describe("skill reference (AC-899)", () => {
+  const reference = {
+    language: "python" as const,
+    entrypoint: "priority",
+    source: "def priority(v):\n    return sum(v)",
+    callPattern: "priority(vector)",
+    argumentsDescription: {},
+  };
+
+  it("apply carries reference and round-trips through the store", () => {
+    const store = new HarnessEntryStore(root);
+    store.apply(
+      [
+        {
+          ...createEdit({
+            kind: "procedure",
+            id: "harness_skill",
+            title: "Promoted skill: priority",
+          }),
+          reference,
+        },
+      ],
+      { scope: "scenario_family" },
+    );
+    const entry = new HarnessEntryStore(root).entries({ kind: "procedure" })[0];
+    expect(entry.reference?.entrypoint).toBe("priority");
+    expect(entry.reference?.source).toContain("def priority");
+  });
+
+  it("update replaces reference when provided", () => {
+    const store = new HarnessEntryStore(root);
+    store.apply([{ ...createEdit({ kind: "procedure", id: "harness_s" }), reference }], {
+      scope: "run",
+    });
+    store.apply(
+      [
+        {
+          ...createEdit({ action: "update", kind: "procedure", id: "harness_s" }),
+          reference: { ...reference, source: "def priority(v):\n    return max(v)" },
+        },
+      ],
+      { scope: "run" },
+    );
+    expect(store.entries()[0].reference?.source).toContain("max(v)");
+  });
+
+  it("mis-kinded reference update is a per-edit error, not silent entry loss", () => {
+    const store = new HarnessEntryStore(root);
+    store.apply([createEdit({ kind: "fact", id: "harness_f" })], { scope: "run" });
+    const batch = store.apply(
+      [
+        { ...createEdit({ action: "update", kind: "procedure", id: "harness_f" }), reference },
+        createEdit({ kind: "fact", id: "harness_ok", title: "t2", content: "c2" }),
+      ],
+      { scope: "run" },
+    );
+    expect(batch.appliedEdits.map((item) => item.applied)).toEqual([false, true]);
+    expect(batch.appliedEdits[0].error).toBe("reference_requires_procedure");
+    const entries = new Map(new HarnessEntryStore(root).entries().map((e) => [e.id, e]));
+    expect([...entries.keys()].sort()).toEqual(["harness_f", "harness_ok"]);
+    expect(entries.get("harness_f")?.reference).toBeUndefined();
+    expect(entries.get("harness_f")?.version).toBe(1);
+  });
+
+  it("non-procedure create carrying a reference is a per-edit error", () => {
+    const store = new HarnessEntryStore(root);
+    const batch = store.apply([{ ...createEdit({ kind: "fact", id: "harness_bad" }), reference }], {
+      scope: "run",
+    });
+    expect(batch.appliedEdits[0].applied).toBe(false);
+    expect(batch.appliedEdits[0].error).toBe("reference_requires_procedure");
+    expect(new HarnessEntryStore(root).entries()).toEqual([]);
+  });
+
+  it("invalid stored reference drops the entry on load", () => {
+    const store = new HarnessEntryStore(root);
+    store.apply([{ ...createEdit({ kind: "procedure", id: "harness_good" }), reference }], {
+      scope: "run",
+    });
+    const raw = JSON.parse(readFileSync(store.statePath, "utf8"));
+    raw.entries.harness_bad = {
+      ...raw.entries.harness_good,
+      id: "harness_bad",
+      reference: { language: "python", entrypoint: "", source: "" },
+    };
+    writeFileSync(store.statePath, JSON.stringify(raw), "utf8");
+    expect(store.entries().map((entry) => entry.id)).toEqual(["harness_good"]);
+  });
+});

@@ -8,7 +8,7 @@
  */
 
 import { compactPromptComponent } from "../knowledge/semantic-compaction.js";
-import type { HarnessEdit } from "../knowledge/harness-entries.js";
+import type { HarnessEdit, HarnessEntry, SkillReference } from "../knowledge/harness-entries.js";
 import type { AgentTaskResult } from "../types/index.js";
 
 /** Cross-generation state for an agent task evolution run. */
@@ -75,8 +75,17 @@ export interface AgentTaskTrajectory {
 export class FunctionSlot {
   constructor(public readonly harness: string) {}
 
-  /** Return the full runnable program: slot prepended to harness. */
-  assemble(slot: string): string {
+  /**
+   * Return the full runnable program: skills, then slot, then harness.
+   *
+   * Skill sources come first so the slot may call them; behavior without
+   * skills is unchanged.
+   */
+  assemble(slot: string, opts: { skills?: string[] } = {}): string {
+    const skills = opts.skills ?? [];
+    if (skills.length > 0) {
+      return [...skills, slot, this.harness].join("\n\n");
+    }
     return `${slot}\n\n${this.harness}`;
   }
 }
@@ -186,6 +195,86 @@ export function lessonEdit(
 }
 
 /**
+ * Flat RUNNING-BEST tail over the last `window` generations (AC-899).
+ *
+ * `scoreHistory` carries per-generation candidate scores, which can
+ * oscillate below a stuck best; the plateau that matters for promotion is
+ * the running maximum going flat.
+ */
+export function detectPlateau(
+  scoreHistory: number[],
+  opts: { window?: number; epsilon?: number } = {},
+): boolean {
+  const window = Math.max(1, opts.window ?? 3);
+  const epsilon = opts.epsilon ?? 1e-6;
+  if (scoreHistory.length < window) return false;
+  const runningBest: number[] = [];
+  let best = Number.NEGATIVE_INFINITY;
+  for (const score of scoreHistory) {
+    best = Math.max(best, score);
+    runningBest.push(best);
+  }
+  const tail = runningBest.slice(-window);
+  return Math.max(...tail) - Math.min(...tail) <= epsilon;
+}
+
+/**
+ * Propose freezing the champion slot as a named executable skill (AC-899).
+ *
+ * Fires only on a plateau with a non-empty champion: the search has stopped
+ * improving, so the best procedure so far is worth reusing deterministically
+ * instead of regenerating. Returns a create edit (proposal); the caller
+ * decides whether to apply it and at what scope. Mirrors Python's
+ * propose_skill_promotion.
+ *
+ * Precondition: the run must be in function-slot mode, where
+ * `state.bestOutput` holds only the evolved slot. In whole-program mode
+ * `bestOutput` is the entire program and must not be promoted as a skill.
+ */
+export function proposeSkillPromotion(
+  state: AgentTaskGenerationState,
+  opts: { entrypoint: string; callPattern?: string; window?: number; epsilon?: number },
+): HarnessEdit | null {
+  if (!detectPlateau(state.scoreHistory, { window: opts.window, epsilon: opts.epsilon })) {
+    return null;
+  }
+  if (!state.bestOutput.trim()) return null;
+  const reference: SkillReference = {
+    language: "python",
+    entrypoint: opts.entrypoint,
+    source: state.bestOutput,
+    callPattern: opts.callPattern ?? `${opts.entrypoint}(...)`,
+    argumentsDescription: {},
+  };
+  const window = opts.window ?? 3;
+  return {
+    action: "create",
+    kind: "procedure",
+    id: "",
+    title: `Promoted skill: ${opts.entrypoint}`,
+    content:
+      `Champion slot frozen at generation ${state.generation} ` +
+      `(score ${fixed2(state.bestScore)}). Call \`${reference.callPattern}\`; do not reimplement.`,
+    expectedOutcome: `Assembling the harness with this skill reproduces score ${fixed2(state.bestScore)}.`,
+    reason: `plateau over ${window} generations at score ${fixed2(state.bestScore)}`,
+    reference,
+  };
+}
+
+/** A promotion must reproduce the score it was distilled from (AC-899). */
+export async function validateSkillPromotion(
+  edit: HarnessEdit,
+  slotHarness: FunctionSlot,
+  evaluate: (program: string) => AgentTaskGenerationEvaluation | Promise<AgentTaskGenerationEvaluation>,
+  opts: { bestScore: number; skills?: string[]; epsilon?: number },
+): Promise<boolean> {
+  if (!edit.reference) return false;
+  const assembled = slotHarness.assemble(edit.reference.source, { skills: opts.skills ?? [] });
+  const evaluation = await evaluate(assembled);
+  return evaluation.score >= opts.bestScore - (opts.epsilon ?? 1e-9);
+}
+
+/**
  * Enrich a task prompt with cross-generation context.
  *
  * In function-slot mode (`harness` provided), the fixed harness is shown once
@@ -199,6 +288,7 @@ export function buildEnrichedPrompt(args: {
   bestOutput: string;
   bestScore: number;
   harness?: string;
+  skills?: HarnessEntry[];
 }): string {
   const playbook = compactPromptComponent("agent_task_playbook", args.playbook);
   const bestOutput = compactPromptComponent("agent_task_best_output", args.bestOutput);
@@ -222,6 +312,15 @@ export function buildEnrichedPrompt(args: {
     sections.push(
       `\n\n## Best Previous Output (score ${fixed2(args.bestScore)})\n` + `${bestOutput}`,
     );
+  }
+
+  const skillLines = (args.skills ?? []).flatMap((entry) => {
+    if (!entry.reference) return [];
+    const pattern = (entry.reference.callPattern || entry.reference.entrypoint).replace(/\n/g, " ");
+    return [`- \`${pattern}\`: ${entry.title.replace(/\n/g, " ")}`];
+  });
+  if (skillLines.length > 0) {
+    sections.push("\n\n## Available Skills (call them; do not reimplement)\n" + skillLines.join("\n"));
   }
 
   if (playbook || bestOutput) {

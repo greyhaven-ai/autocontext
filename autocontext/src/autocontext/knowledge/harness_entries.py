@@ -23,7 +23,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 HarnessEntryKind = Literal["policy", "fact", "procedure", "delegation"]
 HarnessScope = Literal["run", "scenario_family", "global"]
@@ -46,6 +46,22 @@ def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
+class SkillReference(BaseModel):
+    """Executable payload for a procedure entry (AC-899).
+
+    A promoted skill carries real source code plus how to call it. Only the
+    call pattern belongs in prompts; the source goes into execution assembly.
+    """
+
+    language: Literal["python"] = "python"
+    entrypoint: str = Field(min_length=1)
+    source: str = Field(min_length=1)
+    call_pattern: str = ""
+    # TS mirror names this field argumentsDescription; state files are
+    # per-language and not interchangeable, so the divergence is intentional.
+    arguments: dict[str, str] = Field(default_factory=dict)
+
+
 class HarnessEntry(BaseModel):
     """One typed, scoped, versioned harness entry."""
 
@@ -61,6 +77,13 @@ class HarnessEntry(BaseModel):
     created_at: str = ""
     updated_at: str = ""
     version: int = 1
+    reference: SkillReference | None = None
+
+    @model_validator(mode="after")
+    def _reference_requires_procedure(self) -> HarnessEntry:
+        if self.reference is not None and self.kind != "procedure":
+            raise ValueError("reference is only valid on procedure entries")
+        return self
 
 
 class HarnessEdit(BaseModel):
@@ -73,6 +96,13 @@ class HarnessEdit(BaseModel):
     content: str = ""
     expected_outcome: str = ""
     reason: str = ""
+    reference: SkillReference | None = None
+
+    @model_validator(mode="after")
+    def _reference_requires_procedure_edit(self) -> HarnessEdit:
+        if self.reference is not None and self.kind != "procedure":
+            raise ValueError("reference is only valid on procedure edits")
+        return self
 
 
 class AppliedHarnessEdit(BaseModel):
@@ -294,6 +324,7 @@ class HarnessEntryStore:
                 title=edit.title,
                 content=edit.content,
                 expected_outcome=edit.expected_outcome,
+                reference=edit.reference,
                 source=source,
                 created_at=now,
                 updated_at=now,
@@ -306,6 +337,12 @@ class HarnessEntryStore:
             return AppliedHarnessEdit(edit=edit, entry_id=edit.id, applied=False, error="not_found")
         if SCOPE_ORDER[existing.scope] > SCOPE_ORDER[scope]:
             return AppliedHarnessEdit(edit=edit, entry_id=edit.id, applied=False, error="scope_readonly")
+        if edit.reference is not None and edit.action == "update" and existing.kind != "procedure":
+            # The edit validator only sees the edit's DECLARED kind; the target
+            # entry's actual kind decides whether a reference is legal. Failing
+            # here keeps this a per-edit error instead of a batch-poisoning
+            # ValidationError when the mutated entry is re-validated.
+            return AppliedHarnessEdit(edit=edit, entry_id=edit.id, applied=False, error="reference_requires_procedure")
         before = existing.model_copy(deep=True)
         if edit.action == "delete":
             del state[edit.id]
@@ -317,6 +354,8 @@ class HarnessEntryStore:
             updated.content = edit.content
         if edit.expected_outcome:
             updated.expected_outcome = edit.expected_outcome
+        if edit.reference is not None:
+            updated.reference = edit.reference
         updated.updated_at = self._now_iso()
         updated.version += 1
         state[edit.id] = updated
