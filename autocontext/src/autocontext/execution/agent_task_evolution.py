@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from itertools import accumulate
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -161,10 +162,17 @@ def lesson_edit(
 
 
 def detect_plateau(score_history: Sequence[float], *, window: int = 3, epsilon: float = 1e-6) -> bool:
-    """Flat best-score tail over the last ``window`` generations."""
+    """Flat RUNNING-BEST tail over the last ``window`` generations.
+
+    ``score_history`` carries per-generation candidate scores, which can
+    oscillate below a stuck best; the plateau that matters for promotion is
+    the running maximum going flat.
+    """
+    window = max(1, window)
     if len(score_history) < window:
         return False
-    tail = score_history[-window:]
+    running_best = list(accumulate(score_history, max))
+    tail = running_best[-window:]
     return max(tail) - min(tail) <= epsilon
 
 
@@ -177,6 +185,10 @@ def propose_skill_promotion(
     epsilon: float = 1e-6,
 ) -> HarnessEdit | None:
     """Propose freezing the champion slot as a named executable skill (AC-899).
+
+    Precondition: the run must be in function-slot mode, where
+    ``state.best_output`` holds only the evolved slot. In whole-program mode
+    ``best_output`` is the entire program and must not be promoted as a skill.
 
     Fires only on a plateau with a non-empty champion: the search has stopped
     improving, so the best procedure so far is worth reusing deterministically
@@ -238,7 +250,10 @@ def build_enriched_prompt(
         sections.append(f"\n\n## Best Previous Output (score {best_score:.2f})\n{best_output}")
 
     skill_lines = [
-        f"- `{entry.reference.call_pattern or entry.reference.entrypoint}`: {entry.title}"
+        "- `{}`: {}".format(
+            (entry.reference.call_pattern or entry.reference.entrypoint).replace("\n", " "),
+            entry.title.replace("\n", " "),
+        )
         for entry in skills
         if entry.reference is not None
     ]
@@ -262,12 +277,17 @@ def validate_skill_promotion(
     evaluate: Callable[[str], AgentTaskGenerationEvaluation],
     *,
     best_score: float,
+    skills: Sequence[str] = (),
     epsilon: float = 1e-9,
 ) -> bool:
-    """A promotion must reproduce the score it was distilled from (AC-899)."""
+    """A promotion must reproduce the score it was distilled from (AC-899).
+
+    ``skills`` are previously promoted skill sources the candidate may call;
+    validation must assemble the same program shape evaluation used.
+    """
     if edit.reference is None:
         return False
-    assembled = slot_harness.assemble(edit.reference.source)
+    assembled = slot_harness.assemble(edit.reference.source, skills=skills)
     evaluation = evaluate(assembled)
     return evaluation.score >= best_score - epsilon
 

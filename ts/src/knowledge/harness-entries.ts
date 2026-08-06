@@ -168,6 +168,11 @@ function normalizeEdit(raw: unknown): HarnessEdit | undefined {
   if (!isRecord(raw)) return undefined;
   const { action, kind } = raw;
   if (!isAction(action) || !isKind(kind)) return undefined;
+  let reference: SkillReference | undefined;
+  if (raw.reference !== undefined && raw.reference !== null) {
+    reference = normalizeSkillReference(raw.reference);
+    if (!reference) return undefined;
+  }
   return {
     action,
     kind,
@@ -176,6 +181,7 @@ function normalizeEdit(raw: unknown): HarnessEdit | undefined {
     content: typeof raw.content === "string" ? raw.content : "",
     expectedOutcome: typeof raw.expectedOutcome === "string" ? raw.expectedOutcome : "",
     reason: typeof raw.reason === "string" ? raw.reason : "",
+    reference,
   };
 }
 
@@ -210,6 +216,7 @@ function normalizeEntry(raw: unknown): HarnessEntry | undefined {
   if (raw.reference !== undefined && raw.reference !== null) {
     reference = normalizeSkillReference(raw.reference);
     if (!reference) return undefined;
+    if (kind !== "procedure") return undefined;
   }
   return {
     id: raw.id,

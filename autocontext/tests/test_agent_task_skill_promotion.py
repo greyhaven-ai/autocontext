@@ -130,3 +130,79 @@ class TestValidateSkillPromotion:
             raise AssertionError("must not evaluate without a reference")
 
         assert validate_skill_promotion(edit, FunctionSlot(harness="H"), evaluate, best_score=0.9) is False
+
+
+class TestReviewHardening:
+    """Review pins: running-best plateau, reference round-trip, no source leak."""
+
+    def test_plateau_fires_on_stuck_best_with_oscillating_candidates(self) -> None:
+        assert detect_plateau([0.9, 0.5, 0.7, 0.6], window=3) is True
+
+    def test_plateau_true_when_best_flat_despite_subbest_tail(self) -> None:
+        assert detect_plateau([0.9, 0.5, 0.5, 0.5], window=3) is True
+
+    def test_validation_passes_prior_skills_into_assembly(self) -> None:
+        helper = "def helper(x):\n    return x"
+        captured: list[str] = []
+
+        def evaluate(program: str) -> AgentTaskGenerationEvaluation:
+            captured.append(program)
+            return AgentTaskGenerationEvaluation(output=program, score=1.0, reasoning="ok")
+
+        edit = HarnessEdit(
+            action="create", kind="procedure", title="t", content="c",
+            reference=SkillReference(entrypoint="priority", source=SLOT),
+        )
+        slot_harness = FunctionSlot(harness="H")
+        assert validate_skill_promotion(edit, slot_harness, evaluate, best_score=0.9, skills=[helper])
+        assert captured == [slot_harness.assemble(SLOT, skills=[helper])]
+
+    def test_reference_survives_history_and_rollback(self, tmp_path) -> None:
+        from autocontext.knowledge.harness_entries import HarnessEntryStore
+
+        store = HarnessEntryStore(tmp_path)
+        edit = propose_skill_promotion(_state([0.9, 0.9, 0.9]), entrypoint="priority")
+        assert edit is not None
+        batch = store.apply([edit], scope="scenario_family")
+        history = store.load_history()
+        assert history[0].applied_edits[0].edit.reference is not None
+        removed = store.apply(
+            [HarnessEdit(action="delete", kind="procedure", id=batch.applied_edits[0].entry_id)],
+            scope="scenario_family",
+        )
+        store.rollback(removed.id)
+        entry = store.entries(kind="procedure")[0]
+        assert entry.reference is not None and entry.reference.source == SLOT
+
+    def test_render_markdown_never_leaks_skill_source(self, tmp_path) -> None:
+        from autocontext.knowledge.harness_entries import HarnessEntryStore
+
+        store = HarnessEntryStore(tmp_path)
+        edit = propose_skill_promotion(_state([0.9, 0.9, 0.9]), entrypoint="priority")
+        assert edit is not None
+        store.apply([edit], scope="run")
+        assert "def priority" not in store.render_markdown()
+
+    def test_reference_rejected_on_non_procedure_kinds(self) -> None:
+        import pytest as pytest_module
+
+        with pytest_module.raises(ValueError, match="procedure"):
+            HarnessEdit(
+                action="create", kind="fact", title="t", content="c",
+                reference=SkillReference(entrypoint="f", source="def f(): ..."),
+            )
+
+    def test_invalid_stored_reference_drops_entry(self, tmp_path) -> None:
+        import json
+
+        from autocontext.knowledge.harness_entries import HarnessEntryStore
+
+        store = HarnessEntryStore(tmp_path)
+        edit = propose_skill_promotion(_state([0.9, 0.9, 0.9]), entrypoint="priority")
+        assert edit is not None
+        store.apply([edit], scope="run")
+        raw = json.loads(store.state_path.read_text(encoding="utf-8"))
+        [(entry_id, data)] = raw["entries"].items()
+        data["reference"] = {"language": "python", "entrypoint": "", "source": ""}
+        store.state_path.write_text(json.dumps(raw), encoding="utf-8")
+        assert store.entries() == []

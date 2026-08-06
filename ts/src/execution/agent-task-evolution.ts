@@ -194,15 +194,27 @@ export function lessonEdit(
   };
 }
 
-/** Flat best-score tail over the last `window` generations (AC-899). */
+/**
+ * Flat RUNNING-BEST tail over the last `window` generations (AC-899).
+ *
+ * `scoreHistory` carries per-generation candidate scores, which can
+ * oscillate below a stuck best; the plateau that matters for promotion is
+ * the running maximum going flat.
+ */
 export function detectPlateau(
   scoreHistory: number[],
   opts: { window?: number; epsilon?: number } = {},
 ): boolean {
-  const window = opts.window ?? 3;
+  const window = Math.max(1, opts.window ?? 3);
   const epsilon = opts.epsilon ?? 1e-6;
   if (scoreHistory.length < window) return false;
-  const tail = scoreHistory.slice(-window);
+  const runningBest: number[] = [];
+  let best = Number.NEGATIVE_INFINITY;
+  for (const score of scoreHistory) {
+    best = Math.max(best, score);
+    runningBest.push(best);
+  }
+  const tail = runningBest.slice(-window);
   return Math.max(...tail) - Math.min(...tail) <= epsilon;
 }
 
@@ -214,6 +226,10 @@ export function detectPlateau(
  * instead of regenerating. Returns a create edit (proposal); the caller
  * decides whether to apply it and at what scope. Mirrors Python's
  * propose_skill_promotion.
+ *
+ * Precondition: the run must be in function-slot mode, where
+ * `state.bestOutput` holds only the evolved slot. In whole-program mode
+ * `bestOutput` is the entire program and must not be promoted as a skill.
  */
 export function proposeSkillPromotion(
   state: AgentTaskGenerationState,
@@ -250,10 +266,10 @@ export async function validateSkillPromotion(
   edit: HarnessEdit,
   slotHarness: FunctionSlot,
   evaluate: (program: string) => AgentTaskGenerationEvaluation | Promise<AgentTaskGenerationEvaluation>,
-  opts: { bestScore: number; epsilon?: number },
+  opts: { bestScore: number; skills?: string[]; epsilon?: number },
 ): Promise<boolean> {
   if (!edit.reference) return false;
-  const assembled = slotHarness.assemble(edit.reference.source);
+  const assembled = slotHarness.assemble(edit.reference.source, { skills: opts.skills ?? [] });
   const evaluation = await evaluate(assembled);
   return evaluation.score >= opts.bestScore - (opts.epsilon ?? 1e-9);
 }
@@ -298,9 +314,11 @@ export function buildEnrichedPrompt(args: {
     );
   }
 
-  const skillLines = (args.skills ?? [])
-    .filter((entry) => entry.reference)
-    .map((entry) => `- \`${entry.reference!.callPattern || entry.reference!.entrypoint}\`: ${entry.title}`);
+  const skillLines = (args.skills ?? []).flatMap((entry) => {
+    if (!entry.reference) return [];
+    const pattern = (entry.reference.callPattern || entry.reference.entrypoint).replace(/\n/g, " ");
+    return [`- \`${pattern}\`: ${entry.title.replace(/\n/g, " ")}`];
+  });
   if (skillLines.length > 0) {
     sections.push("\n\n## Available Skills (call them; do not reimplement)\n" + skillLines.join("\n"));
   }

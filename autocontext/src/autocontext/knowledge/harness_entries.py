@@ -23,7 +23,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 HarnessEntryKind = Literal["policy", "fact", "procedure", "delegation"]
 HarnessScope = Literal["run", "scenario_family", "global"]
@@ -57,6 +57,8 @@ class SkillReference(BaseModel):
     entrypoint: str = Field(min_length=1)
     source: str = Field(min_length=1)
     call_pattern: str = ""
+    # TS mirror names this field argumentsDescription; state files are
+    # per-language and not interchangeable, so the divergence is intentional.
     arguments: dict[str, str] = Field(default_factory=dict)
 
 
@@ -77,6 +79,12 @@ class HarnessEntry(BaseModel):
     version: int = 1
     reference: SkillReference | None = None
 
+    @model_validator(mode="after")
+    def _reference_requires_procedure(self) -> HarnessEntry:
+        if self.reference is not None and self.kind != "procedure":
+            raise ValueError("reference is only valid on procedure entries")
+        return self
+
 
 class HarnessEdit(BaseModel):
     """A single create/update/delete request against the store."""
@@ -89,6 +97,12 @@ class HarnessEdit(BaseModel):
     expected_outcome: str = ""
     reason: str = ""
     reference: SkillReference | None = None
+
+    @model_validator(mode="after")
+    def _reference_requires_procedure_edit(self) -> HarnessEdit:
+        if self.reference is not None and self.kind != "procedure":
+            raise ValueError("reference is only valid on procedure edits")
+        return self
 
 
 class AppliedHarnessEdit(BaseModel):
