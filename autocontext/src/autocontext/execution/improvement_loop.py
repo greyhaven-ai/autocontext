@@ -288,9 +288,7 @@ class ImprovementLoop:
                     reasoning="required target(s) missing from output: " + ", ".join(missing_targets),
                     dimension_scores={},
                 )
-                self._on_event(
-                    ImprovementLoopEvent(event="targets_missing", round=round_num, output=current_output)
-                )
+                self._on_event(ImprovementLoopEvent(event="targets_missing", round=round_num, output=current_output))
             elif cached_verdict is not None:
                 replayed_veto = cached_verdict.vetoed
                 result = AgentTaskResult(
@@ -299,9 +297,7 @@ class ImprovementLoop:
                     dimension_scores=dict(cached_verdict.dimension_scores),
                     evaluator_epoch=cached_verdict.evaluator_epoch,
                 )
-                self._on_event(
-                    ImprovementLoopEvent(event="verifier_cache_hit", round=round_num, score=cached_verdict.score)
-                )
+                self._on_event(ImprovementLoopEvent(event="verifier_cache_hit", round=round_num, score=cached_verdict.score))
             else:
                 result = self.task.evaluate_output(
                     current_output,
@@ -439,6 +435,12 @@ class ImprovementLoop:
                 dimension_trajectory[dim].append(dim_score)
 
             effective_score = result.score
+            # AC-902: the cache stores the ARTIFACT-INTRINSIC verdict. The
+            # fact-check penalty and veto zeroing depend only on the artifact
+            # and are folded in below; the delta-cap clamp depends on the
+            # previous round's baseline (evaluation context) and is re-derived
+            # at replay time instead of being frozen into the cache.
+            cacheable_score = result.score
 
             # Max score delta warning + optional cap (AC-750: compare against
             # the last non-vetoed score, not against post-veto zeros).
@@ -475,6 +477,7 @@ class ImprovementLoop:
                         annotation = " | Fact-check issues: " + "; ".join(issues)
                         round_result.reasoning += annotation
                     effective_score = max(0.0, effective_score * 0.9)
+                    cacheable_score = max(0.0, cacheable_score * 0.9)
                     round_result.score = effective_score
 
             # AC-733: external-command verifier hook. Override the judge score
@@ -497,6 +500,7 @@ class ImprovementLoop:
                         evaluator_epoch=result.evaluator_epoch,
                     )
                     effective_score = 0.0
+                    cacheable_score = 0.0
                     round_result.score = 0.0
                     verifier_vetoed = True
                     logger.info(
@@ -519,10 +523,10 @@ class ImprovementLoop:
                 verdict_cache.put(
                     fingerprint,
                     CachedVerdict(
-                        score=result.score,
+                        score=cacheable_score,
                         reasoning=round_result.reasoning,
                         dimension_scores=dict(result.dimension_scores),
-                        passed=effective_score >= self.quality_threshold,
+                        passed=cacheable_score >= self.quality_threshold,
                         vetoed=verifier_vetoed,
                         evaluator_epoch=result.evaluator_epoch,
                     ),

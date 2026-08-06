@@ -108,7 +108,9 @@ export class ImprovementLoop {
       // AC-902: byte-identical artifacts are never re-judged; a missing
       // required target fails closed for free.
       const fingerprint = contentFingerprint(currentOutput);
-      const missingTargets = this.#requiredTargets.filter((target) => !currentOutput.includes(target));
+      const missingTargets = this.#requiredTargets.filter(
+        (target) => !currentOutput.includes(target),
+      );
       const cachedVerdict = missingTargets.length > 0 ? undefined : verdictCache.get(fingerprint);
       const fromCache = cachedVerdict !== undefined;
       let result: AgentTaskResult;
@@ -250,6 +252,12 @@ export class ImprovementLoop {
         console.warn(scoreDeltaPolicy.warning);
       }
       let effectiveScore = scoreDeltaPolicy.effectiveScore;
+      // AC-902: the cache stores the ARTIFACT-INTRINSIC verdict. The
+      // fact-check penalty depends only on the artifact and is folded in
+      // below; the delta-cap clamp depends on the previous round's baseline
+      // (evaluation context) and is re-derived at replay time instead of
+      // being frozen into the cache.
+      let cacheableScore = result.score;
 
       if (effectiveScore > 0 && !fromCache && this.#task.verifyFacts) {
         this.#timeBudget?.check(`round ${roundNum} fact verification`);
@@ -261,18 +269,19 @@ export class ImprovementLoop {
             roundResult.reasoning += ` | Fact-check issues: ${issues.join("; ")}`;
           }
           effectiveScore = Math.max(0, effectiveScore * 0.9);
+          cacheableScore = Math.max(0, cacheableScore * 0.9);
           roundResult.score = effectiveScore;
         }
       }
 
       if (!fromCache && !failed && missingTargets.length === 0) {
-        // cached verdicts embed the delta-cap and fact-check adjustments, so
-        // a later reuse of this fingerprint replays the effective outcome
+        // cached verdicts embed the fact-check penalty (artifact-intrinsic);
+        // the delta-cap is contextual and re-derived on replay
         verdictCache.put(fingerprint, {
-          score: effectiveScore,
+          score: cacheableScore,
           reasoning: roundResult.reasoning,
           dimensionScores: { ...(result.dimensionScores ?? {}) },
-          passed: effectiveScore >= this.#qualityThreshold,
+          passed: cacheableScore >= this.#qualityThreshold,
           evaluatorEpoch: result.evaluatorEpoch ?? null,
         });
       }

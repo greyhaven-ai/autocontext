@@ -221,3 +221,99 @@ class TestReviewRegressions:
         # cached vetoed replay of A in round 3 is not a legitimate baseline
         assert result.best_score == 0.9
         assert result.best_output == "output C"
+
+
+class FactPenalizedOscillator(AgentTaskInterface):
+    """Judge scores 0.72; fact-check penalizes to 0.648, below the 0.7 gate."""
+
+    def __init__(self) -> None:
+        self.evaluate_calls: list[str] = []
+
+    def get_task_prompt(self, state):  # type: ignore[no-untyped-def]
+        return "task"
+
+    def evaluate_output(self, output, state, reference_context=None, required_concepts=None, **kwargs):  # type: ignore[no-untyped-def]
+        self.evaluate_calls.append(output)
+        return AgentTaskResult(score=0.72, reasoning="plausible", dimension_scores={})
+
+    def verify_facts(self, output, state):  # type: ignore[no-untyped-def]
+        return {"verified": False, "issues": ["claim X unsupported"]}
+
+    def revise_output(self, output, judge_result, state):  # type: ignore[no-untyped-def]
+        return "output B" if output == "output A" else "output A"
+
+    def describe_task(self):  # type: ignore[no-untyped-def]
+        return "test task"
+
+    def get_rubric(self):  # type: ignore[no-untyped-def]
+        return "rubric"
+
+    def initial_state(self):  # type: ignore[no-untyped-def]
+        return {}
+
+
+class CapTriggerTask(AgentTaskInterface):
+    """A scores 0.3, B scores 0.9; revisions cycle A -> B -> A -> B."""
+
+    def __init__(self) -> None:
+        self.evaluate_calls: list[str] = []
+
+    def get_task_prompt(self, state):  # type: ignore[no-untyped-def]
+        return "task"
+
+    def evaluate_output(self, output, state, reference_context=None, required_concepts=None, **kwargs):  # type: ignore[no-untyped-def]
+        self.evaluate_calls.append(output)
+        return AgentTaskResult(
+            score=0.3 if output == "output A" else 0.9,
+            reasoning="judged",
+            dimension_scores={},
+        )
+
+    def revise_output(self, output, judge_result, state):  # type: ignore[no-untyped-def]
+        return "output B" if output == "output A" else "output A"
+
+    def describe_task(self):  # type: ignore[no-untyped-def]
+        return "test task"
+
+    def get_rubric(self):  # type: ignore[no-untyped-def]
+        return "rubric"
+
+    def initial_state(self):  # type: ignore[no-untyped-def]
+        return {}
+
+
+class TestCachedScoreIsArtifactIntrinsic:
+    """AC-902 review fix: the cache stores the artifact-intrinsic verdict.
+
+    Fact-check penalty and veto zeroing depend only on the artifact and are
+    embedded; the delta-cap clamp depends on the previous round's baseline
+    (evaluation context) and must be re-derived at replay time, never frozen.
+    """
+
+    def test_fact_check_penalty_survives_cache_replay(self) -> None:
+        task = FactPenalizedOscillator()
+        loop = ImprovementLoop(task, max_rounds=6, quality_threshold=0.7)
+        result = loop.run("output A", {})
+        assert len(task.evaluate_calls) == 2
+        # a cached replay must not resurrect the unpenalized 0.72 judge score
+        # (which would clear the 0.7 gate the artifact honestly failed)
+        for round_result in result.rounds:
+            assert abs(round_result.score - 0.648) < 1e-9
+        assert abs(result.best_score - 0.648) < 1e-9
+
+    def test_cap_clamp_is_not_frozen_into_cache(self) -> None:
+        task = CapTriggerTask()
+        loop = ImprovementLoop(
+            task,
+            max_rounds=4,
+            quality_threshold=0.95,
+            cap_score_jumps=True,
+            max_score_delta=0.2,
+        )
+        result = loop.run("output A", {})
+        assert len(task.evaluate_calls) == 2
+        # round 2 judged B at 0.9 (effective capped to 0.5 against the 0.3
+        # baseline); round 4 replays B and must carry the intrinsic 0.9, not
+        # the frozen clamp from round 2's context
+        replayed_b = result.rounds[3]
+        assert abs(replayed_b.score - 0.9) < 1e-9

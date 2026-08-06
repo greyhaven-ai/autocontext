@@ -141,3 +141,55 @@ describe("review regressions (AC-902)", () => {
     expect(result.bestOutput).toBe("theorem foo := by simp");
   });
 });
+
+describe("cached score is artifact-intrinsic (AC-902 review fix)", () => {
+  // Fact-check penalty and veto zeroing depend only on the artifact and are
+  // embedded in the cached verdict; the delta-cap clamp depends on the
+  // previous round's baseline (evaluation context) and must be re-derived at
+  // replay time, never frozen into the cache.
+
+  function makeFactPenalizedTask(): ReturnType<typeof makeTask> {
+    const task = makeTask({
+      score: () => 0.72,
+      revise: (output) => (output === "output A" ? "output B" : "output A"),
+    });
+    (task as unknown as { verifyFacts: unknown }).verifyFacts = async () => ({
+      verified: false,
+      issues: ["claim X unsupported"],
+    });
+    return task;
+  }
+
+  it("fact-check penalty survives cache replay", async () => {
+    const task = makeFactPenalizedTask();
+    const loop = new ImprovementLoop({ task, maxRounds: 6, qualityThreshold: 0.7 });
+    const result = await loop.run({ initialOutput: "output A", state: {} });
+    expect(task.evaluateCalls.length).toBe(2);
+    // a cached replay must not resurrect the unpenalized 0.72 judge score
+    // (which would clear the 0.7 gate the artifact honestly failed)
+    for (const round of result.rounds) {
+      expect(round.score).toBeCloseTo(0.648, 9);
+    }
+    expect(result.bestScore).toBeCloseTo(0.648, 9);
+  });
+
+  it("cap clamp is not frozen into the cache", async () => {
+    const task = makeTask({
+      score: (output) => (output === "output A" ? 0.3 : 0.9),
+      revise: (output) => (output === "output A" ? "output B" : "output A"),
+    });
+    const loop = new ImprovementLoop({
+      task,
+      maxRounds: 4,
+      qualityThreshold: 0.95,
+      capScoreJumps: true,
+      maxScoreDelta: 0.2,
+    });
+    const result = await loop.run({ initialOutput: "output A", state: {} });
+    expect(task.evaluateCalls.length).toBe(2);
+    // round 2 judged B at 0.9 (effective capped to 0.5 against the 0.3
+    // baseline); round 4 replays B and must carry the intrinsic 0.9, not the
+    // frozen clamp from round 2's context
+    expect(result.rounds[3].score).toBeCloseTo(0.9, 9);
+  });
+});

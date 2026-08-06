@@ -15,5 +15,9 @@
   },
   "include": [],
   "exclude": ["node_modules", "dist"],
-  "files": ["tests/harness-entries.test.ts", "tests/agent-task-evolution.test.ts"]
+  "files": [
+    "tests/harness-entries.test.ts",
+    "tests/agent-task-evolution.test.ts",
+    "tests/verifier-cache.test.ts"
+  ]
 }
