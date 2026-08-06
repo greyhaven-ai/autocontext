@@ -304,7 +304,7 @@ class TestReviewHardening:
 class TestSkillReference:
     """AC-899: executable skill payload on procedure entries."""
 
-    def _reference(self) -> "SkillReference":
+    def _reference(self) -> SkillReference:
         return SkillReference(
             entrypoint="priority",
             source="def priority(v):\n    return sum(v)",
