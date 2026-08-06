@@ -24,6 +24,19 @@ export {
 export type { PendingPlaybookProvenance, PendingPlaybookView } from "./playbook-approval.js";
 export { CompactionLedgerStore } from "./compaction-ledger.js";
 export type { CompactionEntry } from "./compaction-ledger.js";
+export { HarnessEntryStore } from "./harness-entries.js";
+export type {
+  AppliedHarnessEdit,
+  HarnessApplyOpts,
+  HarnessEdit,
+  HarnessEditAction,
+  HarnessEntry,
+  HarnessEntryKind,
+  HarnessEntryStoreOpts,
+  HarnessOutcome,
+  HarnessRefinement,
+  HarnessScope,
+} from "./harness-entries.js";
 export {
   compactPromptComponent,
   compactPromptComponents,

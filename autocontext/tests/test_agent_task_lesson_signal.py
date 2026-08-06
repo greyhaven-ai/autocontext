@@ -82,3 +82,31 @@ class TestRunnerThreadsSignal:
         runner = AgentTaskEvolutionRunner(task_prompt="t", generate_fn=gen, evaluate_fn=ev)
         _, state = runner.run_with_state(1)
         assert "Hint: try a different family" in state.playbook
+
+
+class TestLessonEdit:
+    def test_hint_maps_to_policy_with_expected_outcome(self) -> None:
+        from autocontext.execution.agent_task_evolution import LessonSignal, lesson_edit
+        from autocontext.scenarios.agent_task import AgentTaskResult
+
+        result = AgentTaskResult(score=0.94, reasoning="close", dimension_scores={"size": 0.94})
+        signal = LessonSignal(hint="Demote a few CAP224 members", plateau=False, metrics={"delta": 0.0})
+        edit = lesson_edit(result, 5, signal=signal)
+        assert edit.action == "create" and edit.kind == "policy"
+        assert "Demote a few CAP224 members" in edit.content
+        assert "raise the best score above 0.94" in edit.expected_outcome
+        assert edit.reason == "lesson accumulated at generation 5"
+
+    def test_plateau_without_hint_maps_to_policy(self) -> None:
+        from autocontext.execution.agent_task_evolution import LessonSignal, lesson_edit
+
+        edit = lesson_edit(_judge(score=0.5, reasoning=""), 2, signal=LessonSignal(plateau=True))
+        assert edit.kind == "policy"
+        assert "structurally different approach" in edit.expected_outcome
+
+    def test_no_signal_maps_to_fact(self) -> None:
+        from autocontext.execution.agent_task_evolution import lesson_edit
+
+        edit = lesson_edit(_judge(score=0.7, reasoning="ok"), 1)
+        assert edit.kind == "fact" and edit.expected_outcome == ""
+        assert edit.title == "Generation 1 lesson (score 0.70)"

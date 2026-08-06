@@ -1,0 +1,19 @@
+{
+  // Opt-in type-checking for test files (npm run check:test-types).
+  //
+  // The main tsconfig excludes tests/, so vitest runs them without any type
+  // checking; a test can silently drift from the API it pins (AC-898 review
+  // found a scope-guardrail probe that omitted the required scope argument).
+  // The wider suite carries pre-existing type debt (branded types), so files
+  // opt in here instead of gating everything at once. Add new test files as
+  // they are written or brought clean.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": [],
+  "exclude": ["node_modules", "dist"],
+  "files": ["tests/harness-entries.test.ts", "tests/agent-task-evolution.test.ts"]
+}
