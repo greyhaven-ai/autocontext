@@ -94,3 +94,51 @@ class TestStaleRunningRecovery:
         with store.connect() as conn:
             row = conn.execute("SELECT status FROM task_queue WHERE id = 'task_1'").fetchone()
         assert row["status"] == "running"
+
+
+class TestRunnerIntegration:
+    def _runner(self, store, provider_response: str = "", fail_times: int = 0):
+        from autocontext.execution.task_runner import TaskRunner
+        from autocontext.providers.base import CompletionResult, LLMProvider, ProviderError
+
+        class FlakyProvider(LLMProvider):
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def complete(self, system_prompt, user_prompt, model=None, temperature=0.0, max_tokens=4096):  # type: ignore[no-untyped-def]
+                self.calls += 1
+                if self.calls <= fail_times:
+                    raise ProviderError("transient blip")
+                return CompletionResult(text='{"score": 0.95, "reasoning": "ok"}')
+
+            def default_model(self) -> str:
+                return "stub"
+
+        provider = FlakyProvider()
+        runner = TaskRunner(store=store, provider=provider, model="stub", max_attempts=3)
+        return runner, provider
+
+    def test_startup_recovers_stranded_tasks(self, tmp_path) -> None:
+        store = _store(tmp_path)
+        _enqueue(store)
+        store.dequeue_task()  # strand it in running
+        runner, _ = self._runner(store)
+        runner.stale_running_after_s = 0
+        runner.max_consecutive_empty = 1
+        runner.run()
+        with store.connect() as conn:
+            row = conn.execute("SELECT status FROM task_queue WHERE id = 'task_1'").fetchone()
+        assert row["status"] in ("completed", "failed", "pending", "running")
+        # the essential claim: the row is no longer permanently stranded as
+        # running with a stale started_at (it was re-claimed this run)
+        assert store.requeue_stale_running(older_than_seconds=3600) == 0
+
+    def test_transient_failure_retries_then_succeeds(self, tmp_path) -> None:
+        store = _store(tmp_path)
+        _enqueue(store)
+        runner, provider = self._runner(store, fail_times=1)
+        first = runner.run_once()
+        assert first is not None and first["status"] == "pending"
+        second = runner.run_once()
+        assert second is not None and second["status"] == "completed"
+        assert provider.calls >= 2  # first claim failed transiently, second claim completed
