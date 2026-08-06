@@ -5,7 +5,14 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -218,6 +225,7 @@ describe("outcome and render", () => {
     const created = store.apply([createEdit({ kind: "policy" })], { scope: "run" });
     const entryId = created.appliedEdits[0].entryId;
     const marked = store.markOutcome(entryId, "refuted", {
+      scope: "run",
       evidence: "score did not improve over 3 gens",
     });
     expect(marked.outcome).toBe("refuted");
@@ -228,7 +236,9 @@ describe("outcome and render", () => {
 
   it("markOutcome unknown id throws", () => {
     const store = new HarnessEntryStore(root);
-    expect(() => store.markOutcome("harness_nope", "confirmed", { scope: "run" })).toThrow(/unknown harness entry/);
+    expect(() => store.markOutcome("harness_nope", "confirmed", { scope: "run" })).toThrow(
+      /unknown harness entry/,
+    );
   });
 
   it("renderMarkdown groups by kind and hides refuted", () => {
@@ -272,10 +282,38 @@ describe("review hardening (parity with Python TestReviewHardening)", () => {
     expect(marked.outcome).toBe("refuted");
   });
 
+  it("markOutcome with a missing or unknown scope throws instead of bypassing the guardrail", () => {
+    const store = new HarnessEntryStore(root);
+    store.apply([createEdit({ kind: "policy", id: "harness_g", title: "g" })], { scope: "global" });
+    expect(() =>
+      // @ts-expect-error untyped callers can omit scope; the runtime check must catch it
+      store.markOutcome("harness_g", "refuted", { evidence: "no scope" }),
+    ).toThrow(/unknown harness scope/);
+    expect(() =>
+      // @ts-expect-error unknown scope strings must not compare as writable
+      store.markOutcome("harness_g", "refuted", { scope: "galaxy" }),
+    ).toThrow(/unknown harness scope/);
+    expect(store.entries()[0].outcome).toBe("pending");
+  });
+
+  it("apply with a missing or unknown scope throws instead of bypassing the guardrail", () => {
+    const store = new HarnessEntryStore(root);
+    store.apply([createEdit({ kind: "policy", id: "harness_g", title: "g" })], { scope: "global" });
+    const edit = createEdit({ action: "update", kind: "policy", id: "harness_g", content: "x" });
+    // @ts-expect-error untyped callers can omit scope; the runtime check must catch it
+    expect(() => store.apply([edit], {})).toThrow(/unknown harness scope/);
+    // @ts-expect-error unknown scope strings must not compare as writable
+    expect(() => store.apply([edit], { scope: "galaxy" })).toThrow(/unknown harness scope/);
+    expect(store.entries()[0].content).toBe("c");
+    expect(store.loadHistory()).toHaveLength(1);
+  });
+
   it("rollback of a rollback restores the original", () => {
     const store = new HarnessEntryStore(root);
     store.apply([createEdit({ id: "harness_a", content: "v1" })], { scope: "run" });
-    const batch = store.apply([createEdit({ action: "update", id: "harness_a", content: "v2" })], { scope: "run" });
+    const batch = store.apply([createEdit({ action: "update", id: "harness_a", content: "v2" })], {
+      scope: "run",
+    });
     const first = store.rollback(batch.id);
     expect(store.entries()[0].content).toBe("v1");
     store.rollback(first.id);
@@ -285,7 +323,10 @@ describe("review hardening (parity with Python TestReviewHardening)", () => {
   it("rollback preserves a marked outcome", () => {
     const store = new HarnessEntryStore(root);
     store.apply([createEdit({ kind: "policy", id: "harness_p", content: "v1" })], { scope: "run" });
-    const batch = store.apply([createEdit({ action: "update", kind: "policy", id: "harness_p", content: "v2" })], { scope: "run" });
+    const batch = store.apply(
+      [createEdit({ action: "update", kind: "policy", id: "harness_p", content: "v2" })],
+      { scope: "run" },
+    );
     store.markOutcome("harness_p", "refuted", { scope: "run", evidence: "did not deliver" });
     store.rollback(batch.id);
     const entry = store.entries()[0];
@@ -298,8 +339,12 @@ describe("review hardening (parity with Python TestReviewHardening)", () => {
   it("rollback lost-update semantics pinned", () => {
     const store = new HarnessEntryStore(root);
     store.apply([createEdit({ id: "harness_a", content: "v1" })], { scope: "run" });
-    const mid = store.apply([createEdit({ action: "update", id: "harness_a", content: "v2" })], { scope: "run" });
-    store.apply([createEdit({ action: "update", id: "harness_a", content: "v3" })], { scope: "run" });
+    const mid = store.apply([createEdit({ action: "update", id: "harness_a", content: "v2" })], {
+      scope: "run",
+    });
+    store.apply([createEdit({ action: "update", id: "harness_a", content: "v3" })], {
+      scope: "run",
+    });
     store.rollback(mid.id);
     expect(store.entries()[0].content).toBe("v1");
   });

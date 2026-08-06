@@ -17,7 +17,7 @@ function judge(
   reasoning: string,
   dimensionScores: Record<string, number> = {},
 ): AgentTaskResult {
-  return { score, reasoning, dimensionScores, internalRetries: 0 };
+  return { score, reasoning, dimensionScores, internalRetries: 0, evaluatorEpoch: null };
 }
 
 describe("accumulateLessons (parity with Python accumulate_lessons)", () => {
@@ -287,7 +287,11 @@ describe("async generate/evaluate (P2b: promise-based providers)", () => {
 
 describe("lessonEdit (parity with Python lesson_edit, AC-898)", () => {
   it("hint maps to policy with expected outcome", () => {
-    const signal: LessonSignal = { hint: "Demote a few CAP224 members", plateau: false, metrics: { delta: 0.0 } };
+    const signal: LessonSignal = {
+      hint: "Demote a few CAP224 members",
+      plateau: false,
+      metrics: { delta: 0.0 },
+    };
     const edit = lessonEdit(judge(0.94, "close", { size: 0.94 }), 5, signal);
     expect(edit.action).toBe("create");
     expect(edit.kind).toBe("policy");

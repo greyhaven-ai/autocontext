@@ -136,6 +136,18 @@ function isAction(value: unknown): value is HarnessEditAction {
   return ACTIONS.some((action) => action === value);
 }
 
+/**
+ * Runtime backstop for the compile-time HarnessScope type: untyped callers
+ * omitting or misspelling scope would otherwise compare as `number > undefined`
+ * (false) and silently bypass the scope guardrail.
+ */
+function requireScope(value: unknown): HarnessScope {
+  if (!isScope(value)) {
+    throw new Error(`unknown harness scope: ${String(value)}`);
+  }
+  return value;
+}
+
 function normalizeEdit(raw: unknown): HarnessEdit | undefined {
   if (!isRecord(raw)) return undefined;
   const { action, kind } = raw;
@@ -239,11 +251,12 @@ export class HarnessEntryStore {
    * refinement is not recorded in history.
    */
   apply(edits: HarnessEdit[], opts: HarnessApplyOpts): HarnessRefinement {
+    const scope = requireScope(opts.scope);
     const state = this.loadState();
-    const applied = edits.map((edit) => this.applyEdit(state, edit, opts.scope, opts.source ?? ""));
+    const applied = edits.map((edit) => this.applyEdit(state, edit, scope, opts.source ?? ""));
     const refinement: HarnessRefinement = {
       id: shortId("refinement"),
-      scope: opts.scope,
+      scope,
       summary: opts.summary ?? "",
       appliedEdits: applied,
       rollbackOf: opts.rollbackOf ?? "",
@@ -372,12 +385,13 @@ export class HarnessEntryStore {
     outcome: "confirmed" | "refuted",
     opts: { scope: HarnessScope; evidence?: string },
   ): HarnessEntry {
+    const scope = requireScope(opts.scope);
     const state = this.loadState();
     const existing = state.get(entryId);
     if (!existing) {
       throw new Error(`unknown harness entry: ${entryId}`);
     }
-    if (SCOPE_ORDER[existing.scope] > SCOPE_ORDER[opts.scope]) {
+    if (SCOPE_ORDER[existing.scope] > SCOPE_ORDER[scope]) {
       throw new Error(`scope_readonly: ${entryId} is ${existing.scope}-scoped`);
     }
     const updated: HarnessEntry = { ...existing, outcome };
