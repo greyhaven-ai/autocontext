@@ -46,6 +46,20 @@ def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
+class SkillReference(BaseModel):
+    """Executable payload for a procedure entry (AC-899).
+
+    A promoted skill carries real source code plus how to call it. Only the
+    call pattern belongs in prompts; the source goes into execution assembly.
+    """
+
+    language: Literal["python"] = "python"
+    entrypoint: str = Field(min_length=1)
+    source: str = Field(min_length=1)
+    call_pattern: str = ""
+    arguments: dict[str, str] = Field(default_factory=dict)
+
+
 class HarnessEntry(BaseModel):
     """One typed, scoped, versioned harness entry."""
 
@@ -61,6 +75,7 @@ class HarnessEntry(BaseModel):
     created_at: str = ""
     updated_at: str = ""
     version: int = 1
+    reference: SkillReference | None = None
 
 
 class HarnessEdit(BaseModel):
@@ -73,6 +88,7 @@ class HarnessEdit(BaseModel):
     content: str = ""
     expected_outcome: str = ""
     reason: str = ""
+    reference: SkillReference | None = None
 
 
 class AppliedHarnessEdit(BaseModel):
@@ -294,6 +310,7 @@ class HarnessEntryStore:
                 title=edit.title,
                 content=edit.content,
                 expected_outcome=edit.expected_outcome,
+                reference=edit.reference,
                 source=source,
                 created_at=now,
                 updated_at=now,
@@ -317,6 +334,8 @@ class HarnessEntryStore:
             updated.content = edit.content
         if edit.expected_outcome:
             updated.expected_outcome = edit.expected_outcome
+        if edit.reference is not None:
+            updated.reference = edit.reference
         updated.updated_at = self._now_iso()
         updated.version += 1
         state[edit.id] = updated

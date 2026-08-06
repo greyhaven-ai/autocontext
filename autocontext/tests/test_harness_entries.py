@@ -13,6 +13,7 @@ from autocontext.knowledge.harness_entries import (
     HarnessEntry,
     HarnessEntryStore,
     HarnessRefinement,
+    SkillReference,
 )
 
 
@@ -298,3 +299,57 @@ class TestReviewHardening:
         store.state_path.write_text(json.dumps(raw), encoding="utf-8")
         update = store.apply([HarnessEdit(action="update", kind="fact", id="harness_real", content="x")], scope="run")
         assert update.applied_edits[0].applied
+
+
+class TestSkillReference:
+    """AC-899: executable skill payload on procedure entries."""
+
+    def _reference(self) -> "SkillReference":
+        return SkillReference(
+            entrypoint="priority",
+            source="def priority(v):\n    return sum(v)",
+            call_pattern="priority(vector)",
+        )
+
+    def test_reference_validates(self) -> None:
+        ref = self._reference()
+        assert ref.language == "python"
+        with pytest.raises(ValidationError):
+            SkillReference(entrypoint="", source="x")
+        with pytest.raises(ValidationError):
+            SkillReference(entrypoint="f", source="")
+
+    def test_entry_and_edit_default_to_no_reference(self) -> None:
+        assert _entry().reference is None
+        assert HarnessEdit(action="create", kind="procedure").reference is None
+
+    def test_apply_carries_reference_and_round_trips(self, tmp_path) -> None:
+        store = HarnessEntryStore(tmp_path)
+        edit = HarnessEdit(
+            action="create",
+            kind="procedure",
+            id="harness_skill",
+            title="Promoted skill: priority",
+            content="call priority(vector)",
+            reference=self._reference(),
+        )
+        store.apply([edit], scope="scenario_family")
+        entry = HarnessEntryStore(tmp_path).entries(kind="procedure")[0]
+        assert entry.reference is not None
+        assert entry.reference.entrypoint == "priority"
+        assert "def priority" in entry.reference.source
+
+    def test_update_replaces_reference_when_provided(self, tmp_path) -> None:
+        store = HarnessEntryStore(tmp_path)
+        store.apply(
+            [HarnessEdit(action="create", kind="procedure", id="harness_s", title="t", content="c",
+                         reference=self._reference())],
+            scope="run",
+        )
+        new_ref = SkillReference(entrypoint="priority", source="def priority(v):\n    return max(v)")
+        store.apply(
+            [HarnessEdit(action="update", kind="procedure", id="harness_s", reference=new_ref)],
+            scope="run",
+        )
+        entry = store.entries()[0]
+        assert entry.reference is not None and "max(v)" in entry.reference.source
