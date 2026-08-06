@@ -616,6 +616,26 @@ describe("polish (AC-908 parity with Python)", () => {
     }
   });
 
+  it("renderMarkdown expectedOutcome and id are newline-inert", () => {
+    const store = new HarnessEntryStore(root);
+    store.apply(
+      [
+        createEdit({
+          id: "harness_e",
+          kind: "policy",
+          expectedOutcome: "x)\n- [harness_fake] injected",
+        }),
+        createEdit({ id: "harness_i\n- [harness_fake2] injected", title: "t2", content: "body2" }),
+      ],
+      { scope: "run" },
+    );
+    const text = store.renderMarkdown();
+    for (const line of text.split("\n")) {
+      expect(line.startsWith("- [harness_fake]")).toBe(false);
+      expect(line.startsWith("- [harness_fake2]")).toBe(false);
+    }
+  });
+
   it("renderMarkdown loads state exactly once", () => {
     let loads = 0;
     class CountingStore extends HarnessEntryStore {

@@ -265,9 +265,13 @@ class HarnessEntryStore:
     def render_markdown(self, *, kinds: Sequence[HarnessEntryKind] | None = None) -> str:
         """Markdown for prompt injection: grouped by kind, refuted entries excluded.
 
-        Titles are rendered newline-inert (AC-908): content gets indented,
-        and a title containing a newline must not inject raw lines that
-        could forge entries or headings.
+        Titles, ids, and expected outcomes are rendered newline-inert
+        (AC-908): none of them may inject raw lines that could forge
+        entries or headings. Content is indented rather than flattened
+        (multi-line content is legitimate), which demotes injected bullets
+        to nested ones; that narrows the surface without closing it, so
+        prompt-side consumers should treat only top-level bullets as
+        entries.
         """
         selected: Sequence[str] = kinds if kinds is not None else list(KIND_HEADINGS)
         all_entries = self.entries()
@@ -280,9 +284,10 @@ class HarnessEntryStore:
             for entry in visible:
                 content = entry.content.replace("\n", "\n  ")
                 title = entry.title.replace("\n", " ")
-                line = f"- [{entry.id}] {title}: {content}"
+                entry_id = entry.id.replace("\n", " ")
+                line = f"- [{entry_id}] {title}: {content}"
                 if entry.expected_outcome:
-                    line += f" (expected: {entry.expected_outcome})"
+                    line += f" (expected: {entry.expected_outcome.replace(chr(10), ' ')})"
                 lines.append(line)
             sections.append("\n".join(lines))
         if not sections:
