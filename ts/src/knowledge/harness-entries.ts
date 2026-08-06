@@ -118,14 +118,45 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+const ACTIONS: HarnessEditAction[] = ["create", "update", "delete"];
+
+function isKind(value: unknown): value is HarnessEntryKind {
+  return KINDS.some((kind) => kind === value);
+}
+
+function isScope(value: unknown): value is HarnessScope {
+  return SCOPES.some((scope) => scope === value);
+}
+
+function isOutcome(value: unknown): value is HarnessOutcome {
+  return OUTCOMES.some((outcome) => outcome === value);
+}
+
+function isAction(value: unknown): value is HarnessEditAction {
+  return ACTIONS.some((action) => action === value);
+}
+
+function normalizeEdit(raw: unknown): HarnessEdit | undefined {
+  if (!isRecord(raw)) return undefined;
+  const { action, kind } = raw;
+  if (!isAction(action) || !isKind(kind)) return undefined;
+  return {
+    action,
+    kind,
+    id: typeof raw.id === "string" ? raw.id : "",
+    title: typeof raw.title === "string" ? raw.title : "",
+    content: typeof raw.content === "string" ? raw.content : "",
+    expectedOutcome: typeof raw.expectedOutcome === "string" ? raw.expectedOutcome : "",
+    reason: typeof raw.reason === "string" ? raw.reason : "",
+  };
+}
+
 function normalizeEntry(raw: unknown): HarnessEntry | undefined {
   if (!isRecord(raw)) return undefined;
-  const kind = raw.kind as HarnessEntryKind;
-  const scope = raw.scope as HarnessScope;
-  const outcome = (raw.outcome ?? "pending") as HarnessOutcome;
+  const { kind, scope } = raw;
+  const outcome = raw.outcome ?? "pending";
   if (typeof raw.id !== "string" || raw.id === "") return undefined;
-  if (!KINDS.includes(kind) || !SCOPES.includes(scope) || !OUTCOMES.includes(outcome))
-    return undefined;
+  if (!isKind(kind) || !isScope(scope) || !isOutcome(outcome)) return undefined;
   if (typeof raw.title !== "string" || typeof raw.content !== "string") return undefined;
   return {
     id: raw.id,
@@ -145,13 +176,15 @@ function normalizeEntry(raw: unknown): HarnessEntry | undefined {
 
 function normalizeRefinement(raw: unknown): HarnessRefinement | undefined {
   if (!isRecord(raw)) return undefined;
-  const scope = raw.scope as HarnessScope;
-  if (typeof raw.id !== "string" || raw.id === "" || !SCOPES.includes(scope)) return undefined;
+  const { scope } = raw;
+  if (typeof raw.id !== "string" || raw.id === "" || !isScope(scope)) return undefined;
   if (!Array.isArray(raw.appliedEdits)) return undefined;
   const appliedEdits: AppliedHarnessEdit[] = [];
   for (const item of raw.appliedEdits) {
     if (!isRecord(item) || typeof item.entryId !== "string" || typeof item.applied !== "boolean")
       return undefined;
+    const edit = normalizeEdit(item.edit);
+    if (!edit) return undefined;
     let before: HarnessEntry | undefined;
     let after: HarnessEntry | undefined;
     if (item.before !== undefined && item.before !== null) {
@@ -162,7 +195,14 @@ function normalizeRefinement(raw: unknown): HarnessRefinement | undefined {
       after = normalizeEntry(item.after);
       if (!after) return undefined;
     }
-    appliedEdits.push({ ...(item as unknown as AppliedHarnessEdit), before, after });
+    appliedEdits.push({
+      edit,
+      entryId: item.entryId,
+      applied: item.applied,
+      error: typeof item.error === "string" ? item.error : "",
+      before,
+      after,
+    });
   }
   return {
     id: raw.id,
