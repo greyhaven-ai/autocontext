@@ -111,13 +111,17 @@ class InterpreterWorkspace:
             return self._worker.run_code(ReplCommand(code=code))
         except CodeTimeout as exc:
             return ReplResult(stdout="", error=f"CodeTimeout: {exc}", answer={})
-        except SystemExit as exc:
+        except KeyboardInterrupt:
+            # Deliberately NOT contained: a genuine operator signal, not
+            # candidate behavior.
+            raise
+        except BaseException as exc:  # noqa: BLE001
             # ReplWorker's inner handler catches only Exception, so a
-            # candidate's `raise SystemExit(...)` would otherwise escape and
-            # kill the owning process (TaskRunner catches Exception only).
-            # KeyboardInterrupt is deliberately NOT contained: that is a
-            # genuine operator signal, not candidate behavior.
-            return ReplResult(stdout="", error=f"SystemExit: {exc}", answer={})
+            # candidate's `raise SystemExit(...)` or `raise BaseException(...)`
+            # would otherwise escape and kill the owning process (TaskRunner
+            # catches Exception only). Containment of every non-operator
+            # escape is the point of this handler.
+            return ReplResult(stdout="", error=f"{type(exc).__name__}: {exc}", answer={})
 
     def variables(self) -> list[WorkspaceVariable]:
         """Describe user variables (never their full contents), sorted by name."""

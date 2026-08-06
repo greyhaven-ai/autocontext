@@ -142,6 +142,17 @@ def test_system_exit_from_candidate_is_contained() -> None:
     assert after.error is None and "2" in after.stdout
 
 
+def test_base_exception_from_candidate_is_contained() -> None:
+    """`raise BaseException` needs no builtins and previously escaped run(),
+    the same daemon-killing path as the SystemExit case (TaskRunner catches
+    Exception only)."""
+    ws = InterpreterWorkspace()
+    result = ws.run("raise BaseException('boom')")
+    assert result.error is not None and "BaseException" in result.error
+    after = ws.run("1 + 1")
+    assert after.error is None and "2" in after.stdout
+
+
 def test_seed_values_do_not_alias_caller_state() -> None:
     caller_pool = [1, 2, 3]
     ws = InterpreterWorkspace(seed={"pool": caller_pool})
