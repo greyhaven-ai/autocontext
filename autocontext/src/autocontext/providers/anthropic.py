@@ -54,6 +54,7 @@ class AnthropicProvider(LLMProvider):
             text=text,
             model=model_id,
             usage=usage,
+            stop_reason=getattr(response, "stop_reason", None),
         )
 
     def default_model(self) -> str:
