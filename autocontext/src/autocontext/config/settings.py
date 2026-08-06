@@ -310,6 +310,22 @@ class AppSettings(BaseModel):
     judge_samples: int = Field(default=1, ge=1)
     judge_temperature: float = Field(default=0.0, ge=0.0)
     judge_max_tokens: int = Field(default=4096, ge=256)
+
+    # AC-905: per-role output-token budgets. Defaults preserve the previous
+    # hard-coded literals, except the translator floor which rises from
+    # 400/200 to 1024 (strategy JSON at 200 tokens truncated routinely and
+    # the failure was silently swallowed upstream before AC-904).
+    competitor_max_tokens: int = Field(default=800, ge=256)
+    translator_max_tokens: int = Field(default=1024, ge=256)
+    analyst_max_tokens: int = Field(default=1200, ge=256)
+    coach_max_tokens: int = Field(default=2000, ge=256)
+    architect_max_tokens: int = Field(default=1600, ge=256)
+    curator_max_tokens: int = Field(default=3000, ge=256)
+    curator_rating_max_tokens: int = Field(default=1200, ge=256)
+    curator_consolidation_max_tokens: int = Field(default=4000, ge=256)
+    skeptic_max_tokens: int = Field(default=2000, ge=256)
+    scenario_designer_max_tokens: int = Field(default=3000, ge=256)
+    train_codegen_max_tokens: int = Field(default=8000, ge=256)
     # Multi-model provider settings.
     # Default "auto" (AC-586): inherit the judge provider from the effective
     # runtime provider (role override first, then ``agent_provider``) when it's
