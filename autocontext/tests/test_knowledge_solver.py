@@ -785,7 +785,7 @@ class TestSolveLLMFn:
                 captured.update(kwargs)
                 return _Response()
 
-        llm_fn = _llm_fn_from_client(_Client(), "architect-model")
+        llm_fn = _llm_fn_from_client(_Client(), "architect-model", 1200)
         result = llm_fn("system prompt", "user prompt")
 
         assert result == "ok"

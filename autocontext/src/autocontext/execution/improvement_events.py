@@ -29,6 +29,12 @@ class ImprovementLoopEvent:
       Lets consumers salvage near-miss outputs from verifier-vetoed rounds
       (AC-753).
     - `judge_done`: round, score
+    - `verifier_cache_hit`: round, score -- the artifact's fingerprint was
+      already evaluated this run; the cached verdict is replayed and neither
+      the judge nor the external verifier runs (AC-902).
+    - `targets_missing`: round, output -- a required target string is absent
+      from the artifact; the round fails closed without a judge call
+      (AC-902).
     - `verifier_done`: round, verifier_ok, verifier_exit_code
     - `checkpoint_done`: round, checkpoint_ok, checkpoint_exit_code -- the
       external `--checkpoint-cmd` ran after the round and either succeeded

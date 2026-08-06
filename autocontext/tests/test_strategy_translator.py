@@ -124,7 +124,7 @@ class TestStrategyTranslator:
         assert "mobility_weight" in call_args.prompt
         assert call_args.role == "translator"
         assert call_args.temperature == 0.0
-        assert call_args.max_tokens == 200
+        assert call_args.max_tokens == 1024  # AC-905 floor raise
 
     def test_translate_strips_markdown_fences(self) -> None:
         """Translator strips markdown code fences wrapping JSON."""
@@ -196,4 +196,5 @@ class TestStrategyTranslator:
         assert result["actions"][0]["name"] == "review_request"
         assert "Include only numeric values" not in prompt
         assert "Preserve strings, arrays, and nested objects" in prompt
-        assert task.max_tokens == 400
+        # AC-905: translator floor raised from 400/200 to 1024
+        assert task.max_tokens == 1024

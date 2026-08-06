@@ -18,9 +18,12 @@ from autocontext.strategy_interface import is_action_plan_interface
 class StrategyTranslator:
     """Single-purpose agent that converts raw competitor text into a validated JSON strategy dict."""
 
-    def __init__(self, runtime: SubagentRuntime, model: str) -> None:
+    def __init__(self, runtime: SubagentRuntime, model: str, max_tokens: int = 1024) -> None:
         self.runtime = runtime
         self.model = model
+        # AC-905: the old 400/200 budgets were the tightest in the codebase
+        # and routinely truncated strategy JSON; the floor is now 1024.
+        self.max_tokens = max_tokens
 
     @staticmethod
     def _strip_fences(text: str) -> str:
@@ -57,7 +60,7 @@ class StrategyTranslator:
                 role="translator",
                 model=self.model,
                 prompt=prompt,
-                max_tokens=400 if action_plan_interface else 200,
+                max_tokens=self.max_tokens,
                 temperature=0.0,
             )
         )

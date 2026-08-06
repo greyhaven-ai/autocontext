@@ -393,7 +393,7 @@ class TrainingRunner:
         response = client.generate(
             model=self._resolve_agent_model(),
             prompt=prompt,
-            max_tokens=8000,
+            max_tokens=load_settings().train_codegen_max_tokens,
             temperature=0.2,
             role="training_agent",
         )

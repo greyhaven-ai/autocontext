@@ -115,9 +115,19 @@ _CURATOR_ANALYST_RATING_CONSTRAINT = (
 
 
 class KnowledgeCurator:
-    def __init__(self, runtime: SubagentRuntime, model: str) -> None:
+    def __init__(
+        self,
+        runtime: SubagentRuntime,
+        model: str,
+        max_tokens: int = 3000,
+        rating_max_tokens: int = 1200,
+        consolidation_max_tokens: int = 4000,
+    ) -> None:
         self.runtime = runtime
         self.model = model
+        self.max_tokens = max_tokens
+        self.rating_max_tokens = rating_max_tokens
+        self.consolidation_max_tokens = consolidation_max_tokens
 
     def assess_playbook_quality(
         self,
@@ -163,7 +173,7 @@ class KnowledgeCurator:
                 role="curator",
                 model=self.model,
                 prompt=prompt,
-                max_tokens=3000,
+                max_tokens=self.max_tokens,
                 temperature=0.3,
             )
         )
@@ -197,7 +207,7 @@ class KnowledgeCurator:
                 role="curator",
                 model=self.model,
                 prompt=prompt,
-                max_tokens=1200,
+                max_tokens=self.rating_max_tokens,
                 temperature=0.2,
             )
         )
@@ -242,7 +252,7 @@ class KnowledgeCurator:
                 role="curator",
                 model=self.model,
                 prompt=prompt,
-                max_tokens=4000,
+                max_tokens=self.consolidation_max_tokens,
                 temperature=0.3,
             )
         )

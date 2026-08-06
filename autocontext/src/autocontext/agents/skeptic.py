@@ -66,9 +66,10 @@ _SKEPTIC_CONSTRAINT = (
 
 
 class SkepticAgent:
-    def __init__(self, runtime: SubagentRuntime, model: str) -> None:
+    def __init__(self, runtime: SubagentRuntime, model: str, max_tokens: int = 2000) -> None:
         self.runtime = runtime
         self.model = model
+        self.max_tokens = max_tokens
 
     def review(
         self,
@@ -107,7 +108,7 @@ class SkepticAgent:
                 role="skeptic",
                 model=self.model,
                 prompt=prompt,
-                max_tokens=2000,
+                max_tokens=self.max_tokens,
                 temperature=0.4,
             )
         )

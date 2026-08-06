@@ -5,6 +5,7 @@ from __future__ import annotations
 import anthropic
 
 from autocontext.providers.base import CompletionResult, LLMProvider, ProviderError
+from autocontext.providers.token_caps import clamp_output_tokens
 
 
 class AnthropicProvider(LLMProvider):
@@ -30,7 +31,7 @@ class AnthropicProvider(LLMProvider):
         try:
             response = self._client.messages.create(
                 model=model_id,
-                max_tokens=max_tokens,
+                max_tokens=clamp_output_tokens(max_tokens, model_id),
                 temperature=temperature,
                 system=system_prompt,
                 messages=[{"role": "user", "content": user_prompt}],

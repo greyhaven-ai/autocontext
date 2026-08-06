@@ -9,9 +9,10 @@ logger = logging.getLogger(__name__)
 
 
 class CompetitorRunner:
-    def __init__(self, runtime: SubagentRuntime, model: str) -> None:
+    def __init__(self, runtime: SubagentRuntime, model: str, max_tokens: int = 800) -> None:
         self.runtime = runtime
         self.model = model
+        self.max_tokens = max_tokens
 
     def run(
         self,
@@ -29,7 +30,7 @@ class CompetitorRunner:
                 role="competitor",
                 model=self.model,
                 prompt=final_prompt,
-                max_tokens=800,
+                max_tokens=self.max_tokens,
                 temperature=0.2 if temperature is None else temperature,
                 system=system,
             )

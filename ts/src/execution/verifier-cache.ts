@@ -1,0 +1,70 @@
+/**
+ * Content-fingerprint cache for verifier and judge verdicts (AC-902).
+ * Mirrors Python's autocontext/execution/verifier_cache.py.
+ *
+ * Re-evaluating a byte-identical artifact burns compute to learn nothing;
+ * this is the core seam for prime-agent's "never rerun a failed gate on an
+ * unchanged workspace" discipline. The cache is loop-lifetime by design;
+ * durable caching belongs to the adapter layer consuming this seam.
+ */
+
+import { createHash } from "node:crypto";
+
+/**
+ * Stable identity of a verified artifact. `salt` distinguishes evaluation
+ * configurations (toolchain pin, rubric id) so the same text under a
+ * different gate is a different fingerprint.
+ */
+export function contentFingerprint(artifact: string, opts: { salt?: string } = {}): string {
+  const digest = createHash("sha256");
+  digest.update(opts.salt ?? "");
+  digest.update("\0");
+  digest.update(artifact);
+  return digest.digest("hex");
+}
+
+/** One remembered evaluation outcome for a fingerprint. */
+export interface CachedVerdict {
+  score: number;
+  reasoning: string;
+  dimensionScores: Record<string, number>;
+  passed: boolean;
+  evaluatorEpoch?: string | null;
+}
+
+export interface VerifierCacheStats {
+  hits: number;
+  misses: number;
+  entries: number;
+}
+
+/** In-memory fingerprint -> verdict cache with hit/miss accounting. */
+export class EvaluationCache {
+  #entries = new Map<string, CachedVerdict>();
+  #hits = 0;
+  #misses = 0;
+
+  get(fingerprint: string): CachedVerdict | undefined {
+    const cached = this.#entries.get(fingerprint);
+    if (cached === undefined) {
+      this.#misses += 1;
+      return undefined;
+    }
+    this.#hits += 1;
+    return cached;
+  }
+
+  put(fingerprint: string, verdict: CachedVerdict): void {
+    this.#entries.set(fingerprint, verdict);
+  }
+
+  /** True when this exact artifact already failed: re-running learns nothing. */
+  unchangedFailure(fingerprint: string): boolean {
+    const cached = this.#entries.get(fingerprint);
+    return cached !== undefined && !cached.passed;
+  }
+
+  stats(): VerifierCacheStats {
+    return { hits: this.#hits, misses: this.#misses, entries: this.#entries.size };
+  }
+}
