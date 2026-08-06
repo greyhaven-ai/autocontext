@@ -5,6 +5,12 @@
  * maintained at behavioral parity with the Python module. The framework's
  * native multi-generation loop for agent tasks: lesson accumulation,
  * best-tracking, and enriched prompts carried across generations.
+ *
+ * AC-901 note: the persistent interpreter workspace substrate
+ * (`autocontext/execution/interpreter_workspace.py`) is Python-only runner
+ * infrastructure; ts/src has no code-execution engine. This module mirrors
+ * only the prompt/data layer (workspace variable descriptions and the
+ * workspace prompt section) so cross-language artifacts stay consistent.
  */
 
 import { compactPromptComponent } from "../knowledge/semantic-compaction.js";
@@ -265,7 +271,9 @@ export function proposeSkillPromotion(
 export async function validateSkillPromotion(
   edit: HarnessEdit,
   slotHarness: FunctionSlot,
-  evaluate: (program: string) => AgentTaskGenerationEvaluation | Promise<AgentTaskGenerationEvaluation>,
+  evaluate: (
+    program: string,
+  ) => AgentTaskGenerationEvaluation | Promise<AgentTaskGenerationEvaluation>,
   opts: { bestScore: number; skills?: string[]; epsilon?: number },
 ): Promise<boolean> {
   if (!edit.reference) return false;
@@ -274,12 +282,35 @@ export async function validateSkillPromotion(
   return evaluation.score >= opts.bestScore - (opts.epsilon ?? 1e-9);
 }
 
+/** Prompt-facing description of one workspace variable (AC-901). */
+export interface WorkspaceVariable {
+  name: string;
+  typeName: string;
+  size: number | null;
+  summary: string;
+}
+
+/** Render workspace variables as prompt-ready markdown lines (AC-901). */
+export function renderWorkspaceSummary(vars: WorkspaceVariable[], maxVars = 20): string {
+  const lines = vars.slice(0, maxVars).map((v) => {
+    const sizePart = v.size !== null ? `, size ${v.size}` : "";
+    return `- ${v.name} (${v.typeName}${sizePart}): ${v.summary}`;
+  });
+  if (vars.length > maxVars) {
+    lines.push(`... and ${vars.length - maxVars} more`);
+  }
+  return lines.join("\n");
+}
+
 /**
  * Enrich a task prompt with cross-generation context.
  *
  * In function-slot mode (`harness` provided), the fixed harness is shown once
  * as stable context so the model knows the contract it writes the slot
  * against. The evolved slot itself is carried via `bestOutput`.
+ *
+ * `workspaceSummary` describes persistent interpreter variables by name
+ * (AC-901); contents stay in the workspace, never in the prompt.
  */
 export function buildEnrichedPrompt(args: {
   taskPrompt: string;
@@ -289,6 +320,7 @@ export function buildEnrichedPrompt(args: {
   bestScore: number;
   harness?: string;
   skills?: HarnessEntry[];
+  workspaceSummary?: string;
 }): string {
   const playbook = compactPromptComponent("agent_task_playbook", args.playbook);
   const bestOutput = compactPromptComponent("agent_task_best_output", args.bestOutput);
@@ -320,7 +352,17 @@ export function buildEnrichedPrompt(args: {
     return [`- \`${pattern}\`: ${entry.title.replace(/\n/g, " ")}`];
   });
   if (skillLines.length > 0) {
-    sections.push("\n\n## Available Skills (call them; do not reimplement)\n" + skillLines.join("\n"));
+    sections.push(
+      "\n\n## Available Skills (call them; do not reimplement)\n" + skillLines.join("\n"),
+    );
+  }
+
+  if (args.workspaceSummary) {
+    sections.push(
+      "\n\n## Workspace (persistent interpreter variables; reference them by name, " +
+        "contents are not inlined)\n" +
+        args.workspaceSummary,
+    );
   }
 
   if (playbook || bestOutput) {

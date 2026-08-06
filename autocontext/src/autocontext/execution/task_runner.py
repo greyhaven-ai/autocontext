@@ -13,6 +13,7 @@ import signal
 import time
 import traceback
 import uuid
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -36,6 +37,7 @@ from autocontext.execution.agent_task_evolution import (
 from autocontext.execution.evaluator_epoch_registry import observe_epoch_quarantined
 from autocontext.execution.evaluator_guardrail import evaluate_evaluator_guardrail
 from autocontext.execution.improvement_loop import ImprovementLoop, ImprovementResult
+from autocontext.execution.interpreter_workspace import InterpreterWorkspace
 from autocontext.execution.judge import LLMJudge
 from autocontext.execution.queued_task_browser_context import (
     QueuedTaskBrowserContextService,
@@ -102,6 +104,25 @@ def _serialize_result(
     if result.metadata:
         data["optimizer_metadata"] = result.metadata
     return json.dumps(data)
+
+
+def _workspace_factory_from_settings(
+    settings: AppSettings | None,
+) -> Callable[[], InterpreterWorkspace] | None:
+    """Build a workspace factory when the opt-in flag is set (AC-901).
+
+    Substrate-only wiring: the queued-task evaluate path (ImprovementLoop +
+    LLM judge) does not execute candidate code, so it passes no
+    workspace_evaluate_fn and the workspace stays empty there. Code-mode
+    consumers construct AgentTaskEvolutionRunner directly with a
+    workspace_evaluate_fn (see tests/test_workspace_benchmark.py and
+    examples/workspace_benchmark.py); wiring a code-executing queued-task
+    path is deferred follow-up work, noted on the Linear issue.
+    """
+    if settings is None or not settings.workspace_interpreter_enabled:
+        return None
+    timeout = settings.workspace_interpreter_timeout_seconds
+    return lambda: InterpreterWorkspace(timeout_seconds=timeout)
 
 
 def _serialize_evolution_result(
@@ -620,6 +641,7 @@ class TaskRunner:
             evaluate_fn=evaluate_fn,
             initial_output=initial_output,
             task_name=spec_name,
+            workspace_factory=_workspace_factory_from_settings(self.settings),
         )
         trajectory, state = evolution.run_with_state(config.generations)
 

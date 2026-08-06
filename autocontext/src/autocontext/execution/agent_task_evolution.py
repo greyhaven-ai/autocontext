@@ -9,6 +9,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from autocontext.execution.interpreter_workspace import InterpreterWorkspace
 from autocontext.knowledge.compaction import compact_prompt_component
 from autocontext.knowledge.harness_entries import HarnessEdit, HarnessEntry, SkillReference
 from autocontext.scenarios.agent_task import AgentTaskResult
@@ -227,12 +228,16 @@ def build_enriched_prompt(
     best_score: float,
     harness: str = "",
     skills: Sequence[HarnessEntry] = (),
+    workspace_summary: str = "",
 ) -> str:
     """Enrich a task prompt with cross-generation context.
 
     In function-slot mode (``harness`` provided), the fixed harness is shown
     once as stable context so the model knows the contract it writes the slot
     against. The evolved slot itself is carried via ``best_output``.
+
+    ``workspace_summary`` describes persistent interpreter variables by name
+    (AC-901); contents stay in the workspace, never in the prompt.
     """
     playbook = compact_prompt_component("agent_task_playbook", playbook)
     best_output = compact_prompt_component("agent_task_best_output", best_output)
@@ -258,8 +263,12 @@ def build_enriched_prompt(
         if entry.reference is not None
     ]
     if skill_lines:
+        sections.append("\n\n## Available Skills (call them; do not reimplement)\n" + "\n".join(skill_lines))
+
+    if workspace_summary:
         sections.append(
-            "\n\n## Available Skills (call them; do not reimplement)\n" + "\n".join(skill_lines)
+            "\n\n## Workspace (persistent interpreter variables; reference them by name, "
+            "contents are not inlined)\n" + workspace_summary
         )
 
     if playbook or best_output:
@@ -318,6 +327,29 @@ def migrate_states(
         else:
             migrated.append(s)
     return migrated
+
+
+def migrate_workspaces(
+    states: list[AgentTaskGenerationState],
+    migrated: list[AgentTaskGenerationState],
+    workspaces: Sequence[InterpreterWorkspace],
+) -> None:
+    """Carry the champion's workspace into islands that adopted its output.
+
+    ``states``/``migrated`` are the before/after of :func:`migrate_states`;
+    an island whose best score rose during migration adopted the champion's
+    output, so it also adopts a deep copy of the champion's variables. The
+    champion (and any tied island) keeps its own workspace untouched.
+    """
+    if not states or not workspaces:
+        return
+    if len(workspaces) != len(states):
+        raise ValueError(f"expected {len(states)} workspaces, got {len(workspaces)}")
+    champion_index = max(range(len(states)), key=lambda i: states[i].best_score)
+    snapshot = workspaces[champion_index].snapshot()
+    for i, (before, after) in enumerate(zip(states, migrated, strict=True)):
+        if after.best_score > before.best_score:
+            workspaces[i].restore(snapshot)
 
 
 class AgentTaskTrajectory(BaseModel):
@@ -407,6 +439,7 @@ class ScenarioFamilyGuide:
 
 GenerateFn = Callable[[str, int], str]
 EvaluateFn = Callable[[str, int], AgentTaskGenerationEvaluation]
+WorkspaceEvaluateFn = Callable[[str, int, InterpreterWorkspace], AgentTaskGenerationEvaluation]
 
 
 class AgentTaskEvolutionRunner:
@@ -420,19 +453,31 @@ class AgentTaskEvolutionRunner:
         initial_output: str = "",
         task_name: str = "agent_task",
         slot: FunctionSlot | None = None,
+        workspace_factory: Callable[[], InterpreterWorkspace] | None = None,
+        workspace_evaluate_fn: WorkspaceEvaluateFn | None = None,
     ) -> None:
+        if workspace_evaluate_fn is not None and workspace_factory is None:
+            raise ValueError("workspace_evaluate_fn requires a workspace_factory")
         self._task_prompt = task_prompt
         self._generate_fn = generate_fn
         self._evaluate_fn = evaluate_fn
         self._initial_output = initial_output
         self._task_name = task_name
         self._slot = slot
+        self._workspace_factory = workspace_factory
+        self._workspace_evaluate_fn = workspace_evaluate_fn
 
     def run_generation(
         self,
         state: AgentTaskGenerationState,
+        workspace: InterpreterWorkspace | None = None,
     ) -> AgentTaskGenerationState:
-        """Run one generation: generate, evaluate, accumulate lessons, advance state."""
+        """Run one generation: generate, evaluate, accumulate lessons, advance state.
+
+        When a ``workspace`` is provided its variable listing (names, never
+        contents) is rendered into the prompt, and evaluation goes through
+        ``workspace_evaluate_fn`` when one was configured (AC-901).
+        """
         prompt = build_enriched_prompt(
             task_prompt=self._task_prompt,
             playbook=state.playbook,
@@ -440,6 +485,7 @@ class AgentTaskEvolutionRunner:
             best_output=state.best_output,
             best_score=state.best_score,
             harness=self._slot.harness if self._slot else "",
+            workspace_summary=workspace.render_markdown() if workspace is not None else "",
         )
 
         if state.generation == 0 and self._initial_output:
@@ -452,11 +498,18 @@ class AgentTaskEvolutionRunner:
         if self._slot is not None:
             # Function-slot mode: evaluate the assembled harness+slot, but
             # carry only the small slot forward (no whole-program bloat).
-            assembled = self._slot.assemble(candidate_output)
-            evaluation = self._evaluate_fn(assembled, state.generation)
+            program = self._slot.assemble(candidate_output)
+        else:
+            program = candidate_output
+
+        if workspace is not None and self._workspace_evaluate_fn is not None:
+            evaluation = self._workspace_evaluate_fn(program, state.generation, workspace)
+        else:
+            evaluation = self._evaluate_fn(program, state.generation)
+
+        if self._slot is not None:
             evaluated_output = candidate_output
         else:
-            evaluation = self._evaluate_fn(candidate_output, state.generation)
             evaluated_output = evaluation.output.strip() or candidate_output
 
         judge_result = AgentTaskResult(
@@ -492,6 +545,11 @@ class AgentTaskEvolutionRunner:
         metadata["generation_round_counts"] = generation_round_counts
         metadata["met_threshold_history"] = met_threshold_history
 
+        if workspace is not None:
+            workspace_variables = list(metadata.get("workspace_variables", []))
+            workspace_variables.append([f"{v.name}:{v.type_name}" for v in workspace.variables()])
+            metadata["workspace_variables"] = workspace_variables
+
         return AgentTaskGenerationState(
             generation=state.generation + 1,
             best_output=new_best_output,
@@ -517,8 +575,13 @@ class AgentTaskEvolutionRunner:
             metadata={},
         )
 
-        for _ in range(num_generations):
-            state = self.run_generation(state)
+        workspace = self._workspace_factory() if self._workspace_factory is not None else None
+        try:
+            for _ in range(num_generations):
+                state = self.run_generation(state, workspace=workspace)
+        finally:
+            if workspace is not None:
+                workspace.close()
 
         trajectory = AgentTaskTrajectory(
             task_name=self._task_name,
@@ -575,12 +638,31 @@ class AgentTaskEvolutionRunner:
             for _ in range(num_islands)
         ]
 
+        # Created inside the try so a factory failure mid-list still closes
+        # the workspaces already created.
+        created_workspaces: list[InterpreterWorkspace] = []
+        workspaces: list[InterpreterWorkspace] | None = None
+
         best_per_gen: list[float] = []
-        for gen in range(num_generations):
-            states = [self.run_generation(s) for s in states]
-            best_per_gen.append(max(s.best_score for s in states))
-            if migrate_every and (gen + 1) % migrate_every == 0:
-                states = migrate_states(states)
+        try:
+            if self._workspace_factory is not None:
+                for _ in range(num_islands):
+                    created_workspaces.append(self._workspace_factory())
+                workspaces = created_workspaces
+            for gen in range(num_generations):
+                if workspaces is None:
+                    states = [self.run_generation(s) for s in states]
+                else:
+                    states = [self.run_generation(s, workspace=ws) for s, ws in zip(states, workspaces, strict=True)]
+                best_per_gen.append(max(s.best_score for s in states))
+                if migrate_every and (gen + 1) % migrate_every == 0:
+                    migrated = migrate_states(states)
+                    if workspaces is not None:
+                        migrate_workspaces(states, migrated, workspaces)
+                    states = migrated
+        finally:
+            for ws in created_workspaces:
+                ws.close()
 
         champion = max(states, key=lambda s: s.best_score)
         return AgentTaskTrajectory(
