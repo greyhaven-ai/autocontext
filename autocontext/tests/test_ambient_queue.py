@@ -29,11 +29,12 @@ def test_fail_returns_job_to_pending_with_attempts(tmp_path: Path) -> None:
     queue = AmbientQueue(tmp_path / "ambient.sqlite3")
     queue.enqueue("curate", "rebuild", {})
     job = queue.claim("curate")
-    assert job is not None and job.attempts == 0
+    # AC-906: attempts is burned at claim so crash-loops reach the cap
+    assert job is not None and job.attempts == 1
     queue.fail(job.job_id, "boom")
     retried = queue.claim("curate")
     assert retried is not None
-    assert retried.attempts == 1
+    assert retried.attempts == 2
 
 
 def test_queue_survives_reopen(tmp_path: Path) -> None:
@@ -84,3 +85,18 @@ def test_fail_dead_letters_at_max_attempts(tmp_path: Path) -> None:
     assert queue.depth("train") == 0
     assert queue.dead_letter_count() == 1
     assert queue.claim("train") is None
+
+
+def test_crash_loop_reaches_dead_letter_without_fail(tmp_path: Path) -> None:
+    """AC-906: a handler that kills the process never calls fail(); claims
+    alone must burn the budget so requeue+reclaim cycles cannot loop forever."""
+    queue = AmbientQueue(tmp_path / "q.sqlite3")
+    queue.enqueue("train", "run", {})
+    for _ in range(3):
+        claimed = queue.claim("train", max_attempts=3)
+        assert claimed is not None
+        # simulate crash: no complete/fail, daemon restart requeues
+        queue.requeue_stale_running()
+    # budget exhausted purely via claims: next claim dead-letters it
+    assert queue.claim("train", max_attempts=3) is None
+    assert queue.dead_letter_count() == 1

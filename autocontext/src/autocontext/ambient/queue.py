@@ -1,4 +1,12 @@
-"""durable sqlite work queue connecting the ambient stages (task-queue idiom)."""
+"""durable sqlite work queue for ambient work (task-queue idiom).
+
+Production status (AC-906 audit): the ambient stages are cursor-driven and
+do not route work through this queue today; the daemon uses it for
+crash-recovery bookkeeping (requeue_stale_running under the startup flock)
+and it serves as the claiming reference implementation. Routing stage work
+through it, or removing it, is an ambient-roadmap decision; until then its
+claim/dead-letter semantics are kept correct so adoption is safe.
+"""
 
 from __future__ import annotations
 
@@ -48,12 +56,21 @@ class AmbientQueue:
             )
             return int(cursor.lastrowid or 0)
 
-    def claim(self, stage: str) -> AmbientJob | None:
+    def claim(self, stage: str, *, max_attempts: int = 5) -> AmbientJob | None:
         # single atomic statement: a select-then-update pair would let two
         # connections claim the same pending row (toctou double-claim)
         with self._connect() as conn:
+            # AC-906: attempts is burned AT CLAIM, and a job that already
+            # exhausted its budget dead-letters here. A handler that kills the
+            # process never calls fail(), so counting at fail time alone let
+            # crash-loops run forever without reaching the poison-job cap.
+            conn.execute(
+                "UPDATE ambient_queue SET status = 'dead' "
+                "WHERE stage = ? AND status = 'pending' AND attempts >= ?",
+                (stage, max_attempts),
+            )
             row = conn.execute(
-                "UPDATE ambient_queue SET status = 'running' WHERE job_id = ("
+                "UPDATE ambient_queue SET status = 'running', attempts = attempts + 1 WHERE job_id = ("
                 "SELECT job_id FROM ambient_queue WHERE stage = ? AND status = 'pending' "
                 "ORDER BY job_id LIMIT 1) AND status = 'pending' "
                 "RETURNING job_id, stage, kind, payload, attempts",
@@ -80,10 +97,11 @@ class AmbientQueue:
     def fail(self, job_id: int, error: str, *, max_attempts: int = 5) -> None:
         # a job that has failed max_attempts times is a poison job: move it to
         # 'dead' so it stops being reclaimed and looping forever. attempts is
-        # incremented first so the count reflects this failure.
+        # counted at CLAIM time (AC-906), so this only records the error and
+        # applies the cap.
         with self._connect() as conn:
             conn.execute(
-                "UPDATE ambient_queue SET attempts = attempts + 1, last_error = ? WHERE job_id = ?",
+                "UPDATE ambient_queue SET last_error = ? WHERE job_id = ?",
                 (error, job_id),
             )
             conn.execute(
