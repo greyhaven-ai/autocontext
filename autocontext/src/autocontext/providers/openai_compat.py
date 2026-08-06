@@ -11,6 +11,7 @@ import os
 from typing import Any
 
 from autocontext.providers.base import CompletionResult, LLMProvider, ProviderError
+from autocontext.providers.token_caps import clamp_output_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +72,7 @@ class OpenAICompatibleProvider(LLMProvider):
             response = self._client.chat.completions.create(
                 model=model_id,
                 temperature=temperature,
-                max_tokens=max_tokens,
+                max_tokens=clamp_output_tokens(max_tokens, model_id),
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},

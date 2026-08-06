@@ -1,4 +1,5 @@
 import { ProviderError } from "../types/index.js";
+import { clampOutputTokens } from "./token-caps.js";
 import type { CompletionResult, LLMProvider } from "../types/index.js";
 import { DeterministicProvider } from "./deterministic.js";
 import { ClaudeCLIRuntime } from "../runtimes/claude-cli.js";
@@ -37,7 +38,7 @@ export function createAnthropicProvider(opts: AnthropicProviderOpts): LLMProvide
         },
         body: JSON.stringify({
           model: callOpts.model || defaultModel,
-          max_tokens: callOpts.maxTokens ?? 4096,
+          max_tokens: clampOutputTokens(callOpts.maxTokens ?? 4096, callOpts.model || defaultModel),
           temperature: callOpts.temperature ?? 0,
           system: callOpts.systemPrompt,
           messages: [{ role: "user", content: callOpts.userPrompt }],
@@ -94,7 +95,7 @@ export function createOpenAICompatibleProvider(opts: OpenAICompatibleProviderOpt
         },
         body: JSON.stringify({
           model: callOpts.model || defaultModel,
-          max_tokens: callOpts.maxTokens ?? 4096,
+          max_tokens: clampOutputTokens(callOpts.maxTokens ?? 4096, callOpts.model || defaultModel),
           temperature: callOpts.temperature ?? 0,
           messages: [
             { role: "system", content: callOpts.systemPrompt },

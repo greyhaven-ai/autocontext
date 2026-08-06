@@ -442,12 +442,12 @@ class SolveScenarioBuilder:
         )
 
 
-def _llm_fn_from_client(client: Any, model: str) -> LlmFn:
+def _llm_fn_from_client(client: Any, model: str, max_tokens: int) -> LlmFn:
     def llm_fn(system: str, user: str) -> str:
         response = client.generate(
             model=model,
             prompt=f"{system}\n\n{user}",
-            max_tokens=1200,
+            max_tokens=max_tokens,
             temperature=0.2,
             role="scenario_designer",
         )
@@ -594,7 +594,7 @@ class SolveManager:
             )
             runtime = SubagentRuntime(client)
             designer_model = self._settings.model_translator or self._settings.model_architect
-            llm_fn = _llm_fn_from_client(client, designer_model)
+            llm_fn = _llm_fn_from_client(client, designer_model, self._settings.solve_designer_max_tokens)
             return SolveScenarioBuilder(
                 runtime=runtime,
                 llm_fn=llm_fn,

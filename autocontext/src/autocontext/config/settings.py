@@ -8,6 +8,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator  # type: ignore[import-not-found]
 
+from autocontext.config.output_budgets import OutputBudgetFields
 from autocontext.config.presets import apply_preset
 from autocontext.runtimes.pi_defaults import PI_DEFAULT_TIMEOUT_SECONDS
 
@@ -40,7 +41,7 @@ class HarnessProfile(StrEnum):
     LEAN = "lean"
 
 
-class AppSettings(BaseModel):
+class AppSettings(OutputBudgetFields, BaseModel):
     db_path: Path = Field(default=Path("runs/autocontext.sqlite3"))
     runs_root: Path = Field(default=Path("runs"))
     knowledge_root: Path = Field(default=Path("knowledge"))

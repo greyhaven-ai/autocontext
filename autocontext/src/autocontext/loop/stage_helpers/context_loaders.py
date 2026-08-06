@@ -218,7 +218,7 @@ def _collect_hint_feedback(
         response = client.generate(
             model=model,
             prompt=prompt,
-            max_tokens=400,
+            max_tokens=ctx.settings.hint_feedback_max_tokens,
             temperature=0.2,
             role="competitor",
         )

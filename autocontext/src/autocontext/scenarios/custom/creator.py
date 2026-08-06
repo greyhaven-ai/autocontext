@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from autocontext.agents.subagent_runtime import SubagentRuntime, SubagentTask
+from autocontext.config.settings import load_settings
 from autocontext.scenarios.base import ScenarioInterface
 from autocontext.scenarios.custom.codegen import generate_scenario_class
 from autocontext.scenarios.custom.designer import SCENARIO_DESIGNER_SYSTEM, parse_spec_from_response
@@ -39,7 +40,7 @@ class ScenarioCreator:
             role="scenario_designer",
             model=self.model,
             prompt=prompt,
-            max_tokens=3000,
+            max_tokens=load_settings().scenario_designer_max_tokens,
             temperature=0.3,
         ))
         spec = parse_spec_from_response(result.content)
@@ -59,7 +60,7 @@ class ScenarioCreator:
             role="scenario_designer",
             model=self.model,
             prompt=prompt,
-            max_tokens=3000,
+            max_tokens=load_settings().scenario_designer_max_tokens,
             temperature=0.3,
         ))
         spec = parse_spec_from_response(result.content)

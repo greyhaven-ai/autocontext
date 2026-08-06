@@ -35,9 +35,10 @@ def parse_coach_sections(content: str) -> tuple[str, str, str]:
 
 
 class CoachRunner:
-    def __init__(self, runtime: SubagentRuntime, model: str) -> None:
+    def __init__(self, runtime: SubagentRuntime, model: str, max_tokens: int = 2000) -> None:
         self.runtime = runtime
         self.model = model
+        self.max_tokens = max_tokens
 
     def run(self, prompt: str, *, system: str = "") -> RoleExecution:
         return self.runtime.run_task(
@@ -45,7 +46,7 @@ class CoachRunner:
                 role="coach",
                 model=self.model,
                 prompt=prompt,
-                max_tokens=2000,
+                max_tokens=self.max_tokens,
                 temperature=0.4,
                 system=system,
             )
