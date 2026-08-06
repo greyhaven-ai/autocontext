@@ -36,6 +36,9 @@ class TestClampOutputTokens:
     def test_requested_below_cap_passes(self) -> None:
         assert clamp_output_tokens(2000, "claude-3-haiku-20240307") == 2000
 
+    def test_longest_prefix_wins(self) -> None:
+        assert clamp_output_tokens(100_000, "claude-3-5-sonnet-20241022") == 8192
+
     def test_unknown_model_passes_through(self) -> None:
         assert clamp_output_tokens(100_000, "future-model-9000") == 100_000
 
