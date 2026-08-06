@@ -18,6 +18,9 @@ class CompletionResult:
     model: str | None = None
     usage: dict[str, int] = field(default_factory=dict)
     cost_usd: float | None = None
+    # AC-904: why generation stopped ("max_tokens"/"length" indicates
+    # truncation); None when the provider does not report one.
+    stop_reason: str | None = None
 
 
 class LLMProvider(ABC):

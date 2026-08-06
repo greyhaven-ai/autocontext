@@ -144,6 +144,7 @@ def evaluate_output(
         provider=provider,
         samples=ctx.settings.judge_samples,
         temperature=ctx.settings.judge_temperature,
+        max_tokens=ctx.settings.judge_max_tokens,
         disagreement_threshold=ctx.settings.judge_disagreement_threshold,
     )
 

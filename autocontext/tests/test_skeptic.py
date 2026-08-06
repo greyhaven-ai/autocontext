@@ -501,3 +501,35 @@ class TestDeterministicSkepticBranch:
         assert review.parse_success is True
         assert review.risk_level in ("high", "medium", "low")
         assert review.recommendation in ("proceed", "caution", "block")
+
+
+class TestParseFailureYieldsNoReview:
+    """AC-904: an unparseable skeptic review must neither block nor endorse."""
+
+    def test_unparseable_review_sets_no_review(self) -> None:
+        review = parse_skeptic_review("free-form rambling with no markers")
+        assert review.parse_success is False
+        assert review.recommendation == "proceed"
+
+    def test_stage_discards_unparseable_review(self, tmp_path) -> None:
+        from autocontext.agents.skeptic import SkepticReview
+        from autocontext.loop.stages import _accept_skeptic_review
+
+        review = SkepticReview(
+            risk_level="low",
+            concerns=[],
+            recommendation="proceed",
+            confidence=5,
+            reasoning="raw",
+            parse_success=False,
+        )
+        assert _accept_skeptic_review(review) is None
+        review_ok = SkepticReview(
+            risk_level="high",
+            concerns=["x"],
+            recommendation="block",
+            confidence=8,
+            reasoning="raw",
+            parse_success=True,
+        )
+        assert _accept_skeptic_review(review_ok) is review_ok

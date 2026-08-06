@@ -174,6 +174,7 @@ class LLMJudge:
         provider: LLMProvider | None = None,
         samples: int = 1,
         temperature: float = 0.0,
+        max_tokens: int = 4096,
         check_coherence: bool = False,
         disagreement_threshold: float = 0.15,
         hook_bus: HookBus | None = None,
@@ -195,6 +196,7 @@ class LLMJudge:
             self._typed_dimension_ids = list(compiled_rubric.result_dimension_ids)
         self.samples = max(1, samples)
         self.temperature = temperature
+        self.max_tokens = max(256, max_tokens)
         self.hook_bus = hook_bus
 
         # AC-885: content-addressed identity of this evaluator (rubric + judge). The epoch for the
@@ -283,6 +285,8 @@ class LLMJudge:
         # samples resolve different models (pathological), the first one is chosen deterministically.
         effective_model: str | None = None
 
+        parse_oks: list[bool] = []
+        last_stop_reason: str | None = None
         for sample_index in range(self.samples):
             dims: dict[str, float] = {}
             score, reasoning = 0.0, ""
@@ -315,7 +319,10 @@ class LLMJudge:
                     user_prompt=str(request.get("user_prompt", user_prompt)),
                     model=resolved_model,
                     temperature=_coerce_float(request.get("temperature"), self.temperature),
+                    max_tokens=self.max_tokens,
                 )
+                if result.stop_reason in ("max_tokens", "length") or last_stop_reason not in ("max_tokens", "length"):
+                    last_stop_reason = result.stop_reason
                 response = result.text
                 if hook_bus is not None:
                     after_judge = hook_bus.emit(
@@ -339,7 +346,26 @@ class LLMJudge:
             scores.append(score)
             reasonings.append(reasoning)
             all_dims.append(dims)
+            parse_oks.append(sample_parse_method != "none")
             last_parse_method = sample_parse_method
+
+        # AC-904: an unparseable sample is an evaluation failure, not a zero.
+        # Exclude failed samples from the average when at least one parsed;
+        # when none parsed, name truncation explicitly if the provider said so.
+        valid_indices = [i for i, ok in enumerate(parse_oks) if ok]
+        if valid_indices and len(valid_indices) < len(scores):
+            logger.warning(
+                "excluding %d unparseable judge sample(s) from the average",
+                len(scores) - len(valid_indices),
+            )
+            scores = [scores[i] for i in valid_indices]
+            reasonings = [reasonings[i] for i in valid_indices]
+            all_dims = [all_dims[i] for i in valid_indices]
+        elif not valid_indices and last_stop_reason in ("max_tokens", "length"):
+            reasonings = [
+                f"Failed to parse judge response: output truncated (stop_reason={last_stop_reason}); "
+                "no parseable score found"
+            ]
 
         avg_score = sum(scores) / len(scores)
 

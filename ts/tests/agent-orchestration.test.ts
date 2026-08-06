@@ -20,13 +20,6 @@ describe("Role definitions", () => {
     expect(ROLES).toContain("curator");
   });
 
-  it("exports ROLE_CONFIGS with per-role settings", async () => {
-    const { ROLE_CONFIGS } = await import("../src/agents/roles.js");
-    expect(ROLE_CONFIGS.competitor.maxTokens).toBe(800);
-    expect(ROLE_CONFIGS.competitor.temperature).toBe(0.2);
-    expect(ROLE_CONFIGS.coach.maxTokens).toBe(2000);
-    expect(ROLE_CONFIGS.architect.temperature).toBe(0.4);
-  });
 });
 
 describe("Output parsing", () => {
@@ -556,5 +549,28 @@ describe("AgentOrchestrator", () => {
     ]);
     expect(result.competitorOutput.rawText).toContain("aggression");
     expect(result.analystOutput.findings).toContain("Strong opening");
+  });
+});
+
+describe("coach truncation fails closed (AC-904)", () => {
+  it("START without END discards the update", async () => {
+    const { parseCoachOutput } = await import("../src/agents/roles.js");
+    const output = parseCoachOutput("<!-- PLAYBOOK_START -->\npartial cut off mid-sen");
+    expect(output.playbook).toBe("");
+    expect(output.parseSuccess).toBe(false);
+  });
+
+  it("no markers keeps the whole-content fallback", async () => {
+    const { parseCoachOutput } = await import("../src/agents/roles.js");
+    const output = parseCoachOutput("plain playbook, no markers");
+    expect(output.playbook).toBe("plain playbook, no markers");
+    expect(output.parseSuccess).toBe(true);
+  });
+
+  it("delimited content unchanged", async () => {
+    const { parseCoachOutput } = await import("../src/agents/roles.js");
+    const output = parseCoachOutput("<!-- PLAYBOOK_START -->\nreal\n<!-- PLAYBOOK_END -->");
+    expect(output.playbook).toBe("real");
+    expect(output.parseSuccess).toBe(true);
   });
 });

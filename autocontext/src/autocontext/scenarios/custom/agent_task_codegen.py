@@ -122,6 +122,7 @@ def generate_agent_task_class(spec: AgentTaskSpec, name: str = "custom_agent_tas
                     rubric=self._rubric,
                     provider=provider,
                     samples=judge_samples,
+                    max_tokens=int(getattr(settings, "judge_max_tokens", 4096)),
                     temperature=judge_temperature,
                     disagreement_threshold=judge_disagreement_threshold,
                 )
