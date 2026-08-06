@@ -12,6 +12,7 @@ import {
   enqueueTaskRecord,
   failTaskRecord,
   getTaskRecord,
+  requeueStaleRunning,
 } from "../src/storage/task-queue-store.js";
 
 const MIGRATIONS_DIR = join(import.meta.dirname, "..", "migrations");
@@ -66,5 +67,64 @@ describe("task queue store workflow", () => {
       error: "boom",
     });
     expect(dequeueTaskRecord<TaskQueueRow>(db)).toBeNull();
+  });
+});
+
+describe("task queue reliability (AC-906)", () => {
+  let dir: string;
+  let db: Database.Database;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "ac-task-queue-rel-"));
+    const dbPath = join(dir, "test.db");
+    const store = new SQLiteStore(dbPath);
+    store.migrate(MIGRATIONS_DIR);
+    store.close();
+    db = new Database(dbPath);
+  });
+
+  afterEach(() => {
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("claim increments attempts and returns the full row", () => {
+    enqueueTaskRecord(db, "t1", "spec", 0);
+    const claimed = dequeueTaskRecord<TaskQueueRow & { attempts: number }>(db);
+    expect(claimed?.attempts).toBe(1);
+    expect(claimed?.status).toBe("running");
+    expect(dequeueTaskRecord(db)).toBeNull();
+  });
+
+  it("transient failure requeues below maxAttempts, dead-letters at it", () => {
+    enqueueTaskRecord(db, "t1", "spec", 0);
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const claimed = dequeueTaskRecord(db);
+      expect(claimed).not.toBeNull();
+      failTaskRecord(db, "t1", `error ${attempt}`, 3);
+      const row = db.prepare("SELECT status, error FROM task_queue WHERE id = 't1'").get() as {
+        status: string;
+        error: string;
+      };
+      expect(row.status).toBe(attempt < 3 ? "pending" : "failed");
+      expect(row.error).toBe(`error ${attempt}`);
+    }
+  });
+
+  it("default fail stays terminal", () => {
+    enqueueTaskRecord(db, "t1", "spec", 0);
+    dequeueTaskRecord(db);
+    failTaskRecord(db, "t1", "hard error");
+    const row = db.prepare("SELECT status FROM task_queue WHERE id = 't1'").get() as { status: string };
+    expect(row.status).toBe("failed");
+  });
+
+  it("requeueStaleRunning recovers stranded rows and spares recent ones", () => {
+    enqueueTaskRecord(db, "t1", "spec", 0);
+    dequeueTaskRecord(db);
+    expect(requeueStaleRunning(db, 3600)).toBe(0);
+    expect(requeueStaleRunning(db, 0)).toBe(1);
+    const row = db.prepare("SELECT status FROM task_queue WHERE id = 't1'").get() as { status: string };
+    expect(row.status).toBe("pending");
   });
 });

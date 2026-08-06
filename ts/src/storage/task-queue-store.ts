@@ -16,31 +16,42 @@ export function enqueueTaskRecord(
 }
 
 export function dequeueTaskRecord<T>(db: Database.Database): T | null {
-  const tx = db.transaction(() => {
-    const row = db.prepare(
-      `SELECT id FROM task_queue
+  // AC-906: single-statement claim (the ambient-queue idiom); attempts is
+  // burned AT CLAIM so a handler that kills the process still counts toward
+  // the dead-letter limit. Mirrors the Python store.
+  const row = db.prepare(
+    `UPDATE task_queue
+     SET status = 'running',
+         started_at = datetime('now'),
+         updated_at = datetime('now'),
+         attempts = attempts + 1
+     WHERE id = (
+       SELECT id FROM task_queue
        WHERE status = 'pending'
          AND (scheduled_at IS NULL OR scheduled_at <= datetime('now'))
        ORDER BY priority DESC, created_at ASC
-       LIMIT 1`,
-    ).get() as { id: string } | undefined;
+       LIMIT 1
+     )
+     RETURNING *`,
+  ).get() as T | undefined;
+  return row ?? null;
+}
 
-    if (!row) return null;
-
-    const changes = db.prepare(
-      `UPDATE task_queue
-       SET status = 'running',
-           started_at = datetime('now'),
-           updated_at = datetime('now')
-       WHERE id = ? AND status = 'pending'`,
-    ).run(row.id);
-
-    if (changes.changes === 0) return null;
-
-    return (db.prepare("SELECT * FROM task_queue WHERE id = ?").get(row.id) as T | undefined) ?? null;
-  });
-
-  return tx() as T | null;
+/**
+ * Return crash-stranded running tasks to pending (AC-906). The claim-time
+ * attempts increment already counted the stranded execution, so the
+ * dead-letter limit still applies across crash-loops.
+ */
+export function requeueStaleRunning(db: Database.Database, olderThanSeconds: number): number {
+  const result = db.prepare(
+    `UPDATE task_queue
+     SET status = 'pending',
+         updated_at = datetime('now')
+     WHERE status = 'running'
+       AND started_at IS NOT NULL
+       AND (julianday('now') - julianday(started_at)) * 86400.0 >= ?`,
+  ).run(olderThanSeconds);
+  return result.changes;
 }
 
 export function completeTaskRecord(
@@ -70,7 +81,21 @@ export function failTaskRecord(
   db: Database.Database,
   taskId: string,
   error: string,
+  maxAttempts?: number,
 ): void {
+  if (maxAttempts !== undefined) {
+    // AC-906: below the attempts limit the task requeues for a later retry;
+    // at or above it the task dead-letters to failed. Mirrors Python.
+    db.prepare(
+      `UPDATE task_queue
+       SET status = CASE WHEN attempts >= ? THEN 'failed' ELSE 'pending' END,
+           completed_at = CASE WHEN attempts >= ? THEN datetime('now') ELSE NULL END,
+           updated_at = datetime('now'),
+           error = ?
+       WHERE id = ?`,
+    ).run(maxAttempts, maxAttempts, error, taskId);
+    return;
+  }
   db.prepare(
     `UPDATE task_queue
      SET status = 'failed',
