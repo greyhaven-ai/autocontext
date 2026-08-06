@@ -34,7 +34,7 @@ if TYPE_CHECKING:
     from autocontext.agents.curator import KnowledgeCurator
     from autocontext.agents.llm_client import LanguageModelClient
     from autocontext.agents.orchestrator import AgentOrchestrator
-    from autocontext.agents.skeptic import SkepticAgent
+    from autocontext.agents.skeptic import SkepticAgent, SkepticReview
     from autocontext.execution.supervisor import ExecutionSupervisor
     from autocontext.harness.pipeline.gate import BackpressureGate
     from autocontext.knowledge.trajectory import ScoreTrajectoryBuilder
@@ -823,6 +823,14 @@ def stage_stagnation_check(
     return ctx
 
 
+def _accept_skeptic_review(review: SkepticReview) -> SkepticReview | None:
+    """AC-904: an unparseable skeptic review must neither block nor endorse."""
+    if not review.parse_success:
+        logger.warning("skeptic review unparseable; treating as no review")
+        return None
+    return review
+
+
 def stage_skeptic_review(
     ctx: GenerationContext,
     *,
@@ -867,7 +875,7 @@ def stage_skeptic_review(
         recent_analysis=analysis,
         constraint_mode=ctx.settings.constraint_prompts_enabled,
     )
-    ctx.skeptic_review = review
+    ctx.skeptic_review = _accept_skeptic_review(review)
 
     sqlite.append_generation_agent_activity(
         ctx.run_id,
@@ -887,7 +895,7 @@ def stage_skeptic_review(
     )
 
     # If skeptic blocks and blocking is enabled, clear the playbook (like curator reject)
-    if review.recommendation == "block" and ctx.settings.skeptic_can_block:
+    if ctx.skeptic_review is not None and review.recommendation == "block" and ctx.settings.skeptic_can_block:
         ctx.outputs = dataclasses.replace(ctx.outputs, coach_playbook="")
 
     events.emit(
