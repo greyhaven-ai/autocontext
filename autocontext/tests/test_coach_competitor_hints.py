@@ -60,3 +60,25 @@ def test_missing_hints_defaults_empty() -> None:
     playbook, lessons, hints = parse_coach_sections(content)
     assert playbook == "Playbook"
     assert hints == ""
+
+
+class TestTruncationFailsClosed:
+    """AC-904: START without END is a truncation signature; the fragment must
+    not be persisted as the playbook. No markers at all keeps the legacy
+    whole-content fallback."""
+
+    def test_start_without_end_discards_update(self) -> None:
+        content = "<!-- PLAYBOOK_START -->\npartial playbook cut off mid-sente"
+        playbook, lessons, hints = parse_coach_sections(content)
+        assert playbook == ""
+        assert lessons == "" and hints == ""
+
+    def test_no_markers_keeps_whole_content_fallback(self) -> None:
+        content = "Just a plain playbook with no markers at all"
+        playbook, _, _ = parse_coach_sections(content)
+        assert playbook == content
+
+    def test_delimited_content_unchanged(self) -> None:
+        content = "<!-- PLAYBOOK_START -->\nreal playbook\n<!-- PLAYBOOK_END -->"
+        playbook, _, _ = parse_coach_sections(content)
+        assert playbook == "real playbook"

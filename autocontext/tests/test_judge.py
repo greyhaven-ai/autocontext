@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import pytest
+
 from autocontext.execution.judge import JudgeResult, LLMJudge, _detect_generated_dimensions
 from autocontext.execution.judge_executor import JudgeExecutor
+from autocontext.providers.base import CompletionResult, LLMProvider
 from autocontext.scenarios.agent_task import AgentTaskInterface, AgentTaskResult
 
 VALID_JUDGE_RESPONSE = """
@@ -321,3 +324,70 @@ class TestJudgeExecutor:
         result = executor.execute("my output", {})
         assert result.score == 0.9
         assert result.reasoning == "Great"
+
+
+class _StubProvider(LLMProvider):
+    """Scriptable provider capturing complete() kwargs (AC-904 tests)."""
+
+    def __init__(self, responses: list[CompletionResult]) -> None:
+        self._responses = responses
+        self._call_index = 0
+        self.calls: list[dict] = []
+
+    def complete(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        model: str | None = None,
+        temperature: float = 0.0,
+        max_tokens: int = 4096,
+    ) -> CompletionResult:
+        self.calls.append({"max_tokens": max_tokens})
+        response = self._responses[min(self._call_index, len(self._responses) - 1)]
+        self._call_index += 1
+        return response
+
+    def default_model(self) -> str:
+        return "stub"
+
+
+def _good_verdict(score: float) -> CompletionResult:
+    return CompletionResult(text=f'{{"score": {score}, "reasoning": "ok", "dimensions": {{}}}}')
+
+
+def _garbage(stop_reason: str | None = None) -> CompletionResult:
+    return CompletionResult(text="mid-sentence trunca", stop_reason=stop_reason)
+
+
+class TestTruncationHonesty:
+    """AC-904: unparseable samples are excluded, truncation is named."""
+
+    def test_judge_passes_settings_backed_max_tokens(self) -> None:
+        provider = _StubProvider([_good_verdict(0.8)])
+        judge = LLMJudge(model="stub", rubric="quality", provider=provider, max_tokens=2222)
+        judge.evaluate(task_prompt="t", agent_output="o")
+        assert provider.calls[0]["max_tokens"] == 2222
+
+    def test_unparseable_sample_excluded_from_average(self) -> None:
+        # 3 samples; sample 2 fails both attempts (2 calls), 4 calls total.
+        responses = [
+            _good_verdict(0.8),
+            _garbage(),
+            _garbage(),
+            _good_verdict(0.6),
+        ]
+        provider = _StubProvider(responses)
+        judge = LLMJudge(model="stub", rubric="quality", provider=provider, samples=3)
+        result = judge.evaluate(task_prompt="t", agent_output="o")
+        assert result.score == pytest.approx(0.7)
+
+    def test_all_samples_truncated_names_truncation(self) -> None:
+        provider = _StubProvider([_garbage(stop_reason="max_tokens")])
+        judge = LLMJudge(model="stub", rubric="quality", provider=provider)
+        result = judge.evaluate(task_prompt="t", agent_output="o")
+        assert result.score == 0.0
+        assert "truncated" in result.reasoning
+        assert "max_tokens" in result.reasoning
+
+    def test_completion_result_stop_reason_default(self) -> None:
+        assert CompletionResult(text="x").stop_reason is None

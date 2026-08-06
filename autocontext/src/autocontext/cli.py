@@ -1202,6 +1202,7 @@ def judge(
             provider=judge_provider,
             model=settings.judge_model,
             rubric=rubric,
+            max_tokens=settings.judge_max_tokens,
         )
         result = llm_judge.evaluate(task_prompt=task_prompt, agent_output=output)
     except ProviderError as exc:

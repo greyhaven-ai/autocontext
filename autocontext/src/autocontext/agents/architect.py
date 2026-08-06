@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import json
+import logging
 from collections.abc import Mapping
 from typing import Any
 
@@ -9,6 +10,7 @@ from autocontext.agents.subagent_runtime import SubagentRuntime, SubagentTask
 from autocontext.agents.types import RoleExecution
 from autocontext.harness.core.output_parser import extract_delimited_section
 
+logger = logging.getLogger(__name__)
 
 def parse_architect_tool_specs(content: str) -> list[dict[str, Any]]:
     start = content.find("```json")
@@ -19,6 +21,7 @@ def parse_architect_tool_specs(content: str) -> list[dict[str, Any]]:
     try:
         decoded = json.loads(body)
     except json.JSONDecodeError:
+        logger.warning("architect output JSON block unparseable (possibly truncated); treating as no proposal")
         return []
     if not isinstance(decoded, Mapping):
         return []
@@ -55,6 +58,7 @@ def parse_dag_changes(content: str) -> list[dict[str, Any]]:
     try:
         decoded = json.loads(body)
     except json.JSONDecodeError:
+        logger.warning("architect output JSON block unparseable (possibly truncated); treating as no proposal")
         return []
     if not isinstance(decoded, Mapping):
         return []
@@ -93,6 +97,7 @@ def parse_architect_harness_specs(content: str) -> list[dict[str, Any]]:
     try:
         decoded = json.loads(body)
     except json.JSONDecodeError:
+        logger.warning("architect output JSON block unparseable (possibly truncated); treating as no proposal")
         return []
     if not isinstance(decoded, Mapping):
         return []

@@ -95,6 +95,7 @@ class OpenAICompatibleProvider(LLMProvider):
             text=text,
             model=model_id,
             usage=usage,
+            stop_reason=getattr(choice, "finish_reason", None) if choice else None,
         )
 
     def default_model(self) -> str:
