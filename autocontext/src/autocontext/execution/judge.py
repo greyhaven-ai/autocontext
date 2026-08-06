@@ -321,7 +321,8 @@ class LLMJudge:
                     temperature=_coerce_float(request.get("temperature"), self.temperature),
                     max_tokens=self.max_tokens,
                 )
-                last_stop_reason = result.stop_reason
+                if result.stop_reason in ("max_tokens", "length") or last_stop_reason not in ("max_tokens", "length"):
+                    last_stop_reason = result.stop_reason
                 response = result.text
                 if hook_bus is not None:
                     after_judge = hook_bus.emit(

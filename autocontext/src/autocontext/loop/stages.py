@@ -1018,6 +1018,7 @@ def stage_curator_gate(
             "run_id": ctx.run_id,
             "generation": ctx.generation,
             "decision": curator_decision.decision,
+            "parse_success": curator_decision.parse_success,
             "analyst_rating": analyst_rating.to_dict() if analyst_rating is not None else None,
             "skeptic_recommendation": (ctx.skeptic_review.recommendation if ctx.skeptic_review is not None else None),
         },

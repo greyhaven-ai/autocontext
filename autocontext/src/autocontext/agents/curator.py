@@ -49,6 +49,8 @@ def parse_curator_playbook_decision(content: str) -> CuratorPlaybookDecision:
     decision_match = _DECISION_RE.search(content)
     # AC-904: no decision marker means the response is unparseable (often
     # truncated); the quality gate must fail CLOSED, never accept-by-default.
+    if decision_match is None:
+        logger.warning("curator output missing CURATOR_DECISION marker (possibly truncated); failing closed to reject")
     decision = decision_match.group(1).lower() if decision_match else "reject"
 
     playbook_match = _PLAYBOOK_RE.search(content)

@@ -175,7 +175,13 @@ export class LLMJudge {
           temperature: finalTemperature,
           maxTokens: this.#maxTokens,
         });
-        lastStopReason = result.stopReason ?? null;
+        if (
+          result.stopReason === "max_tokens" ||
+          result.stopReason === "length" ||
+          (lastStopReason !== "max_tokens" && lastStopReason !== "length")
+        ) {
+          lastStopReason = result.stopReason ?? null;
+        }
         const after = this.emitHook(HookEvents.AFTER_JUDGE, {
           provider: this.#provider.name,
           model: finalModel,

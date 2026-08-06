@@ -551,3 +551,26 @@ describe("AgentOrchestrator", () => {
     expect(result.analystOutput.findings).toContain("Strong opening");
   });
 });
+
+describe("coach truncation fails closed (AC-904)", () => {
+  it("START without END discards the update", async () => {
+    const { parseCoachOutput } = await import("../src/agents/roles.js");
+    const output = parseCoachOutput("<!-- PLAYBOOK_START -->\npartial cut off mid-sen");
+    expect(output.playbook).toBe("");
+    expect(output.parseSuccess).toBe(false);
+  });
+
+  it("no markers keeps the whole-content fallback", async () => {
+    const { parseCoachOutput } = await import("../src/agents/roles.js");
+    const output = parseCoachOutput("plain playbook, no markers");
+    expect(output.playbook).toBe("plain playbook, no markers");
+    expect(output.parseSuccess).toBe(true);
+  });
+
+  it("delimited content unchanged", async () => {
+    const { parseCoachOutput } = await import("../src/agents/roles.js");
+    const output = parseCoachOutput("<!-- PLAYBOOK_START -->\nreal\n<!-- PLAYBOOK_END -->");
+    expect(output.playbook).toBe("real");
+    expect(output.parseSuccess).toBe(true);
+  });
+});

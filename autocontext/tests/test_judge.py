@@ -369,7 +369,7 @@ class TestTruncationHonesty:
         assert provider.calls[0]["max_tokens"] == 2222
 
     def test_unparseable_sample_excluded_from_average(self) -> None:
-        # 3 samples; sample 2 fails both attempts (4 total calls for it).
+        # 3 samples; sample 2 fails both attempts (2 calls), 4 calls total.
         responses = [
             _good_verdict(0.8),
             _garbage(),

@@ -136,12 +136,25 @@ export function parseCoachOutput(rawMarkdown: string): CoachOutput {
       "<!-- COMPETITOR_HINTS_START -->",
       "<!-- COMPETITOR_HINTS_END -->",
     );
+    // AC-904: START without END is the truncation signature; the fragment
+    // must not become the playbook. No markers at all keeps the legacy
+    // whole-content fallback (mirrors Python parse_coach_sections).
+    let effectivePlaybook: string;
+    let parseSuccess = true;
+    if (playbook !== null && playbook !== undefined) {
+      effectivePlaybook = playbook;
+    } else if (rawMarkdown.includes("<!-- PLAYBOOK_START -->")) {
+      effectivePlaybook = "";
+      parseSuccess = false;
+    } else {
+      effectivePlaybook = rawMarkdown.trim();
+    }
     return {
       rawMarkdown,
-      playbook: playbook ?? rawMarkdown.trim(),
+      playbook: effectivePlaybook,
       lessons: lessons ?? "",
       hints: hints ?? "",
-      parseSuccess: true,
+      parseSuccess,
     };
   } catch {
     return { rawMarkdown, playbook: "", lessons: "", hints: "", parseSuccess: false };
