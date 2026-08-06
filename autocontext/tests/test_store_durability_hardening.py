@@ -9,6 +9,7 @@ state instead of raising on a hot path.
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 from autocontext.analytics.facets import RunFacet
@@ -234,9 +235,7 @@ class TestMutationStores:
         monkeypatch.setattr("autocontext.util.json_io.os.replace", spy)
         log.append(
             "grid_ctf",
-            MutationEntry.model_validate(
-                {"mutation_type": "playbook_update", "generation": 5, "payload": {"summary": "g5"}}
-            ),
+            MutationEntry.model_validate({"mutation_type": "playbook_update", "generation": 5, "payload": {"summary": "g5"}}),
         )
         assert any(dst.endswith(".jsonl") for dst in replaced)
 
@@ -291,14 +290,19 @@ class TestRemainingStores:
         assert lines[-1] == '{"ok": 1}'
         assert len(lines) == 2
 
-    def test_blob_registry_corrupt_or_misshapen_degrades(self, tmp_path) -> None:
+    def test_blob_registry_corrupt_or_misshapen_degrades(self, tmp_path, caplog) -> None:
         from autocontext.blobstore.registry import BlobRegistry
 
         path = tmp_path / "registry.json"
         path.write_text("{not json", encoding="utf-8")
-        assert BlobRegistry.load(path)._entries == {}
+        with caplog.at_level(logging.WARNING, logger="autocontext.blobstore.registry"):
+            assert BlobRegistry.load(path)._entries == {}
+        assert "blob registry unreadable" in caplog.text
+        caplog.clear()
         path.write_text('{"run_1": "not a dict"}', encoding="utf-8")
-        assert BlobRegistry.load(path)._entries == {}
+        with caplog.at_level(logging.WARNING, logger="autocontext.blobstore.registry"):
+            assert BlobRegistry.load(path)._entries == {}
+        assert "skipping misshapen blob registry run run_1" in caplog.text
 
     def test_research_manifest_corrupt_degrades_and_bad_entries_skipped(self, tmp_path) -> None:
         from autocontext.research.persistence import ResearchStore
