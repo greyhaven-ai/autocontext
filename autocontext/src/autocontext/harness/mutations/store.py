@@ -79,6 +79,6 @@ class MutationStore:
             return False
         latest_archive = versions[-1]
         current = scenario_dir / _MUTATIONS_FILENAME
-        current.write_text(latest_archive.read_text(encoding="utf-8"), encoding="utf-8")
+        write_text_atomic(current, latest_archive.read_text(encoding="utf-8"))
         latest_archive.unlink()
         return True

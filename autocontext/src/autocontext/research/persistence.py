@@ -76,8 +76,11 @@ class ResearchStore:
         brief_path = self._dir / f"{brief_id}.json"
         if not brief_path.exists():
             return None
-        data = json.loads(brief_path.read_text(encoding="utf-8"))
-        return ResearchBrief.model_validate(data)
+        try:
+            data = json.loads(brief_path.read_text(encoding="utf-8"))
+            return ResearchBrief.model_validate(data)
+        except (OSError, ValueError):
+            return None
 
     def list_briefs(self, session_id: str) -> list[BriefRef]:
         refs: list[BriefRef] = []

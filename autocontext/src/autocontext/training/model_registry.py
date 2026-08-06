@@ -22,7 +22,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from autocontext.util.json_io import read_json_guarded, write_json
+from autocontext.util.json_io import read_json_guarded, write_json, write_text_atomic
 
 _VALID_STATES = frozenset({"candidate", "active", "disabled", "deprecated"})
 
@@ -273,10 +273,7 @@ def publish_training_output(
     if artifacts_root is not None:
         artifacts_dir = _artifact_dir(artifacts_root)
         artifacts_dir.mkdir(parents=True, exist_ok=True)
-        _artifact_path(artifacts_root, artifact_id).write_text(
-            published_artifact.model_dump_json(indent=2),
-            encoding="utf-8",
-        )
+        write_text_atomic(_artifact_path(artifacts_root, artifact_id), published_artifact.model_dump_json(indent=2))
 
     existing = registry.load(artifact_id)
     if existing is not None:

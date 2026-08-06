@@ -39,7 +39,7 @@ from autocontext.storage.scenario_paths import (
     resolve_scenario_root,
     resolve_scenario_skill_dir,
 )
-from autocontext.util.json_io import read_json, read_json_guarded, write_json
+from autocontext.util.json_io import read_json, read_json_guarded, write_json, write_text_atomic
 
 logger = logging.getLogger(__name__)
 
@@ -600,7 +600,7 @@ class ArtifactStore(
                 description,
                 code,
             )
-            target.write_text(wrapped, encoding="utf-8")
+            write_text_atomic(target, wrapped)
             created.append(f"{target.name} (updated)" if is_update else target.name)
 
         return created
@@ -951,8 +951,7 @@ class ArtifactStore(
     def write_tuning(self, scenario_name: str, content: str) -> None:
         """Write tuning config JSON."""
         path = self._scenario_dir(scenario_name) / "tuning.json"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content, encoding="utf-8")
+        write_text_atomic(path, content)
 
     def read_notebook(self, session_id: str) -> dict[str, Any] | None:
         """Read notebook JSON from runs/sessions/<session_id>/notebook.json."""

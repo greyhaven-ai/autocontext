@@ -66,8 +66,7 @@ class VersionedFileStore:
             return False
         latest = versions[-1]
         path = self._root / name
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(latest.read_text(encoding="utf-8"), encoding="utf-8")
+        write_text_atomic(path, latest.read_text(encoding="utf-8"))
         latest.unlink()
         return True
 

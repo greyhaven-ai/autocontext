@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pytest
 
@@ -90,4 +89,3 @@ class TestReadJsonGuarded:
         bad.write_text("{not json", encoding="utf-8")
         with pytest.raises(json.JSONDecodeError):
             read_json(bad)
-        assert isinstance(Path(str(bad)), Path)

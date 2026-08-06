@@ -41,7 +41,7 @@ def read_json_guarded(path: Path, default: Any = None) -> Any:
 def write_text_atomic(path: Path, content: str) -> None:
     """Write *content* to *path* via a temp file and ``os.replace``.
 
-    A crash mid-write can never truncate the live file, and concurrent
+    A process crash mid-write can never truncate the live file, and concurrent
     readers observe either the old or the new content, never a partial
     write. Parent directories are created automatically.
     """

@@ -61,11 +61,14 @@ class DatasetStore:
         path = self.dataset_path(target)
         prefix = ""
         if path.exists():
-            tail = path.read_bytes()[-1:]
-            if tail and tail != b"\n":
-                # a torn trailing line from a crash mid-append must not
-                # fuse with the next record; start it on a fresh line
-                prefix = "\n"
+            with path.open("rb") as handle:
+                handle.seek(0, os.SEEK_END)
+                if handle.tell() > 0:
+                    handle.seek(-1, os.SEEK_END)
+                    if handle.read(1) != b"\n":
+                        # a torn trailing line from a crash mid-append must not
+                        # fuse with the next record; start it on a fresh line
+                        prefix = "\n"
         with path.open("a", encoding="utf-8") as handle:
             handle.write(prefix)
             for record in records:

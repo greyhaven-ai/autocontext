@@ -117,7 +117,11 @@ def stage_pending_playbook(
     scenario_dir = resolve_scenario_root(knowledge_root, scenario_name)
     scenario_dir.mkdir(parents=True, exist_ok=True)
     if _pending_json(scenario_dir).exists():
-        raise ValueError("pending playbook already exists; approve or reject it before staging another")
+        if _pending_md(scenario_dir).exists():
+            raise ValueError("pending playbook already exists; approve or reject it before staging another")
+        # Provenance without pending.md is a torn clear (md is always removed
+        # first); drop the orphan provenance and continue staging.
+        _pending_json(scenario_dir).unlink()
     # An orphan pending.md without provenance is a torn earlier staging; the
     # provenance file is the commit point, so clear the orphan and continue.
     if _pending_md(scenario_dir).exists():
@@ -144,10 +148,9 @@ def read_pending_playbook(knowledge_root: Path, scenario_name: str) -> dict[str,
     pending_path = _pending_md(scenario_dir)
     provenance_path = _pending_json(scenario_dir)
     if not provenance_path.exists():
-        # Provenance is the commit point; a pending.md without it is a torn
-        # staging. Remove the orphan so the next staging is not wedged.
-        if pending_path.exists():
-            pending_path.unlink()
+        # Provenance is the commit point. A pending.md without it is either a
+        # torn staging or a stage IN PROGRESS in another process, so the read
+        # path must never delete it; the stage path cleans real orphans.
         return {"has_pending": False, "content": "", "diff": "", "provenance": None}
     if not pending_path.exists():
         return {"has_pending": False, "content": "", "diff": "", "provenance": None}

@@ -473,3 +473,42 @@ class TestReportStoreReaderHardening:
         path.write_text("{not json", encoding="utf-8")
         assert read_negative_result_ledger(tmp_path, "grid_ctf", "run_bad") is None
         assert read_latest_negative_result_ledgers_markdown(tmp_path, "grid_ctf") == ""
+
+
+class TestPendingPlaybookRaceSafety:
+    """Review fixes: the read path must never delete files, and a torn clear
+    (provenance json without md) must not wedge staging forever."""
+
+    def _stage(self, tmp_path) -> None:
+        stage_pending_playbook(
+            tmp_path,
+            "grid_ctf",
+            "content",
+            source_run_id="run_1",
+            generation=1,
+            curator_decision="accept",
+        )
+
+    def test_read_does_not_delete_mid_stage_orphan(self, tmp_path) -> None:
+        scenario_dir = tmp_path / "grid_ctf"
+        scenario_dir.mkdir(parents=True)
+        md = scenario_dir / "playbook.pending.md"
+        md.write_text("mid-stage\n", encoding="utf-8")
+        view = read_pending_playbook(tmp_path, "grid_ctf")
+        assert view["has_pending"] is False
+        assert md.exists()
+
+    def test_json_orphan_from_torn_clear_unwedges_staging(self, tmp_path) -> None:
+        self._stage(tmp_path)
+        scenario_dir = tmp_path / "grid_ctf"
+        (scenario_dir / "playbook.pending.md").unlink()
+        assert read_pending_playbook(tmp_path, "grid_ctf")["has_pending"] is False
+        self._stage(tmp_path)
+        assert read_pending_playbook(tmp_path, "grid_ctf")["has_pending"] is True
+
+    def test_genuine_pending_still_blocks_staging(self, tmp_path) -> None:
+        self._stage(tmp_path)
+        import pytest as pytest_module
+
+        with pytest_module.raises(ValueError, match="pending playbook already exists"):
+            self._stage(tmp_path)
