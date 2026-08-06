@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from autocontext.ambient.advise_gate import AdviseGateDecision, run_advise_gate
+from autocontext.ambient.advise_gate import AdviseGateDecision, GateOutcome, run_advise_gate
 from autocontext.ambient.charter import (
     AdviseGateConfig,
     Charter,
@@ -84,23 +84,33 @@ class TestAdviseGateConfig:
 class TestRunAdviseGate:
     def test_parses_clean_verdict(self) -> None:
         provider = _StubProvider('{"should_propose": true, "rationale": "durable evidence"}')
-        decision = run_advise_gate(provider, "judge-model", "evidence", max_output_tokens=256)
-        assert decision == AdviseGateDecision(should_propose=True, rationale="durable evidence")
+        outcome = run_advise_gate(provider, "judge-model", "evidence", max_output_tokens=256)
+        assert outcome == GateOutcome(AdviseGateDecision(should_propose=True, rationale="durable evidence"), "")
         assert provider.calls[0]["max_tokens"] == 256
         assert provider.calls[0]["model"] == "judge-model"
 
     def test_parses_fenced_verdict(self) -> None:
         provider = _StubProvider('```json\n{"should_propose": false, "rationale": "one-off noise"}\n```')
-        decision = run_advise_gate(provider, "m", "evidence", max_output_tokens=512)
-        assert decision is not None and decision.should_propose is False
+        outcome = run_advise_gate(provider, "m", "evidence", max_output_tokens=512)
+        assert outcome.decision is not None and outcome.decision.should_propose is False
 
-    def test_garbage_returns_none(self) -> None:
+    def test_garbage_returns_parse_failure(self) -> None:
         provider = _StubProvider("mid-sentence trunca")
-        assert run_advise_gate(provider, "m", "evidence", max_output_tokens=512) is None
+        outcome = run_advise_gate(provider, "m", "evidence", max_output_tokens=512)
+        assert outcome == GateOutcome(None, "parse_error")
 
-    def test_provider_error_returns_none(self) -> None:
+    def test_provider_error_returns_failure(self) -> None:
         provider = _StubProvider(error=True)
-        assert run_advise_gate(provider, "m", "evidence", max_output_tokens=512) is None
+        outcome = run_advise_gate(provider, "m", "evidence", max_output_tokens=512)
+        assert outcome == GateOutcome(None, "provider_error")
+
+    def test_unexpected_exception_degrades_not_raises(self) -> None:
+        class _TypeErrorProvider(_StubProvider):
+            def complete(self, *args, **kwargs):  # type: ignore[override]
+                raise TypeError("Could not resolve authentication method")
+
+        outcome = run_advise_gate(_TypeErrorProvider(), "m", "evidence", max_output_tokens=512)
+        assert outcome == GateOutcome(None, "provider_error")
 
 
 class TestAdviseStageGating:
@@ -183,3 +193,59 @@ class TestAdviseStageGating:
         pending, _, _ = self._run_stage(tmp_path, _gate_charter(), provider)
         assert pending != []
         assert provider.calls == []
+
+
+class TestFactoryWiring:
+    """The gate provider is built only when the charter enables the gate,
+    and a misconfigured provider degrades to gate-off instead of crashing."""
+
+    def _build(self, tmp_path, charter, monkeypatch, provider_factory):
+        import autocontext.providers as providers_module
+        from autocontext.ambient.stage_factory import build_stages
+        from autocontext.config.settings import AppSettings
+        from autocontext.harness.core.events import EventStreamEmitter
+
+        monkeypatch.setattr(providers_module, "get_provider", provider_factory)
+        return build_stages(
+            charter,
+            db_path=tmp_path / "ambient.sqlite3",
+            emitter=EventStreamEmitter(tmp_path / "events.ndjson"),
+            runs_db_path=tmp_path / "runs.sqlite3",
+            otel_feed_dir=tmp_path / "feed",
+            datasets_dir=tmp_path / "datasets",
+            registry_dir=tmp_path / "registry",
+            usage_db=tmp_path / "usage.sqlite3",
+            artifacts_dir=tmp_path / "artifacts",
+            checkpoints_dir=tmp_path / "checkpoints",
+            suites_dir=tmp_path / "suites",
+            settings=AppSettings(),
+        )
+
+    def test_gate_charter_builds_provider(self, tmp_path, monkeypatch) -> None:
+        sentinel = _StubProvider("{}")
+        stages = self._build(
+            tmp_path,
+            _gate_charter(advise_gate=AdviseGateConfig(model="judge")),
+            monkeypatch,
+            lambda settings: sentinel,
+        )
+        assert stages["advise"].gate_provider is sentinel  # type: ignore[union-attr]
+
+    def test_default_charter_never_builds_provider(self, tmp_path, monkeypatch) -> None:
+        def boom(settings):
+            raise AssertionError("provider must not be built without a gate config")
+
+        stages = self._build(tmp_path, _gate_charter(), monkeypatch, boom)
+        assert stages["advise"].gate_provider is None  # type: ignore[union-attr]
+
+    def test_provider_failure_degrades_to_gate_off(self, tmp_path, monkeypatch) -> None:
+        def broken(settings):
+            raise TypeError("no api key")
+
+        stages = self._build(
+            tmp_path,
+            _gate_charter(advise_gate=AdviseGateConfig(model="judge")),
+            monkeypatch,
+            broken,
+        )
+        assert stages["advise"].gate_provider is None  # type: ignore[union-attr]

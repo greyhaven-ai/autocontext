@@ -13,10 +13,11 @@ from __future__ import annotations
 
 import json
 import logging
+from typing import NamedTuple
 
 from pydantic import BaseModel, ValidationError
 
-from autocontext.providers.base import LLMProvider, ProviderError
+from autocontext.providers.base import LLMProvider
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,13 @@ class AdviseGateDecision(BaseModel):
     rationale: str = ""
 
 
+class GateOutcome(NamedTuple):
+    """Decision plus a failure label when the gate could not decide."""
+
+    decision: AdviseGateDecision | None
+    failure: str  # "" | "provider_error" | "parse_error"
+
+
 def _strip_fences(text: str) -> str:
     stripped = text.strip()
     if stripped.startswith("```"):
@@ -51,8 +59,14 @@ def run_advise_gate(
     evidence_summary: str,
     *,
     max_output_tokens: int,
-) -> AdviseGateDecision | None:
-    """One bounded gate call; None on any failure (caller degrades to permit)."""
+) -> GateOutcome:
+    """One bounded gate call; a failed gate never decides (caller must permit).
+
+    The catch is deliberately broad: provider stacks raise more than
+    ProviderError (a missing API key surfaces as TypeError from the anthropic
+    client), and ANY escape here would trip the stage breaker and suppress
+    proposals permanently, the exact failure the gate must never cause.
+    """
     try:
         result = provider.complete(
             system_prompt=ADVISE_GATE_SYSTEM_PROMPT,
@@ -61,11 +75,12 @@ def run_advise_gate(
             temperature=0.0,
             max_tokens=max_output_tokens,
         )
-    except ProviderError:
+    except Exception:
         logger.warning("advise gate provider call failed; degrading to LLM-free path", exc_info=True)
-        return None
+        return GateOutcome(None, "provider_error")
     try:
-        return AdviseGateDecision.model_validate(json.loads(_strip_fences(result.text)))
+        decision = AdviseGateDecision.model_validate(json.loads(_strip_fences(result.text)))
     except (ValueError, ValidationError):
         logger.warning("advise gate verdict unparseable; degrading to LLM-free path")
-        return None
+        return GateOutcome(None, "parse_error")
+    return GateOutcome(decision, "")

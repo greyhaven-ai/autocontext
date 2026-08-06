@@ -105,7 +105,8 @@ class AdviseStage:
             if role_coverage or scenario in covered:
                 continue
             candidates.append(scenario)
-        if candidates and not self._gate_permits(ctx, stats, candidates):
+        has_template = next(iter(ctx.charter.targets), None) is not None
+        if candidates and has_template and not self._gate_permits(ctx, stats, candidates):
             return StageResult()
         emitted = 0
         for scenario in candidates:
@@ -179,23 +180,27 @@ class AdviseStage:
         if gate is None or self.gate_provider is None:
             return True
         summary_lines = [
-            f"- scenario {scenario}: {stats[scenario].count} eligible frontier traces, "
-            f"mean score {stats[scenario].mean_score:.2f}"
+            "- scenario {}: {} eligible frontier traces, mean score {:.2f}".format(
+                " ".join(scenario.split()),
+                stats[scenario].count,
+                stats[scenario].mean_score,
+            )
             for scenario in candidates
         ]
         evidence = (
             "Candidate training-target proposals this advise cycle:\n" + "\n".join(summary_lines)
         )
-        decision = run_advise_gate(
+        outcome = run_advise_gate(
             self.gate_provider,
             gate.model,
             evidence,
             max_output_tokens=gate.max_output_tokens,
         )
+        decision = outcome.decision
         if decision is None:
             ctx.emitter.emit(
                 "advise_gate_degraded",
-                {"candidates": candidates},
+                {"candidates": candidates, "reason": outcome.failure},
                 channel="ambient",
             )
             return True

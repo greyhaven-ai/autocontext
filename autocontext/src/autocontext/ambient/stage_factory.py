@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from autocontext.ambient.advise import AdviseStage
@@ -24,6 +25,7 @@ from autocontext.config import AppSettings
 from autocontext.harness.core.events import EventStreamEmitter
 from autocontext.training.model_registry import ModelRegistry
 
+logger = logging.getLogger(__name__)
 
 def build_stages(
     charter: Charter,
@@ -76,7 +78,12 @@ def build_stages(
     if charter.advise_gate is not None:
         from autocontext.providers import get_provider
 
-        gate_provider = get_provider(settings)
+        try:
+            gate_provider = get_provider(settings)
+        except Exception:
+            # a misconfigured judge provider must not take down the daemon or
+            # the read-only status command; the gate degrades to off (permit)
+            logger.warning("advise gate provider unavailable; gate disabled", exc_info=True)
     stages["advise"] = AdviseStage(name="advise", trace_store=trace_store, gate_provider=gate_provider)
     stages["train"] = TrainStage(
         name="train",
