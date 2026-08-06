@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from autocontext.blobstore.ref import BlobRef
+from autocontext.util.json_io import write_text_atomic
 
 
 class BlobRegistry:
@@ -30,16 +31,27 @@ class BlobRegistry:
         data: dict[str, Any] = {}
         for run_id, entries in self._entries.items():
             data[run_id] = {name: ref.to_dict() for name, ref in entries.items()}
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        write_text_atomic(path, json.dumps(data, indent=2))
 
     @classmethod
     def load(cls, path: Path) -> BlobRegistry:
         registry = cls()
         if not path.is_file():
             return registry
-        data = json.loads(path.read_text(encoding="utf-8"))
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return registry
+        if not isinstance(data, dict):
+            return registry
         for run_id, entries in data.items():
+            if not isinstance(entries, dict):
+                continue
             for name, ref_dict in entries.items():
-                registry.register(run_id, name, BlobRef.from_dict(ref_dict))
+                if not isinstance(ref_dict, dict):
+                    continue
+                try:
+                    registry.register(run_id, name, BlobRef.from_dict(ref_dict))
+                except (KeyError, TypeError, ValueError):
+                    continue
         return registry

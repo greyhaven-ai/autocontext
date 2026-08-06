@@ -17,6 +17,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from autocontext.research.consultation import ResearchBrief
+from autocontext.util.json_io import write_text_atomic
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +63,7 @@ class ResearchStore:
         )
 
         brief_path = self._dir / f"{brief_id}.json"
-        brief_path.write_text(brief.model_dump_json(indent=2), encoding="utf-8")
+        write_text_atomic(brief_path, brief.model_dump_json(indent=2))
 
         manifest = self._load_manifest()
         manifest.append(ref.model_dump())
@@ -79,8 +80,15 @@ class ResearchStore:
         return ResearchBrief.model_validate(data)
 
     def list_briefs(self, session_id: str) -> list[BriefRef]:
-        manifest = self._load_manifest()
-        return [BriefRef.model_validate(e) for e in manifest if e["session_id"] == session_id]
+        refs: list[BriefRef] = []
+        for entry in self._load_manifest():
+            if not isinstance(entry, dict) or entry.get("session_id") != session_id:
+                continue
+            try:
+                refs.append(BriefRef.model_validate(entry))
+            except ValueError:
+                continue
+        return refs
 
     def brief_count(self) -> int:
         return len(self._load_manifest())
@@ -97,8 +105,11 @@ class ResearchStore:
     def _load_manifest(self) -> list[dict[str, Any]]:
         if not self._manifest_path.exists():
             return []
-        data: list[dict[str, Any]] = json.loads(self._manifest_path.read_text(encoding="utf-8"))
-        return data
+        try:
+            data = json.loads(self._manifest_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return []
+        return data if isinstance(data, list) else []
 
     def _write_manifest(self, manifest: list[dict[str, Any]]) -> None:
-        self._manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        write_text_atomic(self._manifest_path, json.dumps(manifest, indent=2))

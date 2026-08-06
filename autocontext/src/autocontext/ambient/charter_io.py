@@ -8,6 +8,7 @@ import yaml  # type: ignore[import-untyped]
 from pydantic import ValidationError
 
 from autocontext.ambient.charter import Charter
+from autocontext.util.json_io import write_text_atomic
 
 
 class CharterLoadError(Exception):
@@ -34,4 +35,4 @@ def load_charter(path: Path) -> Charter:
 def save_charter(charter: Charter, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = charter.model_dump(mode="json")
-    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    write_text_atomic(path, yaml.safe_dump(payload, sort_keys=False))

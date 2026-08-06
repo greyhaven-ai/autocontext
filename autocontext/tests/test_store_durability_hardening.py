@@ -252,3 +252,101 @@ class TestMutationStores:
             fh.write('{"mutation_type": "playbook_update", "generation": "not_an_int", "payload": {}}\n')
         entries = log.read("grid_ctf")
         assert [e.payload.get("summary") for e in entries] == ["ok"]
+
+
+class TestRemainingStores:
+    def _spy_replace(self, monkeypatch):
+        import os as os_module
+
+        replaced: list[str] = []
+        real_replace = os_module.replace
+
+        def spy(src, dst):  # type: ignore[no-untyped-def]
+            replaced.append(str(dst))
+            return real_replace(src, dst)
+
+        monkeypatch.setattr("autocontext.util.json_io.os.replace", spy)
+        return replaced
+
+    def test_self_improve_jsonl_skips_malformed_and_writes_atomic(self, tmp_path, monkeypatch) -> None:
+        from autocontext.training.autoresearch.self_improve import _read_jsonl, _write_jsonl
+
+        path = tmp_path / "records.jsonl"
+        path.write_text('{"a": 1}\n{torn\n{"b": 2}\n', encoding="utf-8")
+        assert _read_jsonl(path) == [{"a": 1}, {"b": 2}]
+        replaced = self._spy_replace(monkeypatch)
+        _write_jsonl(path, [{"c": 3}])
+        assert str(path) in replaced
+
+    def test_dataset_append_guards_torn_trailing_line(self, tmp_path) -> None:
+        from autocontext.ambient.datasets import DatasetStore
+
+        store = DatasetStore(tmp_path)
+        dataset = store.dataset_path("target_a")
+        dataset.parent.mkdir(parents=True, exist_ok=True)
+        with dataset.open("w", encoding="utf-8") as fh:
+            fh.write('{"partial": tru')
+        store.append_records("target_a", [{"ok": 1}])
+        lines = dataset.read_text(encoding="utf-8").splitlines()
+        assert lines[-1] == '{"ok": 1}'
+        assert len(lines) == 2
+
+    def test_blob_registry_corrupt_or_misshapen_degrades(self, tmp_path) -> None:
+        from autocontext.blobstore.registry import BlobRegistry
+
+        path = tmp_path / "registry.json"
+        path.write_text("{not json", encoding="utf-8")
+        assert BlobRegistry.load(path)._entries == {}
+        path.write_text('{"run_1": "not a dict"}', encoding="utf-8")
+        assert BlobRegistry.load(path)._entries == {}
+
+    def test_research_manifest_corrupt_degrades_and_bad_entries_skipped(self, tmp_path) -> None:
+        from autocontext.research.persistence import ResearchStore
+
+        store = ResearchStore(tmp_path)
+        store._manifest_path.write_text("{not json", encoding="utf-8")
+        assert store.brief_count() == 0
+        store._manifest_path.write_text('[{"no_keys": true}]', encoding="utf-8")
+        assert store.list_briefs("session_x") == []
+
+    def test_charter_save_is_atomic(self, tmp_path, monkeypatch) -> None:
+        from autocontext.ambient.charter import (
+            Charter,
+            CharterBudgets,
+            CharterSource,
+            CharterTarget,
+        )
+        from autocontext.ambient.charter_io import load_charter, save_charter
+
+        replaced = self._spy_replace(monkeypatch)
+        path = tmp_path / "charter.yaml"
+        charter = Charter(
+            tier="oss",
+            control_surface="local",
+            autonomy="propose",
+            sources=[CharterSource(name="native", kind="autocontext", enabled=True)],
+            targets=[
+                CharterTarget(
+                    name="competitor-grid",
+                    kind="role",
+                    selector="competitor@grid_ctf",
+                    base_model="Qwen/Qwen2.5-3B-Instruct",
+                    method="sft-distill",
+                    min_dataset_records=500,
+                    eval_suite="grid_ctf_holdout",
+                )
+            ],
+            budgets=CharterBudgets(gpu_hours_per_window=8.0, window_hours=24, disk_quota_gb=200.0),
+        )
+        save_charter(charter, path)
+        assert str(path) in replaced
+        assert load_charter(path).tier == "oss"
+
+    def test_lesson_store_wrong_shaped_records_degrade(self, tmp_path) -> None:
+        from autocontext.knowledge.lessons import LessonStore
+
+        store = LessonStore(tmp_path / "knowledge", tmp_path / "skills")
+        scenario_dir = tmp_path / "knowledge" / "grid_ctf"
+        scenario_dir.mkdir(parents=True)
+        (scenario_dir / "lessons.json").write_text('[{"wrong": "shape"}]', encoding="utf-8")
+        assert store.read_lessons("grid_ctf") == []

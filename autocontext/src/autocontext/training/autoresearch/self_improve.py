@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from autocontext.training.autoresearch.data_selection import select_top_fraction
+from autocontext.util.json_io import write_text_atomic
 
 
 def select_elite_samples(samples: list[dict[str, Any]], *, fraction: float) -> list[dict[str, Any]]:
@@ -52,12 +53,22 @@ def samples_to_records(
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    records: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        try:
+            parsed = json.loads(stripped)
+        except ValueError:
+            continue
+        if isinstance(parsed, dict):
+            records.append(parsed)
+    return records
 
 
 def _write_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(json.dumps(r) for r in records) + "\n", encoding="utf-8")
+    write_text_atomic(path, "\n".join(json.dumps(r) for r in records) + "\n")
 
 
 def representative_context(records: list[dict[str, Any]]) -> Any:

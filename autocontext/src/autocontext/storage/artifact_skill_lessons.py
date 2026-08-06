@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Protocol
 
 from autocontext.storage.scenario_paths import normalize_scenario_name_segment
+from autocontext.util.json_io import write_text_atomic
 
 
 class SkillLessonHost(Protocol):
@@ -90,12 +91,12 @@ class SkillLessonMethods:
         )
 
         skill_dir.mkdir(parents=True, exist_ok=True)
-        skill_path.write_text(skill_content, encoding="utf-8")
+        write_text_atomic(skill_path, skill_content)
 
         playbook_content = self.read_playbook(scenario)
-        (skill_dir / "playbook.md").write_text(
+        write_text_atomic(
+            skill_dir / "playbook.md",
             playbook_content.strip() + "\n",
-            encoding="utf-8",
         )
 
         self.sync_skills_to_claude()
@@ -147,7 +148,7 @@ class SkillLessonMethods:
                 continue
             result.append(line)
         if lessons_written:
-            skill_path.write_text("\n".join(result) + "\n", encoding="utf-8")
+            write_text_atomic(skill_path, "\n".join(result) + "\n")
 
     def sync_skills_to_claude(self: SkillLessonHost) -> None:
         """Symlink skill directories into .claude/skills/ for Claude Code discovery."""
