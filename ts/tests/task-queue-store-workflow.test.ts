@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { asDbPath } from "../src/domain/ids.js";
 import { SQLiteStore, type TaskQueueRow } from "../src/storage/index.js";
 import {
   completeTaskRecord,
@@ -24,7 +25,7 @@ describe("task queue store workflow", () => {
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "ac-task-queue-store-"));
     const dbPath = join(dir, "test.db");
-    const store = new SQLiteStore(dbPath);
+    const store = new SQLiteStore(asDbPath(dbPath));
     store.migrate(MIGRATIONS_DIR);
     store.close();
     db = new Database(dbPath);
@@ -45,7 +46,7 @@ describe("task queue store workflow", () => {
     expect(dequeued?.id).toBe("task-high");
     expect(dequeued?.status).toBe("running");
 
-    completeTaskRecord(db, "task-high", 0.92, "Best", 3, true, "{\"ok\":true}");
+    completeTaskRecord(db, "task-high", 0.92, "Best", 3, true, '{"ok":true}');
     expect(getTaskRecord<TaskQueueRow>(db, "task-high")).toMatchObject({
       status: "completed",
       best_score: 0.92,
@@ -77,7 +78,7 @@ describe("task queue reliability (AC-906)", () => {
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "ac-task-queue-rel-"));
     const dbPath = join(dir, "test.db");
-    const store = new SQLiteStore(dbPath);
+    const store = new SQLiteStore(asDbPath(dbPath));
     store.migrate(MIGRATIONS_DIR);
     store.close();
     db = new Database(dbPath);
@@ -115,7 +116,9 @@ describe("task queue reliability (AC-906)", () => {
     enqueueTaskRecord(db, "t1", "spec", 0);
     dequeueTaskRecord(db);
     failTaskRecord(db, "t1", "hard error");
-    const row = db.prepare("SELECT status FROM task_queue WHERE id = 't1'").get() as { status: string };
+    const row = db.prepare("SELECT status FROM task_queue WHERE id = 't1'").get() as {
+      status: string;
+    };
     expect(row.status).toBe("failed");
   });
 
@@ -124,7 +127,9 @@ describe("task queue reliability (AC-906)", () => {
     dequeueTaskRecord(db);
     expect(requeueStaleRunning(db, 3600)).toBe(0);
     expect(requeueStaleRunning(db, 0)).toBe(1);
-    const row = db.prepare("SELECT status FROM task_queue WHERE id = 't1'").get() as { status: string };
+    const row = db.prepare("SELECT status FROM task_queue WHERE id = 't1'").get() as {
+      status: string;
+    };
     expect(row.status).toBe("pending");
   });
 });
@@ -137,7 +142,7 @@ describe("task queue backoff, sweep dead-letter, and store wiring (AC-906 review
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "ac-task-queue-rev-"));
     dbPath = join(dir, "test.db");
-    const store = new SQLiteStore(dbPath);
+    const store = new SQLiteStore(asDbPath(dbPath));
     store.migrate(MIGRATIONS_DIR);
     store.close();
     db = new Database(dbPath);
@@ -179,7 +184,7 @@ describe("task queue backoff, sweep dead-letter, and store wiring (AC-906 review
   it("SQLiteStore wires retries and stale recovery end to end", () => {
     // review-caught Critical: the facade previously dropped maxAttempts and
     // had no requeueStaleRunning, making the feature a production no-op
-    const store = new SQLiteStore(dbPath);
+    const store = new SQLiteStore(asDbPath(dbPath));
     store.enqueueTask("t1", "spec");
     store.dequeueTask();
     store.failTask("t1", "transient blip", 3, 0);
