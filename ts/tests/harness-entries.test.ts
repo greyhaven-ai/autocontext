@@ -196,7 +196,7 @@ describe("rollback", () => {
       ],
       { scope: "run" },
     );
-    const result = store.rollback(batch.id);
+    const result = store.rollback(batch.id, { scope: "run" });
     expect(result.rollbackOf).toBe(batch.id);
     const byId = new Map(store.entries().map((entry) => [entry.id, entry]));
     expect([...byId.keys()].sort()).toEqual(["harness_gone", "harness_keep"]);
@@ -206,13 +206,13 @@ describe("rollback", () => {
 
   it("unknown id throws", () => {
     const store = new HarnessEntryStore(root);
-    expect(() => store.rollback("refinement_nope")).toThrow(/unknown refinement/);
+    expect(() => store.rollback("refinement_nope", { scope: "run" })).toThrow(/unknown refinement/);
   });
 
   it("rollback is itself recorded", () => {
     const store = new HarnessEntryStore(root);
     const batch = store.apply([createEdit()], { scope: "run" });
-    store.rollback(batch.id);
+    store.rollback(batch.id, { scope: "run" });
     const history = store.loadHistory();
     expect(history).toHaveLength(2);
     expect(history[1].rollbackOf).toBe(batch.id);
@@ -273,6 +273,36 @@ describe("outcome and render", () => {
 });
 
 describe("review hardening (parity with Python TestReviewHardening)", () => {
+  it("rollback respects scope guardrail", () => {
+    const store = new HarnessEntryStore(root);
+    const batch = store.apply([createEdit({ id: "harness_g", title: "g", content: "v1" })], {
+      scope: "global",
+    });
+    expect(() => store.rollback(batch.id, { scope: "run" })).toThrow(/scope_readonly/);
+    // The rejected rollback mutated nothing: entry intact, no rollback recorded.
+    expect(store.entries()[0].content).toBe("v1");
+    expect(store.loadHistory()).toHaveLength(1);
+    const undone = store.rollback(batch.id, { scope: "global" });
+    expect(undone.rollbackOf).toBe(batch.id);
+    expect(store.entries()).toHaveLength(0);
+  });
+
+  it("broader caller can roll back a narrower refinement", () => {
+    const store = new HarnessEntryStore(root);
+    const batch = store.apply([createEdit({ id: "harness_r", title: "r", content: "v1" })], {
+      scope: "run",
+    });
+    store.rollback(batch.id, { scope: "global" });
+    expect(store.entries()).toHaveLength(0);
+  });
+
+  it("rollback rejects a missing scope at runtime", () => {
+    const store = new HarnessEntryStore(root);
+    const batch = store.apply([createEdit()], { scope: "run" });
+    const opts: { scope?: "run" } = {};
+    expect(() => store.rollback(batch.id, opts as { scope: "run" })).toThrow(/scope/);
+  });
+
   it("markOutcome respects scope guardrail", () => {
     const store = new HarnessEntryStore(root);
     const created = store.apply([createEdit({ kind: "policy", title: "g" })], { scope: "global" });
@@ -314,9 +344,9 @@ describe("review hardening (parity with Python TestReviewHardening)", () => {
     const batch = store.apply([createEdit({ action: "update", id: "harness_a", content: "v2" })], {
       scope: "run",
     });
-    const first = store.rollback(batch.id);
+    const first = store.rollback(batch.id, { scope: "run" });
     expect(store.entries()[0].content).toBe("v1");
-    store.rollback(first.id);
+    store.rollback(first.id, { scope: "run" });
     expect(store.entries()[0].content).toBe("v2");
   });
 
@@ -328,7 +358,7 @@ describe("review hardening (parity with Python TestReviewHardening)", () => {
       { scope: "run" },
     );
     store.markOutcome("harness_p", "refuted", { scope: "run", evidence: "did not deliver" });
-    store.rollback(batch.id);
+    store.rollback(batch.id, { scope: "run" });
     const entry = store.entries()[0];
     expect(entry.content).toBe("v1");
     expect(entry.outcome).toBe("refuted");
@@ -345,7 +375,7 @@ describe("review hardening (parity with Python TestReviewHardening)", () => {
     store.apply([createEdit({ action: "update", id: "harness_a", content: "v3" })], {
       scope: "run",
     });
-    store.rollback(mid.id);
+    store.rollback(mid.id, { scope: "run" });
     expect(store.entries()[0].content).toBe("v1");
   });
 

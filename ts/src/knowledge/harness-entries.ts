@@ -352,11 +352,20 @@ export class HarnessEntryStore {
    * the same entries by later refinements are overwritten (lost update).
    * Outcome marks are measurements, not refinement effects, so a current
    * non-pending outcome survives the restore.
+   *
+   * The same scope guardrail as `apply` and `markOutcome` holds (AC-907):
+   * a narrower-scope caller cannot roll back a broader-scope refinement.
+   * Checking the refinement's scope suffices because every entry a
+   * refinement touched has scope at or below the refinement's.
    */
-  rollback(refinementId: string): HarnessRefinement {
+  rollback(refinementId: string, opts: { scope: HarnessScope }): HarnessRefinement {
+    const scope = requireScope(opts.scope);
     const target = this.loadHistory().find((r) => r.id === refinementId);
     if (!target) {
       throw new Error(`unknown refinement: ${refinementId}`);
+    }
+    if (SCOPE_ORDER[target.scope] > SCOPE_ORDER[scope]) {
+      throw new Error(`scope_readonly: ${refinementId} is ${target.scope}-scoped`);
     }
     const state = this.loadState();
     const applied: AppliedHarnessEdit[] = [];
