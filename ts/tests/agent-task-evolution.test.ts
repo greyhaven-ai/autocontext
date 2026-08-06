@@ -8,6 +8,7 @@ import {
   lessonEdit,
   migrateStates,
   proposeSkillPromotion,
+  renderWorkspaceSummary,
   validateSkillPromotion,
   type AgentTaskGenerationEvaluation,
   type AgentTaskGenerationState,
@@ -415,5 +416,50 @@ describe("skill promotion (parity with Python, AC-899)", () => {
       reasoning: "regressed",
     }), { bestScore: 0.949 });
     expect(bad).toBe(false);
+  });
+});
+
+describe("workspace prompt section (AC-901 parity with Python)", () => {
+  it("renderWorkspaceSummary formats variables and bounds the listing", () => {
+    const vars = Array.from({ length: 25 }, (_, i) => ({
+      name: `var_${String(i).padStart(2, "0")}`,
+      typeName: "int",
+      size: null,
+      summary: String(i),
+    }));
+    const rendered = renderWorkspaceSummary(vars, 20);
+    expect(rendered).toContain("- var_00 (int): 0");
+    expect(rendered).toContain("- var_19 (int): 19");
+    expect(rendered).not.toContain("- var_20");
+    expect(rendered).toContain("... and 5 more");
+  });
+
+  it("renderWorkspaceSummary includes size when present and returns empty for no vars", () => {
+    const rendered = renderWorkspaceSummary([
+      { name: "pool", typeName: "list", size: 3, summary: "[1, 2, 3]" },
+    ]);
+    expect(rendered).toBe("- pool (list, size 3): [1, 2, 3]");
+    expect(renderWorkspaceSummary([])).toBe("");
+  });
+
+  it("buildEnrichedPrompt appends the workspace section only when a summary is given", () => {
+    const base = {
+      taskPrompt: "TASK",
+      playbook: "",
+      generation: 1,
+      bestOutput: "",
+      bestScore: 0,
+    };
+    expect(buildEnrichedPrompt(base)).toBe("TASK");
+    expect(buildEnrichedPrompt({ ...base, workspaceSummary: "" })).toBe("TASK");
+    const withWorkspace = buildEnrichedPrompt({
+      ...base,
+      workspaceSummary: "- pool (list, size 3): [1, 2, 3]",
+    });
+    // Section text pinned to the exact Python literal.
+    expect(withWorkspace).toContain(
+      "## Workspace (persistent interpreter variables; reference them by name, contents are not inlined)",
+    );
+    expect(withWorkspace).toContain("- pool (list, size 3): [1, 2, 3]");
   });
 });
