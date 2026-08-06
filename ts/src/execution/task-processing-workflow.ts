@@ -201,7 +201,11 @@ export async function executeQueuedTaskWorkflow(opts: {
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    await opts.store.failTask(opts.task.id, message, opts.maxAttempts);
+    if (opts.maxAttempts === undefined) {
+      await opts.store.failTask(opts.task.id, message);
+    } else {
+      await opts.store.failTask(opts.task.id, message, opts.maxAttempts);
+    }
   }
 }
 
