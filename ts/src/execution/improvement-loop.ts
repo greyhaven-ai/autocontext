@@ -142,7 +142,9 @@ export class ImprovementLoop {
       const roundMs = Math.round(performance.now() - roundStart);
       totalInternalRetries += result.internalRetries ?? 0;
 
-      const failed = isParseFailure(result.score, result.reasoning);
+      // a cached round replays a real verdict; its embedded output must
+      // never be re-classified as a judge parse failure
+      const failed = fromCache ? false : isParseFailure(result.score, result.reasoning);
       const roundResult = buildRoundResult({
         roundNumber: roundNum,
         output: currentOutput,
@@ -160,16 +162,6 @@ export class ImprovementLoop {
         }
       } else if (!failed) {
         consecutiveCachedFailures = 0;
-      }
-
-      if (!fromCache && !failed && missingTargets.length === 0) {
-        verdictCache.put(fingerprint, {
-          score: result.score,
-          reasoning: result.reasoning,
-          dimensionScores: { ...(result.dimensionScores ?? {}) },
-          passed: result.score >= this.#qualityThreshold,
-          evaluatorEpoch: result.evaluatorEpoch ?? null,
-        });
       }
 
       if (failed) {
@@ -217,7 +209,13 @@ export class ImprovementLoop {
       // confirm a new-epoch round as "confirmed stable" and stop the loop early. Mirrors Python
       // resolve_epoch_rebaseline.
       const roundEpoch = result.evaluatorEpoch ?? null;
-      const epochDecision = resolveEpochRebaseline(baselineEpoch, roundEpoch, hasBaseline);
+      // AC-902: a synthesized targets-missing round is deterministic and
+      // epoch-less; letting it rebaseline would reset bestScore and crown the
+      // known-bad artifact as best. Skip the AC-885 block entirely.
+      const epochDecision =
+        missingTargets.length > 0
+          ? resolveEpochRebaseline(baselineEpoch, baselineEpoch, false)
+          : resolveEpochRebaseline(baselineEpoch, roundEpoch, hasBaseline);
       if (epochDecision.rebaseline) {
         // The TS loop has no event sink, so the rebaseline is surfaced via console.warn -- the same
         // channel the score-delta warning uses. The token EVALUATOR_EPOCH_REBASELINE mirrors the
@@ -230,8 +228,10 @@ export class ImprovementLoop {
         thresholdMetRound = null;
         plateauCount = 0;
       }
-      baselineEpoch = roundEpoch;
-      hasBaseline = true;
+      if (missingTargets.length === 0) {
+        baselineEpoch = roundEpoch;
+        hasBaseline = true;
+      }
 
       if (pinnedDimensions === undefined && Object.keys(result.dimensionScores).length > 0) {
         pinnedDimensions = Object.keys(result.dimensionScores).sort();
@@ -251,7 +251,7 @@ export class ImprovementLoop {
       }
       let effectiveScore = scoreDeltaPolicy.effectiveScore;
 
-      if (effectiveScore > 0 && this.#task.verifyFacts) {
+      if (effectiveScore > 0 && !fromCache && this.#task.verifyFacts) {
         this.#timeBudget?.check(`round ${roundNum} fact verification`);
         const verifyResult = await this.#task.verifyFacts(currentOutput, opts.state);
         this.#timeBudget?.check(`round ${roundNum} fact verification`);
@@ -263,6 +263,18 @@ export class ImprovementLoop {
           effectiveScore = Math.max(0, effectiveScore * 0.9);
           roundResult.score = effectiveScore;
         }
+      }
+
+      if (!fromCache && !failed && missingTargets.length === 0) {
+        // cached verdicts embed the delta-cap and fact-check adjustments, so
+        // a later reuse of this fingerprint replays the effective outcome
+        verdictCache.put(fingerprint, {
+          score: effectiveScore,
+          reasoning: roundResult.reasoning,
+          dimensionScores: { ...(result.dimensionScores ?? {}) },
+          passed: effectiveScore >= this.#qualityThreshold,
+          evaluatorEpoch: result.evaluatorEpoch ?? null,
+        });
       }
 
       if (effectiveScore > bestScore) {

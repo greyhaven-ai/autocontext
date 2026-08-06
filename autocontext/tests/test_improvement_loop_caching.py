@@ -128,3 +128,96 @@ class TestRequiredTargets:
         result = loop.run("theorem foo := by simp", {})
         assert task.evaluate_calls == 1
         assert result.best_score == 0.95
+
+
+class EpochTask(AgentTaskInterface):
+    """Judge carries an evaluator epoch (production AC-885 shape)."""
+
+    def __init__(self) -> None:
+        self.evaluate_calls = 0
+
+    def get_task_prompt(self, state):  # type: ignore[no-untyped-def]
+        return "task"
+
+    def evaluate_output(self, output, state, reference_context=None, required_concepts=None, **kwargs):  # type: ignore[no-untyped-def]
+        self.evaluate_calls += 1
+        return AgentTaskResult(score=0.85, reasoning="good", dimension_scores={}, evaluator_epoch="epoch-E")
+
+    def revise_output(self, output, judge_result, state):  # type: ignore[no-untyped-def]
+        return "artifact without the target"
+
+    def describe_task(self):  # type: ignore[no-untyped-def]
+        return "test task"
+
+    def get_rubric(self):  # type: ignore[no-untyped-def]
+        return "rubric"
+
+    def initial_state(self):  # type: ignore[no-untyped-def]
+        return {}
+
+
+class TestReviewRegressions:
+    def test_targets_missing_round_cannot_become_best_under_epoch_judge(self) -> None:
+        """A synthesized round must not trigger AC-885 rebaselining and crown
+        the known-bad artifact as best (review-caught Critical)."""
+        task = EpochTask()
+        loop = ImprovementLoop(
+            task,
+            max_rounds=2,
+            quality_threshold=0.95,
+            required_targets=["theorem foo"],
+        )
+        result = loop.run("theorem foo := by simp", {})
+        assert result.best_score == 0.85
+        assert result.best_output == "theorem foo := by simp"
+
+    def test_cached_vetoed_verdict_replays_as_veto(self) -> None:
+        """AC-750: a cached veto-zeroed score must not become the unvetoed
+        delta baseline on replay."""
+        from autocontext.execution.output_verifier import OutputVerifier
+
+        class OscillatingGoodTask(AgentTaskInterface):
+            def __init__(self) -> None:
+                self.outputs = iter(["output B", "output A", "output C"])
+
+            def get_task_prompt(self, state):  # type: ignore[no-untyped-def]
+                return "task"
+
+            def evaluate_output(self, output, state, reference_context=None, required_concepts=None, **kwargs):  # type: ignore[no-untyped-def]
+                score = {"output A": 0.9, "output B": 0.6, "output C": 0.9}[output]
+                return AgentTaskResult(score=score, reasoning="r", dimension_scores={})
+
+            def revise_output(self, output, judge_result, state):  # type: ignore[no-untyped-def]
+                return next(self.outputs)
+
+            def describe_task(self):  # type: ignore[no-untyped-def]
+                return "t"
+
+            def get_rubric(self):  # type: ignore[no-untyped-def]
+                return "rubric"
+
+            def initial_state(self):  # type: ignore[no-untyped-def]
+                return {}
+
+        # verifier rejects output A only
+        verifier = OutputVerifier(command="test-cmd")
+
+        def fake_run(output):  # type: ignore[no-untyped-def]
+            from autocontext.execution.output_verifier import VerifyResult
+
+            ok = output != "output A"
+            return VerifyResult(ok=ok, exit_code=0 if ok else 1, stdout="", stderr="" if ok else "rejected A")
+
+        verifier.run = fake_run  # type: ignore[method-assign]
+        loop = ImprovementLoop(
+            OscillatingGoodTask(),
+            max_rounds=4,
+            quality_threshold=0.95,
+            cap_score_jumps=True,
+            output_verifier=verifier,
+        )
+        result = loop.run("output A", {})
+        # round 4 (output C, 0.9, verifier passes) must win uncapped: the
+        # cached vetoed replay of A in round 3 is not a legitimate baseline
+        assert result.best_score == 0.9
+        assert result.best_output == "output C"

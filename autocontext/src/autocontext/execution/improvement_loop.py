@@ -278,6 +278,7 @@ class ImprovementLoop:
             # AC-902: byte-identical artifacts are never re-judged or
             # re-verified; a missing required target fails closed for free.
             fingerprint = content_fingerprint(current_output)
+            replayed_veto = False
             missing_targets = [target for target in self.required_targets if target not in current_output]
             cached_verdict = None if missing_targets else verdict_cache.get(fingerprint)
             from_cache = cached_verdict is not None
@@ -291,6 +292,7 @@ class ImprovementLoop:
                     ImprovementLoopEvent(event="targets_missing", round=round_num, output=current_output)
                 )
             elif cached_verdict is not None:
+                replayed_veto = cached_verdict.vetoed
                 result = AgentTaskResult(
                     score=cached_verdict.score,
                     reasoning=cached_verdict.reasoning,
@@ -314,7 +316,9 @@ class ImprovementLoop:
             total_internal_retries += result.internal_retries
             self._on_event(ImprovementLoopEvent(event="judge_done", round=round_num, score=result.score))
 
-            failed = _is_parse_failure(result.score, result.reasoning)
+            # a cached round replays a real verdict; its embedded verifier
+            # output must never be re-classified as a judge parse failure
+            failed = False if from_cache else _is_parse_failure(result.score, result.reasoning)
 
             round_result = RoundResult(
                 round_number=round_num,
@@ -393,7 +397,13 @@ class ImprovementLoop:
             # plateau_count) is also reset so a prior-epoch threshold-met round cannot confirm a
             # new-epoch round as "confirmed stable" and stop the loop early.
             round_result.evaluator_epoch = result.evaluator_epoch
-            _epoch_decision = resolve_epoch_rebaseline(baseline_epoch, result.evaluator_epoch, has_baseline)
+            # AC-902: a synthesized targets-missing round is deterministic and
+            # epoch-less; letting it rebaseline would reset best_score and crown
+            # the known-bad artifact as best. Skip the AC-885 block entirely.
+            if missing_targets:
+                _epoch_decision = resolve_epoch_rebaseline(baseline_epoch, baseline_epoch, False)
+            else:
+                _epoch_decision = resolve_epoch_rebaseline(baseline_epoch, result.evaluator_epoch, has_baseline)
             if _epoch_decision.rebaseline:
                 self._on_event(
                     ImprovementLoopEvent(
@@ -408,8 +418,9 @@ class ImprovementLoop:
                 threshold_met_round = None
                 prev_valid_score = None
                 plateau_count = 0
-            baseline_epoch = result.evaluator_epoch
-            has_baseline = True
+            if not missing_targets:
+                baseline_epoch = result.evaluator_epoch
+                has_baseline = True
 
             # Compute worst dimension for this round
             if result.dimension_scores:
@@ -452,8 +463,11 @@ class ImprovementLoop:
                             ),
                         )
 
-            # Reference verification hook — apply score penalty if facts unverified
-            if effective_score > 0:
+            # Reference verification hook — apply score penalty if facts unverified.
+            # Cached rounds replay a verdict whose reasoning already embeds any
+            # fact-check annotation from the original round; re-running would
+            # duplicate the annotation and double-penalize.
+            if effective_score > 0 and not from_cache:
                 verify_result = self.task.verify_facts(current_output, state)
                 if verify_result is not None and not verify_result.get("verified", True):
                     issues = verify_result.get("issues", [])
@@ -470,7 +484,7 @@ class ImprovementLoop:
             # next revision prompt sees the actual error rather than the
             # judge's prose impression.
             verifier_vetoed = False
-            if self.output_verifier is not None and not from_cache:
+            if self.output_verifier is not None and not from_cache and not missing_targets:
                 verifier_outcome = self.output_verifier.run(current_output)
                 if not verifier_outcome.ok:
                     annotation = "\n\nExternal Verifier Output:\n" + verifier_outcome.message
@@ -509,6 +523,7 @@ class ImprovementLoop:
                         reasoning=round_result.reasoning,
                         dimension_scores=dict(result.dimension_scores),
                         passed=effective_score >= self.quality_threshold,
+                        vetoed=verifier_vetoed,
                         evaluator_epoch=result.evaluator_epoch,
                     ),
                 )
@@ -608,7 +623,8 @@ class ImprovementLoop:
             prev_valid_score = result.score
             # AC-750: only the judge's view from a non-vetoed round counts as a
             # legitimate baseline for the next round's max_score_delta check.
-            if not verifier_vetoed:
+            # A cached replay of a vetoed round is still a veto.
+            if not verifier_vetoed and not replayed_veto:
                 last_unvetoed_score = result.score
 
             # `dims_ok` was computed up front (alongside best-tracking) so

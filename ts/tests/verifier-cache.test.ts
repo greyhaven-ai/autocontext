@@ -109,3 +109,35 @@ describe("improvement loop caching (AC-902)", () => {
     expect(result.bestScore).toBe(0.95);
   });
 });
+
+describe("review regressions (AC-902)", () => {
+  it("targets-missing round cannot become best under an epoch-carrying judge", async () => {
+    const calls: string[] = [];
+    const task = {
+      getTaskPrompt: () => "task",
+      describeTask: () => "t",
+      getRubric: () => "rubric",
+      initialState: () => ({}),
+      evaluateOutput: async (output: string) => {
+        calls.push(output);
+        return {
+          score: 0.85,
+          reasoning: "good",
+          dimensionScores: {},
+          internalRetries: 0,
+          evaluatorEpoch: "epoch-E",
+        };
+      },
+      reviseOutput: async () => "artifact without the target",
+    } as unknown as AgentTaskInterface;
+    const loop = new ImprovementLoop({
+      task,
+      maxRounds: 2,
+      qualityThreshold: 0.95,
+      requiredTargets: ["theorem foo"],
+    });
+    const result = await loop.run({ initialOutput: "theorem foo := by simp", state: {} });
+    expect(result.bestScore).toBe(0.85);
+    expect(result.bestOutput).toBe("theorem foo := by simp");
+  });
+});

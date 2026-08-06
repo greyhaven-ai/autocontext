@@ -36,6 +36,7 @@ class CachedVerdict:
     reasoning: str
     dimension_scores: dict[str, float]
     passed: bool
+    vetoed: bool = False
     evaluator_epoch: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
