@@ -13,6 +13,7 @@ from autocontext.knowledge.harness_entries import (
     HarnessEntry,
     HarnessEntryStore,
     HarnessRefinement,
+    SkillReference,
 )
 
 
@@ -214,8 +215,14 @@ class TestOutcomeAndRender:
         store = HarnessEntryStore(tmp_path)
         store.apply(
             [
-                HarnessEdit(action="create", kind="policy", id="harness_p1", title="P", content="line1\nline2",
-                            expected_outcome="score rises"),
+                HarnessEdit(
+                    action="create",
+                    kind="policy",
+                    id="harness_p1",
+                    title="P",
+                    content="line1\nline2",
+                    expected_outcome="score rises",
+                ),
                 HarnessEdit(action="create", kind="fact", id="harness_f1", title="F", content="fact"),
                 HarnessEdit(action="create", kind="fact", id="harness_f2", title="Bad", content="wrong"),
             ],
@@ -298,3 +305,75 @@ class TestReviewHardening:
         store.state_path.write_text(json.dumps(raw), encoding="utf-8")
         update = store.apply([HarnessEdit(action="update", kind="fact", id="harness_real", content="x")], scope="run")
         assert update.applied_edits[0].applied
+
+
+class TestSkillReference:
+    """AC-899: executable skill payload on procedure entries."""
+
+    def _reference(self) -> SkillReference:
+        return SkillReference(
+            entrypoint="priority",
+            source="def priority(v):\n    return sum(v)",
+            call_pattern="priority(vector)",
+        )
+
+    def test_reference_validates(self) -> None:
+        ref = self._reference()
+        assert ref.language == "python"
+        with pytest.raises(ValidationError):
+            SkillReference(entrypoint="", source="x")
+        with pytest.raises(ValidationError):
+            SkillReference(entrypoint="f", source="")
+
+    def test_entry_and_edit_default_to_no_reference(self) -> None:
+        assert _entry().reference is None
+        assert HarnessEdit(action="create", kind="procedure").reference is None
+
+    def test_apply_carries_reference_and_round_trips(self, tmp_path) -> None:
+        store = HarnessEntryStore(tmp_path)
+        edit = HarnessEdit(
+            action="create",
+            kind="procedure",
+            id="harness_skill",
+            title="Promoted skill: priority",
+            content="call priority(vector)",
+            reference=self._reference(),
+        )
+        store.apply([edit], scope="scenario_family")
+        entry = HarnessEntryStore(tmp_path).entries(kind="procedure")[0]
+        assert entry.reference is not None
+        assert entry.reference.entrypoint == "priority"
+        assert "def priority" in entry.reference.source
+
+    def test_mis_kinded_reference_update_is_per_edit_error_not_batch_poison(self, tmp_path) -> None:
+        """A procedure-declared update aiming a reference at a non-procedure
+        entry must fail as a per-edit error; it previously escaped as an
+        uncaught ValidationError that lost the whole batch."""
+        store = HarnessEntryStore(tmp_path)
+        store.apply([HarnessEdit(action="create", kind="fact", id="harness_f", title="t", content="c")], scope="run")
+        batch = store.apply(
+            [
+                HarnessEdit(action="update", kind="procedure", id="harness_f", reference=self._reference()),
+                HarnessEdit(action="create", kind="fact", id="harness_ok", title="t2", content="c2"),
+            ],
+            scope="run",
+        )
+        assert [item.applied for item in batch.applied_edits] == [False, True]
+        assert batch.applied_edits[0].error == "reference_requires_procedure"
+        entries = {entry.id: entry for entry in HarnessEntryStore(tmp_path).entries()}
+        assert set(entries) == {"harness_f", "harness_ok"}
+        assert entries["harness_f"].reference is None and entries["harness_f"].version == 1
+
+    def test_update_replaces_reference_when_provided(self, tmp_path) -> None:
+        store = HarnessEntryStore(tmp_path)
+        store.apply(
+            [HarnessEdit(action="create", kind="procedure", id="harness_s", title="t", content="c", reference=self._reference())],
+            scope="run",
+        )
+        new_ref = SkillReference(entrypoint="priority", source="def priority(v):\n    return max(v)")
+        store.apply(
+            [HarnessEdit(action="update", kind="procedure", id="harness_s", reference=new_ref)],
+            scope="run",
+        )
+        entry = store.entries()[0]
+        assert entry.reference is not None and "max(v)" in entry.reference.source

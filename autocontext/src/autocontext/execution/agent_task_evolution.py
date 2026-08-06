@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from itertools import accumulate
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 from autocontext.knowledge.compaction import compact_prompt_component
-from autocontext.knowledge.harness_entries import HarnessEdit
+from autocontext.knowledge.harness_entries import HarnessEdit, HarnessEntry, SkillReference
 from autocontext.scenarios.agent_task import AgentTaskResult
 
 
@@ -79,8 +80,14 @@ class FunctionSlot:
 
     harness: str
 
-    def assemble(self, slot: str) -> str:
-        """Return the full runnable program: slot prepended to harness."""
+    def assemble(self, slot: str, *, skills: Sequence[str] = ()) -> str:
+        """Return the full runnable program: skills, then slot, then harness.
+
+        Skill sources come first so the slot may call them; behavior without
+        skills is unchanged.
+        """
+        if skills:
+            return "\n\n".join([*skills, slot, self.harness])
         return f"{slot}\n\n{self.harness}"
 
 
@@ -154,6 +161,63 @@ def lesson_edit(
     )
 
 
+def detect_plateau(score_history: Sequence[float], *, window: int = 3, epsilon: float = 1e-6) -> bool:
+    """Flat RUNNING-BEST tail over the last ``window`` generations.
+
+    ``score_history`` carries per-generation candidate scores, which can
+    oscillate below a stuck best; the plateau that matters for promotion is
+    the running maximum going flat.
+    """
+    window = max(1, window)
+    if len(score_history) < window:
+        return False
+    running_best = list(accumulate(score_history, max))
+    tail = running_best[-window:]
+    return max(tail) - min(tail) <= epsilon
+
+
+def propose_skill_promotion(
+    state: AgentTaskGenerationState,
+    *,
+    entrypoint: str,
+    call_pattern: str = "",
+    window: int = 3,
+    epsilon: float = 1e-6,
+) -> HarnessEdit | None:
+    """Propose freezing the champion slot as a named executable skill (AC-899).
+
+    Precondition: the run must be in function-slot mode, where
+    ``state.best_output`` holds only the evolved slot. In whole-program mode
+    ``best_output`` is the entire program and must not be promoted as a skill.
+
+    Fires only on a plateau with a non-empty champion: the search has stopped
+    improving, so the best procedure so far is worth reusing deterministically
+    instead of regenerating. Returns a create edit (proposal); the caller
+    decides whether to apply it and at what scope.
+    """
+    if not detect_plateau(state.score_history, window=window, epsilon=epsilon):
+        return None
+    if not state.best_output.strip():
+        return None
+    reference = SkillReference(
+        entrypoint=entrypoint,
+        source=state.best_output,
+        call_pattern=call_pattern or f"{entrypoint}(...)",
+    )
+    return HarnessEdit(
+        action="create",
+        kind="procedure",
+        title=f"Promoted skill: {entrypoint}",
+        content=(
+            f"Champion slot frozen at generation {state.generation} "
+            f"(score {state.best_score:.2f}). Call `{reference.call_pattern}`; do not reimplement."
+        ),
+        expected_outcome=f"Assembling the harness with this skill reproduces score {state.best_score:.2f}.",
+        reason=f"plateau over {window} generations at score {state.best_score:.2f}",
+        reference=reference,
+    )
+
+
 def build_enriched_prompt(
     *,
     task_prompt: str,
@@ -162,6 +226,7 @@ def build_enriched_prompt(
     best_output: str,
     best_score: float,
     harness: str = "",
+    skills: Sequence[HarnessEntry] = (),
 ) -> str:
     """Enrich a task prompt with cross-generation context.
 
@@ -184,6 +249,19 @@ def build_enriched_prompt(
     if best_output:
         sections.append(f"\n\n## Best Previous Output (score {best_score:.2f})\n{best_output}")
 
+    skill_lines = [
+        "- `{}`: {}".format(
+            (entry.reference.call_pattern or entry.reference.entrypoint).replace("\n", " "),
+            entry.title.replace("\n", " "),
+        )
+        for entry in skills
+        if entry.reference is not None
+    ]
+    if skill_lines:
+        sections.append(
+            "\n\n## Available Skills (call them; do not reimplement)\n" + "\n".join(skill_lines)
+        )
+
     if playbook or best_output:
         sections.append(
             "\n\nUse the accumulated lessons and previous best output as context. "
@@ -191,6 +269,27 @@ def build_enriched_prompt(
         )
 
     return "\n".join(sections)
+
+
+def validate_skill_promotion(
+    edit: HarnessEdit,
+    slot_harness: FunctionSlot,
+    evaluate: Callable[[str], AgentTaskGenerationEvaluation],
+    *,
+    best_score: float,
+    skills: Sequence[str] = (),
+    epsilon: float = 1e-9,
+) -> bool:
+    """A promotion must reproduce the score it was distilled from (AC-899).
+
+    ``skills`` are previously promoted skill sources the candidate may call;
+    validation must assemble the same program shape evaluation used.
+    """
+    if edit.reference is None:
+        return False
+    assembled = slot_harness.assemble(edit.reference.source, skills=skills)
+    evaluation = evaluate(assembled)
+    return evaluation.score >= best_score - epsilon
 
 
 def migrate_states(
