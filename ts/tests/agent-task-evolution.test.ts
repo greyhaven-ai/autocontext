@@ -4,6 +4,7 @@ import {
   buildEnrichedPrompt,
   AgentTaskEvolutionRunner,
   FunctionSlot,
+  lessonEdit,
   migrateStates,
   type AgentTaskGenerationEvaluation,
   type AgentTaskGenerationState,
@@ -16,7 +17,7 @@ function judge(
   reasoning: string,
   dimensionScores: Record<string, number> = {},
 ): AgentTaskResult {
-  return { score, reasoning, dimensionScores, internalRetries: 0 };
+  return { score, reasoning, dimensionScores, internalRetries: 0, evaluatorEpoch: null };
 }
 
 describe("accumulateLessons (parity with Python accumulate_lessons)", () => {
@@ -281,5 +282,34 @@ describe("async generate/evaluate (P2b: promise-based providers)", () => {
     });
     const traj = await runner.runIslands({ numIslands: 2, numGenerations: 2 });
     expect(traj.totalGenerations).toBe(2);
+  });
+});
+
+describe("lessonEdit (parity with Python lesson_edit, AC-898)", () => {
+  it("hint maps to policy with expected outcome", () => {
+    const signal: LessonSignal = {
+      hint: "Demote a few CAP224 members",
+      plateau: false,
+      metrics: { delta: 0.0 },
+    };
+    const edit = lessonEdit(judge(0.94, "close", { size: 0.94 }), 5, signal);
+    expect(edit.action).toBe("create");
+    expect(edit.kind).toBe("policy");
+    expect(edit.content).toContain("Demote a few CAP224 members");
+    expect(edit.expectedOutcome).toContain("raise the best score above 0.94");
+    expect(edit.reason).toBe("lesson accumulated at generation 5");
+  });
+
+  it("plateau without hint maps to policy", () => {
+    const edit = lessonEdit(judge(0.5, ""), 2, { hint: "", plateau: true, metrics: {} });
+    expect(edit.kind).toBe("policy");
+    expect(edit.expectedOutcome).toContain("structurally different approach");
+  });
+
+  it("no signal maps to fact", () => {
+    const edit = lessonEdit(judge(0.7, "ok"), 1);
+    expect(edit.kind).toBe("fact");
+    expect(edit.expectedOutcome).toBe("");
+    expect(edit.title).toBe("Generation 1 lesson (score 0.70)");
   });
 });

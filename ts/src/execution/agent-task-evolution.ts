@@ -8,6 +8,7 @@
  */
 
 import { compactPromptComponent } from "../knowledge/semantic-compaction.js";
+import type { HarnessEdit } from "../knowledge/harness-entries.js";
 import type { AgentTaskResult } from "../types/index.js";
 
 /** Cross-generation state for an agent task evolution run. */
@@ -152,6 +153,36 @@ export function accumulateLessons(
   }
 
   return parts.join("\n");
+}
+
+/**
+ * Map a generation lesson onto a typed harness edit (AC-898).
+ *
+ * Actionable signals (hint or plateau) become policy entries carrying a
+ * falsifiable expected outcome; plain judge feedback becomes a fact.
+ * Mirrors Python's lesson_edit.
+ */
+export function lessonEdit(
+  judgeResult: AgentTaskResult,
+  generation: number,
+  signal?: LessonSignal,
+): HarnessEdit {
+  const actionable = signal !== undefined && Boolean(signal.hint || signal.plateau);
+  let expectedOutcome = "";
+  if (signal !== undefined && signal.hint) {
+    expectedOutcome = `Applying the hint should raise the best score above ${judgeResult.score.toFixed(2)}.`;
+  } else if (signal !== undefined && signal.plateau) {
+    expectedOutcome = "A structurally different approach should break the plateau.";
+  }
+  return {
+    action: "create",
+    kind: actionable ? "policy" : "fact",
+    id: "",
+    title: `Generation ${generation} lesson (score ${judgeResult.score.toFixed(2)})`,
+    content: accumulateLessons(judgeResult, generation, signal),
+    expectedOutcome,
+    reason: `lesson accumulated at generation ${generation}`,
+  };
 }
 
 /**
