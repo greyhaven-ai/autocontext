@@ -79,6 +79,17 @@
           "provider_class": "mid_tier",
           "cost_per_1k_tokens": 0.003
         }
+      },
+      "self_hosted_default_provider_is_frontier_via_table": {
+        "role": "competitor",
+        "settings": { "agent_provider": "vllm" },
+        "context": {},
+        "expected": {
+          "provider_type": "vllm",
+          "model": "opus-tier-model",
+          "provider_class": "frontier",
+          "cost_per_1k_tokens": 0.015
+        }
       }
     },
     "explicit_override": {
@@ -243,10 +254,17 @@
   "known_divergences": [
     {
       "case": "explicit_override.mixed_case_provider_name",
-      "python": "returns the raw settings value, e.g. 'Ollama'",
-      "typescript": "returns normalizeProvider(value), e.g. 'ollama'",
-      "reason": "Python's _config_for_explicit lowercases only for the _EXPLICIT_PROVIDER_CLASS lookup and returns provider_type verbatim; TypeScript's routeRoleProvider returns the normalized value. The provider_class agrees; only the reported provider string differs.",
-      "resolution": "AC-911: normalize once when Endpoint replaces the bare provider string, so both packages report the canonical transport name."
+      "python": "returns the raw settings value verbatim at all three sites that build a ProviderConfig from a provider string (_config_for_class, _config_for_explicit, _config_for_default), e.g. 'Ollama'. It also never trims: a whitespace-only provider value (e.g. competitor_provider = \"  \") is still truthy, so Python takes the EXPLICIT-override path with provider_type '  ' and model from the role's explicit-model setting.",
+      "typescript": "returns normalizeProvider(value), which both lowercases AND trims via clean(), e.g. 'ollama'. For a whitespace-only provider value, clean() reduces it to undefined, so TypeScript takes the AUTO path instead (provider_type 'anthropic', tier-derived model) rather than the explicit path.",
+      "reason": "For an ordinary mixed-case value (e.g. 'Ollama') both languages resolve the same provider_class and only the reported provider string differs, as originally recorded. But for a whitespace-only value the divergence is not cosmetic: normalizeProvider's trim makes TypeScript treat the setting as unset and take a different route (auto vs. explicit) with a different model, not merely a different provider spelling.",
+      "resolution": "AC-911: normalize once when Endpoint replaces the bare provider string, so both packages report the canonical transport name. That normalization must also decide, once, whether a whitespace-only override counts as 'set' — right now Python says yes (explicit) and TypeScript says no (auto)."
+    },
+    {
+      "case": "routing_off.unknown_role_model",
+      "python": "returns model=None (role_router.py _config_for_default: self._role_models.get(role) misses for an unregistered role, e.g. 'skeptic', and there is no fallback default)",
+      "typescript": "returns \"sonnet-tier-model\" (role-routing.ts roleSpecificModel falls through to a tier default for any role outside its switch statement)",
+      "reason": "Python has no fallback for an unregistered role under routing_off and returns None for the model, while TypeScript's roleSpecificModel falls back to the sonnet tier model. provider_type ('anthropic') and provider_class ('frontier') agree in both; only model differs.",
+      "resolution": "AC-911: the RoleAssignment work must decide one behavior for an unregistered role under routing_off, rather than inheriting Python's None and TypeScript's tier-default fallback as two separate defaults."
     }
   ]
 }

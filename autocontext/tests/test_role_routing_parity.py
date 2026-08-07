@@ -144,8 +144,17 @@ _EXPECTED_GROUPS = {
 
 
 def test_every_expected_fixture_group_is_present() -> None:
-    """A deleted group would otherwise make both suites pass with less coverage."""
+    """A deleted group would otherwise make both suites pass with less coverage.
+
+    Also couples ROUTE_GROUPS (the replay registry) to _EXPECTED_GROUPS: they are
+    otherwise independent literals, so dropping a name from ROUTE_GROUPS leaves
+    the fixture-key check untouched (the fixture still has the group, this
+    assertion above still passes) and this language silently stops replaying
+    it. The fixture-key check alone cannot catch a dropped replay registration —
+    only comparing the registry itself against the expected set can.
+    """
     assert set(_load()["fixtures"]) == _EXPECTED_GROUPS
+    assert set(ROUTE_GROUPS) | {"cost_estimation"} == _EXPECTED_GROUPS
 
 
 def test_no_expected_group_is_empty() -> None:

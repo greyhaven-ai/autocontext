@@ -104,6 +104,10 @@ function settingsFromFixture(overrides: Record<string, string> = {}): RoleRoutin
   return settings;
 }
 
+// toBeCloseTo defaults to precision 2 (tolerance 0.005); the cost classes here are
+// 0.015 / 0.003 / 0.001 / 0.0, so a default-precision check cannot distinguish
+// most of them from each other. Pin to precision 6 so this assertion is at least
+// as strict as Python's pytest.approx (relative tolerance 1e-6) on the same fields.
 function assertRouteMatches(
   result: {
     estimatedCostPer1kTokens: number;
@@ -116,7 +120,7 @@ function assertRouteMatches(
   expect(result.providerType).toBe(expected.provider_type);
   expect(result.model).toBe(expected.model);
   expect(result.providerClass).toBe(expected.provider_class);
-  expect(result.estimatedCostPer1kTokens).toBeCloseTo(expected.cost_per_1k_tokens);
+  expect(result.estimatedCostPer1kTokens).toBeCloseTo(expected.cost_per_1k_tokens, 6);
 }
 
 /**
@@ -187,11 +191,15 @@ describe("cost_estimation parity", () => {
         settingsFromFixture(testCase.settings),
         testCase.context ?? {},
       );
-      expect(estimate.totalPer1kTokens).toBeCloseTo(testCase.expected.total_per_1k_tokens);
+      expect(estimate.totalPer1kTokens).toBeCloseTo(testCase.expected.total_per_1k_tokens, 6);
       expect(estimate.allFrontierPer1kTokens).toBeCloseTo(
         testCase.expected.all_frontier_per_1k_tokens,
+        6,
       );
-      expect(estimate.savingsVsAllFrontier).toBeCloseTo(testCase.expected.savings_vs_all_frontier);
+      expect(estimate.savingsVsAllFrontier).toBeCloseTo(
+        testCase.expected.savings_vs_all_frontier,
+        6,
+      );
     });
   }
 });
@@ -208,6 +216,14 @@ describe("fixture completeness", () => {
 
   it("replays every expected fixture group", () => {
     expect(Object.keys(FIXTURES.fixtures).sort()).toEqual(EXPECTED_GROUPS);
+
+    // ROUTE_GROUPS and EXPECTED_GROUPS are independent literals, so dropping a
+    // name from ROUTE_GROUPS (the replay registry) leaves the assertion above
+    // untouched: the fixture still has the group, that check still passes, and
+    // this language silently stops replaying it. The fixture-key check alone
+    // cannot catch a dropped replay registration — only comparing the registry
+    // itself against the expected set can.
+    expect([...ROUTE_GROUPS, "cost_estimation"].sort()).toEqual(EXPECTED_GROUPS);
   });
 
   it("has no empty group", () => {
