@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const SCHEMA_VERSION: "1.0.0" = "1.0.0";
+export const SCHEMA_VERSION = "1.0.0";
 export const SchemaVersionSchema = z.literal(SCHEMA_VERSION);
 
 export const ToolCallSchema = z.object({
@@ -40,24 +40,16 @@ export const PublicTraceSchema = z.object({
   messages: z.array(TraceMessageSchema).min(1),
   outcome: TraceOutcomeSchema.optional(),
   metadata: z.record(z.unknown()).optional(),
-  fileReferences: z
-    .array(
-      z.object({
-        path: z.string(),
-        action: z.enum(["read", "write", "edit", "delete"]).optional(),
-        diff: z.string().optional(),
-      }),
-    )
-    .optional(),
-  redactions: z
-    .array(
-      z.object({
-        field: z.string(),
-        reason: z.string(),
-        method: z.string().optional(),
-      }),
-    )
-    .optional(),
+  fileReferences: z.array(z.object({
+    path: z.string(),
+    action: z.enum(["read", "write", "edit", "delete"]).optional(),
+    diff: z.string().optional(),
+  })).optional(),
+  redactions: z.array(z.object({
+    field: z.string(),
+    reason: z.string(),
+    method: z.string().optional(),
+  })).optional(),
 });
 
 export type PublicTrace = z.infer<typeof PublicTraceSchema>;
