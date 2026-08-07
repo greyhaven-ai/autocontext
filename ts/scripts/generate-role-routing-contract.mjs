@@ -73,6 +73,8 @@ const tsSource = `/* eslint-disable */
 
 export const PROVIDER_CLASSES = ${tsArray([...contract.provider_classes])} as const;
 
+export type ProviderClass = (typeof PROVIDER_CLASSES)[number];
+
 export const ROLE_ROUTING_MODES = ${tsArray([...contract.mode_values])} as const;
 
 export const PROVIDER_CLASS_COST_PER_1K_TOKENS = {
@@ -83,9 +85,15 @@ export const DEFAULT_ROLE_ROUTING_TABLE = {
 ${jsonObjOfArrays(contract.default_routing_table, "  ")}
 } as const;
 
-export const LOCAL_ELIGIBLE_ROLES = ${tsArray([...contract.local_eligible_roles].sort())} as const;
+// Kept in the contract's own declaration order, like the per-role preference arrays
+// above: order is semantically meaningful for neither, but this makes the two
+// consistent, and a committed contract file needs no sort for determinism.
+export const LOCAL_ELIGIBLE_ROLES = ${tsArray([...contract.local_eligible_roles])} as const;
 
-export const EXPLICIT_PROVIDER_CLASS: Record<string, string> = {
+// Typed against ProviderClass (not Record<string, string>) so a contract value that
+// isn't a declared provider class fails to compile here, instead of surfacing later as
+// a mistyped ProviderClass deep inside routing logic.
+export const EXPLICIT_PROVIDER_CLASS: Record<string, ProviderClass> = {
 ${jsonObj(contract.explicit_provider_classes, "  ")}
 };
 `;
@@ -112,9 +120,7 @@ DEFAULT_ROUTING_TABLE: Final[dict[str, list[str]]] = {
 ${pyObjOfArrays(contract.default_routing_table, "    ")}
 }
 
-LOCAL_ELIGIBLE_ROLES: Final[frozenset[str]] = frozenset(${pyList(
-  [...contract.local_eligible_roles].sort(),
-)})
+LOCAL_ELIGIBLE_ROLES: Final[frozenset[str]] = frozenset(${pyList([...contract.local_eligible_roles])})
 
 EXPLICIT_PROVIDER_CLASSES: Final[dict[str, str]] = {
 ${pyObj(contract.explicit_provider_classes, "    ")}

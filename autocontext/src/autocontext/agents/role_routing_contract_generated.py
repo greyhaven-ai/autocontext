@@ -28,7 +28,7 @@ DEFAULT_ROUTING_TABLE: Final[dict[str, list[str]]] = {
     "translator": ["fast", "local"],
 }
 
-LOCAL_ELIGIBLE_ROLES: Final[frozenset[str]] = frozenset(["analyst", "coach", "competitor", "translator"])
+LOCAL_ELIGIBLE_ROLES: Final[frozenset[str]] = frozenset(["competitor", "analyst", "coach", "translator"])
 
 EXPLICIT_PROVIDER_CLASSES: Final[dict[str, str]] = {
     "agent_sdk": "frontier",

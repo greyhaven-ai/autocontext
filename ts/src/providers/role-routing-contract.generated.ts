@@ -5,6 +5,8 @@
 
 export const PROVIDER_CLASSES = ["frontier", "mid_tier", "fast", "local", "code_policy"] as const;
 
+export type ProviderClass = (typeof PROVIDER_CLASSES)[number];
+
 export const ROLE_ROUTING_MODES = ["off", "auto"] as const;
 
 export const PROVIDER_CLASS_COST_PER_1K_TOKENS = {
@@ -23,9 +25,15 @@ export const DEFAULT_ROLE_ROUTING_TABLE = {
   translator: ["fast", "local"],
 } as const;
 
-export const LOCAL_ELIGIBLE_ROLES = ["analyst", "coach", "competitor", "translator"] as const;
+// Kept in the contract's own declaration order, like the per-role preference arrays
+// above: order is semantically meaningful for neither, but this makes the two
+// consistent, and a committed contract file needs no sort for determinism.
+export const LOCAL_ELIGIBLE_ROLES = ["competitor", "analyst", "coach", "translator"] as const;
 
-export const EXPLICIT_PROVIDER_CLASS: Record<string, string> = {
+// Typed against ProviderClass (not Record<string, string>) so a contract value that
+// isn't a declared provider class fails to compile here, instead of surfacing later as
+// a mistyped ProviderClass deep inside routing logic.
+export const EXPLICIT_PROVIDER_CLASS: Record<string, ProviderClass> = {
   agent_sdk: "frontier",
   anthropic: "frontier",
   deterministic: "fast",
