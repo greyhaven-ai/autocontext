@@ -19,6 +19,16 @@ import {
   validateInstrumentSession,
   validateInstrumentPlan,
 } from "../../../../src/control-plane/instrument/contract/validators.js";
+import {
+  parseContentHash,
+  type ContentHash,
+} from "../../../../src/control-plane/contract/branded-ids.js";
+
+function hash(fill: string): ContentHash {
+  const parsed = parseContentHash(`sha256:${fill.repeat(64)}`);
+  if (parsed === null) throw new Error(`invalid test hash fill: ${fill}`);
+  return parsed;
+}
 
 const range: SourceRange = {
   startByte: 10,
@@ -127,7 +137,7 @@ describe("InstrumentSession schema validation", () => {
     registeredPlugins: [
       { id: "openai-python", version: "1.0.0", sdkName: "openai", language: "python" },
     ],
-    gitignoreFingerprint: "sha256:" + "a".repeat(64),
+    gitignoreFingerprint: hash("a"),
   };
 
   test("valid session passes", () => {
@@ -190,12 +200,8 @@ describe("InstrumentPlan schema validation", () => {
         existingImports: [{ module: "openai", names: ["OpenAI"] }],
       },
     ],
-    conflictDecisions: [
-      { filePath: "src/agent.py", decision: { kind: "accepted" } },
-    ],
-    safetyDecisions: [
-      { filePath: "src/agent.py", decision: { kind: "allow" } },
-    ],
+    conflictDecisions: [{ filePath: "src/agent.py", decision: { kind: "accepted" } }],
+    safetyDecisions: [{ filePath: "src/agent.py", decision: { kind: "allow" } }],
   };
 
   test("valid plan passes", () => {

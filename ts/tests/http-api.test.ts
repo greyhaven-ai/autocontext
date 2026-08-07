@@ -3,6 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { asDbPath } from "../src/domain/ids.js";
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -81,7 +82,7 @@ async function createTestServer(dir: string) {
 
   // Pre-populate with a run
   const dbPath = join(dir, "test.db");
-  const store = new SQLiteStore(dbPath);
+  const store = new SQLiteStore(asDbPath(dbPath));
   store.migrate(join(__dirname, "..", "migrations"));
   store.createRun("test-run-1", "grid_ctf", 3, "local");
   store.upsertGeneration("test-run-1", 1, {
@@ -973,7 +974,7 @@ describe("HTTP API — cockpit", () => {
 
   it("GET /api/cockpit/runs/:run_id/status carries evaluator_epoch and quarantined lineage", async () => {
     const { SQLiteStore } = await import("../src/storage/index.js");
-    const store = new SQLiteStore(join(dir, "test.db"));
+    const store = new SQLiteStore(asDbPath(join(dir, "test.db")));
     store.upsertGeneration("test-run-1", 1, {
       meanScore: 0.65,
       bestScore: 0.7,
@@ -1068,7 +1069,7 @@ describe("HTTP API — cockpit", () => {
 
   it("GET /api/cockpit/runs/:run_id/compare/:gen_a/:gen_b compares generations", async () => {
     const { SQLiteStore } = await import("../src/storage/index.js");
-    const store = new SQLiteStore(join(dir, "test.db"));
+    const store = new SQLiteStore(asDbPath(join(dir, "test.db")));
     store.upsertGeneration("test-run-1", 2, {
       meanScore: 0.72,
       bestScore: 0.78,

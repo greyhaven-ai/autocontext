@@ -16,8 +16,17 @@ import { importLegacyModelRecords } from "../../../../src/control-plane/actuator
 import { hashDirectory } from "../../../../src/control-plane/registry/content-address.js";
 import { createArtifact } from "../../../../src/control-plane/contract/factories.js";
 import { defaultWorkspaceLayout } from "../../../../src/control-plane/emit/workspace-layout.js";
-import { parseContentHash } from "../../../../src/control-plane/contract/branded-ids.js";
+import { parseContentHash,
+  parseScenario,
+  type Scenario,
+} from "../../../../src/control-plane/contract/branded-ids.js";
 import type { Artifact, Provenance } from "../../../../src/control-plane/contract/types.js";
+
+function scenario(value: string): Scenario {
+  const parsed = parseScenario(value);
+  if (parsed === null) throw new Error(`invalid test scenario: ${value}`);
+  return parsed;
+}
 
 const prov: Provenance = {
   authorType: "human",
@@ -43,7 +52,7 @@ function mkPayload(dir: string, pointer: object): string {
 function mkArtifact(payloadDir: string): Artifact {
   return createArtifact({
     actuatorType: "fine-tuned-model",
-    scenario: "grid_ctf",
+    scenario: scenario("grid_ctf"),
     payloadHash: hashDirectory(payloadDir),
     provenance: prov,
   });
@@ -133,7 +142,7 @@ describe("fine-tuned-model actuator", () => {
     const candidate = mkArtifact(candDir);
     const baseline = createArtifact({
       actuatorType: "fine-tuned-model",
-      scenario: "grid_ctf",
+      scenario: scenario("grid_ctf"),
       payloadHash: hashDirectory(baseDir),
       provenance: prov,
     });
@@ -168,7 +177,7 @@ describe("fine-tuned-model actuator", () => {
     const payloadDir = mkPayload(join(tmp, "payload"), VALID_POINTER);
     const artifact = createArtifact({
       actuatorType: "fine-tuned-model",
-      scenario: "grid_ctf",
+      scenario: scenario("grid_ctf"),
       payloadHash: parseContentHash("sha256:" + "0".repeat(64))!,
       provenance: prov,
     });

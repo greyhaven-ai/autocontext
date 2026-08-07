@@ -12,6 +12,8 @@ function makeTask(overrides?: Partial<AgentTaskInterface>): AgentTaskInterface {
       score: output.includes("good") ? 0.9 : 0.3,
       reasoning: "test evaluation",
       dimensionScores: { quality: 0.8 },
+      internalRetries: 0,
+      evaluatorEpoch: null,
     }),
     reviseOutput: async (output) => output,
     ...overrides,
@@ -33,7 +35,13 @@ describe("JudgeExecutor", () => {
     const task = makeTask({
       evaluateOutput: async (_out, _state, opts) => {
         capturedOpts = opts as Record<string, unknown>;
-        return { score: 0.5, reasoning: "ok", dimensionScores: {} };
+        return {
+          score: 0.5,
+          reasoning: "ok",
+          dimensionScores: {},
+          internalRetries: 0,
+          evaluatorEpoch: null,
+        };
       },
     });
     const executor = new JudgeExecutor(task);
@@ -52,7 +60,13 @@ describe("JudgeExecutor", () => {
     let capturedState: Record<string, unknown> = {};
     task.evaluateOutput = async (_out, state) => {
       capturedState = state;
-      return { score: 0.7, reasoning: "prepared", dimensionScores: {} };
+      return {
+        score: 0.7,
+        reasoning: "prepared",
+        dimensionScores: {},
+        internalRetries: 0,
+        evaluatorEpoch: null,
+      };
     };
     const executor = new JudgeExecutor(task);
     await executor.execute("output", { original: true });
@@ -79,7 +93,13 @@ describe("JudgeExecutor", () => {
       getRubric: () => "rubric",
       initialState: () => ({}),
       describeTask: () => "test",
-      evaluateOutput: async () => ({ score: 0.6, reasoning: "basic", dimensionScores: {} }),
+      evaluateOutput: async () => ({
+        score: 0.6,
+        reasoning: "basic",
+        dimensionScores: {},
+        internalRetries: 0,
+        evaluatorEpoch: null,
+      }),
       reviseOutput: async (o) => o,
     };
     const executor = new JudgeExecutor(task);

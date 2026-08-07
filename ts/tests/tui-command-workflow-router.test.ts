@@ -10,11 +10,16 @@ describe("TUI interactive command workflow", () => {
   it("lets /cancel resolve pending login before API-key submission", async () => {
     const effects = createEffects();
 
-    await expect(executeTuiInteractiveCommandWorkflow({
-      raw: "/cancel",
-      pendingLogin: { provider: "anthropic" },
-      activitySettings: DEFAULT_TUI_ACTIVITY_SETTINGS,
-    }, effects)).resolves.toEqual({
+    await expect(
+      executeTuiInteractiveCommandWorkflow(
+        {
+          raw: "/cancel",
+          pendingLogin: { provider: "anthropic" },
+          activitySettings: DEFAULT_TUI_ACTIVITY_SETTINGS,
+        },
+        effects,
+      ),
+    ).resolves.toEqual({
       logLines: ["cancelled login prompt"],
       pendingLogin: null,
     });
@@ -26,11 +31,16 @@ describe("TUI interactive command workflow", () => {
   it("submits non-slash input to pending login before normal command routing", async () => {
     const effects = createEffects();
 
-    await expect(executeTuiInteractiveCommandWorkflow({
-      raw: "sk-ant-test",
-      pendingLogin: { provider: "anthropic", model: "claude" },
-      activitySettings: DEFAULT_TUI_ACTIVITY_SETTINGS,
-    }, effects)).resolves.toEqual({
+    await expect(
+      executeTuiInteractiveCommandWorkflow(
+        {
+          raw: "sk-ant-test",
+          pendingLogin: { provider: "anthropic", model: "claude" },
+          activitySettings: DEFAULT_TUI_ACTIVITY_SETTINGS,
+        },
+        effects,
+      ),
+    ).resolves.toEqual({
       logLines: ["logged in to anthropic"],
       pendingLogin: null,
     });
@@ -48,11 +58,16 @@ describe("TUI interactive command workflow", () => {
   it("does not read active run state for unrelated auth commands", async () => {
     const effects = createEffects();
 
-    await expect(executeTuiInteractiveCommandWorkflow({
-      raw: "/login anthropic sk-ant-test",
-      pendingLogin: null,
-      activitySettings: DEFAULT_TUI_ACTIVITY_SETTINGS,
-    }, effects)).resolves.toEqual({
+    await expect(
+      executeTuiInteractiveCommandWorkflow(
+        {
+          raw: "/login anthropic sk-ant-test",
+          pendingLogin: null,
+          activitySettings: DEFAULT_TUI_ACTIVITY_SETTINGS,
+        },
+        effects,
+      ),
+    ).resolves.toEqual({
       logLines: ["logged in to anthropic"],
       pendingLogin: null,
     });
@@ -69,11 +84,16 @@ describe("TUI interactive command workflow", () => {
   it("routes active-run inspection before chat and auth handling", async () => {
     const effects = createEffects();
 
-    await expect(executeTuiInteractiveCommandWorkflow({
-      raw: "/timeline",
-      pendingLogin: null,
-      activitySettings: DEFAULT_TUI_ACTIVITY_SETTINGS,
-    }, effects)).resolves.toEqual({
+    await expect(
+      executeTuiInteractiveCommandWorkflow(
+        {
+          raw: "/timeline",
+          pendingLogin: null,
+          activitySettings: DEFAULT_TUI_ACTIVITY_SETTINGS,
+        },
+        effects,
+      ),
+    ).resolves.toEqual({
       logLines: ["timeline line"],
       pendingLogin: null,
     });
@@ -87,11 +107,16 @@ describe("TUI interactive command workflow", () => {
   it("routes chat before auth handling", async () => {
     const effects = createEffects();
 
-    await expect(executeTuiInteractiveCommandWorkflow({
-      raw: "/chat analyst hello",
-      pendingLogin: null,
-      activitySettings: DEFAULT_TUI_ACTIVITY_SETTINGS,
-    }, effects)).resolves.toEqual({
+    await expect(
+      executeTuiInteractiveCommandWorkflow(
+        {
+          raw: "/chat analyst hello",
+          pendingLogin: null,
+          activitySettings: DEFAULT_TUI_ACTIVITY_SETTINGS,
+        },
+        effects,
+      ),
+    ).resolves.toEqual({
       logLines: ["[analyst] chat response"],
       pendingLogin: null,
     });
@@ -104,11 +129,16 @@ describe("TUI interactive command workflow", () => {
   it("falls through to the unknown command response without touching adapters", async () => {
     const effects = createEffects();
 
-    await expect(executeTuiInteractiveCommandWorkflow({
-      raw: "/not-real",
-      pendingLogin: null,
-      activitySettings: DEFAULT_TUI_ACTIVITY_SETTINGS,
-    }, effects)).resolves.toEqual({
+    await expect(
+      executeTuiInteractiveCommandWorkflow(
+        {
+          raw: "/not-real",
+          pendingLogin: null,
+          activitySettings: DEFAULT_TUI_ACTIVITY_SETTINGS,
+        },
+        effects,
+      ),
+    ).resolves.toEqual({
       logLines: ["unknown command; use /help"],
       pendingLogin: null,
     });
@@ -156,6 +186,7 @@ function createEffects(): TuiInteractiveCommandEffects {
       renderStatus: vi.fn(async () => ["status line"]),
       renderShow: vi.fn(async () => ["show line"]),
       renderTimeline: vi.fn(async () => ["timeline line"]),
+      renderTraceGates: vi.fn(async () => ["trace gate line"]),
     },
     chat: {
       chatAgent: vi.fn(async () => "chat response\nsecond line"),

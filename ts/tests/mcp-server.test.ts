@@ -4,13 +4,14 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createMcpServer } from "../src/mcp/server.js";
 import { SQLiteStore } from "../src/storage/index.js";
+import { asDbPath } from "../src/domain/ids.js";
 import type { LLMProvider } from "../src/types/index.js";
 
 const MIGRATIONS_DIR = join(import.meta.dirname, "..", "migrations");
 
 function createStore(): SQLiteStore {
   const dir = mkdtempSync(join(tmpdir(), "autocontext-mcp-"));
-  const store = new SQLiteStore(join(dir, "test.db"));
+  const store = new SQLiteStore(asDbPath(join(dir, "test.db")));
   store.migrate(MIGRATIONS_DIR);
   return store;
 }

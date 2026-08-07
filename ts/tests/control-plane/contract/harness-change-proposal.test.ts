@@ -6,6 +6,15 @@ import {
 } from "../../../src/control-plane/contract/harness-change-proposal.js";
 import { decideHarnessChangeProposal } from "../../../src/control-plane/promotion/harness-change-proposal.js";
 import { validateHarnessChangeProposal } from "../../../src/control-plane/contract/validators.js";
+import {
+  parseArtifactId,
+  parseContentHash,
+  parseEnvironmentTag,
+  parseHarnessProposalId,
+  parseScenario,
+  parseSuiteId,
+} from "../../../src/control-plane/contract/branded-ids.js";
+import { parseSchemaVersion } from "../../../src/control-plane/contract/schema-version.js";
 import type {
   Artifact,
   EvalRun,
@@ -15,7 +24,15 @@ import type {
   Patch,
   PromotionThresholds,
   Provenance,
+  ValidationResult,
 } from "../../../src/control-plane/contract/types.js";
+
+// ValidationResult is a discriminated union: `errors` only exists on the
+// failure branch, so narrow before reading it.
+function failureErrors(result: ValidationResult): readonly string[] {
+  if (result.valid) throw new Error("expected validation to fail");
+  return result.errors;
+}
 
 const provenance: Provenance = {
   authorType: "autocontext-run",
@@ -40,7 +57,10 @@ const thresholds: PromotionThresholds = {
   strongQualityMultiplier: 2.0,
 };
 
-function metrics(score: number, regressions: MetricBundle["safety"]["regressions"] = []): MetricBundle {
+function metrics(
+  score: number,
+  regressions: MetricBundle["safety"]["regressions"] = [],
+): MetricBundle {
   return {
     quality: { score, sampleSize: 1000 },
     cost: { tokensIn: 100, tokensOut: 50 },
@@ -49,20 +69,22 @@ function metrics(score: number, regressions: MetricBundle["safety"]["regressions
     evalRunnerIdentity: {
       name: "heldout",
       version: "1.0.0",
-      configHash: `sha256:${"9".repeat(64)}`,
+      configHash: parseContentHash(`sha256:${"9".repeat(64)}`)!,
     },
   };
 }
 
 function artifact(id: Artifact["id"]): Artifact {
   return {
-    schemaVersion: "1.0",
+    schemaVersion: parseSchemaVersion("1.0")!,
     id,
     actuatorType: "prompt-patch",
-    scenario: "grid_ctf",
-    environmentTag: "production",
+    scenario: parseScenario("grid_ctf")!,
+    environmentTag: parseEnvironmentTag("production")!,
     activationState: "candidate",
-    payloadHash: `sha256:${id.endsWith("1") ? "a" : "b"}`.padEnd(71, id.endsWith("1") ? "a" : "b") as Artifact["payloadHash"],
+    payloadHash: parseContentHash(
+      `sha256:${id.endsWith("1") ? "a" : "b"}`.padEnd(71, id.endsWith("1") ? "a" : "b"),
+    )!,
     provenance,
     promotionHistory: [],
     evalRuns: [],
@@ -71,23 +93,25 @@ function artifact(id: Artifact["id"]): Artifact {
 
 function evalRun(artifactId: Artifact["id"], runId: string, score: number): EvalRun {
   return {
-    schemaVersion: "1.0",
+    schemaVersion: parseSchemaVersion("1.0")!,
     runId,
     artifactId,
-    suiteId: "heldout-suite",
+    suiteId: parseSuiteId("heldout-suite")!,
     metrics: metrics(score),
     datasetProvenance: {
       datasetId: "prod-traces",
-      sliceHash: `sha256:${"c".repeat(64)}`,
+      sliceHash: parseContentHash(`sha256:${"c".repeat(64)}`)!,
       sampleCount: 1000,
     },
     ingestedAt: "2026-05-13T12:05:00.000Z",
   };
 }
 
-function acceptedDecision(evidenceRefs: readonly string[] = ["runs/heldout/candidate-heldout.json"]): HarnessChangeDecision {
-  const candidateArtifact = artifact("01HX0000000000000000000001" as Artifact["id"]);
-  const baselineArtifact = artifact("01HX0000000000000000000002" as Artifact["id"]);
+function acceptedDecision(
+  evidenceRefs: readonly string[] = ["runs/heldout/candidate-heldout.json"],
+): HarnessChangeDecision {
+  const candidateArtifact = artifact(parseArtifactId("01HX0000000000000000000001")!);
+  const baselineArtifact = artifact(parseArtifactId("01HX0000000000000000000002")!);
   return decideHarnessChangeProposal({
     proposal: proposal(),
     candidate: {
@@ -96,12 +120,12 @@ function acceptedDecision(evidenceRefs: readonly string[] = ["runs/heldout/candi
     },
     baseline: {
       artifact: baselineArtifact,
-      evalRun: evalRun(baselineArtifact.id, "baseline-heldout", 0.70),
+      evalRun: evalRun(baselineArtifact.id, "baseline-heldout", 0.7),
     },
     thresholds,
     validation: {
       mode: "heldout",
-      suiteId: "heldout-suite",
+      suiteId: parseSuiteId("heldout-suite")!,
       evidenceRefs,
     },
     decidedAt: "2026-05-13T12:10:00.000Z",
@@ -110,7 +134,7 @@ function acceptedDecision(evidenceRefs: readonly string[] = ["runs/heldout/candi
 
 function proposal(overrides: Partial<HarnessChangeProposal> = {}): HarnessChangeProposal {
   return createHarnessChangeProposal({
-    id: "01HX0000000000000000000680" as HarnessChangeProposal["id"],
+    id: parseHarnessProposalId("01HX0000000000000000000680")!,
     findingIds: ["finding-1"],
     targetSurface: "prompt",
     proposedEdit: {
@@ -149,15 +173,19 @@ describe("harness change proposal contract", () => {
     const invalid = proposal({ findingIds: [] });
     const result = validateHarnessChangeProposal(invalid);
     expect(result.valid).toBe(false);
-    expect(result.errors.some((error) => error.includes("findingIds"))).toBe(true);
+    expect(failureErrors(result).some((error) => error.includes("findingIds"))).toBe(true);
   });
 
   test("validation enforces status and decision lifecycle invariants", () => {
     const decision = acceptedDecision();
 
     expect(validateHarnessChangeProposal(proposal({ status: "accepted" })).valid).toBe(false);
-    expect(validateHarnessChangeProposal(proposal({ status: "proposed", decision })).valid).toBe(false);
-    expect(validateHarnessChangeProposal(proposal({ status: "rejected", decision })).valid).toBe(false);
+    expect(validateHarnessChangeProposal(proposal({ status: "proposed", decision })).valid).toBe(
+      false,
+    );
+    expect(validateHarnessChangeProposal(proposal({ status: "rejected", decision })).valid).toBe(
+      false,
+    );
     expect(validateHarnessChangeProposal(proposal({ decision })).valid).toBe(true);
   });
 
@@ -166,22 +194,26 @@ describe("harness change proposal contract", () => {
       ...acceptedDecision(),
       validation: {
         mode: "heldout",
-        suiteId: "heldout-suite",
+        suiteId: parseSuiteId("heldout-suite")!,
         evidenceRefs: [],
       },
     };
-    const acceptedResult = validateHarnessChangeProposal(proposal({ decision: acceptedWithoutRefs }));
+    const acceptedResult = validateHarnessChangeProposal(
+      proposal({ decision: acceptedWithoutRefs }),
+    );
     expect(acceptedResult.valid).toBe(false);
-    expect(acceptedResult.errors.some((error) => error.includes("evidenceRefs"))).toBe(true);
+    expect(failureErrors(acceptedResult).some((error) => error.includes("evidenceRefs"))).toBe(true);
 
     const rejectedWithoutRefs: HarnessChangeDecision = {
       ...acceptedWithoutRefs,
       status: "rejected",
       reason: "Rejected on heldout validation.",
     };
-    const rejectedResult = validateHarnessChangeProposal(proposal({ decision: rejectedWithoutRefs }));
+    const rejectedResult = validateHarnessChangeProposal(
+      proposal({ decision: rejectedWithoutRefs }),
+    );
     expect(rejectedResult.valid).toBe(false);
-    expect(rejectedResult.errors.some((error) => error.includes("evidenceRefs"))).toBe(true);
+    expect(failureErrors(rejectedResult).some((error) => error.includes("evidenceRefs"))).toBe(true);
   });
 
   test("validation rejects accepted or rejected decisions from dev-only evidence", () => {
@@ -189,13 +221,13 @@ describe("harness change proposal contract", () => {
       ...acceptedDecision(),
       validation: {
         mode: "dev",
-        suiteId: "dev-suite",
+        suiteId: parseSuiteId("dev-suite")!,
         evidenceRefs: ["runs/dev/candidate-dev.json"],
       },
     };
     const acceptedResult = validateHarnessChangeProposal(proposal({ decision: acceptedFromDev }));
     expect(acceptedResult.valid).toBe(false);
-    expect(acceptedResult.errors.some((error) => error.includes("mode"))).toBe(true);
+    expect(failureErrors(acceptedResult).some((error) => error.includes("mode"))).toBe(true);
 
     const rejectedFromDev: HarnessChangeDecision = {
       ...acceptedFromDev,
@@ -204,7 +236,7 @@ describe("harness change proposal contract", () => {
     };
     const rejectedResult = validateHarnessChangeProposal(proposal({ decision: rejectedFromDev }));
     expect(rejectedResult.valid).toBe(false);
-    expect(rejectedResult.errors.some((error) => error.includes("mode"))).toBe(true);
+    expect(failureErrors(rejectedResult).some((error) => error.includes("mode"))).toBe(true);
   });
 
   test("validation rejects accepted or rejected decisions without baseline evidence", () => {
@@ -213,10 +245,12 @@ describe("harness change proposal contract", () => {
       baselineEvalRunId: _acceptedBaselineEvalRunId,
       ...acceptedWithoutBaseline
     } = acceptedDecision();
-    const acceptedResult = validateHarnessChangeProposal(proposal({ decision: acceptedWithoutBaseline }));
+    const acceptedResult = validateHarnessChangeProposal(
+      proposal({ decision: acceptedWithoutBaseline }),
+    );
     expect(acceptedResult.valid).toBe(false);
-    expect(acceptedResult.errors.some((error) => error.includes("baselineArtifactId"))).toBe(true);
-    expect(acceptedResult.errors.some((error) => error.includes("baselineEvalRunId"))).toBe(true);
+    expect(failureErrors(acceptedResult).some((error) => error.includes("baselineArtifactId"))).toBe(true);
+    expect(failureErrors(acceptedResult).some((error) => error.includes("baselineEvalRunId"))).toBe(true);
 
     const {
       baselineArtifactId: _rejectedBaselineArtifactId,
@@ -227,10 +261,12 @@ describe("harness change proposal contract", () => {
       status: "rejected",
       reason: "Rejected on heldout validation.",
     };
-    const rejectedResult = validateHarnessChangeProposal(proposal({ decision: rejectedWithoutBaseline }));
+    const rejectedResult = validateHarnessChangeProposal(
+      proposal({ decision: rejectedWithoutBaseline }),
+    );
     expect(rejectedResult.valid).toBe(false);
-    expect(rejectedResult.errors.some((error) => error.includes("baselineArtifactId"))).toBe(true);
-    expect(rejectedResult.errors.some((error) => error.includes("baselineEvalRunId"))).toBe(true);
+    expect(failureErrors(rejectedResult).some((error) => error.includes("baselineArtifactId"))).toBe(true);
+    expect(failureErrors(rejectedResult).some((error) => error.includes("baselineEvalRunId"))).toBe(true);
   });
 
   test("accepts only when candidate beats baseline on heldout or fresh validation", () => {
@@ -242,8 +278,8 @@ describe("harness change proposal contract", () => {
   });
 
   test("marks promotion-grade validation without evidence refs inconclusive", () => {
-    const candidateArtifact = artifact("01HX0000000000000000000001" as Artifact["id"]);
-    const baselineArtifact = artifact("01HX0000000000000000000002" as Artifact["id"]);
+    const candidateArtifact = artifact(parseArtifactId("01HX0000000000000000000001")!);
+    const baselineArtifact = artifact(parseArtifactId("01HX0000000000000000000002")!);
     const decision = decideHarnessChangeProposal({
       proposal: proposal(),
       candidate: {
@@ -252,12 +288,12 @@ describe("harness change proposal contract", () => {
       },
       baseline: {
         artifact: baselineArtifact,
-        evalRun: evalRun(baselineArtifact.id, "baseline-heldout", 0.70),
+        evalRun: evalRun(baselineArtifact.id, "baseline-heldout", 0.7),
       },
       thresholds,
       validation: {
         mode: "heldout",
-        suiteId: "heldout-suite",
+        suiteId: parseSuiteId("heldout-suite")!,
         evidenceRefs: [],
       },
       decidedAt: "2026-05-13T12:10:00.000Z",
@@ -268,8 +304,8 @@ describe("harness change proposal contract", () => {
   });
 
   test("marks dev-only validation inconclusive even when candidate improves", () => {
-    const candidateArtifact = artifact("01HX0000000000000000000001" as Artifact["id"]);
-    const baselineArtifact = artifact("01HX0000000000000000000002" as Artifact["id"]);
+    const candidateArtifact = artifact(parseArtifactId("01HX0000000000000000000001")!);
+    const baselineArtifact = artifact(parseArtifactId("01HX0000000000000000000002")!);
     const decision = decideHarnessChangeProposal({
       proposal: proposal(),
       candidate: {
@@ -278,12 +314,12 @@ describe("harness change proposal contract", () => {
       },
       baseline: {
         artifact: baselineArtifact,
-        evalRun: evalRun(baselineArtifact.id, "baseline-dev", 0.70),
+        evalRun: evalRun(baselineArtifact.id, "baseline-dev", 0.7),
       },
       thresholds,
       validation: {
         mode: "dev",
-        suiteId: "dev-suite",
+        suiteId: parseSuiteId("dev-suite")!,
         evidenceRefs: ["runs/dev/candidate-dev.json"],
       },
       decidedAt: "2026-05-13T12:10:00.000Z",

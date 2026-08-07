@@ -10,6 +10,32 @@ import type {
   Provenance,
   SafetyRegression,
 } from "../../../src/control-plane/contract/types.js";
+import {
+  parseContentHash,
+  parseScenario,
+  parseSuiteId,
+  type ContentHash,
+  type Scenario,
+  type SuiteId,
+} from "../../../src/control-plane/contract/branded-ids.js";
+
+function hash(fill: string): ContentHash {
+  const parsed = parseContentHash(`sha256:${fill.repeat(64)}`);
+  if (parsed === null) throw new Error(`invalid test hash fill: ${fill}`);
+  return parsed;
+}
+
+function scenario(value: string): Scenario {
+  const parsed = parseScenario(value);
+  if (parsed === null) throw new Error(`invalid test scenario: ${value}`);
+  return parsed;
+}
+
+function suiteId(value: string): SuiteId {
+  const parsed = parseSuiteId(value);
+  if (parsed === null) throw new Error(`invalid test suite id: ${value}`);
+  return parsed;
+}
 
 const prov: Provenance = {
   authorType: "human",
@@ -27,7 +53,7 @@ function mkMetrics(overrides: Partial<MetricBundle> = {}): MetricBundle {
     evalRunnerIdentity: {
       name: "eval",
       version: "1.0",
-      configHash: "sha256:" + "a".repeat(64),
+      configHash: hash("a"),
     },
   };
   return { ...base, ...overrides };
@@ -36,8 +62,8 @@ function mkMetrics(overrides: Partial<MetricBundle> = {}): MetricBundle {
 function mkArtifact(): Artifact {
   return createArtifact({
     actuatorType: "prompt-patch",
-    scenario: "grid_ctf",
-    payloadHash: "sha256:" + "b".repeat(64),
+    scenario: scenario("grid_ctf"),
+    payloadHash: hash("b"),
     provenance: prov,
   });
 }
@@ -46,11 +72,11 @@ function mkEvalRun(artifact: Artifact, metrics: MetricBundle): EvalRun {
   return createEvalRun({
     runId: "run_" + artifact.id.slice(0, 6),
     artifactId: artifact.id,
-    suiteId: "prod-eval-v3",
+    suiteId: suiteId("prod-eval-v3"),
     metrics,
     datasetProvenance: {
       datasetId: "ds-1",
-      sliceHash: "sha256:" + "c".repeat(64),
+      sliceHash: hash("c"),
       sampleCount: metrics.quality.sampleSize,
     },
     ingestedAt: "2026-04-17T12:05:00.000Z",
@@ -62,8 +88,14 @@ describe("decidePromotion — example cases", () => {
     const baseline = mkArtifact();
     const candidate = mkArtifact();
     const d = decidePromotion({
-      candidate: { artifact: candidate, evalRun: mkEvalRun(candidate, mkMetrics({ quality: { score: 0.9, sampleSize: 1000 } })) },
-      baseline: { artifact: baseline, evalRun: mkEvalRun(baseline, mkMetrics({ quality: { score: 0.7, sampleSize: 1000 } })) },
+      candidate: {
+        artifact: candidate,
+        evalRun: mkEvalRun(candidate, mkMetrics({ quality: { score: 0.9, sampleSize: 1000 } })),
+      },
+      baseline: {
+        artifact: baseline,
+        evalRun: mkEvalRun(baseline, mkMetrics({ quality: { score: 0.7, sampleSize: 1000 } })),
+      },
       thresholds: defaultThresholds(),
       evaluatedAt: "2026-04-17T12:20:00.000Z",
     });
@@ -81,10 +113,13 @@ describe("decidePromotion — example cases", () => {
     const d = decidePromotion({
       candidate: {
         artifact: candidate,
-        evalRun: mkEvalRun(candidate, mkMetrics({
-          quality: { score: 0.99, sampleSize: 1000 },           // very good
-          safety: { regressions: [reg] },                        // but safety broke
-        })),
+        evalRun: mkEvalRun(
+          candidate,
+          mkMetrics({
+            quality: { score: 0.99, sampleSize: 1000 }, // very good
+            safety: { regressions: [reg] }, // but safety broke
+          }),
+        ),
       },
       baseline: { artifact: baseline, evalRun: mkEvalRun(baseline, mkMetrics()) },
       thresholds: defaultThresholds(),
@@ -222,7 +257,10 @@ describe("decidePromotion — example cases", () => {
     const baseline = mkArtifact();
     const candidate = mkArtifact();
     const d = decidePromotion({
-      candidate: { artifact: candidate, evalRun: mkEvalRun(candidate, mkMetrics({ quality: { score: 0.99, sampleSize: 1000 } })) },
+      candidate: {
+        artifact: candidate,
+        evalRun: mkEvalRun(candidate, mkMetrics({ quality: { score: 0.99, sampleSize: 1000 } })),
+      },
       baseline: {
         artifact: baseline,
         evalRun: {
@@ -243,7 +281,10 @@ describe("decidePromotion — example cases", () => {
     const baseline = mkArtifact();
     const candidate = mkArtifact();
     const d = decidePromotion({
-      candidate: { artifact: candidate, evalRun: mkEvalRun(candidate, mkMetrics({ quality: { score: 0.99, sampleSize: 1000 } })) },
+      candidate: {
+        artifact: candidate,
+        evalRun: mkEvalRun(candidate, mkMetrics({ quality: { score: 0.99, sampleSize: 1000 } })),
+      },
       baseline: {
         artifact: baseline,
         evalRun: {
@@ -263,7 +304,10 @@ describe("decidePromotion — example cases", () => {
   test("no baseline (first candidate) → recommendedTargetState=shadow regardless of absolute metrics", () => {
     const candidate = mkArtifact();
     const d = decidePromotion({
-      candidate: { artifact: candidate, evalRun: mkEvalRun(candidate, mkMetrics({ quality: { score: 0.99, sampleSize: 1000 } })) },
+      candidate: {
+        artifact: candidate,
+        evalRun: mkEvalRun(candidate, mkMetrics({ quality: { score: 0.99, sampleSize: 1000 } })),
+      },
       baseline: null,
       thresholds: defaultThresholds(),
       evaluatedAt: "2026-04-17T12:20:00.000Z",
@@ -277,8 +321,17 @@ describe("decidePromotion — example cases", () => {
     const candidate = mkArtifact();
     const t = defaultThresholds();
     const d = decidePromotion({
-      candidate: { artifact: candidate, evalRun: mkEvalRun(candidate, mkMetrics({ quality: { score: 0.7 + t.qualityMinDelta, sampleSize: 5 } })) },
-      baseline: { artifact: baseline, evalRun: mkEvalRun(baseline, mkMetrics({ quality: { score: 0.7, sampleSize: 5 } })) },
+      candidate: {
+        artifact: candidate,
+        evalRun: mkEvalRun(
+          candidate,
+          mkMetrics({ quality: { score: 0.7 + t.qualityMinDelta, sampleSize: 5 } }),
+        ),
+      },
+      baseline: {
+        artifact: baseline,
+        evalRun: mkEvalRun(baseline, mkMetrics({ quality: { score: 0.7, sampleSize: 5 } })),
+      },
       thresholds: t,
       evaluatedAt: "2026-04-17T12:20:00.000Z",
     });
@@ -293,10 +346,13 @@ describe("decidePromotion — example cases", () => {
     const d = decidePromotion({
       candidate: {
         artifact: candidate,
-        evalRun: mkEvalRun(candidate, mkMetrics({
-          quality: { score: 0.9, sampleSize: 1000 },
-          cost: { tokensIn: 1000, tokensOut: 10000 },        // 20x
-        })),
+        evalRun: mkEvalRun(
+          candidate,
+          mkMetrics({
+            quality: { score: 0.9, sampleSize: 1000 },
+            cost: { tokensIn: 1000, tokensOut: 10000 }, // 20x
+          }),
+        ),
       },
       baseline: { artifact: baseline, evalRun: mkEvalRun(baseline, mkMetrics()) },
       thresholds: t,
@@ -317,7 +373,12 @@ describe("P3 (property): decidePromotion is deterministic", () => {
     };
     const base = { artifact: baseline, evalRun: mkEvalRun(baseline, mkMetrics()) };
     const t = defaultThresholds();
-    const input = { candidate: cand, baseline: base, thresholds: t, evaluatedAt: "2026-04-17T12:20:00.000Z" };
+    const input = {
+      candidate: cand,
+      baseline: base,
+      thresholds: t,
+      evaluatedAt: "2026-04-17T12:20:00.000Z",
+    };
     const a = decidePromotion(input);
     const b = decidePromotion(input);
     expect(JSON.stringify(a)).toBe(JSON.stringify(b));
@@ -340,22 +401,35 @@ describe("P3 (property): decidePromotion is deterministic", () => {
           const candidate = mkArtifact();
           const cand = {
             artifact: candidate,
-            evalRun: mkEvalRun(candidate, mkMetrics({
-              quality: { score: p.candidateQ, sampleSize: p.samples },
-              cost: { tokensIn: 0, tokensOut: p.candidateCost },
-              latency: { p50Ms: 0, p95Ms: p.candidateLat, p99Ms: 0 },
-            })),
+            evalRun: mkEvalRun(
+              candidate,
+              mkMetrics({
+                quality: { score: p.candidateQ, sampleSize: p.samples },
+                cost: { tokensIn: 0, tokensOut: p.candidateCost },
+                latency: { p50Ms: 0, p95Ms: p.candidateLat, p99Ms: 0 },
+              }),
+            ),
           };
           const base = {
             artifact: baseline,
-            evalRun: mkEvalRun(baseline, mkMetrics({
-              quality: { score: p.baselineQ, sampleSize: p.samples },
-              cost: { tokensIn: 0, tokensOut: p.baselineCost },
-              latency: { p50Ms: 0, p95Ms: p.baselineLat, p99Ms: 0 },
-            })),
+            evalRun: mkEvalRun(
+              baseline,
+              mkMetrics({
+                quality: { score: p.baselineQ, sampleSize: p.samples },
+                cost: { tokensIn: 0, tokensOut: p.baselineCost },
+                latency: { p50Ms: 0, p95Ms: p.baselineLat, p99Ms: 0 },
+              }),
+            ),
           };
-          const input = { candidate: cand, baseline: base, thresholds: defaultThresholds(), evaluatedAt: "2026-04-17T12:20:00.000Z" };
-          expect(JSON.stringify(decidePromotion(input))).toBe(JSON.stringify(decidePromotion(input)));
+          const input = {
+            candidate: cand,
+            baseline: base,
+            thresholds: defaultThresholds(),
+            evaluatedAt: "2026-04-17T12:20:00.000Z",
+          };
+          expect(JSON.stringify(decidePromotion(input))).toBe(
+            JSON.stringify(decidePromotion(input)),
+          );
         },
       ),
       { numRuns: 150 },
@@ -370,7 +444,12 @@ describe("P4 (property): safety monotonicity — any regression forces pass=fals
         fc.record({
           candidateQ: fc.double({ min: 0, max: 1, noNaN: true }),
           baselineQ: fc.double({ min: 0, max: 1, noNaN: true }),
-          severity: fc.constantFrom<SafetyRegression["severity"]>("info", "minor", "major", "critical"),
+          severity: fc.constantFrom<SafetyRegression["severity"]>(
+            "info",
+            "minor",
+            "major",
+            "critical",
+          ),
           qualityMinDelta: fc.double({ min: -1, max: 1, noNaN: true }),
           costMax: fc.double({ min: 0.001, max: 100, noNaN: true }),
           latencyMax: fc.double({ min: 0.001, max: 100, noNaN: true }),
@@ -381,14 +460,20 @@ describe("P4 (property): safety monotonicity — any regression forces pass=fals
           const reg: SafetyRegression = { id: "r", severity: p.severity, description: "x" };
           const cand = {
             artifact: candidate,
-            evalRun: mkEvalRun(candidate, mkMetrics({
-              quality: { score: p.candidateQ, sampleSize: 1000 },
-              safety: { regressions: [reg] },
-            })),
+            evalRun: mkEvalRun(
+              candidate,
+              mkMetrics({
+                quality: { score: p.candidateQ, sampleSize: 1000 },
+                safety: { regressions: [reg] },
+              }),
+            ),
           };
           const base = {
             artifact: baseline,
-            evalRun: mkEvalRun(baseline, mkMetrics({ quality: { score: p.baselineQ, sampleSize: 1000 } })),
+            evalRun: mkEvalRun(
+              baseline,
+              mkMetrics({ quality: { score: p.baselineQ, sampleSize: 1000 } }),
+            ),
           };
           const t = {
             ...defaultThresholds(),
@@ -418,7 +503,10 @@ describe("P4 (property): safety monotonicity — any regression forces pass=fals
           const candidate = mkArtifact();
           const reg: SafetyRegression = { id: "r", severity: sev, description: "x" };
           const d = decidePromotion({
-            candidate: { artifact: candidate, evalRun: mkEvalRun(candidate, mkMetrics({ safety: { regressions: [reg] } })) },
+            candidate: {
+              artifact: candidate,
+              evalRun: mkEvalRun(candidate, mkMetrics({ safety: { regressions: [reg] } })),
+            },
             baseline: null,
             thresholds: defaultThresholds(),
             evaluatedAt: "2026-04-17T12:20:00.000Z",

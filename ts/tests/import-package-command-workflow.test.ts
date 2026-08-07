@@ -5,6 +5,7 @@ import {
   IMPORT_PACKAGE_HELP_TEXT,
   planImportPackageCommand,
 } from "../src/cli/import-package-command-workflow.js";
+import type { ImportStrategyPackageResult } from "../src/knowledge/package.js";
 
 describe("import-package command workflow", () => {
   it("exposes stable help text", () => {
@@ -52,7 +53,7 @@ describe("import-package command workflow", () => {
   });
 
   it("parses raw packages and renders import results as json", () => {
-    const importStrategyPackage = vi.fn(() => ({
+    const importStrategyPackage = vi.fn((): ImportStrategyPackageResult => ({
       scenario: "grid_ctf",
       playbookWritten: true,
       harnessWritten: ["validator"],

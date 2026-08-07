@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { registerScenarioExecutionTools } from "../src/mcp/scenario-execution-tools.js";
+import type {
+  LegalAction,
+  Observation,
+  Result,
+  ScenarioInterface,
+  ScoringDimension,
+} from "../src/scenarios/game-interface.js";
 
 function createFakeServer() {
   const registeredTools: Record<
@@ -8,7 +15,9 @@ function createFakeServer() {
     {
       description: string;
       schema: Record<string, unknown>;
-      handler: (args: Record<string, unknown>) => Promise<{ content: Array<{ type: string; text: string }> }>;
+      handler: (
+        args: Record<string, unknown>,
+      ) => Promise<{ content: Array<{ type: string; text: string }> }>;
     }
   > = {};
 
@@ -18,20 +27,29 @@ function createFakeServer() {
       name: string,
       description: string,
       schema: Record<string, unknown>,
-      handler: (args: Record<string, unknown>) => Promise<{ content: Array<{ type: string; text: string }> }>,
+      handler: (
+        args: Record<string, unknown>,
+      ) => Promise<{ content: Array<{ type: string; text: string }> }>,
     ) {
       registeredTools[name] = { description, schema, handler };
     },
   };
 }
 
-class ScenarioStub {
-  initialState(seed: number) {
+/**
+ * Minimal `ScenarioInterface` implementation: only the three members the MCP
+ * execution tools actually call carry behaviour. The rest satisfy the contract
+ * and throw so an unexpected call fails loudly instead of silently passing.
+ */
+class ScenarioStub implements ScenarioInterface {
+  readonly name = "grid_ctf";
+
+  initialState(seed?: number): Record<string, unknown> {
     return { seed };
   }
 
   validateActions(
-    _state: unknown,
+    _state: Record<string, unknown>,
     actor: string,
     strategy: Record<string, unknown>,
   ): [boolean, string] {
@@ -41,13 +59,60 @@ class ScenarioStub {
     ];
   }
 
-  executeMatch(strategy: Record<string, unknown>, seed: number) {
+  executeMatch(strategy: Record<string, unknown>, seed: number): Result {
     return {
       score: Number(strategy.aggression ?? 0),
       winner: seed === 7 ? "challenger" : "defender",
-      passedValidation: true,
+      summary: "stub match",
+      replay: [],
+      metrics: {},
       validationErrors: [],
+      passedValidation: true,
     };
+  }
+
+  describeRules(): string {
+    throw new Error("ScenarioStub.describeRules is not used by these tests");
+  }
+
+  describeStrategyInterface(): string {
+    throw new Error("ScenarioStub.describeStrategyInterface is not used by these tests");
+  }
+
+  describeEvaluationCriteria(): string {
+    throw new Error("ScenarioStub.describeEvaluationCriteria is not used by these tests");
+  }
+
+  getObservation(): Observation {
+    throw new Error("ScenarioStub.getObservation is not used by these tests");
+  }
+
+  step(): Record<string, unknown> {
+    throw new Error("ScenarioStub.step is not used by these tests");
+  }
+
+  isTerminal(): boolean {
+    throw new Error("ScenarioStub.isTerminal is not used by these tests");
+  }
+
+  getResult(): Result {
+    throw new Error("ScenarioStub.getResult is not used by these tests");
+  }
+
+  replayToNarrative(): string {
+    throw new Error("ScenarioStub.replayToNarrative is not used by these tests");
+  }
+
+  renderFrame(): Record<string, unknown> {
+    throw new Error("ScenarioStub.renderFrame is not used by these tests");
+  }
+
+  enumerateLegalActions(): LegalAction[] | null {
+    return null;
+  }
+
+  scoringDimensions(): ScoringDimension[] | null {
+    return null;
   }
 }
 
@@ -123,8 +188,11 @@ describe("scenario execution MCP tools", () => {
     expect(JSON.parse(result.content[0].text)).toEqual({
       score: 0.7,
       winner: "challenger",
-      passedValidation: true,
+      summary: "stub match",
+      replay: [],
+      metrics: {},
       validationErrors: [],
+      passedValidation: true,
     });
   });
 

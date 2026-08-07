@@ -4,6 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { asDbPath } from "../src/domain/ids.js";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -39,7 +40,7 @@ async function createToolServer(dir: string): Promise<{
   const { DeterministicProvider } = await import("../src/providers/deterministic.js");
   const { createMcpServer } = await import("../src/mcp/server.js");
 
-  const store = new SQLiteStore(join(dir, "test.db"));
+  const store = new SQLiteStore(asDbPath(join(dir, "test.db")));
   store.migrate(join(__dirname, "..", "migrations"));
   const server = createMcpServer({
     store,

@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
+import { asDbPath } from "../src/domain/ids.js";
 import { SQLiteStore } from "../src/storage/index.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -22,7 +23,7 @@ function makeTempDir(): string {
 
 function createStore(dir: string): SQLiteStore {
   const dbPath = join(dir, "test.db");
-  const store = new SQLiteStore(dbPath);
+  const store = new SQLiteStore(asDbPath(dbPath));
   const tsMigrations = join(__dirname, "..", "migrations");
   store.migrate(tsMigrations);
   return store;
@@ -85,7 +86,7 @@ describe("upsertGeneration", () => {
   it("should insert a new generation", () => {
     store.upsertGeneration("run-1", 1, {
       meanScore: 0.65,
-      bestScore: 0.70,
+      bestScore: 0.7,
       elo: 1050.0,
       wins: 3,
       losses: 2,
@@ -95,14 +96,14 @@ describe("upsertGeneration", () => {
     const gens = store.getGenerations("run-1");
     expect(gens).toHaveLength(1);
     expect(gens[0].mean_score).toBeCloseTo(0.65);
-    expect(gens[0].best_score).toBeCloseTo(0.70);
+    expect(gens[0].best_score).toBeCloseTo(0.7);
     expect(gens[0].elo).toBeCloseTo(1050.0);
     expect(gens[0].gate_decision).toBe("advance");
   });
 
   it("should upsert (update on conflict)", () => {
     store.upsertGeneration("run-1", 1, {
-      meanScore: 0.50,
+      meanScore: 0.5,
       bestScore: 0.55,
       elo: 1000.0,
       wins: 1,
@@ -111,8 +112,8 @@ describe("upsertGeneration", () => {
       status: "completed",
     });
     store.upsertGeneration("run-1", 1, {
-      meanScore: 0.70,
-      bestScore: 0.80,
+      meanScore: 0.7,
+      bestScore: 0.8,
       elo: 1100.0,
       wins: 4,
       losses: 1,
@@ -121,14 +122,14 @@ describe("upsertGeneration", () => {
     });
     const gens = store.getGenerations("run-1");
     expect(gens).toHaveLength(1);
-    expect(gens[0].best_score).toBeCloseTo(0.80);
+    expect(gens[0].best_score).toBeCloseTo(0.8);
     expect(gens[0].gate_decision).toBe("advance");
   });
 
   it("should accept optional duration_seconds", () => {
     store.upsertGeneration("run-1", 1, {
       meanScore: 0.65,
-      bestScore: 0.70,
+      bestScore: 0.7,
       elo: 1050.0,
       wins: 3,
       losses: 2,
@@ -143,7 +144,7 @@ describe("upsertGeneration", () => {
   it("should accept optional scoring_backend and rating_uncertainty", () => {
     store.upsertGeneration("run-1", 1, {
       meanScore: 0.65,
-      bestScore: 0.70,
+      bestScore: 0.7,
       elo: 1050.0,
       wins: 3,
       losses: 2,
@@ -168,7 +169,7 @@ describe("recordMatch", () => {
     store.createRun("run-1", "grid_ctf", 5, "local");
     store.upsertGeneration("run-1", 1, {
       meanScore: 0.65,
-      bestScore: 0.70,
+      bestScore: 0.7,
       elo: 1050.0,
       wins: 3,
       losses: 2,
@@ -185,21 +186,21 @@ describe("recordMatch", () => {
   it("should insert a match", () => {
     store.recordMatch("run-1", 1, {
       seed: 42,
-      score: 0.80,
+      score: 0.8,
       passedValidation: true,
       validationErrors: "",
     });
     const matches = store.getMatchesForRun("run-1");
     expect(matches).toHaveLength(1);
     expect(matches[0].seed).toBe(42);
-    expect(matches[0].score).toBeCloseTo(0.80);
+    expect(matches[0].score).toBeCloseTo(0.8);
     expect(matches[0].passed_validation).toBe(1);
   });
 
   it("should accept optional winner, strategy_json, replay_json", () => {
     store.recordMatch("run-1", 1, {
       seed: 42,
-      score: 0.90,
+      score: 0.9,
       passedValidation: true,
       validationErrors: "",
       winner: "challenger",
@@ -236,7 +237,7 @@ describe("appendAgentOutput", () => {
     store.createRun("run-1", "grid_ctf", 5, "local");
     store.upsertGeneration("run-1", 1, {
       meanScore: 0.65,
-      bestScore: 0.70,
+      bestScore: 0.7,
       elo: 1050.0,
       wins: 3,
       losses: 2,
@@ -264,7 +265,7 @@ describe("appendAgentOutput", () => {
     store.appendAgentOutput("run-1", 1, "coach", "Coach update");
     const outputs = store.getAgentOutputs("run-1", 1);
     expect(outputs).toHaveLength(3);
-    const roles = outputs.map((o: Record<string, unknown>) => o.role);
+    const roles = outputs.map((o) => o.role);
     expect(roles).toContain("competitor");
     expect(roles).toContain("analyst");
     expect(roles).toContain("coach");
@@ -293,7 +294,7 @@ describe("getScoreTrajectory", () => {
 
   it("should return trajectory with deltas", () => {
     store.upsertGeneration("run-1", 1, {
-      meanScore: 0.50,
+      meanScore: 0.5,
       bestScore: 0.55,
       elo: 1000.0,
       wins: 2,
@@ -303,7 +304,7 @@ describe("getScoreTrajectory", () => {
     });
     store.upsertGeneration("run-1", 2, {
       meanScore: 0.65,
-      bestScore: 0.70,
+      bestScore: 0.7,
       elo: 1050.0,
       wins: 3,
       losses: 2,
@@ -311,7 +312,7 @@ describe("getScoreTrajectory", () => {
       status: "completed",
     });
     store.upsertGeneration("run-1", 3, {
-      meanScore: 0.80,
+      meanScore: 0.8,
       bestScore: 0.85,
       elo: 1100.0,
       wins: 4,
@@ -329,7 +330,7 @@ describe("getScoreTrajectory", () => {
 
   it("should only include completed generations", () => {
     store.upsertGeneration("run-1", 1, {
-      meanScore: 0.50,
+      meanScore: 0.5,
       bestScore: 0.55,
       elo: 1000.0,
       wins: 2,
@@ -354,7 +355,7 @@ describe("getScoreTrajectory", () => {
   it("should include scoring_backend and rating_uncertainty when present", () => {
     store.upsertGeneration("run-1", 1, {
       meanScore: 0.65,
-      bestScore: 0.70,
+      bestScore: 0.7,
       elo: 1050.0,
       wins: 3,
       losses: 2,

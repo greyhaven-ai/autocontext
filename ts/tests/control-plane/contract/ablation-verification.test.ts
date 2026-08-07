@@ -10,6 +10,32 @@ import type {
   MetricBundle,
 } from "../../../src/control-plane/contract/types.js";
 import { createEvalRun } from "../../../src/control-plane/contract/factories.js";
+import {
+  parseArtifactId,
+  parseContentHash,
+  parseSuiteId,
+  type ArtifactId,
+  type ContentHash,
+  type SuiteId,
+} from "../../../src/control-plane/contract/branded-ids.js";
+
+function hash(fill: string): ContentHash {
+  const parsed = parseContentHash(`sha256:${fill.repeat(64)}`);
+  if (parsed === null) throw new Error(`invalid test hash fill: ${fill}`);
+  return parsed;
+}
+
+function artifactId(value: string): ArtifactId {
+  const parsed = parseArtifactId(value);
+  if (parsed === null) throw new Error(`invalid test artifact id: ${value}`);
+  return parsed;
+}
+
+function suiteId(value: string): SuiteId {
+  const parsed = parseSuiteId(value);
+  if (parsed === null) throw new Error(`invalid test suite id: ${value}`);
+  return parsed;
+}
 
 const metrics: MetricBundle = {
   quality: { score: 0.9, sampleSize: 100 },
@@ -19,7 +45,7 @@ const metrics: MetricBundle = {
   evalRunnerIdentity: {
     name: "eval",
     version: "1.0",
-    configHash: "sha256:" + "9".repeat(64),
+    configHash: hash("9"),
   },
 };
 
@@ -38,12 +64,12 @@ const passedVerification: AblationVerification = {
 function evalRun(ablationVerification?: AblationVerification): EvalRun {
   return createEvalRun({
     runId: "run_1",
-    artifactId: "01KPEYB3BRQWK2WSHK9E93N6NP",
-    suiteId: "prod-eval-v3",
+    artifactId: artifactId("01KPEYB3BRQWK2WSHK9E93N6NP"),
+    suiteId: suiteId("prod-eval-v3"),
     metrics,
     datasetProvenance: {
       datasetId: "ds-1",
-      sliceHash: "sha256:" + "a".repeat(64),
+      sliceHash: hash("a"),
       sampleCount: 100,
     },
     ingestedAt: "2026-05-13T12:05:00.000Z",
@@ -59,10 +85,12 @@ describe("ablation verification assessment", () => {
     });
 
     expect(assessment.status).toBe("not-required");
-    expect(describeAblationVerificationIssue(evalRun(), "candidate", {
-      required: false,
-      targets: ["strategy", "harness"],
-    })).toBeNull();
+    expect(
+      describeAblationVerificationIssue(evalRun(), "candidate", {
+        required: false,
+        targets: ["strategy", "harness"],
+      }),
+    ).toBeNull();
   });
 
   test("reports missing evidence when the opt-in requirement is enabled", () => {
@@ -76,21 +104,37 @@ describe("ablation verification assessment", () => {
   });
 
   test("rejects failed or incomplete verification statuses", () => {
-    expect(assessAblationVerification(evalRun({
-      ...passedVerification,
-      status: "failed",
-    }), "candidate", requirement).status).toBe("failed");
-    expect(describeAblationVerificationIssue(evalRun({
-      ...passedVerification,
-      status: "incomplete",
-    }), "candidate", requirement)).toContain("status is incomplete");
+    expect(
+      assessAblationVerification(
+        evalRun({
+          ...passedVerification,
+          status: "failed",
+        }),
+        "candidate",
+        requirement,
+      ).status,
+    ).toBe("failed");
+    expect(
+      describeAblationVerificationIssue(
+        evalRun({
+          ...passedVerification,
+          status: "incomplete",
+        }),
+        "candidate",
+        requirement,
+      ),
+    ).toContain("status is incomplete");
   });
 
   test("requires every configured ablation target to be covered", () => {
-    const assessment = assessAblationVerification(evalRun({
-      ...passedVerification,
-      targets: ["strategy"],
-    }), "candidate", requirement);
+    const assessment = assessAblationVerification(
+      evalRun({
+        ...passedVerification,
+        targets: ["strategy"],
+      }),
+      "candidate",
+      requirement,
+    );
 
     expect(assessment.status).toBe("incomplete");
     expect(assessment.coveredTargets).toEqual(["strategy"]);
@@ -99,7 +143,11 @@ describe("ablation verification assessment", () => {
   });
 
   test("passes when status and target coverage satisfy the requirement", () => {
-    const assessment = assessAblationVerification(evalRun(passedVerification), "candidate", requirement);
+    const assessment = assessAblationVerification(
+      evalRun(passedVerification),
+      "candidate",
+      requirement,
+    );
 
     expect(assessment).toEqual({
       required: true,

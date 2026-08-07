@@ -370,7 +370,7 @@ describe("execution validation — live solve wiring", () => {
       manager as unknown as {
         runCodegenScenario: (
           job: Record<string, unknown>,
-          created: typeof created,
+          createdScenario: typeof created,
           family: "simulation",
         ) => Promise<void>;
       }

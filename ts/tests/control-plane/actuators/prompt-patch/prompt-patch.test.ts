@@ -16,6 +16,16 @@ import { hashDirectory } from "../../../../src/control-plane/registry/content-ad
 import { createArtifact } from "../../../../src/control-plane/contract/factories.js";
 import { defaultWorkspaceLayout } from "../../../../src/control-plane/emit/workspace-layout.js";
 import type { Artifact, Provenance } from "../../../../src/control-plane/contract/types.js";
+import {
+  parseScenario,
+  type Scenario,
+} from "../../../../src/control-plane/contract/branded-ids.js";
+
+function scenario(value: string): Scenario {
+  const parsed = parseScenario(value);
+  if (parsed === null) throw new Error(`invalid test scenario: ${value}`);
+  return parsed;
+}
 
 const prov: Provenance = {
   authorType: "human",
@@ -33,7 +43,7 @@ function mkPayload(dir: string, content: string): { dir: string } {
 function mkArtifact(payloadDir: string): Artifact {
   return createArtifact({
     actuatorType: "prompt-patch",
-    scenario: "grid_ctf",
+    scenario: scenario("grid_ctf"),
     payloadHash: hashDirectory(payloadDir),
     provenance: prov,
   });
@@ -124,7 +134,7 @@ describe("prompt-patch actuator", () => {
     const candidate = mkArtifact(candDir);
     const baseline = createArtifact({
       actuatorType: "prompt-patch",
-      scenario: "grid_ctf",
+      scenario: scenario("grid_ctf"),
       payloadHash: hashDirectory(baseDir),
       provenance: prov,
     });

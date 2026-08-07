@@ -2,10 +2,15 @@ import { describe, expect, it, vi } from "vitest";
 
 import { executeInvestigationRun } from "../src/investigation/investigation-run-workflow.js";
 import type { LLMProvider } from "../src/types/index.js";
+import type {
+  Evidence,
+  Hypothesis,
+  InvestigationResult,
+} from "../src/investigation/investigation-contracts.js";
 
 describe("investigation run workflow", () => {
   it("returns a failed result when generated investigation source does not validate", async () => {
-    const buildFailedInvestigationResult = vi.fn(() => ({
+    const buildFailedInvestigationResult = vi.fn((): InvestigationResult => ({
       id: "inv-1",
       name: "checkout_rca",
       family: "investigation",
@@ -34,7 +39,12 @@ describe("investigation run workflow", () => {
         buildInvestigationSpec: vi.fn(async () => ({ diagnosis_target: "config regression" })),
         healSpec: vi.fn((spec) => spec),
         generateScenarioSource: vi.fn(() => "module.exports = { scenario: {} }"),
-        validateGeneratedScenario: vi.fn(async () => ({ valid: false, errors: ["spec invalid"] })),
+        validateGeneratedScenario: vi.fn(async () => ({
+          valid: false,
+          errors: ["spec invalid"],
+          executedMethods: [],
+          durationMs: 0,
+        })),
         buildFailedInvestigationResult,
       },
     );
@@ -50,7 +60,7 @@ describe("investigation run workflow", () => {
 
   it("orchestrates a completed investigation and persists the report", async () => {
     const persistInvestigationReport = vi.fn();
-    const buildCompletedInvestigationResult = vi.fn(() => ({
+    const buildCompletedInvestigationResult = vi.fn((): InvestigationResult => ({
       id: "inv-2",
       name: "incident_rca",
       family: "investigation",
@@ -78,7 +88,12 @@ describe("investigation run workflow", () => {
         buildInvestigationSpec: vi.fn(async () => ({ diagnosis_target: "config drift" })),
         healSpec: vi.fn((spec) => spec),
         generateScenarioSource: vi.fn(() => "module.exports = { scenario: {} }"),
-        validateGeneratedScenario: vi.fn(async () => ({ valid: true, errors: [] })),
+        validateGeneratedScenario: vi.fn(async () => ({
+          valid: true,
+          errors: [],
+          executedMethods: ["setup", "step"],
+          durationMs: 1,
+        })),
         persistInvestigationArtifacts: vi.fn(() => "/tmp/knowledge/_investigations/incident_rca"),
         executeGeneratedInvestigation: vi.fn(async () => ({
           stepsExecuted: 2,
@@ -98,7 +113,7 @@ describe("investigation run workflow", () => {
           contradicts: [],
           isRedHerring: false,
         }]),
-        evaluateInvestigationHypotheses: vi.fn(() => ({
+        evaluateInvestigationHypotheses: vi.fn((): { evidence: Evidence[]; hypotheses: Hypothesis[] } => ({
           evidence: [{
             id: "e0",
             kind: "observation",
@@ -139,7 +154,7 @@ describe("investigation run workflow", () => {
   });
 
   it("shapes thrown errors into failed investigation results", async () => {
-    const buildFailedInvestigationResult = vi.fn(() => ({
+    const buildFailedInvestigationResult = vi.fn((): InvestigationResult => ({
       id: "inv-3",
       name: "outage_rca",
       family: "investigation",

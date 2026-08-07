@@ -53,6 +53,7 @@ describe("task runner config workflow", () => {
         dimensionScores: { quality: 0.7 },
         isRevision: false,
         judgeFailed: false,
+        evaluatorEpoch: null,
       }],
       bestOutput: "best",
       bestScore: 0.9,
@@ -65,6 +66,7 @@ describe("task runner config workflow", () => {
       totalInternalRetries: 0,
       durationMs: 12,
       judgeCalls: 1,
+      evaluatorEpoch: null,
     }, [{ phase: "generate", content: "draft" } as never]));
 
     expect(payload.best_score).toBe(0.9);
@@ -106,6 +108,7 @@ describe("task runner config workflow", () => {
       terminationReason: "threshold_met",
       dimensionTrajectory: {},
       totalInternalRetries: 0,
+      judgeCalls: 0,
       evaluatorEpoch: "e2",
     }));
 

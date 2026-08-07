@@ -8,6 +8,7 @@ import {
   executeMissionRunCommand,
   executeMissionStatusCommand,
 } from "../src/cli/mission-command-execution.js";
+import type { LLMProvider } from "../src/types/index.js";
 
 describe("mission command execution", () => {
   it("creates generic missions and returns checkpoint payloads", () => {
@@ -122,7 +123,11 @@ describe("mission command execution", () => {
   });
 
   it("runs missions with adaptive providers when required", async () => {
-    const provider = { name: "provider" };
+    const provider: LLMProvider = {
+      name: "provider",
+      complete: async () => ({ text: "", usage: {} }),
+      defaultModel: () => "test-model",
+    };
     const createAdaptiveProvider = vi.fn(() => provider);
     const runMissionLoop = vi.fn(async () => ({
       id: "mission-2",
@@ -210,7 +215,7 @@ describe("mission command execution", () => {
       executeMissionLifecycleCommand({
         action: "pause",
         missionId: "mission-1",
-        manager: { pause },
+        manager: { pause, resume: vi.fn(), cancel: vi.fn() },
         buildMissionStatusPayload,
         writeMissionCheckpoint,
         runsRoot: "/runs",

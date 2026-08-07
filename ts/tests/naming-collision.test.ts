@@ -50,12 +50,12 @@ describe("package.json bin entries", () => {
 
 describe("autocontext redirect shim", () => {
   it("resolves the source CLI path when run from TypeScript source", async () => {
-    const { resolveRealCliPath } = await import("../src/cli/autocontext-shim.ts");
+    const { resolveRealCliPath } = await import("../src/cli/autocontext-shim.js");
     expect(resolveRealCliPath("/tmp/pkg/src/cli/autocontext-shim.ts")).toBe("/tmp/pkg/src/cli/index.ts");
   });
 
   it("resolves the built CLI path when run from the published dist layout", async () => {
-    const { resolveRealCliPath } = await import("../src/cli/autocontext-shim.ts");
+    const { resolveRealCliPath } = await import("../src/cli/autocontext-shim.js");
     expect(resolveRealCliPath("/tmp/pkg/dist/cli/autocontext-shim.js")).toBe("/tmp/pkg/dist/cli/index.js");
   });
 

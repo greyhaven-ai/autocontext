@@ -315,6 +315,8 @@ export interface UpsertGenerationOpts {
   dimensionSummaryJson?: string | null;
   scoringBackend?: string;
   ratingUncertainty?: number | null;
+  evaluatorEpoch?: string | null;
+  quarantined?: number | null;
 }
 
 export interface RecordMatchOpts {

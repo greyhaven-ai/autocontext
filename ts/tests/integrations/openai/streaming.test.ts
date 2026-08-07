@@ -107,11 +107,11 @@ describe("streaming proxy", () => {
 
   test("stream_options.include_usage auto-injected when missing", async () => {
     const { sink, cleanup } = makeSink();
-    let capturedInit: RequestInit | null = null;
+    const capturedInits: RequestInit[] = [];
     const chunks = makeStreamChunks("hi");
 
     const fakeFetch = (_url: string, init: RequestInit) => {
-      capturedInit = init;
+      capturedInits.push(init);
       return Promise.resolve(makeSSEResponse(chunks));
     };
     const inner = new OpenAI({ apiKey: "test-key", fetch: fakeFetch as typeof fetch });
@@ -126,6 +126,7 @@ describe("streaming proxy", () => {
     for await (const _chunk of stream as AsyncIterable<unknown>) { /* no-op */ }
 
     // The request body should include stream_options.include_usage = true
+    const capturedInit = capturedInits.at(-1);
     if (capturedInit?.body) {
       const body = JSON.parse(String(capturedInit.body)) as Record<string, unknown>;
       expect((body["stream_options"] as Record<string, unknown>)?.["include_usage"]).toBe(true);

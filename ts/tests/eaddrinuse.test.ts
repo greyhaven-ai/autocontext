@@ -83,9 +83,10 @@ describe("EADDRINUSE handling", () => {
   it("port 0 still works (auto-assign)", async () => {
     const { RunManager, InteractiveServer } = await import("../src/server/index.js");
     const { SQLiteStore } = await import("../src/storage/index.js");
+    const { asDbPath } = await import("../src/domain/ids.js");
 
     const dbPath = join(dir, "test.db");
-    const store = new SQLiteStore(dbPath);
+    const store = new SQLiteStore(asDbPath(dbPath));
     store.migrate(join(__dirname, "..", "migrations"));
     store.close();
 

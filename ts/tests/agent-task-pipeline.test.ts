@@ -422,6 +422,7 @@ function makeMockProvider(response = "mock output"): LLMProvider {
         usage: { inputTokens: 0, outputTokens: 0 },
       }) as CompletionResult,
     defaultModel: () => "mock-model",
+    name: "mock",
   };
 }
 
@@ -507,12 +508,14 @@ describe("Designer", () => {
   });
 
   it("falls back to raw JSON when delimiters are missing", () => {
-    const spec = parseAgentTaskSpec(JSON.stringify({
-      task_prompt: SAMPLE_SPEC.taskPrompt,
-      judge_rubric: SAMPLE_SPEC.judgeRubric,
-      output_format: SAMPLE_SPEC.outputFormat,
-      judge_model: SAMPLE_SPEC.judgeModel,
-    }));
+    const spec = parseAgentTaskSpec(
+      JSON.stringify({
+        task_prompt: SAMPLE_SPEC.taskPrompt,
+        judge_rubric: SAMPLE_SPEC.judgeRubric,
+        output_format: SAMPLE_SPEC.outputFormat,
+        judge_model: SAMPLE_SPEC.judgeModel,
+      }),
+    );
     expect(spec.taskPrompt).toBe(SAMPLE_SPEC.taskPrompt);
   });
 });
@@ -989,6 +992,9 @@ describe("AgentTaskCreator", () => {
     });
 
     const task = await creator.create("Write a haiku about testing software");
+    if (!("getTaskPrompt" in task)) {
+      throw new Error("expected a plain agent task, got a routed family scenario");
+    }
     expect(task.getTaskPrompt({})).toBe(SAMPLE_SPEC.taskPrompt);
     expect(task.getRubric()).toBe(SAMPLE_SPEC.judgeRubric);
 
@@ -1392,9 +1398,12 @@ describe("AC-306: factory reviseOutput model sanitization", () => {
       name: "test_task",
       provider: mockProvider as any,
     });
+    if (!task.reviseOutput) {
+      throw new Error("expected the created agent task to support reviseOutput");
+    }
     await task.reviseOutput(
       "original output",
-      { score: 0.5, reasoning: "needs work", dimensionScores: {}, internalRetries: 0 },
+      { score: 0.5, reasoning: "needs work", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
       {},
     );
 
@@ -1430,9 +1439,12 @@ describe("AC-306: factory reviseOutput model sanitization", () => {
       name: "test_task_2",
       provider: mockProvider as any,
     });
+    if (!task.reviseOutput) {
+      throw new Error("expected the created agent task to support reviseOutput");
+    }
     await task.reviseOutput(
       "original",
-      { score: 0.5, reasoning: "weak", dimensionScores: {}, internalRetries: 0 },
+      { score: 0.5, reasoning: "weak", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
       {},
     );
 

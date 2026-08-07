@@ -104,6 +104,8 @@ describe("Improvement loop dimension pinning", () => {
           score,
           reasoning: `Score ${score}`,
           dimensionScores: { creativity: score, depth: score * 0.8 },
+          internalRetries: 0,
+          evaluatorEpoch: null,
         };
       },
       reviseOutput: async (out) => out + " [revised]",
@@ -141,6 +143,8 @@ describe("Improvement loop dimension pinning", () => {
           score: 0.5,
           reasoning: "ok",
           dimensionScores: {},
+          internalRetries: 0,
+          evaluatorEpoch: null,
         };
       },
       reviseOutput: async (out) => out + " [revised]",

@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { asDbPath } from "../src/domain/ids.js";
 import { SQLiteStore } from "../src/storage/index.js";
 import {
   bestStrategyForScenario,
@@ -18,7 +19,7 @@ describe("package metadata workflow", () => {
 
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "ac-package-metadata-"));
-    store = new SQLiteStore(join(dir, "test.db"));
+    store = new SQLiteStore(asDbPath(join(dir, "test.db")));
     store.migrate(join(import.meta.dirname, "..", "migrations"));
   });
 

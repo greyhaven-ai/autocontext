@@ -1,12 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from "vitest";
-import {
-  mkdtempSync,
-  rmSync,
-  readFileSync,
-  writeFileSync,
-  mkdirSync,
-  existsSync,
-} from "node:fs";
+import { mkdtempSync, rmSync, readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -16,11 +9,15 @@ import {
 } from "../../../src/control-plane/registry/artifact-store.js";
 import { createArtifact } from "../../../src/control-plane/contract/factories.js";
 import { hashDirectory } from "../../../src/control-plane/registry/content-address.js";
-import type {
-  Artifact,
-  Provenance,
-} from "../../../src/control-plane/contract/types.js";
-import type { ContentHash } from "../../../src/control-plane/contract/branded-ids.js";
+import type { Artifact, Provenance } from "../../../src/control-plane/contract/types.js";
+import type { ContentHash, Scenario } from "../../../src/control-plane/contract/branded-ids.js";
+import { parseScenario } from "../../../src/control-plane/contract/branded-ids.js";
+
+function scenario(value: string): Scenario {
+  const parsed = parseScenario(value);
+  if (parsed === null) throw new Error(`invalid test scenario: ${value}`);
+  return parsed;
+}
 
 const aProvenance: Provenance = {
   authorType: "human",
@@ -29,7 +26,10 @@ const aProvenance: Provenance = {
   createdAt: "2026-04-17T12:00:00.000Z",
 };
 
-function tempPayloadDir(parent: string, files: Record<string, string>): {
+function tempPayloadDir(
+  parent: string,
+  files: Record<string, string>,
+): {
   dir: string;
   hash: ContentHash;
 } {
@@ -61,7 +61,7 @@ describe("saveArtifact / loadArtifact round-trip", () => {
     });
     const artifact = createArtifact({
       actuatorType: "prompt-patch",
-      scenario: "grid_ctf",
+      scenario: scenario("grid_ctf"),
       payloadHash: hash,
       provenance: aProvenance,
     });
@@ -83,7 +83,7 @@ describe("saveArtifact / loadArtifact round-trip", () => {
     });
     const artifact = createArtifact({
       actuatorType: "tool-policy",
-      scenario: "othello",
+      scenario: scenario("othello"),
       payloadHash: hash,
       provenance: aProvenance,
     });
@@ -101,21 +101,30 @@ describe("saveArtifact / loadArtifact round-trip", () => {
     });
     const artifact = createArtifact({
       actuatorType: "prompt-patch",
-      scenario: "grid_ctf",
+      scenario: scenario("grid_ctf"),
       payloadHash: hash,
       provenance: aProvenance,
     });
     saveArtifact(registryRoot, artifact, payloadDir);
 
     // Tamper the on-disk payload after save.
-    const stored = join(registryRoot, ".autocontext", "candidates", artifact.id, "payload", "a.txt");
+    const stored = join(
+      registryRoot,
+      ".autocontext",
+      "candidates",
+      artifact.id,
+      "payload",
+      "a.txt",
+    );
     writeFileSync(stored, "bad");
 
     expect(() => loadArtifact(registryRoot, artifact.id)).toThrow(/payload.*hash.*mismatch/i);
   });
 
   test("loadArtifact throws when the artifact id is unknown", () => {
-    expect(() => loadArtifact(registryRoot, "01KPEYB3BRQWK2WSHK9E93N6NP" as any)).toThrow(/not found/i);
+    expect(() => loadArtifact(registryRoot, "01KPEYB3BRQWK2WSHK9E93N6NP" as any)).toThrow(
+      /not found/i,
+    );
   });
 
   test("listArtifactIds enumerates every directory under candidates/", () => {
@@ -126,7 +135,7 @@ describe("saveArtifact / loadArtifact round-trip", () => {
       });
       const a = createArtifact({
         actuatorType: "prompt-patch",
-        scenario: "grid_ctf",
+        scenario: scenario("grid_ctf"),
         payloadHash: hash,
         provenance: aProvenance,
       });

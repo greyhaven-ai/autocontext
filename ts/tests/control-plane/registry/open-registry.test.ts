@@ -3,13 +3,32 @@ import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openRegistry } from "../../../src/control-plane/registry/index.js";
-import { createArtifact, createPromotionEvent, createEvalRun } from "../../../src/control-plane/contract/factories.js";
+import {
+  createArtifact,
+  createPromotionEvent,
+  createEvalRun,
+} from "../../../src/control-plane/contract/factories.js";
 import { hashDirectory } from "../../../src/control-plane/registry/content-address.js";
 import { readHistory } from "../../../src/control-plane/registry/history-store.js";
 import { artifactDirectory } from "../../../src/control-plane/registry/artifact-store.js";
 import { readStatePointer } from "../../../src/control-plane/registry/state-pointer.js";
-import type { ContentHash, EnvironmentTag, Scenario } from "../../../src/control-plane/contract/branded-ids.js";
-import type { Artifact, MetricBundle, Provenance } from "../../../src/control-plane/contract/types.js";
+import type {
+  ContentHash,
+  EnvironmentTag,
+  Scenario,
+} from "../../../src/control-plane/contract/branded-ids.js";
+import { parseContentHash } from "../../../src/control-plane/contract/branded-ids.js";
+import type {
+  Artifact,
+  MetricBundle,
+  Provenance,
+} from "../../../src/control-plane/contract/types.js";
+
+function contentHash(fill: string): ContentHash {
+  const parsed = parseContentHash(`sha256:${fill.repeat(64)}`);
+  if (parsed === null) throw new Error(`invalid test content hash fill: ${fill}`);
+  return parsed;
+}
 
 const aProvenance: Provenance = {
   authorType: "human",
@@ -26,7 +45,7 @@ const aMetrics: MetricBundle = {
   evalRunnerIdentity: {
     name: "test-eval",
     version: "1.0.0",
-    configHash: "sha256:" + "9".repeat(64),
+    configHash: contentHash("9"),
   },
 };
 
@@ -84,7 +103,11 @@ describe("openRegistry — facade", () => {
       artifactId: artifact.id,
       suiteId: "prod-eval-v3" as any,
       metrics: aMetrics,
-      datasetProvenance: { datasetId: "ds-1", sliceHash: "sha256:" + "1".repeat(64), sampleCount: 100 },
+      datasetProvenance: {
+        datasetId: "ds-1",
+        sliceHash: contentHash("1"),
+        sampleCount: 100,
+      },
       ingestedAt: "2026-04-17T12:05:00.000Z",
     });
     reg.attachEvalRun(run);
@@ -115,7 +138,12 @@ describe("openRegistry — facade", () => {
     expect(readHistory(join(aDir, "promotion-history.jsonl"))).toEqual([promote]);
 
     // State pointer flipped to point at us:
-    const pointer = readStatePointer(registryRoot, artifact.scenario, artifact.actuatorType, artifact.environmentTag);
+    const pointer = readStatePointer(
+      registryRoot,
+      artifact.scenario,
+      artifact.actuatorType,
+      artifact.environmentTag,
+    );
     expect(pointer?.artifactId).toBe(artifact.id);
 
     // The on-disk metadata also reflects the new state:
@@ -138,7 +166,12 @@ describe("openRegistry — facade", () => {
     });
     reg.appendPromotionEvent(artifact.id, toShadow);
 
-    const pointer = readStatePointer(registryRoot, artifact.scenario, artifact.actuatorType, artifact.environmentTag);
+    const pointer = readStatePointer(
+      registryRoot,
+      artifact.scenario,
+      artifact.actuatorType,
+      artifact.environmentTag,
+    );
     expect(pointer).toBeNull();
   });
 
@@ -148,17 +181,29 @@ describe("openRegistry — facade", () => {
     const { dir: dirA, hash: hashA } = tempPayload(registryRoot, "vA");
     const a = makeArtifact(hashA);
     reg.saveArtifact(a, dirA);
-    reg.appendPromotionEvent(a.id, createPromotionEvent({
-      from: "candidate", to: "active", reason: "first", timestamp: "2026-04-17T12:00:00.000Z",
-    }));
+    reg.appendPromotionEvent(
+      a.id,
+      createPromotionEvent({
+        from: "candidate",
+        to: "active",
+        reason: "first",
+        timestamp: "2026-04-17T12:00:00.000Z",
+      }),
+    );
 
     // Second artifact, same scenario/actuatorType/environment:
     const { dir: dirB, hash: hashB } = tempPayload(registryRoot, "vB");
     const b = makeArtifact(hashB);
     reg.saveArtifact(b, dirB);
-    reg.appendPromotionEvent(b.id, createPromotionEvent({
-      from: "candidate", to: "active", reason: "second-better", timestamp: "2026-04-17T12:10:00.000Z",
-    }));
+    reg.appendPromotionEvent(
+      b.id,
+      createPromotionEvent({
+        from: "candidate",
+        to: "active",
+        reason: "second-better",
+        timestamp: "2026-04-17T12:10:00.000Z",
+      }),
+    );
 
     // a should now be deprecated, b should be active.
     const reloadedA = reg.loadArtifact(a.id);
@@ -174,9 +219,15 @@ describe("openRegistry — facade", () => {
   test("appendPromotionEvent on an unknown artifact id throws", () => {
     const reg = openRegistry(registryRoot);
     expect(() =>
-      reg.appendPromotionEvent("01KPEYB3BRQWK2WSHK9E93N6NP" as any, createPromotionEvent({
-        from: "candidate", to: "shadow", reason: "x", timestamp: "2026-04-17T12:00:00.000Z",
-      })),
+      reg.appendPromotionEvent(
+        "01KPEYB3BRQWK2WSHK9E93N6NP" as any,
+        createPromotionEvent({
+          from: "candidate",
+          to: "shadow",
+          reason: "x",
+          timestamp: "2026-04-17T12:00:00.000Z",
+        }),
+      ),
     ).toThrow();
   });
 });

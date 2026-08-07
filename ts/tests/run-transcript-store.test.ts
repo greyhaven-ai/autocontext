@@ -642,7 +642,8 @@ describe("RunTranscriptStore", () => {
     expect(retained).toHaveLength(2_000);
     expect(retained.at(0)?.sequence).toBe(1);
     expect(retained.at(-1)?.sequence).toBe(2_001);
-    expect(retained.at(0)?.message.type === "event" ? retained.at(0)?.message.event : null).toBe(
+    const firstRetained = retained.at(0);
+    expect(firstRetained?.message.type === "event" ? firstRetained.message.event : null).toBe(
       "action_detail",
     );
     expect(store.resolveClientRunId("engine-high-volume-evidence")).toBe(
@@ -900,6 +901,7 @@ describe("RunTranscriptStore", () => {
           type: "start_run",
           scenario: "grid_ctf",
           generations: 1,
+          require_playbook_approval: false,
           client_run_id: "client-commands",
           command_id: "command-start",
         },
@@ -907,6 +909,7 @@ describe("RunTranscriptStore", () => {
           type: "start_run",
           scenario: "grid_ctf",
           generations: 2,
+          require_playbook_approval: false,
           client_run_id: "client-commands",
           command_id: "command-start",
         },

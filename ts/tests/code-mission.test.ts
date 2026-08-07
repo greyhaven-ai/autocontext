@@ -12,6 +12,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { asDbPath } from "../src/domain/ids.js";
 
 const CLI = join(import.meta.dirname, "..", "src", "cli", "index.ts");
 const MIGRATIONS_DIR = join(import.meta.dirname, "..", "migrations");
@@ -21,10 +22,18 @@ function makeTempDir(): string {
 }
 
 const SANITIZED_KEYS = [
-  "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "AUTOCONTEXT_API_KEY",
-  "AUTOCONTEXT_AGENT_API_KEY", "AUTOCONTEXT_PROVIDER", "AUTOCONTEXT_AGENT_PROVIDER",
-  "AUTOCONTEXT_DB_PATH", "AUTOCONTEXT_RUNS_ROOT", "AUTOCONTEXT_KNOWLEDGE_ROOT",
-  "AUTOCONTEXT_CONFIG_DIR", "AUTOCONTEXT_AGENT_DEFAULT_MODEL", "AUTOCONTEXT_MODEL",
+  "ANTHROPIC_API_KEY",
+  "OPENAI_API_KEY",
+  "AUTOCONTEXT_API_KEY",
+  "AUTOCONTEXT_AGENT_API_KEY",
+  "AUTOCONTEXT_PROVIDER",
+  "AUTOCONTEXT_AGENT_PROVIDER",
+  "AUTOCONTEXT_DB_PATH",
+  "AUTOCONTEXT_RUNS_ROOT",
+  "AUTOCONTEXT_KNOWLEDGE_ROOT",
+  "AUTOCONTEXT_CONFIG_DIR",
+  "AUTOCONTEXT_AGENT_DEFAULT_MODEL",
+  "AUTOCONTEXT_MODEL",
 ];
 
 function buildEnv(overrides: Record<string, string> = {}): NodeJS.ProcessEnv {
@@ -54,13 +63,21 @@ function setupProjectDir(): string {
   const dir = makeTempDir();
   mkdirSync(join(dir, "runs"), { recursive: true });
   mkdirSync(join(dir, "knowledge"), { recursive: true });
-  writeFileSync(join(dir, ".autoctx.json"), JSON.stringify({
-    default_scenario: "grid_ctf",
-    provider: "deterministic",
-    gens: 1,
-    runs_dir: "./runs",
-    knowledge_dir: "./knowledge",
-  }, null, 2), "utf-8");
+  writeFileSync(
+    join(dir, ".autoctx.json"),
+    JSON.stringify(
+      {
+        default_scenario: "grid_ctf",
+        provider: "deterministic",
+        gens: 1,
+        runs_dir: "./runs",
+        knowledge_dir: "./knowledge",
+      },
+      null,
+      2,
+    ),
+    "utf-8",
+  );
   return dir;
 }
 
@@ -85,7 +102,7 @@ async function createMissionToolServer(dir: string): Promise<{
   const { createMcpServer } = await import("../src/mcp/server.js");
 
   const dbPath = join(dir, "test.db");
-  const store = new SQLiteStore(dbPath);
+  const store = new SQLiteStore(asDbPath(dbPath));
   store.migrate(MIGRATIONS_DIR);
   const server = createMcpServer({
     store,
@@ -103,8 +120,12 @@ async function createMissionToolServer(dir: string): Promise<{
 
 describe("CommandVerifier", () => {
   let dir: string;
-  beforeEach(() => { dir = makeTempDir(); });
-  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+  beforeEach(() => {
+    dir = makeTempDir();
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   it("passes when command exits 0", async () => {
     const { CommandVerifier } = await import("../src/mission/verifiers.js");
@@ -149,8 +170,12 @@ describe("CommandVerifier", () => {
 
 describe("CompositeVerifier", () => {
   let dir: string;
-  beforeEach(() => { dir = makeTempDir(); });
-  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+  beforeEach(() => {
+    dir = makeTempDir();
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   it("passes when all verifiers pass", async () => {
     const { CommandVerifier, CompositeVerifier } = await import("../src/mission/verifiers.js");
@@ -190,7 +215,10 @@ describe("CompositeVerifier", () => {
       new CommandVerifier("false", dir),
       {
         label: "should-not-run",
-        verify: async () => { secondCalled = true; return { passed: true, reason: "ok" }; },
+        verify: async () => {
+          secondCalled = true;
+          return { passed: true, reason: "ok", suggestions: [], metadata: {} };
+        },
       },
     ]);
     await composite.verify("m-1");
@@ -235,8 +263,12 @@ describe("CodeMissionSpec", () => {
 
 describe("createCodeMission", () => {
   let dir: string;
-  beforeEach(() => { dir = makeTempDir(); });
-  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+  beforeEach(() => {
+    dir = makeTempDir();
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   it("creates a mission with verifiers wired up", async () => {
     const { createCodeMission } = await import("../src/mission/verifiers.js");
@@ -244,6 +276,7 @@ describe("createCodeMission", () => {
     const manager = new MissionManager(join(dir, "test.db"));
 
     const id = createCodeMission(manager, {
+      metadata: {},
       name: "Fix bug",
       goal: "Tests pass",
       repoPath: dir,
@@ -265,6 +298,7 @@ describe("createCodeMission", () => {
     const manager = new MissionManager(join(dir, "test.db"));
 
     const id = createCodeMission(manager, {
+      metadata: {},
       name: "Fix bug",
       goal: "Tests + lint pass",
       repoPath: dir,
@@ -283,6 +317,7 @@ describe("createCodeMission", () => {
     const manager = new MissionManager(join(dir, "test.db"));
 
     const id = createCodeMission(manager, {
+      metadata: {},
       name: "Fix bug",
       goal: "Tests pass",
       repoPath: dir,
@@ -301,6 +336,7 @@ describe("createCodeMission", () => {
     const manager = new MissionManager(join(dir, "test.db"));
 
     const id = createCodeMission(manager, {
+      metadata: {},
       name: "Fix bug",
       goal: "Tests pass",
       repoPath: dir,
@@ -316,14 +352,23 @@ describe("createCodeMission", () => {
   it("CLI can create and run a code mission with honest failed status and checkpoint artifacts", () => {
     const projectDir = setupProjectDir();
     try {
-      const created = runCli([
-        "mission", "create",
-        "--type", "code",
-        "--name", "Fix bug",
-        "--goal", "Tests pass",
-        "--repo-path", projectDir,
-        "--test-command", "false",
-      ], { cwd: projectDir });
+      const created = runCli(
+        [
+          "mission",
+          "create",
+          "--type",
+          "code",
+          "--name",
+          "Fix bug",
+          "--goal",
+          "Tests pass",
+          "--repo-path",
+          projectDir,
+          "--test-command",
+          "false",
+        ],
+        { cwd: projectDir },
+      );
       expect(created.exitCode).toBe(0);
 
       const createdPayload = JSON.parse(created.stdout);
@@ -340,10 +385,14 @@ describe("createCodeMission", () => {
       expect(runPayload.verifierPassed).toBe(false);
       expect(runPayload.latestVerification.reason).toContain("failed (exit 1)");
 
-      const status = JSON.parse(runCli(["mission", "status", "--id", missionId], { cwd: projectDir }).stdout);
+      const status = JSON.parse(
+        runCli(["mission", "status", "--id", missionId], { cwd: projectDir }).stdout,
+      );
       expect(status.status).toBe("failed");
 
-      const artifacts = JSON.parse(runCli(["mission", "artifacts", "--id", missionId], { cwd: projectDir }).stdout);
+      const artifacts = JSON.parse(
+        runCli(["mission", "artifacts", "--id", missionId], { cwd: projectDir }).stdout,
+      );
       expect(artifacts.latestCheckpoint.mission.metadata.missionType).toBe("code");
       expect(artifacts.latestCheckpoint.mission.status).toBe("failed");
       expect(artifacts.latestCheckpoint.verifications[0].metadata.exitCode).toBe(1);
@@ -356,14 +405,21 @@ describe("createCodeMission", () => {
     const dir = setupProjectDir();
     try {
       const { store, server } = await createMissionToolServer(dir);
-      const created = JSON.parse((await server._registeredTools.create_mission.handler({
-        type: "code",
-        name: "Fix login",
-        goal: "Tests pass",
-        repo_path: dir,
-        test_command: "true",
-        lint_command: "true",
-      }, {})).content[0].text);
+      const created = JSON.parse(
+        (
+          await server._registeredTools.create_mission.handler(
+            {
+              type: "code",
+              name: "Fix login",
+              goal: "Tests pass",
+              repo_path: dir,
+              test_command: "true",
+              lint_command: "true",
+            },
+            {},
+          )
+        ).content[0].text,
+      );
 
       expect(created.metadata.missionType).toBe("code");
       expect(created.metadata.repoPath).toBe(dir);

@@ -18,6 +18,7 @@ import {
   type DataPlaneStatus,
 } from "../src/index.js";
 import { SCHEMA_VERSION } from "../src/traces/public-schema.js";
+import type { TraceArtifact } from "../src/traces/publishers-types.js";
 import * as pkg from "../src/index.js";
 
 let tmpDir: string;
@@ -66,7 +67,7 @@ function seedTraces(dir: string, count: number, scores?: number[]) {
   }
 }
 
-function sampleArtifact(id = "trace_sample", allowTraining = true) {
+function sampleArtifact(id = "trace_sample", allowTraining = true): TraceArtifact {
   return {
     trace: {
       schemaVersion: SCHEMA_VERSION,

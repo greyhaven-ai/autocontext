@@ -1,13 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach } from "vitest";
 import { applyPatch } from "diff";
-import {
-  mkdtempSync,
-  mkdirSync,
-  rmSync,
-  writeFileSync,
-  readFileSync,
-  existsSync,
-} from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { routingRuleActuator } from "../../../../src/control-plane/actuators/routing-rule/applicator.js";
@@ -16,8 +9,18 @@ import { CascadeRollbackRequired } from "../../../../src/control-plane/actuators
 import { hashDirectory } from "../../../../src/control-plane/registry/content-address.js";
 import { createArtifact } from "../../../../src/control-plane/contract/factories.js";
 import { defaultWorkspaceLayout } from "../../../../src/control-plane/emit/workspace-layout.js";
-import type { ArtifactId } from "../../../../src/control-plane/contract/branded-ids.js";
+import {
+  parseScenario,
+  type ArtifactId,
+  type Scenario,
+} from "../../../../src/control-plane/contract/branded-ids.js";
 import type { Artifact, Provenance } from "../../../../src/control-plane/contract/types.js";
+
+function scenario(value: string): Scenario {
+  const parsed = parseScenario(value);
+  if (parsed === null) throw new Error(`invalid test scenario: ${value}`);
+  return parsed;
+}
 
 const prov: Provenance = {
   authorType: "human",
@@ -35,7 +38,7 @@ function mkPayload(dir: string, rule: object): string {
 function mkArtifact(payloadDir: string): Artifact {
   return createArtifact({
     actuatorType: "routing-rule",
-    scenario: "grid_ctf",
+    scenario: scenario("grid_ctf"),
     payloadHash: hashDirectory(payloadDir),
     provenance: prov,
   });
@@ -132,7 +135,7 @@ describe("routing-rule actuator", () => {
     const candidate = mkArtifact(candDir);
     const baseline = createArtifact({
       actuatorType: "routing-rule",
-      scenario: "grid_ctf",
+      scenario: scenario("grid_ctf"),
       payloadHash: hashDirectory(baseDir),
       provenance: prov,
     });
@@ -160,7 +163,7 @@ describe("routing-rule actuator", () => {
     const candidate = mkArtifact(candDir);
     const baseline = createArtifact({
       actuatorType: "routing-rule",
-      scenario: "grid_ctf",
+      scenario: scenario("grid_ctf"),
       payloadHash: hashDirectory(baseDir),
       provenance: prov,
     });
@@ -197,7 +200,7 @@ describe("routing-rule actuator", () => {
     const candidate = mkArtifact(candDir);
     const baseline = createArtifact({
       actuatorType: "routing-rule",
-      scenario: "grid_ctf",
+      scenario: scenario("grid_ctf"),
       payloadHash: hashDirectory(baseDir),
       provenance: prov,
     });
@@ -228,10 +231,7 @@ describe("routing-rule actuator", () => {
 describe("CascadeRollbackRequired", () => {
   test("is an Error subclass with typed dependents property", () => {
     const ids = ["01KPEYB3BRQWK2WSHK9E93N6NP" as ArtifactId];
-    const err = new CascadeRollbackRequired(
-      "rollback blocked by active dependents",
-      ids,
-    );
+    const err = new CascadeRollbackRequired("rollback blocked by active dependents", ids);
     expect(err).toBeInstanceOf(Error);
     expect(err.message).toBe("rollback blocked by active dependents");
     expect(err.dependents).toEqual(ids);

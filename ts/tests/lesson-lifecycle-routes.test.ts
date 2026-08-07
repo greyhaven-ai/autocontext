@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { asScenarioName } from "../src/domain/ids.js";
 import { ArtifactStore } from "../src/knowledge/artifact-store.js";
 import { buildKnowledgeApiRoutes, type KnowledgeApiRoutes } from "../src/server/knowledge-api.js";
 
@@ -33,7 +34,7 @@ function seedLessons(dir: string, scenario: string, bullets: string[]): void {
     knowledgeRoot: join(dir, "knowledge"),
   });
   const block = ["<!-- LESSONS_START -->", ...bullets.map((b) => `- ${b}`), "<!-- LESSONS_END -->"];
-  artifacts.writePlaybook(scenario, `Strategy.\n\n${block.join("\n")}\n`);
+  artifacts.writePlaybook(asScenarioName(scenario), `Strategy.\n\n${block.join("\n")}\n`);
 }
 
 describe("lesson lifecycle routes", () => {
@@ -41,7 +42,7 @@ describe("lesson lifecycle routes", () => {
     const dir = root();
     try {
       seedLessons(dir, "grid_ctf", ["use X", "use Y"]);
-      const res = routesFor(dir).lessonLifecycle("grid_ctf");
+      const res = routesFor(dir).lessonLifecycle(asScenarioName("grid_ctf"));
       expect(res.status).toBe(200);
       const body = res.body as { active: Array<{ id: string; text: string }>; pending: unknown[] };
       expect(body.pending).toEqual([]);
@@ -56,13 +57,13 @@ describe("lesson lifecycle routes", () => {
     try {
       seedLessons(dir, "grid_ctf", ["use X"]);
       const routes = routesFor(dir);
-      const id = (routes.lessonLifecycle("grid_ctf").body as { active: Array<{ id: string }> })
+      const id = (routes.lessonLifecycle(asScenarioName("grid_ctf")).body as { active: Array<{ id: string }> })
         .active[0]!.id;
-      expect(routes.approveLesson("grid_ctf", id)).toEqual({
+      expect(routes.approveLesson(asScenarioName("grid_ctf"), id)).toEqual({
         status: 200,
         body: { ok: true, status: "active" },
       });
-      expect(routes.approveLesson("grid_ctf", "nope").status).toBe(404);
+      expect(routes.approveLesson(asScenarioName("grid_ctf"), "nope").status).toBe(404);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -74,12 +75,12 @@ describe("lesson lifecycle routes", () => {
       seedLessons(dir, "grid_ctf", ["use X", "use Y"]);
       const routes = routesFor(dir);
       const id = (
-        routes.lessonLifecycle("grid_ctf").body as { active: Array<{ id: string; text: string }> }
+        routes.lessonLifecycle(asScenarioName("grid_ctf")).body as { active: Array<{ id: string; text: string }> }
       ).active.find((l) => l.text === "use X")!.id;
-      expect(routes.rejectLesson("grid_ctf", id)).toEqual({ status: 200, body: { ok: true } });
-      const after = routes.lessonLifecycle("grid_ctf").body as { active: Array<{ text: string }> };
+      expect(routes.rejectLesson(asScenarioName("grid_ctf"), id)).toEqual({ status: 200, body: { ok: true } });
+      const after = routes.lessonLifecycle(asScenarioName("grid_ctf")).body as { active: Array<{ text: string }> };
       expect(after.active.map((l) => l.text)).toEqual(["use Y"]);
-      expect(routes.rejectLesson("grid_ctf", id).status).toBe(404);
+      expect(routes.rejectLesson(asScenarioName("grid_ctf"), id).status).toBe(404);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -91,21 +92,21 @@ describe("lesson lifecycle routes", () => {
       seedLessons(dir, "grid_ctf", ["use X", "use Y"]);
       const routes = routesFor(dir);
       const lessons = (
-        routes.lessonLifecycle("grid_ctf").body as { active: Array<{ id: string; text: string }> }
+        routes.lessonLifecycle(asScenarioName("grid_ctf")).body as { active: Array<{ id: string; text: string }> }
       ).active;
       const xId = lessons.find((l) => l.text === "use X")!.id;
       const yId = lessons.find((l) => l.text === "use Y")!.id;
 
-      expect(routes.curateLesson("grid_ctf", xId, { action: "stale" })).toEqual({
+      expect(routes.curateLesson(asScenarioName("grid_ctf"), xId, { action: "stale" })).toEqual({
         status: 200,
         body: { ok: true, status: "stale" },
       });
-      expect(routes.curateLesson("grid_ctf", yId, { action: "deadEnd" })).toEqual({
+      expect(routes.curateLesson(asScenarioName("grid_ctf"), yId, { action: "deadEnd" })).toEqual({
         status: 200,
         body: { ok: true, status: "deadEnd" },
       });
 
-      const lc = routes.lessonLifecycle("grid_ctf").body as {
+      const lc = routes.lessonLifecycle(asScenarioName("grid_ctf")).body as {
         active: unknown[];
         stale: Array<{ text: string }>;
         deadEnd: Array<{ text: string }>;
@@ -113,7 +114,7 @@ describe("lesson lifecycle routes", () => {
       expect(lc.stale.map((l) => l.text)).toEqual(["use X"]);
       expect(lc.deadEnd.map((l) => l.text)).toEqual(["use Y"]);
 
-      expect(routes.curateLesson("grid_ctf", xId, { action: "bogus" }).status).toBe(422);
+      expect(routes.curateLesson(asScenarioName("grid_ctf"), xId, { action: "bogus" }).status).toBe(422);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -122,7 +123,7 @@ describe("lesson lifecycle routes", () => {
   it("422s an invalid scenario id", () => {
     const dir = root();
     try {
-      expect(routesFor(dir).lessonLifecycle("../escape").status).toBe(422);
+      expect(routesFor(dir).lessonLifecycle(asScenarioName("../escape")).status).toBe(422);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

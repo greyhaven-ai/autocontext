@@ -1,13 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach } from "vitest";
 import { applyPatch } from "diff";
-import {
-  mkdtempSync,
-  mkdirSync,
-  rmSync,
-  writeFileSync,
-  readFileSync,
-  existsSync,
-} from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { toolPolicyActuator } from "../../../../src/control-plane/actuators/tool-policy/applicator.js";
@@ -15,7 +8,19 @@ import { toolPolicyRegistration } from "../../../../src/control-plane/actuators/
 import { hashDirectory } from "../../../../src/control-plane/registry/content-address.js";
 import { createArtifact } from "../../../../src/control-plane/contract/factories.js";
 import { defaultWorkspaceLayout } from "../../../../src/control-plane/emit/workspace-layout.js";
+import {
+  parseScenario,
+  type Scenario,
+} from "../../../../src/control-plane/contract/branded-ids.js";
 import type { Artifact, Provenance } from "../../../../src/control-plane/contract/types.js";
+
+function scenario(value: string): Scenario {
+  const parsed = parseScenario(value);
+  if (parsed === null) throw new Error(`invalid test scenario: ${value}`);
+  return parsed;
+}
+
+const GRID_CTF = scenario("grid_ctf");
 
 const prov: Provenance = {
   authorType: "human",
@@ -33,7 +38,7 @@ function mkPayload(dir: string, policy: object): string {
 function mkArtifact(payloadDir: string): Artifact {
   return createArtifact({
     actuatorType: "tool-policy",
-    scenario: "grid_ctf",
+    scenario: GRID_CTF,
     payloadHash: hashDirectory(payloadDir),
     provenance: prov,
   });
@@ -121,12 +126,15 @@ describe("tool-policy actuator", () => {
 
   test("rollback reverts the working-tree policy file to the baseline policy content", async () => {
     const layout = defaultWorkspaceLayout();
-    const candDir = mkPayload(join(tmp, "cand"), { ...VALID_POLICY, tools: { search: { allow: true } } });
+    const candDir = mkPayload(join(tmp, "cand"), {
+      ...VALID_POLICY,
+      tools: { search: { allow: true } },
+    });
     const baseDir = mkPayload(join(tmp, "base"), VALID_POLICY);
     const candidate = mkArtifact(candDir);
     const baseline = createArtifact({
       actuatorType: "tool-policy",
-      scenario: "grid_ctf",
+      scenario: GRID_CTF,
       payloadHash: hashDirectory(baseDir),
       provenance: prov,
     });
@@ -149,7 +157,10 @@ describe("tool-policy actuator", () => {
       layout,
     });
     const patch = Array.isArray(patches) ? patches[0]! : patches;
-    const candidateContent = readFileSync(join(wt, toolPolicyActuator.resolveTargetPath(candidate, layout)), "utf-8");
+    const candidateContent = readFileSync(
+      join(wt, toolPolicyActuator.resolveTargetPath(candidate, layout)),
+      "utf-8",
+    );
     const baselineContent = readFileSync(join(baseDir, "policy.json"), "utf-8");
     expect(patch.afterContent).toBe(baselineContent);
     expect(applyPatch(candidateContent, patch.unifiedDiff)).toBe(baselineContent);

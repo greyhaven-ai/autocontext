@@ -17,6 +17,7 @@ function makeFakeTask(scores: number[]): AgentTaskInterface {
         reasoning: "ok",
         dimensionScores: {},
         internalRetries: 0,
+        evaluatorEpoch: null,
       };
     },
     reviseOutput: async (out) => `${out} [revised]`,

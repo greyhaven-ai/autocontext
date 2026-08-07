@@ -8,6 +8,7 @@ import { ArtifactStore } from "../src/knowledge/artifact-store.js";
 import { SQLiteStore } from "../src/storage/index.js";
 import type { GenerationJournalAttempt, GenerationJournalScenario } from "../src/loop/generation-journal.js";
 import { GenerationJournal } from "../src/loop/generation-journal.js";
+import { asDbPath, asRunId, asScenarioName } from "../src/domain/ids.js";
 
 function makeTempDir(): string {
   return mkdtempSync(join(tmpdir(), "ac-generation-journal-"));
@@ -63,7 +64,7 @@ describe("GenerationJournal", () => {
       const dbPath = join(dir, "test.db");
       const runsRoot = join(dir, "runs");
       const knowledgeRoot = join(dir, "knowledge");
-      const store = new SQLiteStore(dbPath);
+      const store = new SQLiteStore(asDbPath(dbPath));
       store.migrate(join(__dirname, "..", "migrations"));
       store.createRun("run-1", "journal_scenario", 1, "local");
 
@@ -74,7 +75,7 @@ describe("GenerationJournal", () => {
         scenario: makeScenario(),
       });
 
-      journal.persistGeneration("run-1", 1, makeAttempt());
+      journal.persistGeneration(asRunId("run-1"), 1, makeAttempt());
 
       expect(store.getGenerations("run-1")).toHaveLength(1);
       expect(store.getMatchesForRun("run-1")).toHaveLength(2);
@@ -99,7 +100,7 @@ describe("GenerationJournal", () => {
       const dbPath = join(dir, "test.db");
       const runsRoot = join(dir, "runs");
       const knowledgeRoot = join(dir, "knowledge");
-      const store = new SQLiteStore(dbPath);
+      const store = new SQLiteStore(asDbPath(dbPath));
       store.migrate(join(__dirname, "..", "migrations"));
       store.createRun("run-2", "journal_scenario", 2, "local");
       store.upsertGeneration("run-2", 1, {
@@ -113,8 +114,8 @@ describe("GenerationJournal", () => {
       });
 
       const artifacts = new ArtifactStore({ runsRoot, knowledgeRoot });
-      artifacts.appendDeadEnd("journal_scenario", "avoid tunnel vision");
-      artifacts.appendDeadEnd("journal_scenario", "avoid overconfidence");
+      artifacts.appendDeadEnd(asScenarioName("journal_scenario"), "avoid tunnel vision");
+      artifacts.appendDeadEnd(asScenarioName("journal_scenario"), "avoid overconfidence");
 
       const journal = new GenerationJournal({
         store,
@@ -124,7 +125,7 @@ describe("GenerationJournal", () => {
 
       expect(journal.countDeadEnds()).toBe(2);
 
-      const reportPath = journal.persistSessionReport("run-2", {
+      const reportPath = journal.persistSessionReport(asRunId("run-2"), {
         runStartedAtMs: Date.now() - 2_000,
         explorationMode: "linear",
       });

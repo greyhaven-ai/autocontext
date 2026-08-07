@@ -15,6 +15,18 @@ import { fileURLToPath } from "node:url";
 import {
   buildSimulationApiRoutes,
 } from "../src/server/simulation-api.js";
+import { asDbPath } from "../src/domain/ids.js";
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Reads a JSON object response, failing the test if the body is not an object. */
+async function readJsonRecord(response: Response): Promise<Record<string, unknown>> {
+  const body: unknown = await response.json();
+  if (!isRecord(body)) throw new Error(`expected a JSON object, got ${typeof body}`);
+  return body;
+}
 
 let tmpDir: string;
 const __filename = fileURLToPath(import.meta.url);
@@ -82,7 +94,7 @@ describe("Simulation API routes", () => {
     const result = routes.getSimulation("test_sim");
     expect(result).not.toBeNull();
     expect(result!.name).toBe("test_sim");
-    expect(result!.summary.score).toBe(0.85);
+    expect(result!.summary).toMatchObject({ score: 0.85 });
   });
 
   it("getSimulation returns null for missing", () => {
@@ -203,7 +215,7 @@ async function createSimulationDashboardServer(dir: string) {
   mkdirSync(runsRoot, { recursive: true });
   mkdirSync(knowledgeRoot, { recursive: true });
 
-  const store = new SQLiteStore(dbPath);
+  const store = new SQLiteStore(asDbPath(dbPath));
   store.migrate(join(__dirname, "..", "migrations"));
   store.close();
 
@@ -251,18 +263,19 @@ describe("Simulation dashboard integration", () => {
   it("mounts simulation REST endpoints on the live server", async () => {
     const listRes = await fetch(`${baseUrl}/api/simulations`);
     expect(listRes.status).toBe(200);
-    const list = await listRes.json();
+    const list: unknown = await listRes.json();
     expect(Array.isArray(list)).toBe(true);
+    if (!Array.isArray(list)) throw new Error("expected a JSON array");
     expect(list[0]?.name).toBe("live_sim");
 
     const detailRes = await fetch(`${baseUrl}/api/simulations/live_sim`);
     expect(detailRes.status).toBe(200);
-    const detail = await detailRes.json();
+    const detail = await readJsonRecord(detailRes);
     expect(detail.name).toBe("live_sim");
 
     const dashRes = await fetch(`${baseUrl}/api/simulations/live_sim/dashboard`);
     expect(dashRes.status).toBe(200);
-    const dashboard = await dashRes.json();
+    const dashboard = await readJsonRecord(dashRes);
     expect(dashboard.overallScore).toBe(0.82);
     expect(dashboard.sensitivityRanking).toEqual(["timeout"]);
   });

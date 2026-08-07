@@ -69,12 +69,9 @@ describe("Anthropic streaming proxy", () => {
     });
 
     const collected: string[] = [];
-    for await (const event of stream as AsyncIterable<Record<string, unknown>>) {
-      if (event["type"] === "content_block_delta") {
-        const delta = event["delta"] as Record<string, unknown>;
-        if (delta["type"] === "text_delta") {
-          collected.push(String(delta["text"] ?? ""));
-        }
+    for await (const event of await stream) {
+      if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+        collected.push(event.delta.text);
       }
     }
 
@@ -124,7 +121,7 @@ describe("Anthropic streaming proxy", () => {
       stream: true,
     });
 
-    for await (const _event of stream as AsyncIterable<unknown>) {
+    for await (const _event of await stream) {
       // consume all events
     }
 
@@ -174,7 +171,7 @@ describe("Anthropic streaming proxy", () => {
       stream: true,
     });
 
-    for await (const _event of stream as AsyncIterable<unknown>) {
+    for await (const _event of await stream) {
       // consume all events
     }
 

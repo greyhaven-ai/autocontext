@@ -7,6 +7,8 @@ import type { LLMProvider, CompletionResult } from "../src/types/index.js";
 
 function makeMockProvider(response: string): LLMProvider {
   return {
+    name: "mock",
+    defaultModel: () => "test",
     complete: async (): Promise<CompletionResult> => ({
       text: response,
       model: "test",
@@ -58,6 +60,8 @@ describe("factual_confidence dimension", () => {
   it("includes factual_confidence instruction in system prompt", async () => {
     const captured: string[] = [];
     const provider: LLMProvider = {
+      name: "mock",
+      defaultModel: () => "test",
       complete: async (opts): Promise<CompletionResult> => {
         captured.push(opts.systemPrompt ?? "");
         return {

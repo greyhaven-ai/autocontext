@@ -9,6 +9,7 @@ import {
   planTuiAuthCommand,
 } from "../src/tui/auth-command.js";
 import { handleInteractiveTuiCommand } from "../src/tui/commands.js";
+import type { TuiAuthStatus } from "../src/server/tui-auth.js";
 
 describe("TUI auth command planner", () => {
   it("plans login commands with normalized provider and optional credential fields", () => {
@@ -67,7 +68,9 @@ describe("TUI auth command planner", () => {
   });
 
   it("formats auth status lines consistently", () => {
-    expect(formatTuiWhoamiLines({
+    // Typed as the real producer shape (TuiAuthStatus) so the test exercises the
+    // richer object the server actually hands to the formatter.
+    const status: TuiAuthStatus = {
       provider: "openai",
       authenticated: true,
       model: "gpt-5.2",
@@ -75,7 +78,8 @@ describe("TUI auth command planner", () => {
         { provider: "openai", hasApiKey: true },
         { provider: "anthropic", hasApiKey: true },
       ],
-    })).toEqual([
+    };
+    expect(formatTuiWhoamiLines(status)).toEqual([
       "provider: openai",
       "authenticated: yes",
       "model: gpt-5.2",

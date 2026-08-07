@@ -5,9 +5,15 @@ import {
   computeTreeHash,
   type TreeFile,
 } from "../../../src/control-plane/contract/invariants.js";
-import type { ArtifactId, PromotionEvent } from "../../../src/control-plane/contract/types.js";
+import type { PromotionEvent } from "../../../src/control-plane/contract/types.js";
+import type { ArtifactId } from "../../../src/control-plane/contract/branded-ids.js";
+import { parseArtifactId } from "../../../src/control-plane/contract/branded-ids.js";
 
-const id = (s: string) => s as ArtifactId;
+const id = (s: string): ArtifactId => {
+  const parsed = parseArtifactId(s);
+  if (parsed === null) throw new Error(`invalid test artifact id: ${s}`);
+  return parsed;
+};
 
 describe("validateLineageNoCycles (I4)", () => {
   test("returns valid for empty parent list", () => {

@@ -35,6 +35,8 @@ function createImprovingTask(): AgentTaskInterface & { evalCount: number } {
           technical_relevance: score,
           creativity: Math.max(0.0, score - 0.05),
         },
+        internalRetries: 0,
+        evaluatorEpoch: null,
       };
     },
 
@@ -70,6 +72,8 @@ function makeImprovingTask() {
           technical_relevance: score,
           creativity: Math.max(0.0, score - 0.05),
         },
+        internalRetries: 0,
+        evaluatorEpoch: null,
       };
     },
 

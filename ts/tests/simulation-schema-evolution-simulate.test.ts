@@ -79,9 +79,9 @@ function providerForSchemaDesigner(text: string): LLMProvider {
     defaultModel: () => "test-model",
     complete: async ({ systemPrompt }) => {
       if (systemPrompt.includes("SchemaEvolutionSpec")) {
-        return { text };
+        return { text, usage: {} };
       }
-      return { text: genericZeroMutationSpec() };
+      return { text: genericZeroMutationSpec(), usage: {} };
     },
   };
 }

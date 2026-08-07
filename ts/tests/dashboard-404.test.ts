@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
+import { asDbPath } from "../src/domain/ids.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -19,12 +20,24 @@ function makeTempDir(): string {
   return mkdtempSync(join(tmpdir(), "ac-467-no-dash-"));
 }
 
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Narrow a parsed JSON body to an object so its fields can be asserted on. */
+function jsonObject(value: unknown): Record<string, unknown> {
+  if (!isJsonObject(value)) {
+    throw new Error(`expected a JSON object, got ${JSON.stringify(value)}`);
+  }
+  return value;
+}
+
 async function createTestServer(dir: string) {
   const { RunManager, InteractiveServer } = await import("../src/server/index.js");
   const { SQLiteStore } = await import("../src/storage/index.js");
 
   const dbPath = join(dir, "test.db");
-  const store = new SQLiteStore(dbPath);
+  const store = new SQLiteStore(asDbPath(dbPath));
   store.migrate(join(__dirname, "..", "migrations"));
   store.close();
 
@@ -59,16 +72,16 @@ describe("Server root + dashboard surfaces", () => {
   it("GET / returns JSON API info", async () => {
     const res = await fetch(`${httpUrl}/`);
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = jsonObject(await res.json());
     expect(body.service).toBe("autocontext");
     expect(body.endpoints).toBeDefined();
-    expect(body.endpoints.dashboard).toBe("/dashboard");
+    expect(jsonObject(body.endpoints).dashboard).toBe("/dashboard");
   });
 
   it("GET /health still works", async () => {
     const res = await fetch(`${httpUrl}/health`);
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = jsonObject(await res.json());
     expect(body.status).toBe("ok");
   });
 

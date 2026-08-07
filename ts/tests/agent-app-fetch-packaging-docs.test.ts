@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { buildGeneratedFetchPackageArtifacts } from "../examples/generated-fetch-packaging.ts";
+import { buildGeneratedFetchPackageArtifacts } from "../examples/generated-fetch-packaging.js";
 
 const repoRoot = join(import.meta.dirname, "..", "..");
 const docsPath = join(repoRoot, "docs", "generated-fetch-packaging.md");

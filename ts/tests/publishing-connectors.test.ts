@@ -50,6 +50,7 @@ function sampleArtifact(): TraceArtifact {
       createdAt: "2026-03-27T10:00:00Z",
     },
     attestation: {
+      schemaVersion: SCHEMA_VERSION,
       submitterId: "user_test",
       consentGiven: true,
       dataOrigin: "own_work",
@@ -90,12 +91,12 @@ describe("LocalPublisher", () => {
   it("appends multiple artifacts to the same file", async () => {
     const publisher = new LocalPublisher(join(tmpDir, "published"));
     await publisher.publish(sampleArtifact());
-    await publisher.publish({ ...sampleArtifact(), trace: { ...sampleArtifact().trace, traceId: "trace_002" } });
+    await publisher.publish({
+      ...sampleArtifact(),
+      trace: { ...sampleArtifact().trace, traceId: "trace_002" },
+    });
 
-    const content = readFileSync(
-      join(tmpDir, "published", "traces.jsonl"),
-      "utf-8",
-    );
+    const content = readFileSync(join(tmpDir, "published", "traces.jsonl"), "utf-8");
     const lines = content.trim().split("\n");
     expect(lines.length).toBe(2);
   });
@@ -186,9 +187,7 @@ describe("TraceIngester", () => {
     const result = await ingester.ingestFromFile(join(tmpDir, "published", "traces.jsonl"));
 
     // Check cached artifact has provenance
-    const cached = JSON.parse(
-      readFileSync(join(result.cacheDir!, "trace_test_001.json"), "utf-8"),
-    );
+    const cached = JSON.parse(readFileSync(join(result.cacheDir!, "trace_test_001.json"), "utf-8"));
     expect(cached.manifest.sourceHarness).toBe("autocontext");
     expect(cached.manifest.license).toBe("CC-BY-4.0");
     expect(cached.attestation.consentGiven).toBe(true);
@@ -215,7 +214,9 @@ describe("TraceIngester", () => {
     const first = await firstIngester.ingestFromFile(join(tmpDir, "published", "traces.jsonl"));
 
     const restartedIngester = new TraceIngester(join(tmpDir, "cache"));
-    const second = await restartedIngester.ingestFromFile(join(tmpDir, "published", "traces.jsonl"));
+    const second = await restartedIngester.ingestFromFile(
+      join(tmpDir, "published", "traces.jsonl"),
+    );
 
     expect(first.tracesIngested).toBe(1);
     expect(second.tracesIngested).toBe(0);

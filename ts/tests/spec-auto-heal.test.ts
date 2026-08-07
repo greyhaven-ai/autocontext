@@ -17,11 +17,7 @@ import {
   inferMissingFields,
 } from "../src/scenarios/spec-auto-heal.js";
 import type { AgentTaskSpec } from "../src/scenarios/agent-task-spec.js";
-import {
-  parseAgentTaskSpec,
-  SPEC_END,
-  SPEC_START,
-} from "../src/scenarios/agent-task-designer.js";
+import { parseAgentTaskSpec, SPEC_END, SPEC_START } from "../src/scenarios/agent-task-designer.js";
 import {
   parseOperatorLoopSpec,
   OPERATOR_LOOP_SPEC_END,
@@ -136,8 +132,7 @@ describe("generateSyntheticSampleInput", () => {
 describe("healAgentTaskSpec", () => {
   it("adds sampleInput when prompt references external data", () => {
     const spec: AgentTaskSpec = {
-      taskPrompt:
-        "You will be provided with patient records. Identify drug interactions.",
+      taskPrompt: "You will be provided with patient records. Identify drug interactions.",
       judgeRubric: "Evaluate accuracy",
       outputFormat: "free_text",
       judgeModel: "",
@@ -204,8 +199,11 @@ describe("inferMissingFields", () => {
       description: "",
     };
     const fixed = inferMissingFields(spec);
-    expect(fixed.description).toBeTruthy();
-    expect(fixed.description.length).toBeGreaterThan(0);
+    const description = fixed.description;
+    expect(description).toBeTruthy();
+    expect(description).toBeTypeOf("string");
+    if (typeof description !== "string") throw new Error("description must be a string");
+    expect(description.length).toBeGreaterThan(0);
   });
 
   it("infers rubric when missing", () => {
@@ -268,8 +266,7 @@ describe("healSpec", () => {
         SPEC_START,
         JSON.stringify(
           {
-            task_prompt:
-              "You will be provided with an outage log. Summarize the root cause.",
+            task_prompt: "You will be provided with an outage log. Summarize the root cause.",
             judge_rubric: "Evaluate accuracy",
             output_format: "free_text",
             judge_model: "",
@@ -334,25 +331,23 @@ describe("healSpec", () => {
 
   it("returns a healed agent_task spec from createScenarioFromDescription", async () => {
     const provider = {
+      name: "test-provider",
       defaultModel: () => "test-model",
       complete: async () => ({
         text: JSON.stringify({
           family: "agent_task",
           name: "incident_summary",
-          taskPrompt:
-            "You will be provided with an incident report. Summarize the outage.",
+          taskPrompt: "You will be provided with an incident report. Summarize the outage.",
           rubric: "Evaluate accuracy and completeness.",
           outputFormat: "free_text",
           maxRounds: "2",
           qualityThreshold: "0.88",
         }),
+        usage: {},
       }),
     };
 
-    const result = await createScenarioFromDescription(
-      "Summarize an incident report",
-      provider,
-    );
+    const result = await createScenarioFromDescription("Summarize an incident report", provider);
 
     expect(result.spec.sampleInput).toBeDefined();
     expect(result.spec.maxRounds).toBe(2);
@@ -362,17 +357,14 @@ describe("healSpec", () => {
   it("builds solve-time agent_task specs without dropping healed fields", () => {
     const spec = buildAgentTaskSolveSpec(
       {
-        taskPrompt:
-          "You will be provided with customer transaction data. Find anomalies.",
+        taskPrompt: "You will be provided with customer transaction data. Find anomalies.",
         rubric: "Evaluate correctness",
         outputFormat: "free_text",
         maxRounds: "3",
         qualityThreshold: "0.92",
         sampleInput: '{"transactions":[{"id":"t1"}]}',
-        referenceContext:
-          "Fraud analysts compare amount, merchant, and timing.",
-        contextPreparation:
-          "Load the latest fraud rules before drafting the summary.",
+        referenceContext: "Fraud analysts compare amount, merchant, and timing.",
+        contextPreparation: "Load the latest fraud rules before drafting the summary.",
         requiredContextKeys: ["referenceContext", "sampleInput"],
       },
       1,
@@ -383,10 +375,7 @@ describe("healSpec", () => {
     expect(spec.sampleInput).toContain("transactions");
     expect(spec.referenceContext).toContain("Fraud analysts");
     expect(spec.contextPreparation).toContain("fraud rules");
-    expect(spec.requiredContextKeys).toEqual([
-      "referenceContext",
-      "sampleInput",
-    ]);
+    expect(spec.requiredContextKeys).toEqual(["referenceContext", "sampleInput"]);
   });
 
   it("returns a copy, not a mutation", () => {
