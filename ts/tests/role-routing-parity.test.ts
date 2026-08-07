@@ -99,7 +99,7 @@ function settingsFromFixture(overrides: Record<string, string> = {}): RoleRoutin
     if (!camelKey) {
       throw new Error(`fixture sets unknown settings key: ${pythonKey}`);
     }
-    (settings as Record<string, string>)[camelKey] = value;
+    settings[camelKey] = value;
   }
   return settings;
 }
