@@ -113,3 +113,18 @@ def test_route_parity(group: str, case_name: str, case: dict[str, Any]) -> None:
     router = RoleRouter(_settings_from_fixture(case.get("settings", {})))
     context = RoutingContext(**_context_from_fixture(case.get("context", {})))
     _assert_route_matches(router.route(case["role"], context=context), case["expected"])
+
+
+@pytest.mark.parametrize("case_name,case", _cases("cost_estimation"))
+def test_cost_estimation_parity(case_name: str, case: dict[str, Any]) -> None:
+    """Cost totals must match TypeScript's estimateRoleRoutingCost()."""
+    from autocontext.agents.role_router import RoleRouter, RoutingContext
+
+    del case_name
+    router = RoleRouter(_settings_from_fixture(case.get("settings", {})))
+    context = RoutingContext(**_context_from_fixture(case.get("context", {})))
+    estimate = router.estimate_run_cost(context=context)
+
+    expected = case["expected"]
+    for key in ("total_per_1k_tokens", "all_frontier_per_1k_tokens", "savings_vs_all_frontier"):
+        assert estimate[key] == pytest.approx(expected[key]), key

@@ -218,6 +218,26 @@
           "cost_per_1k_tokens": 0.015
         }
       }
+    },
+    "cost_estimation": {
+      "default_auto_mode_totals": {
+        "settings": {},
+        "context": {},
+        "expected": {
+          "total_per_1k_tokens": 0.038,
+          "all_frontier_per_1k_tokens": 0.09,
+          "savings_vs_all_frontier": 0.052
+        }
+      },
+      "with_local_artifacts_totals": {
+        "settings": {},
+        "context": { "availableLocalModels": ["/models/distilled"] },
+        "expected": {
+          "total_per_1k_tokens": 0.016,
+          "all_frontier_per_1k_tokens": 0.09,
+          "savings_vs_all_frontier": 0.074
+        }
+      }
     }
   },
   "known_divergences": [

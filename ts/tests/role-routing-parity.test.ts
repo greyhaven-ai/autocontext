@@ -12,7 +12,11 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { routeRoleProvider, type RoleRoutingSettings } from "../src/providers/index.js";
+import {
+  estimateRoleRoutingCost,
+  routeRoleProvider,
+  type RoleRoutingSettings,
+} from "../src/providers/index.js";
 
 type ExpectedAssignment = {
   cost_per_1k_tokens: number;
@@ -157,3 +161,37 @@ for (const group of ROUTE_GROUPS) {
     }
   });
 }
+
+type CostCase = {
+  context?: { availableLocalModels?: string[] };
+  expected: {
+    all_frontier_per_1k_tokens: number;
+    savings_vs_all_frontier: number;
+    total_per_1k_tokens: number;
+  };
+  settings?: Record<string, string>;
+};
+
+describe("cost_estimation parity", () => {
+  const cases = Object.entries(
+    (FIXTURES.fixtures.cost_estimation ?? {}) as unknown as Record<string, CostCase>,
+  );
+
+  it("has cases to replay", () => {
+    expect(cases.length).toBeGreaterThan(0);
+  });
+
+  for (const [name, testCase] of cases) {
+    it(`matches Python for ${name}`, () => {
+      const estimate = estimateRoleRoutingCost(
+        settingsFromFixture(testCase.settings),
+        testCase.context ?? {},
+      );
+      expect(estimate.totalPer1kTokens).toBeCloseTo(testCase.expected.total_per_1k_tokens);
+      expect(estimate.allFrontierPer1kTokens).toBeCloseTo(
+        testCase.expected.all_frontier_per_1k_tokens,
+      );
+      expect(estimate.savingsVsAllFrontier).toBeCloseTo(testCase.expected.savings_vs_all_frontier);
+    });
+  }
+});
