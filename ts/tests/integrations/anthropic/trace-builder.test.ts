@@ -75,7 +75,7 @@ describe("trace-builder", () => {
       sourceInfo: FAKE_SOURCE,
       traceId: ulid(),
     });
-    const messages = trace.messages as Array<Record<string, unknown>>;
+    const messages = trace.messages;
     const lastMsg = messages[messages.length - 1]!;
     expect(lastMsg["role"]).toBe("assistant");
     expect(lastMsg["content"]).toBe("hello world");
@@ -107,7 +107,7 @@ describe("trace-builder", () => {
       sourceInfo: FAKE_SOURCE,
       traceId: ulid(),
     });
-    const messages = trace.messages as Array<Record<string, unknown>>;
+    const messages = trace.messages;
     expect(messages[0]?.content).toBe("look at this");
   });
 
@@ -126,10 +126,10 @@ describe("trace-builder", () => {
       sourceInfo: FAKE_SOURCE,
       traceId: ulid(),
     });
-    const toolCalls = trace.toolCalls as Array<Record<string, unknown>>;
+    const toolCalls = trace.toolCalls;
     expect(toolCalls).toHaveLength(1);
     expect(toolCalls[0]!["toolName"]).toBe("search");
-    expect((toolCalls[0]!["args"] as Record<string, unknown>)["query"]).toBe("foo");
+    expect(toolCalls[0]!["args"]["query"]).toBe("foo");
   });
 
   test("buildSuccessTrace with stop_reason: metadata.anthropicStopReason present", () => {
@@ -182,7 +182,7 @@ describe("trace-builder", () => {
       accumulatedStopReason: "end_turn",
       outcome: { label: "success" },
     });
-    const messages = trace.messages as Array<Record<string, unknown>>;
+    const messages = trace.messages;
     const lastMsg = messages[messages.length - 1]!;
     expect(lastMsg["content"]).toBe("streaming text");
     const usage = trace.usage as Record<string, unknown>;

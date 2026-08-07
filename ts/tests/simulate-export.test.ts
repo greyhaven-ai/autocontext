@@ -166,7 +166,7 @@ describe("simulate export — CSV", () => {
     await engine.run({
       description: "CSV test",
       saveAs: "csv_test",
-      sweep: [{ name: "seed", values: [1, 2, 3] }],
+      sweep: [{ name: "seed", values: [1, 2, 3], scale: "linear" }],
     });
 
     const result = exportSimulation({

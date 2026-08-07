@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { ArtifactStore } from "../src/knowledge/artifact-store.js";
+import { asScenarioName } from "../src/domain/ids.js";
 
 let dir: string;
 beforeEach(() => {
@@ -37,7 +38,7 @@ describe("lesson lifecycle (derived markdown view)", () => {
   it("buildLifecycle derives active lessons from playbook/SKILL and reads dead ends", async () => {
     const { buildLifecycle } = await mods();
     const artifacts = store();
-    artifacts.writePlaybook("scn", playbook("fresh", "shared"));
+    artifacts.writePlaybook(asScenarioName("scn"), playbook("fresh", "shared"));
     const skillDir = join(dir, "skills", "scn-ops");
     mkdirSync(skillDir, { recursive: true });
     writeFileSync(
@@ -45,7 +46,7 @@ describe("lesson lifecycle (derived markdown view)", () => {
       "# Skill\n\n## Operational Lessons\n\n- shared\n- skill only\n",
       "utf-8",
     );
-    artifacts.appendDeadEnd("scn", "tried Y, lost");
+    artifacts.appendDeadEnd(asScenarioName("scn"), "tried Y, lost");
 
     const view = buildLifecycle({
       knowledgeRoot: dir,
@@ -110,7 +111,7 @@ describe("lesson lifecycle (derived markdown view)", () => {
       }),
     ).toBe("deadEnd");
     expect(readFileSync(skillPath, "utf-8")).not.toContain("skill only");
-    expect(store().readDeadEnds("scn")).toContain("skill only");
+    expect(store().readDeadEnds(asScenarioName("scn"))).toContain("skill only");
 
     writeFileSync(skillPath, "# Skill\n\n## Operational Lessons\n\n- reject me\n", "utf-8");
     const rejectId = buildLifecycle({
@@ -133,7 +134,7 @@ describe("lesson lifecycle (derived markdown view)", () => {
   it("approve is a no-op for a live derived lesson", async () => {
     const { approveLesson, buildLifecycle } = await mods();
     const artifacts = store();
-    artifacts.writePlaybook("scn", playbook("already live"));
+    artifacts.writePlaybook(asScenarioName("scn"), playbook("already live"));
     const [lesson] = buildLifecycle({
       knowledgeRoot: dir,
       scenario: "scn",
@@ -161,7 +162,7 @@ describe("lesson lifecycle (derived markdown view)", () => {
   it("reject removes a live markdown lesson", async () => {
     const { rejectLesson, buildLifecycle } = await mods();
     const artifacts = store();
-    artifacts.writePlaybook("scn", playbook("held", "keep"));
+    artifacts.writePlaybook(asScenarioName("scn"), playbook("held", "keep"));
     const lesson = buildLifecycle({
       knowledgeRoot: dir,
       scenario: "scn",
@@ -169,14 +170,14 @@ describe("lesson lifecycle (derived markdown view)", () => {
     }).active.find((l: { text: string }) => l.text === "held")!;
 
     expect(rejectLesson({ knowledgeRoot: dir, scenario: "scn", lessonId: lesson.id })).toBe(true);
-    expect(artifacts.readPlaybook("scn")).not.toContain("held");
-    expect(artifacts.readPlaybook("scn")).toContain("keep");
+    expect(artifacts.readPlaybook(asScenarioName("scn"))).not.toContain("held");
+    expect(artifacts.readPlaybook(asScenarioName("scn"))).toContain("keep");
   });
 
   it("curate deadEnd moves the markdown lesson into the shared registry", async () => {
     const { curateLesson, buildLifecycle } = await mods();
     const artifacts = store();
-    artifacts.writePlaybook("scn", playbook("dead me"));
+    artifacts.writePlaybook(asScenarioName("scn"), playbook("dead me"));
     const [lesson] = buildLifecycle({
       knowledgeRoot: dir,
       scenario: "scn",
@@ -192,7 +193,7 @@ describe("lesson lifecycle (derived markdown view)", () => {
         currentGeneration: 9,
       }),
     ).toBe("deadEnd");
-    expect(artifacts.readPlaybook("scn")).not.toContain("dead me");
+    expect(artifacts.readPlaybook(asScenarioName("scn"))).not.toContain("dead me");
     expect(
       buildLifecycle({ knowledgeRoot: dir, scenario: "scn", currentGeneration: 9 }).deadEnd[0].text,
     ).toContain("dead me");
@@ -201,7 +202,7 @@ describe("lesson lifecycle (derived markdown view)", () => {
   it("curate stale annotates without deleting and excludes stale from active", async () => {
     const { curateLesson, buildLifecycle } = await mods();
     const artifacts = store();
-    artifacts.writePlaybook("scn", playbook("stale me"));
+    artifacts.writePlaybook(asScenarioName("scn"), playbook("stale me"));
     const [lesson] = buildLifecycle({
       knowledgeRoot: dir,
       scenario: "scn",
@@ -220,13 +221,13 @@ describe("lesson lifecycle (derived markdown view)", () => {
     const view = buildLifecycle({ knowledgeRoot: dir, scenario: "scn", currentGeneration: 9 });
     expect(view.active).toEqual([]);
     expect(view.stale.map((l: { text: string }) => l.text)).toEqual(["stale me"]);
-    expect(artifacts.readPlaybook("scn")).toContain("stale me");
+    expect(artifacts.readPlaybook(asScenarioName("scn"))).toContain("stale me");
   });
 
   it("deletes and returns null on missing", async () => {
     const { curateLesson, buildLifecycle } = await mods();
     const artifacts = store();
-    artifacts.writePlaybook("scn", playbook("gone"));
+    artifacts.writePlaybook(asScenarioName("scn"), playbook("gone"));
     const [lesson] = buildLifecycle({
       knowledgeRoot: dir,
       scenario: "scn",
@@ -242,7 +243,7 @@ describe("lesson lifecycle (derived markdown view)", () => {
         currentGeneration: 9,
       }),
     ).toBe("deleted");
-    expect(artifacts.readPlaybook("scn")).not.toContain("gone");
+    expect(artifacts.readPlaybook(asScenarioName("scn"))).not.toContain("gone");
     expect(
       curateLesson({
         knowledgeRoot: dir,

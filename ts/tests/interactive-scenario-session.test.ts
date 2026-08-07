@@ -48,6 +48,11 @@ describe("interactive scenario session", () => {
         })),
         reviseSpec: vi.fn(async () => ({
           changesApplied: true,
+          original: {
+            description: "Incident triage task",
+            taskPrompt: "Summarize incident reports.",
+            rubric: "Evaluate triage completeness.",
+          },
           revised: {
             description: "Incident triage task with owner assignment",
             taskPrompt: "Summarize incident reports and assign an owner.",
@@ -103,9 +108,11 @@ describe("interactive scenario session", () => {
     const ready = await session.confirmScenario();
     expect(ready).toEqual({ name: "incident_triage", testScores: [] });
 
-    await expect(session.reviseScenario({
-      feedback: "Try another revision",
-      provider,
-    })).rejects.toThrow("No scenario preview is pending. Create a scenario first.");
+    await expect(
+      session.reviseScenario({
+        feedback: "Try another revision",
+        provider,
+      }),
+    ).rejects.toThrow("No scenario preview is pending. Create a scenario first.");
   });
 });

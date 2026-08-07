@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
+import type { MissionStore } from "../src/mission/store.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -76,7 +77,7 @@ describe("Mission types", () => {
 
 describe("MissionStore", () => {
   let dir: string;
-  let store: InstanceType<Awaited<ReturnType<typeof import("../src/mission/store.js")>>["MissionStore"]>;
+  let store: MissionStore;
 
   beforeEach(async () => {
     dir = makeTempDir();
@@ -214,6 +215,8 @@ describe("MissionManager", () => {
     manager.setVerifier(id, async () => ({
       passed: true,
       reason: "All checks pass",
+      suggestions: [],
+      metadata: {},
     }));
 
     const result = await manager.verify(id);
@@ -230,6 +233,7 @@ describe("MissionManager", () => {
       passed: false,
       reason: "Tests still failing",
       suggestions: ["Fix the type error"],
+      metadata: {},
     }));
 
     const result = await manager.verify(id);

@@ -17,6 +17,16 @@ import {
   resolveRunStartPlan,
 } from "../src/server/run-start-workflow.js";
 
+// Array.prototype.findLastIndex is ES2023; the compiler targets ES2022 lib.
+function lastIndexOfEvent(entries: readonly { event: string }[], event: string): number {
+  for (let i = entries.length - 1; i >= 0; i -= 1) {
+    if (entries[i]?.event === event) {
+      return i;
+    }
+  }
+  return -1;
+}
+
 function makeSettings(): AppSettings {
   return {
     ...({} as AppSettings),
@@ -269,7 +279,7 @@ describe("run start workflow", () => {
     expect(emitted.findIndex((entry) => entry.event === "task_plan_updated")).toBeGreaterThan(
       emitted.findIndex((entry) => entry.event === "run_started"),
     );
-    expect(emitted.findLastIndex((entry) => entry.event === "task_plan_updated")).toBeLessThan(
+    expect(lastIndexOfEvent(emitted, "task_plan_updated")).toBeLessThan(
       emitted.findIndex((entry) => entry.event === "run_completed"),
     );
     const progressNotes = emitted.filter((entry) => entry.event === "agent_progress_note");
@@ -282,7 +292,7 @@ describe("run start workflow", () => {
     expect(progressNotes.map((entry) => entry.payload.generation)).toEqual([0, 1, 2, 2]);
     expect(JSON.stringify(progressNotes)).not.toContain("first generation");
     expect(JSON.stringify(progressNotes)).not.toContain("second generation");
-    expect(emitted.findLastIndex((entry) => entry.event === "agent_progress_note")).toBeLessThan(
+    expect(lastIndexOfEvent(emitted, "agent_progress_note")).toBeLessThan(
       emitted.findIndex((entry) => entry.event === "run_completed"),
     );
     const completed = emitted.find((entry) => entry.event === "run_completed");
@@ -537,7 +547,7 @@ describe("run start workflow", () => {
       plan_revision: 2,
       active_step_id: null,
     });
-    expect(emitted.findLastIndex((entry) => entry.event === "task_plan_updated")).toBeLessThan(
+    expect(lastIndexOfEvent(emitted, "task_plan_updated")).toBeLessThan(
       emitted.findIndex((entry) => entry.event === "run_completed"),
     );
     const progressNotes = emitted.filter((entry) => entry.event === "agent_progress_note");
@@ -552,7 +562,7 @@ describe("run start workflow", () => {
     ]);
     expect(progressNotes.at(3)?.payload.text).toContain("Evaluation round 1");
     expect(progressNotes.at(4)?.payload.text).toContain("revision approach");
-    expect(emitted.findLastIndex((entry) => entry.event === "agent_progress_note")).toBeLessThan(
+    expect(lastIndexOfEvent(emitted, "agent_progress_note")).toBeLessThan(
       emitted.findIndex((entry) => entry.event === "run_completed"),
     );
   });

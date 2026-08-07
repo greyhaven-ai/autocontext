@@ -98,6 +98,26 @@ jobs:
         working-directory: ts
         run: uv run --frozen --project ../autocontext -- npm run check:schemas
 
+  # AC-909: the TypeScript type gate. Without this the 833-file clean test
+  # suite has no ratchet: tsconfig.json excludes tests/, so a drifting test
+  # only surfaces here. `npm run lint` is tsc --noEmit + check:test-types
+  # (all test files) + the generated root-index check.
+  ts-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: ts
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: ts/.nvmrc
+      - name: Install TypeScript deps
+        run: npm ci --ignore-scripts
+      - name: Lint (tsc, test types, root index)
+        run: npm run lint
+
   ts-test-shards:
     runs-on: ubuntu-latest
     timeout-minutes: 20

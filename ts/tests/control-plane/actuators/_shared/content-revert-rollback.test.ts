@@ -1,19 +1,22 @@
 import { describe, test, expect, beforeEach, afterEach } from "vitest";
 import { applyPatch } from "diff";
-import {
-  mkdtempSync,
-  mkdirSync,
-  rmSync,
-  writeFileSync,
-  readFileSync,
-  existsSync,
-} from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { contentRevertRollback } from "../../../../src/control-plane/actuators/_shared/content-revert-rollback.js";
 import { hashDirectory } from "../../../../src/control-plane/registry/content-address.js";
 import { createArtifact } from "../../../../src/control-plane/contract/factories.js";
 import type { Artifact, Provenance } from "../../../../src/control-plane/contract/types.js";
+import {
+  parseScenario,
+  type Scenario,
+} from "../../../../src/control-plane/contract/branded-ids.js";
+
+function scenario(value: string): Scenario {
+  const parsed = parseScenario(value);
+  if (parsed === null) throw new Error(`invalid test scenario: ${value}`);
+  return parsed;
+}
 
 const prov: Provenance = {
   authorType: "human",
@@ -22,10 +25,7 @@ const prov: Provenance = {
   createdAt: "2026-04-17T00:00:00.000Z",
 };
 
-function makePayload(
-  dir: string,
-  files: Record<string, string>,
-): string {
+function makePayload(dir: string, files: Record<string, string>): string {
   mkdirSync(dir, { recursive: true });
   for (const [name, content] of Object.entries(files)) {
     writeFileSync(join(dir, name), content, "utf-8");
@@ -36,7 +36,7 @@ function makePayload(
 function mkArtifact(payloadDir: string): Artifact {
   return createArtifact({
     actuatorType: "prompt-patch",
-    scenario: "grid_ctf",
+    scenario: scenario("grid_ctf"),
     payloadHash: hashDirectory(payloadDir),
     provenance: prov,
   });

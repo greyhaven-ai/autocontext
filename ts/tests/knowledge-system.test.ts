@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
+import { asRunId, asScenarioName } from "../src/domain/ids.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -123,33 +124,33 @@ describe("PlaybookManager", () => {
   it("read returns sentinel when no playbook", async () => {
     const { PlaybookManager, EMPTY_PLAYBOOK_SENTINEL } = await import("../src/knowledge/playbook.js");
     const mgr = new PlaybookManager(dir);
-    expect(mgr.read("grid_ctf")).toBe(EMPTY_PLAYBOOK_SENTINEL);
+    expect(mgr.read(asScenarioName("grid_ctf"))).toBe(EMPTY_PLAYBOOK_SENTINEL);
   });
 
   it("write and read playbook", async () => {
     const { PlaybookManager } = await import("../src/knowledge/playbook.js");
     const mgr = new PlaybookManager(dir);
-    mgr.write("grid_ctf", "# Playbook\n\nBe aggressive.");
-    const content = mgr.read("grid_ctf");
+    mgr.write(asScenarioName("grid_ctf"), "# Playbook\n\nBe aggressive.");
+    const content = mgr.read(asScenarioName("grid_ctf"));
     expect(content).toContain("Be aggressive");
   });
 
   it("versioning: write creates archive", async () => {
     const { PlaybookManager } = await import("../src/knowledge/playbook.js");
     const mgr = new PlaybookManager(dir);
-    mgr.write("grid_ctf", "v1");
-    mgr.write("grid_ctf", "v2");
-    expect(mgr.versionCount("grid_ctf")).toBe(1);
+    mgr.write(asScenarioName("grid_ctf"), "v1");
+    mgr.write(asScenarioName("grid_ctf"), "v2");
+    expect(mgr.versionCount(asScenarioName("grid_ctf"))).toBe(1);
   });
 
   it("rollback restores previous playbook", async () => {
     const { PlaybookManager } = await import("../src/knowledge/playbook.js");
     const mgr = new PlaybookManager(dir);
-    mgr.write("grid_ctf", "v1 playbook");
-    mgr.write("grid_ctf", "v2 playbook");
-    const ok = mgr.rollback("grid_ctf");
+    mgr.write(asScenarioName("grid_ctf"), "v1 playbook");
+    mgr.write(asScenarioName("grid_ctf"), "v2 playbook");
+    const ok = mgr.rollback(asScenarioName("grid_ctf"));
     expect(ok).toBe(true);
-    expect(mgr.read("grid_ctf")).toContain("v1 playbook");
+    expect(mgr.read(asScenarioName("grid_ctf"))).toContain("v1 playbook");
   });
 
   it("exports PLAYBOOK_MARKERS", async () => {
@@ -269,7 +270,7 @@ describe("ArtifactStore", () => {
       runsRoot: join(dir, "runs"),
       knowledgeRoot: join(dir, "knowledge"),
     });
-    const genDir = store.generationDir("run-1", 3);
+    const genDir = store.generationDir(asRunId("run-1"), 3);
     expect(genDir).toContain("run-1");
     expect(genDir).toContain("gen_3");
   });
@@ -280,8 +281,8 @@ describe("ArtifactStore", () => {
       runsRoot: join(dir, "runs"),
       knowledgeRoot: join(dir, "knowledge"),
     });
-    store.writePlaybook("grid_ctf", "# Strategy\nBe aggressive.");
-    const content = store.readPlaybook("grid_ctf");
+    store.writePlaybook(asScenarioName("grid_ctf"), "# Strategy\nBe aggressive.");
+    const content = store.readPlaybook(asScenarioName("grid_ctf"));
     expect(content).toContain("Be aggressive");
   });
 });

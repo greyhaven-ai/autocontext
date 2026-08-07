@@ -7,6 +7,7 @@ import { ArtifactStore } from "../src/knowledge/artifact-store.js";
 import { exportStrategyPackage } from "../src/knowledge/package.js";
 import { writePackageMetadata } from "../src/knowledge/package-metadata.js";
 import { SQLiteStore } from "../src/storage/index.js";
+import { asDbPath, asScenarioName } from "../src/domain/ids.js";
 
 describe("strategy package run export", () => {
   let dir: string;
@@ -15,13 +16,13 @@ describe("strategy package run export", () => {
 
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "ac-strategy-package-run-"));
-    store = new SQLiteStore(join(dir, "test.db"));
+    store = new SQLiteStore(asDbPath(join(dir, "test.db")));
     store.migrate(join(import.meta.dirname, "..", "migrations"));
     artifacts = new ArtifactStore({
       runsRoot: join(dir, "runs"),
       knowledgeRoot: join(dir, "knowledge"),
     });
-    artifacts.writePlaybook("grid_ctf", "## Lesson\n\nTake the safe lane.");
+    artifacts.writePlaybook(asScenarioName("grid_ctf"), "## Lesson\n\nTake the safe lane.");
   });
 
   afterEach(() => {

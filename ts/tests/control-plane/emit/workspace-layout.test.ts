@@ -6,6 +6,24 @@ import {
   defaultWorkspaceLayout,
   loadWorkspaceLayout,
 } from "../../../src/control-plane/emit/workspace-layout.js";
+import {
+  parseEnvironmentTag,
+  parseScenario,
+  type EnvironmentTag,
+  type Scenario,
+} from "../../../src/control-plane/contract/branded-ids.js";
+
+function scenario(value: string): Scenario {
+  const parsed = parseScenario(value);
+  if (parsed === null) throw new Error(`invalid test scenario: ${value}`);
+  return parsed;
+}
+
+function env(value: string): EnvironmentTag {
+  const parsed = parseEnvironmentTag(value);
+  if (parsed === null) throw new Error(`invalid test environment tag: ${value}`);
+  return parsed;
+}
 
 describe("defaultWorkspaceLayout", () => {
   test("has the conventional defaults documented in the spec", () => {
@@ -14,7 +32,7 @@ describe("defaultWorkspaceLayout", () => {
     expect(layout.policySubdir).toBe("policies/tools");
     expect(layout.routingSubdir).toBe("routing");
     expect(layout.modelPointerSubdir).toBe("models/active");
-    expect(layout.scenarioDir("grid_ctf", "production")).toBe("agents/grid_ctf");
+    expect(layout.scenarioDir(scenario("grid_ctf"), env("production"))).toBe("agents/grid_ctf");
   });
 
   test("is stable across calls (same subdirs, equivalent scenarioDir output)", () => {
@@ -24,7 +42,7 @@ describe("defaultWorkspaceLayout", () => {
     expect(a.policySubdir).toBe(b.policySubdir);
     expect(a.routingSubdir).toBe(b.routingSubdir);
     expect(a.modelPointerSubdir).toBe(b.modelPointerSubdir);
-    expect(a.scenarioDir("s", "e")).toBe(b.scenarioDir("s", "e"));
+    expect(a.scenarioDir(scenario("s"), env("e"))).toBe(b.scenarioDir(scenario("s"), env("e")));
   });
 });
 
@@ -46,7 +64,7 @@ describe("loadWorkspaceLayout", () => {
     expect(layout.policySubdir).toBe(d.policySubdir);
     expect(layout.routingSubdir).toBe(d.routingSubdir);
     expect(layout.modelPointerSubdir).toBe(d.modelPointerSubdir);
-    expect(layout.scenarioDir("s", "e")).toBe(d.scenarioDir("s", "e"));
+    expect(layout.scenarioDir(scenario("s"), env("e"))).toBe(d.scenarioDir(scenario("s"), env("e")));
   });
 
   test("merges a partial workspace.json on top of defaults per-field", () => {
@@ -62,7 +80,7 @@ describe("loadWorkspaceLayout", () => {
     expect(layout.policySubdir).toBe(d.policySubdir);
     expect(layout.routingSubdir).toBe(d.routingSubdir);
     expect(layout.modelPointerSubdir).toBe(d.modelPointerSubdir);
-    expect(layout.scenarioDir("s", "e")).toBe(d.scenarioDir("s", "e"));
+    expect(layout.scenarioDir(scenario("s"), env("e"))).toBe(d.scenarioDir(scenario("s"), env("e")));
   });
 
   test("honours a custom scenarioDir template with ${scenario} and ${env} substitution", () => {
@@ -72,7 +90,7 @@ describe("loadWorkspaceLayout", () => {
       JSON.stringify({ scenarioDirTemplate: "envs/${env}/scenarios/${scenario}" }),
     );
     const layout = loadWorkspaceLayout(cwd);
-    expect(layout.scenarioDir("grid_ctf", "staging")).toBe("envs/staging/scenarios/grid_ctf");
+    expect(layout.scenarioDir(scenario("grid_ctf"), env("staging"))).toBe("envs/staging/scenarios/grid_ctf");
   });
 
   test("silently ignores unknown fields in workspace.json (forward-compat)", () => {

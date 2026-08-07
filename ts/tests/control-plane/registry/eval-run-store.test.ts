@@ -8,8 +8,33 @@ import {
   listEvalRunIds,
 } from "../../../src/control-plane/registry/eval-run-store.js";
 import { createEvalRun } from "../../../src/control-plane/contract/factories.js";
-import type { ArtifactId } from "../../../src/control-plane/contract/branded-ids.js";
+import {
+  parseArtifactId,
+  parseContentHash,
+  parseSuiteId,
+  type ArtifactId,
+  type ContentHash,
+  type SuiteId,
+} from "../../../src/control-plane/contract/branded-ids.js";
 import type { EvalRun, MetricBundle } from "../../../src/control-plane/contract/types.js";
+
+function hash(fill: string): ContentHash {
+  const parsed = parseContentHash(`sha256:${fill.repeat(64)}`);
+  if (parsed === null) throw new Error(`invalid test hash fill: ${fill}`);
+  return parsed;
+}
+
+function artifactId(value: string): ArtifactId {
+  const parsed = parseArtifactId(value);
+  if (parsed === null) throw new Error(`invalid test artifact id: ${value}`);
+  return parsed;
+}
+
+function suiteId(value: string): SuiteId {
+  const parsed = parseSuiteId(value);
+  if (parsed === null) throw new Error(`invalid test suite id: ${value}`);
+  return parsed;
+}
 
 const aMetrics: MetricBundle = {
   quality: { score: 0.85, sampleSize: 250 },
@@ -19,21 +44,21 @@ const aMetrics: MetricBundle = {
   evalRunnerIdentity: {
     name: "my-eval",
     version: "1.0.0",
-    configHash: "sha256:" + "f".repeat(64),
+    configHash: hash("f"),
   },
 };
 
-const ARTIFACT_ID = "01KPEYB3BRQWK2WSHK9E93N6NP" as ArtifactId;
+const ARTIFACT_ID = artifactId("01KPEYB3BRQWK2WSHK9E93N6NP");
 
 function makeRun(runId: string): EvalRun {
   return createEvalRun({
     runId,
     artifactId: ARTIFACT_ID,
-    suiteId: "prod-eval-v3" as any,
+    suiteId: suiteId("prod-eval-v3"),
     metrics: aMetrics,
     datasetProvenance: {
       datasetId: "ds-1",
-      sliceHash: "sha256:" + "a".repeat(64),
+      sliceHash: hash("a"),
       sampleCount: 250,
     },
     ingestedAt: "2026-04-17T12:05:00.000Z",

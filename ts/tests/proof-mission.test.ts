@@ -150,6 +150,7 @@ describe("createProofMission", () => {
     const manager = new MissionManager(join(dir, "test.db"));
 
     const id = createProofMission(manager, {
+      metadata: {},
       name: "Prove theorem",
       goal: "Formally verify",
       proofAssistant: "lean4",
@@ -175,6 +176,7 @@ describe("createProofMission", () => {
     const manager = new MissionManager(join(dir, "test.db"));
 
     const id = createProofMission(manager, {
+      metadata: {},
       name: "Prove",
       goal: "Verify",
       proofAssistant: "lean4",
@@ -195,6 +197,7 @@ describe("createProofMission", () => {
     const manager = new MissionManager(join(dir, "test.db"));
 
     const id = createProofMission(manager, {
+      metadata: {},
       name: "Coq theorem",
       goal: "Formally verify in Coq",
       proofAssistant: "coq",

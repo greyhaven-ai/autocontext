@@ -7,6 +7,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
+import { asDbPath, asRunId } from "../src/domain/ids.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -305,7 +306,7 @@ describe("Live provider routing", () => {
     const { SQLiteStore } = await import("../src/storage/index.js");
 
     const dbPath = join(dir, "routing.db");
-    const store = new SQLiteStore(dbPath);
+    const store = new SQLiteStore(asDbPath(dbPath));
     store.migrate(join(__dirname, "..", "migrations"));
 
     const calls: Array<{ role: string; model?: string }> = [];
@@ -387,7 +388,7 @@ describe("Live provider routing", () => {
       minDelta: 0,
     });
 
-    const result = await runner.run("routing-run", 1);
+    const result = await runner.run(asRunId("routing-run"), 1);
     expect(result.generationsCompleted).toBe(1);
     expect(defaultCalls).toBe(0);
     expect(calls).toEqual([

@@ -51,6 +51,7 @@ describe("improvement loop policy workflow", () => {
         reasoning: "Needs improvement",
         dimensionScores: { clarity: 0.7, accuracy: 0.6 },
         internalRetries: 1,
+        evaluatorEpoch: null,
       },
       previousValidRound: {
         roundNumber: 1,
@@ -58,6 +59,7 @@ describe("improvement loop policy workflow", () => {
         score: 0.75,
         reasoning: "prior",
         dimensionScores: { clarity: 0.8, accuracy: 0.4 },
+        evaluatorEpoch: null,
         isRevision: false,
         judgeFailed: false,
       },

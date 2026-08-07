@@ -7,7 +7,7 @@ import {
 
 describe("mission action workflow", () => {
   it("builds mission run requests with normalized iterations and provider rules", () => {
-    const provider = { complete: vi.fn() };
+    const provider = { complete: vi.fn(), defaultModel: () => "test-model", name: "test" };
 
     expect(buildMissionRunRequest({
       body: { maxIterations: "3", stepDescription: "Advance the plan" },
@@ -69,7 +69,12 @@ describe("mission action workflow", () => {
       runManager: {
         getRunsRoot: () => "/tmp/runs",
         getKnowledgeRoot: () => "/tmp/knowledge",
-        buildMissionProvider: () => ({ complete: vi.fn(), close: closeProvider }),
+        buildMissionProvider: () => ({
+          complete: vi.fn(),
+          close: closeProvider,
+          defaultModel: () => "test-model",
+          name: "test",
+        }),
       },
       deps: {
         runMissionLoop,

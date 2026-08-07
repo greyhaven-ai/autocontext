@@ -5,7 +5,7 @@ import {
   lifecycleHooksForBootMode,
   normalizeSandboxAdapterCapabilities,
   planSandboxStartup,
-} from "../src/execution/sandbox-adapter-contracts.ts";
+} from "../src/execution/sandbox-adapter-contracts.js";
 import { buildSandboxCapabilitySessionEvent } from "../src/session/background-session-events.js";
 
 const timestamp = "2026-06-01T00:07:00.000Z";

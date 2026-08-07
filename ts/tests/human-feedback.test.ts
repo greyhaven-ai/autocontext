@@ -3,12 +3,13 @@ import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { SQLiteStore } from "../src/storage/index.js";
+import { asDbPath } from "../src/domain/ids.js";
 
 const MIGRATIONS_DIR = join(import.meta.dirname, "..", "migrations");
 
 function createStore(): SQLiteStore {
   const dir = mkdtempSync(join(tmpdir(), "autocontext-feedback-"));
-  const store = new SQLiteStore(join(dir, "test.db"));
+  const store = new SQLiteStore(asDbPath(join(dir, "test.db")));
   store.migrate(MIGRATIONS_DIR);
   return store;
 }

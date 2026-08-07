@@ -33,7 +33,10 @@ import {
   type Scenario,
 } from "../../../../../src/production-traces/contract/branded-ids.js";
 import { createProductionTrace } from "../../../../../src/production-traces/contract/factories.js";
-import type { ProductionTrace } from "../../../../../src/production-traces/contract/types.js";
+import type {
+  ProductionTrace,
+  ProviderName,
+} from "../../../../../src/production-traces/contract/types.js";
 import {
   incomingDir,
   ingestedDir,
@@ -88,7 +91,7 @@ export interface TraceOverrides {
   readonly taskType?: string;
   readonly appId?: string;
   readonly environmentTag?: string;
-  readonly provider?: string;
+  readonly provider?: ProviderName;
   readonly model?: string;
   readonly messages?: ProductionTrace["messages"];
   readonly toolCalls?: ProductionTrace["toolCalls"];

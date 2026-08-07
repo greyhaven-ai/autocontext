@@ -2,6 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
+import type { AnySchema } from "ajv";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -25,9 +26,9 @@ const fixture = JSON.parse(
     }
   >;
 };
-const schema = JSON.parse(
+const schema: AnySchema = JSON.parse(
   readFileSync(join(import.meta.dirname, "..", "..", "docs", "goal-run-report.json"), "utf-8"),
-) as unknown;
+);
 
 describe("goal run report", () => {
   it("matches the shared Python/TypeScript parity fixture", () => {

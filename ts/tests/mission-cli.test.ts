@@ -6,6 +6,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { asDbPath } from "../src/domain/ids.js";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -79,7 +80,7 @@ async function createMissionToolServer(dir: string): Promise<{
   const { createMcpServer } = await import("../src/mcp/server.js");
 
   const dbPath = join(dir, "test.db");
-  const store = new SQLiteStore(dbPath);
+  const store = new SQLiteStore(asDbPath(dbPath));
   store.migrate(MIGRATIONS_DIR);
   const server = createMcpServer({
     store,

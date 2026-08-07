@@ -106,7 +106,7 @@ describe("campaign command execution", () => {
       executeCampaignLifecycleCommand({
         action: "pause",
         campaignId: "campaign-1",
-        manager: { pause, get: getCampaign },
+        manager: { pause, get: getCampaign, resume: vi.fn(), cancel: vi.fn() },
       }),
     ).toEqual({ id: "campaign-1", status: "paused" });
 

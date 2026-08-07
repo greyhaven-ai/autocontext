@@ -13,6 +13,7 @@ import {
   getScoreTrajectoryRecords,
   parseDimensionSummaryJson,
 } from "../src/storage/generation-trajectory-workflow.js";
+import { asDbPath } from "../src/domain/ids.js";
 
 const MIGRATIONS_DIR = join(import.meta.dirname, "..", "migrations");
 
@@ -23,7 +24,7 @@ describe("generation trajectory workflow", () => {
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "ac-generation-trajectory-"));
     const dbPath = join(dir, "test.db");
-    const store = new SQLiteStore(dbPath);
+    const store = new SQLiteStore(asDbPath(dbPath));
     store.migrate(MIGRATIONS_DIR);
     store.close();
     db = new Database(dbPath);

@@ -212,7 +212,7 @@ describe("GridCtfScenario", () => {
     expect(next.score).toBeGreaterThanOrEqual(0);
     expect(next.score).toBeLessThanOrEqual(1);
     expect(next.metrics).toBeDefined();
-    expect(typeof next.metrics.capture_progress).toBe("number");
+    expect(next.metrics).toMatchObject({ capture_progress: expect.any(Number) });
   });
 
   it("step is deterministic with same seed", async () => {
@@ -251,7 +251,8 @@ describe("GridCtfScenario", () => {
     const scenario = new GridCtfScenario();
     // High aggression + path_bias should produce high score
     const next = scenario.step(scenario.initialState(1000), { aggression: 0.9, defense: 0.3, path_bias: 0.9 });
-    if (next.score >= 0.55) {
+    const score = next.score;
+    if (typeof score === "number" && score >= 0.55) {
       const result = scenario.getResult(next);
       expect(result.winner).toBe("challenger");
     }
@@ -297,7 +298,9 @@ describe("GridCtfScenario", () => {
     const { GridCtfScenario } = await import("../src/scenarios/grid-ctf.js");
     const scenario = new GridCtfScenario();
     const next = scenario.step(scenario.initialState(42), { aggression: 0.6, defense: 0.4, path_bias: 0.5 });
-    const text = scenario.replayToNarrative(next.timeline);
+    const timeline = next.timeline;
+    if (!Array.isArray(timeline)) throw new Error("timeline must be an array");
+    const text = scenario.replayToNarrative(timeline);
     expect(text.length).toBeGreaterThan(0);
     expect(text).toContain("Capture");
   });

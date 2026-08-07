@@ -4,6 +4,7 @@
  */
 
 import { describe, it, expect } from "vitest";
+import { asRunId, asScenarioName } from "../src/domain/ids.js";
 
 // ---------------------------------------------------------------------------
 // Task 32: Curator Parsing
@@ -214,7 +215,7 @@ describe("Session Reports", () => {
       { generation_index: 2, best_score: 0.70, elo: 1050, gate_decision: "advance", delta: 0.15, mean_score: 0.65, scoring_backend: "elo" },
       { generation_index: 3, best_score: 0.85, elo: 1100, gate_decision: "advance", delta: 0.15, mean_score: 0.80, scoring_backend: "elo" },
     ];
-    const report = generateSessionReport("run-1", "grid_ctf", rows, { durationSeconds: 125 });
+    const report = generateSessionReport(asRunId("run-1"), asScenarioName("grid_ctf"), rows, { durationSeconds: 125 });
     expect(report.runId).toBe("run-1");
     expect(report.startScore).toBeCloseTo(0.55);
     expect(report.endScore).toBeCloseTo(0.85);
@@ -229,7 +230,7 @@ describe("Session Reports", () => {
     const rows = [
       { generation_index: 1, best_score: 0.55, elo: 1000, gate_decision: "advance", delta: 0.55, mean_score: 0.50, scoring_backend: "elo" },
     ];
-    const report = generateSessionReport("run-1", "grid_ctf", rows);
+    const report = generateSessionReport(asRunId("run-1"), asScenarioName("grid_ctf"), rows);
     const md = report.toMarkdown();
     expect(md).toContain("# Session Report");
     expect(md).toContain("run-1");
@@ -239,7 +240,7 @@ describe("Session Reports", () => {
 
   it("handles empty trajectory", async () => {
     const { generateSessionReport } = await import("../src/knowledge/session-report.js");
-    const report = generateSessionReport("run-1", "grid_ctf", []);
+    const report = generateSessionReport(asRunId("run-1"), asScenarioName("grid_ctf"), []);
     expect(report.totalGenerations).toBe(0);
     expect(report.startScore).toBe(0);
     expect(report.endScore).toBe(0);

@@ -15,6 +15,7 @@ import {
   AnalysisEngine,
   type AnalysisResult,
 } from "../src/analysis/engine.js";
+import { asDbPath } from "../src/domain/ids.js";
 import { SQLiteStore } from "../src/storage/index.js";
 import { MissionManager } from "../src/mission/manager.js";
 
@@ -131,7 +132,7 @@ describe("AnalysisEngine — single target", () => {
       "utf-8",
     );
 
-    const store = new SQLiteStore(join(tmpDir, "autocontext.sqlite3"));
+    const store = new SQLiteStore(asDbPath(join(tmpDir, "autocontext.sqlite3")));
     store.migrate(MIGRATIONS_DIR);
     store.createRun("run_123", "grid_ctf", 3, "local", "anthropic");
     store.upsertGeneration("run_123", 1, {
@@ -306,7 +307,7 @@ describe("analyze CLI integration", () => {
       "utf-8",
     );
 
-    const store = new SQLiteStore(join(tmpDir, "autocontext.sqlite3"));
+    const store = new SQLiteStore(asDbPath(join(tmpDir, "autocontext.sqlite3")));
     store.migrate(MIGRATIONS_DIR);
     store.createRun("run_cli", "grid_ctf", 2, "local", "anthropic");
     store.upsertGeneration("run_cli", 1, {

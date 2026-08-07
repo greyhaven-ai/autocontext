@@ -5,7 +5,7 @@ import {
   buildSessionOutcome,
   buildSessionOutcomeArtifactEvent,
   sessionOutcomeToArtifact,
-} from "../src/session/background-session-outcomes.ts";
+} from "../src/session/background-session-outcomes.js";
 
 const sessionId = "run:run-123:runtime";
 const createdAt = "2026-06-01T00:08:00.000Z";
@@ -214,7 +214,8 @@ describe("background session outcome artifacts", () => {
       path: "",
       ref: "",
       sha: "",
-      summary: "Host capability hosted_pull_request_creation is unavailable for pull_request outcomes.",
+      summary:
+        "Host capability hosted_pull_request_creation is unavailable for pull_request outcomes.",
       metadata: {
         reason: "missing_host_capability",
         required_capability: "hosted_pull_request_creation",

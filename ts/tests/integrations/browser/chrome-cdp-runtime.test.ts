@@ -37,6 +37,9 @@ describe("chrome cdp runtime", () => {
     );
 
     expect(session).toBeInstanceOf(ChromeCdpSession);
+    if (!(session instanceof ChromeCdpSession)) {
+      throw new Error("expected createSession to return a ChromeCdpSession");
+    }
     expect(createdUrls).toEqual(["ws://127.0.0.1:9222/devtools/page/1"]);
     expect(session.sessionId).toBe("session_fixed");
     expect(session.transport).toBe(transport);

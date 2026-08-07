@@ -69,6 +69,7 @@ describe("agent-task solve execution", () => {
         reasoning: "Good output",
         dimensionScores: { completeness: 0.9 },
         internalRetries: 0,
+        evaluatorEpoch: null,
       }),
     };
 
@@ -80,6 +81,7 @@ describe("agent-task solve execution", () => {
           score: 0.93,
           reasoning: "Added owner assignment and severity classification.",
           dimensionScores: { completeness: 0.93 },
+          evaluatorEpoch: null,
           isRevision: false,
           judgeFailed: false,
         },
@@ -95,6 +97,7 @@ describe("agent-task solve execution", () => {
       totalInternalRetries: 0,
       durationMs: 1,
       judgeCalls: 1,
+      evaluatorEpoch: null,
     };
 
     const result = await executeAgentTaskSolve({
@@ -178,6 +181,8 @@ describe("agent-task solve execution", () => {
         score: 1,
         reasoning: "complete",
         dimensionScores: {},
+        internalRetries: 0,
+        evaluatorEpoch: null,
       }),
     };
 
@@ -225,6 +230,7 @@ describe("agent-task solve execution", () => {
         reasoning: "ok",
         dimensionScores: {},
         internalRetries: 0,
+        evaluatorEpoch: null,
       }),
     }));
 
@@ -244,7 +250,7 @@ describe("agent-task solve execution", () => {
         createLoop: ({ maxRounds }) => {
           expect(maxRounds).toBe(3);
           return {
-            run: vi.fn(async () => ({
+            run: vi.fn(async (): Promise<ImprovementResult> => ({
               rounds: [],
               bestOutput: "Initial response",
               bestScore: 0.5,
@@ -257,6 +263,7 @@ describe("agent-task solve execution", () => {
               totalInternalRetries: 0,
               durationMs: 1,
               judgeCalls: 1,
+              evaluatorEpoch: null,
             })),
           };
         },
@@ -294,6 +301,7 @@ describe("agent-task solve execution", () => {
         reasoning: "unused",
         dimensionScores: {},
         internalRetries: 0,
+        evaluatorEpoch: null,
       }),
     };
 

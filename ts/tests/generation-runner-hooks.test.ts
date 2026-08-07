@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { asDbPath, asRunId } from "../src/domain/ids.js";
 import { HookBus, HookEvents } from "../src/extensions/index.js";
 
 function makeRoot(): string {
@@ -112,7 +113,7 @@ describe("GenerationRunner extension hooks", () => {
       return { metadata: { hookObserved: true } };
     });
 
-    const store = new SQLiteStore(join(root, "test.db"));
+    const store = new SQLiteStore(asDbPath(join(root, "test.db")));
     store.migrate(join(import.meta.dirname, "..", "migrations"));
     const runner = new GenerationRunner({
       provider,
@@ -126,7 +127,7 @@ describe("GenerationRunner extension hooks", () => {
       hookBus: bus,
     });
 
-    await runner.run("hook-run", 1);
+    await runner.run(asRunId("hook-run"), 1);
 
     const competitorProviderPrompt = provider.prompts.find((prompt) =>
       prompt.includes("Describe your strategy"),
@@ -211,7 +212,7 @@ describe("GenerationRunner extension hooks", () => {
       return undefined;
     });
 
-    const store = new SQLiteStore(join(root, "test.db"));
+    const store = new SQLiteStore(asDbPath(join(root, "test.db")));
     store.migrate(join(import.meta.dirname, "..", "migrations"));
     const runner = new GenerationRunner({
       provider,
@@ -227,7 +228,7 @@ describe("GenerationRunner extension hooks", () => {
       hookBus: bus,
     });
 
-    await runner.run("scout-hook-run", 1);
+    await runner.run(asRunId("scout-hook-run"), 1);
 
     const competitorPrompt = provider.prompts.find((prompt) => prompt.includes("Describe your strategy"));
     expect(seenScoutGuidance[0]).toContain("Lévy scout mutation guidance");
