@@ -156,7 +156,9 @@ describe("TaskRunner", () => {
       },
     };
 
-    const runner = new TaskRunner({ store, provider: failProvider });
+    // maxAttempts: 1 pins the permanent-failure surface this test is about;
+    // with the AC-906 default (3) a first failure re-queues as pending.
+    const runner = new TaskRunner({ store, provider: failProvider, maxAttempts: 1 });
     const result = await runner.runOnce();
     expect(result).not.toBeNull();
     expect(result!.status).toBe("failed");
@@ -165,12 +167,29 @@ describe("TaskRunner", () => {
     expect(result!.error).not.toContain("\n    at ");
   });
 
+  it("retries a provider error as pending under the default attempt budget", async () => {
+    const store = createStore();
+    enqueueTask(store, "retry-spec", { initialOutput: "test" });
+    const failProvider: LLMProvider = {
+      name: "fail",
+      defaultModel: () => "m",
+      complete: async () => {
+        throw new Error("API down");
+      },
+    };
+    const runner = new TaskRunner({ store, provider: failProvider });
+    const result = await runner.runOnce();
+    expect(result).not.toBeNull();
+    expect(result!.status).toBe("pending");
+    expect(result!.error).toContain("API down");
+  });
+
   it("rejects invalid config via Zod validation", async () => {
     const store = createStore();
     const provider = makeMockProvider();
     // max_rounds must be a positive integer, not a string
     store.enqueueTask("bad", "test_spec", 0, { max_rounds: "not_a_number" });
-    const runner = new TaskRunner({ store, provider });
+    const runner = new TaskRunner({ store, provider, maxAttempts: 1 });
     const result = await runner.runOnce();
     expect(result!.status).toBe("failed");
     expect(result!.error).toContain("Expected number");
