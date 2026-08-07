@@ -128,3 +128,61 @@ def test_cost_estimation_parity(case_name: str, case: dict[str, Any]) -> None:
     expected = case["expected"]
     for key in ("total_per_1k_tokens", "all_frontier_per_1k_tokens", "savings_vs_all_frontier"):
         assert estimate[key] == pytest.approx(expected[key]), key
+
+
+# Every group the fixture is expected to contain, including groups that are not in
+# ROUTE_GROUPS (cost_estimation has its own replay; a "divergent" group, if Task 2
+# created one, is data only). If you add a group, add it here too, or the guard
+# stops guarding.
+_EXPECTED_GROUPS = {
+    "auto_mode",
+    "explicit_override",
+    "routing_off",
+    "local_artifacts",
+    "cost_estimation",
+}
+
+
+def test_every_expected_fixture_group_is_present() -> None:
+    """A deleted group would otherwise make both suites pass with less coverage."""
+    assert set(_load()["fixtures"]) == _EXPECTED_GROUPS
+
+
+def test_no_expected_group_is_empty() -> None:
+    """Emptying a group is the silent failure the present-check does not catch.
+
+    `"auto_mode": {}` keeps the key, so the presence check still passes, but
+    `_cases()` returns [] and pytest reports an empty parametrize list as
+    "1 skipped" with exit code 0: a green CI run that asserted nothing.
+    The TypeScript replay already guards this per group via its
+    "has cases to replay" test; this is the Python counterpart.
+    """
+    fixtures = _load()["fixtures"]
+    empty = sorted(name for name in _EXPECTED_GROUPS if not fixtures.get(name))
+    assert not empty, f"fixture groups present but empty: {empty}"
+
+
+def test_known_divergences_are_fully_described() -> None:
+    """A divergence recorded without a resolution is an untracked bug."""
+    divergences = _load()["known_divergences"]
+    assert divergences, "expected at least the mixed-case provider divergence from Task 3"
+    required = {"case", "python", "typescript", "reason", "resolution"}
+    for entry in divergences:
+        missing = required - set(entry)
+        assert not missing, f"divergence entry missing keys: {sorted(missing)}"
+
+
+def test_fixture_typo_guards_actually_raise() -> None:
+    """The harness's own typo guards are otherwise never executed.
+
+    `_settings_from_fixture` and `_context_from_fixture` raise on unknown keys
+    so that a misspelled fixture key fails loudly. If those guards were broken,
+    a typo would be silently ignored, the case would run against default
+    settings, and it could pass while testing something other than what it
+    claims. That is the same silent-green failure this whole fixture exists to
+    prevent, so the guards themselves get a test.
+    """
+    with pytest.raises(AssertionError, match="unknown settings keys"):
+        _settings_from_fixture({"not_a_real_setting": "x"})
+    with pytest.raises(AssertionError, match="unknown context key"):
+        _context_from_fixture({"notARealContextKey": []})

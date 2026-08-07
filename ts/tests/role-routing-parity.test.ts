@@ -195,3 +195,31 @@ describe("cost_estimation parity", () => {
     });
   }
 });
+
+describe("fixture completeness", () => {
+  // Must match _EXPECTED_GROUPS in the Python replay.
+  const EXPECTED_GROUPS = [
+    "auto_mode",
+    "cost_estimation",
+    "explicit_override",
+    "local_artifacts",
+    "routing_off",
+  ];
+
+  it("replays every expected fixture group", () => {
+    expect(Object.keys(FIXTURES.fixtures).sort()).toEqual(EXPECTED_GROUPS);
+  });
+
+  it("has no empty group", () => {
+    const empty = EXPECTED_GROUPS.filter(
+      (g) => Object.keys(FIXTURES.fixtures[g] ?? {}).length === 0,
+    );
+    expect(empty).toEqual([]);
+  });
+
+  // The unknown-key guard exists so a misspelled fixture key fails loudly instead
+  // of silently falling back to defaults. Untested, it could rot into a no-op.
+  it("rejects an unknown settings key", () => {
+    expect(() => settingsFromFixture({ not_a_real_setting: "x" })).toThrow(/unknown settings key/);
+  });
+});
