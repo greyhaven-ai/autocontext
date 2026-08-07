@@ -11,6 +11,14 @@
   // NEW test file is type-checked the moment it is written, with no ritual
   // step to remember. The exclude list only shrinks; deleting its last entry
   // removes the mechanism.
+  //
+  // "include" is *.test.ts only, deliberately: helper modules are still
+  // checked because test files import them, while fixture inputs under
+  // _fixtures/ and golden/ are not. Those are deliberately non-compiling
+  // sample source (fake module specifiers, an SDK call missing a required
+  // argument) that tests read with readFileSync as TEXT and never import.
+  // Type-checking them is a category error, and "fixing" them would corrupt
+  // the fixtures they exist to be.
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "rootDir": ".",
@@ -20,7 +28,7 @@
     ]
   },
   "include": [
-    "tests/**/*.ts"
+    "tests/**/*.test.ts"
   ],
   "exclude": [
     "node_modules",
@@ -66,23 +74,9 @@
     "tests/control-plane/emit/pr-body-renderer.test.ts",
     "tests/control-plane/emit/workspace-layout.test.ts",
     "tests/control-plane/external-evals/diagnostics.test.ts",
-    "tests/control-plane/instrument/_fixtures/scanner/tabs-and-spaces/two_space.ts",
     "tests/control-plane/instrument/contract/edit-descriptor.test.ts",
-    "tests/control-plane/instrument/detectors/anthropic-ts/golden/already-wrapped-skipped/input.ts",
-    "tests/control-plane/instrument/detectors/anthropic-ts/golden/async-client/input.ts",
-    "tests/control-plane/instrument/detectors/anthropic-ts/golden/bedrock-refused/input.ts",
-    "tests/control-plane/instrument/detectors/anthropic-ts/golden/canonical-single/input.ts",
-    "tests/control-plane/instrument/detectors/anthropic-ts/golden/mixed-async-and-sync/input.ts",
-    "tests/control-plane/instrument/detectors/anthropic-ts/golden/vertex-refused/input.ts",
-    "tests/control-plane/instrument/detectors/openai-ts/golden/already-wrapped-skipped/input.ts",
-    "tests/control-plane/instrument/planner/_fixtures/typescript/mixed-quotes.ts",
-    "tests/control-plane/instrument/planner/_fixtures/typescript/simple.ts",
-    "tests/control-plane/instrument/planner/_fixtures/typescript/single-quotes.ts",
-    "tests/control-plane/instrument/planner/_fixtures/typescript/with-directive.ts",
     "tests/control-plane/instrument/registry/plugin-registry.test.ts",
-    "tests/control-plane/integration/_helpers/fixtures.ts",
     "tests/control-plane/memory-packs/memory-pack.test.ts",
-    "tests/control-plane/production-traces/integration/_helpers/fixtures.ts",
     "tests/control-plane/promotion/decide.test.ts",
     "tests/control-plane/promotion/transitions.test.ts",
     "tests/control-plane/registry/artifact-store-update.test.ts",
@@ -120,7 +114,6 @@
     "tests/integrations/anthropic/streaming.test.ts",
     "tests/integrations/anthropic/trace-builder.test.ts",
     "tests/integrations/browser/chrome-cdp-runtime.test.ts",
-    "tests/integrations/openai/_helpers/fake-fetch.ts",
     "tests/integrations/openai/streaming.test.ts",
     "tests/interactive-control-command-workflow.test.ts",
     "tests/interactive-scenario-session.test.ts",
