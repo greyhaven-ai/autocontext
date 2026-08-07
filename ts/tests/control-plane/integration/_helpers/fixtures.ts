@@ -33,7 +33,10 @@ import type {
   MetricBundle,
   Provenance,
 } from "../../../../src/control-plane/contract/types.js";
-import { computeTreeHash, type TreeFile } from "../../../../src/control-plane/contract/invariants.js";
+import {
+  computeTreeHash,
+  type TreeFile,
+} from "../../../../src/control-plane/contract/invariants.js";
 import { openRegistry, type Registry } from "../../../../src/control-plane/registry/index.js";
 import { attachEvalRun } from "../../../../src/control-plane/eval-ingest/index.js";
 
@@ -134,6 +137,21 @@ function defaultPayload(actuatorType: ActuatorType): PayloadSpec {
           ),
         },
       };
+    case "model-routing":
+      return {
+        files: {
+          "models.json": JSON.stringify(
+            {
+              schemaVersion: "1.0",
+              default: { provider: "anthropic", model: "claude-sonnet-4-5-20250929" },
+              routes: [],
+              fallback: [],
+            },
+            null,
+            2,
+          ),
+        },
+      };
     case "fine-tuned-model":
       return {
         files: {
@@ -163,8 +181,7 @@ export async function buildArtifactWithPassingEval(
 ): Promise<BuildArtifactResult> {
   const actuatorType: ActuatorType = opts.actuatorType ?? "prompt-patch";
   const payloadSpec = opts.payload ?? defaultPayload(actuatorType);
-  const payloadSuffix =
-    opts.payloadSuffix ?? Math.random().toString(36).slice(2, 10);
+  const payloadSuffix = opts.payloadSuffix ?? Math.random().toString(36).slice(2, 10);
 
   const payloadDir = writePayloadDir(opts.tmpRoot, payloadSuffix, payloadSpec);
 
@@ -197,8 +214,7 @@ export async function buildArtifactWithPassingEval(
   };
   const suiteId: SuiteId = parseSuiteId(opts.suiteId ?? "prod-eval")!;
   const ingestedAt = opts.ingestedAt ?? "2026-04-17T12:30:00.000Z";
-  const runId =
-    opts.runId ?? `run_${Math.random().toString(36).slice(2, 10)}`;
+  const runId = opts.runId ?? `run_${Math.random().toString(36).slice(2, 10)}`;
 
   const evalRun = createEvalRun({
     runId,
