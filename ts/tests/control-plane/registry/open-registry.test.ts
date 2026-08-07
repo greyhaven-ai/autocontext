@@ -13,16 +13,34 @@ import { readHistory } from "../../../src/control-plane/registry/history-store.j
 import { artifactDirectory } from "../../../src/control-plane/registry/artifact-store.js";
 import { readStatePointer } from "../../../src/control-plane/registry/state-pointer.js";
 import type {
+  ArtifactId,
   ContentHash,
   EnvironmentTag,
   Scenario,
+  SuiteId,
 } from "../../../src/control-plane/contract/branded-ids.js";
-import { parseContentHash } from "../../../src/control-plane/contract/branded-ids.js";
+import {
+  parseArtifactId,
+  parseContentHash,
+  parseSuiteId,
+} from "../../../src/control-plane/contract/branded-ids.js";
 import type {
   Artifact,
   MetricBundle,
   Provenance,
 } from "../../../src/control-plane/contract/types.js";
+
+function suiteId(value: string): SuiteId {
+  const parsed = parseSuiteId(value);
+  if (parsed === null) throw new Error(`invalid test suite id: ${value}`);
+  return parsed;
+}
+
+function artifactId(value: string): ArtifactId {
+  const parsed = parseArtifactId(value);
+  if (parsed === null) throw new Error(`invalid test artifact id: ${value}`);
+  return parsed;
+}
 
 function contentHash(fill: string): ContentHash {
   const parsed = parseContentHash(`sha256:${fill.repeat(64)}`);
@@ -101,7 +119,7 @@ describe("openRegistry — facade", () => {
     const run = createEvalRun({
       runId: "run_x",
       artifactId: artifact.id,
-      suiteId: "prod-eval-v3" as any,
+      suiteId: suiteId("prod-eval-v3"),
       metrics: aMetrics,
       datasetProvenance: {
         datasetId: "ds-1",
@@ -220,7 +238,7 @@ describe("openRegistry — facade", () => {
     const reg = openRegistry(registryRoot);
     expect(() =>
       reg.appendPromotionEvent(
-        "01KPEYB3BRQWK2WSHK9E93N6NP" as any,
+        artifactId("01KPEYB3BRQWK2WSHK9E93N6NP"),
         createPromotionEvent({
           from: "candidate",
           to: "shadow",

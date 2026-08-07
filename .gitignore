@@ -48,6 +48,13 @@ skills/*
 !skills/.gitkeep
 # AC-712: committed Hermes skill snapshot; CI sync invariant pins it.
 !skills/autocontext/
+
+# The patterns above are anchored to the repo root, so the same runtime
+# outputs produced inside the TS package were not ignored (AC-909 review
+# caught 24 such artifacts getting committed).
+ts/runs/
+ts/knowledge/
+ts/skills/
 !skills/autocontext/**
 autocontext/runs/
 autocontext/knowledge/

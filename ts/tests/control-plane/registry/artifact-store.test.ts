@@ -10,8 +10,14 @@ import {
 import { createArtifact } from "../../../src/control-plane/contract/factories.js";
 import { hashDirectory } from "../../../src/control-plane/registry/content-address.js";
 import type { Artifact, Provenance } from "../../../src/control-plane/contract/types.js";
-import type { ContentHash, Scenario } from "../../../src/control-plane/contract/branded-ids.js";
-import { parseScenario } from "../../../src/control-plane/contract/branded-ids.js";
+import type { ArtifactId, ContentHash, Scenario } from "../../../src/control-plane/contract/branded-ids.js";
+import { parseArtifactId, parseScenario } from "../../../src/control-plane/contract/branded-ids.js";
+
+function artifactId(value: string): ArtifactId {
+  const parsed = parseArtifactId(value);
+  if (parsed === null) throw new Error(`invalid test artifact id: ${value}`);
+  return parsed;
+}
 
 function scenario(value: string): Scenario {
   const parsed = parseScenario(value);
@@ -122,7 +128,7 @@ describe("saveArtifact / loadArtifact round-trip", () => {
   });
 
   test("loadArtifact throws when the artifact id is unknown", () => {
-    expect(() => loadArtifact(registryRoot, "01KPEYB3BRQWK2WSHK9E93N6NP" as any)).toThrow(
+    expect(() => loadArtifact(registryRoot, artifactId("01KPEYB3BRQWK2WSHK9E93N6NP"))).toThrow(
       /not found/i,
     );
   });
