@@ -12,6 +12,11 @@ import { exportSimulation, type SimulationExportResult } from "../src/simulation
 import type { LLMProvider } from "../src/types/index.js";
 
 const CLI = join(import.meta.dirname, "..", "src", "cli", "index.ts");
+// Spawn the installed tsx binary rather than `npx tsx`: these tests run the
+// CLI from a temp cwd, where npx cannot see the repo's node_modules and
+// falls back to the registry. That fetch pollutes stderr with an install
+// warning (breaking stderr assertions) and can exceed the spawn timeout.
+const TSX = join(import.meta.dirname, "..", "node_modules", ".bin", "tsx");
 const SANITIZED_KEYS = [
   "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "AUTOCONTEXT_API_KEY",
   "AUTOCONTEXT_AGENT_API_KEY", "AUTOCONTEXT_PROVIDER", "AUTOCONTEXT_AGENT_PROVIDER",
@@ -254,7 +259,7 @@ describe("simulate export CLI integration", () => {
     const engine = new SimulationEngine(mockProvider(), tmpDir);
     await engine.run({ description: "CLI bad format", saveAs: "cli_bad_fmt" });
 
-    const result = spawnSync("npx", ["tsx", CLI, "simulate", "--export", "cli_bad_fmt", "--format", "yaml"], {
+    const result = spawnSync(TSX, [CLI, "simulate", "--export", "cli_bad_fmt", "--format", "yaml"], {
       cwd: tmpDir,
       encoding: "utf-8",
       env: buildEnv({ AUTOCONTEXT_KNOWLEDGE_ROOT: tmpDir }),

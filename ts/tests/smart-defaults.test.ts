@@ -9,6 +9,11 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 const CLI = join(import.meta.dirname, "..", "src", "cli", "index.ts");
+// Spawn the installed tsx binary rather than `npx tsx`: these tests run the
+// CLI from a temp cwd, where npx cannot see the repo's node_modules and
+// falls back to the registry. That fetch pollutes stderr with an install
+// warning (breaking stderr assertions) and can exceed the spawn timeout.
+const TSX = join(import.meta.dirname, "..", "node_modules", ".bin", "tsx");
 
 const SANITIZED_KEYS = [
   "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "AUTOCONTEXT_API_KEY",
@@ -27,7 +32,7 @@ function runCli(
   args: string[],
   opts: { cwd?: string; env?: Record<string, string> } = {},
 ): { stdout: string; stderr: string; exitCode: number } {
-  const r = spawnSync("npx", ["tsx", CLI, ...args], {
+  const r = spawnSync(TSX, [CLI, ...args], {
     encoding: "utf8",
     timeout: 15000,
     cwd: opts.cwd,

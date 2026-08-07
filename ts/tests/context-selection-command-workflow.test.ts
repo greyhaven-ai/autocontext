@@ -6,6 +6,11 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 const CLI = join(import.meta.dirname, "..", "src", "cli", "index.ts");
+// Spawn the installed tsx binary rather than `npx tsx`: these tests run the
+// CLI from a temp cwd, where npx cannot see the repo's node_modules and
+// falls back to the registry. That fetch pollutes stderr with an install
+// warning (breaking stderr assertions) and can exceed the spawn timeout.
+const TSX = join(import.meta.dirname, "..", "node_modules", ".bin", "tsx");
 
 let dir: string;
 
@@ -69,9 +74,7 @@ describe("context-selection CLI", () => {
   it("renders JSON telemetry from persisted run artifacts", () => {
     persistDecision();
 
-    const result = spawnSync(
-      "npx",
-      ["tsx", CLI, "context-selection", "--run-id", "run-cli", "--json"],
+    const result = spawnSync(TSX, [CLI, "context-selection", "--run-id", "run-cli", "--json"],
       {
         cwd: dir,
         encoding: "utf-8",
@@ -95,9 +98,7 @@ describe("context-selection CLI", () => {
   }, 15000);
 
   it("fails clearly when no persisted context-selection artifacts exist", () => {
-    const result = spawnSync(
-      "npx",
-      ["tsx", CLI, "context-selection", "--run-id", "missing-run", "--json"],
+    const result = spawnSync(TSX, [CLI, "context-selection", "--run-id", "missing-run", "--json"],
       {
         cwd: dir,
         encoding: "utf-8",
