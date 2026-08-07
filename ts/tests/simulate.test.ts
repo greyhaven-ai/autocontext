@@ -21,6 +21,11 @@ import {
 import type { LLMProvider } from "../src/types/index.js";
 
 const CLI = join(import.meta.dirname, "..", "src", "cli", "index.ts");
+// Spawn the installed tsx binary rather than `npx tsx`: these tests run the
+// CLI from a temp cwd, where npx cannot see the repo's node_modules and
+// falls back to the registry. That fetch pollutes stderr with an install
+// warning (breaking stderr assertions) and can exceed the spawn timeout.
+const TSX = join(import.meta.dirname, "..", "node_modules", ".bin", "tsx");
 const SANITIZED_KEYS = [
   "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "AUTOCONTEXT_API_KEY",
   "AUTOCONTEXT_AGENT_API_KEY", "AUTOCONTEXT_PROVIDER", "AUTOCONTEXT_AGENT_PROVIDER",
@@ -39,7 +44,7 @@ function runCliAsync(
   opts: { cwd?: string; env?: Record<string, string> } = {},
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   return new Promise((resolve, reject) => {
-    const child = spawn("npx", ["tsx", CLI, ...args], {
+    const child = spawn(TSX, [CLI, ...args], {
       cwd: opts.cwd,
       env: buildEnv(opts.env),
       stdio: "pipe",
@@ -354,7 +359,7 @@ describe("simulate CLI integration", () => {
   it("fails clearly when no provider is configured", () => {
     const dir = mkdtempSync(join(tmpdir(), "ac-446-cli-"));
     try {
-      const result = spawnSync("npx", ["tsx", CLI, "simulate", "-d", "simulate a deployment"], {
+      const result = spawnSync(TSX, [CLI, "simulate", "-d", "simulate a deployment"], {
         cwd: dir,
         encoding: "utf-8",
         env: buildEnv(),
@@ -371,7 +376,7 @@ describe("simulate CLI integration", () => {
   it("fails clearly when --preset is provided without --preset-file", () => {
     const dir = mkdtempSync(join(tmpdir(), "ac-446-cli-"));
     try {
-      const result = spawnSync("npx", ["tsx", CLI, "simulate", "-d", "simulate a deployment", "--preset", "aggressive"], {
+      const result = spawnSync(TSX, [CLI, "simulate", "-d", "simulate a deployment", "--preset", "aggressive"], {
         cwd: dir,
         encoding: "utf-8",
         env: buildEnv(),
@@ -394,8 +399,8 @@ describe("simulate CLI integration", () => {
       }), "utf-8");
 
       const result = spawnSync(
-        "npx",
-        ["tsx", CLI, "simulate", "-d", "simulate a deployment", "--preset", "aggressive", "--preset-file", presetFile],
+        TSX,
+        [CLI, "simulate", "-d", "simulate a deployment", "--preset", "aggressive", "--preset-file", presetFile],
         {
           cwd: dir,
           encoding: "utf-8",
