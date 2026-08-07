@@ -28,13 +28,22 @@ const contract = JSON.parse(readFileSync(CONTRACT_FILE, "utf-8"));
 
 // Deterministic ordering everywhere: regenerating must never produce a spurious diff.
 const sortedKeys = (obj) => Object.keys(obj).sort();
+
+// TypeScript array/object literals need ", " (space after comma) and bare (unquoted) keys
+// wherever the key is a valid identifier, to match Prettier's default `quoteProps: "as-needed"`
+// formatting. JSON.stringify quotes every key and omits the space, which `prettier --write`
+// would otherwise rewrite and make the committed file differ from the generator's output.
+const isValidTsIdentifier = (key) => /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key);
+const tsKey = (key) => (isValidTsIdentifier(key) ? key : JSON.stringify(key));
+const tsArray = (arr) => `[${arr.map((v) => JSON.stringify(v)).join(", ")}]`;
+
 const jsonObj = (obj, indent) =>
   sortedKeys(obj)
-    .map((k) => `${indent}${JSON.stringify(k)}: ${JSON.stringify(obj[k])},`)
+    .map((k) => `${indent}${tsKey(k)}: ${JSON.stringify(obj[k])},`)
     .join("\n");
 const jsonObjOfArrays = (obj, indent) =>
   sortedKeys(obj)
-    .map((k) => `${indent}${JSON.stringify(k)}: ${JSON.stringify([...obj[k]])},`)
+    .map((k) => `${indent}${tsKey(k)}: ${tsArray([...obj[k]])},`)
     .join("\n");
 
 // Python list/tuple literals need ", " (space after comma) to match ruff's formatter;
@@ -62,9 +71,9 @@ const tsSource = `/* eslint-disable */
 // Regenerate with: node scripts/generate-role-routing-contract.mjs
 // CI gate: node scripts/generate-role-routing-contract.mjs --check
 
-export const PROVIDER_CLASSES = ${JSON.stringify([...contract.provider_classes])} as const;
+export const PROVIDER_CLASSES = ${tsArray([...contract.provider_classes])} as const;
 
-export const ROLE_ROUTING_MODES = ${JSON.stringify([...contract.mode_values])} as const;
+export const ROLE_ROUTING_MODES = ${tsArray([...contract.mode_values])} as const;
 
 export const PROVIDER_CLASS_COST_PER_1K_TOKENS = {
 ${jsonObj(contract.cost_per_1k_tokens, "  ")}
@@ -74,7 +83,7 @@ export const DEFAULT_ROLE_ROUTING_TABLE = {
 ${jsonObjOfArrays(contract.default_routing_table, "  ")}
 } as const;
 
-export const LOCAL_ELIGIBLE_ROLES = ${JSON.stringify([...contract.local_eligible_roles].sort())} as const;
+export const LOCAL_ELIGIBLE_ROLES = ${tsArray([...contract.local_eligible_roles].sort())} as const;
 
 export const EXPLICIT_PROVIDER_CLASS: Record<string, string> = {
 ${jsonObj(contract.explicit_provider_classes, "  ")}
