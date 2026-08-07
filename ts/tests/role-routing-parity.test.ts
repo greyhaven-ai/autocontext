@@ -43,7 +43,7 @@ const FIXTURES = JSON.parse(
 
 // Fixture groups whose cases are single routeRoleProvider() calls compared field by
 // field. Must stay in sync with ROUTE_GROUPS in the Python replay.
-const ROUTE_GROUPS = ["auto_mode"] as const;
+const ROUTE_GROUPS = ["auto_mode", "explicit_override"] as const;
 
 // The fixture uses Python snake_case settings keys. Map them to the camelCase
 // fields RoleRoutingSettings expects, so one fixture drives both languages.

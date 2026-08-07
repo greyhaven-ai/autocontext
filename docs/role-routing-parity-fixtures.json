@@ -80,7 +80,72 @@
           "cost_per_1k_tokens": 0.003
         }
       }
+    },
+    "explicit_override": {
+      "competitor_override_to_ollama_is_mid_tier": {
+        "role": "competitor",
+        "settings": { "competitor_provider": "ollama" },
+        "context": {},
+        "expected": {
+          "provider_type": "ollama",
+          "model": "competitor-role-model",
+          "provider_class": "mid_tier",
+          "cost_per_1k_tokens": 0.003
+        }
+      },
+      "architect_override_to_vllm_is_mid_tier": {
+        "role": "architect",
+        "settings": { "architect_provider": "vllm" },
+        "context": {},
+        "expected": {
+          "provider_type": "vllm",
+          "model": "architect-role-model",
+          "provider_class": "mid_tier",
+          "cost_per_1k_tokens": 0.003
+        }
+      },
+      "unknown_override_provider_defaults_to_frontier": {
+        "role": "analyst",
+        "settings": { "analyst_provider": "some-unknown-provider" },
+        "context": {},
+        "expected": {
+          "provider_type": "some-unknown-provider",
+          "model": "analyst-role-model",
+          "provider_class": "frontier",
+          "cost_per_1k_tokens": 0.015
+        }
+      },
+      "override_to_mlx_uses_mlx_model_path": {
+        "role": "coach",
+        "settings": { "coach_provider": "mlx" },
+        "context": {},
+        "expected": {
+          "provider_type": "mlx",
+          "model": "/models/default-local",
+          "provider_class": "local",
+          "cost_per_1k_tokens": 0.0
+        }
+      },
+      "override_wins_over_role_routing_off": {
+        "role": "competitor",
+        "settings": { "competitor_provider": "ollama", "role_routing": "off" },
+        "context": {},
+        "expected": {
+          "provider_type": "ollama",
+          "model": "competitor-role-model",
+          "provider_class": "mid_tier",
+          "cost_per_1k_tokens": 0.003
+        }
+      }
     }
   },
-  "known_divergences": []
+  "known_divergences": [
+    {
+      "case": "explicit_override.mixed_case_provider_name",
+      "python": "returns the raw settings value, e.g. 'Ollama'",
+      "typescript": "returns normalizeProvider(value), e.g. 'ollama'",
+      "reason": "Python's _config_for_explicit lowercases only for the _EXPLICIT_PROVIDER_CLASS lookup and returns provider_type verbatim; TypeScript's routeRoleProvider returns the normalized value. The provider_class agrees; only the reported provider string differs.",
+      "resolution": "AC-911: normalize once when Endpoint replaces the bare provider string, so both packages report the canonical transport name."
+    }
+  ]
 }
