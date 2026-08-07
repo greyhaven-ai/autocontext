@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "contract": "cross-language role routing behavior; replayed by autocontext/tests/test_role_routing_parity.py and ts/tests/role-routing-parity.test.ts",
+  "fixtures": {
+    "auto_mode": {
+      "competitor_frontier": {
+        "role": "competitor",
+        "settings": {},
+        "context": {},
+        "expected": {
+          "provider_type": "anthropic",
+          "model": "opus-tier-model",
+          "provider_class": "frontier",
+          "cost_per_1k_tokens": 0.015
+        }
+      },
+      "analyst_mid_tier": {
+        "role": "analyst",
+        "settings": {},
+        "context": {},
+        "expected": {
+          "provider_type": "anthropic",
+          "model": "sonnet-tier-model",
+          "provider_class": "mid_tier",
+          "cost_per_1k_tokens": 0.003
+        }
+      },
+      "coach_mid_tier": {
+        "role": "coach",
+        "settings": {},
+        "context": {},
+        "expected": {
+          "provider_type": "anthropic",
+          "model": "sonnet-tier-model",
+          "provider_class": "mid_tier",
+          "cost_per_1k_tokens": 0.003
+        }
+      },
+      "architect_frontier_no_local_fallback": {
+        "role": "architect",
+        "settings": {},
+        "context": {},
+        "expected": {
+          "provider_type": "anthropic",
+          "model": "opus-tier-model",
+          "provider_class": "frontier",
+          "cost_per_1k_tokens": 0.015
+        }
+      },
+      "curator_fast": {
+        "role": "curator",
+        "settings": {},
+        "context": {},
+        "expected": {
+          "provider_type": "anthropic",
+          "model": "haiku-tier-model",
+          "provider_class": "fast",
+          "cost_per_1k_tokens": 0.001
+        }
+      },
+      "translator_fast": {
+        "role": "translator",
+        "settings": {},
+        "context": {},
+        "expected": {
+          "provider_type": "anthropic",
+          "model": "haiku-tier-model",
+          "provider_class": "fast",
+          "cost_per_1k_tokens": 0.001
+        }
+      },
+      "unknown_role_falls_back_to_mid_tier": {
+        "role": "skeptic",
+        "settings": {},
+        "context": {},
+        "expected": {
+          "provider_type": "anthropic",
+          "model": "sonnet-tier-model",
+          "provider_class": "mid_tier",
+          "cost_per_1k_tokens": 0.003
+        }
+      }
+    }
+  },
+  "known_divergences": []
+}
