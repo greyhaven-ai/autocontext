@@ -137,6 +137,87 @@
           "cost_per_1k_tokens": 0.003
         }
       }
+    },
+    "routing_off": {
+      "off_uses_default_provider_and_role_model": {
+        "role": "competitor",
+        "settings": { "role_routing": "off" },
+        "context": {},
+        "expected": {
+          "provider_type": "anthropic",
+          "model": "competitor-role-model",
+          "provider_class": "frontier",
+          "cost_per_1k_tokens": 0.015
+        }
+      },
+      "off_with_ollama_default_is_mid_tier": {
+        "role": "architect",
+        "settings": { "role_routing": "off", "agent_provider": "ollama" },
+        "context": {},
+        "expected": {
+          "provider_type": "ollama",
+          "model": "architect-role-model",
+          "provider_class": "mid_tier",
+          "cost_per_1k_tokens": 0.003
+        }
+      },
+      "off_with_unknown_default_provider_is_mid_tier": {
+        "role": "analyst",
+        "settings": { "role_routing": "off", "agent_provider": "some-unknown-provider" },
+        "context": {},
+        "expected": {
+          "provider_type": "some-unknown-provider",
+          "model": "analyst-role-model",
+          "provider_class": "mid_tier",
+          "cost_per_1k_tokens": 0.003
+        }
+      }
+    },
+    "local_artifacts": {
+      "eligible_role_prefers_local_artifact": {
+        "role": "competitor",
+        "settings": {},
+        "context": { "availableLocalModels": ["/models/distilled-competitor"] },
+        "expected": {
+          "provider_type": "mlx",
+          "model": "/models/distilled-competitor",
+          "provider_class": "local",
+          "cost_per_1k_tokens": 0.0
+        }
+      },
+      "architect_ignores_local_artifact": {
+        "role": "architect",
+        "settings": {},
+        "context": { "availableLocalModels": ["/models/distilled-architect"] },
+        "expected": {
+          "provider_type": "anthropic",
+          "model": "opus-tier-model",
+          "provider_class": "frontier",
+          "cost_per_1k_tokens": 0.015
+        }
+      },
+      "curator_ignores_local_artifact": {
+        "role": "curator",
+        "settings": {},
+        "context": { "availableLocalModels": ["/models/distilled-curator"] },
+        "expected": {
+          "provider_type": "anthropic",
+          "model": "haiku-tier-model",
+          "provider_class": "fast",
+          "cost_per_1k_tokens": 0.001
+        }
+      },
+      "local_artifact_ignored_when_routing_off": {
+        "role": "competitor",
+        "settings": { "role_routing": "off" },
+        "context": { "availableLocalModels": ["/models/distilled-competitor"] },
+        "expected": {
+          "provider_type": "anthropic",
+          "model": "competitor-role-model",
+          "provider_class": "frontier",
+          "cost_per_1k_tokens": 0.015
+        }
+      }
     }
   },
   "known_divergences": [

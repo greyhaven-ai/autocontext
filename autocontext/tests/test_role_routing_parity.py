@@ -21,7 +21,12 @@ FIXTURE_PATH = Path(__file__).resolve().parents[2] / "docs" / "role-routing-pari
 
 # Fixture groups whose cases are single route() calls compared field by field.
 # Groups with a different shape (cost estimation) get their own replay test.
-ROUTE_GROUPS: tuple[str, ...] = ("auto_mode", "explicit_override")
+ROUTE_GROUPS: tuple[str, ...] = (
+    "auto_mode",
+    "explicit_override",
+    "routing_off",
+    "local_artifacts",
+)
 
 # Every settings key a fixture case may set, with the value used when a case omits it.
 # Mirrors the TypeScript baseSettings() helper so both languages start from identical state.
