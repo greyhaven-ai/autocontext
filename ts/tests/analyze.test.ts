@@ -22,6 +22,11 @@ import { MissionManager } from "../src/mission/manager.js";
 let tmpDir: string;
 const MIGRATIONS_DIR = join(import.meta.dirname, "..", "migrations");
 const CLI = join(import.meta.dirname, "..", "src", "cli", "index.ts");
+// Spawn the installed tsx binary rather than `npx tsx`: these tests run the
+// CLI from a temp cwd, where npx cannot see the repo's node_modules and
+// falls back to the registry. That fetch pollutes stderr with an install
+// warning (breaking stderr assertions) and can exceed the spawn timeout.
+const TSX = join(import.meta.dirname, "..", "node_modules", ".bin", "tsx");
 
 beforeEach(() => {
   tmpDir = mkdtempSync(join(tmpdir(), "ac-448-test-"));
@@ -321,7 +326,7 @@ describe("analyze CLI integration", () => {
     store.updateRunStatus("run_cli", "completed");
     store.close();
 
-    const result = spawnSync("npx", ["tsx", CLI, "analyze", "--id", "run_cli", "--type", "run", "--json"], {
+    const result = spawnSync(TSX, [CLI, "analyze", "--id", "run_cli", "--type", "run", "--json"], {
       cwd: tmpDir,
       encoding: "utf-8",
       timeout: 15000,
