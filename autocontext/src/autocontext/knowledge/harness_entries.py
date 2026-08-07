@@ -7,6 +7,10 @@ before/after snapshots, so any refinement can be rolled back. Modeled on
 prime-agent's continual-harness refinement store; adds outcome marking so
 verifier-scored runs can confirm or refute an entry's expected outcome.
 
+The scope guardrail (a narrower-scope caller cannot mutate broader-scope
+state) covers every write path: ``apply``, ``mark_outcome``, and
+``rollback`` (AC-907).
+
 The store assumes a single writer per root directory: writes are atomic
 but load-modify-save, so concurrent writers are last-writer-wins. State
 files are per-language (the TypeScript mirror writes camelCase fields)
@@ -30,6 +34,19 @@ HarnessScope = Literal["run", "scenario_family", "global"]
 HarnessOutcome = Literal["pending", "confirmed", "refuted"]
 
 SCOPE_ORDER: dict[str, int] = {"run": 0, "scenario_family": 1, "global": 2}
+
+
+def _require_scope(scope: str) -> HarnessScope:
+    """Runtime backstop mirroring the TS ``requireScope`` (AC-907).
+
+    Typed callers are covered by mypy, but scope strings arriving from
+    dynamic boundaries (JSON, MCP) would otherwise surface as a raw
+    ``KeyError`` from the ``SCOPE_ORDER`` lookup.
+    """
+    if scope not in SCOPE_ORDER:
+        raise ValueError(f"unknown harness scope: {scope}")
+    return scope  # type: ignore[return-value]
+
 
 STATE_FILE_NAME = "harness_state.json"
 HISTORY_FILE_NAME = "harness_refinements.jsonl"
@@ -156,6 +173,7 @@ class HarnessEntryStore:
         An empty batch is a no-op: nothing is persisted and the returned
         refinement is not recorded in history.
         """
+        _require_scope(scope)
         state = self._load_state()
         applied = [self._apply_edit(state, edit, scope=scope, source=source) for edit in edits]
         refinement = HarnessRefinement(
@@ -215,6 +233,7 @@ class HarnessEntryStore:
         scope guardrail as ``apply`` holds: a narrower-scope caller cannot
         mark a broader-scope entry.
         """
+        _require_scope(scope)
         state = self._load_state()
         existing = state.get(entry_id)
         if existing is None:
@@ -251,23 +270,46 @@ class HarnessEntryStore:
             return ""
         return "## Harness Entries\n\n" + "\n\n".join(sections) + "\n"
 
-    def rollback(self, refinement_id: str) -> HarnessRefinement:
+    def rollback(self, refinement_id: str, *, scope: HarnessScope) -> HarnessRefinement:
         """Invert a recorded refinement by restoring its before-snapshots.
 
         One-step semantics: snapshots are restored blindly, so edits made
         to the same entries by later refinements are overwritten (lost
         update). Outcome marks are measurements, not refinement effects,
         so a current non-pending outcome survives the restore.
+
+        The same scope guardrail as ``apply`` and ``mark_outcome`` holds
+        (AC-907): a narrower-scope caller cannot roll back a broader-scope
+        refinement (whole-refinement check), and each restore additionally
+        verifies the CURRENT occupant of the entry id and the snapshot
+        being restored. The per-entry checks matter because entry ids can
+        be reused across scopes: an id deleted at run scope and recreated
+        at global scope must not be deletable or overwritable by a
+        run-scoped rollback. Blocked items are recorded with
+        ``error="scope_readonly"`` (the per-edit convention of ``apply``)
+        while the rest of the refinement still rolls back.
         """
+        _require_scope(scope)
         target = next((r for r in self.load_history() if r.id == refinement_id), None)
         if target is None:
             raise ValueError(f"unknown refinement: {refinement_id}")
+        if SCOPE_ORDER[target.scope] > SCOPE_ORDER[scope]:
+            raise ValueError(f"scope_readonly: {refinement_id} is {target.scope}-scoped")
         state = self._load_state()
         applied: list[AppliedHarnessEdit] = []
         for item in reversed(target.applied_edits):
             if not item.applied:
                 continue
             reason = f"rollback of {refinement_id}"
+            current = state.get(item.entry_id)
+            blocked = (current is not None and SCOPE_ORDER[current.scope] > SCOPE_ORDER[scope]) or (
+                item.before is not None and SCOPE_ORDER[item.before.scope] > SCOPE_ORDER[scope]
+            )
+            if blocked:
+                blocked_action: Literal["delete", "update"] = "delete" if item.before is None else "update"
+                edit = HarnessEdit(action=blocked_action, kind=item.edit.kind, id=item.entry_id, reason=reason)
+                applied.append(AppliedHarnessEdit(edit=edit, entry_id=item.entry_id, applied=False, error="scope_readonly"))
+                continue
             if item.before is None:
                 removed = state.pop(item.entry_id, None)
                 edit = HarnessEdit(action="delete", kind=item.edit.kind, id=item.entry_id, reason=reason)
