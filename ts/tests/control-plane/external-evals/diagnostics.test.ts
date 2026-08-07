@@ -5,6 +5,7 @@ import {
   buildOperationalMemoryPackFromDiagnostics,
   decideExternalEvalContextPromotion,
 } from "../../../src/control-plane/external-evals/index.js";
+import type { ExternalEvalDiagnosticReport } from "../../../src/control-plane/external-evals/index.js";
 import {
   compileOperationalMemoryContext,
   validateOperationalMemoryPack,
@@ -750,7 +751,7 @@ describe("external eval diagnostics", () => {
       trials: [],
       evidence: [],
     });
-    const reportWithInjectedSignal = {
+    const reportWithInjectedSignal: ExternalEvalDiagnosticReport = {
       ...report,
       improvementSignals: [
         {

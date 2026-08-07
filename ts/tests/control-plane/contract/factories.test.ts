@@ -14,7 +14,51 @@ import type {
   AblationVerification,
   Provenance,
   MetricBundle,
+  StrategyIdentity,
+  StrategyQuarantine,
 } from "../../../src/control-plane/contract/types.js";
+import {
+  parseArtifactId,
+  parseContentHash,
+  parseEnvironmentTag,
+  parseScenario,
+  parseSuiteId,
+  type ArtifactId,
+  type ContentHash,
+  type EnvironmentTag,
+  type Scenario,
+  type SuiteId,
+} from "../../../src/control-plane/contract/branded-ids.js";
+
+function hash(fill: string): ContentHash {
+  const parsed = parseContentHash(`sha256:${fill.repeat(64)}`);
+  if (parsed === null) throw new Error(`invalid test hash fill: ${fill}`);
+  return parsed;
+}
+
+function artifactId(value: string): ArtifactId {
+  const parsed = parseArtifactId(value);
+  if (parsed === null) throw new Error(`invalid test artifact id: ${value}`);
+  return parsed;
+}
+
+function scenario(value: string): Scenario {
+  const parsed = parseScenario(value);
+  if (parsed === null) throw new Error(`invalid test scenario: ${value}`);
+  return parsed;
+}
+
+function envTag(value: string): EnvironmentTag {
+  const parsed = parseEnvironmentTag(value);
+  if (parsed === null) throw new Error(`invalid test environment tag: ${value}`);
+  return parsed;
+}
+
+function suiteId(value: string): SuiteId {
+  const parsed = parseSuiteId(value);
+  if (parsed === null) throw new Error(`invalid test suite id: ${value}`);
+  return parsed;
+}
 
 const aProvenance: Provenance = {
   authorType: "human",
@@ -31,7 +75,7 @@ const aMetricBundle: MetricBundle = {
   evalRunnerIdentity: {
     name: "my-eval",
     version: "1.0.0",
-    configHash: "sha256:" + "a".repeat(64),
+    configHash: hash("a"),
   },
 };
 
@@ -39,8 +83,8 @@ describe("createArtifact", () => {
   test("produces a valid Artifact in candidate state with fresh ULID and defaults", () => {
     const artifact = createArtifact({
       actuatorType: "prompt-patch",
-      scenario: "grid_ctf",
-      payloadHash: "sha256:" + "b".repeat(64),
+      scenario: scenario("grid_ctf"),
+      payloadHash: hash("b"),
       provenance: aProvenance,
     });
     expect(artifact.actuatorType).toBe("prompt-patch");
@@ -55,19 +99,17 @@ describe("createArtifact", () => {
   });
 
   test("preserves optional strategy identity metadata", () => {
-    const strategyIdentity = {
-      fingerprint: "sha256:" + "9".repeat(64),
-      components: [
-        { name: "prompt.txt", fingerprint: "sha256:" + "8".repeat(64) },
-      ],
+    const strategyIdentity: StrategyIdentity = {
+      fingerprint: hash("9"),
+      components: [{ name: "prompt.txt", fingerprint: hash("8") }],
       lineage: {
-        parentFingerprints: ["sha256:" + "7".repeat(64)],
+        parentFingerprints: [hash("7")],
       },
     };
     const artifact = createArtifact({
       actuatorType: "prompt-patch",
-      scenario: "grid_ctf",
-      payloadHash: "sha256:" + "b".repeat(64),
+      scenario: scenario("grid_ctf"),
+      payloadHash: hash("b"),
       provenance: aProvenance,
       strategyIdentity,
     });
@@ -77,17 +119,17 @@ describe("createArtifact", () => {
   });
 
   test("preserves optional strategy quarantine metadata", () => {
-    const strategyQuarantine = {
+    const strategyQuarantine: StrategyQuarantine = {
       status: "quarantined",
       reason: "repeated-invalid-strategy",
-      sourceArtifactIds: ["01KPEYB3BQNFDEYRS8KH538PF5"],
-      sourceFingerprints: ["sha256:" + "7".repeat(64)],
+      sourceArtifactIds: [artifactId("01KPEYB3BQNFDEYRS8KH538PF5")],
+      sourceFingerprints: [hash("7")],
       detail: "exact duplicate of disabled strategy",
     };
     const artifact = createArtifact({
       actuatorType: "prompt-patch",
-      scenario: "grid_ctf",
-      payloadHash: "sha256:" + "b".repeat(64),
+      scenario: scenario("grid_ctf"),
+      payloadHash: hash("b"),
       provenance: aProvenance,
       strategyQuarantine,
     });
@@ -99,11 +141,11 @@ describe("createArtifact", () => {
   test("respects overrides for id and environmentTag (for tests / legacy adapter)", () => {
     const artifact = createArtifact({
       actuatorType: "tool-policy",
-      scenario: "othello",
-      environmentTag: "staging",
-      payloadHash: "sha256:" + "c".repeat(64),
+      scenario: scenario("othello"),
+      environmentTag: envTag("staging"),
+      payloadHash: hash("c"),
       provenance: aProvenance,
-      id: "01KPEYB3BQNFDEYRS8KH538PF5",
+      id: artifactId("01KPEYB3BQNFDEYRS8KH538PF5"),
     });
     expect(artifact.id).toBe("01KPEYB3BQNFDEYRS8KH538PF5");
     expect(artifact.environmentTag).toBe("staging");
@@ -113,14 +155,14 @@ describe("createArtifact", () => {
   test("different invocations produce different ULIDs (time-ordered)", () => {
     const a = createArtifact({
       actuatorType: "prompt-patch",
-      scenario: "grid_ctf",
-      payloadHash: "sha256:" + "d".repeat(64),
+      scenario: scenario("grid_ctf"),
+      payloadHash: hash("d"),
       provenance: aProvenance,
     });
     const b = createArtifact({
       actuatorType: "prompt-patch",
-      scenario: "grid_ctf",
-      payloadHash: "sha256:" + "d".repeat(64),
+      scenario: scenario("grid_ctf"),
+      payloadHash: hash("d"),
       provenance: aProvenance,
     });
     expect(a.id).not.toBe(b.id);
@@ -148,10 +190,10 @@ describe("createPromotionEvent", () => {
       to: "canary",
       reason: "passed shadow",
       timestamp: "2026-04-17T13:00:00.000Z",
-      evidence: { suiteId: "prod-eval-v3" },
+      evidence: { suiteId: suiteId("prod-eval-v3") },
       signature: "sig-abc",
     });
-    expect(event.evidence).toEqual({ suiteId: "prod-eval-v3" });
+    expect(event.evidence).toEqual({ suiteId: suiteId("prod-eval-v3") });
     expect(event.signature).toBe("sig-abc");
     expect(validatePromotionEvent(event).valid).toBe(true);
   });
@@ -161,12 +203,12 @@ describe("createEvalRun", () => {
   test("produces a valid EvalRun", () => {
     const run = createEvalRun({
       runId: "eval_123",
-      artifactId: "01KPEYB3BRQWK2WSHK9E93N6NP",
-      suiteId: "prod-eval-v3",
+      artifactId: artifactId("01KPEYB3BRQWK2WSHK9E93N6NP"),
+      suiteId: suiteId("prod-eval-v3"),
       metrics: aMetricBundle,
       datasetProvenance: {
         datasetId: "prod-traces-2026-04-15",
-        sliceHash: "sha256:" + "e".repeat(64),
+        sliceHash: hash("e"),
         sampleCount: 300,
       },
       ingestedAt: "2026-04-17T12:05:00.000Z",
@@ -184,12 +226,12 @@ describe("createEvalRun", () => {
     };
     const run = createEvalRun({
       runId: "eval_ablation",
-      artifactId: "01KPEYB3BRQWK2WSHK9E93N6NP",
-      suiteId: "prod-eval-v3",
+      artifactId: artifactId("01KPEYB3BRQWK2WSHK9E93N6NP"),
+      suiteId: suiteId("prod-eval-v3"),
       metrics: aMetricBundle,
       datasetProvenance: {
         datasetId: "prod-traces-2026-04-15",
-        sliceHash: "sha256:" + "e".repeat(64),
+        sliceHash: hash("e"),
         sampleCount: 300,
       },
       ingestedAt: "2026-04-17T12:05:00.000Z",
@@ -205,8 +247,8 @@ describe("appendPromotionEvent (immutable, state-transition enforcing)", () => {
   test("returns a new Artifact with the event appended and activationState updated", () => {
     const before = createArtifact({
       actuatorType: "prompt-patch",
-      scenario: "grid_ctf",
-      payloadHash: "sha256:" + "f".repeat(64),
+      scenario: scenario("grid_ctf"),
+      payloadHash: hash("f"),
       provenance: aProvenance,
     });
     const event = createPromotionEvent({
@@ -228,8 +270,8 @@ describe("appendPromotionEvent (immutable, state-transition enforcing)", () => {
   test("throws when event.from does not match current activationState", () => {
     const artifact = createArtifact({
       actuatorType: "prompt-patch",
-      scenario: "grid_ctf",
-      payloadHash: "sha256:" + "f".repeat(64),
+      scenario: scenario("grid_ctf"),
+      payloadHash: hash("f"),
       provenance: aProvenance,
     });
     // artifact is "candidate"; event claims "from: active"

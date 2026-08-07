@@ -12,7 +12,7 @@ function makeMockProvider(response: string): LLMProvider {
   };
 }
 
-function makeRecordingProvider(response: string, modelsUsed: string[]): LLMProvider {
+function makeRecordingProvider(response: string, modelsUsed: (string | undefined)[]): LLMProvider {
   return {
     name: "recording",
     defaultModel: () => "ctor-model",
@@ -53,7 +53,7 @@ describe("LLMJudge evaluatorEpoch", () => {
   });
 
   it("stamps the epoch of the model a BEFORE_JUDGE hook switched to", async () => {
-    const modelsUsed: string[] = [];
+    const modelsUsed: (string | undefined)[] = [];
     const provider = makeRecordingProvider(RESPONSE, modelsUsed);
     const bus = new HookBus();
     bus.on(HookEvents.BEFORE_JUDGE, () => ({ model: "hook-model" }));
@@ -82,7 +82,7 @@ describe("LLMJudge evaluatorEpoch", () => {
   });
 
   it("stamps the ctor-model epoch when no hook changes the model", async () => {
-    const modelsUsed: string[] = [];
+    const modelsUsed: (string | undefined)[] = [];
     const provider = makeRecordingProvider(RESPONSE, modelsUsed);
     const judge = new LLMJudge({ provider, model: "ctor-model", rubric: "score correctness 0-1" });
     const result = await judge.evaluate({ taskPrompt: "task", agentOutput: "output" });

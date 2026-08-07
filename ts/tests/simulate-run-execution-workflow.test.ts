@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { executeSimulateRunWorkflow } from "../src/cli/simulate-command-workflow.js";
+import type { SweepDimension } from "../src/simulation/sweep-dsl.js";
 
 describe("simulate run execution workflow", () => {
   it("executes a run with provider, knowledge root, and parsed numeric options", async () => {
     const provider = { name: "live-provider" };
-    const sweep = [{ name: "threshold", values: [0.5, 0.7] }];
+    const sweep: SweepDimension[] = [{ name: "threshold", values: [0.5, 0.7], scale: "linear" }];
     const variables = { threshold: 0.8, budget: 100 };
     const run = vi.fn().mockResolvedValue({ status: "completed", id: "sim_123" });
     const createEngine = vi.fn(() => ({ run }));

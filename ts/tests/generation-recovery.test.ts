@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 
+import { asRunId, asScenarioName } from "../src/domain/ids.js";
 import { ArtifactStore } from "../src/knowledge/artifact-store.js";
 import { GenerationRecovery } from "../src/loop/generation-recovery.js";
 import { StagnationDetector } from "../src/loop/stagnation.js";
@@ -21,7 +22,7 @@ describe("GenerationRecovery", () => {
       });
       const recovery = new GenerationRecovery({
         artifacts,
-        scenarioName: "linear_outage_escalation",
+        scenarioName: asScenarioName("linear_outage_escalation"),
         deadEndTrackingEnabled: true,
         deadEndMaxEntries: 5,
         stagnationResetEnabled: false,
@@ -29,7 +30,7 @@ describe("GenerationRecovery", () => {
         stagnationDetector: new StagnationDetector(),
       });
 
-      const outcome = recovery.handleAttempt("run-1", {
+      const outcome = recovery.handleAttempt(asRunId("run-1"), {
         generation: 2,
         gateDecision: "rollback",
         bestScore: 0.2,
@@ -40,7 +41,7 @@ describe("GenerationRecovery", () => {
       expect(outcome.deadEndRecorded).toBe(true);
       expect(outcome.shouldNotifyRegression).toBe(true);
       expect(outcome.events.some((event: { event: string }) => event.event === "dead_end_recorded")).toBe(true);
-      expect(artifacts.readDeadEnds("linear_outage_escalation")).toContain("### Dead End");
+      expect(artifacts.readDeadEnds(asScenarioName("linear_outage_escalation"))).toContain("### Dead End");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -54,7 +55,7 @@ describe("GenerationRecovery", () => {
         knowledgeRoot: join(dir, "knowledge"),
       });
       artifacts.writePlaybook(
-        "linear_outage_escalation",
+        asScenarioName("linear_outage_escalation"),
         [
           "<!-- PLAYBOOK_START -->",
           "## Strategy Updates",
@@ -69,11 +70,11 @@ describe("GenerationRecovery", () => {
           "<!-- COMPETITOR_HINTS_END -->",
         ].join("\n"),
       );
-      artifacts.appendDeadEnd("linear_outage_escalation", "avoid repeated over-escalation");
+      artifacts.appendDeadEnd(asScenarioName("linear_outage_escalation"), "avoid repeated over-escalation");
 
       const recovery = new GenerationRecovery({
         artifacts,
-        scenarioName: "linear_outage_escalation",
+        scenarioName: asScenarioName("linear_outage_escalation"),
         deadEndTrackingEnabled: false,
         deadEndMaxEntries: 5,
         stagnationResetEnabled: true,
@@ -85,14 +86,14 @@ describe("GenerationRecovery", () => {
         }),
       });
 
-      recovery.handleAttempt("run-2", {
+      recovery.handleAttempt(asRunId("run-2"), {
         generation: 1,
         gateDecision: "advance",
         bestScore: 0.4,
         strategy: { escalation_readiness: 0.4 },
         previousBestForGeneration: 0.1,
       });
-      const outcome = recovery.handleAttempt("run-2", {
+      const outcome = recovery.handleAttempt(asRunId("run-2"), {
         generation: 2,
         gateDecision: "advance",
         bestScore: 0.4,

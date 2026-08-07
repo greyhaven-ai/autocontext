@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { asDbPath } from "../src/domain/ids.js";
 import { SQLiteStore } from "../src/storage/index.js";
 import {
   TaskRunner,
@@ -16,7 +17,7 @@ const MIGRATIONS_DIR = join(import.meta.dirname, "..", "migrations");
 
 function createStore(): SQLiteStore {
   const dir = mkdtempSync(join(tmpdir(), "autocontext-runner-"));
-  const store = new SQLiteStore(join(dir, "test.db"));
+  const store = new SQLiteStore(asDbPath(join(dir, "test.db")));
   store.migrate(MIGRATIONS_DIR);
   return store;
 }
@@ -484,7 +485,7 @@ describe("SimpleAgentTask", () => {
 
     const revised = await task.reviseOutput(
       output,
-      { score: 0.5, reasoning: "Needs work", dimensionScores: {} },
+      { score: 0.5, reasoning: "Needs work", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
       {},
     );
     expect(revised).toBe("generated text"); // Mock returns same for non-judge calls
@@ -536,7 +537,13 @@ describe("SimpleAgentTask", () => {
 
     const revised = await task.reviseOutput(
       "Original draft",
-      { score: 0.4, reasoning: "Needs work", dimensionScores: { quality: 0.4 } },
+      {
+        score: 0.4,
+        reasoning: "Needs work",
+        dimensionScores: { quality: 0.4 },
+        internalRetries: 0,
+        evaluatorEpoch: null,
+      },
       {},
     );
 
@@ -577,7 +584,13 @@ describe("SimpleAgentTask", () => {
 
     const revised = await task.reviseOutput(
       "Original draft",
-      { score: 0.5, reasoning: "Needs work", dimensionScores: { quality: 0.5 } },
+      {
+        score: 0.5,
+        reasoning: "Needs work",
+        dimensionScores: { quality: 0.5 },
+        internalRetries: 0,
+        evaluatorEpoch: null,
+      },
       {},
     );
 
@@ -624,7 +637,7 @@ describe("SimpleAgentTask", () => {
     await expect(
       task.reviseOutput(
         "old output",
-        { score: 0.2, reasoning: "revise", dimensionScores: {}, internalRetries: 0 },
+        { score: 0.2, reasoning: "revise", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
         {},
       ),
     ).resolves.toBe("agent_task_revise hooked output");

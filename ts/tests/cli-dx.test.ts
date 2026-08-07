@@ -11,6 +11,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { asDbPath, asScenarioName } from "../src/domain/ids.js";
 
 const CLI = join(import.meta.dirname, "..", "src", "cli", "index.ts");
 const SANITIZED_ENV_KEYS = [
@@ -358,7 +359,7 @@ describe("AC-405: autoctx capabilities", () => {
       writeFileSync(join(dir, "knowledge", "lessons", "note.md"), "Keep pressure.\n", "utf-8");
 
       const { SQLiteStore } = await import("../src/storage/index.js");
-      const store = new SQLiteStore(join(dir, "runs", "autocontext.sqlite3"));
+      const store = new SQLiteStore(asDbPath(join(dir, "runs", "autocontext.sqlite3")));
       store.migrate(join(import.meta.dirname, "..", "migrations"));
       store.createRun("run-active", "grid_ctf", 2, "local", "deterministic");
       store.createRun("run-done", "grid_ctf", 1, "local", "deterministic");
@@ -710,7 +711,7 @@ describe("runtime session run inspection", () => {
         await import("../src/session/runtime-events.js");
       const { runtimeSessionIdForRun } = await import("../src/session/runtime-session-ids.js");
 
-      const store = new SQLiteStore(dbPath);
+      const store = new SQLiteStore(asDbPath(dbPath));
       store.migrate(join(import.meta.dirname, "..", "migrations"));
       store.createRun("run-123", "grid_ctf", 1, "local", "codex");
       store.upsertGeneration("run-123", 1, {
@@ -762,7 +763,7 @@ describe("runtime session run inspection", () => {
       const { SQLiteStore } = await import("../src/storage/index.js");
       const { buildRunProgressReport } = await import("../src/analytics/progress-report.js");
 
-      const store = new SQLiteStore(dbPath);
+      const store = new SQLiteStore(asDbPath(dbPath));
       store.migrate(join(import.meta.dirname, "..", "migrations"));
       store.createRun("run-123", "grid_ctf", 1, "local", "codex");
       store.upsertGeneration("run-123", 1, {
@@ -944,12 +945,12 @@ describe("AC-424: export-training-data", () => {
 
       const { SQLiteStore } = await import("../src/storage/index.js");
       const { ArtifactStore } = await import("../src/knowledge/artifact-store.js");
-      const store = new SQLiteStore(dbPath);
+      const store = new SQLiteStore(asDbPath(dbPath));
       store.migrate(join(import.meta.dirname, "..", "migrations"));
 
       const artifacts = new ArtifactStore({ runsRoot, knowledgeRoot });
       artifacts.writePlaybook(
-        "grid_ctf",
+        asScenarioName("grid_ctf"),
         [
           "# Strategy",
           "",

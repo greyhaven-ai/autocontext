@@ -5,6 +5,9 @@
 
 import { describe, it, expect } from "vitest";
 
+import type { ExecutionInput, ExecutionOutput } from "../src/execution/supervisor.js";
+import type { ScenarioInterface } from "../src/scenarios/game-interface.js";
+
 // ---------------------------------------------------------------------------
 // Elo scoring (Task 8)
 // ---------------------------------------------------------------------------
@@ -248,9 +251,9 @@ describe("TournamentRunner", () => {
     const { GridCtfScenario } = await import("../src/scenarios/grid-ctf.js");
 
     const scenario = new GridCtfScenario();
-    const calls: Array<Record<string, unknown>> = [];
+    const calls: ExecutionInput[] = [];
     const supervisor = {
-      run(_scenario: unknown, payload: Record<string, unknown>) {
+      run(_scenario: ScenarioInterface, payload: ExecutionInput): ExecutionOutput {
         calls.push(payload);
         return {
           result: {

@@ -4,6 +4,7 @@ import {
   isParseFailure,
   isImproved,
 } from "../src/execution/improvement-loop.js";
+import type { ImprovementLoopProgress } from "../src/execution/improvement-loop.js";
 import type { AgentTaskInterface, AgentTaskResult, RoundResult } from "../src/types/index.js";
 
 function makeFakeTask(
@@ -45,15 +46,15 @@ describe("isImproved", () => {
     expect(isImproved([])).toBe(false);
     expect(
       isImproved([
-        { roundNumber: 1, output: "", score: 0.5, reasoning: "", dimensionScores: {}, isRevision: false, judgeFailed: false },
+        { roundNumber: 1, output: "", score: 0.5, reasoning: "", dimensionScores: {}, evaluatorEpoch: null, isRevision: false, judgeFailed: false },
       ]),
     ).toBe(false);
   });
   it("ignores failed rounds", () => {
     const rounds: RoundResult[] = [
-      { roundNumber: 1, output: "", score: 0.5, reasoning: "", dimensionScores: {}, isRevision: false, judgeFailed: false },
-      { roundNumber: 2, output: "", score: 0, reasoning: "", dimensionScores: {}, isRevision: true, judgeFailed: true },
-      { roundNumber: 3, output: "", score: 0.7, reasoning: "", dimensionScores: {}, isRevision: true, judgeFailed: false },
+      { roundNumber: 1, output: "", score: 0.5, reasoning: "", dimensionScores: {}, evaluatorEpoch: null, isRevision: false, judgeFailed: false },
+      { roundNumber: 2, output: "", score: 0, reasoning: "", dimensionScores: {}, evaluatorEpoch: null, isRevision: true, judgeFailed: true },
+      { roundNumber: 3, output: "", score: 0.7, reasoning: "", dimensionScores: {}, evaluatorEpoch: null, isRevision: true, judgeFailed: false },
     ];
     expect(isImproved(rounds)).toBe(true);
   });
@@ -61,7 +62,7 @@ describe("isImproved", () => {
 
 describe("ImprovementLoop", () => {
   it("meets threshold on first round", async () => {
-    const task = makeFakeTask([{ score: 0.95, reasoning: "great", dimensionScores: {} }]);
+    const task = makeFakeTask([{ score: 0.95, reasoning: "great", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null }]);
     const loop = new ImprovementLoop({ task, maxRounds: 3, qualityThreshold: 0.9 });
     const result = await loop.run({ initialOutput: "test", state: {} });
     expect(result.metThreshold).toBe(true);
@@ -72,8 +73,8 @@ describe("ImprovementLoop", () => {
 
   it("improves over multiple rounds", async () => {
     const task = makeFakeTask([
-      { score: 0.5, reasoning: "ok", dimensionScores: {} },
-      { score: 0.95, reasoning: "great", dimensionScores: {} },
+      { score: 0.5, reasoning: "ok", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
+      { score: 0.95, reasoning: "great", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
     ]);
     const loop = new ImprovementLoop({ task, maxRounds: 3, qualityThreshold: 0.9 });
     const result = await loop.run({ initialOutput: "test", state: {} });
@@ -84,10 +85,10 @@ describe("ImprovementLoop", () => {
   });
 
   it("reports evaluation and revision boundaries without judge feedback", async () => {
-    const progress: Array<Record<string, unknown>> = [];
+    const progress: ImprovementLoopProgress[] = [];
     const task = makeFakeTask([
-      { score: 0.5, reasoning: "private judge feedback", dimensionScores: {} },
-      { score: 0.95, reasoning: "also private", dimensionScores: {} },
+      { score: 0.5, reasoning: "private judge feedback", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
+      { score: 0.95, reasoning: "also private", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
     ]);
     const loop = new ImprovementLoop({
       task,
@@ -114,7 +115,7 @@ describe("ImprovementLoop", () => {
   it("keeps rejected async progress observers from changing loop results", async () => {
     const loop = new ImprovementLoop({
       task: makeFakeTask([
-        { score: 0.95, reasoning: "complete", dimensionScores: {} },
+        { score: 0.95, reasoning: "complete", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
       ]),
       maxRounds: 1,
       qualityThreshold: 0.9,
@@ -131,7 +132,7 @@ describe("ImprovementLoop", () => {
 
   it("stops when output unchanged", async () => {
     const task = makeFakeTask(
-      [{ score: 0.5, reasoning: "ok", dimensionScores: {} }],
+      [{ score: 0.5, reasoning: "ok", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null }],
       (out) => out, // Return unchanged
     );
     const loop = new ImprovementLoop({ task, maxRounds: 5, qualityThreshold: 0.9 });
@@ -143,8 +144,8 @@ describe("ImprovementLoop", () => {
 
   it("handles judge parse failure gracefully", async () => {
     const task = makeFakeTask([
-      { score: 0, reasoning: "Failed to parse judge response: no parseable score found", dimensionScores: {} },
-      { score: 0.8, reasoning: "good", dimensionScores: {} },
+      { score: 0, reasoning: "Failed to parse judge response: no parseable score found", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
+      { score: 0.8, reasoning: "good", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
     ]);
     const loop = new ImprovementLoop({ task, maxRounds: 3, qualityThreshold: 0.9 });
     const result = await loop.run({ initialOutput: "test", state: {} });
@@ -154,7 +155,7 @@ describe("ImprovementLoop", () => {
 
   it("aborts after 3 consecutive failures", async () => {
     const task = makeFakeTask([
-      { score: 0, reasoning: "Failed to parse judge response: no parseable score found", dimensionScores: {} },
+      { score: 0, reasoning: "Failed to parse judge response: no parseable score found", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
     ]);
     const loop = new ImprovementLoop({ task, maxRounds: 10, qualityThreshold: 0.9 });
     const result = await loop.run({ initialOutput: "test", state: {} });
@@ -173,7 +174,7 @@ describe("ImprovementLoop", () => {
       evaluateOutput: async () => ({
         score: 0.95,
         reasoning: "good",
-        dimensionScores: {},
+        dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null,
       }),
       reviseOutput: async (out) => `${out} [revised]`,
       verifyFacts: async () => {
@@ -202,7 +203,7 @@ describe("ImprovementLoop", () => {
         evalCount++;
         // Round 1: 0.91 (within 0.02 of 0.90 threshold)
         // Round 2: 0.91 (confirm stable)
-        return { score: 0.91, reasoning: `round ${evalCount}`, dimensionScores: {} };
+        return { score: 0.91, reasoning: `round ${evalCount}`, dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null };
       },
       reviseOutput: async (out) => `${out} [revised]`,
     };
@@ -223,7 +224,7 @@ describe("ImprovementLoop", () => {
       describeTask: () => "test task",
       evaluateOutput: async () => {
         evalCount++;
-        return { score: 0.95, reasoning: "great", dimensionScores: {} };
+        return { score: 0.95, reasoning: "great", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null };
       },
       reviseOutput: async (out) => `${out} [revised]`,
     };
@@ -247,7 +248,7 @@ describe("ImprovementLoop", () => {
         // Round 3: 0.91 (near again), Round 4: 0.91 (confirmed)
         const scores = [0.91, 0.85, 0.91, 0.91];
         const score = scores[Math.min(evalCount - 1, scores.length - 1)];
-        return { score, reasoning: `round ${evalCount}`, dimensionScores: {} };
+        return { score, reasoning: `round ${evalCount}`, dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null };
       },
       reviseOutput: async (out) => `${out} [revised]`,
     };
@@ -262,9 +263,9 @@ describe("ImprovementLoop", () => {
     const revisions: string[] = [];
     const task = makeFakeTask(
       [
-        { score: 0.6, reasoning: "Needs detail", dimensionScores: {} },
-        { score: 0, reasoning: "Failed to parse judge response: no parseable score found", dimensionScores: {} },
-        { score: 0.85, reasoning: "Better", dimensionScores: {} },
+        { score: 0.6, reasoning: "Needs detail", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
+        { score: 0, reasoning: "Failed to parse judge response: no parseable score found", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
+        { score: 0.85, reasoning: "Better", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
       ],
       (out, res) => {
         revisions.push(res.reasoning);
@@ -280,9 +281,9 @@ describe("ImprovementLoop", () => {
 
   it("sets terminationReason to max_rounds when exhausted", async () => {
     const task = makeFakeTask([
-      { score: 0.3, reasoning: "low", dimensionScores: {} },
-      { score: 0.5, reasoning: "mid", dimensionScores: {} },
-      { score: 0.6, reasoning: "better", dimensionScores: {} },
+      { score: 0.3, reasoning: "low", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
+      { score: 0.5, reasoning: "mid", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
+      { score: 0.6, reasoning: "better", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
     ]);
     const loop = new ImprovementLoop({ task, maxRounds: 3, qualityThreshold: 0.9 });
     const result = await loop.run({ initialOutput: "test", state: {} });
@@ -300,7 +301,7 @@ describe("ImprovementLoop", () => {
       evaluateOutput: async () => ({
         score: 0.5,
         reasoning: "needs work",
-        dimensionScores: { clarity: 0.4, accuracy: 0.6 },
+        dimensionScores: { clarity: 0.4, accuracy: 0.6 }, internalRetries: 0, evaluatorEpoch: null,
       }),
       reviseOutput: async (out, res) => {
         revisionFeedback.push(res.reasoning);
@@ -322,9 +323,9 @@ describe("ImprovementLoop", () => {
 describe("Plateau detection", () => {
   it("detects plateau after 2 consecutive near-identical scores", async () => {
     const task = makeFakeTask([
-      { score: 0.5, reasoning: "ok", dimensionScores: {} },
-      { score: 0.505, reasoning: "ok", dimensionScores: {} },
-      { score: 0.508, reasoning: "ok", dimensionScores: {} },
+      { score: 0.5, reasoning: "ok", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
+      { score: 0.505, reasoning: "ok", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
+      { score: 0.508, reasoning: "ok", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
     ]);
     const loop = new ImprovementLoop({ task, maxRounds: 10, qualityThreshold: 0.9 });
     const result = await loop.run({ initialOutput: "test", state: {} });
@@ -335,11 +336,11 @@ describe("Plateau detection", () => {
 
   it("resets plateau counter on significant score change", async () => {
     const task = makeFakeTask([
-      { score: 0.5, reasoning: "ok", dimensionScores: {} },
-      { score: 0.505, reasoning: "ok", dimensionScores: {} },  // plateau +1
-      { score: 0.7, reasoning: "jump", dimensionScores: {} },  // reset
-      { score: 0.705, reasoning: "ok", dimensionScores: {} },  // plateau +1
-      { score: 0.95, reasoning: "great", dimensionScores: {} },
+      { score: 0.5, reasoning: "ok", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
+      { score: 0.505, reasoning: "ok", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },  // plateau +1
+      { score: 0.7, reasoning: "jump", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },  // reset
+      { score: 0.705, reasoning: "ok", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },  // plateau +1
+      { score: 0.95, reasoning: "great", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
     ]);
     const loop = new ImprovementLoop({ task, maxRounds: 10, qualityThreshold: 0.9 });
     const result = await loop.run({ initialOutput: "test", state: {} });
@@ -349,10 +350,10 @@ describe("Plateau detection", () => {
 
   it("does not detect plateau with only 1 near-identical score", async () => {
     const task = makeFakeTask([
-      { score: 0.5, reasoning: "ok", dimensionScores: {} },
-      { score: 0.505, reasoning: "ok", dimensionScores: {} },  // plateau +1
-      { score: 0.7, reasoning: "jump", dimensionScores: {} },  // reset
-      { score: 0.95, reasoning: "great", dimensionScores: {} },
+      { score: 0.5, reasoning: "ok", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
+      { score: 0.505, reasoning: "ok", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },  // plateau +1
+      { score: 0.7, reasoning: "jump", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },  // reset
+      { score: 0.95, reasoning: "great", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
     ]);
     const loop = new ImprovementLoop({ task, maxRounds: 10, qualityThreshold: 0.9 });
     const result = await loop.run({ initialOutput: "test", state: {} });
@@ -363,9 +364,9 @@ describe("Plateau detection", () => {
 describe("Dimension trajectory", () => {
   it("builds trajectory from valid rounds", async () => {
     const task = makeFakeTask([
-      { score: 0.5, reasoning: "ok", dimensionScores: { clarity: 0.4, accuracy: 0.6 } },
-      { score: 0.7, reasoning: "better", dimensionScores: { clarity: 0.6, accuracy: 0.8 } },
-      { score: 0.95, reasoning: "great", dimensionScores: { clarity: 0.9, accuracy: 1.0 } },
+      { score: 0.5, reasoning: "ok", dimensionScores: { clarity: 0.4, accuracy: 0.6 }, internalRetries: 0, evaluatorEpoch: null },
+      { score: 0.7, reasoning: "better", dimensionScores: { clarity: 0.6, accuracy: 0.8 }, internalRetries: 0, evaluatorEpoch: null },
+      { score: 0.95, reasoning: "great", dimensionScores: { clarity: 0.9, accuracy: 1.0 }, internalRetries: 0, evaluatorEpoch: null },
     ]);
     const loop = new ImprovementLoop({ task, maxRounds: 5, qualityThreshold: 0.9 });
     const result = await loop.run({ initialOutput: "test", state: {} });
@@ -377,9 +378,9 @@ describe("Dimension trajectory", () => {
 
   it("skips failed rounds in trajectory", async () => {
     const task = makeFakeTask([
-      { score: 0.5, reasoning: "ok", dimensionScores: { quality: 0.5 } },
-      { score: 0, reasoning: "Failed to parse judge response: no parseable score found", dimensionScores: {} },
-      { score: 0.95, reasoning: "great", dimensionScores: { quality: 0.9 } },
+      { score: 0.5, reasoning: "ok", dimensionScores: { quality: 0.5 }, internalRetries: 0, evaluatorEpoch: null },
+      { score: 0, reasoning: "Failed to parse judge response: no parseable score found", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
+      { score: 0.95, reasoning: "great", dimensionScores: { quality: 0.9 }, internalRetries: 0, evaluatorEpoch: null },
     ]);
     const loop = new ImprovementLoop({ task, maxRounds: 5, qualityThreshold: 0.9 });
     const result = await loop.run({ initialOutput: "test", state: {} });
@@ -387,7 +388,7 @@ describe("Dimension trajectory", () => {
   });
 
   it("returns empty trajectory when no dimension scores", async () => {
-    const task = makeFakeTask([{ score: 0.95, reasoning: "great", dimensionScores: {} }]);
+    const task = makeFakeTask([{ score: 0.95, reasoning: "great", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null }]);
     const loop = new ImprovementLoop({ task, maxRounds: 3, qualityThreshold: 0.9 });
     const result = await loop.run({ initialOutput: "test", state: {} });
     expect(result.dimensionTrajectory).toEqual({});
@@ -397,9 +398,9 @@ describe("Dimension trajectory", () => {
 describe("Minimum revision rounds", () => {
   it("continues past threshold when minRounds not yet reached", async () => {
     const task = makeFakeTask([
-      { score: 0.95, reasoning: "great", dimensionScores: {} },
-      { score: 0.96, reasoning: "even better", dimensionScores: {} },
-      { score: 0.97, reasoning: "best", dimensionScores: {} },
+      { score: 0.95, reasoning: "great", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
+      { score: 0.96, reasoning: "even better", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
+      { score: 0.97, reasoning: "best", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
     ]);
     const loop = new ImprovementLoop({ task, maxRounds: 5, qualityThreshold: 0.9, minRounds: 3 });
     const result = await loop.run({ initialOutput: "test", state: {} });
@@ -411,8 +412,8 @@ describe("Minimum revision rounds", () => {
 
   it("stops at threshold when minRounds already met", async () => {
     const task = makeFakeTask([
-      { score: 0.5, reasoning: "ok", dimensionScores: {} },
-      { score: 0.95, reasoning: "great", dimensionScores: {} },
+      { score: 0.5, reasoning: "ok", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
+      { score: 0.95, reasoning: "great", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
     ]);
     const loop = new ImprovementLoop({ task, maxRounds: 5, qualityThreshold: 0.9, minRounds: 1 });
     const result = await loop.run({ initialOutput: "test", state: {} });
@@ -421,7 +422,7 @@ describe("Minimum revision rounds", () => {
   });
 
   it("defaults minRounds to 1", async () => {
-    const task = makeFakeTask([{ score: 0.95, reasoning: "great", dimensionScores: {} }]);
+    const task = makeFakeTask([{ score: 0.95, reasoning: "great", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null }]);
     const loop = new ImprovementLoop({ task, maxRounds: 5, qualityThreshold: 0.9 });
     const result = await loop.run({ initialOutput: "test", state: {} });
     expect(result.totalRounds).toBe(1);
@@ -432,8 +433,8 @@ describe("Max score delta", () => {
   it("warns on large score jump", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const task = makeFakeTask([
-      { score: 0.2, reasoning: "low", dimensionScores: {} },
-      { score: 0.95, reasoning: "great", dimensionScores: {} },
+      { score: 0.2, reasoning: "low", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
+      { score: 0.95, reasoning: "great", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
     ]);
     const loop = new ImprovementLoop({ task, maxRounds: 3, qualityThreshold: 0.9, maxScoreDelta: 0.5 });
     await loop.run({ initialOutput: "test", state: {} });
@@ -445,8 +446,8 @@ describe("Max score delta", () => {
   it("does not warn when delta within limit", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const task = makeFakeTask([
-      { score: 0.5, reasoning: "ok", dimensionScores: {} },
-      { score: 0.95, reasoning: "great", dimensionScores: {} },
+      { score: 0.5, reasoning: "ok", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
+      { score: 0.95, reasoning: "great", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
     ]);
     const loop = new ImprovementLoop({ task, maxRounds: 3, qualityThreshold: 0.9, maxScoreDelta: 0.5 });
     await loop.run({ initialOutput: "test", state: {} });
@@ -457,9 +458,9 @@ describe("Max score delta", () => {
   it("caps score when capScoreJumps is true", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const task = makeFakeTask([
-      { score: 0.2, reasoning: "low", dimensionScores: {} },
-      { score: 0.9, reasoning: "huge jump", dimensionScores: {} },
-      { score: 0.95, reasoning: "great", dimensionScores: {} },
+      { score: 0.2, reasoning: "low", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
+      { score: 0.9, reasoning: "huge jump", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
+      { score: 0.95, reasoning: "great", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
     ]);
     const loop = new ImprovementLoop({
       task, maxRounds: 5, qualityThreshold: 0.99,
@@ -478,8 +479,8 @@ describe("Max score delta", () => {
   it("does not cap score when capScoreJumps is false (default)", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const task = makeFakeTask([
-      { score: 0.2, reasoning: "low", dimensionScores: {} },
-      { score: 0.95, reasoning: "great", dimensionScores: {} },
+      { score: 0.2, reasoning: "low", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
+      { score: 0.95, reasoning: "great", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
     ]);
     const loop = new ImprovementLoop({ task, maxRounds: 3, qualityThreshold: 0.9, maxScoreDelta: 0.3 });
     const result = await loop.run({ initialOutput: "test", state: {} });

@@ -1,24 +1,35 @@
 {
-  // Opt-in type-checking for test files (npm run check:test-types).
+  // Type-checking for test files (npm run check:test-types).
   //
   // The main tsconfig excludes tests/, so vitest runs them without any type
   // checking; a test can silently drift from the API it pins (AC-898 review
   // found a scope-guardrail probe that omitted the required scope argument).
-  // The wider suite carries pre-existing type debt (branded types), so files
-  // opt in here instead of gating everything at once. Add new test files as
-  // they are written or brought clean.
+  //
+  // AC-909 brought the whole suite clean: every test file is type-checked,
+  // with no allowlist or denylist to maintain. A NEW test file is checked
+  // the moment it is written. Do not reintroduce per-file opt-outs; fix the
+  // types instead.
+  //
+  // "include" is *.test.ts only, deliberately: helper modules are still
+  // checked because test files import them, while fixture inputs under
+  // _fixtures/ and golden/ are not. Those are deliberately non-compiling
+  // sample source (fake module specifiers, an SDK call missing a required
+  // argument) that tests read with readFileSync as TEXT and never import.
+  // Type-checking them is a category error, and "fixing" them would corrupt
+  // the fixtures they exist to be.
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "rootDir": ".",
     "noEmit": true,
-    "types": ["node"]
+    "types": [
+      "node"
+    ]
   },
-  "include": [],
-  "exclude": ["node_modules", "dist"],
-  "files": [
-    "tests/harness-entries.test.ts",
-    "tests/agent-task-evolution.test.ts",
-    "tests/verifier-cache.test.ts",
-    "tests/task-queue-store-workflow.test.ts"
+  "include": [
+    "tests/**/*.test.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
   ]
 }

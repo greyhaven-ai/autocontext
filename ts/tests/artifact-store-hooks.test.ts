@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { HookBus, HookEvents } from "../src/extensions/index.js";
+import { asRunId, asScenarioName } from "../src/domain/ids.js";
 import { ArtifactStore } from "../src/knowledge/artifact-store.js";
 
 function makeRoot(): string {
@@ -76,9 +77,9 @@ describe("ArtifactStore extension hooks", () => {
         hookBus: bus,
       });
 
-      store.writePlaybook("grid_ctf", "base playbook");
-      store.appendDeadEnd("grid_ctf", "base dead end");
-      store.appendCompactionEntries("run-1", [{
+      store.writePlaybook(asScenarioName("grid_ctf"), "base playbook");
+      store.appendDeadEnd(asScenarioName("grid_ctf"), "base dead end");
+      store.appendCompactionEntries(asRunId("run-1"), [{
         id: "entry-1",
         parentId: "",
         timestamp: "2026-04-29T00:00:00.000Z",
@@ -137,7 +138,7 @@ describe("ArtifactStore extension hooks", () => {
         hookBus: bus,
       });
 
-      const result = store.appendCompactionEntries("run-1", [{
+      const result = store.appendCompactionEntries(asRunId("run-1"), [{
         id: "original-entry",
         parentId: "",
         timestamp: "2026-04-29T00:00:00.000Z",

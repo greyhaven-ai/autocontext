@@ -5,6 +5,7 @@ import {
   buildCampaignMissionLinkRequest,
   executeCampaignRouteRequest,
 } from "../src/server/campaign-route-workflow.js";
+import type { Campaign, CampaignProgress } from "../src/mission/campaign-contracts.js";
 
 describe("campaign route workflow", () => {
   it("normalizes campaign creation payloads", () => {
@@ -70,11 +71,28 @@ describe("campaign route workflow", () => {
   });
 
   it("delegates create, add-mission, and status transitions", () => {
+    const campaign: Campaign = {
+      id: "camp_1",
+      name: "Ship OAuth",
+      goal: "Implement login",
+      status: "active",
+      metadata: {},
+      createdAt: "2026-01-01T00:00:00.000Z",
+    };
+    const progress: CampaignProgress = {
+      totalMissions: 2,
+      completedMissions: 1,
+      failedMissions: 0,
+      activeMissions: 1,
+      totalSteps: 2,
+      percentComplete: 50,
+      allMissionsComplete: false,
+    };
     const campaignApi = {
-      listCampaigns: vi.fn(() => [{ id: "camp_1" }]),
+      listCampaigns: vi.fn(() => [campaign]),
       createCampaign: vi.fn(() => ({ id: "camp_2" })),
-      getCampaign: vi.fn(() => ({ id: "camp_1" })),
-      getCampaignProgress: vi.fn(() => ({ completed: 1, total: 2 })),
+      getCampaign: vi.fn(() => campaign),
+      getCampaignProgress: vi.fn(() => progress),
       addMission: vi.fn(),
       updateStatus: vi.fn(),
     };
@@ -90,7 +108,7 @@ describe("campaign route workflow", () => {
       campaignManager,
     })).toEqual({
       status: 200,
-      body: [{ id: "camp_1" }],
+      body: [campaign],
     });
 
     expect(executeCampaignRouteRequest({
@@ -141,7 +159,7 @@ describe("campaign route workflow", () => {
     })).toEqual({
       status: 200,
       body: {
-        progress: { completed: 1, total: 2 },
+        progress,
         budget: { totalSteps: 2 },
       },
     });

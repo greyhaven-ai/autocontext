@@ -2,9 +2,17 @@ import { describe, expect, test } from "vitest";
 import {
   parseArtifactId,
   parseContentHash,
+  parseEnvironmentTag,
+  parseScenario,
   type ArtifactId,
   type ContentHash,
+  type EnvironmentTag,
+  type Scenario,
 } from "../../../src/control-plane/contract/branded-ids.js";
+import {
+  parseSchemaVersion,
+  type SchemaVersion,
+} from "../../../src/control-plane/contract/schema-version.js";
 import type { Artifact } from "../../../src/control-plane/contract/types.js";
 import { buildStrategyIdentity } from "../../../src/control-plane/contract/strategy-identity.js";
 import {
@@ -24,10 +32,30 @@ function id(value: string): ArtifactId {
   return parsed;
 }
 
+function scenario(value: string): Scenario {
+  const parsed = parseScenario(value);
+  if (parsed === null) throw new Error(`invalid test scenario: ${value}`);
+  return parsed;
+}
+
+function environmentTag(value: string): EnvironmentTag {
+  const parsed = parseEnvironmentTag(value);
+  if (parsed === null) throw new Error(`invalid test environment tag: ${value}`);
+  return parsed;
+}
+
+function schemaVersion(value: string): SchemaVersion {
+  const parsed = parseSchemaVersion(value);
+  if (parsed === null) throw new Error(`invalid test schema version: ${value}`);
+  return parsed;
+}
+
+const GRID_CTF = scenario("grid_ctf");
+
 function identity(fill: string) {
   return buildStrategyIdentity({
     actuatorType: "prompt-patch",
-    scenario: "grid_ctf",
+    scenario: GRID_CTF,
     payloadHash: hash(fill),
     components: [
       { name: "prompt.txt", fingerprint: hash(fill) },
@@ -39,11 +67,11 @@ function identity(fill: string) {
 
 function artifact(overrides: Pick<Artifact, "id"> & Partial<Artifact>): Artifact {
   return {
-    schemaVersion: "1.0",
+    schemaVersion: schemaVersion("1.0"),
     id: overrides.id,
     actuatorType: overrides.actuatorType ?? "prompt-patch",
-    scenario: overrides.scenario ?? "grid_ctf",
-    environmentTag: overrides.environmentTag ?? "production",
+    scenario: overrides.scenario ?? GRID_CTF,
+    environmentTag: overrides.environmentTag ?? environmentTag("production"),
     activationState: overrides.activationState ?? "candidate",
     payloadHash: overrides.payloadHash ?? hash("a"),
     provenance: overrides.provenance ?? {
@@ -68,7 +96,7 @@ describe("strategy quarantine domain", () => {
     const candidate = identity("a");
     const unrelated = buildStrategyIdentity({
       actuatorType: "prompt-patch",
-      scenario: "grid_ctf",
+      scenario: GRID_CTF,
       payloadHash: hash("b"),
       components: [{ name: "unrelated.txt", fingerprint: hash("b") }],
       parentFingerprints: [],
@@ -79,7 +107,7 @@ describe("strategy quarantine domain", () => {
       activationState: "disabled",
     });
 
-    expect(assessStrategyQuarantine(candidate, "prompt-patch", "grid_ctf", [prior])).toBeNull();
+    expect(assessStrategyQuarantine(candidate, "prompt-patch", GRID_CTF, [prior])).toBeNull();
   });
 
   test("quarantines repeated exact matches of disabled strategies", () => {
@@ -90,7 +118,7 @@ describe("strategy quarantine domain", () => {
       activationState: "disabled",
     });
 
-    expect(assessStrategyQuarantine(invalidIdentity, "prompt-patch", "grid_ctf", [prior])).toEqual({
+    expect(assessStrategyQuarantine(invalidIdentity, "prompt-patch", GRID_CTF, [prior])).toEqual({
       status: "quarantined",
       reason: "repeated-invalid-strategy",
       sourceArtifactIds: [prior.id],
@@ -107,7 +135,9 @@ describe("strategy quarantine domain", () => {
       activationState: "disabled",
     });
 
-    expect(assessStrategyQuarantine(candidate, "prompt-patch", "grid_ctf", [legacyDisabled])).toEqual({
+    expect(
+      assessStrategyQuarantine(candidate, "prompt-patch", GRID_CTF, [legacyDisabled]),
+    ).toEqual({
       status: "quarantined",
       reason: "repeated-invalid-strategy",
       sourceArtifactIds: [legacyDisabled.id],
@@ -130,7 +160,7 @@ describe("strategy quarantine domain", () => {
     });
     const near = buildStrategyIdentity({
       actuatorType: "prompt-patch",
-      scenario: "grid_ctf",
+      scenario: GRID_CTF,
       payloadHash: hash("b"),
       components: [
         { name: "prompt.txt", fingerprint: hash("b") },
@@ -139,7 +169,7 @@ describe("strategy quarantine domain", () => {
       parentFingerprints: [],
     });
 
-    const quarantine = assessStrategyQuarantine(near, "prompt-patch", "grid_ctf", [prior]);
+    const quarantine = assessStrategyQuarantine(near, "prompt-patch", GRID_CTF, [prior]);
 
     expect(quarantine).toMatchObject({
       status: "quarantined",

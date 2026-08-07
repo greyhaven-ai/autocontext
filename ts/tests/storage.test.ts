@@ -2,13 +2,14 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { mkdtempSync, cpSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { asDbPath } from "../src/domain/ids.js";
 import { SQLiteStore } from "../src/storage/index.js";
 
 const MIGRATIONS_DIR = join(import.meta.dirname, "..", "migrations");
 
 function createStore(): SQLiteStore {
   const dir = mkdtempSync(join(tmpdir(), "autocontext-test-"));
-  const store = new SQLiteStore(join(dir, "test.db"));
+  const store = new SQLiteStore(asDbPath(join(dir, "test.db")));
   store.migrate(MIGRATIONS_DIR);
   return store;
 }

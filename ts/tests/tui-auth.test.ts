@@ -187,7 +187,13 @@ describe("Interactive TUI command handler", () => {
 
   it("routes /login and /provider through the live slash-command handler", async () => {
     const { handleInteractiveTuiCommand } = await import("../src/tui/commands.js");
-    const manager = makeMockManager() as RunManager;
+    // Deliberately partial test double. `satisfies Partial<RunManager>` in
+    // makeMockManager still type-checks every method it DOES implement
+    // against the real class (that is the drift protection AC-909 wants);
+    // widening through unknown here only covers the members this code path
+    // never touches. Replacing the pre-existing `as RunManager`, which only
+    // compiled because tests were previously unchecked.
+    const manager = makeMockManager() as unknown as RunManager;
 
     let result = await handleInteractiveTuiCommand({
       manager,

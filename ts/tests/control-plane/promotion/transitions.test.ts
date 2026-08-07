@@ -8,6 +8,24 @@ import {
 import { createArtifact, createPromotionEvent } from "../../../src/control-plane/contract/factories.js";
 import { appendPromotionEvent } from "../../../src/control-plane/promotion/append.js";
 import type { ActivationState, Provenance } from "../../../src/control-plane/contract/types.js";
+import {
+  parseContentHash,
+  parseScenario,
+  type ContentHash,
+  type Scenario,
+} from "../../../src/control-plane/contract/branded-ids.js";
+
+function hash(fill: string): ContentHash {
+  const parsed = parseContentHash(`sha256:${fill.repeat(64)}`);
+  if (parsed === null) throw new Error(`invalid test hash fill: ${fill}`);
+  return parsed;
+}
+
+function scenario(value: string): Scenario {
+  const parsed = parseScenario(value);
+  if (parsed === null) throw new Error(`invalid test scenario: ${value}`);
+  return parsed;
+}
 
 const anyProvenance: Provenance = {
   authorType: "human",
@@ -76,8 +94,8 @@ describe("P5 (property): no appendPromotionEvent yields a history with a disallo
         (seedIndexes) => {
           let artifact = createArtifact({
             actuatorType: "prompt-patch",
-            scenario: "grid_ctf",
-            payloadHash: "sha256:" + "f".repeat(64),
+            scenario: scenario("grid_ctf"),
+            payloadHash: hash("f"),
             provenance: anyProvenance,
           });
           let t = 0;
@@ -112,8 +130,8 @@ describe("P5 (property): no appendPromotionEvent yields a history with a disallo
           // skip transitions the factory would reject on mismatched `from`
           let artifact = createArtifact({
             actuatorType: "prompt-patch",
-            scenario: "grid_ctf",
-            payloadHash: "sha256:" + "f".repeat(64),
+            scenario: scenario("grid_ctf"),
+            payloadHash: hash("f"),
             provenance: anyProvenance,
           });
           // Drive artifact into the `from` state via an allowed path, if possible.

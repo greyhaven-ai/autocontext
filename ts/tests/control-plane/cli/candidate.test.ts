@@ -135,15 +135,25 @@ describe("candidate register", () => {
 describe("candidate list / show / lineage", () => {
   test("list returns candidates after register", async () => {
     const rReg = await runControlPlaneCommand(
-      ["candidate", "register", "--scenario", "grid_ctf", "--actuator", "prompt-patch", "--payload", payload, "--output", "json"],
+      [
+        "candidate",
+        "register",
+        "--scenario",
+        "grid_ctf",
+        "--actuator",
+        "prompt-patch",
+        "--payload",
+        payload,
+        "--output",
+        "json",
+      ],
       { cwd: tmp },
     );
     const registered = JSON.parse(rReg.stdout);
 
-    const rList = await runControlPlaneCommand(
-      ["candidate", "list", "--output", "json"],
-      { cwd: tmp },
-    );
+    const rList = await runControlPlaneCommand(["candidate", "list", "--output", "json"], {
+      cwd: tmp,
+    });
     expect(rList.exitCode).toBe(0);
     const list = JSON.parse(rList.stdout);
     expect(Array.isArray(list)).toBe(true);
@@ -152,7 +162,18 @@ describe("candidate list / show / lineage", () => {
 
   test("show round-trips the registered artifact", async () => {
     const rReg = await runControlPlaneCommand(
-      ["candidate", "register", "--scenario", "grid_ctf", "--actuator", "prompt-patch", "--payload", payload, "--output", "json"],
+      [
+        "candidate",
+        "register",
+        "--scenario",
+        "grid_ctf",
+        "--actuator",
+        "prompt-patch",
+        "--payload",
+        payload,
+        "--output",
+        "json",
+      ],
       { cwd: tmp },
     );
     const registered = JSON.parse(rReg.stdout);
@@ -169,13 +190,35 @@ describe("candidate list / show / lineage", () => {
 
   test("register stores strategy identity and flags exact duplicates", async () => {
     const first = await runControlPlaneCommand(
-      ["candidate", "register", "--scenario", "grid_ctf", "--actuator", "prompt-patch", "--payload", payload, "--output", "json"],
+      [
+        "candidate",
+        "register",
+        "--scenario",
+        "grid_ctf",
+        "--actuator",
+        "prompt-patch",
+        "--payload",
+        payload,
+        "--output",
+        "json",
+      ],
       { cwd: tmp },
     );
     const original = JSON.parse(first.stdout);
 
     const second = await runControlPlaneCommand(
-      ["candidate", "register", "--scenario", "grid_ctf", "--actuator", "prompt-patch", "--payload", payload, "--output", "json"],
+      [
+        "candidate",
+        "register",
+        "--scenario",
+        "grid_ctf",
+        "--actuator",
+        "prompt-patch",
+        "--payload",
+        payload,
+        "--output",
+        "json",
+      ],
       { cwd: tmp },
     );
     const duplicate = JSON.parse(second.stdout);
@@ -192,18 +235,43 @@ describe("candidate list / show / lineage", () => {
   test("register flags near duplicates that keep the same strategy surface", async () => {
     writeFileSync(join(payload, "notes.md"), "same supporting note\n");
     const first = await runControlPlaneCommand(
-      ["candidate", "register", "--scenario", "grid_ctf", "--actuator", "prompt-patch", "--payload", payload, "--output", "json"],
+      [
+        "candidate",
+        "register",
+        "--scenario",
+        "grid_ctf",
+        "--actuator",
+        "prompt-patch",
+        "--payload",
+        payload,
+        "--output",
+        "json",
+      ],
       { cwd: tmp },
     );
     const original = JSON.parse(first.stdout);
 
     const nearPayload = join(tmp, "near-payload");
     mkdirSync(nearPayload, { recursive: true });
-    writeFileSync(join(nearPayload, "prompt.txt"), "You are a helpful agent with a small refinement.\n");
+    writeFileSync(
+      join(nearPayload, "prompt.txt"),
+      "You are a helpful agent with a small refinement.\n",
+    );
     writeFileSync(join(nearPayload, "notes.md"), "same supporting note\n");
 
     const second = await runControlPlaneCommand(
-      ["candidate", "register", "--scenario", "grid_ctf", "--actuator", "prompt-patch", "--payload", nearPayload, "--output", "json"],
+      [
+        "candidate",
+        "register",
+        "--scenario",
+        "grid_ctf",
+        "--actuator",
+        "prompt-patch",
+        "--payload",
+        nearPayload,
+        "--output",
+        "json",
+      ],
       { cwd: tmp },
     );
     const near = JSON.parse(second.stdout);
@@ -218,18 +286,48 @@ describe("candidate list / show / lineage", () => {
 
   test("register quarantines repeated duplicates of disabled strategies", async () => {
     const first = await runControlPlaneCommand(
-      ["candidate", "register", "--scenario", "grid_ctf", "--actuator", "prompt-patch", "--payload", payload, "--output", "json"],
+      [
+        "candidate",
+        "register",
+        "--scenario",
+        "grid_ctf",
+        "--actuator",
+        "prompt-patch",
+        "--payload",
+        payload,
+        "--output",
+        "json",
+      ],
       { cwd: tmp },
     );
     const original = JSON.parse(first.stdout);
     const disabled = await runControlPlaneCommand(
-      ["promotion", "apply", original.id, "--to", "disabled", "--reason", "invalid strategy pattern"],
+      [
+        "promotion",
+        "apply",
+        original.id,
+        "--to",
+        "disabled",
+        "--reason",
+        "invalid strategy pattern",
+      ],
       { cwd: tmp },
     );
     expect(disabled.exitCode).toBe(0);
 
     const repeated = await runControlPlaneCommand(
-      ["candidate", "register", "--scenario", "grid_ctf", "--actuator", "prompt-patch", "--payload", payload, "--output", "json"],
+      [
+        "candidate",
+        "register",
+        "--scenario",
+        "grid_ctf",
+        "--actuator",
+        "prompt-patch",
+        "--payload",
+        payload,
+        "--output",
+        "json",
+      ],
       { cwd: tmp },
     );
     const quarantined = JSON.parse(repeated.stdout);
@@ -241,12 +339,11 @@ describe("candidate list / show / lineage", () => {
       sourceFingerprints: [original.strategyIdentity.fingerprint],
     });
 
-    const listed = await runControlPlaneCommand(
-      ["candidate", "list", "--output", "json"],
-      { cwd: tmp },
-    );
+    const listed = await runControlPlaneCommand(["candidate", "list", "--output", "json"], {
+      cwd: tmp,
+    });
     const rows = JSON.parse(listed.stdout);
-    expect(rows.find((row) => row.id === quarantined.id)).toMatchObject({
+    expect(rows.find((row: { id: string }) => row.id === quarantined.id)).toMatchObject({
       id: quarantined.id,
       duplicateKind: "exact",
       quarantineReason: "repeated-invalid-strategy",
@@ -255,12 +352,31 @@ describe("candidate list / show / lineage", () => {
 
   test("register detects repeated invalid strategies across environments", async () => {
     const first = await runControlPlaneCommand(
-      ["candidate", "register", "--scenario", "grid_ctf", "--actuator", "prompt-patch", "--payload", payload, "--output", "json"],
+      [
+        "candidate",
+        "register",
+        "--scenario",
+        "grid_ctf",
+        "--actuator",
+        "prompt-patch",
+        "--payload",
+        payload,
+        "--output",
+        "json",
+      ],
       { cwd: tmp },
     );
     const original = JSON.parse(first.stdout);
     const disabled = await runControlPlaneCommand(
-      ["promotion", "apply", original.id, "--to", "disabled", "--reason", "invalid strategy pattern"],
+      [
+        "promotion",
+        "apply",
+        original.id,
+        "--to",
+        "disabled",
+        "--reason",
+        "invalid strategy pattern",
+      ],
       { cwd: tmp },
     );
     expect(disabled.exitCode).toBe(0);
@@ -300,12 +416,31 @@ describe("candidate list / show / lineage", () => {
 
   test("register quarantines legacy disabled duplicates that lack strategy identity metadata", async () => {
     const first = await runControlPlaneCommand(
-      ["candidate", "register", "--scenario", "grid_ctf", "--actuator", "prompt-patch", "--payload", payload, "--output", "json"],
+      [
+        "candidate",
+        "register",
+        "--scenario",
+        "grid_ctf",
+        "--actuator",
+        "prompt-patch",
+        "--payload",
+        payload,
+        "--output",
+        "json",
+      ],
       { cwd: tmp },
     );
     const original = JSON.parse(first.stdout);
     const disabled = await runControlPlaneCommand(
-      ["promotion", "apply", original.id, "--to", "disabled", "--reason", "invalid strategy pattern"],
+      [
+        "promotion",
+        "apply",
+        original.id,
+        "--to",
+        "disabled",
+        "--reason",
+        "invalid strategy pattern",
+      ],
       { cwd: tmp },
     );
     expect(disabled.exitCode).toBe(0);
@@ -316,7 +451,18 @@ describe("candidate list / show / lineage", () => {
     writeFileSync(metadataPath, JSON.stringify(metadata), "utf-8");
 
     const repeated = await runControlPlaneCommand(
-      ["candidate", "register", "--scenario", "grid_ctf", "--actuator", "prompt-patch", "--payload", payload, "--output", "json"],
+      [
+        "candidate",
+        "register",
+        "--scenario",
+        "grid_ctf",
+        "--actuator",
+        "prompt-patch",
+        "--payload",
+        payload,
+        "--output",
+        "json",
+      ],
       { cwd: tmp },
     );
     const quarantined = JSON.parse(repeated.stdout);
@@ -337,15 +483,25 @@ describe("candidate list / show / lineage", () => {
 
   test("lineage renders a tree for an artifact with no parents", async () => {
     const rReg = await runControlPlaneCommand(
-      ["candidate", "register", "--scenario", "grid_ctf", "--actuator", "prompt-patch", "--payload", payload, "--output", "json"],
+      [
+        "candidate",
+        "register",
+        "--scenario",
+        "grid_ctf",
+        "--actuator",
+        "prompt-patch",
+        "--payload",
+        payload,
+        "--output",
+        "json",
+      ],
       { cwd: tmp },
     );
     const registered = JSON.parse(rReg.stdout);
 
-    const rLin = await runControlPlaneCommand(
-      ["candidate", "lineage", registered.id],
-      { cwd: tmp },
-    );
+    const rLin = await runControlPlaneCommand(["candidate", "lineage", registered.id], {
+      cwd: tmp,
+    });
     expect(rLin.exitCode).toBe(0);
     expect(rLin.stdout).toContain(registered.id);
   });
@@ -354,7 +510,18 @@ describe("candidate list / show / lineage", () => {
 describe("candidate rollback", () => {
   test("records a rollback event on a non-routing-rule artifact", async () => {
     const rReg = await runControlPlaneCommand(
-      ["candidate", "register", "--scenario", "grid_ctf", "--actuator", "prompt-patch", "--payload", payload, "--output", "json"],
+      [
+        "candidate",
+        "register",
+        "--scenario",
+        "grid_ctf",
+        "--actuator",
+        "prompt-patch",
+        "--payload",
+        payload,
+        "--output",
+        "json",
+      ],
       { cwd: tmp },
     );
     const registered = JSON.parse(rReg.stdout);

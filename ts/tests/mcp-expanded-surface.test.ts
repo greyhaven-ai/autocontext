@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
+import { asDbPath, asRunId, asScenarioName } from "../src/domain/ids.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -39,7 +40,7 @@ async function createToolServer(dir: string): Promise<{
   const { createMcpServer } = await import("../src/mcp/server.js");
 
   const dbPath = join(dir, "test.db");
-  const store = new SQLiteStore(dbPath);
+  const store = new SQLiteStore(asDbPath(dbPath));
   store.migrate(join(__dirname, "..", "migrations"));
   const server = createMcpServer({
     store,
@@ -135,7 +136,7 @@ describe("Expanded MCP tool handlers", () => {
       runsRoot: join(dir, "runs"),
       knowledgeRoot: join(dir, "knowledge"),
     });
-    artifacts.writePlaybook("grid_ctf", [
+    artifacts.writePlaybook(asScenarioName("grid_ctf"), [
       "<!-- PLAYBOOK_START -->",
       "Strategy here",
       "<!-- PLAYBOOK_END -->",
@@ -160,7 +161,7 @@ describe("Expanded MCP tool handlers", () => {
       runsRoot: join(dir, "runs"),
       knowledgeRoot: join(dir, "knowledge"),
     });
-    artifacts.writePlaybook("grid_ctf", [
+    artifacts.writePlaybook(asScenarioName("grid_ctf"), [
       "<!-- PLAYBOOK_START -->",
       "Hold the center lane.",
       "<!-- PLAYBOOK_END -->",
@@ -238,7 +239,7 @@ describe("Expanded MCP tool handlers", () => {
       runsRoot: join(dir, "runs"),
       knowledgeRoot: join(dir, "knowledge"),
     });
-    const replayDir = join(artifacts.generationDir("run-1", 1), "replays");
+    const replayDir = join(artifacts.generationDir(asRunId("run-1"), 1), "replays");
     mkdirSync(replayDir, { recursive: true });
     writeFileSync(
       join(replayDir, "grid_ctf_1.json"),

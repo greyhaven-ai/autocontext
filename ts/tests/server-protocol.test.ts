@@ -676,15 +676,15 @@ describe("InteractiveServer", () => {
     const { RunManager, InteractiveServer } = await import("../src/server/index.js");
     const { DeterministicProvider } = await import("../src/providers/deterministic.js");
     const deterministicProvider = new DeterministicProvider();
-    let releaseProviderGate: (() => void) | null = null;
+    const providerGateResolver: { release: (() => void) | null } = { release: null };
     const providerGate = new Promise<void>((resolve) => {
-      releaseProviderGate = resolve;
+      providerGateResolver.release = resolve;
     });
     let providerGatePending = true;
     const gatedProvider = {
       name: deterministicProvider.name,
       defaultModel: () => deterministicProvider.defaultModel(),
-      complete: async (opts: Parameters<DeterministicProvider["complete"]>[0]) => {
+      complete: async (opts: Parameters<typeof deterministicProvider.complete>[0]) => {
         if (providerGatePending) {
           providerGatePending = false;
           await providerGate;
@@ -850,7 +850,7 @@ describe("InteractiveServer", () => {
       ).toMatchObject({
         client_run_id: "client-stop-run-2",
       });
-      const release = releaseProviderGate;
+      const release = providerGateResolver.release;
       if (!release) throw new Error("expected provider gate resolver");
       release();
       await socket.waitFor(
@@ -1143,8 +1143,9 @@ describe("InteractiveServer", () => {
         verificationNote,
       );
       expect(await reconnect.waitFor((msg) => msg.event_id === chat.event_id)).toEqual(chat);
-      expect(await reconnect.waitFor((msg) => msg.event_id === pauseAck.event_id)).toEqual(
-        pauseAck,
+      const retainedPauseAck = pauseAck;
+      expect(await reconnect.waitFor((msg) => msg.event_id === retainedPauseAck.event_id)).toEqual(
+        retainedPauseAck,
       );
       resumeAck = await reconnect.waitFor(
         (msg) => msg.type === "ack" && msg.command_id === "command-backfill-1",

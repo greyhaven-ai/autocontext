@@ -86,9 +86,11 @@ describe("LLMJudge extension hooks", () => {
     const seen: string[] = [];
     bus.on(HookEvents.BEFORE_JUDGE, () => {
       seen.push("before_judge");
+      return undefined;
     });
     bus.on(HookEvents.AFTER_JUDGE, () => {
       seen.push("after_judge");
+      return undefined;
     });
     const { executeAgentTaskSolve } =
       await import("../src/knowledge/agent-task-solve-execution.js");

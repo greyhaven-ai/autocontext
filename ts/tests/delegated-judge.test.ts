@@ -12,6 +12,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { asDbPath } from "../src/domain/ids.js";
 
 const CLI = join(import.meta.dirname, "..", "src", "cli", "index.ts");
 const MIGRATIONS_DIR = join(import.meta.dirname, "..", "migrations");
@@ -20,7 +21,7 @@ async function createToolServer() {
   const dir = mkdtempSync(join(tmpdir(), "ac-delegated-judge-"));
   const { SQLiteStore } = await import("../src/storage/index.js");
   const { createMcpServer } = await import("../src/mcp/server.js");
-  const store = new SQLiteStore(join(dir, "test.db"));
+  const store = new SQLiteStore(asDbPath(join(dir, "test.db")));
   store.migrate(MIGRATIONS_DIR);
   const provider = {
     name: "should-not-judge",
@@ -35,7 +36,15 @@ async function createToolServer() {
     runsRoot: join(dir, "runs"),
     knowledgeRoot: join(dir, "knowledge"),
   }) as unknown as {
-    _registeredTools: Record<string, { handler: (args: Record<string, unknown>, extra: unknown) => Promise<{ content: Array<{ text: string }> }> }>;
+    _registeredTools: Record<
+      string,
+      {
+        handler: (
+          args: Record<string, unknown>,
+          extra: unknown,
+        ) => Promise<{ content: Array<{ text: string }> }>;
+      }
+    >;
   };
   return { dir, store, server };
 }
@@ -86,10 +95,7 @@ describe("DelegatedJudge", () => {
 
   it("has rubric property for interface compatibility", async () => {
     const { DelegatedJudge } = await import("../src/judge/delegated.js");
-    const judge = new DelegatedJudge(
-      { score: 0.5, reasoning: "ok" },
-      "Custom rubric text",
-    );
+    const judge = new DelegatedJudge({ score: 0.5, reasoning: "ok" }, "Custom rubric text");
     expect(judge.rubric).toBe("Custom rubric text");
   });
 });
@@ -203,16 +209,19 @@ describe("delegated judging control-plane surfaces", () => {
   it("MCP evaluate_output accepts a delegated result without calling provider judging", async () => {
     const { store, server } = await createToolServer();
 
-    const result = await server._registeredTools.evaluate_output.handler({
-      taskPrompt: "Summarize this doc",
-      agentOutput: "A short summary",
-      rubric: "Score clarity",
-      delegatedResult: {
-        score: 0.82,
-        reasoning: "Delegated externally",
-        dimensionScores: { clarity: 0.82 },
+    const result = await server._registeredTools.evaluate_output.handler(
+      {
+        taskPrompt: "Summarize this doc",
+        agentOutput: "A short summary",
+        rubric: "Score clarity",
+        delegatedResult: {
+          score: 0.82,
+          reasoning: "Delegated externally",
+          dimensionScores: { clarity: 0.82 },
+        },
       },
-    }, {});
+      {},
+    );
 
     const payload = JSON.parse(result.content[0].text);
     expect(payload.score).toBe(0.82);
@@ -224,19 +233,22 @@ describe("delegated judging control-plane surfaces", () => {
   it("MCP run_improvement_loop can use delegated evaluations when initial output is provided", async () => {
     const { store, server } = await createToolServer();
 
-    const result = await server._registeredTools.run_improvement_loop.handler({
-      taskPrompt: "Write a summary",
-      rubric: "Score clarity",
-      initialOutput: "Draft summary",
-      maxRounds: 1,
-      delegatedResults: [
-        {
-          score: 0.91,
-          reasoning: "Already strong",
-          dimensionScores: { clarity: 0.91 },
-        },
-      ],
-    }, {});
+    const result = await server._registeredTools.run_improvement_loop.handler(
+      {
+        taskPrompt: "Write a summary",
+        rubric: "Score clarity",
+        initialOutput: "Draft summary",
+        maxRounds: 1,
+        delegatedResults: [
+          {
+            score: 0.91,
+            reasoning: "Already strong",
+            dimensionScores: { clarity: 0.91 },
+          },
+        ],
+      },
+      {},
+    );
 
     const payload = JSON.parse(result.content[0].text);
     expect(payload.totalRounds).toBe(1);

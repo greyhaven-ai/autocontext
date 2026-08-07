@@ -15,6 +15,7 @@ import { CampaignManager } from "../src/mission/campaign.js";
 import { buildCampaignApiRoutes } from "../src/server/campaign-api.js";
 import { CAMPAIGN_TOOLS } from "../src/mcp/campaign-tools.js";
 import { SQLiteStore } from "../src/storage/index.js";
+import { asDbPath } from "../src/domain/ids.js";
 import type { LLMProvider } from "../src/types/index.js";
 
 let tmpDir: string;
@@ -201,7 +202,7 @@ describe("Campaign MCP tools", () => {
 
   it("registers live campaign tools on the MCP server", async () => {
     const storeDir = mkdtempSync(join(tmpdir(), "ac533-mcp-"));
-    const store = new SQLiteStore(join(storeDir, "test.db"));
+    const store = new SQLiteStore(asDbPath(join(storeDir, "test.db")));
     store.migrate(MIGRATIONS_DIR);
     const { createMcpServer } = await import("../src/mcp/server.js");
     const server = createMcpServer({
@@ -232,11 +233,11 @@ describe("Concept model", () => {
   it("campaign concept is implemented, not reserved", async () => {
     const { getConceptModel } = await import("../src/concepts/model.js");
     const model = getConceptModel();
-    const campaign = (model as Record<string, unknown[]>).concepts?.find?.(
-      (c: Record<string, unknown>) => c.name === "campaign",
+    const campaign = [...model.user_facing, ...model.runtime].find(
+      (c) => c.name.toLowerCase() === "campaign",
     );
     if (campaign) {
-      expect((campaign as Record<string, unknown>).status).not.toBe("reserved");
+      expect(campaign.status).not.toBe("reserved");
     }
   });
 });

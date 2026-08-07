@@ -47,8 +47,12 @@ describe("StepExecutor", () => {
 
 describe("runStep", () => {
   let dir: string;
-  beforeEach(() => { dir = makeTempDir(); });
-  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+  beforeEach(() => {
+    dir = makeTempDir();
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   it("executes one step and records it", async () => {
     const { MissionManager } = await import("../src/mission/manager.js");
@@ -153,8 +157,12 @@ describe("runStep", () => {
 
 describe("runUntilDone", () => {
   let dir: string;
-  beforeEach(() => { dir = makeTempDir(); });
-  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+  beforeEach(() => {
+    dir = makeTempDir();
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   it("loops steps until verifier passes", async () => {
     const { MissionManager } = await import("../src/mission/manager.js");
@@ -166,6 +174,8 @@ describe("runUntilDone", () => {
     manager.setVerifier(mId, async () => ({
       passed: stepCount >= 3,
       reason: stepCount >= 3 ? "All done" : "Not yet",
+      suggestions: [],
+      metadata: {},
     }));
 
     const result = await runUntilDone(manager, mId, async () => {
@@ -185,7 +195,12 @@ describe("runUntilDone", () => {
     const manager = new MissionManager(join(dir, "test.db"));
 
     const mId = manager.create({ name: "Test", goal: "g", budget: { maxSteps: 2 } });
-    manager.setVerifier(mId, async () => ({ passed: false, reason: "Never done" }));
+    manager.setVerifier(mId, async () => ({
+      passed: false,
+      reason: "Never done",
+      suggestions: [],
+      metadata: {},
+    }));
 
     const result = await runUntilDone(manager, mId, async () => ({
       description: "work",
@@ -204,12 +219,21 @@ describe("runUntilDone", () => {
 
     const mId = manager.create({ name: "Test", goal: "g" });
     let stepCount = 0;
-    manager.setVerifier(mId, async () => ({ passed: false, reason: "Not yet" }));
+    manager.setVerifier(mId, async () => ({
+      passed: false,
+      reason: "Not yet",
+      suggestions: [],
+      metadata: {},
+    }));
 
     const result = await runUntilDone(manager, mId, async () => {
       stepCount++;
       if (stepCount === 2) {
-        return { description: "Blocked on review", status: "blocked" as const, blockReason: "Needs approval" };
+        return {
+          description: "Blocked on review",
+          status: "blocked" as const,
+          blockReason: "Needs approval",
+        };
       }
       return { description: `Step ${stepCount}`, status: "completed" as const };
     });
@@ -228,10 +252,15 @@ describe("runUntilDone", () => {
     manager.cancel(mId);
     let callCount = 0;
 
-    const result = await runUntilDone(manager, mId, async () => {
-      callCount++;
-      return { description: "Should never run", status: "completed" as const };
-    }, { maxIterations: 3 });
+    const result = await runUntilDone(
+      manager,
+      mId,
+      async () => {
+        callCount++;
+        return { description: "Should never run", status: "completed" as const };
+      },
+      { maxIterations: 3 },
+    );
 
     expect(callCount).toBe(0);
     expect(result.finalStatus).toBe("canceled");
@@ -252,10 +281,15 @@ describe("runUntilDone", () => {
       throw new Error("Verifier transport failed");
     });
 
-    const result = await runUntilDone(manager, mId, async () => ({
-      description: "work",
-      status: "completed" as const,
-    }), { maxIterations: 1 });
+    const result = await runUntilDone(
+      manager,
+      mId,
+      async () => ({
+        description: "work",
+        status: "completed" as const,
+      }),
+      { maxIterations: 1 },
+    );
 
     expect(result.finalStatus).toBe("verifier_failed");
     expect(result.verifierPassed).toBe(false);
@@ -275,12 +309,22 @@ describe("runUntilDone", () => {
     const manager = new MissionManager(join(dir, "test.db"));
 
     const mId = manager.create({ name: "Test", goal: "g" });
-    manager.setVerifier(mId, async () => ({ passed: false, reason: "Never" }));
+    manager.setVerifier(mId, async () => ({
+      passed: false,
+      reason: "Never",
+      suggestions: [],
+      metadata: {},
+    }));
 
-    const result = await runUntilDone(manager, mId, async () => ({
-      description: "work",
-      status: "completed" as const,
-    }), { maxIterations: 5 });
+    const result = await runUntilDone(
+      manager,
+      mId,
+      async () => ({
+        description: "work",
+        status: "completed" as const,
+      }),
+      { maxIterations: 5 },
+    );
 
     expect(result.stepsExecuted).toBe(5);
     expect(result.finalStatus).toBe("active");

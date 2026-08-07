@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
 import type { LLMProvider } from "../src/types/index.js";
+import { asDbPath } from "../src/domain/ids.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -124,7 +125,7 @@ describe("Custom scenario auto-discovery", () => {
     }), "utf-8");
 
     const dbPath = join(dir, "test.db");
-    const store = new SQLiteStore(dbPath);
+    const store = new SQLiteStore(asDbPath(dbPath));
     store.migrate(join(__dirname, "..", "migrations"));
     enqueueTask(store, "my_task", { initialOutput: "Initial draft" });
 

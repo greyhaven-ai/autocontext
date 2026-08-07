@@ -36,7 +36,7 @@ function makePlugin(args: {
     id: args.id,
     supports: { language: args.language, sdkName: args.sdkName },
     treeSitterQueries: [],
-    produce: () => [],
+    produce: () => ({ edits: [], advisories: [] }),
   };
 }
 

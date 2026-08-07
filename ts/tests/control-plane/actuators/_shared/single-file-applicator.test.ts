@@ -12,8 +12,17 @@ import { join } from "node:path";
 import { applySingleFile } from "../../../../src/control-plane/actuators/_shared/single-file-applicator.js";
 import { hashDirectory } from "../../../../src/control-plane/registry/content-address.js";
 import { createArtifact } from "../../../../src/control-plane/contract/factories.js";
-import { parseContentHash } from "../../../../src/control-plane/contract/branded-ids.js";
+import { parseContentHash,
+  parseScenario,
+  type Scenario,
+} from "../../../../src/control-plane/contract/branded-ids.js";
 import type { Provenance } from "../../../../src/control-plane/contract/types.js";
+
+function scenario(value: string): Scenario {
+  const parsed = parseScenario(value);
+  if (parsed === null) throw new Error(`invalid test scenario: ${value}`);
+  return parsed;
+}
 
 const prov: Provenance = {
   authorType: "human",
@@ -40,7 +49,7 @@ describe("applySingleFile", () => {
     const hash = hashDirectory(payloadDir);
     const artifact = createArtifact({
       actuatorType: "prompt-patch",
-      scenario: "grid_ctf",
+      scenario: scenario("grid_ctf"),
       payloadHash: hash,
       provenance: prov,
     });
@@ -66,7 +75,7 @@ describe("applySingleFile", () => {
     const hash = hashDirectory(payloadDir);
     const artifact = createArtifact({
       actuatorType: "tool-policy",
-      scenario: "othello",
+      scenario: scenario("othello"),
       payloadHash: hash,
       provenance: prov,
     });
@@ -88,7 +97,7 @@ describe("applySingleFile", () => {
     writeFileSync(join(payloadDir, "prompt.txt"), "old", "utf-8");
     const artifact = createArtifact({
       actuatorType: "prompt-patch",
-      scenario: "grid_ctf",
+      scenario: scenario("grid_ctf"),
       // Deliberately wrong hash — claims the payload has some other content.
       payloadHash: parseContentHash(
         "sha256:" + "0".repeat(64),
@@ -114,7 +123,7 @@ describe("applySingleFile", () => {
     const hash = hashDirectory(payloadDir);
     const artifact = createArtifact({
       actuatorType: "prompt-patch",
-      scenario: "grid_ctf",
+      scenario: scenario("grid_ctf"),
       payloadHash: hash,
       provenance: prov,
     });
@@ -135,7 +144,7 @@ describe("applySingleFile", () => {
     const hash = hashDirectory(payloadDir);
     const artifact = createArtifact({
       actuatorType: "prompt-patch",
-      scenario: "grid_ctf",
+      scenario: scenario("grid_ctf"),
       payloadHash: hash,
       provenance: prov,
     });

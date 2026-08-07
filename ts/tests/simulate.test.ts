@@ -224,7 +224,7 @@ describe("SimulationEngine — sweep", () => {
     const result = await engine.run({
       description: "Simulate a system with varying parameters",
       sweep: [
-        { name: "seed", values: [1, 2, 3] },
+        { name: "seed", values: [1, 2, 3], scale: "categorical" },
       ],
       runs: 3,
     });
@@ -240,7 +240,7 @@ describe("SimulationEngine — sweep", () => {
 
     const result = await engine.run({
       description: "Simulate a deployment pipeline with bounded rollout steps",
-      sweep: [{ name: "max_steps", values: [1, 2] }],
+      sweep: [{ name: "max_steps", values: [1, 2], scale: "categorical" }],
     });
 
     expect(result.status).toBe("completed");
@@ -255,7 +255,7 @@ describe("SimulationEngine — sweep", () => {
 
     const result = await engine.run({
       description: "Simulate with sweep",
-      sweep: [{ name: "seed", values: [1, 2, 3] }],
+      sweep: [{ name: "seed", values: [1, 2, 3], scale: "categorical" }],
     });
 
     expect(result.summary.bestCase).toBeDefined();

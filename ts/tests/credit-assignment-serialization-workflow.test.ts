@@ -68,7 +68,8 @@ describe("credit assignment serialization workflow", () => {
       metadata: { source: "test" },
     });
 
-    const restored = CreditAssignmentRecord.fromDict(dict);
+    // fromDict takes an untyped payload; spread widens the typed dict to a plain record.
+    const restored = CreditAssignmentRecord.fromDict({ ...dict });
     expect(restored.toDict()).toEqual(dict);
   });
 });

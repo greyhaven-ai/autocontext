@@ -25,6 +25,7 @@ import {
 import { JudgeExecutor } from "../src/execution/judge-executor.js";
 import { LLMJudge } from "../src/judge/index.js";
 import { parseJudgeResponse } from "../src/judge/parse.js";
+import { asDbPath } from "../src/domain/ids.js";
 import { SQLiteStore } from "../src/storage/index.js";
 import { createAgentTask } from "../src/scenarios/agent-task-factory.js";
 import type { AgentTaskSpec } from "../src/scenarios/agent-task-spec.js";
@@ -98,7 +99,7 @@ function makeMockProvider(opts?: {
 
 function createTempStore(): { store: SQLiteStore; tmpDir: string } {
   const tmpDir = mkdtempSync(join(tmpdir(), "autocontext-e2e-"));
-  const store = new SQLiteStore(join(tmpDir, "test.db"));
+  const store = new SQLiteStore(asDbPath(join(tmpDir, "test.db")));
   store.migrate(MIGRATIONS_DIR);
   return { store, tmpDir };
 }

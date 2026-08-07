@@ -12,6 +12,7 @@ import { dirname } from "node:path";
 import { SQLiteStore } from "../src/storage/index.js";
 import { ArtifactStore } from "../src/knowledge/artifact-store.js";
 import { HarnessStore } from "../src/knowledge/harness-store.js";
+import { asDbPath, asScenarioName } from "../src/domain/ids.js";
 
 const CLI = join(import.meta.dirname, "..", "src", "cli", "index.ts");
 const __filename = fileURLToPath(import.meta.url);
@@ -72,7 +73,7 @@ describe("CLI parity fixtures", () => {
     const knowledgeRoot = join(dir, "knowledge");
     const skillsRoot = join(dir, "skills");
 
-    const store = new SQLiteStore(dbPath);
+    const store = new SQLiteStore(asDbPath(dbPath));
     store.migrate(join(__dirname, "..", "migrations"));
     store.createRun("run-1", "grid_ctf", 1, "local", "deterministic");
     store.upsertGeneration("run-1", 1, {
@@ -98,7 +99,7 @@ describe("CLI parity fixtures", () => {
 
     const artifacts = new ArtifactStore({ runsRoot, knowledgeRoot });
     artifacts.writePlaybook(
-      "grid_ctf",
+      asScenarioName("grid_ctf"),
       [
         "<!-- PLAYBOOK_START -->",
         "## Strategy Updates",

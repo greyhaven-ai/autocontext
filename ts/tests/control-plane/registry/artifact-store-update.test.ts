@@ -11,7 +11,17 @@ import { createArtifact, createPromotionEvent } from "../../../src/control-plane
 import { hashDirectory } from "../../../src/control-plane/registry/content-address.js";
 import { appendPromotionEvent } from "../../../src/control-plane/promotion/append.js";
 import type { Provenance } from "../../../src/control-plane/contract/types.js";
-import type { ContentHash } from "../../../src/control-plane/contract/branded-ids.js";
+import {
+  parseScenario,
+  type ContentHash,
+  type Scenario,
+} from "../../../src/control-plane/contract/branded-ids.js";
+
+function scenario(value: string): Scenario {
+  const parsed = parseScenario(value);
+  if (parsed === null) throw new Error(`invalid test scenario: ${value}`);
+  return parsed;
+}
 
 const aProvenance: Provenance = {
   authorType: "human",
@@ -42,7 +52,7 @@ describe("updateArtifactMetadata", () => {
     const { dir, hash } = tempPayload(registryRoot);
     const original = createArtifact({
       actuatorType: "prompt-patch",
-      scenario: "grid_ctf",
+      scenario: scenario("grid_ctf"),
       payloadHash: hash,
       provenance: aProvenance,
     });
@@ -68,7 +78,7 @@ describe("updateArtifactMetadata", () => {
     const { dir, hash } = tempPayload(registryRoot);
     const original = createArtifact({
       actuatorType: "prompt-patch",
-      scenario: "grid_ctf",
+      scenario: scenario("grid_ctf"),
       payloadHash: hash,
       provenance: aProvenance,
     });
@@ -82,7 +92,7 @@ describe("updateArtifactMetadata", () => {
     const { hash } = tempPayload(registryRoot);
     const orphan = createArtifact({
       actuatorType: "prompt-patch",
-      scenario: "grid_ctf",
+      scenario: scenario("grid_ctf"),
       payloadHash: hash,
       provenance: aProvenance,
     });
@@ -93,7 +103,7 @@ describe("updateArtifactMetadata", () => {
     const { dir, hash } = tempPayload(registryRoot);
     const original = createArtifact({
       actuatorType: "prompt-patch",
-      scenario: "grid_ctf",
+      scenario: scenario("grid_ctf"),
       payloadHash: hash,
       provenance: aProvenance,
     });
@@ -101,7 +111,7 @@ describe("updateArtifactMetadata", () => {
 
     const wrongId = createArtifact({
       actuatorType: "prompt-patch",
-      scenario: "grid_ctf",
+      scenario: scenario("grid_ctf"),
       payloadHash: hash,
       provenance: aProvenance,
     });

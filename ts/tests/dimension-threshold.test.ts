@@ -28,9 +28,9 @@ describe("Dimension threshold gating", () => {
     // R2: score=0.87, action=0.78 (still below 0.8) -> continue
     // R3: score=0.90, action=0.85 (all dims >= 0.8) -> stop
     const task = makeFakeTask([
-      { score: 0.85, reasoning: "round 1", dimensionScores: { clarity: 0.90, action: 0.50 }, internalRetries: 0 },
-      { score: 0.87, reasoning: "round 2", dimensionScores: { clarity: 0.92, action: 0.78 }, internalRetries: 0 },
-      { score: 0.90, reasoning: "round 3", dimensionScores: { clarity: 0.95, action: 0.85 }, internalRetries: 0 },
+      { score: 0.85, reasoning: "round 1", dimensionScores: { clarity: 0.90, action: 0.50 }, internalRetries: 0, evaluatorEpoch: null },
+      { score: 0.87, reasoning: "round 2", dimensionScores: { clarity: 0.92, action: 0.78 }, internalRetries: 0, evaluatorEpoch: null },
+      { score: 0.90, reasoning: "round 3", dimensionScores: { clarity: 0.95, action: 0.85 }, internalRetries: 0, evaluatorEpoch: null },
     ]);
     const loop = new ImprovementLoop({
       task, maxRounds: 5, qualityThreshold: 0.85,
@@ -45,8 +45,8 @@ describe("Dimension threshold gating", () => {
 
   it("stops immediately without dimension_threshold", async () => {
     const task = makeFakeTask([
-      { score: 0.90, reasoning: "round 1", dimensionScores: { clarity: 0.95, action: 0.50 }, internalRetries: 0 },
-      { score: 0.92, reasoning: "round 2", dimensionScores: { clarity: 0.97, action: 0.78 }, internalRetries: 0 },
+      { score: 0.90, reasoning: "round 1", dimensionScores: { clarity: 0.95, action: 0.50 }, internalRetries: 0, evaluatorEpoch: null },
+      { score: 0.92, reasoning: "round 2", dimensionScores: { clarity: 0.97, action: 0.78 }, internalRetries: 0, evaluatorEpoch: null },
     ]);
     const loop = new ImprovementLoop({
       task, maxRounds: 5, qualityThreshold: 0.85,
@@ -60,8 +60,8 @@ describe("Dimension threshold gating", () => {
 
   it("continues past overall with dimension_threshold set", async () => {
     const task = makeFakeTask([
-      { score: 0.90, reasoning: "round 1", dimensionScores: { clarity: 0.95, action: 0.50 }, internalRetries: 0 },
-      { score: 0.92, reasoning: "round 2", dimensionScores: { clarity: 0.97, action: 0.85 }, internalRetries: 0 },
+      { score: 0.90, reasoning: "round 1", dimensionScores: { clarity: 0.95, action: 0.50 }, internalRetries: 0, evaluatorEpoch: null },
+      { score: 0.92, reasoning: "round 2", dimensionScores: { clarity: 0.97, action: 0.85 }, internalRetries: 0, evaluatorEpoch: null },
     ]);
     const loop = new ImprovementLoop({
       task, maxRounds: 5, qualityThreshold: 0.85,
@@ -79,8 +79,8 @@ describe("Dimension threshold gating", () => {
 describe("Worst dimension tracking", () => {
   it("tracks worst dimension in round results", async () => {
     const task = makeFakeTask([
-      { score: 0.80, reasoning: "ok", dimensionScores: { clarity: 0.90, accuracy: 0.70, depth: 0.85 }, internalRetries: 0 },
-      { score: 0.95, reasoning: "great", dimensionScores: { clarity: 0.95, accuracy: 0.90, depth: 0.92 }, internalRetries: 0 },
+      { score: 0.80, reasoning: "ok", dimensionScores: { clarity: 0.90, accuracy: 0.70, depth: 0.85 }, internalRetries: 0, evaluatorEpoch: null },
+      { score: 0.95, reasoning: "great", dimensionScores: { clarity: 0.95, accuracy: 0.90, depth: 0.92 }, internalRetries: 0, evaluatorEpoch: null },
     ]);
     const loop = new ImprovementLoop({ task, maxRounds: 3, qualityThreshold: 0.9 });
     const result = await loop.run({ initialOutput: "test", state: {} });
@@ -96,7 +96,7 @@ describe("Worst dimension tracking", () => {
 
   it("leaves worst dimension undefined without dimension scores", async () => {
     const task = makeFakeTask([
-      { score: 0.95, reasoning: "great", dimensionScores: {}, internalRetries: 0 },
+      { score: 0.95, reasoning: "great", dimensionScores: {}, internalRetries: 0, evaluatorEpoch: null },
     ]);
     const loop = new ImprovementLoop({ task, maxRounds: 1, qualityThreshold: 0.9 });
     const result = await loop.run({ initialOutput: "test", state: {} });

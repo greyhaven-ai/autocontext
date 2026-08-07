@@ -31,6 +31,7 @@ describe("task runner workflows", () => {
         reasoning: "Need more detail",
         dimensionScores: {},
         internalRetries: 0,
+        evaluatorEpoch: null,
       },
       taskPrompt: "Summarize the outage",
       revisionPrompt: "Add owner and severity.",

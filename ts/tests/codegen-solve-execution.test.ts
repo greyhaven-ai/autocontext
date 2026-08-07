@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { executeCodegenSolve } from "../src/knowledge/codegen-solve-execution.js";
+import type { GeneratedScenarioExecutionResult } from "../src/scenarios/codegen/executor.js";
 
 let tmpDir: string;
 
@@ -26,7 +27,7 @@ describe("codegen solve execution", () => {
         executedMethods: ["initialState", "getResult"],
       },
     }));
-    const executeScenario = vi.fn(async () => ({
+    const executeScenario = vi.fn(async (): Promise<GeneratedScenarioExecutionResult> => ({
       family: "simulation",
       stepsExecuted: 3,
       finalState: { deployed: true },
@@ -76,7 +77,7 @@ describe("codegen solve execution", () => {
   });
 
   it("defaults maxSteps to 20 when the created spec does not provide one", async () => {
-    const executeScenario = vi.fn(async () => ({
+    const executeScenario = vi.fn(async (): Promise<GeneratedScenarioExecutionResult> => ({
       family: "investigation",
       stepsExecuted: 1,
       finalState: {},

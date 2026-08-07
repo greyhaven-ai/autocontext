@@ -11,6 +11,7 @@ import {
 import type { AgentOutput, AgentRuntime } from "../src/runtimes/base.js";
 import { createInMemoryWorkspaceEnv } from "../src/runtimes/workspace-env.js";
 import { RuntimeSessionEventType } from "../src/session/runtime-events.js";
+import type { RuntimeSessionPromptResult } from "../src/session/runtime-session.js";
 
 class FakeRuntime implements AgentRuntime {
   readonly name = "fake-runtime";
@@ -68,7 +69,10 @@ describe("experimental agent runtime surface", () => {
   it("loads and invokes a typed .autoctx/agents handler through a runtime session", async () => {
     const root = join(import.meta.dirname, "fixtures", "autoctx-agent-project");
     const [entry] = await discoverAutoctxAgents({ cwd: root });
-    const loaded = await loadAutoctxAgent(entry!);
+    const loaded = await loadAutoctxAgent<
+      { threadId?: string; message: string },
+      RuntimeSessionPromptResult
+    >(entry!);
     const runtime = new FakeRuntime();
     const workspace = createInMemoryWorkspaceEnv({ cwd: "/repo" });
 

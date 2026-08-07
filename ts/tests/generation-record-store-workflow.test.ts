@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { asDbPath } from "../src/domain/ids.js";
 import {
   type AgentOutputRow,
   type GenerationRow,
@@ -39,7 +40,7 @@ describe("generation record store workflow", () => {
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "ac-generation-store-"));
     const dbPath = join(dir, "test.db");
-    const store = new SQLiteStore(dbPath);
+    const store = new SQLiteStore(asDbPath(dbPath));
     store.migrate(MIGRATIONS_DIR);
     store.close();
     db = new Database(dbPath);

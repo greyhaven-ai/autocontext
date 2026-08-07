@@ -12,6 +12,15 @@ import {
 } from "../src/storage/schema-parity-manifest.js";
 import { migrateDatabase } from "../src/storage/storage-migration-workflow.js";
 
+/**
+ * SCHEMA_PARITY_TYPESCRIPT_ONLY_TABLES is currently the empty tuple, so its element type is
+ * `never`. Widening both manifests to their declared entry shape keeps the assertions below
+ * readable and keeps this test honest when an entry is added.
+ */
+type ParityTableEntry = { readonly table: string; readonly reason: string };
+const pythonOnlyManifest: readonly ParityTableEntry[] = SCHEMA_PARITY_PYTHON_ONLY_TABLES;
+const typescriptOnlyManifest: readonly ParityTableEntry[] = SCHEMA_PARITY_TYPESCRIPT_ONLY_TABLES;
+
 const TYPESCRIPT_MIGRATIONS_DIR = join(import.meta.dirname, "..", "migrations");
 const PYTHON_MIGRATIONS_DIR = join(
   import.meta.dirname,
@@ -189,10 +198,10 @@ describe("storage schema parity", () => {
     const typescriptOnly = [...typescriptTables].filter((table) => !pythonTables.has(table)).sort();
 
     expect(pythonOnly).toEqual(
-      SCHEMA_PARITY_PYTHON_ONLY_TABLES.map((entry) => entry.table).sort(),
+      pythonOnlyManifest.map((entry) => entry.table).sort(),
     );
     expect(typescriptOnly).toEqual(
-      SCHEMA_PARITY_TYPESCRIPT_ONLY_TABLES.map((entry) => entry.table).sort(),
+      typescriptOnlyManifest.map((entry) => entry.table).sort(),
     );
   });
 
@@ -200,8 +209,8 @@ describe("storage schema parity", () => {
     const shared = new Set<string>(SCHEMA_PARITY_SHARED_TABLES);
     expect(shared.size).toBe(SCHEMA_PARITY_SHARED_TABLES.length);
 
-    const pythonOnly = new Set(SCHEMA_PARITY_PYTHON_ONLY_TABLES.map((entry) => entry.table));
-    const typescriptOnly = new Set(SCHEMA_PARITY_TYPESCRIPT_ONLY_TABLES.map((entry) => entry.table));
+    const pythonOnly = new Set(pythonOnlyManifest.map((entry) => entry.table));
+    const typescriptOnly = new Set(typescriptOnlyManifest.map((entry) => entry.table));
 
     for (const tableName of shared) {
       expect(pythonOnly.has(tableName), tableName).toBe(false);

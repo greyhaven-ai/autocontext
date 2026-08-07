@@ -4,7 +4,13 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { renderPrBody } from "../../../src/control-plane/emit/pr-body-renderer.js";
 import { createArtifact, createEvalRun } from "../../../src/control-plane/contract/factories.js";
-import type { ArtifactId, ContentHash, Scenario, SuiteId } from "../../../src/control-plane/contract/branded-ids.js";
+import { CURRENT_SCHEMA_VERSION } from "../../../src/control-plane/contract/schema-version.js";
+import type {
+  ArtifactId,
+  ContentHash,
+  Scenario,
+  SuiteId,
+} from "../../../src/control-plane/contract/branded-ids.js";
 import type {
   Artifact,
   EvalRun,
@@ -26,8 +32,8 @@ function readGolden(name: string): string {
     // new file by committing it (subsequent runs will compare against the
     // recorded bytes).
     throw new Error(
-      `Golden file missing: ${p}. Run tests with UPDATE_GOLDEN=1 to create it, `
-      + `then review the output and commit.`,
+      `Golden file missing: ${p}. Run tests with UPDATE_GOLDEN=1 to create it, ` +
+        `then review the output and commit.`,
     );
   }
   return readFileSync(p, "utf-8");
@@ -46,8 +52,8 @@ function assertMatchesGolden(name: string, actual: string): void {
   // Produce a helpful diff preview on mismatch rather than just the bare
   // expect() output — golden bodies run ~50+ lines.
   if (expected !== actual) {
-    const msg = `Golden mismatch for ${name}.\n\n--- expected\n+++ actual\n`
-      + diffPreview(expected, actual);
+    const msg =
+      `Golden mismatch for ${name}.\n\n--- expected\n+++ actual\n` + diffPreview(expected, actual);
     throw new Error(msg);
   }
   expect(actual).toBe(expected);
@@ -88,9 +94,12 @@ const provRoot: Provenance = {
   createdAt: "2026-04-17T00:00:00.000Z",
 };
 
-const CONFIG_HASH = "sha256:cfg0000000000000000000000000000000000000000000000000000000000" as ContentHash;
-const SLICE_HASH = "sha256:sli0000000000000000000000000000000000000000000000000000000000" as ContentHash;
-const PAYLOAD_HASH = "sha256:pl000000000000000000000000000000000000000000000000000000000000" as ContentHash;
+const CONFIG_HASH =
+  "sha256:cfg0000000000000000000000000000000000000000000000000000000000" as ContentHash;
+const SLICE_HASH =
+  "sha256:sli0000000000000000000000000000000000000000000000000000000000" as ContentHash;
+const PAYLOAD_HASH =
+  "sha256:pl000000000000000000000000000000000000000000000000000000000000" as ContentHash;
 
 function metricBundle(overrides: Partial<MetricBundle> = {}): MetricBundle {
   const base: MetricBundle = {
@@ -122,11 +131,7 @@ function mkEvalRun(artifactId: ArtifactId, metrics: MetricBundle): EvalRun {
   });
 }
 
-function mkArtifact(
-  id: ArtifactId,
-  prov: Provenance,
-  overrides: Partial<Artifact> = {},
-): Artifact {
+function mkArtifact(id: ArtifactId, prov: Provenance, overrides: Partial<Artifact> = {}): Artifact {
   const base = createArtifact({
     id,
     actuatorType: "prompt-patch",
@@ -148,7 +153,7 @@ const defaultThresholds: PromotionThresholds = {
 
 function mkDecision(overrides: Partial<PromotionDecision>): PromotionDecision {
   const base: PromotionDecision = {
-    schemaVersion: "1.0",
+    schemaVersion: CURRENT_SCHEMA_VERSION,
     pass: true,
     recommendedTargetState: "canary",
     deltas: {
@@ -406,8 +411,7 @@ describe("renderPrBody — golden files", () => {
         },
         safety: { regressions: [], passed: true },
       },
-      reasoning:
-        "Rollback restoring prior-known-good artifact after regression in current active.",
+      reasoning: "Rollback restoring prior-known-good artifact after regression in current active.",
     });
 
     const body = renderPrBody({

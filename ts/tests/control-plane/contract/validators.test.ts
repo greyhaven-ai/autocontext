@@ -8,6 +8,14 @@ import {
   validatePromotionDecision,
   validatePatch,
 } from "../../../src/control-plane/contract/validators.js";
+import {
+  parseArtifactId,
+  parseContentHash,
+  parseEnvironmentTag,
+  parseScenario,
+  parseSuiteId,
+} from "../../../src/control-plane/contract/branded-ids.js";
+import { parseSchemaVersion } from "../../../src/control-plane/contract/schema-version.js";
 import type {
   MetricBundle,
   Provenance,
@@ -27,7 +35,7 @@ const validMetricBundle: MetricBundle = {
   evalRunnerIdentity: {
     name: "my-eval",
     version: "1.0.0",
-    configHash: "sha256:" + "a".repeat(64),
+    configHash: parseContentHash("sha256:" + "a".repeat(64))!,
   },
 };
 
@@ -40,14 +48,14 @@ const validProvenance: Provenance = {
 };
 
 const validEvalRun: EvalRun = {
-  schemaVersion: "1.0",
+  schemaVersion: parseSchemaVersion("1.0")!,
   runId: "eval_abc",
-  artifactId: "01KPEYB3BQNFDEYRS8KH538PF5",
-  suiteId: "prod-eval-v3",
+  artifactId: parseArtifactId("01KPEYB3BQNFDEYRS8KH538PF5")!,
+  suiteId: parseSuiteId("prod-eval-v3")!,
   metrics: validMetricBundle,
   datasetProvenance: {
     datasetId: "prod-traces-2026-04-15",
-    sliceHash: "sha256:" + "b".repeat(64),
+    sliceHash: parseContentHash("sha256:" + "b".repeat(64))!,
     sampleCount: 300,
   },
   ingestedAt: "2026-04-17T12:05:00.000Z",
@@ -61,20 +69,20 @@ const validPromotionEvent: PromotionEvent = {
 };
 
 const validArtifact: Artifact = {
-  schemaVersion: "1.0",
-  id: "01KPEYB3BRQWK2WSHK9E93N6NP",
+  schemaVersion: parseSchemaVersion("1.0")!,
+  id: parseArtifactId("01KPEYB3BRQWK2WSHK9E93N6NP")!,
   actuatorType: "prompt-patch",
-  scenario: "grid_ctf",
-  environmentTag: "production",
+  scenario: parseScenario("grid_ctf")!,
+  environmentTag: parseEnvironmentTag("production")!,
   activationState: "candidate",
-  payloadHash: "sha256:" + "c".repeat(64),
+  payloadHash: parseContentHash("sha256:" + "c".repeat(64))!,
   provenance: validProvenance,
   promotionHistory: [],
   evalRuns: [],
 };
 
 const validPromotionDecision: PromotionDecision = {
-  schemaVersion: "1.0",
+  schemaVersion: parseSchemaVersion("1.0")!,
   pass: true,
   recommendedTargetState: "canary",
   deltas: {
@@ -121,15 +129,18 @@ describe("validateMetricBundle", () => {
   });
 
   test("rejects missing required dimension", () => {
-    const bad = { ...validMetricBundle } as Partial<MetricBundle>;
-    delete bad.quality;
+    const { quality: _quality, ...bad } = validMetricBundle;
     const r = validateMetricBundle(bad);
     expect(r.valid).toBe(false);
-    expect(r.errors?.some((e) => /quality/.test(e))).toBe(true);
+    if (r.valid) throw new Error("expected validateMetricBundle to reject");
+    expect(r.errors.some((e) => /quality/.test(e))).toBe(true);
   });
 
   test("rejects wrong type for quality.score", () => {
-    const bad = { ...validMetricBundle, quality: { score: "high", sampleSize: 10 } } as unknown as MetricBundle;
+    const bad = {
+      ...validMetricBundle,
+      quality: { score: "high", sampleSize: 10 },
+    } as unknown as MetricBundle;
     expect(validateMetricBundle(bad).valid).toBe(false);
   });
 
@@ -150,8 +161,7 @@ describe("validateProvenance", () => {
   });
 
   test("rejects missing parentArtifactIds array", () => {
-    const bad = { ...validProvenance } as Partial<Provenance>;
-    delete bad.parentArtifactIds;
+    const { parentArtifactIds: _parentArtifactIds, ...bad } = validProvenance;
     expect(validateProvenance(bad).valid).toBe(false);
   });
 });
@@ -215,8 +225,7 @@ describe("validateEvalRun", () => {
   });
 
   test("rejects missing schemaVersion", () => {
-    const bad = { ...validEvalRun } as Partial<EvalRun>;
-    delete bad.schemaVersion;
+    const { schemaVersion: _schemaVersion, ...bad } = validEvalRun;
     expect(validateEvalRun(bad).valid).toBe(false);
   });
 });
@@ -234,7 +243,10 @@ describe("validatePromotionEvent", () => {
   test("accepts with optional evidence and signature", () => {
     const withExtras: PromotionEvent = {
       ...validPromotionEvent,
-      evidence: { suiteId: "prod-eval-v3", baselineArtifactId: "01KPEYB3BRYCQ6J235VBR7WBY8" },
+      evidence: {
+        suiteId: parseSuiteId("prod-eval-v3")!,
+        baselineArtifactId: parseArtifactId("01KPEYB3BRYCQ6J235VBR7WBY8")!,
+      },
       signature: "abc123",
     };
     expect(validatePromotionEvent(withExtras).valid).toBe(true);
@@ -252,9 +264,7 @@ describe("validateArtifact", () => {
       strategyIdentity: {
         fingerprint: "sha256:" + "d".repeat(64),
         payloadHash: "sha256:" + "c".repeat(64),
-        components: [
-          { name: "prompt.txt", fingerprint: "sha256:" + "e".repeat(64) },
-        ],
+        components: [{ name: "prompt.txt", fingerprint: "sha256:" + "e".repeat(64) }],
         lineage: {
           parentFingerprints: ["sha256:" + "f".repeat(64)],
         },
@@ -365,7 +375,10 @@ describe("validatePromotionDecision", () => {
   });
 
   test("rejects invalid recommendedTargetState", () => {
-    const bad = { ...validPromotionDecision, recommendedTargetState: "production" } as unknown as PromotionDecision;
+    const bad = {
+      ...validPromotionDecision,
+      recommendedTargetState: "production",
+    } as unknown as PromotionDecision;
     expect(validatePromotionDecision(bad).valid).toBe(false);
   });
 });
@@ -376,7 +389,12 @@ describe("validatePatch", () => {
   });
 
   test("accepts a create patch with afterContent", () => {
-    const p: Patch = { filePath: "x.txt", operation: "create", unifiedDiff: "diff", afterContent: "new" };
+    const p: Patch = {
+      filePath: "x.txt",
+      operation: "create",
+      unifiedDiff: "diff",
+      afterContent: "new",
+    };
     expect(validatePatch(p).valid).toBe(true);
   });
 

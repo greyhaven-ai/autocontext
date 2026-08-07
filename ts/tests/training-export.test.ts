@@ -10,6 +10,8 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
+import { asDbPath, asScenarioName } from "../src/domain/ids.js";
+import type { TrainingExportRecord, TrainingRecord } from "../src/training/export-types.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -19,7 +21,20 @@ function makeTempDir(): string {
   return mkdtempSync(join(tmpdir(), "ac-training-"));
 }
 
-function runCli(args: string[], envOverrides: Record<string, string> = {}): { stdout: string; exitCode: number } {
+// Exported records are a union of generation records and match records; only
+// the former carries `gate_decision`. Narrowing on that discriminator keeps the
+// assertions below on the generation half of the union.
+function asTrainingRecord(record: TrainingExportRecord): TrainingRecord {
+  if (!("gate_decision" in record)) {
+    throw new Error(`expected a generation record, got ${JSON.stringify(record)}`);
+  }
+  return record;
+}
+
+function runCli(
+  args: string[],
+  envOverrides: Record<string, string> = {},
+): { stdout: string; exitCode: number } {
   try {
     const stdout = execFileSync("npx", ["tsx", CLI, ...args], {
       encoding: "utf8",
@@ -40,8 +55,12 @@ function runCli(args: string[], envOverrides: Record<string, string> = {}): { st
 describe("exportTrainingData helper", () => {
   let dir: string;
 
-  beforeEach(() => { dir = makeTempDir(); });
-  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+  beforeEach(() => {
+    dir = makeTempDir();
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   it("is importable", async () => {
     const { exportTrainingData } = await import("../src/training/export.js");
@@ -52,7 +71,7 @@ describe("exportTrainingData helper", () => {
     const { exportTrainingData } = await import("../src/training/export.js");
     const { SQLiteStore } = await import("../src/storage/index.js");
     const { ArtifactStore } = await import("../src/knowledge/artifact-store.js");
-    const store = new SQLiteStore(join(dir, "test.db"));
+    const store = new SQLiteStore(asDbPath(join(dir, "test.db")));
     store.migrate(join(__dirname, "..", "migrations"));
     const artifacts = new ArtifactStore({
       runsRoot: join(dir, "runs"),
@@ -66,7 +85,7 @@ describe("exportTrainingData helper", () => {
     const { exportTrainingData } = await import("../src/training/export.js");
     const { SQLiteStore } = await import("../src/storage/index.js");
     const { ArtifactStore } = await import("../src/knowledge/artifact-store.js");
-    const store = new SQLiteStore(join(dir, "test.db"));
+    const store = new SQLiteStore(asDbPath(join(dir, "test.db")));
     store.migrate(join(__dirname, "..", "migrations"));
     const artifacts = new ArtifactStore({
       runsRoot: join(dir, "runs"),
@@ -79,23 +98,33 @@ describe("exportTrainingData helper", () => {
       "Keep pressure on the flag carrier.",
       "<!-- COMPETITOR_HINTS_END -->",
     ].join("\n");
-    artifacts.writePlaybook("grid_ctf", playbook);
+    artifacts.writePlaybook(asScenarioName("grid_ctf"), playbook);
     store.createRun("run-1", "grid_ctf", 1, "local");
     store.upsertGeneration("run-1", 1, {
-      meanScore: 0.65, bestScore: 0.70, elo: 1050,
-      wins: 3, losses: 2, gateDecision: "advance", status: "completed",
+      meanScore: 0.65,
+      bestScore: 0.7,
+      elo: 1050,
+      wins: 3,
+      losses: 2,
+      gateDecision: "advance",
+      status: "completed",
     });
     store.appendAgentOutput("run-1", 1, "competitor", '{"aggression": 0.6}');
     store.upsertGeneration("run-1", 2, {
-      meanScore: 0.75, bestScore: 0.80, elo: 1080,
-      wins: 4, losses: 1, gateDecision: "advance", status: "completed",
+      meanScore: 0.75,
+      bestScore: 0.8,
+      elo: 1080,
+      wins: 4,
+      losses: 1,
+      gateDecision: "advance",
+      status: "completed",
     });
     store.appendAgentOutput("run-1", 2, "competitor", '{"aggression": 0.7}');
 
     const records = exportTrainingData(store, artifacts, { runId: "run-1" });
     expect(records.length).toBe(2);
 
-    const rec = records[1];
+    const rec = asTrainingRecord(records[1]);
     expect(rec).toHaveProperty("run_id");
     expect(rec).toHaveProperty("scenario");
     expect(rec).toHaveProperty("generation_index");
@@ -104,7 +133,7 @@ describe("exportTrainingData helper", () => {
     expect(rec).toHaveProperty("gate_decision");
     expect("seed" in rec).toBe(false);
     expect(rec.run_id).toBe("run-1");
-    expect(rec.score).toBeCloseTo(0.80);
+    expect(rec.score).toBeCloseTo(0.8);
     expect(rec.gate_decision).toBe("advance");
     expect(rec.strategy).toBe('{"aggression": 0.7}');
     expect(rec.context).toMatchObject({
@@ -117,8 +146,8 @@ describe("exportTrainingData helper", () => {
       playbook: `${playbook}\n`,
       hints: "Keep pressure on the flag carrier.",
       trajectory: [
-        { generation_index: 1, best_score: 0.70, gate_decision: "advance" },
-        { generation_index: 2, best_score: 0.80, gate_decision: "advance" },
+        { generation_index: 1, best_score: 0.7, gate_decision: "advance" },
+        { generation_index: 2, best_score: 0.8, gate_decision: "advance" },
       ],
     });
     store.close();
@@ -134,17 +163,22 @@ describe("exportTrainingData helper", () => {
     } = await import("../src/index.js");
     const { SQLiteStore } = await import("../src/storage/index.js");
     const { ArtifactStore } = await import("../src/knowledge/artifact-store.js");
-    const store = new SQLiteStore(join(dir, "test.db"));
+    const store = new SQLiteStore(asDbPath(join(dir, "test.db")));
     store.migrate(join(__dirname, "..", "migrations"));
     const artifacts = new ArtifactStore({
       runsRoot: join(dir, "runs"),
       knowledgeRoot: join(dir, "knowledge"),
     });
-    artifacts.writePlaybook("grid_ctf", "# Strategy\n");
+    artifacts.writePlaybook(asScenarioName("grid_ctf"), "# Strategy\n");
     store.createRun("run-1", "grid_ctf", 1, "local");
     store.upsertGeneration("run-1", 1, {
-      meanScore: 0.65, bestScore: 0.70, elo: 1050,
-      wins: 3, losses: 2, gateDecision: "advance", status: "completed",
+      meanScore: 0.65,
+      bestScore: 0.7,
+      elo: 1050,
+      wins: 3,
+      losses: 2,
+      gateDecision: "advance",
+      status: "completed",
     });
     store.appendAgentOutput("run-1", 1, "competitor", '{"aggression": 0.6}');
 
@@ -160,17 +194,19 @@ describe("exportTrainingData helper", () => {
       score: record.score,
       context: record.context,
     });
-    const runtimePrompt = new RuntimePromptAdapter().fromBundle(buildPromptBundle({
-      scenarioRules: String(record.context.scenarioRules ?? ""),
-      strategyInterface: String(record.context.strategyInterface ?? ""),
-      evaluationCriteria: String(record.context.evaluationCriteria ?? ""),
-      playbook: String(record.context.playbook ?? ""),
-      trajectory: "Generation 1: score=0.7000, gate=advance",
-      lessons: "",
-      tools: "",
-      hints: String(record.context.hints ?? ""),
-      analysis: "",
-    }));
+    const runtimePrompt = new RuntimePromptAdapter().fromBundle(
+      buildPromptBundle({
+        scenarioRules: String(record.context.scenarioRules ?? ""),
+        strategyInterface: String(record.context.strategyInterface ?? ""),
+        evaluationCriteria: String(record.context.evaluationCriteria ?? ""),
+        playbook: String(record.context.playbook ?? ""),
+        trajectory: "Generation 1: score=0.7000, gate=advance",
+        lessons: "",
+        tools: "",
+        hints: String(record.context.hints ?? ""),
+        analysis: "",
+      }),
+    );
     const report = validatePromptAlignment({ trainingPrompt, runtimePrompt });
 
     expect(report.aligned).toBe(true);
@@ -182,7 +218,7 @@ describe("exportTrainingData helper", () => {
     const { exportTrainingData } = await import("../src/training/export.js");
     const { SQLiteStore } = await import("../src/storage/index.js");
     const { ArtifactStore } = await import("../src/knowledge/artifact-store.js");
-    const store = new SQLiteStore(join(dir, "test.db"));
+    const store = new SQLiteStore(asDbPath(join(dir, "test.db")));
     store.migrate(join(__dirname, "..", "migrations"));
     const artifacts = new ArtifactStore({
       runsRoot: join(dir, "runs"),
@@ -190,20 +226,30 @@ describe("exportTrainingData helper", () => {
     });
     store.createRun("run-1", "grid_ctf", 2, "local");
     store.upsertGeneration("run-1", 1, {
-      meanScore: 0.65, bestScore: 0.70, elo: 1050,
-      wins: 3, losses: 2, gateDecision: "advance", status: "completed",
+      meanScore: 0.65,
+      bestScore: 0.7,
+      elo: 1050,
+      wins: 3,
+      losses: 2,
+      gateDecision: "advance",
+      status: "completed",
     });
     store.appendAgentOutput("run-1", 1, "competitor", '{"aggression": 0.6}');
     store.upsertGeneration("run-1", 2, {
-      meanScore: 0.55, bestScore: 0.60, elo: 1020,
-      wins: 2, losses: 3, gateDecision: "rollback", status: "completed",
+      meanScore: 0.55,
+      bestScore: 0.6,
+      elo: 1020,
+      wins: 2,
+      losses: 3,
+      gateDecision: "rollback",
+      status: "completed",
     });
     store.appendAgentOutput("run-1", 2, "competitor", '{"aggression": 0.9}');
 
     const records = exportTrainingData(store, artifacts, { runId: "run-1", keptOnly: true });
     expect(records.length).toBe(1);
     expect("seed" in records[0]).toBe(false);
-    expect(records[0].gate_decision).toBe("advance");
+    expect(asTrainingRecord(records[0]).gate_decision).toBe("advance");
     store.close();
   });
 
@@ -211,7 +257,7 @@ describe("exportTrainingData helper", () => {
     const { exportTrainingData } = await import("../src/training/export.js");
     const { SQLiteStore } = await import("../src/storage/index.js");
     const { ArtifactStore } = await import("../src/knowledge/artifact-store.js");
-    const store = new SQLiteStore(join(dir, "test.db"));
+    const store = new SQLiteStore(asDbPath(join(dir, "test.db")));
     store.migrate(join(__dirname, "..", "migrations"));
     const artifacts = new ArtifactStore({
       runsRoot: join(dir, "runs"),
@@ -219,11 +265,22 @@ describe("exportTrainingData helper", () => {
     });
     store.createRun("run-1", "grid_ctf", 1, "local");
     store.upsertGeneration("run-1", 1, {
-      meanScore: 0.65, bestScore: 0.70, elo: 1050,
-      wins: 2, losses: 1, gateDecision: "advance", status: "completed",
+      meanScore: 0.65,
+      bestScore: 0.7,
+      elo: 1050,
+      wins: 2,
+      losses: 1,
+      gateDecision: "advance",
+      status: "completed",
     });
     store.appendAgentOutput("run-1", 1, "competitor", '{"aggression": 0.6}');
-    store.recordMatch("run-1", 1, { seed: 42, score: 0.70, passedValidation: true, validationErrors: "", winner: "challenger" });
+    store.recordMatch("run-1", 1, {
+      seed: 42,
+      score: 0.7,
+      passedValidation: true,
+      validationErrors: "",
+      winner: "challenger",
+    });
 
     const records = exportTrainingData(store, artifacts, { runId: "run-1", includeMatches: true });
     expect(records).toHaveLength(2);
@@ -237,7 +294,7 @@ describe("exportTrainingData helper", () => {
       run_id: "run-1",
       generation_index: 1,
       seed: 42,
-      score: 0.70,
+      score: 0.7,
       passed_validation: true,
       validation_errors: "",
     });
@@ -248,7 +305,7 @@ describe("exportTrainingData helper", () => {
     const { exportTrainingData } = await import("../src/training/export.js");
     const { SQLiteStore } = await import("../src/storage/index.js");
     const { ArtifactStore } = await import("../src/knowledge/artifact-store.js");
-    const store = new SQLiteStore(join(dir, "test.db"));
+    const store = new SQLiteStore(asDbPath(join(dir, "test.db")));
     store.migrate(join(__dirname, "..", "migrations"));
     const artifacts = new ArtifactStore({
       runsRoot: join(dir, "runs"),
@@ -309,14 +366,14 @@ describe("CLI export-training-data boundary", () => {
 
     const { SQLiteStore } = await import("../src/storage/index.js");
     const { ArtifactStore } = await import("../src/knowledge/artifact-store.js");
-    const store = new SQLiteStore(dbPath);
+    const store = new SQLiteStore(asDbPath(dbPath));
     store.migrate(join(__dirname, "..", "migrations"));
     const artifacts = new ArtifactStore({
       runsRoot: join(dir, "runs"),
       knowledgeRoot,
     });
     artifacts.writePlaybook(
-      "grid_ctf",
+      asScenarioName("grid_ctf"),
       [
         "# Strategy",
         "",
@@ -327,25 +384,27 @@ describe("CLI export-training-data boundary", () => {
     );
     store.createRun("cli-run-1", "grid_ctf", 1, "local");
     store.upsertGeneration("cli-run-1", 1, {
-      meanScore: 0.65, bestScore: 0.70, elo: 1050,
-      wins: 3, losses: 2, gateDecision: "advance", status: "completed",
+      meanScore: 0.65,
+      bestScore: 0.7,
+      elo: 1050,
+      wins: 3,
+      losses: 2,
+      gateDecision: "advance",
+      status: "completed",
     });
     store.appendAgentOutput("cli-run-1", 1, "competitor", '{"aggression": 0.6}');
     store.close();
 
-    const { stdout, exitCode } = runCli(
-      ["export-training-data", "--run-id", "cli-run-1"],
-      {
-        AUTOCONTEXT_DB_PATH: dbPath,
-        AUTOCONTEXT_RUNS_ROOT: join(dir, "runs"),
-        AUTOCONTEXT_KNOWLEDGE_ROOT: knowledgeRoot,
-      },
-    );
+    const { stdout, exitCode } = runCli(["export-training-data", "--run-id", "cli-run-1"], {
+      AUTOCONTEXT_DB_PATH: dbPath,
+      AUTOCONTEXT_RUNS_ROOT: join(dir, "runs"),
+      AUTOCONTEXT_KNOWLEDGE_ROOT: knowledgeRoot,
+    });
     expect(exitCode).toBe(0);
     const record = JSON.parse(stdout.trim());
     expect(record.run_id).toBe("cli-run-1");
     expect(record.scenario).toBe("grid_ctf");
-    expect(record.score).toBeCloseTo(0.70);
+    expect(record.score).toBeCloseTo(0.7);
     expect(record.context.hints).toBe("Flank early.");
     expect(Array.isArray(record.context.trajectory)).toBe(true);
 

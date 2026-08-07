@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { buildBackgroundSessionApiRoutes } from "../src/server/background-session-api.ts";
+import { buildBackgroundSessionApiRoutes } from "../src/server/background-session-api.js";
 import { RuntimeSessionEventLog, RuntimeSessionEventType } from "../src/session/runtime-events.js";
 import type { RunRow, TaskQueueRow } from "../src/storage/index.js";
 

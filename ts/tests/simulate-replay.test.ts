@@ -207,7 +207,7 @@ describe("simulate replay", () => {
     const original = await engine.run({
       description: "Sweep replay test",
       saveAs: "sweep_test",
-      sweep: [{ name: "max_steps", values: [1, 2] }],
+      sweep: [{ name: "max_steps", values: [1, 2], scale: "categorical" }],
       runs: 2,
     });
 

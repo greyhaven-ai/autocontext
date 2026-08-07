@@ -8,6 +8,7 @@
  */
 
 import { describe, it, expect, vi } from "vitest";
+import { asDbPath } from "../src/domain/ids.js";
 
 // ---------------------------------------------------------------------------
 // 1. AgentTaskSpec schema defaults
@@ -167,7 +168,7 @@ describe("TaskRunner defaults", () => {
     const { TaskRunner, enqueueTask } = await import("../src/execution/task-runner.js");
 
     const dir = mkdtempSync(join(tmpdir(), "autoctx-runner-default-model-"));
-    const store = new SQLiteStore(join(dir, "test.db"));
+    const store = new SQLiteStore(asDbPath(join(dir, "test.db")));
     store.migrate(join(import.meta.dirname, "..", "migrations"));
 
     const provider = {

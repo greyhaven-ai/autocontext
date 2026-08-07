@@ -11,7 +11,7 @@ import {
 } from "../src/control-plane/agent-app-fetch/index.js";
 import {
   buildGeneratedFetchRuntimeFactoryPackageArtifacts,
-} from "../examples/generated-fetch-runtime-factory-packaging.ts";
+} from "../examples/generated-fetch-runtime-factory-packaging.js";
 
 import type { AgentRuntime } from "../src/runtimes/base.js";
 

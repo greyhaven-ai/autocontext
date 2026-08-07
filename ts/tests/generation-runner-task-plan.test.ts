@@ -11,8 +11,21 @@ import { HookBus, HookEvents, HookResult } from "../src/extensions/index.js";
 import { DeterministicProvider } from "../src/providers/deterministic.js";
 import { GridCtfScenario } from "../src/scenarios/grid-ctf.js";
 import { SQLiteStore } from "../src/storage/index.js";
+import { asDbPath, asRunId } from "../src/domain/ids.js";
 
 const TEST_DIRECTORY = dirname(fileURLToPath(import.meta.url));
+
+type EmittedEvent = { event: string; payload: Record<string, unknown> };
+
+/** `Array.prototype.findLastIndex` equivalent; the package targets ES2022. */
+function lastIndexOfEvent(emitted: EmittedEvent[], event: string): number {
+  for (let index = emitted.length - 1; index >= 0; index -= 1) {
+    if (emitted[index]!.event === event) {
+      return index;
+    }
+  }
+  return -1;
+}
 
 describe("GenerationRunner task plans", () => {
   let root: string;
@@ -45,7 +58,7 @@ describe("GenerationRunner task plans", () => {
     });
 
     try {
-      await runner.run("built_in_plan", 1);
+      await runner.run(asRunId("built_in_plan"), 1);
     } finally {
       store.close();
     }
@@ -74,7 +87,7 @@ describe("GenerationRunner task plans", () => {
         expect.objectContaining({ id: "finalize_run", status: "completed" }),
       ]),
     );
-    expect(emitted.findLastIndex((entry) => entry.event === "task_plan_updated")).toBeLessThan(
+    expect(lastIndexOfEvent(emitted, "task_plan_updated")).toBeLessThan(
       emitted.findIndex((entry) => entry.event === "run_completed"),
     );
     expect(progressNotes.map((entry) => entry.payload.kind)).toEqual([
@@ -89,7 +102,7 @@ describe("GenerationRunner task plans", () => {
     });
     expect(progressNotes.at(1)?.payload.text).toContain("recovery signal");
     expect(progressNotes.at(2)?.payload.text).toContain("best score");
-    expect(emitted.findLastIndex((entry) => entry.event === "agent_progress_note")).toBeLessThan(
+    expect(lastIndexOfEvent(emitted, "agent_progress_note")).toBeLessThan(
       emitted.findIndex((entry) => entry.event === "run_completed"),
     );
   });
@@ -124,7 +137,7 @@ describe("GenerationRunner task plans", () => {
     });
 
     try {
-      await expect(runner.run("built_in_stop", 1)).rejects.toMatchObject({
+      await expect(runner.run(asRunId("built_in_stop"), 1)).rejects.toMatchObject({
         name: "RunStopRequestedError",
         runId: "built_in_stop",
         commandId: "stop-command",
@@ -178,7 +191,7 @@ describe("GenerationRunner task plans", () => {
     });
 
     try {
-      await expect(runner.run("blocked_completion", 1)).rejects.toThrow(
+      await expect(runner.run(asRunId("blocked_completion"), 1)).rejects.toThrow(
         "extension hook blocked run_end: completion policy rejected",
       );
     } finally {
@@ -194,7 +207,7 @@ describe("GenerationRunner task plans", () => {
     );
     expect(emitted.some((entry) => entry.event === "run_completed")).toBe(false);
     expect(emitted.filter((entry) => entry.event === "run_failed")).toHaveLength(1);
-    expect(emitted.findLastIndex((entry) => entry.event === "task_plan_updated")).toBeLessThan(
+    expect(lastIndexOfEvent(emitted, "task_plan_updated")).toBeLessThan(
       emitted.findIndex((entry) => entry.event === "run_failed"),
     );
     const progressNotes = emitted.filter((entry) => entry.event === "agent_progress_note");
@@ -204,14 +217,14 @@ describe("GenerationRunner task plans", () => {
       "blocker",
     ]);
     expect(JSON.stringify(progressNotes)).not.toContain("completion policy rejected");
-    expect(emitted.findLastIndex((entry) => entry.event === "agent_progress_note")).toBeLessThan(
+    expect(lastIndexOfEvent(emitted, "agent_progress_note")).toBeLessThan(
       emitted.findIndex((entry) => entry.event === "run_failed"),
     );
   });
 });
 
 function createStore(root: string, name: string): SQLiteStore {
-  const store = new SQLiteStore(join(root, name));
+  const store = new SQLiteStore(asDbPath(join(root, name)));
   store.migrate(join(TEST_DIRECTORY, "..", "migrations"));
   return store;
 }

@@ -74,7 +74,10 @@ describe("task queue store contract", () => {
     const task = await store.dequeueTask();
     expect(task?.spec_name).toBe("postgres-spec");
 
-    await store.completeTask("hosted-async", 0.9, "done", 1, true);
+    // Exercise completion through the contract surface, which carries the full
+    // completeTask signature (the literal only declares the params it uses).
+    const contractStore: TaskQueueEnqueueStore = store;
+    await contractStore.completeTask("hosted-async", 0.9, "done", 1, true);
     await expect(store.getTask("hosted-async")).resolves.toMatchObject({
       status: "completed",
     });

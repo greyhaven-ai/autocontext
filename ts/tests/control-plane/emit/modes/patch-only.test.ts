@@ -6,6 +6,7 @@ import { runPatchOnlyMode } from "../../../../src/control-plane/emit/modes/patch
 import { defaultWorkspaceLayout } from "../../../../src/control-plane/emit/workspace-layout.js";
 import type { Patch, PromotionDecision } from "../../../../src/control-plane/contract/types.js";
 import type { ArtifactId } from "../../../../src/control-plane/contract/branded-ids.js";
+import { CURRENT_SCHEMA_VERSION } from "../../../../src/control-plane/contract/schema-version.js";
 
 let tmp: string;
 
@@ -28,7 +29,7 @@ const patch: Patch = {
 };
 
 const decision: PromotionDecision = {
-  schemaVersion: "1.0",
+  schemaVersion: CURRENT_SCHEMA_VERSION,
   pass: true,
   recommendedTargetState: "canary",
   deltas: {

@@ -3,6 +3,16 @@ import {
   compileOperationalMemoryContext,
   validateOperationalMemoryPack,
 } from "../../../src/control-plane/memory-packs/index.js";
+import {
+  parseContentHash,
+  type ContentHash,
+} from "../../../src/control-plane/contract/branded-ids.js";
+
+function hash(fill: string): ContentHash {
+  const parsed = parseContentHash(`sha256:${fill.repeat(64)}`);
+  if (parsed === null) throw new Error(`invalid test hash fill: ${fill}`);
+  return parsed;
+}
 
 describe("validateOperationalMemoryPack", () => {
   test("accepts sanitized reusable operational findings", () => {
@@ -79,8 +89,12 @@ describe("validateOperationalMemoryPack", () => {
 
     expect(result).toMatchObject({ valid: false });
     if (!result.valid) {
-      expect(result.errors).toContain("finding leaky containsTaskAnswer must be a boolean when present");
-      expect(result.errors).toContain("finding leaky containsSecret must be a boolean when present");
+      expect(result.errors).toContain(
+        "finding leaky containsTaskAnswer must be a boolean when present",
+      );
+      expect(result.errors).toContain(
+        "finding leaky containsSecret must be a boolean when present",
+      );
     }
   });
 
@@ -105,7 +119,9 @@ describe("validateOperationalMemoryPack", () => {
 
     expect(result).toMatchObject({ valid: false });
     if (!result.valid) {
-      expect(result.errors).toContain("finding bad-fingerprint strategyFingerprint must be a ContentHash when present");
+      expect(result.errors).toContain(
+        "finding bad-fingerprint strategyFingerprint must be a ContentHash when present",
+      );
     }
   });
 });
@@ -131,7 +147,8 @@ describe("compileOperationalMemoryContext", () => {
               id: "required-artifact-contract",
               summary: "Verify required output artifacts at checked paths.",
               evidenceRefs: ["runs/dev10/hf-model-inference/tests.log"],
-              reusableBehavior: "Read every required artifact from its checked path before finishing.",
+              reusableBehavior:
+                "Read every required artifact from its checked path before finishing.",
               targetFamilies: ["terminal", "artifact-contract"],
               risk: "low",
               containsTaskAnswer: false,
@@ -291,7 +308,7 @@ describe("compileOperationalMemoryContext", () => {
   });
 
   test("quarantines findings tied to quarantined strategy fingerprints", () => {
-    const strategyFingerprint = "sha256:" + "7".repeat(64);
+    const strategyFingerprint = hash("7");
     const context = compileOperationalMemoryContext({
       contextId: "strategy-quarantine-context",
       createdAt: "2026-05-11T15:15:00.000Z",

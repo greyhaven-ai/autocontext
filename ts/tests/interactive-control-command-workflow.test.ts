@@ -81,7 +81,12 @@ describe("interactive control command workflow", () => {
 
     await expect(
       executeInteractiveControlCommand({
-        command: { type: "start_run", scenario: "grid_ctf", generations: 3 },
+        command: {
+          type: "start_run",
+          scenario: "grid_ctf",
+          generations: 3,
+          require_playbook_approval: false,
+        },
         runManager,
       }),
     ).resolves.toEqual([
@@ -143,6 +148,7 @@ describe("interactive control command workflow", () => {
           type: "start_run",
           scenario: "grid_ctf",
           generations: 1,
+          require_playbook_approval: false,
           client_run_id: "client-run-1",
           command_id: "command-start-1",
         },

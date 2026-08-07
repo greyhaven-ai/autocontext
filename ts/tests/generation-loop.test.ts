@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
+import { asDbPath, asRunId } from "../src/domain/ids.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -273,7 +274,7 @@ describe("GenerationRunner", () => {
     const { SQLiteStore } = await import("../src/storage/index.js");
 
     const dbPath = join(dir, "test.db");
-    const store = new SQLiteStore(dbPath);
+    const store = new SQLiteStore(asDbPath(dbPath));
     store.migrate(join(__dirname, "..", "migrations"));
 
     const runner = new GenerationRunner({
@@ -287,7 +288,7 @@ describe("GenerationRunner", () => {
       minDelta: 0.005,
     });
 
-    const result = await runner.run("test-run", 1);
+    const result = await runner.run(asRunId("test-run"), 1);
     expect(result.runId).toBe("test-run");
     expect(result.generationsCompleted).toBe(1);
     expect(typeof result.bestScore).toBe("number");
@@ -303,7 +304,7 @@ describe("GenerationRunner", () => {
     const { SQLiteStore } = await import("../src/storage/index.js");
 
     const dbPath = join(dir, "test.db");
-    const store = new SQLiteStore(dbPath);
+    const store = new SQLiteStore(asDbPath(dbPath));
     store.migrate(join(__dirname, "..", "migrations"));
 
     const runner = new GenerationRunner({
@@ -317,7 +318,7 @@ describe("GenerationRunner", () => {
       minDelta: 0.0,
     });
 
-    const result = await runner.run("test-run-multi", 3);
+    const result = await runner.run(asRunId("test-run-multi"), 3);
     expect(result.generationsCompleted).toBe(3);
     expect(result.bestScore).toBeGreaterThanOrEqual(0);
 
@@ -353,7 +354,7 @@ describe("GenerationRunner", () => {
     }
 
     const dbPath = join(dir, "stopped.db");
-    const store = new SQLiteStore(dbPath);
+    const store = new SQLiteStore(asDbPath(dbPath));
     store.migrate(join(__dirname, "..", "migrations"));
     const events = new EventStreamEmitter(join(dir, "stopped-events.ndjson"));
     const emitted: string[] = [];
@@ -388,7 +389,7 @@ describe("GenerationRunner", () => {
       hookBus,
     });
 
-    await expect(runner.run("test-run-stop", 2)).rejects.toMatchObject({
+    await expect(runner.run(asRunId("test-run-stop"), 2)).rejects.toMatchObject({
       name: "RunStopRequestedError",
       runId: "test-run-stop",
       commandId: "stop-built-in-1",
@@ -418,7 +419,7 @@ describe("GenerationRunner", () => {
     const { SQLiteStore } = await import("../src/storage/index.js");
 
     const dbPath = join(dir, "test.db");
-    const store = new SQLiteStore(dbPath);
+    const store = new SQLiteStore(asDbPath(dbPath));
     store.migrate(join(__dirname, "..", "migrations"));
 
     const runner = new GenerationRunner({
@@ -432,7 +433,7 @@ describe("GenerationRunner", () => {
       minDelta: 0.0,
     });
 
-    await runner.run("test-matches", 1);
+    await runner.run(asRunId("test-matches"), 1);
     const matches = store.getMatchesForRun("test-matches");
     expect(matches.length).toBe(3);
 
@@ -492,7 +493,7 @@ describe("GenerationRunner", () => {
     const dbPath = join(dir, "test.db");
     const runsRoot = join(dir, "runs");
     const knowledgeRoot = join(dir, "knowledge");
-    const store = new SQLiteStore(dbPath);
+    const store = new SQLiteStore(asDbPath(dbPath));
     store.migrate(join(__dirname, "..", "migrations"));
 
     const runner = new GenerationRunner({
@@ -506,7 +507,7 @@ describe("GenerationRunner", () => {
       minDelta: 0.0,
     });
 
-    await runner.run("test-knowledge-loop", 2);
+    await runner.run(asRunId("test-knowledge-loop"), 2);
 
     const competitorPrompts = provider.prompts.filter((prompt) =>
       prompt.includes("Describe your strategy"),
@@ -581,7 +582,7 @@ describe("GenerationRunner", () => {
       "utf-8",
     );
 
-    const store = new SQLiteStore(dbPath);
+    const store = new SQLiteStore(asDbPath(dbPath));
     store.migrate(join(__dirname, "..", "migrations"));
     const runtimeEventStore = new RuntimeSessionEventStore(dbPath);
     try {
@@ -607,7 +608,7 @@ describe("GenerationRunner", () => {
         runtimeSession,
       });
 
-      await runner.run("semantic-run", 1);
+      await runner.run(asRunId("semantic-run"), 1);
     } finally {
       runtimeEventStore.close();
     }
@@ -716,7 +717,7 @@ describe("GenerationRunner", () => {
       return undefined;
     });
 
-    const store = new SQLiteStore(dbPath);
+    const store = new SQLiteStore(asDbPath(dbPath));
     store.migrate(join(__dirname, "..", "migrations"));
     const runtimeEventStore = new RuntimeSessionEventStore(dbPath);
     try {
@@ -743,7 +744,7 @@ describe("GenerationRunner", () => {
         hookBus,
       });
 
-      await runner.run(runId, 1);
+      await runner.run(asRunId(runId), 1);
     } finally {
       runtimeEventStore.close();
     }
@@ -894,7 +895,7 @@ describe("GenerationRunner", () => {
     }
 
     const dbPath = join(dir, "retry.db");
-    const store = new SQLiteStore(dbPath);
+    const store = new SQLiteStore(asDbPath(dbPath));
     store.migrate(join(__dirname, "..", "migrations"));
 
     const runner = new GenerationRunner({
@@ -908,7 +909,7 @@ describe("GenerationRunner", () => {
       minDelta: 0.05,
     });
 
-    await runner.run("retry-run", 2);
+    await runner.run(asRunId("retry-run"), 2);
 
     const matches = store.getMatchesForRun("retry-run");
     expect(matches).toHaveLength(6);
@@ -932,7 +933,7 @@ describe("GenerationRunner", () => {
     const dbPath = join(dir, "advanced.db");
     const runsRoot = join(dir, "runs");
     const knowledgeRoot = join(dir, "knowledge");
-    const store = new SQLiteStore(dbPath);
+    const store = new SQLiteStore(asDbPath(dbPath));
     store.migrate(join(__dirname, "..", "migrations"));
 
     const notifications: Array<Record<string, unknown>> = [];
@@ -951,7 +952,7 @@ describe("GenerationRunner", () => {
       notifyOn: "threshold_met,completion",
     });
 
-    await runner.run("advanced-run", 2);
+    await runner.run(asRunId("advanced-run"), 2);
 
     const outputs = store.getAgentOutputs("advanced-run", 2);
     expect(outputs.some((row) => row.role === "curator")).toBe(true);
@@ -983,7 +984,7 @@ describe("GenerationRunner", () => {
     const dbPath = join(dir, "stagnation.db");
     const runsRoot = join(dir, "runs");
     const knowledgeRoot = join(dir, "knowledge");
-    const store = new SQLiteStore(dbPath);
+    const store = new SQLiteStore(asDbPath(dbPath));
     store.migrate(join(__dirname, "..", "migrations"));
 
     const runner = new GenerationRunner({
@@ -1003,7 +1004,7 @@ describe("GenerationRunner", () => {
       stagnationPlateauEpsilon: 0.0001,
     });
 
-    await runner.run("stagnation-run", 3);
+    await runner.run(asRunId("stagnation-run"), 3);
 
     const deadEndsPath = join(knowledgeRoot, "grid_ctf", "dead_ends.md");
     expect(existsSync(deadEndsPath)).toBe(true);

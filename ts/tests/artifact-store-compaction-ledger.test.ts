@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { asRunId } from "../src/domain/ids.js";
 import { ArtifactStore } from "../src/knowledge/artifact-store.js";
 import type { CompactionEntry } from "../src/knowledge/compaction-ledger.js";
 
@@ -41,13 +42,13 @@ describe("ArtifactStore compaction ledger", () => {
         },
       ];
 
-      store.appendCompactionEntries("run-1", entries);
+      store.appendCompactionEntries(asRunId("run-1"), entries);
 
-      expect(store.latestCompactionEntryId("run-1")).toBe("bbbb2222");
-      expect(store.readCompactionEntries("run-1", { limit: 1 })).toEqual([
+      expect(store.latestCompactionEntryId(asRunId("run-1"))).toBe("bbbb2222");
+      expect(store.readCompactionEntries(asRunId("run-1"), { limit: 1 })).toEqual([
         expect.objectContaining({ id: "bbbb2222", firstKeptEntryId: "component:experiment_log:kept" }),
       ]);
-      expect(existsSync(store.compactionLatestEntryPath("run-1"))).toBe(true);
+      expect(existsSync(store.compactionLatestEntryPath(asRunId("run-1")))).toBe(true);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -57,7 +58,7 @@ describe("ArtifactStore compaction ledger", () => {
     const root = mkdtempSync(join(tmpdir(), "autoctx-ts-compaction-legacy-"));
     try {
       const store = makeStore(root);
-      const ledgerPath = store.compactionLedgerPath("legacy-run");
+      const ledgerPath = store.compactionLedgerPath(asRunId("legacy-run"));
       mkdirSync(join(root, "runs", "legacy-run"), { recursive: true });
       writeFileSync(
         ledgerPath,
@@ -68,7 +69,7 @@ describe("ArtifactStore compaction ledger", () => {
         "utf-8",
       );
 
-      expect(store.latestCompactionEntryId("legacy-run")).toBe("legacy-last");
+      expect(store.latestCompactionEntryId(asRunId("legacy-run"))).toBe("legacy-last");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -79,8 +80,8 @@ describe("ArtifactStore compaction ledger", () => {
     try {
       const store = makeStore(root);
 
-      expect(() => store.compactionLedgerPath("../outside")).toThrow(/run_id.*runs root/i);
-      expect(() => store.readCompactionEntries("../outside")).toThrow(/run_id.*runs root/i);
+      expect(() => store.compactionLedgerPath(asRunId("../outside"))).toThrow(/run_id.*runs root/i);
+      expect(() => store.readCompactionEntries(asRunId("../outside"))).toThrow(/run_id.*runs root/i);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

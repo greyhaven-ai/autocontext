@@ -73,7 +73,10 @@ export function errorResponse(status: number, message: string): Response {
 }
 
 /** Build an SSE stream from an array of data objects */
-export function sseStream(chunks: unknown[], includeUsage?: Record<string, unknown>): Response {
+export function sseStream(
+  chunks: Record<string, unknown>[],
+  includeUsage?: Record<string, unknown>,
+): Response {
   const lines: string[] = [];
   for (const chunk of chunks) {
     lines.push(`data: ${JSON.stringify(chunk)}\n\n`);

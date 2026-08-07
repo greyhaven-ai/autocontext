@@ -4,24 +4,44 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { ArtifactStore } from "../src/knowledge/artifact-store.js";
+import { asDbPath, asScenarioName } from "../src/domain/ids.js";
 import { SQLiteStore } from "../src/storage/index.js";
 import {
   buildTrainingExportRecordsForRun,
   resolveTrainingExportRuns,
 } from "../src/training/export-records-workflow.js";
+import type { TrainingExportRecord, TrainingRecord } from "../src/training/export-types.js";
+
+/** Reads the generation indices out of an untyped `context.trajectory` payload. */
+function generationIndicesOf(trajectory: unknown): number[] {
+  if (!Array.isArray(trajectory)) {
+    throw new Error("expected context.trajectory to be an array");
+  }
+  const entries: unknown[] = trajectory;
+  return entries.map((entry) => {
+    if (typeof entry !== "object" || entry === null || !("generation_index" in entry)) {
+      throw new Error("expected a trajectory entry with generation_index");
+    }
+    const index = entry.generation_index;
+    if (typeof index !== "number") {
+      throw new Error("expected generation_index to be a number");
+    }
+    return index;
+  });
+}
 
 describe("training export records workflow", () => {
   it("resolves runs and emits per-generation records with keptOnly and includeMatches", async () => {
     const dir = mkdtempSync(join(tmpdir(), "ac-export-records-"));
     try {
-      const store = new SQLiteStore(join(dir, "test.db"));
+      const store = new SQLiteStore(asDbPath(join(dir, "test.db")));
       store.migrate(join(process.cwd(), "migrations"));
       const artifacts = new ArtifactStore({
         runsRoot: join(dir, "runs"),
         knowledgeRoot: join(dir, "knowledge"),
       });
 
-      artifacts.writePlaybook("grid_ctf", "# Strategy\n");
+      artifacts.writePlaybook(asScenarioName("grid_ctf"), "# Strategy\n");
       store.createRun("run-1", "grid_ctf", 2, "local");
       store.upsertGeneration("run-1", 1, {
         meanScore: 0.65,
@@ -93,7 +113,7 @@ describe("training export records workflow", () => {
   it("carries evaluator_epoch from the generation row onto the exported record", () => {
     const dir = mkdtempSync(join(tmpdir(), "ac-export-epoch-"));
     try {
-      const store = new SQLiteStore(join(dir, "test.db"));
+      const store = new SQLiteStore(asDbPath(join(dir, "test.db")));
       store.migrate(join(process.cwd(), "migrations"));
       const artifacts = new ArtifactStore({
         runsRoot: join(dir, "runs"),
@@ -131,7 +151,7 @@ describe("training export records workflow", () => {
   it("excludes quarantined generations by default and includes them with the flag", () => {
     const dir = mkdtempSync(join(tmpdir(), "ac-export-quarantine-"));
     try {
-      const store = new SQLiteStore(join(dir, "test.db"));
+      const store = new SQLiteStore(asDbPath(join(dir, "test.db")));
       store.migrate(join(process.cwd(), "migrations"));
       const artifacts = new ArtifactStore({
         runsRoot: join(dir, "runs"),
@@ -188,7 +208,7 @@ describe("training export records workflow", () => {
   it("excludes a quarantined generation's training record but keeps its matches", () => {
     const dir = mkdtempSync(join(tmpdir(), "ac-export-quarantine-matches-"));
     try {
-      const store = new SQLiteStore(join(dir, "test.db"));
+      const store = new SQLiteStore(asDbPath(join(dir, "test.db")));
       store.migrate(join(process.cwd(), "migrations"));
       const artifacts = new ArtifactStore({
         runsRoot: join(dir, "runs"),
@@ -236,7 +256,7 @@ describe("training export records workflow", () => {
   it("keeps a quarantined score out of a later trusted record's trajectory context", () => {
     const dir = mkdtempSync(join(tmpdir(), "ac-export-quarantine-trajectory-"));
     try {
-      const store = new SQLiteStore(join(dir, "test.db"));
+      const store = new SQLiteStore(asDbPath(join(dir, "test.db")));
       store.migrate(join(process.cwd(), "migrations"));
       const artifacts = new ArtifactStore({
         runsRoot: join(dir, "runs"),
@@ -269,11 +289,14 @@ describe("training export records workflow", () => {
       store.appendAgentOutput("run-1", 2, "competitor", '{"aggression":0.9}');
 
       const run = { run_id: "run-1", scenario: "grid_ctf" };
-      const trajectoryIndices = (records: ReturnType<typeof buildTrainingExportRecordsForRun>) => {
+      const trajectoryIndices = (records: TrainingExportRecord[]) => {
         const gen2 = records.find(
-          (r) => (r as { generation_index: number }).generation_index === 2,
-        ) as { context: { trajectory: Array<{ generation_index: number }> } };
-        return gen2.context.trajectory.map((entry) => entry.generation_index).sort();
+          (r): r is TrainingRecord => "context" in r && r.generation_index === 2,
+        );
+        if (!gen2) {
+          throw new Error("expected a training record for generation 2");
+        }
+        return generationIndicesOf(gen2.context.trajectory).sort();
       };
 
       // Default: the quarantined generation 1 must be absent from the trusted generation 2 trajectory.
