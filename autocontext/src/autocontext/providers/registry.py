@@ -11,6 +11,32 @@ if TYPE_CHECKING:
     from autocontext.config.settings import AppSettings
 
 
+# Transports this package can construct. `create_provider` handles the API-backed
+# ones; `get_provider` adds the runtime-bridged and MLX branches. Kept as one
+# frozenset so the contract test has a single thing to compare against, instead of
+# re-deriving the list by reading dispatch branches.
+SUPPORTED_PROVIDER_TYPES: frozenset[str] = frozenset(
+    {
+        "anthropic",
+        "openai",
+        "openai-compatible",
+        "openrouter",
+        "ollama",
+        "vllm",
+        "mlx",
+        "claude-cli",
+        "codex",
+        "pi",
+        "pi-rpc",
+    }
+)
+
+
+def supported_provider_types() -> frozenset[str]:
+    """Transports this package can construct. Compared against the shared contract."""
+    return SUPPORTED_PROVIDER_TYPES
+
+
 def create_provider(
     provider_type: str,
     api_key: str | None = None,
@@ -63,11 +89,7 @@ def create_provider(
 
         return RetryProvider(
             OpenAICompatibleProvider(
-                api_key=(
-                    api_key
-                    or os.getenv("OPENROUTER_API_KEY")
-                    or os.getenv("AUTOCONTEXT_OPENROUTER_API_KEY")
-                ),
+                api_key=(api_key or os.getenv("OPENROUTER_API_KEY") or os.getenv("AUTOCONTEXT_OPENROUTER_API_KEY")),
                 base_url=base_url or "https://openrouter.ai/api/v1",
                 default_model_name=model or "anthropic/claude-sonnet-4",
             )

@@ -33,3 +33,20 @@ def test_python_role_router_constants_match_shared_contract() -> None:
         provider: provider_class.value
         for provider, provider_class in role_router._EXPLICIT_PROVIDER_CLASS.items()  # noqa: SLF001
     } == contract["explicit_provider_classes"]
+
+
+def test_python_supported_provider_types_match_contract() -> None:
+    """An unlisted Python provider is drift; a listed-but-missing one is a stale contract."""
+    contract = _contract()
+    declared = {name for name, entry in contract["supported_provider_types"].items() if "python" in entry["packages"]}
+    from autocontext.providers import registry
+
+    actual = registry.supported_provider_types()
+    assert actual == declared
+
+
+def test_single_package_provider_entries_carry_a_reason() -> None:
+    """A one-language provider is allowed, but only as a deliberate, explained choice."""
+    for name, entry in _contract()["supported_provider_types"].items():
+        if len(entry["packages"]) < 2:
+            assert entry.get("reason"), f"{name} is single-package but has no reason"

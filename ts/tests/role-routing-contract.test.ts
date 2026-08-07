@@ -9,6 +9,7 @@ import {
   PROVIDER_CLASSES,
   PROVIDER_CLASS_COST_PER_1K_TOKENS,
   ROLE_ROUTING_MODES,
+  SUPPORTED_PROVIDER_TYPES,
   buildRoleProviderBundle,
   estimateRoleRoutingCost,
   routeRoleProvider,
@@ -22,6 +23,7 @@ type RoleRoutingContract = {
   local_eligible_roles: string[];
   mode_values: string[];
   provider_classes: string[];
+  supported_provider_types: Record<string, { packages: string[] }>;
 };
 
 const CONTRACT = JSON.parse(
@@ -81,6 +83,14 @@ describe("shared role routing contract", () => {
     expect(LOCAL_ELIGIBLE_ROLES).toEqual(CONTRACT.local_eligible_roles);
     expect(PROVIDER_CLASS_COST_PER_1K_TOKENS).toEqual(CONTRACT.cost_per_1k_tokens);
     expect(EXPLICIT_PROVIDER_CLASS).toEqual(CONTRACT.explicit_provider_classes);
+  });
+
+  it("supported provider types match the contract", () => {
+    const declared = Object.entries(CONTRACT.supported_provider_types)
+      .filter(([, entry]) => entry.packages.includes("typescript"))
+      .map(([name]) => name)
+      .sort();
+    expect([...SUPPORTED_PROVIDER_TYPES].sort()).toEqual(declared);
   });
 
   it("uses the default provider and configured role model when role routing is off", () => {
