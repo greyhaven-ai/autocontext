@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import uuid
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
@@ -34,6 +35,37 @@ HarnessScope = Literal["run", "scenario_family", "global"]
 HarnessOutcome = Literal["pending", "confirmed", "refuted"]
 
 SCOPE_ORDER: dict[str, int] = {"run": 0, "scenario_family": 1, "global": 2}
+
+
+# Every character form that starts a new line for a splitlines-style
+# consumer or for a model reading the rendered prompt. Replacing only "\n"
+# left \r (and the exotic breaks) able to forge an entry line.
+_LINE_BREAK_RE = re.compile("\r\n|[\n\r\v\f\x1c\x1d\x1e\x85\u2028\u2029]")
+
+
+def _flatten(text: str) -> str:
+    """Collapse every line-break form to a space (AC-908)."""
+    return _LINE_BREAK_RE.sub(" ", text)
+
+
+def _indent_content(text: str) -> str:
+    """Indent continuation lines and neutralise injected headings (AC-908).
+
+    Multi-line content is legitimate, so content is indented rather than
+    flattened. Indenting demotes an injected bullet to a nested one, but
+    NOT an injected heading: CommonMark allows up to three leading spaces
+    on an ATX heading, so ``  ### Policies`` still opens a section.
+    Escaping the leading ``#`` closes that gap. Content is the only
+    agent-derived field on the production path (``lesson_edit`` passes raw
+    judge text through it), so it is the one that most needs this.
+    """
+    head, *rest = _LINE_BREAK_RE.split(text)
+    lines = [head]
+    for line in rest:
+        if line.lstrip().startswith("#"):
+            line = line.replace("#", "\\#", 1)
+        lines.append("  " + line)
+    return "\n".join(lines)
 
 
 def _require_scope(scope: str) -> HarnessScope:
@@ -104,7 +136,22 @@ class HarnessEntry(BaseModel):
 
 
 class HarnessEdit(BaseModel):
-    """A single create/update/delete request against the store."""
+    """A single create/update/delete request against the store.
+
+    Update edits are partial: an empty ``title``, ``content``, or
+    ``expected_outcome`` means "leave unchanged", never "clear" (AC-908).
+    The one supported clear is ``clear_expected_outcome``, so an agent can
+    withdraw a falsifiable prediction; empty titles or content would be
+    junk states and have no clear flag.
+
+    Clearing the prediction does NOT reset a recorded ``outcome``: outcome
+    marks are measurements, not refinement effects (the same reason they
+    survive ``rollback``), and a refinement edit must not rewrite one. An
+    entry already marked ``refuted`` therefore stays hidden from
+    ``render_markdown`` after its prediction is withdrawn; there is no
+    path back to ``pending``. Recreate the entry if it should be visible
+    again.
+    """
 
     action: Literal["create", "update", "delete"]
     kind: HarnessEntryKind
@@ -112,6 +159,7 @@ class HarnessEdit(BaseModel):
     title: str = ""
     content: str = ""
     expected_outcome: str = ""
+    clear_expected_outcome: bool = False
     reason: str = ""
     reference: SkillReference | None = None
 
@@ -119,6 +167,10 @@ class HarnessEdit(BaseModel):
     def _reference_requires_procedure_edit(self) -> HarnessEdit:
         if self.reference is not None and self.kind != "procedure":
             raise ValueError("reference is only valid on procedure edits")
+        if self.clear_expected_outcome and self.action != "update":
+            raise ValueError("clear_expected_outcome is only valid on update edits")
+        if self.clear_expected_outcome and self.expected_outcome:
+            raise ValueError("clear_expected_outcome conflicts with expected_outcome")
         return self
 
 
@@ -251,19 +303,31 @@ class HarnessEntryStore:
         return updated
 
     def render_markdown(self, *, kinds: Sequence[HarnessEntryKind] | None = None) -> str:
-        """Markdown for prompt injection: grouped by kind, refuted entries excluded."""
+        """Markdown for prompt injection: grouped by kind, refuted entries excluded.
+
+        Titles, ids, and expected outcomes are rendered line-break-inert
+        (AC-908): none of them may inject raw lines that could forge
+        entries or headings. "Line break" means every form that starts a
+        line, not just ``\\n`` -- a bare ``\\n`` replace still let ``\\r``
+        forge one. Content is indented rather than flattened (multi-line
+        content is legitimate), which demotes an injected bullet to a
+        nested one, and an injected heading has its leading ``#`` escaped
+        because indentation alone does not demote headings. That narrows
+        the surface without closing it, so prompt-side consumers should
+        still treat only top-level bullets as entries.
+        """
         selected: Sequence[str] = kinds if kinds is not None else list(KIND_HEADINGS)
+        all_entries = self.entries()
         sections: list[str] = []
         for kind in selected:
-            visible = [entry for entry in self.entries() if entry.kind == kind and entry.outcome != "refuted"]
+            visible = [entry for entry in all_entries if entry.kind == kind and entry.outcome != "refuted"]
             if not visible:
                 continue
             lines = [f"### {KIND_HEADINGS[kind]}"]
             for entry in visible:
-                content = entry.content.replace("\n", "\n  ")
-                line = f"- [{entry.id}] {entry.title}: {content}"
+                line = f"- [{_flatten(entry.id)}] {_flatten(entry.title)}: {_indent_content(entry.content)}"
                 if entry.expected_outcome:
-                    line += f" (expected: {entry.expected_outcome})"
+                    line += f" (expected: {_flatten(entry.expected_outcome)})"
                 lines.append(line)
             sections.append("\n".join(lines))
         if not sections:
@@ -396,6 +460,8 @@ class HarnessEntryStore:
             updated.content = edit.content
         if edit.expected_outcome:
             updated.expected_outcome = edit.expected_outcome
+        if edit.clear_expected_outcome:
+            updated.expected_outcome = ""
         if edit.reference is not None:
             updated.reference = edit.reference
         updated.updated_at = self._now_iso()

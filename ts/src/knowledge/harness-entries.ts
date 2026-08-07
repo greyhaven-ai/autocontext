@@ -52,6 +52,35 @@ export const KIND_HEADINGS: Record<HarnessEntryKind, string> = {
   delegation: "Delegations",
 };
 
+// Every character form that starts a new line for a splitlines-style
+// consumer or for a model reading the rendered prompt. Replacing only "\n"
+// left \r (and the exotic breaks) able to forge an entry line. Mirrors
+// Python's _LINE_BREAK_RE, including treating \r\n as a single break.
+const LINE_BREAK_PATTERN = "\\r\\n|[\\n\\r\\v\\f\\x1c\\x1d\\x1e\\x85\\u2028\\u2029]";
+
+/** Collapse every line-break form to a space (AC-908). */
+function flatten(text: string): string {
+  return text.replace(new RegExp(LINE_BREAK_PATTERN, "g"), " ");
+}
+
+/**
+ * Indent continuation lines and neutralise injected headings (AC-908).
+ *
+ * Multi-line content is legitimate, so content is indented rather than
+ * flattened. Indenting demotes an injected bullet to a nested one, but NOT
+ * an injected heading: CommonMark allows up to three leading spaces on an
+ * ATX heading, so `  ### Policies` still opens a section. Escaping the
+ * leading `#` closes that gap. Mirrors Python's _indent_content.
+ */
+function indentContent(text: string): string {
+  const [head, ...rest] = text.split(new RegExp(LINE_BREAK_PATTERN));
+  const lines = [head ?? ""];
+  for (const line of rest) {
+    lines.push("  " + (line.trimStart().startsWith("#") ? line.replace("#", "\\#") : line));
+  }
+  return lines.join("\n");
+}
+
 const KINDS: HarnessEntryKind[] = ["policy", "fact", "procedure", "delegation"];
 const SCOPES: HarnessScope[] = ["run", "scenario_family", "global"];
 const OUTCOMES: HarnessOutcome[] = ["pending", "confirmed", "refuted"];
@@ -95,6 +124,19 @@ export interface HarnessEdit {
   title: string;
   content: string;
   expectedOutcome: string;
+  /**
+   * Update edits are partial: an empty title, content, or expectedOutcome
+   * means "leave unchanged", never "clear" (AC-908). The one supported
+   * clear is this flag, so an agent can withdraw a falsifiable prediction.
+   * Only valid on update edits; conflicts with a non-empty expectedOutcome.
+   *
+   * Clearing the prediction does NOT reset a recorded `outcome`: outcome
+   * marks are measurements, not refinement effects (the same reason they
+   * survive `rollback`), so an entry already marked `refuted` stays hidden
+   * from `renderMarkdown` after its prediction is withdrawn, with no path
+   * back to `pending`. Recreate the entry if it should be visible again.
+   */
+  clearExpectedOutcome?: boolean;
   reason: string;
   reference?: SkillReference;
 }
@@ -184,6 +226,7 @@ function normalizeEdit(raw: unknown): HarnessEdit | undefined {
     title: typeof raw.title === "string" ? raw.title : "",
     content: typeof raw.content === "string" ? raw.content : "",
     expectedOutcome: typeof raw.expectedOutcome === "string" ? raw.expectedOutcome : "",
+    clearExpectedOutcome: raw.clearExpectedOutcome === true,
     reason: typeof raw.reason === "string" ? raw.reason : "",
     reference,
   };
@@ -496,15 +539,22 @@ export class HarnessEntryStore {
   /** Markdown for prompt injection: grouped by kind, refuted entries excluded. */
   renderMarkdown(opts: { kinds?: HarnessEntryKind[] } = {}): string {
     const selected = opts.kinds ?? KINDS;
+    const allEntries = this.entries();
     const sections: string[] = [];
     for (const kind of selected) {
-      const visible = this.entries({ kind }).filter((entry) => entry.outcome !== "refuted");
+      const visible = allEntries.filter(
+        (entry) => entry.kind === kind && entry.outcome !== "refuted",
+      );
       if (visible.length === 0) continue;
       const lines = [`### ${KIND_HEADINGS[kind]}`];
       for (const entry of visible) {
-        const content = entry.content.replace(/\n/g, "\n  ");
-        let line = `- [${entry.id}] ${entry.title}: ${content}`;
-        if (entry.expectedOutcome) line += ` (expected: ${entry.expectedOutcome})`;
+        // Titles, ids, and expected outcomes render line-break-inert
+        // (AC-908) against every break form, not just "\n". Content is
+        // indented rather than flattened, which demotes an injected bullet
+        // to a nested one; its leading "#" is escaped because indentation
+        // alone does not demote a heading (surface narrowed, not closed).
+        let line = `- [${flatten(entry.id)}] ${flatten(entry.title)}: ${indentContent(entry.content)}`;
+        if (entry.expectedOutcome) line += ` (expected: ${flatten(entry.expectedOutcome)})`;
         lines.push(line);
       }
       sections.push(lines.join("\n"));
@@ -521,6 +571,11 @@ export class HarnessEntryStore {
   ): AppliedHarnessEdit {
     if (edit.action === "create") {
       const entryId = edit.id || shortId("harness");
+      if (edit.clearExpectedOutcome) {
+        // Python rejects this combination at model construction; TS edits
+        // are plain literals, so the per-edit error is the equivalent.
+        return { edit, entryId, applied: false, error: "clear_requires_update" };
+      }
       if (edit.reference !== undefined && edit.kind !== "procedure") {
         // Runtime backstop for the compile-time contract: persisting a
         // reference on a non-procedure entry would make normalizeEntry drop
@@ -565,13 +620,25 @@ export class HarnessEntryStore {
     }
     const before: HarnessEntry = { ...existing };
     if (edit.action === "delete") {
+      if (edit.clearExpectedOutcome) {
+        return { edit, entryId: edit.id, applied: false, error: "clear_requires_update" };
+      }
       state.delete(edit.id);
       return { edit, entryId: edit.id, applied: true, error: "", before };
+    }
+    if (edit.clearExpectedOutcome && edit.expectedOutcome) {
+      return {
+        edit,
+        entryId: edit.id,
+        applied: false,
+        error: "clear_conflicts_with_expected_outcome",
+      };
     }
     const updated: HarnessEntry = { ...existing };
     if (edit.title) updated.title = edit.title;
     if (edit.content) updated.content = edit.content;
     if (edit.expectedOutcome) updated.expectedOutcome = edit.expectedOutcome;
+    if (edit.clearExpectedOutcome) updated.expectedOutcome = "";
     if (edit.reference !== undefined) updated.reference = edit.reference;
     updated.updatedAt = this.nowIso();
     updated.version = existing.version + 1;
