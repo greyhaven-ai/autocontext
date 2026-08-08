@@ -5,8 +5,8 @@
  * autocontext/tests/test_role_routing_parity.py replays the identical file
  * through the Python RoleRouter. Both must agree exactly.
  *
- * To add a scenario group: add it to the fixture, then add its name to
- * ROUTE_GROUPS here and to ROUTE_GROUPS in the Python replay.
+ * To add a scenario: add it to the fixture, then add its case id to
+ * EXPECTED_CASE_IDS here and _EXPECTED_CASE_IDS in the Python replay.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -20,7 +20,7 @@ import {
 
 type ExpectedAssignment = {
   cost_per_1k_tokens: number;
-  model: string;
+  model: string | null;
   provider_class: string;
   provider_type: string;
 };
@@ -32,9 +32,20 @@ type ParityCase = {
   settings?: Record<string, string>;
 };
 
+type DivergenceCase = {
+  case: string;
+  context?: { availableLocalModels?: string[] };
+  python: ExpectedAssignment;
+  reason: string;
+  resolution: string;
+  role: string;
+  settings?: Record<string, string>;
+  typescript: ExpectedAssignment;
+};
+
 type ParityFixtures = {
   fixtures: Record<string, Record<string, ParityCase>>;
-  known_divergences: unknown[];
+  known_divergences: DivergenceCase[];
   schema_version: number;
 };
 
@@ -45,9 +56,61 @@ const FIXTURES = JSON.parse(
   ),
 ) as ParityFixtures;
 
-// Fixture groups whose cases are single routeRoleProvider() calls compared field by
-// field. Must stay in sync with ROUTE_GROUPS in the Python replay.
-const ROUTE_GROUPS = ["auto_mode", "explicit_override", "routing_off", "local_artifacts"] as const;
+// The fixture is the behavioral contract, but the expected case ids live outside
+// it so deleting or replacing a critical scenario cannot silently reduce coverage.
+const EXPECTED_CASE_IDS = {
+  auto_mode: [
+    "competitor_frontier",
+    "analyst_mid_tier",
+    "coach_mid_tier",
+    "architect_frontier_no_local_fallback",
+    "curator_fast",
+    "translator_fast",
+    "unknown_role_falls_back_to_mid_tier",
+    "self_hosted_default_provider_is_frontier_via_table",
+  ],
+  explicit_override: [
+    "competitor_override_to_ollama_is_mid_tier",
+    "architect_override_to_vllm_is_mid_tier",
+    "unknown_override_provider_defaults_to_frontier",
+    "override_to_mlx_uses_mlx_model_path",
+    "override_wins_over_role_routing_off",
+  ],
+  routing_off: [
+    "off_uses_default_provider_and_role_model",
+    "off_with_ollama_default_is_mid_tier",
+    "off_with_unknown_default_provider_is_mid_tier",
+    "off_uses_coach_role_model",
+    "off_uses_curator_role_model",
+    "off_uses_translator_role_model",
+    "off_with_mlx_default_uses_mlx_model_path",
+  ],
+  local_artifacts: [
+    "eligible_role_prefers_local_artifact",
+    "architect_ignores_local_artifact",
+    "curator_ignores_local_artifact",
+    "local_artifact_ignored_when_routing_off",
+  ],
+  cost_estimation: ["default_auto_mode_totals", "with_local_artifacts_totals"],
+} as const satisfies Record<string, readonly string[]>;
+
+const EXPECTED_DIVERGENCE_CASE_IDS = [
+  "explicit_override.mixed_case_provider_name",
+  "explicit_override.whitespace_only_provider_name",
+  "routing_off.unknown_role_model",
+];
+
+const EXPECTED_ASSIGNMENT_KEYS = [
+  "cost_per_1k_tokens",
+  "model",
+  "provider_class",
+  "provider_type",
+];
+
+const EXPECTED_GROUPS = Object.keys(EXPECTED_CASE_IDS).sort();
+
+// Fixture groups whose cases are single routeRoleProvider() calls compared field by field.
+const ROUTE_GROUPS = Object.keys(EXPECTED_CASE_IDS).filter((group) => group !== "cost_estimation");
 
 // The fixture uses Python snake_case settings keys. Map them to the camelCase
 // fields RoleRoutingSettings expects, so one fixture drives both languages.
@@ -166,6 +229,31 @@ for (const group of ROUTE_GROUPS) {
   });
 }
 
+describe("known divergences", () => {
+  it("contains every expected divergence exactly once", () => {
+    const caseIds = FIXTURES.known_divergences.map((testCase) => testCase.case);
+    expect(new Set(caseIds).size).toBe(caseIds.length);
+    expect(caseIds.sort()).toEqual(EXPECTED_DIVERGENCE_CASE_IDS);
+  });
+
+  for (const testCase of FIXTURES.known_divergences) {
+    it(`pins the TypeScript output for ${testCase.case}`, () => {
+      expect(Object.keys(testCase.python).sort()).toEqual(EXPECTED_ASSIGNMENT_KEYS);
+      expect(Object.keys(testCase.typescript).sort()).toEqual(EXPECTED_ASSIGNMENT_KEYS);
+      expect(testCase.typescript).not.toEqual(testCase.python);
+      expect(testCase.reason.trim()).not.toBe("");
+      expect(testCase.resolution.trim()).not.toBe("");
+
+      const result = routeRoleProvider(
+        settingsFromFixture(testCase.settings),
+        testCase.role,
+        testCase.context ?? {},
+      );
+      assertRouteMatches(result, testCase.typescript);
+    });
+  }
+});
+
 type CostCase = {
   context?: { availableLocalModels?: string[] };
   expected: {
@@ -205,25 +293,19 @@ describe("cost_estimation parity", () => {
 });
 
 describe("fixture completeness", () => {
-  // Must match _EXPECTED_GROUPS in the Python replay.
-  const EXPECTED_GROUPS = [
-    "auto_mode",
-    "cost_estimation",
-    "explicit_override",
-    "local_artifacts",
-    "routing_off",
-  ];
-
   it("replays every expected fixture group", () => {
     expect(Object.keys(FIXTURES.fixtures).sort()).toEqual(EXPECTED_GROUPS);
-
-    // ROUTE_GROUPS and EXPECTED_GROUPS are independent literals, so dropping a
-    // name from ROUTE_GROUPS (the replay registry) leaves the assertion above
-    // untouched: the fixture still has the group, that check still passes, and
-    // this language silently stops replaying it. The fixture-key check alone
-    // cannot catch a dropped replay registration — only comparing the registry
-    // itself against the expected set can.
     expect([...ROUTE_GROUPS, "cost_estimation"].sort()).toEqual(EXPECTED_GROUPS);
+  });
+
+  it("replays every expected fixture case", () => {
+    const actual = Object.fromEntries(
+      Object.entries(FIXTURES.fixtures).map(([group, cases]) => [group, Object.keys(cases).sort()]),
+    );
+    const expected = Object.fromEntries(
+      Object.entries(EXPECTED_CASE_IDS).map(([group, caseIds]) => [group, [...caseIds].sort()]),
+    );
+    expect(actual).toEqual(expected);
   });
 
   it("has no empty group", () => {

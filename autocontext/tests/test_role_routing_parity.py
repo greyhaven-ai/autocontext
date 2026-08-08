@@ -4,8 +4,8 @@ Replays docs/role-routing-parity-fixtures.json through the Python RoleRouter.
 ts/tests/role-routing-parity.test.ts replays the identical file through the
 TypeScript routeRoleProvider. Both must agree exactly.
 
-To add a scenario group: add it to the fixture, then add its name to
-ROUTE_GROUPS here and to ROUTE_GROUPS in the TypeScript replay.
+To add a scenario: add it to the fixture, then add its case id to
+_EXPECTED_CASE_IDS here and EXPECTED_CASE_IDS in the TypeScript replay.
 """
 
 from __future__ import annotations
@@ -19,14 +19,75 @@ import pytest
 
 FIXTURE_PATH = Path(__file__).resolve().parents[2] / "docs" / "role-routing-parity-fixtures.json"
 
+# The fixture is the behavioral contract, but the expected case ids live outside
+# it so deleting or replacing a critical scenario cannot silently reduce coverage.
+_EXPECTED_CASE_IDS: dict[str, frozenset[str]] = {
+    "auto_mode": frozenset(
+        {
+            "competitor_frontier",
+            "analyst_mid_tier",
+            "coach_mid_tier",
+            "architect_frontier_no_local_fallback",
+            "curator_fast",
+            "translator_fast",
+            "unknown_role_falls_back_to_mid_tier",
+            "self_hosted_default_provider_is_frontier_via_table",
+        },
+    ),
+    "explicit_override": frozenset(
+        {
+            "competitor_override_to_ollama_is_mid_tier",
+            "architect_override_to_vllm_is_mid_tier",
+            "unknown_override_provider_defaults_to_frontier",
+            "override_to_mlx_uses_mlx_model_path",
+            "override_wins_over_role_routing_off",
+        },
+    ),
+    "routing_off": frozenset(
+        {
+            "off_uses_default_provider_and_role_model",
+            "off_with_ollama_default_is_mid_tier",
+            "off_with_unknown_default_provider_is_mid_tier",
+            "off_uses_coach_role_model",
+            "off_uses_curator_role_model",
+            "off_uses_translator_role_model",
+            "off_with_mlx_default_uses_mlx_model_path",
+        },
+    ),
+    "local_artifacts": frozenset(
+        {
+            "eligible_role_prefers_local_artifact",
+            "architect_ignores_local_artifact",
+            "curator_ignores_local_artifact",
+            "local_artifact_ignored_when_routing_off",
+        },
+    ),
+    "cost_estimation": frozenset(
+        {
+            "default_auto_mode_totals",
+            "with_local_artifacts_totals",
+        },
+    ),
+}
+
+_EXPECTED_DIVERGENCE_CASE_IDS = {
+    "explicit_override.mixed_case_provider_name",
+    "explicit_override.whitespace_only_provider_name",
+    "routing_off.unknown_role_model",
+}
+
 # Fixture groups whose cases are single route() calls compared field by field.
 # Groups with a different shape (cost estimation) get their own replay test.
-ROUTE_GROUPS: tuple[str, ...] = (
-    "auto_mode",
-    "explicit_override",
-    "routing_off",
-    "local_artifacts",
+ROUTE_GROUPS: tuple[str, ...] = tuple(
+    group for group in _EXPECTED_CASE_IDS if group != "cost_estimation"
 )
+_EXPECTED_GROUPS = set(_EXPECTED_CASE_IDS)
+_EXPECTED_ASSIGNMENT_KEYS = {
+    "provider_type",
+    "model",
+    "provider_class",
+    "cost_per_1k_tokens",
+}
 
 # Every settings key a fixture case may set, with the value used when a case omits it.
 # Mirrors the TypeScript baseSettings() helper so both languages start from identical state.
@@ -74,6 +135,10 @@ def _cases(group: str) -> list[tuple[str, dict[str, Any]]]:
 
 def _route_cases() -> list[tuple[str, str, dict[str, Any]]]:
     return [(group, name, case) for group in ROUTE_GROUPS for name, case in _cases(group)]
+
+
+def _divergence_cases() -> list[tuple[str, dict[str, Any]]]:
+    return sorted((entry["case"], entry) for entry in _load()["known_divergences"])
 
 
 def _settings_from_fixture(overrides: dict[str, Any]) -> MagicMock:
@@ -130,31 +195,30 @@ def test_cost_estimation_parity(case_name: str, case: dict[str, Any]) -> None:
         assert estimate[key] == pytest.approx(expected[key]), key
 
 
-# Every group the fixture is expected to contain, including groups that are not in
-# ROUTE_GROUPS (cost_estimation has its own replay; a "divergent" group, if Task 2
-# created one, is data only). If you add a group, add it here too, or the guard
-# stops guarding.
-_EXPECTED_GROUPS = {
-    "auto_mode",
-    "explicit_override",
-    "routing_off",
-    "local_artifacts",
-    "cost_estimation",
-}
+@pytest.mark.parametrize("case_name,case", _divergence_cases())
+def test_python_known_divergence_output(case_name: str, case: dict[str, Any]) -> None:
+    """Known disagreements remain executable until AC-911 resolves them."""
+    from autocontext.agents.role_router import RoleRouter, RoutingContext
+
+    del case_name
+    router = RoleRouter(_settings_from_fixture(case.get("settings", {})))
+    context = RoutingContext(**_context_from_fixture(case.get("context", {})))
+    _assert_route_matches(router.route(case["role"], context=context), case["python"])
+    assert case["python"] != case["typescript"]
 
 
 def test_every_expected_fixture_group_is_present() -> None:
-    """A deleted group would otherwise make both suites pass with less coverage.
-
-    Also couples ROUTE_GROUPS (the replay registry) to _EXPECTED_GROUPS: they are
-    otherwise independent literals, so dropping a name from ROUTE_GROUPS leaves
-    the fixture-key check untouched (the fixture still has the group, this
-    assertion above still passes) and this language silently stops replaying
-    it. The fixture-key check alone cannot catch a dropped replay registration —
-    only comparing the registry itself against the expected set can.
-    """
+    """The external inventory pins both fixture groups and replay registration."""
     assert set(_load()["fixtures"]) == _EXPECTED_GROUPS
     assert set(ROUTE_GROUPS) | {"cost_estimation"} == _EXPECTED_GROUPS
+
+
+def test_every_expected_fixture_case_is_present() -> None:
+    """Deleting or replacing one scenario must not silently reduce coverage."""
+    fixtures = _load()["fixtures"]
+    actual = {group: set(cases) for group, cases in fixtures.items()}
+    expected = {group: set(case_ids) for group, case_ids in _EXPECTED_CASE_IDS.items()}
+    assert actual == expected
 
 
 def test_no_expected_group_is_empty() -> None:
@@ -172,13 +236,30 @@ def test_no_expected_group_is_empty() -> None:
 
 
 def test_known_divergences_are_fully_described() -> None:
-    """A divergence recorded without a resolution is an untracked bug."""
+    """Divergences must have runnable inputs, exact outputs, and a resolution."""
     divergences = _load()["known_divergences"]
-    assert divergences, "expected at least the mixed-case provider divergence from Task 3"
-    required = {"case", "python", "typescript", "reason", "resolution"}
+    case_ids = [entry["case"] for entry in divergences]
+    assert len(case_ids) == len(set(case_ids)), "duplicate known-divergence case ids"
+    assert set(case_ids) == _EXPECTED_DIVERGENCE_CASE_IDS
+
+    required = {
+        "case",
+        "role",
+        "settings",
+        "context",
+        "python",
+        "typescript",
+        "reason",
+        "resolution",
+    }
     for entry in divergences:
         missing = required - set(entry)
         assert not missing, f"divergence entry missing keys: {sorted(missing)}"
+        assert set(entry["python"]) == _EXPECTED_ASSIGNMENT_KEYS
+        assert set(entry["typescript"]) == _EXPECTED_ASSIGNMENT_KEYS
+        assert entry["python"] != entry["typescript"]
+        assert entry["reason"].strip()
+        assert entry["resolution"].strip()
 
 
 def test_fixture_typo_guards_actually_raise() -> None:
