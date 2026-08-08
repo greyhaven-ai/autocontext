@@ -143,6 +143,17 @@ CORPUS: list[tuple[str, str]] = [
         "fenced_mixed_array_with_object",
         '```json\n[1, {"a": 1}, 2]\n```',
     ),
+    (
+        # AC-910 Task 3 regression case: two separate bare (unfenced) JSON
+        # objects in prose, e.g. a competitor listing two strategy options.
+        # extract_json's no-fence fallback must try each top-level candidate
+        # in order and return the first that parses, not build one
+        # first-"{"-to-last-"}" span (which would cross both objects and
+        # fail). Also pinned directly against the real production path in
+        # tests/test_translator_simplification.py::test_multiple_json_objects_extracts_first.
+        "two_bare_json_objects_no_fence",
+        'Option A: {"aggression": 0.9, "defense": 0.1}\nOption B: {"aggression": 0.5, "defense": 0.5}',
+    ),
 ]
 
 CORPUS_IDS = [name for name, _ in CORPUS]
@@ -245,6 +256,10 @@ STRIP_JSON_FENCES_EXPECTED: dict[str, str] = {
     "bare_array_of_objects": '[{"a": 1}]',
     "fenced_array_of_objects": '[{"a": 1}]',
     "fenced_mixed_array_with_object": '[1, {"a": 1}, 2]',
+    # No fence present -> passthrough unchanged, same as any other no-fence case.
+    "two_bare_json_objects_no_fence": (
+        'Option A: {"aggression": 0.9, "defense": 0.1}\nOption B: {"aggression": 0.5, "defense": 0.5}'
+    ),
 }
 
 
@@ -292,6 +307,11 @@ EXTRACT_JSON_EXPECTED: dict[str, Any] = {
     "bare_array_of_objects": _Raises(ValueError),
     "fenced_array_of_objects": _Raises(ValueError),
     "fenced_mixed_array_with_object": _Raises(ValueError),
+    # AC-910 Task 3 fix: no fence, so multiple top-level candidates are tried
+    # in order; Option A's object parses first and wins. Before the fix this
+    # raised JSONDecodeError (the single first-"{"-to-last-"}" span crossed
+    # both objects and the "Option B:" prose between them).
+    "two_bare_json_objects_no_fence": {"aggression": 0.9, "defense": 0.1},
 }
 
 
@@ -398,6 +418,7 @@ PARSE_ARCHITECT_TOOL_SPECS_EXPECTED: dict[str, list[dict[str, Any]]] = {
     "bare_array_of_objects": [],
     "fenced_array_of_objects": [],  # same terminal-list rule -> None -> [] with a warning
     "fenced_mixed_array_with_object": [],  # same terminal-list rule -> None -> [] with a warning
+    "two_bare_json_objects_no_fence": [],  # extract_json recovers Option A's dict, but it has no "tools" key
 }
 
 
@@ -467,6 +488,7 @@ CURATOR_RATE_EXPECTED: dict[str, _CuratorRatingShape] = {
     "bare_array_of_objects": _CURATOR_DEFAULT,  # parses to a list; isinstance(decoded, dict) is False -> discarded silently
     "fenced_array_of_objects": _CURATOR_DEFAULT,  # same: parses to a list, not a dict
     "fenced_mixed_array_with_object": _CURATOR_DEFAULT,  # same: parses to a list, not a dict
+    "two_bare_json_objects_no_fence": _CURATOR_DEFAULT,  # recovers Option A's dict, but no matching rating keys
 }
 
 
@@ -523,6 +545,11 @@ EXTRACT_STRATEGY_DETERMINISTIC_EXPECTED: dict[str, dict[str, Any] | None] = {
     "bare_array_of_objects": None,
     "fenced_array_of_objects": None,
     "fenced_mixed_array_with_object": None,
+    # Multi-object regression FIX (Task 3, output_parser.py): before the fix
+    # this was None (the whole point of the regression report); now recovers
+    # Option A, matching the old three-layer fallback chain this extractor
+    # used to have. Net unchanged from the pre-migration baseline.
+    "two_bare_json_objects_no_fence": {"aggression": 0.9, "defense": 0.1},
 }
 
 
@@ -592,6 +619,11 @@ EXTRACT_JSON_OBJECT_EXPECTED: dict[str, dict[str, Any] | None] = {
     "bare_array_of_objects": None,
     "fenced_array_of_objects": None,
     "fenced_mixed_array_with_object": None,
+    # Multi-object regression FIX (Task 3, output_parser.py): this extractor
+    # used to have its own two-stage candidate approach and would have
+    # recovered Option A too before the extract_json migration; the parser
+    # fix restores that.
+    "two_bare_json_objects_no_fence": {"aggression": 0.9, "defense": 0.1},
 }
 
 
