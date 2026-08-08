@@ -1,6 +1,11 @@
 import { SUPPORTED_PROVIDER_TYPES } from "./supported-provider-types.js";
+import * as _contract from "./role-routing-contract.generated.js";
 
-export const PROVIDER_CLASSES = ["frontier", "mid_tier", "fast", "local", "code_policy"] as const;
+// The values below derive from docs/role-routing-contract.json via the generated
+// module role-routing-contract.generated.ts. To change a value, edit the contract
+// and regenerate — do not edit here.
+
+export const PROVIDER_CLASSES = _contract.PROVIDER_CLASSES;
 
 export type ProviderClass = (typeof PROVIDER_CLASSES)[number];
 
@@ -15,44 +20,26 @@ export const ROUTED_GENERATION_ROLES = [
 
 export type GenerationRole = (typeof ROUTED_GENERATION_ROLES)[number];
 
-export const ROLE_ROUTING_MODES = ["off", "auto"] as const;
+export const ROLE_ROUTING_MODES = _contract.ROLE_ROUTING_MODES;
 
 export type RoleRoutingMode = (typeof ROLE_ROUTING_MODES)[number];
 
-export const PROVIDER_CLASS_COST_PER_1K_TOKENS: Partial<Record<ProviderClass, number>> = {
-  frontier: 0.015,
-  mid_tier: 0.003,
-  fast: 0.001,
-  local: 0.0,
-};
+export const PROVIDER_CLASS_COST_PER_1K_TOKENS: Partial<Record<ProviderClass, number>> =
+  _contract.PROVIDER_CLASS_COST_PER_1K_TOKENS;
 
-export const DEFAULT_ROLE_ROUTING_TABLE = {
-  competitor: ["frontier", "local"],
-  analyst: ["mid_tier", "local"],
-  coach: ["mid_tier", "local"],
-  architect: ["frontier"],
-  curator: ["fast"],
-  translator: ["fast", "local"],
-} as const satisfies Record<GenerationRole, readonly ProviderClass[]>;
+export const DEFAULT_ROLE_ROUTING_TABLE = _contract.DEFAULT_ROLE_ROUTING_TABLE satisfies Record<
+  GenerationRole,
+  readonly ProviderClass[]
+>;
 
-export const LOCAL_ELIGIBLE_ROLES = [
-  "competitor",
-  "analyst",
-  "coach",
-  "translator",
-] as const satisfies readonly GenerationRole[];
+export const LOCAL_ELIGIBLE_ROLES =
+  _contract.LOCAL_ELIGIBLE_ROLES satisfies readonly GenerationRole[];
 
-export const EXPLICIT_PROVIDER_CLASS: Record<string, ProviderClass> = {
-  anthropic: "frontier",
-  mlx: "local",
-  openclaw: "frontier",
-  deterministic: "fast",
-  agent_sdk: "frontier",
-  openai: "mid_tier",
-  "openai-compatible": "mid_tier",
-  ollama: "mid_tier",
-  vllm: "mid_tier",
-};
+// Typed Record<string, ProviderClass> in the generated module itself (not
+// Record<string, string>), so a contract value that isn't a declared provider class
+// fails to compile there instead of surfacing later as a mistyped ProviderClass deep
+// inside routing logic.
+export const EXPLICIT_PROVIDER_CLASS = _contract.EXPLICIT_PROVIDER_CLASS;
 
 const DEFAULT_ROLE_MODELS: Record<GenerationRole, string> = {
   competitor: "claude-sonnet-4-5-20250929",

@@ -7,11 +7,14 @@ Usage:
     AUTOCONTEXT_ROLE_ROUTING=auto  — automatic provider selection per role
     AUTOCONTEXT_ROLE_ROUTING=off   — use default provider for all roles (default)
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
+
+from autocontext.agents import role_routing_contract_generated as _contract
 
 if TYPE_CHECKING:
     from autocontext.config.settings import AppSettings
@@ -48,39 +51,36 @@ class RoutingContext:
     scenario_name: str = ""
 
 
+# The values below derive from docs/role-routing-contract.json via the
+# generated module autocontext.agents.role_routing_contract_generated.
+# To change a value, edit the contract and regenerate — do not edit here.
+
+# The contract is the source of truth for which provider classes exist;
+# ProviderClass is the hand-written enum type. If the contract declares a
+# class the enum doesn't have, fail loudly here instead of deep inside a
+# ProviderClass(name) call during a routing decision.
+_MISSING_CLASSES = set(_contract.PROVIDER_CLASSES) - {member.value for member in ProviderClass}
+if _MISSING_CLASSES:
+    raise RuntimeError(
+        f"role-routing contract declares provider classes with no ProviderClass member: "
+        f"{sorted(_MISSING_CLASSES)}. Add them to the enum."
+    )
+
 # Approximate cost per 1K input tokens by provider class
-_COST_TABLE: dict[ProviderClass, float] = {
-    ProviderClass.FRONTIER: 0.015,
-    ProviderClass.MID_TIER: 0.003,
-    ProviderClass.FAST: 0.001,
-    ProviderClass.LOCAL: 0.0,
-}
+_COST_TABLE: dict[ProviderClass, float] = {ProviderClass(name): cost for name, cost in _contract.COST_PER_1K_TOKENS.items()}
 
 # Default routing table: role → ordered list of preferred provider classes
 # First match that's available wins; last entry is the fallback.
 DEFAULT_ROUTING_TABLE: dict[str, list[ProviderClass]] = {
-    "competitor": [ProviderClass.FRONTIER, ProviderClass.LOCAL],
-    "analyst": [ProviderClass.MID_TIER, ProviderClass.LOCAL],
-    "coach": [ProviderClass.MID_TIER, ProviderClass.LOCAL],
-    "architect": [ProviderClass.FRONTIER],
-    "curator": [ProviderClass.FAST],
-    "translator": [ProviderClass.FAST, ProviderClass.LOCAL],
+    role: [ProviderClass(name) for name in preferences] for role, preferences in _contract.DEFAULT_ROUTING_TABLE.items()
 }
 
 # Roles that can be served by local artifacts when available
-_LOCAL_ELIGIBLE_ROLES: set[str] = {"competitor", "analyst", "coach", "translator"}
+_LOCAL_ELIGIBLE_ROLES: set[str] = set(_contract.LOCAL_ELIGIBLE_ROLES)
 
 # Provider type inferred from provider class when using the default provider
 _EXPLICIT_PROVIDER_CLASS: dict[str, ProviderClass] = {
-    "anthropic": ProviderClass.FRONTIER,
-    "mlx": ProviderClass.LOCAL,
-    "openclaw": ProviderClass.FRONTIER,
-    "deterministic": ProviderClass.FAST,
-    "agent_sdk": ProviderClass.FRONTIER,
-    "openai": ProviderClass.MID_TIER,
-    "openai-compatible": ProviderClass.MID_TIER,
-    "ollama": ProviderClass.MID_TIER,
-    "vllm": ProviderClass.MID_TIER,
+    provider: ProviderClass(name) for provider, name in _contract.EXPLICIT_PROVIDER_CLASSES.items()
 }
 
 
@@ -219,7 +219,8 @@ class RoleRouter:
     def _config_for_explicit(self, role: str, provider_type: str) -> ProviderConfig:
         """Build config when an explicit per-role provider is set."""
         provider_class = _EXPLICIT_PROVIDER_CLASS.get(
-            provider_type.lower(), ProviderClass.FRONTIER,
+            provider_type.lower(),
+            ProviderClass.FRONTIER,
         )
         return ProviderConfig(
             provider_type=provider_type,
@@ -231,7 +232,8 @@ class RoleRouter:
     def _config_for_default(self, role: str) -> ProviderConfig:
         """Build config when routing is disabled — use default provider + model."""
         provider_class = _EXPLICIT_PROVIDER_CLASS.get(
-            self._settings.agent_provider.lower(), ProviderClass.MID_TIER,
+            self._settings.agent_provider.lower(),
+            ProviderClass.MID_TIER,
         )
         return ProviderConfig(
             provider_type=self._settings.agent_provider,

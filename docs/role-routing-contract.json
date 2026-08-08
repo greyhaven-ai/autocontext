@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "contract": "role provider routing classes, preferences, and model tier mapping shared by Python and TypeScript",
   "mode_values": ["off", "auto"],
   "provider_classes": ["frontier", "mid_tier", "fast", "local", "code_policy"],
@@ -49,5 +49,42 @@
     "auto routing table with available local artifacts preferred for eligible roles",
     "first API-backed provider class in the role routing table",
     "mid-tier fallback for unknown roles"
-  ]
+  ],
+  "supported_provider_types": {
+    "anthropic": { "packages": ["python", "typescript"] },
+    "openai": { "packages": ["python", "typescript"] },
+    "openai-compatible": { "packages": ["python", "typescript"] },
+    "openrouter": { "packages": ["python", "typescript"] },
+    "ollama": { "packages": ["python", "typescript"] },
+    "vllm": { "packages": ["python", "typescript"] },
+    "claude-cli": { "packages": ["python", "typescript"] },
+    "codex": { "packages": ["python", "typescript"] },
+    "pi": { "packages": ["python", "typescript"] },
+    "pi-rpc": { "packages": ["python", "typescript"] },
+    "mlx": { "packages": ["python"], "reason": "no MLX binding for Node; Python-only by design" },
+    "hermes": {
+      "packages": ["typescript"],
+      "reason": "not yet added to the Python provider factory"
+    },
+    "gemini": {
+      "packages": ["typescript"],
+      "reason": "not yet added to the Python provider factory"
+    },
+    "mistral": {
+      "packages": ["typescript"],
+      "reason": "not yet added to the Python provider factory"
+    },
+    "groq": {
+      "packages": ["typescript"],
+      "reason": "not yet added to the Python provider factory"
+    },
+    "azure-openai": {
+      "packages": ["typescript"],
+      "reason": "not yet added to the Python provider factory"
+    },
+    "deterministic": {
+      "packages": ["typescript"],
+      "reason": "test/offline provider; Python has no equivalent construction path in create_provider"
+    }
+  }
 }
