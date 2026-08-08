@@ -105,6 +105,22 @@ CORPUS: list[tuple[str, str]] = [
         "hint_feedback_shape",
         '```json\n{"helpful": ["h1"], "misleading": ["m1"], "missing": ["mi1"]}\n```',
     ),
+    (
+        # AC-921: a corrupt fenced block followed by unrelated JSON in the
+        # trailing prose. extract_strategy_deterministic's bare-object
+        # fallback finds the decoy {"x": 2} and returns it -- silently wrong,
+        # not safe. This case guards the strengthened extract_json against
+        # reintroducing that behavior.
+        "ac_921_corrupt_fence_with_decoy_json",
+        '```json\n{a: 1, "b":}\n```  also see config: {"x": 2}',
+    ),
+    (
+        # strip_json_fences is case-sensitive: the "(?:json)?" tag group
+        # only matches lowercase, so an uppercase ```JSON tag isn't consumed
+        # as a tag and leaks into the "stripped" content instead.
+        "uppercase_json_fence_tag",
+        '```JSON\n{"a": 1}\n```',
+    ),
 ]
 
 CORPUS_IDS = [name for name, _ in CORPUS]
@@ -202,6 +218,8 @@ STRIP_JSON_FENCES_EXPECTED: dict[str, str] = {
     "fenced_with_leading_prose_and_trailing_prose": '{"a": 1}',
     "curator_rating_shape": '{"actionability": 4, "specificity": 5, "correctness": 2, "rationale": "solid"}',
     "hint_feedback_shape": '{"helpful": ["h1"], "misleading": ["m1"], "missing": ["mi1"]}',
+    "ac_921_corrupt_fence_with_decoy_json": '{a: 1, "b":}',
+    "uppercase_json_fence_tag": 'JSON\n{"a": 1}',
 }
 
 
@@ -231,6 +249,8 @@ EXTRACT_JSON_EXPECTED: dict[str, Any] = {
     "fenced_with_leading_prose_and_trailing_prose": {"a": 1},
     "curator_rating_shape": {"actionability": 4, "specificity": 5, "correctness": 2, "rationale": "solid"},
     "hint_feedback_shape": {"helpful": ["h1"], "misleading": ["m1"], "missing": ["mi1"]},
+    "ac_921_corrupt_fence_with_decoy_json": _Raises(json.JSONDecodeError),
+    "uppercase_json_fence_tag": _Raises(json.JSONDecodeError),
 }
 
 
@@ -265,6 +285,8 @@ PARSE_ARCHITECT_TOOL_SPECS_EXPECTED: dict[str, list[dict[str, Any]]] = {
     "fenced_with_leading_prose_and_trailing_prose": [],
     "curator_rating_shape": [],
     "hint_feedback_shape": [],
+    "ac_921_corrupt_fence_with_decoy_json": [],  # body between the tag and last ``` is invalid JSON -> JSONDecodeError -> []
+    "uppercase_json_fence_tag": [],  # requires the literal "```json" tag; uppercase never matches find("```json")
 }
 
 
@@ -311,6 +333,8 @@ CURATOR_RATE_EXPECTED: dict[str, _CuratorRatingShape] = {
     "fenced_with_leading_prose_and_trailing_prose": _CURATOR_DEFAULT,
     "curator_rating_shape": _CuratorRatingShape(actionability=4, specificity=5, correctness=2, rationale="solid"),
     "hint_feedback_shape": _CURATOR_DEFAULT,
+    "ac_921_corrupt_fence_with_decoy_json": _CURATOR_DEFAULT,  # JSONDecodeError swallowed
+    "uppercase_json_fence_tag": _CURATOR_DEFAULT,  # leaky "JSON\n{...}" content isn't valid JSON; swallowed
 }
 
 
@@ -340,6 +364,8 @@ EXTRACT_STRATEGY_DETERMINISTIC_EXPECTED: dict[str, dict[str, Any] | None] = {
     "fenced_with_leading_prose_and_trailing_prose": {"a": 1},
     "curator_rating_shape": {"actionability": 4, "specificity": 5, "correctness": 2, "rationale": "solid"},
     "hint_feedback_shape": {"helpful": ["h1"], "misleading": ["m1"], "missing": ["mi1"]},
+    "ac_921_corrupt_fence_with_decoy_json": {"x": 2},  # AC-921: decoy bare-object fallback picks up unrelated JSON
+    "uppercase_json_fence_tag": {"a": 1},  # bare-object regex fallback still finds it despite the leaky tag
 }
 
 
@@ -387,6 +413,8 @@ EXTRACT_JSON_OBJECT_EXPECTED: dict[str, dict[str, Any] | None] = {
     "fenced_with_leading_prose_and_trailing_prose": {"a": 1},
     "curator_rating_shape": {"actionability": 4, "specificity": 5, "correctness": 2, "rationale": "solid"},
     "hint_feedback_shape": {"helpful": ["h1"], "misleading": ["m1"], "missing": ["mi1"]},
+    "ac_921_corrupt_fence_with_decoy_json": None,  # fenced candidate invalid; naive first-{-to-last-} scan also invalid
+    "uppercase_json_fence_tag": {"a": 1},  # fenced regex is case-insensitive, unlike strip_json_fences
 }
 
 
