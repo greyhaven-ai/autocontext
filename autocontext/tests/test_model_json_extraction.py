@@ -154,6 +154,40 @@ CORPUS: list[tuple[str, str]] = [
         "two_bare_json_objects_no_fence",
         'Option A: {"aggression": 0.9, "defense": 0.1}\nOption B: {"aggression": 0.5, "defense": 0.5}',
     ),
+    (
+        # AC-910 Task 3 review Critical 1: a literal "}" inside a JSON string
+        # value used to fragment this well-formed object into an invalid
+        # prefix, letting the naive scan fall through to the unrelated decoy
+        # object below and silently return it. The string-aware span scan
+        # must keep the whole first object intact and return it, never the
+        # decoy.
+        "critical1_brace_in_string_with_decoy",
+        ('My rating: {"score": 5, "rationale": "matches rubric step 3}"} Ignore stale: {"score": 1, "rationale": "stale"}'),
+    ),
+    (
+        # AC-910 Task 3 review Critical 2: a bare array followed by a
+        # separate bare object, no fence. The array is a decisive answer
+        # about what the model produced; the naive scan used to reach past
+        # it and adopt the object dangling after it.
+        "array_then_separate_object_no_fence",
+        '[{"a": 1}], {"b": 2}',
+    ),
+    (
+        # Same defect as above, realistic shape: array of objects embedded in
+        # prose rather than at the very start of the text. This is the case
+        # that a plain `scope.lstrip().startswith("[")` check would miss,
+        # since the array isn't the first token in the scope.
+        "array_of_objects_in_prose_no_fence",
+        'Available tools: [{"name": "n1"}] let me know.',
+    ),
+    (
+        # Companion to critical1: a brace inside a string value with NO decoy
+        # after it. This must still parse successfully -- confirms the
+        # string-aware fix isn't just failing safe on brace-in-string inputs,
+        # it's recovering the correct object.
+        "brace_in_string_value_no_fence_no_decoy",
+        '{"note": "step 3} done", "a": 1}',
+    ),
 ]
 
 CORPUS_IDS = [name for name, _ in CORPUS]
@@ -260,6 +294,12 @@ STRIP_JSON_FENCES_EXPECTED: dict[str, str] = {
     "two_bare_json_objects_no_fence": (
         'Option A: {"aggression": 0.9, "defense": 0.1}\nOption B: {"aggression": 0.5, "defense": 0.5}'
     ),
+    "critical1_brace_in_string_with_decoy": (
+        'My rating: {"score": 5, "rationale": "matches rubric step 3}"} Ignore stale: {"score": 1, "rationale": "stale"}'
+    ),
+    "array_then_separate_object_no_fence": '[{"a": 1}], {"b": 2}',
+    "array_of_objects_in_prose_no_fence": 'Available tools: [{"name": "n1"}] let me know.',
+    "brace_in_string_value_no_fence_no_decoy": '{"note": "step 3} done", "a": 1}',
 }
 
 
@@ -286,7 +326,13 @@ EXTRACT_JSON_EXPECTED: dict[str, Any] = {
     "empty_string": _Raises(json.JSONDecodeError),
     "invalid_json_in_fence": _Raises(json.JSONDecodeError),
     "brace_in_string_value": {"code": "if (x) { return 1; }", "ok": True},
-    "trailing_stray_brace_no_fence": _Raises(json.JSONDecodeError),
+    # CHANGED by the AC-910 Task 3 review fix (Critical 1, string-aware
+    # spans): the naive brace counter used to see the "}" inside the
+    # "value } here" string as closing the object, leaving an invalid
+    # `{"text": "value }` fragment and a dangling `{2}` decoy, neither of
+    # which parses -> raise. The string-aware scan now sees the real,
+    # well-formed `{"text": "value } here"}` object and recovers it.
+    "trailing_stray_brace_no_fence": {"text": "value } here"},
     "architect_valid_tools_block": {"tools": [{"name": "n", "description": "d", "code": "c"}]},
     "whitespace_only": _Raises(json.JSONDecodeError),
     "fenced_with_leading_prose_and_trailing_prose": {"a": 1},
@@ -312,6 +358,21 @@ EXTRACT_JSON_EXPECTED: dict[str, Any] = {
     # raised JSONDecodeError (the single first-"{"-to-last-"}" span crossed
     # both objects and the "Option B:" prose between them).
     "two_bare_json_objects_no_fence": {"aggression": 0.9, "defense": 0.1},
+    # AC-910 Task 3 review Critical 1 fix: the brace inside the "rationale"
+    # string no longer fragments the first object, so it recovers correctly
+    # instead of falling through to the unrelated "stale" decoy object.
+    "critical1_brace_in_string_with_decoy": {"score": 5, "rationale": "matches rubric step 3}"},
+    # AC-910 Task 3 review Critical 2 fix: a top-level array candidate is
+    # terminal even when it isn't the whole scope, so this no longer
+    # unwraps {"a": 1} out of the array and ignores the trailing {"b": 2}.
+    "array_then_separate_object_no_fence": _Raises(ValueError),
+    # Same Critical 2 fix, array embedded in prose rather than leading.
+    "array_of_objects_in_prose_no_fence": _Raises(ValueError),
+    # String-aware span scan recovers this whole, valid object; there's no
+    # decoy here to fall through to, so this also passed before the fix via
+    # the whole-scope candidate -- pinned as the no-decoy companion to
+    # critical1 above.
+    "brace_in_string_value_no_fence_no_decoy": {"note": "step 3} done", "a": 1},
 }
 
 
@@ -419,6 +480,10 @@ PARSE_ARCHITECT_TOOL_SPECS_EXPECTED: dict[str, list[dict[str, Any]]] = {
     "fenced_array_of_objects": [],  # same terminal-list rule -> None -> [] with a warning
     "fenced_mixed_array_with_object": [],  # same terminal-list rule -> None -> [] with a warning
     "two_bare_json_objects_no_fence": [],  # extract_json recovers Option A's dict, but it has no "tools" key
+    "critical1_brace_in_string_with_decoy": [],  # extract_json recovers the correct object, but no "tools" key
+    "array_then_separate_object_no_fence": [],  # extract_json now raises (Critical 2 fix) -> None -> []
+    "array_of_objects_in_prose_no_fence": [],  # same Critical 2 fix -> None -> []
+    "brace_in_string_value_no_fence_no_decoy": [],  # valid dict recovered, but no "tools" key
 }
 
 
@@ -489,6 +554,16 @@ CURATOR_RATE_EXPECTED: dict[str, _CuratorRatingShape] = {
     "fenced_array_of_objects": _CURATOR_DEFAULT,  # same: parses to a list, not a dict
     "fenced_mixed_array_with_object": _CURATOR_DEFAULT,  # same: parses to a list, not a dict
     "two_bare_json_objects_no_fence": _CURATOR_DEFAULT,  # recovers Option A's dict, but no matching rating keys
+    # extract_json recovers {"score": 5, "rationale": "matches rubric step 3}"}.
+    # "score" isn't a rating field and is ignored, but "rationale" IS a
+    # rating field, so it flows through where the other rows' recovered
+    # dicts have no field overlap at all.
+    "critical1_brace_in_string_with_decoy": _CuratorRatingShape(
+        actionability=3, specificity=3, correctness=3, rationale="matches rubric step 3}"
+    ),
+    "array_then_separate_object_no_fence": _CURATOR_DEFAULT,  # extract_json raises -> None -> default
+    "array_of_objects_in_prose_no_fence": _CURATOR_DEFAULT,  # same
+    "brace_in_string_value_no_fence_no_decoy": _CURATOR_DEFAULT,  # parses fine, no matching keys
 }
 
 
@@ -532,7 +607,9 @@ EXTRACT_STRATEGY_DETERMINISTIC_EXPECTED: dict[str, dict[str, Any] | None] = {
     "empty_string": None,
     "invalid_json_in_fence": None,
     "brace_in_string_value": {"code": "if (x) { return 1; }", "ok": True},
-    "trailing_stray_brace_no_fence": None,
+    # CHANGED by the AC-910 Task 3 review fix (Critical 1, string-aware
+    # spans): see the matching comment on EXTRACT_JSON_EXPECTED above.
+    "trailing_stray_brace_no_fence": {"text": "value } here"},
     "architect_valid_tools_block": {"tools": [{"name": "n", "description": "d", "code": "c"}]},
     "whitespace_only": None,
     "fenced_with_leading_prose_and_trailing_prose": {"a": 1},
@@ -550,6 +627,12 @@ EXTRACT_STRATEGY_DETERMINISTIC_EXPECTED: dict[str, dict[str, Any] | None] = {
     # Option A, matching the old three-layer fallback chain this extractor
     # used to have. Net unchanged from the pre-migration baseline.
     "two_bare_json_objects_no_fence": {"aggression": 0.9, "defense": 0.1},
+    # Critical 1 fix: recovers the correct first object, not the decoy.
+    "critical1_brace_in_string_with_decoy": {"score": 5, "rationale": "matches rubric step 3}"},
+    # Critical 2 fix: extract_json now raises on the array candidate -> None.
+    "array_then_separate_object_no_fence": None,
+    "array_of_objects_in_prose_no_fence": None,
+    "brace_in_string_value_no_fence_no_decoy": {"note": "step 3} done", "a": 1},
 }
 
 
@@ -605,7 +688,9 @@ EXTRACT_JSON_OBJECT_EXPECTED: dict[str, dict[str, Any] | None] = {
     "empty_string": None,
     "invalid_json_in_fence": None,
     "brace_in_string_value": {"code": "if (x) { return 1; }", "ok": True},
-    "trailing_stray_brace_no_fence": None,
+    # CHANGED by the AC-910 Task 3 review fix (Critical 1, string-aware
+    # spans): see the matching comment on EXTRACT_JSON_EXPECTED above.
+    "trailing_stray_brace_no_fence": {"text": "value } here"},
     "architect_valid_tools_block": {"tools": [{"name": "n", "description": "d", "code": "c"}]},
     "whitespace_only": None,
     "fenced_with_leading_prose_and_trailing_prose": {"a": 1},
@@ -624,6 +709,12 @@ EXTRACT_JSON_OBJECT_EXPECTED: dict[str, dict[str, Any] | None] = {
     # recovered Option A too before the extract_json migration; the parser
     # fix restores that.
     "two_bare_json_objects_no_fence": {"aggression": 0.9, "defense": 0.1},
+    # Critical 1 fix: recovers the correct first object, not the decoy.
+    "critical1_brace_in_string_with_decoy": {"score": 5, "rationale": "matches rubric step 3}"},
+    # Critical 2 fix: extract_json now raises on the array candidate -> None.
+    "array_then_separate_object_no_fence": None,
+    "array_of_objects_in_prose_no_fence": None,
+    "brace_in_string_value_no_fence_no_decoy": {"note": "step 3} done", "a": 1},
 }
 
 
