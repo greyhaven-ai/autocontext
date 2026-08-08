@@ -103,6 +103,10 @@ describe("contract self-consistency", () => {
     );
     expect(missingRoleFields, "roles with no model field mapping").toEqual([]);
 
+    // code_policy is excluded deliberately, not overlooked. It is a declared provider class
+    // that is currently vestigial: no cost entry, no model-field mapping, and it appears in no
+    // role's routing preferences, so nothing can route to it. Both languages fall back to the
+    // mid-tier cost for it. Revisit when AC-911 reworks the capability taxonomy.
     const missingClassFields = [...classes].filter(
       (providerClass) =>
         providerClass !== "code_policy" && !(providerClass in CONTRACT.class_model_fields),

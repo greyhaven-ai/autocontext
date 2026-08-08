@@ -15,7 +15,7 @@ MODE_VALUES: Final[tuple[str, ...]] = ("off", "auto")
 COST_PER_1K_TOKENS: Final[dict[str, float]] = {
     "fast": 0.001,
     "frontier": 0.015,
-    "local": 0,
+    "local": 0.0,
     "mid_tier": 0.003,
 }
 

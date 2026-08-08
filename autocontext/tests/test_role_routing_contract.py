@@ -40,6 +40,10 @@ def test_contract_is_internally_consistent() -> None:
     missing_role_fields = routed_roles - set(contract["role_model_fields"])
     assert not missing_role_fields, f"roles with no model field mapping: {sorted(missing_role_fields)}"
 
+    # code_policy is excluded deliberately, not overlooked. It is a declared provider class
+    # that is currently vestigial: no cost entry, no model-field mapping, and it appears in no
+    # role's routing preferences, so nothing can route to it. Both languages fall back to the
+    # mid-tier cost for it. Revisit when AC-911 reworks the capability taxonomy.
     missing_class_fields = classes - set(contract["class_model_fields"]) - {"code_policy"}
     assert not missing_class_fields, f"classes with no model field mapping: {sorted(missing_class_fields)}"
 

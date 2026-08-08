@@ -46,14 +46,35 @@ const jsonObjOfArrays = (obj, indent) =>
     .map((k) => `${indent}${tsKey(k)}: ${tsArray([...obj[k]])},`)
     .join("\n");
 
+// Format one contract scalar as a Python literal, and refuse anything else.
+//
+// JSON.stringify is wrong for Python in two ways. First, JavaScript has no int/float
+// distinction, so the contract's `cost_per_1k_tokens.local = 0.0` stringifies to `0` and
+// silently lands in Python as an int, changing _COST_TABLE[LOCAL] from 0.0 to 0. Neither
+// gate can see it: the parity fixture compares with pytest.approx, and mypy accepts int
+// for float via the numeric tower. Second, JSON null/true/false would be written verbatim
+// and raise NameError on import, so those are rejected loudly at generation time rather
+// than producing a Python file that cannot be imported.
+const pyScalar = (value) => {
+  if (typeof value === "string") return JSON.stringify(value);
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Number.isInteger(value) ? `${value}.0` : String(value);
+  }
+  throw new Error(
+    `role-routing contract: cannot emit ${JSON.stringify(value)} as a Python literal. ` +
+      `Only strings and finite numbers are supported; null/true/false/objects would produce ` +
+      `invalid Python. Fix docs/role-routing-contract.json.`,
+  );
+};
+
 // Python list/tuple literals need ", " (space after comma) to match ruff's formatter;
 // JSON.stringify on an array omits that space, which `ruff format` would otherwise rewrite
 // and make the committed file differ from the generator's output.
-const pyList = (arr) => `[${arr.map((v) => JSON.stringify(v)).join(", ")}]`;
+const pyList = (arr) => `[${arr.map(pyScalar).join(", ")}]`;
 
 const pyObj = (obj, indent) =>
   sortedKeys(obj)
-    .map((k) => `${indent}${JSON.stringify(k)}: ${JSON.stringify(obj[k])},`)
+    .map((k) => `${indent}${JSON.stringify(k)}: ${pyScalar(obj[k])},`)
     .join("\n");
 const pyObjOfArrays = (obj, indent) =>
   sortedKeys(obj)
@@ -61,10 +82,14 @@ const pyObjOfArrays = (obj, indent) =>
     .join("\n");
 
 // Python tuple literal from a JSON array, e.g. ["frontier", "mid_tier"] -> ("frontier", "mid_tier")
-// Deliberately no trailing comma before the closing paren: ruff's formatter collapses a
-// short tuple like `("a", "b",)` to `("a", "b")`, so emitting the trailing form here would
-// make the committed file differ from ruff's canonical output and fail --check forever.
-const pyTuple = (arr) => `(${arr.map((v) => JSON.stringify(v)).join(", ")})`;
+// No trailing comma for two or more elements: ruff's formatter collapses `("a", "b",)` to
+// `("a", "b")`, so the trailing form would make the committed file differ from ruff's
+// canonical output and fail --check forever.
+// A ONE-element tuple is the opposite case and needs the trailing comma: `("a")` is a plain
+// string, not a tuple, and ruff rewrites it to `"a"` — same permanent --check failure, plus
+// a wrong type. ruff preserves `("a",)`.
+const pyTuple = (arr) =>
+  arr.length === 1 ? `(${pyScalar(arr[0])},)` : `(${arr.map(pyScalar).join(", ")})`;
 
 const tsSource = `/* eslint-disable */
 // AUTO-GENERATED from docs/role-routing-contract.json — DO NOT EDIT.
