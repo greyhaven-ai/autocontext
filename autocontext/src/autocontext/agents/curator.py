@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 import re
 from dataclasses import dataclass
@@ -10,7 +9,7 @@ from typing import Any
 from autocontext.agents.feedback_loops import AnalystRating
 from autocontext.agents.subagent_runtime import SubagentRuntime, SubagentTask
 from autocontext.agents.types import RoleExecution
-from autocontext.harness.core.output_parser import strip_json_fences
+from autocontext.harness.core.output_parser import extract_json
 
 _DECISION_RE = re.compile(r"<!--\s*CURATOR_DECISION:\s*(accept|reject|merge)\s*-->", re.IGNORECASE)
 _PLAYBOOK_RE = re.compile(
@@ -102,6 +101,7 @@ _CURATOR_CONSOLIDATION_CONSTRAINT = (
     "- Do NOT keep lessons that directly contradict each other without resolution\n\n"
 )
 
+
 def _structural_hint_prompt(hint_style: str) -> str:
     return str(import_module("autocontext.knowledge.soft_hints").structural_hint_prompt(hint_style))
 
@@ -191,8 +191,7 @@ class KnowledgeCurator:
         """Rate analyst quality so the next analyst prompt gets concrete curator feedback."""
         constraint_preamble = _CURATOR_ANALYST_RATING_CONSTRAINT if constraint_mode else ""
         prompt = (
-            constraint_preamble
-            + "You are a curator rating the quality of the analyst's report.\n\n"
+            constraint_preamble + "You are a curator rating the quality of the analyst's report.\n\n"
             "Score the report from 1-5 on:\n"
             "- actionability: how directly the recommendations can be used\n"
             "- specificity: how concrete and evidence-backed the findings are\n"
@@ -211,14 +210,12 @@ class KnowledgeCurator:
                 temperature=0.2,
             )
         )
-        payload: dict[str, Any] = {}
-        try:
-            decoded = json.loads(strip_json_fences(exec_result.content))
-            if isinstance(decoded, dict):
-                payload = decoded
-        except json.JSONDecodeError:
-            logger.warning("curator analyst-rating parse failed; using default scores", exc_info=True)
-            payload = {}
+        decoded = extract_json(exec_result.content, on_failure="none")
+        if decoded is None:
+            logger.warning("curator analyst-rating parse failed; using default scores")
+            payload: dict[str, Any] = {}
+        else:
+            payload = decoded
         rating = AnalystRating.from_dict({"generation": generation, **payload})
         return rating, exec_result
 
@@ -233,8 +230,7 @@ class KnowledgeCurator:
         lessons_text = "\n".join(existing_lessons)
         constraint_preamble = _CURATOR_CONSOLIDATION_CONSTRAINT if constraint_mode else ""
         prompt = (
-            constraint_preamble
-            + "You are a curator consolidating operational lessons. "
+            constraint_preamble + "You are a curator consolidating operational lessons. "
             f"Reduce {len(existing_lessons)} lessons to at most {max_lessons}.\n\n"
             "Deduplicate semantically similar lessons. Rank by evidence strength.\n"
             "Remove outdated or contradicted lessons.\n\n"

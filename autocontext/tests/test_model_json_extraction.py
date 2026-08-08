@@ -359,16 +359,29 @@ def test_extract_json_ac_921_decoy_does_not_return_the_decoy_object() -> None:
 # Extractor 3: agents.architect.parse_architect_tool_specs
 # ---------------------------------------------------------------------------
 
+# AC-910 Task 3: parse_architect_tool_specs now delegates to the shared
+# extract_json(..., on_failure="none") instead of its own find("```json") /
+# rfind("```") span. Every row below still returns the same value as before
+# the migration -- ARCH's [] here is (with one exception, noted per-row)
+# still a schema mismatch (extract_json returns a dict, just not one with a
+# "tools" list), not a parse failure. The one exception is `two_fenced_blocks`,
+# which changes from a JSONDecodeError-driven [] to a schema-mismatch-driven
+# [] -- same return value, different reason, not a value change (see the
+# dedicated AC-920 test below for the case where this DOES change the
+# return value).
 PARSE_ARCHITECT_TOOL_SPECS_EXPECTED: dict[str, list[dict[str, Any]]] = {
     "normal_fenced_block": [],
-    "fence_no_language": [],  # requires the literal "```json" tag; plain fence never matches
+    "fence_no_language": [],
     "fence_single_line": [],
-    "two_fenced_blocks": [],  # rfind("```") grabs the SECOND block's closing fence -> corrupt span -> JSONDecodeError -> []
+    "two_fenced_blocks": [],  # extract_json grabs the FIRST block ({"a": 1}); still [] since it has no "tools" key
+    # extract_json can't find a complete JSON object -> None -> [] (now logs
+    # the warning; the old find/rfind short-circuited before ever trying to
+    # parse, so it silently returned [] without logging)
     "truncated_block": [],
     "bare_json_with_prose": [],
     "json_array_not_object": [],
     "empty_string": [],
-    "invalid_json_in_fence": [],
+    "invalid_json_in_fence": [],  # still unparseable within the fenced scope -> None -> [] with a warning, as before
     "brace_in_string_value": [],  # valid JSON, valid dict, but no "tools" key
     "trailing_stray_brace_no_fence": [],
     "architect_valid_tools_block": [{"name": "n", "description": "d", "code": "c"}],
@@ -376,17 +389,39 @@ PARSE_ARCHITECT_TOOL_SPECS_EXPECTED: dict[str, list[dict[str, Any]]] = {
     "fenced_with_leading_prose_and_trailing_prose": [],
     "curator_rating_shape": [],
     "hint_feedback_shape": [],
-    "ac_921_corrupt_fence_with_decoy_json": [],  # body between the tag and last ``` is invalid JSON -> JSONDecodeError -> []
-    "uppercase_json_fence_tag": [],  # requires the literal "```json" tag; uppercase never matches find("```json")
-    "bare_array_of_objects": [],  # no "```json" tag at all
-    "fenced_array_of_objects": [],  # parses to a list, not a dict with a "tools" key
-    "fenced_mixed_array_with_object": [],  # same: parses to a list, not a dict with a "tools" key
+    # still fails within the fenced scope (decoy sits outside it) -> None ->
+    # [] with a warning, as before
+    "ac_921_corrupt_fence_with_decoy_json": [],
+    "uppercase_json_fence_tag": [],  # recovered via the within-scope brace scan despite the leaked tag; still no "tools" key
+    # scope parses to a list -> terminal ValueError -> None -> [] with a
+    # warning (previously [] via no "```json" tag found at all, no warning)
+    "bare_array_of_objects": [],
+    "fenced_array_of_objects": [],  # same terminal-list rule -> None -> [] with a warning
+    "fenced_mixed_array_with_object": [],  # same terminal-list rule -> None -> [] with a warning
 }
 
 
 @pytest.mark.parametrize("name,text", CORPUS, ids=CORPUS_IDS)
 def test_parse_architect_tool_specs(name: str, text: str) -> None:
     assert parse_architect_tool_specs(text) == PARSE_ARCHITECT_TOOL_SPECS_EXPECTED[name]
+
+
+def test_parse_architect_tool_specs_ac_920_two_tools_blocks_uses_first_block() -> None:
+    """AC-920: an architect response offering an alternative (two fenced
+    ``{"tools": [...]}`` blocks) used to be treated as no proposal at all.
+
+    The old `find("```json")` / `rfind("```")` span took the LAST closing
+    fence, splicing the first block's opening through the second block's
+    opening into one corrupt, unparseable span -> JSONDecodeError -> [].
+    extract_json's regex is non-greedy and takes the FIRST complete fenced
+    block, so migrating onto it fixes this for free: the architect's first
+    proposal is now recovered instead of silently discarded.
+    """
+    two_tools_blocks = (
+        'Here is my primary proposal:\n```json\n{"tools": [{"name": "n1", "description": "d1", "code": "c1"}]}\n```\n'
+        'And an alternative:\n```json\n{"tools": [{"name": "n2", "description": "d2", "code": "c2"}]}\n```'
+    )
+    assert parse_architect_tool_specs(two_tools_blocks) == [{"name": "n1", "description": "d1", "code": "c1"}]
 
 
 # ---------------------------------------------------------------------------
@@ -444,33 +479,50 @@ def test_curator_rate_analyst_output(name: str, text: str) -> None:
 # Extractor 6: agents.translator_simplification.extract_strategy_deterministic
 # ---------------------------------------------------------------------------
 
+# AC-910 Task 3: extract_strategy_deterministic now delegates to the shared
+# extract_json(..., on_failure="none") instead of its own fence regex +
+# bare-object regex + whole-text fallback chain. Two rows changed value as a
+# result, both filed-bug fixes, not regressions:
+#
+# - `ac_921_corrupt_fence_with_decoy_json` ({"x": 2} -> None): this extractor
+#   WAS the AC-921 bug -- its bare-object regex fallback scanned the whole
+#   raw text and picked up the decoy object outside the corrupt fence.
+#   extract_json's brace scan stays confined to the fence's own captured
+#   content, so the decoy is never reached; the corrupt fence now fails
+#   closed (None) instead of returning the wrong-but-plausible object.
+# - `bare_array_of_objects` / `fenced_array_of_objects` /
+#   `fenced_mixed_array_with_object` ({"a": 1} -> None): same array-coercion
+#   defect Task 2 fixed inside extract_json itself (a successful parse to a
+#   list is terminal, not a cue to keep hunting for a nested object) --
+#   this extractor's own bare-object regex had the identical defect, and
+#   migrating removes it here too.
+#
+# Every other row is unchanged: extract_json's fence + no-fence brace-scan
+# fallbacks cover the same ground this extractor's three-layer chain did.
 EXTRACT_STRATEGY_DETERMINISTIC_EXPECTED: dict[str, dict[str, Any] | None] = {
     "normal_fenced_block": {"a": 1},
     "fence_no_language": {"a": 1},
-    "fence_single_line": {"a": 1},  # fence regex requires a literal \n, but the bare-object regex fallback still finds it
+    "fence_single_line": {"a": 1},
     "two_fenced_blocks": {"a": 1},
     "truncated_block": None,
-    "bare_json_with_prose": {"a": 1},  # bare-object regex fallback
-    "json_array_not_object": None,  # not a dict; fenced+bare-object+whole-text all reject
+    "bare_json_with_prose": {"a": 1},
+    "json_array_not_object": None,  # scope parses to a list -> terminal ValueError -> None
     "empty_string": None,
     "invalid_json_in_fence": None,
     "brace_in_string_value": {"code": "if (x) { return 1; }", "ok": True},
-    "trailing_stray_brace_no_fence": None,  # naive bare-object regex still fails to reconstruct valid JSON here
+    "trailing_stray_brace_no_fence": None,
     "architect_valid_tools_block": {"tools": [{"name": "n", "description": "d", "code": "c"}]},
     "whitespace_only": None,
     "fenced_with_leading_prose_and_trailing_prose": {"a": 1},
     "curator_rating_shape": {"actionability": 4, "specificity": 5, "correctness": 2, "rationale": "solid"},
     "hint_feedback_shape": {"helpful": ["h1"], "misleading": ["m1"], "missing": ["mi1"]},
-    "ac_921_corrupt_fence_with_decoy_json": {"x": 2},  # AC-921: decoy bare-object fallback picks up unrelated JSON
-    "uppercase_json_fence_tag": {"a": 1},  # bare-object regex fallback still finds it despite the leaky tag
-    # This extractor's own bare-object regex has the same array-coercion
-    # defect that AC-910 Task 2 fixed in extract_json: it finds the nested
-    # {"a": 1} inside the array and returns it instead of rejecting the
-    # array. Out of scope for this task (no call sites may change here) --
-    # pinned as-is per the characterization-suite mandate.
-    "bare_array_of_objects": {"a": 1},
-    "fenced_array_of_objects": {"a": 1},
-    "fenced_mixed_array_with_object": {"a": 1},
+    # AC-921 FIX (see comment above the table): was {"x": 2}, now None.
+    "ac_921_corrupt_fence_with_decoy_json": None,
+    "uppercase_json_fence_tag": {"a": 1},  # recovered via the within-scope brace scan on the leaked tag, not a bare-object regex
+    # Array-coercion FIX (see comment above the table): were all {"a": 1}, now None.
+    "bare_array_of_objects": None,
+    "fenced_array_of_objects": None,
+    "fenced_mixed_array_with_object": None,
 }
 
 
@@ -501,32 +553,45 @@ def test_parse_hint_feedback(name: str, text: str) -> None:
 # Extractor 8: execution.action_filter.ActionFilterHarness._extract_json_object
 # ---------------------------------------------------------------------------
 
+# AC-910 Task 3: _extract_json_object now delegates to the shared
+# extract_json(..., on_failure="none") instead of its own anchored fenced
+# regex + naive first-"{"-to-last-"}" fallback. Three rows changed value,
+# all the same array-coercion family Task 2 fixed inside extract_json
+# itself (a successful parse to a list is terminal, not a cue to keep
+# hunting for a nested object): `bare_array_of_objects`,
+# `fenced_array_of_objects`, `fenced_mixed_array_with_object`, all
+# {"a": 1} -> None. This extractor's naive find("{")/rfind("}") fallback had
+# the identical defect (no type check at all on what it recovers); migrating
+# removes it here too. `ac_921_corrupt_fence_with_decoy_json` does NOT
+# change (still None both ways) -- this extractor's corrupted-fence
+# candidate already failed to parse before reaching the naive whole-response
+# scan that could have picked up the decoy, so it was accidentally already
+# safe from AC-921, not by design.
 EXTRACT_JSON_OBJECT_EXPECTED: dict[str, dict[str, Any] | None] = {
     "normal_fenced_block": {"a": 1},
     "fence_no_language": {"a": 1},
     "fence_single_line": {"a": 1},
     "two_fenced_blocks": {"a": 1},
     "truncated_block": None,
-    "bare_json_with_prose": {"a": 1},  # naive find("{")/rfind("}") fallback happens to work here
-    "json_array_not_object": None,  # no "{" in the text at all; fenced regex requires one too
+    "bare_json_with_prose": {"a": 1},
+    "json_array_not_object": None,  # scope parses to a list -> terminal ValueError -> None
     "empty_string": None,
     "invalid_json_in_fence": None,
-    "brace_in_string_value": {"code": "if (x) { return 1; }", "ok": True},  # fenced regex backtracks past the inner "}"
-    "trailing_stray_brace_no_fence": None,  # naive rfind("}") picks up the LATER stray "}" from "{2}", corrupting the span
+    "brace_in_string_value": {"code": "if (x) { return 1; }", "ok": True},
+    "trailing_stray_brace_no_fence": None,
     "architect_valid_tools_block": {"tools": [{"name": "n", "description": "d", "code": "c"}]},
     "whitespace_only": None,
     "fenced_with_leading_prose_and_trailing_prose": {"a": 1},
     "curator_rating_shape": {"actionability": 4, "specificity": 5, "correctness": 2, "rationale": "solid"},
     "hint_feedback_shape": {"helpful": ["h1"], "misleading": ["m1"], "missing": ["mi1"]},
-    "ac_921_corrupt_fence_with_decoy_json": None,  # fenced candidate invalid; naive first-{-to-last-} scan also invalid
-    "uppercase_json_fence_tag": {"a": 1},  # fenced regex is case-insensitive, unlike strip_json_fences
-    # Same pre-existing array-coercion defect as extract_strategy_deterministic
-    # above: this extractor's naive first-"{"-to-last-"}" fallback has no type
-    # check at all, so it happily returns the nested object from an array.
-    # Out of scope here (no call sites may change); pinned as-is.
-    "bare_array_of_objects": {"a": 1},
-    "fenced_array_of_objects": {"a": 1},
-    "fenced_mixed_array_with_object": {"a": 1},
+    "ac_921_corrupt_fence_with_decoy_json": None,  # unchanged: fails within scope, decoy never reached, as before
+    "uppercase_json_fence_tag": {
+        "a": 1
+    },  # recovered via the within-scope brace scan on the leaked tag now, not case-insensitive tag matching
+    # Array-coercion FIX (see comment above the table): were all {"a": 1}, now None.
+    "bare_array_of_objects": None,
+    "fenced_array_of_objects": None,
+    "fenced_mixed_array_with_object": None,
 }
 
 
