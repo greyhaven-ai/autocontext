@@ -3,12 +3,6 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
-  DEFAULT_ROLE_ROUTING_TABLE,
-  EXPLICIT_PROVIDER_CLASS,
-  LOCAL_ELIGIBLE_ROLES,
-  PROVIDER_CLASSES,
-  PROVIDER_CLASS_COST_PER_1K_TOKENS,
-  ROLE_ROUTING_MODES,
   SUPPORTED_PROVIDER_TYPES,
   buildRoleProviderBundle,
   estimateRoleRoutingCost,
@@ -17,12 +11,14 @@ import {
 } from "../src/providers/index.js";
 
 type RoleRoutingContract = {
+  class_model_fields: Record<string, Record<string, string>>;
   cost_per_1k_tokens: Record<string, number>;
   default_routing_table: Record<string, string[]>;
   explicit_provider_classes: Record<string, string>;
   local_eligible_roles: string[];
   mode_values: string[];
   provider_classes: string[];
+  role_model_fields: Record<string, Record<string, string>>;
   supported_provider_types: Record<string, { packages: string[] }>;
 };
 
@@ -75,16 +71,47 @@ function withCleanProviderEnv(run: () => void): void {
   }
 }
 
-describe("shared role routing contract", () => {
-  it("keeps TypeScript routing constants aligned with the shared contract", () => {
-    expect(PROVIDER_CLASSES).toEqual(CONTRACT.provider_classes);
-    expect(ROLE_ROUTING_MODES).toEqual(CONTRACT.mode_values);
-    expect(DEFAULT_ROLE_ROUTING_TABLE).toEqual(CONTRACT.default_routing_table);
-    expect(LOCAL_ELIGIBLE_ROLES).toEqual(CONTRACT.local_eligible_roles);
-    expect(PROVIDER_CLASS_COST_PER_1K_TOKENS).toEqual(CONTRACT.cost_per_1k_tokens);
-    expect(EXPLICIT_PROVIDER_CLASS).toEqual(CONTRACT.explicit_provider_classes);
-  });
+// Catches contract edits that codegen would happily propagate as nonsense. These
+// invariants cannot be satisfied by construction the way the old constants-match-contract
+// assertions could, because both sides of each comparison come from different sections of
+// the contract, not from the generated module.
+describe("contract self-consistency", () => {
+  it("checks every contract table against the classes and roles the contract itself declares", () => {
+    const classes = new Set(CONTRACT.provider_classes);
 
+    const unknownCostClasses = Object.keys(CONTRACT.cost_per_1k_tokens).filter(
+      (providerClass) => !classes.has(providerClass),
+    );
+    expect(unknownCostClasses, "cost table names unknown classes").toEqual([]);
+
+    for (const [role, preferences] of Object.entries(CONTRACT.default_routing_table)) {
+      const unknown = preferences.filter((providerClass) => !classes.has(providerClass));
+      expect(unknown, `role ${role} prefers unknown classes`).toEqual([]);
+    }
+
+    const routedRoles = new Set(Object.keys(CONTRACT.default_routing_table));
+    const unknownLocal = CONTRACT.local_eligible_roles.filter((role) => !routedRoles.has(role));
+    expect(unknownLocal, "local_eligible_roles names unrouted roles").toEqual([]);
+
+    const unknownExplicit = Object.values(CONTRACT.explicit_provider_classes).filter(
+      (providerClass) => !classes.has(providerClass),
+    );
+    expect(unknownExplicit, "explicit_provider_classes names unknown classes").toEqual([]);
+
+    const missingRoleFields = [...routedRoles].filter(
+      (role) => !(role in CONTRACT.role_model_fields),
+    );
+    expect(missingRoleFields, "roles with no model field mapping").toEqual([]);
+
+    const missingClassFields = [...classes].filter(
+      (providerClass) =>
+        providerClass !== "code_policy" && !(providerClass in CONTRACT.class_model_fields),
+    );
+    expect(missingClassFields, "classes with no model field mapping").toEqual([]);
+  });
+});
+
+describe("shared role routing contract", () => {
   it("supported provider types match the contract", () => {
     const declared = Object.entries(CONTRACT.supported_provider_types)
       .filter(([, entry]) => entry.packages.includes("typescript"))
