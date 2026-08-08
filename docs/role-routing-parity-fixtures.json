@@ -1,0 +1,360 @@
+{
+  "schema_version": 1,
+  "contract": "cross-language role routing behavior; replayed by autocontext/tests/test_role_routing_parity.py and ts/tests/role-routing-parity.test.ts",
+  "fixtures": {
+    "auto_mode": {
+      "competitor_frontier": {
+        "role": "competitor",
+        "settings": {},
+        "context": {},
+        "expected": {
+          "provider_type": "anthropic",
+          "model": "opus-tier-model",
+          "provider_class": "frontier",
+          "cost_per_1k_tokens": 0.015
+        }
+      },
+      "analyst_mid_tier": {
+        "role": "analyst",
+        "settings": {},
+        "context": {},
+        "expected": {
+          "provider_type": "anthropic",
+          "model": "sonnet-tier-model",
+          "provider_class": "mid_tier",
+          "cost_per_1k_tokens": 0.003
+        }
+      },
+      "coach_mid_tier": {
+        "role": "coach",
+        "settings": {},
+        "context": {},
+        "expected": {
+          "provider_type": "anthropic",
+          "model": "sonnet-tier-model",
+          "provider_class": "mid_tier",
+          "cost_per_1k_tokens": 0.003
+        }
+      },
+      "architect_frontier_no_local_fallback": {
+        "role": "architect",
+        "settings": {},
+        "context": {},
+        "expected": {
+          "provider_type": "anthropic",
+          "model": "opus-tier-model",
+          "provider_class": "frontier",
+          "cost_per_1k_tokens": 0.015
+        }
+      },
+      "curator_fast": {
+        "role": "curator",
+        "settings": {},
+        "context": {},
+        "expected": {
+          "provider_type": "anthropic",
+          "model": "haiku-tier-model",
+          "provider_class": "fast",
+          "cost_per_1k_tokens": 0.001
+        }
+      },
+      "translator_fast": {
+        "role": "translator",
+        "settings": {},
+        "context": {},
+        "expected": {
+          "provider_type": "anthropic",
+          "model": "haiku-tier-model",
+          "provider_class": "fast",
+          "cost_per_1k_tokens": 0.001
+        }
+      },
+      "unknown_role_falls_back_to_mid_tier": {
+        "role": "skeptic",
+        "settings": {},
+        "context": {},
+        "expected": {
+          "provider_type": "anthropic",
+          "model": "sonnet-tier-model",
+          "provider_class": "mid_tier",
+          "cost_per_1k_tokens": 0.003
+        }
+      },
+      "self_hosted_default_provider_is_frontier_via_table": {
+        "role": "competitor",
+        "settings": { "agent_provider": "vllm" },
+        "context": {},
+        "expected": {
+          "provider_type": "vllm",
+          "model": "opus-tier-model",
+          "provider_class": "frontier",
+          "cost_per_1k_tokens": 0.015
+        }
+      }
+    },
+    "explicit_override": {
+      "competitor_override_to_ollama_is_mid_tier": {
+        "role": "competitor",
+        "settings": { "competitor_provider": "ollama" },
+        "context": {},
+        "expected": {
+          "provider_type": "ollama",
+          "model": "competitor-role-model",
+          "provider_class": "mid_tier",
+          "cost_per_1k_tokens": 0.003
+        }
+      },
+      "architect_override_to_vllm_is_mid_tier": {
+        "role": "architect",
+        "settings": { "architect_provider": "vllm" },
+        "context": {},
+        "expected": {
+          "provider_type": "vllm",
+          "model": "architect-role-model",
+          "provider_class": "mid_tier",
+          "cost_per_1k_tokens": 0.003
+        }
+      },
+      "unknown_override_provider_defaults_to_frontier": {
+        "role": "analyst",
+        "settings": { "analyst_provider": "some-unknown-provider" },
+        "context": {},
+        "expected": {
+          "provider_type": "some-unknown-provider",
+          "model": "analyst-role-model",
+          "provider_class": "frontier",
+          "cost_per_1k_tokens": 0.015
+        }
+      },
+      "override_to_mlx_uses_mlx_model_path": {
+        "role": "coach",
+        "settings": { "coach_provider": "mlx" },
+        "context": {},
+        "expected": {
+          "provider_type": "mlx",
+          "model": "/models/default-local",
+          "provider_class": "local",
+          "cost_per_1k_tokens": 0.0
+        }
+      },
+      "override_wins_over_role_routing_off": {
+        "role": "competitor",
+        "settings": { "competitor_provider": "ollama", "role_routing": "off" },
+        "context": {},
+        "expected": {
+          "provider_type": "ollama",
+          "model": "competitor-role-model",
+          "provider_class": "mid_tier",
+          "cost_per_1k_tokens": 0.003
+        }
+      }
+    },
+    "routing_off": {
+      "off_uses_default_provider_and_role_model": {
+        "role": "competitor",
+        "settings": { "role_routing": "off" },
+        "context": {},
+        "expected": {
+          "provider_type": "anthropic",
+          "model": "competitor-role-model",
+          "provider_class": "frontier",
+          "cost_per_1k_tokens": 0.015
+        }
+      },
+      "off_with_ollama_default_is_mid_tier": {
+        "role": "architect",
+        "settings": { "role_routing": "off", "agent_provider": "ollama" },
+        "context": {},
+        "expected": {
+          "provider_type": "ollama",
+          "model": "architect-role-model",
+          "provider_class": "mid_tier",
+          "cost_per_1k_tokens": 0.003
+        }
+      },
+      "off_with_unknown_default_provider_is_mid_tier": {
+        "role": "analyst",
+        "settings": { "role_routing": "off", "agent_provider": "some-unknown-provider" },
+        "context": {},
+        "expected": {
+          "provider_type": "some-unknown-provider",
+          "model": "analyst-role-model",
+          "provider_class": "mid_tier",
+          "cost_per_1k_tokens": 0.003
+        }
+      },
+      "off_uses_coach_role_model": {
+        "role": "coach",
+        "settings": { "role_routing": "off" },
+        "context": {},
+        "expected": {
+          "provider_type": "anthropic",
+          "model": "coach-role-model",
+          "provider_class": "frontier",
+          "cost_per_1k_tokens": 0.015
+        }
+      },
+      "off_uses_curator_role_model": {
+        "role": "curator",
+        "settings": { "role_routing": "off" },
+        "context": {},
+        "expected": {
+          "provider_type": "anthropic",
+          "model": "curator-role-model",
+          "provider_class": "frontier",
+          "cost_per_1k_tokens": 0.015
+        }
+      },
+      "off_uses_translator_role_model": {
+        "role": "translator",
+        "settings": { "role_routing": "off" },
+        "context": {},
+        "expected": {
+          "provider_type": "anthropic",
+          "model": "translator-role-model",
+          "provider_class": "frontier",
+          "cost_per_1k_tokens": 0.015
+        }
+      },
+      "off_with_mlx_default_uses_mlx_model_path": {
+        "role": "coach",
+        "settings": { "role_routing": "off", "agent_provider": "mlx" },
+        "context": {},
+        "expected": {
+          "provider_type": "mlx",
+          "model": "/models/default-local",
+          "provider_class": "local",
+          "cost_per_1k_tokens": 0.0
+        }
+      }
+    },
+    "local_artifacts": {
+      "eligible_role_prefers_local_artifact": {
+        "role": "competitor",
+        "settings": {},
+        "context": { "availableLocalModels": ["/models/distilled-competitor"] },
+        "expected": {
+          "provider_type": "mlx",
+          "model": "/models/distilled-competitor",
+          "provider_class": "local",
+          "cost_per_1k_tokens": 0.0
+        }
+      },
+      "architect_ignores_local_artifact": {
+        "role": "architect",
+        "settings": {},
+        "context": { "availableLocalModels": ["/models/distilled-architect"] },
+        "expected": {
+          "provider_type": "anthropic",
+          "model": "opus-tier-model",
+          "provider_class": "frontier",
+          "cost_per_1k_tokens": 0.015
+        }
+      },
+      "curator_ignores_local_artifact": {
+        "role": "curator",
+        "settings": {},
+        "context": { "availableLocalModels": ["/models/distilled-curator"] },
+        "expected": {
+          "provider_type": "anthropic",
+          "model": "haiku-tier-model",
+          "provider_class": "fast",
+          "cost_per_1k_tokens": 0.001
+        }
+      },
+      "local_artifact_ignored_when_routing_off": {
+        "role": "competitor",
+        "settings": { "role_routing": "off" },
+        "context": { "availableLocalModels": ["/models/distilled-competitor"] },
+        "expected": {
+          "provider_type": "anthropic",
+          "model": "competitor-role-model",
+          "provider_class": "frontier",
+          "cost_per_1k_tokens": 0.015
+        }
+      }
+    },
+    "cost_estimation": {
+      "default_auto_mode_totals": {
+        "settings": {},
+        "context": {},
+        "expected": {
+          "total_per_1k_tokens": 0.038,
+          "all_frontier_per_1k_tokens": 0.09,
+          "savings_vs_all_frontier": 0.052
+        }
+      },
+      "with_local_artifacts_totals": {
+        "settings": {},
+        "context": { "availableLocalModels": ["/models/distilled"] },
+        "expected": {
+          "total_per_1k_tokens": 0.016,
+          "all_frontier_per_1k_tokens": 0.09,
+          "savings_vs_all_frontier": 0.074
+        }
+      }
+    }
+  },
+  "known_divergences": [
+    {
+      "case": "explicit_override.mixed_case_provider_name",
+      "role": "competitor",
+      "settings": { "competitor_provider": "Ollama" },
+      "context": {},
+      "python": {
+        "provider_type": "Ollama",
+        "model": "competitor-role-model",
+        "provider_class": "mid_tier",
+        "cost_per_1k_tokens": 0.003
+      },
+      "typescript": {
+        "provider_type": "ollama",
+        "model": "competitor-role-model",
+        "provider_class": "mid_tier",
+        "cost_per_1k_tokens": 0.003
+      },
+      "reason": "Python returns the raw per-role provider string while TypeScript normalizes it to lowercase.",
+      "resolution": "AC-911: normalize once when Endpoint replaces the bare provider string, so both packages report the canonical transport name."
+    },
+    {
+      "case": "explicit_override.whitespace_only_provider_name",
+      "role": "competitor",
+      "settings": { "competitor_provider": "  " },
+      "context": {},
+      "python": {
+        "provider_type": "  ",
+        "model": "competitor-role-model",
+        "provider_class": "frontier",
+        "cost_per_1k_tokens": 0.015
+      },
+      "typescript": {
+        "provider_type": "anthropic",
+        "model": "opus-tier-model",
+        "provider_class": "frontier",
+        "cost_per_1k_tokens": 0.015
+      },
+      "reason": "Python treats a whitespace-only provider as a truthy explicit override; TypeScript trims it to undefined and takes the auto route.",
+      "resolution": "AC-911: decide once whether a whitespace-only override counts as set when Endpoint replaces the bare provider string."
+    },
+    {
+      "case": "routing_off.unknown_role_model",
+      "role": "skeptic",
+      "settings": { "role_routing": "off" },
+      "context": {},
+      "python": {
+        "provider_type": "anthropic",
+        "model": null,
+        "provider_class": "frontier",
+        "cost_per_1k_tokens": 0.015
+      },
+      "typescript": {
+        "provider_type": "anthropic",
+        "model": "sonnet-tier-model",
+        "provider_class": "frontier",
+        "cost_per_1k_tokens": 0.015
+      },
+      "reason": "Python has no fallback for an unregistered role under routing_off and returns None for the model, while TypeScript's roleSpecificModel falls back to the sonnet tier model. provider_type ('anthropic') and provider_class ('frontier') agree in both; only model differs.",
+      "resolution": "AC-911: the RoleAssignment work must decide one behavior for an unregistered role under routing_off, rather than inheriting Python's None and TypeScript's tier-default fallback as two separate defaults."
+    }
+  ]
+}
