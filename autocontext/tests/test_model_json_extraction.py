@@ -238,7 +238,10 @@ EXTRACT_JSON_EXPECTED: dict[str, Any] = {
     "fence_single_line": {"a": 1},
     "two_fenced_blocks": {"a": 1},
     "truncated_block": _Raises(json.JSONDecodeError),
-    "bare_json_with_prose": _Raises(json.JSONDecodeError),
+    # CHANGED by the Step 2 strengthening: no fence is present (the fence is
+    # unterminated), so extract_json now brace-scans the bare text -- same
+    # fallback action_filter already uses -- and recovers the object.
+    "bare_json_with_prose": {"a": 1},
     "json_array_not_object": _Raises(ValueError),
     "empty_string": _Raises(json.JSONDecodeError),
     "invalid_json_in_fence": _Raises(json.JSONDecodeError),
@@ -249,8 +252,15 @@ EXTRACT_JSON_EXPECTED: dict[str, Any] = {
     "fenced_with_leading_prose_and_trailing_prose": {"a": 1},
     "curator_rating_shape": {"actionability": 4, "specificity": 5, "correctness": 2, "rationale": "solid"},
     "hint_feedback_shape": {"helpful": ["h1"], "misleading": ["m1"], "missing": ["mi1"]},
+    # NOT changed: the decoy JSON lives outside the fenced span. The brace
+    # scan is confined to the fence's own captured content, so it never
+    # reaches the decoy -- this is the AC-921 guard.
     "ac_921_corrupt_fence_with_decoy_json": _Raises(json.JSONDecodeError),
-    "uppercase_json_fence_tag": _Raises(json.JSONDecodeError),
+    # CHANGED by the Step 2 strengthening: a fence IS present, so the fallback
+    # stays confined to its captured content ('JSON\n{"a": 1}'), which itself
+    # contains a recoverable {...} span once the leaked tag is scanned past.
+    # This never reaches outside the fence, so it doesn't reintroduce AC-921.
+    "uppercase_json_fence_tag": {"a": 1},
 }
 
 
@@ -262,6 +272,56 @@ def test_extract_json(name: str, text: str) -> None:
             extract_json(text)
     else:
         assert extract_json(text) == expected
+
+
+# ---------------------------------------------------------------------------
+# extract_json's strengthened fallback and on_failure policy (AC-910 task 2).
+# ---------------------------------------------------------------------------
+
+
+def test_extract_json_same_line_fence_parses() -> None:
+    assert extract_json('```json{"a": 1}```') == {"a": 1}
+
+
+def test_extract_json_prose_wrapped_bare_json_parses_via_brace_scan() -> None:
+    assert extract_json('Here is the result: {"a": 1} -- hope that helps!') == {"a": 1}
+
+
+def test_extract_json_broken_fence_tag_recovers_via_brace_scan_within_fence() -> None:
+    # The fenced content itself ('JSON\n{"a": 1}') doesn't parse directly
+    # because of the leaked uppercase tag, but brace-scanning WITHIN that
+    # captured span (not the wider text) recovers the object.
+    assert extract_json('```JSON\n{"a": 1}\n```') == {"a": 1}
+
+
+def test_extract_json_json_array_raises_instead_of_being_coerced() -> None:
+    with pytest.raises(ValueError):
+        extract_json("```json\n[1, 2, 3]\n```")
+
+
+def test_extract_json_on_failure_none_returns_none_instead_of_raising() -> None:
+    assert extract_json("```json\n[1, 2, 3]\n```", on_failure="none") is None
+    assert extract_json('```json\n{a: 1, "b":}\n```', on_failure="none") is None
+    assert extract_json("", on_failure="none") is None
+
+
+def test_extract_json_default_on_failure_still_raises() -> None:
+    with pytest.raises(json.JSONDecodeError):
+        extract_json('```json\n{a: 1, "b":}\n```')
+
+
+def test_extract_json_ac_921_decoy_does_not_return_the_decoy_object() -> None:
+    """A broken fence must FAIL, never silently substitute unrelated prose JSON.
+
+    This is the specific input that made extract_strategy_deterministic return
+    the wrong-but-plausible {"x": 2} (AC-921, characterized in the CORPUS row
+    ac_921_corrupt_fence_with_decoy_json above). The strengthened extract_json
+    must not reproduce that: it should fail, not return the decoy.
+    """
+    decoy_text = '```json\n{a: 1, "b":}\n```  also see config: {"x": 2}'
+    assert extract_json(decoy_text, on_failure="none") is None
+    with pytest.raises(json.JSONDecodeError):
+        extract_json(decoy_text)
 
 
 # ---------------------------------------------------------------------------
