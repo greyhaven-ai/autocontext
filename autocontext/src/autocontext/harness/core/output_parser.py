@@ -53,7 +53,17 @@ def extract_json(text: str, *, on_failure: str = "raise") -> dict[str, Any] | No
             continue
         if isinstance(decoded, Mapping):
             return dict(decoded)
+        # A candidate that PARSES but isn't a Mapping (e.g. a JSON array) is a
+        # decisive answer about what the model produced, not a parse failure
+        # to recover from. Stop here rather than falling through to the next
+        # candidate (the first-"{"-to-last-"}" brace scan): that scan would
+        # then grab whatever object-shaped fragment happens to be nested
+        # inside the array and silently return it, which is the same
+        # substitute-something-plausible-nearby failure as AC-921, just one
+        # level of nesting inward instead of outward. Only a JSONDecodeError
+        # above (candidate didn't parse at all) is a reason to keep scanning.
         last_exc = ValueError("Expected JSON object, got " + type(decoded).__name__)
+        break
 
     assert last_exc is not None
     if on_failure == "none":

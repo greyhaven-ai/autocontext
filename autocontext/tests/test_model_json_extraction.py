@@ -121,6 +121,28 @@ CORPUS: list[tuple[str, str]] = [
         "uppercase_json_fence_tag",
         '```JSON\n{"a": 1}\n```',
     ),
+    (
+        # AC-910 Task 2 defect: a bare (unfenced) array of OBJECTS, not
+        # scalars. json_array_not_object above ([1, 2, 3]) contains no
+        # braces at all, so it never exercised the brace-scan fallback; this
+        # one does, and used to have the fallback silently return the
+        # array's first element instead of raising.
+        "bare_array_of_objects",
+        '[{"a": 1}]',
+    ),
+    (
+        # Same defect, fenced: the scope itself parses successfully to a
+        # list, which must be terminal -- not a cue to fall through to the
+        # brace-scan candidate and grab the nested {"a": 1}.
+        "fenced_array_of_objects",
+        '```json\n[{"a": 1}]\n```',
+    ),
+    (
+        # Same defect, mixed array: scalars AND an object. Confirms the fix
+        # isn't specific to all-object arrays.
+        "fenced_mixed_array_with_object",
+        '```json\n[1, {"a": 1}, 2]\n```',
+    ),
 ]
 
 CORPUS_IDS = [name for name, _ in CORPUS]
@@ -220,6 +242,9 @@ STRIP_JSON_FENCES_EXPECTED: dict[str, str] = {
     "hint_feedback_shape": '{"helpful": ["h1"], "misleading": ["m1"], "missing": ["mi1"]}',
     "ac_921_corrupt_fence_with_decoy_json": '{a: 1, "b":}',
     "uppercase_json_fence_tag": 'JSON\n{"a": 1}',
+    "bare_array_of_objects": '[{"a": 1}]',
+    "fenced_array_of_objects": '[{"a": 1}]',
+    "fenced_mixed_array_with_object": '[1, {"a": 1}, 2]',
 }
 
 
@@ -261,6 +286,12 @@ EXTRACT_JSON_EXPECTED: dict[str, Any] = {
     # contains a recoverable {...} span once the leaked tag is scanned past.
     # This never reaches outside the fence, so it doesn't reintroduce AC-921.
     "uppercase_json_fence_tag": {"a": 1},
+    # Defect fix (AC-910 Task 2 review): the scope parses successfully to a
+    # list. That is now terminal -- raise -- rather than falling through to
+    # the brace-scan candidate and silently returning the nested {"a": 1}.
+    "bare_array_of_objects": _Raises(ValueError),
+    "fenced_array_of_objects": _Raises(ValueError),
+    "fenced_mixed_array_with_object": _Raises(ValueError),
 }
 
 
@@ -347,6 +378,9 @@ PARSE_ARCHITECT_TOOL_SPECS_EXPECTED: dict[str, list[dict[str, Any]]] = {
     "hint_feedback_shape": [],
     "ac_921_corrupt_fence_with_decoy_json": [],  # body between the tag and last ``` is invalid JSON -> JSONDecodeError -> []
     "uppercase_json_fence_tag": [],  # requires the literal "```json" tag; uppercase never matches find("```json")
+    "bare_array_of_objects": [],  # no "```json" tag at all
+    "fenced_array_of_objects": [],  # parses to a list, not a dict with a "tools" key
+    "fenced_mixed_array_with_object": [],  # same: parses to a list, not a dict with a "tools" key
 }
 
 
@@ -395,6 +429,9 @@ CURATOR_RATE_EXPECTED: dict[str, _CuratorRatingShape] = {
     "hint_feedback_shape": _CURATOR_DEFAULT,
     "ac_921_corrupt_fence_with_decoy_json": _CURATOR_DEFAULT,  # JSONDecodeError swallowed
     "uppercase_json_fence_tag": _CURATOR_DEFAULT,  # leaky "JSON\n{...}" content isn't valid JSON; swallowed
+    "bare_array_of_objects": _CURATOR_DEFAULT,  # parses to a list; isinstance(decoded, dict) is False -> discarded silently
+    "fenced_array_of_objects": _CURATOR_DEFAULT,  # same: parses to a list, not a dict
+    "fenced_mixed_array_with_object": _CURATOR_DEFAULT,  # same: parses to a list, not a dict
 }
 
 
@@ -426,6 +463,14 @@ EXTRACT_STRATEGY_DETERMINISTIC_EXPECTED: dict[str, dict[str, Any] | None] = {
     "hint_feedback_shape": {"helpful": ["h1"], "misleading": ["m1"], "missing": ["mi1"]},
     "ac_921_corrupt_fence_with_decoy_json": {"x": 2},  # AC-921: decoy bare-object fallback picks up unrelated JSON
     "uppercase_json_fence_tag": {"a": 1},  # bare-object regex fallback still finds it despite the leaky tag
+    # This extractor's own bare-object regex has the same array-coercion
+    # defect that AC-910 Task 2 fixed in extract_json: it finds the nested
+    # {"a": 1} inside the array and returns it instead of rejecting the
+    # array. Out of scope for this task (no call sites may change here) --
+    # pinned as-is per the characterization-suite mandate.
+    "bare_array_of_objects": {"a": 1},
+    "fenced_array_of_objects": {"a": 1},
+    "fenced_mixed_array_with_object": {"a": 1},
 }
 
 
@@ -475,6 +520,13 @@ EXTRACT_JSON_OBJECT_EXPECTED: dict[str, dict[str, Any] | None] = {
     "hint_feedback_shape": {"helpful": ["h1"], "misleading": ["m1"], "missing": ["mi1"]},
     "ac_921_corrupt_fence_with_decoy_json": None,  # fenced candidate invalid; naive first-{-to-last-} scan also invalid
     "uppercase_json_fence_tag": {"a": 1},  # fenced regex is case-insensitive, unlike strip_json_fences
+    # Same pre-existing array-coercion defect as extract_strategy_deterministic
+    # above: this extractor's naive first-"{"-to-last-"}" fallback has no type
+    # check at all, so it happily returns the nested object from an array.
+    # Out of scope here (no call sites may change); pinned as-is.
+    "bare_array_of_objects": {"a": 1},
+    "fenced_array_of_objects": {"a": 1},
+    "fenced_mixed_array_with_object": {"a": 1},
 }
 
 
