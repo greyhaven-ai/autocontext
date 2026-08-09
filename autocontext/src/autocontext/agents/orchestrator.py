@@ -678,7 +678,15 @@ class AgentOrchestrator:
         # then gets executed and scored as a legitimate result. extract_json's
         # default on_failure="raise" matches the direct (non-pipeline) path's
         # StrategyTranslator.translate, which already raises on the same
-        # failure; this used to diverge and fail soft instead.
+        # failure; this used to diverge and fail soft instead. This also
+        # closes a second, separate defect: the old `json.loads(...)` call had
+        # no type check at all, so a translator response shaped as a JSON
+        # array (not an object) was assigned to `strategy` as-is -- a list
+        # silently violating the `dict[str, Any]` every downstream consumer
+        # (AgentOutputs, CompetitorOutput) declares and expects. extract_json
+        # treats a successful parse to a non-object as terminal and raises,
+        # so that shape is now rejected here instead of failing later, less
+        # legibly, downstream.
         from autocontext.harness.core.output_parser import extract_json
 
         strategy = extract_json(results["translator"].content)
