@@ -13,11 +13,9 @@ same input, that disagreement is the point -- see the report at
 ``.superpowers/sdd/2026-08-08-ac-910-plan3-model-json-consolidation/task-1-report.md``
 for the full disagreement table.
 
-The call sites characterized here. There were eight when this file was written;
-``strip_json_fences`` was the ninth and is gone -- it was a generic fence
-stripper that ended the consolidation with zero production callers, so AC-910
-deleted it rather than leave behind the same uncalled-public-extractor shape
-the plan set out to remove:
+The call sites characterized here. ``strip_json_fences`` is retained as a
+compatibility wrapper for external imports, but has zero production callers;
+all production JSON parsing routes through the seven sites below:
 
 1. ``harness.core.output_parser.extract_json`` -- the consolidation target.
    It had zero callers when this file was written; every site below that
@@ -141,9 +139,9 @@ CORPUS: list[tuple[str, str]] = [
         '```json\n{a: 1, "b":}\n```  also see config: {"x": 2}',
     ),
     (
-        # strip_json_fences is case-sensitive: the "(?:json)?" tag group
-        # only matches lowercase, so an uppercase ```JSON tag isn't consumed
-        # as a tag and leaks into the "stripped" content instead.
+        # JSON fence tags are case-insensitive. This corpus row is the simple
+        # control; a separate priority test below proves an uppercase tag is
+        # recognized rather than merely recovered by a brace scan.
         "uppercase_json_fence_tag",
         '```JSON\n{"a": 1}\n```',
     ),
@@ -510,10 +508,8 @@ EXTRACT_JSON_EXPECTED: dict[str, Any] = {
     # scan is confined to the fence's own captured content, so it never
     # reaches the decoy -- this is the AC-921 guard.
     "ac_921_corrupt_fence_with_decoy_json": _Raises(json.JSONDecodeError),
-    # CHANGED by the Step 2 strengthening: a fence IS present, so the fallback
-    # stays confined to its captured content ('JSON\n{"a": 1}'), which itself
-    # contains a recoverable {...} span once the leaked tag is scanned past.
-    # This never reaches outside the fence, so it doesn't reintroduce AC-921.
+    # JSON tags are now matched case-insensitively, so this parses directly
+    # from the designated fence rather than succeeding through brace recovery.
     "uppercase_json_fence_tag": {"a": 1},
     # Defect fix (AC-910 Task 2 review): the scope parses successfully to a
     # list. That is now terminal -- raise -- rather than falling through to
@@ -531,7 +527,7 @@ EXTRACT_JSON_EXPECTED: dict[str, Any] = {
     # instead of falling through to the unrelated "stale" decoy object.
     "critical1_brace_in_string_with_decoy": {"score": 5, "rationale": "matches rubric step 3}"},
     # AC-910 Task 3 review Critical 2 fix: the scope OPENS with "[", so the
-    # `scope.startswith("[")` check skips the rescue candidates entirely and
+    # direct-array check skips the rescue candidates entirely and
     # the only candidate left is the whole scope -- which json.loads rejects
     # with "Extra data" at the trailing `, {"b": 2}`. So this is terminal via
     # the array-SHAPED-SCOPE rule and a JSONDecodeError, NOT via the
@@ -546,9 +542,9 @@ EXTRACT_JSON_EXPECTED: dict[str, Any] = {
     # `array_span_then_later_object_no_fence` after it (which additionally
     # pins that the scan STOPS there).
     "array_then_separate_object_no_fence": _Raises(json.JSONDecodeError),
-    # Same Critical 2 fix, array embedded in prose rather than leading: the
-    # scope does not open with "[", so the span scan runs, offers the array as
-    # a rescue candidate, and it parses to a list -> wrong-type ValueError.
+    # Same Critical 2 fix, array embedded in prose rather than leading: it is
+    # isolated as the first container candidate and parses to a list ->
+    # wrong-type ValueError.
     "array_of_objects_in_prose_no_fence": _Raises(ValueError),
     # Wrong-type TERMINALITY (the `break`, not merely the raise): an array
     # span with a well-formed object span AFTER it. See CORPUS.
@@ -558,10 +554,10 @@ EXTRACT_JSON_EXPECTED: dict[str, Any] = {
     # the whole-scope candidate -- pinned as the no-decoy companion to
     # critical1 above.
     "brace_in_string_value_no_fence_no_decoy": {"note": "step 3} done", "a": 1},
-    # AC-910 Task 5 Step 1c(i) fix: the scope opens with "[", so a failed
-    # parse (JSONDecodeError, since the array is unterminated) is now
-    # terminal -- no rescue candidates are tried -- instead of falling
-    # through to _top_level_object_spans and unwrapping the inner {"a": 1}.
+    # AC-910 Task 5 Step 1c(i) fix: the first container is "[", so a failed
+    # parse (JSONDecodeError, since the array is unterminated) is terminal --
+    # no object-rescue candidates are tried -- instead of unwrapping the inner
+    # {"a": 1}.
     "truncated_array_one_object": _Raises(json.JSONDecodeError),
     "truncated_array_two_objects": _Raises(json.JSONDecodeError),
     # Step 1c(iv) accepted residual: no fence, so each malformed candidate is
@@ -619,11 +615,24 @@ def test_extract_json_prose_wrapped_bare_json_parses_via_brace_scan() -> None:
     assert extract_json('Here is the result: {"a": 1} -- hope that helps!') == {"a": 1}
 
 
-def test_extract_json_broken_fence_tag_recovers_via_brace_scan_within_fence() -> None:
-    # The fenced content itself ('JSON\n{"a": 1}') doesn't parse directly
-    # because of the leaked uppercase tag, but brace-scanning WITHIN that
-    # captured span (not the wider text) recovers the object.
+def test_extract_json_uppercase_json_fence_tag_is_recognized() -> None:
     assert extract_json('```JSON\n{"a": 1}\n```') == {"a": 1}
+
+
+def test_extract_json_matches_json_fence_tag_exactly_case_insensitively() -> None:
+    expected = {"answer": 2}
+
+    # If the uppercase tag leaked into its body, both fences would look
+    # untagged and the earlier python dict would win.
+    uppercase_answer = '```python\nscratch = {"draft": 1}\n```\n```JsOn\n{"answer": 2}\n```'
+    assert extract_json(uppercase_answer) == expected
+    assert ActionFilterHarness._extract_json_object(uppercase_answer) == expected
+
+    # Prefixes are not tags. If any of these gained JSON priority, its scratch
+    # object would beat the later, genuinely JSON-tagged answer.
+    for info_string in ("jsonl", "json5", "jsonnet"):
+        response = f'```{info_string}\n{{"draft": 1}}\n```\n```json\n{{"answer": 2}}\n```'
+        assert extract_json(response) == expected
 
 
 def test_extract_json_json_array_raises_instead_of_being_coerced() -> None:
@@ -714,8 +723,31 @@ def test_extract_json_fenced_truncated_array_does_not_unwrap_inner_object() -> N
         extract_json('```json\n[{"a": 1}]\n```')
     # Plain object control, fenced: proves the array-only check doesn't
     # over-tighten and start blocking the ordinary fenced brace-scan rescue
-    # path (see test_extract_json_broken_fence_tag_recovers_via_brace_scan_within_fence).
+    # path.
     assert extract_json('```json\n{"a": 1}\n```') == {"a": 1}
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        'Final: [{"aggression": 0.7}',
+        '```\nFinal: [{"aggression": 0.7}\n```',
+        '```JSON\n[{"aggression": 0.7}\n```',
+        '```jsonnet\n[{"aggression": 0.7}\n```',
+    ],
+)
+def test_extract_json_prefixed_truncated_array_is_terminal(text: str) -> None:
+    """Prose or fence info before ``[`` must not expose an inner object."""
+    with pytest.raises(json.JSONDecodeError):
+        extract_json(text)
+    assert extract_json(text, on_failure="none") is None
+    assert ActionFilterHarness._extract_json_object(text) is None
+
+
+def test_translator_rejects_prefixed_truncated_array() -> None:
+    """The fail-hard production translator must reject, not score, the fragment."""
+    with pytest.raises(json.JSONDecodeError):
+        _translate('Final: [{"aggression": 0.7}')
 
 
 def test_extract_json_unfenced_earlier_malformed_candidate_is_skipped() -> None:
@@ -809,13 +841,12 @@ def test_extract_json_wrong_type_candidate_is_terminal() -> None:
 
     This pins the `break` (not `continue`) at output_parser.py:188 -- the
     plan's strongest structural claim about extract_json, and until now
-    entirely untested. Every corpus row that reaches that line has the
-    wrong-type candidate as the LAST candidate, where breaking and continuing
-    are indistinguishable; the `scope.startswith("[")` check is what makes
-    those rows terminal, not the break. Flipping `break` to `continue` left
-    the whole targeted suite green (292/292). These three inputs are the ones
-    that tell the two apart -- each has a well-formed OBJECT candidate sitting
-    after the wrong-type one, so `continue` returns it instead of raising:
+    entirely untested. Every earlier corpus row that reached that line had the
+    wrong-type candidate LAST, where breaking and continuing were
+    indistinguishable; direct-array rows skipped rescue candidates before
+    reaching it. These inputs tell the two apart -- each has a well-formed
+    OBJECT candidate after the wrong-type one, so `continue` would return it
+    instead of raising:
 
         'Tools: [{"a": 1}] and {"b": 2}'                    -> would return {"b": 2}
         'garbage: {not valid json,} [{"mid": 1}] {"c": 3}'  -> would return {"c": 3}
@@ -874,12 +905,10 @@ def test_extract_json_wrong_type_candidate_is_terminal() -> None:
 def test_extract_json_bom_does_not_walk_past_the_array_shape_check() -> None:
     """A leading U+FEFF must not defeat the truncated-array rule.
 
-    The rule two tests above is a `scope.startswith("[")` check, and the
-    scope is produced with `.strip()`, which does NOT remove U+FEFF -- it is
-    a format character, not whitespace. So a BOM shifted the "[" to index 1,
-    the check read False, and the rescue candidates the rule exists to skip
-    ran anyway, unwrapping the inner object and returning a plausible wrong
-    answer. One invisible character was enough to undo the fix.
+    The original rule used `scope.startswith("[")`, while `.strip()` does not
+    remove U+FEFF. A BOM therefore shifted the "[" to index 1 and exposed the
+    inner object to rescue. Scope normalization and first-container detection
+    now make the BOM-prefixed payload follow the same path as its plain twin.
 
     Both scope-producing paths are pinned, not just one: the fenced scope
     (`fence_match.group(1)`) and the unfenced one (`text`) are separate
@@ -936,7 +965,7 @@ PARSE_ARCHITECT_TOOL_SPECS_EXPECTED: dict[str, list[dict[str, Any]]] = {
     # still fails within the fenced scope (decoy sits outside it) -> None ->
     # [] with a warning, as before
     "ac_921_corrupt_fence_with_decoy_json": [],
-    "uppercase_json_fence_tag": [],  # recovered via the within-scope brace scan despite the leaked tag; still no "tools" key
+    "uppercase_json_fence_tag": [],  # parses directly; still no "tools" key
     # scope parses to a list -> terminal ValueError -> None -> [] with a
     # warning (previously [] via no "```json" tag found at all, no warning)
     "bare_array_of_objects": [],
@@ -1111,7 +1140,7 @@ CURATOR_RATE_EXPECTED: dict[str, _CuratorRatingShape] = {
     "curator_rating_shape": _CuratorRatingShape(actionability=4, specificity=5, correctness=2, rationale="solid"),
     "hint_feedback_shape": _CURATOR_DEFAULT,
     "ac_921_corrupt_fence_with_decoy_json": _CURATOR_DEFAULT,  # JSONDecodeError swallowed
-    "uppercase_json_fence_tag": _CURATOR_DEFAULT,  # leaky "JSON\n{...}" content isn't valid JSON; swallowed
+    "uppercase_json_fence_tag": _CURATOR_DEFAULT,  # parses directly, but has no rating keys
     "bare_array_of_objects": _CURATOR_DEFAULT,  # parses to a list; isinstance(decoded, dict) is False -> discarded silently
     "fenced_array_of_objects": _CURATOR_DEFAULT,  # same: parses to a list, not a dict
     "fenced_mixed_array_with_object": _CURATOR_DEFAULT,  # same: parses to a list, not a dict
@@ -1229,7 +1258,7 @@ EXTRACT_STRATEGY_DETERMINISTIC_EXPECTED: dict[str, dict[str, Any] | None] = {
     "hint_feedback_shape": {"helpful": ["h1"], "misleading": ["m1"], "missing": ["mi1"]},
     # AC-921 FIX (see comment above the table): was {"x": 2}, now None.
     "ac_921_corrupt_fence_with_decoy_json": None,
-    "uppercase_json_fence_tag": {"a": 1},  # recovered via the within-scope brace scan on the leaked tag, not a bare-object regex
+    "uppercase_json_fence_tag": {"a": 1},  # exact case-insensitive JSON tag
     # Array-coercion FIX (see comment above the table): were all {"a": 1}, now None.
     "bare_array_of_objects": None,
     "fenced_array_of_objects": None,
@@ -1353,9 +1382,7 @@ EXTRACT_JSON_OBJECT_EXPECTED: dict[str, dict[str, Any] | None] = {
     "curator_rating_shape": {"actionability": 4, "specificity": 5, "correctness": 2, "rationale": "solid"},
     "hint_feedback_shape": {"helpful": ["h1"], "misleading": ["m1"], "missing": ["mi1"]},
     "ac_921_corrupt_fence_with_decoy_json": None,  # unchanged: fails within scope, decoy never reached, as before
-    "uppercase_json_fence_tag": {
-        "a": 1
-    },  # recovered via the within-scope brace scan on the leaked tag now, not case-insensitive tag matching
+    "uppercase_json_fence_tag": {"a": 1},  # exact case-insensitive JSON tag
     # Array-coercion FIX (see comment above the table): were all {"a": 1}, now None.
     "bare_array_of_objects": None,
     "fenced_array_of_objects": None,

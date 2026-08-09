@@ -8,19 +8,24 @@ from collections.abc import Mapping
 from typing import Any
 
 # The `tag` group is what makes a ```json fence distinguishable from a bare
-# ``` or a ```python one. Both groups are named rather than positional so that
-# adding or reordering one cannot silently renumber `body` out from under a
-# reader of this regex.
-_JSON_FENCE_RE = re.compile(r"```(?P<tag>json)?\s*\n?(?P<body>.*?)\n?\s*```", re.DOTALL)
+# ``` or a ```python one. JSON is case-insensitive, but it must be the complete
+# tag: jsonl/json5/jsonnet are different info strings and must not gain JSON's
+# priority merely because they share its prefix. ``{``/``[`` in the lookahead
+# preserves the supported single-line form (```json{"a": 1}```), while U+FEFF
+# lets the normal scope cleanup handle a BOM between the tag and payload.
+_JSON_FENCE_RE = re.compile(
+    r"```(?P<tag>json(?=\s|[\[{\ufeff]))?\s*\n?(?P<body>.*?)\n?\s*```",
+    re.DOTALL | re.IGNORECASE,
+)
 
 # U+FEFF (BOM / zero-width no-break space). `str.strip()` does NOT remove it
 # -- it is a format character, not whitespace, so `.isspace()` on it is False
 # -- and neither does the fence regex's `\s*`, so a BOM survives both ways of
-# producing a scope in extract_json. That matters because the array-shape
-# check there is a `startswith("[")` on the scope: a leading BOM shifts the
-# "[" off index 0, the check reads False, and a truncated array falls through
-# to the rescue candidates it is supposed to be exempt from. Spelled with
-# chr() rather than pasted in, so it is visible in a diff and in an editor.
+# producing a scope in extract_json. Normalizing it here keeps structural
+# checks and direct parsing aligned, rather than making the same payload take
+# a recovery path solely because an invisible format character precedes it.
+# Spelled with chr() rather than pasted in, so it is visible in a diff and in
+# an editor.
 _BOM = chr(0xFEFF)
 
 
@@ -41,6 +46,17 @@ def _scope_text(raw: str) -> str:
 # hand-rolled version was tried and worked, but it cannot help disagreeing
 # with json.loads at the margins (that disagreement is exactly how the two
 # holes this function now closes got in) where the real parser can't.
+
+
+def strip_json_fences(text: str) -> str:
+    """Strip the first markdown code fence, returning its inner content.
+
+    This compatibility wrapper intentionally keeps the historical first-fence
+    behavior. JSON-parsing callers should use :func:`extract_json`, which can
+    distinguish a designated JSON answer from an earlier reasoning fence.
+    """
+    match = _JSON_FENCE_RE.search(text)
+    return match.group("body").strip() if match else text.strip()
 
 
 def _top_level_object_spans(text: str) -> list[str]:
@@ -65,10 +81,12 @@ def _top_level_object_spans(text: str) -> list[str]:
     only looked at whether the scope *starts* with ``[`` would miss the
     latter.
 
-    A location where raw_decode can't produce a full value (e.g. a stray
-    ``{`` that never closes) is skipped and scanning resumes one character
-    later, so side-by-side top-level values are still returned as separate
-    spans rather than one merged, invalid span.
+    A malformed object start is skipped and scanning resumes one character
+    later, so side-by-side top-level objects are still returned separately.
+    A malformed array start is different: scanning into it could expose a
+    complete nested object and silently unwrap that object as the answer. Its
+    remaining text is therefore returned as one terminal failing candidate,
+    and scanning stops.
     """
     spans: list[str] = []
     decoder = json.JSONDecoder()
@@ -81,6 +99,12 @@ def _top_level_object_spans(text: str) -> list[str]:
         try:
             _value, end = decoder.raw_decode(text, start)
         except ValueError:
+            if text[start] == "[":
+                # A truncated array can still contain complete object values.
+                # Treat the whole remainder as one failing candidate instead
+                # of walking into it and promoting one of those nested values.
+                spans.append(text[start:])
+                return spans
             # AC-922: retrying one character later is O(n^2) on degenerate
             # repetitive input (e.g. '{"a": ' * n); load-bearing for
             # correctness (it's what lets side-by-side spans still separate
@@ -185,13 +209,11 @@ def extract_json(text: str, *, on_failure: str = "raise") -> dict[str, Any] | No
     valid one is the closest match to what a human reader would take as the
     answer.
 
-    A scope that opens with ``[`` -- fenced or not -- is exempt from any
-    rescue attempt: if it parses, it's a decisive, terminal answer about the
-    model's output shape (see the wrong-type note below), not a detour on
-    the way to finding an object; if it fails to parse (e.g. a truncated
-    array cut off mid-token), that failure is terminal too, rather than a
-    cue to brace-scan or span-scan into the array's interior and unwrap
-    whatever complete object happens to be sitting inside it.
+    A scope whose first JSON container is ``[`` -- fenced or not, and even
+    when prose precedes it -- is exempt from object rescue. If it parses, it
+    is a decisive answer about the model's output shape (see the wrong-type
+    note below); if it is truncated, that parse failure is terminal too,
+    rather than a cue to scan into the array and unwrap a nested object.
 
     ``on_failure`` controls what happens when no JSON object is found:
     ``"raise"`` (default) re-raises the underlying parse error; ``"none"``
@@ -209,26 +231,24 @@ def extract_json(text: str, *, on_failure: str = "raise") -> dict[str, Any] | No
     candidates: list[str] = []
     for scope in scopes:
         candidates.append(scope)
-        # scope opening with `[` means the model was producing an array, and
-        # this check must run BEFORE looking at has_fence (not nested inside a
-        # fenced `elif`, the way an earlier version of this had it), because a
-        # fenced scope can open with `[` too, and the fenced branch's
-        # brace-scan below is just as able to reach into a truncated array's
-        # interior as the no-fence span scan is. A complete array is caught by
-        # the wrong-type-terminal rule further down once it parses, but a
-        # TRUNCATED array (no closing bracket) never reaches that rule:
-        # json.loads(scope) raises JSONDecodeError instead of returning a
-        # list, so without this check the loop would fall through to a rescue
-        # candidate below and unwrap whatever complete object happens to sit
-        # inside the unterminated array -- the same silent-unwrap shape the
-        # wrong-type rule exists to prevent, reached through malformed syntax
-        # instead of a successful parse.
-        # Skipping the rescue candidates entirely means an array-shaped scope
-        # is terminal whether it parses or not, regardless of which branch
-        # below would otherwise have produced them. `scope` is BOM-normalized
-        # by _scope_text precisely so this check cannot be walked past by a
-        # leading U+FEFF -- see that constant's comment.
-        if scope.startswith("["):
+        # The first structural JSON token, not scope[0], decides whether the
+        # model is producing an array: prose and non-JSON fence info can sit in
+        # front of it. Parse a complete array as its own candidate so the
+        # wrong-type rule below remains decisive; for a truncated array,
+        # _top_level_object_spans returns its whole remainder as one failing
+        # candidate. Either way, do not add any object-rescue candidates from
+        # inside or after that array.
+        array_start = scope.find("[")
+        object_start = scope.find("{")
+        if array_start != -1 and (object_start == -1 or array_start < object_start):
+            # Keep the established direct-array behavior: the whole scope is
+            # already the exact candidate, including any trailing material
+            # whose Extra-data JSONDecodeError is part of the public outcome.
+            if array_start == 0:
+                continue
+            array_candidate = _top_level_object_spans(scope)[0]
+            if array_candidate != scope:
+                candidates.append(array_candidate)
             continue
         if has_fence:
             # NOTE: this crude first-`{`-to-last-`}` rescue is weaker than the

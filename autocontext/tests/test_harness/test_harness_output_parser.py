@@ -8,6 +8,7 @@ from autocontext.harness.core.output_parser import (
     extract_delimited_section,
     extract_json,
     extract_tagged_content,
+    strip_json_fences,
 )
 
 
@@ -26,6 +27,15 @@ class TestExtractJson:
         text = "```json\n[1, 2, 3]\n```"
         with pytest.raises(ValueError, match="Expected JSON object"):
             extract_json(text)
+
+
+class TestStripJsonFences:
+    def test_strips_first_fenced_payload(self) -> None:
+        text = 'before\n```JSON\n{"name": "test"}\n```\nafter'
+        assert strip_json_fences(text) == '{"name": "test"}'
+
+    def test_unfenced_text_is_stripped_and_returned(self) -> None:
+        assert strip_json_fences('  {"name": "test"}\n') == '{"name": "test"}'
 
 
 class TestExtractTaggedContent:
