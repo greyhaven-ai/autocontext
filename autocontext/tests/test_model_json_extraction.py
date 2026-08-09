@@ -34,8 +34,11 @@ The seven call sites characterized here:
    own fence regex (this one requires a literal newline after the fence,
    unlike (1)'s optional-newline regex) with a bare-JSON-object regex
    fallback and a whole-text last resort.
-7. ``agents.hint_feedback.parse_hint_feedback`` -- another private fence
-   regex requiring a literal newline, feeding a schema-specific payload.
+7. ``agents.hint_feedback.parse_hint_feedback`` -- feeds a schema-specific
+   payload. Originally its own private fence regex requiring a literal
+   newline; AC-910 Task 5 migrated it onto (2), which recovers a single-line
+   fence this site used to silently miss (see
+   ``hint_feedback_shape_single_line_fence`` below).
 8. ``execution.action_filter.ActionFilterHarness._extract_json_object`` --
    tries a fenced-and-anchored regex, then falls back to naive
    first-``{``-to-last-``}`` scanning.
@@ -51,8 +54,10 @@ rather than indistinguishable from the various failure paths.
 
 from __future__ import annotations
 
+import ast
 import json
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -192,6 +197,56 @@ CORPUS: list[tuple[str, str]] = [
         "brace_in_string_value_no_fence_no_decoy",
         '{"note": "step 3} done", "a": 1}',
     ),
+    (
+        # AC-910 Task 5 Step 1c(i): a TRUNCATED array (no closing bracket)
+        # containing exactly one complete object. `bare_array_of_objects`
+        # above ('[{"a": 1}]', complete) is already terminal via the
+        # successful-list-parse rule; this one is the residual the F1/Critical
+        # 2 fixes didn't cover, because json.loads(scope) raises
+        # JSONDecodeError on truncated input instead of returning a list, so
+        # the terminal rule never got a chance to engage and the scan used to
+        # unwrap the inner {"a": 1}. Must now raise, same as the complete case.
+        "truncated_array_one_object",
+        '[{"a": 1}',
+    ),
+    (
+        # Same defect, two complete objects inside the truncated array. Both
+        # are individually well-formed, which is exactly what let the old
+        # no-fence multi-candidate scan find and adopt the first one.
+        "truncated_array_two_objects",
+        '[{"a": 1}, {"b": 2}',
+    ),
+    (
+        # AC-910 Task 5 Step 1c(iv): the accepted residual. No fence is
+        # present, so there is no designated payload -- unlike
+        # ac_921_corrupt_fence_with_decoy_json above, where a fence exists
+        # and a broken fence is evidence the model claimed that block as its
+        # answer, so substituting a decoy found elsewhere would be a silent
+        # wrong-answer (AC-921's failure shape). Here, with no fence, the
+        # first candidate ("first: {bad json,}...") is malformed and the
+        # scan tries the next top-level candidate in appearance order,
+        # recovering {"x": 2}. This is DELIBERATE: try-each-candidate is the
+        # only sensible policy for unfenced prose, and it matches
+        # pre-consolidation behavior (see EXTRACT_JSON_EXPECTED's comment on
+        # two_bare_json_objects_no_fence for the same policy applied to two
+        # well-formed candidates instead of one malformed + one valid).
+        "unfenced_earlier_malformed_then_valid",
+        'first: {bad json,} then: {"x": 2}',
+    ),
+    (
+        # AC-910 Task 5 hint_feedback.py migration: a single-line fence with
+        # a payload matching HintFeedback's own schema (helpful/misleading/
+        # missing), unlike `fence_single_line` above ({"a": 1}, no matching
+        # keys). hint_feedback's own extraction step routes through a domain
+        # type (HintFeedback) that masks parse success on schema-mismatched
+        # input, so a corpus case with no matching keys can't observe this
+        # site's behavior change -- this one can. Before the migration,
+        # hint_feedback's own fence regex required a literal newline after
+        # the fence tag and silently missed this (falling to all-empty
+        # defaults); extract_json's optional-newline regex recovers it.
+        "hint_feedback_shape_single_line_fence",
+        '```json{"helpful": ["h1"], "misleading": ["m1"], "missing": ["mi1"]}```',
+    ),
 ]
 
 CORPUS_IDS = [name for name, _ in CORPUS]
@@ -317,6 +372,10 @@ STRIP_JSON_FENCES_EXPECTED: dict[str, str] = {
     "array_then_separate_object_no_fence": '[{"a": 1}], {"b": 2}',
     "array_of_objects_in_prose_no_fence": 'Available tools: [{"name": "n1"}] let me know.',
     "brace_in_string_value_no_fence_no_decoy": '{"note": "step 3} done", "a": 1}',
+    "truncated_array_one_object": '[{"a": 1}',
+    "truncated_array_two_objects": '[{"a": 1}, {"b": 2}',
+    "unfenced_earlier_malformed_then_valid": 'first: {bad json,} then: {"x": 2}',
+    "hint_feedback_shape_single_line_fence": '{"helpful": ["h1"], "misleading": ["m1"], "missing": ["mi1"]}',
 }
 
 
@@ -390,6 +449,19 @@ EXTRACT_JSON_EXPECTED: dict[str, Any] = {
     # the whole-scope candidate -- pinned as the no-decoy companion to
     # critical1 above.
     "brace_in_string_value_no_fence_no_decoy": {"note": "step 3} done", "a": 1},
+    # AC-910 Task 5 Step 1c(i) fix: the scope opens with "[", so a failed
+    # parse (JSONDecodeError, since the array is unterminated) is now
+    # terminal -- no rescue candidates are tried -- instead of falling
+    # through to _top_level_object_spans and unwrapping the inner {"a": 1}.
+    "truncated_array_one_object": _Raises(json.JSONDecodeError),
+    "truncated_array_two_objects": _Raises(json.JSONDecodeError),
+    # Step 1c(iv) accepted residual: no fence, so each malformed candidate is
+    # skipped in favor of the next one that parses. See the CORPUS comment.
+    "unfenced_earlier_malformed_then_valid": {"x": 2},
+    # hint_feedback.py migration: a single-line fence recovers fine here too
+    # (extract_json's own regex already had the optional-newline form) --
+    # this row's significance is only visible at the hint_feedback site.
+    "hint_feedback_shape_single_line_fence": {"helpful": ["h1"], "misleading": ["m1"], "missing": ["mi1"]},
 }
 
 
@@ -453,6 +525,43 @@ def test_extract_json_ac_921_decoy_does_not_return_the_decoy_object() -> None:
         extract_json(decoy_text)
 
 
+def test_extract_json_truncated_array_does_not_unwrap_inner_object() -> None:
+    """AC-910 Task 5 Step 1c(i): a truncated (unterminated) array must fail
+    the same way a complete one does, not silently unwrap its inner object.
+
+    Before this fix: candidate 1 (the whole scope) raised JSONDecodeError
+    because the array never closes, so the loop continued to
+    _top_level_object_spans, which found the complete {"a": 1} sitting
+    inside the unterminated array and returned it. A model hitting its
+    token budget mid-array is a realistic truncation, not an exotic input
+    (see AC-904/AC-905), so this silent unwrap mattered.
+    """
+    with pytest.raises(json.JSONDecodeError):
+        extract_json('[{"a": 1}')
+    with pytest.raises(json.JSONDecodeError):
+        extract_json('[{"a": 1}, {"b": 2}')
+    # Complete array: already terminal via the successful-list-parse rule,
+    # pinned here as the control case this fix must not disturb.
+    with pytest.raises(ValueError):
+        extract_json('[{"a": 1}]')
+
+
+def test_extract_json_unfenced_earlier_malformed_candidate_is_skipped() -> None:
+    """AC-910 Task 5 Step 1c(iv): the accepted residual, pinned deliberately.
+
+    With no fence, there is no designated payload, so trying each top-level
+    candidate in order and returning the first that parses is the only
+    sensible policy -- it is what recovers legitimate prose-plus-noise (see
+    two_bare_json_objects_no_fence in the corpus) and it matches
+    pre-consolidation behavior. This differs from the FENCED case
+    (ac_921_corrupt_fence_with_decoy_json): there, a broken fence is
+    evidence the model designated that block as its answer, so silently
+    substituting a decoy found elsewhere would be a wrong answer, not a
+    recovered one (AC-921). Without a fence, no such designation exists.
+    """
+    assert extract_json('first: {bad json,} then: {"x": 2}') == {"x": 2}
+
+
 # ---------------------------------------------------------------------------
 # Extractor 3: agents.architect.parse_architect_tool_specs
 # ---------------------------------------------------------------------------
@@ -501,6 +610,10 @@ PARSE_ARCHITECT_TOOL_SPECS_EXPECTED: dict[str, list[dict[str, Any]]] = {
     "array_then_separate_object_no_fence": [],  # extract_json now raises (Critical 2 fix) -> None -> []
     "array_of_objects_in_prose_no_fence": [],  # same Critical 2 fix -> None -> []
     "brace_in_string_value_no_fence_no_decoy": [],  # valid dict recovered, but no "tools" key
+    "truncated_array_one_object": [],  # extract_json now raises (Step 1c(i) fix) -> None -> []
+    "truncated_array_two_objects": [],  # same
+    "unfenced_earlier_malformed_then_valid": [],  # extract_json recovers {"x": 2}, but no "tools" key
+    "hint_feedback_shape_single_line_fence": [],  # recovers the dict, but no "tools" key
 }
 
 
@@ -619,6 +732,10 @@ CURATOR_RATE_EXPECTED: dict[str, _CuratorRatingShape] = {
     "array_then_separate_object_no_fence": _CURATOR_DEFAULT,  # extract_json raises -> None -> default
     "array_of_objects_in_prose_no_fence": _CURATOR_DEFAULT,  # same
     "brace_in_string_value_no_fence_no_decoy": _CURATOR_DEFAULT,  # parses fine, no matching keys
+    "truncated_array_one_object": _CURATOR_DEFAULT,  # extract_json raises -> None -> default
+    "truncated_array_two_objects": _CURATOR_DEFAULT,  # same
+    "unfenced_earlier_malformed_then_valid": _CURATOR_DEFAULT,  # recovers {"x": 2}, but no matching rating keys
+    "hint_feedback_shape_single_line_fence": _CURATOR_DEFAULT,  # recovers the dict, no matching rating keys
 }
 
 
@@ -688,6 +805,13 @@ EXTRACT_STRATEGY_DETERMINISTIC_EXPECTED: dict[str, dict[str, Any] | None] = {
     "array_then_separate_object_no_fence": None,
     "array_of_objects_in_prose_no_fence": None,
     "brace_in_string_value_no_fence_no_decoy": {"note": "step 3} done", "a": 1},
+    # Step 1c(i) fix (see EXTRACT_JSON_EXPECTED comment): truncated array
+    # scopes are now terminal on failure, not a cue to unwrap a nested object.
+    "truncated_array_one_object": None,
+    "truncated_array_two_objects": None,
+    # Step 1c(iv) accepted residual: recovers the later well-formed candidate.
+    "unfenced_earlier_malformed_then_valid": {"x": 2},
+    "hint_feedback_shape_single_line_fence": {"helpful": ["h1"], "misleading": ["m1"], "missing": ["mi1"]},
 }
 
 
@@ -707,6 +831,17 @@ _HINT_FEEDBACK_DEFAULT = _HintFeedbackShape(helpful=(), misleading=(), missing=(
 
 HINT_FEEDBACK_EXPECTED: dict[str, _HintFeedbackShape] = {name: _HINT_FEEDBACK_DEFAULT for name, _ in CORPUS}
 HINT_FEEDBACK_EXPECTED["hint_feedback_shape"] = _HintFeedbackShape(helpful=("h1",), misleading=("m1",), missing=("mi1",))
+# AC-910 Task 5: CHANGED by the migration to extract_json. hint_feedback's
+# own fence regex required a literal newline after the fence tag and missed
+# this single-line fence, silently falling through to the all-empty default
+# (identical to `_HINT_FEEDBACK_DEFAULT` above, so pre-migration this row
+# would have been indistinguishable from the base case). extract_json's
+# regex has always accepted the newline as optional, so migrating recovers
+# the payload -- the intended union-of-behaviors direction this whole plan
+# has been strengthening extract_json toward, not a regression.
+HINT_FEEDBACK_EXPECTED["hint_feedback_shape_single_line_fence"] = _HintFeedbackShape(
+    helpful=("h1",), misleading=("m1",), missing=("mi1",)
+)
 
 
 @pytest.mark.parametrize("name,text", CORPUS, ids=CORPUS_IDS)
@@ -770,9 +905,101 @@ EXTRACT_JSON_OBJECT_EXPECTED: dict[str, dict[str, Any] | None] = {
     "array_then_separate_object_no_fence": None,
     "array_of_objects_in_prose_no_fence": None,
     "brace_in_string_value_no_fence_no_decoy": {"note": "step 3} done", "a": 1},
+    # Step 1c(i) fix (see EXTRACT_JSON_EXPECTED comment): truncated array
+    # scopes are now terminal on failure, not a cue to unwrap a nested object.
+    "truncated_array_one_object": None,
+    "truncated_array_two_objects": None,
+    # Step 1c(iv) accepted residual: recovers the later well-formed candidate.
+    "unfenced_earlier_malformed_then_valid": {"x": 2},
+    "hint_feedback_shape_single_line_fence": {"helpful": ["h1"], "misleading": ["m1"], "missing": ["mi1"]},
 }
 
 
 @pytest.mark.parametrize("name,text", CORPUS, ids=CORPUS_IDS)
 def test_action_filter_extract_json_object(name: str, text: str) -> None:
     assert ActionFilterHarness._extract_json_object(text) == EXTRACT_JSON_OBJECT_EXPECTED[name]
+
+
+# ---------------------------------------------------------------------------
+# AC-910 Task 5 Step 2: guard against a new duplicate fence extractor
+# reappearing now that the seven originals are consolidated onto
+# harness.core.output_parser.extract_json.
+# ---------------------------------------------------------------------------
+
+_GUARDED_SRC_DIRS = ("agents", "execution")
+_ALLOWED_FENCE_REGEX_FILE = "output_parser.py"
+
+# AC-924: execution/judge.py has its own `_try_code_block_parse` fence regex,
+# one of FOUR ordered parsing strategies (marker-delimited, raw-JSON-with-
+# "score"-key, code-block, plain-text) whose ordering is observable and
+# entirely uncharacterized. Migrating it onto extract_json blind would be
+# exactly the mistake this plan keeps proving is wrong -- characterize
+# before you change. Tracked in AC-924, not fixed here.
+#
+# This is EXACT-SET equality, not an allow-list: it fails both when a NEW
+# offender appears (someone adds a fence regex) and when this known one
+# disappears (AC-924 lands and judge.py is migrated or the guard reverts to
+# a plain "no offenders" assertion) -- so a stale exemption can't survive
+# unnoticed the way a permissive allow-list would let it.
+_KNOWN_OFFENDERS = frozenset({"execution/judge.py"})
+
+
+def _guarded_python_files() -> list[Path]:
+    src_root = Path(__file__).resolve().parents[1] / "src" / "autocontext"
+    files: list[Path] = []
+    for dirname in _GUARDED_SRC_DIRS:
+        files.extend(sorted((src_root / dirname).rglob("*.py")))
+    return files
+
+
+def _fence_regex_offenders() -> set[str]:
+    """Return the set of guarded-directory-relative paths (e.g.
+    "agents/hint_feedback.py") containing a `re.compile(...)` call whose
+    pattern argument is a string literal containing three backticks.
+    """
+    src_root = Path(__file__).resolve().parents[1] / "src" / "autocontext"
+    offenders: set[str] = set()
+    for path in _guarded_python_files():
+        if path.name == _ALLOWED_FENCE_REGEX_FILE:
+            continue
+        tree = ast.parse(path.read_text(), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            if not (isinstance(func, ast.Attribute) and func.attr == "compile"):
+                continue
+            if not (isinstance(func.value, ast.Name) and func.value.id == "re"):
+                continue
+            if not node.args:
+                continue
+            first_arg = node.args[0]
+            if not (isinstance(first_arg, ast.Constant) and isinstance(first_arg.value, str)):
+                continue
+            if "```" in first_arg.value:
+                offenders.add(str(path.relative_to(src_root)))
+    return offenders
+
+
+def test_no_new_markdown_fence_regex_outside_output_parser() -> None:
+    """No module under agents/ or execution/ may define its own markdown-fence
+    regex, beyond the single known, tracked exception -- that duplication is
+    exactly what this plan consolidated away. `output_parser.py` (the shared
+    parser's home) is the sole allowed owner; it doesn't live under either
+    guarded directory today, so excluding it by name is defense-in-depth
+    rather than load-bearing, in case it ever moves.
+
+    Exact-set equality against `_KNOWN_OFFENDERS`, not a plain "no offenders"
+    assertion and not a permissive allow-list: a NEW offender fails it (the
+    regression this guard exists to catch), and so does the known one
+    disappearing (so AC-924 landing forces this test's expected set to be
+    updated deliberately, rather than carrying a stale exemption forever).
+
+    Proven to fire in both directions this guard cares about (see
+    task-5-report.md for the pasted output):
+    1. A deliberately reintroduced `_JSON_FENCE_RE = re.compile(r"```...")`
+       added to an agents/ module -> fails, naming that file. Removed -> passes.
+    2. `_KNOWN_OFFENDERS` emptied while judge.py still offends -> fails.
+       Restored -> passes.
+    """
+    assert _fence_regex_offenders() == _KNOWN_OFFENDERS

@@ -63,6 +63,10 @@ def _top_level_object_spans(text: str) -> list[str]:
         try:
             _value, end = decoder.raw_decode(text, start)
         except ValueError:
+            # AC-922: retrying one character later is O(n^2) on degenerate
+            # repetitive input (e.g. '{"a": ' * n); load-bearing for
+            # correctness (it's what lets side-by-side spans still separate
+            # after a stray unclosed brace), so don't "optimize" it away here.
             i = start + 1
             continue
         spans.append(text[start:end])
@@ -113,10 +117,21 @@ def extract_json(text: str, *, on_failure: str = "raise") -> dict[str, Any] | No
             brace_candidate = scope[start : end + 1]
             if brace_candidate != scope:
                 candidates.append(brace_candidate)
-    else:
+    elif not scope.startswith("["):
         for span in _top_level_object_spans(scope):
             if span != scope:
                 candidates.append(span)
+    # else: scope opens with `[` -- the model was producing an array. A
+    # complete array is caught by the wrong-type-terminal rule below once it
+    # parses, but a TRUNCATED array (no closing bracket) never reaches that
+    # rule: json.loads(scope) raises JSONDecodeError instead of returning a
+    # list, so without this branch the loop would fall through to
+    # _top_level_object_spans and unwrap whatever complete object happens to
+    # sit inside the unterminated array -- the same silent-unwrap shape as
+    # the wrong-type rule exists to prevent, reached through malformed
+    # syntax instead of a successful parse. Skipping the rescue candidates
+    # entirely here means an array-shaped scope is terminal whether it
+    # parses or not.
 
     last_exc: Exception | None = None
     for candidate in candidates:

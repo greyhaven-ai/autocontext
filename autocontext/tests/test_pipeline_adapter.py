@@ -1,8 +1,12 @@
 """Tests for PipelineEngine-backed orchestrator codepath."""
+
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from autocontext.agents.llm_client import DeterministicDevClient
 from autocontext.agents.orchestrator import AgentOrchestrator
@@ -30,7 +34,8 @@ def _make_prompt_bundle() -> PromptBundle:
         competitor=base + "Describe your strategy reasoning and recommend specific parameter values.",
         analyst=base + "Analyze strengths/failures and return markdown with sections: "
         "Findings, Root Causes, Actionable Recommendations.",
-        coach=base + (
+        coach=base
+        + (
             "You are the playbook coach. Produce TWO structured sections:\n\n"
             "1. A COMPLETE replacement playbook between markers.\n\n"
             "<!-- PLAYBOOK_START -->\n(Your consolidated playbook here)\n<!-- PLAYBOOK_END -->\n\n"
@@ -187,3 +192,49 @@ class TestPipelineOrchestratorIntegration:
         # DeterministicDevClient architect response has tools JSON
         assert isinstance(outputs.architect_tools, list)
         assert len(outputs.architect_tools) >= 1
+
+    def test_pipeline_malformed_translator_content_raises(self) -> None:
+        """AC-910 Task 5 Step 1c(iii): malformed translator content must
+        surface as a raise through the pipeline path (`_run_via_pipeline`).
+
+        Every other pipeline test here only exercises the happy path,
+        where extraction success is invisible in AgentOutputs -- there's
+        no field recording whether the translator's JSON actually parsed.
+        This is the recurring theme of the whole AC-910 plan: extraction
+        success must be verified at the raise, not inferred from a call
+        site's output, before `use_pipeline_engine` ever flips
+        default-on.
+        """
+        client = DeterministicDevClient()
+        settings = _make_settings(use_pipeline=True)
+        orch = AgentOrchestrator(client=client, settings=settings)
+
+        def fake_competitor_run(prompt: str, tool_context: str = "") -> tuple[str, RoleExecution]:
+            # Prose with no embedded JSON, so extract_strategy_deterministic
+            # returns None and translate() falls through to the runtime call
+            # below instead of short-circuiting on the deterministic path.
+            content = "I will play aggressively and hold the center."
+            return content, RoleExecution(
+                role="competitor",
+                content=content,
+                usage=RoleUsage(input_tokens=0, output_tokens=0, latency_ms=0, model="stub"),
+                subagent_id="test",
+                status="completed",
+            )
+
+        orch.competitor.run = fake_competitor_run  # type: ignore[method-assign]
+
+        def fake_translator_run_task(task: object) -> RoleExecution:
+            return RoleExecution(
+                role="translator",
+                content='{"aggression": 0.5, "defense":}',  # malformed: no value
+                usage=RoleUsage(input_tokens=0, output_tokens=0, latency_ms=0, model="stub"),
+                subagent_id="test",
+                status="completed",
+            )
+
+        orch.translator.runtime.run_task = fake_translator_run_task  # type: ignore[method-assign]
+
+        prompts = _make_prompt_bundle()
+        with pytest.raises(json.JSONDecodeError):
+            orch.run_generation(prompts, generation_index=1)
