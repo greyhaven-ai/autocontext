@@ -184,6 +184,12 @@ CORPUS: list[tuple[str, str]] = [
         # separate bare object, no fence. The array is a decisive answer
         # about what the model produced; the naive scan used to reach past
         # it and adopt the object dangling after it.
+        #
+        # NOTE what this row does and does not reach today: the scope opens
+        # with "[", so the array-shaped-scope check skips the rescue
+        # candidates and json.loads rejects the whole scope with "Extra data".
+        # It is terminal via THAT rule, not via the wrong-type rule -- see
+        # EXTRACT_JSON_EXPECTED's comment on this row.
         "array_then_separate_object_no_fence",
         '[{"a": 1}], {"b": 2}',
     ),
@@ -194,6 +200,24 @@ CORPUS: list[tuple[str, str]] = [
         # since the array isn't the first token in the scope.
         "array_of_objects_in_prose_no_fence",
         'Available tools: [{"name": "n1"}] let me know.',
+    ),
+    (
+        # The wrong-type rule's TERMINALITY, which nothing else here pinned.
+        # `array_of_objects_in_prose_no_fence` above reaches the wrong-type
+        # rule, but its array is the LAST candidate, so stopping there and
+        # continuing past it are indistinguishable -- and every other row
+        # that reaches the rule has the same shape. Changing the `break` at
+        # output_parser.py:188 to `continue` left the entire suite green.
+        #
+        # Here the array span is followed by a LATER, well-formed object
+        # span, so the two differ: `break` raises (the array settles what the
+        # model produced), `continue` reaches past it and returns {"b": 2} --
+        # the same silently-plausible wrong answer as AC-921, one nesting
+        # level inward. See test_extract_json_wrong_type_candidate_is_terminal
+        # for the two other discriminating shapes (an array reached after an
+        # earlier malformed span, and a non-array wrong type).
+        "array_span_then_later_object_no_fence",
+        'Tools: [{"a": 1}] and {"b": 2}',
     ),
     (
         # Companion to critical1: a brace inside a string value with NO decoy
@@ -248,8 +272,10 @@ CORPUS: list[tuple[str, str]] = [
         # input, so a corpus case with no matching keys can't observe this
         # site's behavior change -- this one can. Before the migration,
         # hint_feedback's own fence regex required a literal newline after
-        # the fence tag and silently missed this (falling to all-empty
-        # defaults); extract_json's optional-newline regex recovers it.
+        # the fence tag and, matching nothing, gave up entirely -- falling to
+        # all-empty defaults. What recovers it now is not extract_json's
+        # optional newline but the fact that extract_json has a fallback at
+        # all; see HINT_FEEDBACK_EXPECTED's comment below.
         "hint_feedback_shape_single_line_fence",
         '```json{"helpful": ["h1"], "misleading": ["m1"], "missing": ["mi1"]}```',
     ),
@@ -291,7 +317,20 @@ CORPUS_IDS = [name for name, _ in CORPUS]
 
 
 class _Raises:
-    """Sentinel marking that an extractor is pinned to raise on this case."""
+    """Sentinel marking that an extractor is pinned to raise on this case.
+
+    The pinned type is matched EXACTLY (``type(exc) is exc_type``), not by
+    ``isinstance``. ``json.JSONDecodeError`` subclasses ``ValueError``, so an
+    ``isinstance`` check cannot tell "nothing parsed at all" from "parsed
+    fine, but to the wrong type" -- and those are two different outcomes of
+    two different rules in extract_json, reached through different branches.
+    A row that silently swapped one for the other would still pass a loose
+    check. That is not hypothetical: ``array_then_separate_object_no_fence``
+    below was pinned to ``ValueError`` and documented as covering the
+    wrong-type rule, while it actually raises ``JSONDecodeError`` and never
+    reaches that rule at all. The subclass relationship is the only reason
+    the mislabel survived.
+    """
 
     def __init__(self, exc_type: type[BaseException]) -> None:
         self.exc_type = exc_type
@@ -409,6 +448,7 @@ STRIP_JSON_FENCES_EXPECTED: dict[str, str] = {
     ),
     "array_then_separate_object_no_fence": '[{"a": 1}], {"b": 2}',
     "array_of_objects_in_prose_no_fence": 'Available tools: [{"name": "n1"}] let me know.',
+    "array_span_then_later_object_no_fence": 'Tools: [{"a": 1}] and {"b": 2}',
     "brace_in_string_value_no_fence_no_decoy": '{"note": "step 3} done", "a": 1}',
     "truncated_array_one_object": '[{"a": 1}',
     "truncated_array_two_objects": '[{"a": 1}, {"b": 2}',
@@ -440,9 +480,12 @@ EXTRACT_JSON_EXPECTED: dict[str, Any] = {
     "fence_single_line": {"a": 1},
     "two_fenced_blocks": {"a": 1},
     "truncated_block": _Raises(json.JSONDecodeError),
-    # CHANGED by the Step 2 strengthening: no fence is present (the fence is
-    # unterminated), so extract_json now brace-scans the bare text -- same
-    # fallback action_filter already uses -- and recovers the object.
+    # CHANGED by the Step 2 strengthening: this row has no fence at all, just
+    # an object in prose, so extract_json now span-scans the bare text -- same
+    # fallback action_filter already uses -- and recovers the object. (The
+    # "no fence because the fence is unterminated" case is `truncated_block`
+    # directly above; it reaches the same no-fence branch by a different
+    # route and still fails, since there's nothing complete to recover.)
     "bare_json_with_prose": {"a": 1},
     "json_array_not_object": _Raises(ValueError),
     "empty_string": _Raises(json.JSONDecodeError),
@@ -484,12 +527,29 @@ EXTRACT_JSON_EXPECTED: dict[str, Any] = {
     # string no longer fragments the first object, so it recovers correctly
     # instead of falling through to the unrelated "stale" decoy object.
     "critical1_brace_in_string_with_decoy": {"score": 5, "rationale": "matches rubric step 3}"},
-    # AC-910 Task 3 review Critical 2 fix: a top-level array candidate is
-    # terminal even when it isn't the whole scope, so this no longer
-    # unwraps {"a": 1} out of the array and ignores the trailing {"b": 2}.
-    "array_then_separate_object_no_fence": _Raises(ValueError),
-    # Same Critical 2 fix, array embedded in prose rather than leading.
+    # AC-910 Task 3 review Critical 2 fix: the scope OPENS with "[", so the
+    # `scope.startswith("[")` check skips the rescue candidates entirely and
+    # the only candidate left is the whole scope -- which json.loads rejects
+    # with "Extra data" at the trailing `, {"b": 2}`. So this is terminal via
+    # the array-SHAPED-SCOPE rule and a JSONDecodeError, NOT via the
+    # wrong-type rule; the wrong-type `break` at output_parser.py:188 is never
+    # reached on this input. It was pinned to `_Raises(ValueError)` and
+    # commented as covering "a top-level array candidate is terminal even
+    # when it isn't the whole scope" -- neither claim is true of this row, and
+    # it only passed because JSONDecodeError subclasses ValueError. The row
+    # that actually covers a terminal array candidate mid-scope is
+    # `array_of_objects_in_prose_no_fence` just below (array not at index 0,
+    # so the rescue candidates DO run and the array parses to a list), and
+    # `array_span_then_later_object_no_fence` after it (which additionally
+    # pins that the scan STOPS there).
+    "array_then_separate_object_no_fence": _Raises(json.JSONDecodeError),
+    # Same Critical 2 fix, array embedded in prose rather than leading: the
+    # scope does not open with "[", so the span scan runs, offers the array as
+    # a rescue candidate, and it parses to a list -> wrong-type ValueError.
     "array_of_objects_in_prose_no_fence": _Raises(ValueError),
+    # Wrong-type TERMINALITY (the `break`, not merely the raise): an array
+    # span with a well-formed object span AFTER it. See CORPUS.
+    "array_span_then_later_object_no_fence": _Raises(ValueError),
     # String-aware span scan recovers this whole, valid object; there's no
     # decoy here to fall through to, so this also passed before the fix via
     # the whole-scope candidate -- pinned as the no-decoy companion to
@@ -504,9 +564,11 @@ EXTRACT_JSON_EXPECTED: dict[str, Any] = {
     # Step 1c(iv) accepted residual: no fence, so each malformed candidate is
     # skipped in favor of the next one that parses. See the CORPUS comment.
     "unfenced_earlier_malformed_then_valid": {"x": 2},
-    # hint_feedback.py migration: a single-line fence recovers fine here too
-    # (extract_json's own regex already had the optional-newline form) --
-    # this row's significance is only visible at the hint_feedback site.
+    # hint_feedback.py migration: a single-line fence recovers fine here --
+    # via the fence regex's optional newline, and, were that newline
+    # required, via the unfenced span scan instead (verified by requiring it
+    # and re-running). This row's significance is only visible at the
+    # hint_feedback site.
     "hint_feedback_shape_single_line_fence": {"helpful": ["h1"], "misleading": ["m1"], "missing": ["mi1"]},
     # BOM fix: the scope is BOM-normalized before the array-shape check, so
     # these two now behave exactly like their BOM-less twins
@@ -523,8 +585,10 @@ EXTRACT_JSON_EXPECTED: dict[str, Any] = {
 def test_extract_json(name: str, text: str) -> None:
     expected = EXTRACT_JSON_EXPECTED[name]
     if isinstance(expected, _Raises):
-        with pytest.raises(expected.exc_type):
+        with pytest.raises(expected.exc_type) as excinfo:
             extract_json(text)
+        # Exact type, not isinstance -- see _Raises' docstring.
+        assert type(excinfo.value) is expected.exc_type
     else:
         assert extract_json(text) == expected
 
@@ -657,6 +721,73 @@ def test_extract_json_unfenced_earlier_malformed_candidate_is_skipped() -> None:
     assert extract_json('first: {bad json,} then: {"x": 2}') == {"x": 2}
 
 
+def test_extract_json_wrong_type_candidate_is_terminal() -> None:
+    """A candidate that PARSES to a non-Mapping stops the whole scan.
+
+    This pins the `break` (not `continue`) at output_parser.py:188 -- the
+    plan's strongest structural claim about extract_json, and until now
+    entirely untested. Every corpus row that reaches that line has the
+    wrong-type candidate as the LAST candidate, where breaking and continuing
+    are indistinguishable; the `scope.startswith("[")` check is what makes
+    those rows terminal, not the break. Flipping `break` to `continue` left
+    the whole targeted suite green (292/292). These three inputs are the ones
+    that tell the two apart -- each has a well-formed OBJECT candidate sitting
+    after the wrong-type one, so `continue` returns it instead of raising:
+
+        'Tools: [{"a": 1}] and {"b": 2}'                    -> would return {"b": 2}
+        'garbage: {not valid json,} [{"mid": 1}] {"c": 3}'  -> would return {"c": 3}
+        '"empty {} here"'                                   -> would return {}
+
+    Returning any of those would be the AC-921 failure shape one nesting
+    level inward: a plausible object lifted from somewhere the model never
+    designated, substituted for an answer the parser already had. The array
+    (or, in the third case, the string) IS the model's answer about what it
+    produced; the fact that an object-shaped fragment sits nearby is not a
+    reason to keep looking.
+
+    The three shapes are deliberately different, since they enter the
+    wrong-type branch by different routes: an array reached as the first
+    rescue candidate; an array reached only AFTER an earlier malformed span
+    was skipped (proving the break isn't an artifact of being the first
+    rescue tried); and a non-array wrong type (a bare JSON string as the
+    whole scope, terminal from the scope candidate itself, with the object
+    fragment found by the span scan behind it).
+    """
+    # 1. Array span, then a later object span. Terminal at the array.
+    with pytest.raises(ValueError) as excinfo:
+        extract_json('Tools: [{"a": 1}] and {"b": 2}')
+    assert type(excinfo.value) is ValueError  # not JSONDecodeError; see _Raises
+    assert "got list" in str(excinfo.value)
+
+    # 2. Same, but the array is only reached after an earlier candidate fails
+    #    to parse -- so the scan is demonstrably still running when it hits
+    #    the wrong type, and still stops there.
+    with pytest.raises(ValueError) as excinfo:
+        extract_json('garbage: {not valid json,} [{"mid": 1}] {"c": 3}')
+    assert type(excinfo.value) is ValueError
+    assert "got list" in str(excinfo.value)
+
+    # 3. Non-array wrong type: the scope is a bare JSON string, which parses
+    #    (to `str`) as the FIRST candidate. The span scan still found a `{}`
+    #    inside it, so a `continue` would return that empty dict.
+    with pytest.raises(ValueError) as excinfo:
+        extract_json('"empty {} here"')
+    assert type(excinfo.value) is ValueError
+    assert "got str" in str(excinfo.value)
+
+    # on_failure="none" must fail closed on all three too, not fall through to
+    # the trailing object -- this is the shape the migrated call sites use.
+    assert extract_json('Tools: [{"a": 1}] and {"b": 2}', on_failure="none") is None
+    assert extract_json('garbage: {not valid json,} [{"mid": 1}] {"c": 3}', on_failure="none") is None
+    assert extract_json('"empty {} here"', on_failure="none") is None
+
+    # Control: an earlier candidate that FAILS to parse is still a reason to
+    # keep scanning (the Step 1c(iv) residual). Only a successful parse to a
+    # wrong type is terminal, so the break must not be over-read as "stop on
+    # any bad candidate".
+    assert extract_json('first: {bad json,} then: {"x": 2}') == {"x": 2}
+
+
 def test_extract_json_bom_does_not_walk_past_the_array_shape_check() -> None:
     """A leading U+FEFF must not defeat the truncated-array rule.
 
@@ -732,6 +863,7 @@ PARSE_ARCHITECT_TOOL_SPECS_EXPECTED: dict[str, list[dict[str, Any]]] = {
     "critical1_brace_in_string_with_decoy": [],  # extract_json recovers the correct object, but no "tools" key
     "array_then_separate_object_no_fence": [],  # extract_json now raises (Critical 2 fix) -> None -> []
     "array_of_objects_in_prose_no_fence": [],  # same Critical 2 fix -> None -> []
+    "array_span_then_later_object_no_fence": [],  # wrong-type rule is terminal -> raises -> None -> []
     "brace_in_string_value_no_fence_no_decoy": [],  # valid dict recovered, but no "tools" key
     "truncated_array_one_object": [],  # extract_json now raises (Step 1c(i) fix) -> None -> []
     "truncated_array_two_objects": [],  # same
@@ -792,8 +924,13 @@ def test_parse_architect_tool_specs_ac_920_two_tools_blocks_uses_first_block() -
 def test_translator_translate(name: str, text: str) -> None:
     expected = EXTRACT_JSON_EXPECTED[name]
     if isinstance(expected, _Raises):
-        with pytest.raises(expected.exc_type):
+        with pytest.raises(expected.exc_type) as excinfo:
             _translate(text)
+        # Exact type, not isinstance -- see _Raises' docstring. translate()
+        # re-raises the wrong-type case as its own bare ValueError and lets a
+        # JSONDecodeError through untouched, so the exact types match
+        # extract_json's row for row.
+        assert type(excinfo.value) is expected.exc_type
     else:
         assert _translate(text) == expected
 
@@ -857,6 +994,10 @@ CURATOR_RATE_EXPECTED: dict[str, _CuratorRatingShape] = {
     ),
     "array_then_separate_object_no_fence": _CURATOR_DEFAULT,  # extract_json raises -> None -> default
     "array_of_objects_in_prose_no_fence": _CURATOR_DEFAULT,  # same
+    # extract_json raises (wrong-type rule is terminal) -> None -> default.
+    # The {"b": 2} a `continue` would reach has no rating keys either, so this
+    # row cannot discriminate the break -- only EXTRACT_JSON_EXPECTED's can.
+    "array_span_then_later_object_no_fence": _CURATOR_DEFAULT,
     "brace_in_string_value_no_fence_no_decoy": _CURATOR_DEFAULT,  # parses fine, no matching keys
     "truncated_array_one_object": _CURATOR_DEFAULT,  # extract_json raises -> None -> default
     "truncated_array_two_objects": _CURATOR_DEFAULT,  # same
@@ -930,9 +1071,13 @@ EXTRACT_STRATEGY_DETERMINISTIC_EXPECTED: dict[str, dict[str, Any] | None] = {
     "two_bare_json_objects_no_fence": {"aggression": 0.9, "defense": 0.1},
     # Critical 1 fix: recovers the correct first object, not the decoy.
     "critical1_brace_in_string_with_decoy": {"score": 5, "rationale": "matches rubric step 3}"},
-    # Critical 2 fix: extract_json now raises on the array candidate -> None.
+    # Critical 2 fix: extract_json now raises -> None. Via the array-shaped-
+    # scope rule for the first (JSONDecodeError on the whole scope), the
+    # wrong-type rule for the second and third; the third additionally pins
+    # that the scan stops rather than adopting the later {"b": 2}.
     "array_then_separate_object_no_fence": None,
     "array_of_objects_in_prose_no_fence": None,
+    "array_span_then_later_object_no_fence": None,
     "brace_in_string_value_no_fence_no_decoy": {"note": "step 3} done", "a": 1},
     # Step 1c(i) fix (see EXTRACT_JSON_EXPECTED comment): truncated array
     # scopes are now terminal on failure, not a cue to unwrap a nested object.
@@ -969,10 +1114,20 @@ HINT_FEEDBACK_EXPECTED["hint_feedback_shape"] = _HintFeedbackShape(helpful=("h1"
 # own fence regex required a literal newline after the fence tag and missed
 # this single-line fence, silently falling through to the all-empty default
 # (identical to `_HINT_FEEDBACK_DEFAULT` above, so pre-migration this row
-# would have been indistinguishable from the base case). extract_json's
-# regex has always accepted the newline as optional, so migrating recovers
-# the payload -- the intended union-of-behaviors direction this whole plan
-# has been strengthening extract_json toward, not a regression.
+# would have been indistinguishable from the base case).
+#
+# What recovers it is NOT, as an earlier version of this comment claimed,
+# extract_json's optional-newline fence regex. Requiring the newline there
+# and re-running leaves this row passing: with no fence matched, the scope
+# becomes the whole text and the unfenced span scan finds the payload
+# anyway. The optional newline is one of two independent routes; the real
+# difference is that extract_json has a fallback at all, where
+# hint_feedback's single regex either matched or gave up. That distinction
+# matters because it says what would actually regress this row -- removing
+# the fallback scan, not tightening the fence pattern.
+#
+# Either way this is the intended union-of-behaviors direction this whole
+# plan has been strengthening extract_json toward, not a regression.
 HINT_FEEDBACK_EXPECTED["hint_feedback_shape_single_line_fence"] = _HintFeedbackShape(
     helpful=("h1",), misleading=("m1",), missing=("mi1",)
 )
@@ -1035,9 +1190,13 @@ EXTRACT_JSON_OBJECT_EXPECTED: dict[str, dict[str, Any] | None] = {
     "two_bare_json_objects_no_fence": {"aggression": 0.9, "defense": 0.1},
     # Critical 1 fix: recovers the correct first object, not the decoy.
     "critical1_brace_in_string_with_decoy": {"score": 5, "rationale": "matches rubric step 3}"},
-    # Critical 2 fix: extract_json now raises on the array candidate -> None.
+    # Critical 2 fix: extract_json now raises -> None. Via the array-shaped-
+    # scope rule for the first (JSONDecodeError on the whole scope), the
+    # wrong-type rule for the second and third; the third additionally pins
+    # that the scan stops rather than adopting the later {"b": 2}.
     "array_then_separate_object_no_fence": None,
     "array_of_objects_in_prose_no_fence": None,
+    "array_span_then_later_object_no_fence": None,
     "brace_in_string_value_no_fence_no_decoy": {"note": "step 3} done", "a": 1},
     # Step 1c(i) fix (see EXTRACT_JSON_EXPECTED comment): truncated array
     # scopes are now terminal on failure, not a cue to unwrap a nested object.

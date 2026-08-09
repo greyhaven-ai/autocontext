@@ -92,6 +92,13 @@ def build_role_handler(
                 scenario_name=scenario_name,
                 generation_deadline=generation_deadline,
             ):
+                # The parsed strategy is discarded here and `_run_via_pipeline`
+                # re-parses `exec_result.content` itself. Worth knowing when
+                # reading that site: the content it re-parses is either
+                # `json.dumps(...)` or the exact string `translate` just parsed
+                # successfully, so its extract_json call cannot fail while this
+                # is the only way a translator RoleExecution is produced. See
+                # the comment at that call for why it is kept anyway.
                 _strategy, exec_result = orch.translator.translate(raw_text, strategy_interface)
                 return exec_result
         elif name == "analyst":

@@ -678,15 +678,36 @@ class AgentOrchestrator:
         # then gets executed and scored as a legitimate result. extract_json's
         # default on_failure="raise" matches the direct (non-pipeline) path's
         # StrategyTranslator.translate, which already raises on the same
-        # failure; this used to diverge and fail soft instead. This also
-        # closes a second, separate defect: the old `json.loads(...)` call had
-        # no type check at all, so a translator response shaped as a JSON
-        # array (not an object) was assigned to `strategy` as-is -- a list
-        # silently violating the `dict[str, Any]` every downstream consumer
-        # (AgentOutputs, CompetitorOutput) declares and expects. extract_json
-        # treats a successful parse to a non-object as terminal and raises,
-        # so that shape is now rejected here instead of failing later, less
-        # legibly, downstream.
+        # failure; this used to diverge and fail soft instead. It also type-
+        # checks, which the old `json.loads(...)` here did not: a translator
+        # response shaped as a JSON array (not an object) used to be assigned
+        # to `strategy` as-is -- a list silently violating the
+        # `dict[str, Any]` every downstream consumer (AgentOutputs,
+        # CompetitorOutput) declares and expects.
+        #
+        # Be clear about what this line can and cannot catch as currently
+        # wired, though, because an earlier version of this comment read as
+        # if both changes were live here and neither is. pipeline_adapter's
+        # translator branch calls `orch.translator.translate(...)`, DISCARDS
+        # the strategy it returns, and hands back only the RoleExecution --
+        # whose `.content` is either `json.dumps(...)` (always valid) or the
+        # very string `translate` just parsed successfully. extract_json is
+        # deterministic, so this second parse cannot disagree with the first:
+        # any input bad enough to fail here fails inside `translate` one frame
+        # earlier and never reaches this line. Through that path neither
+        # fail-hard nor the array rejection can actually fire.
+        #
+        # So this is defense-in-depth, kept deliberately rather than deleted.
+        # The adapter's discard-and-re-parse is an implementation detail, not
+        # a contract: an adapter that sourced the translator RoleExecution
+        # from anywhere other than `translate`'s own return (a cached
+        # execution, a retry, a streaming/partial-result path) would put
+        # un-vetted content in front of this line, and `use_pipeline_engine`
+        # flipping default-on is when that stops being hypothetical. Both
+        # behaviors ARE pinned, by tests that stub the role handler to reach
+        # this parse for real -- see, in tests/test_pipeline_adapter.py,
+        # test_orchestrator_parses_translator_content_and_raises_on_malformed
+        # and test_orchestrator_rejects_array_shaped_translator_content.
         from autocontext.harness.core.output_parser import extract_json
 
         strategy = extract_json(results["translator"].content)
