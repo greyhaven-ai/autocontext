@@ -8,9 +8,9 @@ from collections.abc import Mapping
 from typing import Any
 
 # The `tag` group is what makes a ```json fence distinguishable from a bare
-# ``` or a ```python one. It is a named group so that adding it cannot silently
-# renumber `body` out from under strip_json_fences, which captured group(1)
-# before this group existed.
+# ``` or a ```python one. Both groups are named rather than positional so that
+# adding or reordering one cannot silently renumber `body` out from under a
+# reader of this regex.
 _JSON_FENCE_RE = re.compile(r"```(?P<tag>json)?\s*\n?(?P<body>.*?)\n?\s*```", re.DOTALL)
 
 # U+FEFF (BOM / zero-width no-break space). `str.strip()` does NOT remove it
@@ -41,20 +41,6 @@ def _scope_text(raw: str) -> str:
 # hand-rolled version was tried and worked, but it cannot help disagreeing
 # with json.loads at the margins (that disagreement is exactly how the two
 # holes this function now closes got in) where the real parser can't.
-
-
-def strip_json_fences(text: str) -> str:
-    """Strip markdown code fences, returning inner content.
-
-    Takes the FIRST fence of any language, unlike extract_json below, which
-    prefers a ```json-tagged one. That difference is deliberate and pinned:
-    this is a general-purpose fence stripper with callers that are not
-    extracting JSON at all, so it has no basis for preferring a json tag.
-    Do not "fix" it to match extract_json -- if a caller of this function
-    wants JSON, it should call extract_json.
-    """
-    match = _JSON_FENCE_RE.search(text)
-    return match.group("body").strip() if match else text.strip()
 
 
 def _top_level_object_spans(text: str) -> list[str]:

@@ -8,22 +8,7 @@ from autocontext.harness.core.output_parser import (
     extract_delimited_section,
     extract_json,
     extract_tagged_content,
-    strip_json_fences,
 )
-
-
-class TestStripJsonFences:
-    def test_strip_json_fences_with_json_tag(self) -> None:
-        text = '```json\n{"key": "value"}\n```'
-        assert strip_json_fences(text) == '{"key": "value"}'
-
-    def test_strip_json_fences_plain(self) -> None:
-        text = '```\n{"key": "value"}\n```'
-        assert strip_json_fences(text) == '{"key": "value"}'
-
-    def test_strip_json_fences_no_fences(self) -> None:
-        text = '{"key": "value"}'
-        assert strip_json_fences(text) == '{"key": "value"}'
 
 
 class TestExtractJson:
@@ -33,12 +18,12 @@ class TestExtractJson:
         assert result == {"name": "test", "count": 42}
 
     def test_extract_json_invalid(self) -> None:
-        text = '```json\nnot valid json\n```'
+        text = "```json\nnot valid json\n```"
         with pytest.raises(ValueError):
             extract_json(text)
 
     def test_extract_json_not_object(self) -> None:
-        text = '```json\n[1, 2, 3]\n```'
+        text = "```json\n[1, 2, 3]\n```"
         with pytest.raises(ValueError, match="Expected JSON object"):
             extract_json(text)
 
@@ -62,13 +47,7 @@ class TestExtractTaggedContent:
 
 class TestExtractDelimitedSection:
     def test_extract_delimited_section(self) -> None:
-        text = (
-            "preamble\n"
-            "<!-- PLAYBOOK_START -->\n"
-            "Strategy content here\n"
-            "<!-- PLAYBOOK_END -->\n"
-            "postamble"
-        )
+        text = "preamble\n<!-- PLAYBOOK_START -->\nStrategy content here\n<!-- PLAYBOOK_END -->\npostamble"
         result = extract_delimited_section(text, "<!-- PLAYBOOK_START -->", "<!-- PLAYBOOK_END -->")
         assert result == "Strategy content here"
 

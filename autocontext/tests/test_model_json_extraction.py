@@ -1,8 +1,10 @@
 """Characterization tests for the seven ways autocontext pulls JSON out of LLM text.
 
-AC-910 plan 3 consolidates these onto a single parser. Before that happens, this
-file pins what EACH extractor does TODAY against a shared corpus of realistic LLM
-outputs, so the consolidation can be proven not to change observable behavior.
+AC-910 plan 3 consolidated these onto a single parser. This file pinned what
+EACH extractor did BEFORE that, against a shared corpus of realistic LLM
+outputs, so the consolidation could be proven not to change observable
+behavior; the tables now record the post-consolidation results, with the rows
+that moved annotated in place with why.
 
 This is a characterization test suite: every assertion records the *current*
 result, including ``None``, ``[]``, ``{}``, defaults, and raised exceptions. It
@@ -11,35 +13,43 @@ same input, that disagreement is the point -- see the report at
 ``.superpowers/sdd/2026-08-08-ac-910-plan3-model-json-consolidation/task-1-report.md``
 for the full disagreement table.
 
-The seven call sites characterized here:
+The call sites characterized here. There were eight when this file was written;
+``strip_json_fences`` was the ninth and is gone -- it was a generic fence
+stripper that ended the consolidation with zero production callers, so AC-910
+deleted it rather than leave behind the same uncalled-public-extractor shape
+the plan set out to remove:
 
-1. ``harness.core.output_parser.strip_json_fences`` -- generic fence stripper,
-   the widest-used regex in the codebase.
-2. ``harness.core.output_parser.extract_json`` -- fence-strip + ``json.loads``,
-   currently DEAD CODE (zero callers), and the consolidation target.
-3. ``agents.architect.parse_architect_tool_specs`` -- manual
+1. ``harness.core.output_parser.extract_json`` -- the consolidation target.
+   It had zero callers when this file was written; every site below that
+   still parses JSON now routes through it.
+2. ``agents.architect.parse_architect_tool_specs`` -- manual
    ``find("```json")`` / ``rfind("```")``, no regex, schema-specific
    (``{"tools": [...]}"``).
-4. ``agents.translator.StrategyTranslator.translate`` -- the fail-hard site:
+3. ``agents.translator.StrategyTranslator.translate`` -- the fail-hard site:
    strips fences then ``json.loads``, raising a specific ``ValueError`` when
    the result isn't an object. AC-910 Task 4 migrated this one onto
    ``extract_json(text)`` (default ``on_failure="raise"``) rather than
    ``on_failure="none"``, since this is the strategy actually scored by the
    generation loop -- a parse failure here must raise, never silently
    become an empty dict.
-5. ``agents.curator.KnowledgeCurator.rate_analyst_output`` -- calls (1) then
-   does its own ``json.loads``, swallowing ``JSONDecodeError`` and silently
-   discarding non-dict results, both without raising.
-6. ``agents.translator_simplification.extract_strategy_deterministic`` -- its
-   own fence regex (this one requires a literal newline after the fence,
-   unlike (1)'s optional-newline regex) with a bare-JSON-object regex
-   fallback and a whole-text last resort.
-7. ``agents.hint_feedback.parse_hint_feedback`` -- feeds a schema-specific
+4. ``agents.curator.KnowledgeCurator.rate_analyst_output`` -- the fail-soft
+   counterpart to (3). Originally stripped fences then ran its own
+   ``json.loads``, swallowing ``JSONDecodeError`` and silently discarding
+   non-dict results. AC-910 Task 5 migrated it onto
+   ``extract_json(..., on_failure="none")``, and the branch's final cleanup
+   added the schema guard that makes "degrades to defaults, never raises"
+   true of the WHOLE site rather than only of its parse step -- see
+   ``test_curator_rate_analyst_output_degrades_on_schema_mismatch``.
+5. ``agents.translator_simplification.extract_strategy_deterministic`` -- its
+   own fence regex (this one required a literal newline after the fence,
+   unlike the shared ``_JSON_FENCE_RE``'s optional-newline one) with a
+   bare-JSON-object regex fallback and a whole-text last resort.
+6. ``agents.hint_feedback.parse_hint_feedback`` -- feeds a schema-specific
    payload. Originally its own private fence regex requiring a literal
-   newline; AC-910 Task 5 migrated it onto (2), which recovers a single-line
+   newline; AC-910 Task 5 migrated it onto (1), which recovers a single-line
    fence this site used to silently miss (see
    ``hint_feedback_shape_single_line_fence`` below).
-8. ``execution.action_filter.ActionFilterHarness._extract_json_object`` --
+7. ``execution.action_filter.ActionFilterHarness._extract_json_object`` --
    tries a fenced-and-anchored regex, then falls back to naive
    first-``{``-to-last-``}`` scanning.
 
@@ -56,6 +66,7 @@ from __future__ import annotations
 
 import ast
 import json
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -68,7 +79,7 @@ from autocontext.agents.hint_feedback import parse_hint_feedback
 from autocontext.agents.translator import StrategyTranslator
 from autocontext.agents.translator_simplification import extract_strategy_deterministic
 from autocontext.execution.action_filter import ActionFilterHarness
-from autocontext.harness.core.output_parser import extract_json, strip_json_fences
+from autocontext.harness.core.output_parser import extract_json
 from autocontext.harness.core.types import RoleExecution, RoleUsage
 
 # ---------------------------------------------------------------------------
@@ -463,74 +474,7 @@ def _hint_feedback(text: str) -> _HintFeedbackShape:
 
 
 # ---------------------------------------------------------------------------
-# Extractor 1: output_parser.strip_json_fences
-# ---------------------------------------------------------------------------
-
-STRIP_JSON_FENCES_EXPECTED: dict[str, str] = {
-    "normal_fenced_block": '{"a": 1}',
-    "fence_no_language": '{"a": 1}',
-    "fence_single_line": '{"a": 1}',
-    "two_fenced_blocks": '{"a": 1}',
-    "truncated_block": '```json\n{"a": 1, "b": 2',
-    "bare_json_with_prose": 'Here is the result: {"a": 1} -- hope that helps!',
-    "json_array_not_object": "[1, 2, 3]",
-    "empty_string": "",
-    "invalid_json_in_fence": '{a: 1, "b":}',
-    "brace_in_string_value": '{"code": "if (x) { return 1; }", "ok": true}',
-    "trailing_stray_brace_no_fence": 'Result: {"text": "value } here"} and also check ref {2} today.',
-    "architect_valid_tools_block": '{"tools": [{"name": "n", "description": "d", "code": "c"}]}',
-    "whitespace_only": "",
-    "fenced_with_leading_prose_and_trailing_prose": '{"a": 1}',
-    "curator_rating_shape": '{"actionability": 4, "specificity": 5, "correctness": 2, "rationale": "solid"}',
-    "hint_feedback_shape": '{"helpful": ["h1"], "misleading": ["m1"], "missing": ["mi1"]}',
-    "ac_921_corrupt_fence_with_decoy_json": '{a: 1, "b":}',
-    "uppercase_json_fence_tag": 'JSON\n{"a": 1}',
-    "bare_array_of_objects": '[{"a": 1}]',
-    "fenced_array_of_objects": '[{"a": 1}]',
-    "fenced_mixed_array_with_object": '[1, {"a": 1}, 2]',
-    # No fence present -> passthrough unchanged, same as any other no-fence case.
-    "two_bare_json_objects_no_fence": (
-        'Option A: {"aggression": 0.9, "defense": 0.1}\nOption B: {"aggression": 0.5, "defense": 0.5}'
-    ),
-    "critical1_brace_in_string_with_decoy": (
-        'My rating: {"score": 5, "rationale": "matches rubric step 3}"} Ignore stale: {"score": 1, "rationale": "stale"}'
-    ),
-    "array_then_separate_object_no_fence": '[{"a": 1}], {"b": 2}',
-    "array_of_objects_in_prose_no_fence": 'Available tools: [{"name": "n1"}] let me know.',
-    "array_span_then_later_object_no_fence": 'Tools: [{"a": 1}] and {"b": 2}',
-    "brace_in_string_value_no_fence_no_decoy": '{"note": "step 3} done", "a": 1}',
-    "truncated_array_one_object": '[{"a": 1}',
-    "truncated_array_two_objects": '[{"a": 1}, {"b": 2}',
-    "unfenced_earlier_malformed_then_valid": 'first: {bad json,} then: {"x": 2}',
-    "hint_feedback_shape_single_line_fence": '{"helpful": ["h1"], "misleading": ["m1"], "missing": ["mi1"]}',
-    # strip_json_fences is UNCHANGED by the BOM fix -- it strips fences, and
-    # its `.strip()` cannot remove a U+FEFF any more than extract_json's
-    # could. The BOM is pinned as surviving all three of these on purpose:
-    # the fix lives in extract_json's scope normalization, not here, and if
-    # someone later moves it into strip_json_fences these rows say so.
-    "bom_truncated_array_no_fence": _BOM + '[{"a": 1}',
-    "bom_fenced_truncated_array": _BOM + '[{"a": 1}',
-    "bom_object_no_fence": _BOM + '{"a": 1}',
-    # C1: strip_json_fences is UNCHANGED and still takes the FIRST fence of any
-    # language, so it returns the reasoning/code preamble on all three. Only
-    # extract_json learned to prefer the ```json block. That divergence is
-    # deliberate -- this is a general fence stripper with callers that aren't
-    # extracting JSON, so it has no basis for preferring a json tag -- and
-    # these rows exist to say so out loud, since "why didn't the C1 fix touch
-    # strip_json_fences too" is the obvious next question.
-    "plain_fence_preamble_then_json_fence": "reasoning scratch",
-    "python_fence_preamble_then_json_fence": 'python\nplan = {"draft": 1}',
-    "braceless_fence_preamble_then_bare_json": "scratch",
-}
-
-
-@pytest.mark.parametrize("name,text", CORPUS, ids=CORPUS_IDS)
-def test_strip_json_fences(name: str, text: str) -> None:
-    assert strip_json_fences(text) == STRIP_JSON_FENCES_EXPECTED[name]
-
-
-# ---------------------------------------------------------------------------
-# Extractor 2: output_parser.extract_json (dead code today; consolidation target)
+# Extractor 1: output_parser.extract_json (dead code today; consolidation target)
 # ---------------------------------------------------------------------------
 
 EXTRACT_JSON_EXPECTED: dict[str, Any] = {
@@ -956,7 +900,7 @@ def test_extract_json_bom_does_not_walk_past_the_array_shape_check() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Extractor 3: agents.architect.parse_architect_tool_specs
+# Extractor 2: agents.architect.parse_architect_tool_specs
 # ---------------------------------------------------------------------------
 
 # AC-910 Task 3: parse_architect_tool_specs now delegates to the shared
@@ -1045,8 +989,37 @@ def test_parse_architect_tool_specs_ac_920_two_tools_blocks_uses_first_block() -
     assert parse_architect_tool_specs(two_tools_blocks) == [{"name": "n1", "description": "d1", "code": "c1"}]
 
 
+def test_parse_architect_tool_specs_only_warns_when_there_was_a_payload(caplog: pytest.LogCaptureFixture) -> None:
+    """The "possibly truncated" warning stays scoped to inputs that could hold an object.
+
+    Before this site was migrated onto extract_json it looked for a literal
+    "```json" and returned [] SILENTLY when there wasn't one, so an empty
+    string, bare prose, or an array-shaped answer logged nothing. Routing
+    every unparseable input through one warning turned all of those into log
+    volume, and the message they print -- "possibly truncated" -- is wrong
+    about them: nothing was truncated, there was no object to find.
+
+    The rule pinned here is the payload test, not the phrasing: warn when the
+    content holds a "{" (extract_json can only succeed by returning a Mapping,
+    so a "{" is what makes failure informative), stay silent otherwise.
+    """
+    caplog.set_level(logging.WARNING, logger="autocontext.agents.architect")
+
+    for silent in ("", "   ", "No tools this round, the harness already covers it.", "```json\n[1, 2, 3]\n```"):
+        caplog.clear()
+        assert parse_architect_tool_specs(silent) == []
+        assert caplog.records == [], f"expected no warning for {silent!r}"
+
+    # A real truncated proposal is the case the message is FOR, and it still warns.
+    caplog.clear()
+    assert parse_architect_tool_specs('```json\n{"tools": [{"name": "n", "descrip') == []
+    assert [r.message for r in caplog.records] == [
+        "architect output JSON block unparseable (possibly truncated); treating as no proposal"
+    ]
+
+
 # ---------------------------------------------------------------------------
-# Extractor 4: agents.translator.StrategyTranslator.translate (fail-hard site)
+# Extractor 3: agents.translator.StrategyTranslator.translate (fail-hard site)
 #
 # AC-910 Task 4: translate() now calls extract_json(execution.content)
 # directly -- its own _strip_fences + json.loads is gone -- instead of
@@ -1100,11 +1073,22 @@ def test_translator_translate_parse_failure_stays_a_plain_json_decode_error() ->
 
 
 # ---------------------------------------------------------------------------
-# Extractor 5: agents.curator.KnowledgeCurator.rate_analyst_output
-# Never raises: JSONDecodeError is swallowed, non-dict decoded values are
-# silently discarded. Both failure modes fall back to AnalystRating defaults
-# (actionability=specificity=correctness=3, rationale=""), which is why most
-# rows below look identical regardless of whether parsing "succeeded."
+# Extractor 4: agents.curator.KnowledgeCurator.rate_analyst_output
+# Fail-soft: a parse failure and a decoded value that isn't an object BOTH
+# fall back to AnalystRating defaults (actionability=specificity=correctness=3,
+# rationale=""), which is why most rows below look identical regardless of
+# whether parsing "succeeded."
+#
+# "Never raises" is what this comment used to claim, and it was FALSE both
+# before and after the consolidation: a payload that parses as JSON but not as
+# a rating (e.g. {"actionability": "not-a-number"}) reached
+# AnalystRating.from_dict and came back out as a pydantic ValidationError.
+# None of the corpus rows carry a schema-INVALID payload, so nothing in this
+# table ever observed it. The site now guards from_dict and degrades to
+# defaults, which is what makes the claim true for the first time; the input
+# that used to raise is pinned in
+# test_curator_rate_analyst_output_degrades_on_schema_mismatch below rather
+# than added to the corpus, since it only discriminates at this one site.
 # ---------------------------------------------------------------------------
 
 _CURATOR_DEFAULT = _CuratorRatingShape(actionability=3, specificity=3, correctness=3, rationale="")
@@ -1168,8 +1152,40 @@ def test_curator_rate_analyst_output(name: str, text: str) -> None:
     assert _curator_rate(text) == CURATOR_RATE_EXPECTED[name]
 
 
+def test_curator_rate_analyst_output_degrades_on_schema_mismatch() -> None:
+    """A payload that parses as JSON but not as a rating degrades, it does not raise.
+
+    This site is fail-soft by contract: the rating is feedback for the next
+    generation's analyst prompt, not the artifact the loop scores, and its
+    caller (_maybe_rate_analyst_output) runs mid-generation with no handler,
+    so an exception here costs a whole generation to save a cosmetic score.
+
+    Both rows below used to raise pydantic ValidationError out of
+    rate_analyst_output. The FENCED one raised before the consolidation too --
+    strip_json_fences + json.loads decoded it to a dict just fine, and the bad
+    value went straight into AnalystRating.from_dict. What the migration onto
+    extract_json changed is that the UNFENCED one now reaches from_dict as
+    well: json.loads(strip_json_fences(prose)) raised JSONDecodeError and was
+    swallowed into the default rating, whereas extract_json recovers the
+    object out of surrounding prose. So the raise is pre-existing and the set
+    of inputs reaching it got wider -- both are closed here.
+    """
+    unfenced = 'Rating: {"actionability": "not-a-number"} done'
+    fenced = '```json\n{"actionability": "not-a-number"}\n```'
+
+    assert _curator_rate(unfenced) == _CURATOR_DEFAULT
+    assert _curator_rate(fenced) == _CURATOR_DEFAULT
+
+    # Control: a schema-VALID payload in the same unfenced prose shape still
+    # flows through, so the guard above degrades only on real mismatches
+    # rather than swallowing every recovered payload.
+    assert _curator_rate('Rating: {"actionability": 5} done') == _CuratorRatingShape(
+        actionability=5, specificity=3, correctness=3, rationale=""
+    )
+
+
 # ---------------------------------------------------------------------------
-# Extractor 6: agents.translator_simplification.extract_strategy_deterministic
+# Extractor 5: agents.translator_simplification.extract_strategy_deterministic
 # ---------------------------------------------------------------------------
 
 # AC-910 Task 3: extract_strategy_deterministic now delegates to the shared
@@ -1261,7 +1277,7 @@ def test_extract_strategy_deterministic(name: str, text: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Extractor 7: agents.hint_feedback.parse_hint_feedback
+# Extractor 6: agents.hint_feedback.parse_hint_feedback
 # Never raises. Like curator, its schema-specific return type masks parse
 # success for corpus cases that don't use its "helpful"/"misleading"/"missing"
 # keys, which is why almost every row is the same all-empty shape.
@@ -1300,7 +1316,7 @@ def test_parse_hint_feedback(name: str, text: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Extractor 8: execution.action_filter.ActionFilterHarness._extract_json_object
+# Extractor 7: execution.action_filter.ActionFilterHarness._extract_json_object
 # ---------------------------------------------------------------------------
 
 # AC-910 Task 3: _extract_json_object now delegates to the shared

@@ -711,7 +711,12 @@ class AgentOrchestrator:
         from autocontext.harness.core.output_parser import extract_json
 
         strategy = extract_json(results["translator"].content)
-        assert strategy is not None  # on_failure="raise" never returns None
+        # Type narrowing for mypy ONLY, not a runtime guard: extract_json is
+        # declared `-> dict[str, Any] | None` because of the on_failure="none"
+        # variant, but on the default "raise" path it either returns a dict or
+        # raises, so the None arm is unreachable here. Asserts are stripped
+        # under `python -O`; nothing below depends on this one executing.
+        assert strategy is not None
 
         tools = parse_architect_tool_specs(results["architect"].content)
         harness_specs = parse_architect_harness_specs(results["architect"].content)

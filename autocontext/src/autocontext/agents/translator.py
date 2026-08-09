@@ -72,7 +72,12 @@ class StrategyTranslator:
             raise
         except ValueError as exc:
             raise ValueError("translator did not return a JSON object") from exc
-        assert decoded is not None  # on_failure="raise" never returns None
+        # Type narrowing for mypy ONLY, not a runtime guard: extract_json is
+        # declared `-> dict[str, Any] | None` because of the on_failure="none"
+        # variant, but on the default "raise" path it either returns a dict or
+        # raises, so the None arm is unreachable here. Asserts are stripped
+        # under `python -O`; nothing below depends on this one executing.
+        assert decoded is not None
         return decoded, execution
 
     @staticmethod

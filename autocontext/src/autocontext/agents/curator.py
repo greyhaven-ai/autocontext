@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from importlib import import_module
 from typing import Any
 
+from pydantic import ValidationError
+
 from autocontext.agents.feedback_loops import AnalystRating
 from autocontext.agents.subagent_runtime import SubagentRuntime, SubagentTask
 from autocontext.agents.types import RoleExecution
@@ -212,11 +214,39 @@ class KnowledgeCurator:
         )
         decoded = extract_json(exec_result.content, on_failure="none")
         if decoded is None:
+            # No exc_info here, unlike the ValidationError branch below and
+            # unlike this line before the migration. It used to sit inside
+            # `except json.JSONDecodeError`, where there was a live exception
+            # to attach; extract_json(on_failure="none") swallows that
+            # exception internally and reports failure as a None return, so
+            # there is no active exception at this point and exc_info=True
+            # would append a bare "NoneType: None" to every such warning.
             logger.warning("curator analyst-rating parse failed; using default scores")
             payload: dict[str, Any] = {}
         else:
             payload = decoded
-        rating = AnalystRating.from_dict({"generation": generation, **payload})
+        try:
+            rating = AnalystRating.from_dict({"generation": generation, **payload})
+        except ValidationError:
+            # This site's contract is fail-soft, and it has to be: the rating is
+            # FEEDBACK routed into the next generation's analyst prompt, not the
+            # artifact the loop scores. Its caller
+            # (loop.stage_helpers.persistence_helpers._maybe_rate_analyst_output)
+            # runs mid-generation with no handler, so raising here would abort a
+            # whole generation over a cosmetic score. Contrast translator.translate,
+            # which deliberately uses on_failure="raise" because the strategy it
+            # parses IS the scored artifact.
+            #
+            # A payload that PARSES as JSON but not as a rating (e.g.
+            # {"actionability": "not-a-number"}) has always been able to reach
+            # from_dict and raise; what widened it was migrating this site onto
+            # extract_json, which recovers unfenced prose JSON the old
+            # json.loads(strip_json_fences(...)) could not, so inputs that used
+            # to fail closed at the JSONDecodeError now arrive here with a
+            # non-default payload. Degrade to defaults instead, which is what
+            # every other malformed-output path at this site already does.
+            logger.warning("curator analyst-rating payload failed schema validation; using default scores", exc_info=True)
+            rating = AnalystRating.from_dict({"generation": generation})
         return rating, exec_result
 
     def consolidate_lessons(
