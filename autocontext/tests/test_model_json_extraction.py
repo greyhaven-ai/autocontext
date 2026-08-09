@@ -311,6 +311,55 @@ CORPUS: list[tuple[str, str]] = [
         "bom_object_no_fence",
         _BOM + '{"a": 1}',
     ),
+    (
+        # C1, a REGRESSION this branch introduced and these three rows pin.
+        # extract_json committed to `_JSON_FENCE_RE.search(text)`'s first hit
+        # -- the first fence of ANY language -- and confined every recovery
+        # path to it. A model that reasons in a plain ``` block before
+        # answering therefore had its answer made unreachable: architect
+        # returned [] and logged "possibly truncated", which is AC-920's exact
+        # user-visible symptom reintroduced at AC-920's own call site. The
+        # pre-consolidation architect matched the literal "```json" and
+        # skipped a preceding fence harmlessly; the migration lost that.
+        #
+        # Unpinned in BOTH directions before this: `two_fenced_blocks` uses
+        # two ```json blocks, so it structurally cannot see which fence is
+        # chosen, and no corpus row had a non-JSON fence at all.
+        "plain_fence_preamble_then_json_fence",
+        (
+            "Let me think about this.\n```\nreasoning scratch\n```\n"
+            'Here is the tool:\n```json\n{"tools": [{"name": "n", "description": "d", "code": "c"}]}\n```'
+        ),
+    ),
+    (
+        # Same defect, and the shape that made it a SILENT WRONG ANSWER rather
+        # than a missing one. The preamble is a ```python block whose code
+        # contains a dict literal, so the wrong scope PARSED: extract_json
+        # returned {"draft": 1} -- the model's scratch work -- as the payload.
+        # At the migrated sites that meant extract_strategy_deterministic and
+        # action_filter handing scratch work back as a strategy, which is
+        # worse than the [] the architect row above produced.
+        #
+        # This is also why the fence choice keys on the `json` TAG and not on
+        # "does the block contain a brace": the brace test alone would pick
+        # this python block. The tag is the model's own designation.
+        "python_fence_preamble_then_json_fence",
+        (
+            'Let me think.\n```python\nplan = {"draft": 1}\n```\n'
+            'Here is the tool:\n```json\n{"tools": [{"name": "n", "description": "d", "code": "c"}]}\n```'
+        ),
+    ),
+    (
+        # The third C1 shape: a brace-free reasoning fence and NO json-tagged
+        # block at all, with the payload bare in the prose after it. Nothing
+        # fenced can be holding an object here, so there is no fenced payload
+        # to be confined to and the whole-text span scan runs. Distinct from
+        # ac_921_corrupt_fence_with_decoy_json, where the fence DOES contain a
+        # brace and so is a payload claim whose failure must stay terminal --
+        # that row is what stops this fallback from being widened into AC-921.
+        "braceless_fence_preamble_then_bare_json",
+        'Thinking:\n```\nscratch\n```\nResult: {"a": 1}',
+    ),
 ]
 
 CORPUS_IDS = [name for name, _ in CORPUS]
@@ -462,6 +511,16 @@ STRIP_JSON_FENCES_EXPECTED: dict[str, str] = {
     "bom_truncated_array_no_fence": _BOM + '[{"a": 1}',
     "bom_fenced_truncated_array": _BOM + '[{"a": 1}',
     "bom_object_no_fence": _BOM + '{"a": 1}',
+    # C1: strip_json_fences is UNCHANGED and still takes the FIRST fence of any
+    # language, so it returns the reasoning/code preamble on all three. Only
+    # extract_json learned to prefer the ```json block. That divergence is
+    # deliberate -- this is a general fence stripper with callers that aren't
+    # extracting JSON, so it has no basis for preferring a json tag -- and
+    # these rows exist to say so out loud, since "why didn't the C1 fix touch
+    # strip_json_fences too" is the obvious next question.
+    "plain_fence_preamble_then_json_fence": "reasoning scratch",
+    "python_fence_preamble_then_json_fence": 'python\nplan = {"draft": 1}',
+    "braceless_fence_preamble_then_bare_json": "scratch",
 }
 
 
@@ -578,6 +637,16 @@ EXTRACT_JSON_EXPECTED: dict[str, Any] = {
     "bom_fenced_truncated_array": _Raises(json.JSONDecodeError),
     # Control: same normalization, opposite direction -- still parses.
     "bom_object_no_fence": {"a": 1},
+    # C1 fix: the ```json-tagged block is preferred over the preamble fence,
+    # so the real payload is recovered instead of the reasoning scratch.
+    # Before the fix: row 1 raised JSONDecodeError (scope was "reasoning
+    # scratch"), and row 2 returned {"draft": 1} -- the scratch dict, silently
+    # substituted for the answer.
+    "plain_fence_preamble_then_json_fence": {"tools": [{"name": "n", "description": "d", "code": "c"}]},
+    "python_fence_preamble_then_json_fence": {"tools": [{"name": "n", "description": "d", "code": "c"}]},
+    # No json-tagged block and the only fence is brace-free, so there is no
+    # fenced payload at all and the whole-text span scan recovers the object.
+    "braceless_fence_preamble_then_bare_json": {"a": 1},
 }
 
 
@@ -719,6 +788,76 @@ def test_extract_json_unfenced_earlier_malformed_candidate_is_skipped() -> None:
     recovered one (AC-921). Without a fence, no such designation exists.
     """
     assert extract_json('first: {bad json,} then: {"x": 2}') == {"x": 2}
+
+
+def test_extract_json_prefers_json_tagged_fence_over_preceding_fence() -> None:
+    """C1: a reasoning or code block before the answer must not capture the scan.
+
+    extract_json used to commit to `_JSON_FENCE_RE.search(text)`'s first hit --
+    the first fence of ANY language -- and confine every recovery path to it,
+    so a model that thinks out loud in a ``` block before emitting its
+    ```json block had its answer made unreachable. The pre-consolidation
+    architect matched the literal "```json" and skipped a preceding fence
+    harmlessly; the migration lost that, reintroducing AC-920's user-visible
+    symptom (proposal dropped, warning blaming truncation) at AC-920's own
+    call site.
+
+    Three preamble shapes, because they failed differently:
+    - plain ``` prose -> the wrong scope did not parse -> raised.
+    - ```python containing a dict literal -> the wrong scope DID parse ->
+      returned the scratch dict, a silent wrong answer.
+    - a fence with a brace-free body and no ```json block after it -> nothing
+      fenced can hold an object, so the whole-text scan must run.
+
+    See test_parse_architect_tool_specs_c1_preamble_fence_does_not_drop_tools
+    for the same defect at the call site whose symptom it reproduced.
+    """
+    payload = '{"tools": [{"name": "n", "description": "d", "code": "c"}]}'
+    expected = {"tools": [{"name": "n", "description": "d", "code": "c"}]}
+
+    plain_preamble = f"Let me think about this.\n```\nreasoning scratch\n```\nHere is the tool:\n```json\n{payload}\n```"
+    assert extract_json(plain_preamble) == expected
+
+    # The ```python body contains a dict literal, so a "does this fence hold a
+    # brace" heuristic alone would still pick it. The `json` TAG is what
+    # decides, which is the point of this case.
+    code_preamble = f'Let me think.\n```python\nplan = {{"draft": 1}}\n```\nHere is the tool:\n```json\n{payload}\n```'
+    assert extract_json(code_preamble) == expected
+
+    # No json-tagged block anywhere and the only fence is brace-free: there is
+    # no fenced payload to be confined to, so the whole-text span scan runs.
+    assert extract_json('Thinking:\n```\nscratch\n```\nResult: {"a": 1}') == {"a": 1}
+
+    # Controls, so preferring the tagged fence cannot be over-read.
+    # 1. AC-921 is untouched: a corrupt TAGGED fence still fails closed rather
+    #    than reaching the decoy in the trailing prose.
+    assert extract_json('```json\n{a: 1, "b":}\n```  also see config: {"x": 2}', on_failure="none") is None
+    # 2. An untagged fence that DOES hold a brace is still a payload claim, so
+    #    its failure stays terminal too -- this is what stops the brace-free
+    #    fallback above from widening into AC-921.
+    assert extract_json('```\n{a: 1, "b":}\n```  also see config: {"x": 2}', on_failure="none") is None
+    # 3. AC-920 still holds: with two tagged fences the FIRST one wins.
+    assert extract_json('```json\n{"a": 1}\n```\n```json\n{"b": 2}\n```') == {"a": 1}
+
+
+def test_parse_architect_tool_specs_c1_preamble_fence_does_not_drop_tools() -> None:
+    """C1 at the call site whose symptom it reproduced.
+
+    A reasoning block before the ```json block made this return [] and log
+    "possibly truncated" -- a real architect proposal silently discarded, with
+    the warning pointing at the wrong cause. Byte-for-byte AC-920's symptom,
+    reintroduced through a different door at AC-920's own call site.
+    """
+    payload = '{"tools": [{"name": "n", "description": "d", "code": "c"}]}'
+    expected = [{"name": "n", "description": "d", "code": "c"}]
+
+    assert parse_architect_tool_specs(f"Let me think.\n```\nscratch\n```\nHere:\n```json\n{payload}\n```") == expected
+    assert (
+        parse_architect_tool_specs(f'Thinking.\n```python\nx = {{"draft": 1}}\n```\nHere:\n```json\n{payload}\n```') == expected
+    )
+    # Control: the same payload with no preamble worked throughout, so the
+    # rows above isolate the preamble as the cause.
+    assert parse_architect_tool_specs(f"```json\n{payload}\n```") == expected
 
 
 def test_extract_json_wrong_type_candidate_is_terminal() -> None:
@@ -872,6 +1011,14 @@ PARSE_ARCHITECT_TOOL_SPECS_EXPECTED: dict[str, list[dict[str, Any]]] = {
     "bom_truncated_array_no_fence": [],  # extract_json now raises (BOM fix) -> None -> []
     "bom_fenced_truncated_array": [],  # same
     "bom_object_no_fence": [],  # valid dict recovered, but no "tools" key
+    # C1 fix, and THIS is the row that matters most in this table: the
+    # regression's user-visible symptom was exactly an architect proposal
+    # being silently dropped ([] plus a "possibly truncated" warning) because
+    # a reasoning block preceded the ```json block. Both now recover the spec,
+    # matching the pre-consolidation find("```json") behavior.
+    "plain_fence_preamble_then_json_fence": [{"name": "n", "description": "d", "code": "c"}],
+    "python_fence_preamble_then_json_fence": [{"name": "n", "description": "d", "code": "c"}],
+    "braceless_fence_preamble_then_bare_json": [],  # recovers {"a": 1}, but no "tools" key
 }
 
 
@@ -1006,6 +1153,13 @@ CURATOR_RATE_EXPECTED: dict[str, _CuratorRatingShape] = {
     "bom_truncated_array_no_fence": _CURATOR_DEFAULT,  # extract_json raises (BOM fix) -> None -> default
     "bom_fenced_truncated_array": _CURATOR_DEFAULT,  # same
     "bom_object_no_fence": _CURATOR_DEFAULT,  # parses fine, no matching rating keys
+    # C1 fix: recovers the right dict now, but none of these payloads carry
+    # rating keys, so this table cannot observe the fix. Pinned for
+    # completeness -- EXTRACT_JSON_EXPECTED and the architect table are where
+    # the C1 rows discriminate.
+    "plain_fence_preamble_then_json_fence": _CURATOR_DEFAULT,
+    "python_fence_preamble_then_json_fence": _CURATOR_DEFAULT,
+    "braceless_fence_preamble_then_bare_json": _CURATOR_DEFAULT,
 }
 
 
@@ -1091,6 +1245,13 @@ EXTRACT_STRATEGY_DETERMINISTIC_EXPECTED: dict[str, dict[str, Any] | None] = {
     "bom_truncated_array_no_fence": None,
     "bom_fenced_truncated_array": None,
     "bom_object_no_fence": {"a": 1},
+    # C1 fix: the ```json block is preferred over the preamble fence. Row 2 is
+    # the one that mattered at THIS site -- before the fix it returned
+    # {"draft": 1}, the model's python scratch dict, as a strategy/selection.
+    # A lost recovery is bad; returning scratch work as the answer is worse.
+    "plain_fence_preamble_then_json_fence": {"tools": [{"name": "n", "description": "d", "code": "c"}]},
+    "python_fence_preamble_then_json_fence": {"tools": [{"name": "n", "description": "d", "code": "c"}]},
+    "braceless_fence_preamble_then_bare_json": {"a": 1},
 }
 
 
@@ -1210,6 +1371,13 @@ EXTRACT_JSON_OBJECT_EXPECTED: dict[str, dict[str, Any] | None] = {
     "bom_truncated_array_no_fence": None,
     "bom_fenced_truncated_array": None,
     "bom_object_no_fence": {"a": 1},
+    # C1 fix: the ```json block is preferred over the preamble fence. Row 2 is
+    # the one that mattered at THIS site -- before the fix it returned
+    # {"draft": 1}, the model's python scratch dict, as a strategy/selection.
+    # A lost recovery is bad; returning scratch work as the answer is worse.
+    "plain_fence_preamble_then_json_fence": {"tools": [{"name": "n", "description": "d", "code": "c"}]},
+    "python_fence_preamble_then_json_fence": {"tools": [{"name": "n", "description": "d", "code": "c"}]},
+    "braceless_fence_preamble_then_bare_json": {"a": 1},
 }
 
 

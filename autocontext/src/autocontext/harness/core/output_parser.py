@@ -7,7 +7,11 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
-_JSON_FENCE_RE = re.compile(r"```(?:json)?\s*\n?(.*?)\n?\s*```", re.DOTALL)
+# The `tag` group is what makes a ```json fence distinguishable from a bare
+# ``` or a ```python one. It is a named group so that adding it cannot silently
+# renumber `body` out from under strip_json_fences, which captured group(1)
+# before this group existed.
+_JSON_FENCE_RE = re.compile(r"```(?P<tag>json)?\s*\n?(?P<body>.*?)\n?\s*```", re.DOTALL)
 
 # U+FEFF (BOM / zero-width no-break space). `str.strip()` does NOT remove it
 # -- it is a format character, not whitespace, so `.isspace()` on it is False
@@ -40,9 +44,17 @@ def _scope_text(raw: str) -> str:
 
 
 def strip_json_fences(text: str) -> str:
-    """Strip markdown code fences, returning inner content."""
+    """Strip markdown code fences, returning inner content.
+
+    Takes the FIRST fence of any language, unlike extract_json below, which
+    prefers a ```json-tagged one. That difference is deliberate and pinned:
+    this is a general-purpose fence stripper with callers that are not
+    extracting JSON at all, so it has no basis for preferring a json tag.
+    Do not "fix" it to match extract_json -- if a caller of this function
+    wants JSON, it should call extract_json.
+    """
     match = _JSON_FENCE_RE.search(text)
-    return match.group(1).strip() if match else text.strip()
+    return match.group("body").strip() if match else text.strip()
 
 
 def _top_level_object_spans(text: str) -> list[str]:
@@ -93,22 +105,92 @@ def _top_level_object_spans(text: str) -> list[str]:
         i = end
 
 
+def _fenced_payload_scopes(text: str) -> list[str] | None:
+    """Return the fenced scopes to search, or None to search the whole text.
+
+    Picking the right fence is the whole job here, and committing to
+    ``_JSON_FENCE_RE.search(text)``'s first hit -- the first fence of ANY
+    language -- was a regression (C1). A model that emits a reasoning block
+    before its answer:
+
+        Let me think.
+        ```
+        reasoning scratch
+        ```
+        Here is the tool:
+        ```json
+        {"tools": [...]}
+        ```
+
+    put the scratch block in front of the payload, and `search` handed that
+    scratch block over as THE scope. Every recovery path is confined to the
+    scope, so the real payload became unreachable: architect returned [] and
+    logged "possibly truncated", which is AC-920's exact user-visible symptom
+    reintroduced at AC-920's own call site. The pre-consolidation architect
+    searched for the literal "```json" and skipped a preceding fence
+    harmlessly; the migration lost that. Worse, when the preamble was a
+    ```python block whose code happened to contain a dict literal, the scope
+    PARSED and extract_json returned the model's scratch work as the answer --
+    a silent wrong answer, not a missing one.
+
+    The tag is the model's own designation, so it decides:
+
+    1. Any ```json-tagged fence -> the FIRST one is the sole scope, and it is
+       terminal. This is what makes the preamble cases work regardless of what
+       the preamble contains (prose, code, braces, valid JSON), and it keeps
+       both existing fence rules intact: first block wins when there are two
+       (AC-920), and a corrupt tagged block fails closed rather than
+       substituting JSON found elsewhere in the text (AC-921).
+    2. Otherwise, untagged fences that could plausibly hold an object -- ones
+       containing a ``{`` or a ``[`` -- are tried in order. An untagged fence
+       is a weaker claim than a tagged one, but it is still a claim, so this
+       stays confined to the fences and does NOT fall back to the surrounding
+       prose; that fallback is precisely AC-921's failure shape.
+    3. If every fence is brace-free (pure prose or code -- the reasoning-
+       scratch shape with no json block after it), there is no fenced payload
+       at all. Return None so the caller scans the whole text, which is what
+       recovers an object sitting in the prose outside those fences.
+
+    The brace test in 2/3 is deliberately crude, and it is a fallback for
+    untagged fences only -- rule 1 short-circuits before it whenever a tag is
+    present, so a ```python block containing a dict literal cannot capture the
+    scan away from a real ```json block. It only decides between untagged
+    fences, where there is no better signal available.
+    """
+    matches = list(_JSON_FENCE_RE.finditer(text))
+    if not matches:
+        return None
+    tagged = [m for m in matches if m.group("tag")]
+    if tagged:
+        return [_scope_text(tagged[0].group("body"))]
+    scopes = [_scope_text(m.group("body")) for m in matches]
+    plausible = [scope for scope in scopes if "{" in scope or "[" in scope]
+    return plausible or None
+
+
 def extract_json(text: str, *, on_failure: str = "raise") -> dict[str, Any] | None:
     """Extract a JSON object from LLM text.
 
-    Tries a fenced code block first. If a fence is present but its captured
-    content does not parse directly, this scans for a ``{...}`` span WITHIN
-    that fenced content only -- never the surrounding prose. A broken fence
-    is evidence the model intended that block to be the payload; silently
-    substituting unrelated JSON found elsewhere in the text would return a
-    wrong answer instead of no answer (see AC-921), so it is never attempted.
-    A fence containing more than one object side by side still fails outright
-    for the same reason: the fence is the model's claim about its payload,
-    and more than one object inside it is a real conflict, not something to
-    guess through.
+    Tries fenced code blocks first. WHICH fence is not "the first one":
+    ``_fenced_payload_scopes`` picks it, preferring a ```json-tagged block
+    over any untagged block that precedes it, so a reasoning or code block
+    emitted before the answer cannot capture the scan. See that function --
+    reading the wrong fence was a real regression (C1) with a silent
+    wrong-answer mode, and the rule is stated there once rather than twice.
 
-    Only when there is no fenced block at all does the scan fall back to the
-    whole text. There, unlike the fenced case, multiple candidate top-level
+    If the chosen fence's content does not parse directly, this scans for a
+    ``{...}`` span WITHIN that fenced content only -- never the surrounding
+    prose. A broken fence is evidence the model intended that block to be the
+    payload; silently substituting unrelated JSON found elsewhere in the text
+    would return a wrong answer instead of no answer (see AC-921), so it is
+    never attempted. A fence containing more than one object side by side
+    still fails outright for the same reason: the fence is the model's claim
+    about its payload, and more than one object inside it is a real conflict,
+    not something to guess through.
+
+    Only when there is no fenced payload at all -- no fences, or only
+    brace-free ones that cannot be holding an object -- does the scan fall
+    back to the whole text. There, unlike the fenced case, multiple candidate top-level
     values are tried in the order they appear, returning the first Mapping
     that parses -- this is what lets bare, unfenced JSON embedded in prose
     still be recovered, including when a competitor lists more than one
@@ -129,31 +211,47 @@ def extract_json(text: str, *, on_failure: str = "raise") -> dict[str, Any] | No
     ``"raise"`` (default) re-raises the underlying parse error; ``"none"``
     returns ``None`` instead.
     """
-    fence_match = _JSON_FENCE_RE.search(text)
-    has_fence = fence_match is not None
-    scope = _scope_text(fence_match.group(1) if fence_match else text)
+    fenced_scopes = _fenced_payload_scopes(text)
+    has_fence = fenced_scopes is not None
+    scopes = fenced_scopes if fenced_scopes is not None else [_scope_text(text)]
 
-    candidates = [scope]
-    # scope opening with `[` means the model was producing an array, and this
-    # check must run BEFORE looking at has_fence (not nested inside a fenced
-    # `elif`, the way an earlier version of this had it), because a fenced
-    # scope can open with `[` too, and the fenced branch's brace-scan below
-    # is just as able to reach into a truncated array's interior as the
-    # no-fence span scan is. A complete array is caught by the wrong-type-
-    # terminal rule further down once it parses, but a TRUNCATED array (no
-    # closing bracket) never reaches that rule: json.loads(scope) raises
-    # JSONDecodeError instead of returning a list, so without this check the
-    # loop would fall through to a rescue candidate below and unwrap
-    # whatever complete object happens to sit inside the unterminated array
-    # -- the same silent-unwrap shape the wrong-type rule exists to prevent,
-    # reached through malformed syntax instead of a successful parse.
-    # Skipping the rescue candidates entirely means an array-shaped scope is
-    # terminal whether it parses or not, regardless of which branch below
-    # would otherwise have produced them. `scope` is BOM-normalized by
-    # _scope_text above precisely so this check cannot be walked past by a
-    # leading U+FEFF -- see that constant's comment.
-    if not scope.startswith("["):
+    # One flat candidate list across every scope, in scope order and, within a
+    # scope, whole-scope before recovered sub-span. Flat rather than a loop per
+    # scope because the wrong-type rule below stops the ENTIRE scan, not just
+    # the current scope: a candidate that parses to a non-Mapping settles what
+    # the model produced no matter which fence it came from.
+    candidates: list[str] = []
+    for scope in scopes:
+        candidates.append(scope)
+        # scope opening with `[` means the model was producing an array, and
+        # this check must run BEFORE looking at has_fence (not nested inside a
+        # fenced `elif`, the way an earlier version of this had it), because a
+        # fenced scope can open with `[` too, and the fenced branch's
+        # brace-scan below is just as able to reach into a truncated array's
+        # interior as the no-fence span scan is. A complete array is caught by
+        # the wrong-type-terminal rule further down once it parses, but a
+        # TRUNCATED array (no closing bracket) never reaches that rule:
+        # json.loads(scope) raises JSONDecodeError instead of returning a
+        # list, so without this check the loop would fall through to a rescue
+        # candidate below and unwrap whatever complete object happens to sit
+        # inside the unterminated array -- the same silent-unwrap shape the
+        # wrong-type rule exists to prevent, reached through malformed syntax
+        # instead of a successful parse.
+        # Skipping the rescue candidates entirely means an array-shaped scope
+        # is terminal whether it parses or not, regardless of which branch
+        # below would otherwise have produced them. `scope` is BOM-normalized
+        # by _scope_text precisely so this check cannot be walked past by a
+        # leading U+FEFF -- see that constant's comment.
+        if scope.startswith("["):
+            continue
         if has_fence:
+            # NOTE: this crude first-`{`-to-last-`}` rescue is weaker than the
+            # string-aware span scan the no-fence branch uses below, so
+            # 'blah {oops} and {"a": 1}' recovers unfenced but not fenced.
+            # That divergence predates C1 and is left alone here rather than
+            # widened: unifying it would also change the deliberate rule that
+            # a fence holding two side-by-side objects is a conflict, which is
+            # a separate decision from which fence to read.
             start, end = scope.find("{"), scope.rfind("}")
             if start != -1 and end > start:
                 brace_candidate = scope[start : end + 1]
