@@ -20,9 +20,13 @@ The seven call sites characterized here:
 3. ``agents.architect.parse_architect_tool_specs`` -- manual
    ``find("```json")`` / ``rfind("```")``, no regex, schema-specific
    (``{"tools": [...]}"``).
-4. ``agents.translator.StrategyTranslator._strip_fences`` -- delegates
-   verbatim to (1); pinned here to prove the delegation holds across the
-   whole corpus, not just eyeballed from the source.
+4. ``agents.translator.StrategyTranslator.translate`` -- the fail-hard site:
+   strips fences then ``json.loads``, raising a specific ``ValueError`` when
+   the result isn't an object. AC-910 Task 4 migrated this one onto
+   ``extract_json(text)`` (default ``on_failure="raise"``) rather than
+   ``on_failure="none"``, since this is the strategy actually scored by the
+   generation loop -- a parse failure here must raise, never silently
+   become an empty dict.
 5. ``agents.curator.KnowledgeCurator.rate_analyst_output`` -- calls (1) then
    does its own ``json.loads``, swallowing ``JSONDecodeError`` and silently
    discarding non-dict results, both without raising.
@@ -245,6 +249,19 @@ def _curator_rate(text: str) -> _CuratorRatingShape:
         correctness=rating.correctness,
         rationale=rating.rationale,
     )
+
+
+def _translate(text: str) -> dict[str, Any]:
+    """Run StrategyTranslator.translate's real parsing path on `text`.
+
+    `raw_output` is unrelated prose with no embedded JSON, so
+    extract_strategy_deterministic always returns None on it and the LLM
+    branch under test -- the one that parses `text` (the stubbed model
+    response) via extract_json -- always runs.
+    """
+    translator = StrategyTranslator(runtime=_StubRuntime(text), model="stub")
+    strategy, _execution = translator.translate(raw_output="no deterministic strategy here", strategy_interface="{}")
+    return strategy
 
 
 @dataclass(frozen=True, slots=True)
@@ -511,14 +528,52 @@ def test_parse_architect_tool_specs_ac_920_two_tools_blocks_uses_first_block() -
 
 
 # ---------------------------------------------------------------------------
-# Extractor 4: agents.translator.StrategyTranslator._strip_fences
-# Pinned identical to strip_json_fences on every case: it's a direct delegate.
+# Extractor 4: agents.translator.StrategyTranslator.translate (fail-hard site)
+#
+# AC-910 Task 4: translate() now calls extract_json(execution.content)
+# directly -- its own _strip_fences + json.loads is gone -- instead of
+# fence-stripping then parsing by hand. Every case matches
+# EXTRACT_JSON_EXPECTED exactly, since the stubbed "model response" IS
+# execution.content and nothing else touches it first (raw_output is a
+# fixed non-JSON string across every case, so the deterministic fast path
+# never intercepts; see _translate). The one behavioral seam: a successful
+# parse to a non-Mapping (json_array_not_object, bare_array_of_objects,
+# etc.) still raises ValueError, but translate() re-raises it with its own
+# more specific "translator did not return a JSON object" message instead
+# of extract_json's generic "Expected JSON object, got list" -- pinned
+# separately below, since _Raises only checks the exception type, not the
+# message. A genuine parse failure (bad syntax, e.g. truncated_block) is
+# NOT rewritten: it's re-raised as the same JSONDecodeError extract_json
+# raised, exactly as the pre-migration `json.loads` call would have let it
+# propagate uncaught.
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("name,text", CORPUS, ids=CORPUS_IDS)
-def test_translator_strip_fences_matches_output_parser(name: str, text: str) -> None:
-    assert StrategyTranslator._strip_fences(text) == STRIP_JSON_FENCES_EXPECTED[name]
+def test_translator_translate(name: str, text: str) -> None:
+    expected = EXTRACT_JSON_EXPECTED[name]
+    if isinstance(expected, _Raises):
+        with pytest.raises(expected.exc_type):
+            _translate(text)
+    else:
+        assert _translate(text) == expected
+
+
+def test_translator_translate_wrong_type_uses_translator_specific_message() -> None:
+    """A parse that succeeds but isn't an object gets translate()'s own,
+    more specific message, not extract_json's generic one -- more useful to
+    whoever reads the log.
+    """
+    with pytest.raises(ValueError, match="translator did not return a JSON object"):
+        _translate("```json\n[1, 2, 3]\n```")
+
+
+def test_translator_translate_parse_failure_stays_a_plain_json_decode_error() -> None:
+    """A candidate that never parses at all (bad syntax) is not rewritten
+    with the translator-specific message -- only the wrong-type case is.
+    """
+    with pytest.raises(json.JSONDecodeError):
+        _translate('```json\n{a: 1, "b":}\n```')
 
 
 # ---------------------------------------------------------------------------

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json as _json
 import logging
 from collections.abc import Callable, Sequence
 from contextlib import contextmanager
@@ -673,13 +672,17 @@ class AgentOrchestrator:
         engine = PipelineEngine(dag, handler, max_workers=2)
         results = engine.execute(prompt_map, on_role_event=on_role_event)
 
-        # Extract strategy from translator result
-        from autocontext.harness.core.output_parser import strip_json_fences
+        # Extract strategy from translator result. This is the strategy being
+        # evaluated -- the artifact the whole generation loop scores -- so a
+        # parse failure must raise, not silently become an empty dict that
+        # then gets executed and scored as a legitimate result. extract_json's
+        # default on_failure="raise" matches the direct (non-pipeline) path's
+        # StrategyTranslator.translate, which already raises on the same
+        # failure; this used to diverge and fail soft instead.
+        from autocontext.harness.core.output_parser import extract_json
 
-        try:
-            strategy = _json.loads(strip_json_fences(results["translator"].content))
-        except (_json.JSONDecodeError, TypeError):
-            strategy = {}
+        strategy = extract_json(results["translator"].content)
+        assert strategy is not None  # on_failure="raise" never returns None
 
         tools = parse_architect_tool_specs(results["architect"].content)
         harness_specs = parse_architect_harness_specs(results["architect"].content)
