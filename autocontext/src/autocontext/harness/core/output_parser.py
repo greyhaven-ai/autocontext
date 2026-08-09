@@ -95,12 +95,15 @@ def extract_json(text: str, *, on_failure: str = "raise") -> dict[str, Any] | No
     option (e.g. "Option A: {...} Option B: {...}"): loose prose makes no
     claim to a single payload the way a fence does, so picking the first
     valid one is the closest match to what a human reader would take as the
-    answer. A top-level ``[...]`` array candidate is exempt from this
-    "keep trying" behavior: if one parses successfully, it is terminal (see
-    the wrong-type note below) rather than a cue to keep scanning for an
-    object nested inside it or sitting elsewhere in the text -- an array the
-    model produced is a decisive answer about its shape, not a detour on the
-    way to finding an object.
+    answer.
+
+    A scope that opens with ``[`` -- fenced or not -- is exempt from any
+    rescue attempt: if it parses, it's a decisive, terminal answer about the
+    model's output shape (see the wrong-type note below), not a detour on
+    the way to finding an object; if it fails to parse (e.g. a truncated
+    array cut off mid-token), that failure is terminal too, rather than a
+    cue to brace-scan or span-scan into the array's interior and unwrap
+    whatever complete object happens to be sitting inside it.
 
     ``on_failure`` controls what happens when no JSON object is found:
     ``"raise"`` (default) re-raises the underlying parse error; ``"none"``
@@ -111,27 +114,33 @@ def extract_json(text: str, *, on_failure: str = "raise") -> dict[str, Any] | No
     scope = fence_match.group(1).strip() if fence_match else text.strip()
 
     candidates = [scope]
-    if has_fence:
-        start, end = scope.find("{"), scope.rfind("}")
-        if start != -1 and end > start:
-            brace_candidate = scope[start : end + 1]
-            if brace_candidate != scope:
-                candidates.append(brace_candidate)
-    elif not scope.startswith("["):
-        for span in _top_level_object_spans(scope):
-            if span != scope:
-                candidates.append(span)
-    # else: scope opens with `[` -- the model was producing an array. A
-    # complete array is caught by the wrong-type-terminal rule below once it
-    # parses, but a TRUNCATED array (no closing bracket) never reaches that
-    # rule: json.loads(scope) raises JSONDecodeError instead of returning a
-    # list, so without this branch the loop would fall through to
-    # _top_level_object_spans and unwrap whatever complete object happens to
-    # sit inside the unterminated array -- the same silent-unwrap shape as
-    # the wrong-type rule exists to prevent, reached through malformed
-    # syntax instead of a successful parse. Skipping the rescue candidates
-    # entirely here means an array-shaped scope is terminal whether it
-    # parses or not.
+    # scope opening with `[` means the model was producing an array, and this
+    # check must run BEFORE looking at has_fence (not nested inside a fenced
+    # `elif`, the way an earlier version of this had it), because a fenced
+    # scope can open with `[` too, and the fenced branch's brace-scan below
+    # is just as able to reach into a truncated array's interior as the
+    # no-fence span scan is. A complete array is caught by the wrong-type-
+    # terminal rule further down once it parses, but a TRUNCATED array (no
+    # closing bracket) never reaches that rule: json.loads(scope) raises
+    # JSONDecodeError instead of returning a list, so without this check the
+    # loop would fall through to a rescue candidate below and unwrap
+    # whatever complete object happens to sit inside the unterminated array
+    # -- the same silent-unwrap shape the wrong-type rule exists to prevent,
+    # reached through malformed syntax instead of a successful parse.
+    # Skipping the rescue candidates entirely means an array-shaped scope is
+    # terminal whether it parses or not, regardless of which branch below
+    # would otherwise have produced them.
+    if not scope.startswith("["):
+        if has_fence:
+            start, end = scope.find("{"), scope.rfind("}")
+            if start != -1 and end > start:
+                brace_candidate = scope[start : end + 1]
+                if brace_candidate != scope:
+                    candidates.append(brace_candidate)
+        else:
+            for span in _top_level_object_spans(scope):
+                if span != scope:
+                    candidates.append(span)
 
     last_exc: Exception | None = None
     for candidate in candidates:

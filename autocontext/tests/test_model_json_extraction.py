@@ -535,6 +535,12 @@ def test_extract_json_truncated_array_does_not_unwrap_inner_object() -> None:
     inside the unterminated array and returned it. A model hitting its
     token budget mid-array is a realistic truncation, not an exotic input
     (see AC-904/AC-905), so this silent unwrap mattered.
+
+    This is the UNFENCED half of the guard; see
+    test_extract_json_fenced_truncated_array_does_not_unwrap_inner_object
+    for the fenced half, where the exact same defect survived one fix wave
+    later because the array-shaped-scope check lived only in the no-fence
+    branch.
     """
     with pytest.raises(json.JSONDecodeError):
         extract_json('[{"a": 1}')
@@ -544,6 +550,41 @@ def test_extract_json_truncated_array_does_not_unwrap_inner_object() -> None:
     # pinned here as the control case this fix must not disturb.
     with pytest.raises(ValueError):
         extract_json('[{"a": 1}]')
+    # Plain object control: proves the array-only check doesn't over-tighten
+    # and start blocking the ordinary no-fence brace-scan rescue path.
+    assert extract_json('Here is the result: {"a": 1} -- hope that helps!') == {"a": 1}
+
+
+def test_extract_json_fenced_truncated_array_does_not_unwrap_inner_object() -> None:
+    """CRITICAL fix, AC-910 Task 5 fix wave: the array-shaped-scope check
+    that test_extract_json_truncated_array_does_not_unwrap_inner_object pins
+    for the UNFENCED case used to live only in that no-fence branch. The
+    fenced branch brace-scanned its captured content unconditionally,
+    regardless of whether that content opened with "[" -- so a truncated
+    array behind a fence still silently unwrapped its inner object even
+    after the unfenced case was hardened:
+
+        extract_json('```json\\n[{"a": 1}\\n```')  used to return {'a': 1},
+        silently wrong, while the unfenced extract_json('[{"a": 1}') already
+        raised. Both must now raise identically, fenced or not.
+
+    Fenced is the more likely real-world shape for a truncated array, not
+    less: models are prompted to emit fenced code blocks, so a mid-array
+    truncation is more often going to be behind a fence than bare in prose.
+    """
+    with pytest.raises(json.JSONDecodeError):
+        extract_json('```json\n[{"a": 1}\n```')
+    with pytest.raises(json.JSONDecodeError):
+        extract_json('```json\n[{"a": 1}, {"b": 2}\n```')
+    # Complete array, fenced: already terminal via the successful-list-parse
+    # rule (also pinned in CORPUS as fenced_array_of_objects) -- pinned here
+    # directly as the control case this fix must not disturb.
+    with pytest.raises(ValueError):
+        extract_json('```json\n[{"a": 1}]\n```')
+    # Plain object control, fenced: proves the array-only check doesn't
+    # over-tighten and start blocking the ordinary fenced brace-scan rescue
+    # path (see test_extract_json_broken_fence_tag_recovers_via_brace_scan_within_fence).
+    assert extract_json('```json\n{"a": 1}\n```') == {"a": 1}
 
 
 def test_extract_json_unfenced_earlier_malformed_candidate_is_skipped() -> None:
@@ -929,19 +970,51 @@ def test_action_filter_extract_json_object(name: str, text: str) -> None:
 _GUARDED_SRC_DIRS = ("agents", "execution")
 _ALLOWED_FENCE_REGEX_FILE = "output_parser.py"
 
-# AC-924: execution/judge.py has its own `_try_code_block_parse` fence regex,
-# one of FOUR ordered parsing strategies (marker-delimited, raw-JSON-with-
-# "score"-key, code-block, plain-text) whose ordering is observable and
-# entirely uncharacterized. Migrating it onto extract_json blind would be
-# exactly the mistake this plan keeps proving is wrong -- characterize
+# The four regex call sites this guard is aware of today, one per line,
+# collapsed to three files below because two of them (translator.py's
+# python-fence and generic-fence searches) live in the same module:
+#
+#   agents/translator.py:118            re.search  -- python code block
+#   agents/translator.py:121            re.search  -- generic fence
+#   execution/harness_synthesizer.py:233 re.search  -- python code block
+#   execution/judge.py:555              re.compile -- JSON (AC-924)
+#
+# judge.py is tracked, unmigrated JSON extraction: `_try_code_block_parse`
+# is one of FOUR ordered parsing strategies (marker-delimited, raw-JSON-
+# with-"score"-key, code-block, plain-text) whose ordering is observable
+# and entirely uncharacterized. Migrating it onto extract_json blind would
+# be exactly the mistake this plan keeps proving is wrong -- characterize
 # before you change. Tracked in AC-924, not fixed here.
 #
+# translator.py and harness_synthesizer.py are a DIFFERENT kind of
+# exemption, not a to-do: both regexes extract PYTHON source code from a
+# fence, not JSON. extract_json is a JSON parser (it feeds candidates to
+# json.loads); forcing a Python-code extraction onto it would be wrong, not
+# incomplete, so these are deliberately and permanently out of scope for
+# migration, unlike judge.py's AC-924 debt.
+#
 # This is EXACT-SET equality, not an allow-list: it fails both when a NEW
-# offender appears (someone adds a fence regex) and when this known one
-# disappears (AC-924 lands and judge.py is migrated or the guard reverts to
-# a plain "no offenders" assertion) -- so a stale exemption can't survive
-# unnoticed the way a permissive allow-list would let it.
-_KNOWN_OFFENDERS = frozenset({"execution/judge.py"})
+# offender appears (someone adds a fence regex) and when a known one
+# disappears (e.g. AC-924 lands and judge.py is migrated, or a file is
+# deleted) -- so a stale exemption can't survive unnoticed the way a
+# permissive allow-list would let it.
+_KNOWN_OFFENDERS = frozenset(
+    {
+        "execution/judge.py",
+        "agents/translator.py",
+        "execution/harness_synthesizer.py",
+    }
+)
+
+# re.* callables whose first positional argument, if a string literal
+# containing a markdown fence, marks the call as a fence-regex offender.
+# "compile" catches the pattern this guard was originally written for
+# (`_JSON_FENCE_RE = re.compile(...)`, reused across multiple calls); the
+# other three catch a pattern built inline at each call site instead
+# (`re.search(r"```...", text)`), which is exactly the shape translator.py
+# and harness_synthesizer.py use and the original "compile"-only check
+# missed entirely.
+_FENCE_REGEX_CONSTRUCTORS = frozenset({"compile", "search", "match", "finditer"})
 
 
 def _guarded_python_files() -> list[Path]:
@@ -954,8 +1027,33 @@ def _guarded_python_files() -> list[Path]:
 
 def _fence_regex_offenders() -> set[str]:
     """Return the set of guarded-directory-relative paths (e.g.
-    "agents/hint_feedback.py") containing a `re.compile(...)` call whose
-    pattern argument is a string literal containing three backticks.
+    "agents/hint_feedback.py") containing a `re.compile(...)`, `re.search(...)`,
+    `re.match(...)`, or `re.finditer(...)` call whose first positional
+    argument is a string literal containing three backticks.
+
+    What this DOES catch: a fence pattern passed directly as a string
+    literal to one of those four `re` module functions, e.g.
+    ``re.compile(r"```(?:json)?...")`` or ``re.search(r"```python\\s*\\n(.*?)```", text)``,
+    however many are in one file (a file with two such calls is still one
+    entry in the returned set).
+
+    What this does NOT catch, by construction of the AST check below --
+    each of these is a real, demonstrated way to defeat it, not a
+    theoretical gap:
+    - A pattern assigned to a module-level variable and passed by name
+      (``_P = re.compile(...)`` then ``_P.search(text)`` elsewhere) --
+      idiomatic Python, not evasion; a routine refactor would silently slip
+      past this guard exactly the way a deliberate bypass would.
+    - A pattern built by string concatenation or an f-string instead of a
+      single literal.
+    - ``from re import compile as _c`` (or any aliased import) followed by
+      ``_c(...)`` -- the check requires the call's object to be the bare
+      name ``re``.
+    - A fence string embedded in ordinary text that is never passed to a
+      `re.*` call at all (e.g. a prompt telling the model to emit fenced
+      output, as in agents/llm_client.py) -- deliberately not flagged,
+      since it isn't extracting anything and flagging it would just be
+      noise that gets the guard disabled.
     """
     src_root = Path(__file__).resolve().parents[1] / "src" / "autocontext"
     offenders: set[str] = set()
@@ -967,7 +1065,7 @@ def _fence_regex_offenders() -> set[str]:
             if not isinstance(node, ast.Call):
                 continue
             func = node.func
-            if not (isinstance(func, ast.Attribute) and func.attr == "compile"):
+            if not (isinstance(func, ast.Attribute) and func.attr in _FENCE_REGEX_CONSTRUCTORS):
                 continue
             if not (isinstance(func.value, ast.Name) and func.value.id == "re"):
                 continue
@@ -983,23 +1081,52 @@ def _fence_regex_offenders() -> set[str]:
 
 def test_no_new_markdown_fence_regex_outside_output_parser() -> None:
     """No module under agents/ or execution/ may define its own markdown-fence
-    regex, beyond the single known, tracked exception -- that duplication is
-    exactly what this plan consolidated away. `output_parser.py` (the shared
-    parser's home) is the sole allowed owner; it doesn't live under either
-    guarded directory today, so excluding it by name is defense-in-depth
-    rather than load-bearing, in case it ever moves.
+    regex, beyond the known, tracked exceptions in `_KNOWN_OFFENDERS` --
+    that duplication is exactly what this plan consolidated away.
+    `output_parser.py` (the shared parser's home) is the sole allowed owner;
+    it doesn't live under either guarded directory today, so excluding it by
+    name is defense-in-depth rather than load-bearing, in case it ever moves.
+
+    This enforces exactly what `_fence_regex_offenders`' docstring says it
+    detects -- a fence pattern passed as a string literal directly to
+    `re.compile` / `re.search` / `re.match` / `re.finditer` -- and nothing
+    more. It does NOT catch a pattern assigned to a module-level variable
+    and reused, built by concatenation or an f-string, or reached through
+    an aliased `re` import; see that docstring for why each of those is
+    deliberately out of scope rather than an oversight. A guard that
+    implied broader coverage than that would be worse than one whose limits
+    are written down, because the false confidence is what lets a routine
+    refactor (moving a pattern to a module-level constant, which is
+    idiomatic, not evasive) slip a new duplicate fence extractor past it
+    unnoticed.
 
     Exact-set equality against `_KNOWN_OFFENDERS`, not a plain "no offenders"
     assertion and not a permissive allow-list: a NEW offender fails it (the
-    regression this guard exists to catch), and so does the known one
-    disappearing (so AC-924 landing forces this test's expected set to be
-    updated deliberately, rather than carrying a stale exemption forever).
+    regression this guard exists to catch), and so does a known one
+    disappearing (so migrating one of the tracked files forces this test's
+    expected set to be updated deliberately, rather than carrying a stale
+    exemption forever).
 
-    Proven to fire in both directions this guard cares about (see
-    task-5-report.md for the pasted output):
-    1. A deliberately reintroduced `_JSON_FENCE_RE = re.compile(r"```...")`
-       added to an agents/ module -> fails, naming that file. Removed -> passes.
-    2. `_KNOWN_OFFENDERS` emptied while judge.py still offends -> fails.
-       Restored -> passes.
+    Proven to fire in all three directions this guard cares about (see
+    task-5-fix-report.md for the pasted output):
+    1. The current tree passes with exactly `_KNOWN_OFFENDERS`.
+    2. A deliberately reintroduced fence regex added to an agents/ module
+       that already imports `re` (e.g. `_BYPASS = re.compile(r"```...")` in
+       agents/curator.py) -> fails, naming that file. Removed -> passes.
+       (A module that does NOT already import `re`, e.g. agents/coach.py,
+       fails at import instead of tripping the guard -- that failure looks
+       like a passing proof but tests the wrong thing, so the file used for
+       this check must already import `re`.)
+    3. `_KNOWN_OFFENDERS` missing one of the three tracked files while that
+       file still offends -> fails. Restored -> passes.
+
+    A module-level-variable bypass (`_BYPASS = re.compile(...)` assigned in
+    one place, called via `_BYPASS.search(...)` elsewhere) and an aliased-
+    import bypass (`from re import compile as _c`) were both demonstrated
+    live against this guard and neither is caught -- see this function's
+    docstring and `_fence_regex_offenders`' docstring for why: closing them
+    would require tracing assignments and import aliases, not just call
+    shapes, which is a bigger change than this guard's AST walk is designed
+    to do. Documented here rather than silently accepted.
     """
     assert _fence_regex_offenders() == _KNOWN_OFFENDERS
