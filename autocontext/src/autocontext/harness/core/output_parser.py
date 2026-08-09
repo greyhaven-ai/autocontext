@@ -9,6 +9,26 @@ from typing import Any
 
 _JSON_FENCE_RE = re.compile(r"```(?:json)?\s*\n?(.*?)\n?\s*```", re.DOTALL)
 
+# U+FEFF (BOM / zero-width no-break space). `str.strip()` does NOT remove it
+# -- it is a format character, not whitespace, so `.isspace()` on it is False
+# -- and neither does the fence regex's `\s*`, so a BOM survives both ways of
+# producing a scope in extract_json. That matters because the array-shape
+# check there is a `startswith("[")` on the scope: a leading BOM shifts the
+# "[" off index 0, the check reads False, and a truncated array falls through
+# to the rescue candidates it is supposed to be exempt from. Spelled with
+# chr() rather than pasted in, so it is visible in a diff and in an editor.
+_BOM = chr(0xFEFF)
+
+
+def _scope_text(raw: str) -> str:
+    """Normalize a candidate scope: strip surrounding whitespace and any leading BOM.
+
+    The trailing `.strip()` handles a BOM followed by whitespace, which the
+    leading one stops at.
+    """
+    return raw.strip().lstrip(_BOM).strip()
+
+
 # A plain json.JSONDecoder (no object_hook etc) exposes raw_decode: given a
 # starting index, it parses exactly one JSON value from there using the real
 # parser and reports where that value ended. _top_level_object_spans uses it
@@ -111,7 +131,7 @@ def extract_json(text: str, *, on_failure: str = "raise") -> dict[str, Any] | No
     """
     fence_match = _JSON_FENCE_RE.search(text)
     has_fence = fence_match is not None
-    scope = fence_match.group(1).strip() if fence_match else text.strip()
+    scope = _scope_text(fence_match.group(1) if fence_match else text)
 
     candidates = [scope]
     # scope opening with `[` means the model was producing an array, and this
@@ -129,7 +149,9 @@ def extract_json(text: str, *, on_failure: str = "raise") -> dict[str, Any] | No
     # reached through malformed syntax instead of a successful parse.
     # Skipping the rescue candidates entirely means an array-shaped scope is
     # terminal whether it parses or not, regardless of which branch below
-    # would otherwise have produced them.
+    # would otherwise have produced them. `scope` is BOM-normalized by
+    # _scope_text above precisely so this check cannot be walked past by a
+    # leading U+FEFF -- see that constant's comment.
     if not scope.startswith("["):
         if has_fence:
             start, end = scope.find("{"), scope.rfind("}")

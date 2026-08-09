@@ -76,6 +76,12 @@ from autocontext.harness.core.types import RoleExecution, RoleUsage
 # and by later AC-910 tasks that build the consolidated parser against it.
 # ---------------------------------------------------------------------------
 
+# U+FEFF, spelled with chr() and concatenated into the corpus rows below
+# rather than pasted in as a literal, because a pasted BOM is invisible in
+# an editor and in a diff -- the corpus rows it appears in would read as
+# duplicates of the plain ones they exist to contrast with.
+_BOM = chr(0xFEFF)
+
 CORPUS: list[tuple[str, str]] = [
     ("normal_fenced_block", '```json\n{"a": 1}\n```'),
     ("fence_no_language", '```\n{"a": 1}\n```'),
@@ -247,6 +253,38 @@ CORPUS: list[tuple[str, str]] = [
         "hint_feedback_shape_single_line_fence",
         '```json{"helpful": ["h1"], "misleading": ["m1"], "missing": ["mi1"]}```',
     ),
+    (
+        # BOM + truncated array, UNFENCED. `truncated_array_one_object`
+        # above is the same payload without the BOM, and it is terminal
+        # because extract_json's array-shape check sees scope[0] == "[".
+        # U+FEFF is not whitespace, so `.strip()` leaves it in place, the
+        # "[" lands at index 1, the check reads False, and before the fix
+        # this fell through to the span scan and unwrapped the inner
+        # {"a": 1} -- the exact silent-wrong-answer shape that check exists
+        # to prevent, reached by one invisible character.
+        "bom_truncated_array_no_fence",
+        _BOM + '[{"a": 1}',
+    ),
+    (
+        # Same defect through the FENCED path. The fence regex's `\s*` does
+        # not consume U+FEFF either, so the BOM survives into the captured
+        # group and the fenced brace scan reaches into the array's interior
+        # just as the unfenced span scan did. Both shapes are pinned because
+        # the two scopes are produced by different code (`fence_match.group(1)`
+        # vs `text`) and an earlier round of this work fixed one path and
+        # left the other.
+        "bom_fenced_truncated_array",
+        "```json\n" + _BOM + '[{"a": 1}\n```',
+    ),
+    (
+        # Control for the two above: the BOM fix must not turn a BOM-prefixed
+        # ORDINARY object into a failure. This parsed before the fix too, but
+        # only by accident -- json.loads choked on the BOM and the span-scan
+        # rescue recovered the object. Now the normalized scope parses
+        # directly, first candidate, no rescue involved.
+        "bom_object_no_fence",
+        _BOM + '{"a": 1}',
+    ),
 ]
 
 CORPUS_IDS = [name for name, _ in CORPUS]
@@ -376,6 +414,14 @@ STRIP_JSON_FENCES_EXPECTED: dict[str, str] = {
     "truncated_array_two_objects": '[{"a": 1}, {"b": 2}',
     "unfenced_earlier_malformed_then_valid": 'first: {bad json,} then: {"x": 2}',
     "hint_feedback_shape_single_line_fence": '{"helpful": ["h1"], "misleading": ["m1"], "missing": ["mi1"]}',
+    # strip_json_fences is UNCHANGED by the BOM fix -- it strips fences, and
+    # its `.strip()` cannot remove a U+FEFF any more than extract_json's
+    # could. The BOM is pinned as surviving all three of these on purpose:
+    # the fix lives in extract_json's scope normalization, not here, and if
+    # someone later moves it into strip_json_fences these rows say so.
+    "bom_truncated_array_no_fence": _BOM + '[{"a": 1}',
+    "bom_fenced_truncated_array": _BOM + '[{"a": 1}',
+    "bom_object_no_fence": _BOM + '{"a": 1}',
 }
 
 
@@ -462,6 +508,14 @@ EXTRACT_JSON_EXPECTED: dict[str, Any] = {
     # (extract_json's own regex already had the optional-newline form) --
     # this row's significance is only visible at the hint_feedback site.
     "hint_feedback_shape_single_line_fence": {"helpful": ["h1"], "misleading": ["m1"], "missing": ["mi1"]},
+    # BOM fix: the scope is BOM-normalized before the array-shape check, so
+    # these two now behave exactly like their BOM-less twins
+    # (truncated_array_one_object / the fenced case) instead of returning the
+    # unwrapped inner {"a": 1}.
+    "bom_truncated_array_no_fence": _Raises(json.JSONDecodeError),
+    "bom_fenced_truncated_array": _Raises(json.JSONDecodeError),
+    # Control: same normalization, opposite direction -- still parses.
+    "bom_object_no_fence": {"a": 1},
 }
 
 
@@ -603,6 +657,34 @@ def test_extract_json_unfenced_earlier_malformed_candidate_is_skipped() -> None:
     assert extract_json('first: {bad json,} then: {"x": 2}') == {"x": 2}
 
 
+def test_extract_json_bom_does_not_walk_past_the_array_shape_check() -> None:
+    """A leading U+FEFF must not defeat the truncated-array rule.
+
+    The rule two tests above is a `scope.startswith("[")` check, and the
+    scope is produced with `.strip()`, which does NOT remove U+FEFF -- it is
+    a format character, not whitespace. So a BOM shifted the "[" to index 1,
+    the check read False, and the rescue candidates the rule exists to skip
+    ran anyway, unwrapping the inner object and returning a plausible wrong
+    answer. One invisible character was enough to undo the fix.
+
+    Both scope-producing paths are pinned, not just one: the fenced scope
+    (`fence_match.group(1)`) and the unfenced one (`text`) are separate
+    expressions, the fence regex's `\\s*` does not consume U+FEFF either, and
+    an earlier round of this work fixed one path while leaving the other --
+    so a single-shape test here would repeat that mistake.
+    """
+    with pytest.raises(json.JSONDecodeError):
+        extract_json(_BOM + '[{"a": 1}')
+    with pytest.raises(json.JSONDecodeError):
+        extract_json("```json\n" + _BOM + '[{"a": 1}\n```')
+    # Control: normalizing the BOM away must not newly reject a BOM-prefixed
+    # ordinary object. This one succeeded before the fix too, but only via
+    # the span-scan rescue (json.loads rejects the BOM); now the first
+    # candidate parses directly.
+    assert extract_json(_BOM + '{"a": 1}') == {"a": 1}
+    assert extract_json("```json\n" + _BOM + '{"a": 1}\n```') == {"a": 1}
+
+
 # ---------------------------------------------------------------------------
 # Extractor 3: agents.architect.parse_architect_tool_specs
 # ---------------------------------------------------------------------------
@@ -655,6 +737,9 @@ PARSE_ARCHITECT_TOOL_SPECS_EXPECTED: dict[str, list[dict[str, Any]]] = {
     "truncated_array_two_objects": [],  # same
     "unfenced_earlier_malformed_then_valid": [],  # extract_json recovers {"x": 2}, but no "tools" key
     "hint_feedback_shape_single_line_fence": [],  # recovers the dict, but no "tools" key
+    "bom_truncated_array_no_fence": [],  # extract_json now raises (BOM fix) -> None -> []
+    "bom_fenced_truncated_array": [],  # same
+    "bom_object_no_fence": [],  # valid dict recovered, but no "tools" key
 }
 
 
@@ -777,6 +862,9 @@ CURATOR_RATE_EXPECTED: dict[str, _CuratorRatingShape] = {
     "truncated_array_two_objects": _CURATOR_DEFAULT,  # same
     "unfenced_earlier_malformed_then_valid": _CURATOR_DEFAULT,  # recovers {"x": 2}, but no matching rating keys
     "hint_feedback_shape_single_line_fence": _CURATOR_DEFAULT,  # recovers the dict, no matching rating keys
+    "bom_truncated_array_no_fence": _CURATOR_DEFAULT,  # extract_json raises (BOM fix) -> None -> default
+    "bom_fenced_truncated_array": _CURATOR_DEFAULT,  # same
+    "bom_object_no_fence": _CURATOR_DEFAULT,  # parses fine, no matching rating keys
 }
 
 
@@ -853,6 +941,11 @@ EXTRACT_STRATEGY_DETERMINISTIC_EXPECTED: dict[str, dict[str, Any] | None] = {
     # Step 1c(iv) accepted residual: recovers the later well-formed candidate.
     "unfenced_earlier_malformed_then_valid": {"x": 2},
     "hint_feedback_shape_single_line_fence": {"helpful": ["h1"], "misleading": ["m1"], "missing": ["mi1"]},
+    # BOM fix (see EXTRACT_JSON_EXPECTED): a BOM no longer walks past
+    # extract_json's array-shape check, so these fail closed -> None.
+    "bom_truncated_array_no_fence": None,
+    "bom_fenced_truncated_array": None,
+    "bom_object_no_fence": {"a": 1},
 }
 
 
@@ -953,6 +1046,11 @@ EXTRACT_JSON_OBJECT_EXPECTED: dict[str, dict[str, Any] | None] = {
     # Step 1c(iv) accepted residual: recovers the later well-formed candidate.
     "unfenced_earlier_malformed_then_valid": {"x": 2},
     "hint_feedback_shape_single_line_fence": {"helpful": ["h1"], "misleading": ["m1"], "missing": ["mi1"]},
+    # BOM fix (see EXTRACT_JSON_EXPECTED): a BOM no longer walks past
+    # extract_json's array-shape check, so these fail closed -> None.
+    "bom_truncated_array_no_fence": None,
+    "bom_fenced_truncated_array": None,
+    "bom_object_no_fence": {"a": 1},
 }
 
 
@@ -970,14 +1068,22 @@ def test_action_filter_extract_json_object(name: str, text: str) -> None:
 _GUARDED_SRC_DIRS = ("agents", "execution")
 _ALLOWED_FENCE_REGEX_FILE = "output_parser.py"
 
-# The four regex call sites this guard is aware of today, one per line,
-# collapsed to three files below because two of them (translator.py's
+# The five regex call sites this guard is aware of today, one per line,
+# collapsed to four files below because two of them (translator.py's
 # python-fence and generic-fence searches) live in the same module:
 #
-#   agents/translator.py:118            re.search  -- python code block
-#   agents/translator.py:121            re.search  -- generic fence
+#   agents/translator.py:118             re.search  -- python code block
+#   agents/translator.py:121             re.search  -- generic fence
 #   execution/harness_synthesizer.py:233 re.search  -- python code block
-#   execution/judge.py:555              re.compile -- JSON (AC-924)
+#   execution/policy_refinement.py:71    re.findall -- python code block
+#   execution/judge.py:555               re.compile -- JSON (AC-924)
+#
+# policy_refinement.py was MISSED by the first version of this guard, and by
+# two independent evasions at once, either of which alone would have hidden
+# it: `findall` was not in the constructor set below, and its pattern is a
+# function-local variable passed by name rather than an inline literal. Both
+# holes are closed now (see `_fence_regex_offenders`), which is the only
+# reason this comment can claim five sites rather than four.
 #
 # judge.py is tracked, unmigrated JSON extraction: `_try_code_block_parse`
 # is one of FOUR ordered parsing strategies (marker-delimited, raw-JSON-
@@ -986,12 +1092,12 @@ _ALLOWED_FENCE_REGEX_FILE = "output_parser.py"
 # be exactly the mistake this plan keeps proving is wrong -- characterize
 # before you change. Tracked in AC-924, not fixed here.
 #
-# translator.py and harness_synthesizer.py are a DIFFERENT kind of
-# exemption, not a to-do: both regexes extract PYTHON source code from a
-# fence, not JSON. extract_json is a JSON parser (it feeds candidates to
-# json.loads); forcing a Python-code extraction onto it would be wrong, not
-# incomplete, so these are deliberately and permanently out of scope for
-# migration, unlike judge.py's AC-924 debt.
+# translator.py, harness_synthesizer.py and policy_refinement.py are a
+# DIFFERENT kind of exemption, not a to-do: all three regexes extract PYTHON
+# source code from a fence, not JSON. extract_json is a JSON parser (it feeds
+# candidates to json.loads); forcing a Python-code extraction onto it would be
+# wrong, not incomplete, so these are deliberately and permanently out of
+# scope for migration, unlike judge.py's AC-924 debt.
 #
 # This is EXACT-SET equality, not an allow-list: it fails both when a NEW
 # offender appears (someone adds a fence regex) and when a known one
@@ -1000,21 +1106,31 @@ _ALLOWED_FENCE_REGEX_FILE = "output_parser.py"
 # permissive allow-list would let it.
 _KNOWN_OFFENDERS = frozenset(
     {
+        # Tracked, unmigrated JSON extraction (AC-924).
         "execution/judge.py",
+        # Python code extraction, not JSON -- permanently out of scope.
         "agents/translator.py",
         "execution/harness_synthesizer.py",
+        # Python code extraction, not JSON -- same permanent exemption as the
+        # two above. Missed by the original guard (re.findall + a pattern
+        # bound to a function-local variable); listed here only once the
+        # guard below could actually see it.
+        "execution/policy_refinement.py",
     }
 )
 
-# re.* callables whose first positional argument, if a string literal
+# re.* callables whose first positional argument, if it resolves to a string
 # containing a markdown fence, marks the call as a fence-regex offender.
 # "compile" catches the pattern this guard was originally written for
 # (`_JSON_FENCE_RE = re.compile(...)`, reused across multiple calls); the
-# other three catch a pattern built inline at each call site instead
+# rest catch a pattern built inline at each call site instead
 # (`re.search(r"```...", text)`), which is exactly the shape translator.py
 # and harness_synthesizer.py use and the original "compile"-only check
-# missed entirely.
-_FENCE_REGEX_CONSTRUCTORS = frozenset({"compile", "search", "match", "finditer"})
+# missed entirely. "findall"/"split"/"sub" were added after `findall`'s
+# absence turned out to be one of the two reasons policy_refinement.py went
+# undetected; they are the remaining module-level re.* functions that take a
+# pattern first and are plausible ways to pull content out of a fence.
+_FENCE_REGEX_CONSTRUCTORS = frozenset({"compile", "search", "match", "finditer", "findall", "split", "sub"})
 
 
 def _guarded_python_files() -> list[Path]:
@@ -1025,30 +1141,84 @@ def _guarded_python_files() -> list[Path]:
     return files
 
 
+def _string_literal_bindings(tree: ast.Module) -> dict[str, list[str]]:
+    """Map each name bound to a plain string literal anywhere in ``tree``.
+
+    Collected by walking the WHOLE module, so function-local bindings count
+    the same as module-level ones. That is load-bearing rather than
+    thorough-for-its-own-sake: execution/policy_refinement.py's offender is a
+    function-local ``pattern = r"```(?:python)?\\s*\\n(.*?)```"`` handed to
+    ``re.findall(pattern, ...)`` on the next line, and a module-level-only
+    scan cannot see it.
+
+    Scope is deliberately ignored and no reachability is computed -- this is
+    a name-to-literal lookup, not dataflow. Consequences, both accepted:
+    a name bound in one function and a same-named binding in another are
+    conflated (over-approximating, which for a guard means a spurious
+    failure someone must look at, never a silent miss), and a name rebound
+    several times maps to every literal it took, any one of which containing
+    a fence is enough to flag the call site.
+    """
+    bindings: dict[str, list[str]] = {}
+    for node in ast.walk(tree):
+        target_names: list[str] = []
+        value: ast.expr | None = None
+        if isinstance(node, ast.Assign):
+            target_names = [t.id for t in node.targets if isinstance(t, ast.Name)]
+            value = node.value
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            # `pattern: str = r"```..."` -- same shape, different node type.
+            target_names = [node.target.id]
+            value = node.value
+        if value is None or not (isinstance(value, ast.Constant) and isinstance(value.value, str)):
+            continue
+        for name in target_names:
+            bindings.setdefault(name, []).append(value.value)
+    return bindings
+
+
 def _fence_regex_offenders() -> set[str]:
     """Return the set of guarded-directory-relative paths (e.g.
-    "agents/hint_feedback.py") containing a `re.compile(...)`, `re.search(...)`,
-    `re.match(...)`, or `re.finditer(...)` call whose first positional
-    argument is a string literal containing three backticks.
+    "agents/hint_feedback.py") that call one of ``re.compile``, ``re.search``,
+    ``re.match``, ``re.finditer``, ``re.findall``, ``re.split`` or ``re.sub``
+    with a first positional argument that resolves to a string containing
+    three backticks.
 
-    What this DOES catch: a fence pattern passed directly as a string
-    literal to one of those four `re` module functions, e.g.
-    ``re.compile(r"```(?:json)?...")`` or ``re.search(r"```python\\s*\\n(.*?)```", text)``,
-    however many are in one file (a file with two such calls is still one
-    entry in the returned set).
+    What this DOES catch:
+    - A fence pattern passed inline as a string literal to any of those seven
+      `re` module functions, e.g. ``re.compile(r"```(?:json)?...")`` or
+      ``re.search(r"```python\\s*\\n(.*?)```", text)``.
+    - A fence pattern bound to a NAME anywhere in the same module (any scope,
+      module-level or function-local) and passed by that name, e.g.
+      ``pattern = r"```(?:python)?..."`` then ``re.findall(pattern, text)``
+      -- which is exactly the shape execution/policy_refinement.py uses, and
+      which this guard used to miss for two independent reasons at once
+      (``findall`` was not in the constructor set, and the pattern was not
+      inline). Resolution is by name only, via `_string_literal_bindings`;
+      see that function for what "resolves" does and does not mean.
 
-    What this does NOT catch, by construction of the AST check below --
-    each of these is a real, demonstrated way to defeat it, not a
-    theoretical gap:
-    - A pattern assigned to a module-level variable and passed by name
-      (``_P = re.compile(...)`` then ``_P.search(text)`` elsewhere) --
-      idiomatic Python, not evasion; a routine refactor would silently slip
-      past this guard exactly the way a deliberate bypass would.
-    - A pattern built by string concatenation or an f-string instead of a
-      single literal.
-    - ``from re import compile as _c`` (or any aliased import) followed by
-      ``_c(...)`` -- the check requires the call's object to be the bare
-      name ``re``.
+    Either way, however many such calls are in one file, the file is one
+    entry in the returned set.
+
+    What this still does NOT catch, by construction of the AST check below.
+    The first two were demonstrated live against this guard; all are real
+    holes, not theoretical ones:
+    - ``import re as _r`` / ``from re import compile as _c`` (any aliased
+      import) followed by ``_r.compile(...)`` / ``_c(...)`` -- the check
+      requires the call's object to be the bare name ``re``.
+    - A pattern built by string concatenation or an f-string rather than
+      being a single literal: neither the inline check nor the name
+      resolution above looks at anything but ``ast.Constant`` strings, so
+      ``re.search("`" * 3 + "(.*?)", text)`` or an f-string pattern passes
+      straight through.
+    - A pattern reached through anything other than a direct name: an
+      attribute (``_PATTERNS.fence``), a subscript (``_PATTERNS["fence"]``),
+      a function's return value, or a name bound from another module's
+      constant.
+    - The compiled-object call shape ``_P = re.compile(r"```...")`` followed
+      by ``_P.search(text)`` IS caught, but only because of the
+      ``re.compile`` call itself -- the ``_P.search`` site is invisible, so
+      a pattern compiled in a different module and imported is not seen.
     - A fence string embedded in ordinary text that is never passed to a
       `re.*` call at all (e.g. a prompt telling the model to emit fenced
       output, as in agents/llm_client.py) -- deliberately not flagged,
@@ -1061,6 +1231,7 @@ def _fence_regex_offenders() -> set[str]:
         if path.name == _ALLOWED_FENCE_REGEX_FILE:
             continue
         tree = ast.parse(path.read_text(), filename=str(path))
+        bindings = _string_literal_bindings(tree)
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
                 continue
@@ -1072,9 +1243,13 @@ def _fence_regex_offenders() -> set[str]:
             if not node.args:
                 continue
             first_arg = node.args[0]
-            if not (isinstance(first_arg, ast.Constant) and isinstance(first_arg.value, str)):
+            if isinstance(first_arg, ast.Constant) and isinstance(first_arg.value, str):
+                candidates = [first_arg.value]
+            elif isinstance(first_arg, ast.Name):
+                candidates = bindings.get(first_arg.id, [])
+            else:
                 continue
-            if "```" in first_arg.value:
+            if any("```" in candidate for candidate in candidates):
                 offenders.add(str(path.relative_to(src_root)))
     return offenders
 
@@ -1088,17 +1263,30 @@ def test_no_new_markdown_fence_regex_outside_output_parser() -> None:
     name is defense-in-depth rather than load-bearing, in case it ever moves.
 
     This enforces exactly what `_fence_regex_offenders`' docstring says it
-    detects -- a fence pattern passed as a string literal directly to
-    `re.compile` / `re.search` / `re.match` / `re.finditer` -- and nothing
-    more. It does NOT catch a pattern assigned to a module-level variable
-    and reused, built by concatenation or an f-string, or reached through
-    an aliased `re` import; see that docstring for why each of those is
-    deliberately out of scope rather than an oversight. A guard that
-    implied broader coverage than that would be worse than one whose limits
-    are written down, because the false confidence is what lets a routine
-    refactor (moving a pattern to a module-level constant, which is
-    idiomatic, not evasive) slip a new duplicate fence extractor past it
-    unnoticed.
+    detects, and nothing more: a fence pattern reaching `re.compile` /
+    `re.search` / `re.match` / `re.finditer` / `re.findall` / `re.split` /
+    `re.sub` either as an inline string literal, or as a name bound to a
+    string literal somewhere in the same module (any scope -- module-level
+    or function-local).
+
+    It still does NOT catch a pattern reached through an aliased `re` import
+    (`import re as _r`, `from re import compile as _c`), one built by
+    concatenation or an f-string rather than being a single literal, or one
+    reached by anything other than a bare name (an attribute, a subscript, a
+    call's return value, a constant imported from another module). See that
+    docstring for why each is out of scope rather than an oversight. A guard
+    that implied broader coverage than it has would be worse than one whose
+    limits are written down: the false confidence is what let
+    execution/policy_refinement.py sit undetected while an earlier version
+    of this docstring claimed the coverage was complete for what it
+    described.
+
+    That miss is the reason for the current wording. The first version of
+    this guard checked four `re.*` functions and inline literals only, and
+    policy_refinement.py evaded it twice over -- `re.findall` was not in the
+    set, AND its pattern is a function-local variable passed by name. Either
+    hole alone would have hidden it. Both are closed now; the remaining
+    holes listed above are not.
 
     Exact-set equality against `_KNOWN_OFFENDERS`, not a plain "no offenders"
     assertion and not a permissive allow-list: a NEW offender fails it (the
@@ -1107,26 +1295,17 @@ def test_no_new_markdown_fence_regex_outside_output_parser() -> None:
     expected set to be updated deliberately, rather than carrying a stale
     exemption forever).
 
-    Proven to fire in all three directions this guard cares about (see
-    task-5-fix-report.md for the pasted output):
-    1. The current tree passes with exactly `_KNOWN_OFFENDERS`.
+    Proven to fire in all three directions this guard cares about:
+    1. The current tree passes with exactly `_KNOWN_OFFENDERS` (four files).
     2. A deliberately reintroduced fence regex added to an agents/ module
-       that already imports `re` (e.g. `_BYPASS = re.compile(r"```...")` in
-       agents/curator.py) -> fails, naming that file. Removed -> passes.
+       that already imports `re` -- specifically the shape that used to slip
+       through, `pattern = r"```...(.*?)```"` then `re.findall(pattern, ...)`
+       in agents/curator.py -> fails, naming that file. Removed -> passes.
        (A module that does NOT already import `re`, e.g. agents/coach.py,
        fails at import instead of tripping the guard -- that failure looks
        like a passing proof but tests the wrong thing, so the file used for
        this check must already import `re`.)
-    3. `_KNOWN_OFFENDERS` missing one of the three tracked files while that
+    3. `_KNOWN_OFFENDERS` missing one of the four tracked files while that
        file still offends -> fails. Restored -> passes.
-
-    A module-level-variable bypass (`_BYPASS = re.compile(...)` assigned in
-    one place, called via `_BYPASS.search(...)` elsewhere) and an aliased-
-    import bypass (`from re import compile as _c`) were both demonstrated
-    live against this guard and neither is caught -- see this function's
-    docstring and `_fence_regex_offenders`' docstring for why: closing them
-    would require tracing assignments and import aliases, not just call
-    shapes, which is a bigger change than this guard's AST walk is designed
-    to do. Documented here rather than silently accepted.
     """
     assert _fence_regex_offenders() == _KNOWN_OFFENDERS
