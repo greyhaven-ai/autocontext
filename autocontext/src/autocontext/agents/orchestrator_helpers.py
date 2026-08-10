@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 from autocontext.agents.architect import parse_architect_harness_specs, parse_architect_tool_specs
 from autocontext.agents.coach import parse_coach_sections
-from autocontext.agents.parsers import parse_analyst_output, parse_architect_output, parse_coach_output, parse_competitor_output
+from autocontext.agents.parsers import parse_analyst_exec, parse_architect_exec, parse_coach_exec, parse_competitor_output
 from autocontext.agents.role_isolation import resolve_role_turn
 from autocontext.agents.types import AgentOutputs, RoleExecution
 
@@ -280,9 +280,9 @@ def _assemble_agent_outputs(
         strategy,
         is_code_strategy=orchestrator.settings.code_strategies_enabled,
     )
-    analyst_typed = parse_analyst_output(analyst_exec.content)
-    coach_typed = parse_coach_output(coach_exec.content)
-    architect_typed = parse_architect_output(architect_exec.content)
+    analyst_typed = parse_analyst_exec(analyst_exec)
+    coach_typed = parse_coach_exec(coach_exec)
+    architect_typed = parse_architect_exec(architect_exec)
 
     return AgentOutputs(
         strategy=strategy,

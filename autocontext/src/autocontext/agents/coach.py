@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 
+from autocontext.agents.role_schemas import COACH_SCHEMA
 from autocontext.agents.subagent_runtime import SubagentRuntime, SubagentTask
 from autocontext.agents.types import RoleExecution
 from autocontext.harness.core.output_parser import extract_delimited_section
@@ -44,6 +45,7 @@ class CoachRunner:
         return self.runtime.run_task(
             SubagentTask(
                 role="coach",
+                output_schema=COACH_SCHEMA,
                 model=self.model,
                 prompt=prompt,
                 max_tokens=self.max_tokens,

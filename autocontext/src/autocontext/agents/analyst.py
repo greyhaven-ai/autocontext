@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from autocontext.agents.role_schemas import ANALYST_SCHEMA
 from autocontext.agents.subagent_runtime import SubagentRuntime, SubagentTask
 from autocontext.agents.types import RoleExecution
 
@@ -14,6 +15,7 @@ class AnalystRunner:
         return self.runtime.run_task(
             SubagentTask(
                 role="analyst",
+                output_schema=ANALYST_SCHEMA,
                 model=self.model,
                 prompt=prompt,
                 max_tokens=self.max_tokens,

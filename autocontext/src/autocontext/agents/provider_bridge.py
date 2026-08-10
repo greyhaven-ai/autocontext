@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from autocontext.config.settings import AppSettings
-    from autocontext.providers.base import LLMProvider
+    from autocontext.providers.base import LLMProvider, OutputSchema
     from autocontext.runtimes.base import AgentRuntime
     from autocontext.session.runtime_session import RuntimeSession
 
@@ -38,9 +38,36 @@ class ProviderBridgeClient(LanguageModelClient):
     to be used as a client for agent role runners.
     """
 
+    # AC-913: an LLMProvider can carry an output schema to the backend. Whether
+    # the backend HONORS it is reported per-call by CompletionResult.constrained,
+    # not assumed here -- this flag only says the path exists.
+    supports_constrained_output: bool = True
+
     def __init__(self, provider: LLMProvider, *, use_provider_default_model: bool = False) -> None:
         self._provider = provider
         self._use_provider_default_model = use_provider_default_model
+
+    def generate_constrained(
+        self,
+        *,
+        model: str,
+        prompt: str,
+        max_tokens: int,
+        temperature: float,
+        output_schema: OutputSchema,
+        role: str = "",
+        system: str = "",
+    ) -> ModelResponse:
+        """Generate with a schema, recording whether the backend enforced it."""
+        return self._complete(
+            model=model,
+            prompt=prompt,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            role=role,
+            output_schema=output_schema,
+            system=system,
+        )
 
     def generate(
         self,
@@ -51,21 +78,53 @@ class ProviderBridgeClient(LanguageModelClient):
         temperature: float,
         role: str = "",
     ) -> ModelResponse:
+        return self._complete(
+            model=model,
+            prompt=prompt,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            role=role,
+            output_schema=None,
+        )
+
+    def _complete(
+        self,
+        *,
+        model: str,
+        prompt: str,
+        max_tokens: int,
+        temperature: float,
+        role: str,
+        output_schema: OutputSchema | None,
+        system: str = "",
+    ) -> ModelResponse:
+        del role
         t0 = time.monotonic()
         resolved_model = None if self._use_provider_default_model else model
+        # Forward output_schema ONLY when one was asked for. autocontext ships
+        # LLMProvider as public API, so a provider implemented outside this repo
+        # predates the parameter; passing it unconditionally would break every
+        # such implementation on calls that never wanted a schema. Opting in is
+        # the caller's choice, and a provider that has not adopted it simply
+        # never sees it.
+        extra: dict[str, Any] = {"output_schema": output_schema} if output_schema is not None else {}
         result = self._provider.complete(
-            system_prompt="",
+            system_prompt=system,
             user_prompt=prompt,
             model=resolved_model,
             temperature=temperature,
             max_tokens=max_tokens,
+            **extra,
         )
         elapsed_ms = int((time.monotonic() - t0) * 1000)
         usage_model = result.model or resolved_model or self._provider.default_model()
 
-        metadata = {}
+        metadata: dict[str, Any] = {}
         if result.cost_usd is not None:
             metadata["cost_usd"] = result.cost_usd
+        # What the backend actually did, not what was asked for. A provider
+        # that ignored the schema reports False here and the run record shows it.
+        metadata["constrained"] = result.constrained
         return ModelResponse(
             text=result.text,
             usage=RoleUsage(

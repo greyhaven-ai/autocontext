@@ -20,7 +20,7 @@ from autocontext.agents.orchestrator_helpers import (
     _run_competitor_phase,
     _run_translator_phase,
 )
-from autocontext.agents.parsers import parse_analyst_output, parse_architect_output, parse_coach_output, parse_competitor_output
+from autocontext.agents.parsers import parse_analyst_exec, parse_architect_exec, parse_coach_exec, parse_competitor_output
 from autocontext.agents.role_router import ProviderClass, RoleRouter, RoutingContext
 from autocontext.agents.role_runtime_overrides import apply_role_overrides, settings_for_budgeted_role_call
 from autocontext.agents.runtime_session_wiring import runtime_session_client_for_role
@@ -737,9 +737,9 @@ class AgentOrchestrator:
             strategy,
             is_code_strategy=self.settings.code_strategies_enabled,
         )
-        analyst_typed = parse_analyst_output(results["analyst"].content)
-        coach_typed = parse_coach_output(results["coach"].content)
-        architect_typed = parse_architect_output(results["architect"].content)
+        analyst_typed = parse_analyst_exec(results["analyst"])
+        coach_typed = parse_coach_exec(results["coach"])
+        architect_typed = parse_architect_exec(results["architect"])
 
         return AgentOutputs(
             strategy=strategy,
