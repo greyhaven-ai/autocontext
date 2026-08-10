@@ -117,6 +117,10 @@ _SETTINGS_DEFAULTS: dict[str, str] = {
     "tier_sonnet_model": "sonnet-tier-model",
     "tier_haiku_model": "haiku-tier-model",
     "mlx_model_path": "/models/default-local",
+    # AC-912. Empty is the shipped default; a non-empty value would fill every
+    # unset role/tier slot for non-anthropic providers, which is a different
+    # contract than this fixture pins.
+    "local_model": "",
 }
 
 # The fixture uses the TypeScript spelling for context fields so one file drives
@@ -149,11 +153,25 @@ def _divergence_cases() -> list[tuple[str, dict[str, Any]]]:
 
 
 def _settings_from_fixture(overrides: dict[str, Any]) -> MagicMock:
-    """Build a settings double from fixture overrides layered on shared defaults."""
+    """Build a settings double from fixture overrides layered on shared defaults.
+
+    Specced against ``_SETTINGS_DEFAULTS`` (AC-919 item 8). A bare MagicMock
+    returns a truthy auto-Mock for any attribute a refactor newly reads, so
+    Python silently opted into new behavior while TypeScript's literal
+    baseSettings() opted out -- AC-912 hit exactly that, resolving a role model
+    to ``mock.local_model.strip()``. With a spec, an unlisted field raises
+    AttributeError and names itself instead.
+
+    ``model_fields_set`` reports every field the double defines, because the
+    fixture specifies a concrete value for all of them: within this contract
+    every setting is configured, so provider-default resolution (AC-912) must
+    not treat any of them as untouched.
+    """
     unknown = set(overrides) - set(_SETTINGS_DEFAULTS)
     if unknown:
         raise AssertionError(f"fixture sets unknown settings keys: {sorted(unknown)}")
-    settings = MagicMock()
+    settings = MagicMock(spec=[*_SETTINGS_DEFAULTS, "model_fields_set"])
+    settings.model_fields_set = frozenset(_SETTINGS_DEFAULTS)
     for key, default in _SETTINGS_DEFAULTS.items():
         setattr(settings, key, overrides.get(key, default))
     return settings

@@ -108,6 +108,23 @@ class RoleRouter:
             "translator": settings.model_translator,
             "curator": settings.model_curator,
         }
+        # AC-912: the settings field backing each slot, so model resolution can
+        # ask whether the user actually configured it. Kept beside the tables
+        # above rather than derived, because a wrong mapping here would
+        # silently resolve the wrong field.
+        self._class_model_fields: dict[ProviderClass, str] = {
+            ProviderClass.FRONTIER: "tier_opus_model",
+            ProviderClass.MID_TIER: "tier_sonnet_model",
+            ProviderClass.FAST: "tier_haiku_model",
+        }
+        self._role_model_fields: dict[str, str] = {
+            "competitor": "model_competitor",
+            "analyst": "model_analyst",
+            "coach": "model_coach",
+            "architect": "model_architect",
+            "translator": "model_translator",
+            "curator": "model_curator",
+        }
         self._role_providers: dict[str, str] = {
             "competitor": settings.competitor_provider,
             "analyst": settings.analyst_provider,
@@ -194,6 +211,38 @@ class RoleRouter:
         # Fallback
         return self._config_for_class(role, preferences[0] if preferences else ProviderClass.MID_TIER)
 
+    def _resolve_role_model(self, role: str, provider: str) -> str | None:
+        """Role model for ``provider``, honoring an explicit override first."""
+        from autocontext.config.provider_model_defaults import resolve_model_default
+
+        field = self._role_model_fields.get(role)
+        configured = self._role_models.get(role)
+        if field is None:
+            # An unregistered role has no backing field to check, so there is
+            # nothing to resolve against -- preserve today's behavior exactly.
+            return configured
+        return resolve_model_default(
+            self._settings,
+            provider=provider,
+            field_name=field,
+            configured=configured,
+        )
+
+    def _resolve_class_model(self, role: str, provider_class: ProviderClass, provider: str) -> str | None:
+        """Tier model for ``provider``, falling back to the role model."""
+        from autocontext.config.provider_model_defaults import resolve_model_default
+
+        field = self._class_model_fields.get(provider_class)
+        configured = self._class_to_model.get(provider_class)
+        if field is None or configured is None:
+            return self._resolve_role_model(role, provider)
+        return resolve_model_default(
+            self._settings,
+            provider=provider,
+            field_name=field,
+            configured=configured,
+        )
+
     def _config_for_class(
         self,
         role: str,
@@ -211,7 +260,7 @@ class RoleRouter:
             )
         return ProviderConfig(
             provider_type=self._settings.agent_provider,
-            model=self._class_to_model.get(provider_class, self._role_models.get(role)),
+            model=self._resolve_class_model(role, provider_class, self._settings.agent_provider),
             provider_class=provider_class,
             estimated_cost_per_1k_tokens=_COST_TABLE.get(provider_class, 0.003),
         )
@@ -224,7 +273,11 @@ class RoleRouter:
         )
         return ProviderConfig(
             provider_type=provider_type,
-            model=self._settings.mlx_model_path if provider_class == ProviderClass.LOCAL else self._role_models.get(role),
+            model=(
+                self._settings.mlx_model_path
+                if provider_class == ProviderClass.LOCAL
+                else self._resolve_role_model(role, provider_type)
+            ),
             provider_class=provider_class,
             estimated_cost_per_1k_tokens=_COST_TABLE.get(provider_class, 0.003),
         )
@@ -237,7 +290,11 @@ class RoleRouter:
         )
         return ProviderConfig(
             provider_type=self._settings.agent_provider,
-            model=self._settings.mlx_model_path if provider_class == ProviderClass.LOCAL else self._role_models.get(role),
+            model=(
+                self._settings.mlx_model_path
+                if provider_class == ProviderClass.LOCAL
+                else self._resolve_role_model(role, self._settings.agent_provider)
+            ),
             provider_class=provider_class,
             estimated_cost_per_1k_tokens=_COST_TABLE.get(provider_class, 0.003),
         )
