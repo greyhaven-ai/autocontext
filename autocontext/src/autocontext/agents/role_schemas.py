@@ -27,7 +27,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from autocontext.agents.contracts import AnalystOutput
+from autocontext.agents.contracts import AnalystOutput, ArchitectOutput, CoachOutput
 from autocontext.providers.base import OutputSchema
 
 
@@ -77,7 +77,45 @@ def _output_schema(name: str, model: type[BaseModel]) -> OutputSchema:
     return OutputSchema(name=name, schema=schema)
 
 
+class CoachPayload(_StrictModel):
+    """The coach's three sections.
+
+    Today these are delimited by HTML comment markers, and the fallback when a
+    model emits no markers at all is to treat the entire response as the
+    playbook -- preamble, reasoning and all. That is a quieter failure than the
+    analyst's empty section but a worse one: the playbook is persisted and
+    steers the next generation. A schema removes the marker convention rather
+    than asking a model to honor it.
+    """
+
+    playbook: str = Field(description="The complete replacement playbook, consolidated and deduplicated.")
+    lessons: str = Field(description="Operational lessons, each a concrete prescriptive rule.")
+    hints: str = Field(description="Concrete hints for the competitor's next attempt.")
+
+
+class ArchitectToolSpec(_StrictModel):
+    """One proposed tool. Mirrors what parse_architect_tool_specs already requires."""
+
+    name: str = Field(description="Tool identifier.")
+    description: str = Field(description="What the tool does and when to reach for it.")
+    code: str = Field(description="Complete implementation.")
+
+
+class ArchitectPayload(_StrictModel):
+    """The architect's proposal.
+
+    Architect already speaks JSON via extract_json, so this is the smallest gap
+    of the three: the shape was known, it just was not enforced, and a
+    malformed proposal became an empty list.
+    """
+
+    tools: list[ArchitectToolSpec] = Field(description="Proposed tools; an empty list means no proposal.")
+    changelog_entry: str = Field(description="One line describing the change, or empty if nothing is proposed.")
+
+
 ANALYST_SCHEMA = _output_schema("analyst_output", AnalystPayload)
+COACH_SCHEMA = _output_schema("coach_output", CoachPayload)
+ARCHITECT_SCHEMA = _output_schema("architect_output", ArchitectPayload)
 
 
 def parse_analyst_constrained(raw_text: str) -> AnalystOutput:
@@ -88,13 +126,7 @@ def parse_analyst_constrained(raw_text: str) -> AnalystOutput:
             match the schema. Deliberately loud: the whole point is that drift
             stops being indistinguishable from "the analyst had nothing to say".
     """
-    try:
-        payload = AnalystPayload.model_validate_json(raw_text)
-    except ValidationError as exc:
-        raise RoleOutputValidationError("analyst", str(exc), raw_text) from exc
-    except ValueError as exc:  # malformed JSON
-        raise RoleOutputValidationError("analyst", f"not valid JSON: {exc}", raw_text) from exc
-
+    payload: AnalystPayload = _validate("analyst", AnalystPayload, raw_text)
     return AnalystOutput(
         raw_markdown=render_analyst_markdown(payload),
         findings=payload.findings,
@@ -123,3 +155,56 @@ def render_analyst_markdown(payload: AnalystPayload) -> str:
         lines = "\n".join(f"- {item}" for item in items)
         blocks.append(f"## {heading}\n\n{lines}" if lines else f"## {heading}\n")
     return "\n\n".join(blocks) + "\n"
+
+
+def _validate(role: str, model: type[BaseModel], raw_text: str) -> Any:
+    """Validate one role payload, converting any failure into the typed error."""
+    try:
+        return model.model_validate_json(raw_text)
+    except ValidationError as exc:
+        raise RoleOutputValidationError(role, str(exc), raw_text) from exc
+    except ValueError as exc:  # malformed JSON
+        raise RoleOutputValidationError(role, f"not valid JSON: {exc}", raw_text) from exc
+
+
+def parse_coach_constrained(raw_text: str) -> CoachOutput:
+    """Validate a schema-constrained coach response into the typed contract."""
+    payload: CoachPayload = _validate("coach", CoachPayload, raw_text)
+    return CoachOutput(
+        raw_markdown=render_coach_markdown(payload),
+        playbook=payload.playbook,
+        lessons=payload.lessons,
+        hints=payload.hints,
+        parse_success=True,
+    )
+
+
+def parse_architect_constrained(raw_text: str) -> ArchitectOutput:
+    """Validate a schema-constrained architect response into the typed contract."""
+    payload: ArchitectPayload = _validate("architect", ArchitectPayload, raw_text)
+    return ArchitectOutput(
+        raw_markdown=raw_text,
+        tool_specs=[spec.model_dump() for spec in payload.tools],
+        changelog_entry=payload.changelog_entry,
+        parse_success=True,
+    )
+
+
+def render_coach_markdown(payload: CoachPayload) -> str:
+    """Render validated coach data back into the marker format the repo reads.
+
+    Emits the same delimiters parse_coach_sections expects, so the rendered
+    form round-trips through the existing extractor and every consumer of the
+    marker convention keeps working.
+    """
+    return (
+        "<!-- PLAYBOOK_START -->\n"
+        f"{payload.playbook}\n"
+        "<!-- PLAYBOOK_END -->\n\n"
+        "<!-- LESSONS_START -->\n"
+        f"{payload.lessons}\n"
+        "<!-- LESSONS_END -->\n\n"
+        "<!-- COMPETITOR_HINTS_START -->\n"
+        f"{payload.hints}\n"
+        "<!-- COMPETITOR_HINTS_END -->\n"
+    )

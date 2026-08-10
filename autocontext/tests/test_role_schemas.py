@@ -129,3 +129,88 @@ def test_provider_schema_is_strict_and_complete() -> None:
     for field in ("findings", "root_causes", "recommendations"):
         assert schema["properties"][field]["type"] == "array"
         assert schema["properties"][field]["items"]["type"] == "string"
+
+
+def test_coach_drift_is_a_typed_error_not_a_swallowed_playbook() -> None:
+    """Coach's fail-open is quieter than analyst's and worse.
+
+    With no markers at all, parse_coach_sections treats the ENTIRE response as
+    the playbook -- preamble, reasoning and all -- and that playbook is
+    persisted and steers the next generation. Schema validation refuses it
+    instead.
+    """
+    from autocontext.agents.coach import parse_coach_sections
+    from autocontext.agents.role_schemas import RoleOutputValidationError, parse_coach_constrained
+
+    prose = "Sure! Here is my advice:\n\nTry moving faster and avoid the guards."
+
+    # Today: the whole thing silently becomes the playbook.
+    playbook, lessons, hints = parse_coach_sections(prose)
+    assert playbook == prose.strip()
+    assert (lessons, hints) == ("", "")
+
+    # With a schema: refused, loudly.
+    with pytest.raises(RoleOutputValidationError) as excinfo:
+        parse_coach_constrained(prose)
+    assert excinfo.value.role == "coach"
+
+
+def test_coach_rendered_markdown_round_trips_through_the_marker_parser() -> None:
+    from autocontext.agents.coach import parse_coach_sections
+    from autocontext.agents.role_schemas import parse_coach_constrained
+
+    result = parse_coach_constrained(
+        json.dumps({"playbook": "P", "lessons": "L", "hints": "H"})
+    )
+    assert parse_coach_sections(result.raw_markdown) == ("P", "L", "H")
+
+
+def test_architect_malformed_proposal_raises_instead_of_yielding_no_tools() -> None:
+    """Architect already spoke JSON; the gap was that failure meant an empty list.
+
+    parse_architect_tool_specs returns [] for a malformed proposal, which is
+    indistinguishable from a deliberate "I propose nothing".
+    """
+    from autocontext.agents.architect import parse_architect_tool_specs
+    from autocontext.agents.role_schemas import RoleOutputValidationError, parse_architect_constrained
+
+    malformed = '{"tools": [{"name": "probe"}]}'  # missing description and code
+
+    assert parse_architect_tool_specs(malformed) == []
+
+    with pytest.raises(RoleOutputValidationError) as excinfo:
+        parse_architect_constrained(malformed)
+    assert excinfo.value.role == "architect"
+
+
+def test_architect_valid_proposal_survives_validation() -> None:
+    from autocontext.agents.role_schemas import parse_architect_constrained
+
+    result = parse_architect_constrained(
+        json.dumps(
+            {
+                "tools": [{"name": "probe", "description": "d", "code": "def probe(): ..."}],
+                "changelog_entry": "added probe",
+            }
+        )
+    )
+    assert [spec["name"] for spec in result.tool_specs] == ["probe"]
+    assert result.changelog_entry == "added probe"
+
+
+def test_every_role_schema_is_strict_and_complete() -> None:
+    """Same guard as the analyst's, applied to all three.
+
+    A schema missing additionalProperties:false or a full required list lets a
+    backend satisfy it while omitting the fields the role exists to produce.
+    """
+    from autocontext.agents.role_schemas import ANALYST_SCHEMA, ARCHITECT_SCHEMA, COACH_SCHEMA
+
+    expected = {
+        "analyst_output": {"findings", "root_causes", "recommendations"},
+        "coach_output": {"playbook", "lessons", "hints"},
+        "architect_output": {"tools", "changelog_entry"},
+    }
+    for schema in (ANALYST_SCHEMA, COACH_SCHEMA, ARCHITECT_SCHEMA):
+        assert schema.schema["additionalProperties"] is False, schema.name
+        assert set(schema.schema["required"]) == expected[schema.name], schema.name
