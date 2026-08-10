@@ -1,0 +1,330 @@
+{
+  "contract": "Role output schemas, generated from the pydantic models in autocontext/agents/role_schemas.py. Both packages read this file; neither retypes it. Regenerate with autocontext/scripts/generate_role_output_schemas.py.",
+  "schemas": {
+    "analyst_output": {
+      "additionalProperties": false,
+      "description": "The analyst's three sections, as data rather than headings.",
+      "properties": {
+        "findings": {
+          "description": "What the run showed, one claim per item.",
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Findings",
+          "type": "array"
+        },
+        "recommendations": {
+          "description": "Concrete changes for the next generation, each naming a parameter or behavior.",
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Recommendations",
+          "type": "array"
+        },
+        "root_causes": {
+          "description": "Why each failure happened.",
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Root Causes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "findings",
+        "root_causes",
+        "recommendations"
+      ],
+      "type": "object"
+    },
+    "architect_output": {
+      "$defs": {
+        "ArchitectDAGChange": {
+          "additionalProperties": false,
+          "description": "One role-DAG change directive.",
+          "properties": {
+            "action": {
+              "enum": [
+                "add_role",
+                "remove_role"
+              ],
+              "title": "Action",
+              "type": "string"
+            },
+            "depends_on": {
+              "description": "Dependencies for add_role; empty for remove_role.",
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "title": "Depends On",
+              "type": "array"
+            },
+            "name": {
+              "minLength": 1,
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action",
+            "name",
+            "depends_on"
+          ],
+          "title": "ArchitectDAGChange",
+          "type": "object"
+        },
+        "ArchitectHarnessSpec": {
+          "additionalProperties": false,
+          "description": "One executable pre-tournament strategy validator.",
+          "properties": {
+            "code": {
+              "description": "Complete validate_strategy implementation.",
+              "minLength": 1,
+              "title": "Code",
+              "type": "string"
+            },
+            "description": {
+              "description": "What the validator protects against, or empty.",
+              "title": "Description",
+              "type": "string"
+            },
+            "name": {
+              "description": "Validator identifier.",
+              "minLength": 1,
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "description",
+            "code"
+          ],
+          "title": "ArchitectHarnessSpec",
+          "type": "object"
+        },
+        "ArchitectMutationSpec": {
+          "additionalProperties": false,
+          "description": "One persistent harness mutation, with inapplicable selectors empty.",
+          "properties": {
+            "component": {
+              "description": "Context component for context_policy, otherwise empty.",
+              "title": "Component",
+              "type": "string"
+            },
+            "content": {
+              "minLength": 1,
+              "title": "Content",
+              "type": "string"
+            },
+            "rationale": {
+              "title": "Rationale",
+              "type": "string"
+            },
+            "target_role": {
+              "description": "Target role for prompt_fragment, otherwise empty.",
+              "title": "Target Role",
+              "type": "string"
+            },
+            "tool_name": {
+              "description": "Tool identifier for tool_instruction, otherwise empty.",
+              "title": "Tool Name",
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "prompt_fragment",
+                "context_policy",
+                "completion_check",
+                "tool_instruction"
+              ],
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "target_role",
+            "component",
+            "tool_name",
+            "content",
+            "rationale"
+          ],
+          "title": "ArchitectMutationSpec",
+          "type": "object"
+        },
+        "ArchitectToolSpec": {
+          "additionalProperties": false,
+          "description": "One proposed tool. Mirrors what parse_architect_tool_specs already requires.",
+          "properties": {
+            "code": {
+              "description": "Complete implementation.",
+              "minLength": 1,
+              "title": "Code",
+              "type": "string"
+            },
+            "description": {
+              "description": "What the tool does and when to reach for it.",
+              "minLength": 1,
+              "title": "Description",
+              "type": "string"
+            },
+            "name": {
+              "description": "Tool identifier.",
+              "minLength": 1,
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "description",
+            "code"
+          ],
+          "title": "ArchitectToolSpec",
+          "type": "object"
+        },
+        "ArchitectTuningParameter": {
+          "additionalProperties": false,
+          "description": "One bounded adaptive configuration proposal.",
+          "properties": {
+            "name": {
+              "enum": [
+                "backpressure_min_delta",
+                "matches_per_generation",
+                "rlm_max_turns",
+                "architect_every_n_gens",
+                "probe_matches"
+              ],
+              "title": "Name",
+              "type": "string"
+            },
+            "value": {
+              "title": "Value",
+              "type": "number"
+            }
+          },
+          "required": [
+            "name",
+            "value"
+          ],
+          "title": "ArchitectTuningParameter",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "description": "The architect's proposal.\n\nAll fields are required so OpenAI strict mode can enforce the object. Empty\nlists represent channels with no proposal; rendered markdown omits their\nlegacy marker blocks, preserving the existing downstream behavior.",
+      "properties": {
+        "changelog_entry": {
+          "description": "One line describing the change, or empty if nothing is proposed.",
+          "title": "Changelog Entry",
+          "type": "string"
+        },
+        "dag_changes": {
+          "description": "Proposed role-DAG changes.",
+          "items": {
+            "$ref": "#/$defs/ArchitectDAGChange"
+          },
+          "title": "Dag Changes",
+          "type": "array"
+        },
+        "harness": {
+          "description": "Proposed executable harness validators.",
+          "items": {
+            "$ref": "#/$defs/ArchitectHarnessSpec"
+          },
+          "title": "Harness",
+          "type": "array"
+        },
+        "impact_hypothesis": {
+          "description": "Expected impact of the proposed changes.",
+          "title": "Impact Hypothesis",
+          "type": "string"
+        },
+        "mutations": {
+          "description": "Proposed persistent harness mutations.",
+          "items": {
+            "$ref": "#/$defs/ArchitectMutationSpec"
+          },
+          "title": "Mutations",
+          "type": "array"
+        },
+        "observed_bottlenecks": {
+          "description": "Observed infrastructure bottlenecks.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Observed Bottlenecks",
+          "type": "array"
+        },
+        "tools": {
+          "description": "Proposed tools; an empty list means no proposal.",
+          "items": {
+            "$ref": "#/$defs/ArchitectToolSpec"
+          },
+          "title": "Tools",
+          "type": "array"
+        },
+        "tuning_parameters": {
+          "description": "Proposed adaptive parameters.",
+          "items": {
+            "$ref": "#/$defs/ArchitectTuningParameter"
+          },
+          "title": "Tuning Parameters",
+          "type": "array"
+        },
+        "tuning_reasoning": {
+          "description": "Reasoning for adaptive parameters, or empty.",
+          "title": "Tuning Reasoning",
+          "type": "string"
+        }
+      },
+      "required": [
+        "observed_bottlenecks",
+        "impact_hypothesis",
+        "tools",
+        "harness",
+        "mutations",
+        "dag_changes",
+        "tuning_parameters",
+        "tuning_reasoning",
+        "changelog_entry"
+      ],
+      "type": "object"
+    },
+    "coach_output": {
+      "additionalProperties": false,
+      "description": "The coach's three sections.\n\nToday these are delimited by HTML comment markers, and the fallback when a\nmodel emits no markers at all is to treat the entire response as the\nplaybook -- preamble, reasoning and all. That is a quieter failure than the\nanalyst's empty section but a worse one: the playbook is persisted and\nsteers the next generation. A schema removes the marker convention rather\nthan asking a model to honor it.",
+      "properties": {
+        "hints": {
+          "description": "Concrete hints for the competitor's next attempt.",
+          "title": "Hints",
+          "type": "string"
+        },
+        "lessons": {
+          "description": "Operational lessons, each a concrete prescriptive rule.",
+          "title": "Lessons",
+          "type": "string"
+        },
+        "playbook": {
+          "description": "The complete replacement playbook, consolidated and deduplicated.",
+          "title": "Playbook",
+          "type": "string"
+        }
+      },
+      "required": [
+        "playbook",
+        "lessons",
+        "hints"
+      ],
+      "type": "object"
+    }
+  }
+}

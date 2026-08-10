@@ -14,6 +14,7 @@ const PACKAGE_JSON = JSON.parse(readFileSync(join(PACKAGE_ROOT, "package.json"),
   bin: { autoctx: string };
 };
 let didBuild = false;
+let packedFiles: string[] | undefined;
 
 function ensureBuiltPackage(): void {
   if (didBuild) return;
@@ -24,6 +25,21 @@ function ensureBuiltPackage(): void {
     env: { ...process.env, NODE_NO_WARNINGS: "1" },
   });
   didBuild = true;
+}
+
+function packedFilePaths(): string[] {
+  if (packedFiles) return packedFiles;
+  ensureBuiltPackage();
+  const output = execFileSync("npm", ["pack", "--dry-run", "--json"], {
+    cwd: PACKAGE_ROOT,
+    encoding: "utf8",
+    timeout: 120000,
+    env: { ...process.env, NODE_NO_WARNINGS: "1" },
+  });
+  const metadata = JSON.parse(output);
+  const paths = metadata[0].files.map((file: { path: string }) => file.path);
+  packedFiles = paths;
+  return paths;
 }
 
 function createConsumerWorkspace(): string {
@@ -180,6 +196,10 @@ describe("CLI help matches README", () => {
 // ---------------------------------------------------------------------------
 
 describe("Package exports", () => {
+  it("ships the generated role-output schemas used by the root entry point", () => {
+    expect(packedFilePaths()).toContain("dist/role-output-schemas.json");
+  });
+
   it("exports GenerationRunner", async () => {
     expect(importPackageExport("GenerationRunner")).toBe(true);
   });

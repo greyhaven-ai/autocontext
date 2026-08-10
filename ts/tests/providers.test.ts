@@ -190,6 +190,98 @@ describe("OpenAICompatibleProvider", () => {
     vi.unstubAllGlobals();
   });
 
+  it("sends a JSON schema and reports a constrained response", async () => {
+    const { createOpenAICompatibleProvider } = await import("../src/providers/index.js");
+    const provider = createOpenAICompatibleProvider({ apiKey: "test-key" });
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { content: '{"answer":"ok"}' } }],
+        model: "gpt-4o",
+        usage: { prompt_tokens: 2, completion_tokens: 3 },
+      }),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    const result = await provider.complete({
+      systemPrompt: "sys",
+      userPrompt: "test",
+      outputSchema: {
+        name: "test_output",
+        schema: { type: "object", properties: { answer: { type: "string" } } },
+      },
+    });
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.response_format.json_schema.name).toBe("test_output");
+    expect(body.response_format.json_schema.strict).toBe(true);
+    expect(result.constrained).toBe(true);
+
+    vi.unstubAllGlobals();
+  });
+
+  it("retries without a schema only when the endpoint explicitly rejects it", async () => {
+    const { createOpenAICompatibleProvider } = await import("../src/providers/index.js");
+    const provider = createOpenAICompatibleProvider({ apiKey: "test-key" });
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        text: async () => "response_format json_schema is not supported",
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          choices: [{ message: { content: "fallback markdown" } }],
+          model: "local-model",
+          usage: { prompt_tokens: 2, completion_tokens: 3 },
+        }),
+      });
+    vi.stubGlobal("fetch", mockFetch);
+
+    const result = await provider.complete({
+      systemPrompt: "sys",
+      userPrompt: "test",
+      outputSchema: { name: "test_output", schema: { type: "object" } },
+    });
+
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body)).toHaveProperty("response_format");
+    expect(JSON.parse(mockFetch.mock.calls[1][1].body)).not.toHaveProperty("response_format");
+    expect(result.text).toBe("fallback markdown");
+    expect(result.constrained).toBe(false);
+
+    vi.unstubAllGlobals();
+  });
+
+  it.each([
+    [400, "invalid model name"],
+    [401, "response_format json_schema is not supported"],
+    [429, "response_format json_schema is not supported"],
+    [500, "response_format json_schema is not supported"],
+  ])("does not retry a non-capability HTTP %i response", async (status, message) => {
+    const { createOpenAICompatibleProvider } = await import("../src/providers/index.js");
+    const provider = createOpenAICompatibleProvider({ apiKey: "test-key" });
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status,
+      text: async () => message,
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    await expect(
+      provider.complete({
+        systemPrompt: "sys",
+        userPrompt: "test",
+        outputSchema: { name: "test_output", schema: { type: "object" } },
+      }),
+    ).rejects.toThrow(`OpenAI API error ${status}`);
+    expect(mockFetch).toHaveBeenCalledOnce();
+
+    vi.unstubAllGlobals();
+  });
+
   it("should parse OpenAI response correctly", async () => {
     const { createOpenAICompatibleProvider } = await import("../src/providers/index.js");
     const provider = createOpenAICompatibleProvider({ apiKey: "test-key" });

@@ -17,6 +17,16 @@ export const CompletionResultSchema = z.object({
   // truncation); absent when the provider does not report one.
   stopReason: z.string().nullish(),
   metadata: z.record(z.unknown()).optional(),
+  // AC-929: whether the backend actually constrained generation to the
+  // requested schema. Mirrors Python's CompletionResult.constrained (AC-913).
+  //
+  // Optional rather than .default(false): a default makes the field REQUIRED on
+  // the inferred output type, so every construction site -- including
+  // LLMProvider implementations written outside this repo, since this is public
+  // API -- would stop compiling. Absent and false both mean unconstrained, so
+  // read it through wasConstrained() in agents/role-schemas.ts, which keeps
+  // the `=== true` comparison in exactly one place.
+  constrained: z.boolean().optional(),
 });
 
 export type CompletionResult = z.infer<typeof CompletionResultSchema>;
@@ -28,6 +38,19 @@ export class ProviderError extends Error {
   }
 }
 
+/**
+ * A JSON Schema the backend should constrain generation to (AC-929).
+ *
+ * Passing one is a request, not a guarantee: backends that cannot enforce a
+ * schema ignore it and report `constrained: false`. Callers must read that
+ * flag rather than assume the text validates -- an unconstrained run should be
+ * visible, not inferred.
+ */
+export interface OutputSchema {
+  name: string;
+  schema: Record<string, unknown>;
+}
+
 export interface LLMProvider {
   complete(opts: {
     systemPrompt: string;
@@ -35,6 +58,13 @@ export interface LLMProvider {
     model?: string;
     temperature?: number;
     maxTokens?: number;
+    /**
+     * Optional and best-effort. An implementation that cannot honor it must
+     * still answer and must leave `constrained` false. Optional on purpose:
+     * LLMProvider is public API, so a provider written outside this repo keeps
+     * compiling and keeps working.
+     */
+    outputSchema?: OutputSchema;
   }): Promise<CompletionResult>;
 
   defaultModel(): string;
