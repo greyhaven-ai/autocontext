@@ -8,6 +8,12 @@ All notable changes to this project will be documented in this file.
 
 - TypeScript interactive runs now advertise `agent_progress_notes_v1` to transcript clients and emit concise, strict `agent_progress_note` updates for intent, discovery, decisions, verification, and blockers. Notes are safety-redacted and bounded before emission, may cite only earlier same-run durable action/artifact IDs, and replay with exact ordering and identity across reconnects and server restarts within the transcript's finite retention horizon. Python parity is deferred until it can provide the same durable transcript guarantees (AC-897).
 
+### Fixed
+
+- Provider-aware role and tier model defaults now reach the production orchestrator in both `role_routing=off` and `auto` modes. Explicit role models retain precedence over automatic tiers, OpenAI-compatible defaults match the provider factory, and `AUTOCONTEXT_LOCAL_MODEL` is documented as the single local-endpoint override.
+- Persistent interpreter workspace summaries and migration no longer invoke candidate-defined `__len__`, `__repr__`, or `__deepcopy__` hooks outside the execution timeout; plain built-in working data remains safely copyable while custom objects degrade to bounded metadata or omission.
+- Model JSON recovery skips Markdown/prose brackets before a later object and bounds failed structural decode attempts, preserving truncated-array fail-closed behavior without the AC-922 quadratic path.
+
 ## [0.14.0] - 2026-07-21
 
 ### Added

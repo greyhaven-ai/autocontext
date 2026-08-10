@@ -615,6 +615,35 @@ def test_extract_json_prose_wrapped_bare_json_parses_via_brace_scan() -> None:
     assert extract_json('Here is the result: {"a": 1} -- hope that helps!') == {"a": 1}
 
 
+@pytest.mark.parametrize(
+    "text",
+    (
+        'Use [draft] while reasoning, then return {"a": 1}',
+        'See [working notes](https://example.test/notes), then return {"a": 1}',
+        'Sources [1, 2] support the result {"a": 1}',
+    ),
+)
+def test_extract_json_skips_bracket_prose_before_object(text: str) -> None:
+    assert extract_json(text) == {"a": 1}
+
+
+def test_extract_json_bounds_failed_structural_recovery(monkeypatch: pytest.MonkeyPatch) -> None:
+    from autocontext.harness.core import output_parser
+
+    class AlwaysFailDecoder:
+        calls = 0
+
+        def raw_decode(self, text: str, start: int):  # type: ignore[no-untyped-def]
+            self.calls += 1
+            raise ValueError
+
+    decoder = AlwaysFailDecoder()
+    monkeypatch.setattr(output_parser.json, "JSONDecoder", lambda: decoder)
+
+    assert output_parser._top_level_object_spans('{"a": ' * 1000) == []
+    assert decoder.calls == output_parser._MAX_FAILED_DECODE_ATTEMPTS
+
+
 def test_extract_json_uppercase_json_fence_tag_is_recognized() -> None:
     assert extract_json('```JSON\n{"a": 1}\n```') == {"a": 1}
 

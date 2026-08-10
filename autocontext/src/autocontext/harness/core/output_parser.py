@@ -28,6 +28,13 @@ _JSON_FENCE_RE = re.compile(
 # an editor.
 _BOM = chr(0xFEFF)
 
+# Each failed raw_decode may scan the remaining suffix. Bounding failures keeps
+# adversarial repetition linear in input size while retaining generous recovery
+# for ordinary prose with a handful of stray braces (AC-922).
+_MAX_FAILED_DECODE_ATTEMPTS = 64
+_JSON_NUMBER_AT_ARRAY_START_RE = re.compile(r"-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?(?=\s*(?:[,\]]|$))")
+_NUMERIC_CITATION_RE = re.compile(r"\[\s*\d+(?:\s*,\s*\d+)*\s*\]")
+
 
 def _scope_text(raw: str) -> str:
     """Normalize a candidate scope: strip surrounding whitespace and any leading BOM.
@@ -59,6 +66,24 @@ def strip_json_fences(text: str) -> str:
     return match.group("body").strip() if match else text.strip()
 
 
+def _plausible_json_array_start(text: str, start: int) -> bool:
+    """Distinguish a truncated JSON array from Markdown/prose brackets."""
+    cursor = start + 1
+    while cursor < len(text) and text[cursor].isspace():
+        cursor += 1
+    if cursor == len(text):
+        return True
+    if text[cursor] in {'"', "{", "[", "]"}:
+        return True
+    suffix = text[cursor:]
+    if _JSON_NUMBER_AT_ARRAY_START_RE.match(suffix):
+        return True
+    return any(
+        suffix.startswith(literal) and (len(suffix) == len(literal) or suffix[len(literal)] in " \t\r\n,]")
+        for literal in ("true", "false", "null")
+    )
+
+
 def _top_level_object_spans(text: str) -> list[str]:
     """Find each top-level JSON value span (``{...}`` or ``[...]``) in ``text``, in order.
 
@@ -83,14 +108,16 @@ def _top_level_object_spans(text: str) -> list[str]:
 
     A malformed object start is skipped and scanning resumes one character
     later, so side-by-side top-level objects are still returned separately.
-    A malformed array start is different: scanning into it could expose a
-    complete nested object and silently unwrap that object as the answer. Its
-    remaining text is therefore returned as one terminal failing candidate,
-    and scanning stops.
+    Recovery attempts are capped because each failed ``raw_decode`` may scan
+    the remaining suffix; the cap makes degenerate repetition bounded rather
+    than quadratic. A malformed *plausible JSON array* is terminal so its
+    nested objects cannot be promoted, while Markdown/prose brackets such as
+    ``[draft]`` are skipped like ordinary text.
     """
     spans: list[str] = []
     decoder = json.JSONDecoder()
     i = 0
+    failed_attempts = 0
     while True:
         starts = [p for p in (text.find("{", i), text.find("[", i)) if p != -1]
         if not starts:
@@ -99,16 +126,15 @@ def _top_level_object_spans(text: str) -> list[str]:
         try:
             _value, end = decoder.raw_decode(text, start)
         except ValueError:
-            if text[start] == "[":
+            failed_attempts += 1
+            if text[start] == "[" and _plausible_json_array_start(text, start):
                 # A truncated array can still contain complete object values.
                 # Treat the whole remainder as one failing candidate instead
                 # of walking into it and promoting one of those nested values.
                 spans.append(text[start:])
                 return spans
-            # AC-922: retrying one character later is O(n^2) on degenerate
-            # repetitive input (e.g. '{"a": ' * n); load-bearing for
-            # correctness (it's what lets side-by-side spans still separate
-            # after a stray unclosed brace), so don't "optimize" it away here.
+            if failed_attempts >= _MAX_FAILED_DECODE_ATTEMPTS:
+                return spans
             i = start + 1
             continue
         spans.append(text[start:end])
@@ -209,11 +235,12 @@ def extract_json(text: str, *, on_failure: str = "raise") -> dict[str, Any] | No
     valid one is the closest match to what a human reader would take as the
     answer.
 
-    A scope whose first JSON container is ``[`` -- fenced or not, and even
-    when prose precedes it -- is exempt from object rescue. If it parses, it
-    is a decisive answer about the model's output shape (see the wrong-type
-    note below); if it is truncated, that parse failure is terminal too,
-    rather than a cue to scan into the array and unwrap a nested object.
+    A scope whose first plausible JSON container is ``[`` -- fenced or not,
+    and even when prose precedes it -- is exempt from object rescue. If it
+    parses, it is a decisive answer about the model's output shape (see the
+    wrong-type note below); if it is truncated, that parse failure is terminal
+    too, rather than a cue to scan into the array and unwrap a nested object.
+    Markdown/prose brackets are skipped unless they look like JSON values.
 
     ``on_failure`` controls what happens when no JSON object is found:
     ``"raise"`` (default) re-raises the underlying parse error; ``"none"``
@@ -246,9 +273,25 @@ def extract_json(text: str, *, on_failure: str = "raise") -> dict[str, Any] | No
             # whose Extra-data JSONDecodeError is part of the public outcome.
             if array_start == 0:
                 continue
-            array_candidate = _top_level_object_spans(scope)[0]
-            if array_candidate != scope:
-                candidates.append(array_candidate)
+            structural_candidates = _top_level_object_spans(scope)
+            if structural_candidates:
+                first_object_index = next(
+                    (index for index, candidate in enumerate(structural_candidates) if candidate.startswith("{")),
+                    None,
+                )
+                citation_prefix = (
+                    array_start > 0
+                    and first_object_index is not None
+                    and first_object_index > 0
+                    and all(_NUMERIC_CITATION_RE.fullmatch(candidate) for candidate in structural_candidates[:first_object_index])
+                )
+                if citation_prefix:
+                    assert first_object_index is not None
+                    candidates.append(structural_candidates[first_object_index])
+                    continue
+                first_candidate = structural_candidates[0]
+                if first_candidate != scope:
+                    candidates.append(first_candidate)
             continue
         if has_fence:
             # NOTE: this crude first-`{`-to-last-`}` rescue is weaker than the

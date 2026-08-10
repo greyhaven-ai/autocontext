@@ -228,6 +228,15 @@ class RoleRouter:
             configured=configured,
         )
 
+    def role_model_is_explicit(self, role: str) -> bool:
+        """Whether the caller explicitly configured this role's model slot."""
+        field = self._role_model_fields.get(role)
+        return field is not None and field in self._settings.model_fields_set
+
+    def resolved_role_model(self, role: str, provider: str) -> str | None:
+        """Resolve a role slot for the effective provider."""
+        return self._resolve_role_model(role, provider)
+
     def _resolve_class_model(self, role: str, provider_class: ProviderClass, provider: str) -> str | None:
         """Tier model for ``provider``, falling back to the role model."""
         from autocontext.config.provider_model_defaults import resolve_model_default
