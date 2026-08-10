@@ -87,13 +87,8 @@ export function createOpenAICompatibleProvider(opts: OpenAICompatibleProviderOpt
     name: "openai-compatible",
     defaultModel: () => defaultModel,
     complete: async (callOpts) => {
-      const res = await fetch(`${baseUrl}/chat/completions`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
+      const buildBody = (withSchema: boolean) =>
+        JSON.stringify({
           model: callOpts.model || defaultModel,
           max_tokens: clampOutputTokens(callOpts.maxTokens ?? 4096, callOpts.model || defaultModel),
           temperature: callOpts.temperature ?? 0,
@@ -101,8 +96,42 @@ export function createOpenAICompatibleProvider(opts: OpenAICompatibleProviderOpt
             { role: "system", content: callOpts.systemPrompt },
             { role: "user", content: callOpts.userPrompt },
           ],
-        }),
-      });
+          ...(withSchema && callOpts.outputSchema
+            ? {
+                response_format: {
+                  type: "json_schema",
+                  json_schema: {
+                    name: callOpts.outputSchema.name,
+                    strict: true,
+                    schema: callOpts.outputSchema.schema,
+                  },
+                },
+              }
+            : {}),
+        });
+
+      const post = (withSchema: boolean) =>
+        fetch(`${baseUrl}/chat/completions`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: buildBody(withSchema),
+        });
+
+      let constrained = Boolean(callOpts.outputSchema);
+      let res = await post(constrained);
+
+      if (!res.ok && constrained) {
+        // This endpoint does not understand response_format. Retry once
+        // without it rather than failing the run: a backend with no
+        // constrained-decoding support must still work, and the result then
+        // reports constrained=false so the caller can tell "the schema was
+        // enforced" from "the schema was requested and silently not applied".
+        constrained = false;
+        res = await post(false);
+      }
 
       if (!res.ok) {
         const body = await res.text();
@@ -121,6 +150,7 @@ export function createOpenAICompatibleProvider(opts: OpenAICompatibleProviderOpt
         model: data.model,
         usage: { input: data.usage.prompt_tokens, output: data.usage.completion_tokens },
         stopReason: data.choices[0]?.finish_reason,
+        constrained,
       } satisfies CompletionResult;
     },
   };
