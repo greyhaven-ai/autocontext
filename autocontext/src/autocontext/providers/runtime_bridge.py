@@ -6,7 +6,7 @@ subscription-backed local CLIs instead of direct hosted APIs.
 
 from __future__ import annotations
 
-from autocontext.providers.base import CompletionResult, LLMProvider, ProviderError
+from autocontext.providers.base import CompletionResult, LLMProvider, OutputSchema, ProviderError
 from autocontext.runtimes.base import AgentRuntime
 from autocontext.runtimes.errors import format_runtime_failure
 
@@ -37,8 +37,9 @@ class RuntimeBridgeProvider(LLMProvider):
         model: str | None = None,
         temperature: float = 0.0,
         max_tokens: int = 4096,
+        output_schema: OutputSchema | None = None,
     ) -> CompletionResult:
-        del temperature, max_tokens
+        del temperature, max_tokens, output_schema  # AC-913: bridge cannot constrain; reported unconstrained
         output = self._runtime.generate(
             prompt=user_prompt,
             system=system_prompt or None,

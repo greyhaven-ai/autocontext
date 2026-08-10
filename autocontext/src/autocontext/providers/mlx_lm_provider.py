@@ -17,7 +17,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from autocontext.providers.base import CompletionResult, LLMProvider, ProviderError
+from autocontext.providers.base import CompletionResult, LLMProvider, OutputSchema, ProviderError
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +79,9 @@ class MLXLMProvider(LLMProvider):
         model: str | None = None,
         temperature: float = 0.0,
         max_tokens: int = 4096,
+        output_schema: OutputSchema | None = None,
     ) -> CompletionResult:
+        del output_schema  # AC-913: no constrained decoding in mlx_lm.generate
         from mlx_lm import generate
         from mlx_lm.sample_utils import make_sampler
 

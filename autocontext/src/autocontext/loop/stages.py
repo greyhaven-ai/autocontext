@@ -27,7 +27,7 @@ from autocontext.loop.stage_types import GenerationContext
 from autocontext.loop.tournament_helpers import apply_tournament_outcome
 from autocontext.notebook.context_provider import NotebookContextProvider
 from autocontext.notebook.types import SessionNotebook
-from autocontext.providers.base import CompletionResult, LLMProvider
+from autocontext.providers.base import CompletionResult, LLMProvider, OutputSchema
 from autocontext.storage.artifacts import EMPTY_PLAYBOOK_SENTINEL
 
 if TYPE_CHECKING:
@@ -115,6 +115,7 @@ class _ClientAsProvider(LLMProvider):
         model: str | None = None,
         temperature: float = 0.0,
         max_tokens: int = 4096,
+        output_schema: OutputSchema | None = None,
     ) -> CompletionResult:
         resp = self._client.generate(
             model=model or self._model,

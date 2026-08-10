@@ -1,0 +1,31 @@
+{
+  "contract": "AC-913 format-drift measurement: markdown-heading scraping vs constrained decoding, same prompt and model.",
+  "model": "llama3.1:8b",
+  "backend": "ollama 0.32.5 (localhost:11434)",
+  "trials": 20,
+  "temperature": 0.7,
+  "prompt_source": "the analyst_task string from prompts/templates.py, verbatim",
+  "parser_under_test": "agents/parsers.py::_extract_section_bullets",
+  "before": {
+    "method": "prompt-and-scrape (today's path)",
+    "lost_per_section": {
+      "Findings": 20,
+      "Root Causes": 20,
+      "Actionable Recommendations": 20
+    },
+    "at_least_one_section_lost": 20,
+    "all_sections_lost": 20
+  },
+  "after": {
+    "method": "response_format json_schema via OpenAICompatibleProvider",
+    "lost_per_field": {
+      "findings": 0,
+      "root_causes": 0,
+      "recommendations": 0
+    },
+    "at_least_one_field_lost": 0,
+    "reported_unconstrained": 0
+  },
+  "why_it_failed": "The model's analysis was correct. It emitted '### Findings' with '* ' bullets; the parser requires '## Findings' with '- ' bullets. Two independent drifts, either one alone discarding the whole section silently. No prompt in templates.py ever states the '##' convention the parser demands.",
+  "sample_drifted_output": "**Grid CTF Analysis**\n======================\n\n### Findings\n\n* The agent demonstrated strong performance by reaching the first flag in 6 steps, outperforming the median time of 9 steps.\n* Despite aggressive behavior (aggression=0.8), the agent captured only 2 flags out of 5.\n\n### Root Causes\n\n* **Oscillation between equidistant flags**: The agent's greedy nearest-flag strategy with a 2-step lookahead may have led to oscillation, causing it to repeatedly move towards nearby flags instead of making progress towards the next flag.\n* **Insufficient exploration**: Not using the decoy action suggests"
+}

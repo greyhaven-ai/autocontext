@@ -6,7 +6,7 @@ from typing import Any
 from autocontext.extensions.hooks import HookBus, HookEvents
 from autocontext.harness.core.llm_client import LanguageModelClient
 from autocontext.harness.core.types import ModelResponse, RoleUsage
-from autocontext.providers.base import CompletionResult, LLMProvider
+from autocontext.providers.base import CompletionResult, LLMProvider, OutputSchema
 
 
 class HookedLanguageModelClient(LanguageModelClient):
@@ -135,6 +135,7 @@ class HookedLLMProvider(LLMProvider):
         model: str | None = None,
         temperature: float = 0.0,
         max_tokens: int = 4096,
+        output_schema: OutputSchema | None = None,
     ) -> CompletionResult:
         payload = {
             "provider": self.provider_name,
