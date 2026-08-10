@@ -94,18 +94,23 @@ const EXPECTED_CASE_IDS = {
   cost_estimation: ["default_auto_mode_totals", "with_local_artifacts_totals"],
 } as const satisfies Record<string, readonly string[]>;
 
+// Compared with .sort(), so this list must stay in sorted order.
 const EXPECTED_DIVERGENCE_CASE_IDS = [
   "explicit_override.mixed_case_provider_name",
   "explicit_override.whitespace_only_provider_name",
   "routing_off.unknown_role_model",
+  // AC-919 item 2. Every other fixture case supplies all 16 settings fields
+  // non-empty, so nothing reached the unset/empty layer -- the exact layer
+  // AC-912 rewrites. These five pin its before-state so that rewrite can be
+  // diffed rather than trusted.
+  "unset_settings.agent_provider_empty",
+  "unset_settings.blank_local_artifact",
+  "unset_settings.mlx_model_path_empty",
+  "unset_settings.role_model_empty_routing_off",
+  "unset_settings.tier_model_empty",
 ];
 
-const EXPECTED_ASSIGNMENT_KEYS = [
-  "cost_per_1k_tokens",
-  "model",
-  "provider_class",
-  "provider_type",
-];
+const EXPECTED_ASSIGNMENT_KEYS = ["cost_per_1k_tokens", "model", "provider_class", "provider_type"];
 
 const EXPECTED_GROUPS = Object.keys(EXPECTED_CASE_IDS).sort();
 
