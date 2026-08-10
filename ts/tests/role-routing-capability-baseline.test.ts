@@ -87,7 +87,14 @@ function settingsFor(baseline: Baseline, testCase: BaselineCase<unknown>): RoleR
   for (const [pythonKey, value] of Object.entries(baseline.settings_defaults)) {
     settings[SETTINGS_KEY_MAP[pythonKey]] = testCase.settings[pythonKey] ?? value;
   }
-  return settings;
+  // The case's `set_fields` is what Python feeds to model_fields_set; the same
+  // list in TypeScript spelling is what feeds configuredFields. Without it every
+  // field would look deliberately chosen, because the values above include the
+  // schema defaults -- which is exactly the confusion AC-911 removes.
+  return {
+    ...settings,
+    configuredFields: testCase.set_fields.map((key) => SETTINGS_KEY_MAP[key]).sort(),
+  };
 }
 
 function route(baseline: Baseline, testCase: BaselineCase<Assignment>): Assignment {

@@ -23,11 +23,15 @@ export function buildSettingsAssemblyInput(opts?: {
   const env = opts?.env ?? process.env;
   const defaults = opts?.defaults ?? getDefaultSettingsRecord();
 
-  return {
+  const assembled = {
     ...applyPreset(presetName),
     ...buildProjectConfigSettingsOverrides(opts?.projectConfig ?? null),
     ...resolveEnvSettingsOverrides(defaults, env),
   };
+
+  // Record what was actually supplied before the schema fills in its defaults.
+  // This is the only point where that distinction still exists (AC-911).
+  return { ...assembled, configuredFields: Object.keys(assembled).sort() };
 }
 
 export function parseAppSettings(input: Record<string, unknown>): AppSettings {

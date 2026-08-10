@@ -21,14 +21,42 @@ COST_PER_1K_TOKENS: Final[dict[str, float]] = {
 
 DEFAULT_ROUTING_TABLE: Final[dict[str, list[str]]] = {
     "analyst": ["mid_tier", "local"],
-    "architect": ["frontier"],
+    "architect": ["frontier", "local"],
     "coach": ["mid_tier", "local"],
     "competitor": ["frontier", "local"],
-    "curator": ["fast"],
+    "curator": ["fast", "local"],
     "translator": ["fast", "local"],
 }
 
-LOCAL_ELIGIBLE_ROLES: Final[frozenset[str]] = frozenset(["competitor", "analyst", "coach", "translator"])
+CAPABILITY_RANK: Final[dict[str, int]] = {
+    "fast": 0,
+    "frontier": 2,
+    "mid_tier": 1,
+}
+
+LOCAL_ARTIFACT_CAPABILITY: Final[str] = "frontier"
+
+PROVIDER_HOSTING: Final[dict[str, str]] = {
+    "agent_sdk": "remote",
+    "anthropic": "remote",
+    "deterministic": "local",
+    "mlx": "local",
+    "ollama": "local",
+    "openai": "remote",
+    "openai-compatible": "remote",
+    "openclaw": "remote",
+    "vllm": "local",
+}
+
+PROVIDER_DEFAULT_MODEL: Final[dict[str, str]] = {
+    "ollama": "llama3.1",
+    "openai": "gpt-4o",
+    "openai-compatible": "default",
+    "openrouter": "anthropic/claude-sonnet-4",
+    "vllm": "default",
+}
+
+MODEL_DEFAULT_PRESERVED_PROVIDERS: Final[frozenset[str]] = frozenset(["anthropic"])
 
 EXPLICIT_PROVIDER_CLASSES: Final[dict[str, str]] = {
     "agent_sdk": "frontier",
@@ -59,6 +87,7 @@ SETTINGS_KEYS: Final[dict[str, str]] = {
     "model_competitor": "modelCompetitor",
     "model_curator": "modelCurator",
     "model_translator": "modelTranslator",
+    "provider_capability": "providerCapability",
     "role_routing": "roleRouting",
     "tier_haiku_model": "tierHaikuModel",
     "tier_opus_model": "tierOpusModel",

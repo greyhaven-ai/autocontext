@@ -13,11 +13,31 @@
     "competitor": ["frontier", "local"],
     "analyst": ["mid_tier", "local"],
     "coach": ["mid_tier", "local"],
-    "architect": ["frontier"],
-    "curator": ["fast"],
+    "architect": ["frontier", "local"],
+    "curator": ["fast", "local"],
     "translator": ["fast", "local"]
   },
-  "local_eligible_roles": ["competitor", "analyst", "coach", "translator"],
+  "capability_rank": { "fast": 0, "mid_tier": 1, "frontier": 2 },
+  "local_artifact_capability": "frontier",
+  "provider_default_model": {
+    "ollama": "llama3.1",
+    "openai": "gpt-4o",
+    "openai-compatible": "gpt-4o",
+    "vllm": "default",
+    "openrouter": "anthropic/claude-sonnet-4"
+  },
+  "model_default_preserved_providers": ["anthropic"],
+  "provider_hosting": {
+    "agent_sdk": "remote",
+    "anthropic": "remote",
+    "deterministic": "local",
+    "mlx": "local",
+    "ollama": "local",
+    "openai": "remote",
+    "openai-compatible": "remote",
+    "openclaw": "remote",
+    "vllm": "local"
+  },
   "explicit_provider_classes": {
     "anthropic": "frontier",
     "mlx": "local",
@@ -46,7 +66,8 @@
     "tier_sonnet_model": "tierSonnetModel",
     "tier_haiku_model": "tierHaikuModel",
     "mlx_model_path": "mlxModelPath",
-    "local_model": "localModel"
+    "local_model": "localModel",
+    "provider_capability": "providerCapability"
   },
   "class_model_fields": {
     "frontier": { "python": "tier_opus_model", "typescript": "tierOpusModel" },

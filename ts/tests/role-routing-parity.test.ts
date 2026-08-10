@@ -64,7 +64,7 @@ const EXPECTED_CASE_IDS = {
     "competitor_frontier",
     "analyst_mid_tier",
     "coach_mid_tier",
-    "architect_frontier_no_local_fallback",
+    "architect_frontier_when_no_artifact_is_available",
     "curator_fast",
     "translator_fast",
     "unknown_role_falls_back_to_mid_tier",
@@ -88,8 +88,8 @@ const EXPECTED_CASE_IDS = {
   ],
   local_artifacts: [
     "eligible_role_prefers_local_artifact",
-    "architect_ignores_local_artifact",
-    "curator_ignores_local_artifact",
+    "architect_uses_local_artifact",
+    "curator_uses_local_artifact",
     "local_artifact_ignored_when_routing_off",
   ],
   cost_estimation: ["default_auto_mode_totals", "with_local_artifacts_totals"],
@@ -144,6 +144,9 @@ const BASE_SETTINGS_BY_PYTHON_KEY: Record<string, string> = {
   // role/tier slot for non-anthropic providers, a different contract than this
   // fixture pins.
   local_model: "",
+  // AC-911. Empty means capability is inferred from the transport, which is the
+  // state every case in this fixture was recorded under.
+  provider_capability: "",
 };
 
 function baseSettings(): RoleRoutingSettings {
@@ -151,7 +154,13 @@ function baseSettings(): RoleRoutingSettings {
   for (const [pythonKey, value] of Object.entries(BASE_SETTINGS_BY_PYTHON_KEY)) {
     settings[SETTINGS_KEY_MAP[pythonKey]] = value;
   }
-  return settings;
+  // Mirrors the Python replay's `model_fields_set = every field`: within this
+  // fixture's contract every setting is configured, so per-provider default
+  // resolution (AC-912) must not treat any of them as untouched.
+  return {
+    ...settings,
+    configuredFields: Object.values(SETTINGS_KEY_MAP).slice().sort(),
+  };
 }
 
 function settingsFromFixture(overrides: Record<string, string> = {}): RoleRoutingSettings {

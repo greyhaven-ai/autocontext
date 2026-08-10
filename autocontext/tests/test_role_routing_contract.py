@@ -31,11 +31,30 @@ def test_contract_is_internally_consistent() -> None:
         assert not unknown, f"role {role!r} prefers unknown classes: {sorted(unknown)}"
 
     routed_roles = set(contract["default_routing_table"])
-    unknown_local = set(contract["local_eligible_roles"]) - routed_roles
-    assert not unknown_local, f"local_eligible_roles names unrouted roles: {sorted(unknown_local)}"
 
     unknown_explicit = set(contract["explicit_provider_classes"].values()) - classes
     assert not unknown_explicit, f"explicit_provider_classes names unknown classes: {sorted(unknown_explicit)}"
+
+    # AC-911 replaced the local_eligible_roles list with a derivation, so what
+    # needs checking is that the inputs to that derivation are coherent: every
+    # ranked name is a real class, every transport has both a capability and a
+    # hosting, and the artifact's declared capability is itself rankable.
+    unknown_ranked = set(contract["capability_rank"]) - classes
+    assert not unknown_ranked, f"capability_rank names unknown classes: {sorted(unknown_ranked)}"
+
+    assert contract["local_artifact_capability"] in contract["capability_rank"], (
+        "local_artifact_capability must be rankable, or eligibility cannot be derived"
+    )
+
+    # Exact-set equality, not a subset check in either direction: a transport
+    # with a capability but no hosting silently bills as remote, and one with a
+    # hosting but no capability silently takes the mid-tier fallback.
+    assert set(contract["provider_hosting"]) == set(contract["explicit_provider_classes"]), (
+        "provider_hosting and explicit_provider_classes must cover the same transports"
+    )
+
+    unknown_hosting = set(contract["provider_hosting"].values()) - {"local", "remote"}
+    assert not unknown_hosting, f"provider_hosting names unknown locations: {sorted(unknown_hosting)}"
 
     missing_role_fields = routed_roles - set(contract["role_model_fields"])
     assert not missing_role_fields, f"roles with no model field mapping: {sorted(missing_role_fields)}"

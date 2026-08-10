@@ -294,6 +294,15 @@ export const AppSettingsSchema = z.object({
   blobStoreRepo: z.string().default(""),
   blobStoreCacheMaxMb: z.number().int().min(1).default(500),
   blobStoreMinSizeBytes: z.number().int().min(0).default(1024),
+  // AC-911: the settings keys that actually came from a preset, project config,
+  // or the environment -- everything else in this object is a schema default.
+  // The TypeScript counterpart of pydantic's `model_fields_set`, which per-provider
+  // model resolution needs in order to tell "the user chose this" from "nobody
+  // touched it". Without it, zod has already substituted a Claude id by the time
+  // routing runs and the two cases are indistinguishable.
+  // Populated by buildSettingsAssemblyInput(); an empty array means nothing was
+  // configured, which is exactly true for AppSettingsSchema.parse({}).
+  configuredFields: z.array(z.string()).default([]),
 });
 
 export type AppSettings = z.infer<typeof AppSettingsSchema>;

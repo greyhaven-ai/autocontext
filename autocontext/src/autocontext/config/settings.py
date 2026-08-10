@@ -603,6 +603,7 @@ class AppSettings(WorkspaceInterpreterFields, OutputBudgetFields, BaseModel):
     )
     # Role routing (AC-204) -- "auto" or "off"
     role_routing: str = Field(default="off", description="Role routing mode: 'auto' or 'off'")
+    provider_capability: str = Field(default="", description="Self-hosted endpoint capability: frontier, mid_tier, fast (AC-911)")
     # Per-role provider overrides (AC-184) -- empty = use AUTOCONTEXT_AGENT_PROVIDER
     competitor_provider: str = Field(default="", description="Provider override for competitor role")
     analyst_provider: str = Field(default="", description="Provider override for analyst role")

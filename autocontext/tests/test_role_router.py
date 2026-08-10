@@ -1,4 +1,5 @@
 """Tests for AC-204: Capability- and cost-aware role routing."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -121,24 +122,48 @@ class TestDefaultRoutingTable:
 # ---------------------------------------------------------------------------
 
 
+_SETTINGS_FIELDS: dict[str, str] = {
+    "role_routing": "auto",
+    "agent_provider": "anthropic",
+    "competitor_provider": "",
+    "analyst_provider": "",
+    "coach_provider": "",
+    "architect_provider": "",
+    "model_competitor": "claude-sonnet-4-5-20250929",
+    "model_analyst": "claude-sonnet-4-5-20250929",
+    "model_coach": "claude-opus-4-6",
+    "model_architect": "claude-opus-4-6",
+    "model_translator": "claude-sonnet-4-5-20250929",
+    "model_curator": "claude-opus-4-6",
+    "tier_haiku_model": "claude-haiku-4-5-20251001",
+    "tier_sonnet_model": "claude-sonnet-4-5-20250929",
+    "tier_opus_model": "claude-opus-4-6",
+    "mlx_model_path": "/tmp/distilled-model",
+    "local_model": "",
+    "provider_capability": "",
+}
+
+
 def _settings(**overrides: Any) -> MagicMock:
-    s = MagicMock()
-    s.role_routing = overrides.get("role_routing", "auto")
-    s.agent_provider = overrides.get("agent_provider", "anthropic")
-    s.competitor_provider = overrides.get("competitor_provider", "")
-    s.analyst_provider = overrides.get("analyst_provider", "")
-    s.coach_provider = overrides.get("coach_provider", "")
-    s.architect_provider = overrides.get("architect_provider", "")
-    s.model_competitor = overrides.get("model_competitor", "claude-sonnet-4-5-20250929")
-    s.model_analyst = overrides.get("model_analyst", "claude-sonnet-4-5-20250929")
-    s.model_coach = overrides.get("model_coach", "claude-opus-4-6")
-    s.model_architect = overrides.get("model_architect", "claude-opus-4-6")
-    s.model_translator = overrides.get("model_translator", "claude-sonnet-4-5-20250929")
-    s.model_curator = overrides.get("model_curator", "claude-opus-4-6")
-    s.tier_haiku_model = "claude-haiku-4-5-20251001"
-    s.tier_sonnet_model = "claude-sonnet-4-5-20250929"
-    s.tier_opus_model = "claude-opus-4-6"
-    s.mlx_model_path = overrides.get("mlx_model_path", "/tmp/distilled-model")
+    """A settings double specced to the fields routing may read (AC-911).
+
+    Previously a bare MagicMock, which returns a truthy auto-Mock for any
+    attribute a refactor newly reads. That is how a routing change can start
+    consuming a setting these tests never modelled and still look green: the
+    Mock flows through as if it were a real value. With a spec, an unlisted
+    field raises AttributeError and names itself.
+
+    ``model_fields_set`` reports every field, because this helper gives all of
+    them a concrete value: within these tests every setting is configured, so
+    per-provider default resolution (AC-912) must not treat any as untouched.
+    """
+    unknown = set(overrides) - set(_SETTINGS_FIELDS)
+    if unknown:
+        raise AssertionError(f"unknown settings override: {sorted(unknown)}")
+    s = MagicMock(spec=[*_SETTINGS_FIELDS, "model_fields_set"])
+    s.model_fields_set = frozenset(_SETTINGS_FIELDS)
+    for field, default in _SETTINGS_FIELDS.items():
+        setattr(s, field, overrides.get(field, default))
     return s
 
 
@@ -292,14 +317,50 @@ class TestRoleRouterLocalArtifacts:
         cfg = router.route("analyst", context=ctx)
         assert cfg.provider_class == ProviderClass.LOCAL
 
-    def test_architect_ignores_local_models(self) -> None:
-        """Architect needs frontier-class reasoning, should not be demoted to local."""
+    def test_architect_uses_local_artifact_under_the_declared_capability(self) -> None:
+        """AC-911 reverses this case deliberately; it used to assert FRONTIER.
+
+        The old assertion read "architect needs frontier-class reasoning, should
+        not be demoted to local" -- but competitor requires frontier too and did
+        use the artifact, so the two roles were treated differently for no
+        stated reason. Eligibility is now derived from the artifact's declared
+        capability, and the shipped declaration covers frontier, so architect
+        gets the local fallback the issue asks for.
+        """
         from autocontext.agents.role_router import ProviderClass, RoleRouter, RoutingContext
 
         router = RoleRouter(_settings())
         ctx = RoutingContext(available_local_models=["model1"])
         cfg = router.route("architect", context=ctx)
-        assert cfg.provider_class == ProviderClass.FRONTIER
+        assert cfg.provider_class == ProviderClass.LOCAL
+
+    def test_local_eligibility_is_derived_not_enumerated(self) -> None:
+        """The derivation, checked against a rule rather than a copied answer.
+
+        Asserting the resulting set literally would pass just as well if the set
+        were still hardcoded, which is the thing AC-911 removes. This recomputes
+        it from the routing table and the declared artifact capability, so a
+        future edit that reintroduces a fixed list fails here.
+        """
+        from autocontext.agents import role_router as mod
+
+        rank = mod._CAPABILITY_RANK
+        expected = {
+            role
+            for role, prefs in mod.DEFAULT_ROUTING_TABLE.items()
+            if mod.ProviderClass.LOCAL in prefs
+            and rank[mod._LOCAL_ARTIFACT_CAPABILITY] >= rank[mod._role_minimum_capability(prefs)]
+        }
+        assert mod._LOCAL_ELIGIBLE_ROLES == expected
+        # Declaring a less capable artifact must narrow the set rather than
+        # leave it untouched, which is what "a function of declared capability"
+        # has to mean to be worth anything.
+        narrowed = {
+            role
+            for role, prefs in mod.DEFAULT_ROUTING_TABLE.items()
+            if mod.ProviderClass.LOCAL in prefs and rank[mod.ProviderClass.FAST] >= rank[mod._role_minimum_capability(prefs)]
+        }
+        assert narrowed < expected
 
 
 # ---------------------------------------------------------------------------

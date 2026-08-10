@@ -17,7 +17,8 @@
     "competitor_provider": "",
     "analyst_provider": "",
     "coach_provider": "",
-    "architect_provider": ""
+    "architect_provider": "",
+    "provider_capability": ""
   },
   "roles": ["competitor", "analyst", "coach", "architect", "curator", "translator"],
   "cases": {
@@ -285,13 +286,13 @@
         "provider_type": "ollama",
         "model": "llama3.1",
         "provider_class": "frontier",
-        "cost_per_1k_tokens": 0.015
+        "cost_per_1k_tokens": 0
       },
       "typescript": {
         "provider_type": "ollama",
-        "model": "claude-opus-4-6",
+        "model": "llama3.1",
         "provider_class": "frontier",
-        "cost_per_1k_tokens": 0.015
+        "cost_per_1k_tokens": 0
       }
     },
     "self_hosted.auto.ollama.architect": {
@@ -306,13 +307,13 @@
         "provider_type": "ollama",
         "model": "llama3.1",
         "provider_class": "frontier",
-        "cost_per_1k_tokens": 0.015
+        "cost_per_1k_tokens": 0
       },
       "typescript": {
         "provider_type": "ollama",
-        "model": "claude-opus-4-6",
+        "model": "llama3.1",
         "provider_class": "frontier",
-        "cost_per_1k_tokens": 0.015
+        "cost_per_1k_tokens": 0
       }
     },
     "self_hosted.auto.ollama.curator": {
@@ -327,13 +328,13 @@
         "provider_type": "ollama",
         "model": "llama3.1",
         "provider_class": "fast",
-        "cost_per_1k_tokens": 0.001
+        "cost_per_1k_tokens": 0
       },
       "typescript": {
         "provider_type": "ollama",
-        "model": "claude-haiku-4-5-20251001",
+        "model": "llama3.1",
         "provider_class": "fast",
-        "cost_per_1k_tokens": 0.001
+        "cost_per_1k_tokens": 0
       }
     },
     "self_hosted.off.ollama.competitor": {
@@ -348,13 +349,13 @@
         "provider_type": "ollama",
         "model": "llama3.1",
         "provider_class": "mid_tier",
-        "cost_per_1k_tokens": 0.003
+        "cost_per_1k_tokens": 0
       },
       "typescript": {
         "provider_type": "ollama",
-        "model": "claude-sonnet-4-5-20250929",
+        "model": "llama3.1",
         "provider_class": "mid_tier",
-        "cost_per_1k_tokens": 0.003
+        "cost_per_1k_tokens": 0
       }
     },
     "self_hosted.off.ollama.architect": {
@@ -369,13 +370,13 @@
         "provider_type": "ollama",
         "model": "llama3.1",
         "provider_class": "mid_tier",
-        "cost_per_1k_tokens": 0.003
+        "cost_per_1k_tokens": 0
       },
       "typescript": {
         "provider_type": "ollama",
-        "model": "claude-opus-4-6",
+        "model": "llama3.1",
         "provider_class": "mid_tier",
-        "cost_per_1k_tokens": 0.003
+        "cost_per_1k_tokens": 0
       }
     },
     "self_hosted.off.ollama.curator": {
@@ -390,13 +391,13 @@
         "provider_type": "ollama",
         "model": "llama3.1",
         "provider_class": "mid_tier",
-        "cost_per_1k_tokens": 0.003
+        "cost_per_1k_tokens": 0
       },
       "typescript": {
         "provider_type": "ollama",
-        "model": "claude-opus-4-6",
+        "model": "llama3.1",
         "provider_class": "mid_tier",
-        "cost_per_1k_tokens": 0.003
+        "cost_per_1k_tokens": 0
       }
     },
     "self_hosted.auto.vllm.competitor": {
@@ -411,13 +412,13 @@
         "provider_type": "vllm",
         "model": "default",
         "provider_class": "frontier",
-        "cost_per_1k_tokens": 0.015
+        "cost_per_1k_tokens": 0
       },
       "typescript": {
         "provider_type": "vllm",
-        "model": "claude-opus-4-6",
+        "model": "default",
         "provider_class": "frontier",
-        "cost_per_1k_tokens": 0.015
+        "cost_per_1k_tokens": 0
       }
     },
     "self_hosted.auto.vllm.architect": {
@@ -432,13 +433,13 @@
         "provider_type": "vllm",
         "model": "default",
         "provider_class": "frontier",
-        "cost_per_1k_tokens": 0.015
+        "cost_per_1k_tokens": 0
       },
       "typescript": {
         "provider_type": "vllm",
-        "model": "claude-opus-4-6",
+        "model": "default",
         "provider_class": "frontier",
-        "cost_per_1k_tokens": 0.015
+        "cost_per_1k_tokens": 0
       }
     },
     "self_hosted.auto.vllm.curator": {
@@ -453,13 +454,13 @@
         "provider_type": "vllm",
         "model": "default",
         "provider_class": "fast",
-        "cost_per_1k_tokens": 0.001
+        "cost_per_1k_tokens": 0
       },
       "typescript": {
         "provider_type": "vllm",
-        "model": "claude-haiku-4-5-20251001",
+        "model": "default",
         "provider_class": "fast",
-        "cost_per_1k_tokens": 0.001
+        "cost_per_1k_tokens": 0
       }
     },
     "self_hosted.off.vllm.competitor": {
@@ -474,13 +475,13 @@
         "provider_type": "vllm",
         "model": "default",
         "provider_class": "mid_tier",
-        "cost_per_1k_tokens": 0.003
+        "cost_per_1k_tokens": 0
       },
       "typescript": {
         "provider_type": "vllm",
-        "model": "claude-sonnet-4-5-20250929",
+        "model": "default",
         "provider_class": "mid_tier",
-        "cost_per_1k_tokens": 0.003
+        "cost_per_1k_tokens": 0
       }
     },
     "self_hosted.off.vllm.architect": {
@@ -495,13 +496,13 @@
         "provider_type": "vllm",
         "model": "default",
         "provider_class": "mid_tier",
-        "cost_per_1k_tokens": 0.003
+        "cost_per_1k_tokens": 0
       },
       "typescript": {
         "provider_type": "vllm",
-        "model": "claude-opus-4-6",
+        "model": "default",
         "provider_class": "mid_tier",
-        "cost_per_1k_tokens": 0.003
+        "cost_per_1k_tokens": 0
       }
     },
     "self_hosted.off.vllm.curator": {
@@ -516,13 +517,13 @@
         "provider_type": "vllm",
         "model": "default",
         "provider_class": "mid_tier",
-        "cost_per_1k_tokens": 0.003
+        "cost_per_1k_tokens": 0
       },
       "typescript": {
         "provider_type": "vllm",
-        "model": "claude-opus-4-6",
+        "model": "default",
         "provider_class": "mid_tier",
-        "cost_per_1k_tokens": 0.003
+        "cost_per_1k_tokens": 0
       }
     },
     "local_artifact.anthropic.competitor": {
@@ -609,16 +610,16 @@
         "availableLocalModels": ["/models/distilled"]
       },
       "python": {
-        "provider_type": "anthropic",
-        "model": "claude-opus-4-6",
-        "provider_class": "frontier",
-        "cost_per_1k_tokens": 0.015
+        "provider_type": "mlx",
+        "model": "/models/distilled",
+        "provider_class": "local",
+        "cost_per_1k_tokens": 0
       },
       "typescript": {
-        "provider_type": "anthropic",
-        "model": "claude-opus-4-6",
-        "provider_class": "frontier",
-        "cost_per_1k_tokens": 0.015
+        "provider_type": "mlx",
+        "model": "/models/distilled",
+        "provider_class": "local",
+        "cost_per_1k_tokens": 0
       }
     },
     "local_artifact.anthropic.curator": {
@@ -633,16 +634,16 @@
         "availableLocalModels": ["/models/distilled"]
       },
       "python": {
-        "provider_type": "anthropic",
-        "model": "claude-haiku-4-5-20251001",
-        "provider_class": "fast",
-        "cost_per_1k_tokens": 0.001
+        "provider_type": "mlx",
+        "model": "/models/distilled",
+        "provider_class": "local",
+        "cost_per_1k_tokens": 0
       },
       "typescript": {
-        "provider_type": "anthropic",
-        "model": "claude-haiku-4-5-20251001",
-        "provider_class": "fast",
-        "cost_per_1k_tokens": 0.001
+        "provider_type": "mlx",
+        "model": "/models/distilled",
+        "provider_class": "local",
+        "cost_per_1k_tokens": 0
       }
     },
     "local_artifact.anthropic.translator": {
@@ -753,16 +754,16 @@
         "availableLocalModels": ["/models/distilled"]
       },
       "python": {
-        "provider_type": "ollama",
-        "model": "llama3.1",
-        "provider_class": "frontier",
-        "cost_per_1k_tokens": 0.015
+        "provider_type": "mlx",
+        "model": "/models/distilled",
+        "provider_class": "local",
+        "cost_per_1k_tokens": 0
       },
       "typescript": {
-        "provider_type": "ollama",
-        "model": "claude-opus-4-6",
-        "provider_class": "frontier",
-        "cost_per_1k_tokens": 0.015
+        "provider_type": "mlx",
+        "model": "/models/distilled",
+        "provider_class": "local",
+        "cost_per_1k_tokens": 0
       }
     },
     "local_artifact.ollama.curator": {
@@ -777,16 +778,16 @@
         "availableLocalModels": ["/models/distilled"]
       },
       "python": {
-        "provider_type": "ollama",
-        "model": "llama3.1",
-        "provider_class": "fast",
-        "cost_per_1k_tokens": 0.001
+        "provider_type": "mlx",
+        "model": "/models/distilled",
+        "provider_class": "local",
+        "cost_per_1k_tokens": 0
       },
       "typescript": {
-        "provider_type": "ollama",
-        "model": "claude-haiku-4-5-20251001",
-        "provider_class": "fast",
-        "cost_per_1k_tokens": 0.001
+        "provider_type": "mlx",
+        "model": "/models/distilled",
+        "provider_class": "local",
+        "cost_per_1k_tokens": 0
       }
     },
     "local_artifact.ollama.translator": {
@@ -824,13 +825,13 @@
         "provider_type": "ollama",
         "model": "llama3.1",
         "provider_class": "mid_tier",
-        "cost_per_1k_tokens": 0.003
+        "cost_per_1k_tokens": 0
       },
       "typescript": {
         "provider_type": "ollama",
-        "model": "claude-opus-4-6",
+        "model": "llama3.1",
         "provider_class": "mid_tier",
-        "cost_per_1k_tokens": 0.003
+        "cost_per_1k_tokens": 0
       }
     },
     "explicit_override.architect_to_vllm": {
@@ -844,13 +845,13 @@
         "provider_type": "vllm",
         "model": "default",
         "provider_class": "mid_tier",
-        "cost_per_1k_tokens": 0.003
+        "cost_per_1k_tokens": 0
       },
       "typescript": {
         "provider_type": "vllm",
-        "model": "claude-opus-4-6",
+        "model": "default",
         "provider_class": "mid_tier",
-        "cost_per_1k_tokens": 0.003
+        "cost_per_1k_tokens": 0
       }
     },
     "explicit_override.competitor_to_mlx": {
@@ -860,6 +861,226 @@
         "mlx_model_path": "/models/pinned-local"
       },
       "set_fields": ["competitor_provider", "mlx_model_path"],
+      "context": {},
+      "python": {
+        "provider_type": "mlx",
+        "model": "/models/pinned-local",
+        "provider_class": "local",
+        "cost_per_1k_tokens": 0
+      },
+      "typescript": {
+        "provider_type": "mlx",
+        "model": "/models/pinned-local",
+        "provider_class": "local",
+        "cost_per_1k_tokens": 0
+      }
+    },
+    "declared.vllm_frontier.architect": {
+      "role": "architect",
+      "settings": {
+        "agent_provider": "vllm",
+        "role_routing": "auto",
+        "provider_capability": "frontier"
+      },
+      "set_fields": ["agent_provider", "provider_capability", "role_routing"],
+      "context": {},
+      "python": {
+        "provider_type": "vllm",
+        "model": "default",
+        "provider_class": "frontier",
+        "cost_per_1k_tokens": 0
+      },
+      "typescript": {
+        "provider_type": "vllm",
+        "model": "default",
+        "provider_class": "frontier",
+        "cost_per_1k_tokens": 0
+      }
+    },
+    "declared.ollama_frontier.architect": {
+      "role": "architect",
+      "settings": {
+        "agent_provider": "ollama",
+        "role_routing": "auto",
+        "provider_capability": "frontier"
+      },
+      "set_fields": ["agent_provider", "provider_capability", "role_routing"],
+      "context": {},
+      "python": {
+        "provider_type": "ollama",
+        "model": "llama3.1",
+        "provider_class": "frontier",
+        "cost_per_1k_tokens": 0
+      },
+      "typescript": {
+        "provider_type": "ollama",
+        "model": "llama3.1",
+        "provider_class": "frontier",
+        "cost_per_1k_tokens": 0
+      }
+    },
+    "declared.vllm_fast.architect": {
+      "role": "architect",
+      "settings": {
+        "agent_provider": "vllm",
+        "role_routing": "auto",
+        "provider_capability": "fast"
+      },
+      "set_fields": ["agent_provider", "provider_capability", "role_routing"],
+      "context": {},
+      "python": {
+        "provider_type": "vllm",
+        "model": "default",
+        "provider_class": "fast",
+        "cost_per_1k_tokens": 0
+      },
+      "typescript": {
+        "provider_type": "vllm",
+        "model": "default",
+        "provider_class": "fast",
+        "cost_per_1k_tokens": 0
+      }
+    },
+    "declared.vllm_fast.competitor": {
+      "role": "competitor",
+      "settings": {
+        "agent_provider": "vllm",
+        "role_routing": "auto",
+        "provider_capability": "fast"
+      },
+      "set_fields": ["agent_provider", "provider_capability", "role_routing"],
+      "context": {},
+      "python": {
+        "provider_type": "vllm",
+        "model": "default",
+        "provider_class": "fast",
+        "cost_per_1k_tokens": 0
+      },
+      "typescript": {
+        "provider_type": "vllm",
+        "model": "default",
+        "provider_class": "fast",
+        "cost_per_1k_tokens": 0
+      }
+    },
+    "declared.vllm_frontier.curator": {
+      "role": "curator",
+      "settings": {
+        "agent_provider": "vllm",
+        "role_routing": "auto",
+        "provider_capability": "frontier"
+      },
+      "set_fields": ["agent_provider", "provider_capability", "role_routing"],
+      "context": {},
+      "python": {
+        "provider_type": "vllm",
+        "model": "default",
+        "provider_class": "fast",
+        "cost_per_1k_tokens": 0
+      },
+      "typescript": {
+        "provider_type": "vllm",
+        "model": "default",
+        "provider_class": "fast",
+        "cost_per_1k_tokens": 0
+      }
+    },
+    "declared.off.vllm_frontier.competitor": {
+      "role": "competitor",
+      "settings": {
+        "agent_provider": "vllm",
+        "role_routing": "off",
+        "provider_capability": "frontier"
+      },
+      "set_fields": ["agent_provider", "provider_capability", "role_routing"],
+      "context": {},
+      "python": {
+        "provider_type": "vllm",
+        "model": "default",
+        "provider_class": "frontier",
+        "cost_per_1k_tokens": 0
+      },
+      "typescript": {
+        "provider_type": "vllm",
+        "model": "default",
+        "provider_class": "frontier",
+        "cost_per_1k_tokens": 0
+      }
+    },
+    "declared.override.architect_to_vllm_frontier": {
+      "role": "architect",
+      "settings": {
+        "architect_provider": "vllm",
+        "provider_capability": "frontier"
+      },
+      "set_fields": ["architect_provider", "provider_capability"],
+      "context": {},
+      "python": {
+        "provider_type": "vllm",
+        "model": "default",
+        "provider_class": "frontier",
+        "cost_per_1k_tokens": 0
+      },
+      "typescript": {
+        "provider_type": "vllm",
+        "model": "default",
+        "provider_class": "frontier",
+        "cost_per_1k_tokens": 0
+      }
+    },
+    "declared.anthropic_fast.competitor": {
+      "role": "competitor",
+      "settings": {
+        "agent_provider": "anthropic",
+        "role_routing": "auto",
+        "provider_capability": "fast"
+      },
+      "set_fields": ["agent_provider", "provider_capability", "role_routing"],
+      "context": {},
+      "python": {
+        "provider_type": "anthropic",
+        "model": "claude-opus-4-6",
+        "provider_class": "frontier",
+        "cost_per_1k_tokens": 0.015
+      },
+      "typescript": {
+        "provider_type": "anthropic",
+        "model": "claude-opus-4-6",
+        "provider_class": "frontier",
+        "cost_per_1k_tokens": 0.015
+      }
+    },
+    "declared.off.anthropic_fast.coach": {
+      "role": "coach",
+      "settings": {
+        "agent_provider": "anthropic",
+        "role_routing": "off",
+        "provider_capability": "fast"
+      },
+      "set_fields": ["agent_provider", "provider_capability", "role_routing"],
+      "context": {},
+      "python": {
+        "provider_type": "anthropic",
+        "model": "claude-opus-4-6",
+        "provider_class": "frontier",
+        "cost_per_1k_tokens": 0.015
+      },
+      "typescript": {
+        "provider_type": "anthropic",
+        "model": "claude-opus-4-6",
+        "provider_class": "frontier",
+        "cost_per_1k_tokens": 0.015
+      }
+    },
+    "declared.mlx_frontier.competitor": {
+      "role": "competitor",
+      "settings": {
+        "agent_provider": "mlx",
+        "role_routing": "off",
+        "mlx_model_path": "/models/pinned-local",
+        "provider_capability": "frontier"
+      },
+      "set_fields": ["agent_provider", "mlx_model_path", "provider_capability", "role_routing"],
       "context": {},
       "python": {
         "provider_type": "mlx",
@@ -903,13 +1124,13 @@
       "context": {},
       "python": {
         "all_frontier_per_1k_tokens": 0.09,
-        "savings_vs_all_frontier": 0.052,
-        "total_per_1k_tokens": 0.038
+        "savings_vs_all_frontier": 0.09,
+        "total_per_1k_tokens": 0
       },
       "typescript": {
         "all_frontier_per_1k_tokens": 0.09,
-        "savings_vs_all_frontier": 0.052,
-        "total_per_1k_tokens": 0.038
+        "savings_vs_all_frontier": 0.09,
+        "total_per_1k_tokens": 0
       }
     },
     "cost.vllm": {
@@ -921,13 +1142,13 @@
       "context": {},
       "python": {
         "all_frontier_per_1k_tokens": 0.09,
-        "savings_vs_all_frontier": 0.052,
-        "total_per_1k_tokens": 0.038
+        "savings_vs_all_frontier": 0.09,
+        "total_per_1k_tokens": 0
       },
       "typescript": {
         "all_frontier_per_1k_tokens": 0.09,
-        "savings_vs_all_frontier": 0.052,
-        "total_per_1k_tokens": 0.038
+        "savings_vs_all_frontier": 0.09,
+        "total_per_1k_tokens": 0
       }
     },
     "cost.openai": {
@@ -957,13 +1178,13 @@
       "context": {},
       "python": {
         "all_frontier_per_1k_tokens": 0.09,
-        "savings_vs_all_frontier": 0.052,
-        "total_per_1k_tokens": 0.038
+        "savings_vs_all_frontier": 0.09,
+        "total_per_1k_tokens": 0
       },
       "typescript": {
         "all_frontier_per_1k_tokens": 0.09,
-        "savings_vs_all_frontier": 0.052,
-        "total_per_1k_tokens": 0.038
+        "savings_vs_all_frontier": 0.09,
+        "total_per_1k_tokens": 0
       }
     }
   }

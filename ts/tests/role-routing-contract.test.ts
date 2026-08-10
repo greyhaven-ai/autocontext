@@ -7,6 +7,7 @@ import {
   buildRoleProviderBundle,
   estimateRoleRoutingCost,
   routeRoleProvider,
+  LOCAL_ELIGIBLE_ROLES,
   type RoleProviderSettings,
 } from "../src/providers/index.js";
 
@@ -14,9 +15,11 @@ type RoleRoutingContract = {
   class_model_fields: Record<string, Record<string, string>>;
   cost_per_1k_tokens: Record<string, number>;
   default_routing_table: Record<string, string[]>;
+  capability_rank: Record<string, number>;
   explicit_provider_classes: Record<string, string>;
-  local_eligible_roles: string[];
+  local_artifact_capability: string;
   mode_values: string[];
+  provider_hosting: Record<string, string>;
   provider_classes: string[];
   role_model_fields: Record<string, Record<string, string>>;
   supported_provider_types: Record<string, { packages: string[] }>;
@@ -90,13 +93,36 @@ describe("contract self-consistency", () => {
     }
 
     const routedRoles = new Set(Object.keys(CONTRACT.default_routing_table));
-    const unknownLocal = CONTRACT.local_eligible_roles.filter((role) => !routedRoles.has(role));
-    expect(unknownLocal, "local_eligible_roles names unrouted roles").toEqual([]);
 
     const unknownExplicit = Object.values(CONTRACT.explicit_provider_classes).filter(
       (providerClass) => !classes.has(providerClass),
     );
     expect(unknownExplicit, "explicit_provider_classes names unknown classes").toEqual([]);
+
+    // AC-911 replaced the local_eligible_roles list with a derivation, so what
+    // needs checking is that the inputs to that derivation are coherent.
+    const unknownRanked = Object.keys(CONTRACT.capability_rank).filter(
+      (providerClass) => !classes.has(providerClass),
+    );
+    expect(unknownRanked, "capability_rank names unknown classes").toEqual([]);
+
+    expect(
+      CONTRACT.local_artifact_capability in CONTRACT.capability_rank,
+      "local_artifact_capability must be rankable, or eligibility cannot be derived",
+    ).toBe(true);
+
+    // Exact-set equality, not a subset check in either direction: a transport
+    // with a capability but no hosting silently bills as remote, and one with a
+    // hosting but no capability silently takes the mid-tier fallback.
+    expect(
+      Object.keys(CONTRACT.provider_hosting).sort(),
+      "provider_hosting and explicit_provider_classes must cover the same transports",
+    ).toEqual(Object.keys(CONTRACT.explicit_provider_classes).sort());
+
+    const unknownHosting = Object.values(CONTRACT.provider_hosting).filter(
+      (location) => location !== "local" && location !== "remote",
+    );
+    expect(unknownHosting, "provider_hosting names unknown locations").toEqual([]);
 
     const missingRoleFields = [...routedRoles].filter(
       (role) => !(role in CONTRACT.role_model_fields),
@@ -131,7 +157,10 @@ describe("shared role routing contract", () => {
       providerType: "deterministic",
       providerClass: "fast",
       model: "competitor-role-model",
-      estimatedCostPer1kTokens: 0.001,
+      // AC-911: cost follows hosting, not capability. "deterministic" runs in
+      // process, so it bills nothing however it is classified. This asserted
+      // 0.001 -- the fast-tier API rate -- for a provider that makes no API call.
+      estimatedCostPer1kTokens: 0,
     });
   });
 
@@ -172,7 +201,7 @@ describe("shared role routing contract", () => {
     });
   });
 
-  it("prefers available local artifacts for eligible roles and leaves frontier roles alone", () => {
+  it("prefers available local artifacts for every role the artifact is capable enough to serve", () => {
     const context = { availableLocalModels: ["/models/distilled-grid-ctf"] };
 
     expect(routeRoleProvider(baseSettings(), "analyst", context)).toMatchObject({
@@ -182,12 +211,25 @@ describe("shared role routing contract", () => {
       estimatedCostPer1kTokens: 0.0,
       executableInTypeScript: false,
     });
+    // AC-911 reverses architect deliberately. This asserted that architect
+    // stayed on the default provider, but competitor requires frontier too and
+    // did take the artifact, so the two roles differed for no stated reason.
+    // Eligibility is now derived from the artifact's declared capability.
     expect(routeRoleProvider(baseSettings(), "architect", context)).toMatchObject({
-      providerType: "deterministic",
-      providerClass: "frontier",
-      model: "opus-tier-model",
-      executableInTypeScript: true,
+      providerType: "mlx",
+      providerClass: "local",
+      model: "/models/distilled-grid-ctf",
+      executableInTypeScript: false,
     });
+    // A role whose preferences do not list "local" still never takes the
+    // artifact, so eligibility remains a property of the routing table and not
+    // merely of the artifact being present.
+    expect(LOCAL_ELIGIBLE_ROLES.slice().sort()).toEqual(
+      Object.entries(CONTRACT.default_routing_table)
+        .filter(([, preferences]) => preferences.includes("local"))
+        .map(([role]) => role)
+        .sort(),
+    );
   });
 
   it("AC-873: applies a providerOverride when settings.agentProvider has no per-role setting", () => {
@@ -268,8 +310,11 @@ describe("shared role routing contract", () => {
     expect(Object.keys(estimate.roles).sort()).toEqual(
       Object.keys(CONTRACT.default_routing_table).sort(),
     );
-    expect(estimate.totalPer1kTokens).toBeGreaterThan(0);
-    expect(estimate.savingsVsAllFrontier).toBeGreaterThanOrEqual(0);
+    // AC-911: not toBeGreaterThan(0). These settings use "deterministic", which
+    // is locally hosted, so the correct total is exactly zero -- and a run that
+    // costs nothing is the outcome this whole epic exists to make reachable.
+    expect(estimate.totalPer1kTokens).toBe(0);
+    expect(estimate.savingsVsAllFrontier).toBe(estimate.allFrontierPer1kTokens);
   });
 });
 

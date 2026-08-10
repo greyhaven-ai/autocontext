@@ -27,7 +27,7 @@ _EXPECTED_CASE_IDS: dict[str, frozenset[str]] = {
             "competitor_frontier",
             "analyst_mid_tier",
             "coach_mid_tier",
-            "architect_frontier_no_local_fallback",
+            "architect_frontier_when_no_artifact_is_available",
             "curator_fast",
             "translator_fast",
             "unknown_role_falls_back_to_mid_tier",
@@ -57,8 +57,8 @@ _EXPECTED_CASE_IDS: dict[str, frozenset[str]] = {
     "local_artifacts": frozenset(
         {
             "eligible_role_prefers_local_artifact",
-            "architect_ignores_local_artifact",
-            "curator_ignores_local_artifact",
+            "architect_uses_local_artifact",
+            "curator_uses_local_artifact",
             "local_artifact_ignored_when_routing_off",
         },
     ),
@@ -121,6 +121,9 @@ _SETTINGS_DEFAULTS: dict[str, str] = {
     # unset role/tier slot for non-anthropic providers, which is a different
     # contract than this fixture pins.
     "local_model": "",
+    # AC-911. Empty means capability is inferred from the transport, which is
+    # the state every case in this fixture was recorded under.
+    "provider_capability": "",
 }
 
 # The fixture uses the TypeScript spelling for context fields so one file drives
