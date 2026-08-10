@@ -57,12 +57,12 @@ type SchemaArtifact = {
 };
 
 function loadArtifact(): SchemaArtifact {
-  // Resolved from this module rather than cwd so it works from the package,
-  // the test runner, and a consumer's node_modules alike.
+  // Resolve from this module rather than cwd. Builds copy the artifact into
+  // dist/, while source execution falls back to the repository's docs/ tree.
   const here = dirname(fileURLToPath(import.meta.url));
   const candidates = [
+    join(here, "..", "role-output-schemas.json"),
     join(here, "..", "..", "..", "docs", "role-output-schemas.json"),
-    join(here, "..", "..", "docs", "role-output-schemas.json"),
   ];
   for (const path of candidates) {
     try {

@@ -94,6 +94,9 @@ jobs:
       - name: TypeScript package boundary checks
         working-directory: ts
         run: npx vitest run tests/package-topology.test.ts tests/package-boundaries.test.ts
+      - name: Role output schema drift check
+        working-directory: autocontext
+        run: uv run --frozen python scripts/generate_role_output_schemas.py --check
       - name: Python/TS schema sync drift check
         working-directory: ts
         run: uv run --frozen --project ../autocontext -- npm run check:schemas

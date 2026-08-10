@@ -78,6 +78,21 @@ export interface OpenAICompatibleProviderOpts {
   model?: string;
 }
 
+function isUnsupportedResponseFormatError(status: number, body: string): boolean {
+  if (![400, 404, 422].includes(status)) return false;
+
+  const message = body.toLowerCase();
+  const mentionsSchema = message.includes("response_format") || message.includes("json_schema");
+  const rejectsSchema = [
+    "unsupported",
+    "not supported",
+    "unknown",
+    "unrecognized",
+    "invalid",
+  ].some((token) => message.includes(token));
+  return mentionsSchema && rejectsSchema;
+}
+
 export function createOpenAICompatibleProvider(opts: OpenAICompatibleProviderOpts): LLMProvider {
   const defaultModel = opts.model || "gpt-4o";
   const baseUrl = (opts.baseUrl ?? "https://api.openai.com/v1").replace(/\/+$/, "");
@@ -124,11 +139,14 @@ export function createOpenAICompatibleProvider(opts: OpenAICompatibleProviderOpt
       let res = await post(constrained);
 
       if (!res.ok && constrained) {
-        // This endpoint does not understand response_format. Retry once
-        // without it rather than failing the run: a backend with no
-        // constrained-decoding support must still work, and the result then
-        // reports constrained=false so the caller can tell "the schema was
-        // enforced" from "the schema was requested and silently not applied".
+        const body = await res.text();
+        if (!isUnsupportedResponseFormatError(res.status, body)) {
+          throw new ProviderError(`OpenAI API error ${res.status}: ${body.slice(0, 200)}`);
+        }
+
+        // This endpoint explicitly rejected response_format. Retry once
+        // without it so a backend with no constrained-decoding support still
+        // works, and report that the returned text was unconstrained.
         constrained = false;
         res = await post(false);
       }
