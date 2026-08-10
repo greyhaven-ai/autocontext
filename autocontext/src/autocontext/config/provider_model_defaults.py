@@ -39,6 +39,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Protocol
 
+from autocontext.agents import role_routing_contract_generated as _contract
+
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from collections.abc import Set as AbstractSet
 
@@ -58,17 +60,16 @@ class _SupportsFieldsSet(Protocol):
 
 # Provider -> the model id to use when a role/tier slot was never configured.
 # Keep in sync with providers/registry.py's create_provider() fallbacks.
-PROVIDER_DEFAULT_MODEL: dict[str, str] = {
-    "ollama": "llama3.1",
-    "openai": "gpt-4o",
-    "openai-compatible": "gpt-4o",
-    "vllm": "default",
-    "openrouter": "anthropic/claude-sonnet-4",
-}
+#
+# Sourced from docs/role-routing-contract.json (AC-911) rather than declared
+# here. AC-912 shipped this table in Python only, and the TypeScript engine went
+# on sending Claude ids to every self-hosted endpoint with nothing to catch it;
+# moving it into the shared contract is what stops the two from drifting again.
+PROVIDER_DEFAULT_MODEL: dict[str, str] = dict(_contract.PROVIDER_DEFAULT_MODEL)
 
 # Providers whose defaults must not change. Anthropic is the shipped default
 # and its per-role tiering is the behavior AC-912 promises to preserve exactly.
-_PRESERVED_PROVIDERS = frozenset({"anthropic"})
+_PRESERVED_PROVIDERS = frozenset(_contract.MODEL_DEFAULT_PRESERVED_PROVIDERS)
 
 
 def resolve_model_default(

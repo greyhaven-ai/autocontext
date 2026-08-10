@@ -26,6 +26,40 @@ const PY_OUT = join(
 
 const contract = JSON.parse(readFileSync(CONTRACT_FILE, "utf-8"));
 
+// Contract-level invariants. These are cheap here and expensive later: a transport
+// present in one map and absent from the other resolves to a silent default deep
+// inside a routing decision, where it looks like a routing bug rather than a typo
+// in a JSON file.
+const sameKeys = (a, b) => {
+  const left = Object.keys(a).sort();
+  const right = Object.keys(b).sort();
+  return left.length === right.length && left.every((key, i) => key === right[i]);
+};
+if (!sameKeys(contract.provider_hosting, contract.explicit_provider_classes)) {
+  throw new Error(
+    "role-routing contract: provider_hosting and explicit_provider_classes must cover " +
+      "exactly the same transports. Every transport has both a capability and a hosting.",
+  );
+}
+const rankedClasses = Object.keys(contract.capability_rank).sort();
+const inferredClasses = [...new Set(Object.values(contract.explicit_provider_classes))].sort();
+const unranked = inferredClasses.filter(
+  (name) => !rankedClasses.includes(name) && name !== "local" && name !== "code_policy",
+);
+if (unranked.length > 0) {
+  throw new Error(
+    `role-routing contract: capability classes ${JSON.stringify(unranked)} are inferred for ` +
+      "some transport but have no capability_rank, so they cannot be compared against a " +
+      "role's requirement.",
+  );
+}
+if (!(contract.local_artifact_capability in contract.capability_rank)) {
+  throw new Error(
+    `role-routing contract: local_artifact_capability ` +
+      `${JSON.stringify(contract.local_artifact_capability)} has no capability_rank entry.`,
+  );
+}
+
 // Deterministic ordering everywhere: regenerating must never produce a spurious diff.
 const sortedKeys = (obj) => Object.keys(obj).sort();
 
@@ -96,6 +130,8 @@ const tsSource = `/* eslint-disable */
 // Regenerate with: node scripts/generate-role-routing-contract.mjs
 // CI gate: node scripts/generate-role-routing-contract.mjs --check
 
+import type { StringSettingKey } from "./role-routing.js";
+
 export const PROVIDER_CLASSES = ${tsArray([...contract.provider_classes])} as const;
 
 export type ProviderClass = (typeof PROVIDER_CLASSES)[number];
@@ -110,16 +146,49 @@ export const DEFAULT_ROLE_ROUTING_TABLE = {
 ${jsonObjOfArrays(contract.default_routing_table, "  ")}
 } as const;
 
-// Kept in the contract's own declaration order, like the per-role preference arrays
-// above: order is semantically meaningful for neither, but this makes the two
-// consistent, and a committed contract file needs no sort for determinism.
-export const LOCAL_ELIGIBLE_ROLES = ${tsArray([...contract.local_eligible_roles])} as const;
+// Capability ordering, so a role's requirement can be compared against what an
+// endpoint declares. Only the API-backed classes are ranked: "local" names an
+// artifact slot rather than a capability, and "code_policy" is not model-backed.
+export const CAPABILITY_RANK: Record<string, number> = {
+${jsonObj(contract.capability_rank, "  ")}
+};
+
+// What a distilled local artifact is treated as being capable of. Declared rather
+// than assumed, because it is the value that decides which roles an artifact may
+// serve once eligibility is derived instead of hardcoded.
+export const LOCAL_ARTIFACT_CAPABILITY = ${JSON.stringify(contract.local_artifact_capability)};
+
+// Conservative hosting fallback for endpoints without an explicit declaration.
+// Endpoint settings override this transport-based value because generic transports
+// such as openai-compatible may be local and vllm may be hosted remotely.
+export const PROVIDER_HOSTING: Record<string, string> = {
+${jsonObj(contract.provider_hosting, "  ")}
+};
+
+// Model id to send when the user has configured none and the provider is not one
+// whose defaults are preserved. Declared once here because AC-912 shipped this
+// table in Python only, and the TypeScript engine went on sending Claude ids to
+// every self-hosted endpoint with nothing to catch it.
+export const PROVIDER_DEFAULT_MODEL: Record<string, string> = {
+${jsonObj(contract.provider_default_model, "  ")}
+};
+
+// Providers whose shipped model defaults must never be rewritten.
+export const MODEL_DEFAULT_PRESERVED_PROVIDERS = ${tsArray([...contract.model_default_preserved_providers])} as const;
 
 // Typed against ProviderClass (not Record<string, string>) so a contract value that
 // isn't a declared provider class fails to compile here, instead of surfacing later as
 // a mistyped ProviderClass deep inside routing logic.
 export const EXPLICIT_PROVIDER_CLASS: Record<string, ProviderClass> = {
 ${jsonObj(contract.explicit_provider_classes, "  ")}
+};
+
+// Python settings key -> the RoleRoutingSettings field holding the same value.
+// Typed against \`StringSettingKey\` so a contract entry naming a field TypeScript
+// does not have fails to compile here, rather than silently dropping that setting
+// when a test replays a shared fixture.
+export const SETTINGS_KEY_MAP: Record<string, StringSettingKey> = {
+${jsonObj(contract.settings_keys, "  ")}
 };
 `;
 
@@ -145,10 +214,33 @@ DEFAULT_ROUTING_TABLE: Final[dict[str, list[str]]] = {
 ${pyObjOfArrays(contract.default_routing_table, "    ")}
 }
 
-LOCAL_ELIGIBLE_ROLES: Final[frozenset[str]] = frozenset(${pyList([...contract.local_eligible_roles])})
+CAPABILITY_RANK: Final[dict[str, int]] = {
+${sortedKeys(contract.capability_rank)
+  .map((k) => `    ${JSON.stringify(k)}: ${contract.capability_rank[k]},`)
+  .join("\n")}
+}
+
+LOCAL_ARTIFACT_CAPABILITY: Final[str] = ${JSON.stringify(contract.local_artifact_capability)}
+
+PROVIDER_HOSTING: Final[dict[str, str]] = {
+${pyObj(contract.provider_hosting, "    ")}
+}
+
+PROVIDER_DEFAULT_MODEL: Final[dict[str, str]] = {
+${pyObj(contract.provider_default_model, "    ")}
+}
+
+MODEL_DEFAULT_PRESERVED_PROVIDERS: Final[frozenset[str]] = frozenset(${pyList([...contract.model_default_preserved_providers])})
 
 EXPLICIT_PROVIDER_CLASSES: Final[dict[str, str]] = {
 ${pyObj(contract.explicit_provider_classes, "    ")}
+}
+
+# Python settings key -> the TypeScript field holding the same value. Python reads
+# the keys; TypeScript reads the values. Declared once so neither package can add a
+# routing-relevant setting the other never learns about.
+SETTINGS_KEYS: Final[dict[str, str]] = {
+${pyObj(contract.settings_keys, "    ")}
 }
 `;
 

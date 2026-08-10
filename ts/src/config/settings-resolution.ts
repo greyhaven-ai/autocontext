@@ -86,6 +86,10 @@ export function resolveEnvSettingsOverrides(
   const overrides: Record<string, unknown> = {};
 
   for (const key of Object.keys(defaults)) {
+    // Bookkeeping about which settings were configured, not a setting itself:
+    // reading it from the environment would let a stray env var claim that
+    // fields the user never set were chosen deliberately.
+    if (key === "configuredFields") continue;
     const envKeys = getSettingEnvKeys(key);
     const envValue = envKeys
       .map((envKey) => env[envKey])

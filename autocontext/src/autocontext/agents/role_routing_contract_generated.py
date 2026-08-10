@@ -21,14 +21,42 @@ COST_PER_1K_TOKENS: Final[dict[str, float]] = {
 
 DEFAULT_ROUTING_TABLE: Final[dict[str, list[str]]] = {
     "analyst": ["mid_tier", "local"],
-    "architect": ["frontier"],
+    "architect": ["frontier", "local"],
     "coach": ["mid_tier", "local"],
     "competitor": ["frontier", "local"],
-    "curator": ["fast"],
+    "curator": ["fast", "local"],
     "translator": ["fast", "local"],
 }
 
-LOCAL_ELIGIBLE_ROLES: Final[frozenset[str]] = frozenset(["competitor", "analyst", "coach", "translator"])
+CAPABILITY_RANK: Final[dict[str, int]] = {
+    "fast": 0,
+    "frontier": 2,
+    "mid_tier": 1,
+}
+
+LOCAL_ARTIFACT_CAPABILITY: Final[str] = "frontier"
+
+PROVIDER_HOSTING: Final[dict[str, str]] = {
+    "agent_sdk": "remote",
+    "anthropic": "remote",
+    "deterministic": "local",
+    "mlx": "local",
+    "ollama": "local",
+    "openai": "remote",
+    "openai-compatible": "remote",
+    "openclaw": "remote",
+    "vllm": "local",
+}
+
+PROVIDER_DEFAULT_MODEL: Final[dict[str, str]] = {
+    "ollama": "llama3.1",
+    "openai": "gpt-4o",
+    "openai-compatible": "gpt-4o",
+    "openrouter": "anthropic/claude-sonnet-4",
+    "vllm": "default",
+}
+
+MODEL_DEFAULT_PRESERVED_PROVIDERS: Final[frozenset[str]] = frozenset(["anthropic"])
 
 EXPLICIT_PROVIDER_CLASSES: Final[dict[str, str]] = {
     "agent_sdk": "frontier",
@@ -40,4 +68,37 @@ EXPLICIT_PROVIDER_CLASSES: Final[dict[str, str]] = {
     "openai-compatible": "mid_tier",
     "openclaw": "frontier",
     "vllm": "mid_tier",
+}
+
+# Python settings key -> the TypeScript field holding the same value. Python reads
+# the keys; TypeScript reads the values. Declared once so neither package can add a
+# routing-relevant setting the other never learns about.
+SETTINGS_KEYS: Final[dict[str, str]] = {
+    "agent_provider": "agentProvider",
+    "analyst_provider": "analystProvider",
+    "analyst_provider_capability": "analystProviderCapability",
+    "analyst_provider_hosting": "analystProviderHosting",
+    "architect_provider": "architectProvider",
+    "architect_provider_capability": "architectProviderCapability",
+    "architect_provider_hosting": "architectProviderHosting",
+    "coach_provider": "coachProvider",
+    "coach_provider_capability": "coachProviderCapability",
+    "coach_provider_hosting": "coachProviderHosting",
+    "competitor_provider": "competitorProvider",
+    "competitor_provider_capability": "competitorProviderCapability",
+    "competitor_provider_hosting": "competitorProviderHosting",
+    "local_model": "localModel",
+    "mlx_model_path": "mlxModelPath",
+    "model_analyst": "modelAnalyst",
+    "model_architect": "modelArchitect",
+    "model_coach": "modelCoach",
+    "model_competitor": "modelCompetitor",
+    "model_curator": "modelCurator",
+    "model_translator": "modelTranslator",
+    "provider_capability": "providerCapability",
+    "provider_hosting": "providerHosting",
+    "role_routing": "roleRouting",
+    "tier_haiku_model": "tierHaikuModel",
+    "tier_opus_model": "tierOpusModel",
+    "tier_sonnet_model": "tierSonnetModel",
 }

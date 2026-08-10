@@ -6,6 +6,7 @@ import {
   getDefaultSettingsRecord,
   parseAppSettings,
 } from "../src/config/settings-assembly-workflow.js";
+import { routeRoleProvider } from "../src/providers/role-routing.js";
 
 describe("settings assembly workflow", () => {
   it("exposes the same default settings record as the schema", () => {
@@ -44,5 +45,70 @@ describe("settings assembly workflow", () => {
     const settings = parseAppSettings(input);
     expect(settings.agentProvider).toBe("deterministic");
     expect(settings.piNoContextFiles).toBe(true);
+  });
+
+  it("loads endpoint declarations and the local model through the production assembly path", () => {
+    const input = buildSettingsAssemblyInput({
+      env: {
+        AUTOCONTEXT_AGENT_PROVIDER: "openai-compatible",
+        AUTOCONTEXT_LOCAL_MODEL: "qwen-test",
+        AUTOCONTEXT_PROVIDER_CAPABILITY: "fast",
+        AUTOCONTEXT_PROVIDER_HOSTING: "local",
+        AUTOCONTEXT_COMPETITOR_PROVIDER_CAPABILITY: "mid_tier",
+        AUTOCONTEXT_COMPETITOR_PROVIDER_HOSTING: "remote",
+      },
+      defaults: getDefaultSettingsRecord(),
+    });
+    const settings = parseAppSettings(input);
+
+    expect(settings.configuredFields).toEqual(
+      expect.arrayContaining([
+        "agentProvider",
+        "localModel",
+        "providerCapability",
+        "providerHosting",
+        "competitorProviderCapability",
+        "competitorProviderHosting",
+      ]),
+    );
+    expect(settings.localModel).toBe("qwen-test");
+    expect(settings.providerCapability).toBe("fast");
+    expect(settings.providerHosting).toBe("local");
+    expect(settings.competitorProviderCapability).toBe("mid_tier");
+    expect(settings.competitorProviderHosting).toBe("remote");
+    expect(
+      routeRoleProvider(settings, "competitor", {
+        providerOverride: "openai-compatible",
+        preferProviderOverride: true,
+      }),
+    ).toMatchObject({
+      providerClass: "fast",
+      model: "qwen-test",
+      estimatedCostPer1kTokens: 0,
+    });
+  });
+
+  it("uses the OpenAI-compatible factory model default through production settings", () => {
+    const settings = parseAppSettings(
+      buildSettingsAssemblyInput({
+        env: {
+          AUTOCONTEXT_AGENT_PROVIDER: "openai-compatible",
+          AUTOCONTEXT_ROLE_ROUTING: "auto",
+        },
+        defaults: getDefaultSettingsRecord(),
+      }),
+    );
+
+    expect(
+      routeRoleProvider(settings, "competitor", {
+        providerOverride: "openai-compatible",
+        preferProviderOverride: true,
+      }).model,
+    ).toBe("gpt-4o");
+  });
+
+  it("rejects invalid endpoint declarations", () => {
+    expect(() => AppSettingsSchema.parse({ providerCapability: "turbo" })).toThrow();
+    expect(() => AppSettingsSchema.parse({ providerHosting: "somewhere" })).toThrow();
   });
 });

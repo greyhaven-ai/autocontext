@@ -32,14 +32,70 @@ export const DEFAULT_ROLE_ROUTING_TABLE = _contract.DEFAULT_ROLE_ROUTING_TABLE s
   readonly ProviderClass[]
 >;
 
-export const LOCAL_ELIGIBLE_ROLES =
-  _contract.LOCAL_ELIGIBLE_ROLES satisfies readonly GenerationRole[];
+export const CAPABILITY_RANK = _contract.CAPABILITY_RANK;
+
+export const LOCAL_ARTIFACT_CAPABILITY = _contract.LOCAL_ARTIFACT_CAPABILITY;
+
+// Conservative fallback for endpoints without explicit hosting. Unknown
+// transports count as remote so an unrecognized name never reports zero cost.
+export const PROVIDER_HOSTING = _contract.PROVIDER_HOSTING;
+
+type ProviderHosting = "local" | "remote";
+
+function parseDeclaredHosting(
+  value: string | undefined,
+  settingName: string,
+): ProviderHosting | undefined {
+  const declared = clean(value)?.toLowerCase();
+  if (declared === undefined) return undefined;
+  if (declared !== "local" && declared !== "remote") {
+    throw new Error(`${settingName}=${JSON.stringify(value)} is invalid; expected local or remote`);
+  }
+  return declared;
+}
+
+function hostingFor(providerType: string, declaredHosting: string | undefined): ProviderHosting {
+  const declared = parseDeclaredHosting(declaredHosting, "provider hosting");
+  if (declared !== undefined) return declared;
+  return PROVIDER_HOSTING[providerType.trim().toLowerCase()] === "local" ? "local" : "remote";
+}
+
+// The capability a role needs: its first API-backed preference.
+function roleMinimumCapability(preferences: readonly ProviderClass[]): ProviderClass | undefined {
+  return preferences.find((preference) => preference in CAPABILITY_RANK);
+}
+
+// Roles a local artifact may serve. Derived from the routing table and the
+// artifact's declared capability rather than enumerated (AC-911): a role is
+// eligible when it lists "local" as a preference and the artifact is at least as
+// capable as the role requires. Declaring the artifact less capable therefore
+// narrows this automatically, instead of requiring a second list to be edited in
+// step with the first.
+export const LOCAL_ELIGIBLE_ROLES: readonly string[] = Object.entries<readonly ProviderClass[]>(
+  DEFAULT_ROLE_ROUTING_TABLE,
+).flatMap(([role, preferences]) => {
+  if (!preferences.includes("local")) return [];
+  const minimum = roleMinimumCapability(preferences);
+  if (minimum === undefined) return [];
+  return CAPABILITY_RANK[LOCAL_ARTIFACT_CAPABILITY] >= CAPABILITY_RANK[minimum] ? [role] : [];
+});
 
 // Typed Record<string, ProviderClass> in the generated module itself (not
 // Record<string, string>), so a contract value that isn't a declared provider class
 // fails to compile there instead of surfacing later as a mistyped ProviderClass deep
 // inside routing logic.
 export const EXPLICIT_PROVIDER_CLASS = _contract.EXPLICIT_PROVIDER_CLASS;
+
+export const PROVIDER_DEFAULT_MODEL = _contract.PROVIDER_DEFAULT_MODEL;
+
+export const MODEL_DEFAULT_PRESERVED_PROVIDERS = _contract.MODEL_DEFAULT_PRESERVED_PROVIDERS;
+
+// Python settings key -> the RoleRoutingSettings field holding the same value.
+// Typed in the generated module against `keyof RoleRoutingSettings`, so a contract
+// entry naming a field this package lacks fails to compile there. Exported because
+// the cross-language replays translate one shared fixture into both spellings and
+// must not hand-maintain a second copy of this mapping.
+export const SETTINGS_KEY_MAP = _contract.SETTINGS_KEY_MAP;
 
 const DEFAULT_ROLE_MODELS: Record<GenerationRole, string> = {
   competitor: "claude-sonnet-4-5-20250929",
@@ -67,7 +123,47 @@ export interface RoleRoutingSettings {
   tierSonnetModel?: string;
   tierHaikuModel?: string;
   mlxModelPath?: string;
+  /**
+   * Single model id filling every role/tier slot the user has not configured, for
+   * providers that are not Anthropic. Python's counterpart is `local_model`
+   * (AC-912). Declared here so the shared contract's SETTINGS_KEY_MAP can name it
+   * and neither package can carry a routing setting the other has never heard of.
+   */
+  localModel?: string;
+  /**
+   * Capability class this endpoint declares: "frontier", "mid_tier", or "fast".
+   * Applies only to locally hosted transports, where inferring capability from the
+   * transport name is what AC-911 retires. Empty means fall back to inference.
+   */
+  providerCapability?: string;
+  /** Hosting for the default endpoint. Empty falls back to transport inference. */
+  providerHosting?: string;
+  competitorProviderCapability?: string;
+  analystProviderCapability?: string;
+  coachProviderCapability?: string;
+  architectProviderCapability?: string;
+  competitorProviderHosting?: string;
+  analystProviderHosting?: string;
+  coachProviderHosting?: string;
+  architectProviderHosting?: string;
+  /**
+   * Settings keys that came from a preset, project config, or the environment,
+   * as opposed to a schema default. The TypeScript counterpart of pydantic's
+   * `model_fields_set` (AC-911), populated by `buildSettingsAssemblyInput()`.
+   *
+   * Omitted entirely means "no information", and per-provider model resolution
+   * then leaves every configured value alone. That is deliberate: a caller that
+   * cannot say what the user chose must not have choices made on its behalf.
+   */
+  configuredFields?: readonly string[];
 }
+
+/**
+ * The settings keys that hold a plain string value. `configuredFields` is
+ * bookkeeping about the other keys rather than a setting, so excluding it lets
+ * a shared fixture assign string values through SETTINGS_KEY_MAP without a cast.
+ */
+export type StringSettingKey = Exclude<keyof RoleRoutingSettings, "configuredFields">;
 
 export interface RoleRoutingContext {
   availableLocalModels?: readonly string[];
@@ -146,37 +242,200 @@ function roleSpecificProvider(role: string, settings: RoleRoutingSettings): stri
   }
 }
 
-function roleSpecificModel(role: string, settings: RoleRoutingSettings): string {
+function roleSpecificCapability(role: string, settings: RoleRoutingSettings): string | undefined {
   switch (role) {
     case "competitor":
-      return clean(settings.modelCompetitor) ?? DEFAULT_ROLE_MODELS.competitor;
+      return clean(settings.competitorProviderCapability);
     case "analyst":
-      return clean(settings.modelAnalyst) ?? DEFAULT_ROLE_MODELS.analyst;
+      return clean(settings.analystProviderCapability);
     case "coach":
-      return clean(settings.modelCoach) ?? DEFAULT_ROLE_MODELS.coach;
+      return clean(settings.coachProviderCapability);
     case "architect":
-      return clean(settings.modelArchitect) ?? DEFAULT_ROLE_MODELS.architect;
-    case "curator":
-      return clean(settings.modelCurator) ?? DEFAULT_ROLE_MODELS.curator;
-    case "translator":
-      return clean(settings.modelTranslator) ?? DEFAULT_ROLE_MODELS.translator;
+      return clean(settings.architectProviderCapability);
     default:
-      return clean(settings.tierSonnetModel) ?? "claude-sonnet-4-5-20250929";
+      return undefined;
   }
 }
 
-function tierModel(providerClass: ProviderClass, settings: RoleRoutingSettings): string {
+function roleSpecificHosting(role: string, settings: RoleRoutingSettings): string | undefined {
+  switch (role) {
+    case "competitor":
+      return clean(settings.competitorProviderHosting);
+    case "analyst":
+      return clean(settings.analystProviderHosting);
+    case "coach":
+      return clean(settings.coachProviderHosting);
+    case "architect":
+      return clean(settings.architectProviderHosting);
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * The model to send when a role/tier slot was never configured (AC-912, ported
+ * to TypeScript by AC-911).
+ *
+ * Python distinguishes "the user chose this" from "nobody touched it" via
+ * pydantic's `model_fields_set`. TypeScript needs the same signal and cannot
+ * infer it from the value: `AppSettingsSchema` has already substituted
+ * "claude-opus-4-6" by the time routing runs, so an unset field and a
+ * deliberate Claude choice look identical. `settings.configuredFields` carries
+ * that distinction across, recorded by `buildSettingsAssemblyInput()` before
+ * the schema defaults are applied.
+ *
+ * When `configuredFields` is absent the caller cannot say what was chosen, so
+ * nothing is rewritten and behavior is exactly what it was before AC-911. An
+ * explicit choice always wins, and providers in
+ * MODEL_DEFAULT_PRESERVED_PROVIDERS are never rewritten, so Anthropic routing
+ * is byte-identical either way.
+ */
+/**
+ * The settings fields that hold a model id. Naming this set (rather than using
+ * `keyof RoleRoutingSettings`) keeps `settings[field]` typed as `string |
+ * undefined`, since `configuredFields` is the one non-string member.
+ */
+type ModelFieldKey =
+  | "modelCompetitor"
+  | "modelAnalyst"
+  | "modelCoach"
+  | "modelArchitect"
+  | "modelCurator"
+  | "modelTranslator"
+  | "tierOpusModel"
+  | "tierSonnetModel"
+  | "tierHaikuModel";
+
+function resolveModelDefault(
+  settings: RoleRoutingSettings,
+  providerType: string,
+  fieldName: ModelFieldKey,
+  configured: string | undefined,
+  shippedDefault: string,
+): string {
+  const fallback = clean(configured) ?? shippedDefault;
+  if (settings.configuredFields === undefined) return fallback;
+  if (settings.configuredFields.includes(fieldName)) return fallback;
+
+  const normalized = providerType.trim().toLowerCase();
+  if ((MODEL_DEFAULT_PRESERVED_PROVIDERS as readonly string[]).includes(normalized)) {
+    return fallback;
+  }
+
+  const localModel = clean(settings.localModel);
+  if (localModel) return localModel;
+
+  return PROVIDER_DEFAULT_MODEL[normalized] ?? fallback;
+}
+
+function roleSpecificModel(
+  role: string,
+  settings: RoleRoutingSettings,
+  providerType: string,
+): string {
+  const resolve = (field: ModelFieldKey, shippedDefault: string): string =>
+    resolveModelDefault(settings, providerType, field, settings[field], shippedDefault);
+  switch (role) {
+    case "competitor":
+      return resolve("modelCompetitor", DEFAULT_ROLE_MODELS.competitor);
+    case "analyst":
+      return resolve("modelAnalyst", DEFAULT_ROLE_MODELS.analyst);
+    case "coach":
+      return resolve("modelCoach", DEFAULT_ROLE_MODELS.coach);
+    case "architect":
+      return resolve("modelArchitect", DEFAULT_ROLE_MODELS.architect);
+    case "curator":
+      return resolve("modelCurator", DEFAULT_ROLE_MODELS.curator);
+    case "translator":
+      return resolve("modelTranslator", DEFAULT_ROLE_MODELS.translator);
+    default:
+      return resolve("tierSonnetModel", "claude-sonnet-4-5-20250929");
+  }
+}
+
+function tierModel(
+  providerClass: ProviderClass,
+  settings: RoleRoutingSettings,
+  providerType: string,
+): string {
+  const resolve = (field: ModelFieldKey, shippedDefault: string): string =>
+    resolveModelDefault(settings, providerType, field, settings[field], shippedDefault);
   switch (providerClass) {
     case "frontier":
-      return clean(settings.tierOpusModel) ?? "claude-opus-4-6";
+      return resolve("tierOpusModel", "claude-opus-4-6");
     case "mid_tier":
     case "code_policy":
-      return clean(settings.tierSonnetModel) ?? "claude-sonnet-4-5-20250929";
+      return resolve("tierSonnetModel", "claude-sonnet-4-5-20250929");
     case "fast":
-      return clean(settings.tierHaikuModel) ?? "claude-haiku-4-5-20251001";
+      return resolve("tierHaikuModel", "claude-haiku-4-5-20251001");
     case "local":
+      // The artifact path has its own setting; it never falls back to a role or
+      // tier default, so provider-default resolution does not apply.
       return clean(settings.mlxModelPath) ?? "local";
   }
+}
+
+/** Parse and validate a capability declaration from a routing-settings boundary. */
+function parseDeclaredCapability(
+  value: string | undefined,
+  settingName: string,
+): ProviderClass | undefined {
+  const declared = clean(value)?.toLowerCase();
+  if (declared === undefined) return undefined;
+  if (!(declared in CAPABILITY_RANK)) {
+    throw new Error(
+      `${settingName}=${JSON.stringify(value)} is not a capability; expected fast, mid_tier, or frontier`,
+    );
+  }
+  return declared as ProviderClass;
+}
+
+/**
+ * Prefer an explicit capability for a locally hosted endpoint. Remote endpoints
+ * retain their transport fallback, and "local" remains the artifact-slot class.
+ */
+function effectiveCapability(
+  providerType: string,
+  inferred: ProviderClass,
+  declaredCapability: string | undefined,
+  declaredHosting: string | undefined,
+): ProviderClass {
+  const declared = parseDeclaredCapability(declaredCapability, "provider capability");
+  if (declared === undefined || inferred === "local") return inferred;
+  if (hostingFor(providerType, declaredHosting) !== "local") return inferred;
+  return declared;
+}
+
+/** Lower a requested capability to what the endpoint declares, never raise it. */
+function clampToDeclared(
+  settings: RoleRoutingSettings,
+  providerType: string,
+  requested: ProviderClass,
+): ProviderClass {
+  if (!(requested in CAPABILITY_RANK)) return requested;
+  const declared = effectiveCapability(
+    providerType,
+    requested,
+    settings.providerCapability,
+    settings.providerHosting,
+  );
+  if (!(declared in CAPABILITY_RANK)) return requested;
+  return CAPABILITY_RANK[declared] < CAPABILITY_RANK[requested] ? declared : requested;
+}
+
+/**
+ * Cost is a function of hosting, not capability (AC-911). Self-hosted inference
+ * has no per-token API cost, however capable the model behind it is. Keying this
+ * on capability is what made a fully self-hosted run report the same $/1k as an
+ * all-Anthropic one.
+ */
+function costFor(
+  providerClass: ProviderClass,
+  providerType: string,
+  declaredHosting: string | undefined,
+): number {
+  if (hostingFor(providerType, declaredHosting) === "local") return 0;
+  return PROVIDER_CLASS_COST_PER_1K_TOKENS[providerClass] ?? 0.003;
 }
 
 function executableInTypeScript(providerType: string): boolean {
@@ -188,6 +447,7 @@ function routedConfig(
   providerType: string,
   providerClass: ProviderClass,
   model: string,
+  declaredHosting?: string,
 ): RoutedProviderConfig {
   const executable = executableInTypeScript(providerType);
   return {
@@ -195,7 +455,7 @@ function routedConfig(
     providerType,
     providerClass,
     model,
-    estimatedCostPer1kTokens: PROVIDER_CLASS_COST_PER_1K_TOKENS[providerClass] ?? 0.003,
+    estimatedCostPer1kTokens: costFor(providerClass, providerType, declaredHosting),
     executableInTypeScript: executable,
     unsupportedReason: executable
       ? undefined
@@ -211,10 +471,20 @@ export function routeRoleProvider(
   const explicitProvider = roleSpecificProvider(role, settings);
   if (explicitProvider) {
     const providerType = normalizeProvider(explicitProvider);
-    const providerClass = EXPLICIT_PROVIDER_CLASS[providerType] ?? "frontier";
+    const inferred = EXPLICIT_PROVIDER_CLASS[providerType] ?? "frontier";
+    const declaredCapability = roleSpecificCapability(role, settings);
+    const declaredHosting = roleSpecificHosting(role, settings);
+    const providerClass = effectiveCapability(
+      providerType,
+      inferred,
+      declaredCapability,
+      declaredHosting,
+    );
     const model =
-      providerClass === "local" ? tierModel("local", settings) : roleSpecificModel(role, settings);
-    return routedConfig(role, providerType, providerClass, model);
+      providerClass === "local"
+        ? tierModel("local", settings, providerType)
+        : roleSpecificModel(role, settings, providerType);
+    return routedConfig(role, providerType, providerClass, model, declaredHosting);
   }
 
   const providerType = normalizeProvider(
@@ -223,12 +493,20 @@ export function routeRoleProvider(
       clean(context.providerOverride) ??
       settings.agentProvider,
   );
-  const providerClass = EXPLICIT_PROVIDER_CLASS[providerType] ?? "mid_tier";
+  const inferred = EXPLICIT_PROVIDER_CLASS[providerType] ?? "mid_tier";
+  const providerClass = effectiveCapability(
+    providerType,
+    inferred,
+    settings.providerCapability,
+    settings.providerHosting,
+  );
 
   if (settings.roleRouting !== "auto") {
     const model =
-      providerClass === "local" ? tierModel("local", settings) : roleSpecificModel(role, settings);
-    return routedConfig(role, providerType, providerClass, model);
+      providerClass === "local"
+        ? tierModel("local", settings, providerType)
+        : roleSpecificModel(role, settings, providerType);
+    return routedConfig(role, providerType, providerClass, model, settings.providerHosting);
   }
 
   const preferences = DEFAULT_ROLE_ROUTING_TABLE[role as GenerationRole] ?? ["mid_tier"];
@@ -240,10 +518,21 @@ export function routeRoleProvider(
     (LOCAL_ELIGIBLE_ROLES as readonly string[]).includes(role) &&
     preferences.some((preference) => preference === "local")
   ) {
-    return routedConfig(role, "mlx", "local", localModel);
+    return routedConfig(role, "mlx", "local", localModel, "local");
   }
 
-  return routedConfig(role, providerType, preferences[0], tierModel(preferences[0], settings));
+  // A role asks for a capability; an endpoint has one. Asking for frontier from
+  // an endpoint declared mid_tier does not make it frontier, so the request is
+  // clamped down to what the endpoint offers and both the tier model and the
+  // reported class follow the clamped value.
+  const effective = clampToDeclared(settings, providerType, preferences[0]);
+  return routedConfig(
+    role,
+    providerType,
+    effective,
+    tierModel(effective, settings, providerType),
+    settings.providerHosting,
+  );
 }
 
 export function estimateRoleRoutingCost(

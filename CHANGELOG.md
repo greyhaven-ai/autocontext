@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - TypeScript interactive runs now advertise `agent_progress_notes_v1` to transcript clients and emit concise, strict `agent_progress_note` updates for intent, discovery, decisions, verification, and blockers. Notes are safety-redacted and bounded before emission, may cite only earlier same-run durable action/artifact IDs, and replay with exact ordering and identity across reconnects and server restarts within the transcript's finite retention horizon. Python parity is deferred until it can provide the same durable transcript guarantees (AC-897).
+- Role routing now separates endpoint hosting from capability in both runtimes. Default and role-specific endpoints can declare `local`/`remote` hosting and a local maximum capability (`fast`, `mid_tier`, or `frontier`); routing cost and automatic model tiers honor those declarations, while unset values retain conservative transport inference (AC-911).
 
 ### Fixed
 

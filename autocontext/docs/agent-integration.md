@@ -608,6 +608,7 @@ autoctx run my_task --json
 # Ollama (local, no API key needed)
 AUTOCONTEXT_AGENT_PROVIDER=ollama \
 AUTOCONTEXT_LOCAL_MODEL=qwen3:32b \
+AUTOCONTEXT_PROVIDER_CAPABILITY=frontier \
 AUTOCONTEXT_JUDGE_PROVIDER=ollama \
 autoctx run my_task --json
 
@@ -616,6 +617,8 @@ AUTOCONTEXT_AGENT_PROVIDER=openai-compatible \
 AUTOCONTEXT_AGENT_BASE_URL=http://localhost:8080/v1 \
 AUTOCONTEXT_AGENT_API_KEY=hermes-key \
 AUTOCONTEXT_AGENT_DEFAULT_MODEL=hermes-3-llama-3.1-8b \
+AUTOCONTEXT_PROVIDER_HOSTING=local \
+AUTOCONTEXT_PROVIDER_CAPABILITY=mid_tier \
 autoctx run my_task --json
 
 # Hermes for both agent and judge
@@ -623,6 +626,8 @@ AUTOCONTEXT_AGENT_PROVIDER=openai-compatible \
 AUTOCONTEXT_AGENT_BASE_URL=http://localhost:8080/v1 \
 AUTOCONTEXT_AGENT_API_KEY=hermes-key \
 AUTOCONTEXT_AGENT_DEFAULT_MODEL=hermes-3-llama-3.1-8b \
+AUTOCONTEXT_PROVIDER_HOSTING=local \
+AUTOCONTEXT_PROVIDER_CAPABILITY=mid_tier \
 AUTOCONTEXT_JUDGE_PROVIDER=openai-compatible \
 AUTOCONTEXT_JUDGE_BASE_URL=http://localhost:8080/v1 \
 AUTOCONTEXT_JUDGE_API_KEY=hermes-key \
@@ -655,6 +660,8 @@ ANTHROPIC_API_KEY=sk-ant-primary \
 AUTOCONTEXT_COMPETITOR_PROVIDER=openai-compatible \
 AUTOCONTEXT_COMPETITOR_API_KEY=sk-role \
 AUTOCONTEXT_COMPETITOR_BASE_URL=http://localhost:8000/v1 \
+AUTOCONTEXT_COMPETITOR_PROVIDER_HOSTING=local \
+AUTOCONTEXT_COMPETITOR_PROVIDER_CAPABILITY=mid_tier \
 autoctx run my_task --json
 ```
 
@@ -668,6 +675,9 @@ Key environment variables:
 | `AUTOCONTEXT_AGENT_API_KEY`                                          | Global agent API key override (or use provider-native env vars such as `ANTHROPIC_API_KEY`)                                                                                                                                                                                                         |
 | `AUTOCONTEXT_AGENT_BASE_URL`                                         | Global base URL for OpenAI-compatible agent endpoints                                                                                                                                                                                                                                               |
 | `AUTOCONTEXT_LOCAL_MODEL`                                            | One model id for every otherwise-unset role/tier slot on non-Anthropic providers. Explicit `AUTOCONTEXT_MODEL_<ROLE>` and `AUTOCONTEXT_TIER_<TIER>_MODEL` values win; otherwise known provider defaults apply (`ollama=llama3.1`, `openai`/`openai-compatible=gpt-4o`, `vllm=default`). Works with role routing both `off` and `auto`. |
+| `AUTOCONTEXT_PROVIDER_HOSTING`                                       | Hosting for the default endpoint: `local` or `remote`. Empty uses conservative transport inference. Set this explicitly for generic transports such as `openai-compatible`, or when a normally local transport such as `vllm` is hosted remotely. |
+| `AUTOCONTEXT_PROVIDER_CAPABILITY`                                    | Maximum capability served by a locally hosted default endpoint: `fast`, `mid_tier`, or `frontier`. Automatic tier selection is clamped to this value. Ignored for endpoints resolved as remote. |
+| `AUTOCONTEXT_<ROLE>_PROVIDER_HOSTING` / `AUTOCONTEXT_<ROLE>_PROVIDER_CAPABILITY` | Endpoint declarations for an explicit competitor, analyst, coach, or architect provider. These do not inherit the default endpoint's declarations. |
 | `AUTOCONTEXT_COMPETITOR_API_KEY` / `AUTOCONTEXT_COMPETITOR_BASE_URL` | Optional competitor-specific credential and endpoint override                                                                                                                                                                                                                                       |
 | `AUTOCONTEXT_ANALYST_API_KEY` / `AUTOCONTEXT_ANALYST_BASE_URL`       | Optional analyst-specific credential and endpoint override                                                                                                                                                                                                                                          |
 | `AUTOCONTEXT_COACH_API_KEY` / `AUTOCONTEXT_COACH_BASE_URL`           | Optional coach-specific credential and endpoint override                                                                                                                                                                                                                                            |

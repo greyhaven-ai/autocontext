@@ -13,6 +13,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
+  SETTINGS_KEY_MAP,
   estimateRoleRoutingCost,
   routeRoleProvider,
   type RoleRoutingSettings,
@@ -63,7 +64,7 @@ const EXPECTED_CASE_IDS = {
     "competitor_frontier",
     "analyst_mid_tier",
     "coach_mid_tier",
-    "architect_frontier_no_local_fallback",
+    "architect_frontier_when_no_artifact_is_available",
     "curator_fast",
     "translator_fast",
     "unknown_role_falls_back_to_mid_tier",
@@ -87,8 +88,8 @@ const EXPECTED_CASE_IDS = {
   ],
   local_artifacts: [
     "eligible_role_prefers_local_artifact",
-    "architect_ignores_local_artifact",
-    "curator_ignores_local_artifact",
+    "architect_uses_local_artifact",
+    "curator_uses_local_artifact",
     "local_artifact_ignored_when_routing_off",
   ],
   cost_estimation: ["default_auto_mode_totals", "with_local_artifacts_totals"],
@@ -117,46 +118,57 @@ const EXPECTED_GROUPS = Object.keys(EXPECTED_CASE_IDS).sort();
 // Fixture groups whose cases are single routeRoleProvider() calls compared field by field.
 const ROUTE_GROUPS = Object.keys(EXPECTED_CASE_IDS).filter((group) => group !== "cost_estimation");
 
-// The fixture uses Python snake_case settings keys. Map them to the camelCase
-// fields RoleRoutingSettings expects, so one fixture drives both languages.
-const SETTINGS_KEY_MAP: Record<string, keyof RoleRoutingSettings> = {
-  role_routing: "roleRouting",
-  agent_provider: "agentProvider",
-  competitor_provider: "competitorProvider",
-  analyst_provider: "analystProvider",
-  coach_provider: "coachProvider",
-  architect_provider: "architectProvider",
-  model_competitor: "modelCompetitor",
-  model_analyst: "modelAnalyst",
-  model_coach: "modelCoach",
-  model_architect: "modelArchitect",
-  model_curator: "modelCurator",
-  model_translator: "modelTranslator",
-  tier_opus_model: "tierOpusModel",
-  tier_sonnet_model: "tierSonnetModel",
-  tier_haiku_model: "tierHaikuModel",
-  mlx_model_path: "mlxModelPath",
+// Must match _SETTINGS_DEFAULTS in the Python replay exactly. Keyed by the Python
+// spelling and translated through the shared SETTINGS_KEY_MAP, so the two halves
+// of a settings field cannot drift apart: adding one here without adding it to the
+// contract fails the completeness test below, and adding it to the contract with a
+// field name TypeScript lacks fails to compile in the generated module.
+const BASE_SETTINGS_BY_PYTHON_KEY: Record<string, string> = {
+  role_routing: "auto",
+  agent_provider: "anthropic",
+  competitor_provider: "",
+  analyst_provider: "",
+  coach_provider: "",
+  architect_provider: "",
+  model_competitor: "competitor-role-model",
+  model_analyst: "analyst-role-model",
+  model_coach: "coach-role-model",
+  model_architect: "architect-role-model",
+  model_curator: "curator-role-model",
+  model_translator: "translator-role-model",
+  tier_opus_model: "opus-tier-model",
+  tier_sonnet_model: "sonnet-tier-model",
+  tier_haiku_model: "haiku-tier-model",
+  mlx_model_path: "/models/default-local",
+  // AC-912. Empty is the shipped default; a non-empty value would fill every unset
+  // role/tier slot for non-anthropic providers, a different contract than this
+  // fixture pins.
+  local_model: "",
+  // AC-911. Empty means capability is inferred from the transport, which is the
+  // state every case in this fixture was recorded under.
+  provider_capability: "",
+  provider_hosting: "",
+  competitor_provider_capability: "",
+  analyst_provider_capability: "",
+  coach_provider_capability: "",
+  architect_provider_capability: "",
+  competitor_provider_hosting: "",
+  analyst_provider_hosting: "",
+  coach_provider_hosting: "",
+  architect_provider_hosting: "",
 };
 
-// Must match _SETTINGS_DEFAULTS in the Python replay exactly.
 function baseSettings(): RoleRoutingSettings {
+  const settings = {} as RoleRoutingSettings;
+  for (const [pythonKey, value] of Object.entries(BASE_SETTINGS_BY_PYTHON_KEY)) {
+    settings[SETTINGS_KEY_MAP[pythonKey]] = value;
+  }
+  // Mirrors the Python replay's `model_fields_set = every field`: within this
+  // fixture's contract every setting is configured, so per-provider default
+  // resolution (AC-912) must not treat any of them as untouched.
   return {
-    agentProvider: "anthropic",
-    roleRouting: "auto",
-    competitorProvider: "",
-    analystProvider: "",
-    coachProvider: "",
-    architectProvider: "",
-    modelCompetitor: "competitor-role-model",
-    modelAnalyst: "analyst-role-model",
-    modelCoach: "coach-role-model",
-    modelArchitect: "architect-role-model",
-    modelCurator: "curator-role-model",
-    modelTranslator: "translator-role-model",
-    tierOpusModel: "opus-tier-model",
-    tierSonnetModel: "sonnet-tier-model",
-    tierHaikuModel: "haiku-tier-model",
-    mlxModelPath: "/models/default-local",
+    ...settings,
+    configuredFields: Object.values(SETTINGS_KEY_MAP).slice().sort(),
   };
 }
 
@@ -324,5 +336,15 @@ describe("fixture completeness", () => {
   // of silently falling back to defaults. Untested, it could rot into a no-op.
   it("rejects an unknown settings key", () => {
     expect(() => settingsFromFixture({ not_a_real_setting: "x" })).toThrow(/unknown settings key/);
+  });
+
+  // AC-911. Exact-set equality, not a subset check: a settings field this replay
+  // stops supplying is as much a coverage hole as one it never supplied. AC-912
+  // added `local_model` to the Python replay and not here, and nothing failed --
+  // this is the assertion that would have caught it.
+  it("supplies every settings field the shared contract declares", () => {
+    expect(Object.keys(BASE_SETTINGS_BY_PYTHON_KEY).sort()).toEqual(
+      Object.keys(SETTINGS_KEY_MAP).sort(),
+    );
   });
 });

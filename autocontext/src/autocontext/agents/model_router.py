@@ -56,6 +56,7 @@ class ModelRouter:
         retry_count: int,
         is_plateau: bool,
         harness_coverage: HarnessCoverage | None = None,
+        max_capability: str | None = None,
     ) -> str | None:
         """Return model name for the given role and context, or None if routing disabled."""
         tier = self.select_tier(
@@ -64,6 +65,7 @@ class ModelRouter:
             retry_count=retry_count,
             is_plateau=is_plateau,
             harness_coverage=harness_coverage,
+            max_capability=max_capability,
         )
         return self._tier_map[tier] if tier is not None else None
 
@@ -75,6 +77,7 @@ class ModelRouter:
         retry_count: int,
         is_plateau: bool,
         harness_coverage: HarnessCoverage | None = None,
+        max_capability: str | None = None,
     ) -> str | None:
         """Return the selected tier name so callers can resolve its provider-specific model.
 
@@ -84,6 +87,7 @@ class ModelRouter:
             retry_count: Number of retries for this generation.
             is_plateau: Whether score progression has plateaued.
             harness_coverage: Optional harness coverage measurement for demotion.
+            max_capability: Optional endpoint ceiling applied after escalation.
         """
         if not self._config.enabled:
             return None
@@ -125,7 +129,8 @@ class ModelRouter:
             if is_plateau:
                 tier = self._max_tier(tier, "opus")
 
-        return tier
+        ceiling = {"fast": "haiku", "mid_tier": "sonnet", "frontier": "opus"}.get(max_capability or "")
+        return self._min_tier(tier, ceiling) if ceiling is not None else tier
 
     def _max_tier(self, a: str, b: str) -> str:
         """Return the higher of two tiers."""

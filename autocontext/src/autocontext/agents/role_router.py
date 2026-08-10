@@ -75,13 +75,53 @@ DEFAULT_ROUTING_TABLE: dict[str, list[ProviderClass]] = {
     role: [ProviderClass(name) for name in preferences] for role, preferences in _contract.DEFAULT_ROUTING_TABLE.items()
 }
 
-# Roles that can be served by local artifacts when available
-_LOCAL_ELIGIBLE_ROLES: set[str] = set(_contract.LOCAL_ELIGIBLE_ROLES)
+# Capability ordering, so a role's requirement can be compared against what an
+# endpoint declares. Only the API-backed classes are ranked: LOCAL names an
+# artifact slot rather than a capability, and CODE_POLICY is not model-backed.
+_CAPABILITY_RANK: dict[ProviderClass, int] = {ProviderClass(name): rank for name, rank in _contract.CAPABILITY_RANK.items()}
 
-# Provider type inferred from provider class when using the default provider
+# Fallback hosting when an endpoint has not declared where it runs. Unknown
+# transports are treated as remote, so an unrecognized name never silently
+# reports zero cost.
+_INFERRED_PROVIDER_HOSTING: dict[str, str] = dict(_contract.PROVIDER_HOSTING)
+
+# What a distilled local artifact is treated as being capable of.
+_LOCAL_ARTIFACT_CAPABILITY = ProviderClass(_contract.LOCAL_ARTIFACT_CAPABILITY)
+
+
+def _role_minimum_capability(preferences: list[ProviderClass]) -> ProviderClass | None:
+    """The capability a role needs: its first API-backed preference."""
+    for pref in preferences:
+        if pref in _CAPABILITY_RANK:
+            return pref
+    return None
+
+
+# Roles a local artifact may serve. Derived from the routing table and the
+# artifact's declared capability rather than enumerated (AC-911): a role is
+# eligible when it lists LOCAL as a preference and the artifact is at least as
+# capable as the role requires. Declaring the artifact less capable therefore
+# narrows this automatically, instead of requiring a second list to be edited in
+# step with the first.
+_LOCAL_ELIGIBLE_ROLES: set[str] = {
+    role
+    for role, preferences in DEFAULT_ROUTING_TABLE.items()
+    if ProviderClass.LOCAL in preferences
+    and (minimum := _role_minimum_capability(preferences)) is not None
+    and _CAPABILITY_RANK[_LOCAL_ARTIFACT_CAPABILITY] >= _CAPABILITY_RANK[minimum]
+}
+
+# Capability inferred from the transport name, used only when the endpoint has
+# not declared one. Retained rather than deleted because cloud transports do have
+# a knowable capability; it is self-hosted endpoints that inference gets wrong.
 _EXPLICIT_PROVIDER_CLASS: dict[str, ProviderClass] = {
     provider: ProviderClass(name) for provider, name in _contract.EXPLICIT_PROVIDER_CLASSES.items()
 }
+
+
+def _inferred_hosting(provider_type: str) -> str:
+    """Conservative hosting fallback for an endpoint without a declaration."""
+    return _INFERRED_PROVIDER_HOSTING.get(provider_type.strip().lower(), "remote")
 
 
 class RoleRouter:
@@ -131,6 +171,106 @@ class RoleRouter:
             "coach": settings.coach_provider,
             "architect": settings.architect_provider,
         }
+        self._declared_capability = self._parse_declared_capability(
+            settings.provider_capability,
+            "AUTOCONTEXT_PROVIDER_CAPABILITY",
+        )
+        self._declared_hosting = self._parse_declared_hosting(
+            settings.provider_hosting,
+            "AUTOCONTEXT_PROVIDER_HOSTING",
+        )
+        self._role_declared_capabilities = {
+            role: self._parse_declared_capability(
+                getattr(settings, f"{role}_provider_capability"),
+                f"AUTOCONTEXT_{role.upper()}_PROVIDER_CAPABILITY",
+            )
+            for role in self._role_providers
+        }
+        self._role_declared_hosting = {
+            role: self._parse_declared_hosting(
+                getattr(settings, f"{role}_provider_hosting"),
+                f"AUTOCONTEXT_{role.upper()}_PROVIDER_HOSTING",
+            )
+            for role in self._role_providers
+        }
+
+    @staticmethod
+    def _parse_declared_capability(raw: str, setting_name: str) -> ProviderClass | None:
+        """Validate the declared capability once, at construction.
+
+        Raising here rather than at route() time means a typo surfaces when the
+        run is being set up, not partway through a generation when one role
+        happens to take the path that reads it.
+        """
+        declared = (raw or "").strip().lower()
+        if not declared:
+            return None
+        try:
+            capability = ProviderClass(declared)
+        except ValueError:
+            capability = None
+        if capability is None or capability not in _CAPABILITY_RANK:
+            raise ValueError(
+                f"{setting_name}={raw!r} is not a capability class. "
+                f"Expected one of: {', '.join(sorted(c.value for c in _CAPABILITY_RANK))}."
+            )
+        return capability
+
+    @staticmethod
+    def _parse_declared_hosting(raw: str, setting_name: str) -> str | None:
+        """Validate a local/remote endpoint-hosting declaration."""
+        declared = (raw or "").strip().lower()
+        if not declared:
+            return None
+        if declared not in {"local", "remote"}:
+            raise ValueError(f"{setting_name}={raw!r} is invalid. Expected one of: local, remote.")
+        return declared
+
+    @staticmethod
+    def _hosting_for(provider_type: str, declared_hosting: str | None) -> str:
+        return declared_hosting or _inferred_hosting(provider_type)
+
+    def _effective_capability(
+        self,
+        provider_type: str,
+        inferred: ProviderClass,
+        *,
+        declared_capability: ProviderClass | None,
+        declared_hosting: str | None,
+    ) -> ProviderClass:
+        """The endpoint's capability, preferring what the user declared.
+
+        A declaration only applies to locally hosted transports. Cloud transports
+        have a knowable capability, and confining the override to self-hosted
+        endpoints is what makes "Anthropic routing is unchanged" hold without
+        depending on the user not setting this.
+
+        ProviderClass.LOCAL is left alone: it names the distilled artifact slot,
+        and the orchestrator reads it as a signal that the model is
+        mlx_model_path.
+        """
+        if declared_capability is None or inferred == ProviderClass.LOCAL:
+            return inferred
+        if self._hosting_for(provider_type, declared_hosting) != "local":
+            return inferred
+        return declared_capability
+
+    def _cost_for(
+        self,
+        provider_class: ProviderClass,
+        provider_type: str,
+        *,
+        declared_hosting: str | None,
+    ) -> float:
+        """Cost is a function of hosting, not capability (AC-911).
+
+        Self-hosted inference has no per-token API cost, however capable the
+        model behind it is. Keying this on capability is what made a fully
+        self-hosted run report the same $/1k as an all-Anthropic one.
+        """
+        if self._hosting_for(provider_type, declared_hosting) == "local":
+            return 0.0
+        return _COST_TABLE.get(provider_class, 0.003)
 
     def route(
         self,
@@ -265,20 +405,56 @@ class RoleRouter:
                 provider_type="mlx",
                 model=local_model_path or self._settings.mlx_model_path or None,
                 provider_class=ProviderClass.LOCAL,
-                estimated_cost_per_1k_tokens=_COST_TABLE[ProviderClass.LOCAL],
+                estimated_cost_per_1k_tokens=self._cost_for(
+                    ProviderClass.LOCAL,
+                    "mlx",
+                    declared_hosting="local",
+                ),
             )
+        provider_type = self._settings.agent_provider
+        # A role asks for a capability; an endpoint has one. Asking for frontier
+        # from an endpoint declared mid_tier does not make it frontier, so the
+        # request is clamped down to what the endpoint actually offers and both
+        # the tier model and the reported class follow the clamped value.
+        effective = self._clamp_to_declared(provider_type, provider_class)
         return ProviderConfig(
-            provider_type=self._settings.agent_provider,
-            model=self._resolve_class_model(role, provider_class, self._settings.agent_provider),
-            provider_class=provider_class,
-            estimated_cost_per_1k_tokens=_COST_TABLE.get(provider_class, 0.003),
+            provider_type=provider_type,
+            model=self._resolve_class_model(role, effective, provider_type),
+            provider_class=effective,
+            estimated_cost_per_1k_tokens=self._cost_for(
+                effective,
+                provider_type,
+                declared_hosting=self._declared_hosting,
+            ),
         )
+
+    def _clamp_to_declared(self, provider_type: str, requested: ProviderClass) -> ProviderClass:
+        """Lower a requested capability to what the endpoint declares, never raise it."""
+        if requested not in _CAPABILITY_RANK:
+            return requested
+        declared = self._effective_capability(
+            provider_type,
+            requested,
+            declared_capability=self._declared_capability,
+            declared_hosting=self._declared_hosting,
+        )
+        if declared not in _CAPABILITY_RANK:
+            return requested
+        return declared if _CAPABILITY_RANK[declared] < _CAPABILITY_RANK[requested] else requested
 
     def _config_for_explicit(self, role: str, provider_type: str) -> ProviderConfig:
         """Build config when an explicit per-role provider is set."""
-        provider_class = _EXPLICIT_PROVIDER_CLASS.get(
+        inferred = _EXPLICIT_PROVIDER_CLASS.get(
             provider_type.lower(),
             ProviderClass.FRONTIER,
+        )
+        declared_capability = self._role_declared_capabilities.get(role)
+        declared_hosting = self._role_declared_hosting.get(role)
+        provider_class = self._effective_capability(
+            provider_type,
+            inferred,
+            declared_capability=declared_capability,
+            declared_hosting=declared_hosting,
         )
         return ProviderConfig(
             provider_type=provider_type,
@@ -288,22 +464,37 @@ class RoleRouter:
                 else self._resolve_role_model(role, provider_type)
             ),
             provider_class=provider_class,
-            estimated_cost_per_1k_tokens=_COST_TABLE.get(provider_class, 0.003),
+            estimated_cost_per_1k_tokens=self._cost_for(
+                provider_class,
+                provider_type,
+                declared_hosting=declared_hosting,
+            ),
         )
 
     def _config_for_default(self, role: str) -> ProviderConfig:
         """Build config when routing is disabled — use default provider + model."""
-        provider_class = _EXPLICIT_PROVIDER_CLASS.get(
-            self._settings.agent_provider.lower(),
+        provider_type = self._settings.agent_provider
+        inferred = _EXPLICIT_PROVIDER_CLASS.get(
+            provider_type.lower(),
             ProviderClass.MID_TIER,
         )
+        provider_class = self._effective_capability(
+            provider_type,
+            inferred,
+            declared_capability=self._declared_capability,
+            declared_hosting=self._declared_hosting,
+        )
         return ProviderConfig(
-            provider_type=self._settings.agent_provider,
+            provider_type=provider_type,
             model=(
                 self._settings.mlx_model_path
                 if provider_class == ProviderClass.LOCAL
-                else self._resolve_role_model(role, self._settings.agent_provider)
+                else self._resolve_role_model(role, provider_type)
             ),
             provider_class=provider_class,
-            estimated_cost_per_1k_tokens=_COST_TABLE.get(provider_class, 0.003),
+            estimated_cost_per_1k_tokens=self._cost_for(
+                provider_class,
+                provider_type,
+                declared_hosting=self._declared_hosting,
+            ),
         )

@@ -45,7 +45,7 @@ Use a real provider by setting `AUTOCONTEXT_AGENT_PROVIDER` and its credential:
 
 ```bash
 AUTOCONTEXT_AGENT_PROVIDER=anthropic ANTHROPIC_API_KEY=... autoctx solve "..." --iterations 3
-AUTOCONTEXT_AGENT_PROVIDER=openai-compatible AUTOCONTEXT_AGENT_BASE_URL=http://localhost:8000/v1 AUTOCONTEXT_AGENT_API_KEY=... autoctx solve "..." --iterations 3
+AUTOCONTEXT_AGENT_PROVIDER=openai-compatible AUTOCONTEXT_AGENT_BASE_URL=http://localhost:8000/v1 AUTOCONTEXT_AGENT_API_KEY=... AUTOCONTEXT_PROVIDER_HOSTING=local AUTOCONTEXT_PROVIDER_CAPABILITY=mid_tier autoctx solve "..." --iterations 3
 AUTOCONTEXT_AGENT_PROVIDER=pi AUTOCONTEXT_PI_COMMAND=pi autoctx solve "..." --iterations 3
 ```
 
@@ -54,6 +54,10 @@ AUTOCONTEXT_AGENT_PROVIDER=pi AUTOCONTEXT_PI_COMMAND=pi autoctx solve "..." --it
 Supported providers: `anthropic`, `openai`, `openai-compatible`, `gemini`, `mistral`, `groq`, `openrouter`, `azure-openai`, `ollama`, `vllm`, `hermes`, `claude-cli`, `codex`, `pi`, `pi-rpc`, `deterministic`.
 
 Provider routing details live in [../autocontext/docs/agent-integration.md](../autocontext/docs/agent-integration.md).
+Use `AUTOCONTEXT_PROVIDER_HOSTING=local|remote` to override transport-based
+hosting inference and `AUTOCONTEXT_PROVIDER_CAPABILITY=fast|mid_tier|frontier`
+to cap automatic tiers for a local endpoint. Role-specific endpoints use the
+matching `AUTOCONTEXT_<ROLE>_PROVIDER_*` declarations.
 
 ## CLI surfaces
 

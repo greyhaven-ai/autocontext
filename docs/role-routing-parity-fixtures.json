@@ -36,7 +36,7 @@
           "cost_per_1k_tokens": 0.003
         }
       },
-      "architect_frontier_no_local_fallback": {
+      "architect_frontier_when_no_artifact_is_available": {
         "role": "architect",
         "settings": {},
         "context": {},
@@ -82,42 +82,50 @@
       },
       "self_hosted_default_provider_is_frontier_via_table": {
         "role": "competitor",
-        "settings": { "agent_provider": "vllm" },
+        "settings": {
+          "agent_provider": "vllm"
+        },
         "context": {},
         "expected": {
           "provider_type": "vllm",
           "model": "opus-tier-model",
           "provider_class": "frontier",
-          "cost_per_1k_tokens": 0.015
+          "cost_per_1k_tokens": 0.0
         }
       }
     },
     "explicit_override": {
       "competitor_override_to_ollama_is_mid_tier": {
         "role": "competitor",
-        "settings": { "competitor_provider": "ollama" },
+        "settings": {
+          "competitor_provider": "ollama"
+        },
         "context": {},
         "expected": {
           "provider_type": "ollama",
           "model": "competitor-role-model",
           "provider_class": "mid_tier",
-          "cost_per_1k_tokens": 0.003
+          "cost_per_1k_tokens": 0.0
         }
       },
       "architect_override_to_vllm_is_mid_tier": {
         "role": "architect",
-        "settings": { "architect_provider": "vllm" },
+        "settings": {
+          "architect_provider": "vllm"
+        },
         "context": {},
         "expected": {
           "provider_type": "vllm",
           "model": "architect-role-model",
           "provider_class": "mid_tier",
-          "cost_per_1k_tokens": 0.003
+          "cost_per_1k_tokens": 0.0
         }
       },
       "unknown_override_provider_defaults_to_frontier": {
         "role": "analyst",
-        "settings": { "analyst_provider": "some-unknown-provider" },
+        "settings": {
+          "analyst_provider": "some-unknown-provider"
+        },
         "context": {},
         "expected": {
           "provider_type": "some-unknown-provider",
@@ -128,7 +136,9 @@
       },
       "override_to_mlx_uses_mlx_model_path": {
         "role": "coach",
-        "settings": { "coach_provider": "mlx" },
+        "settings": {
+          "coach_provider": "mlx"
+        },
         "context": {},
         "expected": {
           "provider_type": "mlx",
@@ -139,20 +149,25 @@
       },
       "override_wins_over_role_routing_off": {
         "role": "competitor",
-        "settings": { "competitor_provider": "ollama", "role_routing": "off" },
+        "settings": {
+          "competitor_provider": "ollama",
+          "role_routing": "off"
+        },
         "context": {},
         "expected": {
           "provider_type": "ollama",
           "model": "competitor-role-model",
           "provider_class": "mid_tier",
-          "cost_per_1k_tokens": 0.003
+          "cost_per_1k_tokens": 0.0
         }
       }
     },
     "routing_off": {
       "off_uses_default_provider_and_role_model": {
         "role": "competitor",
-        "settings": { "role_routing": "off" },
+        "settings": {
+          "role_routing": "off"
+        },
         "context": {},
         "expected": {
           "provider_type": "anthropic",
@@ -163,18 +178,24 @@
       },
       "off_with_ollama_default_is_mid_tier": {
         "role": "architect",
-        "settings": { "role_routing": "off", "agent_provider": "ollama" },
+        "settings": {
+          "role_routing": "off",
+          "agent_provider": "ollama"
+        },
         "context": {},
         "expected": {
           "provider_type": "ollama",
           "model": "architect-role-model",
           "provider_class": "mid_tier",
-          "cost_per_1k_tokens": 0.003
+          "cost_per_1k_tokens": 0.0
         }
       },
       "off_with_unknown_default_provider_is_mid_tier": {
         "role": "analyst",
-        "settings": { "role_routing": "off", "agent_provider": "some-unknown-provider" },
+        "settings": {
+          "role_routing": "off",
+          "agent_provider": "some-unknown-provider"
+        },
         "context": {},
         "expected": {
           "provider_type": "some-unknown-provider",
@@ -185,7 +206,9 @@
       },
       "off_uses_coach_role_model": {
         "role": "coach",
-        "settings": { "role_routing": "off" },
+        "settings": {
+          "role_routing": "off"
+        },
         "context": {},
         "expected": {
           "provider_type": "anthropic",
@@ -196,7 +219,9 @@
       },
       "off_uses_curator_role_model": {
         "role": "curator",
-        "settings": { "role_routing": "off" },
+        "settings": {
+          "role_routing": "off"
+        },
         "context": {},
         "expected": {
           "provider_type": "anthropic",
@@ -207,7 +232,9 @@
       },
       "off_uses_translator_role_model": {
         "role": "translator",
-        "settings": { "role_routing": "off" },
+        "settings": {
+          "role_routing": "off"
+        },
         "context": {},
         "expected": {
           "provider_type": "anthropic",
@@ -218,7 +245,10 @@
       },
       "off_with_mlx_default_uses_mlx_model_path": {
         "role": "coach",
-        "settings": { "role_routing": "off", "agent_provider": "mlx" },
+        "settings": {
+          "role_routing": "off",
+          "agent_provider": "mlx"
+        },
         "context": {},
         "expected": {
           "provider_type": "mlx",
@@ -232,7 +262,9 @@
       "eligible_role_prefers_local_artifact": {
         "role": "competitor",
         "settings": {},
-        "context": { "availableLocalModels": ["/models/distilled-competitor"] },
+        "context": {
+          "availableLocalModels": ["/models/distilled-competitor"]
+        },
         "expected": {
           "provider_type": "mlx",
           "model": "/models/distilled-competitor",
@@ -240,32 +272,40 @@
           "cost_per_1k_tokens": 0.0
         }
       },
-      "architect_ignores_local_artifact": {
+      "architect_uses_local_artifact": {
         "role": "architect",
         "settings": {},
-        "context": { "availableLocalModels": ["/models/distilled-architect"] },
+        "context": {
+          "availableLocalModels": ["/models/distilled-architect"]
+        },
         "expected": {
-          "provider_type": "anthropic",
-          "model": "opus-tier-model",
-          "provider_class": "frontier",
-          "cost_per_1k_tokens": 0.015
+          "provider_type": "mlx",
+          "model": "/models/distilled-architect",
+          "provider_class": "local",
+          "cost_per_1k_tokens": 0.0
         }
       },
-      "curator_ignores_local_artifact": {
+      "curator_uses_local_artifact": {
         "role": "curator",
         "settings": {},
-        "context": { "availableLocalModels": ["/models/distilled-curator"] },
+        "context": {
+          "availableLocalModels": ["/models/distilled-curator"]
+        },
         "expected": {
-          "provider_type": "anthropic",
-          "model": "haiku-tier-model",
-          "provider_class": "fast",
-          "cost_per_1k_tokens": 0.001
+          "provider_type": "mlx",
+          "model": "/models/distilled-curator",
+          "provider_class": "local",
+          "cost_per_1k_tokens": 0.0
         }
       },
       "local_artifact_ignored_when_routing_off": {
         "role": "competitor",
-        "settings": { "role_routing": "off" },
-        "context": { "availableLocalModels": ["/models/distilled-competitor"] },
+        "settings": {
+          "role_routing": "off"
+        },
+        "context": {
+          "availableLocalModels": ["/models/distilled-competitor"]
+        },
         "expected": {
           "provider_type": "anthropic",
           "model": "competitor-role-model",
@@ -286,11 +326,13 @@
       },
       "with_local_artifacts_totals": {
         "settings": {},
-        "context": { "availableLocalModels": ["/models/distilled"] },
+        "context": {
+          "availableLocalModels": ["/models/distilled"]
+        },
         "expected": {
-          "total_per_1k_tokens": 0.016,
+          "total_per_1k_tokens": 0.0,
           "all_frontier_per_1k_tokens": 0.09,
-          "savings_vs_all_frontier": 0.074
+          "savings_vs_all_frontier": 0.09
         }
       }
     }
@@ -299,19 +341,21 @@
     {
       "case": "explicit_override.mixed_case_provider_name",
       "role": "competitor",
-      "settings": { "competitor_provider": "Ollama" },
+      "settings": {
+        "competitor_provider": "Ollama"
+      },
       "context": {},
       "python": {
         "provider_type": "Ollama",
         "model": "competitor-role-model",
         "provider_class": "mid_tier",
-        "cost_per_1k_tokens": 0.003
+        "cost_per_1k_tokens": 0.0
       },
       "typescript": {
         "provider_type": "ollama",
         "model": "competitor-role-model",
         "provider_class": "mid_tier",
-        "cost_per_1k_tokens": 0.003
+        "cost_per_1k_tokens": 0
       },
       "reason": "Python returns the raw per-role provider string while TypeScript normalizes it to lowercase.",
       "resolution": "AC-911: normalize once when Endpoint replaces the bare provider string, so both packages report the canonical transport name."
@@ -319,7 +363,9 @@
     {
       "case": "explicit_override.whitespace_only_provider_name",
       "role": "competitor",
-      "settings": { "competitor_provider": "  " },
+      "settings": {
+        "competitor_provider": "  "
+      },
       "context": {},
       "python": {
         "provider_type": "  ",
@@ -339,7 +385,9 @@
     {
       "case": "routing_off.unknown_role_model",
       "role": "skeptic",
-      "settings": { "role_routing": "off" },
+      "settings": {
+        "role_routing": "off"
+      },
       "context": {},
       "python": {
         "provider_type": "anthropic",
@@ -359,7 +407,9 @@
     {
       "case": "unset_settings.agent_provider_empty",
       "role": "competitor",
-      "settings": { "agent_provider": "" },
+      "settings": {
+        "agent_provider": ""
+      },
       "context": {},
       "python": {
         "provider_type": "",
@@ -374,13 +424,15 @@
         "cost_per_1k_tokens": 0.015
       },
       "reason": "An empty default provider is returned verbatim by Python but coerced to 'anthropic' by TypeScript's normalizeProvider fallback. The model and class agree; only the transport name differs.",
-      "resolution": "AC-912 rewrites this layer: role and tier defaults get resolved against the effective provider instead of one vendor's hardcoded ids. This entry exists so that rewrite has a before-state to diff against; when AC-912 makes both languages agree the replay tests fail, and this entry must be deleted rather than updated."
+      "resolution": "Still open after AC-911. This entry was previously attributed to AC-912's per-provider default layer, which was wrong: the disagreement is about how each language treats an explicitly EMPTY setting, not about which model a provider defaults to. Python returns the empty value verbatim; TypeScript trims it away and falls back. AC-912 and AC-911 both landed and both languages still disagree here, so the attribution is corrected rather than the entry deleted. Resolving it means deciding, once, whether an empty setting means \"unset\" or \"deliberately blank\"."
     },
     {
       "case": "unset_settings.blank_local_artifact",
       "role": "competitor",
       "settings": {},
-      "context": { "availableLocalModels": ["  "] },
+      "context": {
+        "availableLocalModels": ["  "]
+      },
       "python": {
         "provider_type": "mlx",
         "model": "  ",
@@ -394,12 +446,15 @@
         "cost_per_1k_tokens": 0.0
       },
       "reason": "A whitespace-only local artifact is treated as a usable model id by Python and returned verbatim, while TypeScript trims it away and falls back to the configured mlx model path.",
-      "resolution": "AC-912 rewrites this layer: role and tier defaults get resolved against the effective provider instead of one vendor's hardcoded ids. This entry exists so that rewrite has a before-state to diff against; when AC-912 makes both languages agree the replay tests fail, and this entry must be deleted rather than updated."
+      "resolution": "Still open after AC-911. This entry was previously attributed to AC-912's per-provider default layer, which was wrong: the disagreement is about how each language treats an explicitly EMPTY setting, not about which model a provider defaults to. Python returns the empty value verbatim; TypeScript trims it away and falls back. AC-912 and AC-911 both landed and both languages still disagree here, so the attribution is corrected rather than the entry deleted. Resolving it means deciding, once, whether an empty setting means \"unset\" or \"deliberately blank\"."
     },
     {
       "case": "unset_settings.mlx_model_path_empty",
       "role": "competitor",
-      "settings": { "competitor_provider": "mlx", "mlx_model_path": "" },
+      "settings": {
+        "competitor_provider": "mlx",
+        "mlx_model_path": ""
+      },
       "context": {},
       "python": {
         "provider_type": "mlx",
@@ -414,12 +469,15 @@
         "cost_per_1k_tokens": 0.0
       },
       "reason": "For a local provider with an empty model path Python returns the empty string, while TypeScript's tierModel('local', ...) falls back to the literal 'local'.",
-      "resolution": "AC-912 rewrites this layer: role and tier defaults get resolved against the effective provider instead of one vendor's hardcoded ids. This entry exists so that rewrite has a before-state to diff against; when AC-912 makes both languages agree the replay tests fail, and this entry must be deleted rather than updated."
+      "resolution": "Still open after AC-911. This entry was previously attributed to AC-912's per-provider default layer, which was wrong: the disagreement is about how each language treats an explicitly EMPTY setting, not about which model a provider defaults to. Python returns the empty value verbatim; TypeScript trims it away and falls back. AC-912 and AC-911 both landed and both languages still disagree here, so the attribution is corrected rather than the entry deleted. Resolving it means deciding, once, whether an empty setting means \"unset\" or \"deliberately blank\"."
     },
     {
       "case": "unset_settings.role_model_empty_routing_off",
       "role": "competitor",
-      "settings": { "model_competitor": "", "role_routing": "off" },
+      "settings": {
+        "model_competitor": "",
+        "role_routing": "off"
+      },
       "context": {},
       "python": {
         "provider_type": "anthropic",
@@ -434,12 +492,14 @@
         "cost_per_1k_tokens": 0.015
       },
       "reason": "With routing off and an empty role model Python returns the empty string, while TypeScript falls back to its hardcoded DEFAULT_ROLE_MODELS entry for the role.",
-      "resolution": "AC-912 rewrites this layer: role and tier defaults get resolved against the effective provider instead of one vendor's hardcoded ids. This entry exists so that rewrite has a before-state to diff against; when AC-912 makes both languages agree the replay tests fail, and this entry must be deleted rather than updated."
+      "resolution": "Still open after AC-911. This entry was previously attributed to AC-912's per-provider default layer, which was wrong: the disagreement is about how each language treats an explicitly EMPTY setting, not about which model a provider defaults to. Python returns the empty value verbatim; TypeScript trims it away and falls back. AC-912 and AC-911 both landed and both languages still disagree here, so the attribution is corrected rather than the entry deleted. Resolving it means deciding, once, whether an empty setting means \"unset\" or \"deliberately blank\"."
     },
     {
       "case": "unset_settings.tier_model_empty",
       "role": "competitor",
-      "settings": { "tier_opus_model": "" },
+      "settings": {
+        "tier_opus_model": ""
+      },
       "context": {},
       "python": {
         "provider_type": "anthropic",
@@ -454,7 +514,7 @@
         "cost_per_1k_tokens": 0.015
       },
       "reason": "With an empty tier model Python returns the empty string as the model, while TypeScript falls back to its hardcoded tierModel default. Python has no equivalent fallback table.",
-      "resolution": "AC-912 rewrites this layer: role and tier defaults get resolved against the effective provider instead of one vendor's hardcoded ids. This entry exists so that rewrite has a before-state to diff against; when AC-912 makes both languages agree the replay tests fail, and this entry must be deleted rather than updated."
+      "resolution": "Still open after AC-911. This entry was previously attributed to AC-912's per-provider default layer, which was wrong: the disagreement is about how each language treats an explicitly EMPTY setting, not about which model a provider defaults to. Python returns the empty value verbatim; TypeScript trims it away and falls back. AC-912 and AC-911 both landed and both languages still disagree here, so the attribution is corrected rather than the entry deleted. Resolving it means deciding, once, whether an empty setting means \"unset\" or \"deliberately blank\"."
     }
   ]
 }

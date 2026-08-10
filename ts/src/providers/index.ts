@@ -49,6 +49,7 @@ export {
   PROVIDER_CLASS_COST_PER_1K_TOKENS,
   ROLE_ROUTING_MODES,
   ROUTED_GENERATION_ROLES,
+  SETTINGS_KEY_MAP,
   estimateRoleRoutingCost,
   routeRoleProvider,
   type ProviderClass,
