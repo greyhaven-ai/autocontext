@@ -1,0 +1,970 @@
+{
+  "contract": "AC-911 capability/hosting baseline. Records what Python and TypeScript each produce today, before capability is separated from hosting. Both languages replay this file; a behavior change must show up as a diff here.",
+  "settings_defaults": {
+    "agent_provider": "anthropic",
+    "role_routing": "off",
+    "model_competitor": "claude-sonnet-4-5-20250929",
+    "model_analyst": "claude-sonnet-4-5-20250929",
+    "model_coach": "claude-opus-4-6",
+    "model_architect": "claude-opus-4-6",
+    "model_curator": "claude-opus-4-6",
+    "model_translator": "claude-sonnet-4-5-20250929",
+    "tier_opus_model": "claude-opus-4-6",
+    "tier_sonnet_model": "claude-sonnet-4-5-20250929",
+    "tier_haiku_model": "claude-haiku-4-5-20251001",
+    "mlx_model_path": "",
+    "local_model": "",
+    "competitor_provider": "",
+    "analyst_provider": "",
+    "coach_provider": "",
+    "architect_provider": ""
+  },
+  "roles": ["competitor", "analyst", "coach", "architect", "curator", "translator"],
+  "cases": {
+    "cloud_regression.auto.anthropic.competitor": {
+      "role": "competitor",
+      "settings": {
+        "agent_provider": "anthropic",
+        "role_routing": "auto"
+      },
+      "set_fields": ["agent_provider", "role_routing"],
+      "context": {},
+      "python": {
+        "provider_type": "anthropic",
+        "model": "claude-opus-4-6",
+        "provider_class": "frontier",
+        "cost_per_1k_tokens": 0.015
+      },
+      "typescript": {
+        "provider_type": "anthropic",
+        "model": "claude-opus-4-6",
+        "provider_class": "frontier",
+        "cost_per_1k_tokens": 0.015
+      }
+    },
+    "cloud_regression.auto.anthropic.analyst": {
+      "role": "analyst",
+      "settings": {
+        "agent_provider": "anthropic",
+        "role_routing": "auto"
+      },
+      "set_fields": ["agent_provider", "role_routing"],
+      "context": {},
+      "python": {
+        "provider_type": "anthropic",
+        "model": "claude-sonnet-4-5-20250929",
+        "provider_class": "mid_tier",
+        "cost_per_1k_tokens": 0.003
+      },
+      "typescript": {
+        "provider_type": "anthropic",
+        "model": "claude-sonnet-4-5-20250929",
+        "provider_class": "mid_tier",
+        "cost_per_1k_tokens": 0.003
+      }
+    },
+    "cloud_regression.auto.anthropic.coach": {
+      "role": "coach",
+      "settings": {
+        "agent_provider": "anthropic",
+        "role_routing": "auto"
+      },
+      "set_fields": ["agent_provider", "role_routing"],
+      "context": {},
+      "python": {
+        "provider_type": "anthropic",
+        "model": "claude-sonnet-4-5-20250929",
+        "provider_class": "mid_tier",
+        "cost_per_1k_tokens": 0.003
+      },
+      "typescript": {
+        "provider_type": "anthropic",
+        "model": "claude-sonnet-4-5-20250929",
+        "provider_class": "mid_tier",
+        "cost_per_1k_tokens": 0.003
+      }
+    },
+    "cloud_regression.auto.anthropic.architect": {
+      "role": "architect",
+      "settings": {
+        "agent_provider": "anthropic",
+        "role_routing": "auto"
+      },
+      "set_fields": ["agent_provider", "role_routing"],
+      "context": {},
+      "python": {
+        "provider_type": "anthropic",
+        "model": "claude-opus-4-6",
+        "provider_class": "frontier",
+        "cost_per_1k_tokens": 0.015
+      },
+      "typescript": {
+        "provider_type": "anthropic",
+        "model": "claude-opus-4-6",
+        "provider_class": "frontier",
+        "cost_per_1k_tokens": 0.015
+      }
+    },
+    "cloud_regression.auto.anthropic.curator": {
+      "role": "curator",
+      "settings": {
+        "agent_provider": "anthropic",
+        "role_routing": "auto"
+      },
+      "set_fields": ["agent_provider", "role_routing"],
+      "context": {},
+      "python": {
+        "provider_type": "anthropic",
+        "model": "claude-haiku-4-5-20251001",
+        "provider_class": "fast",
+        "cost_per_1k_tokens": 0.001
+      },
+      "typescript": {
+        "provider_type": "anthropic",
+        "model": "claude-haiku-4-5-20251001",
+        "provider_class": "fast",
+        "cost_per_1k_tokens": 0.001
+      }
+    },
+    "cloud_regression.auto.anthropic.translator": {
+      "role": "translator",
+      "settings": {
+        "agent_provider": "anthropic",
+        "role_routing": "auto"
+      },
+      "set_fields": ["agent_provider", "role_routing"],
+      "context": {},
+      "python": {
+        "provider_type": "anthropic",
+        "model": "claude-haiku-4-5-20251001",
+        "provider_class": "fast",
+        "cost_per_1k_tokens": 0.001
+      },
+      "typescript": {
+        "provider_type": "anthropic",
+        "model": "claude-haiku-4-5-20251001",
+        "provider_class": "fast",
+        "cost_per_1k_tokens": 0.001
+      }
+    },
+    "cloud_regression.off.anthropic.competitor": {
+      "role": "competitor",
+      "settings": {
+        "agent_provider": "anthropic",
+        "role_routing": "off"
+      },
+      "set_fields": ["agent_provider", "role_routing"],
+      "context": {},
+      "python": {
+        "provider_type": "anthropic",
+        "model": "claude-sonnet-4-5-20250929",
+        "provider_class": "frontier",
+        "cost_per_1k_tokens": 0.015
+      },
+      "typescript": {
+        "provider_type": "anthropic",
+        "model": "claude-sonnet-4-5-20250929",
+        "provider_class": "frontier",
+        "cost_per_1k_tokens": 0.015
+      }
+    },
+    "cloud_regression.off.anthropic.analyst": {
+      "role": "analyst",
+      "settings": {
+        "agent_provider": "anthropic",
+        "role_routing": "off"
+      },
+      "set_fields": ["agent_provider", "role_routing"],
+      "context": {},
+      "python": {
+        "provider_type": "anthropic",
+        "model": "claude-sonnet-4-5-20250929",
+        "provider_class": "frontier",
+        "cost_per_1k_tokens": 0.015
+      },
+      "typescript": {
+        "provider_type": "anthropic",
+        "model": "claude-sonnet-4-5-20250929",
+        "provider_class": "frontier",
+        "cost_per_1k_tokens": 0.015
+      }
+    },
+    "cloud_regression.off.anthropic.coach": {
+      "role": "coach",
+      "settings": {
+        "agent_provider": "anthropic",
+        "role_routing": "off"
+      },
+      "set_fields": ["agent_provider", "role_routing"],
+      "context": {},
+      "python": {
+        "provider_type": "anthropic",
+        "model": "claude-opus-4-6",
+        "provider_class": "frontier",
+        "cost_per_1k_tokens": 0.015
+      },
+      "typescript": {
+        "provider_type": "anthropic",
+        "model": "claude-opus-4-6",
+        "provider_class": "frontier",
+        "cost_per_1k_tokens": 0.015
+      }
+    },
+    "cloud_regression.off.anthropic.architect": {
+      "role": "architect",
+      "settings": {
+        "agent_provider": "anthropic",
+        "role_routing": "off"
+      },
+      "set_fields": ["agent_provider", "role_routing"],
+      "context": {},
+      "python": {
+        "provider_type": "anthropic",
+        "model": "claude-opus-4-6",
+        "provider_class": "frontier",
+        "cost_per_1k_tokens": 0.015
+      },
+      "typescript": {
+        "provider_type": "anthropic",
+        "model": "claude-opus-4-6",
+        "provider_class": "frontier",
+        "cost_per_1k_tokens": 0.015
+      }
+    },
+    "cloud_regression.off.anthropic.curator": {
+      "role": "curator",
+      "settings": {
+        "agent_provider": "anthropic",
+        "role_routing": "off"
+      },
+      "set_fields": ["agent_provider", "role_routing"],
+      "context": {},
+      "python": {
+        "provider_type": "anthropic",
+        "model": "claude-opus-4-6",
+        "provider_class": "frontier",
+        "cost_per_1k_tokens": 0.015
+      },
+      "typescript": {
+        "provider_type": "anthropic",
+        "model": "claude-opus-4-6",
+        "provider_class": "frontier",
+        "cost_per_1k_tokens": 0.015
+      }
+    },
+    "cloud_regression.off.anthropic.translator": {
+      "role": "translator",
+      "settings": {
+        "agent_provider": "anthropic",
+        "role_routing": "off"
+      },
+      "set_fields": ["agent_provider", "role_routing"],
+      "context": {},
+      "python": {
+        "provider_type": "anthropic",
+        "model": "claude-sonnet-4-5-20250929",
+        "provider_class": "frontier",
+        "cost_per_1k_tokens": 0.015
+      },
+      "typescript": {
+        "provider_type": "anthropic",
+        "model": "claude-sonnet-4-5-20250929",
+        "provider_class": "frontier",
+        "cost_per_1k_tokens": 0.015
+      }
+    },
+    "self_hosted.auto.ollama.competitor": {
+      "role": "competitor",
+      "settings": {
+        "agent_provider": "ollama",
+        "role_routing": "auto"
+      },
+      "set_fields": ["agent_provider", "role_routing"],
+      "context": {},
+      "python": {
+        "provider_type": "ollama",
+        "model": "llama3.1",
+        "provider_class": "frontier",
+        "cost_per_1k_tokens": 0.015
+      },
+      "typescript": {
+        "provider_type": "ollama",
+        "model": "claude-opus-4-6",
+        "provider_class": "frontier",
+        "cost_per_1k_tokens": 0.015
+      }
+    },
+    "self_hosted.auto.ollama.architect": {
+      "role": "architect",
+      "settings": {
+        "agent_provider": "ollama",
+        "role_routing": "auto"
+      },
+      "set_fields": ["agent_provider", "role_routing"],
+      "context": {},
+      "python": {
+        "provider_type": "ollama",
+        "model": "llama3.1",
+        "provider_class": "frontier",
+        "cost_per_1k_tokens": 0.015
+      },
+      "typescript": {
+        "provider_type": "ollama",
+        "model": "claude-opus-4-6",
+        "provider_class": "frontier",
+        "cost_per_1k_tokens": 0.015
+      }
+    },
+    "self_hosted.auto.ollama.curator": {
+      "role": "curator",
+      "settings": {
+        "agent_provider": "ollama",
+        "role_routing": "auto"
+      },
+      "set_fields": ["agent_provider", "role_routing"],
+      "context": {},
+      "python": {
+        "provider_type": "ollama",
+        "model": "llama3.1",
+        "provider_class": "fast",
+        "cost_per_1k_tokens": 0.001
+      },
+      "typescript": {
+        "provider_type": "ollama",
+        "model": "claude-haiku-4-5-20251001",
+        "provider_class": "fast",
+        "cost_per_1k_tokens": 0.001
+      }
+    },
+    "self_hosted.off.ollama.competitor": {
+      "role": "competitor",
+      "settings": {
+        "agent_provider": "ollama",
+        "role_routing": "off"
+      },
+      "set_fields": ["agent_provider", "role_routing"],
+      "context": {},
+      "python": {
+        "provider_type": "ollama",
+        "model": "llama3.1",
+        "provider_class": "mid_tier",
+        "cost_per_1k_tokens": 0.003
+      },
+      "typescript": {
+        "provider_type": "ollama",
+        "model": "claude-sonnet-4-5-20250929",
+        "provider_class": "mid_tier",
+        "cost_per_1k_tokens": 0.003
+      }
+    },
+    "self_hosted.off.ollama.architect": {
+      "role": "architect",
+      "settings": {
+        "agent_provider": "ollama",
+        "role_routing": "off"
+      },
+      "set_fields": ["agent_provider", "role_routing"],
+      "context": {},
+      "python": {
+        "provider_type": "ollama",
+        "model": "llama3.1",
+        "provider_class": "mid_tier",
+        "cost_per_1k_tokens": 0.003
+      },
+      "typescript": {
+        "provider_type": "ollama",
+        "model": "claude-opus-4-6",
+        "provider_class": "mid_tier",
+        "cost_per_1k_tokens": 0.003
+      }
+    },
+    "self_hosted.off.ollama.curator": {
+      "role": "curator",
+      "settings": {
+        "agent_provider": "ollama",
+        "role_routing": "off"
+      },
+      "set_fields": ["agent_provider", "role_routing"],
+      "context": {},
+      "python": {
+        "provider_type": "ollama",
+        "model": "llama3.1",
+        "provider_class": "mid_tier",
+        "cost_per_1k_tokens": 0.003
+      },
+      "typescript": {
+        "provider_type": "ollama",
+        "model": "claude-opus-4-6",
+        "provider_class": "mid_tier",
+        "cost_per_1k_tokens": 0.003
+      }
+    },
+    "self_hosted.auto.vllm.competitor": {
+      "role": "competitor",
+      "settings": {
+        "agent_provider": "vllm",
+        "role_routing": "auto"
+      },
+      "set_fields": ["agent_provider", "role_routing"],
+      "context": {},
+      "python": {
+        "provider_type": "vllm",
+        "model": "default",
+        "provider_class": "frontier",
+        "cost_per_1k_tokens": 0.015
+      },
+      "typescript": {
+        "provider_type": "vllm",
+        "model": "claude-opus-4-6",
+        "provider_class": "frontier",
+        "cost_per_1k_tokens": 0.015
+      }
+    },
+    "self_hosted.auto.vllm.architect": {
+      "role": "architect",
+      "settings": {
+        "agent_provider": "vllm",
+        "role_routing": "auto"
+      },
+      "set_fields": ["agent_provider", "role_routing"],
+      "context": {},
+      "python": {
+        "provider_type": "vllm",
+        "model": "default",
+        "provider_class": "frontier",
+        "cost_per_1k_tokens": 0.015
+      },
+      "typescript": {
+        "provider_type": "vllm",
+        "model": "claude-opus-4-6",
+        "provider_class": "frontier",
+        "cost_per_1k_tokens": 0.015
+      }
+    },
+    "self_hosted.auto.vllm.curator": {
+      "role": "curator",
+      "settings": {
+        "agent_provider": "vllm",
+        "role_routing": "auto"
+      },
+      "set_fields": ["agent_provider", "role_routing"],
+      "context": {},
+      "python": {
+        "provider_type": "vllm",
+        "model": "default",
+        "provider_class": "fast",
+        "cost_per_1k_tokens": 0.001
+      },
+      "typescript": {
+        "provider_type": "vllm",
+        "model": "claude-haiku-4-5-20251001",
+        "provider_class": "fast",
+        "cost_per_1k_tokens": 0.001
+      }
+    },
+    "self_hosted.off.vllm.competitor": {
+      "role": "competitor",
+      "settings": {
+        "agent_provider": "vllm",
+        "role_routing": "off"
+      },
+      "set_fields": ["agent_provider", "role_routing"],
+      "context": {},
+      "python": {
+        "provider_type": "vllm",
+        "model": "default",
+        "provider_class": "mid_tier",
+        "cost_per_1k_tokens": 0.003
+      },
+      "typescript": {
+        "provider_type": "vllm",
+        "model": "claude-sonnet-4-5-20250929",
+        "provider_class": "mid_tier",
+        "cost_per_1k_tokens": 0.003
+      }
+    },
+    "self_hosted.off.vllm.architect": {
+      "role": "architect",
+      "settings": {
+        "agent_provider": "vllm",
+        "role_routing": "off"
+      },
+      "set_fields": ["agent_provider", "role_routing"],
+      "context": {},
+      "python": {
+        "provider_type": "vllm",
+        "model": "default",
+        "provider_class": "mid_tier",
+        "cost_per_1k_tokens": 0.003
+      },
+      "typescript": {
+        "provider_type": "vllm",
+        "model": "claude-opus-4-6",
+        "provider_class": "mid_tier",
+        "cost_per_1k_tokens": 0.003
+      }
+    },
+    "self_hosted.off.vllm.curator": {
+      "role": "curator",
+      "settings": {
+        "agent_provider": "vllm",
+        "role_routing": "off"
+      },
+      "set_fields": ["agent_provider", "role_routing"],
+      "context": {},
+      "python": {
+        "provider_type": "vllm",
+        "model": "default",
+        "provider_class": "mid_tier",
+        "cost_per_1k_tokens": 0.003
+      },
+      "typescript": {
+        "provider_type": "vllm",
+        "model": "claude-opus-4-6",
+        "provider_class": "mid_tier",
+        "cost_per_1k_tokens": 0.003
+      }
+    },
+    "local_artifact.anthropic.competitor": {
+      "role": "competitor",
+      "settings": {
+        "agent_provider": "anthropic",
+        "role_routing": "auto",
+        "mlx_model_path": "/models/pinned-local"
+      },
+      "set_fields": ["agent_provider", "mlx_model_path", "role_routing"],
+      "context": {
+        "availableLocalModels": ["/models/distilled"]
+      },
+      "python": {
+        "provider_type": "mlx",
+        "model": "/models/distilled",
+        "provider_class": "local",
+        "cost_per_1k_tokens": 0
+      },
+      "typescript": {
+        "provider_type": "mlx",
+        "model": "/models/distilled",
+        "provider_class": "local",
+        "cost_per_1k_tokens": 0
+      }
+    },
+    "local_artifact.anthropic.analyst": {
+      "role": "analyst",
+      "settings": {
+        "agent_provider": "anthropic",
+        "role_routing": "auto",
+        "mlx_model_path": "/models/pinned-local"
+      },
+      "set_fields": ["agent_provider", "mlx_model_path", "role_routing"],
+      "context": {
+        "availableLocalModels": ["/models/distilled"]
+      },
+      "python": {
+        "provider_type": "mlx",
+        "model": "/models/distilled",
+        "provider_class": "local",
+        "cost_per_1k_tokens": 0
+      },
+      "typescript": {
+        "provider_type": "mlx",
+        "model": "/models/distilled",
+        "provider_class": "local",
+        "cost_per_1k_tokens": 0
+      }
+    },
+    "local_artifact.anthropic.coach": {
+      "role": "coach",
+      "settings": {
+        "agent_provider": "anthropic",
+        "role_routing": "auto",
+        "mlx_model_path": "/models/pinned-local"
+      },
+      "set_fields": ["agent_provider", "mlx_model_path", "role_routing"],
+      "context": {
+        "availableLocalModels": ["/models/distilled"]
+      },
+      "python": {
+        "provider_type": "mlx",
+        "model": "/models/distilled",
+        "provider_class": "local",
+        "cost_per_1k_tokens": 0
+      },
+      "typescript": {
+        "provider_type": "mlx",
+        "model": "/models/distilled",
+        "provider_class": "local",
+        "cost_per_1k_tokens": 0
+      }
+    },
+    "local_artifact.anthropic.architect": {
+      "role": "architect",
+      "settings": {
+        "agent_provider": "anthropic",
+        "role_routing": "auto",
+        "mlx_model_path": "/models/pinned-local"
+      },
+      "set_fields": ["agent_provider", "mlx_model_path", "role_routing"],
+      "context": {
+        "availableLocalModels": ["/models/distilled"]
+      },
+      "python": {
+        "provider_type": "anthropic",
+        "model": "claude-opus-4-6",
+        "provider_class": "frontier",
+        "cost_per_1k_tokens": 0.015
+      },
+      "typescript": {
+        "provider_type": "anthropic",
+        "model": "claude-opus-4-6",
+        "provider_class": "frontier",
+        "cost_per_1k_tokens": 0.015
+      }
+    },
+    "local_artifact.anthropic.curator": {
+      "role": "curator",
+      "settings": {
+        "agent_provider": "anthropic",
+        "role_routing": "auto",
+        "mlx_model_path": "/models/pinned-local"
+      },
+      "set_fields": ["agent_provider", "mlx_model_path", "role_routing"],
+      "context": {
+        "availableLocalModels": ["/models/distilled"]
+      },
+      "python": {
+        "provider_type": "anthropic",
+        "model": "claude-haiku-4-5-20251001",
+        "provider_class": "fast",
+        "cost_per_1k_tokens": 0.001
+      },
+      "typescript": {
+        "provider_type": "anthropic",
+        "model": "claude-haiku-4-5-20251001",
+        "provider_class": "fast",
+        "cost_per_1k_tokens": 0.001
+      }
+    },
+    "local_artifact.anthropic.translator": {
+      "role": "translator",
+      "settings": {
+        "agent_provider": "anthropic",
+        "role_routing": "auto",
+        "mlx_model_path": "/models/pinned-local"
+      },
+      "set_fields": ["agent_provider", "mlx_model_path", "role_routing"],
+      "context": {
+        "availableLocalModels": ["/models/distilled"]
+      },
+      "python": {
+        "provider_type": "mlx",
+        "model": "/models/distilled",
+        "provider_class": "local",
+        "cost_per_1k_tokens": 0
+      },
+      "typescript": {
+        "provider_type": "mlx",
+        "model": "/models/distilled",
+        "provider_class": "local",
+        "cost_per_1k_tokens": 0
+      }
+    },
+    "local_artifact.ollama.competitor": {
+      "role": "competitor",
+      "settings": {
+        "agent_provider": "ollama",
+        "role_routing": "auto",
+        "mlx_model_path": "/models/pinned-local"
+      },
+      "set_fields": ["agent_provider", "mlx_model_path", "role_routing"],
+      "context": {
+        "availableLocalModels": ["/models/distilled"]
+      },
+      "python": {
+        "provider_type": "mlx",
+        "model": "/models/distilled",
+        "provider_class": "local",
+        "cost_per_1k_tokens": 0
+      },
+      "typescript": {
+        "provider_type": "mlx",
+        "model": "/models/distilled",
+        "provider_class": "local",
+        "cost_per_1k_tokens": 0
+      }
+    },
+    "local_artifact.ollama.analyst": {
+      "role": "analyst",
+      "settings": {
+        "agent_provider": "ollama",
+        "role_routing": "auto",
+        "mlx_model_path": "/models/pinned-local"
+      },
+      "set_fields": ["agent_provider", "mlx_model_path", "role_routing"],
+      "context": {
+        "availableLocalModels": ["/models/distilled"]
+      },
+      "python": {
+        "provider_type": "mlx",
+        "model": "/models/distilled",
+        "provider_class": "local",
+        "cost_per_1k_tokens": 0
+      },
+      "typescript": {
+        "provider_type": "mlx",
+        "model": "/models/distilled",
+        "provider_class": "local",
+        "cost_per_1k_tokens": 0
+      }
+    },
+    "local_artifact.ollama.coach": {
+      "role": "coach",
+      "settings": {
+        "agent_provider": "ollama",
+        "role_routing": "auto",
+        "mlx_model_path": "/models/pinned-local"
+      },
+      "set_fields": ["agent_provider", "mlx_model_path", "role_routing"],
+      "context": {
+        "availableLocalModels": ["/models/distilled"]
+      },
+      "python": {
+        "provider_type": "mlx",
+        "model": "/models/distilled",
+        "provider_class": "local",
+        "cost_per_1k_tokens": 0
+      },
+      "typescript": {
+        "provider_type": "mlx",
+        "model": "/models/distilled",
+        "provider_class": "local",
+        "cost_per_1k_tokens": 0
+      }
+    },
+    "local_artifact.ollama.architect": {
+      "role": "architect",
+      "settings": {
+        "agent_provider": "ollama",
+        "role_routing": "auto",
+        "mlx_model_path": "/models/pinned-local"
+      },
+      "set_fields": ["agent_provider", "mlx_model_path", "role_routing"],
+      "context": {
+        "availableLocalModels": ["/models/distilled"]
+      },
+      "python": {
+        "provider_type": "ollama",
+        "model": "llama3.1",
+        "provider_class": "frontier",
+        "cost_per_1k_tokens": 0.015
+      },
+      "typescript": {
+        "provider_type": "ollama",
+        "model": "claude-opus-4-6",
+        "provider_class": "frontier",
+        "cost_per_1k_tokens": 0.015
+      }
+    },
+    "local_artifact.ollama.curator": {
+      "role": "curator",
+      "settings": {
+        "agent_provider": "ollama",
+        "role_routing": "auto",
+        "mlx_model_path": "/models/pinned-local"
+      },
+      "set_fields": ["agent_provider", "mlx_model_path", "role_routing"],
+      "context": {
+        "availableLocalModels": ["/models/distilled"]
+      },
+      "python": {
+        "provider_type": "ollama",
+        "model": "llama3.1",
+        "provider_class": "fast",
+        "cost_per_1k_tokens": 0.001
+      },
+      "typescript": {
+        "provider_type": "ollama",
+        "model": "claude-haiku-4-5-20251001",
+        "provider_class": "fast",
+        "cost_per_1k_tokens": 0.001
+      }
+    },
+    "local_artifact.ollama.translator": {
+      "role": "translator",
+      "settings": {
+        "agent_provider": "ollama",
+        "role_routing": "auto",
+        "mlx_model_path": "/models/pinned-local"
+      },
+      "set_fields": ["agent_provider", "mlx_model_path", "role_routing"],
+      "context": {
+        "availableLocalModels": ["/models/distilled"]
+      },
+      "python": {
+        "provider_type": "mlx",
+        "model": "/models/distilled",
+        "provider_class": "local",
+        "cost_per_1k_tokens": 0
+      },
+      "typescript": {
+        "provider_type": "mlx",
+        "model": "/models/distilled",
+        "provider_class": "local",
+        "cost_per_1k_tokens": 0
+      }
+    },
+    "explicit_override.architect_to_ollama": {
+      "role": "architect",
+      "settings": {
+        "architect_provider": "ollama"
+      },
+      "set_fields": ["architect_provider"],
+      "context": {},
+      "python": {
+        "provider_type": "ollama",
+        "model": "llama3.1",
+        "provider_class": "mid_tier",
+        "cost_per_1k_tokens": 0.003
+      },
+      "typescript": {
+        "provider_type": "ollama",
+        "model": "claude-opus-4-6",
+        "provider_class": "mid_tier",
+        "cost_per_1k_tokens": 0.003
+      }
+    },
+    "explicit_override.architect_to_vllm": {
+      "role": "architect",
+      "settings": {
+        "architect_provider": "vllm"
+      },
+      "set_fields": ["architect_provider"],
+      "context": {},
+      "python": {
+        "provider_type": "vllm",
+        "model": "default",
+        "provider_class": "mid_tier",
+        "cost_per_1k_tokens": 0.003
+      },
+      "typescript": {
+        "provider_type": "vllm",
+        "model": "claude-opus-4-6",
+        "provider_class": "mid_tier",
+        "cost_per_1k_tokens": 0.003
+      }
+    },
+    "explicit_override.competitor_to_mlx": {
+      "role": "competitor",
+      "settings": {
+        "competitor_provider": "mlx",
+        "mlx_model_path": "/models/pinned-local"
+      },
+      "set_fields": ["competitor_provider", "mlx_model_path"],
+      "context": {},
+      "python": {
+        "provider_type": "mlx",
+        "model": "/models/pinned-local",
+        "provider_class": "local",
+        "cost_per_1k_tokens": 0
+      },
+      "typescript": {
+        "provider_type": "mlx",
+        "model": "/models/pinned-local",
+        "provider_class": "local",
+        "cost_per_1k_tokens": 0
+      }
+    }
+  },
+  "cost_cases": {
+    "cost.anthropic": {
+      "settings": {
+        "agent_provider": "anthropic",
+        "role_routing": "auto"
+      },
+      "set_fields": ["agent_provider", "role_routing"],
+      "context": {},
+      "python": {
+        "all_frontier_per_1k_tokens": 0.09,
+        "savings_vs_all_frontier": 0.052,
+        "total_per_1k_tokens": 0.038
+      },
+      "typescript": {
+        "all_frontier_per_1k_tokens": 0.09,
+        "savings_vs_all_frontier": 0.052,
+        "total_per_1k_tokens": 0.038
+      }
+    },
+    "cost.ollama": {
+      "settings": {
+        "agent_provider": "ollama",
+        "role_routing": "auto"
+      },
+      "set_fields": ["agent_provider", "role_routing"],
+      "context": {},
+      "python": {
+        "all_frontier_per_1k_tokens": 0.09,
+        "savings_vs_all_frontier": 0.052,
+        "total_per_1k_tokens": 0.038
+      },
+      "typescript": {
+        "all_frontier_per_1k_tokens": 0.09,
+        "savings_vs_all_frontier": 0.052,
+        "total_per_1k_tokens": 0.038
+      }
+    },
+    "cost.vllm": {
+      "settings": {
+        "agent_provider": "vllm",
+        "role_routing": "auto"
+      },
+      "set_fields": ["agent_provider", "role_routing"],
+      "context": {},
+      "python": {
+        "all_frontier_per_1k_tokens": 0.09,
+        "savings_vs_all_frontier": 0.052,
+        "total_per_1k_tokens": 0.038
+      },
+      "typescript": {
+        "all_frontier_per_1k_tokens": 0.09,
+        "savings_vs_all_frontier": 0.052,
+        "total_per_1k_tokens": 0.038
+      }
+    },
+    "cost.openai": {
+      "settings": {
+        "agent_provider": "openai",
+        "role_routing": "auto"
+      },
+      "set_fields": ["agent_provider", "role_routing"],
+      "context": {},
+      "python": {
+        "all_frontier_per_1k_tokens": 0.09,
+        "savings_vs_all_frontier": 0.052,
+        "total_per_1k_tokens": 0.038
+      },
+      "typescript": {
+        "all_frontier_per_1k_tokens": 0.09,
+        "savings_vs_all_frontier": 0.052,
+        "total_per_1k_tokens": 0.038
+      }
+    },
+    "cost.mlx": {
+      "settings": {
+        "agent_provider": "mlx",
+        "role_routing": "auto"
+      },
+      "set_fields": ["agent_provider", "role_routing"],
+      "context": {},
+      "python": {
+        "all_frontier_per_1k_tokens": 0.09,
+        "savings_vs_all_frontier": 0.052,
+        "total_per_1k_tokens": 0.038
+      },
+      "typescript": {
+        "all_frontier_per_1k_tokens": 0.09,
+        "savings_vs_all_frontier": 0.052,
+        "total_per_1k_tokens": 0.038
+      }
+    }
+  }
+}
