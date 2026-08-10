@@ -23,9 +23,10 @@ the pipeline depends on for correctness.
 
 from __future__ import annotations
 
-from typing import Any
+import json
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
 
 from autocontext.agents.contracts import AnalystOutput, ArchitectOutput, CoachOutput
 from autocontext.providers.base import OutputSchema
@@ -58,12 +59,16 @@ class _StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+NonEmptyText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+
+
 class AnalystPayload(_StrictModel):
     """The analyst's three sections, as data rather than headings."""
 
-    findings: list[str] = Field(description="What the run showed, one claim per item.")
-    root_causes: list[str] = Field(description="Why each failure happened.")
-    recommendations: list[str] = Field(
+    findings: list[NonEmptyText] = Field(min_length=1, description="What the run showed, one claim per item.")
+    root_causes: list[NonEmptyText] = Field(min_length=1, description="Why each failure happened.")
+    recommendations: list[NonEmptyText] = Field(
+        min_length=1,
         description="Concrete changes for the next generation, each naming a parameter or behavior."
     )
 
@@ -96,20 +101,67 @@ class CoachPayload(_StrictModel):
 class ArchitectToolSpec(_StrictModel):
     """One proposed tool. Mirrors what parse_architect_tool_specs already requires."""
 
-    name: str = Field(description="Tool identifier.")
-    description: str = Field(description="What the tool does and when to reach for it.")
-    code: str = Field(description="Complete implementation.")
+    name: NonEmptyText = Field(description="Tool identifier.")
+    description: NonEmptyText = Field(description="What the tool does and when to reach for it.")
+    code: NonEmptyText = Field(description="Complete implementation.")
+
+
+class ArchitectHarnessSpec(_StrictModel):
+    """One executable pre-tournament strategy validator."""
+
+    name: NonEmptyText = Field(description="Validator identifier.")
+    description: str = Field(description="What the validator protects against, or empty.")
+    code: NonEmptyText = Field(description="Complete validate_strategy implementation.")
+
+
+class ArchitectMutationSpec(_StrictModel):
+    """One persistent harness mutation, with inapplicable selectors empty."""
+
+    type: Literal["prompt_fragment", "context_policy", "completion_check", "tool_instruction"]
+    target_role: str = Field(description="Target role for prompt_fragment, otherwise empty.")
+    component: str = Field(description="Context component for context_policy, otherwise empty.")
+    tool_name: str = Field(description="Tool identifier for tool_instruction, otherwise empty.")
+    content: NonEmptyText
+    rationale: str
+
+
+class ArchitectDAGChange(_StrictModel):
+    """One role-DAG change directive."""
+
+    action: Literal["add_role", "remove_role"]
+    name: NonEmptyText
+    depends_on: list[NonEmptyText] = Field(description="Dependencies for add_role; empty for remove_role.")
+
+
+class ArchitectTuningParameter(_StrictModel):
+    """One bounded adaptive configuration proposal."""
+
+    name: Literal[
+        "backpressure_min_delta",
+        "matches_per_generation",
+        "rlm_max_turns",
+        "architect_every_n_gens",
+        "probe_matches",
+    ]
+    value: float
 
 
 class ArchitectPayload(_StrictModel):
     """The architect's proposal.
 
-    Architect already speaks JSON via extract_json, so this is the smallest gap
-    of the three: the shape was known, it just was not enforced, and a
-    malformed proposal became an empty list.
+    All fields are required so OpenAI strict mode can enforce the object. Empty
+    lists represent channels with no proposal; rendered markdown omits their
+    legacy marker blocks, preserving the existing downstream behavior.
     """
 
+    observed_bottlenecks: list[str] = Field(description="Observed infrastructure bottlenecks.")
+    impact_hypothesis: str = Field(description="Expected impact of the proposed changes.")
     tools: list[ArchitectToolSpec] = Field(description="Proposed tools; an empty list means no proposal.")
+    harness: list[ArchitectHarnessSpec] = Field(description="Proposed executable harness validators.")
+    mutations: list[ArchitectMutationSpec] = Field(description="Proposed persistent harness mutations.")
+    dag_changes: list[ArchitectDAGChange] = Field(description="Proposed role-DAG changes.")
+    tuning_parameters: list[ArchitectTuningParameter] = Field(description="Proposed adaptive parameters.")
+    tuning_reasoning: str = Field(description="Reasoning for adaptive parameters, or empty.")
     changelog_entry: str = Field(description="One line describing the change, or empty if nothing is proposed.")
 
 
@@ -182,12 +234,61 @@ def parse_coach_constrained(raw_text: str) -> CoachOutput:
 def parse_architect_constrained(raw_text: str) -> ArchitectOutput:
     """Validate a schema-constrained architect response into the typed contract."""
     payload: ArchitectPayload = _validate("architect", ArchitectPayload, raw_text)
+    rendered = render_architect_markdown(payload)
+    # Keep the existing AST validation for executable harness code even after
+    # the outer object has passed schema validation.
+    from autocontext.agents.architect import parse_architect_harness_specs
+
     return ArchitectOutput(
-        raw_markdown=raw_text,
+        raw_markdown=rendered,
         tool_specs=[spec.model_dump() for spec in payload.tools],
+        harness_specs=parse_architect_harness_specs(rendered),
         changelog_entry=payload.changelog_entry,
         parse_success=True,
     )
+
+
+def render_architect_markdown(payload: ArchitectPayload) -> str:
+    """Render every validated architect channel into its legacy wire format."""
+    bottlenecks = "\n".join(f"- {item}" for item in payload.observed_bottlenecks)
+    tools_summary = "\n".join(f"- **{tool.name}**: {tool.description}" for tool in payload.tools)
+    blocks = [
+        f"## Observed Bottlenecks\n\n{bottlenecks}" if bottlenecks else "## Observed Bottlenecks\n",
+        f"## Tool Proposals\n\n{tools_summary}" if tools_summary else "## Tool Proposals\n",
+        f"## Impact Hypothesis\n\n{payload.impact_hypothesis}",
+        "```json\n" + json.dumps({"tools": [tool.model_dump() for tool in payload.tools]}) + "\n```",
+    ]
+    if payload.harness:
+        blocks.append(
+            "<!-- HARNESS_START -->\n"
+            + json.dumps({"harness": [spec.model_dump() for spec in payload.harness]})
+            + "\n<!-- HARNESS_END -->"
+        )
+    if payload.mutations:
+        blocks.append(
+            "<!-- MUTATIONS_START -->\n"
+            + json.dumps({"mutations": [mutation.model_dump() for mutation in payload.mutations]})
+            + "\n<!-- MUTATIONS_END -->"
+        )
+    if payload.dag_changes:
+        blocks.append(
+            "<!-- DAG_CHANGES_START -->\n"
+            + json.dumps({"changes": [change.model_dump() for change in payload.dag_changes]})
+            + "\n<!-- DAG_CHANGES_END -->"
+        )
+    if payload.tuning_parameters:
+        tuning: dict[str, float | str] = {
+            parameter.name: parameter.value for parameter in payload.tuning_parameters
+        }
+        tuning["reasoning"] = payload.tuning_reasoning
+        blocks.append(
+            "<!-- TUNING_PROPOSAL_START -->\n"
+            + json.dumps(tuning)
+            + "\n<!-- TUNING_PROPOSAL_END -->"
+        )
+    if payload.changelog_entry:
+        blocks.append(f"## Changelog\n\n{payload.changelog_entry}")
+    return "\n\n".join(blocks) + "\n"
 
 
 def render_coach_markdown(payload: CoachPayload) -> str:

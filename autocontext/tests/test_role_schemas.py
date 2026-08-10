@@ -15,6 +15,22 @@ import pytest
 MEASUREMENT = Path(__file__).resolve().parents[2] / "docs" / "ac913-format-drift-measurement.json"
 
 
+def _architect_payload(**overrides: object) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "observed_bottlenecks": [],
+        "impact_hypothesis": "",
+        "tools": [],
+        "harness": [],
+        "mutations": [],
+        "dag_changes": [],
+        "tuning_parameters": [],
+        "tuning_reasoning": "",
+        "changelog_entry": "",
+    }
+    payload.update(overrides)
+    return payload
+
+
 def _recorded_drift_sample() -> str:
     payload = json.loads(MEASUREMENT.read_text(encoding="utf-8"))
     sample = payload["sample_drifted_output"]
@@ -111,7 +127,23 @@ def test_extra_field_is_rejected() -> None:
     from autocontext.agents.role_schemas import RoleOutputValidationError, parse_analyst_constrained
 
     with pytest.raises(RoleOutputValidationError):
-        parse_analyst_constrained(json.dumps({"findings": [], "root_causes": [], "recommendations": [], "extra": 1}))
+        parse_analyst_constrained(
+            json.dumps({"findings": ["a"], "root_causes": ["b"], "recommendations": ["c"], "extra": 1})
+        )
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"findings": [], "root_causes": ["b"], "recommendations": ["c"]},
+        {"findings": ["a"], "root_causes": ["   "], "recommendations": ["c"]},
+    ],
+)
+def test_empty_analyst_sections_and_items_are_rejected(payload: dict[str, list[str]]) -> None:
+    from autocontext.agents.role_schemas import RoleOutputValidationError, parse_analyst_constrained
+
+    with pytest.raises(RoleOutputValidationError):
+        parse_analyst_constrained(json.dumps(payload))
 
 
 def test_provider_schema_is_strict_and_complete() -> None:
@@ -128,7 +160,9 @@ def test_provider_schema_is_strict_and_complete() -> None:
     assert set(schema["required"]) == {"findings", "root_causes", "recommendations"}
     for field in ("findings", "root_causes", "recommendations"):
         assert schema["properties"][field]["type"] == "array"
+        assert schema["properties"][field]["minItems"] == 1
         assert schema["properties"][field]["items"]["type"] == "string"
+        assert schema["properties"][field]["items"]["minLength"] == 1
 
 
 def test_coach_drift_is_a_typed_error_not_a_swallowed_playbook() -> None:
@@ -174,7 +208,7 @@ def test_architect_malformed_proposal_raises_instead_of_yielding_no_tools() -> N
     from autocontext.agents.architect import parse_architect_tool_specs
     from autocontext.agents.role_schemas import RoleOutputValidationError, parse_architect_constrained
 
-    malformed = '{"tools": [{"name": "probe"}]}'  # missing description and code
+    malformed = json.dumps(_architect_payload(tools=[{"name": "probe"}]))  # missing description and code
 
     assert parse_architect_tool_specs(malformed) == []
 
@@ -188,14 +222,67 @@ def test_architect_valid_proposal_survives_validation() -> None:
 
     result = parse_architect_constrained(
         json.dumps(
-            {
-                "tools": [{"name": "probe", "description": "d", "code": "def probe(): ..."}],
-                "changelog_entry": "added probe",
-            }
+            _architect_payload(
+                tools=[{"name": "probe", "description": "d", "code": "def probe(): ..."}],
+                changelog_entry="added probe",
+            )
         )
     )
     assert [spec["name"] for spec in result.tool_specs] == ["probe"]
     assert result.changelog_entry == "added probe"
+
+
+def test_architect_rendered_output_preserves_every_legacy_channel() -> None:
+    from autocontext.agents.architect import (
+        parse_architect_harness_specs,
+        parse_architect_tool_specs,
+        parse_dag_changes,
+    )
+    from autocontext.agents.role_schemas import parse_architect_constrained
+    from autocontext.harness.mutations.parser import parse_mutations
+    from autocontext.knowledge.tuning import parse_tuning_proposal
+
+    result = parse_architect_constrained(
+        json.dumps(
+            _architect_payload(
+                observed_bottlenecks=["slow validation"],
+                impact_hypothesis="Fewer invalid matches.",
+                tools=[{"name": "probe", "description": "d", "code": "def probe(): ..."}],
+                harness=[
+                    {
+                        "name": "guard",
+                        "description": "reject missing moves",
+                        "code": "def validate_strategy(strategy, scenario):\n    return True, []",
+                    }
+                ],
+                mutations=[
+                    {
+                        "type": "completion_check",
+                        "target_role": "",
+                        "component": "",
+                        "tool_name": "",
+                        "content": "verify every move",
+                        "rationale": "avoid omissions",
+                    }
+                ],
+                dag_changes=[{"action": "add_role", "name": "critic", "depends_on": ["analyst"]}],
+                tuning_parameters=[{"name": "matches_per_generation", "value": 5}],
+                tuning_reasoning="more signal",
+                changelog_entry="added validation guard",
+            )
+        )
+    )
+
+    assert [item["name"] for item in parse_architect_tool_specs(result.raw_markdown)] == ["probe"]
+    assert [item["name"] for item in parse_architect_harness_specs(result.raw_markdown)] == ["guard"]
+    assert [item.content for item in parse_mutations(result.raw_markdown)] == ["verify every move"]
+    assert parse_dag_changes(result.raw_markdown) == [
+        {"action": "add_role", "name": "critic", "depends_on": ["analyst"]}
+    ]
+    tuning = parse_tuning_proposal(result.raw_markdown)
+    assert tuning is not None
+    assert tuning.parameters == {"matches_per_generation": 5}
+    assert tuning.reasoning == "more signal"
 
 
 def test_every_role_schema_is_strict_and_complete() -> None:
@@ -209,7 +296,17 @@ def test_every_role_schema_is_strict_and_complete() -> None:
     expected = {
         "analyst_output": {"findings", "root_causes", "recommendations"},
         "coach_output": {"playbook", "lessons", "hints"},
-        "architect_output": {"tools", "changelog_entry"},
+        "architect_output": {
+            "observed_bottlenecks",
+            "impact_hypothesis",
+            "tools",
+            "harness",
+            "mutations",
+            "dag_changes",
+            "tuning_parameters",
+            "tuning_reasoning",
+            "changelog_entry",
+        },
     }
     for schema in (ANALYST_SCHEMA, COACH_SCHEMA, ARCHITECT_SCHEMA):
         assert schema.schema["additionalProperties"] is False, schema.name

@@ -4,7 +4,7 @@ import logging
 import re
 from typing import Any
 
-from autocontext.agents.architect import parse_architect_tool_specs
+from autocontext.agents.architect import parse_architect_harness_specs, parse_architect_tool_specs
 from autocontext.agents.coach import parse_coach_sections
 from autocontext.agents.contracts import AnalystOutput, ArchitectOutput, CoachOutput, CompetitorOutput
 from autocontext.harness.core.types import RoleExecution
@@ -87,9 +87,11 @@ def parse_architect_output(raw_markdown: str) -> ArchitectOutput:
     """Parse architect markdown into typed contract."""
     try:
         tool_specs = parse_architect_tool_specs(raw_markdown)
+        harness_specs = parse_architect_harness_specs(raw_markdown)
         return ArchitectOutput(
             raw_markdown=raw_markdown,
             tool_specs=tool_specs,
+            harness_specs=harness_specs,
             parse_success=True,
         )
     except Exception:

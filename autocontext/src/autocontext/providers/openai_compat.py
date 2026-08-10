@@ -90,7 +90,7 @@ class OpenAICompatibleProvider(LLMProvider):
         try:
             response = self._client.chat.completions.create(**request)
         except Exception as exc:
-            if not constrained:
+            if not constrained or not _is_unsupported_response_format_error(exc):
                 logger.debug("providers.openai_compat: caught Exception", exc_info=True)
                 raise ProviderError(f"OpenAI-compatible API error: {exc}") from exc
             # This endpoint does not understand response_format. Retry once
@@ -132,3 +132,22 @@ class OpenAICompatibleProvider(LLMProvider):
 
     def default_model(self) -> str:
         return self._default_model
+
+
+def _is_unsupported_response_format_error(exc: Exception) -> bool:
+    """Return True only for endpoint rejections of JSON-schema formatting.
+
+    Timeouts, rate limits, authentication failures, and transient server
+    errors must propagate to the normal retry layer. Retrying those requests
+    without a schema would silently turn an outage into an unconstrained run.
+    """
+    status_code = getattr(exc, "status_code", None)
+    if status_code not in {400, 404, 422}:
+        return False
+    message = str(exc).lower()
+    mentions_schema = "response_format" in message or "json_schema" in message
+    rejection = any(
+        token in message
+        for token in ("unsupported", "not supported", "unknown", "unrecognized", "invalid")
+    )
+    return mentions_schema and rejection

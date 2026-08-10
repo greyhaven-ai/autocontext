@@ -12,7 +12,7 @@ from autocontext.harness.core.llm_client import LanguageModelClient
 from autocontext.harness.core.types import ModelResponse, RoleUsage
 from autocontext.harness.evaluation.scenario_evaluator import ScenarioEvaluator
 from autocontext.harness.evaluation.types import EvaluationLimits
-from autocontext.providers.base import CompletionResult, LLMProvider
+from autocontext.providers.base import CompletionResult, LLMProvider, OutputSchema
 from autocontext.scenarios.base import Observation, ReplayEnvelope, Result
 from autocontext.storage.artifacts import ArtifactStore
 
@@ -40,6 +40,31 @@ class _Provider(LLMProvider):
             }
         )
         return CompletionResult(text=self.response, model=model or "stub")
+
+    def default_model(self) -> str:
+        return "stub"
+
+
+class _SchemaProvider(LLMProvider):
+    def __init__(self) -> None:
+        self.schemas: list[OutputSchema | None] = []
+
+    def complete(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        model: str | None = None,
+        temperature: float = 0.0,
+        max_tokens: int = 4096,
+        output_schema: OutputSchema | None = None,
+    ) -> CompletionResult:
+        self.schemas.append(output_schema)
+        return CompletionResult(
+            text='{"ok":true}',
+            model=model or "stub",
+            stop_reason="stop",
+            constrained=output_schema is not None,
+        )
 
     def default_model(self) -> str:
         return "stub"
@@ -201,6 +226,20 @@ def test_language_model_client_hooks_can_transform_request_and_response() -> Non
     assert response.text == "RESPONSE TO HELLO PLUS HOOK"
     assert response.metadata["hooked"] is True
     assert response.metadata["inner"] is True
+
+
+def test_provider_hooks_forward_schema_and_preserve_completion_metadata() -> None:
+    from autocontext.extensions import HookBus, HookedLLMProvider
+
+    inner = _SchemaProvider()
+    provider = HookedLLMProvider(inner, HookBus())
+    schema = OutputSchema(name="answer", schema={"type": "object"})
+
+    response = provider.complete("system", "user", output_schema=schema)
+
+    assert inner.schemas == [schema]
+    assert response.constrained is True
+    assert response.stop_reason == "stop"
 
 
 def test_prompt_hooks_transform_components_prompts_and_compaction() -> None:

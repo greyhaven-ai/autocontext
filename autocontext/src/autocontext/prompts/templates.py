@@ -489,6 +489,7 @@ def build_prompt_bundle(
         '"rationale":"<why>"},{"type":"tool_instruction","tool_name":"<tool_name>",'
         '"content":"<instruction>","rationale":"<why>"}]}\n'
         "<!-- MUTATIONS_END -->\n\n"
+        "Use empty strings for mutation selector fields that do not apply. "
         "If no harness mutations, omit the MUTATIONS markers entirely."
     )
 

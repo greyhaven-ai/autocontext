@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from autocontext.agents.analyst import AnalystRunner
-from autocontext.agents.architect import ArchitectRunner, parse_architect_harness_specs, parse_architect_tool_specs
-from autocontext.agents.coach import CoachRunner, parse_coach_sections
+from autocontext.agents.architect import ArchitectRunner
+from autocontext.agents.coach import CoachRunner
 from autocontext.agents.competitor import CompetitorRunner
 from autocontext.agents.curator import KnowledgeCurator
 from autocontext.agents.llm_client import DeferredMLXClient, LanguageModelClient, build_client_from_settings
@@ -728,10 +728,6 @@ class AgentOrchestrator:
         # under `python -O`; nothing below depends on this one executing.
         assert strategy is not None
 
-        tools = parse_architect_tool_specs(results["architect"].content)
-        harness_specs = parse_architect_harness_specs(results["architect"].content)
-        coach_playbook, coach_lessons, coach_hints = parse_coach_sections(results["coach"].content)
-
         competitor_typed = parse_competitor_output(
             results["competitor"].content,
             strategy,
@@ -743,14 +739,14 @@ class AgentOrchestrator:
 
         return AgentOutputs(
             strategy=strategy,
-            analysis_markdown=results["analyst"].content,
-            coach_markdown=results["coach"].content,
-            coach_playbook=coach_playbook,
-            coach_lessons=coach_lessons,
-            coach_competitor_hints=coach_hints,
-            architect_markdown=results["architect"].content,
-            architect_tools=tools,
-            architect_harness_specs=harness_specs,
+            analysis_markdown=analyst_typed.raw_markdown,
+            coach_markdown=coach_typed.raw_markdown,
+            coach_playbook=coach_typed.playbook,
+            coach_lessons=coach_typed.lessons,
+            coach_competitor_hints=coach_typed.hints,
+            architect_markdown=architect_typed.raw_markdown,
+            architect_tools=architect_typed.tool_specs,
+            architect_harness_specs=architect_typed.harness_specs,
             role_executions=[results[r] for r in ["competitor", "translator", "analyst", "coach", "architect"]],
             competitor_output=competitor_typed,
             analyst_output=analyst_typed,

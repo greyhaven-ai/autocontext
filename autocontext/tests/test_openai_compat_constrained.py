@@ -1,0 +1,88 @@
+from __future__ import annotations
+
+from types import SimpleNamespace
+from typing import Any
+
+import pytest
+
+from autocontext.providers.base import OutputSchema, ProviderError
+from autocontext.providers.openai_compat import OpenAICompatibleProvider
+
+
+class _Completions:
+    def __init__(self, outcomes: list[Any]) -> None:
+        self.outcomes = list(outcomes)
+        self.calls: list[dict[str, Any]] = []
+
+    def create(self, **request: Any) -> Any:
+        self.calls.append(request)
+        outcome = self.outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+
+class _RejectedRequest(Exception):
+    status_code = 400
+
+
+def _response(text: str = '{"answer":"ok"}') -> Any:
+    choice = SimpleNamespace(
+        message=SimpleNamespace(content=text),
+        finish_reason="stop",
+    )
+    usage = SimpleNamespace(prompt_tokens=3, completion_tokens=2)
+    return SimpleNamespace(choices=[choice], usage=usage)
+
+
+def _provider(outcomes: list[Any]) -> tuple[OpenAICompatibleProvider, _Completions]:
+    completions = _Completions(outcomes)
+    provider = object.__new__(OpenAICompatibleProvider)
+    provider._default_model = "stub"
+    provider._client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    return provider, completions
+
+
+def _schema() -> OutputSchema:
+    return OutputSchema(
+        name="answer",
+        schema={
+            "type": "object",
+            "properties": {"answer": {"type": "string"}},
+            "required": ["answer"],
+            "additionalProperties": False,
+        },
+    )
+
+
+def test_transient_failure_does_not_retry_without_schema() -> None:
+    provider, completions = _provider([TimeoutError("timed out"), _response("unconstrained")])
+
+    with pytest.raises(ProviderError, match="timed out"):
+        provider.complete("system", "user", output_schema=_schema())
+
+    assert len(completions.calls) == 1
+    assert "response_format" in completions.calls[0]
+
+
+def test_explicit_response_format_rejection_retries_unconstrained() -> None:
+    provider, completions = _provider(
+        [_RejectedRequest("response_format json_schema is not supported"), _response("fallback")]
+    )
+
+    result = provider.complete("system", "user", output_schema=_schema())
+
+    assert result.text == "fallback"
+    assert result.constrained is False
+    assert len(completions.calls) == 2
+    assert "response_format" in completions.calls[0]
+    assert "response_format" not in completions.calls[1]
+
+
+def test_successful_schema_request_is_reported_as_constrained() -> None:
+    provider, completions = _provider([_response()])
+
+    result = provider.complete("system", "user", output_schema=_schema())
+
+    assert result.constrained is True
+    assert completions.calls[0]["response_format"]["json_schema"]["strict"] is True

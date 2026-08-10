@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from typing import Any
 from unittest.mock import MagicMock
@@ -10,9 +11,11 @@ from autocontext.agents.llm_client import DeterministicDevClient
 from autocontext.agents.orchestrator import AgentOrchestrator
 from autocontext.config.settings import AppSettings
 from autocontext.execution.supervisor import ExecutionSupervisor
+from autocontext.harness.core.types import ModelResponse, RoleUsage
 from autocontext.loop.stage_tree_search import stage_tree_search
 from autocontext.loop.stage_types import GenerationContext
 from autocontext.prompts.templates import PromptBundle, build_prompt_bundle
+from autocontext.providers.base import OutputSchema
 from autocontext.scenarios.base import (
     ExecutionLimits,
     Observation,
@@ -105,6 +108,47 @@ def _make_orchestrator(settings: AppSettings | None = None) -> AgentOrchestrator
     return AgentOrchestrator(client=client, settings=s)
 
 
+class _ConstrainedRoleClient(DeterministicDevClient):
+    supports_constrained_output = True
+
+    def generate_constrained(
+        self,
+        *,
+        model: str,
+        prompt: str,
+        max_tokens: int,
+        temperature: float,
+        output_schema: OutputSchema,
+        role: str = "",
+        system: str = "",
+    ) -> ModelResponse:
+        del prompt, max_tokens, temperature, role, system
+        payloads: dict[str, dict[str, Any]] = {
+            "analyst_output": {
+                "findings": ["tree finding"],
+                "root_causes": ["tree cause"],
+                "recommendations": ["tree recommendation"],
+            },
+            "coach_output": {"playbook": "tree playbook", "lessons": "tree lesson", "hints": "tree hint"},
+            "architect_output": {
+                "observed_bottlenecks": ["tree bottleneck"],
+                "impact_hypothesis": "tree impact",
+                "tools": [],
+                "harness": [],
+                "mutations": [],
+                "dag_changes": [],
+                "tuning_parameters": [],
+                "tuning_reasoning": "",
+                "changelog_entry": "",
+            },
+        }
+        return ModelResponse(
+            text=json.dumps(payloads[output_schema.name]),
+            usage=RoleUsage(input_tokens=1, output_tokens=1, latency_ms=0, model=model),
+            metadata={"constrained": True},
+        )
+
+
 def _make_prompts(scenario: ScenarioInterface | None = None) -> PromptBundle:
     sc = scenario or _FakeScenario()
     obs = sc.get_observation(sc.initial_state(), "challenger")
@@ -173,6 +217,31 @@ class TestTreeSearchStage:
         assert isinstance(result.current_strategy, dict)
         assert result.tournament is not None
         assert result.gate_decision in ("advance", "rollback")
+
+    def test_constrained_role_outputs_use_rendered_typed_fields(self) -> None:
+        settings = _make_settings()
+        ctx = _make_ctx(settings=settings)
+        orch = AgentOrchestrator(client=_ConstrainedRoleClient(), settings=settings)
+        artifacts = MagicMock()
+        artifacts.persist_tools.return_value = []
+        artifacts.generation_dir.return_value = MagicMock()
+
+        result = stage_tree_search(
+            ctx,
+            orchestrator=orch,
+            supervisor=_make_inline_supervisor(),
+            artifacts=artifacts,
+            sqlite=MagicMock(),
+            events=MagicMock(),
+        )
+
+        assert result.outputs is not None
+        assert result.outputs.analysis_markdown.startswith("## Findings")
+        assert result.outputs.analyst_output.findings == ["tree finding"]
+        assert result.outputs.coach_playbook == "tree playbook"
+        assert result.outputs.coach_lessons == "tree lesson"
+        assert result.outputs.coach_competitor_hints == "tree hint"
+        assert result.outputs.architect_markdown.startswith("## Observed Bottlenecks")
 
     def test_emits_tree_search_start_event(self) -> None:
         """The tree_search_start event is emitted."""

@@ -38,14 +38,10 @@ class ProviderBridgeClient(LanguageModelClient):
     to be used as a client for agent role runners.
     """
 
-    # AC-913: an LLMProvider can carry an output schema to the backend. Whether
-    # the backend HONORS it is reported per-call by CompletionResult.constrained,
-    # not assumed here -- this flag only says the path exists.
-    supports_constrained_output: bool = True
-
     def __init__(self, provider: LLMProvider, *, use_provider_default_model: bool = False) -> None:
         self._provider = provider
         self._use_provider_default_model = use_provider_default_model
+        self.supports_constrained_output = _accepts_output_schema(provider.complete)
 
     def generate_constrained(
         self,
@@ -101,13 +97,14 @@ class ProviderBridgeClient(LanguageModelClient):
         del role
         t0 = time.monotonic()
         resolved_model = None if self._use_provider_default_model else model
-        # Forward output_schema ONLY when one was asked for. autocontext ships
-        # LLMProvider as public API, so a provider implemented outside this repo
-        # predates the parameter; passing it unconditionally would break every
-        # such implementation on calls that never wanted a schema. Opting in is
-        # the caller's choice, and a provider that has not adopted it simply
-        # never sees it.
-        extra: dict[str, Any] = {"output_schema": output_schema} if output_schema is not None else {}
+        # LLMProvider is a public interface and subclasses written before
+        # output_schema was added are still valid Python implementations. Only
+        # pass the new keyword when the concrete method opted into it; do not
+        # catch TypeError here, because that would also swallow bugs raised
+        # inside a provider implementation.
+        extra: dict[str, Any] = {}
+        if output_schema is not None and self.supports_constrained_output:
+            extra["output_schema"] = output_schema
         result = self._provider.complete(
             system_prompt=system,
             user_prompt=prompt,
@@ -135,6 +132,18 @@ class ProviderBridgeClient(LanguageModelClient):
             ),
             metadata=metadata,
         )
+
+
+def _accepts_output_schema(complete: Callable[..., object]) -> bool:
+    """Whether a provider's concrete complete method accepts the new keyword."""
+    try:
+        parameters = inspect.signature(complete).parameters.values()
+    except (TypeError, ValueError):
+        return False
+    return any(
+        parameter.name == "output_schema" or parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters
+    )
 
 
 class RuntimeBridgeClient(LanguageModelClient):

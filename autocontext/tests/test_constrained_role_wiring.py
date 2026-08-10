@@ -11,6 +11,7 @@ the schema helpers directly, so these go through the real runner.
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 from typing import Any
 
 from autocontext.providers.base import CompletionResult, LLMProvider, OutputSchema
@@ -44,6 +45,34 @@ class _RecordingProvider(LLMProvider):
 
     def default_model(self) -> str:
         return "stub"
+
+
+class _LegacyProvider(LLMProvider):
+    """Public provider implementation written before output_schema existed."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def complete(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        model: str | None = None,
+        temperature: float = 0.0,
+        max_tokens: int = 4096,
+    ) -> CompletionResult:
+        self.calls += 1
+        return CompletionResult(
+            text=(
+                "## Findings\n\n- legacy finding\n\n"
+                "## Root Causes\n\n- legacy cause\n\n"
+                "## Actionable Recommendations\n\n- legacy recommendation"
+            ),
+            model="legacy",
+        )
+
+    def default_model(self) -> str:
+        return "legacy"
 
 
 _VALID = json.dumps({"findings": ["f"], "root_causes": ["r"], "recommendations": ["rec"]})
@@ -83,6 +112,41 @@ def test_schema_reaches_the_provider_without_a_system_prompt() -> None:
     assert provider.calls[0]["output_schema"] is not None
 
 
+def test_schema_survives_the_production_hook_wrapper() -> None:
+    from autocontext.agents.analyst import AnalystRunner
+    from autocontext.agents.provider_bridge import ProviderBridgeClient
+    from autocontext.extensions import HookBus, HookedLanguageModelClient
+    from autocontext.harness.core.subagent import SubagentRuntime
+
+    provider = _RecordingProvider(enforce=True, text=_VALID)
+    client = HookedLanguageModelClient(ProviderBridgeClient(provider), HookBus())
+    execution = AnalystRunner(SubagentRuntime(client), model="stub").run(
+        "analyze this",
+        system="you are the analyst",
+    )
+
+    assert client.supports_constrained_output is True
+    assert provider.calls[0]["output_schema"].name == "analyst_output"
+    assert provider.calls[0]["system_prompt"] == "you are the analyst"
+    assert execution.metadata["constrained"] is True
+
+
+def test_legacy_provider_omits_the_new_keyword_and_runs_unconstrained() -> None:
+    from autocontext.agents.analyst import AnalystRunner
+    from autocontext.agents.parsers import parse_analyst_exec
+    from autocontext.agents.provider_bridge import ProviderBridgeClient
+    from autocontext.harness.core.subagent import SubagentRuntime
+
+    provider = _LegacyProvider()
+    bridge = ProviderBridgeClient(provider)
+    execution = AnalystRunner(SubagentRuntime(bridge), model="legacy").run("analyze")
+
+    assert bridge.supports_constrained_output is False
+    assert provider.calls == 1
+    assert execution.metadata["constrained"] is False
+    assert parse_analyst_exec(execution).findings == ["legacy finding"]
+
+
 def test_execution_records_whether_the_backend_enforced() -> None:
     """AC-913 criterion 3: the run record says whether output was constrained."""
     enforced = _run_analyst(_RecordingProvider(enforce=True, text=_VALID), system="s")
@@ -116,3 +180,64 @@ def test_a_backend_that_ignores_the_schema_still_produces_a_run() -> None:
     result = parse_analyst_exec(execution)
     assert result.findings == []
     assert execution.metadata["constrained"] is False
+
+
+def test_normal_output_assembly_uses_validated_rendered_views() -> None:
+    from autocontext.agents.orchestrator_helpers import _assemble_agent_outputs
+    from autocontext.harness.core.types import RoleExecution, RoleUsage
+
+    def execution(role: str, content: str, *, constrained: bool = False) -> RoleExecution:
+        return RoleExecution(
+            role=role,
+            content=content,
+            usage=RoleUsage(input_tokens=0, output_tokens=0, latency_ms=0, model="stub"),
+            subagent_id=role,
+            status="completed",
+            metadata={"constrained": constrained},
+        )
+
+    architect_json = json.dumps(
+        {
+            "observed_bottlenecks": ["slow checks"],
+            "impact_hypothesis": "Faster feedback.",
+            "tools": [{"name": "probe", "description": "d", "code": "def probe(): ..."}],
+            "harness": [
+                {
+                    "name": "guard",
+                    "description": "d",
+                    "code": "def validate_strategy(strategy, scenario):\n    return True, []",
+                }
+            ],
+            "mutations": [],
+            "dag_changes": [],
+            "tuning_parameters": [],
+            "tuning_reasoning": "",
+            "changelog_entry": "added probe",
+        }
+    )
+    analyst = execution("analyst", _VALID, constrained=True)
+    coach = execution(
+        "coach",
+        json.dumps({"playbook": "P", "lessons": "L", "hints": "H"}),
+        constrained=True,
+    )
+    architect = execution("architect", architect_json, constrained=True)
+    outputs = _assemble_agent_outputs(
+        SimpleNamespace(settings=SimpleNamespace(code_strategies_enabled=False)),
+        '{"move":"north"}',
+        {"move": "north"},
+        execution("competitor", '{"move":"north"}'),
+        execution("translator", '{"move":"north"}'),
+        analyst,
+        coach,
+        architect,
+    )
+
+    assert outputs.analysis_markdown.startswith("## Findings")
+    assert outputs.coach_markdown.startswith("<!-- PLAYBOOK_START -->")
+    assert outputs.coach_playbook == "P"
+    assert outputs.coach_lessons == "L"
+    assert outputs.coach_competitor_hints == "H"
+    assert outputs.architect_markdown.startswith("## Observed Bottlenecks")
+    assert [item["name"] for item in outputs.architect_tools] == ["probe"]
+    assert [item["name"] for item in outputs.architect_harness_specs] == ["guard"]
