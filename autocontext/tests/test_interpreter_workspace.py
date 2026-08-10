@@ -153,6 +153,47 @@ def test_base_exception_from_candidate_is_contained() -> None:
     assert after.error is None and "2" in after.stdout
 
 
+def test_variables_never_invoke_candidate_repr_or_len() -> None:
+    ws = InterpreterWorkspace()
+    result = ws.run(
+        "def explode(self):\n"
+        "    raise SystemExit(7)\n"
+        'Trap = type("Trap", (), {"__repr__": explode, "__len__": explode})\n'
+        "value = Trap()"
+    )
+    assert result.error is None
+
+    by_name = {variable.name: variable for variable in ws.variables()}
+    assert by_name["value"].type_name == "Trap"
+    assert by_name["value"].size is None
+    assert by_name["value"].summary == "<Trap>"
+
+
+def test_snapshot_never_invokes_candidate_deepcopy() -> None:
+    ws = InterpreterWorkspace()
+    result = ws.run(
+        "def explode(self, memo):\n"
+        "    raise SystemExit(9)\n"
+        'Trap = type("Trap", (), {"__deepcopy__": explode})\n'
+        "value = Trap()\n"
+        "plain = [[1], [2]]"
+    )
+    assert result.error is None
+
+    snapshot = ws.snapshot()
+    assert "value" in snapshot.skipped
+    assert snapshot.variables["plain"] == [[1], [2]]
+
+
+def test_variable_summary_has_global_budget_for_shared_container_graphs() -> None:
+    ws = InterpreterWorkspace()
+    result = ws.run("value = [0]\nfor _ in range(6):\n    value = [value] * 20")
+    assert result.error is None
+
+    by_name = {variable.name: variable for variable in ws.variables()}
+    assert len(by_name["value"].summary) <= 120
+
+
 def test_seed_values_do_not_alias_caller_state() -> None:
     caller_pool = [1, 2, 3]
     ws = InterpreterWorkspace(seed={"pool": caller_pool})

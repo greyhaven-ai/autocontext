@@ -61,7 +61,7 @@ class _SupportsFieldsSet(Protocol):
 PROVIDER_DEFAULT_MODEL: dict[str, str] = {
     "ollama": "llama3.1",
     "openai": "gpt-4o",
-    "openai-compatible": "default",
+    "openai-compatible": "gpt-4o",
     "vllm": "default",
     "openrouter": "anthropic/claude-sonnet-4",
 }

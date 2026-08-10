@@ -50,6 +50,20 @@ AUTOCONTEXT_AGENT_PROVIDER=claude-cli AUTOCONTEXT_CLAUDE_MODEL=sonnet uv run aut
 AUTOCONTEXT_AGENT_PROVIDER=codex AUTOCONTEXT_CODEX_MODEL=o4-mini uv run autoctx solve "..." --iterations 3
 ```
 
+Ollama uses `llama3.1` by default. Set one local model override to fill every
+otherwise-unset role and tier slot, regardless of whether role routing is off
+or automatic:
+
+```bash
+AUTOCONTEXT_AGENT_PROVIDER=ollama \
+AUTOCONTEXT_LOCAL_MODEL=qwen3:32b \
+uv run autoctx solve "..." --iterations 3
+```
+
+An explicit `AUTOCONTEXT_MODEL_<ROLE>` or `AUTOCONTEXT_TIER_<TIER>_MODEL`
+still takes precedence. `AUTOCONTEXT_LOCAL_MODEL` does not alter Anthropic's
+shipped per-role defaults.
+
 ## Common commands
 
 | Command                                                                                | Purpose                                                                                                |

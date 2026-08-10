@@ -607,6 +607,7 @@ autoctx run my_task --json
 
 # Ollama (local, no API key needed)
 AUTOCONTEXT_AGENT_PROVIDER=ollama \
+AUTOCONTEXT_LOCAL_MODEL=qwen3:32b \
 AUTOCONTEXT_JUDGE_PROVIDER=ollama \
 autoctx run my_task --json
 
@@ -666,6 +667,7 @@ Key environment variables:
 | `AUTOCONTEXT_AGENT_PROVIDER`                                         | Agent provider: `anthropic`, `openai-compatible`, `ollama`, `vllm`, `pi`, `pi-rpc`, `deterministic`                                                                                                                                                                                                 |
 | `AUTOCONTEXT_AGENT_API_KEY`                                          | Global agent API key override (or use provider-native env vars such as `ANTHROPIC_API_KEY`)                                                                                                                                                                                                         |
 | `AUTOCONTEXT_AGENT_BASE_URL`                                         | Global base URL for OpenAI-compatible agent endpoints                                                                                                                                                                                                                                               |
+| `AUTOCONTEXT_LOCAL_MODEL`                                            | One model id for every otherwise-unset role/tier slot on non-Anthropic providers. Explicit `AUTOCONTEXT_MODEL_<ROLE>` and `AUTOCONTEXT_TIER_<TIER>_MODEL` values win; otherwise known provider defaults apply (`ollama=llama3.1`, `openai`/`openai-compatible=gpt-4o`, `vllm=default`). Works with role routing both `off` and `auto`. |
 | `AUTOCONTEXT_COMPETITOR_API_KEY` / `AUTOCONTEXT_COMPETITOR_BASE_URL` | Optional competitor-specific credential and endpoint override                                                                                                                                                                                                                                       |
 | `AUTOCONTEXT_ANALYST_API_KEY` / `AUTOCONTEXT_ANALYST_BASE_URL`       | Optional analyst-specific credential and endpoint override                                                                                                                                                                                                                                          |
 | `AUTOCONTEXT_COACH_API_KEY` / `AUTOCONTEXT_COACH_BASE_URL`           | Optional coach-specific credential and endpoint override                                                                                                                                                                                                                                            |

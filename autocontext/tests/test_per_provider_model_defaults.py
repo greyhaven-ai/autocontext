@@ -21,6 +21,8 @@ Two rows must never change, and are asserted against ``_BEFORE`` on purpose:
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 
 ROLES = ("competitor", "analyst", "coach", "architect", "curator", "translator")
@@ -39,7 +41,9 @@ _CLAUDE_BY_ROLE: dict[str, str] = {
 }
 
 # provider -> role -> resolved model, as of 29199664 (pre-fix).
-_BEFORE: dict[str, dict[str, str]] = {provider: dict(_CLAUDE_BY_ROLE) for provider in ("anthropic", "ollama", "vllm", "openai")}
+_BEFORE: dict[str, dict[str, str]] = {
+    provider: dict(_CLAUDE_BY_ROLE) for provider in ("anthropic", "ollama", "vllm", "openai", "openai-compatible")
+}
 _BEFORE["mlx"] = dict.fromkeys(ROLES, _MLX_PATH)
 
 # The same measurement after AC-912. Unchanged rows are spelled out rather
@@ -50,6 +54,7 @@ _AFTER: dict[str, dict[str, str]] = {
     "ollama": dict.fromkeys(ROLES, "llama3.1"),
     "vllm": dict.fromkeys(ROLES, "default"),
     "openai": dict.fromkeys(ROLES, "gpt-4o"),
+    "openai-compatible": dict.fromkeys(ROLES, "gpt-4o"),
 }
 
 _UNCHANGED_PROVIDERS = ("anthropic", "mlx")
@@ -97,7 +102,7 @@ def test_preserved_providers_are_byte_identical_to_before(monkeypatch: pytest.Mo
     assert _route(_settings(monkeypatch, provider), role) == _BEFORE[provider][role]
 
 
-@pytest.mark.parametrize("provider", ("ollama", "vllm", "openai"))
+@pytest.mark.parametrize("provider", ("ollama", "vllm", "openai", "openai-compatible"))
 def test_no_claude_id_reaches_a_non_anthropic_provider(monkeypatch: pytest.MonkeyPatch, provider: str) -> None:
     """The inverse of the original defect test, which is the point of the fix.
 
@@ -174,3 +179,82 @@ def test_explicit_override_is_distinguishable_from_the_default(
     chosen = _settings(monkeypatch, "ollama", AUTOCONTEXT_MODEL_COMPETITOR=_CLAUDE_SONNET)
     assert "model_competitor" in chosen.model_fields_set
     assert chosen.model_competitor == _CLAUDE_SONNET
+
+
+def _orchestrator_model(settings, *, role: str = "competitor", generation: int = 1) -> str | None:
+    """Resolve through the production orchestrator, without constructing a live provider."""
+    from autocontext.agents.llm_client import DeterministicDevClient
+    from autocontext.agents.orchestrator import AgentOrchestrator
+
+    client = DeterministicDevClient()
+    orchestrator = AgentOrchestrator(client, settings)
+    with patch("autocontext.agents.provider_bridge.create_role_client", return_value=client):
+        _resolved_client, model = orchestrator.resolve_role_execution(role, generation=generation)
+    return model
+
+
+@pytest.mark.parametrize(
+    ("provider", "expected"),
+    (
+        ("ollama", "llama3.1"),
+        ("vllm", "default"),
+        ("openai", "gpt-4o"),
+        ("openai-compatible", "gpt-4o"),
+    ),
+)
+def test_routing_off_resolves_provider_default_in_production(
+    monkeypatch: pytest.MonkeyPatch,
+    provider: str,
+    expected: str,
+) -> None:
+    """The shipped routing-off mode must not bypass provider-aware defaults."""
+    assert _orchestrator_model(_settings(monkeypatch, provider)) == expected
+
+
+def test_tier_routing_resolves_tier_against_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = _settings(
+        monkeypatch,
+        "ollama",
+        AUTOCONTEXT_ROLE_ROUTING="auto",
+        AUTOCONTEXT_TIER_ROUTING_ENABLED="true",
+    )
+    assert _orchestrator_model(settings) == "llama3.1"
+
+
+@pytest.mark.parametrize("role_routing", ("off", "auto"))
+def test_tier_routing_resolves_against_per_role_provider(
+    monkeypatch: pytest.MonkeyPatch,
+    role_routing: str,
+) -> None:
+    settings = _settings(
+        monkeypatch,
+        "anthropic",
+        AUTOCONTEXT_ROLE_ROUTING=role_routing,
+        AUTOCONTEXT_TIER_ROUTING_ENABLED="true",
+        AUTOCONTEXT_COMPETITOR_PROVIDER="ollama",
+    )
+    assert _orchestrator_model(settings) == "llama3.1"
+
+
+@pytest.mark.parametrize("tier_routing", ("false", "true"))
+def test_explicit_role_model_wins_in_auto_mode(
+    monkeypatch: pytest.MonkeyPatch,
+    tier_routing: str,
+) -> None:
+    settings = _settings(
+        monkeypatch,
+        "ollama",
+        AUTOCONTEXT_ROLE_ROUTING="auto",
+        AUTOCONTEXT_TIER_ROUTING_ENABLED=tier_routing,
+        AUTOCONTEXT_MODEL_COMPETITOR="qwen3:custom",
+    )
+    assert _orchestrator_model(settings) == "qwen3:custom"
+
+
+def test_openai_compatible_default_matches_provider_factory(monkeypatch: pytest.MonkeyPatch) -> None:
+    from autocontext.config.provider_model_defaults import PROVIDER_DEFAULT_MODEL
+    from autocontext.providers.registry import create_provider
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    provider = create_provider("openai-compatible", api_key="test-key")
+    assert PROVIDER_DEFAULT_MODEL["openai-compatible"] == provider.default_model() == "gpt-4o"

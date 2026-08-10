@@ -5,6 +5,7 @@ problem complexity to appropriate reasoning capacity.  Supports harness-aware
 dynamic demotion (AC-164): when harness coverage is strong, the competitor
 can be demoted to a cheaper tier since the harness catches invalid strategies.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -56,7 +57,26 @@ class ModelRouter:
         is_plateau: bool,
         harness_coverage: HarnessCoverage | None = None,
     ) -> str | None:
-        """Return model name for the given role and context, or None if routing disabled.
+        """Return model name for the given role and context, or None if routing disabled."""
+        tier = self.select_tier(
+            role,
+            generation=generation,
+            retry_count=retry_count,
+            is_plateau=is_plateau,
+            harness_coverage=harness_coverage,
+        )
+        return self._tier_map[tier] if tier is not None else None
+
+    def select_tier(
+        self,
+        role: str,
+        *,
+        generation: int,
+        retry_count: int,
+        is_plateau: bool,
+        harness_coverage: HarnessCoverage | None = None,
+    ) -> str | None:
+        """Return the selected tier name so callers can resolve its provider-specific model.
 
         Args:
             role: Agent role (competitor, analyst, coach, etc.).
@@ -105,7 +125,7 @@ class ModelRouter:
             if is_plateau:
                 tier = self._max_tier(tier, "opus")
 
-        return self._tier_map[tier]
+        return tier
 
     def _max_tier(self, a: str, b: str) -> str:
         """Return the higher of two tiers."""

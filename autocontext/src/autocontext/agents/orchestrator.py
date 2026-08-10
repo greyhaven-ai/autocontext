@@ -29,6 +29,7 @@ from autocontext.agents.subagent_runtime import SubagentRuntime
 from autocontext.agents.translator import StrategyTranslator
 from autocontext.agents.trial_summary import build_trial_summary as _build_trial_summary
 from autocontext.agents.types import AgentOutputs, RoleExecution
+from autocontext.config.provider_model_defaults import resolve_model_default
 from autocontext.config.settings import AppSettings
 from autocontext.execution.harness_coverage import HarnessCoverage
 from autocontext.extensions import HookBus, wrap_language_model_client
@@ -420,13 +421,6 @@ class AgentOrchestrator:
             or self._scenario_bound_default_client(role, scenario_name=scenario_name)
             or self._client_for_role(role)
         )
-        model = self.resolve_model(
-            role,
-            generation=generation,
-            retry_count=retry_count,
-            is_plateau=is_plateau,
-            scenario_name=scenario_name,
-        )
         provider_config = self._resolve_role_provider_config(
             role,
             generation=generation,
@@ -434,11 +428,28 @@ class AgentOrchestrator:
             is_plateau=is_plateau,
             scenario_name=scenario_name,
         )
+        effective_config = provider_config or self._role_router.route(role)
+        model = self.resolve_model(
+            role,
+            generation=generation,
+            retry_count=retry_count,
+            is_plateau=is_plateau,
+            scenario_name=scenario_name,
+            provider=effective_config.provider_type,
+        )
         if provider_config is None:
-            return client, model
+            # role_routing="off" disables provider selection, not effective
+            # model resolution. The runners were constructed from raw
+            # AppSettings defaults (Claude ids), so leaving ``model`` as None
+            # here leaks those ids to Ollama/vLLM/OpenAI-compatible clients.
+            if self._role_router.role_model_is_explicit(role):
+                return client, self._role_router.resolved_role_model(role, effective_config.provider_type)
+            return client, model or effective_config.model
         client = self._client_for_provider_config(role, provider_config, scenario_name=scenario_name)
         if provider_config.provider_class == ProviderClass.LOCAL:
             return client, provider_config.model
+        if self._role_router.role_model_is_explicit(role):
+            return client, self._role_router.resolved_role_model(role, provider_config.provider_type)
         return client, model or provider_config.model
 
     def resolve_role_execution(
@@ -757,16 +768,30 @@ class AgentOrchestrator:
         is_plateau: bool = False,
         scenario_name: str = "",
         harness_coverage: HarnessCoverage | None = None,
+        provider: str | None = None,
     ) -> str | None:
         """Return the model to use for a role, or None to use the default."""
         if harness_coverage is None and role == "competitor":
             harness_coverage = self._get_harness_coverage(scenario_name)
-        return self._model_router.select(
+        tier = self._model_router.select_tier(
             role,
             generation=generation,
             retry_count=retry_count,
             is_plateau=is_plateau,
             harness_coverage=harness_coverage,
+        )
+        if tier is None:
+            return None
+        field_name = f"tier_{tier}_model"
+        configured: str = getattr(self.settings, field_name)
+        return (
+            resolve_model_default(
+                self.settings,
+                provider=provider or self.settings.agent_provider,
+                field_name=field_name,
+                configured=configured,
+            )
+            or configured
         )
 
     def _get_harness_coverage(self, scenario_name: str) -> HarnessCoverage | None:

@@ -52,7 +52,7 @@ class AppSettings(WorkspaceInterpreterFields, OutputBudgetFields, BaseModel):
     agent_provider: str = Field(default="anthropic")
     anthropic_api_key: str | None = Field(default=None)
     # AC-912: fills unset role/tier slots. See config/provider_model_defaults.py.
-    local_model: str = Field(default="")
+    local_model: str = Field(default="", description="Model id for every unset non-Anthropic role/tier slot")
     model_competitor: str = Field(default="claude-sonnet-4-5-20250929")
     model_analyst: str = Field(default="claude-sonnet-4-5-20250929")
     model_coach: str = Field(default="claude-opus-4-6")
