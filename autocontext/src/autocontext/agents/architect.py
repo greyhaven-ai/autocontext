@@ -8,22 +8,25 @@ from typing import Any
 
 from autocontext.agents.subagent_runtime import SubagentRuntime, SubagentTask
 from autocontext.agents.types import RoleExecution
-from autocontext.harness.core.output_parser import extract_delimited_section
+from autocontext.harness.core.output_parser import extract_delimited_section, extract_json
 
 logger = logging.getLogger(__name__)
 
+
 def parse_architect_tool_specs(content: str) -> list[dict[str, Any]]:
-    start = content.find("```json")
-    end = content.rfind("```")
-    if start == -1 or end == -1 or end <= start:
-        return []
-    body = content[start + 7 : end].strip()
-    try:
-        decoded = json.loads(body)
-    except json.JSONDecodeError:
-        logger.warning("architect output JSON block unparseable (possibly truncated); treating as no proposal")
-        return []
-    if not isinstance(decoded, Mapping):
+    decoded = extract_json(content, on_failure="none")
+    if decoded is None:
+        # Warn only when there was something object-shaped to fail ON. Before
+        # this site was migrated onto extract_json it looked for a literal
+        # "```json" and returned [] SILENTLY when there wasn't one, so an empty
+        # string, bare prose, or an array-shaped answer produced no log line at
+        # all; warning on those now would be pure added volume with nothing
+        # actionable in it. extract_json can only ever succeed by returning a
+        # Mapping, so with no "{" anywhere the failure was a foregone
+        # conclusion rather than a truncated proposal -- which is exactly what
+        # this message claims it is.
+        if "{" in content:
+            logger.warning("architect output JSON block unparseable (possibly truncated); treating as no proposal")
         return []
     tools = decoded.get("tools")
     if not isinstance(tools, list):

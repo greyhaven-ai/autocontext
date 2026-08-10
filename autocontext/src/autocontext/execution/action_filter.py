@@ -14,6 +14,7 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
+from autocontext.harness.core.output_parser import extract_json
 from autocontext.scenarios.base import ScenarioInterface
 
 logger = logging.getLogger(__name__)
@@ -205,19 +206,4 @@ class ActionFilterHarness:
 
     @staticmethod
     def _extract_json_object(response: str) -> dict[str, Any] | None:
-        candidates: list[str] = []
-        fenced = re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", response, flags=re.IGNORECASE)
-        if fenced:
-            candidates.append(fenced.group(1))
-        start = response.find("{")
-        end = response.rfind("}")
-        if start != -1 and end > start:
-            candidates.append(response[start : end + 1])
-        for candidate in candidates:
-            try:
-                parsed = json.loads(candidate)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(parsed, dict):
-                return parsed
-        return None
+        return extract_json(response, on_failure="none")

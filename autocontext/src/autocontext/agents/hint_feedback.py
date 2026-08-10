@@ -13,12 +13,13 @@ Key types:
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
+
+from autocontext.harness.core.output_parser import extract_json
 
 logger = logging.getLogger(__name__)
 
@@ -139,9 +140,6 @@ def build_hint_reflection_prompt(
     )
 
 
-_JSON_FENCE_RE = re.compile(r"```(?:json)?\s*\n(.*?)```", re.DOTALL)
-
-
 def _normalize_feedback_list(value: Any) -> list[str]:
     if isinstance(value, str):
         item = value.strip()
@@ -189,48 +187,45 @@ def parse_hint_feedback(
     hint_items: list[str] | None = None,
 ) -> HintFeedback:
     """Parse competitor's hint feedback response."""
-    text = raw_text.strip()
+    # AC-910 Task 5: delegates to the shared extract_json(..., on_failure="none")
+    # instead of its own newline-required fence regex + json.loads. Both a
+    # JSONDecodeError and a successful-but-non-dict parse (e.g. a bare array)
+    # collapse to None here, matching this function's original "fall through
+    # to all-empty defaults on any parse failure" policy exactly -- neither
+    # case ever raised before, and neither does now.
+    data = extract_json(raw_text, on_failure="none")
+    if data is None:
+        logger.debug("agents.hint_feedback: no parseable JSON object found in competitor response")
+        return HintFeedback(helpful=[], misleading=[], missing=[], generation=generation)
 
-    # Try fenced JSON first
-    match = _JSON_FENCE_RE.search(text)
-    if match:
-        text = match.group(1).strip()
+    helpful: list[str]
+    misleading: list[str]
+    if hint_items:
+        helpful_indexes = _normalize_feedback_index_list(
+            data.get("helpful_hint_numbers"),
+            max_index=len(hint_items),
+        )
+        misleading_indexes = _normalize_feedback_index_list(
+            data.get("misleading_hint_numbers"),
+            max_index=len(hint_items),
+        )
+        helpful = [hint_items[index - 1] for index in helpful_indexes]
+        misleading = [hint_items[index - 1] for index in misleading_indexes]
+    else:
+        helpful = []
+        misleading = []
 
-    try:
-        data = json.loads(text)
-        if isinstance(data, dict):
-            helpful: list[str]
-            misleading: list[str]
-            if hint_items:
-                helpful_indexes = _normalize_feedback_index_list(
-                    data.get("helpful_hint_numbers"),
-                    max_index=len(hint_items),
-                )
-                misleading_indexes = _normalize_feedback_index_list(
-                    data.get("misleading_hint_numbers"),
-                    max_index=len(hint_items),
-                )
-                helpful = [hint_items[index - 1] for index in helpful_indexes]
-                misleading = [hint_items[index - 1] for index in misleading_indexes]
-            else:
-                helpful = []
-                misleading = []
+    if not helpful:
+        helpful = _normalize_feedback_list(data.get("helpful"))
+    if not misleading:
+        misleading = _normalize_feedback_list(data.get("misleading"))
 
-            if not helpful:
-                helpful = _normalize_feedback_list(data.get("helpful"))
-            if not misleading:
-                misleading = _normalize_feedback_list(data.get("misleading"))
-
-            return HintFeedback(
-                helpful=helpful,
-                misleading=misleading,
-                missing=_normalize_feedback_list(data.get("missing")),
-                generation=generation,
-            )
-    except (json.JSONDecodeError, TypeError):
-        logger.debug("agents.hint_feedback: suppressed json.JSONDecodeError), TypeError", exc_info=True)
-
-    return HintFeedback(helpful=[], misleading=[], missing=[], generation=generation)
+    return HintFeedback(
+        helpful=helpful,
+        misleading=misleading,
+        missing=_normalize_feedback_list(data.get("missing")),
+        generation=generation,
+    )
 
 
 def format_hint_feedback_for_coach(feedback: HintFeedback | None) -> str:

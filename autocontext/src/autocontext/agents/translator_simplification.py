@@ -10,12 +10,13 @@ Track 2: Consolidated analyst+coach output model and benchmark harness
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 from typing import Any
 
 from pydantic import BaseModel, Field
+
+from autocontext.harness.core.output_parser import extract_json
 
 logger = logging.getLogger(__name__)
 
@@ -23,44 +24,17 @@ logger = logging.getLogger(__name__)
 # Track 1: Deterministic strategy extraction
 # ---------------------------------------------------------------------------
 
-_JSON_FENCE_RE = re.compile(r"```(?:json)?\s*\n(.*?)```", re.DOTALL)
-_JSON_OBJECT_RE = re.compile(r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}")
-
 
 def extract_strategy_deterministic(raw_text: str) -> dict[str, Any] | None:
     """Try to extract a JSON strategy dict from raw competitor output without an LLM.
 
     Returns the parsed dict if successful, None if no valid JSON object found.
-    Tries in order: fenced code blocks, then bare JSON objects in the text.
     """
-    if not raw_text or not raw_text.strip():
+    decoded = extract_json(raw_text, on_failure="none")
+    if decoded is None:
+        logger.debug("agents.translator_simplification: no parseable JSON object found in competitor output")
         return None
-
-    # Try fenced code blocks first
-    for match in _JSON_FENCE_RE.finditer(raw_text):
-        result = _try_parse_object(match.group(1).strip())
-        if result is not None:
-            return result
-
-    # Try bare JSON objects in text
-    for match in _JSON_OBJECT_RE.finditer(raw_text):
-        result = _try_parse_object(match.group(0))
-        if result is not None:
-            return result
-
-    # Last resort: try the whole text as JSON
-    return _try_parse_object(raw_text.strip())
-
-
-def _try_parse_object(text: str) -> dict[str, Any] | None:
-    """Attempt to parse text as a JSON object. Returns None on failure or if not a dict."""
-    try:
-        parsed = json.loads(text)
-        if isinstance(parsed, dict):
-            return parsed
-    except (json.JSONDecodeError, ValueError):
-        logger.debug("agents.translator_simplification: suppressed json.JSONDecodeError), ValueError", exc_info=True)
-    return None
+    return decoded
 
 
 # ---------------------------------------------------------------------------
@@ -89,7 +63,7 @@ def _extract_section_bullets(markdown: str, heading: str) -> list[str]:
     if not match:
         return bullets
 
-    after = markdown[match.end():]
+    after = markdown[match.end() :]
     for line in after.splitlines():
         stripped = line.strip()
         if stripped.startswith("#") or stripped.startswith("<!--"):

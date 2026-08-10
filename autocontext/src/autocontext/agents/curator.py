@@ -1,16 +1,17 @@
 from __future__ import annotations
 
-import json
 import logging
 import re
 from dataclasses import dataclass
 from importlib import import_module
 from typing import Any
 
+from pydantic import ValidationError
+
 from autocontext.agents.feedback_loops import AnalystRating
 from autocontext.agents.subagent_runtime import SubagentRuntime, SubagentTask
 from autocontext.agents.types import RoleExecution
-from autocontext.harness.core.output_parser import strip_json_fences
+from autocontext.harness.core.output_parser import extract_json
 
 _DECISION_RE = re.compile(r"<!--\s*CURATOR_DECISION:\s*(accept|reject|merge)\s*-->", re.IGNORECASE)
 _PLAYBOOK_RE = re.compile(
@@ -102,6 +103,7 @@ _CURATOR_CONSOLIDATION_CONSTRAINT = (
     "- Do NOT keep lessons that directly contradict each other without resolution\n\n"
 )
 
+
 def _structural_hint_prompt(hint_style: str) -> str:
     return str(import_module("autocontext.knowledge.soft_hints").structural_hint_prompt(hint_style))
 
@@ -191,8 +193,7 @@ class KnowledgeCurator:
         """Rate analyst quality so the next analyst prompt gets concrete curator feedback."""
         constraint_preamble = _CURATOR_ANALYST_RATING_CONSTRAINT if constraint_mode else ""
         prompt = (
-            constraint_preamble
-            + "You are a curator rating the quality of the analyst's report.\n\n"
+            constraint_preamble + "You are a curator rating the quality of the analyst's report.\n\n"
             "Score the report from 1-5 on:\n"
             "- actionability: how directly the recommendations can be used\n"
             "- specificity: how concrete and evidence-backed the findings are\n"
@@ -211,15 +212,41 @@ class KnowledgeCurator:
                 temperature=0.2,
             )
         )
-        payload: dict[str, Any] = {}
+        decoded = extract_json(exec_result.content, on_failure="none")
+        if decoded is None:
+            # No exc_info here, unlike the ValidationError branch below and
+            # unlike this line before the migration. It used to sit inside
+            # `except json.JSONDecodeError`, where there was a live exception
+            # to attach; extract_json(on_failure="none") swallows that
+            # exception internally and reports failure as a None return, so
+            # there is no active exception at this point and exc_info=True
+            # would append a bare "NoneType: None" to every such warning.
+            logger.warning("curator analyst-rating parse failed; using default scores")
+            payload: dict[str, Any] = {}
+        else:
+            payload = decoded
         try:
-            decoded = json.loads(strip_json_fences(exec_result.content))
-            if isinstance(decoded, dict):
-                payload = decoded
-        except json.JSONDecodeError:
-            logger.warning("curator analyst-rating parse failed; using default scores", exc_info=True)
-            payload = {}
-        rating = AnalystRating.from_dict({"generation": generation, **payload})
+            rating = AnalystRating.from_dict({"generation": generation, **payload})
+        except ValidationError:
+            # This site's contract is fail-soft, and it has to be: the rating is
+            # FEEDBACK routed into the next generation's analyst prompt, not the
+            # artifact the loop scores. Its caller
+            # (loop.stage_helpers.persistence_helpers._maybe_rate_analyst_output)
+            # runs mid-generation with no handler, so raising here would abort a
+            # whole generation over a cosmetic score. Contrast translator.translate,
+            # which deliberately uses on_failure="raise" because the strategy it
+            # parses IS the scored artifact.
+            #
+            # A payload that PARSES as JSON but not as a rating (e.g.
+            # {"actionability": "not-a-number"}) has always been able to reach
+            # from_dict and raise; what widened it was migrating this site onto
+            # extract_json, which recovers unfenced prose JSON the old
+            # json.loads(strip_json_fences(...)) could not, so inputs that used
+            # to fail closed at the JSONDecodeError now arrive here with a
+            # non-default payload. Degrade to defaults instead, which is what
+            # every other malformed-output path at this site already does.
+            logger.warning("curator analyst-rating payload failed schema validation; using default scores", exc_info=True)
+            rating = AnalystRating.from_dict({"generation": generation})
         return rating, exec_result
 
     def consolidate_lessons(
@@ -233,8 +260,7 @@ class KnowledgeCurator:
         lessons_text = "\n".join(existing_lessons)
         constraint_preamble = _CURATOR_CONSOLIDATION_CONSTRAINT if constraint_mode else ""
         prompt = (
-            constraint_preamble
-            + "You are a curator consolidating operational lessons. "
+            constraint_preamble + "You are a curator consolidating operational lessons. "
             f"Reduce {len(existing_lessons)} lessons to at most {max_lessons}.\n\n"
             "Deduplicate semantically similar lessons. Rank by evidence strength.\n"
             "Remove outdated or contradicted lessons.\n\n"

@@ -10,7 +10,7 @@ from typing import Any
 from autocontext.agents.subagent_runtime import SubagentRuntime, SubagentTask
 from autocontext.agents.translator_simplification import extract_strategy_deterministic
 from autocontext.agents.types import RoleExecution
-from autocontext.harness.core.output_parser import strip_json_fences as _harness_strip_fences
+from autocontext.harness.core.output_parser import extract_json
 from autocontext.harness.core.types import RoleUsage
 from autocontext.strategy_interface import is_action_plan_interface
 
@@ -24,11 +24,6 @@ class StrategyTranslator:
         # AC-905: the old 400/200 budgets were the tightest in the codebase
         # and routinely truncated strategy JSON; the floor is now 1024.
         self.max_tokens = max_tokens
-
-    @staticmethod
-    def _strip_fences(text: str) -> str:
-        """Strip markdown code fences if present, returning the inner content."""
-        return _harness_strip_fences(text)
 
     def translate(self, raw_output: str, strategy_interface: str) -> tuple[dict[str, Any], RoleExecution]:
         deterministic = extract_strategy_deterministic(raw_output)
@@ -64,11 +59,26 @@ class StrategyTranslator:
                 temperature=0.0,
             )
         )
-        cleaned = self._strip_fences(execution.content)
-        decoded = json.loads(cleaned)
-        if not isinstance(decoded, Mapping):
-            raise ValueError("translator did not return a JSON object")
-        return dict(decoded), execution
+        # extract_json defaults to on_failure="raise": a strategy that fails
+        # to parse must surface as an error, never as a silently-substituted
+        # empty dict that then gets executed and scored as a legitimate
+        # result. A JSONDecodeError (nothing parsed at all) is re-raised
+        # as-is; a successful parse to a non-object (e.g. a bare array) is
+        # reported with this method's own, more specific message instead of
+        # the parser's generic one.
+        try:
+            decoded = extract_json(execution.content)
+        except json.JSONDecodeError:
+            raise
+        except ValueError as exc:
+            raise ValueError("translator did not return a JSON object") from exc
+        # Type narrowing for mypy ONLY, not a runtime guard: extract_json is
+        # declared `-> dict[str, Any] | None` because of the on_failure="none"
+        # variant, but on the default "raise" path it either returns a dict or
+        # raises, so the None arm is unreachable here. Asserts are stripped
+        # under `python -O`; nothing below depends on this one executing.
+        assert decoded is not None
+        return decoded, execution
 
     @staticmethod
     def _matches_strategy_interface(strategy: Mapping[str, Any], strategy_interface: str) -> bool:
