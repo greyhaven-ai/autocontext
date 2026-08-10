@@ -3,6 +3,8 @@
 // Regenerate with: node scripts/generate-role-routing-contract.mjs
 // CI gate: node scripts/generate-role-routing-contract.mjs --check
 
+import type { RoleRoutingSettings } from "./role-routing.js";
+
 export const PROVIDER_CLASSES = ["frontier", "mid_tier", "fast", "local", "code_policy"] as const;
 
 export type ProviderClass = (typeof PROVIDER_CLASSES)[number];
@@ -43,4 +45,28 @@ export const EXPLICIT_PROVIDER_CLASS: Record<string, ProviderClass> = {
   "openai-compatible": "mid_tier",
   openclaw: "frontier",
   vllm: "mid_tier",
+};
+
+// Python settings key -> the RoleRoutingSettings field holding the same value.
+// Typed against `keyof RoleRoutingSettings` so a contract entry naming a field
+// TypeScript does not have fails to compile here, rather than silently dropping
+// that setting when a test replays a shared fixture.
+export const SETTINGS_KEY_MAP: Record<string, keyof RoleRoutingSettings> = {
+  agent_provider: "agentProvider",
+  analyst_provider: "analystProvider",
+  architect_provider: "architectProvider",
+  coach_provider: "coachProvider",
+  competitor_provider: "competitorProvider",
+  local_model: "localModel",
+  mlx_model_path: "mlxModelPath",
+  model_analyst: "modelAnalyst",
+  model_architect: "modelArchitect",
+  model_coach: "modelCoach",
+  model_competitor: "modelCompetitor",
+  model_curator: "modelCurator",
+  model_translator: "modelTranslator",
+  role_routing: "roleRouting",
+  tier_haiku_model: "tierHaikuModel",
+  tier_opus_model: "tierOpusModel",
+  tier_sonnet_model: "tierSonnetModel",
 };

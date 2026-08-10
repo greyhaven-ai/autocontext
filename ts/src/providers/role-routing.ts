@@ -41,6 +41,13 @@ export const LOCAL_ELIGIBLE_ROLES =
 // inside routing logic.
 export const EXPLICIT_PROVIDER_CLASS = _contract.EXPLICIT_PROVIDER_CLASS;
 
+// Python settings key -> the RoleRoutingSettings field holding the same value.
+// Typed in the generated module against `keyof RoleRoutingSettings`, so a contract
+// entry naming a field this package lacks fails to compile there. Exported because
+// the cross-language replays translate one shared fixture into both spellings and
+// must not hand-maintain a second copy of this mapping.
+export const SETTINGS_KEY_MAP = _contract.SETTINGS_KEY_MAP;
+
 const DEFAULT_ROLE_MODELS: Record<GenerationRole, string> = {
   competitor: "claude-sonnet-4-5-20250929",
   analyst: "claude-sonnet-4-5-20250929",
@@ -67,6 +74,13 @@ export interface RoleRoutingSettings {
   tierSonnetModel?: string;
   tierHaikuModel?: string;
   mlxModelPath?: string;
+  /**
+   * Single model id filling every role/tier slot the user has not configured, for
+   * providers that are not Anthropic. Python's counterpart is `local_model`
+   * (AC-912). Declared here so the shared contract's SETTINGS_KEY_MAP can name it
+   * and neither package can carry a routing setting the other has never heard of.
+   */
+  localModel?: string;
 }
 
 export interface RoleRoutingContext {

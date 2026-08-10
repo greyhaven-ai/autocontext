@@ -96,6 +96,8 @@ const tsSource = `/* eslint-disable */
 // Regenerate with: node scripts/generate-role-routing-contract.mjs
 // CI gate: node scripts/generate-role-routing-contract.mjs --check
 
+import type { RoleRoutingSettings } from "./role-routing.js";
+
 export const PROVIDER_CLASSES = ${tsArray([...contract.provider_classes])} as const;
 
 export type ProviderClass = (typeof PROVIDER_CLASSES)[number];
@@ -120,6 +122,14 @@ export const LOCAL_ELIGIBLE_ROLES = ${tsArray([...contract.local_eligible_roles]
 // a mistyped ProviderClass deep inside routing logic.
 export const EXPLICIT_PROVIDER_CLASS: Record<string, ProviderClass> = {
 ${jsonObj(contract.explicit_provider_classes, "  ")}
+};
+
+// Python settings key -> the RoleRoutingSettings field holding the same value.
+// Typed against \`keyof RoleRoutingSettings\` so a contract entry naming a field
+// TypeScript does not have fails to compile here, rather than silently dropping
+// that setting when a test replays a shared fixture.
+export const SETTINGS_KEY_MAP: Record<string, keyof RoleRoutingSettings> = {
+${jsonObj(contract.settings_keys, "  ")}
 };
 `;
 
@@ -149,6 +159,13 @@ LOCAL_ELIGIBLE_ROLES: Final[frozenset[str]] = frozenset(${pyList([...contract.lo
 
 EXPLICIT_PROVIDER_CLASSES: Final[dict[str, str]] = {
 ${pyObj(contract.explicit_provider_classes, "    ")}
+}
+
+# Python settings key -> the TypeScript field holding the same value. Python reads
+# the keys; TypeScript reads the values. Declared once so neither package can add a
+# routing-relevant setting the other never learns about.
+SETTINGS_KEYS: Final[dict[str, str]] = {
+${pyObj(contract.settings_keys, "    ")}
 }
 `;
 

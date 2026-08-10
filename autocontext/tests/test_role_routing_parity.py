@@ -287,6 +287,19 @@ def test_known_divergences_are_fully_described() -> None:
         assert entry["resolution"].strip()
 
 
+def test_settings_defaults_cover_every_contract_settings_key() -> None:
+    """AC-911: the two replays' settings surfaces are declared once, in the contract.
+
+    Exact-set equality, not a subset check: a field this replay stops supplying is
+    as much a coverage hole as one it never supplied. AC-912 added ``local_model``
+    here and not to the TypeScript replay, and nothing failed; this is the
+    assertion that would have caught it.
+    """
+    from autocontext.agents.role_routing_contract_generated import SETTINGS_KEYS
+
+    assert set(_SETTINGS_DEFAULTS) == set(SETTINGS_KEYS)
+
+
 def test_fixture_typo_guards_actually_raise() -> None:
     """The harness's own typo guards are otherwise never executed.
 

@@ -41,3 +41,26 @@ EXPLICIT_PROVIDER_CLASSES: Final[dict[str, str]] = {
     "openclaw": "frontier",
     "vllm": "mid_tier",
 }
+
+# Python settings key -> the TypeScript field holding the same value. Python reads
+# the keys; TypeScript reads the values. Declared once so neither package can add a
+# routing-relevant setting the other never learns about.
+SETTINGS_KEYS: Final[dict[str, str]] = {
+    "agent_provider": "agentProvider",
+    "analyst_provider": "analystProvider",
+    "architect_provider": "architectProvider",
+    "coach_provider": "coachProvider",
+    "competitor_provider": "competitorProvider",
+    "local_model": "localModel",
+    "mlx_model_path": "mlxModelPath",
+    "model_analyst": "modelAnalyst",
+    "model_architect": "modelArchitect",
+    "model_coach": "modelCoach",
+    "model_competitor": "modelCompetitor",
+    "model_curator": "modelCurator",
+    "model_translator": "modelTranslator",
+    "role_routing": "roleRouting",
+    "tier_haiku_model": "tierHaikuModel",
+    "tier_opus_model": "tierOpusModel",
+    "tier_sonnet_model": "tierSonnetModel",
+}

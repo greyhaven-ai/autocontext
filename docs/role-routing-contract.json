@@ -29,6 +29,25 @@
     "ollama": "mid_tier",
     "vllm": "mid_tier"
   },
+  "settings_keys": {
+    "agent_provider": "agentProvider",
+    "role_routing": "roleRouting",
+    "competitor_provider": "competitorProvider",
+    "analyst_provider": "analystProvider",
+    "coach_provider": "coachProvider",
+    "architect_provider": "architectProvider",
+    "model_competitor": "modelCompetitor",
+    "model_analyst": "modelAnalyst",
+    "model_coach": "modelCoach",
+    "model_architect": "modelArchitect",
+    "model_curator": "modelCurator",
+    "model_translator": "modelTranslator",
+    "tier_opus_model": "tierOpusModel",
+    "tier_sonnet_model": "tierSonnetModel",
+    "tier_haiku_model": "tierHaikuModel",
+    "mlx_model_path": "mlxModelPath",
+    "local_model": "localModel"
+  },
   "class_model_fields": {
     "frontier": { "python": "tier_opus_model", "typescript": "tierOpusModel" },
     "mid_tier": { "python": "tier_sonnet_model", "typescript": "tierSonnetModel" },
