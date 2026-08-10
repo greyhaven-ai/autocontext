@@ -13,9 +13,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any
 
-from autocontext.agents.architect import parse_architect_harness_specs, parse_architect_tool_specs
-from autocontext.agents.coach import parse_coach_sections
-from autocontext.agents.parsers import parse_analyst_output, parse_architect_output, parse_coach_output, parse_competitor_output
+from autocontext.agents.parsers import parse_analyst_exec, parse_architect_exec, parse_coach_exec, parse_competitor_output
 from autocontext.agents.role_isolation import resolve_role_turn
 from autocontext.agents.types import AgentOutputs, RoleExecution
 
@@ -271,29 +269,25 @@ def _assemble_agent_outputs(
     architect_exec: RoleExecution,
 ) -> AgentOutputs:
     """Parse role outputs and assemble the AgentOutputs for this generation."""
-    tools = parse_architect_tool_specs(architect_exec.content)
-    harness_specs = parse_architect_harness_specs(architect_exec.content)
-    coach_playbook, coach_lessons, coach_hints = parse_coach_sections(coach_exec.content)
-
     competitor_typed = parse_competitor_output(
         raw_text,
         strategy,
         is_code_strategy=orchestrator.settings.code_strategies_enabled,
     )
-    analyst_typed = parse_analyst_output(analyst_exec.content)
-    coach_typed = parse_coach_output(coach_exec.content)
-    architect_typed = parse_architect_output(architect_exec.content)
+    analyst_typed = parse_analyst_exec(analyst_exec)
+    coach_typed = parse_coach_exec(coach_exec)
+    architect_typed = parse_architect_exec(architect_exec)
 
     return AgentOutputs(
         strategy=strategy,
-        analysis_markdown=analyst_exec.content,
-        coach_markdown=coach_exec.content,
-        coach_playbook=coach_playbook,
-        coach_lessons=coach_lessons,
-        coach_competitor_hints=coach_hints,
-        architect_markdown=architect_exec.content,
-        architect_tools=tools,
-        architect_harness_specs=harness_specs,
+        analysis_markdown=analyst_typed.raw_markdown,
+        coach_markdown=coach_typed.raw_markdown,
+        coach_playbook=coach_typed.playbook,
+        coach_lessons=coach_typed.lessons,
+        coach_competitor_hints=coach_typed.hints,
+        architect_markdown=architect_typed.raw_markdown,
+        architect_tools=architect_typed.tool_specs,
+        architect_harness_specs=architect_typed.harness_specs,
         role_executions=[competitor_exec, translator_exec, analyst_exec, coach_exec, architect_exec],
         competitor_output=competitor_typed,
         analyst_output=analyst_typed,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import anthropic
 
-from autocontext.providers.base import CompletionResult, LLMProvider, ProviderError
+from autocontext.providers.base import CompletionResult, LLMProvider, OutputSchema, ProviderError
 from autocontext.providers.token_caps import clamp_output_tokens
 
 
@@ -26,7 +26,9 @@ class AnthropicProvider(LLMProvider):
         model: str | None = None,
         temperature: float = 0.0,
         max_tokens: int = 4096,
+        output_schema: OutputSchema | None = None,
     ) -> CompletionResult:
+        del output_schema  # AC-913: Anthropic structured output not wired yet; reported unconstrained
         model_id = model or self._default_model
         try:
             response = self._client.messages.create(

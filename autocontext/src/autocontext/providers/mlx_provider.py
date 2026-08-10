@@ -11,7 +11,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from autocontext.providers.base import CompletionResult, LLMProvider, ProviderError
+from autocontext.providers.base import CompletionResult, LLMProvider, OutputSchema, ProviderError
 
 logger = logging.getLogger(__name__)
 
@@ -187,12 +187,14 @@ class MLXProvider(LLMProvider):
         model: str | None = None,
         temperature: float = 0.0,
         max_tokens: int = 4096,
+        output_schema: OutputSchema | None = None,
     ) -> CompletionResult:
         """Generate a completion using the local MLX model.
 
         The system and user prompts are concatenated.  ``temperature`` and
         ``max_tokens`` from the call override the instance defaults.
         """
+        del output_schema  # AC-913: no constrained decoding in the MLX sampler
         effective_temp = temperature if temperature > 0 else self._temperature
         effective_max = min(max_tokens, self._max_tokens) if max_tokens != 4096 else self._max_tokens
 

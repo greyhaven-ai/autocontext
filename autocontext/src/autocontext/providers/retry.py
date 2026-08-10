@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 import time
 
-from autocontext.providers.base import CompletionResult, LLMProvider, ProviderError
+from autocontext.providers.base import CompletionResult, LLMProvider, OutputSchema, ProviderError
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +74,7 @@ class RetryProvider(LLMProvider):
         model: str | None = None,
         temperature: float = 0.0,
         max_tokens: int = 4096,
+        output_schema: OutputSchema | None = None,
     ) -> CompletionResult:
         """Call the underlying provider with retry on transient errors."""
         last_error: Exception | None = None
@@ -84,6 +85,7 @@ class RetryProvider(LLMProvider):
                 return self._provider.complete(
                     system_prompt, user_prompt,
                     model=model, temperature=temperature, max_tokens=max_tokens,
+                    output_schema=output_schema,
                 )
             except ProviderError as e:
                 last_error = e

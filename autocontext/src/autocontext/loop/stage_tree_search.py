@@ -6,9 +6,8 @@ import json
 import logging
 from typing import TYPE_CHECKING, Any
 
-from autocontext.agents.architect import parse_architect_harness_specs, parse_architect_tool_specs, parse_dag_changes
-from autocontext.agents.coach import parse_coach_sections
-from autocontext.agents.parsers import parse_analyst_output, parse_architect_output, parse_coach_output, parse_competitor_output
+from autocontext.agents.architect import parse_dag_changes
+from autocontext.agents.parsers import parse_analyst_exec, parse_architect_exec, parse_coach_exec, parse_competitor_output
 from autocontext.agents.types import AgentOutputs
 from autocontext.harness.evaluation.failure_report import FailureReport, MatchDiagnosis
 from autocontext.harness.evaluation.runner import EvaluationRunner
@@ -343,18 +342,14 @@ def stage_tree_search(
     architect_exec = orchestrator.architect.run(architect_prompt)
     _notify("architect", "completed")
 
-    tools = parse_architect_tool_specs(architect_exec.content)
-    harness_specs = parse_architect_harness_specs(architect_exec.content)
-    coach_playbook, coach_lessons, coach_hints = parse_coach_sections(coach_exec.content)
-
     competitor_typed = parse_competitor_output(
         json.dumps(best_strategy, sort_keys=True),
         best_strategy,
         is_code_strategy=settings.code_strategies_enabled,
     )
-    analyst_typed = parse_analyst_output(analyst_exec.content)
-    coach_typed = parse_coach_output(coach_exec.content)
-    architect_typed = parse_architect_output(architect_exec.content)
+    analyst_typed = parse_analyst_exec(analyst_exec)
+    coach_typed = parse_coach_exec(coach_exec)
+    architect_typed = parse_architect_exec(architect_exec)
 
     # Build a synthetic competitor RoleExecution for the tree search phase
     from autocontext.harness.core.types import RoleExecution, RoleUsage
@@ -376,14 +371,14 @@ def stage_tree_search(
 
     outputs = AgentOutputs(
         strategy=best_strategy,
-        analysis_markdown=analyst_exec.content,
-        coach_markdown=coach_exec.content,
-        coach_playbook=coach_playbook,
-        coach_lessons=coach_lessons,
-        coach_competitor_hints=coach_hints,
-        architect_markdown=architect_exec.content,
-        architect_tools=tools,
-        architect_harness_specs=harness_specs,
+        analysis_markdown=analyst_typed.raw_markdown,
+        coach_markdown=coach_typed.raw_markdown,
+        coach_playbook=coach_typed.playbook,
+        coach_lessons=coach_typed.lessons,
+        coach_competitor_hints=coach_typed.hints,
+        architect_markdown=architect_typed.raw_markdown,
+        architect_tools=architect_typed.tool_specs,
+        architect_harness_specs=architect_typed.harness_specs,
         role_executions=[tree_competitor_exec, translator_exec, analyst_exec, coach_exec, architect_exec],
         competitor_output=competitor_typed,
         analyst_output=analyst_typed,
@@ -397,9 +392,9 @@ def stage_tree_search(
         ctx.generation,
         outputs=[
             ("competitor", json.dumps(best_strategy, sort_keys=True)),
-            ("analyst", analyst_exec.content),
-            ("coach", coach_exec.content),
-            ("architect", architect_exec.content),
+            ("analyst", outputs.analysis_markdown),
+            ("coach", outputs.coach_markdown),
+            ("architect", outputs.architect_markdown),
         ],
         role_metrics=[
             (
@@ -415,23 +410,23 @@ def stage_tree_search(
         ],
     )
 
-    created_tools = artifacts.persist_tools(ctx.scenario_name, ctx.generation, tools)
-    if settings.harness_validators_enabled and harness_specs:
-        artifacts.persist_harness(ctx.scenario_name, ctx.generation, harness_specs)
+    created_tools = artifacts.persist_tools(ctx.scenario_name, ctx.generation, outputs.architect_tools)
+    if settings.harness_validators_enabled and outputs.architect_harness_specs:
+        artifacts.persist_harness(ctx.scenario_name, ctx.generation, outputs.architect_harness_specs)
     persist_approved_harness_mutations(
         artifacts,
         ctx.scenario_name,
         generation=ctx.generation,
         run_id=ctx.run_id,
-        proposed=parse_mutations(architect_exec.content),
+        proposed=parse_mutations(outputs.architect_markdown),
     )
 
-    ctx.dag_changes = parse_dag_changes(architect_exec.content)
+    ctx.dag_changes = parse_dag_changes(outputs.architect_markdown)
 
     if settings.config_adaptive_enabled:
         from autocontext.knowledge.tuning import parse_tuning_proposal
 
-        ctx.tuning_proposal = parse_tuning_proposal(architect_exec.content)
+        ctx.tuning_proposal = parse_tuning_proposal(outputs.architect_markdown)
 
     # ── Replay narrative from best match ─────────────────────────────
     best_eval = max(final_tournament.results, key=lambda r: r.score)

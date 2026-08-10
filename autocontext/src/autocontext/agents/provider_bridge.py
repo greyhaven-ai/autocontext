@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from autocontext.config.settings import AppSettings
-    from autocontext.providers.base import LLMProvider
+    from autocontext.providers.base import LLMProvider, OutputSchema
     from autocontext.runtimes.base import AgentRuntime
     from autocontext.session.runtime_session import RuntimeSession
 
@@ -41,6 +41,29 @@ class ProviderBridgeClient(LanguageModelClient):
     def __init__(self, provider: LLMProvider, *, use_provider_default_model: bool = False) -> None:
         self._provider = provider
         self._use_provider_default_model = use_provider_default_model
+        self.supports_constrained_output = _accepts_output_schema(provider.complete)
+
+    def generate_constrained(
+        self,
+        *,
+        model: str,
+        prompt: str,
+        max_tokens: int,
+        temperature: float,
+        output_schema: OutputSchema,
+        role: str = "",
+        system: str = "",
+    ) -> ModelResponse:
+        """Generate with a schema, recording whether the backend enforced it."""
+        return self._complete(
+            model=model,
+            prompt=prompt,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            role=role,
+            output_schema=output_schema,
+            system=system,
+        )
 
     def generate(
         self,
@@ -51,21 +74,54 @@ class ProviderBridgeClient(LanguageModelClient):
         temperature: float,
         role: str = "",
     ) -> ModelResponse:
+        return self._complete(
+            model=model,
+            prompt=prompt,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            role=role,
+            output_schema=None,
+        )
+
+    def _complete(
+        self,
+        *,
+        model: str,
+        prompt: str,
+        max_tokens: int,
+        temperature: float,
+        role: str,
+        output_schema: OutputSchema | None,
+        system: str = "",
+    ) -> ModelResponse:
+        del role
         t0 = time.monotonic()
         resolved_model = None if self._use_provider_default_model else model
+        # LLMProvider is a public interface and subclasses written before
+        # output_schema was added are still valid Python implementations. Only
+        # pass the new keyword when the concrete method opted into it; do not
+        # catch TypeError here, because that would also swallow bugs raised
+        # inside a provider implementation.
+        extra: dict[str, Any] = {}
+        if output_schema is not None and self.supports_constrained_output:
+            extra["output_schema"] = output_schema
         result = self._provider.complete(
-            system_prompt="",
+            system_prompt=system,
             user_prompt=prompt,
             model=resolved_model,
             temperature=temperature,
             max_tokens=max_tokens,
+            **extra,
         )
         elapsed_ms = int((time.monotonic() - t0) * 1000)
         usage_model = result.model or resolved_model or self._provider.default_model()
 
-        metadata = {}
+        metadata: dict[str, Any] = {}
         if result.cost_usd is not None:
             metadata["cost_usd"] = result.cost_usd
+        # What the backend actually did, not what was asked for. A provider
+        # that ignored the schema reports False here and the run record shows it.
+        metadata["constrained"] = result.constrained
         return ModelResponse(
             text=result.text,
             usage=RoleUsage(
@@ -76,6 +132,18 @@ class ProviderBridgeClient(LanguageModelClient):
             ),
             metadata=metadata,
         )
+
+
+def _accepts_output_schema(complete: Callable[..., object]) -> bool:
+    """Whether a provider's concrete complete method accepts the new keyword."""
+    try:
+        parameters = inspect.signature(complete).parameters.values()
+    except (TypeError, ValueError):
+        return False
+    return any(
+        parameter.name == "output_schema" or parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters
+    )
 
 
 class RuntimeBridgeClient(LanguageModelClient):

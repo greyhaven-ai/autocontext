@@ -4,10 +4,25 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from typing import Any
 
 
 class ProviderError(Exception):
     """Raised when an LLM provider call fails."""
+
+
+@dataclass(frozen=True, slots=True)
+class OutputSchema:
+    """A JSON Schema the backend should constrain generation to (AC-913).
+
+    Passing one is a request, not a guarantee: backends that cannot enforce a
+    schema ignore it and report ``constrained=False`` on the result. Callers
+    must read that flag rather than assume the text validates, which is the
+    whole point -- an unconstrained run should be visible, not inferred.
+    """
+
+    name: str
+    schema: dict[str, Any]
 
 
 @dataclass(slots=True)
@@ -21,6 +36,11 @@ class CompletionResult:
     # AC-904: why generation stopped ("max_tokens"/"length" indicates
     # truncation); None when the provider does not report one.
     stop_reason: str | None = None
+    # AC-913: whether the backend actually constrained generation to the
+    # requested schema. Defaults to False so a provider that ignores the
+    # request, or one written before this existed, reports the truth rather
+    # than claiming an enforcement it never performed.
+    constrained: bool = False
 
 
 class LLMProvider(ABC):
@@ -39,6 +59,7 @@ class LLMProvider(ABC):
         model: str | None = None,
         temperature: float = 0.0,
         max_tokens: int = 4096,
+        output_schema: OutputSchema | None = None,
     ) -> CompletionResult:
         """Send a completion request and return the result.
 
@@ -48,6 +69,10 @@ class LLMProvider(ABC):
             model: Override the provider's default model.
             temperature: Sampling temperature.
             max_tokens: Maximum tokens in the response.
+            output_schema: Schema to constrain generation to (AC-913). Optional
+                and best-effort: a backend that cannot enforce it must still
+                answer, and must set ``constrained=False`` on the result so the
+                caller can tell prose from validated output.
 
         Returns:
             CompletionResult with the response text and metadata.

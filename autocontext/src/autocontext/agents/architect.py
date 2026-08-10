@@ -6,6 +6,7 @@ import logging
 from collections.abc import Mapping
 from typing import Any
 
+from autocontext.agents.role_schemas import ARCHITECT_SCHEMA
 from autocontext.agents.subagent_runtime import SubagentRuntime, SubagentTask
 from autocontext.agents.types import RoleExecution
 from autocontext.harness.core.output_parser import extract_delimited_section, extract_json
@@ -138,6 +139,7 @@ class ArchitectRunner:
         return self.runtime.run_task(
             SubagentTask(
                 role="architect",
+                output_schema=ARCHITECT_SCHEMA,
                 model=self.model,
                 prompt=prompt,
                 max_tokens=self.max_tokens,

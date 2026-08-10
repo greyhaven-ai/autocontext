@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 
 from autocontext.agents.types import LlmFn
-from autocontext.providers.base import CompletionResult, LLMProvider, ProviderError
+from autocontext.providers.base import CompletionResult, LLMProvider, OutputSchema, ProviderError
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,9 @@ class CallableProvider(LLMProvider):
         model: str | None = None,
         temperature: float = 0.0,
         max_tokens: int = 4096,
+        output_schema: OutputSchema | None = None,
     ) -> CompletionResult:
+        del output_schema  # AC-913: an arbitrary callable cannot enforce a schema
         try:
             text = self._fn(system_prompt, user_prompt)
         except Exception as exc:

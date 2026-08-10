@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import inspect
 from dataclasses import asdict
 from typing import Any
 
 from autocontext.extensions.hooks import HookBus, HookEvents
 from autocontext.harness.core.llm_client import LanguageModelClient
 from autocontext.harness.core.types import ModelResponse, RoleUsage
-from autocontext.providers.base import CompletionResult, LLMProvider
+from autocontext.providers.base import CompletionResult, LLMProvider, OutputSchema
 
 
 class HookedLanguageModelClient(LanguageModelClient):
@@ -21,6 +22,7 @@ class HookedLanguageModelClient(LanguageModelClient):
         # (ERP-67) silently no-ops whenever a client is wrapped for hooks, which
         # GenerationRunner always does.
         self.supports_structural_isolation = bool(getattr(inner, "supports_structural_isolation", False))
+        self.supports_constrained_output = bool(getattr(inner, "supports_constrained_output", False))
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self.inner, name)
@@ -88,6 +90,42 @@ class HookedLanguageModelClient(LanguageModelClient):
         )
         return self._emit_response(response, request)
 
+    def generate_constrained(
+        self,
+        *,
+        model: str,
+        prompt: str,
+        max_tokens: int,
+        temperature: float,
+        output_schema: OutputSchema,
+        role: str = "",
+        system: str = "",
+    ) -> ModelResponse:
+        payload = {
+            "provider": self.provider_name,
+            "role": role,
+            "model": model,
+            "prompt": prompt,
+            "system": system,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "output_schema": _schema_payload(output_schema),
+            "multiturn": bool(system),
+        }
+        before = self.hook_bus.emit(HookEvents.BEFORE_PROVIDER_REQUEST, payload)
+        before.raise_if_blocked()
+        request = before.payload
+        response = self.inner.generate_constrained(
+            model=str(request.get("model", model)),
+            prompt=str(request.get("prompt", prompt)),
+            system=str(request.get("system", system)),
+            max_tokens=int(request.get("max_tokens", max_tokens)),
+            temperature=float(request.get("temperature", temperature)),
+            output_schema=_output_schema(request.get("output_schema"), output_schema),
+            role=str(request.get("role", role)),
+        )
+        return self._emit_response(response, request)
+
     def _emit_response(self, response: ModelResponse, request: dict[str, Any]) -> ModelResponse:
         payload = {
             "provider": self.provider_name,
@@ -124,6 +162,7 @@ class HookedLLMProvider(LLMProvider):
         self.hook_bus = hook_bus
         self.provider_name = provider_name or inner.name
         self.role = role
+        self._supports_output_schema = _accepts_output_schema(inner.complete)
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self.inner, name)
@@ -135,6 +174,7 @@ class HookedLLMProvider(LLMProvider):
         model: str | None = None,
         temperature: float = 0.0,
         max_tokens: int = 4096,
+        output_schema: OutputSchema | None = None,
     ) -> CompletionResult:
         payload = {
             "provider": self.provider_name,
@@ -144,21 +184,31 @@ class HookedLLMProvider(LLMProvider):
             "user_prompt": user_prompt,
             "temperature": temperature,
             "max_tokens": max_tokens,
+            "output_schema": _schema_payload(output_schema),
             "multiturn": False,
         }
         before = self.hook_bus.emit(HookEvents.BEFORE_PROVIDER_REQUEST, payload)
         before.raise_if_blocked()
         request = before.payload
+        requested_schema = _optional_output_schema(request.get("output_schema", output_schema))
+        extra = (
+            {"output_schema": requested_schema}
+            if requested_schema is not None and self._supports_output_schema
+            else {}
+        )
         response = self.inner.complete(
             system_prompt=str(request.get("system_prompt", system_prompt)),
             user_prompt=str(request.get("user_prompt", user_prompt)),
             model=_optional_str(request.get("model", model)),
             temperature=float(request.get("temperature", temperature)),
             max_tokens=int(request.get("max_tokens", max_tokens)),
+            **extra,
         )
         response_model = getattr(response, "model", None)
         response_usage = getattr(response, "usage", {})
         response_cost = getattr(response, "cost_usd", None)
+        response_stop_reason = getattr(response, "stop_reason", None)
+        response_constrained = bool(getattr(response, "constrained", False))
         response_payload = {
             "provider": self.provider_name,
             "role": request.get("role", self.role),
@@ -167,6 +217,8 @@ class HookedLLMProvider(LLMProvider):
             "text": response.text,
             "usage": dict(response_usage) if isinstance(response_usage, dict) else {},
             "cost_usd": response_cost,
+            "stop_reason": response_stop_reason,
+            "constrained": response_constrained,
         }
         after = self.hook_bus.emit(HookEvents.AFTER_PROVIDER_RESPONSE, response_payload)
         after.raise_if_blocked()
@@ -175,6 +227,8 @@ class HookedLLMProvider(LLMProvider):
             model=_optional_str(after.payload.get("model", response_model)),
             usage=_usage_dict(after.payload.get("usage", response_usage)),
             cost_usd=_optional_float(after.payload.get("cost_usd", response_cost)),
+            stop_reason=response_stop_reason,
+            constrained=response_constrained,
         )
 
     def default_model(self) -> str:
@@ -207,6 +261,35 @@ def _optional_float(value: Any) -> float | None:
     if value is None:
         return None
     return float(value)
+
+
+def _output_schema(value: Any, default: OutputSchema) -> OutputSchema:
+    return _optional_output_schema(value) or default
+
+
+def _optional_output_schema(value: Any) -> OutputSchema | None:
+    if isinstance(value, OutputSchema):
+        return value
+    if isinstance(value, dict) and isinstance(value.get("name"), str) and isinstance(value.get("schema"), dict):
+        return OutputSchema(name=value["name"], schema=dict(value["schema"]))
+    return None
+
+
+def _schema_payload(value: OutputSchema | None) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    return {"name": value.name, "schema": dict(value.schema)}
+
+
+def _accepts_output_schema(complete: Any) -> bool:
+    try:
+        parameters = inspect.signature(complete).parameters.values()
+    except (TypeError, ValueError):
+        return False
+    return any(
+        parameter.name == "output_schema" or parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters
+    )
 
 
 def _usage_dict(value: Any) -> dict[str, int]:

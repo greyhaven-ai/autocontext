@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from autocontext.agents.analyst import AnalystRunner
-from autocontext.agents.architect import ArchitectRunner, parse_architect_harness_specs, parse_architect_tool_specs
-from autocontext.agents.coach import CoachRunner, parse_coach_sections
+from autocontext.agents.architect import ArchitectRunner
+from autocontext.agents.coach import CoachRunner
 from autocontext.agents.competitor import CompetitorRunner
 from autocontext.agents.curator import KnowledgeCurator
 from autocontext.agents.llm_client import DeferredMLXClient, LanguageModelClient, build_client_from_settings
@@ -20,7 +20,7 @@ from autocontext.agents.orchestrator_helpers import (
     _run_competitor_phase,
     _run_translator_phase,
 )
-from autocontext.agents.parsers import parse_analyst_output, parse_architect_output, parse_coach_output, parse_competitor_output
+from autocontext.agents.parsers import parse_analyst_exec, parse_architect_exec, parse_coach_exec, parse_competitor_output
 from autocontext.agents.role_router import ProviderClass, RoleRouter, RoutingContext
 from autocontext.agents.role_runtime_overrides import apply_role_overrides, settings_for_budgeted_role_call
 from autocontext.agents.runtime_session_wiring import runtime_session_client_for_role
@@ -728,29 +728,25 @@ class AgentOrchestrator:
         # under `python -O`; nothing below depends on this one executing.
         assert strategy is not None
 
-        tools = parse_architect_tool_specs(results["architect"].content)
-        harness_specs = parse_architect_harness_specs(results["architect"].content)
-        coach_playbook, coach_lessons, coach_hints = parse_coach_sections(results["coach"].content)
-
         competitor_typed = parse_competitor_output(
             results["competitor"].content,
             strategy,
             is_code_strategy=self.settings.code_strategies_enabled,
         )
-        analyst_typed = parse_analyst_output(results["analyst"].content)
-        coach_typed = parse_coach_output(results["coach"].content)
-        architect_typed = parse_architect_output(results["architect"].content)
+        analyst_typed = parse_analyst_exec(results["analyst"])
+        coach_typed = parse_coach_exec(results["coach"])
+        architect_typed = parse_architect_exec(results["architect"])
 
         return AgentOutputs(
             strategy=strategy,
-            analysis_markdown=results["analyst"].content,
-            coach_markdown=results["coach"].content,
-            coach_playbook=coach_playbook,
-            coach_lessons=coach_lessons,
-            coach_competitor_hints=coach_hints,
-            architect_markdown=results["architect"].content,
-            architect_tools=tools,
-            architect_harness_specs=harness_specs,
+            analysis_markdown=analyst_typed.raw_markdown,
+            coach_markdown=coach_typed.raw_markdown,
+            coach_playbook=coach_typed.playbook,
+            coach_lessons=coach_typed.lessons,
+            coach_competitor_hints=coach_typed.hints,
+            architect_markdown=architect_typed.raw_markdown,
+            architect_tools=architect_typed.tool_specs,
+            architect_harness_specs=architect_typed.harness_specs,
             role_executions=[results[r] for r in ["competitor", "translator", "analyst", "coach", "architect"]],
             competitor_output=competitor_typed,
             analyst_output=analyst_typed,
