@@ -6,6 +6,9 @@ export const costBudgetLimitPreprocess = z.preprocess((val) => {
   return n > 0 ? n : null;
 }, z.number().positive().nullable().default(null));
 
+const providerCapabilitySchema = z.enum(["", "fast", "mid_tier", "frontier"]);
+const providerHostingSchema = z.enum(["", "local", "remote"]);
+
 export const AppSettingsSchema = z.object({
   // Paths
   dbPath: z.string().default("runs/autocontext.sqlite3"),
@@ -34,7 +37,10 @@ export const AppSettingsSchema = z.object({
   tierSonnetModel: z.string().default("claude-sonnet-4-5-20250929"),
   tierOpusModel: z.string().default("claude-opus-4-6"),
   mlxModelPath: z.string().default(""),
+  localModel: z.string().default(""),
   roleRouting: z.enum(["off", "auto"]).default("off"),
+  providerCapability: providerCapabilitySchema.default(""),
+  providerHosting: providerHostingSchema.default(""),
   panelRoles: z.string().default(""),
   panelParticipants: z.string().default(""),
   panelSynthesizerProvider: z.string().default(""),
@@ -264,6 +270,14 @@ export const AppSettingsSchema = z.object({
   analystProvider: z.string().default(""),
   coachProvider: z.string().default(""),
   architectProvider: z.string().default(""),
+  competitorProviderCapability: providerCapabilitySchema.default(""),
+  analystProviderCapability: providerCapabilitySchema.default(""),
+  coachProviderCapability: providerCapabilitySchema.default(""),
+  architectProviderCapability: providerCapabilitySchema.default(""),
+  competitorProviderHosting: providerHostingSchema.default(""),
+  analystProviderHosting: providerHostingSchema.default(""),
+  coachProviderHosting: providerHostingSchema.default(""),
+  architectProviderHosting: providerHostingSchema.default(""),
   competitorApiKey: z.string().default(""),
   competitorBaseUrl: z.string().default(""),
   analystApiKey: z.string().default(""),

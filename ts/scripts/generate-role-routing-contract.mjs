@@ -158,11 +158,9 @@ ${jsonObj(contract.capability_rank, "  ")}
 // serve once eligibility is derived instead of hardcoded.
 export const LOCAL_ARTIFACT_CAPABILITY = ${JSON.stringify(contract.local_artifact_capability)};
 
-// Where a transport runs. Orthogonal to capability: a self-hosted endpoint can be
-// frontier-class, and a cloud endpoint can be fast. Cost is a function of this,
-// not of capability. "openai-compatible" is declared remote because it is the
-// generic escape hatch -- under-reporting cost on a paid API is worse than
-// over-reporting it on a self-hosted one, and self-hosters have vllm and ollama.
+// Conservative hosting fallback for endpoints without an explicit declaration.
+// Endpoint settings override this transport-based value because generic transports
+// such as openai-compatible may be local and vllm may be hosted remotely.
 export const PROVIDER_HOSTING: Record<string, string> = {
 ${jsonObj(contract.provider_hosting, "  ")}
 };

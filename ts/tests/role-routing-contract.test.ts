@@ -164,6 +164,52 @@ describe("shared role routing contract", () => {
     });
   });
 
+  it("uses declared endpoint hosting instead of transport-name hosting", () => {
+    withCleanProviderEnv(() => {
+      expect(
+        routeRoleProvider(
+          baseSettings({
+            agentProvider: "openai-compatible",
+            providerCapability: "fast",
+            providerHosting: "local",
+          }),
+          "competitor",
+        ),
+      ).toMatchObject({ providerClass: "fast", estimatedCostPer1kTokens: 0 });
+
+      expect(
+        routeRoleProvider(
+          baseSettings({
+            agentProvider: "vllm",
+            providerCapability: "fast",
+            providerHosting: "remote",
+          }),
+          "competitor",
+        ),
+      ).toMatchObject({ providerClass: "frontier", estimatedCostPer1kTokens: 0.015 });
+    });
+  });
+
+  it("keeps declarations scoped to an explicit role endpoint", () => {
+    const routed = routeRoleProvider(
+      baseSettings({
+        agentProvider: "anthropic",
+        providerCapability: "frontier",
+        providerHosting: "remote",
+        architectProvider: "openai-compatible",
+        architectProviderCapability: "fast",
+        architectProviderHosting: "local",
+      }),
+      "architect",
+    );
+
+    expect(routed).toMatchObject({
+      providerType: "openai-compatible",
+      providerClass: "fast",
+      estimatedCostPer1kTokens: 0,
+    });
+  });
+
   it("lets explicit per-role provider overrides win over auto routing", () => {
     const routed = routeRoleProvider(baseSettings({ competitorProvider: "ollama" }), "competitor");
 

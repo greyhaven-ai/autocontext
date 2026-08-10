@@ -436,12 +436,11 @@ class AgentOrchestrator:
             is_plateau=is_plateau,
             scenario_name=scenario_name,
             provider=effective_config.provider_type,
+            provider_capability=effective_config.provider_class,
         )
         if provider_config is None:
-            # role_routing="off" disables provider selection, not effective
-            # model resolution. The runners were constructed from raw
-            # AppSettings defaults (Claude ids), so leaving ``model`` as None
-            # here leaks those ids to Ollama/vLLM/OpenAI-compatible clients.
+            # Routing-off still needs provider-aware model resolution because
+            # runners are constructed from raw Claude defaults.
             if self._role_router.role_model_is_explicit(role):
                 return client, self._role_router.resolved_role_model(role, effective_config.provider_type)
             return client, model or effective_config.model
@@ -769,6 +768,7 @@ class AgentOrchestrator:
         scenario_name: str = "",
         harness_coverage: HarnessCoverage | None = None,
         provider: str | None = None,
+        provider_capability: ProviderClass | None = None,
     ) -> str | None:
         """Return the model to use for a role, or None to use the default."""
         if harness_coverage is None and role == "competitor":
@@ -779,6 +779,7 @@ class AgentOrchestrator:
             retry_count=retry_count,
             is_plateau=is_plateau,
             harness_coverage=harness_coverage,
+            max_capability=provider_capability.value if provider_capability is not None else None,
         )
         if tier is None:
             return None

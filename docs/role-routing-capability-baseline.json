@@ -18,7 +18,16 @@
     "analyst_provider": "",
     "coach_provider": "",
     "architect_provider": "",
-    "provider_capability": ""
+    "provider_capability": "",
+    "provider_hosting": "",
+    "competitor_provider_capability": "",
+    "analyst_provider_capability": "",
+    "coach_provider_capability": "",
+    "architect_provider_capability": "",
+    "competitor_provider_hosting": "",
+    "analyst_provider_hosting": "",
+    "coach_provider_hosting": "",
+    "architect_provider_hosting": ""
   },
   "roles": ["competitor", "analyst", "coach", "architect", "curator", "translator"],
   "cases": {
@@ -1011,9 +1020,9 @@
       "role": "architect",
       "settings": {
         "architect_provider": "vllm",
-        "provider_capability": "frontier"
+        "architect_provider_capability": "frontier"
       },
-      "set_fields": ["architect_provider", "provider_capability"],
+      "set_fields": ["architect_provider", "architect_provider_capability"],
       "context": {},
       "python": {
         "provider_type": "vllm",

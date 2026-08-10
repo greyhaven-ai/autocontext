@@ -36,13 +36,28 @@ export const CAPABILITY_RANK = _contract.CAPABILITY_RANK;
 
 export const LOCAL_ARTIFACT_CAPABILITY = _contract.LOCAL_ARTIFACT_CAPABILITY;
 
-// Where a transport runs. Orthogonal to capability: a self-hosted endpoint can be
-// frontier-class and a cloud endpoint can be fast. Unknown transports count as
-// remote, so an unrecognized name never silently reports zero cost.
+// Conservative fallback for endpoints without explicit hosting. Unknown
+// transports count as remote so an unrecognized name never reports zero cost.
 export const PROVIDER_HOSTING = _contract.PROVIDER_HOSTING;
 
-function isLocallyHosted(providerType: string): boolean {
-  return PROVIDER_HOSTING[providerType.trim().toLowerCase()] === "local";
+type ProviderHosting = "local" | "remote";
+
+function parseDeclaredHosting(
+  value: string | undefined,
+  settingName: string,
+): ProviderHosting | undefined {
+  const declared = clean(value)?.toLowerCase();
+  if (declared === undefined) return undefined;
+  if (declared !== "local" && declared !== "remote") {
+    throw new Error(`${settingName}=${JSON.stringify(value)} is invalid; expected local or remote`);
+  }
+  return declared;
+}
+
+function hostingFor(providerType: string, declaredHosting: string | undefined): ProviderHosting {
+  const declared = parseDeclaredHosting(declaredHosting, "provider hosting");
+  if (declared !== undefined) return declared;
+  return PROVIDER_HOSTING[providerType.trim().toLowerCase()] === "local" ? "local" : "remote";
 }
 
 // The capability a role needs: its first API-backed preference.
@@ -121,6 +136,16 @@ export interface RoleRoutingSettings {
    * transport name is what AC-911 retires. Empty means fall back to inference.
    */
   providerCapability?: string;
+  /** Hosting for the default endpoint. Empty falls back to transport inference. */
+  providerHosting?: string;
+  competitorProviderCapability?: string;
+  analystProviderCapability?: string;
+  coachProviderCapability?: string;
+  architectProviderCapability?: string;
+  competitorProviderHosting?: string;
+  analystProviderHosting?: string;
+  coachProviderHosting?: string;
+  architectProviderHosting?: string;
   /**
    * Settings keys that came from a preset, project config, or the environment,
    * as opposed to a schema default. The TypeScript counterpart of pydantic's
@@ -212,6 +237,36 @@ function roleSpecificProvider(role: string, settings: RoleRoutingSettings): stri
       return clean(settings.coachProvider);
     case "architect":
       return clean(settings.architectProvider);
+    default:
+      return undefined;
+  }
+}
+
+function roleSpecificCapability(role: string, settings: RoleRoutingSettings): string | undefined {
+  switch (role) {
+    case "competitor":
+      return clean(settings.competitorProviderCapability);
+    case "analyst":
+      return clean(settings.analystProviderCapability);
+    case "coach":
+      return clean(settings.coachProviderCapability);
+    case "architect":
+      return clean(settings.architectProviderCapability);
+    default:
+      return undefined;
+  }
+}
+
+function roleSpecificHosting(role: string, settings: RoleRoutingSettings): string | undefined {
+  switch (role) {
+    case "competitor":
+      return clean(settings.competitorProviderHosting);
+    case "analyst":
+      return clean(settings.analystProviderHosting);
+    case "coach":
+      return clean(settings.coachProviderHosting);
+    case "architect":
+      return clean(settings.architectProviderHosting);
     default:
       return undefined;
   }
@@ -320,25 +375,35 @@ function tierModel(
   }
 }
 
+/** Parse and validate a capability declaration from a routing-settings boundary. */
+function parseDeclaredCapability(
+  value: string | undefined,
+  settingName: string,
+): ProviderClass | undefined {
+  const declared = clean(value)?.toLowerCase();
+  if (declared === undefined) return undefined;
+  if (!(declared in CAPABILITY_RANK)) {
+    throw new Error(
+      `${settingName}=${JSON.stringify(value)} is not a capability; expected fast, mid_tier, or frontier`,
+    );
+  }
+  return declared as ProviderClass;
+}
+
 /**
- * The endpoint's capability, preferring what the user declared over what the
- * transport name implies (AC-911).
- *
- * A declaration only applies to locally hosted transports. Cloud transports have
- * a knowable capability, and confining the override to self-hosted endpoints is
- * what makes "Anthropic routing is unchanged" hold without depending on the user
- * not setting this. "local" is left alone: it names the distilled artifact slot.
+ * Prefer an explicit capability for a locally hosted endpoint. Remote endpoints
+ * retain their transport fallback, and "local" remains the artifact-slot class.
  */
 function effectiveCapability(
-  settings: RoleRoutingSettings,
   providerType: string,
   inferred: ProviderClass,
+  declaredCapability: string | undefined,
+  declaredHosting: string | undefined,
 ): ProviderClass {
-  const declared = clean(settings.providerCapability)?.toLowerCase();
-  if (!declared || inferred === "local") return inferred;
-  if (!(declared in CAPABILITY_RANK)) return inferred;
-  if (!isLocallyHosted(providerType)) return inferred;
-  return declared as ProviderClass;
+  const declared = parseDeclaredCapability(declaredCapability, "provider capability");
+  if (declared === undefined || inferred === "local") return inferred;
+  if (hostingFor(providerType, declaredHosting) !== "local") return inferred;
+  return declared;
 }
 
 /** Lower a requested capability to what the endpoint declares, never raise it. */
@@ -348,7 +413,12 @@ function clampToDeclared(
   requested: ProviderClass,
 ): ProviderClass {
   if (!(requested in CAPABILITY_RANK)) return requested;
-  const declared = effectiveCapability(settings, providerType, requested);
+  const declared = effectiveCapability(
+    providerType,
+    requested,
+    settings.providerCapability,
+    settings.providerHosting,
+  );
   if (!(declared in CAPABILITY_RANK)) return requested;
   return CAPABILITY_RANK[declared] < CAPABILITY_RANK[requested] ? declared : requested;
 }
@@ -359,8 +429,12 @@ function clampToDeclared(
  * on capability is what made a fully self-hosted run report the same $/1k as an
  * all-Anthropic one.
  */
-function costFor(providerClass: ProviderClass, providerType: string): number {
-  if (isLocallyHosted(providerType)) return 0;
+function costFor(
+  providerClass: ProviderClass,
+  providerType: string,
+  declaredHosting: string | undefined,
+): number {
+  if (hostingFor(providerType, declaredHosting) === "local") return 0;
   return PROVIDER_CLASS_COST_PER_1K_TOKENS[providerClass] ?? 0.003;
 }
 
@@ -373,6 +447,7 @@ function routedConfig(
   providerType: string,
   providerClass: ProviderClass,
   model: string,
+  declaredHosting?: string,
 ): RoutedProviderConfig {
   const executable = executableInTypeScript(providerType);
   return {
@@ -380,7 +455,7 @@ function routedConfig(
     providerType,
     providerClass,
     model,
-    estimatedCostPer1kTokens: costFor(providerClass, providerType),
+    estimatedCostPer1kTokens: costFor(providerClass, providerType, declaredHosting),
     executableInTypeScript: executable,
     unsupportedReason: executable
       ? undefined
@@ -397,12 +472,19 @@ export function routeRoleProvider(
   if (explicitProvider) {
     const providerType = normalizeProvider(explicitProvider);
     const inferred = EXPLICIT_PROVIDER_CLASS[providerType] ?? "frontier";
-    const providerClass = effectiveCapability(settings, providerType, inferred);
+    const declaredCapability = roleSpecificCapability(role, settings);
+    const declaredHosting = roleSpecificHosting(role, settings);
+    const providerClass = effectiveCapability(
+      providerType,
+      inferred,
+      declaredCapability,
+      declaredHosting,
+    );
     const model =
       providerClass === "local"
         ? tierModel("local", settings, providerType)
         : roleSpecificModel(role, settings, providerType);
-    return routedConfig(role, providerType, providerClass, model);
+    return routedConfig(role, providerType, providerClass, model, declaredHosting);
   }
 
   const providerType = normalizeProvider(
@@ -412,14 +494,19 @@ export function routeRoleProvider(
       settings.agentProvider,
   );
   const inferred = EXPLICIT_PROVIDER_CLASS[providerType] ?? "mid_tier";
-  const providerClass = effectiveCapability(settings, providerType, inferred);
+  const providerClass = effectiveCapability(
+    providerType,
+    inferred,
+    settings.providerCapability,
+    settings.providerHosting,
+  );
 
   if (settings.roleRouting !== "auto") {
     const model =
       providerClass === "local"
         ? tierModel("local", settings, providerType)
         : roleSpecificModel(role, settings, providerType);
-    return routedConfig(role, providerType, providerClass, model);
+    return routedConfig(role, providerType, providerClass, model, settings.providerHosting);
   }
 
   const preferences = DEFAULT_ROLE_ROUTING_TABLE[role as GenerationRole] ?? ["mid_tier"];
@@ -431,7 +518,7 @@ export function routeRoleProvider(
     (LOCAL_ELIGIBLE_ROLES as readonly string[]).includes(role) &&
     preferences.some((preference) => preference === "local")
   ) {
-    return routedConfig(role, "mlx", "local", localModel);
+    return routedConfig(role, "mlx", "local", localModel, "local");
   }
 
   // A role asks for a capability; an endpoint has one. Asking for frontier from
@@ -439,7 +526,13 @@ export function routeRoleProvider(
   // clamped down to what the endpoint offers and both the tier model and the
   // reported class follow the clamped value.
   const effective = clampToDeclared(settings, providerType, preferences[0]);
-  return routedConfig(role, providerType, effective, tierModel(effective, settings, providerType));
+  return routedConfig(
+    role,
+    providerType,
+    effective,
+    tierModel(effective, settings, providerType),
+    settings.providerHosting,
+  );
 }
 
 export function estimateRoleRoutingCost(

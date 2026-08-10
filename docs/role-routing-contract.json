@@ -67,7 +67,16 @@
     "tier_haiku_model": "tierHaikuModel",
     "mlx_model_path": "mlxModelPath",
     "local_model": "localModel",
-    "provider_capability": "providerCapability"
+    "provider_capability": "providerCapability",
+    "provider_hosting": "providerHosting",
+    "competitor_provider_capability": "competitorProviderCapability",
+    "analyst_provider_capability": "analystProviderCapability",
+    "coach_provider_capability": "coachProviderCapability",
+    "architect_provider_capability": "architectProviderCapability",
+    "competitor_provider_hosting": "competitorProviderHosting",
+    "analyst_provider_hosting": "analystProviderHosting",
+    "coach_provider_hosting": "coachProviderHosting",
+    "architect_provider_hosting": "architectProviderHosting"
   },
   "class_model_fields": {
     "frontier": { "python": "tier_opus_model", "typescript": "tierOpusModel" },

@@ -57,12 +57,22 @@ or automatic:
 ```bash
 AUTOCONTEXT_AGENT_PROVIDER=ollama \
 AUTOCONTEXT_LOCAL_MODEL=qwen3:32b \
+AUTOCONTEXT_PROVIDER_CAPABILITY=frontier \
 uv run autoctx solve "..." --iterations 3
 ```
 
 An explicit `AUTOCONTEXT_MODEL_<ROLE>` or `AUTOCONTEXT_TIER_<TIER>_MODEL`
 still takes precedence. `AUTOCONTEXT_LOCAL_MODEL` does not alter Anthropic's
 shipped per-role defaults.
+
+For endpoint-aware routing and cost estimates, set
+`AUTOCONTEXT_PROVIDER_HOSTING` to `local` or `remote` and, for a local
+endpoint, set `AUTOCONTEXT_PROVIDER_CAPABILITY` to `fast`, `mid_tier`, or
+`frontier`. Empty hosting retains conservative transport inference. A
+role-specific endpoint uses the corresponding
+`AUTOCONTEXT_<ROLE>_PROVIDER_HOSTING` and
+`AUTOCONTEXT_<ROLE>_PROVIDER_CAPABILITY` declarations instead of the default
+endpoint's declarations.
 
 ## Common commands
 

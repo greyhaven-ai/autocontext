@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, field_validator  # type: ignore[import-no
 
 from autocontext.config.output_budgets import OutputBudgetFields
 from autocontext.config.presets import apply_preset
+from autocontext.config.role_routing import RoleRoutingFields
 from autocontext.config.workspace_interpreter import WorkspaceInterpreterFields
 from autocontext.runtimes.pi_defaults import PI_DEFAULT_TIMEOUT_SECONDS
 
@@ -42,7 +43,7 @@ class HarnessProfile(StrEnum):
     LEAN = "lean"
 
 
-class AppSettings(WorkspaceInterpreterFields, OutputBudgetFields, BaseModel):
+class AppSettings(RoleRoutingFields, WorkspaceInterpreterFields, OutputBudgetFields, BaseModel):
     db_path: Path = Field(default=Path("runs/autocontext.sqlite3"))
     runs_root: Path = Field(default=Path("runs"))
     knowledge_root: Path = Field(default=Path("knowledge"))
@@ -601,22 +602,6 @@ class AppSettings(WorkspaceInterpreterFields, OutputBudgetFields, BaseModel):
         ge=0,
         description="Max validity retries before falling through to tournament",
     )
-    # Role routing (AC-204) -- "auto" or "off"
-    role_routing: str = Field(default="off", description="Role routing mode: 'auto' or 'off'")
-    provider_capability: str = Field(default="", description="Self-hosted endpoint capability: frontier, mid_tier, fast (AC-911)")
-    # Per-role provider overrides (AC-184) -- empty = use AUTOCONTEXT_AGENT_PROVIDER
-    competitor_provider: str = Field(default="", description="Provider override for competitor role")
-    analyst_provider: str = Field(default="", description="Provider override for analyst role")
-    coach_provider: str = Field(default="", description="Provider override for coach role")
-    architect_provider: str = Field(default="", description="Provider override for architect role")
-    competitor_api_key: str = Field(default="", description="API key override for competitor role")
-    competitor_base_url: str = Field(default="", description="Base URL override for competitor role")
-    analyst_api_key: str = Field(default="", description="API key override for analyst role")
-    analyst_base_url: str = Field(default="", description="Base URL override for analyst role")
-    coach_api_key: str = Field(default="", description="API key override for coach role")
-    coach_base_url: str = Field(default="", description="Base URL override for coach role")
-    architect_api_key: str = Field(default="", description="API key override for architect role")
-    architect_base_url: str = Field(default="", description="Base URL override for architect role")
     # MLX local model inference (AC-182)
     mlx_model_path: str = Field(default="", description="Path to trained MLX model checkpoint directory")
     ambient_serving_manifest_path: Path | None = Field(

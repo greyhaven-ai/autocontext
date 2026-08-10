@@ -251,6 +251,41 @@ def test_explicit_role_model_wins_in_auto_mode(
     assert _orchestrator_model(settings) == "qwen3:custom"
 
 
+def test_declared_capability_clamps_dynamic_tier_in_production(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = _settings(
+        monkeypatch,
+        "vllm",
+        AUTOCONTEXT_ROLE_ROUTING="auto",
+        AUTOCONTEXT_PROVIDER_CAPABILITY="fast",
+        AUTOCONTEXT_TIER_ROUTING_ENABLED="true",
+        AUTOCONTEXT_TIER_OPUS_MODEL="frontier-only",
+        AUTOCONTEXT_TIER_HAIKU_MODEL="fast-ok",
+    )
+    assert _orchestrator_model(settings, role="architect") == "fast-ok"
+
+
+def test_endpoint_declarations_load_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    from autocontext.agents.role_router import ProviderClass, RoleRouter
+
+    settings = _settings(
+        monkeypatch,
+        "openai-compatible",
+        AUTOCONTEXT_ROLE_ROUTING="auto",
+        AUTOCONTEXT_PROVIDER_CAPABILITY="fast",
+        AUTOCONTEXT_PROVIDER_HOSTING="local",
+        AUTOCONTEXT_ARCHITECT_PROVIDER="vllm",
+        AUTOCONTEXT_ARCHITECT_PROVIDER_CAPABILITY="mid_tier",
+        AUTOCONTEXT_ARCHITECT_PROVIDER_HOSTING="remote",
+    )
+
+    competitor = RoleRouter(settings).route("competitor")
+    architect = RoleRouter(settings).route("architect")
+    assert competitor.provider_class == ProviderClass.FAST
+    assert competitor.estimated_cost_per_1k_tokens == 0.0
+    assert architect.provider_class == ProviderClass.MID_TIER
+    assert architect.estimated_cost_per_1k_tokens == 0.003
+
+
 def test_openai_compatible_default_matches_provider_factory(monkeypatch: pytest.MonkeyPatch) -> None:
     from autocontext.config.provider_model_defaults import PROVIDER_DEFAULT_MODEL
     from autocontext.providers.registry import create_provider

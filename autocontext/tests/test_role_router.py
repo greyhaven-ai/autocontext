@@ -141,6 +141,15 @@ _SETTINGS_FIELDS: dict[str, str] = {
     "mlx_model_path": "/tmp/distilled-model",
     "local_model": "",
     "provider_capability": "",
+    "provider_hosting": "",
+    "competitor_provider_capability": "",
+    "analyst_provider_capability": "",
+    "coach_provider_capability": "",
+    "architect_provider_capability": "",
+    "competitor_provider_hosting": "",
+    "analyst_provider_hosting": "",
+    "coach_provider_hosting": "",
+    "architect_provider_hosting": "",
 }
 
 
@@ -165,6 +174,54 @@ def _settings(**overrides: Any) -> MagicMock:
     for field, default in _SETTINGS_FIELDS.items():
         setattr(s, field, overrides.get(field, default))
     return s
+
+
+def test_declared_hosting_controls_capability_and_cost_for_compatible_endpoint() -> None:
+    from autocontext.agents.role_router import ProviderClass, RoleRouter
+
+    routed = RoleRouter(
+        _settings(
+            agent_provider="openai-compatible",
+            provider_capability="fast",
+            provider_hosting="local",
+        )
+    ).route("competitor")
+
+    assert routed.provider_class == ProviderClass.FAST
+    assert routed.estimated_cost_per_1k_tokens == 0.0
+
+
+def test_remote_hosting_override_preserves_cost_and_ignores_local_capability_declaration() -> None:
+    from autocontext.agents.role_router import ProviderClass, RoleRouter
+
+    routed = RoleRouter(
+        _settings(
+            agent_provider="vllm",
+            provider_capability="fast",
+            provider_hosting="remote",
+        )
+    ).route("competitor")
+
+    assert routed.provider_class == ProviderClass.FRONTIER
+    assert routed.estimated_cost_per_1k_tokens == 0.015
+
+
+def test_explicit_role_endpoint_uses_its_own_declarations() -> None:
+    from autocontext.agents.role_router import ProviderClass, RoleRouter
+
+    routed = RoleRouter(
+        _settings(
+            agent_provider="anthropic",
+            provider_capability="frontier",
+            provider_hosting="remote",
+            architect_provider="openai-compatible",
+            architect_provider_capability="fast",
+            architect_provider_hosting="local",
+        )
+    ).route("architect")
+
+    assert routed.provider_class == ProviderClass.FAST
+    assert routed.estimated_cost_per_1k_tokens == 0.0
 
 
 class TestRoleRouterAutoMode:

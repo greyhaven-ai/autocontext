@@ -45,6 +45,7 @@ autoctx solve "improve customer-support replies for billing disputes" --iteratio
 ```
 
 Use `AUTOCONTEXT_AGENT_PROVIDER=anthropic`, `openai-compatible`, `claude-cli`, `codex`, `pi-rpc`, or another provider when you need that runtime. See [agent integration](autocontext/docs/agent-integration.md) for the full matrix.
+Self-hosted endpoints can additionally declare `AUTOCONTEXT_PROVIDER_HOSTING=local` and a `fast`, `mid_tier`, or `frontier` `AUTOCONTEXT_PROVIDER_CAPABILITY`; role-specific endpoints use matching `<ROLE>_PROVIDER_*` declarations.
 
 ## Agent Entry Points
 

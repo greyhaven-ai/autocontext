@@ -147,6 +147,15 @@ const BASE_SETTINGS_BY_PYTHON_KEY: Record<string, string> = {
   // AC-911. Empty means capability is inferred from the transport, which is the
   // state every case in this fixture was recorded under.
   provider_capability: "",
+  provider_hosting: "",
+  competitor_provider_capability: "",
+  analyst_provider_capability: "",
+  coach_provider_capability: "",
+  architect_provider_capability: "",
+  competitor_provider_hosting: "",
+  analyst_provider_hosting: "",
+  coach_provider_hosting: "",
+  architect_provider_hosting: "",
 };
 
 function baseSettings(): RoleRoutingSettings {

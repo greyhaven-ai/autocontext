@@ -41,11 +41,9 @@ export const CAPABILITY_RANK: Record<string, number> = {
 // serve once eligibility is derived instead of hardcoded.
 export const LOCAL_ARTIFACT_CAPABILITY = "frontier";
 
-// Where a transport runs. Orthogonal to capability: a self-hosted endpoint can be
-// frontier-class, and a cloud endpoint can be fast. Cost is a function of this,
-// not of capability. "openai-compatible" is declared remote because it is the
-// generic escape hatch -- under-reporting cost on a paid API is worse than
-// over-reporting it on a self-hosted one, and self-hosters have vllm and ollama.
+// Conservative hosting fallback for endpoints without an explicit declaration.
+// Endpoint settings override this transport-based value because generic transports
+// such as openai-compatible may be local and vllm may be hosted remotely.
 export const PROVIDER_HOSTING: Record<string, string> = {
   agent_sdk: "remote",
   anthropic: "remote",
@@ -65,7 +63,7 @@ export const PROVIDER_HOSTING: Record<string, string> = {
 export const PROVIDER_DEFAULT_MODEL: Record<string, string> = {
   ollama: "llama3.1",
   openai: "gpt-4o",
-  "openai-compatible": "default",
+  "openai-compatible": "gpt-4o",
   openrouter: "anthropic/claude-sonnet-4",
   vllm: "default",
 };
@@ -95,9 +93,17 @@ export const EXPLICIT_PROVIDER_CLASS: Record<string, ProviderClass> = {
 export const SETTINGS_KEY_MAP: Record<string, StringSettingKey> = {
   agent_provider: "agentProvider",
   analyst_provider: "analystProvider",
+  analyst_provider_capability: "analystProviderCapability",
+  analyst_provider_hosting: "analystProviderHosting",
   architect_provider: "architectProvider",
+  architect_provider_capability: "architectProviderCapability",
+  architect_provider_hosting: "architectProviderHosting",
   coach_provider: "coachProvider",
+  coach_provider_capability: "coachProviderCapability",
+  coach_provider_hosting: "coachProviderHosting",
   competitor_provider: "competitorProvider",
+  competitor_provider_capability: "competitorProviderCapability",
+  competitor_provider_hosting: "competitorProviderHosting",
   local_model: "localModel",
   mlx_model_path: "mlxModelPath",
   model_analyst: "modelAnalyst",
@@ -107,6 +113,7 @@ export const SETTINGS_KEY_MAP: Record<string, StringSettingKey> = {
   model_curator: "modelCurator",
   model_translator: "modelTranslator",
   provider_capability: "providerCapability",
+  provider_hosting: "providerHosting",
   role_routing: "roleRouting",
   tier_haiku_model: "tierHaikuModel",
   tier_opus_model: "tierOpusModel",
