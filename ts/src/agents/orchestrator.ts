@@ -18,6 +18,7 @@ import {
   COACH_SCHEMA,
   parseAnalystConstrained,
   parseCoachConstrained,
+  wasConstrained,
 } from "./role-schemas.js";
 import type { OutputSchema } from "../types/index.js";
 import type { AnalystOutput, ArchitectOutput, CoachOutput, CompetitorOutput } from "./roles.js";
@@ -104,14 +105,12 @@ export class AgentOrchestrator {
     // the markdown scrape, unchanged.
     return {
       competitorOutput,
-      analystOutput:
-        analystResult.constrained === true
-          ? parseAnalystConstrained(analystResult.text)
-          : parseAnalystOutput(analystResult.text),
-      coachOutput:
-        coachResult.constrained === true
-          ? parseCoachConstrained(coachResult.text)
-          : parseCoachOutput(coachResult.text),
+      analystOutput: wasConstrained(analystResult)
+        ? parseAnalystConstrained(analystResult.text)
+        : parseAnalystOutput(analystResult.text),
+      coachOutput: wasConstrained(coachResult)
+        ? parseCoachConstrained(coachResult.text)
+        : parseCoachOutput(coachResult.text),
       architectOutput: parseArchitectOutput(architectResult.text),
     };
   }

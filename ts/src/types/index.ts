@@ -24,7 +24,8 @@ export const CompletionResultSchema = z.object({
   // the inferred output type, so every construction site -- including
   // LLMProvider implementations written outside this repo, since this is public
   // API -- would stop compiling. Absent and false both mean unconstrained, so
-  // read it as `constrained === true` and nothing breaks.
+  // read it through wasConstrained() in agents/role-schemas.ts, which keeps
+  // the `=== true` comparison in exactly one place.
   constrained: z.boolean().optional(),
 });
 

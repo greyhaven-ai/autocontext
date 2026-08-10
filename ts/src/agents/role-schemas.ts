@@ -23,6 +23,19 @@ import { Ajv, type ValidateFunction } from "ajv";
 import type { OutputSchema } from "../types/index.js";
 import type { AnalystOutput, ArchitectOutput, CoachOutput } from "./roles.js";
 
+/**
+ * Whether a backend actually enforced the requested schema.
+ *
+ * `CompletionResult.constrained` is `boolean | undefined` on purpose --
+ * see the note on the type -- and "absent" and "false" both mean unconstrained.
+ * Reading it through one helper keeps that comparison in a single place, so a
+ * later `if (result.constrained)` cannot quietly treat undefined as a third
+ * state, and callers never have to remember the `=== true`.
+ */
+export function wasConstrained(result: { constrained?: boolean }): boolean {
+  return result.constrained === true;
+}
+
 /** A role's output did not conform to its schema. */
 export class RoleOutputValidationError extends Error {
   readonly role: string;
@@ -179,7 +192,7 @@ export function parseCoachConstrained(rawText: string): CoachOutput {
  * NOT wired into the orchestrator yet. The Python payload carries nine channels
  * and a legacy-format renderer; this maps only tools and the changelog entry,
  * so wiring it would silently drop the rest. Kept as the starting point for
- * that port, and exercised by tests so it cannot rot in the meantime.
+ * that port (tracked as AC-930), and exercised by tests so it cannot rot.
  */
 export function parseArchitectConstrained(rawText: string): ArchitectOutput {
   const payload = parsePayload<{

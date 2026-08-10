@@ -15,6 +15,7 @@ import {
   RoleOutputValidationError,
   parseAnalystConstrained,
   parseCoachConstrained,
+  wasConstrained,
 } from "../src/agents/role-schemas.js";
 import { parseAnalystOutput } from "../src/agents/roles.js";
 import type { CompletionResult, LLMProvider, OutputSchema } from "../src/types/index.js";
@@ -122,6 +123,18 @@ describe("role output schemas", () => {
         Object.keys(body.properties ?? {}).sort(),
       );
     }
+  });
+});
+
+describe("wasConstrained", () => {
+  it("treats absent as unconstrained, not as a third state", () => {
+    // The reason the helper exists: `constrained` is optional so external
+    // LLMProvider implementations keep compiling, which makes `undefined` a
+    // real value at every read site.
+    expect(wasConstrained({})).toBe(false);
+    expect(wasConstrained({ constrained: undefined })).toBe(false);
+    expect(wasConstrained({ constrained: false })).toBe(false);
+    expect(wasConstrained({ constrained: true })).toBe(true);
   });
 });
 
