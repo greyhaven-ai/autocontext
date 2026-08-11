@@ -19,7 +19,7 @@ import { BackpressureGate } from "./backpressure.js";
 import { applyAnnealingToGateDecision, deterministicAnnealingRandomValue } from "./annealing.js";
 import { renderLevyScoutGuidance } from "./levy-scout.js";
 import { ArtifactStore, EMPTY_PLAYBOOK_SENTINEL } from "../knowledge/artifact-store.js";
-import { PlaybookGuard, PLAYBOOK_MARKERS } from "../knowledge/playbook.js";
+import { PlaybookGuard, PLAYBOOK_MARKERS, missingPlaybookMarkers } from "../knowledge/playbook.js";
 import { effectiveHintStyle } from "../knowledge/soft-hints.js";
 import { ScoreTrajectoryBuilder } from "../knowledge/trajectory.js";
 import {
@@ -786,18 +786,30 @@ export class GenerationRunner {
 
     const currentPlaybook = this.#artifactStore.readPlaybook(this.#scenarioName);
     const normalizedPlaybook = currentPlaybook === EMPTY_PLAYBOOK_SENTINEL ? "" : currentPlaybook;
-    const hasStructuredPlaybook =
-      coachResult.text.includes(PLAYBOOK_MARKERS.PLAYBOOK_START) &&
-      coachResult.text.includes(PLAYBOOK_MARKERS.PLAYBOOK_END) &&
-      coachResult.text.includes(PLAYBOOK_MARKERS.LESSONS_START) &&
-      coachResult.text.includes(PLAYBOOK_MARKERS.LESSONS_END) &&
-      coachResult.text.includes(PLAYBOOK_MARKERS.HINTS_START) &&
-      coachResult.text.includes(PLAYBOOK_MARKERS.HINTS_END);
+    // AC-932: which markers are missing, not merely whether any are. A dropped
+    // playbook update is the loop failing to learn from a generation, and the
+    // operator can only fix it if they can see which half of the contract the
+    // model broke.
+    const missingMarkers = missingPlaybookMarkers(coachResult.text);
+    const hasStructuredPlaybook = missingMarkers.length === 0;
     const playbookCheck = this.#playbookGuard.check(normalizedPlaybook, coachResult.text);
 
     let nextPlaybook = "";
     if (hasStructuredPlaybook && playbookCheck.approved) {
       nextPlaybook = coachResult.text;
+    } else {
+      // Two different things used to look identical here. Format drift is a
+      // model or configuration problem the operator can act on; a guard
+      // rejection is the guard doing its job. Reporting them as one silent
+      // no-op made the first indistinguishable from the second, and neither
+      // visible at all.
+      this.emit("playbook_update_skipped", {
+        run_id: runId,
+        scenario: this.#scenario.name,
+        generation: gen,
+        reason: hasStructuredPlaybook ? "guard_rejected" : "missing_markers",
+        missing_markers: missingMarkers,
+      });
     }
 
     if (nextPlaybook && this.#curatorEnabled && normalizedPlaybook) {

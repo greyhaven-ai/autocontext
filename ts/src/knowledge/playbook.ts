@@ -118,3 +118,27 @@ export class PlaybookGuard {
     return { approved: true, reason: "" };
   }
 }
+
+/**
+ * Which of the six playbook markers a coach response is missing (AC-932).
+ *
+ * Named and exported because the loop's decision to accept or drop a playbook
+ * update hangs on it, and "which ones" is what makes a dropped update
+ * actionable rather than mysterious. An empty array means the response is
+ * well-formed.
+ *
+ * Measured on llama3.1:8b: 8 of 10 coach responses carried all six markers,
+ * 2 carried none. On an open-weight model this is a routine outcome, not an
+ * edge case.
+ */
+export function missingPlaybookMarkers(text: string): string[] {
+  const required = [
+    ["playbook_start", PLAYBOOK_MARKERS.PLAYBOOK_START],
+    ["playbook_end", PLAYBOOK_MARKERS.PLAYBOOK_END],
+    ["lessons_start", PLAYBOOK_MARKERS.LESSONS_START],
+    ["lessons_end", PLAYBOOK_MARKERS.LESSONS_END],
+    ["hints_start", PLAYBOOK_MARKERS.HINTS_START],
+    ["hints_end", PLAYBOOK_MARKERS.HINTS_END],
+  ] as const;
+  return required.filter(([, marker]) => !text.includes(marker)).map(([name]) => name);
+}
