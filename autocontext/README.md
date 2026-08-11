@@ -108,6 +108,7 @@ Python runtime-backed `run` and `solve` calls append provider prompts/responses 
 Detailed setup moved out of this README:
 
 - External agents and provider routing: [docs/agent-integration.md](docs/agent-integration.md)
+- Self-hosted models, end to end: [docs/self-hosted-models.md](docs/self-hosted-models.md)
 - Persistent worker trust boundaries: [docs/persistent-host.md](docs/persistent-host.md)
 - Sandbox/executor notes: [docs/sandbox.md](docs/sandbox.md)
 - Extension hooks: [docs/extensions.md](docs/extensions.md)

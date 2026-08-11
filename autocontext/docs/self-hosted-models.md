@@ -172,6 +172,39 @@ The measurement and its harness are committed:
 `docs/ac913-format-drift-measurement.json`, and
 `autocontext/scripts/measure_format_drift_baseline.py`.
 
+### Turning it off
+
+```bash
+AUTOCONTEXT_CONSTRAINED_OUTPUT=false
+```
+
+Role calls then carry no schema, backends report `constrained=false`, and
+parsing falls back to markdown — the same path a backend without support
+already takes, not a separate mode.
+
+You are unlikely to want this on an open-weight model, where it is the
+difference between the loop reading your analyst's output and discarding it.
+It exists because constrained decoding also changed OpenAI-compatible **cloud**
+models, and while the quality comparison came out favourable it was measured on
+one 8B local model: fewer and shorter items, but a higher share citing the
+run's actual numbers and naming a parameter to change. If your analysis gets
+worse on a cloud model, this is the switch, and the measurement you would be
+contradicting is in `docs/ac928-constrained-quality-measurement.json`.
+
+### The coach is the role that matters most
+
+The analyst's sections are what the format-drift measurement above counts, but
+the **coach** is where drift actually costs you something. The loop refuses to
+update the playbook unless the coach emits all six of its marker pairs, and the
+playbook is what carries learning between generations.
+
+Measured on `llama3.1:8b`, 10 trials: 8 produced all six markers, 2 produced
+none. Roughly one generation in five silently lost its update before this was
+made visible; a dropped update now reports which markers were missing.
+
+Constrained decoding is the fix rather than the diagnosis, which is another
+reason to leave it on.
+
 ## Local agentic execution
 
 A local model can drive workspace-touching execution, not just generate text.
