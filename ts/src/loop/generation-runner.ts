@@ -77,6 +77,10 @@ import {
   type GenerationLoopOrchestration,
 } from "./generation-loop-orchestrator.js";
 import { GenerationRecovery } from "./generation-recovery.js";
+import {
+  PLAYBOOK_UPDATE_SKIPPED_EVENT,
+  type PlaybookUpdateSkippedPayload,
+} from "./playbook-update-events.js";
 import { hasRemainingGenerationCycles } from "./generation-cycle-state.js";
 import type { GenerationAttempt } from "./generation-phase-state.js";
 import type { GenerationAttemptOrchestration } from "./generation-attempt-orchestrator.js";
@@ -803,13 +807,17 @@ export class GenerationRunner {
       // rejection is the guard doing its job. Reporting them as one silent
       // no-op made the first indistinguishable from the second, and neither
       // visible at all.
-      this.emit("playbook_update_skipped", {
+      const payload: PlaybookUpdateSkippedPayload = {
         run_id: runId,
         scenario: this.#scenario.name,
         generation: gen,
         reason: hasStructuredPlaybook ? "guard_rejected" : "missing_markers",
         missing_markers: missingMarkers,
-      });
+        ...(hasStructuredPlaybook && playbookCheck.reason
+          ? { guard_reason: playbookCheck.reason }
+          : {}),
+      };
+      this.emit(PLAYBOOK_UPDATE_SKIPPED_EVENT, payload);
     }
 
     if (nextPlaybook && this.#curatorEnabled && normalizedPlaybook) {

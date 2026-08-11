@@ -1,6 +1,10 @@
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  createRunCommandEventEmitter,
   executeAgentTaskRunCommandWorkflow,
   executeRunCommandWorkflow,
   planRunCommand,
@@ -16,6 +20,41 @@ describe("run command workflow", () => {
     expect(RUN_HELP_TEXT).toContain("--gens");
     expect(RUN_HELP_TEXT).toContain("--iterations");
     expect(RUN_HELP_TEXT).toContain("--matches");
+  });
+
+  it("reports and persists skipped playbook updates on the direct CLI event stream", () => {
+    const dir = mkdtempSync(join(tmpdir(), "autoctx-run-events-"));
+    const reportWarning = vi.fn();
+    try {
+      const events = createRunCommandEventEmitter({
+        runsRoot: dir,
+        runId: "run-marker-drift",
+        reportWarning,
+      });
+      events.emit("playbook_update_skipped", {
+        run_id: "run-marker-drift",
+        scenario: "grid_ctf",
+        generation: 2,
+        reason: "missing_markers",
+        missing_markers: ["playbook_end", "hints_end"],
+      });
+
+      expect(reportWarning).toHaveBeenCalledWith(
+        "Warning: playbook update skipped in generation 2: missing coach markers playbook_end, hints_end",
+      );
+      const persisted = JSON.parse(
+        readFileSync(join(dir, "run-marker-drift", "events.ndjson"), "utf-8").trim(),
+      ) as { event: string; payload: Record<string, unknown> };
+      expect(persisted).toMatchObject({
+        event: "playbook_update_skipped",
+        payload: {
+          reason: "missing_markers",
+          missing_markers: ["playbook_end", "hints_end"],
+        },
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("requires a resolved scenario", async () => {
@@ -150,6 +189,11 @@ describe("run command workflow", () => {
     });
     const createRunner = vi.fn(() => ({ run }));
     const assertFamilyContract = vi.fn();
+    const events = createRunCommandEventEmitter({
+      runsRoot: "/tmp/runs",
+      runId: "run-custom",
+      reportWarning: vi.fn(),
+    });
 
     const result = await executeRunCommandWorkflow({
       dbPath: "/tmp/autocontext.db",
@@ -195,6 +239,7 @@ describe("run command workflow", () => {
       ScenarioClass: FakeScenario,
       assertFamilyContract,
       createStore: vi.fn(() => store),
+      events,
       createRunner,
     });
 
@@ -240,6 +285,7 @@ describe("run command workflow", () => {
       levyScoutScale: 0.2,
       explorationCollapseGuard: false,
       explorationCollapseAutoMitigation: false,
+      events,
     });
     expect(run).toHaveBeenCalledWith("run-custom", 3);
     expect(close).toHaveBeenCalled();

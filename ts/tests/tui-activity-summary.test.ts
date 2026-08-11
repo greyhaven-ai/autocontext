@@ -15,6 +15,39 @@ describe("TUI activity summary", () => {
     ).toBe("run run-123 started for support_triage");
   });
 
+  it("shows skipped playbook updates, including the actionable marker list", () => {
+    const payload = {
+      run_id: "run-123",
+      scenario: "grid_ctf",
+      generation: 3,
+      reason: "missing_markers",
+      missing_markers: ["playbook_end", "hints_start"],
+    };
+
+    expect(summarizeTuiEvent("playbook_update_skipped", payload)).toBe(
+      "playbook update skipped in generation 3: missing coach markers playbook_end, hints_start",
+    );
+    expect(
+      summarizeTuiEvent("playbook_update_skipped", payload, {
+        filter: "errors",
+        verbosity: "normal",
+      }),
+    ).not.toBeNull();
+  });
+
+  it("shows the concrete playbook guard rejection reason", () => {
+    expect(
+      summarizeTuiEvent("playbook_update_skipped", {
+        generation: 4,
+        reason: "guard_rejected",
+        missing_markers: [],
+        guard_reason: "Playbook shrink ratio 0.20 below threshold 0.3",
+      }),
+    ).toBe(
+      "playbook update skipped in generation 4: guard rejected the proposed playbook (Playbook shrink ratio 0.20 below threshold 0.3)",
+    );
+  });
+
   it("summarizes live runtime-session prompt events for the operator timeline", () => {
     expect(
       summarizeTuiEvent("runtime_session_event", {

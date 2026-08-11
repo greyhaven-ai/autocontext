@@ -9,6 +9,7 @@ import {
   isAgentTaskPlanPayloadRetainable,
   sanitizeAgentTaskPlanPayload,
 } from "../loop/agent-task-plan.js";
+import { PLAYBOOK_UPDATE_SKIPPED_EVENT } from "../loop/playbook-update-events.js";
 import {
   REDACTED_PRESENTATION_VALUE,
   redactPresentationText,
@@ -86,6 +87,14 @@ const EVENT_PAYLOAD_FIELDS: Readonly<Record<string, readonly string[]>> = {
   generation_started: ["run_id", "generation"],
   generation_timing: ["run_id", "generation", "elapsed_seconds"],
   match_completed: ["run_id", "generation", "match_index", "score"],
+  [PLAYBOOK_UPDATE_SKIPPED_EVENT]: [
+    "run_id",
+    "scenario",
+    "generation",
+    "reason",
+    "missing_markers",
+    "guard_reason",
+  ],
   role_completed: ["run_id", "generation", "role", "latency_ms", "tokens"],
   run_completed: [
     "run_id",
