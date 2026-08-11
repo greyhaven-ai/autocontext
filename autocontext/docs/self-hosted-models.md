@@ -276,12 +276,21 @@ If you have the memory, run the largest model you can. Declare its capability
 honestly: an over-declared endpoint gets handed architect work it cannot do,
 and the loop has no way to notice.
 
-## Not covered yet
+## Endpoint preflight
 
-**Endpoint preflight.** There is no check that your endpoint is reachable, has
-enough context window, or supports structured output before a run starts. It
-is tracked as AC-914; until it lands, a misconfigured endpoint surfaces as a
-failure mid-run.
+`autoctx run` checks every configured OpenAI-compatible agent, explicit role,
+and judge endpoint before starting a generation. It verifies that the endpoint
+answers, that the effective model appears in `/v1/models`, and that the model
+honors the constrained-output schema. Certain configuration failures stop the
+run with exit code 2; transient or indeterminate checks are warnings and the
+run proceeds.
+
+Context-window length is not part of the OpenAI-compatible model-list response,
+so preflight reports no context-window result rather than guessing. If an
+endpoint has a non-standard discovery surface or the operator has independently
+validated it, `autoctx run ... --skip-preflight` bypasses these checks.
+
+## Not covered yet
 
 **llama.cpp.** Reachable through `openai-compatible` with
 `AUTOCONTEXT_PROVIDER_HOSTING=local`, but not exercised while writing this

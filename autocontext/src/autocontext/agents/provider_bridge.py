@@ -433,6 +433,25 @@ def _provider_base_url(settings: AppSettings, *, role: str = "") -> str | None:
     return settings.agent_base_url or settings.judge_base_url
 
 
+def _provider_model(
+    provider_type: str,
+    settings: AppSettings,
+    *,
+    model_override: str | None = None,
+) -> str | None:
+    """Resolve the model passed to an OpenAI-shaped provider client."""
+    if model_override is not None:
+        return model_override
+    from autocontext.config.provider_model_defaults import resolve_model_default
+
+    return resolve_model_default(
+        settings,
+        provider=provider_type,
+        field_name="agent_default_model",
+        configured=settings.agent_default_model,
+    )
+
+
 def _create_provider_bridge(
     provider_type: str,
     settings: AppSettings,
@@ -458,7 +477,7 @@ def _create_provider_bridge(
             provider_type=provider_type,
             api_key=_provider_api_key(provider_type, settings, role=role),
             base_url=_provider_base_url(settings, role=role),
-            model=model_override or settings.agent_default_model,
+            model=_provider_model(provider_type, settings, model_override=model_override),
         )
         use_provider_default_model = True
     return ProviderBridgeClient(provider, use_provider_default_model=use_provider_default_model)

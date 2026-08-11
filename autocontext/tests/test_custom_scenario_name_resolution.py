@@ -142,3 +142,20 @@ class TestCustomScenarioNameResolution:
         assert scenario.name == "linear_outage_escalation"
         assert result.validation_errors == []
         assert result.score > 0.0
+
+    def test_preflight_resolves_saved_scenario_from_configured_knowledge_root(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        from autocontext.preflight import PreflightChecker
+
+        knowledge_root = tmp_path / "configured-knowledge"
+        _write_parametric_custom_spec(knowledge_root)
+
+        with patch.dict("autocontext.scenarios.SCENARIO_REGISTRY", {}, clear=True):
+            result = PreflightChecker(
+                "linear_outage_escalation",
+                knowledge_root=knowledge_root,
+            ).check_scenario_exists()
+
+        assert result.passed

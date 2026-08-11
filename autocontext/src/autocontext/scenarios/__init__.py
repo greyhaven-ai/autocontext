@@ -13,13 +13,28 @@ SCENARIO_REGISTRY: dict[str, ScenarioFactory] = {
 }
 
 
-def _load_persisted_custom_scenarios() -> None:
+def resolve_scenario_class(name: str, knowledge_root: Path) -> ScenarioFactory | None:
+    """Resolve a built-in or persisted custom scenario and cache the result."""
+    cls = SCENARIO_REGISTRY.get(name)
+    if cls is not None:
+        return cls
+
     from autocontext.scenarios.custom.registry import load_all_custom_scenarios
 
+    custom = load_all_custom_scenarios(knowledge_root)
+    if custom:
+        SCENARIO_REGISTRY.update(custom)
+    return SCENARIO_REGISTRY.get(name)
+
+
+def _load_persisted_custom_scenarios() -> None:
     knowledge_root = Path("knowledge")
     if knowledge_root.is_dir():
-        custom = load_all_custom_scenarios(knowledge_root)
-        SCENARIO_REGISTRY.update(custom)
+        # Populate the registry once for the conventional root. Callers using a
+        # configured root resolve through ``resolve_scenario_class`` instead.
+        from autocontext.scenarios.custom.registry import load_all_custom_scenarios
+
+        SCENARIO_REGISTRY.update(load_all_custom_scenarios(knowledge_root))
 
 
 _load_persisted_custom_scenarios()
