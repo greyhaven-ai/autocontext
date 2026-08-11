@@ -30,6 +30,19 @@ def parse_coach_sections(content: str) -> tuple[str, str, str]:
         else:
             # Legacy fallback: no markers at all means the model ignored the
             # format and the entire content is the playbook.
+            #
+            # AC-932: warn, because this is not a neutral fallback. Whatever the
+            # model wrote -- preamble, reasoning, an apology -- becomes the
+            # playbook and steers the next generation. Measured on llama3.1:8b,
+            # 2 of 10 coach responses carried no markers at all, so on an
+            # open-weight model this fires often enough to matter. TypeScript
+            # fails the opposite way and drops the update entirely; both were
+            # silent until now.
+            logger.warning(
+                "coach output has no playbook markers; treating the entire response as the playbook "
+                "(%d chars). Enable constrained output or check the model's format compliance.",
+                len(content.strip()),
+            )
             playbook = content.strip()
 
     return playbook, lessons or "", hints or ""

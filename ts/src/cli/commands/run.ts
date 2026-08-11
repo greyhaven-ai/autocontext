@@ -31,6 +31,7 @@ export async function cmdRun(dbPath: string): Promise<void> {
   const {
     executeAgentTaskRunCommandWorkflow,
     executeRunCommandWorkflow,
+    createRunCommandEventEmitter,
     planRunCommand,
     renderRunResult,
     RUN_HELP_TEXT,
@@ -131,10 +132,16 @@ export async function cmdRun(dbPath: string): Promise<void> {
     process.exit(1);
   }
 
+  const runsRoot = resolve(settings.runsRoot);
+  const events = createRunCommandEventEmitter({
+    runsRoot,
+    runId: plan.runId,
+    reportWarning: (message) => console.error(message),
+  });
   const result = await executeRunCommandWorkflow({
     dbPath,
     migrationsDir: getMigrationsDir(),
-    runsRoot: resolve(settings.runsRoot),
+    runsRoot,
     knowledgeRoot: resolve(settings.knowledgeRoot),
     settings,
     plan,
@@ -142,6 +149,7 @@ export async function cmdRun(dbPath: string): Promise<void> {
     ScenarioClass,
     assertFamilyContract,
     createStore: (runDbPath) => new SQLiteStore(asDbPath(runDbPath)),
+    events,
     createRunner: (runnerOpts) =>
       new GenerationRunner({
         ...(runnerOpts as import("../../loop/generation-runner.js").GenerationRunnerOpts),

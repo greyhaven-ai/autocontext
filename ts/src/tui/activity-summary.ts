@@ -1,3 +1,8 @@
+import {
+  formatPlaybookUpdateSkipped,
+  PLAYBOOK_UPDATE_SKIPPED_EVENT,
+} from "../loop/playbook-update-events.js";
+
 export const TUI_ACTIVITY_FILTERS = [
   "all",
   "runtime",
@@ -107,6 +112,8 @@ function buildTuiActivitySummary(
       return runSummary(`run completed after ${String(payload.completed_generations)} generations`);
     case "run_failed":
       return runSummary(`run failed: ${String(payload.error ?? "unknown error")}`, true);
+    case PLAYBOOK_UPDATE_SKIPPED_EVENT:
+      return runSummary(formatPlaybookUpdateSkipped(payload), true);
     case "runtime_session_event":
       return summarizeRuntimeSessionEvent(payload, settings);
     default:

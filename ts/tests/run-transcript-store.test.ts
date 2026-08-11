@@ -55,6 +55,30 @@ afterEach(() => {
 });
 
 describe("RunTranscriptStore", () => {
+  it("retains skipped playbook diagnostics across restart and replay", () => {
+    const { path, store } = makeStore();
+    const message: ServerMessage = {
+      type: "event",
+      event: "playbook_update_skipped",
+      payload: {
+        run_id: "engine-marker-drift",
+        scenario: "grid_ctf",
+        generation: 2,
+        reason: "missing_markers",
+        missing_markers: ["playbook_end", "hints_end"],
+      },
+    };
+    const frame = store.record({
+      clientRunId: "client-marker-drift",
+      runId: "engine-marker-drift",
+      message,
+    });
+
+    expect(frame?.message).toMatchObject(message);
+    const reloaded = new RunTranscriptStore(path);
+    expect(reloaded.framesAfter("client-marker-drift", 0).at(0)?.message).toEqual(frame?.message);
+  });
+
   it("retains complete long agent plans exactly across restart and replay", () => {
     const { path, store } = makeStore();
     const steps = Array.from({ length: 24 }, (_, index) => ({

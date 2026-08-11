@@ -1,5 +1,12 @@
+import { join } from "node:path";
+
 import { asRunId } from "../domain/ids.js";
 import type { HookBus } from "../extensions/index.js";
+import { EventStreamEmitter } from "../loop/events.js";
+import {
+  formatPlaybookUpdateSkipped,
+  PLAYBOOK_UPDATE_SKIPPED_EVENT,
+} from "../loop/playbook-update-events.js";
 
 export const RUN_HELP_TEXT = `autoctx run — Run the generation loop for a scenario
 
@@ -86,6 +93,20 @@ export interface RunCommandResult {
   provider: string;
   skillPackage?: Record<string, unknown>;
   synthetic?: true;
+}
+
+export function createRunCommandEventEmitter(opts: {
+  runsRoot: string;
+  runId: string;
+  reportWarning: (message: string) => void;
+}): EventStreamEmitter {
+  const events = new EventStreamEmitter(join(opts.runsRoot, opts.runId, "events.ndjson"));
+  events.subscribe((event, payload) => {
+    if (event === PLAYBOOK_UPDATE_SKIPPED_EVENT) {
+      opts.reportWarning(`Warning: ${formatPlaybookUpdateSkipped(payload)}`);
+    }
+  });
+  return events;
 }
 
 type AgentTaskSolveExecutor = (opts: {
@@ -277,6 +298,7 @@ export async function executeRunCommandWorkflow<
   ScenarioClass: new () => TScenario;
   assertFamilyContract: (scenario: TScenario, family: "game", label: string) => void;
   createStore: (dbPath: string) => TStore;
+  events?: EventStreamEmitter;
   createRunner: (
     opts:
       | {
@@ -315,6 +337,7 @@ export async function executeRunCommandWorkflow<
           notifyWebhookUrl: unknown;
           notifyOn: unknown;
           runtimeSession?: TProviderBundle["runtimeSession"];
+          events?: EventStreamEmitter;
         }
       | Record<string, unknown>,
   ) => TRunner;
@@ -361,6 +384,7 @@ export async function executeRunCommandWorkflow<
       notifyWebhookUrl: opts.settings.notifyWebhookUrl,
       notifyOn: opts.settings.notifyOn,
       runtimeSession: opts.providerBundle.runtimeSession,
+      ...(opts.events ? { events: opts.events } : {}),
     });
     const result = await runner.run(asRunId(opts.plan.runId), opts.plan.gens);
     const provider = opts.providerBundle.defaultConfig.providerType;
