@@ -75,9 +75,16 @@ def run_advise_gate(
     # remark, or a reasoning block before the answer degraded the gate to the
     # LLM-free path. Those are ordinary open-weight output shapes, not edge
     # cases; extract_json handles all four and still refuses genuine non-JSON.
-    decoded = extract_json(result.text, on_failure="none")
+    # This gate must also fail open on ambiguous or unexpectedly pathological
+    # output: a parser exception must never escape into the ambient stage
+    # breaker, and competing verdict objects are not a decision we can trust.
+    try:
+        decoded = extract_json(result.text, on_failure="none", require_unique=True)
+    except Exception:
+        logger.warning("advise gate verdict extraction failed; degrading to LLM-free path", exc_info=True)
+        return GateOutcome(None, "parse_error")
     if decoded is None:
-        logger.warning("advise gate verdict unparseable; degrading to LLM-free path")
+        logger.warning("advise gate verdict unparseable or ambiguous; degrading to LLM-free path")
         return GateOutcome(None, "parse_error")
     try:
         decision = AdviseGateDecision.model_validate(decoded)

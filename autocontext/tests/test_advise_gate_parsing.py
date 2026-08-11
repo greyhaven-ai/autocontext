@@ -52,6 +52,14 @@ def _run(text: str) -> Any:
         ("preamble then json", f"Here is my verdict:\n\n{json.dumps(VERDICT)}"),
         ("preamble then fence", f"Sure!\n```json\n{json.dumps(VERDICT)}\n```\nHope that helps."),
         ("reasoning fence first", f"```\nthinking out loud\n```\n```json\n{json.dumps(VERDICT)}\n```"),
+        (
+            "tagged answer after JSON-shaped reasoning",
+            "```\n"
+            + json.dumps({"should_propose": False, "rationale": "draft"})
+            + "\n```\n```json\n"
+            + json.dumps(VERDICT)
+            + "\n```",
+        ),
         ("trailing prose", f"{json.dumps(VERDICT)}\n\nLet me know if you want more."),
     ],
 )
@@ -82,5 +90,43 @@ def test_schema_violation_is_reported_as_a_parse_failure() -> None:
     deciding on a payload it does not understand.
     """
     outcome = _run(json.dumps({"unrelated": "object"}))
+    assert outcome.decision is None
+    assert outcome.failure == "parse_error"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        (
+            "Draft: "
+            + json.dumps({"should_propose": False, "rationale": "draft"})
+            + "\nFinal: "
+            + json.dumps(VERDICT)
+        ),
+        (
+            "```\n"
+            + json.dumps({"should_propose": False, "rationale": "scratch"})
+            + "\n```\nFinal: "
+            + json.dumps(VERDICT)
+        ),
+    ],
+)
+def test_competing_verdict_objects_degrade_instead_of_guessing(text: str) -> None:
+    outcome = _run(text)
+    assert outcome.decision is None
+    assert outcome.failure == "parse_error"
+
+
+def test_unexpected_extraction_exception_degrades_instead_of_escaping(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import autocontext.ambient.advise_gate as advise_gate
+
+    def fail_extraction(*args: Any, **kwargs: Any) -> None:
+        del args, kwargs
+        raise RecursionError("decoder recursion limit")
+
+    monkeypatch.setattr(advise_gate, "extract_json", fail_extraction)
+    outcome = _run(json.dumps(VERDICT))
     assert outcome.decision is None
     assert outcome.failure == "parse_error"

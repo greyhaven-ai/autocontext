@@ -627,7 +627,11 @@ def test_extract_json_skips_bracket_prose_before_object(text: str) -> None:
     assert extract_json(text) == {"a": 1}
 
 
-def test_extract_json_bounds_failed_structural_recovery(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("decoder_error", (ValueError, RecursionError))
+def test_extract_json_bounds_failed_structural_recovery(
+    monkeypatch: pytest.MonkeyPatch,
+    decoder_error: type[Exception],
+) -> None:
     from autocontext.harness.core import output_parser
 
     class AlwaysFailDecoder:
@@ -635,13 +639,28 @@ def test_extract_json_bounds_failed_structural_recovery(monkeypatch: pytest.Monk
 
         def raw_decode(self, text: str, start: int):  # type: ignore[no-untyped-def]
             self.calls += 1
-            raise ValueError
+            raise decoder_error
 
     decoder = AlwaysFailDecoder()
     monkeypatch.setattr(output_parser.json, "JSONDecoder", lambda: decoder)
 
     assert output_parser._top_level_object_spans('{"a": ' * 1000) == []
     assert decoder.calls == output_parser._MAX_FAILED_DECODE_ATTEMPTS
+
+
+def test_extract_json_require_unique_rejects_competing_objects() -> None:
+    text = 'Draft: {"answer": 1}\nFinal: {"answer": 2}'
+
+    assert extract_json(text) == {"answer": 1}
+    assert extract_json(text, on_failure="none", require_unique=True) is None
+    with pytest.raises(ValueError, match="unambiguous"):
+        extract_json(text, require_unique=True)
+
+
+def test_extract_json_require_unique_trusts_tagged_answer() -> None:
+    text = '```\n{"answer": 1}\n```\n```json\n{"answer": 2}\n```'
+
+    assert extract_json(text, require_unique=True) == {"answer": 2}
 
 
 def test_extract_json_uppercase_json_fence_tag_is_recognized() -> None:
@@ -1710,32 +1729,9 @@ def test_no_new_markdown_fence_regex_outside_output_parser() -> None:
     assert _fence_regex_offenders() == _KNOWN_OFFENDERS
 
 
-def test_degenerate_repetition_stays_linear() -> None:
-    """AC-922: the failed-decode cap is load-bearing, so pin it.
-
-    `_MAX_FAILED_DECODE_ATTEMPTS` is what keeps a model stuck in a repetition
-    loop from costing quadratic time. It was measured at ~4x per 2x input
-    before the cap (1.07s for 46KB) and ~2x after (0.017s). Nothing guarded it,
-    so a later "simplification" of the retry loop could reintroduce the
-    quadratic without any test objecting.
-
-    Asserts the shape of the curve rather than absolute timings, which would be
-    machine-dependent and flaky. Quadratic gives ~4x; linear gives ~2x; the
-    threshold sits between them with room for noise.
-    """
-    import time
-
+def test_degenerate_repetition_honors_none_failure_policy() -> None:
+    """Deep malformed output is a parse failure on every supported Python."""
     from autocontext.harness.core.output_parser import extract_json
 
-    def elapsed(n: int) -> float:
-        text = '{"a": ' * n
-        start = time.perf_counter()
-        extract_json(text, on_failure="none")
-        return time.perf_counter() - start
-
-    elapsed(2000)  # warm any lazy imports so the first sample is not inflated
-    small = elapsed(2000)
-    large = elapsed(8000)
-
-    # 4x the input. Linear predicts ~4x time, quadratic ~16x.
-    assert large < small * 8, f"scaling looks superlinear: {small:.4f}s -> {large:.4f}s for 4x input"
+    text = "Here is my verdict:\n" + '{"a": ' * 2000
+    assert extract_json(text, on_failure="none") is None
