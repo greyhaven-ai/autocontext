@@ -24,7 +24,8 @@
     "openai": "gpt-4o",
     "openai-compatible": "gpt-4o",
     "vllm": "default",
-    "openrouter": "anthropic/claude-sonnet-4"
+    "openrouter": "anthropic/claude-sonnet-4",
+    "orcarouter": "openai/gpt-5.5"
   },
   "model_default_preserved_providers": ["anthropic"],
   "provider_hosting": {
@@ -104,6 +105,10 @@
     "openai": { "packages": ["python", "typescript"] },
     "openai-compatible": { "packages": ["python", "typescript"] },
     "openrouter": { "packages": ["python", "typescript"] },
+    "orcarouter": {
+      "packages": ["python"],
+      "reason": "no OrcaRouter wiring in the TypeScript provider factory yet"
+    },
     "ollama": { "packages": ["python", "typescript"] },
     "vllm": { "packages": ["python", "typescript"] },
     "claude-cli": { "packages": ["python", "typescript"] },

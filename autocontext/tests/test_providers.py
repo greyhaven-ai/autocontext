@@ -141,6 +141,17 @@ class TestRegistry:
         )
         assert p.default_model() == "custom-model"
 
+    @_skip_no_openai
+    def test_create_orcarouter_provider(self):
+        p = create_provider("orcarouter", api_key="sk-orca-test", model="openai/gpt-5.5")
+        assert p.default_model() == "openai/gpt-5.5"
+        assert "OpenAICompatibleProvider" in p.name  # may be wrapped in RetryProvider
+
+    @_skip_no_openai
+    def test_create_orcarouter_default_model(self):
+        p = create_provider("orcarouter", api_key="sk-orca-test")
+        assert p.default_model() == "openai/gpt-5.5"
+
 
 # ---------------------------------------------------------------------------
 # LLMJudge with provider

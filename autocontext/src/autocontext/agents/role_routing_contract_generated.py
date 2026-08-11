@@ -53,6 +53,7 @@ PROVIDER_DEFAULT_MODEL: Final[dict[str, str]] = {
     "openai": "gpt-4o",
     "openai-compatible": "gpt-4o",
     "openrouter": "anthropic/claude-sonnet-4",
+    "orcarouter": "openai/gpt-5.5",
     "vllm": "default",
 }
 

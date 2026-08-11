@@ -55,6 +55,7 @@ _AFTER: dict[str, dict[str, str]] = {
     "vllm": dict.fromkeys(ROLES, "default"),
     "openai": dict.fromkeys(ROLES, "gpt-4o"),
     "openai-compatible": dict.fromkeys(ROLES, "gpt-4o"),
+    "orcarouter": dict.fromkeys(ROLES, "openai/gpt-5.5"),
 }
 
 _UNCHANGED_PROVIDERS = ("anthropic", "mlx")
@@ -200,6 +201,7 @@ def _orchestrator_model(settings, *, role: str = "competitor", generation: int =
         ("vllm", "default"),
         ("openai", "gpt-4o"),
         ("openai-compatible", "gpt-4o"),
+        ("orcarouter", "openai/gpt-5.5"),
     ),
 )
 def test_routing_off_resolves_provider_default_in_production(
@@ -293,3 +295,12 @@ def test_openai_compatible_default_matches_provider_factory(monkeypatch: pytest.
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     provider = create_provider("openai-compatible", api_key="test-key")
     assert PROVIDER_DEFAULT_MODEL["openai-compatible"] == provider.default_model() == "gpt-4o"
+
+
+def test_orcarouter_default_matches_provider_factory(monkeypatch: pytest.MonkeyPatch) -> None:
+    from autocontext.config.provider_model_defaults import PROVIDER_DEFAULT_MODEL
+    from autocontext.providers.registry import create_provider
+
+    monkeypatch.delenv("ORCAROUTER_API_KEY", raising=False)
+    provider = create_provider("orcarouter", api_key="sk-orca-test")
+    assert PROVIDER_DEFAULT_MODEL["orcarouter"] == provider.default_model() == "openai/gpt-5.5"

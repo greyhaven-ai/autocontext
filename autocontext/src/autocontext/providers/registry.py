@@ -21,6 +21,7 @@ SUPPORTED_PROVIDER_TYPES: frozenset[str] = frozenset(
         "openai",
         "openai-compatible",
         "openrouter",
+        "orcarouter",
         "ollama",
         "vllm",
         "mlx",
@@ -95,6 +96,18 @@ def create_provider(
             )
         )
 
+    if provider_type == "orcarouter":
+        from autocontext.providers.openai_compat import OpenAICompatibleProvider
+        from autocontext.providers.retry import RetryProvider
+
+        return RetryProvider(
+            OpenAICompatibleProvider(
+                api_key=(api_key or os.getenv("ORCAROUTER_API_KEY") or os.getenv("AUTOCONTEXT_ORCAROUTER_API_KEY")),
+                base_url=base_url or "https://api.orcarouter.ai/v1",
+                default_model_name=model or "openai/gpt-5.5",
+            )
+        )
+
     if provider_type == "ollama":
         from autocontext.providers.openai_compat import OpenAICompatibleProvider
         from autocontext.providers.retry import RetryProvider
@@ -126,7 +139,7 @@ def create_provider(
             raise ProviderError("MLX provider requires a model path (model_path). Set AUTOCONTEXT_MLX_MODEL_PATH.")
         return MLXProvider(model_path=model)
 
-    supported = "anthropic, openai, openai-compatible, openrouter, ollama, vllm, mlx"
+    supported = "anthropic, openai, openai-compatible, openrouter, orcarouter, ollama, vllm, mlx"
     raise ProviderError(f"Unknown provider type: {provider_type!r}. Supported: {supported}")
 
 
@@ -266,6 +279,10 @@ def get_provider(settings: AppSettings) -> LLMProvider:
     if not api_key:
         if provider_type in ("openai", "openai-compatible"):
             api_key = os.getenv("OPENAI_API_KEY")
+        elif provider_type == "openrouter":
+            api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("AUTOCONTEXT_OPENROUTER_API_KEY")
+        elif provider_type == "orcarouter":
+            api_key = os.getenv("ORCAROUTER_API_KEY") or os.getenv("AUTOCONTEXT_ORCAROUTER_API_KEY")
         else:
             api_key = settings.anthropic_api_key or os.getenv("ANTHROPIC_API_KEY") or os.getenv("AUTOCONTEXT_ANTHROPIC_API_KEY")
 

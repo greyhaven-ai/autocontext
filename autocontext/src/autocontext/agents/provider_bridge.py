@@ -407,6 +407,13 @@ def _provider_api_key(provider_type: str, settings: AppSettings, *, role: str = 
             or os.getenv("OPENROUTER_API_KEY")
             or os.getenv("AUTOCONTEXT_OPENROUTER_API_KEY")
         )
+    if provider_type == "orcarouter":
+        return (
+            settings.agent_api_key
+            or settings.judge_api_key
+            or os.getenv("ORCAROUTER_API_KEY")
+            or os.getenv("AUTOCONTEXT_ORCAROUTER_API_KEY")
+        )
     if provider_type == "vllm":
         return settings.agent_api_key or settings.judge_api_key or "no-key"
     return settings.agent_api_key or settings.judge_api_key
@@ -623,7 +630,7 @@ def create_role_client(
         return RuntimeBridgeClient(HermesCLIRuntime(hermes_config))
 
     # LLMProvider-based providers — use the bridge
-    if provider_type in ("mlx", "openai", "openai-compatible", "openrouter", "ollama", "vllm"):
+    if provider_type in ("mlx", "openai", "openai-compatible", "openrouter", "orcarouter", "ollama", "vllm"):
         return _create_provider_bridge(provider_type, settings, model_override=model_override, role=role)
 
     raise ValueError(f"unsupported role provider: {provider_type!r}")
