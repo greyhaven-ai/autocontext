@@ -1708,3 +1708,34 @@ def test_no_new_markdown_fence_regex_outside_output_parser() -> None:
        file still offends -> fails. Restored -> passes.
     """
     assert _fence_regex_offenders() == _KNOWN_OFFENDERS
+
+
+def test_degenerate_repetition_stays_linear() -> None:
+    """AC-922: the failed-decode cap is load-bearing, so pin it.
+
+    `_MAX_FAILED_DECODE_ATTEMPTS` is what keeps a model stuck in a repetition
+    loop from costing quadratic time. It was measured at ~4x per 2x input
+    before the cap (1.07s for 46KB) and ~2x after (0.017s). Nothing guarded it,
+    so a later "simplification" of the retry loop could reintroduce the
+    quadratic without any test objecting.
+
+    Asserts the shape of the curve rather than absolute timings, which would be
+    machine-dependent and flaky. Quadratic gives ~4x; linear gives ~2x; the
+    threshold sits between them with room for noise.
+    """
+    import time
+
+    from autocontext.harness.core.output_parser import extract_json
+
+    def elapsed(n: int) -> float:
+        text = '{"a": ' * n
+        start = time.perf_counter()
+        extract_json(text, on_failure="none")
+        return time.perf_counter() - start
+
+    elapsed(2000)  # warm any lazy imports so the first sample is not inflated
+    small = elapsed(2000)
+    large = elapsed(8000)
+
+    # 4x the input. Linear predicts ~4x time, quadratic ~16x.
+    assert large < small * 8, f"scaling looks superlinear: {small:.4f}s -> {large:.4f}s for 4x input"
