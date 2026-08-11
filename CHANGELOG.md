@@ -11,7 +11,10 @@ All notable changes to this project will be documented in this file.
   native OpenAI-compatible and Anthropic tool loops. Both runtimes force the first scratchpad
   call, disable parallel tool use, keep ordered tool payloads separate from final answer text,
   aggregate multi-turn usage, and fail closed when the tool contract is ignored or never
-  terminates. Retry and Python hook wrappers preserve the capability. Python teacher collection
+  terminates. OpenAI-compatible calls request native reasoning off, use the advertised lowest
+  gateway level only when `none` is rejected, and pass GPT 5.6+ external-thinking budgets through
+  the numeric system-prompt hint. Tool arguments are strict and acknowledgements do not re-inject
+  or steer the scratchpad. Retry and Python hook wrappers preserve the capability. Python teacher collection
   now requires a real tool stream by default and records capture provenance; local, deterministic,
   callable, and CLI/runtime transports report unsupported unless a caller explicitly opts into
   visible-preamble fallback.

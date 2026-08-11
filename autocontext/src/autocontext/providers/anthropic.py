@@ -84,7 +84,7 @@ class AnthropicProvider(LLMProvider):
         temperature: float = 0.0,
         max_tokens: int = 4096,
         output_schema: OutputSchema | None = None,
-        reasoning_effort: str = "none",
+        reasoning_effort: str = "medium",
         max_tool_turns: int = 8,
     ) -> CompletionResult:
         """Collect ordered scratchpad entries with Anthropic client tools."""
@@ -152,7 +152,10 @@ class AnthropicProvider(LLMProvider):
                 name = str(getattr(block, "name", "") or "")
                 if name != DEEP_THINK_TOOL_NAME:
                     raise ProviderError(f"Unexpected thinking tool call: {name or '<missing>'}")
-                thinking_stream.append(extract_deep_thought(getattr(block, "input", None)))
+                try:
+                    thinking_stream.append(extract_deep_thought(getattr(block, "input", None)))
+                except ValueError as exc:
+                    raise ProviderError(f"Invalid deep_think arguments: {exc}") from exc
                 tool_results.append(
                     {
                         "type": "tool_result",

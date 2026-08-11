@@ -115,8 +115,10 @@ describe("OpenAI-compatible deep_think", () => {
     expect(firstBody.parallel_tool_calls).toBe(false);
     expect(firstBody.reasoning_effort).toBe("none");
     expect(firstBody.tools[0].function.name).toBe("deep_think");
+    expect(firstBody.tools[0].function.strict).toBe(true);
     expect(secondBody.messages.at(-1).role).toBe("tool");
     expect(secondBody.messages.at(-1).content).not.toContain("check invariant");
+    expect(secondBody.messages.at(-1).content).toBe('{"recorded":1}');
   });
 
   it("negotiates away only an unsupported reasoning_effort field", async () => {
@@ -138,6 +140,106 @@ describe("OpenAI-compatible deep_think", () => {
     expect(JSON.parse(mockFetch.mock.calls[0][1].body).reasoning_effort).toBe("none");
     expect(JSON.parse(mockFetch.mock.calls[1][1].body).reasoning_effort).toBeUndefined();
     expect(JSON.parse(mockFetch.mock.calls[2][1].body).reasoning_effort).toBeUndefined();
+  });
+
+  it("uses the lowest advertised gateway level when none is rejected", async () => {
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        text: async () => 'level "none" not supported, valid levels: low, medium, high',
+      })
+      .mockResolvedValueOnce(openAIToolResponse("portable scratchpad"))
+      .mockResolvedValueOnce(openAIFinalResponse("final"));
+    vi.stubGlobal("fetch", mockFetch);
+    const provider = createOpenAICompatibleProvider({ apiKey: "test" });
+
+    const result = await provider.completeWithThinking!({
+      systemPrompt: "s",
+      userPrompt: "u",
+      reasoningEffort: "high",
+    });
+
+    expect(result.thinkingStream).toEqual(["portable scratchpad"]);
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body).reasoning_effort).toBe("none");
+    expect(JSON.parse(mockFetch.mock.calls[1][1].body).reasoning_effort).toBe("low");
+    expect(JSON.parse(mockFetch.mock.calls[2][1].body).reasoning_effort).toBe("low");
+  });
+
+  it("negotiates the strict flag while retaining local argument validation", async () => {
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        text: async () => "unknown field tools[0].function.strict",
+      })
+      .mockResolvedValueOnce(openAIToolResponse("portable schema"))
+      .mockResolvedValueOnce(openAIFinalResponse("final"));
+    vi.stubGlobal("fetch", mockFetch);
+    const provider = createOpenAICompatibleProvider({ apiKey: "test" });
+
+    const result = await provider.completeWithThinking!({ systemPrompt: "s", userPrompt: "u" });
+
+    expect(result.thinkingStream).toEqual(["portable schema"]);
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body).tools[0].function.strict).toBe(true);
+    expect(JSON.parse(mockFetch.mock.calls[1][1].body).tools[0].function.strict).toBeUndefined();
+    expect(JSON.parse(mockFetch.mock.calls[2][1].body).tools[0].function.strict).toBeUndefined();
+  });
+
+  it("maps GPT 5.6 external effort to the numeric prompt budget", async () => {
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(openAIToolResponse("budgeted scratchpad"))
+      .mockResolvedValueOnce(openAIFinalResponse("final"));
+    vi.stubGlobal("fetch", mockFetch);
+    const provider = createOpenAICompatibleProvider({
+      apiKey: "test",
+      model: "openai-codex/gpt-5.6-sol",
+    });
+
+    await provider.completeWithThinking!({
+      systemPrompt: "s",
+      userPrompt: "u",
+      reasoningEffort: "high",
+    });
+
+    const firstBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(firstBody.reasoning_effort).toBe("none");
+    expect(firstBody.messages[0].content).toMatch(/# Juice: 48 !important$/);
+  });
+
+  it("fails closed on malformed tool arguments", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        okJson({
+          choices: [
+            {
+              message: {
+                content: null,
+                tool_calls: [
+                  {
+                    id: "call-invalid",
+                    type: "function",
+                    function: { name: "deep_think", arguments: "not-json" },
+                  },
+                ],
+              },
+              finish_reason: "tool_calls",
+            },
+          ],
+          model: "gpt-stub",
+          usage: { prompt_tokens: 1, completion_tokens: 1 },
+        }),
+      ),
+    );
+    const provider = createOpenAICompatibleProvider({ apiKey: "test" });
+
+    await expect(
+      provider.completeWithThinking!({ systemPrompt: "s", userPrompt: "u" }),
+    ).rejects.toThrow("Invalid deep_think arguments");
   });
 
   it("fails closed when the required first tool call is ignored", async () => {
@@ -207,6 +309,33 @@ describe("Anthropic deep_think", () => {
     expect(secondBody.tool_choice).toEqual({ type: "auto", disable_parallel_tool_use: true });
     expect(secondBody.messages.at(-1).content[0].type).toBe("tool_result");
     expect(secondBody.messages.at(-1).content[0].content).not.toContain("establish invariant");
+    expect(secondBody.messages.at(-1).content[0].content).toBe('{"recorded":1}');
+  });
+
+  it("fails closed on malformed tool input", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        okJson({
+          content: [
+            {
+              type: "tool_use",
+              id: "toolu-invalid",
+              name: "deep_think",
+              input: { unexpected: "shape" },
+            },
+          ],
+          model: "claude-stub",
+          usage: { input_tokens: 1, output_tokens: 1 },
+          stop_reason: "tool_use",
+        }),
+      ),
+    );
+    const provider = createAnthropicProvider({ apiKey: "test" });
+
+    await expect(
+      provider.completeWithThinking!({ systemPrompt: "s", userPrompt: "u" }),
+    ).rejects.toThrow("Invalid deep_think arguments");
   });
 
   it("fails closed when the required first tool call is ignored", async () => {

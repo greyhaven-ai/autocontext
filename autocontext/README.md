@@ -85,7 +85,10 @@ Anthropic and OpenAI-compatible providers. The collector requires a structured
 tool stream by default and keeps it separate from the final answer. Local and
 CLI/runtime providers report the capability as unsupported; visible-preamble
 fallback is available only through the collector's explicit
-`require_thinking_stream=False` option. Thinking payloads may contain sensitive
+`require_thinking_stream=False` option. For GPT 5.6+ models,
+`reasoning_effort` selects the external numeric prompt budget while native
+reasoning is requested off; a compatible gateway that rejects `none` is clamped
+to its lowest advertised level. Thinking payloads may contain sensitive
 prompt-derived data and should be redacted before persistence or export.
 
 ## Common commands

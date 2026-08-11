@@ -104,13 +104,15 @@ class LLMProvider(ABC):
         temperature: float = 0.0,
         max_tokens: int = 4096,
         output_schema: OutputSchema | None = None,
-        reasoning_effort: str = "none",
+        reasoning_effort: str = "medium",
         max_tool_turns: int = 8,
     ) -> CompletionResult:
         """Complete while requesting an application-captured thinking stream.
 
         Providers without a tool-loop implementation fall back to ``complete``,
         return an empty ``thinking_stream``, and mark capture as unsupported.
+        ``reasoning_effort`` selects the external scratchpad budget; native
+        provider reasoning is disabled where the transport supports doing so.
         This method is intentionally non-abstract so existing third-party
         ``LLMProvider`` implementations remain compatible.
         """

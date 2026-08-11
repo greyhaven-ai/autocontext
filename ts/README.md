@@ -58,7 +58,10 @@ tool collection through the optional `LLMProvider.completeWithThinking` method.
 Use `completeWithThinkingFallback(provider, options)` for arbitrary providers:
 it calls the native loop when available and otherwise returns an empty
 `thinkingStream` with `thinkingCapture: "unsupported"`. Tool payloads never
-become `text`; treat them as sensitive data and apply trace redaction before
+become `text`. For GPT 5.6+ models, `reasoningEffort` selects the external
+numeric prompt budget while native reasoning is requested off; compatible
+gateways that reject `none` use their lowest advertised level. Treat tool
+payloads as sensitive data and apply trace redaction before
 persistence or export. Local CLI/runtime and deterministic providers do not
 currently expose a structured tool channel.
 

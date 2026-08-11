@@ -71,6 +71,7 @@ export interface CompletionOptions {
 }
 
 export interface ThinkingCompletionOptions extends CompletionOptions {
+  /** External scratchpad budget; native provider reasoning is disabled when supported. */
   reasoningEffort?: string;
   maxToolTurns?: number;
 }

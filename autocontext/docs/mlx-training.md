@@ -280,6 +280,8 @@ Notes:
   OpenAI-compatible teachers use a bounded `deep_think` function-call loop: the first turn
   requires the private scratchpad, later turns may add entries or finish, and ordered calls are
   stored as `thinking_stream` while their joined text becomes the record's `reasoning`.
+  `reasoning_effort` controls the GPT 5.6+ external scratchpad budget while native reasoning is
+  requested off, keeping the explicit tool stream as the observable reasoning surface.
   Collection requires a real tool stream by default. Local, callable, and CLI/runtime providers
   report `thinking_capture=unsupported` and are skipped; pass
   `require_thinking_stream=False` only when a visible-preamble rationale is an acceptable,

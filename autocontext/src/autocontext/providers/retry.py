@@ -97,7 +97,7 @@ class RetryProvider(LLMProvider):
         temperature: float = 0.0,
         max_tokens: int = 4096,
         output_schema: OutputSchema | None = None,
-        reasoning_effort: str = "none",
+        reasoning_effort: str = "medium",
         max_tool_turns: int = 8,
     ) -> CompletionResult:
         """Retry the entire bounded thinking-tool conversation as one call."""

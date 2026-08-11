@@ -64,6 +64,14 @@ def test_anthropic_deep_think_is_ordered_and_separate_from_final_text() -> None:
     tool_result = messages.calls[1]["messages"][-1]["content"][0]
     assert tool_result["type"] == "tool_result"
     assert "establish invariant" not in tool_result["content"]
+    assert tool_result["content"] == '{"recorded":1}'
+
+
+def test_anthropic_deep_think_fails_closed_on_invalid_tool_input() -> None:
+    provider, _ = _provider([_response(_tool_block({"unexpected": "shape"}))])
+
+    with pytest.raises(ProviderError, match="Invalid deep_think arguments"):
+        provider.complete_with_thinking("system", "user")
 
 
 def test_anthropic_deep_think_fails_when_required_call_is_ignored() -> None:

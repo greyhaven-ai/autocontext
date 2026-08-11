@@ -126,7 +126,7 @@ def collect(
     temperature: float = 1.0,
     score_threshold: float = 0.0,
     run_id: str = "teacher",
-    reasoning_effort: str = "none",
+    reasoning_effort: str = "medium",
     max_tool_turns: int = 8,
     require_thinking_stream: bool = True,
 ) -> list[dict[str, Any]]:

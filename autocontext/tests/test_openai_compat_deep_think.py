@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from types import SimpleNamespace
 from typing import Any
 
@@ -15,7 +16,7 @@ class _Completions:
         self.calls: list[dict[str, Any]] = []
 
     def create(self, **request: Any) -> Any:
-        self.calls.append(request)
+        self.calls.append(deepcopy(request))
         outcome = self.outcomes.pop(0)
         if isinstance(outcome, Exception):
             raise outcome
@@ -43,10 +44,12 @@ def _response(*, text: str | None = None, tool_calls: list[Any] | None = None, t
     return SimpleNamespace(choices=[choice], usage=usage)
 
 
-def _provider(outcomes: list[Any]) -> tuple[OpenAICompatibleProvider, _Completions]:
+def _provider(
+    outcomes: list[Any], *, model: str = "stub"
+) -> tuple[OpenAICompatibleProvider, _Completions]:
     completions = _Completions(outcomes)
     provider = object.__new__(OpenAICompatibleProvider)
-    provider._default_model = "stub"
+    provider._default_model = model
     provider._client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
     return provider, completions
 
@@ -71,21 +74,21 @@ def test_deep_think_calls_are_ordered_and_separate_from_final_text() -> None:
     assert completions.calls[0]["parallel_tool_calls"] is False
     assert completions.calls[0]["reasoning_effort"] == "none"
     assert completions.calls[0]["tools"][0]["function"]["name"] == "deep_think"
+    assert completions.calls[0]["tools"][0]["function"]["strict"] is True
     assert completions.calls[1]["messages"][-1]["role"] == "tool"
     assert "check the invariant" not in completions.calls[1]["messages"][-1]["content"]
+    assert completions.calls[1]["messages"][-1]["content"] == '{"recorded":1}'
 
 
-def test_deep_think_preserves_malformed_arguments_instead_of_dropping_them() -> None:
+def test_deep_think_fails_closed_on_malformed_arguments() -> None:
     provider, _ = _provider(
         [
             _response(tool_calls=[_tool_call("unparseable scratchpad")]),
-            _response(text="final"),
         ]
     )
 
-    result = provider.complete_with_thinking("system", "user")
-
-    assert result.thinking_stream == ["unparseable scratchpad"]
+    with pytest.raises(ProviderError, match="Invalid deep_think arguments"):
+        provider.complete_with_thinking("system", "user")
 
 
 def test_deep_think_fails_when_required_first_call_is_ignored() -> None:
@@ -117,6 +120,55 @@ def test_deep_think_negotiates_only_unsupported_reasoning_effort() -> None:
     assert completions.calls[0]["reasoning_effort"] == "none"
     assert "reasoning_effort" not in completions.calls[1]
     assert "reasoning_effort" not in completions.calls[2]
+
+
+def test_deep_think_uses_lowest_gateway_level_when_none_is_rejected() -> None:
+    provider, completions = _provider(
+        [
+            _BadRequest('level "none" not supported, valid levels: low, medium, high'),
+            _response(tool_calls=[_tool_call('{"thoughts":"portable scratchpad"}')]),
+            _response(text="final"),
+        ]
+    )
+
+    result = provider.complete_with_thinking("system", "user", reasoning_effort="high")
+
+    assert result.thinking_stream == ["portable scratchpad"]
+    assert completions.calls[0]["reasoning_effort"] == "none"
+    assert completions.calls[1]["reasoning_effort"] == "low"
+    assert completions.calls[2]["reasoning_effort"] == "low"
+
+
+def test_deep_think_negotiates_strict_flag_but_validates_arguments_locally() -> None:
+    provider, completions = _provider(
+        [
+            _BadRequest("unknown field tools[0].function.strict"),
+            _response(tool_calls=[_tool_call('{"thoughts":"portable schema"}')]),
+            _response(text="final"),
+        ]
+    )
+
+    result = provider.complete_with_thinking("system", "user")
+
+    assert result.thinking_stream == ["portable schema"]
+    assert completions.calls[0]["tools"][0]["function"]["strict"] is True
+    assert "strict" not in completions.calls[1]["tools"][0]["function"]
+    assert "strict" not in completions.calls[2]["tools"][0]["function"]
+
+
+def test_deep_think_maps_gpt_56_external_effort_to_numeric_juice() -> None:
+    provider, completions = _provider(
+        [
+            _response(tool_calls=[_tool_call('{"thoughts":"budgeted scratchpad"}')]),
+            _response(text="final"),
+        ],
+        model="openai-codex/gpt-5.6-sol",
+    )
+
+    provider.complete_with_thinking("system", "user", reasoning_effort="high")
+
+    assert completions.calls[0]["reasoning_effort"] == "none"
+    assert completions.calls[0]["messages"][0]["content"].endswith("# Juice: 48 !important")
 
 
 def test_openai_compat_advertises_native_thinking_support() -> None:

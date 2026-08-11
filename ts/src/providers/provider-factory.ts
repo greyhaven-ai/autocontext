@@ -10,6 +10,7 @@ import {
   DEEP_THINK_PARAMETERS,
   DEEP_THINK_TOOL_NAME,
   addCompletionUsage,
+  deepThinkJuice,
   deepThinkAcknowledgement,
   extractDeepThought,
   isRecord,
@@ -235,7 +236,9 @@ function isUnsupportedReasoningEffortError(status: number, body: string): boolea
   if (![400, 404, 422].includes(status)) return false;
   const message = body.toLowerCase();
   const mentionsField =
-    message.includes("reasoning_effort") || message.includes("reasoning effort");
+    message.includes("reasoning_effort") ||
+    message.includes("reasoning effort") ||
+    /(?:valid|supported|allowed) levels?/.test(message);
   const rejectsField = [
     "unsupported",
     "not supported",
@@ -244,6 +247,48 @@ function isUnsupportedReasoningEffortError(status: number, body: string): boolea
     "invalid",
   ].some((token) => message.includes(token));
   return mentionsField && rejectsField;
+}
+
+function isUnsupportedStrictToolsError(status: number, body: string): boolean {
+  if (![400, 404, 422].includes(status)) return false;
+  const message = body.toLowerCase();
+  const mentionsField =
+    message.includes("strict") && (message.includes("tool") || message.includes("function"));
+  const rejectsField = [
+    "unsupported",
+    "not supported",
+    "unknown",
+    "unrecognized",
+    "unexpected",
+    "invalid",
+  ].some((token) => message.includes(token));
+  return mentionsField && rejectsField;
+}
+
+const REASONING_EFFORT_ORDER = [
+  "none",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+] as const;
+
+function lowestSupportedReasoningEffort(body: string, current: string): string | undefined {
+  const message = body.toLowerCase();
+  if (!/(?:valid|supported|allowed) levels?/.test(message)) return undefined;
+  const advertised = new Set(message.match(/\b(?:none|minimal|low|medium|high|xhigh|max)\b/g) ?? []);
+  advertised.delete(current.toLowerCase());
+  return REASONING_EFFORT_ORDER.find((effort) => advertised.has(effort));
+}
+
+function isGpt56Plus(model: string): boolean {
+  const match = /(?:^|[/:-])gpt-(\d+)(?:\.(\d+))?/i.exec(model);
+  if (!match) return false;
+  const major = Number(match[1]);
+  const minor = Number(match[2] ?? 0);
+  return major > 5 || (major === 5 && minor >= 6);
 }
 
 export function createOpenAICompatibleProvider(opts: OpenAICompatibleProviderOpts): LLMProvider {
@@ -326,14 +371,21 @@ export function createOpenAICompatibleProvider(opts: OpenAICompatibleProviderOpt
       if (maxToolTurns < 1) throw new RangeError("maxToolTurns must be at least 1");
 
       const model = callOpts.model || defaultModel;
+      const juice = isGpt56Plus(model)
+        ? deepThinkJuice(callOpts.reasoningEffort ?? "medium")
+        : undefined;
       const messages: Array<Record<string, unknown>> = [
-        { role: "system", content: withDeepThinkInstruction(callOpts.systemPrompt) },
+        { role: "system", content: withDeepThinkInstruction(callOpts.systemPrompt, juice) },
         { role: "user", content: callOpts.userPrompt },
       ];
       const thinkingStream: string[] = [];
       const usage: Record<string, number> = {};
       let constrained = Boolean(callOpts.outputSchema);
-      let reasoningEffortSupported = true;
+      // reasoningEffort controls the external prompt budget. Keep native
+      // hidden reasoning off so the explicit tool payload is what callers
+      // collect; gateways that reject `none` may advertise a lowest level.
+      let wireReasoningEffort: string | undefined = "none";
+      let strictTools = true;
 
       for (let turn = 0; turn < maxToolTurns; turn++) {
         const body: Record<string, unknown> = {
@@ -348,14 +400,15 @@ export function createOpenAICompatibleProvider(opts: OpenAICompatibleProviderOpt
                 name: DEEP_THINK_TOOL_NAME,
                 description: DEEP_THINK_DESCRIPTION,
                 parameters: DEEP_THINK_PARAMETERS,
+                ...(strictTools ? { strict: true } : {}),
               },
             },
           ],
           tool_choice: turn === 0 ? "required" : "auto",
           parallel_tool_calls: false,
         };
-        if (reasoningEffortSupported) {
-          body["reasoning_effort"] = callOpts.reasoningEffort ?? "none";
+        if (wireReasoningEffort !== undefined) {
+          body["reasoning_effort"] = wireReasoningEffort;
         }
         if (constrained && callOpts.outputSchema) {
           body["response_format"] = {
@@ -389,12 +442,27 @@ export function createOpenAICompatibleProvider(opts: OpenAICompatibleProviderOpt
             delete body["response_format"];
             continue;
           }
+          if (strictTools && isUnsupportedStrictToolsError(res.status, errorBody)) {
+            strictTools = false;
+            const tools = body["tools"];
+            const firstTool = Array.isArray(tools) ? tools[0] : undefined;
+            const toolFunction = isRecord(firstTool) ? firstTool["function"] : undefined;
+            if (isRecord(toolFunction)) delete toolFunction["strict"];
+            continue;
+          }
           if (
             "reasoning_effort" in body &&
             isUnsupportedReasoningEffortError(res.status, errorBody)
           ) {
-            reasoningEffortSupported = false;
-            delete body["reasoning_effort"];
+            const currentEffort = String(body["reasoning_effort"]);
+            const fallbackEffort = lowestSupportedReasoningEffort(errorBody, currentEffort);
+            if (fallbackEffort === undefined) {
+              wireReasoningEffort = undefined;
+              delete body["reasoning_effort"];
+            } else {
+              wireReasoningEffort = fallbackEffort;
+              body["reasoning_effort"] = fallbackEffort;
+            }
             continue;
           }
           throw new ProviderError(`OpenAI API error ${res.status}: ${errorBody.slice(0, 200)}`);
