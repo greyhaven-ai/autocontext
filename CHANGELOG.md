@@ -18,6 +18,10 @@ All notable changes to this project will be documented in this file.
 - Persistent interpreter workspace summaries and migration no longer invoke candidate-defined `__len__`, `__repr__`, or `__deepcopy__` hooks outside the execution timeout; plain built-in working data remains safely copyable while custom objects degrade to bounded metadata or omission.
 - Model JSON recovery skips Markdown/prose brackets before a later object and bounds failed structural decode attempts, preserving truncated-array fail-closed behavior without the AC-922 quadratic path.
 
+### Deprecated
+
+- The legacy dollar-based role-routing aggregates, Python `RoleRouter.estimate_run_cost` and TypeScript `estimateRoleRoutingCost`, remain available for compatibility with 0.14.0 but are deprecated because an all-frontier dollar comparison is not meaningful for self-hosted runs. Use the per-route configuration metadata instead (AC-915).
+
 ## [0.14.0] - 2026-07-21
 
 ### Added

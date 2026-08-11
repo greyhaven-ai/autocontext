@@ -14,7 +14,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   SETTINGS_KEY_MAP,
-  estimateRoleRoutingCost,
   routeRoleProvider,
   type RoleRoutingSettings,
 } from "../src/providers/index.js";
@@ -92,7 +91,6 @@ const EXPECTED_CASE_IDS = {
     "curator_uses_local_artifact",
     "local_artifact_ignored_when_routing_off",
   ],
-  cost_estimation: ["default_auto_mode_totals", "with_local_artifacts_totals"],
 } as const satisfies Record<string, readonly string[]>;
 
 // Compared with .sort(), so this list must stay in sorted order.
@@ -116,7 +114,7 @@ const EXPECTED_ASSIGNMENT_KEYS = ["cost_per_1k_tokens", "model", "provider_class
 const EXPECTED_GROUPS = Object.keys(EXPECTED_CASE_IDS).sort();
 
 // Fixture groups whose cases are single routeRoleProvider() calls compared field by field.
-const ROUTE_GROUPS = Object.keys(EXPECTED_CASE_IDS).filter((group) => group !== "cost_estimation");
+const ROUTE_GROUPS = Object.keys(EXPECTED_CASE_IDS);
 
 // Must match _SETTINGS_DEFAULTS in the Python replay exactly. Keyed by the Python
 // spelling and translated through the shared SETTINGS_KEY_MAP, so the two halves
@@ -271,48 +269,11 @@ describe("known divergences", () => {
   }
 });
 
-type CostCase = {
-  context?: { availableLocalModels?: string[] };
-  expected: {
-    all_frontier_per_1k_tokens: number;
-    savings_vs_all_frontier: number;
-    total_per_1k_tokens: number;
-  };
-  settings?: Record<string, string>;
-};
-
-describe("cost_estimation parity", () => {
-  const cases = Object.entries(
-    (FIXTURES.fixtures.cost_estimation ?? {}) as unknown as Record<string, CostCase>,
-  );
-
-  it("has cases to replay", () => {
-    expect(cases.length).toBeGreaterThan(0);
-  });
-
-  for (const [name, testCase] of cases) {
-    it(`matches Python for ${name}`, () => {
-      const estimate = estimateRoleRoutingCost(
-        settingsFromFixture(testCase.settings),
-        testCase.context ?? {},
-      );
-      expect(estimate.totalPer1kTokens).toBeCloseTo(testCase.expected.total_per_1k_tokens, 6);
-      expect(estimate.allFrontierPer1kTokens).toBeCloseTo(
-        testCase.expected.all_frontier_per_1k_tokens,
-        6,
-      );
-      expect(estimate.savingsVsAllFrontier).toBeCloseTo(
-        testCase.expected.savings_vs_all_frontier,
-        6,
-      );
-    });
-  }
-});
 
 describe("fixture completeness", () => {
   it("replays every expected fixture group", () => {
     expect(Object.keys(FIXTURES.fixtures).sort()).toEqual(EXPECTED_GROUPS);
-    expect([...ROUTE_GROUPS, "cost_estimation"].sort()).toEqual(EXPECTED_GROUPS);
+    expect([...ROUTE_GROUPS].sort()).toEqual(EXPECTED_GROUPS);
   });
 
   it("replays every expected fixture case", () => {

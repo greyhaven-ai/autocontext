@@ -468,33 +468,25 @@ class TestCostEstimation:
         cfg = router.route("analyst", context=ctx)
         assert cfg.estimated_cost_per_1k_tokens == 0.0
 
-    def test_estimate_run_cost(self) -> None:
+    def test_deprecated_estimate_run_cost_remains_compatible(self) -> None:
         from autocontext.agents.role_router import RoleRouter
 
-        router = RoleRouter(_settings())
-        estimate = router.estimate_run_cost()
-        assert "total_per_1k_tokens" in estimate
-        assert "roles" in estimate
-        assert "savings_vs_all_frontier" in estimate
-        assert estimate["total_per_1k_tokens"] >= 0
+        estimate = RoleRouter(_settings()).estimate_run_cost()
 
-    def test_estimate_run_cost_savings(self) -> None:
-        from autocontext.agents.role_router import RoleRouter
-
-        router = RoleRouter(_settings())
-        estimate = router.estimate_run_cost()
-        # With auto routing, mid-tier and fast roles should save vs all-frontier
-        assert estimate["savings_vs_all_frontier"] >= 0
-
-    def test_estimate_run_cost_with_local(self) -> None:
-        from autocontext.agents.role_router import RoleRouter, RoutingContext
-
-        router = RoleRouter(_settings())
-        ctx = RoutingContext(available_local_models=["m1"])
-        estimate = router.estimate_run_cost(context=ctx)
-        # Local models reduce cost further
-        estimate_no_local = router.estimate_run_cost()
-        assert estimate["total_per_1k_tokens"] <= estimate_no_local["total_per_1k_tokens"]
+        assert set(estimate) == {
+            "total_per_1k_tokens",
+            "all_frontier_per_1k_tokens",
+            "savings_vs_all_frontier",
+            "roles",
+        }
+        assert set(estimate["roles"]) == {
+            "competitor",
+            "analyst",
+            "coach",
+            "architect",
+            "curator",
+            "translator",
+        }
 
 
 # ---------------------------------------------------------------------------

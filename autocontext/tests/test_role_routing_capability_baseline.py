@@ -41,7 +41,6 @@ _WRITE = os.environ.get("AC911_BASELINE_WRITE") == "1"
 _CONTEXT_KEY_MAP = {"availableLocalModels": "available_local_models"}
 
 _ASSIGNMENT_KEYS = {"provider_type", "model", "provider_class", "cost_per_1k_tokens"}
-_COST_KEYS = {"total_per_1k_tokens", "all_frontier_per_1k_tokens", "savings_vs_all_frontier"}
 
 
 def _load() -> dict[str, Any]:
@@ -93,20 +92,10 @@ def _route(payload: dict[str, Any], case: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _estimate(payload: dict[str, Any], case: dict[str, Any]) -> dict[str, Any]:
-    from autocontext.agents.role_router import RoleRouter, RoutingContext
-
-    router = RoleRouter(_settings(payload, case))
-    est = router.estimate_run_cost(context=RoutingContext(**_context(case["context"])))
-    return {key: est[key] for key in sorted(_COST_KEYS)}
-
-
 def _rewrite() -> None:
     payload = _load()
     for case in payload["cases"].values():
         case["python"] = _route(payload, case)
-    for case in payload["cost_cases"].values():
-        case["python"] = _estimate(payload, case)
     BASELINE_PATH.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
@@ -125,29 +114,17 @@ def test_route_matches_baseline(case_id: str) -> None:
     assert _route(_PAYLOAD, case) == case["python"]
 
 
-@pytest.mark.parametrize("case_id", sorted(_PAYLOAD["cost_cases"]))
-def test_cost_matches_baseline(case_id: str) -> None:
-    """Whole-run cost totals, which is where hosting and capability are conflated."""
-    case = _PAYLOAD["cost_cases"][case_id]
-    assert case["python"] is not None, f"{case_id} has no recorded Python output"
-    assert _estimate(_PAYLOAD, case) == case["python"]
-
-
 def test_every_case_records_both_languages() -> None:
     """A half-recorded case would pass its own replay while measuring nothing.
 
     Both keys must be populated and well-shaped, so deleting the TypeScript half
     to make a stubborn diff go away fails here instead of going unnoticed.
     """
-    for name, group, keys in (
-        ("cases", _PAYLOAD["cases"], _ASSIGNMENT_KEYS),
-        ("cost_cases", _PAYLOAD["cost_cases"], _COST_KEYS),
-    ):
-        for case_id, case in group.items():
-            for language in ("python", "typescript"):
-                recorded = case[language]
-                assert recorded is not None, f"{name}.{case_id} missing {language}"
-                assert set(recorded) == keys, f"{name}.{case_id}.{language} has keys {sorted(recorded)}"
+    for case_id, case in _PAYLOAD["cases"].items():
+        for language in ("python", "typescript"):
+            recorded = case[language]
+            assert recorded is not None, f"cases.{case_id} missing {language}"
+            assert set(recorded) == _ASSIGNMENT_KEYS, f"cases.{case_id}.{language} has keys {sorted(recorded)}"
 
 
 def test_cloud_only_routing_is_covered() -> None:

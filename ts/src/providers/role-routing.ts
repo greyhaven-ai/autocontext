@@ -200,6 +200,11 @@ export interface RoutedProviderConfig {
   unsupportedReason?: string;
 }
 
+/**
+ * @deprecated This dollar-based aggregate is not meaningful for self-hosted
+ * runs. It remains available only for compatibility with the public API shipped
+ * in 0.14.0. New code should inspect each `RoutedProviderConfig` instead.
+ */
 export interface RoleRoutingCostEstimate {
   roles: Partial<Record<GenerationRole, RoutedProviderConfig>>;
   totalPer1kTokens: number;
@@ -535,6 +540,11 @@ export function routeRoleProvider(
   );
 }
 
+/**
+ * @deprecated This dollar-based aggregate is not meaningful for self-hosted
+ * runs. It remains available only for compatibility with the public API shipped
+ * in 0.14.0. New code should inspect each result from `routeRoleProvider`.
+ */
 export function estimateRoleRoutingCost(
   settings: RoleRoutingSettings,
   context: RoleRoutingContext = {},

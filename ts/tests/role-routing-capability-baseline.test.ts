@@ -30,7 +30,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   SETTINGS_KEY_MAP,
-  estimateRoleRoutingCost,
   routeRoleProvider,
   type RoleRoutingSettings,
 } from "../src/providers/index.js";
@@ -40,12 +39,6 @@ type Assignment = {
   model: string | null;
   provider_class: string;
   provider_type: string;
-};
-
-type CostTotals = {
-  all_frontier_per_1k_tokens: number;
-  savings_vs_all_frontier: number;
-  total_per_1k_tokens: number;
 };
 
 type BaselineCase<T> = {
@@ -59,7 +52,6 @@ type BaselineCase<T> = {
 
 type Baseline = {
   cases: Record<string, BaselineCase<Assignment>>;
-  cost_cases: Record<string, BaselineCase<CostTotals>>;
   roles: string[];
   settings_defaults: Record<string, string>;
 };
@@ -109,17 +101,6 @@ function route(baseline: Baseline, testCase: BaselineCase<Assignment>): Assignme
   };
 }
 
-function estimate(baseline: Baseline, testCase: BaselineCase<CostTotals>): CostTotals {
-  const est = estimateRoleRoutingCost(settingsFor(baseline, testCase), {
-    availableLocalModels: testCase.context.availableLocalModels ?? [],
-  });
-  return {
-    all_frontier_per_1k_tokens: est.allFrontierPer1kTokens,
-    savings_vs_all_frontier: est.savingsVsAllFrontier,
-    total_per_1k_tokens: est.totalPer1kTokens,
-  };
-}
-
 /**
  * routeRoleProvider() reads AUTOCONTEXT_AGENT_PROVIDER / AUTOCONTEXT_PROVIDER live
  * from process.env and lets them outrank the passed settings. Python does not read
@@ -151,9 +132,6 @@ if (process.env.AC911_BASELINE_WRITE === "1") {
   for (const testCase of Object.values(baseline.cases)) {
     testCase.typescript = route(baseline, testCase);
   }
-  for (const testCase of Object.values(baseline.cost_cases)) {
-    testCase.typescript = estimate(baseline, testCase);
-  }
   writeFileSync(BASELINE_PATH, `${JSON.stringify(baseline, null, 2)}\n`, "utf-8");
   if (savedAgent !== undefined) process.env.AUTOCONTEXT_AGENT_PROVIDER = savedAgent;
   if (savedGeneric !== undefined) process.env.AUTOCONTEXT_PROVIDER = savedGeneric;
@@ -166,12 +144,6 @@ describe("capability/hosting baseline", () => {
     const testCase = BASELINE.cases[caseId];
     expect(testCase.typescript).not.toBeNull();
     expect(route(BASELINE, testCase)).toEqual(testCase.typescript);
-  });
-
-  it.each(Object.keys(BASELINE.cost_cases).sort())("totals %s as recorded", (caseId) => {
-    const testCase = BASELINE.cost_cases[caseId];
-    expect(testCase.typescript).not.toBeNull();
-    expect(estimate(BASELINE, testCase)).toEqual(testCase.typescript);
   });
 
   // AC-911's third criterion needs a guard that cannot be quietly emptied: every

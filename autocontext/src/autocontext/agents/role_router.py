@@ -302,16 +302,19 @@ class RoleRouter:
         self,
         context: RoutingContext | None = None,
     ) -> dict[str, Any]:
-        """Estimate per-role and total cost for one generation cycle.
+        """Return the legacy dollar-based estimate for one generation cycle.
 
-        Returns dict with per-role breakdown and savings vs all-frontier.
+        .. deprecated:: 0.15.0
+           This aggregate compares a route with an all-frontier baseline and is
+           not meaningful for self-hosted runs. It remains available only for
+           compatibility with the public API shipped in 0.14.0. New code should
+           inspect each routed ``ProviderConfig`` instead.
         """
-        roles = ["competitor", "analyst", "coach", "architect", "curator", "translator"]
         role_costs: dict[str, dict[str, Any]] = {}
         total = 0.0
         all_frontier = 0.0
 
-        for role in roles:
+        for role in DEFAULT_ROUTING_TABLE:
             cfg = self.route(role, context=context)
             cost = cfg.estimated_cost_per_1k_tokens
             total += cost
