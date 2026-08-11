@@ -64,6 +64,7 @@ from autocontext.execution.improvement_loop import ImprovementLoop
 from autocontext.extensions import active_hook_bus
 from autocontext.loop.generation_runner import GenerationRunner
 from autocontext.loop.runner_hooks import initialize_hook_bus
+from autocontext.preflight import PreflightBlocked, run_preflight
 from autocontext.providers.base import ProviderError
 from autocontext.scenarios import SCENARIO_REGISTRY
 from autocontext.scenarios.agent_task import AgentTaskInterface
@@ -105,6 +106,14 @@ def _main_callback(ctx: typer.Context) -> None:
         from autocontext.banner import print_banner_rich
 
         print_banner_rich()
+
+
+def _warn(message: str, *, json_output: bool) -> None:
+    """One place that knows how this CLI reports a problem in either mode."""
+    if json_output:
+        _write_json_stderr(message)
+    else:
+        console.print(f"[yellow]{message}[/yellow]")
 
 
 def _apply_preset_env(preset: str | None) -> None:
@@ -404,6 +413,9 @@ def run(
     port: int = typer.Option(8000, "--port", help="Server port (only used with --serve)"),
     preset: str | None = typer.Option(None, "--preset", help=_PRESET_HELP),
     json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
+    skip_preflight: bool = typer.Option(
+        False, "--skip-preflight", help="Skip pre-run checks (endpoint reachability, model availability)"
+    ),
 ) -> None:
     """Run generation loop."""
     scenario = scenario.strip() or (scenario_text or "").strip() or "grid_ctf"
@@ -417,6 +429,21 @@ def run(
 
     if preset and not json_output:
         console.print(f"[dim]Active preset: {preset}[/dim]")
+
+    if not skip_preflight:
+        # Agent-task scenarios are not in SCENARIO_REGISTRY -- they are resolved
+        # by _is_agent_task -- so the registry check would reject a whole class
+        # of valid runs. The endpoint checks still apply and still run.
+        try:
+            for check in run_preflight(scenario, preset, check_scenario=not _is_agent_task(scenario)):
+                if not check.passed:
+                    _warn(f"preflight: {check.name}: {check.detail}", json_output=json_output)
+        except PreflightBlocked as blocked:
+            _warn(
+                f"preflight failed: {blocked}. Re-run with --skip-preflight to bypass.",
+                json_output=json_output,
+            )
+            raise typer.Exit(code=2) from blocked
 
     # Agent-task scenario detection (AC-231)
     if _is_agent_task(scenario):
