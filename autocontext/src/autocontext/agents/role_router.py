@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from autocontext.agents import role_routing_contract_generated as _contract
 
@@ -297,6 +297,40 @@ class RoleRouter:
 
         # 3. Auto routing
         return self._auto_route(role, ctx)
+
+    def estimate_run_cost(
+        self,
+        context: RoutingContext | None = None,
+    ) -> dict[str, Any]:
+        """Return the legacy dollar-based estimate for one generation cycle.
+
+        .. deprecated:: 0.15.0
+           This aggregate compares a route with an all-frontier baseline and is
+           not meaningful for self-hosted runs. It remains available only for
+           compatibility with the public API shipped in 0.14.0. New code should
+           inspect each routed ``ProviderConfig`` instead.
+        """
+        role_costs: dict[str, dict[str, Any]] = {}
+        total = 0.0
+        all_frontier = 0.0
+
+        for role in DEFAULT_ROUTING_TABLE:
+            cfg = self.route(role, context=context)
+            cost = cfg.estimated_cost_per_1k_tokens
+            total += cost
+            all_frontier += _COST_TABLE[ProviderClass.FRONTIER]
+            role_costs[role] = {
+                "provider_class": cfg.provider_class,
+                "provider_type": cfg.provider_type,
+                "cost_per_1k_tokens": cost,
+            }
+
+        return {
+            "total_per_1k_tokens": total,
+            "all_frontier_per_1k_tokens": all_frontier,
+            "savings_vs_all_frontier": all_frontier - total,
+            "roles": role_costs,
+        }
 
     def _auto_route(self, role: str, ctx: RoutingContext) -> ProviderConfig:
         """Select provider class from routing table, considering available artifacts.

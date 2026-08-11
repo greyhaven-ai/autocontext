@@ -468,6 +468,26 @@ class TestCostEstimation:
         cfg = router.route("analyst", context=ctx)
         assert cfg.estimated_cost_per_1k_tokens == 0.0
 
+    def test_deprecated_estimate_run_cost_remains_compatible(self) -> None:
+        from autocontext.agents.role_router import RoleRouter
+
+        estimate = RoleRouter(_settings()).estimate_run_cost()
+
+        assert set(estimate) == {
+            "total_per_1k_tokens",
+            "all_frontier_per_1k_tokens",
+            "savings_vs_all_frontier",
+            "roles",
+        }
+        assert set(estimate["roles"]) == {
+            "competitor",
+            "analyst",
+            "coach",
+            "architect",
+            "curator",
+            "translator",
+        }
+
 
 # ---------------------------------------------------------------------------
 # TestSettings

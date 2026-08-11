@@ -2,12 +2,17 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
+import type { RoleRoutingCostEstimate } from "../src/index.js";
+
+const _legacyRoleRoutingCostEstimateTypecheck: RoleRoutingCostEstimate | undefined = undefined;
+
 describe("package root exports", () => {
   it("re-exports representative public symbols directly through the package root", async () => {
     const pkg = await import("../src/index.js");
 
     expect(pkg.SQLiteStore).toBeDefined();
     expect(pkg.createProvider).toBeDefined();
+    expect(pkg.estimateRoleRoutingCost).toBeDefined();
     expect(pkg.ActionFilterHarness).toBeDefined();
     expect(pkg.AgentTaskEvolutionRunner).toBeDefined();
     expect(pkg.FunctionSlot).toBeDefined();
@@ -58,6 +63,7 @@ describe("package root exports", () => {
     expect(pkg.assembleRuntimeContext).toBeDefined();
     expect(pkg.RuntimeContextAssemblyRequest).toBeDefined();
     expect(pkg.RuntimeContextBundle).toBeDefined();
+    expect(_legacyRoleRoutingCostEstimateTypecheck).toBeUndefined();
   }, 30_000);
 
   it("keeps the package root barrel generated from the allowlist", () => {

@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   SUPPORTED_PROVIDER_TYPES,
   buildRoleProviderBundle,
+  estimateRoleRoutingCost,
   routeRoleProvider,
   LOCAL_ELIGIBLE_ROLES,
   ROUTED_GENERATION_ROLES,
@@ -359,6 +360,14 @@ describe("shared role routing contract", () => {
     expect([...ROUTED_GENERATION_ROLES].sort()).toEqual(
       Object.keys(CONTRACT.default_routing_table).sort(),
     );
+  });
+
+  it("keeps the deprecated aggregate estimator compatible with the 0.14 API", () => {
+    const estimate = estimateRoleRoutingCost(baseSettings());
+
+    expect(Object.keys(estimate.roles).sort()).toEqual([...ROUTED_GENERATION_ROLES].sort());
+    expect(estimate.totalPer1kTokens).toBe(0);
+    expect(estimate.savingsVsAllFrontier).toBe(estimate.allFrontierPer1kTokens);
   });
 });
 
