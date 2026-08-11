@@ -5,7 +5,6 @@ validate the environment before any work begins.
 """
 from __future__ import annotations
 
-import logging
 import os
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -13,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from autocontext.config.settings import load_settings
-from autocontext.scenarios import SCENARIO_REGISTRY
+from autocontext.scenarios import resolve_scenario_class
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,7 +46,14 @@ class PreflightChecker:
 
     def check_scenario_exists(self) -> CheckResult:
         """Check if the scenario is registered."""
-        exists = self._scenario in SCENARIO_REGISTRY
+        try:
+            exists = resolve_scenario_class(self._scenario, self._knowledge_root) is not None
+        except Exception as exc:  # noqa: BLE001 - a scenario that cannot load cannot run
+            return CheckResult(
+                name="scenario_exists",
+                passed=False,
+                detail=f"Scenario '{self._scenario}' could not be loaded: {exc}",
+            )
         return CheckResult(
             name="scenario_exists",
             passed=exists,
@@ -69,7 +75,7 @@ class PreflightChecker:
                 test_file.unlink(missing_ok=True)
 
     def check_endpoint(self) -> list[CheckResult]:
-        """Probe the LLM endpoint a run would actually use (AC-914).
+        """Probe the distinct LLM endpoints and models a run would use (AC-914).
 
         Returns [] when no settings were supplied or the transport is not
         HTTP-probeable (CLI runtimes, mlx, anthropic). An absent check is
@@ -77,15 +83,44 @@ class PreflightChecker:
         """
         if self._settings is None:
             return []
-        from autocontext.endpoint_probe import probe_endpoint, resolve_agent_endpoint
+        from autocontext.endpoint_probe import probe_endpoint, resolve_run_endpoints
 
-        endpoint = resolve_agent_endpoint(self._settings)
-        if endpoint is None:
-            return []
-        return [
-            CheckResult(name=probe.name, passed=probe.passed, detail=probe.detail, blocking=probe.certain)
-            for probe in probe_endpoint(*endpoint)
-        ]
+        try:
+            targets = resolve_run_endpoints(self._settings)
+        except Exception as exc:  # noqa: BLE001 - endpoint discovery is advisory when indeterminate
+            return [
+                CheckResult(
+                    name="endpoint_probe",
+                    passed=False,
+                    detail=f"could not resolve endpoint checks ({exc})",
+                    blocking=False,
+                )
+            ]
+
+        results: list[CheckResult] = []
+        for target in targets:
+            try:
+                probes = probe_endpoint(target.base_url, target.api_key, target.model)
+            except Exception as exc:  # noqa: BLE001 - malformed probe responses must not erase static failures
+                results.append(
+                    CheckResult(
+                        name=f"{target.name}.endpoint_probe",
+                        passed=False,
+                        detail=f"endpoint checks errored ({exc}); continuing",
+                        blocking=False,
+                    )
+                )
+                continue
+            results.extend(
+                CheckResult(
+                    name=f"{target.name}.{probe.name}",
+                    passed=probe.passed,
+                    detail=probe.detail,
+                    blocking=probe.certain,
+                )
+                for probe in probes
+            )
+        return results
 
     def run_without_scenario_check(self) -> list[CheckResult]:
         """Everything except the registry lookup.
@@ -163,11 +198,7 @@ def run_preflight(
         os.environ["AUTOCONTEXT_PRESET"] = preset
     settings = load_settings()
     checker = PreflightChecker(scenario, knowledge_root=Path(settings.knowledge_root), settings=settings)
-    try:
-        results = checker.run_all() if check_scenario else checker.run_without_scenario_check()
-    except Exception:  # noqa: BLE001 - preflight must never be why a run cannot start
-        logging.getLogger(__name__).warning("preflight checks errored; continuing", exc_info=True)
-        return []
+    results = checker.run_all() if check_scenario else checker.run_without_scenario_check()
 
     blocking = PreflightChecker.blocking_failures(results)
     if blocking:

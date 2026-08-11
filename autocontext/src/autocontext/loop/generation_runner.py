@@ -206,14 +206,9 @@ class GenerationRunner:
         self.sqlite.migrate(migrations_dir)
 
     def _scenario(self, scenario_name: str) -> ScenarioInterface:
-        cls = SCENARIO_REGISTRY.get(scenario_name)
-        if cls is None:
-            from autocontext.scenarios.custom.registry import load_all_custom_scenarios
+        from autocontext.scenarios import resolve_scenario_class
 
-            custom = load_all_custom_scenarios(self.settings.knowledge_root)
-            if custom:
-                SCENARIO_REGISTRY.update(custom)
-            cls = SCENARIO_REGISTRY.get(scenario_name)
+        cls = resolve_scenario_class(scenario_name, self.settings.knowledge_root)
         if cls is None:
             supported = ", ".join(sorted(SCENARIO_REGISTRY.keys()))
             raise ValueError(f"Unknown scenario '{scenario_name}'. Supported: {supported}")

@@ -7,8 +7,9 @@ has to read a traceback to learn that a base URL was wrong.
 What is probeable, and what is not, was determined by asking a real endpoint
 rather than by reading the OpenAI specification:
 
-* **reachability** and **which models are served** come from ``GET /v1/models``,
-  which every OpenAI-compatible server implements.
+* **reachability** and **which models are served** come from ``GET /v1/models``.
+  Servers that omit or restrict that discovery route produce an advisory rather
+  than evidence that their completion route is broken.
 * **structured-output support** is established by attempting one tiny
   constrained completion. There is no capability field to read; the only honest
   test is to try it.
@@ -25,7 +26,7 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 # Long enough to survive a cold local model load, short enough that a wrong
@@ -48,6 +49,17 @@ class ProbeResult:
     detail: str
 
 
+@dataclass(frozen=True, slots=True)
+class EndpointTarget:
+    """One distinct OpenAI-compatible endpoint/model combination used by a run."""
+
+    name: str
+    provider: str
+    base_url: str
+    api_key: str = field(repr=False)
+    model: str
+
+
 def _get_json(url: str, api_key: str, payload: dict[str, Any] | None = None) -> Any:
     data = json.dumps(payload).encode() if payload is not None else None
     request = urllib.request.Request(
@@ -63,12 +75,48 @@ def probe_reachable(base_url: str, api_key: str) -> ProbeResult:
     """Is anything answering at the configured base URL?"""
     try:
         _get_json(f"{base_url.rstrip('/')}/models", api_key)
-    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+    except urllib.error.HTTPError as exc:
+        # A response proves the host is reachable. Only an authentication
+        # rejection applies uniformly to the completion surface; rate limits,
+        # server failures, and a restricted/absent model-list route do not.
+        certain = exc.code == 401
+        status_detail = "credentials were rejected" if certain else "cannot determine completion availability"
         return ProbeResult(
             name="endpoint_reachable",
             passed=False,
-            certain=True,
-            detail=f"{base_url} did not answer: {exc}",
+            certain=certain,
+            detail=f"{base_url} returned HTTP {exc.code} from /models; {status_detail}",
+        )
+    except TimeoutError as exc:
+        return ProbeResult(
+            name="endpoint_reachable",
+            passed=False,
+            certain=False,
+            detail=f"{base_url} timed out; cannot determine availability: {exc}",
+        )
+    except urllib.error.URLError as exc:
+        refused = isinstance(exc.reason, ConnectionRefusedError)
+        return ProbeResult(
+            name="endpoint_reachable",
+            passed=False,
+            certain=refused,
+            detail=(
+                f"{base_url} refused the connection: {exc}"
+                if refused
+                else f"{base_url} could not be reached; cannot determine availability: {exc}"
+            ),
+        )
+    except OSError as exc:
+        refused = isinstance(exc, ConnectionRefusedError)
+        return ProbeResult(
+            name="endpoint_reachable",
+            passed=False,
+            certain=refused,
+            detail=(
+                f"{base_url} refused the connection: {exc}"
+                if refused
+                else f"{base_url} could not be reached; cannot determine availability: {exc}"
+            ),
         )
     except (json.JSONDecodeError, ValueError) as exc:
         # Something answered but is not an OpenAI-compatible API -- a proxy
@@ -94,6 +142,13 @@ def probe_model_served(base_url: str, api_key: str, model: str) -> ProbeResult:
             passed=False,
             certain=False,
             detail=f"could not list models ({exc})",
+        )
+    if not isinstance(payload, dict) or not isinstance(payload.get("data", []), list):
+        return ProbeResult(
+            name="model_served",
+            passed=False,
+            certain=False,
+            detail="endpoint returned an unexpected model-list shape; cannot confirm",
         )
     served = [str(entry["id"]) for entry in payload.get("data", []) if isinstance(entry, dict) and entry.get("id")]
     if not served:
@@ -150,17 +205,26 @@ def probe_structured_output(base_url: str, api_key: str, model: str) -> ProbeRes
             detail=f"endpoint rejected a constrained request ({exc}); role output will fall back to markdown",
         )
     text = ""
-    choices = payload.get("choices") or []
+    choices = payload.get("choices") or [] if isinstance(payload, dict) else []
     if choices and isinstance(choices[0], dict):
-        text = (choices[0].get("message") or {}).get("content") or ""
+        message = choices[0].get("message") or {}
+        if isinstance(message, dict):
+            text = message.get("content") or ""
     try:
-        json.loads(text)
+        decoded = json.loads(text)
     except (json.JSONDecodeError, TypeError):
         return ProbeResult(
             name="structured_output",
             passed=False,
             certain=False,
             detail="endpoint accepted the schema but did not return JSON; treating as unsupported",
+        )
+    if not isinstance(decoded, dict) or set(decoded) != {"ok"} or decoded.get("ok") is not True:
+        return ProbeResult(
+            name="structured_output",
+            passed=False,
+            certain=False,
+            detail="endpoint returned JSON that did not match the requested schema; treating as unsupported",
         )
     return ProbeResult(name="structured_output", passed=True, certain=True, detail="response_format honored")
 
@@ -174,24 +238,16 @@ def probe_endpoint(base_url: str, api_key: str, model: str) -> list[ProbeResult]
     reachable = probe_reachable(base_url, api_key)
     if not reachable.passed:
         return [reachable]
-    return [reachable, probe_model_served(base_url, api_key, model), probe_structured_output(base_url, api_key, model)]
+    model_result = probe_model_served(base_url, api_key, model)
+    if not model_result.passed and model_result.certain:
+        return [reachable, model_result]
+    return [reachable, model_result, probe_structured_output(base_url, api_key, model)]
 
 
 # Transports that speak the OpenAI-compatible HTTP surface these probes use.
 # Everything else (CLI runtimes, mlx, anthropic) is skipped rather than guessed
 # at: a probe that cannot apply must not report a failure.
 _PROBEABLE = {"openai", "openai-compatible", "ollama", "vllm", "openrouter"}
-
-# Mirrors providers/registry.create_provider's defaults. Duplicating them would
-# recreate the AC-933 defect, so this is asserted equal to the registry in
-# tests/test_endpoint_probe.py rather than trusted to stay in step.
-_DEFAULT_BASE_URL = {
-    "ollama": "http://localhost:11434/v1",
-    "vllm": "http://localhost:8000/v1",
-    "openrouter": "https://openrouter.ai/api/v1",
-    "openai": "https://api.openai.com/v1",
-    "openai-compatible": "https://api.openai.com/v1",
-}
 
 
 def resolve_agent_endpoint(settings: Any) -> tuple[str, str, str] | None:
@@ -200,13 +256,127 @@ def resolve_agent_endpoint(settings: Any) -> tuple[str, str, str] | None:
     Returns None when the configured transport is not HTTP-probeable, so the
     caller reports "not applicable" rather than inventing a result.
     """
-    from autocontext.providers.registry import transport_env_api_key
+    target = _resolve_agent_target(settings)
+    if target is None:
+        return None
+    return target.base_url, target.api_key, target.model
+
+
+def _request_api_key(provider: str, resolved: str | None) -> str:
+    """Mirror the harmless sentinels used by OpenAI-compatible clients."""
+    if resolved:
+        return resolved
+    return "ollama" if provider == "ollama" else "no-key"
+
+
+def _endpoint_target(
+    *,
+    name: str,
+    provider: str,
+    base_url: str | None,
+    api_key: str | None,
+    model: str | None,
+) -> EndpointTarget | None:
+    from autocontext.providers.registry import resolve_provider_base_url
+
+    normalized = provider.strip().lower()
+    if normalized not in _PROBEABLE:
+        return None
+    resolved_url = resolve_provider_base_url(normalized, base_url)
+    if resolved_url is None or not model:
+        return None
+    return EndpointTarget(
+        name=name,
+        provider=normalized,
+        base_url=resolved_url,
+        api_key=_request_api_key(normalized, api_key),
+        model=model,
+    )
+
+
+def _resolve_agent_target(settings: Any) -> EndpointTarget | None:
+    from autocontext.agents.provider_bridge import _provider_api_key, _provider_base_url, _provider_model
 
     provider = (settings.agent_provider or "").strip().lower()
-    if provider not in _PROBEABLE:
-        return None
+    return _endpoint_target(
+        name="agent",
+        provider=provider,
+        base_url=_provider_base_url(settings),
+        api_key=_provider_api_key(provider, settings),
+        model=_provider_model(provider, settings),
+    )
 
-    base_url = settings.agent_base_url or _DEFAULT_BASE_URL[provider]
-    api_key = settings.agent_api_key or transport_env_api_key(provider, settings) or "no-key"
-    model = (settings.local_model or "").strip() or settings.agent_default_model
-    return base_url, api_key, model
+
+def resolve_run_endpoints(settings: Any) -> list[EndpointTarget]:
+    """Resolve every distinct probeable endpoint/model a configured run uses."""
+    from autocontext.agents.provider_bridge import (
+        _provider_api_key,
+        _provider_base_url,
+        _provider_model,
+        configured_role_provider,
+        has_role_client_override,
+    )
+    from autocontext.agents.role_router import RoleRouter, RoutingContext
+    from autocontext.providers.registry import resolve_auto_judge_provider, transport_env_api_key
+
+    candidates: list[EndpointTarget | None] = [_resolve_agent_target(settings)]
+    roles = ("competitor", "analyst", "coach", "architect")
+
+    # Dedicated role clients are constructed even when automatic role routing
+    # is disabled, so they are independently capable of failing a run.
+    for role in roles:
+        if not has_role_client_override(role, settings):
+            continue
+        provider = configured_role_provider(role, settings) or settings.agent_provider.strip().lower()
+        candidates.append(
+            _endpoint_target(
+                name=role,
+                provider=provider,
+                base_url=_provider_base_url(settings, role=role),
+                api_key=_provider_api_key(provider, settings, role=role),
+                model=_provider_model(provider, settings),
+            )
+        )
+
+    # Automatic routing can select role/tier models that differ from the base
+    # client. Probe the initial routing decision for every executing role.
+    if settings.role_routing == "auto":
+        router = RoleRouter(settings)
+        for role in roles:
+            config = router.route(role, context=RoutingContext())
+            candidates.append(
+                _endpoint_target(
+                    name=f"{role}-routed",
+                    provider=config.provider_type,
+                    base_url=_provider_base_url(settings, role=role),
+                    api_key=_provider_api_key(config.provider_type, settings, role=role),
+                    model=config.model,
+                )
+            )
+
+    judge_provider = settings.judge_provider.strip().lower()
+    if judge_provider == "auto":
+        judge_provider = resolve_auto_judge_provider(settings)
+    candidates.append(
+        _endpoint_target(
+            name="judge",
+            provider=judge_provider,
+            base_url=settings.judge_base_url,
+            api_key=settings.judge_api_key or transport_env_api_key(judge_provider, settings),
+            model=settings.judge_model,
+        )
+    )
+
+    # The structured-output check spends a small completion. Avoid repeating it
+    # when several roles share the exact same credentials, endpoint, and model.
+    distinct: list[EndpointTarget] = []
+    seen: set[tuple[str, str, str]] = set()
+    for target in candidates:
+        if target is None:
+            continue
+        identity = (target.base_url.rstrip("/"), target.api_key, target.model)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        distinct.append(target)
+    return distinct

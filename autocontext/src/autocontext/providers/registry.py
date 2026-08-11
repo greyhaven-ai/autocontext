@@ -31,10 +31,28 @@ SUPPORTED_PROVIDER_TYPES: frozenset[str] = frozenset(
     }
 )
 
+# Canonical HTTP roots for transports that expose the OpenAI-compatible
+# surface. Runtime construction and preflight both consume this table: a probe
+# must never reconstruct a different destination from the client it protects.
+OPENAI_COMPATIBLE_DEFAULT_BASE_URLS: dict[str, str] = {
+    "openai": "https://api.openai.com/v1",
+    "openai-compatible": "https://api.openai.com/v1",
+    "openrouter": "https://openrouter.ai/api/v1",
+    "ollama": "http://localhost:11434/v1",
+    "vllm": "http://localhost:8000/v1",
+}
+
 
 def supported_provider_types() -> frozenset[str]:
     """Transports this package can construct. Compared against the shared contract."""
     return SUPPORTED_PROVIDER_TYPES
+
+
+def resolve_provider_base_url(provider_type: str, configured: str | None = None) -> str | None:
+    """Return the HTTP root runtime construction will use for a provider."""
+    if configured:
+        return configured
+    return OPENAI_COMPATIBLE_DEFAULT_BASE_URLS.get(provider_type.lower().strip())
 
 
 def create_provider(
@@ -78,9 +96,8 @@ def create_provider(
         kwargs: dict = {
             "api_key": api_key or os.getenv("OPENAI_API_KEY"),
             "default_model_name": model or "gpt-4o",
+            "base_url": resolve_provider_base_url(provider_type, base_url),
         }
-        if base_url:
-            kwargs["base_url"] = base_url
         return RetryProvider(OpenAICompatibleProvider(**kwargs))
 
     if provider_type == "openrouter":
@@ -98,7 +115,7 @@ def create_provider(
                     or os.getenv("AUTOCONTEXT_OPENROUTER_API_KEY")
                     or "no-key"
                 ),
-                base_url=base_url or "https://openrouter.ai/api/v1",
+                base_url=resolve_provider_base_url(provider_type, base_url),
                 default_model_name=model or "anthropic/claude-sonnet-4",
             )
         )
@@ -110,7 +127,7 @@ def create_provider(
         return RetryProvider(
             OpenAICompatibleProvider(
                 api_key="ollama",
-                base_url=base_url or "http://localhost:11434/v1",
+                base_url=resolve_provider_base_url(provider_type, base_url),
                 default_model_name=model or "llama3.1",
             )
         )
@@ -122,7 +139,7 @@ def create_provider(
         return RetryProvider(
             OpenAICompatibleProvider(
                 api_key=api_key or "no-key",
-                base_url=base_url or "http://localhost:8000/v1",
+                base_url=resolve_provider_base_url(provider_type, base_url),
                 default_model_name=model or "default",
             )
         )

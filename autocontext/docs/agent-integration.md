@@ -50,6 +50,12 @@ autoctx run grid_ctf --iterations 5 --run-id my_run --json
 autoctx run my_agent_task --iterations 3 --json
 ```
 
+Before execution, `run` probes configured OpenAI-compatible agent, role, and
+judge endpoints. Certain endpoint/model mismatches exit with code 2; transient
+probe failures are diagnostics and do not stop the run. Use
+`--skip-preflight` only when the endpoint's discovery surface is known to be
+non-standard and has been validated separately.
+
 JSON output shape:
 
 ```json
