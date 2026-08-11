@@ -685,17 +685,24 @@ def build_client_from_settings(
             temperature=settings.mlx_temperature,
             max_tokens=settings.mlx_max_tokens,
         )
-    if settings.agent_provider in ("openai", "openai-compatible", "ollama", "vllm"):
-        from autocontext.agents.provider_bridge import ProviderBridgeClient
+    if settings.agent_provider in ("openai", "openai-compatible", "openrouter", "ollama", "vllm"):
+        from autocontext.agents.provider_bridge import ProviderBridgeClient, _provider_api_key
+        from autocontext.config.provider_model_defaults import resolve_model_default
         from autocontext.providers.registry import create_provider
 
-        api_key = settings.agent_api_key or settings.judge_api_key
+        api_key = _provider_api_key(settings.agent_provider, settings)
         base_url = settings.agent_base_url or settings.judge_base_url
+        model = resolve_model_default(
+            settings,
+            provider=settings.agent_provider,
+            field_name="agent_default_model",
+            configured=settings.agent_default_model,
+        )
         provider = create_provider(
             provider_type=settings.agent_provider,
             api_key=api_key,
             base_url=base_url or None,
-            model=settings.agent_default_model,
+            model=model,
         )
         return ProviderBridgeClient(provider, use_provider_default_model=True)
     if settings.agent_provider == "claude-cli":

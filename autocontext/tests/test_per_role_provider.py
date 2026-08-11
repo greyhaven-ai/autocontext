@@ -242,6 +242,7 @@ class TestCreateClientForProvider:
         mock_create.return_value = _StubProvider()
         settings = AppSettings(
             anthropic_api_key="anthropic-key",
+            judge_provider="openai",
             judge_api_key="openai-key",
             judge_base_url="http://localhost:8000/v1",
         )

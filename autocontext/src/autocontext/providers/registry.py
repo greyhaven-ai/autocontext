@@ -89,7 +89,15 @@ def create_provider(
 
         return RetryProvider(
             OpenAICompatibleProvider(
-                api_key=(api_key or os.getenv("OPENROUTER_API_KEY") or os.getenv("AUTOCONTEXT_OPENROUTER_API_KEY")),
+                # OpenAICompatibleProvider has a generic OPENAI_API_KEY
+                # fallback. Supplying a sentinel here is what keeps a missing
+                # OpenRouter credential from crossing that vendor boundary.
+                api_key=(
+                    api_key
+                    or os.getenv("OPENROUTER_API_KEY")
+                    or os.getenv("AUTOCONTEXT_OPENROUTER_API_KEY")
+                    or "no-key"
+                ),
                 base_url=base_url or "https://openrouter.ai/api/v1",
                 default_model_name=model or "anthropic/claude-sonnet-4",
             )
@@ -172,6 +180,27 @@ def resolve_auto_judge_provider(settings: AppSettings) -> str:
             return provider
         break
     return "anthropic"
+
+
+# AC-933: the env vars each transport expects, in one place.
+#
+# This existed twice -- completely in agents/provider_bridge._provider_api_key
+# and partially here -- and the incomplete copy handed OpenRouter the Anthropic
+# key because `openrouter` had no branch and fell through to the default. One
+# table, two readers.
+def transport_env_api_key(provider_type: str, settings: AppSettings) -> str | None:
+    """The key a transport expects, from its own setting and environment.
+
+    Returns None for transports that carry no credential of their own (ollama,
+    vllm, mlx); callers decide what a missing key means for those.
+    """
+    if provider_type == "anthropic":
+        return settings.anthropic_api_key or os.getenv("ANTHROPIC_API_KEY") or os.getenv("AUTOCONTEXT_ANTHROPIC_API_KEY")
+    if provider_type in ("openai", "openai-compatible"):
+        return os.getenv("OPENAI_API_KEY")
+    if provider_type == "openrouter":
+        return os.getenv("OPENROUTER_API_KEY") or os.getenv("AUTOCONTEXT_OPENROUTER_API_KEY")
+    return None
 
 
 def get_provider(settings: AppSettings) -> LLMProvider:
@@ -261,13 +290,11 @@ def get_provider(settings: AppSettings) -> LLMProvider:
             default_model_name=settings.pi_model or settings.judge_model or "pi-rpc-default",
         )
 
-    # Use judge_api_key if set, otherwise fall back to provider-specific keys
-    api_key = settings.judge_api_key
-    if not api_key:
-        if provider_type in ("openai", "openai-compatible"):
-            api_key = os.getenv("OPENAI_API_KEY")
-        else:
-            api_key = settings.anthropic_api_key or os.getenv("ANTHROPIC_API_KEY") or os.getenv("AUTOCONTEXT_ANTHROPIC_API_KEY")
+    # Use judge_api_key if set, otherwise consult only this transport's own
+    # credential source. Runtime-backed and MLX providers returned above;
+    # Ollama ignores the value and vLLM substitutes its no-key sentinel.
+    # Falling back to Anthropic here would send that credential to vLLM.
+    api_key = settings.judge_api_key or transport_env_api_key(provider_type, settings)
 
     return create_provider(
         provider_type=provider_type,
