@@ -14,6 +14,16 @@ class RoleRoutingFields(BaseModel):
     """Capability, hosting, and connection settings used by role routing."""
 
     role_routing: Literal["off", "auto"] = Field(default="off", description="Role routing mode")
+    # AC-931: the escape hatch. Constrained decoding is on by default because it
+    # removes a silent failure mode (AC-913 measured 100% -> 0% section loss on
+    # an open-weight model). It is switchable because the OpenAI-compatible
+    # backends it changes include cloud models whose analysis quality we could
+    # not measure, and "pin to 0.14" is not an acceptable answer for someone who
+    # sees a regression.
+    constrained_output: bool = Field(
+        default=True,
+        description="Ask backends to constrain role output to its schema; off falls back to markdown parsing",
+    )
     provider_capability: CapabilityDeclaration = Field(
         default="",
         description="Default endpoint capability: frontier, mid_tier, or fast",

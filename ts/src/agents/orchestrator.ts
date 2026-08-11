@@ -40,6 +40,8 @@ export interface GenerationResult {
 export interface AgentOrchestratorOpts {
   roleProviders?: Partial<Record<GenerationRole, LLMProvider>>;
   roleModels?: Partial<Record<GenerationRole, string>>;
+  /** AC-931: ask backends to constrain role output to its schema. Defaults true. */
+  constrainedOutput?: boolean;
 }
 
 export class AgentOrchestrator {
@@ -47,10 +49,14 @@ export class AgentOrchestrator {
   #roleProviders: Partial<Record<GenerationRole, LLMProvider>>;
   #roleModels: Partial<Record<GenerationRole, string>>;
 
+  #constrainedOutput: boolean;
+
   constructor(provider: LLMProvider, opts: AgentOrchestratorOpts = {}) {
     this.#provider = provider;
     this.#roleProviders = opts.roleProviders ?? {};
     this.#roleModels = opts.roleModels ?? {};
+    // Defaults on, matching Python's constrained_output setting.
+    this.#constrainedOutput = opts.constrainedOutput ?? true;
   }
 
   #providerForRole(role: GenerationRole): LLMProvider {
@@ -76,7 +82,10 @@ export class AgentOrchestrator {
       systemPrompt: "",
       userPrompt,
       model: this.#roleModels[role],
-      outputSchema: AgentOrchestrator.#ROLE_SCHEMAS[role],
+      // AC-931: off means the schema never reaches the provider, so the run
+      // takes the ordinary unconstrained path and parsing falls back to
+      // markdown -- the existing fallback, not a second way to be unconstrained.
+      outputSchema: this.#constrainedOutput ? AgentOrchestrator.#ROLE_SCHEMAS[role] : undefined,
     });
   }
 
