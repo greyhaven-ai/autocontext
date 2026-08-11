@@ -106,6 +106,9 @@ Each role that takes a provider override takes a capability and hosting
 override too, for the case where roles sit on different boxes:
 
 ```bash
+AUTOCONTEXT_AGENT_PROVIDER=vllm
+AUTOCONTEXT_ROLE_ROUTING=auto
+AUTOCONTEXT_PROVIDER_CAPABILITY=frontier
 AUTOCONTEXT_ARCHITECT_PROVIDER=vllm
 AUTOCONTEXT_ARCHITECT_PROVIDER_CAPABILITY=frontier
 ```
@@ -149,9 +152,14 @@ actually ships:
 
 **That is not a reasoning failure.** The model's analysis was correct. It wrote
 `### Findings` with `* ` bullets; the parser wanted `## Findings` with `- `
-bullets. Two independent drifts, either one alone discarding the whole section
-with nothing raised. The analyst contract came back empty and the loop
-continued as though the analyst had said nothing.
+bullets. Two independent drifts, either one alone leaving the corresponding
+typed array empty with nothing raised.
+
+The raw response was not discarded. Python still passed it to the coach and
+persisted it for readers such as the curator, while neither engine currently
+uses those parsed analyst arrays to drive the loop. Constrained decoding makes
+the typed contract reliable and normalizes the rendered markdown; it does not
+decide whether the analyst's prose reaches the rest of the Python loop.
 
 Nothing needs configuring: role calls carry their schema automatically.
 
@@ -182,25 +190,29 @@ Role calls then carry no schema, backends report `constrained=false`, and
 parsing falls back to markdown — the same path a backend without support
 already takes, not a separate mode.
 
-You are unlikely to want this on an open-weight model, where it is the
-difference between the loop reading your analyst's output and discarding it.
-It exists because constrained decoding also changed OpenAI-compatible **cloud**
-models, and while the quality comparison came out favourable it was measured on
-one 8B local model: fewer and shorter items, but a higher share citing the
-run's actual numbers and naming a parameter to change. If your analysis gets
-worse on a cloud model, this is the switch, and the measurement you would be
-contradicting is in `docs/ac928-constrained-quality-measurement.json`.
+You are unlikely to want this on an open-weight model when you depend on the
+typed contract or stable rendered markdown. It exists because constrained
+decoding also changes OpenAI-compatible **cloud** models. The committed
+measurement on this page covers format compliance on one 8B local model; it
+does not establish a quality advantage. If a model's analysis gets worse under
+constraint, this is the switch to use while you measure the tradeoff.
 
 ### The coach is the role that matters most
 
 The analyst's sections are what the format-drift measurement above counts, but
-the **coach** is where drift actually costs you something. The loop refuses to
-update the playbook unless the coach emits all six of its marker pairs, and the
-playbook is what carries learning between generations.
+the **coach** is where drift can change the loop's persistent state. The two
+engines handle malformed coach output differently:
 
-Measured on `llama3.1:8b`, 10 trials: 8 produced all six markers, 2 produced
-none. Roughly one generation in five silently lost its update before this was
-made visible; a dropped update now reports which markers were missing.
+- TypeScript updates the playbook only when all six markers (three pairs) are
+  present. Otherwise it keeps the previous playbook and reports exactly which
+  markers were missing.
+- Python discards a response with `PLAYBOOK_START` but no matching end marker.
+  When there are no playbook markers at all, it instead stores the entire
+  response as the playbook and emits a warning.
+
+Measured on `llama3.1:8b`, 10 trials: 8 produced all six markers and 2 produced
+none. Those two responses were dropped updates in TypeScript and free-form
+playbook replacements in Python. Both outcomes are now visible to the operator.
 
 Constrained decoding is the fix rather than the diagnosis, which is another
 reason to leave it on.
@@ -216,9 +228,13 @@ the form used in [agent-integration.md](agent-integration.md):
 ```bash
 AUTOCONTEXT_AGENT_PROVIDER=openai-compatible
 AUTOCONTEXT_AGENT_BASE_URL=http://localhost:8080/v1
-AUTOCONTEXT_AGENT_DEFAULT_MODEL=hermes-3-llama-3.1-8b
+AUTOCONTEXT_LOCAL_MODEL=hermes-3-llama-3.1-8b
 AUTOCONTEXT_PROVIDER_HOSTING=local
 ```
+
+`AUTOCONTEXT_LOCAL_MODEL` fills every unset role and tier slot. By contrast,
+`AUTOCONTEXT_AGENT_DEFAULT_MODEL` configures only the underlying client; the
+role resolver would still request the provider default (`gpt-4o`).
 
 **As a CLI runtime** — `AUTOCONTEXT_AGENT_PROVIDER=hermes` drives the Hermes
 binary as a subprocess, which is what gives it workspace access rather than
@@ -232,7 +248,13 @@ AUTOCONTEXT_HERMES_API_KEY=no-key            # required by the client, unused lo
 
 `runtimes/hermes_cli.py` exports those two as `OPENAI_BASE_URL` /
 `OPENAI_API_KEY` to the subprocess, and a base URL takes precedence over any
-provider setting. Pi has the same shape (`AUTOCONTEXT_PI_*`).
+provider setting.
+
+Pi is a separate CLI/RPC runtime rather than an endpoint-configured equivalent.
+Its active settings include `AUTOCONTEXT_PI_COMMAND`, `AUTOCONTEXT_PI_MODEL`,
+`AUTOCONTEXT_PI_WORKSPACE` and `AUTOCONTEXT_PI_NO_CONTEXT_FILES`. The legacy
+`AUTOCONTEXT_PI_RPC_ENDPOINT` and `AUTOCONTEXT_PI_RPC_API_KEY` fields are kept
+for compatibility but are not used by the current runtime.
 
 **Untested here.** Both paths exist in the code and are described because
 nothing else describes the runtime one, but every other claim on this page was
