@@ -174,6 +174,30 @@ def resolve_auto_judge_provider(settings: AppSettings) -> str:
     return "anthropic"
 
 
+# AC-933: the env vars each transport expects, in one place.
+#
+# This existed twice -- completely in agents/provider_bridge._provider_api_key
+# and partially here -- and the incomplete copy handed OpenRouter the Anthropic
+# key because `openrouter` had no branch and fell through to the default. One
+# table, two readers.
+TRANSPORTS_WITH_OWN_KEY = frozenset({"anthropic", "openai", "openai-compatible", "openrouter"})
+
+
+def transport_env_api_key(provider_type: str, settings: AppSettings) -> str | None:
+    """The key a transport expects, from its own setting and environment.
+
+    Returns None for transports that carry no credential of their own (ollama,
+    vllm, mlx); callers decide what a missing key means for those.
+    """
+    if provider_type == "anthropic":
+        return settings.anthropic_api_key or os.getenv("ANTHROPIC_API_KEY") or os.getenv("AUTOCONTEXT_ANTHROPIC_API_KEY")
+    if provider_type in ("openai", "openai-compatible"):
+        return os.getenv("OPENAI_API_KEY")
+    if provider_type == "openrouter":
+        return os.getenv("OPENROUTER_API_KEY") or os.getenv("AUTOCONTEXT_OPENROUTER_API_KEY")
+    return None
+
+
 def get_provider(settings: AppSettings) -> LLMProvider:
     """Create a judge provider from autocontext settings.
 
@@ -264,10 +288,16 @@ def get_provider(settings: AppSettings) -> LLMProvider:
     # Use judge_api_key if set, otherwise fall back to provider-specific keys
     api_key = settings.judge_api_key
     if not api_key:
-        if provider_type in ("openai", "openai-compatible"):
-            api_key = os.getenv("OPENAI_API_KEY")
+        if provider_type in TRANSPORTS_WITH_OWN_KEY:
+            # A transport with its own credential never inherits another
+            # vendor's. Sending a real Anthropic key to OpenAI or OpenRouter is
+            # worse than sending none: it leaks it, and the 401 blames the key.
+            api_key = transport_env_api_key(provider_type, settings)
         else:
-            api_key = settings.anthropic_api_key or os.getenv("ANTHROPIC_API_KEY") or os.getenv("AUTOCONTEXT_ANTHROPIC_API_KEY")
+            # Historical default for transports with no key of their own
+            # (claude-cli, codex, pi...). create_provider substitutes its own
+            # sentinel for ollama and vllm.
+            api_key = transport_env_api_key("anthropic", settings)
 
     return create_provider(
         provider_type=provider_type,
