@@ -241,3 +241,49 @@ def test_normal_output_assembly_uses_validated_rendered_views() -> None:
     assert outputs.architect_markdown.startswith("## Observed Bottlenecks")
     assert [item["name"] for item in outputs.architect_tools] == ["probe"]
     assert [item["name"] for item in outputs.architect_harness_specs] == ["guard"]
+
+
+def test_escape_hatch_stops_the_schema_reaching_the_provider() -> None:
+    """AC-931: off means no schema on the wire, not merely "we meant not to".
+
+    Asserts what the provider RECEIVED. The AC-913 near-miss was a dispatch
+    condition that looked right and never fired; the only defence is checking
+    the request itself.
+    """
+    from autocontext.agents.analyst import AnalystRunner
+    from autocontext.agents.provider_bridge import ProviderBridgeClient
+    from autocontext.harness.core.subagent import SubagentRuntime
+
+    provider = _RecordingProvider(enforce=True, text=_VALID)
+    runtime = SubagentRuntime(ProviderBridgeClient(provider), constrained_output=False)
+    execution = AnalystRunner(runtime, model="stub").run("analyze this", system="s")
+
+    assert provider.calls[0]["output_schema"] is None
+    # And the run records the truth: nothing was enforced.
+    assert execution.metadata["constrained"] is False
+
+
+def test_escape_hatch_output_still_parses_via_markdown() -> None:
+    """Turning it off must not create a new failure mode, just the old one."""
+    from autocontext.agents.analyst import AnalystRunner
+    from autocontext.agents.parsers import parse_analyst_exec
+    from autocontext.agents.provider_bridge import ProviderBridgeClient
+    from autocontext.harness.core.subagent import SubagentRuntime
+
+    markdown = "## Findings\n\n- a\n\n## Root Causes\n\n- b\n\n## Actionable Recommendations\n\n- c"
+    runtime = SubagentRuntime(
+        ProviderBridgeClient(_RecordingProvider(enforce=False, text=markdown)),
+        constrained_output=False,
+    )
+    result = parse_analyst_exec(AnalystRunner(runtime, model="stub").run("p", system="s"))
+    assert result.findings == ["a"]
+
+
+def test_default_is_on_so_the_improvement_is_the_default() -> None:
+    from autocontext.agents.analyst import AnalystRunner
+    from autocontext.agents.provider_bridge import ProviderBridgeClient
+    from autocontext.harness.core.subagent import SubagentRuntime
+
+    provider = _RecordingProvider(enforce=True, text=_VALID)
+    AnalystRunner(SubagentRuntime(ProviderBridgeClient(provider)), model="stub").run("p", system="s")
+    assert provider.calls[0]["output_schema"] is not None

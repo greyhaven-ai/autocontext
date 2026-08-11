@@ -34,17 +34,23 @@ class SubagentTask:
 class SubagentRuntime:
     """Lightweight subagent runtime abstraction over configured LLM provider."""
 
-    def __init__(self, client: LanguageModelClient) -> None:
+    def __init__(self, client: LanguageModelClient, *, constrained_output: bool = True) -> None:
         self.client = client
+        # AC-931: gated here rather than at each role runner so a role added
+        # later cannot forget the switch. Off means the schema never leaves this
+        # method, which is what the test asserts -- the request itself, not the
+        # intent to make one.
+        self.constrained_output = constrained_output
 
     def run_task(self, task: SubagentTask) -> RoleExecution:
-        if task.output_schema is not None:
+        output_schema = task.output_schema if self.constrained_output else None
+        if output_schema is not None:
             response = self.client.generate_constrained(
                 model=task.model,
                 prompt=task.prompt,
                 max_tokens=task.max_tokens,
                 temperature=task.temperature,
-                output_schema=task.output_schema,
+                output_schema=output_schema,
                 role=task.role,
                 system=task.system,
             )
@@ -71,7 +77,7 @@ class SubagentRuntime:
             usage=response.usage,
             subagent_id=f"{task.role}-{uuid.uuid4().hex[:10]}",
             status="completed",
-            metadata=_with_constrained_flag(response.metadata, requested=task.output_schema is not None),
+            metadata=_with_constrained_flag(response.metadata, requested=output_schema is not None),
         )
 
 

@@ -160,6 +160,25 @@ describe("orchestrator wiring", () => {
     expect(names).not.toContain("architect_output");
   });
 
+  it("AC-931: the escape hatch stops the schema reaching the provider", async () => {
+    // Asserts what the provider RECEIVED, not what the orchestrator intended.
+    const provider = new RecordingProvider(true, VALID_ANALYST);
+    await new AgentOrchestrator(provider, { constrainedOutput: false })
+      .runGeneration(prompts)
+      .catch(() => undefined);
+
+    expect(provider.calls.every((c) => c.outputSchema === undefined)).toBe(true);
+  });
+
+  it("AC-931: output still parses via markdown when the hatch is open", async () => {
+    const markdown =
+      "## Findings\n\n- a\n\n## Root Causes\n\n- b\n\n## Actionable Recommendations\n\n- c";
+    const result = await new AgentOrchestrator(new RecordingProvider(false, markdown), {
+      constrainedOutput: false,
+    }).runGeneration(prompts);
+    expect(result.analystOutput.findings).toEqual(["a"]);
+  });
+
   it("falls back to scraping when the backend did not enforce", async () => {
     const markdown =
       "## Findings\n\n- from markdown\n\n## Root Causes\n\n- rc\n\n## Actionable Recommendations\n\n- rec";

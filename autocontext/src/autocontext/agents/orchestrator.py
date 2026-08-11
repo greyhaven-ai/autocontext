@@ -155,7 +155,7 @@ class AgentOrchestrator:
         # so the key is a variable-length tuple of optional strings.
         self._routed_clients: dict[tuple[str | None, ...], LanguageModelClient] = {}
         self._disposable_client_ids: set[int] = set()
-        runtime = SubagentRuntime(client=self.client)
+        runtime = SubagentRuntime(client=self.client, constrained_output=settings.constrained_output)
         self.competitor = CompetitorRunner(runtime, settings.model_competitor, settings.competitor_max_tokens)
         self.translator = StrategyTranslator(runtime, settings.model_translator, settings.translator_max_tokens)
         self.analyst = AnalystRunner(runtime, settings.model_analyst, settings.analyst_max_tokens)
