@@ -89,7 +89,15 @@ def create_provider(
 
         return RetryProvider(
             OpenAICompatibleProvider(
-                api_key=(api_key or os.getenv("OPENROUTER_API_KEY") or os.getenv("AUTOCONTEXT_OPENROUTER_API_KEY")),
+                # OpenAICompatibleProvider has a generic OPENAI_API_KEY
+                # fallback. Supplying a sentinel here is what keeps a missing
+                # OpenRouter credential from crossing that vendor boundary.
+                api_key=(
+                    api_key
+                    or os.getenv("OPENROUTER_API_KEY")
+                    or os.getenv("AUTOCONTEXT_OPENROUTER_API_KEY")
+                    or "no-key"
+                ),
                 base_url=base_url or "https://openrouter.ai/api/v1",
                 default_model_name=model or "anthropic/claude-sonnet-4",
             )
@@ -180,9 +188,6 @@ def resolve_auto_judge_provider(settings: AppSettings) -> str:
 # and partially here -- and the incomplete copy handed OpenRouter the Anthropic
 # key because `openrouter` had no branch and fell through to the default. One
 # table, two readers.
-TRANSPORTS_WITH_OWN_KEY = frozenset({"anthropic", "openai", "openai-compatible", "openrouter"})
-
-
 def transport_env_api_key(provider_type: str, settings: AppSettings) -> str | None:
     """The key a transport expects, from its own setting and environment.
 
@@ -285,19 +290,11 @@ def get_provider(settings: AppSettings) -> LLMProvider:
             default_model_name=settings.pi_model or settings.judge_model or "pi-rpc-default",
         )
 
-    # Use judge_api_key if set, otherwise fall back to provider-specific keys
-    api_key = settings.judge_api_key
-    if not api_key:
-        if provider_type in TRANSPORTS_WITH_OWN_KEY:
-            # A transport with its own credential never inherits another
-            # vendor's. Sending a real Anthropic key to OpenAI or OpenRouter is
-            # worse than sending none: it leaks it, and the 401 blames the key.
-            api_key = transport_env_api_key(provider_type, settings)
-        else:
-            # Historical default for transports with no key of their own
-            # (claude-cli, codex, pi...). create_provider substitutes its own
-            # sentinel for ollama and vllm.
-            api_key = transport_env_api_key("anthropic", settings)
+    # Use judge_api_key if set, otherwise consult only this transport's own
+    # credential source. Runtime-backed and MLX providers returned above;
+    # Ollama ignores the value and vLLM substitutes its no-key sentinel.
+    # Falling back to Anthropic here would send that credential to vLLM.
+    api_key = settings.judge_api_key or transport_env_api_key(provider_type, settings)
 
     return create_provider(
         provider_type=provider_type,

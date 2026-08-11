@@ -1,19 +1,20 @@
 """AC-933: which API key each transport actually receives.
 
-Two independent resolvers decide this and they disagree:
+Two call paths historically resolved this independently:
 
 * ``agents/provider_bridge._provider_api_key`` — the per-role client path
 * ``providers/registry.get_provider`` — the judge / default provider path
 
-Characterized here across every transport before changing either, because the
-defect is precisely that one of them was complete and the other was not, and
-only a table shows which rows differ on purpose and which by omission.
+They now share the provider-native lookup and keep only their intentional
+caller-specific precedence. The matrix pins both the resolved key and the key
+that reaches the final SDK constructor, where another fallback used to leak.
 """
 
 from __future__ import annotations
 
 import os
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 
@@ -112,6 +113,71 @@ def test_judge_path_does_not_leak_the_anthropic_key_to_openai(clean_env: None, m
     get_provider(_settings(judge_provider="openai", judge_api_key=""))
 
     assert captured["api_key"] != "ant-key"
+
+
+@pytest.mark.parametrize(
+    ("transport", "foreign_env", "foreign_key", "expected_key"),
+    (
+        ("openrouter", "OPENAI_API_KEY", "openai-key", "no-key"),
+        ("vllm", "ANTHROPIC_API_KEY", "anthropic-key", "no-key"),
+    ),
+)
+def test_judge_path_does_not_leak_a_foreign_key_at_provider_construction(
+    clean_env: None,
+    monkeypatch: pytest.MonkeyPatch,
+    transport: str,
+    foreign_env: str,
+    foreign_key: str,
+    expected_key: str,
+) -> None:
+    """The provider's final SDK client must receive a sentinel, not a foreign key."""
+    pytest.importorskip("openai")
+    from autocontext.providers.registry import get_provider
+
+    monkeypatch.setenv(foreign_env, foreign_key)
+
+    with patch("autocontext.providers.openai_compat.openai.OpenAI") as constructor:
+        get_provider(_settings(judge_provider=transport, judge_api_key=""))
+
+    assert constructor.call_args.kwargs["api_key"] == expected_key
+
+
+def test_mixed_role_prefers_its_native_key_over_other_provider_globals(
+    clean_env: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An OpenRouter role must not inherit OpenAI/Anthropic global credentials."""
+    from autocontext.agents.provider_bridge import _provider_api_key
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "openrouter-key")
+    settings = _settings(
+        agent_provider="openai",
+        agent_api_key="openai-key",
+        judge_provider="anthropic",
+        judge_api_key="anthropic-key",
+        analyst_provider="openrouter",
+    )
+
+    assert _provider_api_key("openrouter", settings, role="analyst") == "openrouter-key"
+
+
+def test_default_openrouter_agent_uses_its_native_key(
+    clean_env: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AUTOCONTEXT_AGENT_PROVIDER=openrouter is a supported default path."""
+    pytest.importorskip("openai")
+    from autocontext.agents.llm_client import build_client_from_settings
+    from autocontext.agents.provider_bridge import ProviderBridgeClient
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "openrouter-key")
+
+    with patch("autocontext.providers.openai_compat.openai.OpenAI") as constructor:
+        client = build_client_from_settings(_settings(agent_provider="openrouter"))
+
+    assert isinstance(client, ProviderBridgeClient)
+    assert constructor.call_args.kwargs["api_key"] == "openrouter-key"
+    assert client._provider.default_model() == "anthropic/claude-sonnet-4"
 
 
 def test_judge_api_key_still_wins(clean_env: None, monkeypatch: pytest.MonkeyPatch) -> None:

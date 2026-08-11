@@ -91,21 +91,21 @@ def test_build_client_openai_falls_back_to_judge_base_url() -> None:
 
 
 def test_provider_api_key_prefers_agent_key_openai() -> None:
-    s = AppSettings(agent_api_key="agent-key", judge_api_key="judge-key")
+    s = AppSettings(agent_provider="openai-compatible", agent_api_key="agent-key", judge_api_key="judge-key")
     with patch.dict("os.environ", {}, clear=True):
         result = _provider_api_key("openai-compatible", s)
     assert result == "agent-key"
 
 
 def test_provider_api_key_falls_back_to_judge_key_openai() -> None:
-    s = AppSettings(agent_api_key="", judge_api_key="judge-key")
+    s = AppSettings(agent_provider="anthropic", judge_provider="openai-compatible", agent_api_key="", judge_api_key="judge-key")
     with patch.dict("os.environ", {}, clear=True):
         result = _provider_api_key("openai-compatible", s)
     assert result == "judge-key"
 
 
 def test_provider_api_key_vllm_prefers_agent_key() -> None:
-    s = AppSettings(agent_api_key="agent-vllm", judge_api_key="judge-vllm")
+    s = AppSettings(agent_provider="vllm", agent_api_key="agent-vllm", judge_api_key="judge-vllm")
     result = _provider_api_key("vllm", s)
     assert result == "agent-vllm"
 

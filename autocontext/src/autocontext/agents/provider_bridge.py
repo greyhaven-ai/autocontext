@@ -399,15 +399,31 @@ def _provider_api_key(provider_type: str, settings: AppSettings, *, role: str = 
     # path and registry.get_provider cannot drift again. The PRECEDENCE differs
     # by design and stays here: anthropic ignores the generic agent/judge keys,
     # while the OpenAI-shaped transports prefer them.
-    from autocontext.providers.registry import transport_env_api_key
+    from autocontext.providers.registry import resolve_auto_judge_provider, transport_env_api_key
 
-    if provider_type == "anthropic":
+    normalized = provider_type.lower().strip()
+    if normalized == "anthropic":
         return transport_env_api_key("anthropic", settings)
-    if provider_type in ("openai", "openai-compatible", "openrouter"):
-        return settings.agent_api_key or settings.judge_api_key or transport_env_api_key(provider_type, settings)
-    if provider_type == "vllm":
-        return settings.agent_api_key or settings.judge_api_key or "no-key"
-    return settings.agent_api_key or settings.judge_api_key
+
+    # Generic keys are valid only for the provider they configure. In a mixed
+    # setup, reusing the default OpenAI agent key for an OpenRouter role is the
+    # same cross-vendor leak as the registry bug this helper prevents.
+    agent_provider = settings.agent_provider.lower().strip()
+    if normalized == agent_provider and settings.agent_api_key:
+        return settings.agent_api_key
+
+    judge_provider = settings.judge_provider.lower().strip()
+    if judge_provider == "auto":
+        judge_provider = resolve_auto_judge_provider(settings)
+    if normalized == judge_provider and settings.judge_api_key:
+        return settings.judge_api_key
+
+    provider_key = transport_env_api_key(normalized, settings)
+    if provider_key:
+        return provider_key
+    if normalized == "vllm":
+        return "no-key"
+    return None
 
 
 def _provider_base_url(settings: AppSettings, *, role: str = "") -> str | None:

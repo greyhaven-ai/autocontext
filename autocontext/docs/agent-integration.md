@@ -605,6 +605,13 @@ AUTOCONTEXT_JUDGE_API_KEY=sk-... \
 AUTOCONTEXT_JUDGE_BASE_URL=https://api.openai.com/v1 \
 autoctx run my_task --json
 
+# OpenRouter (named provider; no generic OpenAI credential fallback)
+AUTOCONTEXT_AGENT_PROVIDER=openrouter \
+OPENROUTER_API_KEY=sk-or-... \
+AUTOCONTEXT_JUDGE_PROVIDER=openrouter \
+AUTOCONTEXT_JUDGE_MODEL=anthropic/claude-sonnet-4 \
+autoctx run my_task --json
+
 # Ollama (local, no API key needed)
 AUTOCONTEXT_AGENT_PROVIDER=ollama \
 AUTOCONTEXT_LOCAL_MODEL=qwen3:32b \
@@ -665,16 +672,25 @@ AUTOCONTEXT_COMPETITOR_PROVIDER_CAPABILITY=mid_tier \
 autoctx run my_task --json
 ```
 
-`ANTHROPIC_API_KEY` is the preferred Anthropic credential env var. `AUTOCONTEXT_ANTHROPIC_API_KEY` remains supported as a compatibility alias.
+`ANTHROPIC_API_KEY` is the preferred Anthropic credential env var;
+`AUTOCONTEXT_ANTHROPIC_API_KEY` remains supported as a compatibility alias.
+OpenRouter follows the same pattern with `OPENROUTER_API_KEY` preferred over
+`AUTOCONTEXT_OPENROUTER_API_KEY`.
+
+Credentials are matched to the effective provider. In mixed-provider setups, a
+role-specific key wins, followed by a generic agent or judge key only when that
+generic key configures the same provider, then the provider-native environment
+variable. A global OpenAI key is never reused for an OpenRouter role.
 
 Key environment variables:
 
 | Variable                                                             | Purpose                                                                                                                                                                                                                                                                                             |
 | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `AUTOCONTEXT_AGENT_PROVIDER`                                         | Agent provider: `anthropic`, `openai-compatible`, `ollama`, `vllm`, `pi`, `pi-rpc`, `deterministic`                                                                                                                                                                                                 |
+| `AUTOCONTEXT_AGENT_PROVIDER`                                         | Agent provider: `anthropic`, `openai`, `openai-compatible`, `openrouter`, `ollama`, `vllm`, `pi`, `pi-rpc`, `deterministic`                                                                                                                                                                         |
 | `AUTOCONTEXT_AGENT_API_KEY`                                          | Global agent API key override (or use provider-native env vars such as `ANTHROPIC_API_KEY`)                                                                                                                                                                                                         |
+| `OPENROUTER_API_KEY` / `AUTOCONTEXT_OPENROUTER_API_KEY`              | OpenRouter credential and compatibility alias; never falls back to `OPENAI_API_KEY`                                                                                                                                                                                                                  |
 | `AUTOCONTEXT_AGENT_BASE_URL`                                         | Global base URL for OpenAI-compatible agent endpoints                                                                                                                                                                                                                                               |
-| `AUTOCONTEXT_LOCAL_MODEL`                                            | One model id for every otherwise-unset role/tier slot on non-Anthropic providers. Explicit `AUTOCONTEXT_MODEL_<ROLE>` and `AUTOCONTEXT_TIER_<TIER>_MODEL` values win; otherwise known provider defaults apply (`ollama=llama3.1`, `openai`/`openai-compatible=gpt-4o`, `vllm=default`). Works with role routing both `off` and `auto`. |
+| `AUTOCONTEXT_LOCAL_MODEL`                                            | One model id for every otherwise-unset role/tier slot on non-Anthropic providers. Explicit `AUTOCONTEXT_MODEL_<ROLE>` and `AUTOCONTEXT_TIER_<TIER>_MODEL` values win; otherwise known provider defaults apply (`ollama=llama3.1`, `openai`/`openai-compatible=gpt-4o`, `openrouter=anthropic/claude-sonnet-4`, `vllm=default`). Works with role routing both `off` and `auto`. |
 | `AUTOCONTEXT_PROVIDER_HOSTING`                                       | Hosting for the default endpoint: `local` or `remote`. Empty uses conservative transport inference. Set this explicitly for generic transports such as `openai-compatible`, or when a normally local transport such as `vllm` is hosted remotely. |
 | `AUTOCONTEXT_PROVIDER_CAPABILITY`                                    | Maximum capability served by a locally hosted default endpoint: `fast`, `mid_tier`, or `frontier`. Automatic tier selection is clamped to this value. Ignored for endpoints resolved as remote. |
 | `AUTOCONTEXT_<ROLE>_PROVIDER_HOSTING` / `AUTOCONTEXT_<ROLE>_PROVIDER_CAPABILITY` | Endpoint declarations for an explicit competitor, analyst, coach, or architect provider. These do not inherit the default endpoint's declarations. |
