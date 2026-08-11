@@ -167,15 +167,43 @@ export function parseArchitectOutput(rawMarkdown: string): ArchitectOutput {
     return {
       rawMarkdown,
       toolSpecs,
+      // Always empty by design, not by omission (AC-930). The architect's
+      // harness channel carries Python source, executed by the Python harness;
+      // this engine has nothing that could run it, and no consumer of harness
+      // specs exists anywhere in ts/src. Parsing it here would produce a value
+      // whose only possible use is to be discarded.
       harnessSpecs: [],
       changelogEntry: "",
       parseSuccess: true,
     };
   } catch {
-    return { rawMarkdown, toolSpecs: [], harnessSpecs: [], changelogEntry: "", parseSuccess: false };
+    return {
+      rawMarkdown,
+      toolSpecs: [],
+      harnessSpecs: [],
+      changelogEntry: "",
+      parseSuccess: false,
+    };
   }
 }
 
+/**
+ * Extract proposed tool specs. Deliberately does NOT syntax-check `code`.
+ *
+ * AC-930 was filed believing this was laxer than Python. It is not: Python's
+ * `parse_architect_tool_specs` type-checks name/description/code and stops
+ * there too. Python's `ast.parse` on tool code runs at the persistence
+ * boundary (`storage/artifacts.py`, on the `kind="tool"` path), immediately
+ * before the source is written to a `.py` file that something will import.
+ *
+ * That is the right place for it, and it is why there is nothing to mirror
+ * here. TypeScript has no persistence path for tool code -- nothing in ts/src
+ * consumes `toolSpecs` at all. Adding a syntax check to this parser would make
+ * TypeScript *stricter* than Python rather than aligned with it, and would
+ * reject a proposal at a stage where nobody is about to execute it. If this
+ * engine ever grows a path that writes or runs proposed tool code, the check
+ * belongs at that boundary.
+ */
 function parseArchitectToolSpecs(markdown: string): Array<Record<string, unknown>> {
   const codeBlockPattern = /```json\s*\n([\s\S]*?)\n```/g;
   let match: RegExpExecArray | null;
