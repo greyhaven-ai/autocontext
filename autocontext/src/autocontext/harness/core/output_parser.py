@@ -125,7 +125,7 @@ def _top_level_object_spans(text: str) -> list[str]:
         start = min(starts)
         try:
             _value, end = decoder.raw_decode(text, start)
-        except ValueError:
+        except (ValueError, RecursionError):
             failed_attempts += 1
             if text[start] == "[" and _plausible_json_array_start(text, start):
                 # A truncated array can still contain complete object values.
@@ -204,7 +204,36 @@ def _fenced_payload_scopes(text: str) -> list[str] | None:
     return plausible or None
 
 
-def extract_json(text: str, *, on_failure: str = "raise") -> dict[str, Any] | None:
+def _has_multiple_mapping_candidates(text: str) -> bool:
+    """Return whether an LLM response contains competing JSON objects.
+
+    A tagged JSON fence is authoritative, matching ``extract_json``'s normal
+    fence-selection rule. Without one, scan the whole response so an object in
+    an untagged reasoning fence cannot hide a different final object outside
+    that fence. Callers that must fail closed on ambiguity can opt into this
+    check without changing the established first-object behavior elsewhere.
+    """
+    tagged = next((match for match in _JSON_FENCE_RE.finditer(text) if match.group("tag")), None)
+    scope = _scope_text(tagged.group("body")) if tagged is not None else _scope_text(text)
+    mapping_count = 0
+    for span in _top_level_object_spans(scope):
+        try:
+            decoded = json.loads(span)
+        except (json.JSONDecodeError, RecursionError):
+            continue
+        if isinstance(decoded, Mapping):
+            mapping_count += 1
+            if mapping_count > 1:
+                return True
+    return False
+
+
+def extract_json(
+    text: str,
+    *,
+    on_failure: str = "raise",
+    require_unique: bool = False,
+) -> dict[str, Any] | None:
     """Extract a JSON object from LLM text.
 
     Tries fenced code blocks first. WHICH fence is not "the first one":
@@ -245,6 +274,11 @@ def extract_json(text: str, *, on_failure: str = "raise") -> dict[str, Any] | No
     ``on_failure`` controls what happens when no JSON object is found:
     ``"raise"`` (default) re-raises the underlying parse error; ``"none"``
     returns ``None`` instead.
+
+    ``require_unique`` rejects responses with more than one top-level JSON
+    object candidate. A tagged JSON fence remains authoritative, so JSON-shaped
+    scratch work in an earlier untagged fence cannot invalidate an explicitly
+    designated answer.
     """
     fenced_scopes = _fenced_payload_scopes(text)
     has_fence = fenced_scopes is not None
@@ -315,10 +349,19 @@ def extract_json(text: str, *, on_failure: str = "raise") -> dict[str, Any] | No
     for candidate in candidates:
         try:
             decoded = json.loads(candidate)
-        except json.JSONDecodeError as exc:
+        except (json.JSONDecodeError, RecursionError) as exc:
             last_exc = exc
             continue
         if isinstance(decoded, Mapping):
+            if require_unique:
+                try:
+                    has_multiple = _has_multiple_mapping_candidates(text)
+                except (ValueError, RecursionError) as exc:
+                    last_exc = exc
+                    break
+                if has_multiple:
+                    last_exc = ValueError("Expected one unambiguous JSON object, got multiple candidates")
+                    break
             return dict(decoded)
         # A candidate that PARSES but isn't a Mapping (e.g. a JSON array) is a
         # decisive answer about what the model produced, not a parse failure
