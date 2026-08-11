@@ -72,6 +72,19 @@ class TestLLMProviderInterface:
         assert r.model is None
         assert r.usage == {}
         assert r.cost_usd is None
+        assert r.thinking_stream == []
+        assert r.thinking_tool is None
+        assert r.thinking_capture == "none"
+
+    def test_thinking_completion_falls_back_for_legacy_provider(self):
+        p = _DummyProvider("legacy")
+
+        result = p.complete_with_thinking("sys", "usr")
+
+        assert result.text == "legacy"
+        assert result.thinking_stream == []
+        assert result.thinking_capture == "unsupported"
+        assert p.supports_thinking_stream is False
 
 
 # ---------------------------------------------------------------------------

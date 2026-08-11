@@ -7,6 +7,7 @@ import type { CompletionResult, LLMProvider } from "../types/index.js";
 
 export class DeterministicProvider implements LLMProvider {
   readonly name = "deterministic";
+  readonly supportsThinkingStream = false;
 
   defaultModel(): string {
     return "deterministic-dev";

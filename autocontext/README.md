@@ -80,6 +80,14 @@ default. If that changes output quality for a backend, set
 and use the existing Markdown parsers instead. The setting also applies to
 roles with dedicated provider overrides.
 
+Build-time teacher trace collection supports native `deep_think` tool loops on
+Anthropic and OpenAI-compatible providers. The collector requires a structured
+tool stream by default and keeps it separate from the final answer. Local and
+CLI/runtime providers report the capability as unsupported; visible-preamble
+fallback is available only through the collector's explicit
+`require_thinking_stream=False` option. Thinking payloads may contain sensitive
+prompt-derived data and should be redacted before persistence or export.
+
 ## Common commands
 
 | Command                                                                                | Purpose                                                                                                |

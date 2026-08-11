@@ -276,8 +276,16 @@ Notes:
 - Models are HuggingFace repo ids (e.g. `Qwen/Qwen2.5-1.5B-Instruct`), not the MLX 4-bit
   community repos. `--base-model` is the student; `--teacher-model` (gkd) must share the
   student's tokenizer. LoRA (PEFT) is applied automatically. API/hosted teachers are supported
-  for build-time trace collection via `trace_collector.collect()`; token-level GKD/OPD still
-  requires local/open-weights teacher logits.
+  for build-time trace collection via `trace_collector.collect()`. Anthropic and
+  OpenAI-compatible teachers use a bounded `deep_think` function-call loop: the first turn
+  requires the private scratchpad, later turns may add entries or finish, and ordered calls are
+  stored as `thinking_stream` while their joined text becomes the record's `reasoning`.
+  Collection requires a real tool stream by default. Local, callable, and CLI/runtime providers
+  report `thinking_capture=unsupported` and are skipped; pass
+  `require_thinking_stream=False` only when a visible-preamble rationale is an acceptable,
+  explicitly marked fallback. Treat collected scratchpads as sensitive training data and apply
+  the same access controls and redaction policy as prompts. Token-level GKD/OPD still requires
+  local/open-weights teacher logits.
 - `--scale-profile cuda_qlora_7b_rlvr` selects TRL GRPO with `Qwen/Qwen2.5-7B-Instruct`,
   NF4 QLoRA loading, and 24 GB target VRAM metadata. `cuda_sharded_32b_distill` selects
   TRL GKD with a 32B student, 72B teacher, NF4 loading, and a generated DeepSpeed ZeRO-3

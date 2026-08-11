@@ -70,6 +70,21 @@ class _SchemaProvider(LLMProvider):
         return "stub"
 
 
+class _ThinkingProvider(_SchemaProvider):
+    def complete_with_thinking(self, *args: Any, **kwargs: Any) -> CompletionResult:
+        return CompletionResult(
+            text="final",
+            model="thinking-stub",
+            thinking_stream=["captured"],
+            thinking_tool="deep_think",
+            thinking_capture="tool",
+        )
+
+    @property
+    def supports_thinking_stream(self) -> bool:
+        return True
+
+
 class _Client(LanguageModelClient):
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
@@ -240,6 +255,20 @@ def test_provider_hooks_forward_schema_and_preserve_completion_metadata() -> Non
     assert inner.schemas == [schema]
     assert response.constrained is True
     assert response.stop_reason == "stop"
+
+
+def test_provider_hooks_preserve_native_thinking_capture() -> None:
+    from autocontext.extensions import HookBus, HookedLLMProvider
+
+    provider = HookedLLMProvider(_ThinkingProvider(), HookBus())
+
+    response = provider.complete_with_thinking("system", "user")
+
+    assert provider.supports_thinking_stream is True
+    assert response.text == "final"
+    assert response.thinking_stream == ["captured"]
+    assert response.thinking_tool == "deep_think"
+    assert response.thinking_capture == "tool"
 
 
 def test_prompt_hooks_transform_components_prompts_and_compaction() -> None:

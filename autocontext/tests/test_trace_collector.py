@@ -8,6 +8,7 @@ records carrying the rationale. Nothing here is tied to a specific model or vend
 
 from __future__ import annotations
 
+from autocontext.providers.base import CompletionResult, LLMProvider
 from autocontext.providers.callable_wrapper import CallableProvider
 from autocontext.scenarios.agent_task import AgentTaskResult
 
@@ -68,6 +69,35 @@ def test_build_record_carries_reasoning_and_score() -> None:
     assert rec["strategy"] == {"points": [1]}
     assert rec["score"] == 0.5
     assert rec["run_id"] == "t0"
+    assert "thinking_stream" not in rec
+    assert "reasoning_source" not in rec
+
+
+class _ThinkingProvider(LLMProvider):
+    def complete(self, system_prompt, user_prompt, model=None, temperature=0.0, max_tokens=4096, output_schema=None):
+        return CompletionResult(text='visible fallback\n{"points": [1, 2, 3, 4, 5]}')
+
+    def complete_with_thinking(self, *args, **kwargs):
+        return CompletionResult(
+            text='{"points": [1, 2, 3, 4, 5]}',
+            thinking_stream=["establish the invariant", "check the boundary case"],
+            thinking_tool="deep_think",
+        )
+
+    def default_model(self):
+        return "thinking-test"
+
+
+def test_collect_prefers_tool_captured_thinking_and_preserves_call_boundaries() -> None:
+    from autocontext.training.autoresearch.trace_collector import collect
+
+    records = collect(_FakeScenario(), _ThinkingProvider(), n_traces=1)
+
+    assert len(records) == 1
+    assert records[0]["reasoning"] == "establish the invariant\n\ncheck the boundary case"
+    assert records[0]["thinking_stream"] == ["establish the invariant", "check the boundary case"]
+    assert records[0]["reasoning_source"] == "deep_think"
+    assert records[0]["thinking_capture"] == "tool"
 
 
 def test_collect_is_provider_agnostic_and_verifies_in_scenario() -> None:
@@ -76,12 +106,28 @@ def test_collect_is_provider_agnostic_and_verifies_in_scenario() -> None:
 
     # teacher always returns a 5-point construction -> scenario scores it 0.5
     provider = CallableProvider(lambda system, user: 'use a wide spread\n{"points": [1,2,3,4,5]}')
-    records = collect(_FakeScenario(), provider, n_traces=3, score_threshold=0.0)
+    records = collect(
+        _FakeScenario(),
+        provider,
+        n_traces=3,
+        score_threshold=0.0,
+        require_thinking_stream=False,
+    )
 
     assert len(records) == 3
     assert all(r["reasoning"] == "use a wide spread" for r in records)
     assert all(r["score"] == 0.5 for r in records)  # verified in-scenario, not from the teacher
     assert all(r["scenario"] == "toy" for r in records)
+    assert all(r["reasoning_source"] == "visible_preamble" for r in records)
+    assert all(r["thinking_capture"] == "unsupported" for r in records)
+
+
+def test_collect_requires_real_thinking_stream_by_default() -> None:
+    from autocontext.training.autoresearch.trace_collector import collect
+
+    provider = CallableProvider(lambda system, user: 'visible only\n{"points": [1,2,3,4,5]}')
+
+    assert collect(_FakeScenario(), provider, n_traces=1) == []
 
 
 def test_collect_gates_by_verified_score_threshold() -> None:
@@ -89,7 +135,13 @@ def test_collect_gates_by_verified_score_threshold() -> None:
     from autocontext.training.autoresearch.trace_collector import collect
 
     provider = CallableProvider(lambda system, user: 'thin\n{"points": [1]}')  # scenario scores 0.1
-    records = collect(_FakeScenario(), provider, n_traces=4, score_threshold=0.5)
+    records = collect(
+        _FakeScenario(),
+        provider,
+        n_traces=4,
+        score_threshold=0.5,
+        require_thinking_stream=False,
+    )
     assert records == []
 
 
@@ -97,7 +149,13 @@ def test_collect_skips_unparseable_teacher_output() -> None:
     from autocontext.training.autoresearch.trace_collector import collect
 
     provider = CallableProvider(lambda system, user: "I refuse to produce JSON")
-    records = collect(_FakeScenario(), provider, n_traces=3, score_threshold=0.0)
+    records = collect(
+        _FakeScenario(),
+        provider,
+        n_traces=3,
+        score_threshold=0.0,
+        require_thinking_stream=False,
+    )
     assert records == []
 
 
@@ -126,7 +184,13 @@ def test_collect_supports_game_scenarios_via_execute_match() -> None:
     from autocontext.training.autoresearch.trace_collector import collect
 
     provider = CallableProvider(lambda system, user: 'spread out\n{"points": [1,2,3,4,5]}')
-    records = collect(_FakeGameScenario(), provider, n_traces=2, score_threshold=0.0)
+    records = collect(
+        _FakeGameScenario(),
+        provider,
+        n_traces=2,
+        score_threshold=0.0,
+        require_thinking_stream=False,
+    )
     assert len(records) == 2  # not dropped
     assert all(r["score"] == 0.5 for r in records)  # scored via execute_match
     assert all(r["reasoning"] == "spread out" for r in records)

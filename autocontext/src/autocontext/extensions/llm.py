@@ -163,6 +163,9 @@ class HookedLLMProvider(LLMProvider):
         self.provider_name = provider_name or inner.name
         self.role = role
         self._supports_output_schema = _accepts_output_schema(inner.complete)
+        thinking_complete = getattr(inner, "complete_with_thinking", None)
+        self._thinking_complete = thinking_complete if callable(thinking_complete) else None
+        self._thinking_supports_output_schema = _accepts_output_schema(thinking_complete)
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self.inner, name)
@@ -209,6 +212,9 @@ class HookedLLMProvider(LLMProvider):
         response_cost = getattr(response, "cost_usd", None)
         response_stop_reason = getattr(response, "stop_reason", None)
         response_constrained = bool(getattr(response, "constrained", False))
+        response_thinking_stream = _thinking_stream(getattr(response, "thinking_stream", []))
+        response_thinking_tool = _optional_str(getattr(response, "thinking_tool", None))
+        response_thinking_capture = str(getattr(response, "thinking_capture", "none"))
         response_payload = {
             "provider": self.provider_name,
             "role": request.get("role", self.role),
@@ -219,6 +225,9 @@ class HookedLLMProvider(LLMProvider):
             "cost_usd": response_cost,
             "stop_reason": response_stop_reason,
             "constrained": response_constrained,
+            "thinking_stream": response_thinking_stream,
+            "thinking_tool": response_thinking_tool,
+            "thinking_capture": response_thinking_capture,
         }
         after = self.hook_bus.emit(HookEvents.AFTER_PROVIDER_RESPONSE, response_payload)
         after.raise_if_blocked()
@@ -229,10 +238,108 @@ class HookedLLMProvider(LLMProvider):
             cost_usd=_optional_float(after.payload.get("cost_usd", response_cost)),
             stop_reason=response_stop_reason,
             constrained=response_constrained,
+            thinking_stream=_thinking_stream(after.payload.get("thinking_stream", response_thinking_stream)),
+            thinking_tool=_optional_str(after.payload.get("thinking_tool", response_thinking_tool)),
+            thinking_capture=str(after.payload.get("thinking_capture", response_thinking_capture)),
+        )
+
+    def complete_with_thinking(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        model: str | None = None,
+        temperature: float = 0.0,
+        max_tokens: int = 4096,
+        output_schema: OutputSchema | None = None,
+        reasoning_effort: str = "none",
+        max_tool_turns: int = 8,
+    ) -> CompletionResult:
+        """Preserve hooks around the inner provider's full thinking loop."""
+        if self._thinking_complete is None:
+            result = self.complete(
+                system_prompt,
+                user_prompt,
+                model=model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                output_schema=output_schema,
+            )
+            result.thinking_capture = "unsupported"
+            return result
+        payload = {
+            "provider": self.provider_name,
+            "role": self.role,
+            "model": model,
+            "system_prompt": system_prompt,
+            "user_prompt": user_prompt,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "output_schema": _schema_payload(output_schema),
+            "reasoning_effort": reasoning_effort,
+            "max_tool_turns": max_tool_turns,
+            "multiturn": True,
+        }
+        before = self.hook_bus.emit(HookEvents.BEFORE_PROVIDER_REQUEST, payload)
+        before.raise_if_blocked()
+        request = before.payload
+        requested_schema = _optional_output_schema(request.get("output_schema", output_schema))
+        extra = (
+            {"output_schema": requested_schema}
+            if requested_schema is not None and self._thinking_supports_output_schema
+            else {}
+        )
+        response = self._thinking_complete(
+            system_prompt=str(request.get("system_prompt", system_prompt)),
+            user_prompt=str(request.get("user_prompt", user_prompt)),
+            model=_optional_str(request.get("model", model)),
+            temperature=float(request.get("temperature", temperature)),
+            max_tokens=int(request.get("max_tokens", max_tokens)),
+            reasoning_effort=str(request.get("reasoning_effort", reasoning_effort)),
+            max_tool_turns=int(request.get("max_tool_turns", max_tool_turns)),
+            **extra,
+        )
+        response_model = getattr(response, "model", None)
+        response_usage = getattr(response, "usage", {})
+        response_cost = getattr(response, "cost_usd", None)
+        response_stop_reason = getattr(response, "stop_reason", None)
+        response_constrained = bool(getattr(response, "constrained", False))
+        response_thinking_stream = _thinking_stream(getattr(response, "thinking_stream", []))
+        response_thinking_tool = _optional_str(getattr(response, "thinking_tool", None))
+        response_thinking_capture = str(getattr(response, "thinking_capture", "none"))
+        response_payload = {
+            "provider": self.provider_name,
+            "role": request.get("role", self.role),
+            "model": response_model or request.get("model") or model or self.default_model(),
+            "request": dict(request),
+            "text": response.text,
+            "usage": dict(response_usage) if isinstance(response_usage, dict) else {},
+            "cost_usd": response_cost,
+            "stop_reason": response_stop_reason,
+            "constrained": response_constrained,
+            "thinking_stream": response_thinking_stream,
+            "thinking_tool": response_thinking_tool,
+            "thinking_capture": response_thinking_capture,
+        }
+        after = self.hook_bus.emit(HookEvents.AFTER_PROVIDER_RESPONSE, response_payload)
+        after.raise_if_blocked()
+        return CompletionResult(
+            text=str(after.payload.get("text", response.text)),
+            model=_optional_str(after.payload.get("model", response_model)),
+            usage=_usage_dict(after.payload.get("usage", response_usage)),
+            cost_usd=_optional_float(after.payload.get("cost_usd", response_cost)),
+            stop_reason=response_stop_reason,
+            constrained=response_constrained,
+            thinking_stream=_thinking_stream(after.payload.get("thinking_stream", response_thinking_stream)),
+            thinking_tool=_optional_str(after.payload.get("thinking_tool", response_thinking_tool)),
+            thinking_capture=str(after.payload.get("thinking_capture", response_thinking_capture)),
         )
 
     def default_model(self) -> str:
         return self.inner.default_model()
+
+    @property
+    def supports_thinking_stream(self) -> bool:
+        return bool(getattr(self.inner, "supports_thinking_stream", False))
 
     @property
     def name(self) -> str:
@@ -296,6 +403,12 @@ def _usage_dict(value: Any) -> dict[str, int]:
     if not isinstance(value, dict):
         return {}
     return {str(key): int(item) for key, item in value.items() if isinstance(item, (int, float))}
+
+
+def _thinking_stream(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value]
 
 
 def _usage_from_payload(default: RoleUsage, value: Any) -> RoleUsage:

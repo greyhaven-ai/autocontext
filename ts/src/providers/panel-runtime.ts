@@ -62,6 +62,7 @@ export function parsePanelConfigForRole(settings: PanelSettings, role: string): 
 
 export class PanelProvider implements LLMProvider {
   readonly name: string;
+  readonly supportsThinkingStream = false;
 
   constructor(
     private readonly opts: {

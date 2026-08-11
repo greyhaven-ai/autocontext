@@ -3,7 +3,12 @@
  * Adapts AgentRuntime into LLMProvider interface with retry support.
  */
 
-import type { CompletionResult, LLMProvider } from "../types/index.js";
+import type {
+  CompletionResult,
+  LLMProvider,
+  ThinkingCompletionOptions,
+} from "../types/index.js";
+import { completeWithThinkingFallback } from "../providers/thinking.js";
 import type { AgentRuntime } from "../runtimes/base.js";
 import { RuntimeSessionAgentRuntime } from "../runtimes/runtime-session-agent.js";
 import type { RuntimeCommandGrant } from "../runtimes/workspace-env.js";
@@ -33,6 +38,10 @@ export class RuntimeBridgeProvider implements LLMProvider {
 
   get supportsConcurrentRequests() {
     return this.#runtime.supportsConcurrentRequests !== false;
+  }
+
+  get supportsThinkingStream() {
+    return false;
   }
 
   defaultModel() {
@@ -98,6 +107,10 @@ export class RetryProvider implements LLMProvider {
     return this.#inner.supportsConcurrentRequests !== false;
   }
 
+  get supportsThinkingStream() {
+    return this.#inner.supportsThinkingStream === true;
+  }
+
   defaultModel() {
     return this.#inner.defaultModel();
   }
@@ -113,10 +126,18 @@ export class RetryProvider implements LLMProvider {
     temperature?: number;
     maxTokens?: number;
   }): Promise<CompletionResult> {
+    return this.#withRetry(() => this.#inner.complete(opts));
+  }
+
+  async completeWithThinking(opts: ThinkingCompletionOptions): Promise<CompletionResult> {
+    return this.#withRetry(() => completeWithThinkingFallback(this.#inner, opts));
+  }
+
+  async #withRetry(operation: () => Promise<CompletionResult>): Promise<CompletionResult> {
     let lastError: Error | undefined;
     for (let attempt = 0; attempt <= this.#maxRetries; attempt++) {
       try {
-        return await this.#inner.complete(opts);
+        return await operation();
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
         if (attempt < this.#maxRetries) {

@@ -155,3 +155,23 @@ class TestRetryProvider:
         assert calls[0]["model"] == "custom"
         assert calls[0]["temperature"] == 0.5
         assert calls[0]["max_tokens"] == 100
+
+    def test_thinking_completion_delegates_through_retry_wrapper(self):
+        class ThinkingProvider(FakeProvider):
+            def complete_with_thinking(self, *args, **kwargs):
+                return CompletionResult(
+                    text="final",
+                    thinking_stream=["captured"],
+                    thinking_tool="deep_think",
+                )
+
+            @property
+            def supports_thinking_stream(self):
+                return True
+
+        provider = RetryProvider(ThinkingProvider(), max_retries=0)
+
+        result = provider.complete_with_thinking("s", "u", reasoning_effort="none")
+
+        assert result.thinking_stream == ["captured"]
+        assert provider.supports_thinking_stream is True

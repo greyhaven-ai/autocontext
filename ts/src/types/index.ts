@@ -27,6 +27,12 @@ export const CompletionResultSchema = z.object({
   // read it through wasConstrained() in agents/role-schemas.ts, which keeps
   // the `=== true` comparison in exactly one place.
   constrained: z.boolean().optional(),
+  // Explicit model-authored scratchpad entries captured from structured
+  // deep_think tool calls. They are deliberately separate from user-visible
+  // text and optional for backward compatibility with third-party providers.
+  thinkingStream: z.array(z.string()).optional(),
+  thinkingTool: z.string().nullish(),
+  thinkingCapture: z.enum(["tool", "unsupported"]).optional(),
 });
 
 export type CompletionResult = z.infer<typeof CompletionResultSchema>;
@@ -51,27 +57,41 @@ export interface OutputSchema {
   schema: Record<string, unknown>;
 }
 
+export interface CompletionOptions {
+  systemPrompt: string;
+  userPrompt: string;
+  model?: string;
+  temperature?: number;
+  maxTokens?: number;
+  /**
+   * Optional and best-effort. An implementation that cannot honor it must
+   * still answer and must leave `constrained` false.
+   */
+  outputSchema?: OutputSchema;
+}
+
+export interface ThinkingCompletionOptions extends CompletionOptions {
+  reasoningEffort?: string;
+  maxToolTurns?: number;
+}
+
 export interface LLMProvider {
-  complete(opts: {
-    systemPrompt: string;
-    userPrompt: string;
-    model?: string;
-    temperature?: number;
-    maxTokens?: number;
-    /**
-     * Optional and best-effort. An implementation that cannot honor it must
-     * still answer and must leave `constrained` false. Optional on purpose:
-     * LLMProvider is public API, so a provider written outside this repo keeps
-     * compiling and keeps working.
-     */
-    outputSchema?: OutputSchema;
-  }): Promise<CompletionResult>;
+  complete(opts: CompletionOptions): Promise<CompletionResult>;
+
+  /**
+   * Optional on purpose: existing third-party providers remain source
+   * compatible. Callers use completeWithThinkingFallback() to receive honest
+   * `unsupported` provenance when this operation is absent.
+   */
+  completeWithThinking?(opts: ThinkingCompletionOptions): Promise<CompletionResult>;
 
   defaultModel(): string;
 
   close?(): void;
 
   readonly supportsConcurrentRequests?: boolean;
+
+  readonly supportsThinkingStream?: boolean;
 
   readonly name: string;
 }
