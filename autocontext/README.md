@@ -74,6 +74,12 @@ role-specific endpoint uses the corresponding
 `AUTOCONTEXT_<ROLE>_PROVIDER_CAPABILITY` declarations instead of the default
 endpoint's declarations.
 
+OpenAI-compatible role generation requests schema-constrained output by
+default. If that changes output quality for a backend, set
+`AUTOCONTEXT_CONSTRAINED_OUTPUT=false` to omit schemas from every role request
+and use the existing Markdown parsers instead. The setting also applies to
+roles with dedicated provider overrides.
+
 ## Common commands
 
 | Command                                                                                | Purpose                                                                                                |

@@ -59,6 +59,18 @@ hosting inference and `AUTOCONTEXT_PROVIDER_CAPABILITY=fast|mid_tier|frontier`
 to cap automatic tiers for a local endpoint. Role-specific endpoints use the
 matching `AUTOCONTEXT_<ROLE>_PROVIDER_*` declarations.
 
+Library consumers using `AgentOrchestrator` get schema-constrained analyst and
+coach output by default. Pass `constrainedOutput: false` to omit those schemas
+and use the existing Markdown parsers instead:
+
+```ts
+import { AgentOrchestrator } from "autoctx";
+
+const orchestrator = new AgentOrchestrator(provider, {
+  constrainedOutput: false,
+});
+```
+
 ## CLI surfaces
 
 | Command                                                | Purpose                                                      |

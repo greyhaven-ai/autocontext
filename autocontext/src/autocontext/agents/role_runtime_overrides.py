@@ -63,7 +63,10 @@ def apply_role_overrides(orch: Any, settings: AppSettings) -> None:
             continue
         client = orch._wrap_client(client, provider_name=f"{provider_type}:{role}")
         orch._role_clients[role] = client
-        runtime = SubagentRuntime(client=client)
+        runtime = SubagentRuntime(
+            client=client,
+            constrained_output=settings.constrained_output,
+        )
         runner = getattr(orch, runner_name)
         runner.runtime = runtime
         logger.info("role '%s' using dedicated provider config: %s", role, provider_type)

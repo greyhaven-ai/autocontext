@@ -390,6 +390,32 @@ class TestOrchestratorPerRoleWiring:
         assert orch.analyst.runtime.client is orch.coach.runtime.client
 
     @patch("autocontext.agents.provider_bridge.create_role_client")
+    def test_constrained_output_escape_hatch_survives_role_override(self, mock_create: MagicMock) -> None:
+        """A dedicated role runtime must inherit the run-wide schema setting."""
+        from autocontext.agents.orchestrator import AgentOrchestrator
+        from autocontext.config.settings import AppSettings
+
+        mock_client = MagicMock(spec=LanguageModelClient)
+        mock_client.generate.return_value = ModelResponse(
+            text="## Findings\n\n- finding",
+            usage=RoleUsage(input_tokens=1, output_tokens=1, latency_ms=1, model="override"),
+        )
+        mock_create.return_value = mock_client
+
+        settings = AppSettings(
+            agent_provider="deterministic",
+            analyst_provider="openai",
+            constrained_output=False,
+        )
+        orch = AgentOrchestrator.from_settings(settings)
+
+        execution = orch.analyst.run("analyze")
+
+        mock_client.generate.assert_called_once()
+        mock_client.generate_constrained.assert_not_called()
+        assert execution.metadata["constrained"] is False
+
+    @patch("autocontext.agents.provider_bridge.create_role_client")
     def test_multiple_role_overrides(self, mock_create: MagicMock) -> None:
         """Multiple per-role overrides work simultaneously."""
         from autocontext.agents.orchestrator import AgentOrchestrator
