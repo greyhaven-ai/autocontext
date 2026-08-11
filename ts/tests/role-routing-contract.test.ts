@@ -5,9 +5,9 @@ import { describe, expect, it } from "vitest";
 import {
   SUPPORTED_PROVIDER_TYPES,
   buildRoleProviderBundle,
-  estimateRoleRoutingCost,
   routeRoleProvider,
   LOCAL_ELIGIBLE_ROLES,
+  ROUTED_GENERATION_ROLES,
   type RoleProviderSettings,
 } from "../src/providers/index.js";
 
@@ -350,17 +350,15 @@ describe("shared role routing contract", () => {
     });
   });
 
-  it("estimates one generation cycle with the same role set as Python", () => {
-    const estimate = estimateRoleRoutingCost(baseSettings());
-
-    expect(Object.keys(estimate.roles).sort()).toEqual(
+  it("routes exactly the roles the shared contract declares", () => {
+    // Inherited from the deleted cost estimator (AC-915), which asserted this
+    // incidentally by summing over its own hardcoded role list. The role set is
+    // the part worth pinning: a role present in the contract but absent from
+    // ROUTED_GENERATION_ROLES is one the loop never routes, and both languages
+    // read this same table.
+    expect([...ROUTED_GENERATION_ROLES].sort()).toEqual(
       Object.keys(CONTRACT.default_routing_table).sort(),
     );
-    // AC-911: not toBeGreaterThan(0). These settings use "deterministic", which
-    // is locally hosted, so the correct total is exactly zero -- and a run that
-    // costs nothing is the outcome this whole epic exists to make reachable.
-    expect(estimate.totalPer1kTokens).toBe(0);
-    expect(estimate.savingsVsAllFrontier).toBe(estimate.allFrontierPer1kTokens);
   });
 });
 

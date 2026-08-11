@@ -200,13 +200,6 @@ export interface RoutedProviderConfig {
   unsupportedReason?: string;
 }
 
-export interface RoleRoutingCostEstimate {
-  roles: Partial<Record<GenerationRole, RoutedProviderConfig>>;
-  totalPer1kTokens: number;
-  allFrontierPer1kTokens: number;
-  savingsVsAllFrontier: number;
-}
-
 function clean(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed ? trimmed : undefined;
@@ -533,29 +526,4 @@ export function routeRoleProvider(
     tierModel(effective, settings, providerType),
     settings.providerHosting,
   );
-}
-
-export function estimateRoleRoutingCost(
-  settings: RoleRoutingSettings,
-  context: RoleRoutingContext = {},
-): RoleRoutingCostEstimate {
-  const roles: Partial<Record<GenerationRole, RoutedProviderConfig>> = {};
-  let totalPer1kTokens = 0;
-
-  for (const role of ROUTED_GENERATION_ROLES) {
-    const routed = routeRoleProvider(settings, role, context);
-    roles[role] = routed;
-    totalPer1kTokens += routed.estimatedCostPer1kTokens;
-  }
-
-  const allFrontierPer1kTokens =
-    ROUTED_GENERATION_ROLES.length * (PROVIDER_CLASS_COST_PER_1K_TOKENS.frontier ?? 0);
-  const savingsVsAllFrontier = Math.max(0, allFrontierPer1kTokens - totalPer1kTokens);
-
-  return {
-    roles,
-    totalPer1kTokens,
-    allFrontierPer1kTokens,
-    savingsVsAllFrontier,
-  };
 }

@@ -62,12 +62,6 @@ _EXPECTED_CASE_IDS: dict[str, frozenset[str]] = {
             "local_artifact_ignored_when_routing_off",
         },
     ),
-    "cost_estimation": frozenset(
-        {
-            "default_auto_mode_totals",
-            "with_local_artifacts_totals",
-        },
-    ),
 }
 
 _EXPECTED_DIVERGENCE_CASE_IDS = {
@@ -85,9 +79,8 @@ _EXPECTED_DIVERGENCE_CASE_IDS = {
     "unset_settings.tier_model_empty",
 }
 
-# Fixture groups whose cases are single route() calls compared field by field.
-# Groups with a different shape (cost estimation) get their own replay test.
-ROUTE_GROUPS: tuple[str, ...] = tuple(group for group in _EXPECTED_CASE_IDS if group != "cost_estimation")
+# Every fixture group is a set of single route() calls compared field by field.
+ROUTE_GROUPS: tuple[str, ...] = tuple(_EXPECTED_CASE_IDS)
 _EXPECTED_GROUPS = set(_EXPECTED_CASE_IDS)
 _EXPECTED_ASSIGNMENT_KEYS = {
     "provider_type",
@@ -217,21 +210,6 @@ def test_route_parity(group: str, case_name: str, case: dict[str, Any]) -> None:
     _assert_route_matches(router.route(case["role"], context=context), case["expected"])
 
 
-@pytest.mark.parametrize("case_name,case", _cases("cost_estimation"))
-def test_cost_estimation_parity(case_name: str, case: dict[str, Any]) -> None:
-    """Cost totals must match TypeScript's estimateRoleRoutingCost()."""
-    from autocontext.agents.role_router import RoleRouter, RoutingContext
-
-    del case_name
-    router = RoleRouter(_settings_from_fixture(case.get("settings", {})))
-    context = RoutingContext(**_context_from_fixture(case.get("context", {})))
-    estimate = router.estimate_run_cost(context=context)
-
-    expected = case["expected"]
-    for key in ("total_per_1k_tokens", "all_frontier_per_1k_tokens", "savings_vs_all_frontier"):
-        assert estimate[key] == pytest.approx(expected[key]), key
-
-
 @pytest.mark.parametrize("case_name,case", _divergence_cases())
 def test_python_known_divergence_output(case_name: str, case: dict[str, Any]) -> None:
     """Known disagreements remain executable until AC-911 resolves them."""
@@ -247,7 +225,7 @@ def test_python_known_divergence_output(case_name: str, case: dict[str, Any]) ->
 def test_every_expected_fixture_group_is_present() -> None:
     """The external inventory pins both fixture groups and replay registration."""
     assert set(_load()["fixtures"]) == _EXPECTED_GROUPS
-    assert set(ROUTE_GROUPS) | {"cost_estimation"} == _EXPECTED_GROUPS
+    assert set(ROUTE_GROUPS) == _EXPECTED_GROUPS
 
 
 def test_every_expected_fixture_case_is_present() -> None:
