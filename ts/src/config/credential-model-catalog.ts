@@ -12,11 +12,16 @@ export interface KnownModel {
  * Provenance differs by vendor and that difference is load-bearing:
  *
  * * **anthropic** ids are confirmed against Anthropic's published ids.
- * * **openai / gemini / mistral** ids are derived from OpenRouter's live
- *   catalog by dropping the vendor prefix. That mapping has always held
- *   (`openai/gpt-4o` served as `gpt-4o`) but was NOT verified against the
- *   vendor APIs here -- no funded key was available at the time. Treat a 404
- *   from one of these as a stale-id bug, not a user misconfiguration.
+ * * **openai** ids are confirmed against `GET https://api.openai.com/v1/models`
+ *   on 2026-08-12. Worth knowing for the next refresh: that endpoint costs
+ *   nothing and answers on a key with no credit balance, so a billing error
+ *   from `chat/completions` is not a reason to leave ids unverified.
+ * * **gemini / mistral** ids are derived from OpenRouter's live catalog by
+ *   dropping the vendor prefix, and are the one group here still unverified --
+ *   no key for either vendor was available. The mapping has always held
+ *   (`openai/gpt-4o` served as `gpt-4o`, and it held for all three OpenAI ids
+ *   above), but treat a 404 from one of these as a stale-id bug rather than a
+ *   user misconfiguration.
  * * **openrouter** ids are used verbatim and are verified, since that is the
  *   catalog they came from.
  * * **groq** is deliberately untouched. Groq publishes its own ids with its
@@ -57,6 +62,10 @@ export const PROVIDER_MODELS: Record<string, KnownModel[]> = {
     { id: "anthropic/claude-sonnet-5", displayName: "Claude Sonnet 5 (via OpenRouter)" },
     // -pro is an OpenRouter serving variant (reasoning.mode=pro), not an
     // OpenAI model id, so it appears here and nowhere else in this file.
+    // Confirmed rather than assumed: gpt-5.6-sol/terra/luna are all present on
+    // the OpenAI models endpoint and gpt-5.6-sol-pro is not. (Earlier
+    // generations did ship -pro as a real id -- gpt-5.5-pro, gpt-5.4-pro --
+    // so this is specific to 5.6, not a rule about OpenAI naming.)
     { id: "openai/gpt-5.6-sol-pro", displayName: "GPT-5.6 Sol Pro (via OpenRouter)" },
     { id: "openai/gpt-5.6-terra", displayName: "GPT-5.6 Terra (via OpenRouter)" },
     { id: "google/gemini-3.1-pro-preview", displayName: "Gemini 3.1 Pro Preview (via OpenRouter)" },
