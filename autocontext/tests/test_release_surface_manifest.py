@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -69,6 +70,16 @@ def test_release_manifest_checks_package_version_files() -> None:
 
     issues = sync.check_release_surfaces(manifest)
 
-    assert "autocontext/src/autocontext/__init__.py version 0.14.0 != manifest 9.9.9" in issues
+    # Read the shipped version independently of the implementation rather than
+    # hardcoding it: the point is that the message names the REAL version, and a
+    # literal here silently becomes a chore that fails on every release bump
+    # (it did, on 0.15.0). A different reader keeps the assertion honest -- using
+    # sync's own would make it tautological.
+    shipped = re.search(
+        r'__version__ = "([^"]+)"',
+        (Path(__file__).resolve().parents[1] / "src" / "autocontext" / "__init__.py").read_text(encoding="utf-8"),
+    )
+    assert shipped is not None
+    assert f"autocontext/src/autocontext/__init__.py version {shipped.group(1)} != manifest 9.9.9" in issues
     assert "pi/package.json version 0.9.0 != manifest 0.8.0" in issues
     assert "pi/package.json autoctx dependency ^0.11.0 != manifest ^0.9.0" in issues

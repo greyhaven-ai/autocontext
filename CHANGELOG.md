@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.15.0] - 2026-08-12
 
 ### Added
 
@@ -28,6 +28,7 @@ All notable changes to this project will be documented in this file.
 - Schema-constrained role output now has an explicit, default-on escape hatch: Python users can set `AUTOCONTEXT_CONSTRAINED_OUTPUT=false`, including with dedicated role providers, and TypeScript `AgentOrchestrator` users can pass `constrainedOutput: false` to retain Markdown generation and parsing (AC-931).
 - TypeScript interactive runs now advertise `agent_progress_notes_v1` to transcript clients and emit concise, strict `agent_progress_note` updates for intent, discovery, decisions, verification, and blockers. Notes are safety-redacted and bounded before emission, may cite only earlier same-run durable action/artifact IDs, and replay with exact ordering and identity across reconnects and server restarts within the transcript's finite retention horizon. Python parity is deferred until it can provide the same durable transcript guarantees (AC-897).
 - Role routing now separates endpoint hosting from capability in both runtimes. Default and role-specific endpoints can declare `local`/`remote` hosting and a local maximum capability (`fast`, `mid_tier`, or `frontier`); routing cost and automatic model tiers honor those declarations, while unset values retain conservative transport inference (AC-911).
+- Anthropic honors schema-constrained role output through a forced tool call and reports `constrained=True`, bringing the shipped default provider onto the same path as OpenAI-compatible backends. Measured over 20 trials per arm before enabling it: grounded content per response rose 6.65 to 7.45 on claude-sonnet-4.5 with 40 of 40 payloads valid, and gpt-4o was statistically unchanged, so the existing OpenAI default stands. A forced tool that returns no matching `tool_use` block falls back to text and reports `constrained=False` rather than claiming enforcement it did not get (AC-928).
 
 ### Fixed
 
@@ -35,6 +36,11 @@ All notable changes to this project will be documented in this file.
 - Provider-aware role and tier model defaults now reach the production orchestrator in both `role_routing=off` and `auto` modes. Explicit role models retain precedence over automatic tiers, OpenAI-compatible defaults match the provider factory, and `AUTOCONTEXT_LOCAL_MODEL` is documented as the single local-endpoint override.
 - Persistent interpreter workspace summaries and migration no longer invoke candidate-defined `__len__`, `__repr__`, or `__deepcopy__` hooks outside the execution timeout; plain built-in working data remains safely copyable while custom objects degrade to bounded metadata or omission.
 - Model JSON recovery skips Markdown/prose brackets before a later object and bounds failed structural decode attempts, preserving truncated-array fail-closed behavior without the AC-922 quadratic path.
+- Judge score parsing no longer lets a discarded draft outrank the answer. Both engines scanned the whole response for the first `"score"`-shaped object, so a reasoning block emitted before the answer won: a run the judge scored 0.88 was recorded as 0.05, silently, with the wrong number entering the loop's ranking. Both now share one model-JSON extractor that prefers the designated answer over the scratchpad, and payloads nested more than one level deep are parsed as JSON instead of being scraped by a plaintext pattern that dropped every per-dimension score (AC-924, AC-937).
+
+### Changed
+
+- Shipped model defaults move to the current generations: `claude-opus-5` and `claude-sonnet-5` replace Opus 4.6 and Sonnet 4.5 (Haiku 4.5 is unchanged, still current), and the OpenAI-compatible default moves from `gpt-4o` to `gpt-5.6-terra`. Explicit `AUTOCONTEXT_MODEL_*` and `AUTOCONTEXT_TIER_*` settings are untouched; only unset slots move. Cost attribution moves with them, and had been materially wrong: the pricing table still carried Opus 4.6 rates ($15/$75 per M) against Opus 5's $5/$25, overstating spend on a default run by roughly 3x.
 
 ### Deprecated
 
