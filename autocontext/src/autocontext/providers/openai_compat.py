@@ -97,13 +97,18 @@ class OpenAICompatibleProvider(LLMProvider):
         model_id = model or self._default_model
         request: dict[str, Any] = {
             "model": model_id,
-            "temperature": temperature,
-            "max_tokens": clamp_output_tokens(max_tokens, model_id),
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
         }
+        request[_output_token_field(model_id)] = clamp_output_tokens(max_tokens, model_id)
+        if _supports_temperature(model_id):
+            request["temperature"] = temperature
+        if _is_gpt_56_plus(model_id):
+            # GPT-5.6 otherwise defaults to medium hidden reasoning, consuming
+            # latency, spend, and the output budget of this ordinary path.
+            request["reasoning_effort"] = "none"
         constrained = False
         if output_schema is not None:
             request["response_format"] = {
@@ -184,13 +189,14 @@ class OpenAICompatibleProvider(LLMProvider):
         for turn in range(max_tool_turns + 1):
             request: dict[str, Any] = {
                 "model": model_id,
-                "temperature": temperature,
-                "max_tokens": clamp_output_tokens(max_tokens, model_id),
                 "messages": messages,
                 "tools": [_deep_think_tool(strict=strict_tools)],
                 "tool_choice": "required" if turn == 0 else "auto",
                 "parallel_tool_calls": False,
             }
+            request[_output_token_field(model_id)] = clamp_output_tokens(max_tokens, model_id)
+            if _supports_temperature(model_id):
+                request["temperature"] = temperature
             if wire_reasoning_effort is not None:
                 request["reasoning_effort"] = wire_reasoning_effort
             if constrained and output_schema is not None:
@@ -322,6 +328,9 @@ class OpenAICompatibleProvider(LLMProvider):
                         )
                         request["reasoning_effort"] = fallback_effort
                     continue
+                if "max_completion_tokens" in request and _is_unsupported_max_completion_tokens_error(exc):
+                    request["max_tokens"] = request.pop("max_completion_tokens")
+                    continue
                 if _is_unsupported_tools_error(exc):
                     raise ThinkingUnsupportedError(
                         f"OpenAI-compatible endpoint does not support thinking tools: {exc}",
@@ -376,6 +385,17 @@ def _is_unsupported_reasoning_effort_error(exc: Exception) -> bool:
         for token in ("unsupported", "not supported", "unknown", "unrecognized", "invalid")
     )
     return mentions_field and rejection
+
+
+def _is_unsupported_max_completion_tokens_error(exc: Exception) -> bool:
+    """Identify compatible endpoints that only implement legacy max_tokens."""
+    if getattr(exc, "status_code", None) not in {400, 404, 422}:
+        return False
+    message = str(exc).lower()
+    return "max_completion_tokens" in message and any(
+        token in message
+        for token in ("unsupported", "not supported", "unknown", "unrecognized", "unexpected", "invalid")
+    )
 
 
 def _is_unsupported_strict_tools_error(exc: Exception) -> bool:
@@ -447,6 +467,15 @@ def _is_gpt_56_plus(model_id: str) -> bool:
     major = int(match.group(1))
     minor = int(match.group(2) or 0)
     return major > 5 or (major == 5 and minor >= 6)
+
+
+def _supports_temperature(model_id: str) -> bool:
+    """Return False for Gemini generations that ignore sampling controls."""
+    return re.search(r"(?:^|/)gemini-3\.(?:5|6)(?:$|[-:])", model_id.lower()) is None
+
+
+def _output_token_field(model_id: str) -> str:
+    return "max_completion_tokens" if _is_gpt_56_plus(model_id) else "max_tokens"
 
 
 def _assistant_tool_message(message: Any, tool_calls: list[Any]) -> dict[str, Any]:

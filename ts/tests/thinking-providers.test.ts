@@ -182,11 +182,36 @@ describe("OpenAI-compatible deep_think", () => {
     expect(secondBody.tool_choice).toBe("auto");
     expect(firstBody.parallel_tool_calls).toBe(false);
     expect(firstBody.reasoning_effort).toBe("none");
+    expect(firstBody.max_completion_tokens).toBe(4096);
+    expect(firstBody.max_tokens).toBeUndefined();
     expect(firstBody.tools[0].function.name).toBe("deep_think");
     expect(firstBody.tools[0].function.strict).toBe(true);
     expect(secondBody.messages.at(-1).role).toBe("tool");
     expect(secondBody.messages.at(-1).content).not.toContain("check invariant");
     expect(secondBody.messages.at(-1).content).toBe('{"recorded":1}');
+  });
+
+  it("omits deprecated Gemini sampling controls throughout the thinking loop", async () => {
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(openAIToolResponse("check invariant"))
+      .mockResolvedValueOnce(openAIFinalResponse("done"));
+    vi.stubGlobal("fetch", mockFetch);
+    const provider = createOpenAICompatibleProvider({
+      apiKey: "test",
+      model: "gemini-3.6-flash",
+    });
+
+    await provider.completeWithThinking!({
+      systemPrompt: "s",
+      userPrompt: "u",
+      temperature: 0.4,
+    });
+
+    expect(mockFetch.mock.calls).toHaveLength(2);
+    for (const call of mockFetch.mock.calls) {
+      expect(JSON.parse(call[1].body).temperature).toBeUndefined();
+    }
   });
 
   it("negotiates away only an unsupported reasoning_effort field", async () => {
@@ -413,6 +438,53 @@ describe("Anthropic deep_think", () => {
     expect(secondBody.messages.at(-1).content[0].type).toBe("tool_result");
     expect(secondBody.messages.at(-1).content[0].content).not.toContain("establish invariant");
     expect(secondBody.messages.at(-1).content[0].content).toBe('{"recorded":1}');
+    expect(firstBody.temperature).toBeUndefined();
+    expect(firstBody.thinking).toEqual({ type: "disabled" });
+    expect(secondBody.temperature).toBeUndefined();
+    expect(secondBody.thinking).toEqual({ type: "disabled" });
+  });
+
+  it("preserves Fable 5 adaptive-thinking blocks across tool turns", async () => {
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        okJson({
+          content: [
+            { type: "thinking", thinking: "summary", signature: "signed-thinking" },
+            {
+              type: "tool_use",
+              id: "toolu-fable",
+              name: "deep_think",
+              input: { thoughts: "bounded" },
+            },
+          ],
+          model: "claude-fable-5",
+          usage: { input_tokens: 2, output_tokens: 3 },
+          stop_reason: "tool_use",
+        }),
+      )
+      .mockResolvedValueOnce(
+        okJson({
+          content: [{ type: "text", text: "final" }],
+          model: "claude-fable-5",
+          usage: { input_tokens: 2, output_tokens: 3 },
+          stop_reason: "end_turn",
+        }),
+      );
+    vi.stubGlobal("fetch", mockFetch);
+    const provider = createAnthropicProvider({ apiKey: "test", model: "claude-fable-5" });
+
+    await provider.completeWithThinking!({ systemPrompt: "s", userPrompt: "u" });
+
+    const firstBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+    const secondBody = JSON.parse(mockFetch.mock.calls[1][1].body);
+    expect(firstBody.temperature).toBeUndefined();
+    expect(firstBody.thinking).toBeUndefined();
+    expect(secondBody.messages[1].content[0]).toMatchObject({
+      type: "thinking",
+      thinking: "summary",
+      signature: "signed-thinking",
+    });
   });
 
   it("fails closed on malformed tool input", async () => {

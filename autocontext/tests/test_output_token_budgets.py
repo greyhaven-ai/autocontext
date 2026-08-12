@@ -39,6 +39,11 @@ class TestClampOutputTokens:
     def test_longest_prefix_wins(self) -> None:
         assert clamp_output_tokens(100_000, "claude-3-5-sonnet-20241022") == 8192
 
+    def test_current_generation_hard_caps_are_known(self) -> None:
+        assert clamp_output_tokens(200_000, "claude-sonnet-5") == 128_000
+        assert clamp_output_tokens(200_000, "gpt-5.6-terra") == 128_000
+        assert clamp_output_tokens(200_000, "openai/gpt-5.6-terra") == 128_000
+
     def test_unknown_model_passes_through(self) -> None:
         assert clamp_output_tokens(100_000, "future-model-9000") == 100_000
 

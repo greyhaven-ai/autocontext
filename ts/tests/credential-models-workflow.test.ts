@@ -56,6 +56,15 @@ describe("credential model and validation workflows", () => {
     expect(authenticated.some((model: AuthenticatedModel) => model.provider === "openai")).toBe(true);
   });
 
+  it("uses explicit provider defaults instead of premium catalog ordering", () => {
+    expect(resolveModel({ configDir: dir, provider: "anthropic" })).toBe("claude-sonnet-5");
+    expect(resolveModel({ configDir: dir, provider: "openai" })).toBe("gpt-5.6-terra");
+    expect(resolveModel({ configDir: dir, provider: "openrouter" })).toBe(
+      "anthropic/claude-sonnet-5",
+    );
+    expect(resolveModel({ configDir: dir, provider: "unknown" })).toBeUndefined();
+  });
+
   it("validates provider api keys using provider-specific rules", async () => {
     await expect(validateApiKey("anthropic", "sk-ant-valid")).resolves.toEqual({ valid: true });
     await expect(validateApiKey("groq", "bad-key")).resolves.toMatchObject({ valid: false });

@@ -67,6 +67,21 @@ def test_anthropic_deep_think_is_ordered_and_separate_from_final_text() -> None:
     assert tool_result["content"] == '{"recorded":1}'
 
 
+def test_claude_5_deep_think_uses_only_the_explicit_scratchpad() -> None:
+    provider, messages = _provider(
+        [
+            _response(_tool_block({"thoughts": "bounded"}), stop_reason="tool_use"),
+            _response(SimpleNamespace(type="text", text="final")),
+        ]
+    )
+    provider._default_model = "claude-sonnet-5"
+
+    provider.complete_with_thinking("system", "user", temperature=0.4)
+
+    assert all("temperature" not in request for request in messages.calls)
+    assert all(request["thinking"] == {"type": "disabled"} for request in messages.calls)
+
+
 def test_anthropic_deep_think_fails_closed_on_invalid_tool_input() -> None:
     provider, _ = _provider([_response(_tool_block({"unexpected": "shape"}))])
 

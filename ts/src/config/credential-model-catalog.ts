@@ -16,12 +16,8 @@ export interface KnownModel {
  *   on 2026-08-12. Worth knowing for the next refresh: that endpoint costs
  *   nothing and answers on a key with no credit balance, so a billing error
  *   from `chat/completions` is not a reason to leave ids unverified.
- * * **gemini / mistral** ids are derived from OpenRouter's live catalog by
- *   dropping the vendor prefix, and are the one group here still unverified --
- *   no key for either vendor was available. The mapping has always held
- *   (`openai/gpt-4o` served as `gpt-4o`, and it held for all three OpenAI ids
- *   above), but treat a 404 from one of these as a stale-id bug rather than a
- *   user misconfiguration.
+ * * **gemini / mistral** ids are confirmed against their vendors' published
+ *   model catalogs as of 2026-08-12.
  * * **openrouter** ids are used verbatim and are verified, since that is the
  *   catalog they came from.
  * * **groq** is deliberately untouched. Groq publishes its own ids with its
@@ -80,6 +76,16 @@ export function getModelsForProvider(provider: string): KnownModel[] {
   return PROVIDER_MODELS[provider.toLowerCase()] ?? [];
 }
 
+const DEFAULT_MODEL_BY_PROVIDER: Record<string, string> = {
+  anthropic: "claude-sonnet-5",
+  openai: "gpt-5.6-terra",
+  gemini: "gemini-3.1-pro-preview",
+  mistral: "mistral-large-2512",
+  groq: "llama-3.3-70b-versatile",
+  openrouter: "anthropic/claude-sonnet-5",
+  "azure-openai": "gpt-5.6-terra",
+};
+
 export interface ResolveModelOpts {
   cliModel?: string;
   projectModel?: string;
@@ -96,7 +102,7 @@ export function resolveModel(opts: ResolveModelOpts): string | undefined {
   const stored = loadProviderCredentials(opts.configDir, opts.provider);
   if (stored?.model) return stored.model;
 
-  return getModelsForProvider(opts.provider)[0]?.id;
+  return DEFAULT_MODEL_BY_PROVIDER[opts.provider.toLowerCase()];
 }
 
 export interface AuthenticatedModel {

@@ -109,7 +109,7 @@ def test_tracker_thread_safe() -> None:
     summary = tracker.summary()
     assert summary.records_count == 50
     # Each call: 1000 input tokens on sonnet = 0.003 per call, 50 calls = 0.15
-    expected = round(50 * (1000 / 1000) * 0.002, 6)
+    expected = round(50 * (1000 / 1000) * 0.003, 6)
     assert summary.total_cost == expected
 
 

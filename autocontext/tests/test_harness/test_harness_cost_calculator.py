@@ -10,12 +10,12 @@ from autocontext.harness.cost.types import ModelPricing
 def test_calculator_known_model() -> None:
     calc = CostCalculator()
     record = calc.calculate("claude-sonnet-5", input_tokens=1000, output_tokens=500)
-    # sonnet-5: 0.002/1k input, 0.010/1k output
+    # sonnet-5 stable rate: 0.003/1k input, 0.015/1k output
     assert record.model == "claude-sonnet-5"
     assert record.input_tokens == 1000
     assert record.output_tokens == 500
-    assert record.input_cost == round((1000 / 1000) * 0.002, 6)
-    assert record.output_cost == round((500 / 1000) * 0.010, 6)
+    assert record.input_cost == round((1000 / 1000) * 0.003, 6)
+    assert record.output_cost == round((500 / 1000) * 0.015, 6)
     assert record.total_cost == round(record.input_cost + record.output_cost, 6)
 
 
@@ -71,6 +71,31 @@ def test_calculator_custom_pricing() -> None:
     record = calc.calculate("my-model", input_tokens=1000, output_tokens=1000)
     assert record.input_cost == round((1000 / 1000) * 0.01, 6)
     assert record.output_cost == round((1000 / 1000) * 0.05, 6)
+
+
+def test_calculator_normalizes_openrouter_vendor_prefix() -> None:
+    calc = CostCalculator()
+
+    direct = calc.calculate("claude-sonnet-5", input_tokens=1000, output_tokens=1000)
+    routed = calc.calculate("anthropic/claude-sonnet-5", input_tokens=1000, output_tokens=1000)
+
+    assert routed.total_cost == direct.total_cost == 0.018
+
+
+def test_calculator_retains_legacy_model_pricing() -> None:
+    record = CostCalculator().calculate("claude-opus-4-6", input_tokens=1000, output_tokens=1000)
+
+    assert record.total_cost == 0.03
+
+
+def test_calculator_uses_current_openai_prices() -> None:
+    calc = CostCalculator()
+
+    terra = calc.calculate("gpt-5.6-terra", input_tokens=1000, output_tokens=1000)
+    luna = calc.calculate("gpt-5.6-luna", input_tokens=1000, output_tokens=1000)
+
+    assert terra.total_cost == 0.0175
+    assert luna.total_cost == 0.007
 
 
 def test_calculator_cost_precision() -> None:

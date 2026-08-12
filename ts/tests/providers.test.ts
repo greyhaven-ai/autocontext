@@ -80,7 +80,31 @@ describe("AnthropicProvider", () => {
     expect(url).toBe("https://api.anthropic.com/v1/messages");
     expect(opts.headers["x-api-key"]).toBe("sk-ant-test");
     expect(opts.headers["anthropic-version"]).toBe("2023-06-01");
+    const body = JSON.parse(opts.body);
+    expect(body.temperature).toBeUndefined();
+    expect(body.thinking).toEqual({ type: "disabled" });
 
+    vi.unstubAllGlobals();
+  });
+
+  it("omits Claude 5 sampling without sending unsupported Fable thinking controls", async () => {
+    const { createAnthropicProvider } = await import("../src/providers/index.js");
+    const provider = createAnthropicProvider({ apiKey: "test-key", model: "claude-fable-5" });
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        content: [{ type: "text", text: "ok" }],
+        model: "claude-fable-5",
+        usage: { input_tokens: 1, output_tokens: 1 },
+      }),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    await provider.complete({ systemPrompt: "s", userPrompt: "u", temperature: 0.4 });
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.temperature).toBeUndefined();
+    expect(body.thinking).toBeUndefined();
     vi.unstubAllGlobals();
   });
 
@@ -185,10 +209,94 @@ describe("OpenAICompatibleProvider", () => {
       { role: "system", content: "system" },
       { role: "user", content: "hello" },
     ]);
+    expect(body.reasoning_effort).toBe("none");
+    expect(body.max_completion_tokens).toBe(4096);
+    expect(body.max_tokens).toBeUndefined();
     expect(opts.headers["Authorization"]).toBe("Bearer sk-test");
 
     vi.unstubAllGlobals();
   });
+
+  it("negotiates away unsupported GPT-5.6 reasoning control", async () => {
+    const { createOpenAICompatibleProvider } = await import("../src/providers/index.js");
+    const provider = createOpenAICompatibleProvider({ apiKey: "test-key" });
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        text: async () => "unknown parameter reasoning_effort",
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          choices: [{ message: { content: "portable" } }],
+          model: "gpt-5.6-terra",
+          usage: { prompt_tokens: 1, completion_tokens: 1 },
+        }),
+      });
+    vi.stubGlobal("fetch", mockFetch);
+
+    const result = await provider.complete({ systemPrompt: "s", userPrompt: "u" });
+
+    expect(result.text).toBe("portable");
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body).reasoning_effort).toBe("none");
+    expect(JSON.parse(mockFetch.mock.calls[1][1].body).reasoning_effort).toBeUndefined();
+    vi.unstubAllGlobals();
+  });
+
+  it("negotiates a legacy gateway output-token field", async () => {
+    const { createOpenAICompatibleProvider } = await import("../src/providers/index.js");
+    const provider = createOpenAICompatibleProvider({ apiKey: "test-key" });
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        text: async () => "unknown parameter max_completion_tokens",
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          choices: [{ message: { content: "portable" } }],
+          model: "gpt-5.6-terra",
+          usage: { prompt_tokens: 1, completion_tokens: 1 },
+        }),
+      });
+    vi.stubGlobal("fetch", mockFetch);
+
+    await provider.complete({ systemPrompt: "s", userPrompt: "u" });
+
+    const firstBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+    const secondBody = JSON.parse(mockFetch.mock.calls[1][1].body);
+    expect(firstBody.max_completion_tokens).toBe(4096);
+    expect(firstBody.max_tokens).toBeUndefined();
+    expect(secondBody.max_tokens).toBe(4096);
+    expect(secondBody.max_completion_tokens).toBeUndefined();
+    vi.unstubAllGlobals();
+  });
+
+  it.each(["gemini-3.6-flash", "google/gemini-3.5-flash-lite"])(
+    "omits ignored sampling controls for %s",
+    async (model) => {
+      const { createOpenAICompatibleProvider } = await import("../src/providers/index.js");
+      const provider = createOpenAICompatibleProvider({ apiKey: "test-key", model });
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          choices: [{ message: { content: "ok" } }],
+          model,
+          usage: { prompt_tokens: 1, completion_tokens: 1 },
+        }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      await provider.complete({ systemPrompt: "s", userPrompt: "u", temperature: 0.4 });
+
+      expect(JSON.parse(mockFetch.mock.calls[0][1].body).temperature).toBeUndefined();
+      vi.unstubAllGlobals();
+    },
+  );
 
   it("sends a JSON schema and reports a constrained response", async () => {
     const { createOpenAICompatibleProvider } = await import("../src/providers/index.js");

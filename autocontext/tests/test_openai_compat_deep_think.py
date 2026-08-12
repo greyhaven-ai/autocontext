@@ -60,7 +60,8 @@ def test_deep_think_calls_are_ordered_and_separate_from_final_text() -> None:
         [
             _response(tool_calls=[_tool_call('{"thoughts":"check the invariant"}')], tokens=(5, 7)),
             _response(text='{"answer":"done"}', tokens=(11, 13)),
-        ]
+        ],
+        model="gpt-5.6-terra",
     )
 
     result = provider.complete_with_thinking("system", "user", reasoning_effort="none")
@@ -74,6 +75,8 @@ def test_deep_think_calls_are_ordered_and_separate_from_final_text() -> None:
     assert completions.calls[1]["tool_choice"] == "auto"
     assert completions.calls[0]["parallel_tool_calls"] is False
     assert completions.calls[0]["reasoning_effort"] == "none"
+    assert completions.calls[0]["max_completion_tokens"] == 4096
+    assert "max_tokens" not in completions.calls[0]
     assert completions.calls[0]["tools"][0]["function"]["name"] == "deep_think"
     assert completions.calls[0]["tools"][0]["function"]["strict"] is True
     assert completions.calls[1]["messages"][-1]["role"] == "tool"

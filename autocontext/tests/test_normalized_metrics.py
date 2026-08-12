@@ -234,7 +234,7 @@ class TestComputeCostEfficiency:
         assert result.total_tokens == 6800
         # 2 advances, so tokens_per_advance = 6800 / 2 = 3400
         assert result.tokens_per_advance == 3400
-        assert result.total_cost_usd == pytest.approx(0.032)
+        assert result.total_cost_usd == pytest.approx(0.048)
 
     def test_no_advances(self) -> None:
         """When no advances, tokens_per_advance should be 0."""
@@ -295,7 +295,7 @@ class TestComputeCostEfficiency:
             ],
             consultation_cost=0.01,
         )
-        assert result.total_cost_usd == pytest.approx(0.022)
+        assert result.total_cost_usd == pytest.approx(0.028)
 
 
 # ---------------------------------------------------------------------------
@@ -461,7 +461,7 @@ class TestGenerateRunProgressReport:
             role_metrics=[{"model": "claude-sonnet-5", "input_tokens": 1000, "output_tokens": 500}],
             consultation_cost=0.10,
         )
-        assert report.cost.total_cost_usd == pytest.approx(0.107)
+        assert report.cost.total_cost_usd == pytest.approx(0.1105)
 
 
 # ---------------------------------------------------------------------------
