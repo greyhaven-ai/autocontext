@@ -53,6 +53,18 @@ AUTOCONTEXT_AGENT_PROVIDER=pi AUTOCONTEXT_PI_COMMAND=pi autoctx solve "..." --it
 
 Supported providers: `anthropic`, `openai`, `openai-compatible`, `gemini`, `mistral`, `groq`, `openrouter`, `azure-openai`, `ollama`, `vllm`, `hermes`, `claude-cli`, `codex`, `pi`, `pi-rpc`, `deterministic`.
 
+Anthropic and OpenAI-compatible providers expose native, bounded `deep_think`
+tool collection through the optional `LLMProvider.completeWithThinking` method.
+Use `completeWithThinkingFallback(provider, options)` for arbitrary providers:
+it calls the native loop when available and otherwise returns an empty
+`thinkingStream` with `thinkingCapture: "unsupported"`. Tool payloads never
+become `text`. For GPT 5.6+ models, `reasoningEffort` selects the external
+numeric prompt budget while native reasoning is requested off; compatible
+gateways that reject `none` use their lowest advertised level. Treat tool
+payloads as sensitive data and apply trace redaction before
+persistence or export. Local CLI/runtime and deterministic providers do not
+currently expose a structured tool channel.
+
 Provider routing details live in [../autocontext/docs/agent-integration.md](../autocontext/docs/agent-integration.md).
 Use `AUTOCONTEXT_PROVIDER_HOSTING=local|remote` to override transport-based
 hosting inference and `AUTOCONTEXT_PROVIDER_CAPABILITY=fast|mid_tier|frontier`

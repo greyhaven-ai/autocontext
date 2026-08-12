@@ -3,7 +3,16 @@
  * Adapts AgentRuntime into LLMProvider interface with retry support.
  */
 
-import type { CompletionResult, LLMProvider } from "../types/index.js";
+import type {
+  CompletionResult,
+  LLMProvider,
+  ThinkingCompletionOptions,
+} from "../types/index.js";
+import { ProviderError } from "../types/index.js";
+import {
+  addCompletionUsage,
+  completeWithThinkingFallback,
+} from "../providers/thinking.js";
 import type { AgentRuntime } from "../runtimes/base.js";
 import { RuntimeSessionAgentRuntime } from "../runtimes/runtime-session-agent.js";
 import type { RuntimeCommandGrant } from "../runtimes/workspace-env.js";
@@ -33,6 +42,10 @@ export class RuntimeBridgeProvider implements LLMProvider {
 
   get supportsConcurrentRequests() {
     return this.#runtime.supportsConcurrentRequests !== false;
+  }
+
+  get supportsThinkingStream() {
+    return false;
   }
 
   defaultModel() {
@@ -98,6 +111,10 @@ export class RetryProvider implements LLMProvider {
     return this.#inner.supportsConcurrentRequests !== false;
   }
 
+  get supportsThinkingStream() {
+    return this.#inner.supportsThinkingStream === true;
+  }
+
   defaultModel() {
     return this.#inner.defaultModel();
   }
@@ -113,18 +130,32 @@ export class RetryProvider implements LLMProvider {
     temperature?: number;
     maxTokens?: number;
   }): Promise<CompletionResult> {
+    return this.#withRetry(() => this.#inner.complete(opts));
+  }
+
+  async completeWithThinking(opts: ThinkingCompletionOptions): Promise<CompletionResult> {
+    return this.#withRetry(() => completeWithThinkingFallback(this.#inner, opts));
+  }
+
+  async #withRetry(operation: () => Promise<CompletionResult>): Promise<CompletionResult> {
     let lastError: Error | undefined;
+    const retryUsage: Record<string, number> = {};
     for (let attempt = 0; attempt <= this.#maxRetries; attempt++) {
       try {
-        return await this.#inner.complete(opts);
+        const result = await operation();
+        const usage = { ...result.usage };
+        addCompletionUsage(usage, retryUsage);
+        return { ...result, usage };
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
+        if (err instanceof ProviderError) addCompletionUsage(retryUsage, err.usage);
         if (attempt < this.#maxRetries) {
           const delay = Math.min(this.#baseDelay * 2 ** attempt, this.#maxDelay);
           await new Promise((r) => setTimeout(r, delay));
         }
       }
     }
+    if (lastError instanceof ProviderError) lastError.usage = retryUsage;
     throw lastError!;
   }
 }

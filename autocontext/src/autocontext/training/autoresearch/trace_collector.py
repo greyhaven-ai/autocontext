@@ -11,6 +11,11 @@ This is the teacher-distillation counterpart to self-distillation: instead of
 bootstrapping from a student's own best samples, the small student inherits reasoning
 from a stronger teacher (a higher cold-start), and the two compose.
 
+Providers with thinking-tool support capture ordered ``deep_think`` calls separately
+from the final answer. The collector uses that stream as the training rationale and
+retains the individual calls for provenance; providers without that capability keep
+the existing visible-preamble fallback only when a caller explicitly opts into it.
+
 Pure helpers (prompt building, output parsing, record building) have no provider or
 scenario dependency and are unit-tested directly; ``collect`` wires them to a provider
 and a scenario.
@@ -22,7 +27,7 @@ import json
 import re
 from typing import Any
 
-from autocontext.providers.base import LLMProvider
+from autocontext.providers.base import LLMProvider, ThinkingUnsupportedError
 from autocontext.training.autoresearch.sequence_format import resolve_scenario_context, resolve_scenario_name
 
 _TEACHER_SYSTEM = (
@@ -89,9 +94,12 @@ def build_record(
     strategy: dict[str, Any],
     score: float,
     run_id: str,
+    thinking_stream: list[str] | None = None,
+    thinking_tool: str | None = None,
+    thinking_capture: str | None = None,
 ) -> dict[str, Any]:
     """Build one training record carrying the teacher's rationale + verified score."""
-    return {
+    record: dict[str, Any] = {
         "run_id": run_id,
         "scenario": scenario,
         "context": context,
@@ -99,6 +107,14 @@ def build_record(
         "strategy": strategy,
         "score": score,
     }
+    if thinking_stream:
+        record["thinking_stream"] = list(thinking_stream)
+        record["reasoning_source"] = thinking_tool or "deep_think"
+        record["thinking_capture"] = thinking_capture or "tool"
+    elif thinking_capture:
+        record["reasoning_source"] = "visible_preamble"
+        record["thinking_capture"] = thinking_capture
+    return record
 
 
 def collect(
@@ -110,13 +126,20 @@ def collect(
     temperature: float = 1.0,
     score_threshold: float = 0.0,
     run_id: str = "teacher",
+    reasoning_effort: str = "medium",
+    max_tool_turns: int = 8,
+    require_thinking_stream: bool = True,
 ) -> list[dict[str, Any]]:
     """Collect verified teacher reasoning traces as training records.
 
     For each of ``n_traces`` attempts: prompt the teacher provider, parse its
     reasoning + construction, score the construction in-scenario, and keep it as a
     record only if the verified score is at least ``score_threshold``. Unparseable
-    outputs and provider errors are skipped (never pollute the dataset).
+    outputs and provider errors are skipped (never pollute the dataset). Providers
+    that support thinking collection force ``deep_think`` on the first turn and
+    may emit more scratchpad calls before the final answer. By default, providers
+    without a real structured stream are skipped; callers may explicitly set
+    ``require_thinking_stream=False`` to retain the visible-preamble fallback.
     """
     system, user = build_teacher_prompt(scenario)
     context = teacher_task_prompt(scenario)
@@ -128,13 +151,39 @@ def collect(
     records: list[dict[str, Any]] = []
     for i in range(max(0, n_traces)):
         try:
-            result = provider.complete(system, user, model=model, temperature=temperature)
+            result = provider.complete_with_thinking(
+                system,
+                user,
+                model=model,
+                temperature=temperature,
+                reasoning_effort=reasoning_effort,
+                max_tool_turns=max_tool_turns,
+            )
+        except ThinkingUnsupportedError:
+            if require_thinking_stream:
+                continue
+            try:
+                result = provider.complete(
+                    system,
+                    user,
+                    model=model,
+                    temperature=temperature,
+                )
+            except Exception:
+                continue
+            result.thinking_stream = []
+            result.thinking_tool = None
+            result.thinking_capture = "unsupported"
         except Exception:
             continue
         parsed = parse_teacher_output(result.text)
         if parsed is None:
             continue
-        reasoning, strategy = parsed
+        visible_reasoning, strategy = parsed
+        thinking_stream = [entry for entry in result.thinking_stream if entry.strip()]
+        if require_thinking_stream and not thinking_stream:
+            continue
+        reasoning = "\n\n".join(thinking_stream) if thinking_stream else visible_reasoning
         try:
             if is_game:
                 score = float(scenario.execute_match(strategy, seed=i).score)
@@ -152,6 +201,13 @@ def collect(
                 strategy=strategy,
                 score=score,
                 run_id=run_id,
+                thinking_stream=thinking_stream,
+                thinking_tool=result.thinking_tool,
+                thinking_capture=(
+                    result.thinking_capture
+                    if result.thinking_capture != "none"
+                    else ("tool" if thinking_stream else "unsupported")
+                ),
             )
         )
     return records

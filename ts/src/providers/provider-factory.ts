@@ -1,7 +1,21 @@
-import { ProviderError } from "../types/index.js";
+import { ProviderError, ThinkingUnsupportedError } from "../types/index.js";
 import { clampOutputTokens } from "./token-caps.js";
-import type { CompletionResult, LLMProvider } from "../types/index.js";
+import type {
+  CompletionResult,
+  LLMProvider,
+} from "../types/index.js";
 import { DeterministicProvider } from "./deterministic.js";
+import {
+  DEEP_THINK_DESCRIPTION,
+  DEEP_THINK_PARAMETERS,
+  DEEP_THINK_TOOL_NAME,
+  addCompletionUsage,
+  deepThinkJuice,
+  deepThinkAcknowledgement,
+  extractDeepThought,
+  isRecord,
+  withDeepThinkInstruction,
+} from "./thinking.js";
 import { ClaudeCLIRuntime } from "../runtimes/claude-cli.js";
 import { CodexCLIRuntime, CodexCLIConfig } from "../runtimes/codex-cli.js";
 import { PiCLIRuntime, PiCLIConfig } from "../runtimes/pi-cli.js";
@@ -25,41 +39,41 @@ export interface AnthropicProviderOpts {
 export function createAnthropicProvider(opts: AnthropicProviderOpts): LLMProvider {
   const defaultModel = opts.model || "claude-sonnet-4-20250514";
 
+  const post = async (body: Record<string, unknown>): Promise<AnthropicMessageResponse> => {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": opts.apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      const errorBody = await res.text();
+      throw new ProviderError(`Anthropic API error ${res.status}: ${errorBody.slice(0, 200)}`);
+    }
+    return parseAnthropicMessageResponse(await res.json());
+  };
+
   return {
     name: "anthropic",
+    supportsThinkingStream: true,
     defaultModel: () => defaultModel,
     complete: async (callOpts) => {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": opts.apiKey,
-          "anthropic-version": "2023-06-01",
-        },
-        body: JSON.stringify({
-          model: callOpts.model || defaultModel,
-          max_tokens: clampOutputTokens(callOpts.maxTokens ?? 4096, callOpts.model || defaultModel),
-          temperature: callOpts.temperature ?? 0,
-          system: callOpts.systemPrompt,
-          messages: [{ role: "user", content: callOpts.userPrompt }],
-        }),
+      const model = callOpts.model || defaultModel;
+      const data = await post({
+        model,
+        max_tokens: clampOutputTokens(callOpts.maxTokens ?? 4096, model),
+        temperature: callOpts.temperature ?? 0,
+        system: callOpts.systemPrompt,
+        messages: [{ role: "user", content: callOpts.userPrompt }],
       });
-
-      if (!res.ok) {
-        const body = await res.text();
-        throw new ProviderError(`Anthropic API error ${res.status}: ${body.slice(0, 200)}`);
-      }
-
-      const data = (await res.json()) as {
-        content: Array<{ type: string; text: string }>;
-        model: string;
-        usage: { input_tokens: number; output_tokens: number };
-        stop_reason?: string;
-      };
 
       const text = data.content
         .filter((c) => c.type === "text")
-        .map((c) => c.text)
+        .map((c) => c.text ?? "")
         .join("");
 
       return {
@@ -69,6 +83,152 @@ export function createAnthropicProvider(opts: AnthropicProviderOpts): LLMProvide
         stopReason: data.stop_reason,
       } satisfies CompletionResult;
     },
+    completeWithThinking: async (callOpts) => {
+      const maxToolTurns = callOpts.maxToolTurns ?? 8;
+      if (maxToolTurns < 1) throw new RangeError("maxToolTurns must be at least 1");
+
+      const model = callOpts.model || defaultModel;
+      const messages: Array<Record<string, unknown>> = [
+        { role: "user", content: callOpts.userPrompt },
+      ];
+      const thinkingStream: string[] = [];
+      const usage: Record<string, number> = {};
+
+      // maxToolTurns bounds tool-bearing responses. The final permitted tool
+      // turn still needs one subsequent request for the answer.
+      for (let turn = 0; turn <= maxToolTurns; turn++) {
+        const toolChoice =
+          turn === 0
+            ? { type: "tool", name: DEEP_THINK_TOOL_NAME, disable_parallel_tool_use: true }
+            : { type: "auto", disable_parallel_tool_use: true };
+        let data: AnthropicMessageResponse;
+        try {
+          data = await post({
+            model,
+            max_tokens: clampOutputTokens(callOpts.maxTokens ?? 4096, model),
+            temperature: callOpts.temperature ?? 0,
+            system: withDeepThinkInstruction(callOpts.systemPrompt),
+            messages,
+            tools: [
+              {
+                name: DEEP_THINK_TOOL_NAME,
+                description: DEEP_THINK_DESCRIPTION,
+                input_schema: DEEP_THINK_PARAMETERS,
+              },
+            ],
+            tool_choice: toolChoice,
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          throw new ProviderError(message, usage);
+        }
+        addCompletionUsage(usage, {
+          input: data.usage.input_tokens,
+          output: data.usage.output_tokens,
+        });
+
+        const toolBlocks = data.content.filter((block) => block.type === "tool_use");
+        if (toolBlocks.length === 0) {
+          if (turn === 0) {
+            throw new ThinkingUnsupportedError(
+              "Anthropic API did not honor required deep_think tool choice",
+              usage,
+            );
+          }
+          return {
+            text: data.content
+              .filter((block) => block.type === "text")
+              .map((block) => block.text ?? "")
+              .join(""),
+            model: data.model,
+            usage,
+            stopReason: data.stop_reason,
+            constrained: false,
+            thinkingStream,
+            thinkingTool: DEEP_THINK_TOOL_NAME,
+            thinkingCapture: "tool",
+          } satisfies CompletionResult;
+        }
+
+        if (turn === maxToolTurns) {
+          throw new ProviderError(`Model exceeded ${maxToolTurns} deep_think tool turns`, usage);
+        }
+
+        messages.push({ role: "assistant", content: data.content });
+        const toolResults: Array<Record<string, unknown>> = [];
+        for (const block of toolBlocks) {
+          if (block.name !== DEEP_THINK_TOOL_NAME) {
+            throw new ProviderError(
+              `Unexpected thinking tool call: ${block.name || "<missing>"}`,
+              usage,
+            );
+          }
+          try {
+            thinkingStream.push(extractDeepThought(block.input));
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            throw new ProviderError(message, usage);
+          }
+          toolResults.push({
+            type: "tool_result",
+            tool_use_id: block.id ?? "",
+            content: deepThinkAcknowledgement(thinkingStream.length),
+          });
+        }
+        messages.push({ role: "user", content: toolResults });
+      }
+      throw new Error("deep_think loop exhausted without returning or raising");
+    },
+  };
+}
+
+interface AnthropicContentBlock {
+  type: string;
+  text?: string;
+  id?: string;
+  name?: string;
+  input?: unknown;
+}
+
+interface AnthropicMessageResponse {
+  content: AnthropicContentBlock[];
+  model: string;
+  usage: { input_tokens: number; output_tokens: number };
+  stop_reason?: string;
+}
+
+function parseAnthropicMessageResponse(value: unknown): AnthropicMessageResponse {
+  if (!isRecord(value) || !Array.isArray(value["content"])) {
+    throw new ProviderError("Anthropic API returned a malformed message response");
+  }
+  const usage = value["usage"];
+  if (
+    typeof value["model"] !== "string" ||
+    !isRecord(usage) ||
+    typeof usage["input_tokens"] !== "number" ||
+    typeof usage["output_tokens"] !== "number"
+  ) {
+    throw new ProviderError("Anthropic API returned malformed model or usage metadata");
+  }
+  const content = value["content"].map((raw): AnthropicContentBlock => {
+    if (!isRecord(raw) || typeof raw["type"] !== "string") {
+      throw new ProviderError("Anthropic API returned a malformed content block");
+    }
+    const block: AnthropicContentBlock = { type: raw["type"] };
+    if (typeof raw["text"] === "string") block.text = raw["text"];
+    if (typeof raw["id"] === "string") block.id = raw["id"];
+    if (typeof raw["name"] === "string") block.name = raw["name"];
+    if ("input" in raw) block.input = raw["input"];
+    return block;
+  });
+  return {
+    content,
+    model: value["model"],
+    usage: {
+      input_tokens: usage["input_tokens"],
+      output_tokens: usage["output_tokens"],
+    },
+    ...(typeof value["stop_reason"] === "string" ? { stop_reason: value["stop_reason"] } : {}),
   };
 }
 
@@ -93,6 +253,85 @@ function isUnsupportedResponseFormatError(status: number, body: string): boolean
   return mentionsSchema && rejectsSchema;
 }
 
+function isUnsupportedReasoningEffortError(status: number, body: string): boolean {
+  if (![400, 404, 422].includes(status)) return false;
+  const message = body.toLowerCase();
+  const mentionsField =
+    message.includes("reasoning_effort") ||
+    message.includes("reasoning effort") ||
+    /(?:valid|supported|allowed) levels?/.test(message);
+  const rejectsField = [
+    "unsupported",
+    "not supported",
+    "unknown",
+    "unrecognized",
+    "invalid",
+  ].some((token) => message.includes(token));
+  return mentionsField && rejectsField;
+}
+
+function isUnsupportedStrictToolsError(status: number, body: string): boolean {
+  if (![400, 404, 422].includes(status)) return false;
+  const message = body.toLowerCase();
+  const mentionsField =
+    message.includes("strict") && (message.includes("tool") || message.includes("function"));
+  const rejectsField = [
+    "unsupported",
+    "not supported",
+    "unknown",
+    "unrecognized",
+    "unexpected",
+    "invalid",
+  ].some((token) => message.includes(token));
+  return mentionsField && rejectsField;
+}
+
+function isUnsupportedToolsError(status: number, body: string): boolean {
+  if (![400, 404, 422].includes(status)) return false;
+  const message = body.toLowerCase();
+  const mentionsTools = [
+    "tools",
+    "tool_choice",
+    "tool choice",
+    "function calling",
+    "function_call",
+  ].some((token) => message.includes(token));
+  const rejectsTools = [
+    "unsupported",
+    "not supported",
+    "unknown",
+    "unrecognized",
+    "invalid",
+  ].some((token) => message.includes(token));
+  return mentionsTools && rejectsTools;
+}
+
+const REASONING_EFFORT_ORDER = [
+  "none",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+] as const;
+
+function lowestSupportedReasoningEffort(body: string, current: string): string | undefined {
+  const message = body.toLowerCase();
+  if (!/(?:valid|supported|allowed) levels?/.test(message)) return undefined;
+  const advertised = new Set(message.match(/\b(?:none|minimal|low|medium|high|xhigh|max)\b/g) ?? []);
+  advertised.delete(current.toLowerCase());
+  return REASONING_EFFORT_ORDER.find((effort) => advertised.has(effort));
+}
+
+function isGpt56Plus(model: string): boolean {
+  const match = /(?:^|[/:-])gpt-(\d+)(?:\.(\d+))?/i.exec(model);
+  if (!match) return false;
+  const major = Number(match[1]);
+  const minor = Number(match[2] ?? 0);
+  return major > 5 || (major === 5 && minor >= 6);
+}
+
 export function createOpenAICompatibleProvider(opts: OpenAICompatibleProviderOpts): LLMProvider {
   const defaultModel = opts.model || "gpt-4o";
   const baseUrl = (opts.baseUrl ?? "https://api.openai.com/v1").replace(/\/+$/, "");
@@ -100,6 +339,7 @@ export function createOpenAICompatibleProvider(opts: OpenAICompatibleProviderOpt
 
   return {
     name: "openai-compatible",
+    supportsThinkingStream: true,
     defaultModel: () => defaultModel,
     complete: async (callOpts) => {
       const buildBody = (withSchema: boolean) =>
@@ -156,11 +396,7 @@ export function createOpenAICompatibleProvider(opts: OpenAICompatibleProviderOpt
         throw new ProviderError(`OpenAI API error ${res.status}: ${body.slice(0, 200)}`);
       }
 
-      const data = (await res.json()) as {
-        choices: Array<{ message: { content: string }; finish_reason?: string }>;
-        model: string;
-        usage: { prompt_tokens: number; completion_tokens: number };
-      };
+      const data = parseOpenAIChatResponse(await res.json());
 
       const text = data.choices[0]?.message?.content ?? "";
       return {
@@ -170,6 +406,263 @@ export function createOpenAICompatibleProvider(opts: OpenAICompatibleProviderOpt
         stopReason: data.choices[0]?.finish_reason,
         constrained,
       } satisfies CompletionResult;
+    },
+    completeWithThinking: async (callOpts) => {
+      const maxToolTurns = callOpts.maxToolTurns ?? 8;
+      if (maxToolTurns < 1) throw new RangeError("maxToolTurns must be at least 1");
+
+      const model = callOpts.model || defaultModel;
+      const juice = isGpt56Plus(model)
+        ? deepThinkJuice(callOpts.reasoningEffort ?? "medium")
+        : undefined;
+      const messages: Array<Record<string, unknown>> = [
+        { role: "system", content: withDeepThinkInstruction(callOpts.systemPrompt, juice) },
+        { role: "user", content: callOpts.userPrompt },
+      ];
+      const thinkingStream: string[] = [];
+      const usage: Record<string, number> = {};
+      let constrained = Boolean(callOpts.outputSchema);
+      // reasoningEffort controls the external prompt budget. Keep native
+      // hidden reasoning off so the explicit tool payload is what callers
+      // collect; gateways that reject `none` may advertise a lowest level.
+      let wireReasoningEffort: string | undefined = "none";
+      let strictTools = true;
+
+      // maxToolTurns bounds tool-bearing responses, with one extra request
+      // available for the model to return its final answer.
+      for (let turn = 0; turn <= maxToolTurns; turn++) {
+        const body: Record<string, unknown> = {
+          model,
+          max_tokens: clampOutputTokens(callOpts.maxTokens ?? 4096, model),
+          temperature: callOpts.temperature ?? 0,
+          messages,
+          tools: [
+            {
+              type: "function",
+              function: {
+                name: DEEP_THINK_TOOL_NAME,
+                description: DEEP_THINK_DESCRIPTION,
+                parameters: DEEP_THINK_PARAMETERS,
+                ...(strictTools ? { strict: true } : {}),
+              },
+            },
+          ],
+          tool_choice: turn === 0 ? "required" : "auto",
+          parallel_tool_calls: false,
+        };
+        if (wireReasoningEffort !== undefined) {
+          body["reasoning_effort"] = wireReasoningEffort;
+        }
+        if (constrained && callOpts.outputSchema) {
+          body["response_format"] = {
+            type: "json_schema",
+            json_schema: {
+              name: callOpts.outputSchema.name,
+              strict: true,
+              schema: callOpts.outputSchema.schema,
+            },
+          };
+        }
+
+        let data: OpenAIChatResponse;
+        while (true) {
+          let res: Response;
+          try {
+            res = await fetch(`${baseUrl}/chat/completions`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${apiKey}`,
+              },
+              body: JSON.stringify(body),
+            });
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            throw new ProviderError(`OpenAI API error: ${message}`, usage);
+          }
+          if (res.ok) {
+            try {
+              data = parseOpenAIChatResponse(await res.json());
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error);
+              throw new ProviderError(message, usage);
+            }
+            break;
+          }
+
+          const errorBody = await res.text();
+          if (constrained && isUnsupportedResponseFormatError(res.status, errorBody)) {
+            constrained = false;
+            delete body["response_format"];
+            continue;
+          }
+          if (strictTools && isUnsupportedStrictToolsError(res.status, errorBody)) {
+            strictTools = false;
+            const tools = body["tools"];
+            const firstTool = Array.isArray(tools) ? tools[0] : undefined;
+            const toolFunction = isRecord(firstTool) ? firstTool["function"] : undefined;
+            if (isRecord(toolFunction)) delete toolFunction["strict"];
+            continue;
+          }
+          if (
+            "reasoning_effort" in body &&
+            isUnsupportedReasoningEffortError(res.status, errorBody)
+          ) {
+            const currentEffort = String(body["reasoning_effort"]);
+            const fallbackEffort = lowestSupportedReasoningEffort(errorBody, currentEffort);
+            if (fallbackEffort === undefined) {
+              wireReasoningEffort = undefined;
+              delete body["reasoning_effort"];
+            } else {
+              wireReasoningEffort = fallbackEffort;
+              body["reasoning_effort"] = fallbackEffort;
+            }
+            continue;
+          }
+          if (isUnsupportedToolsError(res.status, errorBody)) {
+            throw new ThinkingUnsupportedError(
+              `OpenAI-compatible endpoint does not support thinking tools: ${errorBody.slice(0, 200)}`,
+              usage,
+            );
+          }
+          throw new ProviderError(
+            `OpenAI API error ${res.status}: ${errorBody.slice(0, 200)}`,
+            usage,
+          );
+        }
+
+        addCompletionUsage(usage, {
+          input: data.usage.prompt_tokens,
+          output: data.usage.completion_tokens,
+        });
+        const choice = data.choices[0];
+        if (!choice) {
+          throw new ProviderError("OpenAI-compatible API returned no completion choices", usage);
+        }
+        const toolCalls = choice.message.tool_calls ?? [];
+        if (toolCalls.length === 0) {
+          if (turn === 0) {
+            throw new ThinkingUnsupportedError(
+              "OpenAI-compatible endpoint did not honor required deep_think tool choice",
+              usage,
+            );
+          }
+          return {
+            text: choice.message.content ?? "",
+            model: data.model,
+            usage,
+            stopReason: choice.finish_reason,
+            constrained,
+            thinkingStream,
+            thinkingTool: DEEP_THINK_TOOL_NAME,
+            thinkingCapture: "tool",
+          } satisfies CompletionResult;
+        }
+
+        if (turn === maxToolTurns) {
+          throw new ProviderError(`Model exceeded ${maxToolTurns} deep_think tool turns`, usage);
+        }
+
+        messages.push({
+          role: "assistant",
+          content: choice.message.content ?? null,
+          tool_calls: toolCalls,
+        });
+        for (const toolCall of toolCalls) {
+          const name = toolCall.function?.name ?? "";
+          if (name !== DEEP_THINK_TOOL_NAME) {
+            throw new ProviderError(
+              `Unexpected thinking tool call: ${name || "<missing>"}`,
+              usage,
+            );
+          }
+          try {
+            thinkingStream.push(extractDeepThought(toolCall.function?.arguments));
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            throw new ProviderError(message, usage);
+          }
+          messages.push({
+            role: "tool",
+            tool_call_id: toolCall.id ?? "",
+            content: deepThinkAcknowledgement(thinkingStream.length),
+          });
+        }
+      }
+      throw new Error("deep_think loop exhausted without returning or raising");
+    },
+  };
+}
+
+interface OpenAIToolCall {
+  id?: string;
+  type?: string;
+  function?: { name?: string; arguments?: unknown };
+}
+
+interface OpenAIChatResponse {
+  choices: Array<{
+    message: { content: string | null; tool_calls?: OpenAIToolCall[] };
+    finish_reason?: string;
+  }>;
+  model: string;
+  usage: { prompt_tokens: number; completion_tokens: number };
+}
+
+function parseOpenAIChatResponse(value: unknown): OpenAIChatResponse {
+  if (!isRecord(value) || !Array.isArray(value["choices"])) {
+    throw new ProviderError("OpenAI-compatible API returned a malformed chat response");
+  }
+  const usage = value["usage"];
+  if (
+    typeof value["model"] !== "string" ||
+    !isRecord(usage) ||
+    typeof usage["prompt_tokens"] !== "number" ||
+    typeof usage["completion_tokens"] !== "number"
+  ) {
+    throw new ProviderError("OpenAI-compatible API returned malformed model or usage metadata");
+  }
+  const choices = value["choices"].map((rawChoice) => {
+    if (!isRecord(rawChoice) || !isRecord(rawChoice["message"])) {
+      throw new ProviderError("OpenAI-compatible API returned a malformed completion choice");
+    }
+    const rawMessage = rawChoice["message"];
+    let toolCalls: OpenAIToolCall[] | undefined;
+    if (Array.isArray(rawMessage["tool_calls"])) {
+      toolCalls = rawMessage["tool_calls"].map((rawToolCall): OpenAIToolCall => {
+        if (!isRecord(rawToolCall)) {
+          throw new ProviderError("OpenAI-compatible API returned a malformed tool call");
+        }
+        const rawFunction = rawToolCall["function"];
+        const toolCall: OpenAIToolCall = {};
+        if (typeof rawToolCall["id"] === "string") toolCall.id = rawToolCall["id"];
+        if (typeof rawToolCall["type"] === "string") toolCall.type = rawToolCall["type"];
+        if (isRecord(rawFunction)) {
+          toolCall.function = {};
+          if (typeof rawFunction["name"] === "string") {
+            toolCall.function.name = rawFunction["name"];
+          }
+          if ("arguments" in rawFunction) toolCall.function.arguments = rawFunction["arguments"];
+        }
+        return toolCall;
+      });
+    }
+    return {
+      message: {
+        content: typeof rawMessage["content"] === "string" ? rawMessage["content"] : null,
+        ...(toolCalls ? { tool_calls: toolCalls } : {}),
+      },
+      ...(typeof rawChoice["finish_reason"] === "string"
+        ? { finish_reason: rawChoice["finish_reason"] }
+        : {}),
+    };
+  });
+  return {
+    choices,
+    model: value["model"],
+    usage: {
+      prompt_tokens: usage["prompt_tokens"],
+      completion_tokens: usage["completion_tokens"],
     },
   };
 }

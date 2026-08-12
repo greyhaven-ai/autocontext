@@ -59,3 +59,10 @@ export {
   type RoleRoutingSettings,
   type RoutedProviderConfig,
 } from "./role-routing.js";
+
+export {
+  DEEP_THINK_DESCRIPTION,
+  DEEP_THINK_PARAMETERS,
+  DEEP_THINK_TOOL_NAME,
+  completeWithThinkingFallback,
+} from "./thinking.js";

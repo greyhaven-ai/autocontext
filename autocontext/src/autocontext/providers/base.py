@@ -10,6 +10,17 @@ from typing import Any
 class ProviderError(Exception):
     """Raised when an LLM provider call fails."""
 
+    def __init__(self, message: str, *, usage: dict[str, int] | None = None) -> None:
+        super().__init__(message)
+        # Successful requests earlier in a multi-turn operation may already be
+        # billable even when a later request fails. Retry wrappers aggregate
+        # this partial usage into the eventual successful result.
+        self.usage = dict(usage or {})
+
+
+class ThinkingUnsupportedError(ProviderError):
+    """Raised when an endpoint cannot honor structured thinking capture."""
+
 
 @dataclass(frozen=True, slots=True)
 class OutputSchema:
@@ -41,6 +52,15 @@ class CompletionResult:
     # request, or one written before this existed, reports the truth rather
     # than claiming an enforcement it never performed.
     constrained: bool = False
+    # Ordered scratchpad entries captured from an explicit ``deep_think``
+    # tool. Keeping them separate from ``text`` prevents a captured thinking
+    # stream from becoming the user-visible answer by accident.
+    thinking_stream: list[str] = field(default_factory=list)
+    thinking_tool: str | None = None
+    # ``tool`` means the stream came from structured tool calls. ``unsupported``
+    # means the provider could only perform an ordinary completion. The default
+    # preserves compatibility with providers written before thinking capture.
+    thinking_capture: str = "none"
 
 
 class LLMProvider(ABC):
@@ -86,6 +106,56 @@ class LLMProvider(ABC):
     def default_model(self) -> str:
         """Return the default model identifier for this provider."""
         ...
+
+    def complete_with_thinking(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        model: str | None = None,
+        temperature: float = 0.0,
+        max_tokens: int = 4096,
+        output_schema: OutputSchema | None = None,
+        reasoning_effort: str = "medium",
+        max_tool_turns: int = 8,
+    ) -> CompletionResult:
+        """Complete while requesting an application-captured thinking stream.
+
+        Providers without a tool-loop implementation fall back to ``complete``,
+        return an empty ``thinking_stream``, and mark capture as unsupported.
+        ``reasoning_effort`` selects the external scratchpad budget; native
+        provider reasoning is disabled where the transport supports doing so.
+        This method is intentionally non-abstract so existing third-party
+        ``LLMProvider`` implementations remain compatible.
+        """
+        del reasoning_effort, max_tool_turns
+        if output_schema is None:
+            # Older third-party providers may predate the optional schema
+            # keyword even though they still satisfy the core completion
+            # contract. Do not make thinking fallback less compatible.
+            result = self.complete(
+                system_prompt,
+                user_prompt,
+                model=model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+        else:
+            result = self.complete(
+                system_prompt,
+                user_prompt,
+                model=model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                output_schema=output_schema,
+            )
+        if not result.thinking_stream:
+            result.thinking_capture = "unsupported"
+        return result
+
+    @property
+    def supports_thinking_stream(self) -> bool:
+        """Whether this provider has a native structured thinking-tool loop."""
+        return False
 
     @property
     def name(self) -> str:
