@@ -1524,8 +1524,6 @@ _ALLOWED_FENCE_REGEX_FILE = "output_parser.py"
 # permissive allow-list would let it.
 _KNOWN_OFFENDERS = frozenset(
     {
-        # Tracked, unmigrated JSON extraction (AC-924).
-        "execution/judge.py",
         # Python code extraction, not JSON -- permanently out of scope.
         "agents/translator.py",
         "execution/harness_synthesizer.py",

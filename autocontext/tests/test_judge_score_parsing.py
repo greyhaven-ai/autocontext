@@ -6,19 +6,21 @@ turned up two behaviors that matter more than the duplication, because a
 mis-parsed judge score is not a crash. It is a wrong number entering the loop's
 ranking, so the run keeps going and reports a result nobody can tell is wrong.
 
-**Tier order is not what the method docstrings say.** `_parse_judge_response`
-calls markers, then raw_json, then code_block, then plaintext. The individual
-methods label themselves "Strategy 2: code block" and "Strategy 3: raw JSON",
-i.e. the reverse of the order they run in. The class docstring has it right.
-AC-924's own description inherited the wrong version.
+**The tier order was not what the method docstrings said.** The parser ran
+markers, raw_json, code_block, plaintext, while the methods labelled themselves
+"Strategy 2: code block" and "Strategy 3: raw JSON" -- the reverse. Only the
+class docstring was right, and AC-924's own description inherited the wrong
+version.
 
-That inversion is what causes the first defect: `_try_raw_json_parse` scans the
-WHOLE response with `re.finditer(r'\\{[^{}]*"score"[^{}]*\\}', ...)` and takes
-the first match, so it reaches inside fences and reasoning blocks and wins
-before the fence-aware tier is ever tried.
+That inversion is what caused the first defect. `_try_raw_json_parse` scanned
+the WHOLE response with `re.finditer(r'\\{[^{}]*"score"[^{}]*\\}', ...)` and took
+the first match, so it reached inside fences and reasoning blocks and won before
+the fence-aware tier was ever tried.
 
-These tests pin today's behavior including both defects. The fix commit changes
-the recorded values, so the diff is the evidence.
+The fix replaces both middle tiers with the shared `extract_json`, which already
+preferred the answer over the scratchpad. These values were recorded against the
+old parser first and then re-recorded, so the diff in this file is the evidence
+that the behavior moved.
 """
 
 from __future__ import annotations
@@ -47,7 +49,7 @@ def _parse(response: str) -> tuple[float, str, dict[str, float], str]:
             "markers",
         ),
         ("bare object", '{"score": 0.6}', 0.6, "raw_json"),
-        ("fenced object is read by the RAW tier", '```json\n{"score": 0.8}\n```', 0.8, "raw_json"),
+        ("fenced object", '```json\n{"score": 0.8}\n```', 0.8, "raw_json"),
         ("untagged fence, same", '```\n{"score": 0.7}\n```', 0.7, "raw_json"),
         ("prose then object", 'Verdict:\n{"score": 0.55}', 0.55, "raw_json"),
         ("plain text score", "Overall score: 0.45", 0.45, "plaintext"),
@@ -61,77 +63,58 @@ def test_uncontested_responses_parse_as_recorded(label: str, response: str, scor
     assert (got_score, got_method) == (score, method), label
 
 
-def test_code_block_tier_is_only_reachable_past_two_nesting_levels() -> None:
-    """Why `code_block` almost never fires, which the tier order hides.
+def test_arbitrary_nesting_depth_is_read_as_json() -> None:
+    """FIXED by AC-924. Was: fell to the plaintext tier and lost its dimensions.
 
-    `raw_json` runs first and its regex handles at most one level of nesting.
-    A fenced payload nested deeper falls through to the fence-aware tier -- the
-    only routine way to reach it at all.
+    The old raw regex handled one level of nesting and the fence tier could not
+    help an unfenced payload, so a well-formed object was scraped by a plaintext
+    regex. The score survived by luck; every per-dimension score was dropped.
     """
-    score, _reasoning, _dims, method = _parse('```json\n{"score": 0.65, "dimensions": {"a": {"b": 1}}}\n```')
-    assert (score, method) == (0.65, "code_block")
-
-
-def test_deeply_nested_unfenced_payload_falls_all_the_way_to_plaintext() -> None:
-    """DEFECT (recorded, not endorsed): dimensions are silently dropped.
-
-    Two levels of nesting defeats the raw tier, there is no fence for the fence
-    tier, so a well-formed JSON object is scraped by a plaintext regex. The
-    score survives by luck because the regex finds `"score": 0.64`; every
-    per-dimension score in the same object is lost without a signal.
-    """
-    score, _reasoning, dims, method = _parse('{"score": 0.64, "dimensions": {"a": {"b": 1}}}')
-    assert (score, method) == (0.64, "plaintext")
-    assert dims == {}, "dimensions survived; this test is out of date"
+    score, _reasoning, _dims, method = _parse('{"score": 0.64, "dimensions": {"a": {"b": 1}}}')
+    assert (score, method) == (0.64, "raw_json")
 
 
 @pytest.mark.parametrize(
-    "label,response,wrong,right",
+    "label,response,expected,was",
     [
         (
-            "a discarded draft beats the final answer",
-            'I considered {"score": 0.2} but settled on {"score": 0.9}',
-            0.2,
-            0.9,
-        ),
-        (
-            "prose draft beats the fenced answer",
+            "prose draft loses to the fenced answer",
             'Draft thought {"score": 0.1}\n```json\n{"score": 0.95}\n```',
-            0.1,
             0.95,
+            0.1,
         ),
         (
-            "a reasoning block beats the answer",
+            "a reasoning block loses to the answer",
             '```\nthinking out loud, maybe {"score": 0.05}\n```\n```json\n{"score": 0.88}\n```',
-            0.05,
             0.88,
+            0.05,
         ),
     ],
 )
-def test_first_score_shaped_object_anywhere_wins(label: str, response: str, wrong: float, right: float) -> None:
-    """DEFECT (recorded, not endorsed): the earliest match wins, wherever it is.
+def test_a_discarded_draft_no_longer_outranks_the_answer(label: str, response: str, expected: float, was: float) -> None:
+    """FIXED by AC-924, and the reason the issue was worth more than a dedupe.
 
-    The third case is the one that matters in practice. Emitting a reasoning
-    block before the answer is ordinary open-weight behavior -- it is the exact
-    shape AC-926 fixed for the advise gate -- and here it scores the run 0.05
-    instead of 0.88. Nothing errors; a wrong number just enters the ranking.
+    The old middle tier scanned the whole response for a `"score"`-shaped
+    object and took the first hit, so a draft in prose or a reasoning block beat
+    the real answer. Emitting a reasoning block before the answer is ordinary
+    open-weight output -- the exact shape AC-926 fixed for the advise gate --
+    and it scored the run 0.05 where the judge said 0.88. Silently: a wrong
+    number entered the ranking and the run carried on.
     """
     score, _reasoning, _dims, _method = _parse(response)
-    assert score == wrong, f"{label}: expected the recorded (wrong) value"
-    assert score != right, f"{label}: behavior improved; re-record this file"
+    assert score == expected, label
+    assert score != was, f"{label}: regressed to the pre-AC-924 value"
 
 
-def test_tier_order_contradicts_the_method_docstrings() -> None:
-    """Pins the naming inversion so the fix has to resolve it deliberately.
+def test_two_bare_objects_in_prose_still_take_the_first() -> None:
+    """NOT fixed, and deliberately so.
 
-    `_try_code_block_parse` documents itself as Strategy 2 and `_try_raw_json_parse`
-    as Strategy 3, while `_parse_judge_response` runs raw_json second and
-    code_block third. Asserted on observable behavior rather than on docstring
-    text: a fenced, singly-nested payload is reported as `raw_json`, which is
-    only possible if the raw tier runs first.
+    With no fence and no markers there is nothing to distinguish a draft from a
+    verdict; both parsers take the first object. Recorded so the limit is known
+    rather than assumed away by the cases above.
     """
-    _score, _reasoning, _dims, method = _parse('```json\n{"score": 0.5, "dimensions": {"a": 1}}\n```')
-    assert method == "raw_json"
+    score, _reasoning, _dims, method = _parse('I considered {"score": 0.2} but settled on {"score": 0.9}')
+    assert (score, method) == (0.2, "raw_json")
 
 
 def test_dimensions_survive_a_single_nesting_level() -> None:
