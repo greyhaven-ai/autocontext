@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING
 
+from autocontext.offline import require_runtime_available
 from autocontext.providers.base import LLMProvider, ProviderError
 
 if TYPE_CHECKING:
@@ -77,6 +78,12 @@ def create_provider(
         ProviderError: If the provider type is unknown or configuration is invalid.
     """
     provider_type = provider_type.lower().strip()
+
+    # AC-917: refuse the subprocess runtimes here rather than letting them
+    # start and dial out. They shell out to a third-party binary whose sockets
+    # this process does not control, so offline mode cannot vouch for them --
+    # they are unavailable rather than silently trusted.
+    require_runtime_available(provider_type)
 
     if provider_type == "anthropic":
         from autocontext.providers.anthropic import AnthropicProvider

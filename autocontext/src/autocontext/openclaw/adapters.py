@@ -20,6 +20,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
+from autocontext.offline import require_online
+
 logger = logging.getLogger(__name__)
 
 OPENCLAW_COMPATIBILITY_VERSION = "1.0"
@@ -240,6 +242,7 @@ def _http_post(
         headers=request_headers,
         method="POST",
     )
+    require_online("call an openclaw endpoint", detail=endpoint)
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         body = resp.read().decode("utf-8")
         return type("Response", (), {

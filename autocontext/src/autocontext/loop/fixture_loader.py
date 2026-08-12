@@ -33,6 +33,8 @@ from typing import Any, Protocol
 from urllib.parse import urlparse
 from urllib.request import urlopen
 
+from autocontext.offline import require_online
+
 # --- Errors ----------------------------------------------------------------
 
 
@@ -126,6 +128,7 @@ class UrlFetcher:
             except OSError as e:
                 raise FixtureFetchError(f"could not read {source}: {e}") from e
         try:
+            require_online("download a fixture", detail=str(source))
             with urlopen(source) as response:
                 body: bytes = response.read()
                 return body

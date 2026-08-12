@@ -8,6 +8,7 @@ import urllib.error
 import urllib.request
 
 from autocontext.notifications.base import EventType, NotificationEvent, Notifier
+from autocontext.offline import require_online
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,7 @@ class SlackWebhookNotifier(Notifier):
                 headers={"Content-Type": "application/json"},
                 method="POST",
             )
+            require_online("post a Slack notification")
             urllib.request.urlopen(req, timeout=self._timeout)
         except Exception as exc:
             logger.warning("Slack notification failed: %s", exc)

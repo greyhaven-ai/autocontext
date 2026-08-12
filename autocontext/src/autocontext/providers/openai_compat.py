@@ -11,6 +11,7 @@ import os
 import re
 from typing import Any
 
+from autocontext.offline import require_online
 from autocontext.providers.base import (
     CompletionResult,
     LLMProvider,
@@ -288,6 +289,7 @@ class OpenAICompatibleProvider(LLMProvider):
     ) -> tuple[Any, bool]:
         while True:
             try:
+                require_online("call an OpenAI-compatible endpoint")
                 return self._client.chat.completions.create(**request), constrained
             except Exception as exc:
                 if constrained and _is_unsupported_response_format_error(exc):

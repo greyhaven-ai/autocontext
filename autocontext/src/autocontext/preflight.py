@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from autocontext.config.settings import load_settings
+from autocontext.offline import check_offline_configuration
 from autocontext.scenarios import resolve_scenario_class
 
 
@@ -197,8 +198,18 @@ def run_preflight(
     if preset is not None:
         os.environ["AUTOCONTEXT_PRESET"] = preset
     settings = load_settings()
+
+    # AC-917: offline mode and engine-initiated egress are incompatible by
+    # design, not by precedence. Reported as blocking CHECK RESULTS rather than
+    # raised directly, so an operator sees every conflict at once instead of
+    # fixing them one run at a time.
+    conflicts = [
+        CheckResult(name="offline_configuration", passed=False, detail=conflict, blocking=True)
+        for conflict in check_offline_configuration(settings)
+    ]
+
     checker = PreflightChecker(scenario, knowledge_root=Path(settings.knowledge_root), settings=settings)
-    results = checker.run_all() if check_scenario else checker.run_without_scenario_check()
+    results = conflicts + (checker.run_all() if check_scenario else checker.run_without_scenario_check())
 
     blocking = PreflightChecker.blocking_failures(results)
     if blocking:
