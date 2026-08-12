@@ -16,7 +16,7 @@ def test_rate_limit_maps_and_reraises(tmp_path, make_openai_client):
     wrapped = instrument_client(client, sink=sink, app_id="a")
     with pytest.raises(openai.RateLimitError):
         wrapped.chat.completions.create(
-            model="gpt-4o", messages=[{"role": "user", "content": "hi"}],
+            model="gpt-5.6-terra", messages=[{"role": "user", "content": "hi"}],
         )
     sink.close()
     trace = json.loads((tmp_path / "t.jsonl").read_text().strip())
@@ -32,7 +32,7 @@ def test_401_maps_authentication(tmp_path, make_openai_client):
     wrapped = instrument_client(client, sink=sink, app_id="a")
     with pytest.raises(openai.AuthenticationError):
         wrapped.chat.completions.create(
-            model="gpt-4o", messages=[{"role": "user", "content": "hi"}],
+            model="gpt-5.6-terra", messages=[{"role": "user", "content": "hi"}],
         )
     sink.close()
     trace = json.loads((tmp_path / "t.jsonl").read_text().strip())

@@ -47,7 +47,7 @@ for (const name of expected) {
 // Basic behavioral smoke — buildTrace should construct + validate successfully.
 const trace = sdk.buildTrace({
   provider: "openai",
-  model: "gpt-4o-mini",
+  model: "gpt-5.6-luna",
   messages: [{ role: "user", content: "hi", timestamp: "2026-04-17T12:00:00.000Z" }],
   timing: {
     startedAt: "2026-04-17T12:00:00.000Z",

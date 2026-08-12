@@ -29,14 +29,14 @@ def test_generate_calls_query() -> None:
 
     with patch.object(client, "_query", new_callable=AsyncMock, return_value="test response text"):
         response = client.generate(
-            model="claude-sonnet-4-5-20250929",
+            model="claude-sonnet-5",
             prompt="test prompt",
             max_tokens=1024,
             temperature=0.7,
             role="competitor",
         )
     assert response.text == "test response text"
-    assert response.usage.model == "claude-sonnet-4-5-20250929"
+    assert response.usage.model == "claude-sonnet-5"
 
 
 def test_generate_passes_role_tools() -> None:
@@ -112,8 +112,8 @@ def test_unknown_role_defaults_to_competitor() -> None:
 
 def test_resolve_model_full_ids() -> None:
     """Full model IDs are mapped to short names."""
-    assert _resolve_model("claude-opus-4-6") == "opus"
-    assert _resolve_model("claude-sonnet-4-5-20250929") == "sonnet"
+    assert _resolve_model("claude-opus-5") == "opus"
+    assert _resolve_model("claude-sonnet-5") == "sonnet"
     assert _resolve_model("claude-haiku-4-5-20251001") == "haiku"
 
 

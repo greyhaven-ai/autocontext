@@ -49,7 +49,7 @@ def test_build_trace_with_minimum_args_returns_valid_trace() -> None:
 
     trace = build_trace(
         provider="anthropic",
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-5",
         messages=_messages(),
         timing=_timing(),
         usage=_usage(),
@@ -59,7 +59,7 @@ def test_build_trace_with_minimum_args_returns_valid_trace() -> None:
     # Pydantic round-trip: result must validate against the schema.
     parsed = validate_production_trace(trace)
     assert parsed.provider.name == "anthropic"
-    assert parsed.model == "claude-sonnet-4-20250514"
+    assert parsed.model == "claude-sonnet-5"
 
 
 def test_build_trace_generates_ulid_trace_id_by_default() -> None:
@@ -67,7 +67,7 @@ def test_build_trace_generates_ulid_trace_id_by_default() -> None:
 
     trace = build_trace(
         provider="openai",
-        model="gpt-4o",
+        model="gpt-5.6-terra",
         messages=_messages(),
         timing=_timing(),
         usage=_usage(),
@@ -82,7 +82,7 @@ def test_build_trace_honors_explicit_trace_id() -> None:
     explicit = "01KFDQ9XZ3M7RT2V8K1PHY4BNC"
     trace = build_trace(
         provider="openai",
-        model="gpt-4o",
+        model="gpt-5.6-terra",
         messages=_messages(),
         timing=_timing(),
         usage=_usage(),
@@ -97,7 +97,7 @@ def test_build_trace_default_source_is_py_sdk() -> None:
 
     trace = build_trace(
         provider="anthropic",
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-5",
         messages=_messages(),
         timing=_timing(),
         usage=_usage(),
@@ -114,7 +114,7 @@ def test_build_trace_accepts_optional_fields() -> None:
 
     trace = build_trace(
         provider="anthropic",
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-5",
         messages=_messages(),
         timing=_timing(),
         usage=_usage(),
@@ -147,7 +147,7 @@ def test_build_trace_defaults_toolcalls_and_feedbackrefs_to_empty_lists() -> Non
 
     trace = build_trace(
         provider="anthropic",
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-5",
         messages=_messages(),
         timing=_timing(),
         usage=_usage(),
@@ -164,7 +164,7 @@ def test_build_trace_sets_schema_version_1_0() -> None:
 
     trace = build_trace(
         provider="anthropic",
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-5",
         messages=_messages(),
         timing=_timing(),
         usage=_usage(),
@@ -197,7 +197,7 @@ def test_build_trace_rejects_empty_messages() -> None:
     with pytest.raises(ValidationError):
         build_trace(
             provider="anthropic",
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-5",
             messages=[],
             timing=_timing(),
             usage=_usage(),
@@ -212,7 +212,7 @@ def test_build_trace_allows_caller_to_mutate_returned_dict() -> None:
 
     trace = build_trace(
         provider="anthropic",
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-5",
         messages=_messages(),
         timing=_timing(),
         usage=_usage(),
@@ -230,7 +230,7 @@ def test_write_jsonl_writes_single_trace_to_incoming_path(tmp_path: Path) -> Non
 
     trace = build_trace(
         provider="anthropic",
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-5",
         messages=_messages(),
         timing=_timing(),
         usage=_usage(),
@@ -256,7 +256,7 @@ def test_write_jsonl_writes_list_of_traces_one_per_line(tmp_path: Path) -> None:
     traces = [
         build_trace(
             provider="anthropic",
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-5",
             messages=_messages(),
             timing=_timing(i),
             usage=_usage(),
@@ -276,7 +276,7 @@ def test_write_jsonl_date_partitions_by_first_trace_started_at(tmp_path: Path) -
 
     trace = build_trace(
         provider="anthropic",
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-5",
         messages=_messages(),
         timing={
             "startedAt": "2025-12-31T23:59:59Z",
@@ -296,7 +296,7 @@ def test_write_jsonl_uses_explicit_batch_id(tmp_path: Path) -> None:
 
     trace = build_trace(
         provider="anthropic",
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-5",
         messages=_messages(),
         timing=_timing(),
         usage=_usage(),
@@ -314,7 +314,7 @@ def test_write_jsonl_honors_autocontext_registry_path_env(
 
     trace = build_trace(
         provider="anthropic",
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-5",
         messages=_messages(),
         timing=_timing(),
         usage=_usage(),
@@ -332,7 +332,7 @@ def test_write_jsonl_defaults_to_cwd_when_no_env_or_arg(
 
     trace = build_trace(
         provider="anthropic",
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-5",
         messages=_messages(),
         timing=_timing(),
         usage=_usage(),
@@ -351,7 +351,7 @@ def test_write_jsonl_creates_intermediate_directories(tmp_path: Path) -> None:
 
     trace = build_trace(
         provider="anthropic",
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-5",
         messages=_messages(),
         timing=_timing(),
         usage=_usage(),
@@ -368,7 +368,7 @@ def test_write_jsonl_produces_valid_jsonl_roundtrip(tmp_path: Path) -> None:
 
     trace = build_trace(
         provider="anthropic",
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-5",
         messages=_messages(),
         timing=_timing(),
         usage=_usage(),
@@ -394,7 +394,7 @@ def test_trace_batch_accumulates_and_reports_length() -> None:
         batch.add(
             build_trace(
                 provider="anthropic",
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-5",
                 messages=_messages(),
                 timing=_timing(),
                 usage=_usage(),
@@ -412,7 +412,7 @@ def test_trace_batch_flush_writes_accumulated_and_empties(tmp_path: Path) -> Non
         batch.add(
             build_trace(
                 provider="anthropic",
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-5",
                 messages=_messages(),
                 timing=_timing(i),
                 usage=_usage(),
@@ -442,7 +442,7 @@ def test_trace_batch_filename_is_valid_ulid(tmp_path: Path) -> None:
     batch.add(
         build_trace(
             provider="anthropic",
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-5",
             messages=_messages(),
             timing=_timing(),
             usage=_usage(),
@@ -465,7 +465,7 @@ def test_write_jsonl_json_is_utf8_encoded_no_ascii_escape(tmp_path: Path) -> Non
     ]
     trace = build_trace(
         provider="anthropic",
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-5",
         messages=unicode_msg,
         timing=_timing(),
         usage=_usage(),
@@ -482,7 +482,7 @@ def test_write_jsonl_str_cwd_accepted(tmp_path: Path) -> None:
 
     trace = build_trace(
         provider="anthropic",
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-5",
         messages=_messages(),
         timing=_timing(),
         usage=_usage(),
@@ -499,7 +499,7 @@ def test_write_jsonl_returns_absolute_path(tmp_path: Path) -> None:
     # so customer code can print / log it without ambiguity.
     trace = build_trace(
         provider="anthropic",
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-5",
         messages=_messages(),
         timing=_timing(),
         usage=_usage(),

@@ -255,6 +255,6 @@ autoctx tui                # Interactive terminal UI
 autoctx mcp-serve          # MCP server on stdio
 ```
 
-Environment variables: `ANTHROPIC_API_KEY` (required for LLM features), `AUTOCONTEXT_MODEL` (default `claude-sonnet-4-20250514`), `AUTOCONTEXT_DB_PATH` (default `./autocontext.db`).
+Environment variables: `ANTHROPIC_API_KEY` (required for LLM features), `AUTOCONTEXT_MODEL` (default `claude-sonnet-5`), `AUTOCONTEXT_DB_PATH` (default `./autocontext.db`).
 
 Mirrors and extends the Python architecture. Migrations in `ts/migrations/` are cross-compatible with Python.

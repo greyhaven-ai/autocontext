@@ -67,11 +67,11 @@ describe("Multi-provider credential store", () => {
 
   it("saves credentials for a provider", async () => {
     const { saveProviderCredentials, loadProviderCredentials } = await import("../src/config/credentials.js");
-    saveProviderCredentials(dir, "anthropic", { apiKey: "sk-ant-123", model: "claude-sonnet-4-20250514" });
+    saveProviderCredentials(dir, "anthropic", { apiKey: "sk-ant-123", model: "claude-sonnet-5" });
     const creds = loadProviderCredentials(dir, "anthropic");
     expect(creds).not.toBeNull();
     expect(creds!.apiKey).toBe("sk-ant-123");
-    expect(creds!.model).toBe("claude-sonnet-4-20250514");
+    expect(creds!.model).toBe("claude-sonnet-5");
   });
 
   it("saves credentials for multiple providers independently", async () => {
@@ -175,7 +175,7 @@ describe("Legacy credential migration", () => {
     writeFileSync(join(dir, CREDENTIALS_FILE), JSON.stringify({
       provider: "anthropic",
       apiKey: "sk-legacy-key",
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-5",
       savedAt: "2026-01-01T00:00:00Z",
     }), "utf-8");
 

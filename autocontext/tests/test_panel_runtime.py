@@ -298,7 +298,7 @@ def test_orchestrator_role_runtime_executes_panel_and_returns_role_output() -> N
         execution = orch.analyst.run("review this strategy")
 
     assert execution.role == "analyst"
-    assert execution.content == "synth:claude-sonnet-4-5-20250929"
+    assert execution.content == "synth:claude-sonnet-5"
     assert execution.metadata["panel_runtime"] is True
     assert len(execution.metadata["panel_participants"]) == 2
 

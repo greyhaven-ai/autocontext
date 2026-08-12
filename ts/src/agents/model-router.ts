@@ -6,8 +6,8 @@
 const TIER_CONFIG_DEFAULTS = {
   enabled: false,
   tierHaikuModel: "claude-haiku-4-5-20251001",
-  tierSonnetModel: "claude-sonnet-4-5-20250929",
-  tierOpusModel: "claude-opus-4-6",
+  tierSonnetModel: "claude-sonnet-5",
+  tierOpusModel: "claude-opus-5",
   competitorHaikuMaxGen: 3,
   competitorRetryEscalation: 1,
   coachMinTier: "sonnet",

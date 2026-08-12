@@ -68,24 +68,24 @@ describe("Provider surface consistency", () => {
     const { createProvider } = await import("../src/providers/index.js");
 
     expect(createProvider({ providerType: "gemini", apiKey: "gem-key" }).defaultModel()).toBe(
-      "gemini-2.5-pro",
+      "gemini-3.1-pro-preview",
     );
     expect(createProvider({ providerType: "mistral", apiKey: "mistral-key" }).defaultModel()).toBe(
-      "mistral-large-latest",
+      "mistral-large-2512",
     );
     expect(createProvider({ providerType: "groq", apiKey: "groq-key" }).defaultModel()).toBe(
       "llama-3.3-70b-versatile",
     );
     expect(
       createProvider({ providerType: "openrouter", apiKey: "openrouter-key" }).defaultModel(),
-    ).toBe("anthropic/claude-sonnet-4");
+    ).toBe("anthropic/claude-sonnet-5");
     expect(
       createProvider({
         providerType: "azure-openai",
         apiKey: "azure-key",
         baseUrl: "https://azure.example.com/openai/v1",
       }).defaultModel(),
-    ).toBe("gpt-4o");
+    ).toBe("gpt-5.6-terra");
   });
 
   it("KNOWN_PROVIDERS has entries for subscription-backed CLI runtimes and gateway providers", async () => {

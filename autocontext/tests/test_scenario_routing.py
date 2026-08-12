@@ -107,7 +107,7 @@ class TestRoutingDecision:
 
         dec = RoutingDecision(
             provider_type="anthropic",
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-5",
             artifact_id=None,
             source="fallback",
             fallback_used=True,
@@ -152,7 +152,7 @@ class TestResolveProviderForContext:
             scenario="othello", backend="mlx", runtime_type="provider",
         )
         decision = resolve_provider_for_context(
-            ctx, registry, fallback_provider="anthropic", fallback_model="claude-sonnet-4-20250514",
+            ctx, registry, fallback_provider="anthropic", fallback_model="claude-sonnet-5",
         )
 
         assert decision.fallback_used is True

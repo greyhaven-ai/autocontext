@@ -15,7 +15,7 @@ from autocontext.harness.meta.types import ConfigRecommendation
 def _make_rec(
     role: str = "analyst",
     parameter: str = "model",
-    current_value: str = "claude-sonnet-4-5-20250929",
+    current_value: str = "claude-sonnet-5",
     recommended_value: str = "claude-haiku-4-5-20251001",
     confidence: float = 0.8,
     rationale: str = "cheaper with similar quality",

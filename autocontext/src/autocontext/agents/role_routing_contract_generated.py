@@ -50,9 +50,9 @@ PROVIDER_HOSTING: Final[dict[str, str]] = {
 
 PROVIDER_DEFAULT_MODEL: Final[dict[str, str]] = {
     "ollama": "llama3.1",
-    "openai": "gpt-4o",
-    "openai-compatible": "gpt-4o",
-    "openrouter": "anthropic/claude-sonnet-4",
+    "openai": "gpt-5.6-terra",
+    "openai-compatible": "gpt-5.6-terra",
+    "openrouter": "anthropic/claude-sonnet-5",
     "vllm": "default",
 }
 

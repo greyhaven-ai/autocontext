@@ -39,9 +39,9 @@ describe("AgentTaskSpecSchema defaults", () => {
     const spec = AgentTaskSpecSchema.parse({
       taskPrompt: "test",
       judgeRubric: "rubric",
-      judgeModel: "gpt-4o",
+      judgeModel: "gpt-5.6-terra",
     });
-    expect(spec.judgeModel).toBe("gpt-4o");
+    expect(spec.judgeModel).toBe("gpt-5.6-terra");
   });
 });
 
@@ -67,10 +67,10 @@ describe("parseRawSpec defaults", () => {
 describe("AgentTaskDesigner defaults", () => {
   it("should have empty judge_model in EXAMPLE_SPEC", async () => {
     // The EXAMPLE_SPEC is embedded in the system prompt. Check the prompt doesn't
-    // use "claude-sonnet-4-20250514" as the judge_model default.
+    // use "claude-sonnet-5" as the judge_model default.
     const { AGENT_TASK_DESIGNER_SYSTEM } = await import("../src/scenarios/agent-task-designer.js");
     // The system prompt should not contain the hardcoded model as a default
-    expect(AGENT_TASK_DESIGNER_SYSTEM).not.toContain('"judge_model": "claude-sonnet-4-20250514"');
+    expect(AGENT_TASK_DESIGNER_SYSTEM).not.toContain('"judge_model": "claude-sonnet-5"');
   });
 
   it("should parse spec without judge_model to empty string", async () => {
@@ -247,7 +247,7 @@ describe("Provider empty model fallback", () => {
       ok: true,
       json: async () => ({
         content: [{ type: "text", text: "Hello" }],
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-5",
         usage: { input_tokens: 10, output_tokens: 5 },
       }),
     });
@@ -261,7 +261,7 @@ describe("Provider empty model fallback", () => {
 
     const body = JSON.parse(mockFetch.mock.calls[0][1].body);
     // Empty model should fall back to provider default, NOT be sent as ""
-    expect(body.model).toBe("claude-sonnet-4-20250514");
+    expect(body.model).toBe("claude-sonnet-5");
 
     vi.unstubAllGlobals();
   });
@@ -270,14 +270,14 @@ describe("Provider empty model fallback", () => {
     const { createOpenAICompatibleProvider } = await import("../src/providers/index.js");
     const provider = createOpenAICompatibleProvider({
       apiKey: "test",
-      model: "gpt-4o",
+      model: "gpt-5.6-terra",
     });
 
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
         choices: [{ message: { content: "ok" } }],
-        model: "gpt-4o",
+        model: "gpt-5.6-terra",
         usage: { prompt_tokens: 1, completion_tokens: 1 },
       }),
     });
@@ -291,7 +291,7 @@ describe("Provider empty model fallback", () => {
 
     const body = JSON.parse(mockFetch.mock.calls[0][1].body);
     // Empty model should fall back to provider default, NOT be sent as ""
-    expect(body.model).toBe("gpt-4o");
+    expect(body.model).toBe("gpt-5.6-terra");
 
     vi.unstubAllGlobals();
   });
@@ -302,7 +302,7 @@ describe("Provider empty model fallback", () => {
 // ---------------------------------------------------------------------------
 
 describe("No hardcoded Anthropic model in scaffold TS files", () => {
-  const HARDCODED_MODEL = "claude-sonnet-4-20250514";
+  const HARDCODED_MODEL = "claude-sonnet-5";
 
   // These scaffold files should NOT contain the hardcoded Anthropic model
   const SCAFFOLD_FILES = [

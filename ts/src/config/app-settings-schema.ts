@@ -26,16 +26,16 @@ export const AppSettingsSchema = z.object({
   extensionFailFast: z.boolean().default(false),
 
   // Models
-  modelCompetitor: z.string().default("claude-sonnet-4-5-20250929"),
-  modelAnalyst: z.string().default("claude-sonnet-4-5-20250929"),
-  modelCoach: z.string().default("claude-opus-4-6"),
-  modelArchitect: z.string().default("claude-opus-4-6"),
-  modelTranslator: z.string().default("claude-sonnet-4-5-20250929"),
-  modelCurator: z.string().default("claude-opus-4-6"),
-  modelSkeptic: z.string().default("claude-opus-4-6"),
+  modelCompetitor: z.string().default("claude-sonnet-5"),
+  modelAnalyst: z.string().default("claude-sonnet-5"),
+  modelCoach: z.string().default("claude-opus-5"),
+  modelArchitect: z.string().default("claude-opus-5"),
+  modelTranslator: z.string().default("claude-sonnet-5"),
+  modelCurator: z.string().default("claude-opus-5"),
+  modelSkeptic: z.string().default("claude-opus-5"),
   tierHaikuModel: z.string().default("claude-haiku-4-5-20251001"),
-  tierSonnetModel: z.string().default("claude-sonnet-4-5-20250929"),
-  tierOpusModel: z.string().default("claude-opus-4-6"),
+  tierSonnetModel: z.string().default("claude-sonnet-5"),
+  tierOpusModel: z.string().default("claude-opus-5"),
   mlxModelPath: z.string().default(""),
   localModel: z.string().default(""),
   roleRouting: z.enum(["off", "auto"]).default("off"),
@@ -193,7 +193,7 @@ export const AppSettingsSchema = z.object({
   costMaxPerDeltaPoint: z.number().positive().default(10.0),
 
   // Judge
-  judgeModel: z.string().default("claude-sonnet-4-20250514"),
+  judgeModel: z.string().default("claude-sonnet-5"),
   judgeSamples: z.number().int().min(1).default(1),
   judgeTemperature: z.number().min(0).default(0.0),
   judgeProvider: z.string().default("auto"),
@@ -295,7 +295,7 @@ export const AppSettingsSchema = z.object({
   // Provider consultation
   consultationEnabled: z.boolean().default(false),
   consultationProvider: z.string().default("anthropic"),
-  consultationModel: z.string().default("claude-sonnet-4-20250514"),
+  consultationModel: z.string().default("claude-sonnet-5"),
   consultationApiKey: z.string().default(""),
   consultationBaseUrl: z.string().default(""),
   consultationStagnationThreshold: z.number().int().min(2).default(3),

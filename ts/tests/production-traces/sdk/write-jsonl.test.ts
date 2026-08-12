@@ -10,7 +10,7 @@ import { canonicalJsonStringify } from "../../../src/control-plane/contract/cano
 function traceAt(startedAt: string, suffix: string) {
   return buildTrace({
     provider: "openai",
-    model: "gpt-4o-mini",
+    model: "gpt-5.6-luna",
     messages: [{ role: "user", content: "hi", timestamp: startedAt }],
     timing: { startedAt, endedAt: startedAt, latencyMs: 0 },
     usage: { tokensIn: 1, tokensOut: 1 },

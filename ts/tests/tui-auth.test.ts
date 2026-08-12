@@ -65,7 +65,7 @@ describe("Auth protocol schemas", () => {
       type: "auth_status",
       provider: "anthropic",
       authenticated: true,
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-5",
     });
     expect(msg.type).toBe("auth_status");
     expect(msg.provider).toBe("anthropic");
@@ -126,10 +126,10 @@ describe("TUI auth credential operations", () => {
 
   it("handleTuiWhoami returns provider and model info", async () => {
     const { handleTuiLogin, handleTuiWhoami } = await import("../src/server/tui-auth.js");
-    await handleTuiLogin(dir, "anthropic", "sk-ant-test", "claude-sonnet-4-20250514");
+    await handleTuiLogin(dir, "anthropic", "sk-ant-test", "claude-sonnet-5");
     const status = handleTuiWhoami(dir);
     expect(status.provider).toBe("anthropic");
-    expect(status.model).toBe("claude-sonnet-4-20250514");
+    expect(status.model).toBe("claude-sonnet-5");
     expect(status.authenticated).toBe(true);
   });
 

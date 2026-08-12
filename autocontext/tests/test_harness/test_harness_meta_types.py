@@ -88,15 +88,15 @@ def test_config_recommendation_construction() -> None:
     r = ConfigRecommendation(
         role="competitor",
         parameter="model",
-        current_value="claude-opus-4-6",
-        recommended_value="claude-sonnet-4-5-20250929",
+        current_value="claude-opus-5",
+        recommended_value="claude-sonnet-5",
         confidence=0.85,
         rationale="Competitor achieves similar advance rate with sonnet at 80% lower cost.",
     )
     assert r.role == "competitor"
     assert r.parameter == "model"
-    assert r.current_value == "claude-opus-4-6"
-    assert r.recommended_value == "claude-sonnet-4-5-20250929"
+    assert r.current_value == "claude-opus-5"
+    assert r.recommended_value == "claude-sonnet-5"
     assert r.confidence == 0.85
     assert "80% lower cost" in r.rationale
 

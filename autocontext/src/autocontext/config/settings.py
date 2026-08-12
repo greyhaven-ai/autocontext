@@ -54,11 +54,11 @@ class AppSettings(RoleRoutingFields, WorkspaceInterpreterFields, OutputBudgetFie
     anthropic_api_key: str | None = Field(default=None)
     # AC-912: fills unset role/tier slots. See config/provider_model_defaults.py.
     local_model: str = Field(default="", description="Model id for every unset non-Anthropic role/tier slot")
-    model_competitor: str = Field(default="claude-sonnet-4-5-20250929")
-    model_analyst: str = Field(default="claude-sonnet-4-5-20250929")
-    model_coach: str = Field(default="claude-opus-4-6")
-    model_architect: str = Field(default="claude-opus-4-6")
-    model_translator: str = Field(default="claude-sonnet-4-5-20250929")
+    model_competitor: str = Field(default="claude-sonnet-5")
+    model_analyst: str = Field(default="claude-sonnet-5")
+    model_coach: str = Field(default="claude-opus-5")
+    model_architect: str = Field(default="claude-opus-5")
+    model_translator: str = Field(default="claude-sonnet-5")
     architect_every_n_gens: int = Field(default=3, ge=1)
     matches_per_generation: int = Field(default=3, ge=1)
     backpressure_min_delta: float = Field(default=0.005)
@@ -236,12 +236,12 @@ class AppSettings(RoleRoutingFields, WorkspaceInterpreterFields, OutputBudgetFie
     rlm_competitor_enabled: bool = Field(default=False, description="Enable RLM REPL mode for Competitor role")
     playbook_max_versions: int = Field(default=5, ge=1)
     cross_run_inheritance: bool = Field(default=True)
-    model_curator: str = Field(default="claude-opus-4-6")
+    model_curator: str = Field(default="claude-opus-5")
     curator_enabled: bool = Field(default=True)
     curator_consolidate_every_n_gens: int = Field(default=3, ge=1)
     skill_max_lessons: int = Field(default=30, ge=1)
     skeptic_enabled: bool = Field(default=False, description="Enable skeptic/red-team review before persistence")
-    model_skeptic: str = Field(default="claude-opus-4-6")
+    model_skeptic: str = Field(default="claude-opus-5")
     panel_roles: str = ""
     panel_participants: str = ""
     panel_synthesizer_provider: str = ""
@@ -302,8 +302,8 @@ class AppSettings(RoleRoutingFields, WorkspaceInterpreterFields, OutputBudgetFie
     # Tiered model routing
     tier_routing_enabled: bool = Field(default=False, description="Enable dynamic model tier selection")
     tier_haiku_model: str = Field(default="claude-haiku-4-5-20251001")
-    tier_sonnet_model: str = Field(default="claude-sonnet-4-5-20250929")
-    tier_opus_model: str = Field(default="claude-opus-4-6")
+    tier_sonnet_model: str = Field(default="claude-sonnet-5")
+    tier_opus_model: str = Field(default="claude-opus-5")
     tier_competitor_haiku_max_gen: int = Field(default=3, ge=1)
     tier_harness_aware_enabled: bool = Field(
         default=False,
@@ -311,7 +311,7 @@ class AppSettings(RoleRoutingFields, WorkspaceInterpreterFields, OutputBudgetFie
     )
     tier_harness_coverage_demotion_threshold: float = Field(default=0.8, ge=0.0, le=1.0)
     # Agent task judge settings
-    judge_model: str = Field(default="claude-sonnet-4-20250514")
+    judge_model: str = Field(default="claude-sonnet-5")
     judge_samples: int = Field(default=1, ge=1)
     judge_temperature: float = Field(default=0.0, ge=0.0)
     judge_max_tokens: int = Field(default=4096, ge=256)
@@ -650,7 +650,7 @@ class AppSettings(RoleRoutingFields, WorkspaceInterpreterFields, OutputBudgetFie
     # Provider consultation (AC-212)
     consultation_enabled: bool = Field(default=False, description="Enable provider consultation on stall/uncertainty")
     consultation_provider: str = Field(default="anthropic", description="Provider type for consultation")
-    consultation_model: str = Field(default="claude-sonnet-4-20250514", description="Model for consultation calls")
+    consultation_model: str = Field(default="claude-sonnet-5", description="Model for consultation calls")
     consultation_api_key: str = Field(default="", description="API key for consultation provider")
     consultation_base_url: str = Field(default="", description="Base URL for consultation provider")
     consultation_stagnation_threshold: int = Field(default=3, ge=2, description="Consecutive rollback/retry to trigger")
@@ -745,7 +745,7 @@ class AppSettings(RoleRoutingFields, WorkspaceInterpreterFields, OutputBudgetFie
     # OpenAI-compatible agent provider (AC-222)
     agent_base_url: str = Field(default="", description="Base URL for OpenAI-compatible agent provider")
     agent_api_key: str = Field(default="", description="API key for OpenAI-compatible agent provider")
-    agent_default_model: str = Field(default="gpt-4o", description="Default model for OpenAI-compatible agent provider")
+    agent_default_model: str = Field(default="gpt-5.6-terra", description="Default model for OpenAI-compatible agent provider")
     # Trusted SSH executor (AC-213)
     ssh_host: str = Field(default="", description="SSH hostname for trusted executor")
     ssh_port: int = Field(default=22, ge=1, le=65535, description="SSH port")

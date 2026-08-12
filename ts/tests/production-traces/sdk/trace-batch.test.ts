@@ -9,7 +9,7 @@ import type { AppId, EnvironmentTag } from "../../../src/production-traces/contr
 function makeTrace(traceIdSuffix: string) {
   return buildTrace({
     provider: "openai",
-    model: "gpt-4o-mini",
+    model: "gpt-5.6-luna",
     messages: [{ role: "user", content: "hi", timestamp: "2026-04-17T12:00:00.000Z" }],
     timing: {
       startedAt: "2026-04-17T12:00:00.000Z",

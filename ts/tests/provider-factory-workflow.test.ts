@@ -7,14 +7,14 @@ import { RuntimeSession } from "../src/session/runtime-session.js";
 describe("provider factory workflow", () => {
   it("creates compat providers with their family defaults", () => {
     expect(createProvider({ providerType: "gemini", apiKey: "gem-key" }).defaultModel()).toBe(
-      "gemini-2.5-pro",
+      "gemini-3.1-pro-preview",
     );
     expect(createProvider({ providerType: "mistral", apiKey: "mistral-key" }).defaultModel()).toBe(
-      "mistral-large-latest",
+      "mistral-large-2512",
     );
     expect(
       createProvider({ providerType: "openrouter", apiKey: "router-key" }).defaultModel(),
-    ).toBe("anthropic/claude-sonnet-4");
+    ).toBe("anthropic/claude-sonnet-5");
   });
 
   it("creates runtime-backed and renamed provider families", () => {

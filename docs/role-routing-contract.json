@@ -1,8 +1,17 @@
 {
   "version": 2,
   "contract": "role provider routing classes, preferences, and model tier mapping shared by Python and TypeScript",
-  "mode_values": ["off", "auto"],
-  "provider_classes": ["frontier", "mid_tier", "fast", "local", "code_policy"],
+  "mode_values": [
+    "off",
+    "auto"
+  ],
+  "provider_classes": [
+    "frontier",
+    "mid_tier",
+    "fast",
+    "local",
+    "code_policy"
+  ],
   "cost_per_1k_tokens": {
     "frontier": 0.015,
     "mid_tier": 0.003,
@@ -10,23 +19,47 @@
     "local": 0.0
   },
   "default_routing_table": {
-    "competitor": ["frontier", "local"],
-    "analyst": ["mid_tier", "local"],
-    "coach": ["mid_tier", "local"],
-    "architect": ["frontier", "local"],
-    "curator": ["fast", "local"],
-    "translator": ["fast", "local"]
+    "competitor": [
+      "frontier",
+      "local"
+    ],
+    "analyst": [
+      "mid_tier",
+      "local"
+    ],
+    "coach": [
+      "mid_tier",
+      "local"
+    ],
+    "architect": [
+      "frontier",
+      "local"
+    ],
+    "curator": [
+      "fast",
+      "local"
+    ],
+    "translator": [
+      "fast",
+      "local"
+    ]
   },
-  "capability_rank": { "fast": 0, "mid_tier": 1, "frontier": 2 },
+  "capability_rank": {
+    "fast": 0,
+    "mid_tier": 1,
+    "frontier": 2
+  },
   "local_artifact_capability": "frontier",
   "provider_default_model": {
     "ollama": "llama3.1",
-    "openai": "gpt-4o",
-    "openai-compatible": "gpt-4o",
+    "openai": "gpt-5.6-terra",
+    "openai-compatible": "gpt-5.6-terra",
     "vllm": "default",
-    "openrouter": "anthropic/claude-sonnet-4"
+    "openrouter": "anthropic/claude-sonnet-5"
   },
-  "model_default_preserved_providers": ["anthropic"],
+  "model_default_preserved_providers": [
+    "anthropic"
+  ],
   "provider_hosting": {
     "agent_sdk": "remote",
     "anthropic": "remote",
@@ -79,18 +112,48 @@
     "architect_provider_hosting": "architectProviderHosting"
   },
   "class_model_fields": {
-    "frontier": { "python": "tier_opus_model", "typescript": "tierOpusModel" },
-    "mid_tier": { "python": "tier_sonnet_model", "typescript": "tierSonnetModel" },
-    "fast": { "python": "tier_haiku_model", "typescript": "tierHaikuModel" },
-    "local": { "python": "mlx_model_path", "typescript": "mlxModelPath" }
+    "frontier": {
+      "python": "tier_opus_model",
+      "typescript": "tierOpusModel"
+    },
+    "mid_tier": {
+      "python": "tier_sonnet_model",
+      "typescript": "tierSonnetModel"
+    },
+    "fast": {
+      "python": "tier_haiku_model",
+      "typescript": "tierHaikuModel"
+    },
+    "local": {
+      "python": "mlx_model_path",
+      "typescript": "mlxModelPath"
+    }
   },
   "role_model_fields": {
-    "competitor": { "python": "model_competitor", "typescript": "modelCompetitor" },
-    "analyst": { "python": "model_analyst", "typescript": "modelAnalyst" },
-    "coach": { "python": "model_coach", "typescript": "modelCoach" },
-    "architect": { "python": "model_architect", "typescript": "modelArchitect" },
-    "curator": { "python": "model_curator", "typescript": "modelCurator" },
-    "translator": { "python": "model_translator", "typescript": "modelTranslator" }
+    "competitor": {
+      "python": "model_competitor",
+      "typescript": "modelCompetitor"
+    },
+    "analyst": {
+      "python": "model_analyst",
+      "typescript": "modelAnalyst"
+    },
+    "coach": {
+      "python": "model_coach",
+      "typescript": "modelCoach"
+    },
+    "architect": {
+      "python": "model_architect",
+      "typescript": "modelArchitect"
+    },
+    "curator": {
+      "python": "model_curator",
+      "typescript": "modelCurator"
+    },
+    "translator": {
+      "python": "model_translator",
+      "typescript": "modelTranslator"
+    }
   },
   "precedence": [
     "explicit per-role provider override",
@@ -100,39 +163,106 @@
     "mid-tier fallback for unknown roles"
   ],
   "supported_provider_types": {
-    "anthropic": { "packages": ["python", "typescript"] },
-    "openai": { "packages": ["python", "typescript"] },
-    "openai-compatible": { "packages": ["python", "typescript"] },
-    "openrouter": { "packages": ["python", "typescript"] },
-    "ollama": { "packages": ["python", "typescript"] },
-    "vllm": { "packages": ["python", "typescript"] },
-    "claude-cli": { "packages": ["python", "typescript"] },
-    "codex": { "packages": ["python", "typescript"] },
-    "pi": { "packages": ["python", "typescript"] },
-    "pi-rpc": { "packages": ["python", "typescript"] },
-    "mlx": { "packages": ["python"], "reason": "no MLX binding for Node; Python-only by design" },
+    "anthropic": {
+      "packages": [
+        "python",
+        "typescript"
+      ]
+    },
+    "openai": {
+      "packages": [
+        "python",
+        "typescript"
+      ]
+    },
+    "openai-compatible": {
+      "packages": [
+        "python",
+        "typescript"
+      ]
+    },
+    "openrouter": {
+      "packages": [
+        "python",
+        "typescript"
+      ]
+    },
+    "ollama": {
+      "packages": [
+        "python",
+        "typescript"
+      ]
+    },
+    "vllm": {
+      "packages": [
+        "python",
+        "typescript"
+      ]
+    },
+    "claude-cli": {
+      "packages": [
+        "python",
+        "typescript"
+      ]
+    },
+    "codex": {
+      "packages": [
+        "python",
+        "typescript"
+      ]
+    },
+    "pi": {
+      "packages": [
+        "python",
+        "typescript"
+      ]
+    },
+    "pi-rpc": {
+      "packages": [
+        "python",
+        "typescript"
+      ]
+    },
+    "mlx": {
+      "packages": [
+        "python"
+      ],
+      "reason": "no MLX binding for Node; Python-only by design"
+    },
     "hermes": {
-      "packages": ["typescript"],
+      "packages": [
+        "typescript"
+      ],
       "reason": "not yet added to the Python provider factory"
     },
     "gemini": {
-      "packages": ["typescript"],
+      "packages": [
+        "typescript"
+      ],
       "reason": "not yet added to the Python provider factory"
     },
     "mistral": {
-      "packages": ["typescript"],
+      "packages": [
+        "typescript"
+      ],
       "reason": "not yet added to the Python provider factory"
     },
     "groq": {
-      "packages": ["typescript"],
+      "packages": [
+        "typescript"
+      ],
       "reason": "not yet added to the Python provider factory"
     },
     "azure-openai": {
-      "packages": ["typescript"],
+      "packages": [
+        "typescript"
+      ],
       "reason": "not yet added to the Python provider factory"
     },
     "deterministic": {
-      "packages": ["typescript"],
+      "packages": [
+        "typescript"
+      ],
       "reason": "test/offline provider; Python has no equivalent construction path in create_provider"
     }
   }

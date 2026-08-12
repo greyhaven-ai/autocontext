@@ -23,11 +23,11 @@ const BASE_TIMING = {
 describe("buildRequestSnapshot", () => {
   test("packages model + messages + extras", () => {
     const snap = buildRequestSnapshot({
-      model: "gpt-4o",
+      model: "gpt-5.6-terra",
       messages: [{ role: "user", content: "hello" }],
       extraKwargs: { temperature: 0.7 },
     });
-    expect(snap.model).toBe("gpt-4o");
+    expect(snap.model).toBe("gpt-5.6-terra");
     expect(snap.messages).toHaveLength(1);
     expect((snap.extra as Record<string, unknown>).temperature).toBe(0.7);
   });
@@ -85,7 +85,7 @@ describe("normalizeToolCalls", () => {
 describe("buildSuccessTrace", () => {
   test("returns a valid ProductionTrace", () => {
     const snap = buildRequestSnapshot({
-      model: "gpt-4o",
+      model: "gpt-5.6-terra",
       messages: [{ role: "user", content: "hi" }],
       extraKwargs: {},
     });
@@ -109,7 +109,7 @@ describe("buildSuccessTrace", () => {
 describe("buildFailureTrace", () => {
   test("returns a failure trace with error", () => {
     const snap = buildRequestSnapshot({
-      model: "gpt-4o",
+      model: "gpt-5.6-terra",
       messages: [{ role: "user", content: "hi" }],
       extraKwargs: {},
     });
@@ -131,7 +131,7 @@ describe("buildFailureTrace", () => {
 
   test("redacts API keys from error message", () => {
     const snap = buildRequestSnapshot({
-      model: "gpt-4o",
+      model: "gpt-5.6-terra",
       messages: [{ role: "user", content: "hi" }],
       extraKwargs: {},
     });
@@ -154,7 +154,7 @@ describe("buildFailureTrace", () => {
 describe("finalizeStreamingTrace", () => {
   test("builds a streaming trace with accumulated usage", () => {
     const snap = buildRequestSnapshot({
-      model: "gpt-4o",
+      model: "gpt-5.6-terra",
       messages: [{ role: "user", content: "hi" }],
       extraKwargs: {},
     });

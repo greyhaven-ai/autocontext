@@ -35,7 +35,7 @@ describe("public trace export workflow", () => {
 
     const exported = exportRunTraceToPublicTrace(trace, {
       sourceHarness: "autocontext",
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-5",
       provider: "anthropic",
     });
     expect(exported).toMatchObject({
@@ -43,7 +43,7 @@ describe("public trace export workflow", () => {
       sessionId: "run_001",
       sourceHarness: "autocontext",
       metadata: {
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-5",
         provider: "anthropic",
         scenarioType: "grid_ctf",
         eventCount: 1,

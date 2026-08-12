@@ -32,7 +32,7 @@ class LinkedInPostTask(AgentTaskInterface):
         )
         self._judge = LLMJudge(
             provider=provider,
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-5",
             rubric=rubric,
         )
 
@@ -74,7 +74,7 @@ class LinkedInPostTask(AgentTaskInterface):
         result = self._provider.complete(
             system_prompt="You are revising a LinkedIn post based on expert feedback. Output ONLY the revised post.",
             user_prompt=revision_prompt,
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-5",
         )
         return result.text
 
@@ -95,7 +95,7 @@ def section(title: str):
 
 
 def main():
-    provider = AnthropicProvider(default_model_name="claude-sonnet-4-20250514")
+    provider = AnthropicProvider(default_model_name="claude-sonnet-5")
     task = LinkedInPostTask(provider)
 
     # Generate initial output (deliberately mediocre prompt to leave room for improvement)
@@ -103,7 +103,7 @@ def main():
     initial = provider.complete(
         system_prompt="Write a generic, corporate-sounding LinkedIn post. Use buzzwords.",
         user_prompt=task.get_task_prompt({}),
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-5",
     )
     print(f"  Initial ({len(initial.text)} chars):\n  {initial.text[:200]}...")
 

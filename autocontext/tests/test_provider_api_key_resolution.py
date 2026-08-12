@@ -177,7 +177,7 @@ def test_default_openrouter_agent_uses_its_native_key(
 
     assert isinstance(client, ProviderBridgeClient)
     assert constructor.call_args.kwargs["api_key"] == "openrouter-key"
-    assert client._provider.default_model() == "anthropic/claude-sonnet-4"
+    assert client._provider.default_model() == "anthropic/claude-sonnet-5"
 
 
 def test_judge_api_key_still_wins(clean_env: None, monkeypatch: pytest.MonkeyPatch) -> None:

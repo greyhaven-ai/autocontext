@@ -14,7 +14,7 @@ function validTraceDocument() {
   return createProductionTrace({
     source: { emitter: "sdk", sdk: { name: "autocontext-ts", version: "0.0.0" } },
     provider: { name: "openai" },
-    model: "gpt-4o-mini",
+    model: "gpt-5.6-luna",
     env: {
       environmentTag: "production" as EnvironmentTag,
       appId: "my-app" as AppId,

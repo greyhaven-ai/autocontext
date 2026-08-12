@@ -50,7 +50,7 @@ describe("Exception taxonomy integration", () => {
     const client = instrumentClient(inner, { sink, appId: "test-app", environmentTag: "test" });
 
     await expect(
-      client.chat.completions.create({ model: "gpt-4o", messages: [{ role: "user", content: "hi" }] }),
+      client.chat.completions.create({ model: "gpt-5.6-terra", messages: [{ role: "user", content: "hi" }] }),
     ).rejects.toThrow();
 
     const traces = readTraces();
@@ -77,7 +77,7 @@ describe("Exception taxonomy integration", () => {
     const client = instrumentClient(inner, { sink, appId: "test-app", environmentTag: "test" });
 
     await expect(
-      client.chat.completions.create({ model: "gpt-4o", messages: [{ role: "user", content: "hi" }] }),
+      client.chat.completions.create({ model: "gpt-5.6-terra", messages: [{ role: "user", content: "hi" }] }),
     ).rejects.toThrow();
 
     const traces = readTraces();
@@ -101,7 +101,7 @@ describe("Exception taxonomy integration", () => {
     const client = instrumentClient(inner, { sink, appId: "test-app", environmentTag: "test" });
 
     await expect(
-      client.chat.completions.create({ model: "gpt-4o", messages: [{ role: "user", content: "hi" }] }),
+      client.chat.completions.create({ model: "gpt-5.6-terra", messages: [{ role: "user", content: "hi" }] }),
     ).rejects.toThrow();
 
     const traces = readTraces();
@@ -125,7 +125,7 @@ describe("Exception taxonomy integration", () => {
     const client = instrumentClient(inner, { sink, appId: "test-app", environmentTag: "test" });
 
     await expect(
-      client.chat.completions.create({ model: "gpt-4o", messages: [{ role: "user", content: "hi" }] }),
+      client.chat.completions.create({ model: "gpt-5.6-terra", messages: [{ role: "user", content: "hi" }] }),
     ).rejects.toThrow();
 
     const traces = readTraces();
@@ -154,7 +154,7 @@ describe("instrumentClient factory", () => {
       id: "chatcmpl-fake",
       object: "chat.completion",
       created: 1714000000,
-      model: "gpt-4o",
+      model: "gpt-5.6-terra",
       choices: [{ index: 0, message: { role: "assistant", content: "ok" }, finish_reason: "stop" }],
       usage: { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 },
     };
@@ -164,7 +164,7 @@ describe("instrumentClient factory", () => {
       }));
     const inner = new OpenAI({ apiKey: "test-key", fetch: fakeFetch as typeof fetch });
     const client = instrumentClient(inner, { sink, appId: "test-app" });
-    await client.chat.completions.create({ model: "gpt-4o", messages: [{ role: "user", content: "hi" }] });
+    await client.chat.completions.create({ model: "gpt-5.6-terra", messages: [{ role: "user", content: "hi" }] });
 
     const traces = readTraces();
     expect(traces[0]!["env"]).toMatchObject({ environmentTag: "production" });
@@ -178,7 +178,7 @@ describe("instrumentClient factory", () => {
       id: "chatcmpl-fake",
       object: "chat.completion",
       created: 1714000000,
-      model: "gpt-4o",
+      model: "gpt-5.6-terra",
       choices: [{ index: 0, message: { role: "assistant", content: "ok" }, finish_reason: "stop" }],
       usage: { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 },
     };
@@ -188,7 +188,7 @@ describe("instrumentClient factory", () => {
       }));
     const inner = new OpenAI({ apiKey: "test-key", fetch: fakeFetch as typeof fetch });
     const client = instrumentClient(inner, { sink, appId: "test-app", environmentTag: "staging" });
-    await client.chat.completions.create({ model: "gpt-4o", messages: [{ role: "user", content: "hi" }] });
+    await client.chat.completions.create({ model: "gpt-5.6-terra", messages: [{ role: "user", content: "hi" }] });
 
     const traces = readTraces();
     expect(traces[0]!["env"]).toMatchObject({ environmentTag: "staging" });

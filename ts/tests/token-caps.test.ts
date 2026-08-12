@@ -19,6 +19,12 @@ describe("clampOutputTokens", () => {
     expect(clampOutputTokens(100_000, "claude-3-5-sonnet-20241022")).toBe(8192);
   });
 
+  it("knows current-generation hard caps", () => {
+    expect(clampOutputTokens(200_000, "claude-sonnet-5")).toBe(128_000);
+    expect(clampOutputTokens(200_000, "gpt-5.6-terra")).toBe(128_000);
+    expect(clampOutputTokens(200_000, "openai/gpt-5.6-terra")).toBe(128_000);
+  });
+
   it("unknown and absent models pass through", () => {
     expect(clampOutputTokens(100_000, "future-model-9000")).toBe(100_000);
     expect(clampOutputTokens(5000, undefined)).toBe(5000);

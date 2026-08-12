@@ -43,7 +43,7 @@ describe("TraceSink interface", () => {
 describe("FileSink", () => {
   test("add() + flush() writes JSON lines", () => {
     const { sink, path } = makeSink();
-    sink.add({ traceId: "t1", model: "gpt-4o" });
+    sink.add({ traceId: "t1", model: "gpt-5.6-terra" });
     sink.flush();
     sink.close();
     const lines = readFileSync(path, "utf-8").trim().split("\n");

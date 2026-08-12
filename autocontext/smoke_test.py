@@ -37,7 +37,7 @@ def main():
 
     # ─── 1. Provider: real API call ───────────────────────────
     section("1. AnthropicProvider — real API call")
-    provider = create_provider("anthropic", model="claude-sonnet-4-20250514")
+    provider = create_provider("anthropic", model="claude-sonnet-5")
     result = provider.complete(
         system_prompt="You are a helpful assistant. Reply in exactly one sentence.",
         user_prompt="What is autocontext?",
@@ -51,7 +51,7 @@ def main():
     section("2. LLMJudge — real evaluation")
     judge = LLMJudge(
         provider=provider,
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-5",
         rubric="Score based on: factual accuracy (is the description correct?), clarity (easy to understand?), completeness (covers key aspects?). Score 0-1.",
     )
     eval_result = judge.evaluate(
@@ -67,7 +67,7 @@ def main():
 
     # ─── 3. DirectAPIRuntime: generate + revise ──────────────
     section("3. DirectAPIRuntime — generate + revise")
-    runtime = DirectAPIRuntime(provider, model="claude-sonnet-4-20250514")
+    runtime = DirectAPIRuntime(provider, model="claude-sonnet-5")
     gen_output = runtime.generate(
         "Write a two-sentence description of an AI evaluation harness.",
         system="Be concise and technical.",

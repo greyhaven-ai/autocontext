@@ -32,12 +32,12 @@ class TestProviderConfig:
 
         cfg = ProviderConfig(
             provider_type="anthropic",
-            model="claude-opus-4-6",
+            model="claude-opus-5",
             provider_class=ProviderClass.FRONTIER,
             estimated_cost_per_1k_tokens=0.015,
         )
         assert cfg.provider_type == "anthropic"
-        assert cfg.model == "claude-opus-4-6"
+        assert cfg.model == "claude-opus-5"
         assert cfg.provider_class == ProviderClass.FRONTIER
         assert cfg.estimated_cost_per_1k_tokens == 0.015
 
@@ -129,15 +129,15 @@ _SETTINGS_FIELDS: dict[str, str] = {
     "analyst_provider": "",
     "coach_provider": "",
     "architect_provider": "",
-    "model_competitor": "claude-sonnet-4-5-20250929",
-    "model_analyst": "claude-sonnet-4-5-20250929",
-    "model_coach": "claude-opus-4-6",
-    "model_architect": "claude-opus-4-6",
-    "model_translator": "claude-sonnet-4-5-20250929",
-    "model_curator": "claude-opus-4-6",
+    "model_competitor": "claude-sonnet-5",
+    "model_analyst": "claude-sonnet-5",
+    "model_coach": "claude-opus-5",
+    "model_architect": "claude-opus-5",
+    "model_translator": "claude-sonnet-5",
+    "model_curator": "claude-opus-5",
     "tier_haiku_model": "claude-haiku-4-5-20251001",
-    "tier_sonnet_model": "claude-sonnet-4-5-20250929",
-    "tier_opus_model": "claude-opus-4-6",
+    "tier_sonnet_model": "claude-sonnet-5",
+    "tier_opus_model": "claude-opus-5",
     "mlx_model_path": "/tmp/distilled-model",
     "local_model": "",
     "provider_capability": "",
@@ -272,14 +272,14 @@ class TestRoleRouterAutoMode:
 
         router = RoleRouter(_settings())
         cfg = router.route("competitor")
-        assert cfg.model == "claude-opus-4-6"
+        assert cfg.model == "claude-opus-5"
 
     def test_auto_returns_correct_model_for_mid_tier(self) -> None:
         from autocontext.agents.role_router import RoleRouter
 
         router = RoleRouter(_settings())
         cfg = router.route("analyst")
-        assert cfg.model == "claude-sonnet-4-5-20250929"
+        assert cfg.model == "claude-sonnet-5"
 
     def test_auto_returns_correct_model_for_fast(self) -> None:
         from autocontext.agents.role_router import RoleRouter
@@ -335,7 +335,7 @@ class TestRoleRouterDisabledMode:
 
         router = RoleRouter(_settings(role_routing="off"))
         cfg = router.route("competitor")
-        assert cfg.model == "claude-sonnet-4-5-20250929"
+        assert cfg.model == "claude-sonnet-5"
 
 
 # ---------------------------------------------------------------------------

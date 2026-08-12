@@ -77,7 +77,7 @@ def test_agent_probe_reuses_runtime_base_url_and_provider_model(monkeypatch: pyt
             AUTOCONTEXT_JUDGE_BASE_URL="http://127.0.0.1:9999/v1",
         )
     )
-    assert resolved == ("http://127.0.0.1:9999/v1", "local-secret", "anthropic/claude-sonnet-4")
+    assert resolved == ("http://127.0.0.1:9999/v1", "local-secret", "anthropic/claude-sonnet-5")
 
 
 def test_default_base_urls_match_the_provider_registry() -> None:

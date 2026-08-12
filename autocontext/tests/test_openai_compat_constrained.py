@@ -86,3 +86,51 @@ def test_successful_schema_request_is_reported_as_constrained() -> None:
 
     assert result.constrained is True
     assert completions.calls[0]["response_format"]["json_schema"]["strict"] is True
+
+
+def test_gpt_56_ordinary_completion_disables_implicit_reasoning() -> None:
+    provider, completions = _provider([_response("plain")])
+    provider._default_model = "gpt-5.6-terra"
+
+    provider.complete("system", "user")
+
+    assert completions.calls[0]["reasoning_effort"] == "none"
+    assert completions.calls[0]["max_completion_tokens"] == 4096
+    assert "max_tokens" not in completions.calls[0]
+
+
+def test_gpt_56_negotiates_unsupported_reasoning_control() -> None:
+    provider, completions = _provider(
+        [_RejectedRequest("unknown parameter reasoning_effort"), _response("portable")]
+    )
+    provider._default_model = "gpt-5.6-terra"
+
+    result = provider.complete("system", "user")
+
+    assert result.text == "portable"
+    assert completions.calls[0]["reasoning_effort"] == "none"
+    assert "reasoning_effort" not in completions.calls[1]
+
+
+def test_gpt_56_negotiates_legacy_output_token_field() -> None:
+    provider, completions = _provider(
+        [_RejectedRequest("unknown parameter max_completion_tokens"), _response("portable")]
+    )
+    provider._default_model = "gpt-5.6-terra"
+
+    result = provider.complete("system", "user")
+
+    assert result.text == "portable"
+    assert completions.calls[0]["max_completion_tokens"] == 4096
+    assert completions.calls[1]["max_tokens"] == 4096
+    assert "max_completion_tokens" not in completions.calls[1]
+
+
+@pytest.mark.parametrize("model", ["gemini-3.6-flash", "google/gemini-3.5-flash-lite"])
+def test_new_gemini_models_omit_ignored_temperature(model: str) -> None:
+    provider, completions = _provider([_response("plain")])
+    provider._default_model = model
+
+    provider.complete("system", "user", temperature=0.4)
+
+    assert "temperature" not in completions.calls[0]

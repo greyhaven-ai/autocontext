@@ -214,7 +214,7 @@ class TestDesignerContextFields:
             '  "task_prompt": "Write a post",\n'
             '  "judge_rubric": "Evaluate quality",\n'
             '  "output_format": "free_text",\n'
-            '  "judge_model": "claude-sonnet-4-20250514",\n'
+            '  "judge_model": "claude-sonnet-5",\n'
             '  "context_preparation": "Research the topic first",\n'
             '  "required_context_keys": ["research_brief", "sources"]\n'
             '}\n'

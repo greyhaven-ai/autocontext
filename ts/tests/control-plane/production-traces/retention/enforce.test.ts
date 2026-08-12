@@ -55,7 +55,7 @@ function trace(opts: {
     traceId,
     source: { emitter: "sdk", sdk: { name: "autoctx-ts", version: "0.4.3" } },
     provider: { name: "openai" },
-    model: "gpt-4o-mini",
+    model: "gpt-5.6-luna",
     env: {
       environmentTag: "production" as ProductionTrace["env"]["environmentTag"],
       appId: "my-app" as ProductionTrace["env"]["appId"],

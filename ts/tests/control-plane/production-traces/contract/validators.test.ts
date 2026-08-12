@@ -26,7 +26,7 @@ const validTrace = {
   provider: {
     name: "openai",
   },
-  model: "gpt-4o-mini",
+  model: "gpt-5.6-luna",
   env: {
     environmentTag: "production",
     appId: "my-app",

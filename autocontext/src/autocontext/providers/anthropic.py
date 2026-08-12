@@ -40,7 +40,7 @@ class AnthropicProvider(LLMProvider):
     def __init__(
         self,
         api_key: str | None = None,
-        default_model_name: str = "claude-sonnet-4-20250514",
+        default_model_name: str = "claude-sonnet-5",
     ) -> None:
         self._client = anthropic.Anthropic(api_key=api_key)
         self._default_model = default_model_name
@@ -58,10 +58,10 @@ class AnthropicProvider(LLMProvider):
         request: dict[str, Any] = {
             "model": model_id,
             "max_tokens": clamp_output_tokens(max_tokens, model_id),
-            "temperature": temperature,
             "system": system_prompt,
             "messages": [{"role": "user", "content": user_prompt}],
         }
+        request.update(_claude_request_controls(model_id, temperature))
 
         # AC-928. Anthropic has no `response_format`; a strict, forced tool call
         # is the equivalent. ``strict`` is essential: forcing a non-strict tool
@@ -168,17 +168,18 @@ class AnthropicProvider(LLMProvider):
                 }
             else:
                 tool_choice = {"type": "auto", "disable_parallel_tool_use": True}
+            request: dict[str, Any] = {
+                "model": model_id,
+                "max_tokens": clamp_output_tokens(max_tokens, model_id),
+                "system": with_deep_think_instruction(system_prompt),
+                "messages": messages,
+                "tools": [_DEEP_THINK_TOOL],
+                "tool_choice": tool_choice,
+            }
+            request.update(_claude_request_controls(model_id, temperature))
             try:
                 create_message: Any = self._client.messages.create
-                response = create_message(
-                    model=model_id,
-                    max_tokens=clamp_output_tokens(max_tokens, model_id),
-                    temperature=temperature,
-                    system=with_deep_think_instruction(system_prompt),
-                    messages=messages,
-                    tools=[_DEEP_THINK_TOOL],
-                    tool_choice=tool_choice,
-                )
+                response = create_message(**request)
             except anthropic.APIError as exc:
                 raise ProviderError(
                     f"Anthropic API error: {exc}",
@@ -252,6 +253,31 @@ class AnthropicProvider(LLMProvider):
     @property
     def supports_thinking_stream(self) -> bool:
         return True
+
+
+_CLAUDE_5_MODEL = re.compile(r"(?:^|/)claude-(?:sonnet|opus|fable|mythos)-5(?:$|[-:])", re.IGNORECASE)
+_CLAUDE_5_CAN_DISABLE_THINKING = re.compile(
+    r"(?:^|/)claude-(?:sonnet|opus)-5(?:$|[-:])",
+    re.IGNORECASE,
+)
+
+
+def _claude_request_controls(model_id: str, temperature: float) -> dict[str, Any]:
+    """Preserve pre-Claude-5 completion semantics without invalid sampling.
+
+    Claude 5 rejects non-default sampling values. Sonnet 5 and Opus 5 also
+    enable adaptive thinking when ``thinking`` is omitted, which makes the
+    existing output cap cover hidden reasoning as well as visible text. The
+    provider's dedicated thinking method already exposes a bounded tool-based
+    scratchpad, so both paths keep native thinking off where the model permits
+    it. Fable/Mythos 5 cannot disable thinking and therefore receive neither
+    the unsupported control nor a sampling field.
+    """
+    if _CLAUDE_5_MODEL.search(model_id):
+        if _CLAUDE_5_CAN_DISABLE_THINKING.search(model_id):
+            return {"thinking": {"type": "disabled"}}
+        return {}
+    return {"temperature": temperature}
 
 
 def _first_text_block(response: Any) -> str:

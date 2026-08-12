@@ -122,7 +122,7 @@ export function runPythonEmit(opts: RunPythonEmitOptions): RunPythonEmitResult {
     '        env["taskType"] = task_type',
     "    trace = build_trace(",
     '        provider="anthropic",',
-    '        model="claude-sonnet-4-20250514",',
+    '        model="claude-sonnet-5",',
     "        messages=[{",
     '            "role": "user",',
     '            "content": f"hello {i}",',

@@ -696,7 +696,7 @@ Key environment variables:
 | `AUTOCONTEXT_AGENT_API_KEY`                                          | Global agent API key override (or use provider-native env vars such as `ANTHROPIC_API_KEY`)                                                                                                                                                                                                         |
 | `OPENROUTER_API_KEY` / `AUTOCONTEXT_OPENROUTER_API_KEY`              | OpenRouter credential and compatibility alias; never falls back to `OPENAI_API_KEY`                                                                                                                                                                                                                  |
 | `AUTOCONTEXT_AGENT_BASE_URL`                                         | Global base URL for OpenAI-compatible agent endpoints                                                                                                                                                                                                                                               |
-| `AUTOCONTEXT_LOCAL_MODEL`                                            | One model id for every otherwise-unset role/tier slot on non-Anthropic providers. Explicit `AUTOCONTEXT_MODEL_<ROLE>` and `AUTOCONTEXT_TIER_<TIER>_MODEL` values win; otherwise known provider defaults apply (`ollama=llama3.1`, `openai`/`openai-compatible=gpt-4o`, `openrouter=anthropic/claude-sonnet-4`, `vllm=default`). Works with role routing both `off` and `auto`. |
+| `AUTOCONTEXT_LOCAL_MODEL`                                            | One model id for every otherwise-unset role/tier slot on non-Anthropic providers. Explicit `AUTOCONTEXT_MODEL_<ROLE>` and `AUTOCONTEXT_TIER_<TIER>_MODEL` values win; otherwise known provider defaults apply (`ollama=llama3.1`, `openai`/`openai-compatible=gpt-5.6-terra`, `openrouter=anthropic/claude-sonnet-5`, `vllm=default`). Works with role routing both `off` and `auto`. |
 | `AUTOCONTEXT_PROVIDER_HOSTING`                                       | Hosting for the default endpoint: `local` or `remote`. Empty uses conservative transport inference. Set this explicitly for generic transports such as `openai-compatible`, or when a normally local transport such as `vllm` is hosted remotely. |
 | `AUTOCONTEXT_PROVIDER_CAPABILITY`                                    | Maximum capability served by a locally hosted default endpoint: `fast`, `mid_tier`, or `frontier`. Automatic tier selection is clamped to this value. Ignored for endpoints resolved as remote. |
 | `AUTOCONTEXT_<ROLE>_PROVIDER_HOSTING` / `AUTOCONTEXT_<ROLE>_PROVIDER_CAPABILITY` | Endpoint declarations for an explicit competitor, analyst, coach, or architect provider. These do not inherit the default endpoint's declarations. |
@@ -742,8 +742,8 @@ Panel mode is opt-in. It fans a selected role prompt out to configured participa
 
 ```bash
 AUTOCONTEXT_PANEL_ROLES=analyst \
-AUTOCONTEXT_PANEL_PARTICIPANTS='analyst=openai-compatible:gpt-4o,anthropic:claude-sonnet-4-5-20250929' \
-AUTOCONTEXT_PANEL_SYNTHESIZER_MODEL=claude-opus-4-6 \
+AUTOCONTEXT_PANEL_PARTICIPANTS='analyst=openai-compatible:gpt-5.6-terra,anthropic:claude-sonnet-5' \
+AUTOCONTEXT_PANEL_SYNTHESIZER_MODEL=claude-opus-5 \
 autoctx run my_task --json
 
 # OpenRouter Fusion can also be tested as a single OpenAI-compatible role model.

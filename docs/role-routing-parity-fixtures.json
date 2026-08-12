@@ -465,7 +465,7 @@
       },
       "typescript": {
         "provider_type": "anthropic",
-        "model": "claude-sonnet-4-5-20250929",
+        "model": "claude-sonnet-5",
         "provider_class": "frontier",
         "cost_per_1k_tokens": 0.015
       },
@@ -487,7 +487,7 @@
       },
       "typescript": {
         "provider_type": "anthropic",
-        "model": "claude-opus-4-6",
+        "model": "claude-opus-5",
         "provider_class": "frontier",
         "cost_per_1k_tokens": 0.015
       },

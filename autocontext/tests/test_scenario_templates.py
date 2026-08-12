@@ -90,7 +90,7 @@ class TestTemplateSpec:
             "task_prompt": "Do something",
             "judge_rubric": "Evaluate the output",
             "output_format": "free_text",
-            "judge_model": "claude-sonnet-4-20250514",
+            "judge_model": "claude-sonnet-5",
         }
         spec = TemplateSpec.from_dict(yaml_data)
         assert spec.name == "test-template"

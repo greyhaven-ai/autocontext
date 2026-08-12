@@ -111,6 +111,39 @@ def test_no_schema_sends_no_tool_and_reports_unconstrained() -> None:
     assert result.text == "plain prose"
 
 
+@pytest.mark.parametrize("model", ["claude-sonnet-5", "claude-opus-5"])
+def test_claude_5_omits_sampling_and_disables_native_thinking(model: str) -> None:
+    provider, messages = _provider(_response([_text_block("plain prose")]))
+    provider._default_model = model
+
+    provider.complete("sys", "user", temperature=0.4)
+
+    request = messages.calls[0]
+    assert "temperature" not in request
+    assert request["thinking"] == {"type": "disabled"}
+
+
+def test_fable_5_omits_sampling_without_unsupported_thinking_control() -> None:
+    provider, messages = _provider(_response([_text_block("plain prose")]))
+    provider._default_model = "claude-fable-5"
+
+    provider.complete("sys", "user", temperature=0.4)
+
+    request = messages.calls[0]
+    assert "temperature" not in request
+    assert "thinking" not in request
+
+
+def test_legacy_claude_model_keeps_temperature() -> None:
+    provider, messages = _provider(_response([_text_block("plain prose")]))
+    provider._default_model = "claude-sonnet-4-5-20250929"
+
+    provider.complete("sys", "user", temperature=0.4)
+
+    assert messages.calls[0]["temperature"] == 0.4
+    assert "thinking" not in messages.calls[0]
+
+
 def test_missing_tool_use_block_degrades_to_unconstrained(caplog: pytest.LogCaptureFixture) -> None:
     """The failure that would otherwise be invisible.
 

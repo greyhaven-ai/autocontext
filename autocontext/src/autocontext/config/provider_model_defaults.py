@@ -2,7 +2,7 @@
 
 Every ``model_*`` and ``tier_*`` default in ``AppSettings`` is a Claude model
 id. Those defaults are read unconditionally, so setting only
-``AUTOCONTEXT_AGENT_PROVIDER=ollama`` sends ``claude-opus-4-6`` to a local
+``AUTOCONTEXT_AGENT_PROVIDER=ollama`` sends ``claude-opus-5`` to a local
 server, which fails at the endpoint instead of at configuration time. The user
 has to discover and set eight-plus separate vars before anything works.
 

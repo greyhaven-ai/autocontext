@@ -78,7 +78,7 @@ describe("instrumentClient", () => {
     const client = instrumentClient(inner, { sink, appId: "test-app", environmentTag: "test" });
 
     const resp = await client.chat.completions.create({
-      model: "gpt-4o",
+      model: "gpt-5.6-terra",
       messages: [{ role: "user", content: "Hello" }],
     });
     expect(resp.choices[0]?.message.content).toBe("hello world");
@@ -102,7 +102,7 @@ describe("instrumentClient", () => {
     const client = instrumentClient(inner, { sink, appId: "test-app", environmentTag: "test" });
 
     await client.chat.completions.create({
-      model: "gpt-4o",
+      model: "gpt-5.6-terra",
       messages: [{ role: "user", content: "Get weather" }],
     });
 
@@ -125,7 +125,7 @@ describe("instrumentClient", () => {
 
     await expect(
       client.chat.completions.create({
-        model: "gpt-4o",
+        model: "gpt-5.6-terra",
         messages: [{ role: "user", content: "Hello" }],
       }),
     ).rejects.toThrow();

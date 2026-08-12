@@ -25,8 +25,8 @@ class TestAgentTaskSpecDefaults:
     def test_explicit_model_preserved(self) -> None:
         from autocontext.scenarios.custom.agent_task_spec import AgentTaskSpec
 
-        spec = AgentTaskSpec(task_prompt="test", judge_rubric="rubric", judge_model="gpt-4o")
-        assert spec.judge_model == "gpt-4o"
+        spec = AgentTaskSpec(task_prompt="test", judge_rubric="rubric", judge_model="gpt-5.6-terra")
+        assert spec.judge_model == "gpt-5.6-terra"
 
 
 # ---------------------------------------------------------------------------
@@ -50,9 +50,9 @@ class TestTemplateSpecDefaults:
     def test_from_dict_explicit_model_preserved(self) -> None:
         from autocontext.scenarios.templates import TemplateSpec
 
-        data = {"name": "t", "description": "d", "task_prompt": "p", "judge_rubric": "r", "judge_model": "gpt-4o"}
+        data = {"name": "t", "description": "d", "task_prompt": "p", "judge_rubric": "r", "judge_model": "gpt-5.6-terra"}
         spec = TemplateSpec.from_dict(data)
-        assert spec.judge_model == "gpt-4o"
+        assert spec.judge_model == "gpt-5.6-terra"
 
 
 # ---------------------------------------------------------------------------
@@ -70,7 +70,7 @@ class TestAgentTaskDesignerDefaults:
         from autocontext.scenarios.custom.agent_task_designer import AGENT_TASK_DESIGNER_SYSTEM
 
         # The schema section shows "judge_model": "..." — check it's not an Anthropic model
-        assert '"judge_model": "claude-sonnet-4-20250514"' not in AGENT_TASK_DESIGNER_SYSTEM
+        assert '"judge_model": "claude-sonnet-5"' not in AGENT_TASK_DESIGNER_SYSTEM
 
     def test_parse_agent_task_spec_missing_model_defaults_empty(self) -> None:
         from autocontext.scenarios.custom.agent_task_designer import (
@@ -163,18 +163,18 @@ class TestProviderEmptyModelFallback:
         """When complete() is called with model='', the provider should use its default."""
         from autocontext.providers.anthropic import AnthropicProvider
 
-        provider = AnthropicProvider(api_key="test", default_model_name="claude-sonnet-4-20250514")
+        provider = AnthropicProvider(api_key="test", default_model_name="claude-sonnet-5")
         # The provider's complete() should convert "" to its default model
-        assert provider.default_model() == "claude-sonnet-4-20250514"
+        assert provider.default_model() == "claude-sonnet-5"
 
     def test_openai_compat_provider_empty_model_uses_default(self) -> None:
         from autocontext.providers.openai_compat import OpenAICompatibleProvider
 
         try:
-            provider = OpenAICompatibleProvider(api_key="test", default_model_name="gpt-4o")
+            provider = OpenAICompatibleProvider(api_key="test", default_model_name="gpt-5.6-terra")
         except Exception:
             pytest.skip("openai package not installed")
-        assert provider.default_model() == "gpt-4o"
+        assert provider.default_model() == "gpt-5.6-terra"
 
 
 # ---------------------------------------------------------------------------
@@ -184,7 +184,7 @@ class TestProviderEmptyModelFallback:
 class TestNoHardcodedModelsInScaffold:
     """Verify that scaffold/template/spec/runner files don't hardcode Anthropic models."""
 
-    HARDCODED_MODEL = "claude-sonnet-4-20250514"
+    HARDCODED_MODEL = "claude-sonnet-5"
 
     SCAFFOLD_FILES = [
         "autocontext/src/autocontext/scenarios/custom/agent_task_spec.py",

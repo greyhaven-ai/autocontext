@@ -36,8 +36,16 @@ export interface AnthropicProviderOpts {
   model?: string;
 }
 
+function claudeRequestControls(model: string, temperature: number): Record<string, unknown> {
+  const isClaude5 = /(?:^|\/)claude-(?:sonnet|opus|fable|mythos)-5(?:$|[-:])/i.test(model);
+  if (!isClaude5) return { temperature };
+
+  const canDisableThinking = /(?:^|\/)claude-(?:sonnet|opus)-5(?:$|[-:])/i.test(model);
+  return canDisableThinking ? { thinking: { type: "disabled" } } : {};
+}
+
 export function createAnthropicProvider(opts: AnthropicProviderOpts): LLMProvider {
-  const defaultModel = opts.model || "claude-sonnet-4-20250514";
+  const defaultModel = opts.model || "claude-sonnet-5";
 
   const post = async (body: Record<string, unknown>): Promise<AnthropicMessageResponse> => {
     const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -66,9 +74,9 @@ export function createAnthropicProvider(opts: AnthropicProviderOpts): LLMProvide
       const data = await post({
         model,
         max_tokens: clampOutputTokens(callOpts.maxTokens ?? 4096, model),
-        temperature: callOpts.temperature ?? 0,
         system: callOpts.systemPrompt,
         messages: [{ role: "user", content: callOpts.userPrompt }],
+        ...claudeRequestControls(model, callOpts.temperature ?? 0),
       });
 
       const text = data.content
@@ -106,7 +114,6 @@ export function createAnthropicProvider(opts: AnthropicProviderOpts): LLMProvide
           data = await post({
             model,
             max_tokens: clampOutputTokens(callOpts.maxTokens ?? 4096, model),
-            temperature: callOpts.temperature ?? 0,
             system: withDeepThinkInstruction(callOpts.systemPrompt),
             messages,
             tools: [
@@ -117,6 +124,7 @@ export function createAnthropicProvider(opts: AnthropicProviderOpts): LLMProvide
               },
             ],
             tool_choice: toolChoice,
+            ...claudeRequestControls(model, callOpts.temperature ?? 0),
           });
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
@@ -183,6 +191,7 @@ export function createAnthropicProvider(opts: AnthropicProviderOpts): LLMProvide
 }
 
 interface AnthropicContentBlock {
+  [key: string]: unknown;
   type: string;
   text?: string;
   id?: string;
@@ -214,7 +223,9 @@ function parseAnthropicMessageResponse(value: unknown): AnthropicMessageResponse
     if (!isRecord(raw) || typeof raw["type"] !== "string") {
       throw new ProviderError("Anthropic API returned a malformed content block");
     }
-    const block: AnthropicContentBlock = { type: raw["type"] };
+    // Keep thinking/signature fields intact for adaptive-thinking models: the
+    // Messages API requires them to be round-tripped unchanged with tool use.
+    const block: AnthropicContentBlock = { ...raw, type: raw["type"] };
     if (typeof raw["text"] === "string") block.text = raw["text"];
     if (typeof raw["id"] === "string") block.id = raw["id"];
     if (typeof raw["name"] === "string") block.name = raw["name"];
@@ -268,6 +279,17 @@ function isUnsupportedReasoningEffortError(status: number, body: string): boolea
     "invalid",
   ].some((token) => message.includes(token));
   return mentionsField && rejectsField;
+}
+
+function isUnsupportedMaxCompletionTokensError(status: number, body: string): boolean {
+  if (![400, 404, 422].includes(status)) return false;
+  const message = body.toLowerCase();
+  return (
+    message.includes("max_completion_tokens") &&
+    ["unsupported", "not supported", "unknown", "unrecognized", "unexpected", "invalid"].some(
+      (token) => message.includes(token),
+    )
+  );
 }
 
 function isUnsupportedStrictToolsError(status: number, body: string): boolean {
@@ -332,8 +354,16 @@ function isGpt56Plus(model: string): boolean {
   return major > 5 || (major === 5 && minor >= 6);
 }
 
+function supportsTemperature(model: string): boolean {
+  return !/(?:^|\/)gemini-3\.(?:5|6)(?:$|[-:])/i.test(model);
+}
+
+function outputTokenField(model: string): "max_completion_tokens" | "max_tokens" {
+  return isGpt56Plus(model) ? "max_completion_tokens" : "max_tokens";
+}
+
 export function createOpenAICompatibleProvider(opts: OpenAICompatibleProviderOpts): LLMProvider {
-  const defaultModel = opts.model || "gpt-4o";
+  const defaultModel = opts.model || "gpt-5.6-terra";
   const baseUrl = (opts.baseUrl ?? "https://api.openai.com/v1").replace(/\/+$/, "");
   const apiKey = opts.apiKey ?? "";
 
@@ -342,11 +372,17 @@ export function createOpenAICompatibleProvider(opts: OpenAICompatibleProviderOpt
     supportsThinkingStream: true,
     defaultModel: () => defaultModel,
     complete: async (callOpts) => {
+      const model = callOpts.model || defaultModel;
+      let wireReasoningEffort: string | undefined = isGpt56Plus(model) ? "none" : undefined;
+      let tokenField = outputTokenField(model);
       const buildBody = (withSchema: boolean) =>
         JSON.stringify({
-          model: callOpts.model || defaultModel,
-          max_tokens: clampOutputTokens(callOpts.maxTokens ?? 4096, callOpts.model || defaultModel),
-          temperature: callOpts.temperature ?? 0,
+          model,
+          [tokenField]: clampOutputTokens(callOpts.maxTokens ?? 4096, model),
+          ...(supportsTemperature(model) ? { temperature: callOpts.temperature ?? 0 } : {}),
+          ...(wireReasoningEffort !== undefined
+            ? { reasoning_effort: wireReasoningEffort }
+            : {}),
           messages: [
             { role: "system", content: callOpts.systemPrompt },
             { role: "user", content: callOpts.userPrompt },
@@ -376,23 +412,35 @@ export function createOpenAICompatibleProvider(opts: OpenAICompatibleProviderOpt
         });
 
       let constrained = Boolean(callOpts.outputSchema);
-      let res = await post(constrained);
+      let res: Response;
+      while (true) {
+        res = await post(constrained);
+        if (res.ok) break;
 
-      if (!res.ok && constrained) {
         const body = await res.text();
-        if (!isUnsupportedResponseFormatError(res.status, body)) {
-          throw new ProviderError(`OpenAI API error ${res.status}: ${body.slice(0, 200)}`);
+        if (constrained && isUnsupportedResponseFormatError(res.status, body)) {
+          // This endpoint explicitly rejected response_format. Retry without
+          // it and report that the returned text was unconstrained.
+          constrained = false;
+          continue;
         }
-
-        // This endpoint explicitly rejected response_format. Retry once
-        // without it so a backend with no constrained-decoding support still
-        // works, and report that the returned text was unconstrained.
-        constrained = false;
-        res = await post(false);
-      }
-
-      if (!res.ok) {
-        const body = await res.text();
+        if (
+          wireReasoningEffort !== undefined &&
+          isUnsupportedReasoningEffortError(res.status, body)
+        ) {
+          // Compatible gateways may use a GPT-like id without exposing the
+          // native control. Preserve portability after first trying to avoid
+          // GPT-5.6's implicit medium reasoning.
+          wireReasoningEffort = undefined;
+          continue;
+        }
+        if (
+          tokenField === "max_completion_tokens" &&
+          isUnsupportedMaxCompletionTokensError(res.status, body)
+        ) {
+          tokenField = "max_tokens";
+          continue;
+        }
         throw new ProviderError(`OpenAI API error ${res.status}: ${body.slice(0, 200)}`);
       }
 
@@ -433,8 +481,7 @@ export function createOpenAICompatibleProvider(opts: OpenAICompatibleProviderOpt
       for (let turn = 0; turn <= maxToolTurns; turn++) {
         const body: Record<string, unknown> = {
           model,
-          max_tokens: clampOutputTokens(callOpts.maxTokens ?? 4096, model),
-          temperature: callOpts.temperature ?? 0,
+          [outputTokenField(model)]: clampOutputTokens(callOpts.maxTokens ?? 4096, model),
           messages,
           tools: [
             {
@@ -450,6 +497,9 @@ export function createOpenAICompatibleProvider(opts: OpenAICompatibleProviderOpt
           tool_choice: turn === 0 ? "required" : "auto",
           parallel_tool_calls: false,
         };
+        if (supportsTemperature(model)) {
+          body["temperature"] = callOpts.temperature ?? 0;
+        }
         if (wireReasoningEffort !== undefined) {
           body["reasoning_effort"] = wireReasoningEffort;
         }
@@ -517,6 +567,14 @@ export function createOpenAICompatibleProvider(opts: OpenAICompatibleProviderOpt
               wireReasoningEffort = fallbackEffort;
               body["reasoning_effort"] = fallbackEffort;
             }
+            continue;
+          }
+          if (
+            "max_completion_tokens" in body &&
+            isUnsupportedMaxCompletionTokensError(res.status, errorBody)
+          ) {
+            body["max_tokens"] = body["max_completion_tokens"];
+            delete body["max_completion_tokens"];
             continue;
           }
           if (isUnsupportedToolsError(res.status, errorBody)) {
@@ -678,12 +736,12 @@ export const OPENAI_COMPATIBLE_PROVIDER_DEFAULTS: Record<
   gemini: {
     baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
     envVar: "GEMINI_API_KEY",
-    defaultModel: "gemini-2.5-pro",
+    defaultModel: "gemini-3.1-pro-preview",
   },
   mistral: {
     baseUrl: "https://api.mistral.ai/v1",
     envVar: "MISTRAL_API_KEY",
-    defaultModel: "mistral-large-latest",
+    defaultModel: "mistral-large-2512",
   },
   groq: {
     baseUrl: "https://api.groq.com/openai/v1",
@@ -693,11 +751,11 @@ export const OPENAI_COMPATIBLE_PROVIDER_DEFAULTS: Record<
   openrouter: {
     baseUrl: "https://openrouter.ai/api/v1",
     envVar: "OPENROUTER_API_KEY",
-    defaultModel: "anthropic/claude-sonnet-4",
+    defaultModel: "anthropic/claude-sonnet-5",
   },
   "azure-openai": {
     envVar: "AZURE_OPENAI_API_KEY",
-    defaultModel: "gpt-4o",
+    defaultModel: "gpt-5.6-terra",
   },
 };
 

@@ -85,8 +85,8 @@ def _settings(tmp_path: Path, **overrides: object) -> AppSettings:
         agent_provider=str(overrides.get("agent_provider", "pi")),
         architect_provider=str(overrides.get("architect_provider", "")),
         judge_provider=str(overrides.get("judge_provider", "anthropic")),
-        model_architect=str(overrides.get("model_architect", "claude-opus-4-6")),
-        agent_default_model=str(overrides.get("agent_default_model", "gpt-4o")),
+        model_architect=str(overrides.get("model_architect", "claude-opus-5")),
+        agent_default_model=str(overrides.get("agent_default_model", "gpt-5.6-terra")),
         pi_model=str(overrides.get("pi_model", "")),
     )
 
@@ -167,7 +167,7 @@ class TestSimulateRuntimeResolution:
             tmp_path,
             agent_provider="ollama",
             agent_default_model="llama3.1",
-            model_architect="claude-opus-4-6",
+            model_architect="claude-opus-5",
         )
         client = _RecordingClient(text='{"spec": "ollama-runtime"}')
         orchestrator = _FakeOrchestrator(client, "llama3.1")

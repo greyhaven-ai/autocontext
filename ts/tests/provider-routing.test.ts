@@ -133,10 +133,10 @@ describe("resolveProviderConfig env var alignment", () => {
     saveAndClearProviderEnv();
     process.env.AUTOCONTEXT_AGENT_PROVIDER = "openai-compatible";
     process.env.AUTOCONTEXT_AGENT_API_KEY = "test-key";
-    process.env.AUTOCONTEXT_AGENT_DEFAULT_MODEL = "gpt-4o-mini";
+    process.env.AUTOCONTEXT_AGENT_DEFAULT_MODEL = "gpt-5.6-luna";
     const { resolveProviderConfig } = await import("../src/providers/index.js");
     const config = resolveProviderConfig();
-    expect(config.model).toBe("gpt-4o-mini");
+    expect(config.model).toBe("gpt-5.6-luna");
   });
 
   it("resolves hermes provider from env vars", async () => {
@@ -224,7 +224,7 @@ describe("Per-role provider configuration", () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async () => (
       new Response(JSON.stringify({
         choices: [{ message: { content: "ok" } }],
-        model: "gpt-4o",
+        model: "gpt-5.6-terra",
         usage: { prompt_tokens: 1, completion_tokens: 1 },
       }), {
         status: 200,
@@ -242,14 +242,14 @@ describe("Per-role provider configuration", () => {
     await bundle.defaultProvider.complete({
       systemPrompt: "",
       userPrompt: "default",
-      model: "gpt-4o",
+      model: "gpt-5.6-terra",
       temperature: 0,
       maxTokens: 16,
     });
     await bundle.roleProviders.competitor?.complete({
       systemPrompt: "",
       userPrompt: "role",
-      model: "gpt-4o",
+      model: "gpt-5.6-terra",
       temperature: 0,
       maxTokens: 16,
     });

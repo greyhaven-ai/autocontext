@@ -237,7 +237,7 @@ describe("autoctx providers", () => {
       env: {
         AUTOCONTEXT_AGENT_PROVIDER: "openai",
         AUTOCONTEXT_AGENT_API_KEY: "sk-generic-env",
-        AUTOCONTEXT_AGENT_DEFAULT_MODEL: "gpt-4o-mini",
+        AUTOCONTEXT_AGENT_DEFAULT_MODEL: "gpt-5.6-luna",
       },
     });
     expect(exitCode).toBe(0);
@@ -245,7 +245,7 @@ describe("autoctx providers", () => {
     const openai = parsed.find((p) => p.id === "openai");
     expect(openai?.authenticated).toBe(true);
     expect(openai?.source).toBe("env");
-    expect(openai?.model).toBe("gpt-4o-mini");
+    expect(openai?.model).toBe("gpt-5.6-luna");
   });
 });
 

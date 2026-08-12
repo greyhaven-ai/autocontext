@@ -29,7 +29,7 @@ def test_arg_wins_over_env(monkeypatch, tmp_path, make_openai_client):
     client = make_openai_client(lambda r: httpx.Response(200, json=canned_chat_completion()))
     sink = FileSink(path=tmp_path / "t.jsonl", batch_size=1)
     wrapped = instrument_client(client, sink=sink, app_id="arg-app")
-    wrapped.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": "hi"}])
+    wrapped.chat.completions.create(model="gpt-5.6-terra", messages=[{"role": "user", "content": "hi"}])
     sink.close()
     trace = json.loads((tmp_path / "t.jsonl").read_text().strip())
     assert trace["env"]["appId"] == "arg-app"

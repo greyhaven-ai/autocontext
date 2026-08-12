@@ -29,7 +29,7 @@ def test_settings_agent_api_key_default() -> None:
 
 def test_settings_agent_default_model_default() -> None:
     s = AppSettings()
-    assert s.agent_default_model == "gpt-4o"
+    assert s.agent_default_model == "gpt-5.6-terra"
 
 
 # ---------------------------------------------------------------------------
@@ -142,15 +142,15 @@ def test_provider_bridge_generate_delegates_to_provider() -> None:
     mock_provider = MagicMock()
     mock_provider.complete.return_value = MagicMock(
         text="hello world",
-        model="gpt-4o",
+        model="gpt-5.6-terra",
         usage={"input_tokens": 10, "output_tokens": 5},
     )
-    mock_provider.default_model.return_value = "gpt-4o"
+    mock_provider.default_model.return_value = "gpt-5.6-terra"
 
     client = ProviderBridgeClient(mock_provider, use_provider_default_model=True)
     resp = client.generate(model="ignored", prompt="test", max_tokens=100, temperature=0.5)
     assert resp.text == "hello world"
-    assert resp.usage.model == "gpt-4o"
+    assert resp.usage.model == "gpt-5.6-terra"
     mock_provider.complete.assert_called_once()
 
 
@@ -164,7 +164,7 @@ def test_orchestrator_creates_routed_client_for_nondefault_openai_model() -> Non
     settings = AppSettings(
         agent_provider="openai-compatible",
         agent_api_key="test-key",
-        agent_default_model="gpt-4o-mini",
+        agent_default_model="gpt-5.6-luna",
     )
     with patch("autocontext.providers.openai_compat.OpenAICompatibleProvider") as mock_cls:
         mock_cls.return_value = MagicMock()
@@ -181,5 +181,5 @@ def test_orchestrator_creates_routed_client_for_nondefault_openai_model() -> Non
 
     assert client is not orch.client
     assert mock_cls.call_count == 2
-    assert mock_cls.call_args_list[0].kwargs["default_model_name"] == "gpt-4o-mini"
+    assert mock_cls.call_args_list[0].kwargs["default_model_name"] == "gpt-5.6-luna"
     assert mock_cls.call_args_list[1].kwargs["default_model_name"] == "gpt-4.1"

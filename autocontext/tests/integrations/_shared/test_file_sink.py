@@ -15,7 +15,7 @@ def _make_trace(n: int = 1) -> dict:
         "schemaVersion": "1.0",
         "traceId": f"01HN000000000000000000000{n:1d}",
         "provider": "openai",
-        "model": "gpt-4o",
+        "model": "gpt-5.6-terra",
         "messages": [{"role": "user", "content": "hi"}],
         "timing": {"startedAt": "2026-04-21T00:00:00Z", "endedAt": "2026-04-21T00:00:01Z", "latencyMs": 1000},
         "usage": {"tokensIn": 1, "tokensOut": 1},

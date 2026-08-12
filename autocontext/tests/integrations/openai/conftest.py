@@ -63,7 +63,7 @@ def canned_chat_completion(
         "id": "chatcmpl-fake",
         "object": "chat.completion",
         "created": 1714000000,
-        "model": "gpt-4o",
+        "model": "gpt-5.6-terra",
         "choices": [{"index": 0, "message": message, "finish_reason": finish_reason}],
         "usage": usage or {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
     }
@@ -84,7 +84,7 @@ def canned_sse_chunks(
                 "id": "chatcmpl-fake",
                 "object": "chat.completion.chunk",
                 "created": 1714000000,
-                "model": "gpt-4o",
+                "model": "gpt-5.6-terra",
                 "choices": [{"index": 0, "delta": {"content": piece}, "finish_reason": None}],
             }).encode()
             + b"\n\n"
@@ -96,7 +96,7 @@ def canned_sse_chunks(
                 "id": "chatcmpl-fake",
                 "object": "chat.completion.chunk",
                 "created": 1714000000,
-                "model": "gpt-4o",
+                "model": "gpt-5.6-terra",
                 "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
                 "usage": usage,
             }).encode()

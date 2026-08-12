@@ -20,7 +20,7 @@ describe("AnthropicProvider", () => {
   it("should use default model when none specified", async () => {
     const { createAnthropicProvider } = await import("../src/providers/index.js");
     const provider = createAnthropicProvider({ apiKey: "test-key" });
-    expect(provider.defaultModel()).toBe("claude-sonnet-4-20250514");
+    expect(provider.defaultModel()).toBe("claude-sonnet-5");
   });
 
   it("should use custom model when specified", async () => {
@@ -32,7 +32,7 @@ describe("AnthropicProvider", () => {
   it("AC-298: should fall back to default model when empty string passed", async () => {
     const { createAnthropicProvider } = await import("../src/providers/index.js");
     const provider = createAnthropicProvider({ apiKey: "test-key", model: "" });
-    expect(provider.defaultModel()).toBe("claude-sonnet-4-20250514");
+    expect(provider.defaultModel()).toBe("claude-sonnet-5");
     expect(provider.defaultModel().length).toBeGreaterThan(0);
   });
 
@@ -44,7 +44,7 @@ describe("AnthropicProvider", () => {
       ok: true,
       json: async () => ({
         content: [{ type: "text", text: "ok" }],
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-5",
         usage: { input_tokens: 1, output_tokens: 1 },
       }),
     });
@@ -54,7 +54,7 @@ describe("AnthropicProvider", () => {
 
     const body = JSON.parse(mockFetch.mock.calls[0][1].body);
     expect(body.model.length).toBeGreaterThan(0);
-    expect(body.model).toBe("claude-sonnet-4-20250514");
+    expect(body.model).toBe("claude-sonnet-5");
 
     vi.unstubAllGlobals();
   });
@@ -67,7 +67,7 @@ describe("AnthropicProvider", () => {
       ok: true,
       json: async () => ({
         content: [{ type: "text", text: "Hello" }],
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-5",
         usage: { input_tokens: 10, output_tokens: 5 },
       }),
     });
@@ -80,7 +80,31 @@ describe("AnthropicProvider", () => {
     expect(url).toBe("https://api.anthropic.com/v1/messages");
     expect(opts.headers["x-api-key"]).toBe("sk-ant-test");
     expect(opts.headers["anthropic-version"]).toBe("2023-06-01");
+    const body = JSON.parse(opts.body);
+    expect(body.temperature).toBeUndefined();
+    expect(body.thinking).toEqual({ type: "disabled" });
 
+    vi.unstubAllGlobals();
+  });
+
+  it("omits Claude 5 sampling without sending unsupported Fable thinking controls", async () => {
+    const { createAnthropicProvider } = await import("../src/providers/index.js");
+    const provider = createAnthropicProvider({ apiKey: "test-key", model: "claude-fable-5" });
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        content: [{ type: "text", text: "ok" }],
+        model: "claude-fable-5",
+        usage: { input_tokens: 1, output_tokens: 1 },
+      }),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    await provider.complete({ systemPrompt: "s", userPrompt: "u", temperature: 0.4 });
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.temperature).toBeUndefined();
+    expect(body.thinking).toBeUndefined();
     vi.unstubAllGlobals();
   });
 
@@ -92,14 +116,14 @@ describe("AnthropicProvider", () => {
       ok: true,
       json: async () => ({
         content: [{ type: "text", text: "Test response" }],
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-5",
         usage: { input_tokens: 15, output_tokens: 8 },
       }),
     }));
 
     const result = await provider.complete({ systemPrompt: "sys", userPrompt: "test" });
     expect(result.text).toBe("Test response");
-    expect(result.model).toBe("claude-sonnet-4-20250514");
+    expect(result.model).toBe("claude-sonnet-5");
     expect(result.usage).toEqual({ input: 15, output: 8 });
 
     vi.unstubAllGlobals();
@@ -136,10 +160,10 @@ describe("OpenAICompatibleProvider", () => {
     expect(typeof provider.complete).toBe("function");
   });
 
-  it("should use default model gpt-4o when none specified", async () => {
+  it("should use default model gpt-5.6-terra when none specified", async () => {
     const { createOpenAICompatibleProvider } = await import("../src/providers/index.js");
     const provider = createOpenAICompatibleProvider({ apiKey: "test-key" });
-    expect(provider.defaultModel()).toBe("gpt-4o");
+    expect(provider.defaultModel()).toBe("gpt-5.6-terra");
   });
 
   it("should use custom model and base URL", async () => {
@@ -155,7 +179,7 @@ describe("OpenAICompatibleProvider", () => {
   it("AC-298: should fall back to default model when empty string passed", async () => {
     const { createOpenAICompatibleProvider } = await import("../src/providers/index.js");
     const provider = createOpenAICompatibleProvider({ apiKey: "test-key", model: "" });
-    expect(provider.defaultModel()).toBe("gpt-4o");
+    expect(provider.defaultModel()).toBe("gpt-5.6-terra");
   });
 
   it("should call OpenAI chat completions endpoint", async () => {
@@ -169,7 +193,7 @@ describe("OpenAICompatibleProvider", () => {
       ok: true,
       json: async () => ({
         choices: [{ message: { content: "Hello from GPT" } }],
-        model: "gpt-4o",
+        model: "gpt-5.6-terra",
         usage: { prompt_tokens: 10, completion_tokens: 5 },
       }),
     });
@@ -185,10 +209,94 @@ describe("OpenAICompatibleProvider", () => {
       { role: "system", content: "system" },
       { role: "user", content: "hello" },
     ]);
+    expect(body.reasoning_effort).toBe("none");
+    expect(body.max_completion_tokens).toBe(4096);
+    expect(body.max_tokens).toBeUndefined();
     expect(opts.headers["Authorization"]).toBe("Bearer sk-test");
 
     vi.unstubAllGlobals();
   });
+
+  it("negotiates away unsupported GPT-5.6 reasoning control", async () => {
+    const { createOpenAICompatibleProvider } = await import("../src/providers/index.js");
+    const provider = createOpenAICompatibleProvider({ apiKey: "test-key" });
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        text: async () => "unknown parameter reasoning_effort",
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          choices: [{ message: { content: "portable" } }],
+          model: "gpt-5.6-terra",
+          usage: { prompt_tokens: 1, completion_tokens: 1 },
+        }),
+      });
+    vi.stubGlobal("fetch", mockFetch);
+
+    const result = await provider.complete({ systemPrompt: "s", userPrompt: "u" });
+
+    expect(result.text).toBe("portable");
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body).reasoning_effort).toBe("none");
+    expect(JSON.parse(mockFetch.mock.calls[1][1].body).reasoning_effort).toBeUndefined();
+    vi.unstubAllGlobals();
+  });
+
+  it("negotiates a legacy gateway output-token field", async () => {
+    const { createOpenAICompatibleProvider } = await import("../src/providers/index.js");
+    const provider = createOpenAICompatibleProvider({ apiKey: "test-key" });
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        text: async () => "unknown parameter max_completion_tokens",
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          choices: [{ message: { content: "portable" } }],
+          model: "gpt-5.6-terra",
+          usage: { prompt_tokens: 1, completion_tokens: 1 },
+        }),
+      });
+    vi.stubGlobal("fetch", mockFetch);
+
+    await provider.complete({ systemPrompt: "s", userPrompt: "u" });
+
+    const firstBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+    const secondBody = JSON.parse(mockFetch.mock.calls[1][1].body);
+    expect(firstBody.max_completion_tokens).toBe(4096);
+    expect(firstBody.max_tokens).toBeUndefined();
+    expect(secondBody.max_tokens).toBe(4096);
+    expect(secondBody.max_completion_tokens).toBeUndefined();
+    vi.unstubAllGlobals();
+  });
+
+  it.each(["gemini-3.6-flash", "google/gemini-3.5-flash-lite"])(
+    "omits ignored sampling controls for %s",
+    async (model) => {
+      const { createOpenAICompatibleProvider } = await import("../src/providers/index.js");
+      const provider = createOpenAICompatibleProvider({ apiKey: "test-key", model });
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          choices: [{ message: { content: "ok" } }],
+          model,
+          usage: { prompt_tokens: 1, completion_tokens: 1 },
+        }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      await provider.complete({ systemPrompt: "s", userPrompt: "u", temperature: 0.4 });
+
+      expect(JSON.parse(mockFetch.mock.calls[0][1].body).temperature).toBeUndefined();
+      vi.unstubAllGlobals();
+    },
+  );
 
   it("sends a JSON schema and reports a constrained response", async () => {
     const { createOpenAICompatibleProvider } = await import("../src/providers/index.js");
@@ -197,7 +305,7 @@ describe("OpenAICompatibleProvider", () => {
       ok: true,
       json: async () => ({
         choices: [{ message: { content: '{"answer":"ok"}' } }],
-        model: "gpt-4o",
+        model: "gpt-5.6-terra",
         usage: { prompt_tokens: 2, completion_tokens: 3 },
       }),
     });
@@ -290,14 +398,14 @@ describe("OpenAICompatibleProvider", () => {
       ok: true,
       json: async () => ({
         choices: [{ message: { content: "GPT response" } }],
-        model: "gpt-4o",
+        model: "gpt-5.6-terra",
         usage: { prompt_tokens: 20, completion_tokens: 10 },
       }),
     }));
 
     const result = await provider.complete({ systemPrompt: "sys", userPrompt: "test" });
     expect(result.text).toBe("GPT response");
-    expect(result.model).toBe("gpt-4o");
+    expect(result.model).toBe("gpt-5.6-terra");
     expect(result.usage).toEqual({ input: 20, output: 10 });
 
     vi.unstubAllGlobals();
@@ -328,7 +436,7 @@ describe("OpenAICompatibleProvider", () => {
       ok: true,
       json: async () => ({
         choices: [{ message: { content: "ok" } }],
-        model: "gpt-4o",
+        model: "gpt-5.6-terra",
         usage: { prompt_tokens: 1, completion_tokens: 1 },
       }),
     });
@@ -371,23 +479,23 @@ describe("OpenAICompatibleProvider", () => {
     const { createOpenAICompatibleProvider } = await import("../src/providers/index.js");
     const provider = createOpenAICompatibleProvider({
       apiKey: "test-key",
-      model: "gpt-4o",
+      model: "gpt-5.6-terra",
     });
 
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
         choices: [{ message: { content: "ok" } }],
-        model: "gpt-4o-mini",
+        model: "gpt-5.6-luna",
         usage: { prompt_tokens: 1, completion_tokens: 1 },
       }),
     });
     vi.stubGlobal("fetch", mockFetch);
 
-    await provider.complete({ systemPrompt: "s", userPrompt: "u", model: "gpt-4o-mini" });
+    await provider.complete({ systemPrompt: "s", userPrompt: "u", model: "gpt-5.6-luna" });
 
     const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-    expect(body.model).toBe("gpt-4o-mini");
+    expect(body.model).toBe("gpt-5.6-luna");
 
     vi.unstubAllGlobals();
   });
@@ -515,11 +623,11 @@ describe("CLI provider routing", () => {
   it("should use AUTOCONTEXT_MODEL for model override", async () => {
     const { resolveProviderConfig } = await import("../src/providers/index.js");
     process.env.AUTOCONTEXT_PROVIDER = "openai";
-    process.env.AUTOCONTEXT_MODEL = "gpt-4o-mini";
+    process.env.AUTOCONTEXT_MODEL = "gpt-5.6-luna";
     process.env.OPENAI_API_KEY = "key";
 
     const config = resolveProviderConfig();
-    expect(config.model).toBe("gpt-4o-mini");
+    expect(config.model).toBe("gpt-5.6-luna");
   });
 
   it("should error when anthropic selected but no API key", async () => {
@@ -561,14 +669,14 @@ describe("CLI provider routing", () => {
       });
       saveProviderCredentials(configDir, "openai", {
         apiKey: "sk-openai-second",
-        model: "gpt-4o-mini",
+        model: "gpt-5.6-luna",
         baseUrl: "https://api.openai.com/v1",
       });
 
       const config = resolveProviderConfig({ providerType: "openai" });
       expect(config.providerType).toBe("openai");
       expect(config.apiKey).toBe("sk-openai-second");
-      expect(config.model).toBe("gpt-4o-mini");
+      expect(config.model).toBe("gpt-5.6-luna");
       expect(config.baseUrl).toBe("https://api.openai.com/v1");
     } finally {
       rmSync(configDir, { recursive: true, force: true });

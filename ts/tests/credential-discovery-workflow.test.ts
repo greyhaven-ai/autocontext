@@ -56,7 +56,7 @@ describe("credential provider discovery workflow", () => {
   it("discovers generic AUTOCONTEXT_* provider settings", () => {
     process.env.AUTOCONTEXT_AGENT_PROVIDER = "openai";
     process.env.AUTOCONTEXT_AGENT_API_KEY = "sk-generic-env";
-    process.env.AUTOCONTEXT_AGENT_DEFAULT_MODEL = "gpt-4o-mini";
+    process.env.AUTOCONTEXT_AGENT_DEFAULT_MODEL = "gpt-5.6-luna";
     process.env.AUTOCONTEXT_AGENT_BASE_URL = "https://api.example.test/v1";
 
     expect(discoverAllProviders(dir)).toEqual(
@@ -65,7 +65,7 @@ describe("credential provider discovery workflow", () => {
           provider: "openai",
           source: "env",
           hasApiKey: true,
-          model: "gpt-4o-mini",
+          model: "gpt-5.6-luna",
           baseUrl: "https://api.example.test/v1",
         }),
       ]),

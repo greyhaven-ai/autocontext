@@ -65,7 +65,7 @@ def _build_scenario_creator(app_settings: object) -> object | None:
 
         client = build_client_from_settings(app_settings)  # type: ignore[arg-type]
         runtime = SubagentRuntime(client)
-        model = getattr(app_settings, "model_architect", "claude-sonnet-4-5-20250929")
+        model = getattr(app_settings, "model_architect", "claude-sonnet-5")
         knowledge_root = getattr(app_settings, "knowledge_root", Path("knowledge"))
         return ScenarioCreator(runtime=runtime, model=model, knowledge_root=knowledge_root)
     except Exception:

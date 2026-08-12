@@ -68,7 +68,7 @@ describe("trace shape invariants (property, 100 runs)", () => {
         }),
         ({ toolName, argValue }) => {
           const snap = buildRequestSnapshot({
-            model: "gpt-4o",
+            model: "gpt-5.6-terra",
             messages: [{ role: "user", content: "call tool" }],
             extraKwargs: {},
           });

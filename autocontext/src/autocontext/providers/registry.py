@@ -85,7 +85,7 @@ def create_provider(
         return RetryProvider(
             AnthropicProvider(
                 api_key=api_key or os.getenv("ANTHROPIC_API_KEY") or os.getenv("AUTOCONTEXT_ANTHROPIC_API_KEY"),
-                default_model_name=model or "claude-sonnet-4-20250514",
+                default_model_name=model or "claude-sonnet-5",
             )
         )
 
@@ -95,7 +95,7 @@ def create_provider(
 
         kwargs: dict = {
             "api_key": api_key or os.getenv("OPENAI_API_KEY"),
-            "default_model_name": model or "gpt-4o",
+            "default_model_name": model or "gpt-5.6-terra",
             "base_url": resolve_provider_base_url(provider_type, base_url),
         }
         return RetryProvider(OpenAICompatibleProvider(**kwargs))
@@ -116,7 +116,7 @@ def create_provider(
                     or "no-key"
                 ),
                 base_url=resolve_provider_base_url(provider_type, base_url),
-                default_model_name=model or "anthropic/claude-sonnet-4",
+                default_model_name=model or "anthropic/claude-sonnet-5",
             )
         )
 

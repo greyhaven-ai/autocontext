@@ -13,7 +13,7 @@ from autocontext.harness.meta.profiler import PerformanceProfiler
 from autocontext.harness.meta_optimizer import MetaOptimizer
 
 
-def _usage(model: str = "claude-sonnet-4-5-20250929", input_tokens: int = 1000, output_tokens: int = 500) -> RoleUsage:
+def _usage(model: str = "claude-sonnet-5", input_tokens: int = 1000, output_tokens: int = 500) -> RoleUsage:
     return RoleUsage(input_tokens=input_tokens, output_tokens=output_tokens, latency_ms=200, model=model)
 
 
@@ -97,7 +97,7 @@ def test_coordinator_recommendations() -> None:
     profiler = PerformanceProfiler(collector, min_observations=3)
     advisor = ConfigAdvisor(
         profiler,
-        current_config={"model_competitor": "claude-opus-4-6"},
+        current_config={"model_competitor": "claude-opus-5"},
     )
     mo = MetaOptimizer(collector=collector, profiler=profiler, advisor=advisor)
     # Feed 5 generations with high advance rate

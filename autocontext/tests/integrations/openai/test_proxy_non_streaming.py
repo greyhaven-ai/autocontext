@@ -25,7 +25,7 @@ def test_sync_chat_completion_captures_one_trace(tmp_path, make_openai_client) -
     wrapped = instrument_client(client, sink=sink, app_id="test-app")
 
     resp = wrapped.chat.completions.create(
-        model="gpt-4o",
+        model="gpt-5.6-terra",
         messages=[{"role": "user", "content": "hi"}],
     )
 
@@ -35,7 +35,7 @@ def test_sync_chat_completion_captures_one_trace(tmp_path, make_openai_client) -
     assert len(lines) == 1
     trace = json.loads(lines[0])
     assert trace["provider"]["name"] == "openai"
-    assert trace["model"] == "gpt-4o"
+    assert trace["model"] == "gpt-5.6-terra"
     assert trace["usage"] == {"tokensIn": 10, "tokensOut": 5}
     assert trace["outcome"] == {"label": "success"}
 
@@ -79,7 +79,7 @@ def test_strips_autocontext_kwarg_before_forwarding(tmp_path, make_openai_client
     wrapped = instrument_client(client, sink=sink, app_id="a")
 
     wrapped.chat.completions.create(
-        model="gpt-4o",
+        model="gpt-5.6-terra",
         messages=[{"role": "user", "content": "hi"}],
         autocontext={"user_id": "u1", "session_id": "s1"},
     )
@@ -94,7 +94,7 @@ def test_skips_identity_when_install_salt_is_missing(tmp_path, make_openai_clien
     wrapped = instrument_client(client, sink=sink, app_id="a")
 
     wrapped.chat.completions.create(
-        model="gpt-4o",
+        model="gpt-5.6-terra",
         messages=[{"role": "user", "content": "hi"}],
         autocontext={"user_id": "u1", "session_id": "s1"},
     )
@@ -112,7 +112,7 @@ def test_per_call_kwarg_wins_over_ambient_context(tmp_path, make_openai_client) 
 
     with autocontext_session(user_id="ambient", session_id="ambient-s"):
         wrapped.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-5.6-terra",
             messages=[{"role": "user", "content": "hi"}],
             autocontext={"user_id": "explicit", "session_id": "explicit-s"},
         )

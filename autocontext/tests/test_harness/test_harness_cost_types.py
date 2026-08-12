@@ -8,8 +8,8 @@ from autocontext.harness.cost.types import CostRecord, CostSummary, ModelPricing
 
 
 def test_model_pricing_construction() -> None:
-    p = ModelPricing(model="claude-sonnet-4-5-20250929", input_cost_per_1k=0.003, output_cost_per_1k=0.015)
-    assert p.model == "claude-sonnet-4-5-20250929"
+    p = ModelPricing(model="claude-sonnet-5", input_cost_per_1k=0.003, output_cost_per_1k=0.015)
+    assert p.model == "claude-sonnet-5"
     assert p.input_cost_per_1k == 0.003
     assert p.output_cost_per_1k == 0.015
 
@@ -25,14 +25,14 @@ def test_model_pricing_frozen() -> None:
 
 def test_cost_record_construction() -> None:
     r = CostRecord(
-        model="claude-sonnet-4-5-20250929",
+        model="claude-sonnet-5",
         input_tokens=1000,
         output_tokens=500,
         input_cost=0.003,
         output_cost=0.0075,
         total_cost=0.0105,
     )
-    assert r.model == "claude-sonnet-4-5-20250929"
+    assert r.model == "claude-sonnet-5"
     assert r.input_tokens == 1000
     assert r.output_tokens == 500
     assert r.input_cost == 0.003
@@ -51,7 +51,7 @@ def test_cost_record_frozen() -> None:
 
 def test_cost_record_to_dict() -> None:
     r = CostRecord(
-        model="claude-sonnet-4-5-20250929",
+        model="claude-sonnet-5",
         input_tokens=1000,
         output_tokens=500,
         input_cost=0.003,
@@ -60,7 +60,7 @@ def test_cost_record_to_dict() -> None:
     )
     d = r.to_dict()
     assert d == {
-        "model": "claude-sonnet-4-5-20250929",
+        "model": "claude-sonnet-5",
         "input_tokens": 1000,
         "output_tokens": 500,
         "input_cost": 0.003,
@@ -75,13 +75,13 @@ def test_cost_summary_construction() -> None:
         total_input_tokens=5000,
         total_output_tokens=2000,
         records_count=3,
-        cost_by_model={"claude-sonnet-4-5-20250929": 0.05},
+        cost_by_model={"claude-sonnet-5": 0.05},
     )
     assert s.total_cost == 0.05
     assert s.total_input_tokens == 5000
     assert s.total_output_tokens == 2000
     assert s.records_count == 3
-    assert s.cost_by_model == {"claude-sonnet-4-5-20250929": 0.05}
+    assert s.cost_by_model == {"claude-sonnet-5": 0.05}
 
 
 def test_cost_summary_from_records() -> None:

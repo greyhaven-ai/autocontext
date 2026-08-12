@@ -117,7 +117,7 @@ export function aProductionTrace(overrides: TraceOverrides = {}): ProductionTrac
     id: overrides.traceId ?? undefined,
     source: { emitter: "sdk", sdk: { name: "autoctx-ts", version: "0.4.3" } },
     provider: { name: overrides.provider ?? "openai" },
-    model: overrides.model ?? "gpt-4o-mini",
+    model: overrides.model ?? "gpt-5.6-luna",
     env: {
       environmentTag: (overrides.environmentTag ?? "production") as EnvironmentTag,
       appId: (overrides.appId ?? "my-app") as AppId,

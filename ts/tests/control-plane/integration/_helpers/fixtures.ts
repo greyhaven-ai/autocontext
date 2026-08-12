@@ -143,7 +143,7 @@ function defaultPayload(actuatorType: ActuatorType): PayloadSpec {
           "models.json": JSON.stringify(
             {
               schemaVersion: "1.0",
-              default: { provider: "anthropic", model: "claude-sonnet-4-5-20250929" },
+              default: { provider: "anthropic", model: "claude-sonnet-5" },
               routes: [],
               fallback: [],
             },
