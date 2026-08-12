@@ -61,6 +61,8 @@ export interface ExtractJsonOptions {
   onFailure?: OnFailure;
   /** Reject responses carrying more than one top-level JSON object candidate. */
   requireUnique?: boolean;
+  /** Skip object candidates that do not contain every named key. */
+  requiredKeys?: readonly string[];
 }
 
 /** Normalize a candidate scope: strip surrounding whitespace and any leading BOM. */
@@ -227,14 +229,28 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function hasRequiredKeys(
+  value: Record<string, unknown>,
+  requiredKeys: ReadonlySet<string>,
+): boolean {
+  for (const key of requiredKeys) {
+    if (!Object.prototype.hasOwnProperty.call(value, key)) return false;
+  }
+  return true;
+}
+
 /**
  * Whether the response contains competing JSON objects.
  *
  * A tagged JSON fence is authoritative, matching the normal fence-selection
  * rule. Without one, scan the whole response so an object in an untagged
  * reasoning fence cannot hide a different final object outside that fence.
+ * Objects missing `requiredKeys` are ineligible, so they are not competitors.
  */
-function hasMultipleMappingCandidates(text: string): boolean {
+function hasMultipleMappingCandidates(
+  text: string,
+  requiredKeys: ReadonlySet<string>,
+): boolean {
   const tagged = fenceMatches(text).find((m) => m.tag);
   const scope = tagged ? scopeText(tagged.body) : scopeText(text);
   let mappingCount = 0;
@@ -245,7 +261,7 @@ function hasMultipleMappingCandidates(text: string): boolean {
     } catch {
       continue;
     }
-    if (isPlainObject(decoded)) {
+    if (isPlainObject(decoded) && hasRequiredKeys(decoded, requiredKeys)) {
       mappingCount += 1;
       if (mappingCount > 1) return true;
     }
@@ -257,6 +273,8 @@ function hasMultipleMappingCandidates(text: string): boolean {
 export class WrongJsonTypeError extends Error {}
 /** Raised when `requireUnique` is set and the text carries competing objects. */
 export class AmbiguousJsonError extends Error {}
+/** Raised when an object candidate does not satisfy `requiredKeys`. */
+export class MissingRequiredKeysError extends Error {}
 
 /**
  * Extract a JSON object from LLM text.
@@ -278,12 +296,18 @@ export class AmbiguousJsonError extends Error {}
  * rescue. If it parses, that is a decisive answer about the model's output
  * shape; if it is truncated, that failure is terminal too rather than a cue to
  * unwrap a nested object.
+ *
+ * `requiredKeys` filters object candidates without assigning domain semantics
+ * to this shared parser. An object missing any required key is skipped so a
+ * later candidate can satisfy the caller's schema. `requireUnique` likewise
+ * counts only candidates that satisfy the key requirement.
  */
 export function extractJson(
   text: string,
   options: ExtractJsonOptions = {},
 ): Record<string, unknown> | null {
-  const { onFailure = "raise", requireUnique = false } = options;
+  const { onFailure = "raise", requireUnique = false, requiredKeys = [] } = options;
+  const requiredKeySet = new Set(requiredKeys);
 
   const fencedScopes = fencedPayloadScopes(text);
   const hasFence = fencedScopes !== null;
@@ -348,13 +372,21 @@ export function extractJson(
       continue;
     }
     if (isPlainObject(decoded)) {
-      if (requireUnique && hasMultipleMappingCandidates(text)) {
+      if (!hasRequiredKeys(decoded, requiredKeySet)) {
+        const missing = [...requiredKeySet].filter(
+          (key) => !Object.prototype.hasOwnProperty.call(decoded, key),
+        );
+        lastError = new MissingRequiredKeysError(
+          `Expected JSON object containing required keys: ${JSON.stringify(missing.sort())}`,
+        );
+        continue;
+      }
+      if (requireUnique && hasMultipleMappingCandidates(text, requiredKeySet)) {
         lastError = new AmbiguousJsonError(
           "Expected one unambiguous JSON object, got multiple candidates",
         );
         break;
       }
-      if (requireUnique && lastError instanceof AmbiguousJsonError) break;
       return decoded;
     }
     // A candidate that PARSES but is not an object is a decisive answer about

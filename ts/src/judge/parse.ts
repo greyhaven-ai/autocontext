@@ -75,8 +75,7 @@ function tryMarkerParse(response: string): Record<string, unknown> | null {
 }
 
 function tryModelJsonParse(response: string): Record<string, unknown> | null {
-  const data = extractJson(response, { onFailure: "none" });
-  return data && "score" in data ? data : null;
+  return extractJson(response, { onFailure: "none", requiredKeys: ["score"] });
 }
 
 function tryPlaintextParse(response: string): ParsedJudge | null {

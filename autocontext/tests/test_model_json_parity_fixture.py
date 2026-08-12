@@ -57,6 +57,7 @@ def test_fixture_covers_every_rule_group() -> None:
         "arrays",
         "bom",
         "require_unique",
+        "required_keys",
         "failure_policy",
     }
 

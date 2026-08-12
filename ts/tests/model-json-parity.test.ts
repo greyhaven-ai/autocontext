@@ -25,7 +25,11 @@ type Expected =
 
 interface Case {
   text: string;
-  options: { on_failure?: "raise" | "none"; require_unique?: boolean };
+  options: {
+    on_failure?: "raise" | "none";
+    require_unique?: boolean;
+    required_keys?: string[];
+  };
   expected: Expected;
 }
 
@@ -45,6 +49,7 @@ function toOptions(raw: Case["options"]): ExtractJsonOptions {
   return {
     ...(raw.on_failure ? { onFailure: raw.on_failure } : {}),
     ...(raw.require_unique ? { requireUnique: raw.require_unique } : {}),
+    ...(raw.required_keys ? { requiredKeys: raw.required_keys } : {}),
   };
 }
 

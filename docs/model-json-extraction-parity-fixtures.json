@@ -386,6 +386,62 @@
         }
       }
     },
+    "required_keys": {
+      "earlier_ineligible_object_is_skipped": {
+        "text": "{\"metadata\": {\"request_id\": \"abc\"}} then {\"score\": 1e-1}",
+        "options": {
+          "required_keys": [
+            "score"
+          ]
+        },
+        "expected": {
+          "status": "ok",
+          "value": {
+            "score": 0.1
+          }
+        }
+      },
+      "missing_required_key_returns_none": {
+        "text": "{\"metadata\": true}",
+        "options": {
+          "required_keys": [
+            "score"
+          ],
+          "on_failure": "none"
+        },
+        "expected": {
+          "status": "none"
+        }
+      },
+      "uniqueness_ignores_ineligible_objects": {
+        "text": "{\"metadata\": true} then {\"score\": 0.8}",
+        "options": {
+          "required_keys": [
+            "score"
+          ],
+          "require_unique": true
+        },
+        "expected": {
+          "status": "ok",
+          "value": {
+            "score": 0.8
+          }
+        }
+      },
+      "competing_eligible_objects_are_rejected": {
+        "text": "{\"score\": 0.2} then {\"score\": 0.8}",
+        "options": {
+          "required_keys": [
+            "score"
+          ],
+          "require_unique": true,
+          "on_failure": "none"
+        },
+        "expected": {
+          "status": "none"
+        }
+      }
+    },
     "failure_policy": {
       "no_json_raises": {
         "text": "no json here at all",

@@ -125,6 +125,24 @@ CORPUS: dict[str, dict[str, tuple[str, dict[str, Any]]]] = {
         ),
         "single_object_accepted": ('{"a": 1}', {"require_unique": True}),
     },
+    "required_keys": {
+        "earlier_ineligible_object_is_skipped": (
+            '{"metadata": {"request_id": "abc"}} then {"score": 1e-1}',
+            {"required_keys": ["score"]},
+        ),
+        "missing_required_key_returns_none": (
+            '{"metadata": true}',
+            {"required_keys": ["score"], "on_failure": "none"},
+        ),
+        "uniqueness_ignores_ineligible_objects": (
+            '{"metadata": true} then {"score": 0.8}',
+            {"required_keys": ["score"], "require_unique": True},
+        ),
+        "competing_eligible_objects_are_rejected": (
+            '{"score": 0.2} then {"score": 0.8}',
+            {"required_keys": ["score"], "require_unique": True, "on_failure": "none"},
+        ),
+    },
     "failure_policy": {
         "no_json_raises": ("no json here at all", {}),
         "no_json_returns_none": ("no json here at all", {"on_failure": "none"}),

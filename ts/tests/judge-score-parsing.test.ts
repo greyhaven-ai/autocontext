@@ -73,6 +73,19 @@ describe("judge score parsing", () => {
     expect([parsed.score, parsed.parseMethod]).toEqual([0.64, "raw_json"]);
   });
 
+  it("skips an unrelated object before the scored verdict", () => {
+    const parsed = parseJudgeResponse(
+      '{"metadata": {"request_id": "abc"}}\n' +
+        '{"score": 1e-1, "reasoning": "final", "dimensions": {"quality": 0.77}}',
+    );
+    expect(parsed).toEqual({
+      score: 0.1,
+      reasoning: "final",
+      dimensionScores: { quality: 0.77 },
+      parseMethod: "raw_json",
+    });
+  });
+
   it("still takes the first of two bare objects in prose", () => {
     // NOT fixed, deliberately. With no fence and no markers there is nothing to
     // tell a draft from a verdict. Recorded so the limit is known rather than
