@@ -21,19 +21,26 @@ from typing import Any
 import pytest
 
 from autocontext.providers.anthropic import AnthropicProvider
-from autocontext.providers.base import OutputSchema
+from autocontext.providers.base import OutputSchema, ProviderError
 
 PAYLOAD = {"answer": "ok"}
 
 
 class _Messages:
-    def __init__(self, response: Any) -> None:
-        self.response = response
+    def __init__(self, outcomes: list[Any]) -> None:
+        self.outcomes = list(outcomes)
         self.calls: list[dict[str, Any]] = []
 
     def create(self, **request: Any) -> Any:
         self.calls.append(request)
-        return self.response
+        outcome = self.outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+
+class _RejectedRequest(Exception):
+    status_code = 400
 
 
 def _tool_use_block(name: str = "answer", payload: dict[str, Any] | None = None) -> Any:
@@ -52,8 +59,8 @@ def _response(blocks: list[Any], stop_reason: str = "end_turn") -> Any:
     )
 
 
-def _provider(response: Any) -> tuple[AnthropicProvider, _Messages]:
-    messages = _Messages(response)
+def _provider(*outcomes: Any) -> tuple[AnthropicProvider, _Messages]:
+    messages = _Messages(list(outcomes))
     provider = object.__new__(AnthropicProvider)
     provider._default_model = "claude-stub"
     provider._client = SimpleNamespace(messages=messages)
@@ -80,6 +87,7 @@ def test_schema_forces_the_tool_and_returns_its_payload() -> None:
     request = messages.calls[0]
     assert request["tools"][0]["name"] == "answer"
     assert request["tools"][0]["input_schema"] == _schema().schema
+    assert request["tools"][0]["strict"] is True
     # Pinned, not "auto": an unforced tool is one the model may decline to call,
     # which would silently produce prose on the path a strict parser reads.
     assert request["tool_choice"] == {"type": "tool", "name": "answer"}
@@ -117,7 +125,7 @@ def test_missing_tool_use_block_degrades_to_unconstrained(caplog: pytest.LogCapt
 
     assert result.constrained is False
     assert result.text == "I would rather explain."
-    assert any("no tool_use block" in record.message for record in caplog.records)
+    assert any("did not return a complete, schema-valid tool" in record.message for record in caplog.records)
 
 
 def test_tool_use_block_for_a_different_tool_is_not_accepted() -> None:
@@ -139,7 +147,7 @@ def test_tool_use_block_is_found_after_leading_text() -> None:
     The pre-AC-928 reader took ``content[0]`` and stopped, so a preamble would
     have hidden the payload entirely.
     """
-    provider, _ = _provider(_response([_text_block("Let me structure that."), _tool_use_block()]))
+    provider, _ = _provider(_response([_text_block("Let me structure that."), _tool_use_block()], stop_reason="tool_use"))
 
     result = provider.complete("sys", "user", output_schema=_schema())
 
@@ -154,6 +162,66 @@ def test_unconstrained_text_is_found_after_a_non_text_block() -> None:
     result = provider.complete("sys", "user")
 
     assert result.text == "the answer"
+
+
+def test_invalid_matching_tool_payload_is_not_reported_as_constrained() -> None:
+    provider, _ = _provider(
+        _response([_tool_use_block(payload={"answer": ["wrong type"]})], stop_reason="tool_use")
+    )
+
+    result = provider.complete("sys", "user", output_schema=_schema())
+
+    assert result.constrained is False
+
+
+@pytest.mark.parametrize("stop_reason", ["max_tokens", "refusal"])
+def test_incomplete_or_refused_tool_response_is_not_constrained(stop_reason: str) -> None:
+    provider, _ = _provider(_response([_tool_use_block()], stop_reason=stop_reason))
+
+    result = provider.complete("sys", "user", output_schema=_schema())
+
+    assert result.constrained is False
+    assert result.stop_reason == stop_reason
+
+
+def test_strict_schema_rejection_retries_without_tools(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("autocontext.providers.anthropic.anthropic.APIError", _RejectedRequest)
+    provider, messages = _provider(
+        _RejectedRequest("strict structured output is not supported for this model"),
+        _response([_text_block("fallback prose")]),
+    )
+
+    result = provider.complete("sys", "user", output_schema=_schema())
+
+    assert result.text == "fallback prose"
+    assert result.constrained is False
+    assert len(messages.calls) == 2
+    assert messages.calls[0]["tools"][0]["strict"] is True
+    assert "tools" not in messages.calls[1]
+    assert "tool_choice" not in messages.calls[1]
+
+
+def test_unrelated_api_error_does_not_retry_without_schema(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("autocontext.providers.anthropic.anthropic.APIError", _RejectedRequest)
+    provider, messages = _provider(_RejectedRequest("invalid authentication token"))
+
+    with pytest.raises(ProviderError, match="invalid authentication token"):
+        provider.complete("sys", "user", output_schema=_schema())
+
+    assert len(messages.calls) == 1
+
+
+def test_anthropic_schema_transform_keeps_original_constraints_for_local_validation() -> None:
+    schema = _schema()
+    schema.schema["properties"]["answer"]["minLength"] = 2
+    provider, messages = _provider(_response([_tool_use_block(payload={"answer": "x"})], stop_reason="tool_use"))
+
+    result = provider.complete("sys", "user", output_schema=schema)
+
+    sent = messages.calls[0]["tools"][0]["input_schema"]["properties"]["answer"]
+    assert "minLength" not in sent
+    assert "minLength: 2" in sent["description"]
+    assert result.constrained is False
 
 
 def test_a_real_analyst_run_forces_the_tool_on_the_anthropic_wire() -> None:

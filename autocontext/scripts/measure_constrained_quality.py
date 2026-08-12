@@ -1,10 +1,11 @@
 """AC-928: does forcing a schema make the analysis worse?
 
-AC-913 switched every OpenAI-compatible backend to constrained decoding. That
-the payload is *valid* is guaranteed by construction and not worth measuring.
-The open question is whether the analysis is as **substantive** when a model
-fills a schema instead of writing prose -- a model that emits perfectly-shaped
-empty-calorie findings steers the loop just as confidently as a good one.
+AC-913 switched every OpenAI-compatible backend to constrained decoding. This
+harness validates every candidate payload against the shipped analyst contract;
+invalid trials are rejected rather than scored. The open question is whether
+the analysis is as **substantive** when a model fills a schema instead of
+writing prose -- a model that emits perfectly-shaped empty-calorie findings
+steers the loop just as confidently as a good one.
 
 Measured with objective proxies rather than an LLM judge, so the numbers are
 reproducible and not hostage to a judge's mood or a second model's quirks:
@@ -21,17 +22,21 @@ reproducible and not hostage to a judge's mood or a second model's quirks:
 Usage:
     python scripts/measure_constrained_quality.py --base-url http://localhost:11434/v1 \
         --model llama3.1:8b --api-key ollama --trials 20
+    python scripts/measure_constrained_quality.py --base-url https://api.anthropic.com/v1 \
+        --model claude-sonnet-4-5 --api-key "$ANTHROPIC_API_KEY" --mode anthropic_tool --trials 20
 """
 
 from __future__ import annotations
 
 import argparse
-import concurrent.futures
 import json
+import multiprocessing
 import re
 import statistics
 import sys
 import urllib.request
+from collections.abc import Callable
+from multiprocessing.connection import Connection
 from pathlib import Path
 from typing import Any
 
@@ -55,7 +60,45 @@ EVIDENCE = ("0.41", "2 of 5", "14", "40", "6 steps", "9", "0.8", "2-step")
 PARAM = re.compile(r"\b(aggression|lookahead|decoy|tiebreak|threshold|weight|step)\w*\b|\b\d+(\.\d+)?\b", re.I)
 
 
-def _post(url: str, api_key: str, payload: dict[str, Any], *, attempts: int = 3, deadline: float = 120.0) -> dict[str, Any]:
+def _post_once(
+    url: str,
+    api_key: str,
+    payload: dict[str, Any],
+    deadline: float,
+    sender: Connection,
+    anthropic_api: bool,
+) -> None:
+    """Perform one request in a child process the parent can terminate."""
+    try:
+        headers = {"Content-Type": "application/json"}
+        if anthropic_api:
+            headers.update({"x-api-key": api_key, "anthropic-version": "2023-06-01"})
+        else:
+            headers["Authorization"] = f"Bearer {api_key}"
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode(),
+            headers=headers,
+        )
+        with urllib.request.urlopen(req, timeout=deadline) as resp:  # noqa: S310 - operator-supplied endpoint
+            result = json.loads(resp.read())
+        sender.send((True, result))
+    except Exception as exc:  # noqa: BLE001 - serialize any transport failure for the parent
+        sender.send((False, type(exc).__name__, str(exc)))
+    finally:
+        sender.close()
+
+
+def _post(
+    url: str,
+    api_key: str,
+    payload: dict[str, Any],
+    *,
+    attempts: int = 3,
+    deadline: float = 120.0,
+    anthropic_api: bool = False,
+    _worker: Callable[..., None] | None = None,
+) -> dict[str, Any]:
     """POST with a bounded wait and a retry.
 
     urllib's ``timeout`` is per socket operation, not per request, so a gateway
@@ -64,31 +107,45 @@ def _post(url: str, api_key: str, payload: dict[str, Any], *, attempts: int = 3,
     18 minutes with a 120s socket timeout set, while ordinary calls to the same
     model returned in two seconds.
 
-    So the deadline is enforced from outside the socket, on a worker thread the
-    caller abandons if it overruns. The thread may linger until its own socket
-    gives up; that is deliberate. This is a measurement harness, and a leaked
-    thread is a much smaller problem than a measurement that never finishes.
+    The deadline is therefore enforced from a parent process. An overrun child
+    is terminated and joined before retrying, so neither retries nor interpreter
+    shutdown can accumulate hidden in-flight requests.
     """
 
-    def _once() -> dict[str, Any]:
-        req = urllib.request.Request(
-            url,
-            data=json.dumps(payload).encode(),
-            headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
-        )
-        with urllib.request.urlopen(req, timeout=deadline) as resp:  # noqa: S310 - operator-supplied endpoint
-            return json.loads(resp.read())
+    if attempts < 1:
+        raise ValueError("attempts must be at least 1")
+    if deadline <= 0:
+        raise ValueError("deadline must be positive")
 
     last: Exception | None = None
     for attempt in range(attempts):
-        pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        context = multiprocessing.get_context("spawn")
+        receiver, sender = context.Pipe(duplex=False)
+        process = context.Process(
+            target=_post_once if _worker is None else _worker,
+            args=(url, api_key, payload, deadline, sender, anthropic_api),
+            daemon=True,
+        )
+        process.start()
+        sender.close()
         try:
-            return pool.submit(_once).result(timeout=deadline)
+            if not receiver.poll(deadline):
+                raise TimeoutError(f"request exceeded {deadline:.3f}s deadline")
+            message = receiver.recv()
+            if message[0] is True:
+                return message[1]
+            raise RuntimeError(f"{message[1]}: {message[2]}")
         except Exception as exc:  # noqa: BLE001, PERF203 - any failure is a retry
             last = exc
             print(f"    retry {attempt + 1}/{attempts}: {type(exc).__name__}", flush=True)
         finally:
-            pool.shutdown(wait=False)
+            receiver.close()
+            if process.is_alive():
+                process.terminate()
+            process.join(timeout=1.0)
+            if process.is_alive():
+                process.kill()
+                process.join()
     raise RuntimeError(f"request failed after {attempts} attempts: {last}")
 
 
@@ -170,13 +227,11 @@ def _score(sections: dict[str, list[str]]) -> dict[str, float]:
 
 
 def _score_payload(payload: dict[str, Any]) -> dict[str, float]:
-    return _score(
-        {
-            "findings": payload.get("findings", []),
-            "root_causes": payload.get("root_causes", []),
-            "recommendations": payload.get("recommendations", []),
-        }
-    )
+    """Validate the real analyst contract before a payload enters the score."""
+    from autocontext.agents.role_schemas import AnalystPayload
+
+    validated = AnalystPayload.model_validate(payload)
+    return _score(validated.model_dump())
 
 
 def _constrained_request(mode: str, base: dict[str, Any], schema: Any) -> dict[str, Any]:
@@ -185,7 +240,8 @@ def _constrained_request(mode: str, base: dict[str, Any], schema: Any) -> dict[s
     Two mechanisms, because the providers differ in kind rather than in syntax:
 
     * ``response_format`` -- what AC-913 shipped for OpenAI-compatible backends.
-    * ``tool`` -- a forced tool call, which is Anthropic's only equivalent.
+    * ``tool`` -- a strict function tool through an OpenAI-compatible gateway.
+    * ``anthropic_tool`` -- the native Anthropic Messages strict-tool shape.
       AC-928's open question is whether *being made to fill a schema* costs
       analysis quality, so the forced-tool arm has to be measured on its own
       rather than assumed to behave like ``response_format``.
@@ -198,6 +254,21 @@ def _constrained_request(mode: str, base: dict[str, Any], schema: Any) -> dict[s
                 "json_schema": {"name": schema.name, "strict": True, "schema": schema.schema},
             },
         }
+    from autocontext.providers.anthropic import _anthropic_strict_schema
+
+    if mode == "anthropic_tool":
+        return {
+            **base,
+            "tools": [
+                {
+                    "name": schema.name,
+                    "description": "Return the analysis as structured data.",
+                    "input_schema": _anthropic_strict_schema(schema.schema),
+                    "strict": True,
+                }
+            ],
+            "tool_choice": {"type": "tool", "name": schema.name},
+        }
     return {
         **base,
         "tools": [
@@ -206,7 +277,8 @@ def _constrained_request(mode: str, base: dict[str, Any], schema: Any) -> dict[s
                 "function": {
                     "name": schema.name,
                     "description": "Return the analysis as structured data.",
-                    "parameters": schema.schema,
+                    "parameters": _anthropic_strict_schema(schema.schema),
+                    "strict": True,
                 },
             }
         ],
@@ -214,15 +286,38 @@ def _constrained_request(mode: str, base: dict[str, Any], schema: Any) -> dict[s
     }
 
 
-def _constrained_payload(mode: str, response: dict[str, Any]) -> dict[str, Any]:
+def _constrained_payload(
+    mode: str,
+    response: dict[str, Any],
+    *,
+    expected_tool: str = "analyst_output",
+) -> dict[str, Any]:
     """Pull the object out of whichever channel the mechanism used."""
+    if mode == "anthropic_tool":
+        for block in response.get("content", []):
+            if (
+                block.get("type") == "tool_use"
+                and block.get("name") == expected_tool
+                and isinstance(block.get("input"), dict)
+            ):
+                return block["input"]
+        raise json.JSONDecodeError("forced tool call produced no tool_use", "", 0)
     message = response["choices"][0]["message"]
     if mode == "response_format":
         return json.loads(message["content"])
     calls = message.get("tool_calls") or []
-    if not calls:
+    if not calls or calls[0].get("function", {}).get("name") != expected_tool:
         raise json.JSONDecodeError("forced tool call produced no tool_calls", "", 0)
     return json.loads(calls[0]["function"]["arguments"])
+
+
+def _prose_content(mode: str, response: dict[str, Any]) -> str:
+    if mode == "anthropic_tool":
+        for block in response.get("content", []):
+            if block.get("type") == "text" and isinstance(block.get("text"), str):
+                return block["text"]
+        raise KeyError("Anthropic response contained no text block")
+    return response["choices"][0]["message"]["content"]
 
 
 def main() -> int:
@@ -234,29 +329,48 @@ def main() -> int:
     ap.add_argument("--out", default="")
     ap.add_argument(
         "--mode",
-        choices=("response_format", "tool"),
+        choices=("response_format", "tool", "anthropic_tool"),
         default="response_format",
-        help="Constraint mechanism: response_format (OpenAI-compatible) or tool (forced tool call, Anthropic's equivalent)",
+        help=(
+            "Constraint mechanism: response_format, an OpenAI-compatible strict tool, "
+            "or a native Anthropic Messages strict tool"
+        ),
     )
     args = ap.parse_args()
 
     from autocontext.agents.role_schemas import ANALYST_SCHEMA
 
-    url = f"{args.base_url.rstrip('/')}/chat/completions"
+    anthropic_api = args.mode == "anthropic_tool"
+    resource = "messages" if anthropic_api else "chat/completions"
+    url = f"{args.base_url.rstrip('/')}/{resource}"
     prose_scores: list[dict[str, float]] = []
     schema_scores: list[dict[str, float]] = []
     schema_rejected = 0
 
     for i in range(args.trials):
-        base = {"model": args.model, "messages": _messages(), "temperature": 0.7, "max_tokens": 900}
+        messages = _messages()
+        base: dict[str, Any] = {
+            "model": args.model,
+            "messages": messages,
+            "temperature": 0.7,
+            "max_tokens": 900,
+        }
+        if anthropic_api:
+            base["system"] = messages[0]["content"]
+            base["messages"] = messages[1:]
 
-        prose = _post(url, args.api_key, base)["choices"][0]["message"]["content"]
+        prose = _prose_content(args.mode, _post(url, args.api_key, base, anthropic_api=anthropic_api))
         prose_scores.append(_score(_prose_items(prose)))
 
-        response = _post(url, args.api_key, _constrained_request(args.mode, base, ANALYST_SCHEMA))
+        response = _post(
+            url,
+            args.api_key,
+            _constrained_request(args.mode, base, ANALYST_SCHEMA),
+            anthropic_api=anthropic_api,
+        )
         try:
             schema_scores.append(_score_payload(_constrained_payload(args.mode, response)))
-        except (json.JSONDecodeError, KeyError, TypeError):
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError):
             schema_rejected += 1
         print(f"  trial {i + 1}/{args.trials}", flush=True)
 
@@ -288,7 +402,7 @@ def main() -> int:
         "trials": args.trials,
         "prose": agg(prose_scores),
         "schema": agg(schema_scores),
-        "schema_unparseable": schema_rejected,
+        "schema_rejected": schema_rejected,
         # Retained so a reader can re-aggregate or run a different test without
         # paying for the API calls again.
         "raw": {"prose": prose_scores, "schema": schema_scores},
