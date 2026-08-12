@@ -12,6 +12,7 @@ from autocontext.agents.types import LlmFn
 from autocontext.execution.rubric_coherence import check_rubric_coherence
 from autocontext.execution.rubric_spec import RubricSpec, compile_rubric_spec
 from autocontext.extensions import HookBus, HookEvents, get_current_hook_bus
+from autocontext.harness.core.output_parser import extract_json
 from autocontext.providers.base import LLMProvider
 from autocontext.providers.callable_wrapper import CallableProvider
 
@@ -363,8 +364,7 @@ class LLMJudge:
             all_dims = [all_dims[i] for i in valid_indices]
         elif not valid_indices and last_stop_reason in ("max_tokens", "length"):
             reasonings = [
-                f"Failed to parse judge response: output truncated (stop_reason={last_stop_reason}); "
-                "no parseable score found"
+                f"Failed to parse judge response: output truncated (stop_reason={last_stop_reason}); no parseable score found"
             ]
 
         avg_score = sum(scores) / len(scores)
@@ -507,26 +507,36 @@ class LLMJudge:
 
         Strategies (tried in order):
         1. Marker-based: extract JSON between <!-- JUDGE_RESULT_START/END -->
-        2. Raw JSON: find a JSON object with "score" key anywhere in response
-        3. Code block: extract JSON from ```json ... ``` blocks
-        4. Plain text: regex for "score": X.XX or "Score: X.XX" patterns
+        2. Shared model-JSON extraction, accepted only if it carries a "score"
+        3. Plain text: regex for "score": X.XX or "Score: X.XX" patterns
+
+        AC-924 collapsed what used to be two separate middle tiers. A
+        hand-rolled `re.finditer(r'\\{[^{}]*"score"[^{}]*\\}', ...)` ran ahead of
+        a hand-rolled fence regex, and because it scanned the whole response and
+        took the FIRST match, it read inside fences and reasoning blocks and won
+        before the fence-aware tier was ever reached. Measured before the
+        change: a reasoning block containing a discarded draft scored the run
+        0.05 where the fenced answer said 0.88. That is ordinary open-weight
+        output shape, and the failure is silent -- a wrong number entering the
+        ranking, not an error.
+
+        `extract_json` already prefers the answer over the scratchpad, so
+        replacing both tiers with it fixes that rather than only deduplicating
+        a regex. The "score" requirement stays here, at the call site, because
+        it is judge semantics: the shared parser is a general model-JSON
+        extractor and has no business knowing about scores.
         """
         # Strategy 1: Marker-based (preferred — matches our system prompt format)
         data = self._try_marker_parse(response)
         if data is not None:
             return self._extract_from_dict(data, "markers")
 
-        # Strategy 2: Raw JSON object with "score" key
-        data = self._try_raw_json_parse(response)
+        # Strategy 2: Shared extraction, gated on judge semantics.
+        data = self._try_model_json_parse(response)
         if data is not None:
             return self._extract_from_dict(data, "raw_json")
 
-        # Strategy 3: JSON code block
-        data = self._try_code_block_parse(response)
-        if data is not None:
-            return self._extract_from_dict(data, "code_block")
-
-        # Strategy 4: Plain text score extraction
+        # Strategy 3: Plain text score extraction
         result = self._try_plaintext_parse(response)
         if result is not None:
             return (*result, "plaintext")
@@ -550,37 +560,27 @@ class LLMJudge:
             return None
 
     @staticmethod
-    def _try_code_block_parse(response: str) -> dict | None:
-        """Strategy 2: Extract JSON from ```json ... ``` code blocks."""
-        pattern = re.compile(r"```(?:json)?\s*\n?(.*?)\n?```", re.DOTALL)
-        for match in pattern.finditer(response):
-            try:
-                data = json.loads(match.group(1).strip())
-                if isinstance(data, dict) and "score" in data:
-                    return data
-            except (json.JSONDecodeError, TypeError):
-                continue
-        return None
+    def _try_model_json_parse(response: str) -> dict | None:
+        """Strategy 2: shared model-JSON extraction, gated on judge semantics.
 
-    @staticmethod
-    def _try_raw_json_parse(response: str) -> dict | None:
-        """Strategy 3: Find a JSON object containing 'score' key."""
-        # Look for JSON objects in the response
-        for match in re.finditer(r'\{[^{}]*"score"[^{}]*\}', response):
-            try:
-                data = json.loads(match.group(0))
-                if isinstance(data, dict) and "score" in data:
-                    return data
-            except (json.JSONDecodeError, TypeError):
-                continue
-        # Try nested objects (with dimensions)
-        for match in re.finditer(r'\{(?:[^{}]|\{[^{}]*\})*"score"(?:[^{}]|\{[^{}]*\})*\}', response):
-            try:
-                data = json.loads(match.group(0))
-                if isinstance(data, dict) and "score" in data:
-                    return data
-            except (json.JSONDecodeError, TypeError):
-                continue
+        Replaces the two hand-rolled middle tiers (AC-924). Both are gone: a
+        fence regex duplicating the shared one, and a whole-response
+        ``"score"``-shaped scan that ran ahead of it and took the first match
+        wherever it appeared -- including inside a reasoning block.
+
+        The ``"score"`` check stays here rather than moving into ``extract_json``.
+        That function is a general model-JSON parser used by the roles, the
+        advise gate and the strategy path; teaching it about scores would make
+        every one of those callers carry judge semantics they do not want.
+
+        Depth is unbounded now. The old regexes handled at most one level of
+        nesting, so a verdict carrying valid flat dimensions plus unrelated
+        deeply nested metadata fell through to the plaintext tier and lost
+        every dimension silently.
+        """
+        data = extract_json(response, on_failure="none", required_keys=("score",))
+        if isinstance(data, dict) and "score" in data:
+            return data
         return None
 
     @staticmethod
