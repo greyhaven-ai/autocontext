@@ -190,31 +190,25 @@ export function parseCoachConstrained(rawText: string): CoachOutput {
 
 /**
  * NOT wired into the orchestrator. The Python payload carries nine channels and
- * a legacy-format renderer; this maps only tools and the changelog entry, so
- * wiring it would silently drop the rest. Exercised by tests so it cannot rot.
+ * a legacy-format renderer; this maps tools, harness proposals, and the
+ * changelog entry, so wiring it would still silently drop the remaining
+ * channels. Exercised by tests so it cannot rot.
  *
- * AC-930 investigated finishing the port and concluded it is not worth doing on
- * the current shape: the only class that would consume the extra channels here
- * is `AgentOrchestrator`, which is referenced solely by tests and is not public
- * API -- production runs `loop/generation-runner.ts`. If the full payload is
- * ever needed on the production path, that is an issue against generation-runner,
- * not a port into this function.
+ * `AgentOrchestrator` and these parsers are public package exports. Harness code
+ * remains opaque because this engine cannot execute Python validators, but the
+ * public `ArchitectOutput` contract preserves the proposal instead of silently
+ * erasing it. Wiring the full constrained payload remains separate work.
  */
 export function parseArchitectConstrained(rawText: string): ArchitectOutput {
   const payload = parsePayload<{
     tools: Array<{ name: string; description: string; code: string }>;
+    harness: Array<{ name: string; description: string; code: string }>;
     changelog_entry: string;
   }>("architect", ARCHITECT_SCHEMA, rawText);
   return {
     rawMarkdown: rawText,
     toolSpecs: payload.tools.map((tool) => ({ ...tool })),
-    // Dropped on purpose, and unlike the markdown path the data IS here:
-    // ARCHITECT_SCHEMA declares a `harness` channel, so a constrained response
-    // can carry validator specs that this line discards (AC-930). The specs are
-    // Python source for the Python harness; ts/src has no consumer of them and
-    // nothing that could execute one. Surfacing them would hand callers values
-    // whose only correct use on this engine is to ignore them.
-    harnessSpecs: [],
+    harnessSpecs: payload.harness.map((spec) => ({ ...spec })),
     changelogEntry: payload.changelog_entry,
     parseSuccess: true,
   };

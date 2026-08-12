@@ -3,6 +3,8 @@
  * Mirrors Python's autocontext/agents/contracts.py + parsers.py.
  */
 
+import { parseArchitectHarnessSpecs } from "../execution/harness-loader.js";
+
 // ---------------------------------------------------------------------------
 // Role constants
 // ---------------------------------------------------------------------------
@@ -164,15 +166,14 @@ export function parseCoachOutput(rawMarkdown: string): CoachOutput {
 export function parseArchitectOutput(rawMarkdown: string): ArchitectOutput {
   try {
     const toolSpecs = parseArchitectToolSpecs(rawMarkdown);
+    const harnessSpecs = parseArchitectHarnessSpecs(rawMarkdown).map((spec) => ({ ...spec }));
     return {
       rawMarkdown,
       toolSpecs,
-      // Always empty by design, not by omission (AC-930). The architect's
-      // harness channel carries Python source, executed by the Python harness;
-      // this engine has nothing that could run it, and no consumer of harness
-      // specs exists anywhere in ts/src. Parsing it here would produce a value
-      // whose only possible use is to be discarded.
-      harnessSpecs: [],
+      // TypeScript does not execute the proposed Python validators, but this is
+      // a public parser contract. Keep the validated specs as opaque proposal
+      // data so callers can inspect, persist, or forward them without loss.
+      harnessSpecs,
       changelogEntry: "",
       parseSuccess: true,
     };
@@ -190,32 +191,53 @@ export function parseArchitectOutput(rawMarkdown: string): ArchitectOutput {
 /**
  * Extract proposed tool specs. Deliberately does NOT syntax-check `code`.
  *
- * AC-930 was filed believing this was laxer than Python. It is not: Python's
- * `parse_architect_tool_specs` type-checks name/description/code and stops
- * there too. Python's `ast.parse` on tool code runs at the persistence
- * boundary (`storage/artifacts.py`, on the `kind="tool"` path), immediately
- * before the source is written to a `.py` file that something will import.
+ * Like Python's `parse_architect_tool_specs`, this filters malformed entries
+ * and keeps only string name/description/code fields. Python's `ast.parse` on
+ * tool code runs later at the persistence boundary (`storage/artifacts.py`, on
+ * the `kind="tool"` path), immediately before the source is written to a `.py`
+ * file that something will import.
  *
- * That is the right place for it, and it is why there is nothing to mirror
- * here. TypeScript has no persistence path for tool code -- nothing in ts/src
- * consumes `toolSpecs` at all. Adding a syntax check to this parser would make
- * TypeScript *stricter* than Python rather than aligned with it, and would
- * reject a proposal at a stage where nobody is about to execute it. If this
- * engine ever grows a path that writes or runs proposed tool code, the check
- * belongs at that boundary.
+ * TypeScript has no internal persistence or execution path for proposed tool
+ * code. Adding a syntax check here would therefore make this parser stricter
+ * than Python's equivalent stage. If such a path is added, validate syntax at
+ * that boundary.
  */
 function parseArchitectToolSpecs(markdown: string): Array<Record<string, unknown>> {
   const codeBlockPattern = /```json\s*\n([\s\S]*?)\n```/g;
   let match: RegExpExecArray | null;
   while ((match = codeBlockPattern.exec(markdown)) !== null) {
     try {
-      const parsed = JSON.parse(match[1]);
-      if (parsed && Array.isArray(parsed.tools)) {
-        return parsed.tools;
+      const parsed: unknown = JSON.parse(match[1]);
+      if (
+        typeof parsed === "object" &&
+        parsed !== null &&
+        "tools" in parsed &&
+        Array.isArray(parsed.tools)
+      ) {
+        const tools: unknown[] = parsed.tools;
+        return tools
+          .filter(isArchitectToolSpec)
+          .map(({ name, description, code }) => ({ name, description, code }));
       }
     } catch {
       continue;
     }
   }
   return [];
+}
+
+function isArchitectToolSpec(
+  value: unknown,
+): value is { name: string; description: string; code: string } {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  return (
+    "name" in value &&
+    typeof value.name === "string" &&
+    "description" in value &&
+    typeof value.description === "string" &&
+    "code" in value &&
+    typeof value.code === "string"
+  );
 }
