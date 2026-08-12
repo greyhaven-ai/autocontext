@@ -3,10 +3,23 @@
  *
  * Strategies (tried in order):
  * 1. Marker-based: <!-- JUDGE_RESULT_START/END --> (preferred — matches system prompt format)
- * 2. Raw JSON: { "score": ... } anywhere in text
- * 3. Code block: ```json ... ```
- * 4. Plain text: "Score: 0.85" patterns
+ * 2. Shared model-JSON extraction, accepted only if it carries a "score"
+ * 3. Plain text: "Score: 0.85" patterns
+ *
+ * AC-937 collapsed what used to be two separate middle tiers, matching the
+ * Python fix in AC-924. A hand-rolled score-shaped-object regex ran ahead of a
+ * hand-rolled fence regex, and because it scanned the whole response and took
+ * the FIRST match, it read inside fences and reasoning blocks and won before
+ * the fence-aware tier was reached. Measured on the Python twin: a reasoning
+ * block holding a discarded draft scored the run 0.05 where the fenced answer
+ * said 0.88. That is ordinary open-weight output shape, and the failure is
+ * silent -- a wrong number entering the ranking, not an error.
+ *
+ * The "score" requirement stays here, at the call site. `extractJson` is a
+ * general model-JSON parser shared with other call sites and has no business
+ * knowing about scores.
  */
+import { extractJson } from "../execution/model-json.js";
 
 const RESULT_START = "<!-- JUDGE_RESULT_START -->";
 const RESULT_END = "<!-- JUDGE_RESULT_END -->";
@@ -61,45 +74,9 @@ function tryMarkerParse(response: string): Record<string, unknown> | null {
   }
 }
 
-function tryCodeBlockParse(response: string): Record<string, unknown> | null {
-  const re = /```(?:json)?\s*\n?(.*?)\n?```/gs;
-  let match: RegExpExecArray | null;
-  while ((match = re.exec(response)) !== null) {
-    try {
-      const data = JSON.parse(match[1].trim());
-      if (typeof data === "object" && data !== null && "score" in data) {
-        return data;
-      }
-    } catch {
-      continue;
-    }
-  }
-  return null;
-}
-
-function tryRawJsonParse(response: string): Record<string, unknown> | null {
-  // Simple flat objects
-  const flatRe = /\{[^{}]*"score"[^{}]*\}/g;
-  let match: RegExpExecArray | null;
-  while ((match = flatRe.exec(response)) !== null) {
-    try {
-      const data = JSON.parse(match[0]);
-      if (typeof data === "object" && "score" in data) return data;
-    } catch {
-      continue;
-    }
-  }
-  // Nested objects (with dimensions)
-  const nestedRe = /\{(?:[^{}]|\{[^{}]*\})*"score"(?:[^{}]|\{[^{}]*\})*\}/g;
-  while ((match = nestedRe.exec(response)) !== null) {
-    try {
-      const data = JSON.parse(match[0]);
-      if (typeof data === "object" && "score" in data) return data;
-    } catch {
-      continue;
-    }
-  }
-  return null;
+function tryModelJsonParse(response: string): Record<string, unknown> | null {
+  const data = extractJson(response, { onFailure: "none" });
+  return data && "score" in data ? data : null;
 }
 
 function tryPlaintextParse(response: string): ParsedJudge | null {
@@ -131,15 +108,11 @@ export function parseJudgeResponse(response: string): ParsedJudge {
   const markerData = tryMarkerParse(response);
   if (markerData) return extractFromDict(markerData, "markers");
 
-  // Strategy 2: Raw JSON
-  const rawData = tryRawJsonParse(response);
-  if (rawData) return extractFromDict(rawData, "raw_json");
+  // Strategy 2: Shared extraction, gated on judge semantics.
+  const jsonData = tryModelJsonParse(response);
+  if (jsonData) return extractFromDict(jsonData, "raw_json");
 
-  // Strategy 3: Code block
-  const codeData = tryCodeBlockParse(response);
-  if (codeData) return extractFromDict(codeData, "code_block");
-
-  // Strategy 4: Plaintext
+  // Strategy 3: Plaintext
   const plainResult = tryPlaintextParse(response);
   if (plainResult) return plainResult;
 

@@ -1,0 +1,427 @@
+{
+  "contract": "AC-937 model-JSON extraction parity. Generated from Python's harness/core/output_parser.py::extract_json; TypeScript replays this file. Outcomes record the exception TYPE, not its message, because the two languages word errors differently and pinning wording would fail on a difference nobody cares about.",
+  "generator": "autocontext/scripts/generate_model_json_parity_fixtures.py",
+  "groups": {
+    "direct": {
+      "bare_object": {
+        "text": "{\"a\": 1}",
+        "options": {},
+        "expected": {
+          "status": "ok",
+          "value": {
+            "a": 1
+          }
+        }
+      },
+      "object_with_prose_around": {
+        "text": "Here you go:\n{\"a\": 1}\nhope that helps",
+        "options": {},
+        "expected": {
+          "status": "ok",
+          "value": {
+            "a": 1
+          }
+        }
+      },
+      "json_tagged_fence": {
+        "text": "```json\n{\"a\": 1}\n```",
+        "options": {},
+        "expected": {
+          "status": "ok",
+          "value": {
+            "a": 1
+          }
+        }
+      },
+      "untagged_fence": {
+        "text": "```\n{\"a\": 1}\n```",
+        "options": {},
+        "expected": {
+          "status": "ok",
+          "value": {
+            "a": 1
+          }
+        }
+      },
+      "same_line_fence": {
+        "text": "```json{\"a\": 1}```",
+        "options": {},
+        "expected": {
+          "status": "ok",
+          "value": {
+            "a": 1
+          }
+        }
+      },
+      "uppercase_tag": {
+        "text": "```JSON\n{\"a\": 1}\n```",
+        "options": {},
+        "expected": {
+          "status": "ok",
+          "value": {
+            "a": 1
+          }
+        }
+      },
+      "nested_object": {
+        "text": "{\"a\": {\"b\": {\"c\": 1}}}",
+        "options": {},
+        "expected": {
+          "status": "ok",
+          "value": {
+            "a": {
+              "b": {
+                "c": 1
+              }
+            }
+          }
+        }
+      },
+      "object_containing_braces_in_strings": {
+        "text": "{\"a\": \"a } brace\", \"b\": \"{\"}",
+        "options": {},
+        "expected": {
+          "status": "ok",
+          "value": {
+            "a": "a } brace",
+            "b": "{"
+          }
+        }
+      }
+    },
+    "fence_selection": {
+      "reasoning_fence_then_json_fence": {
+        "text": "Let me think.\n```\nreasoning scratch\n```\nHere:\n```json\n{\"a\": 1}\n```",
+        "options": {},
+        "expected": {
+          "status": "ok",
+          "value": {
+            "a": 1
+          }
+        }
+      },
+      "python_fence_with_dict_then_json_fence": {
+        "text": "```python\nd = {\"scratch\": 1}\n```\n```json\n{\"a\": 1}\n```",
+        "options": {},
+        "expected": {
+          "status": "ok",
+          "value": {
+            "a": 1
+          }
+        }
+      },
+      "two_json_fences_first_wins": {
+        "text": "```json\n{\"a\": 1}\n```\n```json\n{\"a\": 2}\n```",
+        "options": {},
+        "expected": {
+          "status": "ok",
+          "value": {
+            "a": 1
+          }
+        }
+      },
+      "corrupt_tagged_fence_does_not_fall_back_to_prose": {
+        "text": "```json\n{\"a\": oops\n```\nlater {\"decoy\": true}",
+        "options": {
+          "on_failure": "none"
+        },
+        "expected": {
+          "status": "none"
+        }
+      },
+      "untagged_fences_tried_in_order": {
+        "text": "```\nno braces here\n```\n```\n{\"a\": 1}\n```",
+        "options": {},
+        "expected": {
+          "status": "ok",
+          "value": {
+            "a": 1
+          }
+        }
+      },
+      "brace_free_fence_falls_back_to_prose": {
+        "text": "```\njust prose\n```\n{\"a\": 1}",
+        "options": {},
+        "expected": {
+          "status": "ok",
+          "value": {
+            "a": 1
+          }
+        }
+      },
+      "jsonl_tag_is_not_a_json_tag": {
+        "text": "```jsonl\n{\"a\": 1}\n```\n```json\n{\"a\": 2}\n```",
+        "options": {},
+        "expected": {
+          "status": "ok",
+          "value": {
+            "a": 2
+          }
+        }
+      },
+      "json5_tag_is_not_a_json_tag": {
+        "text": "```json5\n{\"a\": 1}\n```\n```json\n{\"a\": 2}\n```",
+        "options": {},
+        "expected": {
+          "status": "ok",
+          "value": {
+            "a": 2
+          }
+        }
+      }
+    },
+    "recovery": {
+      "prose_wrapped_bare_json": {
+        "text": "blah {\"a\": 1} blah",
+        "options": {},
+        "expected": {
+          "status": "ok",
+          "value": {
+            "a": 1
+          }
+        }
+      },
+      "two_bare_objects_first_wins": {
+        "text": "{\"a\": 1} then {\"a\": 2}",
+        "options": {},
+        "expected": {
+          "status": "ok",
+          "value": {
+            "a": 1
+          }
+        }
+      },
+      "earlier_malformed_candidate_is_skipped": {
+        "text": "{oops} then {\"a\": 1}",
+        "options": {},
+        "expected": {
+          "status": "ok",
+          "value": {
+            "a": 1
+          }
+        }
+      },
+      "malformed_then_valid_unfenced": {
+        "text": "blah {oops} and {\"a\": 1}",
+        "options": {
+          "on_failure": "none"
+        },
+        "expected": {
+          "status": "ok",
+          "value": {
+            "a": 1
+          }
+        }
+      },
+      "malformed_then_valid_fenced": {
+        "text": "```\nblah {oops} and {\"a\": 1}\n```",
+        "options": {
+          "on_failure": "none"
+        },
+        "expected": {
+          "status": "none"
+        }
+      },
+      "brace_inside_string_needs_span_scan": {
+        "text": "note {\"a\": \"} brace\"} end",
+        "options": {},
+        "expected": {
+          "status": "ok",
+          "value": {
+            "a": "} brace"
+          }
+        }
+      }
+    },
+    "arrays": {
+      "top_level_array_is_wrong_type": {
+        "text": "[1, 2, 3]",
+        "options": {
+          "on_failure": "none"
+        },
+        "expected": {
+          "status": "none"
+        }
+      },
+      "fenced_array_is_wrong_type": {
+        "text": "```json\n[{\"a\": 1}]\n```",
+        "options": {
+          "on_failure": "none"
+        },
+        "expected": {
+          "status": "none"
+        }
+      },
+      "truncated_array_does_not_unwrap_inner_object": {
+        "text": "[{\"a\": 1}, {\"b\": 2}",
+        "options": {
+          "on_failure": "none"
+        },
+        "expected": {
+          "status": "none"
+        }
+      },
+      "prose_then_truncated_array_is_terminal": {
+        "text": "here: [{\"a\": 1}",
+        "options": {
+          "on_failure": "none"
+        },
+        "expected": {
+          "status": "none"
+        }
+      },
+      "leading_bracket_prose_is_terminal": {
+        "text": "[draft] {\"a\": 1}",
+        "options": {
+          "on_failure": "none"
+        },
+        "expected": {
+          "status": "none"
+        }
+      },
+      "leading_citation_bracket_is_terminal": {
+        "text": "[1] see also [2, 3] {\"a\": 1}",
+        "options": {
+          "on_failure": "none"
+        },
+        "expected": {
+          "status": "none"
+        }
+      },
+      "prose_then_markdown_bracket_then_object": {
+        "text": "Use [draft] while reasoning, then return {\"a\": 1}",
+        "options": {},
+        "expected": {
+          "status": "ok",
+          "value": {
+            "a": 1
+          }
+        }
+      },
+      "prose_then_markdown_link_then_object": {
+        "text": "See [working notes](https://example.test/notes), then return {\"a\": 1}",
+        "options": {},
+        "expected": {
+          "status": "ok",
+          "value": {
+            "a": 1
+          }
+        }
+      },
+      "prose_then_numeric_citation_then_object": {
+        "text": "Sources [1, 2] support the result {\"a\": 1}",
+        "options": {},
+        "expected": {
+          "status": "ok",
+          "value": {
+            "a": 1
+          }
+        }
+      },
+      "array_fence_before_object_fence_is_terminal": {
+        "text": "```\n[1, 2]\n```\n```\n{\"a\": 1}\n```",
+        "options": {
+          "on_failure": "none"
+        },
+        "expected": {
+          "status": "none"
+        }
+      }
+    },
+    "bom": {
+      "bom_before_object": {
+        "text": "﻿{\"a\": 1}",
+        "options": {},
+        "expected": {
+          "status": "ok",
+          "value": {
+            "a": 1
+          }
+        }
+      },
+      "bom_inside_fence": {
+        "text": "```json\n﻿{\"a\": 1}\n```",
+        "options": {},
+        "expected": {
+          "status": "ok",
+          "value": {
+            "a": 1
+          }
+        }
+      }
+    },
+    "require_unique": {
+      "competing_objects_rejected": {
+        "text": "{\"a\": 1} and {\"b\": 2}",
+        "options": {
+          "require_unique": true,
+          "on_failure": "none"
+        },
+        "expected": {
+          "status": "none"
+        }
+      },
+      "tagged_answer_trusted_despite_scratch": {
+        "text": "```\n{\"scratch\": 1}\n```\n```json\n{\"a\": 1}\n```",
+        "options": {
+          "require_unique": true
+        },
+        "expected": {
+          "status": "ok",
+          "value": {
+            "a": 1
+          }
+        }
+      },
+      "single_object_accepted": {
+        "text": "{\"a\": 1}",
+        "options": {
+          "require_unique": true
+        },
+        "expected": {
+          "status": "ok",
+          "value": {
+            "a": 1
+          }
+        }
+      }
+    },
+    "failure_policy": {
+      "no_json_raises": {
+        "text": "no json here at all",
+        "options": {},
+        "expected": {
+          "status": "raised",
+          "error_type": "JSONDecodeError"
+        }
+      },
+      "no_json_returns_none": {
+        "text": "no json here at all",
+        "options": {
+          "on_failure": "none"
+        },
+        "expected": {
+          "status": "none"
+        }
+      },
+      "empty_string_returns_none": {
+        "text": "",
+        "options": {
+          "on_failure": "none"
+        },
+        "expected": {
+          "status": "none"
+        }
+      },
+      "degenerate_repetition_returns_none": {
+        "text": "{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{",
+        "options": {
+          "on_failure": "none"
+        },
+        "expected": {
+          "status": "none"
+        }
+      }
+    }
+  }
+}
