@@ -158,6 +158,22 @@ class LLMProvider(ABC):
         return False
 
     @property
+    def supports_thinking_output_schema(self) -> bool:
+        """Whether ``complete_with_thinking`` actually honors ``output_schema``.
+
+        Declared rather than inferred (AC-936). The extension layer used to
+        decide this by inspecting the signature, which cannot tell a parameter
+        that is honored from one that is accepted and discarded -- and Anthropic
+        does the latter, because its thinking loop already pins ``tool_choice``
+        to the scratchpad tool and cannot force a second one.
+
+        Defaults to following ``supports_thinking_stream``: a provider with no
+        thinking loop has nothing to honor a schema on, and one that implements
+        the loop is assumed to have wired the schema unless it says otherwise.
+        """
+        return self.supports_thinking_stream
+
+    @property
     def name(self) -> str:
         """Human-readable provider name."""
         return self.__class__.__name__

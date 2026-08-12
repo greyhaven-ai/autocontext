@@ -37,12 +37,16 @@ so asking it for three tiers is meaningless.
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Protocol
 
 from autocontext.agents import role_routing_contract_generated as _contract
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from collections.abc import Set as AbstractSet
+
+
+logger = logging.getLogger(__name__)
 
 
 class _SupportsFieldsSet(Protocol):
@@ -87,8 +91,24 @@ def resolve_model_default(
     better-informed answer, so every caller can substitute it for a direct
     settings read without changing Anthropic behavior.
     """
-    if field_name in settings.model_fields_set:
+    if field_name in settings.model_fields_set and (configured or "").strip():
         return configured
+
+    # AC-927: a field the user set to "" (or whitespace) is treated as UNSET,
+    # not as a request to send an empty model id. That matches TypeScript's
+    # `clean()`, and it matches this project's own config convention -- the
+    # shipped .env.example carries 20 empty-valued AUTOCONTEXT_* keys, so
+    # failing closed on a blank value would break the template we publish.
+    #
+    # The blank is dropped here so the shipped field default takes over
+    # downstream; passing it through reached an endpoint as `model: ""`, which
+    # is a malformed request rather than a routing preference.
+    if configured is not None and not configured.strip():
+        configured = shipped_default(field_name)
+        logger.debug(
+            "config.provider_model_defaults: %s was set to an empty value; treating it as unset",
+            field_name,
+        )
 
     normalized = provider.strip().lower()
     if normalized in _PRESERVED_PROVIDERS:
@@ -99,3 +119,24 @@ def resolve_model_default(
         return local_model
 
     return PROVIDER_DEFAULT_MODEL.get(normalized, configured)
+
+
+def shipped_default(field_name: str) -> str | None:
+    """The default declared on ``AppSettings`` for ``field_name``.
+
+    Read off the CLASS, not off the settings object a caller passed. The
+    parity harness drives routing with a ``MagicMock(spec=...)`` on purpose, so
+    instance introspection returns nothing there -- and the shipped default is
+    a property of the model either way. TypeScript's counterpart is the
+    ``DEFAULT_ROLE_MODELS`` literal in ``role-routing.ts``; both are the same
+    values, and the parity fixture is what holds them together.
+
+    Imported lazily to keep this module free of a settings import at module
+    scope, which is what lets ``backends.py`` load it without pulling in the
+    heavy config graph.
+    """
+    from autocontext.config.settings import AppSettings
+
+    field = AppSettings.model_fields.get(field_name)
+    default = getattr(field, "default", None)
+    return default if isinstance(default, str) and default.strip() else None

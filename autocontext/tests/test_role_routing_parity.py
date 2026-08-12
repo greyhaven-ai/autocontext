@@ -62,21 +62,32 @@ _EXPECTED_CASE_IDS: dict[str, frozenset[str]] = {
             "local_artifact_ignored_when_routing_off",
         },
     ),
+    # AC-927. These five were `known_divergences` until both languages agreed
+    # that a blank routing setting means unset. Moved here rather than deleted:
+    # dropping them would have removed the only coverage of the empty-value
+    # layer at the exact moment it started working.
+    "unset_settings": frozenset(
+        {
+            "agent_provider_empty",
+            "blank_local_artifact",
+            "mlx_model_path_empty",
+            "role_model_empty_routing_off",
+            "tier_model_empty",
+        },
+    ),
 }
 
 _EXPECTED_DIVERGENCE_CASE_IDS = {
     "explicit_override.mixed_case_provider_name",
     "explicit_override.whitespace_only_provider_name",
     "routing_off.unknown_role_model",
-    # AC-919 item 2. Every other fixture case supplies all 16 settings fields
-    # non-empty, so nothing reached the unset/empty layer -- the exact layer
-    # AC-912 rewrites. These five pin its before-state so that rewrite can be
-    # diffed rather than trusted.
-    "unset_settings.agent_provider_empty",
-    "unset_settings.blank_local_artifact",
-    "unset_settings.mlx_model_path_empty",
-    "unset_settings.role_model_empty_routing_off",
-    "unset_settings.tier_model_empty",
+    # The five unset_settings entries that used to sit here are GONE, not
+    # updated (AC-927). They recorded the two languages disagreeing about what
+    # an empty routing setting means; both now treat blank as unset, so there is
+    # no divergence left to pin. The inputs moved into the `unset_settings`
+    # FIXTURE group above, where they are replayed as agreeing cases -- deleting
+    # them outright would have dropped the only coverage of the empty-value
+    # layer at the moment it started working.
 }
 
 # Every fixture group is a set of single route() calls compared field by field.
