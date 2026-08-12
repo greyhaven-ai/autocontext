@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import logging
 from typing import Any
 
 import anthropic
@@ -28,6 +30,7 @@ _DEEP_THINK_TOOL: dict[str, Any] = {
     "description": DEEP_THINK_DESCRIPTION,
     "input_schema": DEEP_THINK_PARAMETERS,
 }
+logger = logging.getLogger(__name__)
 
 
 class AnthropicProvider(LLMProvider):
@@ -50,24 +53,51 @@ class AnthropicProvider(LLMProvider):
         max_tokens: int = 4096,
         output_schema: OutputSchema | None = None,
     ) -> CompletionResult:
-        del output_schema  # AC-913: Anthropic structured output not wired yet; reported unconstrained
         model_id = model or self._default_model
+        request: dict[str, Any] = {
+            "model": model_id,
+            "max_tokens": clamp_output_tokens(max_tokens, model_id),
+            "temperature": temperature,
+            "system": system_prompt,
+            "messages": [{"role": "user", "content": user_prompt}],
+        }
+
+        # AC-928. Anthropic has no `response_format`; a forced tool call is the
+        # equivalent. Declaring a tool whose input_schema is the role schema and
+        # pinning tool_choice to it makes the model emit a validated object in a
+        # tool_use block instead of prose.
+        constrained = False
+        if output_schema is not None:
+            request["tools"] = [
+                {
+                    "name": output_schema.name,
+                    "description": "Return the response as structured data matching the schema.",
+                    "input_schema": output_schema.schema,
+                }
+            ]
+            request["tool_choice"] = {"type": "tool", "name": output_schema.name}
+            constrained = True
+
         try:
-            response = self._client.messages.create(
-                model=model_id,
-                max_tokens=clamp_output_tokens(max_tokens, model_id),
-                temperature=temperature,
-                system=system_prompt,
-                messages=[{"role": "user", "content": user_prompt}],
-            )
+            response = self._client.messages.create(**request)
         except anthropic.APIError as exc:
             raise ProviderError(f"Anthropic API error: {exc}") from exc
 
-        text = ""
-        if response.content:
-            block = response.content[0]
-            if hasattr(block, "text"):
-                text = block.text
+        text = _text_from(response, output_schema if constrained else None)
+        if constrained and text is None:
+            # Forcing the tool did not produce a tool_use block. Rather than
+            # claim a constrained result the caller would then hand to a strict
+            # parser, fall back to whatever text came back and say it was
+            # unconstrained -- the same honesty contract openai_compat keeps
+            # when an endpoint rejects response_format.
+            logger.warning(
+                "providers.anthropic: %s returned no tool_use block for forced tool '%s'; reporting unconstrained",
+                model_id,
+                output_schema.name if output_schema else "",
+            )
+            constrained = False
+            text = _first_text_block(response)
+
         usage = {}
         if response.usage:
             usage = {
@@ -76,10 +106,11 @@ class AnthropicProvider(LLMProvider):
             }
 
         return CompletionResult(
-            text=text,
+            text=text or "",
             model=model_id,
             usage=usage,
             stop_reason=getattr(response, "stop_reason", None),
+            constrained=constrained,
         )
 
     def complete_with_thinking(
@@ -199,3 +230,29 @@ class AnthropicProvider(LLMProvider):
     @property
     def supports_thinking_stream(self) -> bool:
         return True
+
+
+def _first_text_block(response: Any) -> str:
+    for block in getattr(response, "content", None) or []:
+        text = getattr(block, "text", None)
+        if isinstance(text, str):
+            return text
+    return ""
+
+
+def _text_from(response: Any, output_schema: OutputSchema | None) -> str | None:
+    """Serialize the response into the text the rest of the loop parses.
+
+    Unconstrained, that is the first text block, unchanged. Constrained, the
+    payload arrives as an already-parsed dict on a tool_use block, so it is
+    re-serialized to JSON: every caller downstream of this method reads
+    ``CompletionResult.text``, and returning an object here would mean changing
+    that contract for one provider. Returns None when the forced tool produced
+    no tool_use block, which the caller reports as unconstrained.
+    """
+    if output_schema is None:
+        return _first_text_block(response)
+    for block in getattr(response, "content", None) or []:
+        if getattr(block, "type", None) == "tool_use" and getattr(block, "name", None) == output_schema.name:
+            return json.dumps(block.input)
+    return None

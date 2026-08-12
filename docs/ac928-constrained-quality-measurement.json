@@ -1,0 +1,64 @@
+{
+  "contract": "AC-928 constrained-output quality measurement. Answers whether forcing a model to fill a schema makes its ANALYSIS worse, not whether the payload validates (that is AC-913 and already settled). Read schema_minus_prose_grounded_items with its standard_errors before quoting any ratio from this file.",
+  "measured_on": "2026-08-11",
+  "harness": "scripts/measure_constrained_quality.py",
+  "transport_caveat": "Both models were reached through OpenRouter, not the vendor APIs directly. The OpenAI key available at measurement time had no credits and no Anthropic key was available. OpenRouter normalizes both backends to the OpenAI-shaped API, so the Anthropic arm exercises a forced tool call translated by OpenRouter rather than a native Anthropic messages call. The provider code that shipped from this issue calls Anthropic natively; the largest role schema (architect_output, the only one using $defs/$ref) was separately confirmed accepted with HTTP 200 and a returned tool call.",
+  "metric_note": "The per-item ratios in the raw rows are denominator-sensitive and were nearly misread. The prose arm emits roughly twice as many, much shorter items (structural and nested bullets all count), which dilutes any per-item ratio. Absolute grounded items per response is the comparable figure and is what the verdict rests on.",
+  "arms": {
+    "prose": "no schema; the model writes markdown and the loop scrapes it",
+    "schema": "response_format json_schema (OpenAI) or a forced tool call (Anthropic)"
+  },
+  "results": {
+    "openai/gpt-4o": {
+      "mechanism": "response_format json_schema",
+      "prose": {
+        "items_per_response": 18.15,
+        "grounded_items_per_response": 3.4,
+        "grounded_items_sem": 0.2,
+        "total_chars_per_response": 2469,
+        "actionable_share_of_recommendations": 0.484
+      },
+      "schema": {
+        "items_per_response": 12,
+        "grounded_items_per_response": 2.85,
+        "grounded_items_sem": 0.25,
+        "total_chars_per_response": 1599,
+        "actionable_share_of_recommendations": 0.517
+      },
+      "schema_minus_prose_grounded_items": -0.55,
+      "standard_errors": 1.7,
+      "schema_unparseable": 0,
+      "trials": 20
+    },
+    "anthropic/claude-sonnet-4.5": {
+      "mechanism": "forced tool call",
+      "prose": {
+        "items_per_response": 41.4,
+        "grounded_items_per_response": 6.65,
+        "grounded_items_sem": 0.31,
+        "total_chars_per_response": 2402,
+        "actionable_share_of_recommendations": 0.583
+      },
+      "schema": {
+        "items_per_response": 17.95,
+        "grounded_items_per_response": 7.45,
+        "grounded_items_sem": 0.15,
+        "total_chars_per_response": 2048,
+        "actionable_share_of_recommendations": 0.71
+      },
+      "schema_minus_prose_grounded_items": 0.8,
+      "standard_errors": 2.3,
+      "schema_unparseable": 0,
+      "trials": 20
+    }
+  },
+  "replication": {
+    "anthropic/claude-sonnet-4.5": "An independent 20-trial run reproduced the direction and size (per-item grounding 0.158 -> 0.424 vs 0.161 -> 0.415).",
+    "openai/gpt-4o": "An independent 20-trial run disagreed in SIGN on per-item grounding (0.216 -> 0.210 vs 0.205 -> 0.239), which is itself the evidence that the gpt-4o difference is noise."
+  },
+  "verdict": {
+    "anthropic": "Ship constrained by default. No regression on either substance proxy; grounded content is slightly HIGHER (+0.80 items per response, 2.3 standard errors) and actionability rises 0.583 -> 0.710. 40 of 40 trials produced a valid payload.",
+    "openai": "Keep what AC-913 already shipped. Grounded content is statistically indistinguishable (-0.55 items, 1.7 standard errors, sign flips between runs). Recorded caveat: constrained responses are about 35 percent shorter in total characters, which is a real change in output shape even though the substance proxies do not move.",
+    "escape_hatch": "Neither decision is one-way. AC-931's per-role constrained_output setting already lets an operator take the prose path."
+  }
+}
