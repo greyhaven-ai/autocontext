@@ -42,7 +42,8 @@ translator   ollama     llama3.1   0.0
 ```
 
 `llama3.1` is the per-provider default. Before this work every one of those
-rows said `claude-opus-4-6` or `claude-sonnet-4-5`, which a local server cannot
+rows said an Anthropic model id (`claude-opus-4-6` or `claude-sonnet-4-5` at
+the time), which a local server cannot
 serve — the request failed at the endpoint rather than at configuration time.
 
 `AUTOCONTEXT_LOCAL_MODEL` replaces every slot you have not configured
@@ -234,7 +235,7 @@ AUTOCONTEXT_PROVIDER_HOSTING=local
 
 `AUTOCONTEXT_LOCAL_MODEL` fills every unset role and tier slot. By contrast,
 `AUTOCONTEXT_AGENT_DEFAULT_MODEL` configures only the underlying client; the
-role resolver would still request the provider default (`gpt-4o`).
+role resolver would still request the provider default (`gpt-5.6-terra`).
 
 **As a CLI runtime** — `AUTOCONTEXT_AGENT_PROVIDER=hermes` drives the Hermes
 binary as a subprocess, which is what gives it workspace access rather than

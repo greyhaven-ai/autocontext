@@ -11,7 +11,7 @@
     "endpoint": "https://api.openai.com/v1/chat/completions",
     "providerVersion": "2024-06-01"
   },
-  "model": "gpt-4o-mini",
+  "model": "gpt-5.6-luna",
   "env": {
     "environmentTag": "production",
     "appId": "chat-service",

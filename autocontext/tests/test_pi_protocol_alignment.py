@@ -63,11 +63,11 @@ class TestPiCLIProtocol:
         """Pi uses --model for model selection."""
         from autocontext.runtimes.pi_cli import PiCLIConfig, PiCLIRuntime
 
-        config = PiCLIConfig(model="claude-sonnet-4-20250514")
+        config = PiCLIConfig(model="claude-sonnet-5")
         runtime = PiCLIRuntime(config)
         args = runtime._build_args("test prompt")
         assert "--model" in args
-        assert "claude-sonnet-4-20250514" in args
+        assert "claude-sonnet-5" in args
 
 
 class TestPiRPCProtocol:

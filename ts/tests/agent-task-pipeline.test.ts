@@ -59,7 +59,7 @@ const SAMPLE_SPEC: AgentTaskSpec = {
   judgeRubric:
     "Evaluate on: (1) Format — valid haiku (5-7-5)? (2) Relevance — about testing? (3) Creativity",
   outputFormat: "free_text",
-  judgeModel: "claude-sonnet-4-20250514",
+  judgeModel: "claude-sonnet-5",
   maxRounds: 1,
   qualityThreshold: 0.9,
 };

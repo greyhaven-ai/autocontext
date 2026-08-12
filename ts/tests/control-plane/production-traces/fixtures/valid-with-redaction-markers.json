@@ -6,7 +6,7 @@
     "sdk": { "name": "autocontext-ts", "version": "0.4.3" }
   },
   "provider": { "name": "anthropic" },
-  "model": "claude-sonnet-4-20250514",
+  "model": "claude-sonnet-5",
   "env": { "environmentTag": "production", "appId": "crm-agent" },
   "messages": [
     { "role": "user", "content": "Contact alice@example.com about her ticket.", "timestamp": "2026-04-17T12:00:00.000Z" },

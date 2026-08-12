@@ -9,13 +9,13 @@ from autocontext.harness.cost.types import ModelPricing
 
 def test_calculator_known_model() -> None:
     calc = CostCalculator()
-    record = calc.calculate("claude-sonnet-4-5-20250929", input_tokens=1000, output_tokens=500)
-    # sonnet: 0.003/1k input, 0.015/1k output
-    assert record.model == "claude-sonnet-4-5-20250929"
+    record = calc.calculate("claude-sonnet-5", input_tokens=1000, output_tokens=500)
+    # sonnet-5: 0.002/1k input, 0.010/1k output
+    assert record.model == "claude-sonnet-5"
     assert record.input_tokens == 1000
     assert record.output_tokens == 500
-    assert record.input_cost == round((1000 / 1000) * 0.003, 6)
-    assert record.output_cost == round((500 / 1000) * 0.015, 6)
+    assert record.input_cost == round((1000 / 1000) * 0.002, 6)
+    assert record.output_cost == round((500 / 1000) * 0.010, 6)
     assert record.total_cost == round(record.input_cost + record.output_cost, 6)
 
 
@@ -30,7 +30,7 @@ def test_calculator_unknown_model_uses_default() -> None:
 
 def test_calculator_zero_tokens() -> None:
     calc = CostCalculator()
-    record = calc.calculate("claude-sonnet-4-5-20250929", input_tokens=0, output_tokens=0)
+    record = calc.calculate("claude-sonnet-5", input_tokens=0, output_tokens=0)
     assert record.input_cost == 0.0
     assert record.output_cost == 0.0
     assert record.total_cost == 0.0
@@ -38,9 +38,9 @@ def test_calculator_zero_tokens() -> None:
 
 def test_calculator_from_usage() -> None:
     calc = CostCalculator()
-    usage = RoleUsage(input_tokens=1000, output_tokens=500, latency_ms=200, model="claude-sonnet-4-5-20250929")
+    usage = RoleUsage(input_tokens=1000, output_tokens=500, latency_ms=200, model="claude-sonnet-5")
     record = calc.from_usage(usage)
-    assert record.model == "claude-sonnet-4-5-20250929"
+    assert record.model == "claude-sonnet-5"
     assert record.input_tokens == 1000
     assert record.output_tokens == 500
     assert record.total_cost == round(record.input_cost + record.output_cost, 6)
@@ -49,19 +49,19 @@ def test_calculator_from_usage() -> None:
 def test_calculator_batch() -> None:
     calc = CostCalculator()
     usages = [
-        RoleUsage(input_tokens=1000, output_tokens=500, latency_ms=100, model="claude-sonnet-4-5-20250929"),
-        RoleUsage(input_tokens=2000, output_tokens=1000, latency_ms=200, model="claude-opus-4-6"),
+        RoleUsage(input_tokens=1000, output_tokens=500, latency_ms=100, model="claude-sonnet-5"),
+        RoleUsage(input_tokens=2000, output_tokens=1000, latency_ms=200, model="claude-opus-5"),
     ]
     records = calc.calculate_batch(usages)
     assert len(records) == 2
-    assert records[0].model == "claude-sonnet-4-5-20250929"
-    assert records[1].model == "claude-opus-4-6"
+    assert records[0].model == "claude-sonnet-5"
+    assert records[1].model == "claude-opus-5"
 
 
 def test_calculator_default_pricing_includes_claude_models() -> None:
     model_names = {p.model for p in DEFAULT_PRICING}
-    assert "claude-sonnet-4-5-20250929" in model_names
-    assert "claude-opus-4-6" in model_names
+    assert "claude-sonnet-5" in model_names
+    assert "claude-opus-5" in model_names
     assert "claude-haiku-4-5-20251001" in model_names
 
 
@@ -76,7 +76,7 @@ def test_calculator_custom_pricing() -> None:
 def test_calculator_cost_precision() -> None:
     calc = CostCalculator()
     # Use values that could produce floating point noise
-    record = calc.calculate("claude-sonnet-4-5-20250929", input_tokens=333, output_tokens=777)
+    record = calc.calculate("claude-sonnet-5", input_tokens=333, output_tokens=777)
     # Verify costs are rounded to 6 decimal places
     assert record.input_cost == round(record.input_cost, 6)
     assert record.output_cost == round(record.output_cost, 6)

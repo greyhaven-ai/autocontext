@@ -16,7 +16,7 @@ def _minimal_trace() -> dict:
         "traceId": VALID_TRACE_ID,
         "source": {"emitter": "sdk", "sdk": {"name": "autocontext-py", "version": "0.4.3"}},
         "provider": {"name": "anthropic"},
-        "model": "claude-sonnet-4-20250514",
+        "model": "claude-sonnet-5",
         "env": {"environmentTag": "production", "appId": "my-app"},
         "messages": [
             {"role": "user", "content": "hello", "timestamp": "2026-04-17T12:00:00.000Z"},

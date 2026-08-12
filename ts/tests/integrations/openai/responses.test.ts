@@ -33,7 +33,7 @@ function makeSink() {
 const CANNED_RESPONSES_RESPONSE = {
   id: "resp-fake",
   object: "realtime.response",
-  model: "gpt-4o",
+  model: "gpt-5.6-terra",
   status: "completed",
   output: [
     {
@@ -72,9 +72,9 @@ describe("responses.create", () => {
     const client = instrumentClient(inner, { sink, appId: "test-app", environmentTag: "test" });
 
     await (client as unknown as { responses: { create: (k: unknown) => Promise<unknown> } })
-      .responses.create({ model: "gpt-4o", input: "hello" });
+      .responses.create({ model: "gpt-5.6-terra", input: "hello" });
 
-    expect(seenBody).toMatchObject({ model: "gpt-4o", input: "hello" });
+    expect(seenBody).toMatchObject({ model: "gpt-5.6-terra", input: "hello" });
 
     cleanup();
     sink.close();
@@ -89,7 +89,7 @@ describe("responses.create", () => {
 
     // responses.create expects 'input' or 'messages'
     await (client as unknown as { responses: { create: (k: unknown) => Promise<unknown> } })
-      .responses.create({ model: "gpt-4o", input: "hello" });
+      .responses.create({ model: "gpt-5.6-terra", input: "hello" });
 
     const traces = readTraces();
     expect(traces).toHaveLength(1);
@@ -113,7 +113,7 @@ describe("responses.create", () => {
     const client = instrumentClient(inner, { sink, appId: "test-app", environmentTag: "test" });
 
     await (client as unknown as { responses: { create: (k: unknown) => Promise<unknown> } })
-      .responses.create({ model: "gpt-4o", input: "my prompt" });
+      .responses.create({ model: "gpt-5.6-terra", input: "my prompt" });
 
     const traces = readTraces();
     expect(traces).toHaveLength(1);
@@ -134,7 +134,7 @@ describe("responses.create", () => {
 
     await expect(
       (client as unknown as { responses: { create: (k: unknown) => Promise<unknown> } })
-        .responses.create({ model: "gpt-4o", input: "hello" }),
+        .responses.create({ model: "gpt-5.6-terra", input: "hello" }),
     ).rejects.toThrow();
 
     const traces = readTraces();

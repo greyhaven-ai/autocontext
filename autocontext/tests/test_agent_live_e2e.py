@@ -24,7 +24,7 @@ pytestmark = pytest.mark.skipif(
     reason="ANTHROPIC_API_KEY not set",
 )
 
-MODEL = "claude-sonnet-4-20250514"
+MODEL = "claude-sonnet-5"
 MIGRATIONS_DIR = Path(__file__).parent.parent / "migrations"
 
 

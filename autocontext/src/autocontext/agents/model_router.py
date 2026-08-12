@@ -21,8 +21,8 @@ class TierConfig:
 
     enabled: bool = False
     tier_haiku_model: str = "claude-haiku-4-5-20251001"
-    tier_sonnet_model: str = "claude-sonnet-4-5-20250929"
-    tier_opus_model: str = "claude-opus-4-6"
+    tier_sonnet_model: str = "claude-sonnet-5"
+    tier_opus_model: str = "claude-opus-5"
     # Competitor escalation thresholds
     competitor_haiku_max_gen: int = 3  # Use haiku for first N gens
     competitor_retry_escalation: int = 1  # Retry count that triggers sonnet

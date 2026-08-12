@@ -47,7 +47,7 @@ function seedPythonFixture(dir: string): void {
   mkdirSync(join(dir, "src"), { recursive: true });
   writeFileSync(
     join(dir, "src", "chat.py"),
-    "from openai import OpenAI\nclient = OpenAI()\nresponse = client.chat.completions.create(model=\"gpt-4o\", messages=[])\n",
+    "from openai import OpenAI\nclient = OpenAI()\nresponse = client.chat.completions.create(model=\"gpt-5.6-terra\", messages=[])\n",
   );
   writeFileSync(join(dir, ".gitignore"), "");
 }

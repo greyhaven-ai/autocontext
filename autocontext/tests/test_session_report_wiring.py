@@ -296,7 +296,7 @@ class TestProgressReportWiring:
             {
                 "generation_index": 1,
                 "role": "competitor",
-                "model": "claude-sonnet-4-5-20250929",
+                "model": "claude-sonnet-5",
                 "input_tokens": 1000,
                 "output_tokens": 500,
                 "latency_ms": 100,
@@ -393,7 +393,7 @@ class TestAggregateAnalyticsWiring:
             {
                 "generation_index": 1,
                 "role": "competitor",
-                "model": "claude-sonnet-4-5-20250929",
+                "model": "claude-sonnet-5",
                 "input_tokens": 1000,
                 "output_tokens": 500,
                 "latency_ms": 100,
@@ -479,7 +479,7 @@ class TestRunTraceWiring:
             {
                 "generation_index": 1,
                 "role": "competitor",
-                "model": "claude-sonnet-4-5-20250929",
+                "model": "claude-sonnet-5",
                 "input_tokens": 900,
                 "output_tokens": 450,
                 "latency_ms": 120,
@@ -490,7 +490,7 @@ class TestRunTraceWiring:
             {
                 "generation_index": 2,
                 "role": "analyst",
-                "model": "claude-sonnet-4-5-20250929",
+                "model": "claude-sonnet-5",
                 "input_tokens": 400,
                 "output_tokens": 200,
                 "latency_ms": 90,

@@ -130,7 +130,7 @@ def _mock_claude_json(result: str = "output text", cost: float = 0.05, is_error:
             "duration_ms": 1500,
             "num_turns": 1,
             "usage": {"input_tokens": 100, "output_tokens": 50},
-            "modelUsage": {"claude-sonnet-4-20250514": {"inputTokens": 100, "outputTokens": 50}},
+            "modelUsage": {"claude-sonnet-5": {"inputTokens": 100, "outputTokens": 50}},
         }
     )
 
@@ -201,7 +201,7 @@ class TestClaudeCLIRuntime:
         assert output.text == "hello world"
         assert output.cost_usd == 0.03
         assert output.session_id == "test-session-123"
-        assert output.model == "claude-sonnet-4-20250514"
+        assert output.model == "claude-sonnet-5"
         assert output.metadata["num_turns"] == 1
 
     def test_parse_output_accumulates_cost(self):

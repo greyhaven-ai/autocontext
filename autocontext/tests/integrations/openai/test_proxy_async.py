@@ -24,7 +24,7 @@ async def test_async_chat_completion(tmp_path, make_async_openai_client) -> None
     sink = FileSink(path=tmp_path / "t.jsonl", batch_size=1)
     wrapped = instrument_client(client, sink=sink, app_id="a")
     resp = await wrapped.chat.completions.create(
-        model="gpt-4o", messages=[{"role": "user", "content": "hi"}],
+        model="gpt-5.6-terra", messages=[{"role": "user", "content": "hi"}],
     )
     assert resp.choices[0].message.content == "hello world"
     sink.close()

@@ -11,8 +11,8 @@ from autocontext.harness.meta.types import ConfigRecommendation, RoleProfile
 # Model tiers (cheaper -> more expensive)
 MODEL_TIERS: list[list[str]] = [
     ["claude-haiku-4-5-20251001"],
-    ["claude-sonnet-4-5-20250929"],
-    ["claude-opus-4-6"],
+    ["claude-sonnet-5"],
+    ["claude-opus-5"],
 ]
 
 

@@ -11,11 +11,11 @@ from autocontext.integrations.openai._trace_builder import (
 
 def test_build_request_snapshot_basic() -> None:
     req = build_request_snapshot(
-        model="gpt-4o",
+        model="gpt-5.6-terra",
         messages=[{"role": "user", "content": "hi"}],
         extra_kwargs={"temperature": 0.5},
     )
-    assert req["model"] == "gpt-4o"
+    assert req["model"] == "gpt-5.6-terra"
     assert req["messages"] == [{"role": "user", "content": "hi"}]
     assert req["extra"] == {"temperature": 0.5}
 
@@ -26,7 +26,7 @@ _SESSION_HASH = "b" * 64  # valid 64-char hex string
 
 def test_build_success_trace_minimal() -> None:
     trace = build_success_trace(
-        request_snapshot={"model": "gpt-4o", "messages": [{"role": "user", "content": "hi"}], "extra": {}},
+        request_snapshot={"model": "gpt-5.6-terra", "messages": [{"role": "user", "content": "hi"}], "extra": {}},
         response_usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
         response_tool_calls=None,
         identity={"user_id_hash": _USER_HASH, "session_id_hash": _SESSION_HASH},
@@ -38,7 +38,7 @@ def test_build_success_trace_minimal() -> None:
     assert trace["schemaVersion"] == "1.0"
     assert trace["traceId"] == "01HN0000000000000000000001"
     assert trace["provider"]["name"] == "openai"
-    assert trace["model"] == "gpt-4o"
+    assert trace["model"] == "gpt-5.6-terra"
     assert trace["usage"] == {"tokensIn": 10, "tokensOut": 5}
     assert trace["outcome"] == {"label": "success"}
     assert trace["session"]["userIdHash"] == _USER_HASH
@@ -48,7 +48,7 @@ def test_build_success_trace_minimal() -> None:
 def test_build_success_trace_with_tool_calls() -> None:
     tc = [{"id": "call_1", "type": "function", "function": {"name": "f", "arguments": '{"x":1}'}}]
     trace = build_success_trace(
-        request_snapshot={"model": "gpt-4o", "messages": [{"role": "user", "content": "hi"}], "extra": {}},
+        request_snapshot={"model": "gpt-5.6-terra", "messages": [{"role": "user", "content": "hi"}], "extra": {}},
         response_usage={"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
         response_tool_calls=tc,
         identity={},
@@ -64,7 +64,7 @@ def test_build_success_trace_with_tool_calls() -> None:
 
 def test_build_failure_trace() -> None:
     trace = build_failure_trace(
-        request_snapshot={"model": "gpt-4o", "messages": [{"role": "user", "content": "hi"}], "extra": {}},
+        request_snapshot={"model": "gpt-5.6-terra", "messages": [{"role": "user", "content": "hi"}], "extra": {}},
         identity={},
         timing={"startedAt": "2026-04-21T00:00:00Z", "endedAt": "2026-04-21T00:00:01Z", "latencyMs": 0},
         env={"environmentTag": "test", "appId": "a"},
@@ -81,7 +81,7 @@ def test_build_failure_trace() -> None:
 
 def test_finalize_streaming_trace_partial_abandoned() -> None:
     trace = finalize_streaming_trace(
-        request_snapshot={"model": "gpt-4o", "messages": [{"role": "user", "content": "hi"}], "extra": {}},
+        request_snapshot={"model": "gpt-5.6-terra", "messages": [{"role": "user", "content": "hi"}], "extra": {}},
         identity={},
         timing={"startedAt": "2026-04-21T00:00:00Z", "endedAt": "2026-04-21T00:00:01Z", "latencyMs": 0},
         env={"environmentTag": "test", "appId": "a"},
@@ -97,7 +97,7 @@ def test_finalize_streaming_trace_partial_abandoned() -> None:
 
 def test_build_failure_trace_redacts_secret_in_message() -> None:
     trace = build_failure_trace(
-        request_snapshot={"model": "gpt-4o", "messages": [{"role": "user", "content": "hi"}], "extra": {}},
+        request_snapshot={"model": "gpt-5.6-terra", "messages": [{"role": "user", "content": "hi"}], "extra": {}},
         identity={},
         timing={"startedAt": "2026-04-21T00:00:00Z", "endedAt": "2026-04-21T00:00:01Z", "latencyMs": 0},
         env={"environmentTag": "test", "appId": "a"},

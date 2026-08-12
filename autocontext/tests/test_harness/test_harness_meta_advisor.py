@@ -58,12 +58,12 @@ def test_advisor_recommends_model_downgrade() -> None:
     p = PerformanceProfiler(c, min_observations=3)
     advisor = ConfigAdvisor(
         p,
-        current_config={"model_competitor": "claude-opus-4-6"},
+        current_config={"model_competitor": "claude-opus-5"},
     )
     recs = advisor.recommend()
     model_recs = [r for r in recs if r.parameter == "model" and r.role == "competitor"]
     assert len(model_recs) >= 1
-    assert model_recs[0].recommended_value == "claude-sonnet-4-5-20250929"
+    assert model_recs[0].recommended_value == "claude-sonnet-5"
 
 
 def test_advisor_no_downgrade_when_advance_rate_low() -> None:
@@ -71,7 +71,7 @@ def test_advisor_no_downgrade_when_advance_rate_low() -> None:
     p = PerformanceProfiler(c, min_observations=3)
     advisor = ConfigAdvisor(
         p,
-        current_config={"model_competitor": "claude-opus-4-6"},
+        current_config={"model_competitor": "claude-opus-5"},
     )
     recs = advisor.recommend()
     downgrade_recs = [
@@ -92,7 +92,7 @@ def test_advisor_recommends_model_upgrade() -> None:
     recs = advisor.recommend()
     model_recs = [r for r in recs if r.parameter == "model" and r.role == "analyst" and "more capable" in r.rationale]
     assert len(model_recs) >= 1
-    assert model_recs[0].recommended_value == "claude-sonnet-4-5-20250929"
+    assert model_recs[0].recommended_value == "claude-sonnet-5"
 
 
 def test_advisor_no_upgrade_when_advance_rate_high() -> None:
@@ -128,7 +128,7 @@ def test_advisor_recommendations_have_confidence() -> None:
     p = PerformanceProfiler(c, min_observations=3)
     advisor = ConfigAdvisor(
         p,
-        current_config={"model_competitor": "claude-opus-4-6"},
+        current_config={"model_competitor": "claude-opus-5"},
     )
     recs = advisor.recommend()
     for r in recs:
@@ -140,7 +140,7 @@ def test_advisor_recommendations_have_rationale() -> None:
     p = PerformanceProfiler(c, min_observations=3)
     advisor = ConfigAdvisor(
         p,
-        current_config={"model_competitor": "claude-opus-4-6"},
+        current_config={"model_competitor": "claude-opus-5"},
     )
     recs = advisor.recommend()
     for r in recs:
@@ -157,7 +157,7 @@ def test_advisor_custom_thresholds() -> None:
     p = PerformanceProfiler(c, min_observations=3)
 
     # Default threshold is 0.7, so 60% shouldn't trigger downgrade
-    advisor_default = ConfigAdvisor(p, current_config={"model_competitor": "claude-opus-4-6"})
+    advisor_default = ConfigAdvisor(p, current_config={"model_competitor": "claude-opus-5"})
     recs_default = advisor_default.recommend()
     downgrade_default = [r for r in recs_default if r.parameter == "model" and "cheaper" in r.rationale]
     assert len(downgrade_default) == 0
@@ -165,7 +165,7 @@ def test_advisor_custom_thresholds() -> None:
     # Custom threshold at 0.5, so 60% should trigger downgrade
     advisor_custom = ConfigAdvisor(
         p,
-        current_config={"model_competitor": "claude-opus-4-6"},
+        current_config={"model_competitor": "claude-opus-5"},
         config=AdvisorConfig(high_advance_rate=0.5),
     )
     recs_custom = advisor_custom.recommend()
@@ -178,7 +178,7 @@ def test_advisor_summary() -> None:
     p = PerformanceProfiler(c, min_observations=3)
     advisor = ConfigAdvisor(
         p,
-        current_config={"model_competitor": "claude-opus-4-6"},
+        current_config={"model_competitor": "claude-opus-5"},
     )
     s = advisor.summary()
     assert "Configuration Recommendations" in s

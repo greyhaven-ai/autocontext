@@ -10,7 +10,7 @@ from autocontext.harness.cost.tracker import CostTracker
 from autocontext.harness.cost.types import CostSummary
 
 
-def _usage(model: str = "claude-sonnet-4-5-20250929", input_tokens: int = 1000, output_tokens: int = 500) -> RoleUsage:
+def _usage(model: str = "claude-sonnet-5", input_tokens: int = 1000, output_tokens: int = 500) -> RoleUsage:
     return RoleUsage(input_tokens=input_tokens, output_tokens=output_tokens, latency_ms=200, model=model)
 
 
@@ -37,11 +37,11 @@ def test_tracker_cost_by_role() -> None:
 
 def test_tracker_cost_by_model() -> None:
     tracker = CostTracker()
-    tracker.record(_usage(model="claude-sonnet-4-5-20250929"), role="competitor")
-    tracker.record(_usage(model="claude-opus-4-6"), role="analyst")
+    tracker.record(_usage(model="claude-sonnet-5"), role="competitor")
+    tracker.record(_usage(model="claude-opus-5"), role="analyst")
     by_model = tracker.cost_by_model()
-    assert "claude-sonnet-4-5-20250929" in by_model
-    assert "claude-opus-4-6" in by_model
+    assert "claude-sonnet-5" in by_model
+    assert "claude-opus-5" in by_model
     assert len(by_model) == 2
 
 
@@ -60,8 +60,8 @@ def test_tracker_generation_cost() -> None:
 
 def test_tracker_summary() -> None:
     tracker = CostTracker()
-    tracker.record(_usage(model="claude-sonnet-4-5-20250929", input_tokens=1000, output_tokens=500), role="competitor")
-    tracker.record(_usage(model="claude-opus-4-6", input_tokens=2000, output_tokens=1000), role="analyst")
+    tracker.record(_usage(model="claude-sonnet-5", input_tokens=1000, output_tokens=500), role="competitor")
+    tracker.record(_usage(model="claude-opus-5", input_tokens=2000, output_tokens=1000), role="analyst")
     summary = tracker.summary()
     assert isinstance(summary, CostSummary)
     assert summary.records_count == 2
@@ -109,7 +109,7 @@ def test_tracker_thread_safe() -> None:
     summary = tracker.summary()
     assert summary.records_count == 50
     # Each call: 1000 input tokens on sonnet = 0.003 per call, 50 calls = 0.15
-    expected = round(50 * (1000 / 1000) * 0.003, 6)
+    expected = round(50 * (1000 / 1000) * 0.002, 6)
     assert summary.total_cost == expected
 
 

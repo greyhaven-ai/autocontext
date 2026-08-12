@@ -42,7 +42,7 @@ function pythonEmitTrace(outDir: string): unknown {
     "from autocontext.production_traces import build_trace, write_jsonl",
     "trace = build_trace(",
     '    provider="anthropic",',
-    '    model="claude-sonnet-4-20250514",',
+    '    model="claude-sonnet-5",',
     '    messages=[{"role": "user", "content": "hello", "timestamp": "2026-04-17T12:00:00.000Z"}],',
     '    timing={"startedAt": "2026-04-17T12:00:00.000Z", "endedAt": "2026-04-17T12:00:01.000Z", "latencyMs": 1000},',
     '    usage={"tokensIn": 10, "tokensOut": 5},',

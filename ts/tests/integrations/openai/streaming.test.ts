@@ -36,7 +36,7 @@ function makeStreamChunks(content: string, usage?: Record<string, unknown>) {
     id: "chatcmpl-stream",
     object: "chat.completion.chunk",
     created: 1714000000,
-    model: "gpt-4o",
+    model: "gpt-5.6-terra",
     choices: [
       {
         index: 0,
@@ -51,7 +51,7 @@ function makeStreamChunks(content: string, usage?: Record<string, unknown>) {
       id: "chatcmpl-stream",
       object: "chat.completion.chunk",
       created: 1714000000,
-      model: "gpt-4o",
+      model: "gpt-5.6-terra",
       choices: [],
       usage,
     } as unknown as typeof chunks[0]);
@@ -80,7 +80,7 @@ describe("streaming proxy", () => {
     const client = instrumentClient(inner, { sink, appId: "test-app", environmentTag: "test" });
 
     const stream = await client.chat.completions.create({
-      model: "gpt-4o",
+      model: "gpt-5.6-terra",
       messages: [{ role: "user", content: "hi" }],
       stream: true,
     });
@@ -118,7 +118,7 @@ describe("streaming proxy", () => {
     const client = instrumentClient(inner, { sink, appId: "test-app" });
 
     const stream = await client.chat.completions.create({
-      model: "gpt-4o",
+      model: "gpt-5.6-terra",
       messages: [{ role: "user", content: "hi" }],
       stream: true,
     });
@@ -149,7 +149,7 @@ describe("streaming proxy", () => {
     const client = instrumentClient(inner, { sink, appId: "test-app" });
 
     const stream = await client.chat.completions.create({
-      model: "gpt-4o",
+      model: "gpt-5.6-terra",
       messages: [{ role: "user", content: "hi" }],
       stream: true,
       stream_options: { include_usage: false },
@@ -176,7 +176,7 @@ describe("streaming proxy", () => {
     const client = instrumentClient(inner, { sink, appId: "test-app", environmentTag: "test" });
 
     const stream = await client.chat.completions.create({
-      model: "gpt-4o",
+      model: "gpt-5.6-terra",
       messages: [{ role: "user", content: "test" }],
       stream: true,
     });

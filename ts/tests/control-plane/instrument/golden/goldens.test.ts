@@ -112,7 +112,7 @@ describe("golden pr-body scenarios (spec §11.5)", () => {
     mkdirSync(join(cwd, "src"), { recursive: true });
     writeFileSync(
       join(cwd, "src", "chat.py"),
-      "from openai import OpenAI\nclient = OpenAI()\nresponse = client.chat.completions.create(model=\"gpt-4o\", messages=[])\n",
+      "from openai import OpenAI\nclient = OpenAI()\nresponse = client.chat.completions.create(model=\"gpt-5.6-terra\", messages=[])\n",
     );
     writeFileSync(join(cwd, ".gitignore"), "");
     registerDetectorPlugin(mockOpenAiPythonPlugin);
@@ -134,7 +134,7 @@ describe("golden pr-body scenarios (spec §11.5)", () => {
     mkdirSync(join(cwd, "src"), { recursive: true });
     writeFileSync(
       join(cwd, "src", "chat.py"),
-      "from openai import OpenAI\nclient = OpenAI()\nresponse = client.chat.completions.create(model=\"gpt-4o\", messages=[])\n",
+      "from openai import OpenAI\nclient = OpenAI()\nresponse = client.chat.completions.create(model=\"gpt-5.6-terra\", messages=[])\n",
     );
     writeFileSync(
       join(cwd, "src", "support.ts"),
@@ -179,7 +179,7 @@ describe("golden pr-body scenarios (spec §11.5)", () => {
     // (d) File that instruments cleanly.
     writeFileSync(
       join(cwd, "src", "clean.py"),
-      "from openai import OpenAI\nclient = OpenAI()\nresponse = client.chat.completions.create(model=\"gpt-4o\", messages=[])\n",
+      "from openai import OpenAI\nclient = OpenAI()\nresponse = client.chat.completions.create(model=\"gpt-5.6-terra\", messages=[])\n",
     );
     writeFileSync(join(cwd, ".gitignore"), "");
     registerDetectorPlugin(mockOpenAiPythonPlugin);

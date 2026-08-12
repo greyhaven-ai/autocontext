@@ -98,12 +98,12 @@ export const MODEL_DEFAULT_PRESERVED_PROVIDERS = _contract.MODEL_DEFAULT_PRESERV
 export const SETTINGS_KEY_MAP = _contract.SETTINGS_KEY_MAP;
 
 const DEFAULT_ROLE_MODELS: Record<GenerationRole, string> = {
-  competitor: "claude-sonnet-4-5-20250929",
-  analyst: "claude-sonnet-4-5-20250929",
-  coach: "claude-opus-4-6",
-  architect: "claude-opus-4-6",
-  curator: "claude-opus-4-6",
-  translator: "claude-sonnet-4-5-20250929",
+  competitor: "claude-sonnet-5",
+  analyst: "claude-sonnet-5",
+  coach: "claude-opus-5",
+  architect: "claude-opus-5",
+  curator: "claude-opus-5",
+  translator: "claude-sonnet-5",
 };
 
 export interface RoleRoutingSettings {
@@ -284,7 +284,7 @@ function roleSpecificHosting(role: string, settings: RoleRoutingSettings): strin
  * Python distinguishes "the user chose this" from "nobody touched it" via
  * pydantic's `model_fields_set`. TypeScript needs the same signal and cannot
  * infer it from the value: `AppSettingsSchema` has already substituted
- * "claude-opus-4-6" by the time routing runs, so an unset field and a
+ * "claude-opus-5" by the time routing runs, so an unset field and a
  * deliberate Claude choice look identical. `settings.configuredFields` carries
  * that distinction across, recorded by `buildSettingsAssemblyInput()` before
  * the schema defaults are applied.
@@ -354,7 +354,7 @@ function roleSpecificModel(
     case "translator":
       return resolve("modelTranslator", DEFAULT_ROLE_MODELS.translator);
     default:
-      return resolve("tierSonnetModel", "claude-sonnet-4-5-20250929");
+      return resolve("tierSonnetModel", "claude-sonnet-5");
   }
 }
 
@@ -367,10 +367,10 @@ function tierModel(
     resolveModelDefault(settings, providerType, field, settings[field], shippedDefault);
   switch (providerClass) {
     case "frontier":
-      return resolve("tierOpusModel", "claude-opus-4-6");
+      return resolve("tierOpusModel", "claude-opus-5");
     case "mid_tier":
     case "code_policy":
-      return resolve("tierSonnetModel", "claude-sonnet-4-5-20250929");
+      return resolve("tierSonnetModel", "claude-sonnet-5");
     case "fast":
       return resolve("tierHaikuModel", "claude-haiku-4-5-20251001");
     case "local":

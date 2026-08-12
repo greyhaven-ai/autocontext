@@ -468,17 +468,17 @@ class TestSkepticSettings:
     def test_skeptic_settings_defaults(self) -> None:
         settings = AppSettings()
         assert settings.skeptic_enabled is False
-        assert settings.model_skeptic == "claude-opus-4-6"
+        assert settings.model_skeptic == "claude-opus-5"
         assert settings.skeptic_can_block is False
 
     def test_skeptic_settings_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("AUTOCONTEXT_SKEPTIC_ENABLED", "true")
-        monkeypatch.setenv("AUTOCONTEXT_MODEL_SKEPTIC", "claude-sonnet-4-5-20250929")
+        monkeypatch.setenv("AUTOCONTEXT_MODEL_SKEPTIC", "claude-sonnet-5")
         monkeypatch.setenv("AUTOCONTEXT_SKEPTIC_CAN_BLOCK", "true")
         from autocontext.config.settings import load_settings
         settings = load_settings()
         assert settings.skeptic_enabled is True
-        assert settings.model_skeptic == "claude-sonnet-4-5-20250929"
+        assert settings.model_skeptic == "claude-sonnet-5"
         assert settings.skeptic_can_block is True
 
 

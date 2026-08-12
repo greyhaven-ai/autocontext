@@ -721,7 +721,7 @@ class TestConsultationSettings:
         s = AppSettings()
         assert s.consultation_enabled is False
         assert s.consultation_provider == "anthropic"
-        assert s.consultation_model == "claude-sonnet-4-20250514"
+        assert s.consultation_model == "claude-sonnet-5"
         assert s.consultation_api_key == ""
         assert s.consultation_base_url == ""
         assert s.consultation_stagnation_threshold == 3
@@ -732,14 +732,14 @@ class TestConsultationSettings:
 
         monkeypatch.setenv("AUTOCONTEXT_CONSULTATION_ENABLED", "true")
         monkeypatch.setenv("AUTOCONTEXT_CONSULTATION_PROVIDER", "openai")
-        monkeypatch.setenv("AUTOCONTEXT_CONSULTATION_MODEL", "gpt-4o")
+        monkeypatch.setenv("AUTOCONTEXT_CONSULTATION_MODEL", "gpt-5.6-terra")
         monkeypatch.setenv("AUTOCONTEXT_CONSULTATION_STAGNATION_THRESHOLD", "5")
         monkeypatch.setenv("AUTOCONTEXT_CONSULTATION_COST_BUDGET", "2.50")
 
         settings = load_settings()
         assert settings.consultation_enabled is True
         assert settings.consultation_provider == "openai"
-        assert settings.consultation_model == "gpt-4o"
+        assert settings.consultation_model == "gpt-5.6-terra"
         assert settings.consultation_stagnation_threshold == 5
         assert settings.consultation_cost_budget == 2.50
 

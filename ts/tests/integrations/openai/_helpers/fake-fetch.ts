@@ -17,7 +17,7 @@ export function cannedChatCompletion(overrides: Record<string, unknown> = {}): R
     id: "chatcmpl-fake",
     object: "chat.completion",
     created: 1714000000,
-    model: "gpt-4o",
+    model: "gpt-5.6-terra",
     choices: [
       {
         index: 0,
@@ -35,7 +35,7 @@ export function cannedChatCompletionWithToolCall(overrides: Record<string, unkno
     id: "chatcmpl-fake-tool",
     object: "chat.completion",
     created: 1714000000,
-    model: "gpt-4o",
+    model: "gpt-5.6-terra",
     choices: [
       {
         index: 0,

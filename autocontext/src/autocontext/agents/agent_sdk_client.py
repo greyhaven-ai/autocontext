@@ -21,8 +21,8 @@ ROLE_TOOL_CONFIG: dict[str, list[str]] = {
 
 # Map full model IDs to the short names the Agent SDK expects
 _MODEL_SHORT_NAMES: dict[str, str] = {
-    "claude-opus-4-6": "opus",
-    "claude-sonnet-4-5-20250929": "sonnet",
+    "claude-opus-5": "opus",
+    "claude-sonnet-5": "sonnet",
     "claude-haiku-4-5-20251001": "haiku",
 }
 

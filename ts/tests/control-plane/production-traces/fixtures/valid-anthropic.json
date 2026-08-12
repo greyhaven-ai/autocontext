@@ -10,7 +10,7 @@
     "endpoint": "https://api.anthropic.com/v1/messages",
     "providerVersion": "2023-06-01"
   },
-  "model": "claude-sonnet-4-20250514",
+  "model": "claude-sonnet-5",
   "session": {
     "userIdHash": "b1946ac92492d2347c6235b4d2611184b1946ac92492d2347c6235b4d2611184",
     "sessionIdHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"

@@ -3,14 +3,14 @@
   "settings_defaults": {
     "agent_provider": "anthropic",
     "role_routing": "off",
-    "model_competitor": "claude-sonnet-4-5-20250929",
-    "model_analyst": "claude-sonnet-4-5-20250929",
-    "model_coach": "claude-opus-4-6",
-    "model_architect": "claude-opus-4-6",
-    "model_curator": "claude-opus-4-6",
-    "model_translator": "claude-sonnet-4-5-20250929",
-    "tier_opus_model": "claude-opus-4-6",
-    "tier_sonnet_model": "claude-sonnet-4-5-20250929",
+    "model_competitor": "claude-sonnet-5",
+    "model_analyst": "claude-sonnet-5",
+    "model_coach": "claude-opus-5",
+    "model_architect": "claude-opus-5",
+    "model_curator": "claude-opus-5",
+    "model_translator": "claude-sonnet-5",
+    "tier_opus_model": "claude-opus-5",
+    "tier_sonnet_model": "claude-sonnet-5",
     "tier_haiku_model": "claude-haiku-4-5-20251001",
     "mlx_model_path": "",
     "local_model": "",
@@ -41,13 +41,13 @@
       "context": {},
       "python": {
         "provider_type": "anthropic",
-        "model": "claude-opus-4-6",
+        "model": "claude-opus-5",
         "provider_class": "frontier",
         "cost_per_1k_tokens": 0.015
       },
       "typescript": {
         "provider_type": "anthropic",
-        "model": "claude-opus-4-6",
+        "model": "claude-opus-5",
         "provider_class": "frontier",
         "cost_per_1k_tokens": 0.015
       }
@@ -62,13 +62,13 @@
       "context": {},
       "python": {
         "provider_type": "anthropic",
-        "model": "claude-sonnet-4-5-20250929",
+        "model": "claude-sonnet-5",
         "provider_class": "mid_tier",
         "cost_per_1k_tokens": 0.003
       },
       "typescript": {
         "provider_type": "anthropic",
-        "model": "claude-sonnet-4-5-20250929",
+        "model": "claude-sonnet-5",
         "provider_class": "mid_tier",
         "cost_per_1k_tokens": 0.003
       }
@@ -83,13 +83,13 @@
       "context": {},
       "python": {
         "provider_type": "anthropic",
-        "model": "claude-sonnet-4-5-20250929",
+        "model": "claude-sonnet-5",
         "provider_class": "mid_tier",
         "cost_per_1k_tokens": 0.003
       },
       "typescript": {
         "provider_type": "anthropic",
-        "model": "claude-sonnet-4-5-20250929",
+        "model": "claude-sonnet-5",
         "provider_class": "mid_tier",
         "cost_per_1k_tokens": 0.003
       }
@@ -104,13 +104,13 @@
       "context": {},
       "python": {
         "provider_type": "anthropic",
-        "model": "claude-opus-4-6",
+        "model": "claude-opus-5",
         "provider_class": "frontier",
         "cost_per_1k_tokens": 0.015
       },
       "typescript": {
         "provider_type": "anthropic",
-        "model": "claude-opus-4-6",
+        "model": "claude-opus-5",
         "provider_class": "frontier",
         "cost_per_1k_tokens": 0.015
       }
@@ -167,13 +167,13 @@
       "context": {},
       "python": {
         "provider_type": "anthropic",
-        "model": "claude-sonnet-4-5-20250929",
+        "model": "claude-sonnet-5",
         "provider_class": "frontier",
         "cost_per_1k_tokens": 0.015
       },
       "typescript": {
         "provider_type": "anthropic",
-        "model": "claude-sonnet-4-5-20250929",
+        "model": "claude-sonnet-5",
         "provider_class": "frontier",
         "cost_per_1k_tokens": 0.015
       }
@@ -188,13 +188,13 @@
       "context": {},
       "python": {
         "provider_type": "anthropic",
-        "model": "claude-sonnet-4-5-20250929",
+        "model": "claude-sonnet-5",
         "provider_class": "frontier",
         "cost_per_1k_tokens": 0.015
       },
       "typescript": {
         "provider_type": "anthropic",
-        "model": "claude-sonnet-4-5-20250929",
+        "model": "claude-sonnet-5",
         "provider_class": "frontier",
         "cost_per_1k_tokens": 0.015
       }
@@ -209,13 +209,13 @@
       "context": {},
       "python": {
         "provider_type": "anthropic",
-        "model": "claude-opus-4-6",
+        "model": "claude-opus-5",
         "provider_class": "frontier",
         "cost_per_1k_tokens": 0.015
       },
       "typescript": {
         "provider_type": "anthropic",
-        "model": "claude-opus-4-6",
+        "model": "claude-opus-5",
         "provider_class": "frontier",
         "cost_per_1k_tokens": 0.015
       }
@@ -230,13 +230,13 @@
       "context": {},
       "python": {
         "provider_type": "anthropic",
-        "model": "claude-opus-4-6",
+        "model": "claude-opus-5",
         "provider_class": "frontier",
         "cost_per_1k_tokens": 0.015
       },
       "typescript": {
         "provider_type": "anthropic",
-        "model": "claude-opus-4-6",
+        "model": "claude-opus-5",
         "provider_class": "frontier",
         "cost_per_1k_tokens": 0.015
       }
@@ -251,13 +251,13 @@
       "context": {},
       "python": {
         "provider_type": "anthropic",
-        "model": "claude-opus-4-6",
+        "model": "claude-opus-5",
         "provider_class": "frontier",
         "cost_per_1k_tokens": 0.015
       },
       "typescript": {
         "provider_type": "anthropic",
-        "model": "claude-opus-4-6",
+        "model": "claude-opus-5",
         "provider_class": "frontier",
         "cost_per_1k_tokens": 0.015
       }
@@ -272,13 +272,13 @@
       "context": {},
       "python": {
         "provider_type": "anthropic",
-        "model": "claude-sonnet-4-5-20250929",
+        "model": "claude-sonnet-5",
         "provider_class": "frontier",
         "cost_per_1k_tokens": 0.015
       },
       "typescript": {
         "provider_type": "anthropic",
-        "model": "claude-sonnet-4-5-20250929",
+        "model": "claude-sonnet-5",
         "provider_class": "frontier",
         "cost_per_1k_tokens": 0.015
       }
@@ -1048,13 +1048,13 @@
       "context": {},
       "python": {
         "provider_type": "anthropic",
-        "model": "claude-opus-4-6",
+        "model": "claude-opus-5",
         "provider_class": "frontier",
         "cost_per_1k_tokens": 0.015
       },
       "typescript": {
         "provider_type": "anthropic",
-        "model": "claude-opus-4-6",
+        "model": "claude-opus-5",
         "provider_class": "frontier",
         "cost_per_1k_tokens": 0.015
       }
@@ -1070,13 +1070,13 @@
       "context": {},
       "python": {
         "provider_type": "anthropic",
-        "model": "claude-opus-4-6",
+        "model": "claude-opus-5",
         "provider_class": "frontier",
         "cost_per_1k_tokens": 0.015
       },
       "typescript": {
         "provider_type": "anthropic",
-        "model": "claude-opus-4-6",
+        "model": "claude-opus-5",
         "provider_class": "frontier",
         "cost_per_1k_tokens": 0.015
       }

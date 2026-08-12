@@ -196,14 +196,14 @@ describe("discoverAllProviders", () => {
     try {
       process.env.AUTOCONTEXT_AGENT_PROVIDER = "openai";
       process.env.AUTOCONTEXT_AGENT_API_KEY = "sk-generic-env-key";
-      process.env.AUTOCONTEXT_AGENT_DEFAULT_MODEL = "gpt-4o-mini";
+      process.env.AUTOCONTEXT_AGENT_DEFAULT_MODEL = "gpt-5.6-luna";
 
       const providers = discoverAllProviders(dir);
       const openai = providers.find((p) => p.provider === "openai");
       expect(openai).toBeDefined();
       expect(openai!.hasApiKey).toBe(true);
       expect(openai!.source).toBe("env");
-      expect(openai!.model).toBe("gpt-4o-mini");
+      expect(openai!.model).toBe("gpt-5.6-luna");
     } finally {
       if (oldProvider === undefined) delete process.env.AUTOCONTEXT_AGENT_PROVIDER;
       else process.env.AUTOCONTEXT_AGENT_PROVIDER = oldProvider;

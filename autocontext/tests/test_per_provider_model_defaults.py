@@ -8,7 +8,7 @@ claim that nothing else moved.
 
 The defect: with no ``AUTOCONTEXT_MODEL_*`` overrides set, every provider
 except ``mlx`` resolved every role to a Claude model id, so pointing the loop
-at a local server sent it ``claude-opus-4-6`` and the request failed at the
+at a local server sent it ``claude-opus-5`` and the request failed at the
 endpoint rather than at configuration time.
 
 Two rows must never change, and are asserted against ``_BEFORE`` on purpose:
@@ -27,8 +27,8 @@ import pytest
 
 ROLES = ("competitor", "analyst", "coach", "architect", "curator", "translator")
 
-_CLAUDE_SONNET = "claude-sonnet-4-5-20250929"
-_CLAUDE_OPUS = "claude-opus-4-6"
+_CLAUDE_SONNET = "claude-sonnet-5"
+_CLAUDE_OPUS = "claude-opus-5"
 _MLX_PATH = "/models/pinned-local"
 
 _CLAUDE_BY_ROLE: dict[str, str] = {
@@ -53,8 +53,8 @@ _AFTER: dict[str, dict[str, str]] = {
     "mlx": dict.fromkeys(ROLES, _MLX_PATH),
     "ollama": dict.fromkeys(ROLES, "llama3.1"),
     "vllm": dict.fromkeys(ROLES, "default"),
-    "openai": dict.fromkeys(ROLES, "gpt-4o"),
-    "openai-compatible": dict.fromkeys(ROLES, "gpt-4o"),
+    "openai": dict.fromkeys(ROLES, "gpt-5.6-terra"),
+    "openai-compatible": dict.fromkeys(ROLES, "gpt-5.6-terra"),
 }
 
 _UNCHANGED_PROVIDERS = ("anthropic", "mlx")
@@ -198,8 +198,8 @@ def _orchestrator_model(settings, *, role: str = "competitor", generation: int =
     (
         ("ollama", "llama3.1"),
         ("vllm", "default"),
-        ("openai", "gpt-4o"),
-        ("openai-compatible", "gpt-4o"),
+        ("openai", "gpt-5.6-terra"),
+        ("openai-compatible", "gpt-5.6-terra"),
     ),
 )
 def test_routing_off_resolves_provider_default_in_production(
@@ -292,4 +292,4 @@ def test_openai_compatible_default_matches_provider_factory(monkeypatch: pytest.
 
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     provider = create_provider("openai-compatible", api_key="test-key")
-    assert PROVIDER_DEFAULT_MODEL["openai-compatible"] == provider.default_model() == "gpt-4o"
+    assert PROVIDER_DEFAULT_MODEL["openai-compatible"] == provider.default_model() == "gpt-5.6-terra"

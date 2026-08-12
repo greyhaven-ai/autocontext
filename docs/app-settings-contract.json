@@ -550,7 +550,7 @@
       "python": "consultation_model",
       "typescript": "consultationModel",
       "type": "string",
-      "default": "claude-sonnet-4-20250514",
+      "default": "claude-sonnet-5",
       "env": [
         "AUTOCONTEXT_CONSULTATION_MODEL"
       ]
@@ -1070,7 +1070,7 @@
       "python": "judge_model",
       "typescript": "judgeModel",
       "type": "string",
-      "default": "claude-sonnet-4-20250514",
+      "default": "claude-sonnet-5",
       "env": [
         "AUTOCONTEXT_JUDGE_MODEL"
       ]
@@ -1133,7 +1133,7 @@
       "python": "model_analyst",
       "typescript": "modelAnalyst",
       "type": "string",
-      "default": "claude-sonnet-4-5-20250929",
+      "default": "claude-sonnet-5",
       "python_env": [
         "AUTOCONTEXT_MODEL_ANALYST"
       ],
@@ -1147,7 +1147,7 @@
       "python": "model_architect",
       "typescript": "modelArchitect",
       "type": "string",
-      "default": "claude-opus-4-6",
+      "default": "claude-opus-5",
       "python_env": [
         "AUTOCONTEXT_MODEL_ARCHITECT"
       ],
@@ -1161,7 +1161,7 @@
       "python": "model_coach",
       "typescript": "modelCoach",
       "type": "string",
-      "default": "claude-opus-4-6",
+      "default": "claude-opus-5",
       "python_env": [
         "AUTOCONTEXT_MODEL_COACH"
       ],
@@ -1175,7 +1175,7 @@
       "python": "model_competitor",
       "typescript": "modelCompetitor",
       "type": "string",
-      "default": "claude-sonnet-4-5-20250929",
+      "default": "claude-sonnet-5",
       "python_env": [
         "AUTOCONTEXT_MODEL_COMPETITOR"
       ],
@@ -1189,7 +1189,7 @@
       "python": "model_curator",
       "typescript": "modelCurator",
       "type": "string",
-      "default": "claude-opus-4-6",
+      "default": "claude-opus-5",
       "python_env": [
         "AUTOCONTEXT_MODEL_CURATOR"
       ],
@@ -1203,7 +1203,7 @@
       "python": "model_skeptic",
       "typescript": "modelSkeptic",
       "type": "string",
-      "default": "claude-opus-4-6",
+      "default": "claude-opus-5",
       "python_env": [
         "AUTOCONTEXT_MODEL_SKEPTIC"
       ],
@@ -1217,7 +1217,7 @@
       "python": "model_translator",
       "typescript": "modelTranslator",
       "type": "string",
-      "default": "claude-sonnet-4-5-20250929",
+      "default": "claude-sonnet-5",
       "python_env": [
         "AUTOCONTEXT_MODEL_TRANSLATOR"
       ],
@@ -1906,7 +1906,7 @@
       "python": "tier_sonnet_model",
       "typescript": "tierSonnetModel",
       "type": "string",
-      "default": "claude-sonnet-4-5-20250929",
+      "default": "claude-sonnet-5",
       "env": [
         "AUTOCONTEXT_TIER_SONNET_MODEL"
       ]
@@ -1915,7 +1915,7 @@
       "python": "tier_opus_model",
       "typescript": "tierOpusModel",
       "type": "string",
-      "default": "claude-opus-4-6",
+      "default": "claude-opus-5",
       "env": [
         "AUTOCONTEXT_TIER_OPUS_MODEL"
       ]

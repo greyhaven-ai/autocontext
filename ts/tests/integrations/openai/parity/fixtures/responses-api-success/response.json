@@ -2,7 +2,7 @@
   "id": "resp-parity001",
   "object": "realtime.response",
   "status": "completed",
-  "model": "gpt-4o",
+  "model": "gpt-5.6-terra",
   "output": [{"id": "msg-001", "type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "Hello!"}]}],
   "usage": {"input_tokens": 6, "output_tokens": 2, "total_tokens": 8}
 }

@@ -104,7 +104,7 @@ describe("settings assembly workflow", () => {
         providerOverride: "openai-compatible",
         preferProviderOverride: true,
       }).model,
-    ).toBe("gpt-4o");
+    ).toBe("gpt-5.6-terra");
   });
 
   it("rejects invalid endpoint declarations", () => {

@@ -71,7 +71,7 @@ describe("PublicTraceSchema", () => {
       dimensions: { accuracy: 0.9, completeness: 0.8 },
     },
     metadata: {
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-5",
       provider: "anthropic",
       totalTokens: 1500,
     },
@@ -248,13 +248,13 @@ describe("exportToPublicTrace", () => {
 
     const publicTrace = exportToPublicTrace(trace, {
       sourceHarness: "autocontext",
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-5",
     });
 
     expect(publicTrace.schemaVersion).toBe(SCHEMA_VERSION);
     expect(publicTrace.sourceHarness).toBe("autocontext");
     expect(publicTrace.messages.length).toBeGreaterThan(0);
-    expect(publicTrace.metadata?.model).toBe("claude-sonnet-4-20250514");
+    expect(publicTrace.metadata?.model).toBe("claude-sonnet-5");
 
     const result = validatePublicTrace(publicTrace);
     expect(result.valid).toBe(true);

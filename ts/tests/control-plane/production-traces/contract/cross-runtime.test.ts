@@ -89,7 +89,7 @@ maybeDescribe("P5 cross-runtime property (factory-built traces validate on both 
           const trace = createProductionTrace({
             source: { emitter: "sdk", sdk: { name: "ts", version: "0.4.3" } },
             provider: { name: "openai" },
-            model: "gpt-4o-mini",
+            model: "gpt-5.6-luna",
             env: {
               environmentTag: "production" as EnvironmentTag,
               appId: "my-app" as AppId,
@@ -125,7 +125,7 @@ describe("P5 TS-only property check (AJV + factory)", () => {
           const trace = createProductionTrace({
             source: { emitter: "sdk", sdk: { name: "ts", version: "0.4.3" } },
             provider: { name: "openai" },
-            model: "gpt-4o-mini",
+            model: "gpt-5.6-luna",
             env: {
               environmentTag: "production" as EnvironmentTag,
               appId: "my-app" as AppId,

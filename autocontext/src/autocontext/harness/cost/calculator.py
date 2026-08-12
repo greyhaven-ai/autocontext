@@ -4,11 +4,21 @@ from __future__ import annotations
 from autocontext.harness.core.types import RoleUsage
 from autocontext.harness.cost.types import CostRecord, ModelPricing
 
-# Default pricing (Anthropic models, approximate as of 2025)
+# Dollars per 1K tokens, refreshed 2026-08-11 alongside the model-id sweep.
+#
+# Sourced from OpenRouter's live catalog, which is what was reachable at the
+# time; OpenRouter adds margin over vendor-direct list prices, so treat these
+# as an upper bound rather than an invoice. The previous table was left on
+# Opus 4.6 rates ($15/$75 per M) -- Opus 5 is $5/$25, so cost attribution for
+# every default run had been overstating spend by roughly 3x.
 DEFAULT_PRICING: list[ModelPricing] = [
-    ModelPricing("claude-opus-4-6", 0.015, 0.075),
-    ModelPricing("claude-sonnet-4-5-20250929", 0.003, 0.015),
-    ModelPricing("claude-haiku-4-5-20251001", 0.0008, 0.004),
+    ModelPricing("claude-fable-5", 0.010, 0.050),
+    ModelPricing("claude-opus-5", 0.005, 0.025),
+    ModelPricing("claude-sonnet-5", 0.002, 0.010),
+    ModelPricing("claude-haiku-4-5-20251001", 0.001, 0.005),
+    ModelPricing("gpt-5.6-sol", 0.005, 0.030),
+    ModelPricing("gpt-5.6-terra", 0.001, 0.006),
+    ModelPricing("gpt-5.6-luna", 0.0001, 0.0006),
 ]
 
 # Fallback for unknown models

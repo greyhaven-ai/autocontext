@@ -34,7 +34,7 @@ def test_streaming_normal_finalize_on_end(tmp_path, make_openai_client) -> None:
 
     collected: list[str] = []
     with wrapped.chat.completions.create(
-        model="gpt-4o",
+        model="gpt-5.6-terra",
         messages=[{"role": "user", "content": "hi"}],
         stream=True,
     ) as stream:
@@ -64,7 +64,7 @@ def test_streaming_include_usage_auto_injected(tmp_path, make_openai_client) -> 
     wrapped = instrument_client(client, sink=sink, app_id="a")
 
     with wrapped.chat.completions.create(
-        model="gpt-4o", messages=[{"role": "user", "content": "hi"}], stream=True,
+        model="gpt-5.6-terra", messages=[{"role": "user", "content": "hi"}], stream=True,
     ) as stream:
         for _ in stream:
             pass
@@ -88,7 +88,7 @@ def test_streaming_customer_include_usage_preserved(tmp_path, make_openai_client
     wrapped = instrument_client(client, sink=sink, app_id="a")
 
     with wrapped.chat.completions.create(
-        model="gpt-4o",
+        model="gpt-5.6-terra",
         messages=[{"role": "user", "content": "hi"}],
         stream=True,
         stream_options={"include_usage": False},  # customer-set; must not be overwritten
@@ -110,7 +110,7 @@ def test_streaming_abandoned_emits_partial(tmp_path, make_openai_client) -> None
     wrapped = instrument_client(client, sink=sink, app_id="a")
 
     stream = wrapped.chat.completions.create(
-        model="gpt-4o", messages=[{"role": "user", "content": "hi"}], stream=True,
+        model="gpt-5.6-terra", messages=[{"role": "user", "content": "hi"}], stream=True,
     )
     it = iter(stream)
     next(it)  # consume one chunk, then drop reference
@@ -133,7 +133,7 @@ async def test_async_streaming_normal_finalize(tmp_path, make_async_openai_clien
     sink = FileSink(path=tmp_path / "t.jsonl", batch_size=1)
     wrapped = instrument_client(client, sink=sink, app_id="a")
     async with await wrapped.chat.completions.create(
-        model="gpt-4o", messages=[{"role": "user", "content": "hi"}], stream=True,
+        model="gpt-5.6-terra", messages=[{"role": "user", "content": "hi"}], stream=True,
     ) as stream:
         async for _ in stream:
             pass

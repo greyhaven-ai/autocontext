@@ -13,7 +13,7 @@ function baseTrace(): ProductionTrace {
     traceId: "01KFDQ9XZ3M7RT2V8K1PHY4BNC" as ProductionTrace["traceId"],
     source: { emitter: "sdk", sdk: { name: "ts", version: "0.4.3" } },
     provider: { name: "openai" },
-    model: "gpt-4o-mini",
+    model: "gpt-5.6-luna",
     env: {
       environmentTag: "production" as ProductionTrace["env"]["environmentTag"],
       appId: "my-app" as ProductionTrace["env"]["appId"],

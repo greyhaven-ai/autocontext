@@ -219,9 +219,9 @@ class TestComputeCostEfficiency:
 
     def test_basic_computation(self) -> None:
         role_metrics = [
-            {"model": "claude-sonnet-4-5-20250929", "input_tokens": 1000, "output_tokens": 500},
-            {"model": "claude-sonnet-4-5-20250929", "input_tokens": 2000, "output_tokens": 1000},
-            {"model": "claude-sonnet-4-5-20250929", "input_tokens": 1500, "output_tokens": 800},
+            {"model": "claude-sonnet-5", "input_tokens": 1000, "output_tokens": 500},
+            {"model": "claude-sonnet-5", "input_tokens": 2000, "output_tokens": 1000},
+            {"model": "claude-sonnet-5", "input_tokens": 1500, "output_tokens": 800},
         ]
         trajectory = [
             {"generation_index": 0, "best_score": 0.3, "delta": 0.3, "gate_decision": "advance"},
@@ -234,11 +234,11 @@ class TestComputeCostEfficiency:
         assert result.total_tokens == 6800
         # 2 advances, so tokens_per_advance = 6800 / 2 = 3400
         assert result.tokens_per_advance == 3400
-        assert result.total_cost_usd == pytest.approx(0.048)
+        assert result.total_cost_usd == pytest.approx(0.032)
 
     def test_no_advances(self) -> None:
         """When no advances, tokens_per_advance should be 0."""
-        role_metrics = [{"model": "claude-sonnet-4-5-20250929", "input_tokens": 1000, "output_tokens": 500}]
+        role_metrics = [{"model": "claude-sonnet-5", "input_tokens": 1000, "output_tokens": 500}]
         trajectory = [
             {"generation_index": 0, "best_score": 0.3, "delta": 0.0, "gate_decision": "rollback"},
         ]
@@ -248,7 +248,7 @@ class TestComputeCostEfficiency:
     def test_tokens_per_score_point(self) -> None:
         """Tokens per net score point gained."""
         role_metrics = [
-            {"model": "claude-sonnet-4-5-20250929", "input_tokens": 5000, "output_tokens": 2000},
+            {"model": "claude-sonnet-5", "input_tokens": 5000, "output_tokens": 2000},
         ]
         trajectory = [
             {"generation_index": 0, "best_score": 0.2, "delta": 0.2, "gate_decision": "advance"},
@@ -265,7 +265,7 @@ class TestComputeCostEfficiency:
 
     def test_no_score_gain(self) -> None:
         """When no score improvement, tokens_per_score_point = 0."""
-        role_metrics = [{"model": "claude-sonnet-4-5-20250929", "input_tokens": 1000, "output_tokens": 500}]
+        role_metrics = [{"model": "claude-sonnet-5", "input_tokens": 1000, "output_tokens": 500}]
         trajectory = [
             {"generation_index": 0, "best_score": 0.5, "delta": 0.0, "gate_decision": "rollback"},
         ]
@@ -284,7 +284,7 @@ class TestComputeCostEfficiency:
         result = compute_cost_efficiency(
             role_metrics=[
                 {
-                    "model": "claude-sonnet-4-5-20250929",
+                    "model": "claude-sonnet-5",
                     "input_tokens": 1000,
                     "output_tokens": 1000,
                     "latency_ms": 10,
@@ -295,7 +295,7 @@ class TestComputeCostEfficiency:
             ],
             consultation_cost=0.01,
         )
-        assert result.total_cost_usd == pytest.approx(0.028)
+        assert result.total_cost_usd == pytest.approx(0.022)
 
 
 # ---------------------------------------------------------------------------
@@ -458,10 +458,10 @@ class TestGenerateRunProgressReport:
             trajectory=[
                 {"generation_index": 0, "best_score": 0.5, "delta": 0.5, "gate_decision": "advance"},
             ],
-            role_metrics=[{"model": "claude-sonnet-4-5-20250929", "input_tokens": 1000, "output_tokens": 500}],
+            role_metrics=[{"model": "claude-sonnet-5", "input_tokens": 1000, "output_tokens": 500}],
             consultation_cost=0.10,
         )
-        assert report.cost.total_cost_usd == pytest.approx(0.1105)
+        assert report.cost.total_cost_usd == pytest.approx(0.107)
 
 
 # ---------------------------------------------------------------------------

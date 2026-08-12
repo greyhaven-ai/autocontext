@@ -99,7 +99,7 @@ describe("init command workflow", () => {
           },
           persistedCredentials: {
             provider: "openai",
-            model: "gpt-4o",
+            model: "gpt-5.6-terra",
           },
           env: {
             AUTOCONTEXT_AGENT_PROVIDER: "gemini",

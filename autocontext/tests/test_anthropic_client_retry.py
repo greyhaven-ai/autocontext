@@ -35,7 +35,7 @@ def test_build_client_from_settings_retries_transient_anthropic_errors() -> None
     ):
         client = build_client_from_settings(settings)
         response = client.generate(
-            model="claude-sonnet-4-5-20250929",
+            model="claude-sonnet-5",
             prompt="hello",
             max_tokens=128,
             temperature=0.0,
@@ -64,7 +64,7 @@ def test_per_role_anthropic_client_retries_transient_errors() -> None:
         client = create_role_client("anthropic", settings)
         assert client is not None
         response = client.generate(
-            model="claude-sonnet-4-5-20250929",
+            model="claude-sonnet-5",
             prompt="hello",
             max_tokens=128,
             temperature=0.0,
@@ -90,7 +90,7 @@ def test_anthropic_client_retries_multiturn_requests() -> None:
     ):
         client = AnthropicClient(api_key="sk-test")
         response = client.generate_multiturn(
-            model="claude-sonnet-4-5-20250929",
+            model="claude-sonnet-5",
             system="system",
             messages=[{"role": "user", "content": "hello"}],
             max_tokens=128,

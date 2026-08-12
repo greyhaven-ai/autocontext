@@ -69,7 +69,7 @@ class OpenAICompatibleProvider(LLMProvider):
         self,
         api_key: str | None = None,
         base_url: str | None = None,
-        default_model_name: str = "gpt-4o",
+        default_model_name: str = "gpt-5.6-terra",
         extra_headers: dict[str, str] | None = None,
     ) -> None:
         if not _HAS_OPENAI:

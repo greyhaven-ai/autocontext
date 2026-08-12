@@ -227,7 +227,7 @@ class TestEndToEndActivationFlow:
             ctx,
             registry,
             fallback_provider="anthropic",
-            fallback_model="claude-sonnet-4-20250514",
+            fallback_model="claude-sonnet-5",
         )
 
         assert decision.fallback_used is True

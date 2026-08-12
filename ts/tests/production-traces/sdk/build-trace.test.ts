@@ -13,7 +13,7 @@ import type {
 function validInputs(overrides: Partial<BuildTraceInputs> = {}): BuildTraceInputs {
   return {
     provider: "openai",
-    model: "gpt-4o-mini",
+    model: "gpt-5.6-luna",
     messages: [
       { role: "user", content: "hi", timestamp: "2026-04-17T12:00:00.000Z" },
     ],
@@ -177,7 +177,7 @@ describe("buildTrace — feedbackRefs / toolCalls / routing pass-through", () =>
 
   test("routing decision (AC-545) is preserved when provided", () => {
     const routing = {
-      chosen: { provider: "openai", model: "gpt-4o-mini" },
+      chosen: { provider: "openai", model: "gpt-5.6-luna" },
       reason: "default" as const,
       evaluatedAt: "2026-04-17T12:00:00.500Z",
     };

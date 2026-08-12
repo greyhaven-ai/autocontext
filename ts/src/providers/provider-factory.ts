@@ -37,7 +37,7 @@ export interface AnthropicProviderOpts {
 }
 
 export function createAnthropicProvider(opts: AnthropicProviderOpts): LLMProvider {
-  const defaultModel = opts.model || "claude-sonnet-4-20250514";
+  const defaultModel = opts.model || "claude-sonnet-5";
 
   const post = async (body: Record<string, unknown>): Promise<AnthropicMessageResponse> => {
     const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -333,7 +333,7 @@ function isGpt56Plus(model: string): boolean {
 }
 
 export function createOpenAICompatibleProvider(opts: OpenAICompatibleProviderOpts): LLMProvider {
-  const defaultModel = opts.model || "gpt-4o";
+  const defaultModel = opts.model || "gpt-5.6-terra";
   const baseUrl = (opts.baseUrl ?? "https://api.openai.com/v1").replace(/\/+$/, "");
   const apiKey = opts.apiKey ?? "";
 
@@ -678,12 +678,12 @@ export const OPENAI_COMPATIBLE_PROVIDER_DEFAULTS: Record<
   gemini: {
     baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
     envVar: "GEMINI_API_KEY",
-    defaultModel: "gemini-2.5-pro",
+    defaultModel: "gemini-3.1-pro-preview",
   },
   mistral: {
     baseUrl: "https://api.mistral.ai/v1",
     envVar: "MISTRAL_API_KEY",
-    defaultModel: "mistral-large-latest",
+    defaultModel: "mistral-large-2512",
   },
   groq: {
     baseUrl: "https://api.groq.com/openai/v1",
@@ -693,11 +693,11 @@ export const OPENAI_COMPATIBLE_PROVIDER_DEFAULTS: Record<
   openrouter: {
     baseUrl: "https://openrouter.ai/api/v1",
     envVar: "OPENROUTER_API_KEY",
-    defaultModel: "anthropic/claude-sonnet-4",
+    defaultModel: "anthropic/claude-sonnet-5",
   },
   "azure-openai": {
     envVar: "AZURE_OPENAI_API_KEY",
-    defaultModel: "gpt-4o",
+    defaultModel: "gpt-5.6-terra",
   },
 };
 

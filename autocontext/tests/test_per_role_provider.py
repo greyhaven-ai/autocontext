@@ -194,7 +194,7 @@ class TestProviderBridgeClient:
         provider = _StubProvider("output")
         bridge = ProviderBridgeClient(provider, use_provider_default_model=True)
         response = bridge.generate(
-            model="claude-sonnet-4-5-20250929",
+            model="claude-sonnet-5",
             prompt="p",
             max_tokens=100,
             temperature=0.0,
@@ -254,7 +254,7 @@ class TestCreateClientForProvider:
             provider_type="openai",
             api_key="openai-key",
             base_url="http://localhost:8000/v1",
-            model="gpt-4o",
+            model="gpt-5.6-terra",
         )
 
     @patch("autocontext.providers.registry.create_provider")
@@ -277,7 +277,7 @@ class TestCreateClientForProvider:
             provider_type="openai-compatible",
             api_key="role-key",
             base_url="http://role.local:8000/v1",
-            model="gpt-4o",
+            model="gpt-5.6-terra",
         )
 
     def test_empty_provider_returns_none(self) -> None:

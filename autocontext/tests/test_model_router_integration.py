@@ -26,8 +26,8 @@ def test_settings_tier_models_configurable() -> None:
 def test_settings_tier_defaults() -> None:
     settings = AppSettings()
     assert settings.tier_haiku_model == "claude-haiku-4-5-20251001"
-    assert settings.tier_sonnet_model == "claude-sonnet-4-5-20250929"
-    assert settings.tier_opus_model == "claude-opus-4-6"
+    assert settings.tier_sonnet_model == "claude-sonnet-5"
+    assert settings.tier_opus_model == "claude-opus-5"
     assert settings.tier_competitor_haiku_max_gen == 3
     assert settings.tier_harness_aware_enabled is False
     assert settings.tier_harness_coverage_demotion_threshold == 0.8
