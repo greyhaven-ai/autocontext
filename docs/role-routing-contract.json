@@ -265,5 +265,22 @@
       ],
       "reason": "test/offline provider; Python has no equivalent construction path in create_provider"
     }
+  },
+  "provider_tier_models": {
+    "openai": {
+      "frontier": "gpt-5.6-sol",
+      "mid_tier": "gpt-5.6-terra",
+      "fast": "gpt-5.6-luna"
+    },
+    "openai-compatible": {
+      "frontier": "gpt-5.6-sol",
+      "mid_tier": "gpt-5.6-terra",
+      "fast": "gpt-5.6-luna"
+    },
+    "openrouter": {
+      "frontier": "anthropic/claude-opus-5",
+      "mid_tier": "anthropic/claude-sonnet-5",
+      "fast": "anthropic/claude-haiku-4.5"
+    }
   }
 }

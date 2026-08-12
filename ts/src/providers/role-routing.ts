@@ -87,6 +87,9 @@ export const LOCAL_ELIGIBLE_ROLES: readonly string[] = Object.entries<readonly P
 export const EXPLICIT_PROVIDER_CLASS = _contract.EXPLICIT_PROVIDER_CLASS;
 
 export const PROVIDER_DEFAULT_MODEL = _contract.PROVIDER_DEFAULT_MODEL;
+// Per-tier defaults for providers that serve real tiers (AC-935).
+export const PROVIDER_TIER_MODELS: Record<string, Record<string, string>> =
+  _contract.PROVIDER_TIER_MODELS;
 
 export const MODEL_DEFAULT_PRESERVED_PROVIDERS = _contract.MODEL_DEFAULT_PRESERVED_PROVIDERS;
 
@@ -317,6 +320,7 @@ function resolveModelDefault(
   fieldName: ModelFieldKey,
   configured: string | undefined,
   shippedDefault: string,
+  providerClass?: ProviderClass,
 ): string {
   const fallback = clean(configured) ?? shippedDefault;
   if (settings.configuredFields === undefined) return fallback;
@@ -329,6 +333,16 @@ function resolveModelDefault(
 
   const localModel = clean(settings.localModel);
   if (localModel) return localModel;
+
+  // Per-tier before per-provider (AC-935): a provider that serves real tiers
+  // should answer with the tier's model rather than one id for every slot. The
+  // class is passed in because the caller already knows it. Providers absent
+  // from the table keep the single default, which is right for an endpoint that
+  // serves one model.
+  if (providerClass !== undefined) {
+    const tierModelId = PROVIDER_TIER_MODELS[normalized]?.[providerClass];
+    if (tierModelId) return tierModelId;
+  }
 
   return PROVIDER_DEFAULT_MODEL[normalized] ?? fallback;
 }
@@ -364,7 +378,7 @@ function tierModel(
   providerType: string,
 ): string {
   const resolve = (field: ModelFieldKey, shippedDefault: string): string =>
-    resolveModelDefault(settings, providerType, field, settings[field], shippedDefault);
+    resolveModelDefault(settings, providerType, field, settings[field], shippedDefault, providerClass);
   switch (providerClass) {
     case "frontier":
       return resolve("tierOpusModel", "claude-opus-5");

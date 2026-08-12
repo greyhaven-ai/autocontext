@@ -414,6 +414,7 @@ class RoleRouter:
             provider=provider,
             field_name=field,
             configured=configured,
+            provider_class=provider_class.value,
         )
 
     def _config_for_class(

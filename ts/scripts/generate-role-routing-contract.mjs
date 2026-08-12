@@ -75,6 +75,11 @@ const jsonObj = (obj, indent) =>
   sortedKeys(obj)
     .map((k) => `${indent}${tsKey(k)}: ${JSON.stringify(obj[k])},`)
     .join("\n");
+// Providers that serve real tiers map class -> model id, so this one nests.
+const jsonObjOfObjs = (obj, indent) =>
+  sortedKeys(obj)
+    .map((k) => `${indent}${tsKey(k)}: ${JSON.stringify(obj[k])},`)
+    .join("\n");
 const jsonObjOfArrays = (obj, indent) =>
   sortedKeys(obj)
     .map((k) => `${indent}${tsKey(k)}: ${tsArray([...obj[k]])},`)
@@ -109,6 +114,15 @@ const pyList = (arr) => `[${arr.map(pyScalar).join(", ")}]`;
 const pyObj = (obj, indent) =>
   sortedKeys(obj)
     .map((k) => `${indent}${JSON.stringify(k)}: ${pyScalar(obj[k])},`)
+    .join("\n");
+const pyObjOfObjs = (obj, indent) =>
+  sortedKeys(obj)
+    .map(
+      (k) =>
+        `${indent}${JSON.stringify(k)}: {\n${sortedKeys(obj[k])
+          .map((t) => `${indent}    ${JSON.stringify(t)}: ${pyScalar(obj[k][t])},`)
+          .join("\n")}\n${indent}},`,
+    )
     .join("\n");
 const pyObjOfArrays = (obj, indent) =>
   sortedKeys(obj)
@@ -173,6 +187,13 @@ export const PROVIDER_DEFAULT_MODEL: Record<string, string> = {
 ${jsonObj(contract.provider_default_model, "  ")}
 };
 
+// Per-tier defaults for providers that actually SERVE tiers (AC-935). A provider
+// absent here keeps the single PROVIDER_DEFAULT_MODEL entry, which is correct for
+// an endpoint serving one model rather than an omission.
+export const PROVIDER_TIER_MODELS: Record<string, Record<string, string>> = {
+${jsonObjOfObjs(contract.provider_tier_models ?? {}, "  ")}
+};
+
 // Providers whose shipped model defaults must never be rewritten.
 export const MODEL_DEFAULT_PRESERVED_PROVIDERS = ${tsArray([...contract.model_default_preserved_providers])} as const;
 
@@ -228,6 +249,10 @@ ${pyObj(contract.provider_hosting, "    ")}
 
 PROVIDER_DEFAULT_MODEL: Final[dict[str, str]] = {
 ${pyObj(contract.provider_default_model, "    ")}
+}
+
+PROVIDER_TIER_MODELS: Final[dict[str, dict[str, str]]] = {
+${pyObjOfObjs(contract.provider_tier_models ?? {}, "    ")}
 }
 
 MODEL_DEFAULT_PRESERVED_PROVIDERS: Final[frozenset[str]] = frozenset(${pyList([...contract.model_default_preserved_providers])})

@@ -56,6 +56,24 @@ PROVIDER_DEFAULT_MODEL: Final[dict[str, str]] = {
     "vllm": "default",
 }
 
+PROVIDER_TIER_MODELS: Final[dict[str, dict[str, str]]] = {
+    "openai": {
+        "fast": "gpt-5.6-luna",
+        "frontier": "gpt-5.6-sol",
+        "mid_tier": "gpt-5.6-terra",
+    },
+    "openai-compatible": {
+        "fast": "gpt-5.6-luna",
+        "frontier": "gpt-5.6-sol",
+        "mid_tier": "gpt-5.6-terra",
+    },
+    "openrouter": {
+        "fast": "anthropic/claude-haiku-4.5",
+        "frontier": "anthropic/claude-opus-5",
+        "mid_tier": "anthropic/claude-sonnet-5",
+    },
+}
+
 MODEL_DEFAULT_PRESERVED_PROVIDERS: Final[frozenset[str]] = frozenset(["anthropic"])
 
 EXPLICIT_PROVIDER_CLASSES: Final[dict[str, str]] = {
