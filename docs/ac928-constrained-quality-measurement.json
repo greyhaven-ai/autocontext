@@ -1,0 +1,68 @@
+{
+  "status": "pilot_only_not_release_evidence",
+  "contract": "Historical AC-928 quality pilot. The Anthropic-shaped arm forced a tool name but omitted strict=true and checked only that arguments were JSON-decodable, so it did not measure schema-constrained Anthropic output. Its quality numbers may guide a future experiment but cannot support a default-rollout decision.",
+  "measured_on": "2026-08-11",
+  "harness": "scripts/measure_constrained_quality.py",
+  "required_rerun": "Use --mode anthropic_tool with https://api.anthropic.com/v1; the corrected harness sends native strict=true tools and rejects payloads that fail AnalystPayload validation.",
+  "transport_caveat": "Both models were reached through OpenRouter, not the vendor APIs directly. The Anthropic arm exercised a non-strict forced tool call translated by OpenRouter rather than a native Anthropic strict tool. The reported HTTP 200 for architect_output established only that a non-strict tool declaration was accepted; it did not establish schema enforcement.",
+  "metric_note": "The per-item ratios in the raw rows are denominator-sensitive and were nearly misread. The prose arm emits roughly twice as many, much shorter items (structural and nested bullets all count), which dilutes any per-item ratio. Absolute grounded items per response is the comparable figure and is what the verdict rests on.",
+  "arms": {
+    "prose": "no schema; the model writes markdown and the loop scrapes it",
+    "schema": "response_format json_schema (OpenAI) or, in the historical Anthropic pilot only, a non-strict forced tool call"
+  },
+  "results": {
+    "openai/gpt-4o": {
+      "mechanism": "response_format json_schema",
+      "prose": {
+        "items_per_response": 18.15,
+        "grounded_items_per_response": 3.4,
+        "grounded_items_sem": 0.2,
+        "total_chars_per_response": 2469,
+        "actionable_share_of_recommendations": 0.484
+      },
+      "schema": {
+        "items_per_response": 12,
+        "grounded_items_per_response": 2.85,
+        "grounded_items_sem": 0.25,
+        "total_chars_per_response": 1599,
+        "actionable_share_of_recommendations": 0.517
+      },
+      "schema_minus_prose_grounded_items": -0.55,
+      "standard_errors": 1.7,
+      "schema_unparseable": 0,
+      "schema_validation": "Validated by the response_format strict JSON-schema mechanism.",
+      "trials": 20
+    },
+    "anthropic/claude-sonnet-4.5": {
+      "mechanism": "forced tool call",
+      "prose": {
+        "items_per_response": 41.4,
+        "grounded_items_per_response": 6.65,
+        "grounded_items_sem": 0.31,
+        "total_chars_per_response": 2402,
+        "actionable_share_of_recommendations": 0.583
+      },
+      "schema": {
+        "items_per_response": 17.95,
+        "grounded_items_per_response": 7.45,
+        "grounded_items_sem": 0.15,
+        "total_chars_per_response": 2048,
+        "actionable_share_of_recommendations": 0.71
+      },
+      "schema_minus_prose_grounded_items": 0.8,
+      "standard_errors": 2.3,
+      "schema_unparseable": 0,
+      "schema_validation": "Not measured. Zero means JSON decoding succeeded, not that payloads matched analyst_output.",
+      "trials": 20
+    }
+  },
+  "replication": {
+    "anthropic/claude-sonnet-4.5": "An independent 20-trial run reproduced the direction and size for the same non-strict forced-tool pilot (per-item grounding 0.158 -> 0.424 vs 0.161 -> 0.415); this does not repair the missing enforcement or native-transport controls.",
+    "openai/gpt-4o": "An independent 20-trial run disagreed in SIGN on per-item grounding (0.216 -> 0.210 vs 0.205 -> 0.239), which is itself the evidence that the gpt-4o difference is noise."
+  },
+  "verdict": {
+    "anthropic": "INCONCLUSIVE. This pilot cannot support its original ship-by-default conclusion and must not be cited as rollout evidence. Rerun the corrected strict harness against the native Anthropic Messages API and require every payload to pass the AnalystPayload contract before comparing quality.",
+    "openai": "Keep what AC-913 already shipped. Grounded content is statistically indistinguishable (-0.55 items, 1.7 standard errors, sign flips between runs). Recorded caveat: constrained responses are about 35 percent shorter in total characters, which is a real change in output shape even though the substance proxies do not move.",
+    "escape_hatch": "Neither decision is one-way. AC-931's per-role constrained_output setting already lets an operator take the prose path."
+  }
+}
