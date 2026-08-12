@@ -67,11 +67,29 @@ def test_arbitrary_nesting_depth_is_read_as_json() -> None:
     """FIXED by AC-924. Was: fell to the plaintext tier and lost its dimensions.
 
     The old raw regex handled one level of nesting and the fence tier could not
-    help an unfenced payload, so a well-formed object was scraped by a plaintext
-    regex. The score survived by luck; every per-dimension score was dropped.
+    help an unfenced payload with deeply nested metadata, so a well-formed
+    object was scraped by a plaintext regex. The score survived by luck; every
+    otherwise-valid per-dimension score was dropped.
     """
-    score, _reasoning, _dims, method = _parse('{"score": 0.64, "dimensions": {"a": {"b": 1}}}')
+    response = '{"score": 0.64, "dimensions": {"quality": 0.7}, "metadata": {"a": {"b": 1}}}'
+    score, _reasoning, dims, method = _parse(response)
     assert (score, method) == (0.64, "raw_json")
+    assert dims == {"quality": 0.7}
+
+
+def test_unrelated_json_object_does_not_hide_the_scored_verdict() -> None:
+    """A schema-mismatched object must not force the lossy plaintext tier.
+
+    Without caller-aware candidate filtering, ``extract_json`` returned the
+    metadata object and the judge rejected it only after extraction had ended.
+    Plaintext fallback then read the ``1`` prefix of the valid JSON number
+    ``1e-1`` as 1.0 and discarded the verdict's reasoning and dimensions.
+    """
+    response = (
+        '{"metadata": {"request_id": "abc"}}\n'
+        '{"score": 1e-1, "reasoning": "final", "dimensions": {"quality": 0.77}}'
+    )
+    assert _parse(response) == (0.1, "final", {"quality": 0.77}, "raw_json")
 
 
 @pytest.mark.parametrize(

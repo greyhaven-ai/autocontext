@@ -574,10 +574,11 @@ class LLMJudge:
         every one of those callers carry judge semantics they do not want.
 
         Depth is unbounded now. The old regexes handled at most one level of
-        nesting, so a judge returning nested per-dimension scores fell through
-        to the plaintext tier and lost every dimension silently.
+        nesting, so a verdict carrying valid flat dimensions plus unrelated
+        deeply nested metadata fell through to the plaintext tier and lost
+        every dimension silently.
         """
-        data = extract_json(response, on_failure="none")
+        data = extract_json(response, on_failure="none", required_keys=("score",))
         if isinstance(data, dict) and "score" in data:
             return data
         return None

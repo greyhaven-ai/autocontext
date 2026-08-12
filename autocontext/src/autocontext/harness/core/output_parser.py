@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from typing import Any
 
 # The `tag` group is what makes a ```json fence distinguishable from a bare
@@ -204,14 +204,16 @@ def _fenced_payload_scopes(text: str) -> list[str] | None:
     return plausible or None
 
 
-def _has_multiple_mapping_candidates(text: str) -> bool:
-    """Return whether an LLM response contains competing JSON objects.
+def _has_multiple_mapping_candidates(text: str, required_keys: frozenset[str]) -> bool:
+    """Return whether an LLM response contains competing eligible JSON objects.
 
     A tagged JSON fence is authoritative, matching ``extract_json``'s normal
     fence-selection rule. Without one, scan the whole response so an object in
     an untagged reasoning fence cannot hide a different final object outside
     that fence. Callers that must fail closed on ambiguity can opt into this
     check without changing the established first-object behavior elsewhere.
+    Mappings missing ``required_keys`` are not competitors because the caller
+    could not accept them as its result.
     """
     tagged = next((match for match in _JSON_FENCE_RE.finditer(text) if match.group("tag")), None)
     scope = _scope_text(tagged.group("body")) if tagged is not None else _scope_text(text)
@@ -221,7 +223,7 @@ def _has_multiple_mapping_candidates(text: str) -> bool:
             decoded = json.loads(span)
         except (json.JSONDecodeError, RecursionError):
             continue
-        if isinstance(decoded, Mapping):
+        if isinstance(decoded, Mapping) and required_keys.issubset(decoded):
             mapping_count += 1
             if mapping_count > 1:
                 return True
@@ -233,6 +235,7 @@ def extract_json(
     *,
     on_failure: str = "raise",
     require_unique: bool = False,
+    required_keys: Collection[str] = (),
 ) -> dict[str, Any] | None:
     """Extract a JSON object from LLM text.
 
@@ -257,12 +260,12 @@ def extract_json(
     brace-free ones that cannot be holding an object -- does the scan fall
     back to the whole text. There, unlike the fenced case, multiple candidate top-level
     values are tried in the order they appear, returning the first Mapping
-    that parses -- this is what lets bare, unfenced JSON embedded in prose
-    still be recovered, including when a competitor lists more than one
-    option (e.g. "Option A: {...} Option B: {...}"): loose prose makes no
-    claim to a single payload the way a fence does, so picking the first
-    valid one is the closest match to what a human reader would take as the
-    answer.
+    that parses and satisfies ``required_keys`` -- this is what lets bare,
+    unfenced JSON embedded in prose still be recovered, including when a
+    competitor lists more than one option (e.g. "Option A: {...} Option B:
+    {...}"): loose prose makes no claim to a single payload the way a fence
+    does, so picking the first valid one is the closest match to what a human
+    reader would take as the answer.
 
     A scope whose first plausible JSON container is ``[`` -- fenced or not,
     and even when prose precedes it -- is exempt from object rescue. If it
@@ -279,7 +282,14 @@ def extract_json(
     object candidate. A tagged JSON fence remains authoritative, so JSON-shaped
     scratch work in an earlier untagged fence cannot invalidate an explicitly
     designated answer.
+
+    ``required_keys`` filters Mapping candidates without assigning domain
+    semantics to this shared parser. A Mapping that does not contain every
+    required key is skipped so a later candidate can satisfy the caller's
+    schema. ``require_unique`` likewise counts only candidates that satisfy
+    the key requirement.
     """
+    required_key_set = frozenset(required_keys)
     fenced_scopes = _fenced_payload_scopes(text)
     has_fence = fenced_scopes is not None
     scopes = fenced_scopes if fenced_scopes is not None else [_scope_text(text)]
@@ -353,9 +363,13 @@ def extract_json(
             last_exc = exc
             continue
         if isinstance(decoded, Mapping):
+            if not required_key_set.issubset(decoded):
+                missing = sorted(required_key_set.difference(decoded))
+                last_exc = ValueError(f"Expected JSON object containing required keys: {missing}")
+                continue
             if require_unique:
                 try:
-                    has_multiple = _has_multiple_mapping_candidates(text)
+                    has_multiple = _has_multiple_mapping_candidates(text, required_key_set)
                 except (ValueError, RecursionError) as exc:
                     last_exc = exc
                     break

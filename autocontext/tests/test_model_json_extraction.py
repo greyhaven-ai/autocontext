@@ -657,6 +657,14 @@ def test_extract_json_require_unique_rejects_competing_objects() -> None:
         extract_json(text, require_unique=True)
 
 
+def test_extract_json_required_keys_skip_unrelated_mapping() -> None:
+    text = 'Metadata: {"request_id": "abc"}\nVerdict: {"score": 0.1}'
+
+    assert extract_json(text) == {"request_id": "abc"}
+    assert extract_json(text, required_keys=("score",)) == {"score": 0.1}
+    assert extract_json(text, required_keys=("score",), require_unique=True) == {"score": 0.1}
+
+
 def test_extract_json_require_unique_trusts_tagged_answer() -> None:
     text = '```\n{"answer": 1}\n```\n```json\n{"answer": 2}\n```'
 
@@ -1486,42 +1494,32 @@ def test_action_filter_extract_json_object(name: str, text: str) -> None:
 _GUARDED_SRC_DIRS = ("agents", "execution")
 _ALLOWED_FENCE_REGEX_FILE = "output_parser.py"
 
-# The five regex call sites this guard is aware of today, one per line,
-# collapsed to four files below because two of them (translator.py's
+# The four regex call sites this guard is aware of today, one per line,
+# collapsed to three files below because two of them (translator.py's
 # python-fence and generic-fence searches) live in the same module:
 #
 #   agents/translator.py:118             re.search  -- python code block
 #   agents/translator.py:121             re.search  -- generic fence
 #   execution/harness_synthesizer.py:233 re.search  -- python code block
 #   execution/policy_refinement.py:71    re.findall -- python code block
-#   execution/judge.py:555               re.compile -- JSON (AC-924)
 #
 # policy_refinement.py was MISSED by the first version of this guard, and by
 # two independent evasions at once, either of which alone would have hidden
 # it: `findall` was not in the constructor set below, and its pattern is a
 # function-local variable passed by name rather than an inline literal. Both
 # holes are closed now (see `_fence_regex_offenders`), which is the only
-# reason this comment can claim five sites rather than four.
-#
-# judge.py is tracked, unmigrated JSON extraction: `_try_code_block_parse`
-# is one of FOUR ordered parsing strategies (marker-delimited, raw-JSON-
-# with-"score"-key, code-block, plain-text) whose ordering is observable
-# and entirely uncharacterized. Migrating it onto extract_json blind would
-# be exactly the mistake this plan keeps proving is wrong -- characterize
-# before you change. Tracked in AC-924, not fixed here.
+# reason this comment can claim four sites rather than three.
 #
 # translator.py, harness_synthesizer.py and policy_refinement.py are a
-# DIFFERENT kind of exemption, not a to-do: all three regexes extract PYTHON
+# permanent exemption, not a to-do: all three regexes extract PYTHON
 # source code from a fence, not JSON. extract_json is a JSON parser (it feeds
 # candidates to json.loads); forcing a Python-code extraction onto it would be
-# wrong, not incomplete, so these are deliberately and permanently out of
-# scope for migration, unlike judge.py's AC-924 debt.
+# wrong, not incomplete, so these are deliberately out of scope for migration.
 #
 # This is EXACT-SET equality, not an allow-list: it fails both when a NEW
 # offender appears (someone adds a fence regex) and when a known one
-# disappears (e.g. AC-924 lands and judge.py is migrated, or a file is
-# deleted) -- so a stale exemption can't survive unnoticed the way a
-# permissive allow-list would let it.
+# disappears (for example, a file is deleted) -- so a stale exemption can't
+# survive unnoticed the way a permissive allow-list would let it.
 _KNOWN_OFFENDERS = frozenset(
     {
         # Python code extraction, not JSON -- permanently out of scope.
