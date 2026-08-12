@@ -123,13 +123,88 @@ class PreflightChecker:
             )
         return results
 
+    def check_budget_gates_can_fire(self) -> list[CheckResult]:
+        """Warn when a dollar budget is configured for a run that spends no dollars.
+
+        AC-934. Two gates are denominated in USD: `consultation_cost_budget`,
+        and `cost_budget_limit` / `cost_throttle_above_total` in the generation
+        pipeline. Spend accumulates from `CompletionResult.cost_usd`, which is
+        None for local providers, so on an all-local run the total stays at zero
+        and neither gate ever fires.
+
+        Deliberately NOT fixed by making a dollar budget bound something else.
+        The setting says dollars; a local run spends no dollars; not firing is
+        correct. Quietly repurposing it as a wall-clock or token bound would be
+        the silent substitution this codebase keeps removing -- the operator
+        would get a limit they never asked for, in a unit the name does not say.
+
+        What was actually missing is that nobody was told. An operator who set a
+        dollar budget as a proxy for "do not let this run forever" got no bound
+        and no signal. Advisory rather than blocking: the configuration is not
+        wrong, and refusing to start a working local run over an inert gate
+        would be worse than the gap it reports.
+        """
+        if self._settings is None:
+            return []
+
+        budgets = {
+            "AUTOCONTEXT_COST_BUDGET_LIMIT": float(getattr(self._settings, "cost_budget_limit", 0.0) or 0.0),
+            "AUTOCONTEXT_COST_THROTTLE_ABOVE_TOTAL": float(
+                getattr(self._settings, "cost_throttle_above_total", 0.0) or 0.0
+            ),
+            "AUTOCONTEXT_CONSULTATION_COST_BUDGET": float(
+                getattr(self._settings, "consultation_cost_budget", 0.0) or 0.0
+            ),
+        }
+        configured = sorted(name for name, value in budgets.items() if value > 0)
+        if not configured:
+            return []
+
+        # Asked of the router rather than inferred from the provider name: after
+        # AC-911 hosting is declared, so a self-hosted frontier endpoint and a
+        # cloud one are distinguishable, and a priced role is what makes a
+        # dollar gate reachable at all.
+        from autocontext.agents.role_router import RoleRouter
+
+        router = RoleRouter(self._settings)
+        priced = [
+            role
+            for role in ("competitor", "analyst", "coach", "architect", "curator", "translator")
+            if router.route(role).estimated_cost_per_1k_tokens > 0
+        ]
+        if priced:
+            return []
+
+        time_budget = int(getattr(self._settings, "generation_time_budget_seconds", 0) or 0)
+        hint = (
+            "AUTOCONTEXT_GENERATION_TIME_BUDGET_SECONDS bounds a local run by wall clock"
+            if time_budget <= 0
+            else f"a time budget is already set ({time_budget}s), which does bound this run"
+        )
+        return [
+            CheckResult(
+                name="budget_gate_inert",
+                passed=False,
+                detail=(
+                    f"{', '.join(configured)} is set, but every role on this run routes to a "
+                    "locally hosted endpoint priced at zero, so accumulated spend stays at zero "
+                    f"and the budget can never be reached. {hint}."
+                ),
+                blocking=False,
+            )
+        ]
+
     def run_without_scenario_check(self) -> list[CheckResult]:
         """Everything except the registry lookup.
 
         Agent-task scenarios are resolved outside SCENARIO_REGISTRY, so that
         check would reject them; the endpoint checks apply just the same.
         """
-        return [self.check_knowledge_writable(), *self.check_endpoint()]
+        return [
+            self.check_knowledge_writable(),
+            *self.check_endpoint(),
+            *self.check_budget_gates_can_fire(),
+        ]
 
     def run_all(self) -> list[CheckResult]:
         """Run all preflight checks."""
@@ -137,6 +212,7 @@ class PreflightChecker:
             self.check_scenario_exists(),
             self.check_knowledge_writable(),
             *self.check_endpoint(),
+            *self.check_budget_gates_can_fire(),
         ]
 
     @staticmethod
