@@ -8,7 +8,12 @@ records carrying the rationale. Nothing here is tied to a specific model or vend
 
 from __future__ import annotations
 
-from autocontext.providers.base import CompletionResult, LLMProvider
+from autocontext.providers.base import (
+    CompletionResult,
+    LLMProvider,
+    ProviderError,
+    ThinkingUnsupportedError,
+)
 from autocontext.providers.callable_wrapper import CallableProvider
 from autocontext.scenarios.agent_task import AgentTaskResult
 
@@ -88,6 +93,26 @@ class _ThinkingProvider(LLMProvider):
         return "thinking-test"
 
 
+class _UnsupportedThinkingProvider(LLMProvider):
+    def __init__(self) -> None:
+        self.complete_calls = 0
+
+    def complete(self, system_prompt, user_prompt, **kwargs):
+        self.complete_calls += 1
+        return CompletionResult(text='visible fallback\n{"points": [1, 2, 3, 4, 5]}')
+
+    def complete_with_thinking(self, *args, **kwargs):
+        raise ThinkingUnsupportedError("tools are not supported")
+
+    def default_model(self):
+        return "unsupported-thinking-test"
+
+
+class _BrokenThinkingProvider(_UnsupportedThinkingProvider):
+    def complete_with_thinking(self, *args, **kwargs):
+        raise ProviderError("connection reset")
+
+
 def test_collect_prefers_tool_captured_thinking_and_preserves_call_boundaries() -> None:
     from autocontext.training.autoresearch.trace_collector import collect
 
@@ -128,6 +153,48 @@ def test_collect_requires_real_thinking_stream_by_default() -> None:
     provider = CallableProvider(lambda system, user: 'visible only\n{"points": [1,2,3,4,5]}')
 
     assert collect(_FakeScenario(), provider, n_traces=1) == []
+
+
+def test_collect_uses_explicit_visible_fallback_when_native_tools_are_unsupported() -> None:
+    from autocontext.training.autoresearch.trace_collector import collect
+
+    provider = _UnsupportedThinkingProvider()
+
+    records = collect(
+        _FakeScenario(),
+        provider,
+        n_traces=1,
+        require_thinking_stream=False,
+    )
+
+    assert len(records) == 1
+    assert records[0]["reasoning"] == "visible fallback"
+    assert records[0]["reasoning_source"] == "visible_preamble"
+    assert records[0]["thinking_capture"] == "unsupported"
+    assert provider.complete_calls == 1
+
+
+def test_collect_does_not_fallback_when_structured_stream_is_required() -> None:
+    from autocontext.training.autoresearch.trace_collector import collect
+
+    provider = _UnsupportedThinkingProvider()
+
+    assert collect(_FakeScenario(), provider, n_traces=1) == []
+    assert provider.complete_calls == 0
+
+
+def test_collect_does_not_convert_provider_failures_into_visible_fallbacks() -> None:
+    from autocontext.training.autoresearch.trace_collector import collect
+
+    provider = _BrokenThinkingProvider()
+
+    assert collect(
+        _FakeScenario(),
+        provider,
+        n_traces=1,
+        require_thinking_stream=False,
+    ) == []
+    assert provider.complete_calls == 0
 
 
 def test_collect_gates_by_verified_score_threshold() -> None:

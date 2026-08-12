@@ -82,10 +82,30 @@ def test_anthropic_deep_think_fails_when_required_call_is_ignored() -> None:
 
 
 def test_anthropic_deep_think_fails_closed_at_turn_limit() -> None:
-    provider, _ = _provider([_response(_tool_block({"thoughts": "still working"}))])
+    provider, _ = _provider(
+        [
+            _response(_tool_block({"thoughts": "first turn"}, "toolu-1")),
+            _response(_tool_block({"thoughts": "still working"}, "toolu-2")),
+        ]
+    )
 
     with pytest.raises(ProviderError, match="exceeded 1 deep_think tool turns"):
         provider.complete_with_thinking("system", "user", max_tool_turns=1)
+
+
+def test_anthropic_allows_final_answer_after_last_tool_turn() -> None:
+    provider, messages = _provider(
+        [
+            _response(_tool_block({"thoughts": "bounded thought"})),
+            _response(SimpleNamespace(type="text", text="final")),
+        ]
+    )
+
+    result = provider.complete_with_thinking("system", "user", max_tool_turns=1)
+
+    assert result.text == "final"
+    assert result.thinking_stream == ["bounded thought"]
+    assert len(messages.calls) == 2
 
 
 def test_anthropic_advertises_native_thinking_support() -> None:

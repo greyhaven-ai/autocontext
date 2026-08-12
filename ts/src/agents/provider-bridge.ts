@@ -8,7 +8,11 @@ import type {
   LLMProvider,
   ThinkingCompletionOptions,
 } from "../types/index.js";
-import { completeWithThinkingFallback } from "../providers/thinking.js";
+import { ProviderError } from "../types/index.js";
+import {
+  addCompletionUsage,
+  completeWithThinkingFallback,
+} from "../providers/thinking.js";
 import type { AgentRuntime } from "../runtimes/base.js";
 import { RuntimeSessionAgentRuntime } from "../runtimes/runtime-session-agent.js";
 import type { RuntimeCommandGrant } from "../runtimes/workspace-env.js";
@@ -135,17 +139,23 @@ export class RetryProvider implements LLMProvider {
 
   async #withRetry(operation: () => Promise<CompletionResult>): Promise<CompletionResult> {
     let lastError: Error | undefined;
+    const retryUsage: Record<string, number> = {};
     for (let attempt = 0; attempt <= this.#maxRetries; attempt++) {
       try {
-        return await operation();
+        const result = await operation();
+        const usage = { ...result.usage };
+        addCompletionUsage(usage, retryUsage);
+        return { ...result, usage };
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
+        if (err instanceof ProviderError) addCompletionUsage(retryUsage, err.usage);
         if (attempt < this.#maxRetries) {
           const delay = Math.min(this.#baseDelay * 2 ** attempt, this.#maxDelay);
           await new Promise((r) => setTimeout(r, delay));
         }
       }
     }
+    if (lastError instanceof ProviderError) lastError.usage = retryUsage;
     throw lastError!;
   }
 }

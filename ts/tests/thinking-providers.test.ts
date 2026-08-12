@@ -7,6 +7,7 @@ import {
   createOpenAICompatibleProvider,
 } from "../src/providers/index.js";
 import type { LLMProvider } from "../src/types/index.js";
+import { ProviderError, ThinkingUnsupportedError } from "../src/types/index.js";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -61,6 +62,46 @@ describe("thinking provider contract", () => {
     expect(result.thinkingCapture).toBe("unsupported");
   });
 
+  it("falls back when a nominally native endpoint rejects thinking tools", async () => {
+    const provider: LLMProvider = {
+      name: "dynamic-capability",
+      supportsThinkingStream: true,
+      defaultModel: () => "dynamic-capability",
+      complete: async () => ({ text: "visible only", usage: { input: 11, output: 13 } }),
+      completeWithThinking: async () => {
+        throw new ThinkingUnsupportedError("tools unsupported", { input: 5, output: 7 });
+      },
+    };
+
+    const result = await completeWithThinkingFallback(provider, {
+      systemPrompt: "system",
+      userPrompt: "user",
+    });
+
+    expect(result.text).toBe("visible only");
+    expect(result.thinkingStream).toEqual([]);
+    expect(result.thinkingCapture).toBe("unsupported");
+    expect(result.usage).toEqual({ input: 16, output: 20 });
+  });
+
+  it("does not convert unrelated provider failures into ordinary completions", async () => {
+    const complete = vi.fn(async () => ({ text: "must not run", usage: {} }));
+    const provider: LLMProvider = {
+      name: "broken-native",
+      supportsThinkingStream: true,
+      defaultModel: () => "broken-native",
+      complete,
+      completeWithThinking: async () => {
+        throw new ProviderError("connection reset");
+      },
+    };
+
+    await expect(
+      completeWithThinkingFallback(provider, { systemPrompt: "system", userPrompt: "user" }),
+    ).rejects.toThrow("connection reset");
+    expect(complete).not.toHaveBeenCalled();
+  });
+
   it("retries the whole native thinking operation through RetryProvider", async () => {
     let attempts = 0;
     const inner: LLMProvider = {
@@ -86,6 +127,33 @@ describe("thinking provider contract", () => {
     expect(provider.supportsThinkingStream).toBe(true);
     expect(attempts).toBe(2);
     expect(result.thinkingStream).toEqual(["captured"]);
+  });
+
+  it("preserves partial usage when retrying a thinking operation", async () => {
+    let attempts = 0;
+    const inner: LLMProvider = {
+      name: "native",
+      supportsThinkingStream: true,
+      defaultModel: () => "native",
+      complete: async () => ({ text: "unused", usage: {} }),
+      completeWithThinking: async () => {
+        attempts += 1;
+        if (attempts === 1) {
+          throw new ProviderError("temporary", { input: 5, output: 7 });
+        }
+        return {
+          text: "final",
+          thinkingStream: ["captured"],
+          thinkingCapture: "tool",
+          usage: { input: 11, output: 13 },
+        };
+      },
+    };
+    const provider = new RetryProvider(inner, { maxRetries: 1, baseDelay: 0 });
+
+    const result = await provider.completeWithThinking({ systemPrompt: "s", userPrompt: "u" });
+
+    expect(result.usage).toEqual({ input: 16, output: 20 });
   });
 });
 
@@ -251,6 +319,22 @@ describe("OpenAI-compatible deep_think", () => {
     ).rejects.toThrow("did not honor required deep_think");
   });
 
+  it("reports endpoint-level tool rejection as unsupported", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 400,
+        text: async () => "tools are not supported",
+      }),
+    );
+    const provider = createOpenAICompatibleProvider({ apiKey: "test" });
+
+    await expect(
+      provider.completeWithThinking!({ systemPrompt: "s", userPrompt: "u" }),
+    ).rejects.toBeInstanceOf(ThinkingUnsupportedError);
+  });
+
   it("fails closed at the configured tool-turn bound", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(openAIToolResponse("still thinking")));
     const provider = createOpenAICompatibleProvider({ apiKey: "test" });
@@ -258,6 +342,25 @@ describe("OpenAI-compatible deep_think", () => {
     await expect(
       provider.completeWithThinking!({ systemPrompt: "s", userPrompt: "u", maxToolTurns: 2 }),
     ).rejects.toThrow("exceeded 2 deep_think tool turns");
+  });
+
+  it("allows a final answer after the last permitted tool turn", async () => {
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(openAIToolResponse("bounded thought"))
+      .mockResolvedValueOnce(openAIFinalResponse("final"));
+    vi.stubGlobal("fetch", mockFetch);
+    const provider = createOpenAICompatibleProvider({ apiKey: "test" });
+
+    const result = await provider.completeWithThinking!({
+      systemPrompt: "s",
+      userPrompt: "u",
+      maxToolTurns: 1,
+    });
+
+    expect(result.text).toBe("final");
+    expect(result.thinkingStream).toEqual(["bounded thought"]);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -381,5 +484,45 @@ describe("Anthropic deep_think", () => {
     await expect(
       provider.completeWithThinking!({ systemPrompt: "s", userPrompt: "u", maxToolTurns: 2 }),
     ).rejects.toThrow("exceeded 2 deep_think tool turns");
+  });
+
+  it("allows a final answer after the last permitted tool turn", async () => {
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        okJson({
+          content: [
+            {
+              type: "tool_use",
+              id: "toolu-bounded",
+              name: "deep_think",
+              input: { thoughts: "bounded thought" },
+            },
+          ],
+          model: "claude-stub",
+          usage: { input_tokens: 3, output_tokens: 2 },
+          stop_reason: "tool_use",
+        }),
+      )
+      .mockResolvedValueOnce(
+        okJson({
+          content: [{ type: "text", text: "final" }],
+          model: "claude-stub",
+          usage: { input_tokens: 3, output_tokens: 2 },
+          stop_reason: "end_turn",
+        }),
+      );
+    vi.stubGlobal("fetch", mockFetch);
+    const provider = createAnthropicProvider({ apiKey: "test" });
+
+    const result = await provider.completeWithThinking!({
+      systemPrompt: "s",
+      userPrompt: "u",
+      maxToolTurns: 1,
+    });
+
+    expect(result.text).toBe("final");
+    expect(result.thinkingStream).toEqual(["bounded thought"]);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 });

@@ -6,7 +6,13 @@ from typing import Any
 
 import anthropic
 
-from autocontext.providers.base import CompletionResult, LLMProvider, OutputSchema, ProviderError
+from autocontext.providers.base import (
+    CompletionResult,
+    LLMProvider,
+    OutputSchema,
+    ProviderError,
+    ThinkingUnsupportedError,
+)
 from autocontext.providers.thinking import (
     DEEP_THINK_DESCRIPTION,
     DEEP_THINK_PARAMETERS,
@@ -97,7 +103,9 @@ class AnthropicProvider(LLMProvider):
         thinking_stream: list[str] = []
         total_usage = {"input_tokens": 0, "output_tokens": 0}
 
-        for turn in range(max_tool_turns):
+        # ``max_tool_turns`` bounds tool-bearing responses, not all requests;
+        # allow one final request after the last permitted scratchpad turn.
+        for turn in range(max_tool_turns + 1):
             tool_choice: dict[str, Any]
             if turn == 0:
                 tool_choice = {
@@ -119,7 +127,10 @@ class AnthropicProvider(LLMProvider):
                     tool_choice=tool_choice,
                 )
             except anthropic.APIError as exc:
-                raise ProviderError(f"Anthropic API error: {exc}") from exc
+                raise ProviderError(
+                    f"Anthropic API error: {exc}",
+                    usage=total_usage,
+                ) from exc
 
             usage = getattr(response, "usage", None)
             if usage is not None:
@@ -130,7 +141,10 @@ class AnthropicProvider(LLMProvider):
             tool_blocks = [block for block in blocks if getattr(block, "type", "") == "tool_use"]
             if not tool_blocks:
                 if turn == 0:
-                    raise ProviderError("Anthropic API did not honor required deep_think tool choice")
+                    raise ThinkingUnsupportedError(
+                        "Anthropic API did not honor required deep_think tool choice",
+                        usage=total_usage,
+                    )
                 text = "".join(
                     str(getattr(block, "text", "") or "")
                     for block in blocks
@@ -146,16 +160,28 @@ class AnthropicProvider(LLMProvider):
                     thinking_capture="tool",
                 )
 
+            if turn == max_tool_turns:
+                raise ProviderError(
+                    f"Model exceeded {max_tool_turns} deep_think tool turns",
+                    usage=total_usage,
+                )
+
             messages.append({"role": "assistant", "content": blocks})
             tool_results: list[dict[str, Any]] = []
             for block in tool_blocks:
                 name = str(getattr(block, "name", "") or "")
                 if name != DEEP_THINK_TOOL_NAME:
-                    raise ProviderError(f"Unexpected thinking tool call: {name or '<missing>'}")
+                    raise ProviderError(
+                        f"Unexpected thinking tool call: {name or '<missing>'}",
+                        usage=total_usage,
+                    )
                 try:
                     thinking_stream.append(extract_deep_thought(getattr(block, "input", None)))
                 except ValueError as exc:
-                    raise ProviderError(f"Invalid deep_think arguments: {exc}") from exc
+                    raise ProviderError(
+                        f"Invalid deep_think arguments: {exc}",
+                        usage=total_usage,
+                    ) from exc
                 tool_results.append(
                     {
                         "type": "tool_result",
@@ -165,7 +191,7 @@ class AnthropicProvider(LLMProvider):
                 )
             messages.append({"role": "user", "content": tool_results})
 
-        raise ProviderError(f"Model exceeded {max_tool_turns} deep_think tool turns")
+        raise AssertionError("deep_think loop exhausted without returning or raising")
 
     def default_model(self) -> str:
         return self._default_model

@@ -117,12 +117,16 @@ class RetryProvider(LLMProvider):
     def _call_with_retry(self, operation: Callable[[], CompletionResult]) -> CompletionResult:
         last_error: Exception | None = None
         delay = self.base_delay
+        retry_usage: dict[str, int] = {}
 
         for attempt in range(1 + self.max_retries):
             try:
-                return operation()
+                result = operation()
+                _add_usage(result.usage, retry_usage)
+                return result
             except ProviderError as e:
                 last_error = e
+                _add_usage(retry_usage, e.usage)
                 if attempt == self.max_retries:
                     break
                 if not self.retry_all and not _is_transient(e):
@@ -139,6 +143,8 @@ class RetryProvider(LLMProvider):
                 time.sleep(delay)
                 delay = min(delay * self.backoff_factor, self.max_delay)
 
+        if isinstance(last_error, ProviderError):
+            last_error.usage = retry_usage
         raise last_error  # type: ignore[misc]
 
     def default_model(self) -> str:
@@ -151,3 +157,8 @@ class RetryProvider(LLMProvider):
     @property
     def name(self) -> str:
         return f"Retry({self._provider.name})"
+
+
+def _add_usage(total: dict[str, int], usage: dict[str, int]) -> None:
+    for key, value in usage.items():
+        total[key] = total.get(key, 0) + value

@@ -10,6 +10,17 @@ from typing import Any
 class ProviderError(Exception):
     """Raised when an LLM provider call fails."""
 
+    def __init__(self, message: str, *, usage: dict[str, int] | None = None) -> None:
+        super().__init__(message)
+        # Successful requests earlier in a multi-turn operation may already be
+        # billable even when a later request fails. Retry wrappers aggregate
+        # this partial usage into the eventual successful result.
+        self.usage = dict(usage or {})
+
+
+class ThinkingUnsupportedError(ProviderError):
+    """Raised when an endpoint cannot honor structured thinking capture."""
+
 
 @dataclass(frozen=True, slots=True)
 class OutputSchema:

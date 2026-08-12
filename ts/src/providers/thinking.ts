@@ -3,7 +3,7 @@ import type {
   LLMProvider,
   ThinkingCompletionOptions,
 } from "../types/index.js";
-import { ProviderError } from "../types/index.js";
+import { ProviderError, ThinkingUnsupportedError } from "../types/index.js";
 
 export const DEEP_THINK_TOOL_NAME = "deep_think";
 export const DEEP_THINK_DESCRIPTION =
@@ -87,10 +87,21 @@ export async function completeWithThinkingFallback(
   provider: LLMProvider,
   opts: ThinkingCompletionOptions,
 ): Promise<CompletionResult> {
-  if (provider.completeWithThinking) return provider.completeWithThinking(opts);
+  let unsupportedUsage: Record<string, number> = {};
+  if (provider.completeWithThinking) {
+    try {
+      return await provider.completeWithThinking(opts);
+    } catch (error) {
+      if (!(error instanceof ThinkingUnsupportedError)) throw error;
+      unsupportedUsage = error.usage;
+    }
+  }
   const result = await provider.complete(opts);
+  const usage = { ...result.usage };
+  addCompletionUsage(usage, unsupportedUsage);
   return {
     ...result,
+    usage,
     thinkingStream: [],
     thinkingCapture: "unsupported",
   };

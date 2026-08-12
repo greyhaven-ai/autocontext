@@ -38,9 +38,19 @@ export const CompletionResultSchema = z.object({
 export type CompletionResult = z.infer<typeof CompletionResultSchema>;
 
 export class ProviderError extends Error {
-  constructor(message: string) {
+  usage: Record<string, number>;
+
+  constructor(message: string, usage: Record<string, number> = {}) {
     super(message);
     this.name = "ProviderError";
+    this.usage = { ...usage };
+  }
+}
+
+export class ThinkingUnsupportedError extends ProviderError {
+  constructor(message: string, usage: Record<string, number> = {}) {
+    super(message, usage);
+    this.name = "ThinkingUnsupportedError";
   }
 }
 

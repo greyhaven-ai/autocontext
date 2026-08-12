@@ -6,8 +6,9 @@ from typing import Any
 
 import pytest
 
-from autocontext.providers.base import ProviderError
+from autocontext.providers.base import ProviderError, ThinkingUnsupportedError
 from autocontext.providers.openai_compat import DEEP_THINK_TOOL_NAME, OpenAICompatibleProvider
+from autocontext.providers.retry import RetryProvider
 
 
 class _Completions:
@@ -98,11 +99,55 @@ def test_deep_think_fails_when_required_first_call_is_ignored() -> None:
         provider.complete_with_thinking("system", "user")
 
 
+def test_deep_think_reports_endpoint_level_tool_rejection_as_unsupported() -> None:
+    provider, _ = _provider([_BadRequest("tools are not supported")])
+
+    with pytest.raises(ThinkingUnsupportedError, match="does not support thinking tools"):
+        provider.complete_with_thinking("system", "user")
+
+
 def test_deep_think_fails_closed_at_tool_turn_limit() -> None:
-    provider, _ = _provider([_response(tool_calls=[_tool_call('{"thoughts":"still working"}')])])
+    provider, _ = _provider(
+        [
+            _response(tool_calls=[_tool_call('{"thoughts":"first turn"}', "call-1")]),
+            _response(tool_calls=[_tool_call('{"thoughts":"still working"}', "call-2")]),
+        ]
+    )
 
     with pytest.raises(ProviderError, match="exceeded 1 deep_think tool turns"):
         provider.complete_with_thinking("system", "user", max_tool_turns=1)
+
+
+def test_deep_think_allows_final_answer_after_last_tool_turn() -> None:
+    provider, completions = _provider(
+        [
+            _response(tool_calls=[_tool_call('{"thoughts":"bounded thought"}')]),
+            _response(text="final"),
+        ]
+    )
+
+    result = provider.complete_with_thinking("system", "user", max_tool_turns=1)
+
+    assert result.text == "final"
+    assert result.thinking_stream == ["bounded thought"]
+    assert len(completions.calls) == 2
+
+
+def test_retry_preserves_usage_from_successful_turns_before_transient_failure() -> None:
+    provider, _ = _provider(
+        [
+            _response(tool_calls=[_tool_call('{"thoughts":"first attempt"}')], tokens=(5, 7)),
+            ProviderError("connection reset"),
+            _response(tool_calls=[_tool_call('{"thoughts":"retry"}')], tokens=(11, 13)),
+            _response(text="final", tokens=(17, 19)),
+        ]
+    )
+    retrying = RetryProvider(provider, max_retries=1, base_delay=0)
+
+    result = retrying.complete_with_thinking("system", "user")
+
+    assert result.text == "final"
+    assert result.usage == {"input_tokens": 33, "output_tokens": 39}
 
 
 def test_deep_think_negotiates_only_unsupported_reasoning_effort() -> None:

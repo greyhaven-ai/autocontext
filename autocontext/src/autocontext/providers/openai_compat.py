@@ -11,7 +11,13 @@ import os
 import re
 from typing import Any
 
-from autocontext.providers.base import CompletionResult, LLMProvider, OutputSchema, ProviderError
+from autocontext.providers.base import (
+    CompletionResult,
+    LLMProvider,
+    OutputSchema,
+    ProviderError,
+    ThinkingUnsupportedError,
+)
 from autocontext.providers.thinking import (
     DEEP_THINK_DESCRIPTION,
     DEEP_THINK_PARAMETERS,
@@ -172,7 +178,10 @@ class OpenAICompatibleProvider(LLMProvider):
         wire_reasoning_effort: str | None = "none"
         strict_tools = True
 
-        for turn in range(max_tool_turns):
+        # ``max_tool_turns`` bounds tool-bearing responses. A model that uses
+        # the final allowed tool turn still needs one more request in which to
+        # return its answer.
+        for turn in range(max_tool_turns + 1):
             request: dict[str, Any] = {
                 "model": model_id,
                 "temperature": temperature,
@@ -198,6 +207,7 @@ class OpenAICompatibleProvider(LLMProvider):
                 request,
                 model_id=model_id,
                 constrained=constrained,
+                partial_usage=total_usage,
             )
             effective_effort = request.get("reasoning_effort")
             wire_reasoning_effort = effective_effort if isinstance(effective_effort, str) else None
@@ -205,13 +215,19 @@ class OpenAICompatibleProvider(LLMProvider):
             _add_usage(total_usage, response)
             choice = response.choices[0] if response.choices else None
             if choice is None:
-                raise ProviderError("OpenAI-compatible API returned no completion choices")
+                raise ProviderError(
+                    "OpenAI-compatible API returned no completion choices",
+                    usage=total_usage,
+                )
             message = choice.message
             tool_calls = list(getattr(message, "tool_calls", None) or [])
 
             if not tool_calls:
                 if turn == 0:
-                    raise ProviderError("OpenAI-compatible endpoint did not honor required deep_think tool choice")
+                    raise ThinkingUnsupportedError(
+                        "OpenAI-compatible endpoint did not honor required deep_think tool choice",
+                        usage=total_usage,
+                    )
                 return CompletionResult(
                     text=getattr(message, "content", None) or "",
                     model=model_id,
@@ -223,17 +239,29 @@ class OpenAICompatibleProvider(LLMProvider):
                     thinking_capture="tool",
                 )
 
+            if turn == max_tool_turns:
+                raise ProviderError(
+                    f"Model exceeded {max_tool_turns} deep_think tool turns",
+                    usage=total_usage,
+                )
+
             messages.append(_assistant_tool_message(message, tool_calls))
             for call in tool_calls:
                 function = getattr(call, "function", None)
                 name = getattr(function, "name", "")
                 if name != DEEP_THINK_TOOL_NAME:
-                    raise ProviderError(f"Unexpected thinking tool call: {name or '<missing>'}")
+                    raise ProviderError(
+                        f"Unexpected thinking tool call: {name or '<missing>'}",
+                        usage=total_usage,
+                    )
                 arguments = str(getattr(function, "arguments", "") or "")
                 try:
                     thinking_stream.append(extract_deep_thought(arguments))
                 except ValueError as exc:
-                    raise ProviderError(f"Invalid deep_think arguments: {exc}") from exc
+                    raise ProviderError(
+                        f"Invalid deep_think arguments: {exc}",
+                        usage=total_usage,
+                    ) from exc
                 messages.append(
                     {
                         "role": "tool",
@@ -242,7 +270,7 @@ class OpenAICompatibleProvider(LLMProvider):
                     }
                 )
 
-        raise ProviderError(f"Model exceeded {max_tool_turns} deep_think tool turns")
+        raise AssertionError("deep_think loop exhausted without returning or raising")
 
     def _create_chat_completion(
         self,
@@ -250,6 +278,7 @@ class OpenAICompatibleProvider(LLMProvider):
         *,
         model_id: str,
         constrained: bool,
+        partial_usage: dict[str, int] | None = None,
     ) -> tuple[Any, bool]:
         while True:
             try:
@@ -293,8 +322,16 @@ class OpenAICompatibleProvider(LLMProvider):
                         )
                         request["reasoning_effort"] = fallback_effort
                     continue
+                if _is_unsupported_tools_error(exc):
+                    raise ThinkingUnsupportedError(
+                        f"OpenAI-compatible endpoint does not support thinking tools: {exc}",
+                        usage=partial_usage,
+                    ) from exc
                 logger.debug("providers.openai_compat: caught Exception", exc_info=True)
-                raise ProviderError(f"OpenAI-compatible API error: {exc}") from exc
+                raise ProviderError(
+                    f"OpenAI-compatible API error: {exc}",
+                    usage=partial_usage,
+                ) from exc
 
     def default_model(self) -> str:
         return self._default_model
@@ -353,6 +390,23 @@ def _is_unsupported_strict_tools_error(exc: Exception) -> bool:
         for token in ("unsupported", "not supported", "unknown", "unrecognized", "unexpected", "invalid")
     )
     return mentions_field and rejection
+
+
+def _is_unsupported_tools_error(exc: Exception) -> bool:
+    """Identify endpoints that reject function/tool calling altogether."""
+    status_code = getattr(exc, "status_code", None)
+    if status_code not in {400, 404, 422}:
+        return False
+    message = str(exc).lower()
+    mentions_tools = any(
+        token in message
+        for token in ("tools", "tool_choice", "tool choice", "function calling", "function_call")
+    )
+    rejection = any(
+        token in message
+        for token in ("unsupported", "not supported", "unknown", "unrecognized", "invalid")
+    )
+    return mentions_tools and rejection
 
 
 def _request_uses_strict_tools(request: dict[str, Any]) -> bool:

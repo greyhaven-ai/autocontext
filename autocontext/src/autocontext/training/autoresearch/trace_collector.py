@@ -27,7 +27,7 @@ import json
 import re
 from typing import Any
 
-from autocontext.providers.base import LLMProvider
+from autocontext.providers.base import LLMProvider, ThinkingUnsupportedError
 from autocontext.training.autoresearch.sequence_format import resolve_scenario_context, resolve_scenario_name
 
 _TEACHER_SYSTEM = (
@@ -159,6 +159,21 @@ def collect(
                 reasoning_effort=reasoning_effort,
                 max_tool_turns=max_tool_turns,
             )
+        except ThinkingUnsupportedError:
+            if require_thinking_stream:
+                continue
+            try:
+                result = provider.complete(
+                    system,
+                    user,
+                    model=model,
+                    temperature=temperature,
+                )
+            except Exception:
+                continue
+            result.thinking_stream = []
+            result.thinking_tool = None
+            result.thinking_capture = "unsupported"
         except Exception:
             continue
         parsed = parse_teacher_output(result.text)

@@ -1,4 +1,4 @@
-import { ProviderError } from "../types/index.js";
+import { ProviderError, ThinkingUnsupportedError } from "../types/index.js";
 import { clampOutputTokens } from "./token-caps.js";
 import type {
   CompletionResult,
@@ -94,26 +94,34 @@ export function createAnthropicProvider(opts: AnthropicProviderOpts): LLMProvide
       const thinkingStream: string[] = [];
       const usage: Record<string, number> = {};
 
-      for (let turn = 0; turn < maxToolTurns; turn++) {
+      // maxToolTurns bounds tool-bearing responses. The final permitted tool
+      // turn still needs one subsequent request for the answer.
+      for (let turn = 0; turn <= maxToolTurns; turn++) {
         const toolChoice =
           turn === 0
             ? { type: "tool", name: DEEP_THINK_TOOL_NAME, disable_parallel_tool_use: true }
             : { type: "auto", disable_parallel_tool_use: true };
-        const data = await post({
-          model,
-          max_tokens: clampOutputTokens(callOpts.maxTokens ?? 4096, model),
-          temperature: callOpts.temperature ?? 0,
-          system: withDeepThinkInstruction(callOpts.systemPrompt),
-          messages,
-          tools: [
-            {
-              name: DEEP_THINK_TOOL_NAME,
-              description: DEEP_THINK_DESCRIPTION,
-              input_schema: DEEP_THINK_PARAMETERS,
-            },
-          ],
-          tool_choice: toolChoice,
-        });
+        let data: AnthropicMessageResponse;
+        try {
+          data = await post({
+            model,
+            max_tokens: clampOutputTokens(callOpts.maxTokens ?? 4096, model),
+            temperature: callOpts.temperature ?? 0,
+            system: withDeepThinkInstruction(callOpts.systemPrompt),
+            messages,
+            tools: [
+              {
+                name: DEEP_THINK_TOOL_NAME,
+                description: DEEP_THINK_DESCRIPTION,
+                input_schema: DEEP_THINK_PARAMETERS,
+              },
+            ],
+            tool_choice: toolChoice,
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          throw new ProviderError(message, usage);
+        }
         addCompletionUsage(usage, {
           input: data.usage.input_tokens,
           output: data.usage.output_tokens,
@@ -122,7 +130,10 @@ export function createAnthropicProvider(opts: AnthropicProviderOpts): LLMProvide
         const toolBlocks = data.content.filter((block) => block.type === "tool_use");
         if (toolBlocks.length === 0) {
           if (turn === 0) {
-            throw new ProviderError("Anthropic API did not honor required deep_think tool choice");
+            throw new ThinkingUnsupportedError(
+              "Anthropic API did not honor required deep_think tool choice",
+              usage,
+            );
           }
           return {
             text: data.content
@@ -139,15 +150,25 @@ export function createAnthropicProvider(opts: AnthropicProviderOpts): LLMProvide
           } satisfies CompletionResult;
         }
 
+        if (turn === maxToolTurns) {
+          throw new ProviderError(`Model exceeded ${maxToolTurns} deep_think tool turns`, usage);
+        }
+
         messages.push({ role: "assistant", content: data.content });
         const toolResults: Array<Record<string, unknown>> = [];
         for (const block of toolBlocks) {
           if (block.name !== DEEP_THINK_TOOL_NAME) {
             throw new ProviderError(
               `Unexpected thinking tool call: ${block.name || "<missing>"}`,
+              usage,
             );
           }
-          thinkingStream.push(extractDeepThought(block.input));
+          try {
+            thinkingStream.push(extractDeepThought(block.input));
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            throw new ProviderError(message, usage);
+          }
           toolResults.push({
             type: "tool_result",
             tool_use_id: block.id ?? "",
@@ -156,7 +177,7 @@ export function createAnthropicProvider(opts: AnthropicProviderOpts): LLMProvide
         }
         messages.push({ role: "user", content: toolResults });
       }
-      throw new ProviderError(`Model exceeded ${maxToolTurns} deep_think tool turns`);
+      throw new Error("deep_think loop exhausted without returning or raising");
     },
   };
 }
@@ -263,6 +284,26 @@ function isUnsupportedStrictToolsError(status: number, body: string): boolean {
     "invalid",
   ].some((token) => message.includes(token));
   return mentionsField && rejectsField;
+}
+
+function isUnsupportedToolsError(status: number, body: string): boolean {
+  if (![400, 404, 422].includes(status)) return false;
+  const message = body.toLowerCase();
+  const mentionsTools = [
+    "tools",
+    "tool_choice",
+    "tool choice",
+    "function calling",
+    "function_call",
+  ].some((token) => message.includes(token));
+  const rejectsTools = [
+    "unsupported",
+    "not supported",
+    "unknown",
+    "unrecognized",
+    "invalid",
+  ].some((token) => message.includes(token));
+  return mentionsTools && rejectsTools;
 }
 
 const REASONING_EFFORT_ORDER = [
@@ -387,7 +428,9 @@ export function createOpenAICompatibleProvider(opts: OpenAICompatibleProviderOpt
       let wireReasoningEffort: string | undefined = "none";
       let strictTools = true;
 
-      for (let turn = 0; turn < maxToolTurns; turn++) {
+      // maxToolTurns bounds tool-bearing responses, with one extra request
+      // available for the model to return its final answer.
+      for (let turn = 0; turn <= maxToolTurns; turn++) {
         const body: Record<string, unknown> = {
           model,
           max_tokens: clampOutputTokens(callOpts.maxTokens ?? 4096, model),
@@ -423,16 +466,27 @@ export function createOpenAICompatibleProvider(opts: OpenAICompatibleProviderOpt
 
         let data: OpenAIChatResponse;
         while (true) {
-          const res = await fetch(`${baseUrl}/chat/completions`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${apiKey}`,
-            },
-            body: JSON.stringify(body),
-          });
+          let res: Response;
+          try {
+            res = await fetch(`${baseUrl}/chat/completions`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${apiKey}`,
+              },
+              body: JSON.stringify(body),
+            });
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            throw new ProviderError(`OpenAI API error: ${message}`, usage);
+          }
           if (res.ok) {
-            data = parseOpenAIChatResponse(await res.json());
+            try {
+              data = parseOpenAIChatResponse(await res.json());
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error);
+              throw new ProviderError(message, usage);
+            }
             break;
           }
 
@@ -465,7 +519,16 @@ export function createOpenAICompatibleProvider(opts: OpenAICompatibleProviderOpt
             }
             continue;
           }
-          throw new ProviderError(`OpenAI API error ${res.status}: ${errorBody.slice(0, 200)}`);
+          if (isUnsupportedToolsError(res.status, errorBody)) {
+            throw new ThinkingUnsupportedError(
+              `OpenAI-compatible endpoint does not support thinking tools: ${errorBody.slice(0, 200)}`,
+              usage,
+            );
+          }
+          throw new ProviderError(
+            `OpenAI API error ${res.status}: ${errorBody.slice(0, 200)}`,
+            usage,
+          );
         }
 
         addCompletionUsage(usage, {
@@ -473,12 +536,15 @@ export function createOpenAICompatibleProvider(opts: OpenAICompatibleProviderOpt
           output: data.usage.completion_tokens,
         });
         const choice = data.choices[0];
-        if (!choice) throw new ProviderError("OpenAI-compatible API returned no completion choices");
+        if (!choice) {
+          throw new ProviderError("OpenAI-compatible API returned no completion choices", usage);
+        }
         const toolCalls = choice.message.tool_calls ?? [];
         if (toolCalls.length === 0) {
           if (turn === 0) {
-            throw new ProviderError(
+            throw new ThinkingUnsupportedError(
               "OpenAI-compatible endpoint did not honor required deep_think tool choice",
+              usage,
             );
           }
           return {
@@ -493,6 +559,10 @@ export function createOpenAICompatibleProvider(opts: OpenAICompatibleProviderOpt
           } satisfies CompletionResult;
         }
 
+        if (turn === maxToolTurns) {
+          throw new ProviderError(`Model exceeded ${maxToolTurns} deep_think tool turns`, usage);
+        }
+
         messages.push({
           role: "assistant",
           content: choice.message.content ?? null,
@@ -501,9 +571,17 @@ export function createOpenAICompatibleProvider(opts: OpenAICompatibleProviderOpt
         for (const toolCall of toolCalls) {
           const name = toolCall.function?.name ?? "";
           if (name !== DEEP_THINK_TOOL_NAME) {
-            throw new ProviderError(`Unexpected thinking tool call: ${name || "<missing>"}`);
+            throw new ProviderError(
+              `Unexpected thinking tool call: ${name || "<missing>"}`,
+              usage,
+            );
           }
-          thinkingStream.push(extractDeepThought(toolCall.function?.arguments));
+          try {
+            thinkingStream.push(extractDeepThought(toolCall.function?.arguments));
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            throw new ProviderError(message, usage);
+          }
           messages.push({
             role: "tool",
             tool_call_id: toolCall.id ?? "",
@@ -511,7 +589,7 @@ export function createOpenAICompatibleProvider(opts: OpenAICompatibleProviderOpt
           });
         }
       }
-      throw new ProviderError(`Model exceeded ${maxToolTurns} deep_think tool turns`);
+      throw new Error("deep_think loop exhausted without returning or raising");
     },
   };
 }

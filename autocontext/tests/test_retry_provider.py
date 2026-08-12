@@ -75,6 +75,26 @@ class TestRetryProvider:
         assert result.text == "success"
         assert inner.call_count == 3  # 2 failures + 1 success
 
+    def test_retry_aggregates_partial_usage_into_success(self):
+        class PartialUsageProvider(FakeProvider):
+            def complete(self, system_prompt, user_prompt, **kwargs):
+                self.call_count += 1
+                if self.call_count == 1:
+                    raise ProviderError(
+                        "connection reset",
+                        usage={"input_tokens": 5, "output_tokens": 7},
+                    )
+                return CompletionResult(
+                    text="success",
+                    usage={"input_tokens": 11, "output_tokens": 13},
+                )
+
+        provider = RetryProvider(PartialUsageProvider(), max_retries=1, base_delay=0)
+
+        result = provider.complete("sys", "user")
+
+        assert result.usage == {"input_tokens": 16, "output_tokens": 20}
+
     def test_exhaust_retries(self):
         inner = FakeProvider(fail_count=10, error_msg="rate limit exceeded")
         provider = RetryProvider(inner, max_retries=2, base_delay=0.001)
