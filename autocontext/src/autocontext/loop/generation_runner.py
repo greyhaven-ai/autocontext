@@ -62,6 +62,7 @@ from autocontext.loop.runner_hooks import (
     initialize_hook_bus,
 )
 from autocontext.loop.trace_artifacts import persist_run_inspection
+from autocontext.offline import require_online
 from autocontext.scenarios import SCENARIO_REGISTRY
 from autocontext.scenarios.base import ScenarioInterface
 from autocontext.scenarios.families import detect_family
@@ -117,6 +118,7 @@ class GenerationRunner:
             self.gate = BackpressureGate(min_delta=settings.backpressure_min_delta)
         self.remote: Any | None = None
         if settings.executor_mode == "primeintellect":
+            require_online("use the PrimeIntellect executor", settings=settings)
             from autocontext.execution.executors.primeintellect import PrimeIntellectExecutor
             from autocontext.integrations.primeintellect.client import PrimeIntellectClient
 
@@ -151,6 +153,7 @@ class GenerationRunner:
                 )
             )
         elif settings.executor_mode == "ssh":
+            require_online("use the SSH executor", settings=settings, detail=settings.ssh_host)
             if not settings.ssh_host:
                 raise ValueError("AUTOCONTEXT_SSH_HOST is required for ssh executor mode")
             from autocontext.execution.executors.ssh import SSHExecutor

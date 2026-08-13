@@ -20,7 +20,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
-from autocontext.offline import require_online
+from autocontext.offline import require_endpoint_available, require_runtime_available
 
 logger = logging.getLogger(__name__)
 
@@ -201,6 +201,7 @@ class CLIOpenClawAdapter(OpenClawAdapter):
         return "cli"
 
     def execute(self, request: OpenClawRequest) -> OpenClawResponse:
+        require_runtime_available("openclaw-cli")
         args = [self.command, *self.extra_args]
         try:
             result = subprocess.run(
@@ -242,7 +243,7 @@ def _http_post(
         headers=request_headers,
         method="POST",
     )
-    require_online("call an openclaw endpoint", detail=endpoint)
+    require_endpoint_available("call an openclaw endpoint", endpoint)
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         body = resp.read().decode("utf-8")
         return type("Response", (), {

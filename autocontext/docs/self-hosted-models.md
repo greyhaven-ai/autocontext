@@ -302,6 +302,25 @@ notifications and fixture downloads are engine-initiated, so they are off. An
 operator SSH-ing into the box is operator-initiated, so it is out of scope --
 airgapped does not have to mean unreachable.
 
+Connections to an endpoint that is unambiguously on the same host are not
+outbound and remain available. The allowlist is intentionally narrow: the exact
+`localhost` name and literal loopback addresses (`127.0.0.0/8` and `::1`). A
+private-LAN address or hostname is still egress and is refused; the engine does
+not perform DNS resolution to decide whether a name happens to resolve locally.
+
+A complete local setup must configure both the agent and the judge. The normal
+`judge_provider=auto` fallback is Anthropic unless it inherits a subscription
+CLI runtime, so leaving it on `auto` is a startup conflict offline:
+
+```bash
+AUTOCONTEXT_OFFLINE=1 \
+AUTOCONTEXT_AGENT_PROVIDER=ollama \
+AUTOCONTEXT_LOCAL_MODEL=llama3.1:8b \
+AUTOCONTEXT_JUDGE_PROVIDER=ollama \
+AUTOCONTEXT_JUDGE_BASE_URL=http://localhost:11434/v1 \
+  autoctx run my_task
+```
+
 Anything blocked raises an error naming what it was, rather than failing as a
 timeout three layers down:
 
@@ -312,20 +331,24 @@ AUTOCONTEXT_OFFLINE is set; refusing to post a webhook notification
 
 ### What becomes unavailable
 
-**The CLI runtimes** — `claude-cli`, `codex`, `pi`, `pi-rpc`, `hermes` — refuse
-to start. They shell out to a third-party binary that makes its own network
-calls, and no amount of guarding this codebase controls another program's
-sockets. They are refused rather than silently trusted, because a guarantee
-that depends on someone else's behavior is not a guarantee.
+**External runtimes** — `agent_sdk`, `claude-cli`, `codex`, `pi`, `pi-rpc`,
+`hermes`, and OpenClaw CLI/factory runtimes — refuse to start. They run code
+outside the guarded provider transports, and no amount of guarding this
+codebase controls another program's sockets. They are refused rather than
+silently trusted, because a guarantee that depends on someone else's behavior
+is not a guarantee. An OpenClaw HTTP sidecar remains usable only when its URL is
+literal loopback.
 
 Use a local endpoint instead: `ollama`, `vllm`, or `mlx`.
 
 **Configuring egress at the same time is a startup error**, not a silent
 precedence rule. Setting `AUTOCONTEXT_OFFLINE=1` alongside
-`AUTOCONTEXT_NOTIFY_WEBHOOK_URL`, or alongside a CLI runtime, fails preflight
-with both conflicts listed at once. Letting one quietly win would mean you
-either got a guarantee you did not receive or a sync you did not expect,
-decided by load order.
+`AUTOCONTEXT_NOTIFY_WEBHOOK_URL`, a remote provider or per-role override, a
+remote judge or consultation provider, an SSH/PrimeIntellect executor, a
+Hugging Face blob store, or an external runtime fails preflight with every
+conflict listed at once. Letting one quietly win would mean you either got a
+guarantee you did not receive or a sync you did not expect, decided by load
+order.
 
 ### How it is enforced, and how far that goes
 

@@ -4,6 +4,7 @@ from pathlib import Path
 
 from autocontext.config.settings import AppSettings
 from autocontext.extensions import HookBus
+from autocontext.offline import require_online
 from autocontext.storage.artifacts import ArtifactStore
 
 
@@ -20,6 +21,8 @@ def artifact_store_from_settings(
     """Build an ArtifactStore from app settings, including blob-store wiring."""
     blob_store = None
     if settings.blob_store_enabled:
+        if settings.blob_store_backend == "hf_bucket":
+            require_online("use Hugging Face blob storage", settings=settings, detail=settings.blob_store_repo)
         from autocontext.blobstore.factory import create_blob_store
 
         blob_store = create_blob_store(

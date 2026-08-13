@@ -12,6 +12,7 @@ import shutil
 import subprocess
 from dataclasses import dataclass, field
 
+from autocontext.offline import require_runtime_available
 from autocontext.runtimes.base import AgentOutput, AgentRuntime
 
 logger = logging.getLogger(__name__)
@@ -103,6 +104,7 @@ class CodexCLIRuntime(AgentRuntime):
         return args
 
     def _invoke(self, prompt: str, args: list[str]) -> AgentOutput:
+        require_runtime_available("codex")
         logger.info("invoking codex exec: %s", " ".join(args[:6]) + "...")
 
         # Append the prompt as the final positional argument

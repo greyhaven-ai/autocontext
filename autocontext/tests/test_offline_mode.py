@@ -21,7 +21,9 @@ from __future__ import annotations
 import ast
 import socket
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -29,7 +31,9 @@ from autocontext.offline import (
     UNAVAILABLE_OFFLINE_RUNTIMES,
     OfflineError,
     check_offline_configuration,
+    is_local_endpoint,
     is_offline,
+    require_endpoint_available,
     require_online,
     runtime_is_available,
 )
@@ -140,6 +144,113 @@ def test_nothing_is_blocked_when_offline_is_unset(monkeypatch: pytest.MonkeyPatc
     assert is_offline() is False
 
 
+@pytest.mark.parametrize("value", ["1", "true", "yes", "on", "y", "t"])
+def test_direct_guard_accepts_every_true_spelling_that_settings_accepts(
+    monkeypatch: pytest.MonkeyPatch,
+    value: str,
+) -> None:
+    """The settings and boundary paths must never disagree about the flag."""
+    monkeypatch.setenv("AUTOCONTEXT_OFFLINE", value)
+    from autocontext.config.settings import load_settings
+
+    assert load_settings().offline is True
+    assert is_offline() is True
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "http://localhost:11434/v1",
+        "http://localhost.:8000/v1",
+        "http://127.0.0.2:8000/v1",
+        "http://[::1]:8000/v1",
+    ],
+)
+def test_literal_loopback_endpoints_are_local(endpoint: str) -> None:
+    assert is_local_endpoint(endpoint) is True
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "https://api.openai.com/v1",
+        "http://localhost.example.com/v1",
+        "http://10.0.0.8:8000/v1",
+        "not-a-url",
+    ],
+)
+def test_non_loopback_or_ambiguous_endpoints_are_not_local(endpoint: str) -> None:
+    assert is_local_endpoint(endpoint) is False
+
+
+def test_local_endpoint_is_available_offline(offline: None) -> None:
+    require_endpoint_available("call a local model", "http://127.0.0.1:11434/v1")
+
+
+def test_remote_endpoint_is_blocked_offline(offline: None) -> None:
+    with pytest.raises(OfflineError, match="api.openai.com"):
+        require_endpoint_available("call a model", "https://api.openai.com/v1")
+
+
+def test_openai_compatible_provider_calls_loopback_offline(offline: None) -> None:
+    """Ollama/vLLM use this provider, so the boundary must admit loopback."""
+    from autocontext.providers.openai_compat import OpenAICompatibleProvider
+
+    provider = OpenAICompatibleProvider(api_key="local", base_url="http://127.0.0.1:11434/v1")
+    sentinel = object()
+    create = Mock(return_value=sentinel)
+    provider._client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+
+    response, constrained = provider._create_chat_completion({}, model_id="local", constrained=False)
+
+    assert response is sentinel
+    assert constrained is False
+    create.assert_called_once_with()
+
+
+def test_openai_compatible_provider_blocks_remote_endpoint_offline(offline: None) -> None:
+    from autocontext.providers.base import ProviderError
+    from autocontext.providers.openai_compat import OpenAICompatibleProvider
+
+    provider = OpenAICompatibleProvider(api_key="remote", base_url="https://api.openai.com/v1")
+    create = Mock()
+    provider._client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+
+    with pytest.raises(ProviderError, match="AUTOCONTEXT_OFFLINE"):
+        provider._create_chat_completion({}, model_id="remote", constrained=False)
+    create.assert_not_called()
+
+
+def test_primary_anthropic_client_is_guarded(offline: None) -> None:
+    """The generation loop uses agents.llm_client, not providers.anthropic."""
+    from autocontext.agents.llm_client import AnthropicClient
+
+    client = AnthropicClient.__new__(AnthropicClient)
+    client.max_retries = 0
+    client.base_delay = 0.0
+    client.max_delay = 0.0
+    client.backoff_factor = 2.0
+    create = Mock()
+    client._client = SimpleNamespace(messages=SimpleNamespace(create=create))
+
+    with pytest.raises(OfflineError, match="Anthropic"):
+        client._messages_create_with_retry(model="remote")
+    create.assert_not_called()
+
+
+def test_anthropic_thinking_path_is_guarded(offline: None) -> None:
+    from autocontext.providers.anthropic import AnthropicProvider
+
+    provider = AnthropicProvider.__new__(AnthropicProvider)
+    provider._default_model = "remote"
+    create = Mock()
+    provider._client = SimpleNamespace(messages=SimpleNamespace(create=create))
+
+    with pytest.raises(OfflineError, match="Anthropic"):
+        provider.complete_with_thinking("system", "prompt")
+    create.assert_not_called()
+
+
 @pytest.mark.parametrize("runtime", sorted(UNAVAILABLE_OFFLINE_RUNTIMES))
 def test_subprocess_runtimes_are_refused(offline: None, runtime: str) -> None:
     """They shell out to binaries whose sockets this process does not control.
@@ -152,6 +263,59 @@ def test_subprocess_runtimes_are_refused(offline: None, runtime: str) -> None:
     assert runtime_is_available(runtime) is False
     with pytest.raises(OfflineError, match=runtime):
         create_provider(runtime)
+
+
+@pytest.mark.parametrize("runtime", ["agent_sdk", "claude-cli", "codex", "hermes", "pi", "pi-rpc"])
+def test_main_client_factory_refuses_external_runtimes(offline: None, runtime: str) -> None:
+    from autocontext.agents.llm_client import build_client_from_settings
+    from autocontext.config.settings import load_settings
+
+    settings = load_settings().model_copy(update={"agent_provider": runtime})
+    with pytest.raises(OfflineError, match=runtime):
+        build_client_from_settings(settings)
+
+
+def test_role_override_factory_refuses_external_runtime(offline: None) -> None:
+    from autocontext.agents.provider_bridge import create_role_client
+    from autocontext.config.settings import load_settings
+
+    settings = load_settings().model_copy(update={"agent_provider": "deterministic", "competitor_provider": "codex"})
+    with pytest.raises(OfflineError, match="codex"):
+        create_role_client("codex", settings, role="competitor")
+
+
+def test_judge_factory_refuses_external_runtime(offline: None) -> None:
+    from autocontext.config.settings import load_settings
+    from autocontext.providers.registry import get_provider
+
+    settings = load_settings().model_copy(update={"agent_provider": "deterministic", "judge_provider": "codex"})
+    with pytest.raises(OfflineError, match="codex"):
+        get_provider(settings)
+
+
+def test_openclaw_cli_factory_is_refused(offline: None) -> None:
+    from autocontext.agents.provider_bridge import create_role_client
+    from autocontext.config.settings import load_settings
+
+    settings = load_settings().model_copy(
+        update={
+            "agent_provider": "deterministic",
+            "openclaw_runtime_kind": "cli",
+            "openclaw_agent_command": "agent",
+        },
+    )
+    with pytest.raises(OfflineError, match="openclaw-cli"):
+        create_role_client("openclaw", settings, role="competitor")
+
+
+def test_direct_runtime_boundary_refuses_before_subprocess(offline: None) -> None:
+    from autocontext.runtimes.codex_cli import CodexCLIRuntime
+
+    runtime = CodexCLIRuntime()
+    with patch("autocontext.runtimes.codex_cli.subprocess.run") as run:
+        with pytest.raises(OfflineError, match="codex"):
+            runtime.generate("prompt")
+    run.assert_not_called()
 
 
 @pytest.mark.parametrize("provider", ["ollama", "vllm"])
@@ -177,7 +341,13 @@ def test_offline_plus_webhook_is_a_conflict(offline: None) -> None:
     """
     from autocontext.config.settings import load_settings
 
-    settings = load_settings().model_copy(update={"notify_webhook_url": "https://hooks.example/x"})
+    settings = load_settings().model_copy(
+        update={
+            "agent_provider": "deterministic",
+            "judge_provider": "mlx",
+            "notify_webhook_url": "https://hooks.example/x",
+        },
+    )
     conflicts = check_offline_configuration(settings)
 
     assert len(conflicts) == 1
@@ -187,7 +357,7 @@ def test_offline_plus_webhook_is_a_conflict(offline: None) -> None:
 def test_offline_plus_cli_runtime_is_a_conflict(offline: None) -> None:
     from autocontext.config.settings import load_settings
 
-    settings = load_settings().model_copy(update={"agent_provider": "claude-cli"})
+    settings = load_settings().model_copy(update={"agent_provider": "claude-cli", "judge_provider": "mlx"})
     conflicts = check_offline_configuration(settings)
 
     assert len(conflicts) == 1
@@ -202,6 +372,97 @@ def test_no_conflicts_when_online(monkeypatch: pytest.MonkeyPatch) -> None:
         update={"notify_webhook_url": "https://hooks.example/x", "agent_provider": "claude-cli"},
     )
     assert check_offline_configuration(settings) == []
+
+
+def test_loopback_agent_and_judge_have_no_offline_conflict(offline: None) -> None:
+    from autocontext.config.settings import load_settings
+
+    settings = load_settings().model_copy(
+        update={
+            "agent_provider": "ollama",
+            "agent_base_url": "http://localhost:11434/v1",
+            "judge_provider": "vllm",
+            "judge_base_url": "http://127.0.0.1:8000/v1",
+        },
+    )
+    assert check_offline_configuration(settings) == []
+
+
+def test_auto_judge_is_reported_when_it_resolves_to_anthropic(offline: None) -> None:
+    from autocontext.config.settings import load_settings
+
+    settings = load_settings().model_copy(update={"agent_provider": "ollama", "judge_provider": "auto"})
+    conflicts = check_offline_configuration(settings)
+
+    assert len(conflicts) == 1
+    assert "JUDGE_PROVIDER=anthropic" in conflicts[0]
+
+
+@pytest.mark.parametrize("executor", ["primeintellect", "ssh"])
+def test_remote_executor_is_an_offline_conflict(offline: None, executor: str) -> None:
+    from autocontext.config.settings import load_settings
+
+    settings = load_settings().model_copy(
+        update={"agent_provider": "deterministic", "judge_provider": "mlx", "executor_mode": executor},
+    )
+    conflicts = check_offline_configuration(settings)
+
+    assert len(conflicts) == 1
+    assert f"EXECUTOR_MODE={executor}" in conflicts[0]
+
+
+def test_remote_blob_store_is_an_offline_conflict(offline: None) -> None:
+    from autocontext.config.settings import load_settings
+
+    settings = load_settings().model_copy(
+        update={
+            "agent_provider": "deterministic",
+            "judge_provider": "mlx",
+            "blob_store_enabled": True,
+            "blob_store_backend": "hf_bucket",
+        },
+    )
+    conflicts = check_offline_configuration(settings)
+
+    assert len(conflicts) == 1
+    assert "BLOB_STORE_BACKEND=hf_bucket" in conflicts[0]
+
+
+def test_remote_blob_store_boundary_blocks_before_construction(offline: None, tmp_path: Path) -> None:
+    from autocontext.config.settings import load_settings
+    from autocontext.storage.factory import artifact_store_from_settings
+
+    settings = load_settings().model_copy(
+        update={
+            "blob_store_enabled": True,
+            "blob_store_backend": "hf_bucket",
+            "blob_store_root": str(tmp_path),
+            "blob_store_repo": "owner/repo",
+        },
+    )
+    with pytest.raises(OfflineError, match="Hugging Face"):
+        artifact_store_from_settings(settings)
+
+
+def test_ssh_boundary_blocks_before_subprocess(offline: None) -> None:
+    from autocontext.integrations.ssh.client import SSHClient
+    from autocontext.integrations.ssh.config import SSHHostConfig
+
+    client = SSHClient(SSHHostConfig(name="remote", hostname="host.example"))
+    with patch("autocontext.integrations.ssh.client.subprocess.run") as run:
+        with pytest.raises(OfflineError, match="SSH"):
+            client.execute_command("true")
+    run.assert_not_called()
+
+
+def test_primeintellect_boundary_blocks_before_sdk(offline: None) -> None:
+    from autocontext.integrations.primeintellect.client import PrimeIntellectClient
+
+    client = PrimeIntellectClient(api_key="secret")
+    with patch("autocontext.integrations.primeintellect.client.asyncio.run") as run:
+        with pytest.raises(OfflineError, match="PrimeIntellect"):
+            client.warm_provision("test")
+    run.assert_not_called()
 
 
 def test_preflight_blocks_on_a_conflict(offline: None, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -230,6 +491,7 @@ _EGRESS_EXEMPT: dict[str, str] = {
 }
 
 _EGRESS_CALLS = {"urlopen"}
+_EGRESS_GUARDS = {"require_online", "require_endpoint_available"}
 
 
 def _egress_functions_without_a_guard() -> set[str]:
@@ -265,7 +527,7 @@ def _egress_functions_without_a_guard() -> set[str]:
                 for child in ast.walk(node)
                 if isinstance(child, ast.Call) and isinstance(child.func, ast.Attribute)
             }
-            if names & _EGRESS_CALLS and "require_online" not in names:
+            if names & _EGRESS_CALLS and not names & _EGRESS_GUARDS:
                 offenders.add(rel)
     return offenders
 
@@ -298,6 +560,6 @@ def test_the_egress_guard_can_actually_fail(tmp_path: Path) -> None:
         child.func.id for child in ast.walk(functions[0]) if isinstance(child, ast.Call) and isinstance(child.func, ast.Name)
     }
     assert names & _EGRESS_CALLS
-    assert "require_online" not in names
+    assert not names & _EGRESS_GUARDS
 
     del tmp_path

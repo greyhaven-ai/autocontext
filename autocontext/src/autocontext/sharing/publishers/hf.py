@@ -10,6 +10,8 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from autocontext.offline import require_online
+
 
 class HfPublishError(Exception):
     """Raised when HF publication fails."""
@@ -49,6 +51,7 @@ def _run_hf_command(
     repo_type: str,
 ) -> str:
     """Execute ``huggingface-cli upload`` and return the repo URL."""
+    require_online("publish to Hugging Face", detail=repo_id)
     cmd = [
         "huggingface-cli",
         "upload",

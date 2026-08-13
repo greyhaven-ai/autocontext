@@ -29,7 +29,7 @@ import urllib.request
 from dataclasses import dataclass, field
 from typing import Any
 
-from autocontext.offline import require_online
+from autocontext.offline import require_endpoint_available
 
 # Long enough to survive a cold local model load, short enough that a wrong
 # base URL fails at setup instead of looking like a hang.
@@ -69,7 +69,7 @@ def _get_json(url: str, api_key: str, payload: dict[str, Any] | None = None) -> 
         data=data,
         headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
     )
-    require_online("probe an endpoint", detail=url)
+    require_endpoint_available("probe an endpoint", url)
     with urllib.request.urlopen(request, timeout=_TIMEOUT_SECONDS) as response:  # noqa: S310 - operator-configured endpoint
         return json.loads(response.read())
 

@@ -9,6 +9,8 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from autocontext.offline import require_online
+
 
 class GistPublishError(Exception):
     """Raised when Gist publication fails."""
@@ -46,6 +48,7 @@ def _run_gh_command(
     public: bool,
 ) -> str:
     """Execute ``gh gist create`` and return the Gist URL."""
+    require_online("publish a GitHub Gist")
     cmd = ["gh", "gist", "create"]
     if public:
         cmd.append("--public")

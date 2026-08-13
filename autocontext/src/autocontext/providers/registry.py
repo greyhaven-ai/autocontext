@@ -240,6 +240,7 @@ def get_provider(settings: AppSettings) -> LLMProvider:
     provider_type = settings.judge_provider.lower().strip()
     if provider_type == "auto":
         provider_type = resolve_auto_judge_provider(settings)
+    require_runtime_available(provider_type, settings=settings)
     base_url = settings.judge_base_url
 
     # MLX provider has its own construction path using mlx_* settings

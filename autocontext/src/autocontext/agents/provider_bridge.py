@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any, cast
 from autocontext.extensions.llm import HookedLanguageModelClient
 from autocontext.harness.core.llm_client import LanguageModelClient
 from autocontext.harness.core.types import ModelResponse, RoleUsage
+from autocontext.offline import require_endpoint_available, require_runtime_available
 from autocontext.runtimes.errors import format_runtime_failure
 
 logger = logging.getLogger(__name__)
@@ -555,6 +556,7 @@ def create_role_client(
         return None
 
     provider_type = provider_type.lower().strip()
+    require_runtime_available(provider_type, settings=settings)
 
     # Native LanguageModelClient implementations
     if provider_type == "deterministic":
@@ -681,6 +683,7 @@ def _build_openclaw_agent(settings: AppSettings) -> object:
     compatibility_version = getattr(settings, "openclaw_compatibility_version", "1.0")
 
     if runtime_kind == "factory":
+        require_runtime_available("openclaw-factory", settings=settings)
         factory_path = settings.openclaw_agent_factory.strip()
         if not factory_path:
             raise ValueError(
@@ -701,6 +704,7 @@ def _build_openclaw_agent(settings: AppSettings) -> object:
         return agent
 
     if runtime_kind == "cli":
+        require_runtime_available("openclaw-cli", settings=settings)
         command_parts = shlex.split(getattr(settings, "openclaw_agent_command", ""))
         if not command_parts:
             raise ValueError(
@@ -726,6 +730,7 @@ def _build_openclaw_agent(settings: AppSettings) -> object:
             raise ValueError(
                 "OpenClaw HTTP runtime requires AUTOCONTEXT_OPENCLAW_AGENT_HTTP_ENDPOINT",
             )
+        require_endpoint_available("call an OpenClaw endpoint", endpoint, settings=settings)
         raw_headers = getattr(settings, "openclaw_agent_http_headers", "").strip()
         headers: dict[str, str] = {}
         if raw_headers:

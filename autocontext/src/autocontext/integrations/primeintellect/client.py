@@ -8,6 +8,8 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+from autocontext.offline import require_online
+
 logger = logging.getLogger(__name__)
 
 AsyncSandboxClient: Any | None = None
@@ -53,6 +55,7 @@ class PrimeIntellectClient:
 
     def warm_provision(self, environment_name: str, max_retries: int = 2, backoff_seconds: float = 0.75) -> dict[str, Any]:
         del max_retries, backoff_seconds
+        require_online("use the PrimeIntellect executor")
         try:
             asyncio.run(self._probe())
             return {"environment": environment_name, "status": "ready"}
@@ -72,6 +75,7 @@ class PrimeIntellectClient:
         max_retries: int = 2,
         backoff_seconds: float = 0.75,
     ) -> dict[str, Any]:
+        require_online("use the PrimeIntellect executor")
         attempt = 0
         while True:
             try:

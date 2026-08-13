@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from autocontext.integrations.ssh.config import SSHHostConfig
+from autocontext.offline import require_online
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +91,7 @@ class SSHClient:
 
     def execute_command(self, command: str, *, timeout: float | None = None) -> SSHCommandResult:
         """Execute a command on the remote host via SSH."""
+        require_online("connect to an SSH executor", detail=self.config.hostname)
         effective_timeout = timeout or self.config.command_timeout
         wrapped = self._wrap_command(command)
         args = self._ssh_base_args() + [self._ssh_target(), wrapped]
@@ -151,6 +153,7 @@ class SSHClient:
 
     def upload_file(self, local_path: Path, remote_path: str) -> None:
         """Upload a local file to the remote host via SCP."""
+        require_online("upload a file over SCP", detail=self.config.hostname)
         args = self._scp_base_args() + [str(local_path), self._scp_target(remote_path)]
         proc = subprocess.run(args, capture_output=True, text=True, timeout=self.config.command_timeout)
         if proc.returncode != 0:
@@ -158,6 +161,7 @@ class SSHClient:
 
     def download_file(self, remote_path: str, local_path: Path) -> None:
         """Download a file from the remote host via SCP."""
+        require_online("download a file over SCP", detail=self.config.hostname)
         args = self._scp_base_args() + [self._scp_target(remote_path), str(local_path)]
         proc = subprocess.run(args, capture_output=True, text=True, timeout=self.config.command_timeout)
         if proc.returncode != 0:
