@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import re
 import sys
 from pathlib import Path
@@ -81,5 +82,11 @@ def test_release_manifest_checks_package_version_files() -> None:
     )
     assert shipped is not None
     assert f"autocontext/src/autocontext/__init__.py version {shipped.group(1)} != manifest 9.9.9" in issues
-    assert "pi/package.json version 0.9.0 != manifest 0.8.0" in issues
-    assert "pi/package.json autoctx dependency ^0.11.0 != manifest ^0.9.0" in issues
+    # Read from the file for the same reason as the version above: hardcoding
+    # the shipped pi values turned every pi bump into a test edit, which is
+    # exactly what happened bumping the autoctx pin to ^0.15.0.
+    pi_package = json.loads((Path(__file__).resolve().parents[2] / "pi" / "package.json").read_text(encoding="utf-8"))
+    assert f"pi/package.json version {pi_package['version']} != manifest 0.8.0" in issues
+    assert (
+        f"pi/package.json autoctx dependency {pi_package['dependencies']['autoctx']} != manifest ^0.9.0" in issues
+    )

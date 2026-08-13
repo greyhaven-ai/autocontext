@@ -45,6 +45,7 @@ All notable changes to this project will be documented in this file.
 
 - Shipped model defaults move to the current generations: `claude-opus-5` and `claude-sonnet-5` replace Opus 4.6 and Sonnet 4.5 (Haiku 4.5 is unchanged, still current), and the OpenAI-compatible default moves from `gpt-4o` to `gpt-5.6-terra`. Explicit `AUTOCONTEXT_MODEL_*` and `AUTOCONTEXT_TIER_*` settings are untouched; only unset slots move. Cost attribution moves with them, and had been materially wrong: the pricing table still carried Opus 4.6 rates ($15/$75 per M) against Opus 5's $5/$25, overstating spend on a default run by roughly 3x.
 - An empty or whitespace-only routing setting now means "unset" in both engines, matching the convention the shipped `.env.example` already uses. Python previously passed blank values through, so `AUTOCONTEXT_AGENT_PROVIDER=` produced an unconstructible empty transport and `AUTOCONTEXT_MODEL_COACH=` sent an empty model id to the endpoint; both now fall back to the shipped default as TypeScript already did. The five recorded cross-language divergences for this layer are resolved and replayed as agreeing cases (AC-927).
+- The TypeScript engine refuses to start when `AUTOCONTEXT_OFFLINE=1` instead of running unenforced. Offline mode is enforced by the Python engine only; the TypeScript engine has unguarded outbound call sites and no socket-level proof, and a guarantee that looks enforced but is not is worse than one that is absent. Full TypeScript enforcement is tracked as AC-938 (AC-938).
 
 ### Deprecated
 

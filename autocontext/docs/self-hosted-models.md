@@ -310,6 +310,12 @@ validated it, `autoctx run ... --skip-preflight` bypasses these checks.
 
 ## Offline mode
 
+**Enforced by the Python engine only.** The TypeScript engine refuses to start
+when `AUTOCONTEXT_OFFLINE=1` rather than running unenforced, because it has
+unguarded outbound call sites and no socket-level proof (AC-938). A guarantee
+that looks enforced but is not is worse than one that is absent, so it fails
+loudly instead of quietly. Everything below describes the Python engine.
+
 `AUTOCONTEXT_OFFLINE=1` means one thing:
 
 > The engine never initiates an outbound connection.

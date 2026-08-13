@@ -1,7 +1,7 @@
 {
   "core_version": "0.15.0",
-  "pi_version": "0.9.0",
-  "pi_autoctx_dependency": "^0.11.0",
+  "pi_version": "0.10.0",
+  "pi_autoctx_dependency": "^0.15.0",
   "whats_new": [
     "**Local models as a first-class peer tier:** endpoints now declare hosting (`local`/`remote`) and capability (`fast`/`mid_tier`/`frontier`) separately, so a self-hosted frontier-class model is no longer permanently misclassified as mid-tier. Per-provider model defaults stop leaking Claude ids into local endpoints, providers that serve real tiers get a model per tier, and `autoctx run` preflights every configured endpoint before spending generation tokens.",
     "**Offline mode:** `AUTOCONTEXT_OFFLINE=1` enforces that the engine never initiates an outbound connection, verified by a test that runs a full generation with a socket-level guard and asserts zero connection attempts. Operator-initiated access such as SSH stays in scope, so an airgapped host does not have to be unreachable.",
