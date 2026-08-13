@@ -61,6 +61,23 @@ describe("provider config resolution workflow", () => {
     });
   });
 
+  it.each(["", "   ", "\t"])("treats blank provider env %j as unset", (blank) => {
+    saveAndClear();
+    process.env.AUTOCONTEXT_AGENT_PROVIDER = blank;
+    process.env.AUTOCONTEXT_PROVIDER = "deterministic";
+
+    expect(resolveProviderConfig()).toMatchObject({ providerType: "deterministic" });
+  });
+
+  it("treats a blank explicit provider override as unset", () => {
+    saveAndClear();
+    process.env.ANTHROPIC_API_KEY = "sk-test";
+
+    expect(
+      resolveProviderConfig({ providerType: "   " }, { preferProviderOverride: true }),
+    ).toMatchObject({ providerType: "anthropic" });
+  });
+
   it("preserves keyless provider families and anthropic guardrails", () => {
     saveAndClear();
     process.env.AUTOCONTEXT_AGENT_PROVIDER = "pi";

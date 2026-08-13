@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
@@ -167,10 +168,23 @@ class LLMProvider(ABC):
         does the latter, because its thinking loop already pins ``tool_choice``
         to the scratchpad tool and cannot force a second one.
 
-        Defaults to following ``supports_thinking_stream``: a provider with no
-        thinking loop has nothing to honor a schema on, and one that implements
-        the loop is assumed to have wired the schema unless it says otherwise.
+        Defaults to following ``supports_thinking_stream`` when the provider
+        inherits the standard thinking fallback. For compatibility, an older
+        provider that overrides ``complete_with_thinking`` but predates this
+        declaration is inferred from that override's signature. New providers
+        whose signature accepts but discards the schema must override this
+        declaration, as Anthropic does.
         """
+        implementation = inspect.getattr_static(type(self), "complete_with_thinking", None)
+        if implementation is not LLMProvider.complete_with_thinking:
+            try:
+                parameters = inspect.signature(self.complete_with_thinking).parameters.values()
+            except (TypeError, ValueError):
+                return False
+            return any(
+                parameter.name == "output_schema" or parameter.kind is inspect.Parameter.VAR_KEYWORD
+                for parameter in parameters
+            )
         return self.supports_thinking_stream
 
     @property

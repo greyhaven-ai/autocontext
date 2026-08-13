@@ -16,6 +16,11 @@ export interface ResolveProviderConfigOpts {
   preferBaseUrlOverride?: boolean;
 }
 
+function nonBlank(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
 export function resolveProviderConfig(
   overrides: Partial<ProviderConfig> = {},
   opts: ResolveProviderConfigOpts = {},
@@ -23,8 +28,8 @@ export function resolveProviderConfig(
   const projectConfig = loadProjectConfig();
   const defaultPersistedCredentials = loadPersistedCredentials();
   const envProviderType =
-    process.env.AUTOCONTEXT_AGENT_PROVIDER ??
-    process.env.AUTOCONTEXT_PROVIDER;
+    nonBlank(process.env.AUTOCONTEXT_AGENT_PROVIDER) ??
+    nonBlank(process.env.AUTOCONTEXT_PROVIDER);
   const envModel =
     process.env.AUTOCONTEXT_AGENT_DEFAULT_MODEL ??
     process.env.AUTOCONTEXT_MODEL;
@@ -36,11 +41,11 @@ export function resolveProviderConfig(
     process.env.AUTOCONTEXT_API_KEY;
 
   const providerType =
-    (opts.preferProviderOverride ? overrides.providerType : undefined) ??
+    nonBlank(opts.preferProviderOverride ? overrides.providerType : undefined) ??
     envProviderType ??
-    overrides.providerType ??
-    projectConfig?.provider ??
-    defaultPersistedCredentials?.provider ??
+    nonBlank(overrides.providerType) ??
+    nonBlank(projectConfig?.provider) ??
+    nonBlank(defaultPersistedCredentials?.provider) ??
     "anthropic";
   const persistedCredentials = loadPersistedCredentials(undefined, providerType);
   const model =

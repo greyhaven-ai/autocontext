@@ -350,6 +350,11 @@ class HookedLLMProvider(LLMProvider):
         return bool(getattr(self.inner, "supports_thinking_stream", False))
 
     @property
+    def supports_thinking_output_schema(self) -> bool:
+        """Forward the resolved capability instead of answering for the wrapper."""
+        return self._thinking_supports_output_schema
+
+    @property
     def name(self) -> str:
         return self.provider_name
 

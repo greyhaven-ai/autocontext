@@ -327,11 +327,12 @@ export function buildRoleProviderBundle(
 ): RoleProviderBundle {
   // Only actually prefer the override when there is one to prefer — an empty overrides.providerType
   // with preferProviderOverride:true must fall through to the usual env/settings precedence.
-  const preferOverride = Boolean(opts.preferProviderOverride) && Boolean(overrides.providerType);
+  const providerOverride = normalizeOptionalOverride(overrides.providerType);
+  const preferOverride = Boolean(opts.preferProviderOverride) && Boolean(providerOverride);
   const defaultConfig = resolveProviderConfig(
     {
       ...overrides,
-      providerType: overrides.providerType ?? settings.agentProvider,
+      providerType: providerOverride ?? settings.agentProvider,
     },
     { preferProviderOverride: preferOverride },
   );
