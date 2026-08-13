@@ -251,6 +251,18 @@ class AnthropicProvider(LLMProvider):
         return self._default_model
 
     @property
+    def supports_thinking_output_schema(self) -> bool:
+        """False: ``complete_with_thinking`` discards ``output_schema`` (AC-936).
+
+        Not an oversight. The loop forces the ``deep_think`` tool on the first
+        turn, and ``tool_choice`` cannot pin two tools at once, so a forced
+        schema tool has nowhere to go. Honoring both means declaring both tools
+        and expecting the output tool on the final turn instead of forcing it,
+        which is a design change rather than a parameter pass-through.
+        """
+        return False
+
+    @property
     def supports_thinking_stream(self) -> bool:
         return True
 

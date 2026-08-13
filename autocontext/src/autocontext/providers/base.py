@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
@@ -156,6 +157,35 @@ class LLMProvider(ABC):
     def supports_thinking_stream(self) -> bool:
         """Whether this provider has a native structured thinking-tool loop."""
         return False
+
+    @property
+    def supports_thinking_output_schema(self) -> bool:
+        """Whether ``complete_with_thinking`` actually honors ``output_schema``.
+
+        Declared rather than inferred (AC-936). The extension layer used to
+        decide this by inspecting the signature, which cannot tell a parameter
+        that is honored from one that is accepted and discarded -- and Anthropic
+        does the latter, because its thinking loop already pins ``tool_choice``
+        to the scratchpad tool and cannot force a second one.
+
+        Defaults to following ``supports_thinking_stream`` when the provider
+        inherits the standard thinking fallback. For compatibility, an older
+        provider that overrides ``complete_with_thinking`` but predates this
+        declaration is inferred from that override's signature. New providers
+        whose signature accepts but discards the schema must override this
+        declaration, as Anthropic does.
+        """
+        implementation = inspect.getattr_static(type(self), "complete_with_thinking", None)
+        if implementation is not LLMProvider.complete_with_thinking:
+            try:
+                parameters = inspect.signature(self.complete_with_thinking).parameters.values()
+            except (TypeError, ValueError):
+                return False
+            return any(
+                parameter.name == "output_schema" or parameter.kind is inspect.Parameter.VAR_KEYWORD
+                for parameter in parameters
+            )
+        return self.supports_thinking_stream
 
     @property
     def name(self) -> str:

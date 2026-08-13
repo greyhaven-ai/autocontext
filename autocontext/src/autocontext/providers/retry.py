@@ -155,6 +155,13 @@ class RetryProvider(LLMProvider):
         return self._provider.supports_thinking_stream
 
     @property
+    def supports_thinking_output_schema(self) -> bool:
+        # Must be forwarded, not inherited from the base default: this wrapper
+        # has no thinking loop of its own, so the base would answer for the
+        # wrapper rather than for the provider actually doing the work.
+        return self._provider.supports_thinking_output_schema
+
+    @property
     def name(self) -> str:
         return f"Retry({self._provider.name})"
 

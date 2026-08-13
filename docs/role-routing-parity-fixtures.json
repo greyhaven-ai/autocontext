@@ -263,7 +263,9 @@
         "role": "competitor",
         "settings": {},
         "context": {
-          "availableLocalModels": ["/models/distilled-competitor"]
+          "availableLocalModels": [
+            "/models/distilled-competitor"
+          ]
         },
         "expected": {
           "provider_type": "mlx",
@@ -276,7 +278,9 @@
         "role": "architect",
         "settings": {},
         "context": {
-          "availableLocalModels": ["/models/distilled-architect"]
+          "availableLocalModels": [
+            "/models/distilled-architect"
+          ]
         },
         "expected": {
           "provider_type": "mlx",
@@ -289,7 +293,9 @@
         "role": "curator",
         "settings": {},
         "context": {
-          "availableLocalModels": ["/models/distilled-curator"]
+          "availableLocalModels": [
+            "/models/distilled-curator"
+          ]
         },
         "expected": {
           "provider_type": "mlx",
@@ -304,11 +310,79 @@
           "role_routing": "off"
         },
         "context": {
-          "availableLocalModels": ["/models/distilled-competitor"]
+          "availableLocalModels": [
+            "/models/distilled-competitor"
+          ]
         },
         "expected": {
           "provider_type": "anthropic",
           "model": "competitor-role-model",
+          "provider_class": "frontier",
+          "cost_per_1k_tokens": 0.015
+        }
+      }
+    },
+    "unset_settings": {
+      "agent_provider_empty": {
+        "settings": {
+          "agent_provider": ""
+        },
+        "role": "competitor",
+        "expected": {
+          "provider_type": "anthropic",
+          "model": "opus-tier-model",
+          "provider_class": "frontier",
+          "cost_per_1k_tokens": 0.015
+        }
+      },
+      "blank_local_artifact": {
+        "context": {
+          "availableLocalModels": [
+            "  "
+          ]
+        },
+        "role": "competitor",
+        "expected": {
+          "provider_type": "mlx",
+          "model": "/models/default-local",
+          "provider_class": "local",
+          "cost_per_1k_tokens": 0.0
+        }
+      },
+      "mlx_model_path_empty": {
+        "settings": {
+          "competitor_provider": "mlx",
+          "mlx_model_path": ""
+        },
+        "role": "competitor",
+        "expected": {
+          "provider_type": "mlx",
+          "model": "local",
+          "provider_class": "local",
+          "cost_per_1k_tokens": 0.0
+        }
+      },
+      "role_model_empty_routing_off": {
+        "settings": {
+          "model_competitor": "",
+          "role_routing": "off"
+        },
+        "role": "competitor",
+        "expected": {
+          "provider_type": "anthropic",
+          "model": "claude-sonnet-5",
+          "provider_class": "frontier",
+          "cost_per_1k_tokens": 0.015
+        }
+      },
+      "tier_model_empty": {
+        "settings": {
+          "tier_opus_model": ""
+        },
+        "role": "competitor",
+        "expected": {
+          "provider_type": "anthropic",
+          "model": "claude-opus-5",
           "provider_class": "frontier",
           "cost_per_1k_tokens": 0.015
         }
@@ -381,118 +455,6 @@
       },
       "reason": "Python has no fallback for an unregistered role under routing_off and returns None for the model, while TypeScript's roleSpecificModel falls back to the sonnet tier model. provider_type ('anthropic') and provider_class ('frontier') agree in both; only model differs.",
       "resolution": "AC-911: the RoleAssignment work must decide one behavior for an unregistered role under routing_off, rather than inheriting Python's None and TypeScript's tier-default fallback as two separate defaults."
-    },
-    {
-      "case": "unset_settings.agent_provider_empty",
-      "role": "competitor",
-      "settings": {
-        "agent_provider": ""
-      },
-      "context": {},
-      "python": {
-        "provider_type": "",
-        "model": "opus-tier-model",
-        "provider_class": "frontier",
-        "cost_per_1k_tokens": 0.015
-      },
-      "typescript": {
-        "provider_type": "anthropic",
-        "model": "opus-tier-model",
-        "provider_class": "frontier",
-        "cost_per_1k_tokens": 0.015
-      },
-      "reason": "An empty default provider is returned verbatim by Python but coerced to 'anthropic' by TypeScript's normalizeProvider fallback. The model and class agree; only the transport name differs.",
-      "resolution": "Still open after AC-911. This entry was previously attributed to AC-912's per-provider default layer, which was wrong: the disagreement is about how each language treats an explicitly EMPTY setting, not about which model a provider defaults to. Python returns the empty value verbatim; TypeScript trims it away and falls back. AC-912 and AC-911 both landed and both languages still disagree here, so the attribution is corrected rather than the entry deleted. Resolving it means deciding, once, whether an empty setting means \"unset\" or \"deliberately blank\"."
-    },
-    {
-      "case": "unset_settings.blank_local_artifact",
-      "role": "competitor",
-      "settings": {},
-      "context": {
-        "availableLocalModels": ["  "]
-      },
-      "python": {
-        "provider_type": "mlx",
-        "model": "  ",
-        "provider_class": "local",
-        "cost_per_1k_tokens": 0.0
-      },
-      "typescript": {
-        "provider_type": "mlx",
-        "model": "/models/default-local",
-        "provider_class": "local",
-        "cost_per_1k_tokens": 0.0
-      },
-      "reason": "A whitespace-only local artifact is treated as a usable model id by Python and returned verbatim, while TypeScript trims it away and falls back to the configured mlx model path.",
-      "resolution": "Still open after AC-911. This entry was previously attributed to AC-912's per-provider default layer, which was wrong: the disagreement is about how each language treats an explicitly EMPTY setting, not about which model a provider defaults to. Python returns the empty value verbatim; TypeScript trims it away and falls back. AC-912 and AC-911 both landed and both languages still disagree here, so the attribution is corrected rather than the entry deleted. Resolving it means deciding, once, whether an empty setting means \"unset\" or \"deliberately blank\"."
-    },
-    {
-      "case": "unset_settings.mlx_model_path_empty",
-      "role": "competitor",
-      "settings": {
-        "competitor_provider": "mlx",
-        "mlx_model_path": ""
-      },
-      "context": {},
-      "python": {
-        "provider_type": "mlx",
-        "model": "",
-        "provider_class": "local",
-        "cost_per_1k_tokens": 0.0
-      },
-      "typescript": {
-        "provider_type": "mlx",
-        "model": "local",
-        "provider_class": "local",
-        "cost_per_1k_tokens": 0.0
-      },
-      "reason": "For a local provider with an empty model path Python returns the empty string, while TypeScript's tierModel('local', ...) falls back to the literal 'local'.",
-      "resolution": "Still open after AC-911. This entry was previously attributed to AC-912's per-provider default layer, which was wrong: the disagreement is about how each language treats an explicitly EMPTY setting, not about which model a provider defaults to. Python returns the empty value verbatim; TypeScript trims it away and falls back. AC-912 and AC-911 both landed and both languages still disagree here, so the attribution is corrected rather than the entry deleted. Resolving it means deciding, once, whether an empty setting means \"unset\" or \"deliberately blank\"."
-    },
-    {
-      "case": "unset_settings.role_model_empty_routing_off",
-      "role": "competitor",
-      "settings": {
-        "model_competitor": "",
-        "role_routing": "off"
-      },
-      "context": {},
-      "python": {
-        "provider_type": "anthropic",
-        "model": "",
-        "provider_class": "frontier",
-        "cost_per_1k_tokens": 0.015
-      },
-      "typescript": {
-        "provider_type": "anthropic",
-        "model": "claude-sonnet-5",
-        "provider_class": "frontier",
-        "cost_per_1k_tokens": 0.015
-      },
-      "reason": "With routing off and an empty role model Python returns the empty string, while TypeScript falls back to its hardcoded DEFAULT_ROLE_MODELS entry for the role.",
-      "resolution": "Still open after AC-911. This entry was previously attributed to AC-912's per-provider default layer, which was wrong: the disagreement is about how each language treats an explicitly EMPTY setting, not about which model a provider defaults to. Python returns the empty value verbatim; TypeScript trims it away and falls back. AC-912 and AC-911 both landed and both languages still disagree here, so the attribution is corrected rather than the entry deleted. Resolving it means deciding, once, whether an empty setting means \"unset\" or \"deliberately blank\"."
-    },
-    {
-      "case": "unset_settings.tier_model_empty",
-      "role": "competitor",
-      "settings": {
-        "tier_opus_model": ""
-      },
-      "context": {},
-      "python": {
-        "provider_type": "anthropic",
-        "model": "",
-        "provider_class": "frontier",
-        "cost_per_1k_tokens": 0.015
-      },
-      "typescript": {
-        "provider_type": "anthropic",
-        "model": "claude-opus-5",
-        "provider_class": "frontier",
-        "cost_per_1k_tokens": 0.015
-      },
-      "reason": "With an empty tier model Python returns the empty string as the model, while TypeScript falls back to its hardcoded tierModel default. Python has no equivalent fallback table.",
-      "resolution": "Still open after AC-911. This entry was previously attributed to AC-912's per-provider default layer, which was wrong: the disagreement is about how each language treats an explicitly EMPTY setting, not about which model a provider defaults to. Python returns the empty value verbatim; TypeScript trims it away and falls back. AC-912 and AC-911 both landed and both languages still disagree here, so the attribution is corrected rather than the entry deleted. Resolving it means deciding, once, whether an empty setting means \"unset\" or \"deliberately blank\"."
     }
   ]
 }

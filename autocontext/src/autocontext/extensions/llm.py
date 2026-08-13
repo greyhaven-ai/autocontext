@@ -165,7 +165,15 @@ class HookedLLMProvider(LLMProvider):
         self._supports_output_schema = _accepts_output_schema(inner.complete)
         thinking_complete = getattr(inner, "complete_with_thinking", None)
         self._thinking_complete = thinking_complete if callable(thinking_complete) else None
-        self._thinking_supports_output_schema = _accepts_output_schema(thinking_complete)
+        # Ask the provider before falling back to signature inspection
+        # (AC-936). A signature cannot distinguish a parameter that is honored
+        # from one that is accepted and discarded, and Anthropic's thinking loop
+        # does the latter, so the probe used to report support that did not
+        # exist. The declaration wins wherever a provider makes one.
+        declared = getattr(inner, "supports_thinking_output_schema", None)
+        self._thinking_supports_output_schema = (
+            bool(declared) if isinstance(declared, bool) else _accepts_output_schema(thinking_complete)
+        )
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self.inner, name)
@@ -340,6 +348,11 @@ class HookedLLMProvider(LLMProvider):
     @property
     def supports_thinking_stream(self) -> bool:
         return bool(getattr(self.inner, "supports_thinking_stream", False))
+
+    @property
+    def supports_thinking_output_schema(self) -> bool:
+        """Forward the resolved capability instead of answering for the wrapper."""
+        return self._thinking_supports_output_schema
 
     @property
     def name(self) -> str:

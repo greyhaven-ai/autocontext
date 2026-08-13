@@ -124,6 +124,27 @@ def _inferred_hosting(provider_type: str) -> str:
     return _INFERRED_PROVIDER_HOSTING.get(provider_type.strip().lower(), "remote")
 
 
+# The shipped default for `agent_provider`; kept next to its only consumer so
+# the fallback cannot drift from settings.py without this line being read.
+_DEFAULT_AGENT_PROVIDER = "anthropic"
+# The artifact slot has its own setting and never falls back to a role or
+# tier default, so a blank one resolves to this literal rather than to a
+# model id. Matches TypeScript's `clean(settings.mlxModelPath) ?? "local"`.
+_DEFAULT_LOCAL_ARTIFACT = "local"
+
+
+def _clean_setting(value: str | None, fallback: str) -> str:
+    """Treat an empty or whitespace-only setting as unset (AC-927).
+
+    Mirrors TypeScript's `clean()`. The decision is recorded once here: a blank
+    value means "I did not set this", not "send an empty transport name". An
+    empty provider type cannot be constructed at all, so passing it through
+    turned a config mistake into a runtime failure far from its cause.
+    """
+    cleaned = (value or "").strip()
+    return cleaned or fallback
+
+
 class RoleRouter:
     """Routes agent roles to providers based on capability, cost, and available artifacts."""
 
@@ -406,7 +427,10 @@ class RoleRouter:
         if provider_class == ProviderClass.LOCAL:
             return ProviderConfig(
                 provider_type="mlx",
-                model=local_model_path or self._settings.mlx_model_path or None,
+                model=(
+                    _clean_setting(local_model_path, "")
+                    or _clean_setting(self._settings.mlx_model_path, _DEFAULT_LOCAL_ARTIFACT)
+                ),
                 provider_class=ProviderClass.LOCAL,
                 estimated_cost_per_1k_tokens=self._cost_for(
                     ProviderClass.LOCAL,
@@ -414,7 +438,7 @@ class RoleRouter:
                     declared_hosting="local",
                 ),
             )
-        provider_type = self._settings.agent_provider
+        provider_type = _clean_setting(self._settings.agent_provider, _DEFAULT_AGENT_PROVIDER)
         # A role asks for a capability; an endpoint has one. Asking for frontier
         # from an endpoint declared mid_tier does not make it frontier, so the
         # request is clamped down to what the endpoint actually offers and both
@@ -462,7 +486,7 @@ class RoleRouter:
         return ProviderConfig(
             provider_type=provider_type,
             model=(
-                self._settings.mlx_model_path
+                _clean_setting(self._settings.mlx_model_path, _DEFAULT_LOCAL_ARTIFACT)
                 if provider_class == ProviderClass.LOCAL
                 else self._resolve_role_model(role, provider_type)
             ),
@@ -476,7 +500,7 @@ class RoleRouter:
 
     def _config_for_default(self, role: str) -> ProviderConfig:
         """Build config when routing is disabled — use default provider + model."""
-        provider_type = self._settings.agent_provider
+        provider_type = _clean_setting(self._settings.agent_provider, _DEFAULT_AGENT_PROVIDER)
         inferred = _EXPLICIT_PROVIDER_CLASS.get(
             provider_type.lower(),
             ProviderClass.MID_TIER,
@@ -490,7 +514,7 @@ class RoleRouter:
         return ProviderConfig(
             provider_type=provider_type,
             model=(
-                self._settings.mlx_model_path
+                _clean_setting(self._settings.mlx_model_path, _DEFAULT_LOCAL_ARTIFACT)
                 if provider_class == ProviderClass.LOCAL
                 else self._resolve_role_model(role, provider_type)
             ),

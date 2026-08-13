@@ -16,6 +16,8 @@ from autocontext.runtimes.pi_defaults import PI_DEFAULT_TIMEOUT_SECONDS
 
 logger = logging.getLogger(__name__)
 
+_DEFAULT_AGENT_PROVIDER = "anthropic"
+
 _ENV_ALIASES: dict[str, tuple[str, ...]] = {
     "agent_provider": ("AUTOCONTEXT_AGENT_PROVIDER", "AUTOCONTEXT_PROVIDER"),
     "anthropic_api_key": ("ANTHROPIC_API_KEY", "AUTOCONTEXT_ANTHROPIC_API_KEY"),
@@ -50,7 +52,7 @@ class AppSettings(RoleRoutingFields, WorkspaceInterpreterFields, OutputBudgetFie
     skills_root: Path = Field(default=Path("skills"))
     claude_skills_path: Path = Field(default=Path(".claude/skills"))
     executor_mode: str = Field(default="local")
-    agent_provider: str = Field(default="anthropic")
+    agent_provider: str = Field(default=_DEFAULT_AGENT_PROVIDER)
     anthropic_api_key: str | None = Field(default=None)
     # AC-912: fills unset role/tier slots. See config/provider_model_defaults.py.
     local_model: str = Field(default="", description="Model id for every unset non-Anthropic role/tier slot")
@@ -797,6 +799,11 @@ class AppSettings(RoleRoutingFields, WorkspaceInterpreterFields, OutputBudgetFie
         f = float(v) if isinstance(v, (int, float, str)) else 0.0
         return f if f > 0 else None
 
+    @field_validator("agent_provider", mode="before")
+    @classmethod
+    def _blank_agent_provider_uses_default(cls, v: object) -> object:
+        return _DEFAULT_AGENT_PROVIDER if isinstance(v, str) and not v.strip() else v
+
 
 def load_settings() -> AppSettings:
     """Load settings from env vars and preset overrides.
@@ -810,7 +817,13 @@ def load_settings() -> AppSettings:
     kwargs: dict[str, Any] = {}
     for field_name in AppSettings.model_fields:
         env_keys = setting_env_keys(field_name)
-        env_val = next((value for key in env_keys if (value := os.getenv(key)) is not None), None)
+        env_val = next(
+            (
+                value for key in env_keys if (value := os.getenv(key)) is not None
+                and (field_name != "agent_provider" or bool(value.strip()))
+            ),
+            None,
+        )
         if env_val is not None:
             kwargs[field_name] = env_val
         elif field_name in preset:

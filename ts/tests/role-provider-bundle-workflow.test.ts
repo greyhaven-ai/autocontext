@@ -80,6 +80,36 @@ describe("role provider bundle workflow", () => {
     }
   });
 
+  it("treats a blank default provider setting as unset", () => {
+    saveAndClear();
+    process.env.ANTHROPIC_API_KEY = "sk-test";
+
+    const bundle = buildRoleProviderBundle({ agentProvider: "   " });
+    try {
+      expect(bundle.defaultConfig.providerType).toBe("anthropic");
+      expect(bundle.defaultProvider.name).toBe("anthropic");
+      expect(bundle.roleRoutes?.competitor?.providerType).toBe("anthropic");
+    } finally {
+      closeProviderBundle(bundle);
+    }
+  });
+
+  it("lets a blank CLI provider override fall back to the settings provider", () => {
+    saveAndClear();
+
+    const bundle = buildRoleProviderBundle(
+      { agentProvider: "deterministic" },
+      { providerType: "   " },
+      { preferProviderOverride: true },
+    );
+    try {
+      expect(bundle.defaultConfig.providerType).toBe("deterministic");
+      expect(bundle.defaultProvider.name).toBe("deterministic");
+    } finally {
+      closeProviderBundle(bundle);
+    }
+  });
+
   it("wraps configured roles with the experimental panel provider", async () => {
     saveAndClear();
 

@@ -1,6 +1,9 @@
 """Tests for settings simplification (AC-25)."""
 from __future__ import annotations
 
+import pytest
+
+from autocontext.agents.llm_client import AnthropicClient, build_client_from_settings
 from autocontext.config.settings import AppSettings, load_settings
 
 
@@ -46,3 +49,20 @@ def test_load_settings_without_removed_env_vars() -> None:
     settings = load_settings()
     assert settings.agent_provider == "anthropic"
     assert settings.curator_enabled is True
+
+
+@pytest.mark.parametrize("blank", ["", "   ", "\t"])
+def test_blank_agent_provider_uses_default_before_client_construction(blank: str) -> None:
+    settings = AppSettings(agent_provider=blank, anthropic_api_key="test-key")
+
+    assert settings.agent_provider == "anthropic"
+    assert isinstance(build_client_from_settings(settings), AnthropicClient)
+
+
+def test_blank_primary_provider_env_falls_through_to_compatibility_alias(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("AUTOCONTEXT_AGENT_PROVIDER", "   ")
+    monkeypatch.setenv("AUTOCONTEXT_PROVIDER", "deterministic")
+
+    assert load_settings().agent_provider == "deterministic"
