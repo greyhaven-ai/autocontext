@@ -339,7 +339,7 @@ describe("exportTrainingData helper", () => {
 
 describe("CLI export-training-data boundary", () => {
   it("help output lists the command", () => {
-    const { stdout } = runCli(["--help"]);
+    const { stdout } = runCli(["--help", "--all"]);
     expect(stdout).toContain("export-training-data");
   });
 

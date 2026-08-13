@@ -247,7 +247,7 @@ const COMMANDS: readonly CommandDescriptor[] = [
   },
   {
     name: "status",
-    description: "Show a required run's current snapshot; defaults to text output. Next: watch.",
+    description: "Show a required run's current snapshot; defaults to text output. Queue: autoctx queue status. Next: watch.",
     group: "primary",
     route: { kind: "db", command: "status" },
   },

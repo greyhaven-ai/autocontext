@@ -286,7 +286,7 @@ describe("AC-393: autoctx init", () => {
   });
 
   it("auto-detects provider/model defaults and can create AGENTS.md guidance", () => {
-    const { exitCode } = runCli(["init", "--dir", dir, "--agents-md"], {
+    const { exitCode } = runCli(["init", "--dir", dir], {
       env: {
         AUTOCONTEXT_AGENT_PROVIDER: "ollama",
         AUTOCONTEXT_AGENT_DEFAULT_MODEL: "llama3.2",

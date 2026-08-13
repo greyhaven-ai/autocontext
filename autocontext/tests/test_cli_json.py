@@ -791,7 +791,7 @@ class TestFlagPresence:
         help_text = _strip_ansi(result.output)
 
         assert result.exit_code == 0
-        assert "Show status for one run" in help_text
+        assert "current snapshot" in help_text
         assert "autoctx queue status" in help_text
         assert "--run-id" in help_text
         assert "run_id_text" not in help_text
