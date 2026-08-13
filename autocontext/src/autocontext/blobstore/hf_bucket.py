@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from autocontext.blobstore.store import BlobStore, normalize_blob_key, prefix_matches, resolve_blob_path
+from autocontext.offline import require_online
 
 logger = logging.getLogger(__name__)
 _INDEX_KEY = ".autocontext/blob_index.json"
@@ -204,6 +205,7 @@ class HfBucketStore(BlobStore):
             logger.info("remote delete not available for %s in %s", key, self.repo_id)
 
     def _run_hf_command(self, cmd: list[str]) -> str:
+        require_online("synchronize Hugging Face blob storage", detail=self.repo_id)
         result = subprocess.run(
             cmd,
             capture_output=True,

@@ -12,6 +12,7 @@ from anthropic import Anthropic
 from autocontext.config.settings import AppSettings
 from autocontext.harness.core.llm_client import LanguageModelClient
 from autocontext.harness.core.types import ModelResponse, RoleUsage
+from autocontext.offline import require_online, require_runtime_available
 from autocontext.providers.base import ProviderError
 from autocontext.providers.mlx_provider import MLXProvider  # type: ignore[import-untyped]
 from autocontext.providers.retry import _is_transient
@@ -44,6 +45,7 @@ class AnthropicClient(LanguageModelClient):
 
         for attempt in range(1 + self.max_retries):
             try:
+                require_online("call the Anthropic API")
                 return self._client.messages.create(**kwargs)
             except anthropic.APIError as exc:
                 last_error = exc
@@ -665,6 +667,7 @@ def build_client_from_settings(
     scenario_name: str = "",
 ) -> LanguageModelClient:
     """Construct a LanguageModelClient from AppSettings."""
+    require_runtime_available(settings.agent_provider, settings=settings)
     if settings.agent_provider == "anthropic":
         api_key = settings.anthropic_api_key or os.getenv("ANTHROPIC_API_KEY") or os.getenv("AUTOCONTEXT_ANTHROPIC_API_KEY", "")
         if not api_key:

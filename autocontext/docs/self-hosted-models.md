@@ -291,6 +291,88 @@ so preflight reports no context-window result rather than guessing. If an
 endpoint has a non-standard discovery surface or the operator has independently
 validated it, `autoctx run ... --skip-preflight` bypasses these checks.
 
+## Offline mode
+
+`AUTOCONTEXT_OFFLINE=1` means one thing:
+
+> The engine never initiates an outbound connection.
+
+Scoped by **who initiates**. Control-plane sync, provider calls, webhook
+notifications and fixture downloads are engine-initiated, so they are off. An
+operator SSH-ing into the box is operator-initiated, so it is out of scope --
+airgapped does not have to mean unreachable.
+
+Connections to an endpoint that is unambiguously on the same host are not
+outbound and remain available. The allowlist is intentionally narrow: the exact
+`localhost` name and literal loopback addresses (`127.0.0.0/8` and `::1`). A
+private-LAN address or hostname is still egress and is refused; the engine does
+not perform DNS resolution to decide whether a name happens to resolve locally.
+
+A complete local setup must configure both the agent and the judge. The normal
+`judge_provider=auto` fallback is Anthropic unless it inherits a subscription
+CLI runtime, so leaving it on `auto` is a startup conflict offline:
+
+```bash
+AUTOCONTEXT_OFFLINE=1 \
+AUTOCONTEXT_AGENT_PROVIDER=ollama \
+AUTOCONTEXT_LOCAL_MODEL=llama3.1:8b \
+AUTOCONTEXT_JUDGE_PROVIDER=ollama \
+AUTOCONTEXT_JUDGE_BASE_URL=http://localhost:11434/v1 \
+  autoctx run my_task
+```
+
+Anything blocked raises an error naming what it was, rather than failing as a
+timeout three layers down:
+
+```
+AUTOCONTEXT_OFFLINE is set; refusing to post a webhook notification
+(https://hooks.example/x)
+```
+
+### What becomes unavailable
+
+**External runtimes** — `agent_sdk`, `claude-cli`, `codex`, `pi`, `pi-rpc`,
+`hermes`, and OpenClaw CLI/factory runtimes — refuse to start. They run code
+outside the guarded provider transports, and no amount of guarding this
+codebase controls another program's sockets. They are refused rather than
+silently trusted, because a guarantee that depends on someone else's behavior
+is not a guarantee. An OpenClaw HTTP sidecar remains usable only when its URL is
+literal loopback.
+
+Use a local endpoint instead: `ollama`, `vllm`, or `mlx`.
+
+**Configuring egress at the same time is a startup error**, not a silent
+precedence rule. Setting `AUTOCONTEXT_OFFLINE=1` alongside
+`AUTOCONTEXT_NOTIFY_WEBHOOK_URL`, a remote provider or per-role override, a
+remote judge or consultation provider, an SSH/PrimeIntellect executor, a
+Hugging Face blob store, or an external runtime fails preflight with every
+conflict listed at once. Letting one quietly win would mean you either got a
+guarantee you did not receive or a sync you did not expect, decided by load
+order.
+
+### How it is enforced, and how far that goes
+
+Two mechanisms, and it is worth knowing which covers what.
+
+A test runs a **complete generation** with a guard installed at
+`socket.socket.connect` — below every HTTP client, SDK and transport in the
+process — and asserts zero connection attempts. Per-path checks only cover the
+paths someone remembered; this covers the path nobody remembered.
+
+A CI guard fails the build when a new `urlopen` appears without a
+`require_online` in the same function. That is the part that stops this
+decaying: without it the enforcement is a convention held up by code review.
+Its limits are written down in `tests/test_offline_mode.py` — it does not catch
+egress through an SDK client or a helper one frame down, which is what the
+socket-level test is paired with it to cover.
+
+**What this is not is proof.** The strongest assurance comes from outside the
+process: run autocontext in a network namespace with no route, or behind a
+firewall rule that drops egress. This work is what makes doing that actually
+function instead of hanging on a call you did not expect it to make. That claim
+you can verify yourself in about thirty seconds, which is worth more than
+anything the program could assert about itself.
+
 ## Not covered yet
 
 **llama.cpp.** Reachable through `openai-compatible` with

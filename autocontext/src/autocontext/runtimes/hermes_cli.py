@@ -14,6 +14,7 @@ import shutil
 import subprocess
 from dataclasses import dataclass, field
 
+from autocontext.offline import require_runtime_available
 from autocontext.runtimes.base import AgentOutput, AgentRuntime
 
 logger = logging.getLogger(__name__)
@@ -157,6 +158,7 @@ class HermesCLIRuntime(AgentRuntime):
         return env
 
     def _invoke(self, prompt: str) -> AgentOutput:
+        require_runtime_available("hermes")
         args = self._build_args(prompt)
         logger.info("invoking hermes: %s", " ".join(args[:6]) + "...")
         try:

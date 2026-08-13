@@ -8,6 +8,7 @@ import urllib.error
 import urllib.request
 
 from autocontext.notifications.base import NotificationEvent, Notifier
+from autocontext.offline import require_online
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,7 @@ class HTTPNotifier(Notifier):
                 headers={"Content-Type": "application/json", **self._headers},
                 method="POST",
             )
+            require_online("post a webhook notification", detail=self._url)
             urllib.request.urlopen(req, timeout=self._timeout)
         except Exception as exc:
             logger.warning("HTTP notification failed: %s", exc)

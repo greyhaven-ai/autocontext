@@ -18,6 +18,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
+from autocontext.offline import require_runtime_available
 from autocontext.runtimes.base import AgentOutput, AgentRuntime
 from autocontext.runtimes.runtime_budget import RuntimeBudget, RuntimeBudgetExpired
 
@@ -118,6 +119,7 @@ def _run_with_group_kill(
     Re-raises `subprocess.TimeoutExpired` on timeout so the caller's
     retry/backoff path keeps working.
     """
+    require_runtime_available("claude-cli")
     popen_kwargs: dict[str, Any] = {
         "stdin": subprocess.PIPE,
         "stdout": subprocess.PIPE,

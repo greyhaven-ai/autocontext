@@ -9,6 +9,7 @@ from typing import Any
 
 import anthropic
 
+from autocontext.offline import require_online
 from autocontext.providers.base import (
     CompletionResult,
     LLMProvider,
@@ -122,6 +123,7 @@ class AnthropicProvider(LLMProvider):
         """Create one message, degrading only explicit strict-schema rejection."""
         while True:
             try:
+                require_online("call the Anthropic API")
                 return self._client.messages.create(**request), constrained
             except anthropic.APIError as exc:
                 if constrained and _is_unsupported_strict_schema_error(exc):
@@ -178,6 +180,7 @@ class AnthropicProvider(LLMProvider):
             }
             request.update(_claude_request_controls(model_id, temperature))
             try:
+                require_online("call the Anthropic API")
                 create_message: Any = self._client.messages.create
                 response = create_message(**request)
             except anthropic.APIError as exc:

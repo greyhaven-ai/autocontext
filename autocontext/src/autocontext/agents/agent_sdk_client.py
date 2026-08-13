@@ -8,6 +8,7 @@ from dataclasses import dataclass
 
 from autocontext.agents.llm_client import LanguageModelClient, ModelResponse
 from autocontext.agents.types import RoleUsage
+from autocontext.offline import require_runtime_available
 
 # Per-role tool permissions
 ROLE_TOOL_CONFIG: dict[str, list[str]] = {
@@ -78,6 +79,7 @@ class AgentSdkClient(LanguageModelClient):
         return ModelResponse(text=result_text, usage=usage)
 
     async def _query(self, prompt: str, model: str, role: str, system_prompt: str = "") -> str:
+        require_runtime_available("agent_sdk")
         from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query
 
         tool_list = ROLE_TOOL_CONFIG.get(role, ROLE_TOOL_CONFIG["competitor"])

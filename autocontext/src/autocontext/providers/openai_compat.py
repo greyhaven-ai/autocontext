@@ -11,6 +11,7 @@ import os
 import re
 from typing import Any
 
+from autocontext.offline import require_endpoint_available
 from autocontext.providers.base import (
     CompletionResult,
     LLMProvider,
@@ -83,6 +84,10 @@ class OpenAICompatibleProvider(LLMProvider):
             kwargs["default_headers"] = extra_headers
 
         self._client = openai.OpenAI(**kwargs)
+        # Keep the SDK's resolved URL (including its default when no URL was
+        # supplied) so offline enforcement judges the destination actually
+        # used, rather than inferring it from a provider label.
+        self._base_url = str(self._client.base_url)
         self._default_model = default_model_name
 
     def complete(
@@ -288,6 +293,12 @@ class OpenAICompatibleProvider(LLMProvider):
     ) -> tuple[Any, bool]:
         while True:
             try:
+                # Some compatible subclasses and long-standing unit-test
+                # doubles construct via __new__ and inject only the transport.
+                # Default to the SDK's real hosted endpoint for those objects;
+                # offline mode therefore still fails closed.
+                endpoint = getattr(self, "_base_url", "https://api.openai.com/v1")
+                require_endpoint_available("call an OpenAI-compatible endpoint", endpoint)
                 return self._client.chat.completions.create(**request), constrained
             except Exception as exc:
                 if constrained and _is_unsupported_response_format_error(exc):

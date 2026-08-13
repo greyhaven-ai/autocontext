@@ -21,6 +21,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from autocontext.offline import require_runtime_available
 from autocontext.runtimes.base import AgentOutput, AgentRuntime
 
 logger = logging.getLogger(__name__)
@@ -158,6 +159,7 @@ class PiRPCRuntime(AgentRuntime):
         stderr_lines: list[str] = []
         process: subprocess.Popen[str] | None = None
         try:
+            require_runtime_available("pi-rpc")
             # Keep stdin open after the prompt ack so Pi can stream the agent result.
             input_line = json.dumps(command) + "\n"
             process = subprocess.Popen(
@@ -368,6 +370,7 @@ class PiPersistentRPCRuntime(PiRPCRuntime):
         if self._process is not None and self._process.poll() is None:
             return self._process
 
+        require_runtime_available("pi-rpc")
         self._stdout_queue = queue.Queue()
         self._stderr_queue = queue.Queue()
         self._stderr_lines = []

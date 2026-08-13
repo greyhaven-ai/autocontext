@@ -17,6 +17,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from autocontext.offline import require_runtime_available
 from autocontext.runtimes.base import AgentOutput, AgentRuntime
 from autocontext.runtimes.pi_artifacts import PiExecutionTrace
 from autocontext.runtimes.pi_defaults import PI_DEFAULT_TIMEOUT_SECONDS
@@ -108,6 +109,7 @@ def _run_with_group_kill(
     child from the terminal's signal-delivery group.
     """
 
+    require_runtime_available("pi")
     popen_kwargs: dict[str, Any] = {
         "stdout": subprocess.PIPE,
         "stderr": subprocess.PIPE,

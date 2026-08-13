@@ -23,6 +23,8 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol, cast, runtime_checkabl
 
 from pydantic import BaseModel, Field
 
+from autocontext.offline import require_runtime_available
+
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
@@ -81,6 +83,7 @@ class CommandDistillSidecar:
         self._cwd = cwd
 
     def launch(self, job_id: str, scenario: str, config: dict[str, Any]) -> None:
+        require_runtime_available("openclaw-cli")
         command = shlex.split(
             self._command_template.format(job_id=job_id, scenario=scenario),
         )
@@ -123,6 +126,7 @@ def load_distill_sidecar(settings: AppSettings, *, cwd: Path | None = None) -> D
     """Resolve the configured distillation sidecar, if any."""
     factory_path = settings.openclaw_distill_sidecar_factory.strip()
     if factory_path:
+        require_runtime_available("openclaw-factory", settings=settings)
         factory = _load_factory(factory_path)
         signature = inspect.signature(factory)
         if len(signature.parameters) == 0:

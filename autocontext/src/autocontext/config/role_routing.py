@@ -32,6 +32,13 @@ class RoleRoutingFields(BaseModel):
         default="",
         description="Default endpoint hosting: local or remote; empty infers from transport",
     )
+    # AC-917: when true, the engine never initiates an outbound connection.
+    # Scoped by who initiates: operator-initiated access (SSH, a tunnel) is out
+    # of scope, so "airgapped" does not have to mean "unreachable".
+    offline: bool = Field(
+        default=False,
+        description="Refuse all engine-initiated network egress (AUTOCONTEXT_OFFLINE)",
+    )
 
     competitor_provider: str = Field(default="", description="Provider override for competitor role")
     analyst_provider: str = Field(default="", description="Provider override for analyst role")
