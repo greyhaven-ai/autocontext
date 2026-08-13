@@ -16,8 +16,12 @@ source; `ts/tests/role-routing-contract.test.ts` replays the same expectations.
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 
+from autocontext.agents.llm_client import DeterministicDevClient
+from autocontext.agents.orchestrator import AgentOrchestrator
 from autocontext.agents.role_router import RoleRouter
 from autocontext.config.settings import load_settings
 
@@ -100,3 +104,47 @@ def test_local_model_still_overrides_every_slot(monkeypatch: pytest.MonkeyPatch)
     router = _router(monkeypatch, "openai")
     models = {router.route(role).model for role in ("architect", "analyst", "curator")}
     assert models == {"my-local-model"}
+
+
+def test_dynamic_tier_is_used_to_construct_the_routed_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The effective wire client and the model returned to the runner must agree.
+
+    Generation-one competitor routing dynamically selects the fast tier even
+    though its static role class is frontier. Provider bridges use their
+    configured default model, so changing only the runner model would still
+    send the static frontier model on the wire.
+    """
+    monkeypatch.setenv("AUTOCONTEXT_AGENT_PROVIDER", "openai")
+    monkeypatch.setenv("AUTOCONTEXT_ROLE_ROUTING", "auto")
+    monkeypatch.setenv("AUTOCONTEXT_TIER_ROUTING_ENABLED", "true")
+    settings = load_settings()
+    fallback_client = DeterministicDevClient()
+    orchestrator = AgentOrchestrator(fallback_client, settings)
+
+    with patch(
+        "autocontext.agents.provider_bridge.create_role_client",
+        return_value=fallback_client,
+    ) as create_role_client:
+        _client, model = orchestrator.resolve_role_execution("competitor", generation=1)
+
+    assert model == "gpt-5.6-luna"
+    assert create_role_client.call_args.kwargs["model_override"] == "gpt-5.6-luna"
+
+
+def test_explicit_role_model_is_used_to_construct_the_routed_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Explicit role precedence must reach bridges that ignore call-time models."""
+    monkeypatch.setenv("AUTOCONTEXT_AGENT_PROVIDER", "openai")
+    monkeypatch.setenv("AUTOCONTEXT_ROLE_ROUTING", "auto")
+    monkeypatch.setenv("AUTOCONTEXT_MODEL_COMPETITOR", "my-competitor-model")
+    settings = load_settings()
+    fallback_client = DeterministicDevClient()
+    orchestrator = AgentOrchestrator(fallback_client, settings)
+
+    with patch(
+        "autocontext.agents.provider_bridge.create_role_client",
+        return_value=fallback_client,
+    ) as create_role_client:
+        _client, model = orchestrator.resolve_role_execution("competitor", generation=1)
+
+    assert model == "my-competitor-model"
+    assert create_role_client.call_args.kwargs["model_override"] == "my-competitor-model"

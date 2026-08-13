@@ -56,6 +56,23 @@ AUTOCONTEXT_LOCAL_MODEL=llama3.1:8b     → every role: llama3.1:8b, $0.00
 
 An explicit `AUTOCONTEXT_MODEL_<ROLE>` always wins over it.
 
+### Hosted providers use real tier defaults in automatic mode
+
+With `AUTOCONTEXT_ROLE_ROUTING=auto`, providers backed by multi-model catalogs
+do not reuse one model for every role:
+
+| class    | OpenAI / OpenAI-compatible | OpenRouter                   |
+| -------- | -------------------------- | ---------------------------- |
+| frontier | `gpt-5.6-sol`              | `anthropic/claude-opus-5`    |
+| mid-tier | `gpt-5.6-terra`            | `anthropic/claude-sonnet-5`  |
+| fast     | `gpt-5.6-luna`             | `anthropic/claude-haiku-4.5` |
+
+`openai-compatible` names a wire protocol, not a guaranteed model catalog. If
+that transport points at llama.cpp, LM Studio, Hermes, or another endpoint
+serving one model, set `AUTOCONTEXT_LOCAL_MODEL` to that endpoint's exact model
+id. It overrides all otherwise-unset tier slots and prevents requests for the
+hosted OpenAI ids above.
+
 ### Cost is zero because hosting is local, not because the model is small
 
 Self-hosted inference has no per-token API cost however capable the model is.
