@@ -48,6 +48,7 @@ from autocontext.cli_runtime_overrides import (
 )
 from autocontext.cli_self_improve import register_self_improve_command
 from autocontext.cli_share import register_share_command
+from autocontext.cli_skills import register_skills_command
 from autocontext.cli_solve import register_solve_command
 from autocontext.cli_train import register_train_command
 from autocontext.cli_worker import register_worker_command
@@ -1256,6 +1257,7 @@ def judge(
 register_analytics_command(app, console=console)
 register_capabilities_command(app, console=console)
 register_hermes_command(app, console=console)
+register_skills_command(app, console=console)
 register_improve_command(app, console=console)
 register_mission_command(app, console=console)
 register_new_scenario_command(app, console=console)

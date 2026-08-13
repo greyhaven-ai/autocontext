@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.15.1] - 2026-08-13
+
+### Added
+
+- Two host-agnostic skills, `autocontext-creator` and `autocontext-consumer`, emitted by `autoctx skills export <name>`. The existing `autocontext` skill is written for Hermes and covers producing and consuming knowledge in one file; these split it by what the agent is doing and name no host, so an agent that only needs to read existing knowledge gets the on-disk layout and four commands instead of the whole run-and-train surface. `autoctx skills list` shows what can be emitted. The Hermes skill is unchanged (AC-925).
+
+### Fixed
+
+- Removed the Star History chart from the README.
+- Fixed a broken README link to the scenario parity matrix, which moved to `docs/internal/`.
+- The README's offline-mode summary now says the guarantee is enforced by the Python engine and that the TypeScript engine refuses to start, matching `docs/self-hosted-models.md` rather than implying it is engine-independent.
+
 ## [0.15.0] - 2026-08-12
 
 ### Added

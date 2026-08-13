@@ -48,6 +48,11 @@ skills/*
 !skills/.gitkeep
 # AC-712: committed Hermes skill snapshot; CI sync invariant pins it.
 !skills/autocontext/
+# AC-925: the host-agnostic snapshots, pinned by the same kind of drift test.
+# skills/ is otherwise a runtime output directory, so each committed snapshot
+# has to be un-ignored by name.
+!skills/autocontext-creator/
+!skills/autocontext-consumer/
 
 # The patterns above are anchored to the repo root, so the same runtime
 # outputs produced inside the TS package were not ignored (AC-909 review
