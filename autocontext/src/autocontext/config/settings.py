@@ -337,14 +337,6 @@ class AppSettings(RoleRoutingFields, WorkspaceInterpreterFields, OutputBudgetFie
         default=False,
         description="Run bias probes on judge evaluations",
     )
-    # AC-917: when true, the engine never initiates an outbound connection.
-    # Scoped by who initiates: operator-initiated access (SSH, a tunnel) is out
-    # of scope, so "airgapped" does not have to mean "unreachable".
-    offline: bool = Field(
-        default=False,
-        description="Refuse all engine-initiated network egress (AUTOCONTEXT_OFFLINE)",
-    )
-
     # Notification settings
     notify_webhook_url: str | None = Field(default=None)
     notify_on: str = Field(default="threshold_met,failure")
