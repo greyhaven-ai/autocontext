@@ -124,75 +124,106 @@ class PreflightChecker:
         return results
 
     def check_budget_gates_can_fire(self) -> list[CheckResult]:
-        """Warn when a dollar budget is configured for a run that spends no dollars.
+        """Warn when a configured dollar gate cannot receive non-zero spend.
 
-        AC-934. Two gates are denominated in USD: `consultation_cost_budget`,
-        and `cost_budget_limit` / `cost_throttle_above_total` in the generation
-        pipeline. Spend accumulates from `CompletionResult.cost_usd`, which is
-        None for local providers, so on an all-local run the total stays at zero
-        and neither gate ever fires.
-
-        Deliberately NOT fixed by making a dollar budget bound something else.
-        The setting says dollars; a local run spends no dollars; not firing is
-        correct. Quietly repurposing it as a wall-clock or token bound would be
-        the silent substitution this codebase keeps removing -- the operator
-        would get a limit they never asked for, in a unit the name does not say.
-
-        What was actually missing is that nobody was told. An operator who set a
-        dollar budget as a proxy for "do not let this run forever" got no bound
-        and no signal. Advisory rather than blocking: the configuration is not
-        wrong, and refusing to start a working local run over an inert gate
-        would be worse than the gap it reports.
+        The two generation gates and the consultation gate use different
+        accumulators. Generation prices ``RoleUsage`` by model; consultation
+        sums provider-reported ``CompletionResult.cost_usd``. Reachability must
+        therefore be evaluated independently rather than inferred from one
+        provider or one routing estimate.
         """
         if self._settings is None:
             return []
 
-        budgets = {
+        generation_budgets = {
             "AUTOCONTEXT_COST_BUDGET_LIMIT": float(getattr(self._settings, "cost_budget_limit", 0.0) or 0.0),
             "AUTOCONTEXT_COST_THROTTLE_ABOVE_TOTAL": float(
                 getattr(self._settings, "cost_throttle_above_total", 0.0) or 0.0
             ),
-            "AUTOCONTEXT_CONSULTATION_COST_BUDGET": float(
-                getattr(self._settings, "consultation_cost_budget", 0.0) or 0.0
-            ),
         }
-        configured = sorted(name for name, value in budgets.items() if value > 0)
-        if not configured:
-            return []
+        configured_generation = sorted(name for name, value in generation_budgets.items() if value > 0)
+        consultation_budget = float(getattr(self._settings, "consultation_cost_budget", 0.0) or 0.0)
+        results: list[CheckResult] = []
 
-        # Asked of the router rather than inferred from the provider name: after
-        # AC-911 hosting is declared, so a self-hosted frontier endpoint and a
-        # cloud one are distinguishable, and a priced role is what makes a
-        # dollar gate reachable at all.
-        from autocontext.agents.role_router import RoleRouter
+        if configured_generation:
+            reason = self._generation_budget_inert_reason()
+            if reason is not None:
+                time_budget = int(getattr(self._settings, "generation_time_budget_seconds", 0) or 0)
+                if time_budget <= 0:
+                    hint = (
+                        "AUTOCONTEXT_GENERATION_TIME_BUDGET_SECONDS can stop later stages after elapsed "
+                        "wall clock, but it does not cancel an in-flight provider call"
+                    )
+                else:
+                    hint = (
+                        f"a time budget is already set ({time_budget}s); it limits later stages after calls "
+                        "return, but it does not cancel an in-flight provider call"
+                    )
+                results.append(
+                    CheckResult(
+                        name="generation_budget_gate_inert",
+                        passed=False,
+                        detail=(
+                            f"{', '.join(configured_generation)} is set, but {reason}, so its accumulated "
+                            f"spend stays at zero and the budget cannot be reached. {hint}."
+                        ),
+                        blocking=False,
+                    )
+                )
 
-        router = RoleRouter(self._settings)
-        priced = [
-            role
-            for role in ("competitor", "analyst", "coach", "architect", "curator", "translator")
-            if router.route(role).estimated_cost_per_1k_tokens > 0
-        ]
-        if priced:
-            return []
-
-        time_budget = int(getattr(self._settings, "generation_time_budget_seconds", 0) or 0)
-        hint = (
-            "AUTOCONTEXT_GENERATION_TIME_BUDGET_SECONDS bounds a local run by wall clock"
-            if time_budget <= 0
-            else f"a time budget is already set ({time_budget}s), which does bound this run"
-        )
-        return [
-            CheckResult(
-                name="budget_gate_inert",
-                passed=False,
-                detail=(
-                    f"{', '.join(configured)} is set, but every role on this run routes to a "
-                    "locally hosted endpoint priced at zero, so accumulated spend stays at zero "
-                    f"and the budget can never be reached. {hint}."
-                ),
-                blocking=False,
+        if consultation_budget > 0:
+            provider = str(getattr(self._settings, "consultation_provider", "") or "configured provider")
+            if not bool(getattr(self._settings, "consultation_enabled", False)):
+                reason = "consultation is disabled"
+            else:
+                # ConsultationRunner persists CompletionResult.cost_usd exactly
+                # as returned. None of the providers constructible by the
+                # consultation path currently populate that field.
+                reason = f"the {provider} consultation path does not report CompletionResult.cost_usd"
+            results.append(
+                CheckResult(
+                    name="consultation_budget_gate_inert",
+                    passed=False,
+                    detail=(
+                        "AUTOCONTEXT_CONSULTATION_COST_BUDGET is set, but "
+                        f"{reason}, so new consultations add no recorded spend and the budget cannot be reached."
+                    ),
+                    blocking=False,
+                )
             )
-        ]
+
+        return results
+
+    def _generation_budget_inert_reason(self) -> str | None:
+        """Explain why generation's model-priced accumulator cannot advance."""
+        assert self._settings is not None
+        if not bool(getattr(self._settings, "cost_tracking_enabled", False)):
+            return "generation cost tracking is disabled"
+        if getattr(self._settings, "exploration_mode", "linear") == "tree":
+            return "tree exploration bypasses generation cost accounting"
+
+        from autocontext.agents.role_router import (
+            DEFAULT_ROUTING_TABLE,
+            RoleRouter,
+            RoutingContext,
+            available_local_models,
+        )
+
+        context = RoutingContext(
+            available_local_models=available_local_models(
+                self._settings,
+                scenario_name=self._scenario,
+            ),
+            scenario_name=self._scenario,
+        )
+        router = RoleRouter(self._settings)
+        # Generation gates price RoleUsage via CostCalculator. MLX completions
+        # currently expose no token usage, so their calculated contribution is
+        # zero. Other routes can contribute through model-based estimation even
+        # when their endpoint is locally hosted (for example Ollama or vLLM).
+        if all(router.route(role, context=context).provider_type == "mlx" for role in DEFAULT_ROUTING_TABLE):
+            return "every generation role uses MLX, whose completions expose no token usage to the cost tracker"
+        return None
 
     def run_without_scenario_check(self) -> list[CheckResult]:
         """Everything except the registry lookup.
