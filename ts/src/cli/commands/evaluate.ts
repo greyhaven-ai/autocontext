@@ -21,6 +21,7 @@ export async function cmdSolve(dbPath: string): Promise<void> {
     options: {
       description: { type: "string", short: "d" },
       gens: { type: "string", short: "g" },
+      generations: { type: "string" },
       iterations: { type: "string" },
       timeout: { type: "string" },
       "generation-time-budget": { type: "string" },
@@ -46,7 +47,10 @@ export async function cmdSolve(dbPath: string): Promise<void> {
 
   let plan;
   try {
-    plan = planSolveCommand({ ...values, positionals }, parsePositiveInteger);
+    plan = planSolveCommand(
+      { ...values, gens: values.gens ?? values.generations, positionals },
+      parsePositiveInteger,
+    );
   } catch (error) {
     const message = errorMessage(error).replace(/^Error:\s*/, "");
     if (values.json) {

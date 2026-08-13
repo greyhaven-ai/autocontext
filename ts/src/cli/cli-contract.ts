@@ -46,6 +46,16 @@ export const PositionalArgumentSchema = z.object({
   description: z.string().default(""),
 });
 
+export const RuntimeCommandShapeSchema = z.object({
+  positionals: z.array(PositionalArgumentSchema).default([]),
+  flags: z.array(FlagSchema).default([]),
+});
+
+export const RuntimeCommandShapesSchema = z.object({
+  python: RuntimeCommandShapeSchema.optional(),
+  typescript: RuntimeCommandShapeSchema.optional(),
+});
+
 export const OutputSpecSchema = z.object({
   modes: z.array(z.enum(["json", "ndjson", "text", "none"])).default(["text"]),
   streaming: z.enum(["single", "ndjson"]).default("single"),
@@ -79,6 +89,7 @@ export const CommandSpecSchema = z.object({
   output: OutputSpecSchema.optional(),
   exit_codes: ExitCodesSchema.default({}),
   examples: z.array(z.string()).default([]),
+  runtime_shapes: RuntimeCommandShapesSchema.optional().default({}),
 });
 
 export const ContractSchema = z.object({
@@ -106,6 +117,7 @@ import { readFileSync } from "node:fs";
 export function loadContract(path: string): Contract {
   const raw = readFileSync(path, "utf-8");
   const parsed: unknown = JSON.parse(raw);
+  validateVersion2Entries(parsed);
   const contract = ContractSchema.parse(parsed);
   return {
     ...contract,
@@ -121,6 +133,33 @@ export function loadContract(path: string): Contract {
       },
     })),
   };
+}
+
+function validateVersion2Entries(value: unknown): void {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return;
+  const record = value as Record<string, unknown>;
+  if (typeof record.schema_version !== "number" || record.schema_version < 2) return;
+  if (!Array.isArray(record.commands)) return;
+  const required = ["positionals", "flags", "output", "exit_codes", "examples", "runtime_shapes"];
+  for (const item of record.commands) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const command = item as Record<string, unknown>;
+    const missing = required.filter((field) => !(field in command));
+    if (missing.length > 0) {
+      throw new Error(
+        `contract v2 command ${JSON.stringify(command.id ?? "<unknown>")} missing fields: ${missing.join(", ")}`,
+      );
+    }
+    const support = command.runtime_support as Record<string, { status?: unknown }> | undefined;
+    const shapes = command.runtime_shapes as Record<string, unknown> | undefined;
+    for (const runtime of ["python", "typescript"] as const) {
+      if (support?.[runtime]?.status === "yes" && shapes?.[runtime] === undefined) {
+        throw new Error(
+          `contract v2 command ${JSON.stringify(command.id ?? "<unknown>")} missing ${runtime} runtime shape`,
+        );
+      }
+    }
+  }
 }
 
 /** Return the canonical command id every alias resolves to, or

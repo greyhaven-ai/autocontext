@@ -24,7 +24,6 @@ export interface InitCommandValues {
   provider?: string;
   model?: string;
   gens?: string;
-  "agents-md"?: boolean;
 }
 
 export interface InitPlan {

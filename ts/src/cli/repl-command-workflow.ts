@@ -1,7 +1,23 @@
-export const REPL_HELP_TEXT =
-  "autoctx repl (-s <saved-scenario> | -p <task-prompt>) [-r <rubric>] " +
-  "[--phase generate|revise] [-o <current-output>] [--reference-context TEXT] " +
-  "[--required-concept C]... [-m model] [-n turns]";
+export const REPL_HELP_TEXT = `autoctx repl — run a direct iterative task session
+
+Usage:
+  autoctx repl (--scenario <saved-scenario> | --prompt <task-prompt> --rubric <rubric>) [options]
+
+Options:
+  -s, --scenario <name>         Saved task scenario
+  -p, --prompt <text>           Task prompt
+  -r, --rubric <text>           Evaluation rubric
+  -o, --output <text>           Current output for revise mode
+  --phase <generate|revise>     Session phase (default: generate)
+  --reference-context <text>    Additional reference material
+  --required-concept <text>     Required concept; repeatable
+  -m, --model <name>            Model override
+  -n, --turns <N>               Maximum turns (default: 6)
+  --max-tokens <N>              Maximum tokens per turn (default: 2048)
+  -t, --temperature <N>         Sampling temperature (default: 0.2)
+  --max-stdout <N>              Maximum stdout characters (default: 8192)
+  --timeout-ms <N>              Code timeout in milliseconds (default: 10000)
+  --memory-mb <N>               Code memory limit in MiB (default: 64)`;
 
 export interface ReplCommandValues {
   scenario?: string;

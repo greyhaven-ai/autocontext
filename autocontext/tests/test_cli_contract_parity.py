@@ -7,13 +7,10 @@ surfaces immediately.
 
 What this pins:
 
-1. **Reverse direction**: every top-level Typer command observed on
-   the live ``autocontext.cli.app`` is either contracted, listed
-   as a contracted alias, or named in
-   ``UNCONTRACTED_TOP_LEVEL_ALLOWLIST``. Adding a new top-level
-   command without a contract entry (or allowlist line) fails the
-   test, so the operator is forced to either advertise it in the
-   contract or document why it stays uncontracted.
+1. **Reverse direction**: every public Typer command path observed
+   on the live ``autocontext.cli.app`` is contracted or is a
+   contracted compatibility alias. There is no allowlist escape
+   hatch for public commands.
 
 2. **Alias registration**: every contracted alias path must
    correspond to an observed top-level Typer command. Pins that
@@ -55,43 +52,8 @@ def contract() -> Contract:
     return load_contract(_contract_path())
 
 
-# Top-level Typer commands that are intentionally NOT advertised in
-# docs/cli-contract.json. Reasons range from "operator-internal"
-# (``worker``, ``import-package``) to "advanced surface tracked in a
-# future contract slice" (``investigate``, ``simulate``, ``train``).
-# Adding a new top-level command should land either in the contract
-# or on this list; nothing should slip through silently.
-UNCONTRACTED_TOP_LEVEL_ALLOWLIST: frozenset[str] = frozenset(
-    {
-        "ab-test",
-        "ambient",
-        "analytics",
-        "benchmark",
-        "ecosystem",
-        "export-training-data",
-        "hermes",
-        "import-package",
-        "investigate",
-        "probes",
-        "resume",
-        "self-improve",
-        "share",
-        # AC-925. Emits SKILL.md files for agent hosts; it is tooling for
-        # setting autocontext up rather than a way to run it, so it stays
-        # uncontracted alongside `hermes` rather than joining the paved road.
-        "skills",
-        "simulate",
-        "train",
-        "train-r1",
-        "tui",
-        "wait",
-        "worker",
-    }
-)
-
-
 # ---------------------------------------------------------------------------
-# Reverse direction: observed -> contract / alias / allowlist
+# Reverse direction: observed -> contract / alias
 # ---------------------------------------------------------------------------
 
 
@@ -118,34 +80,20 @@ def _observed_top_level_names(app: object) -> set[str]:
     return iter_paths | group_names
 
 
-def test_every_observed_top_level_command_is_accounted_for(
+def test_every_observed_public_command_path_is_contracted(
     contract: Contract,
 ) -> None:
-    """Every top-level Typer command OR group on the live ``app``
-    must be in the contract, in a contracted alias list, or on the
-    explicit ``UNCONTRACTED_TOP_LEVEL_ALLOWLIST``.
-
-    A new command shipped without a contract entry surfaces here so
-    the operator either adds it to the contract or documents why it
-    stays uncontracted via the allowlist.
-    """
+    """Every invokable Typer path must be canonical or a declared alias."""
     from autocontext.cli import app
 
-    observed = _observed_top_level_names(app)
-    contracted_top_level = {c.path[0] for c in contract.commands if len(c.path) == 1}
-    contracted_aliases = {a for c in contract.commands for a in c.aliases}
-    # Multi-token contract entries (e.g. `scenario.create`) anchor
-    # their top-level token; that token IS the visible Typer group
-    # name and must count as contracted.
-    contracted_parents = {c.path[0] for c in contract.commands if len(c.path) >= 2}
-    accounted_for = contracted_top_level | contracted_parents | contracted_aliases | UNCONTRACTED_TOP_LEVEL_ALLOWLIST
-
-    leaked = observed - accounted_for
+    observed = {tuple(path) for path in iter_python_command_paths(app)}
+    contracted = {tuple(command.path) for command in contract.commands}
+    aliases = {(alias,) for command in contract.commands for alias in command.aliases}
+    leaked = observed - contracted - aliases
     assert not leaked, (
-        "Top-level Typer commands/groups shipped without a contract "
-        "entry or allowlist line: "
-        f"{sorted(leaked)}. Either add them to docs/cli-contract.json "
-        "or to UNCONTRACTED_TOP_LEVEL_ALLOWLIST in this test."
+        "Public Typer command paths shipped without a contract entry: "
+        f"{sorted(leaked)}. Add them to docs/cli-contract.json or hide "
+        "the command from the public CLI."
     )
 
 
@@ -169,19 +117,6 @@ def test_every_contracted_alias_path_is_registered_in_typer(
             assert alias in observed, (
                 f"contracted alias {alias!r} on {cmd.id!r} is no longer registered as a top-level Typer command"
             )
-
-
-def test_allowlist_is_minimal(contract: Contract) -> None:
-    """Defensive: an entry on
-    ``UNCONTRACTED_TOP_LEVEL_ALLOWLIST`` that ALSO appears in the
-    contract is dead weight and confuses future readers. Reject the
-    duplication so the allowlist stays the "explicitly uncontracted"
-    set."""
-    contracted_top_level = {c.path[0] for c in contract.commands if len(c.path) == 1}
-    contracted_aliases = {a for c in contract.commands for a in c.aliases}
-    contracted = contracted_top_level | contracted_aliases
-    redundant = UNCONTRACTED_TOP_LEVEL_ALLOWLIST & contracted
-    assert not redundant, f"Allowlist entries that are ALSO in the contract: {sorted(redundant)}. Remove them from the allowlist."
 
 
 # ---------------------------------------------------------------------------

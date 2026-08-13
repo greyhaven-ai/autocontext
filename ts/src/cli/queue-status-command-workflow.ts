@@ -1,8 +1,27 @@
-export const QUEUE_HELP_TEXT =
-  "autoctx queue add -s <spec-name> [-p prompt] [-r rubric] [--priority N] " +
-  "[--min-rounds N] [--browser-url URL] [--rlm] [--rlm-turns N]\n" +
-  "autoctx queue -s <spec-name> [...]  (legacy alias; prefer `queue add`)\n" +
-  "autoctx queue status [--json]";
+export const QUEUE_HELP_TEXT = `autoctx queue — add work to the background queue
+
+Usage:
+  autoctx queue add --spec <name> [options]
+  autoctx queue --spec <name> [options]  (legacy form)
+  autoctx queue status [--json]
+
+Options:
+  -s, --spec <name>       Saved task specification to queue
+  -p, --prompt <text>     Override the task prompt
+  -r, --rubric <text>     Override the evaluation rubric
+  --priority <N>          Queue priority (default: 0)
+  --min-rounds <N>        Minimum improvement rounds (default: 1)
+  --browser-url <url>     Browser evidence URL
+  --rlm                   Enable the iterative runtime
+  --rlm-model <name>      Model override for the iterative runtime
+  --rlm-turns <N>         Maximum iterative-runtime turns
+  --rlm-max-tokens <N>    Maximum tokens per turn
+  --rlm-temperature <N>   Sampling temperature
+  --rlm-max-stdout <N>    Maximum captured stdout characters
+  --rlm-timeout-ms <N>    Code execution timeout in milliseconds
+  --rlm-memory-mb <N>     Code execution memory limit in MiB
+
+Next: autoctx queue status`;
 
 export interface QueueCommandValues {
   spec?: string;

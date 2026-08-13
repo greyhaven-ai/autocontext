@@ -11,7 +11,8 @@ Options:
   <text>                     Plain-language scenario/problem description
   -d, --description <text>   Same description as a named option
   --iterations <N>           Refinement iterations to run (default: 5)
-  -g, --gens <N>             Deprecated alias for --iterations
+  -g, --gens, --generations <N>
+                              Deprecated aliases for --iterations
   --family <name>            Force a scenario family before creation/routing
   --timeout <seconds>        Maximum time to wait for solve completion (default: 300)
   --generation-time-budget <seconds>

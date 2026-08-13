@@ -48,7 +48,6 @@ export async function cmdInit(): Promise<void> {
       provider: { type: "string" },
       model: { type: "string" },
       gens: { type: "string", default: "3" },
-      "agents-md": { type: "boolean" },
       help: { type: "boolean", short: "h" },
     },
   });
@@ -100,6 +99,12 @@ export async function cmdInit(): Promise<void> {
 }
 
 export async function cmdCapabilities(): Promise<void> {
+  if (process.argv.slice(3).some((arg) => arg === "--help" || arg === "-h")) {
+    console.log(
+      "autoctx capabilities\n\nPrint supported commands, providers, features, project state, and the shared CLI contract as JSON.",
+    );
+    process.exit(0);
+  }
   const { buildCapabilitiesPayload } = await import("../capabilities-command-workflow.js");
   const { getCapabilities } = await import("../../mcp/capabilities.js");
   const projectConfig = await buildProjectConfigSummary();

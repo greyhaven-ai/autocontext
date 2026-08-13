@@ -43,6 +43,10 @@ export async function cmdMission(dbPath: string): Promise<void> {
     console.log(MISSION_HELP_TEXT);
     process.exit(0);
   }
+  if (process.argv.slice(4).some((arg) => arg === "--help" || arg === "-h")) {
+    console.log(MISSION_HELP_TEXT);
+    process.exit(0);
+  }
 
   const manager = new MissionManager(dbPath);
   try {

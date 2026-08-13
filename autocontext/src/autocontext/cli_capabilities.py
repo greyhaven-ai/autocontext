@@ -56,6 +56,33 @@ def _default_contract_path() -> Path:
 
 
 def _contract_command_to_payload(cmd: Any) -> dict[str, Any]:
+    def flag_payload(flag: Any) -> dict[str, Any]:
+        return {
+            "name": flag.name,
+            "type": flag.type,
+            "aliases": list(flag.aliases),
+            "short_names": list(flag.short_names),
+            "required": flag.required,
+            "description": flag.description,
+            "default": flag.default,
+            "choices": list(flag.choices),
+            "value_aliases": dict(flag.value_aliases),
+        }
+
+    def positional_payload(positional: Any) -> dict[str, Any]:
+        return {
+            "name": positional.name,
+            "type": positional.type,
+            "required": positional.required,
+            "description": positional.description,
+        }
+
+    def shape_payload(shape: Any) -> dict[str, Any]:
+        return {
+            "positionals": [positional_payload(item) for item in shape.positionals],
+            "flags": [flag_payload(item) for item in shape.flags],
+        }
+
     payload: dict[str, Any] = {
         "id": cmd.id,
         "path": list(cmd.path),
@@ -64,29 +91,8 @@ def _contract_command_to_payload(cmd: Any) -> dict[str, Any]:
         "maturity": cmd.maturity,
         "domain_concept": cmd.domain_concept,
         "aliases": list(cmd.aliases),
-        "positionals": [
-            {
-                "name": positional.name,
-                "type": positional.type,
-                "required": positional.required,
-                "description": positional.description,
-            }
-            for positional in cmd.positionals
-        ],
-        "flags": [
-            {
-                "name": flag.name,
-                "type": flag.type,
-                "aliases": list(flag.aliases),
-                "short_names": list(flag.short_names),
-                "required": flag.required,
-                "description": flag.description,
-                "default": flag.default,
-                "choices": list(flag.choices),
-                "value_aliases": dict(flag.value_aliases),
-            }
-            for flag in cmd.flags
-        ],
+        "positionals": [positional_payload(item) for item in cmd.positionals],
+        "flags": [flag_payload(item) for item in cmd.flags],
         "output_contract": cmd.output_contract,
         "output": {
             "modes": list(cmd.output.modes),
@@ -94,6 +100,7 @@ def _contract_command_to_payload(cmd: Any) -> dict[str, Any]:
             "success_stream": cmd.output.success_stream,
             "error_stream": cmd.output.error_stream,
             "schemas": dict(cmd.output.schemas),
+            "fixtures": dict(cmd.output.fixtures),
         },
         "exit_codes": {
             "success": cmd.exit_codes.success,
@@ -101,6 +108,18 @@ def _contract_command_to_payload(cmd: Any) -> dict[str, Any]:
             "execution": cmd.exit_codes.execution,
         },
         "examples": list(cmd.examples),
+        "runtime_shapes": {
+            **(
+                {"python": shape_payload(cmd.runtime_shapes.python)}
+                if cmd.runtime_shapes.python is not None
+                else {}
+            ),
+            **(
+                {"typescript": shape_payload(cmd.runtime_shapes.typescript)}
+                if cmd.runtime_shapes.typescript is not None
+                else {}
+            ),
+        },
         "runtime_support": {
             "python": {"status": cmd.runtime_support.python.status.value},
             "typescript": {"status": cmd.runtime_support.typescript.status.value},

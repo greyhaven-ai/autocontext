@@ -10,6 +10,17 @@ Subcommands:
   cancel     Cancel a mission
   artifacts  Inspect saved mission checkpoints
 
+Options by subcommand:
+  create     --type --name --goal --max-steps --repo-path --test-command
+             --lint-command --build-command
+  run        --id --max-iterations --step-description
+  status     --id
+  list       --status
+  artifacts  --id
+  pause      --id
+  resume     --id
+  cancel     --id
+
 Examples:
   autoctx mission create --name "Ship login" --goal "Implement OAuth"
   autoctx mission create --type code --name "Fix login" --goal "Tests pass" --repo-path . --test-command "npm test"

@@ -30,10 +30,11 @@ Usage:
 Options:
   <run-id>             Run to export as a strategy package
   --run-id <id>        Same run id as a named option
-  --scenario <name>    Scenario to export
+  -s, --scenario <name>
+                       Scenario to export
   --format <format>    Artifact format: json or pi-package (default: json)
                        Legacy value "strategy" is an alias for json
-  --output <path>      JSON file or Pi-package directory
+  -o, --output <path>  JSON file or Pi-package directory
                        JSON defaults to stdout; Pi defaults to <scenario>-pi-package
   --json               Emit a structured receipt when writing an artifact
 

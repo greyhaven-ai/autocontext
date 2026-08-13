@@ -14,6 +14,7 @@ import {
 
 const HELP = buildCliHelp();
 const FULL_HELP = buildCliHelp({ all: true });
+const VERSION_HELP = `autoctx version [--json]\n\nShow package version and runtime identity.`;
 
 async function printVersion(json: boolean): Promise<void> {
   const pkg = await import("../../package.json", { with: { type: "json" } });
@@ -45,6 +46,10 @@ async function main(): Promise<void> {
   const route = resolveCliCommand(command);
   switch (route.kind) {
     case "version": {
+      if (process.argv.slice(3).some((arg) => arg === "--help" || arg === "-h")) {
+        console.log(VERSION_HELP);
+        break;
+      }
       await printVersion(process.argv.slice(3).includes("--json"));
       break;
     }

@@ -24,7 +24,6 @@ describe("init command workflow", () => {
           provider: undefined,
           model: undefined,
           gens: undefined,
-          "agents-md": false,
         },
         {
           resolvePath: (value: string) => value,
@@ -49,7 +48,6 @@ describe("init command workflow", () => {
           provider: undefined,
           model: undefined,
           gens: undefined,
-          "agents-md": false,
         },
         {
           resolvePath: (value: string) => value,
@@ -86,7 +84,6 @@ describe("init command workflow", () => {
           provider: "ollama",
           model: "llama3.2",
           gens: "5",
-          "agents-md": true,
         },
         {
           resolvePath: (value: string) => value,
@@ -132,7 +129,6 @@ describe("init command workflow", () => {
           provider: undefined,
           model: undefined,
           gens: "4",
-          "agents-md": false,
         },
         {
           resolvePath: (value: string) => value,

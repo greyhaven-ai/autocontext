@@ -37,6 +37,8 @@ def test_build_capabilities_payload_shape() -> None:
     assert export["positionals"][0]["name"] == "run-id"
     assert export["output"]["success_stream"] == "stdout"
     assert export["exit_codes"] == {"success": 0, "usage": 2, "execution": 1}
+    assert export["runtime_shapes"]["python"]["flags"]
+    assert export["runtime_shapes"]["typescript"]["flags"]
 
 
 def test_capabilities_payload_includes_paved_road_commands() -> None:

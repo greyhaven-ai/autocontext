@@ -92,6 +92,22 @@ class PositionalArgument:
 
 
 @dataclass(frozen=True, slots=True)
+class RuntimeCommandShape:
+    """The complete public input shape exposed by one runtime."""
+
+    positionals: tuple[PositionalArgument, ...] = ()
+    flags: tuple[Flag, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeCommandShapes:
+    """Runtime-specific input shapes around the shared canonical subset."""
+
+    python: RuntimeCommandShape | None = None
+    typescript: RuntimeCommandShape | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class OutputSpec:
     """Wire-output and stream conventions for a command."""
 
@@ -130,6 +146,7 @@ class CommandSpec:
     output: OutputSpec = OutputSpec()
     exit_codes: ExitCodes = ExitCodes()
     examples: tuple[str, ...] = ()
+    runtime_shapes: RuntimeCommandShapes = RuntimeCommandShapes()
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,31 +166,13 @@ class Contract:
 def load_contract(path: Path) -> Contract:
     """Load ``docs/cli-contract.json`` into a :class:`Contract`."""
     raw = json.loads(path.read_text(encoding="utf-8"))
+    schema_version = int(raw.get("schema_version", 1))
+    if schema_version >= 2:
+        _validate_v2_entries(raw.get("commands", []))
     commands: list[CommandSpec] = []
     for entry in raw.get("commands", []):
-        flags = tuple(
-            Flag(
-                name=f["name"],
-                type=f.get("type", "string"),
-                aliases=tuple(f.get("aliases", [])),
-                short_names=tuple(f.get("short_names", [])),
-                required=bool(f.get("required", False)),
-                description=f.get("description", ""),
-                default=f.get("default"),
-                choices=tuple(f.get("choices", [])),
-                value_aliases=tuple(sorted(f.get("value_aliases", {}).items())),
-            )
-            for f in entry.get("flags", [])
-        )
-        positionals = tuple(
-            PositionalArgument(
-                name=positional["name"],
-                type=positional.get("type", "string"),
-                required=bool(positional.get("required", False)),
-                description=positional.get("description", ""),
-            )
-            for positional in entry.get("positionals", [])
-        )
+        flags = _load_flags(entry.get("flags", []))
+        positionals = _load_positionals(entry.get("positionals", []))
         output_raw = entry.get("output", {})
         output = OutputSpec(
             modes=tuple(output_raw.get("modes", [entry.get("output_contract", "text")])),
@@ -194,6 +193,11 @@ def load_contract(path: Path) -> Contract:
             python=_load_runtime_support(support_raw.get("python", {})),
             typescript=_load_runtime_support(support_raw.get("typescript", {})),
         )
+        runtime_shapes_raw = entry.get("runtime_shapes", {})
+        runtime_shapes = RuntimeCommandShapes(
+            python=_load_runtime_shape(runtime_shapes_raw.get("python")),
+            typescript=_load_runtime_shape(runtime_shapes_raw.get("typescript")),
+        )
         commands.append(
             CommandSpec(
                 id=entry["id"],
@@ -210,12 +214,66 @@ def load_contract(path: Path) -> Contract:
                 output=output,
                 exit_codes=exit_codes,
                 examples=tuple(entry.get("examples", [])),
+                runtime_shapes=runtime_shapes,
             )
         )
     return Contract(
-        schema_version=int(raw.get("schema_version", 1)),
+        schema_version=schema_version,
         commands=tuple(commands),
     )
+
+
+def _load_flags(raw: Iterable[dict[str, Any]]) -> tuple[Flag, ...]:
+    return tuple(
+        Flag(
+            name=item["name"],
+            type=item.get("type", "string"),
+            aliases=tuple(item.get("aliases", [])),
+            short_names=tuple(item.get("short_names", [])),
+            required=bool(item.get("required", False)),
+            description=item.get("description", ""),
+            default=item.get("default"),
+            choices=tuple(item.get("choices", [])),
+            value_aliases=tuple(sorted(item.get("value_aliases", {}).items())),
+        )
+        for item in raw
+    )
+
+
+def _load_positionals(raw: Iterable[dict[str, Any]]) -> tuple[PositionalArgument, ...]:
+    return tuple(
+        PositionalArgument(
+            name=item["name"],
+            type=item.get("type", "string"),
+            required=bool(item.get("required", False)),
+            description=item.get("description", ""),
+        )
+        for item in raw
+    )
+
+
+def _load_runtime_shape(raw: dict[str, Any] | None) -> RuntimeCommandShape | None:
+    if raw is None:
+        return None
+    return RuntimeCommandShape(
+        positionals=_load_positionals(raw.get("positionals", [])),
+        flags=_load_flags(raw.get("flags", [])),
+    )
+
+
+def _validate_v2_entries(entries: Iterable[dict[str, Any]]) -> None:
+    """Reject partially specified v2 entries while v1 stays compatible."""
+    required = {"positionals", "flags", "output", "exit_codes", "examples", "runtime_shapes"}
+    for entry in entries:
+        missing = required - entry.keys()
+        if missing:
+            msg = f"contract v2 command {entry.get('id', '<unknown>')!r} missing fields: {sorted(missing)}"
+            raise ValueError(msg)
+        for runtime in ("python", "typescript"):
+            support = entry.get("runtime_support", {}).get(runtime, {}).get("status")
+            if support == "yes" and runtime not in entry["runtime_shapes"]:
+                msg = f"contract v2 command {entry.get('id', '<unknown>')!r} missing {runtime} runtime shape"
+                raise ValueError(msg)
 
 
 def _load_runtime_support(blob: dict[str, Any]) -> RuntimeSupport:
@@ -275,6 +333,8 @@ __all__ = [
     "RuntimeStatus",
     "RuntimeSupport",
     "RuntimeSupportPair",
+    "RuntimeCommandShape",
+    "RuntimeCommandShapes",
     "iter_python_command_paths",
     "load_contract",
 ]

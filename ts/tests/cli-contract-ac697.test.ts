@@ -67,6 +67,26 @@ describe("AC-697 CLI contract — schema sanity", () => {
     expect(command?.examples.length).toBeGreaterThan(0);
   });
 
+  it("requires explicit v2 fields and a shape for every supported runtime", () => {
+    const raw = JSON.parse(readFileSync(CONTRACT_PATH, "utf-8")) as {
+      commands: Array<Record<string, unknown>>;
+    };
+    const required = ["positionals", "flags", "output", "exit_codes", "examples", "runtime_shapes"];
+    for (const command of raw.commands) {
+      for (const field of required) {
+        expect(field in command, `${String(command.id)} missing ${field}`).toBe(true);
+      }
+      expect((command.examples as unknown[]).length, `${String(command.id)} examples`).toBeGreaterThan(0);
+      const support = command.runtime_support as Record<string, { status: string }>;
+      const shapes = command.runtime_shapes as Record<string, unknown>;
+      for (const runtime of ["python", "typescript"] as const) {
+        if (support[runtime]?.status === "yes") {
+          expect(shapes[runtime], `${String(command.id)}.${runtime} shape`).toBeDefined();
+        }
+      }
+    }
+  });
+
   it("keeps version-1 command entries loadable with compatibility defaults", () => {
     const raw = JSON.parse(readFileSync(CONTRACT_PATH, "utf-8")) as {
       schema_version: number;
@@ -193,6 +213,28 @@ describe("AC-697 CLI contract — TypeScript parity", () => {
             registered.has(cmd.path[0]),
             `contract claims TS support for ${cmd.id} at ${JSON.stringify(cmd.path)} but the parent token ${JSON.stringify(cmd.path[0])} is not a registered command`,
           ).toBe(true);
+        }
+      }
+    }
+  });
+
+  it("every canonical flag spelling is accepted by each yes-supported runtime shape", () => {
+    const contract = loadContract(CONTRACT_PATH);
+    for (const command of contract.commands) {
+      for (const runtime of ["python", "typescript"] as const) {
+        if (command.runtime_support[runtime].status !== "yes") continue;
+        const shape = command.runtime_shapes[runtime];
+        expect(shape, `${command.id}.${runtime} missing runtime shape`).toBeDefined();
+        const accepted = new Set(
+          shape?.flags.flatMap((flag) => [flag.name, ...flag.aliases, ...flag.short_names]),
+        );
+        for (const flag of command.flags) {
+          for (const spelling of [flag.name, ...flag.aliases, ...flag.short_names]) {
+            expect(
+              accepted.has(spelling),
+              `${command.id}.${runtime} does not accept canonical flag ${spelling}`,
+            ).toBe(true);
+          }
         }
       }
     }

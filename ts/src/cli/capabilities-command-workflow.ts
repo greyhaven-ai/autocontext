@@ -31,6 +31,7 @@ export interface CapabilitiesContractCommand {
   readonly output: CommandSpec["output"];
   readonly exit_codes: CommandSpec["exit_codes"];
   readonly examples: CommandSpec["examples"];
+  readonly runtime_shapes: CommandSpec["runtime_shapes"];
   readonly runtime_support: {
     readonly python: { readonly status: string; readonly reason?: string };
     readonly typescript: { readonly status: string; readonly reason?: string };
@@ -93,6 +94,7 @@ function _toContractCommand(cmd: CommandSpec): CapabilitiesContractCommand {
     output: cmd.output,
     exit_codes: cmd.exit_codes,
     examples: cmd.examples,
+    runtime_shapes: cmd.runtime_shapes,
     runtime_support: {
       python: {
         status: cmd.runtime_support.python.status,
