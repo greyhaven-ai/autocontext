@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from autocontext.agents import role_routing_contract_generated as _contract
@@ -49,6 +50,49 @@ class RoutingContext:
     is_plateau: bool = False
     available_local_models: list[str] = field(default_factory=list)
     scenario_name: str = ""
+
+
+def available_local_models(
+    settings: AppSettings,
+    *,
+    scenario_name: str = "",
+    runtime_type: str = "provider",
+) -> list[str]:
+    """Return local model artifacts that role routing can actually execute.
+
+    Both orchestration and preflight need the same answer. Keeping discovery
+    beside ``RoutingContext`` prevents an advisory from evaluating a different
+    route than the generation it describes.
+    """
+    model_path = settings.mlx_model_path.strip()
+    if model_path:
+        return [model_path] if Path(model_path).exists() else []
+    if not scenario_name:
+        return []
+
+    try:
+        from autocontext.providers.scenario_routing import (
+            ScenarioRoutingContext,
+            resolve_provider_for_context,
+        )
+        from autocontext.training.model_registry import ModelRegistry
+
+        decision = resolve_provider_for_context(
+            ScenarioRoutingContext(
+                scenario=scenario_name,
+                backend="mlx",
+                runtime_type=runtime_type,
+            ),
+            ModelRegistry(settings.knowledge_root),
+            fallback_provider="",
+            fallback_model="",
+        )
+    except Exception:
+        return []
+    if decision.fallback_used or decision.provider_type != "mlx":
+        return []
+    candidate_path = decision.model.strip()
+    return [candidate_path] if candidate_path and Path(candidate_path).exists() else []
 
 
 # The values below derive from docs/role-routing-contract.json via the

@@ -123,13 +123,119 @@ class PreflightChecker:
             )
         return results
 
+    def check_budget_gates_can_fire(self) -> list[CheckResult]:
+        """Warn when a configured dollar gate cannot receive non-zero spend.
+
+        The two generation gates and the consultation gate use different
+        accumulators. Generation prices ``RoleUsage`` by model; consultation
+        sums provider-reported ``CompletionResult.cost_usd``. Reachability must
+        therefore be evaluated independently rather than inferred from one
+        provider or one routing estimate.
+        """
+        if self._settings is None:
+            return []
+
+        generation_budgets = {
+            "AUTOCONTEXT_COST_BUDGET_LIMIT": float(getattr(self._settings, "cost_budget_limit", 0.0) or 0.0),
+            "AUTOCONTEXT_COST_THROTTLE_ABOVE_TOTAL": float(
+                getattr(self._settings, "cost_throttle_above_total", 0.0) or 0.0
+            ),
+        }
+        configured_generation = sorted(name for name, value in generation_budgets.items() if value > 0)
+        consultation_budget = float(getattr(self._settings, "consultation_cost_budget", 0.0) or 0.0)
+        results: list[CheckResult] = []
+
+        if configured_generation:
+            reason = self._generation_budget_inert_reason()
+            if reason is not None:
+                time_budget = int(getattr(self._settings, "generation_time_budget_seconds", 0) or 0)
+                if time_budget <= 0:
+                    hint = (
+                        "AUTOCONTEXT_GENERATION_TIME_BUDGET_SECONDS can stop later stages after elapsed "
+                        "wall clock, but it does not cancel an in-flight provider call"
+                    )
+                else:
+                    hint = (
+                        f"a time budget is already set ({time_budget}s); it limits later stages after calls "
+                        "return, but it does not cancel an in-flight provider call"
+                    )
+                results.append(
+                    CheckResult(
+                        name="generation_budget_gate_inert",
+                        passed=False,
+                        detail=(
+                            f"{', '.join(configured_generation)} is set, but {reason}, so its accumulated "
+                            f"spend stays at zero and the budget cannot be reached. {hint}."
+                        ),
+                        blocking=False,
+                    )
+                )
+
+        if consultation_budget > 0:
+            provider = str(getattr(self._settings, "consultation_provider", "") or "configured provider")
+            if not bool(getattr(self._settings, "consultation_enabled", False)):
+                reason = "consultation is disabled"
+            else:
+                # ConsultationRunner persists CompletionResult.cost_usd exactly
+                # as returned. None of the providers constructible by the
+                # consultation path currently populate that field.
+                reason = f"the {provider} consultation path does not report CompletionResult.cost_usd"
+            results.append(
+                CheckResult(
+                    name="consultation_budget_gate_inert",
+                    passed=False,
+                    detail=(
+                        "AUTOCONTEXT_CONSULTATION_COST_BUDGET is set, but "
+                        f"{reason}, so new consultations add no recorded spend and the budget cannot be reached."
+                    ),
+                    blocking=False,
+                )
+            )
+
+        return results
+
+    def _generation_budget_inert_reason(self) -> str | None:
+        """Explain why generation's model-priced accumulator cannot advance."""
+        assert self._settings is not None
+        if not bool(getattr(self._settings, "cost_tracking_enabled", False)):
+            return "generation cost tracking is disabled"
+        if getattr(self._settings, "exploration_mode", "linear") == "tree":
+            return "tree exploration bypasses generation cost accounting"
+
+        from autocontext.agents.role_router import (
+            DEFAULT_ROUTING_TABLE,
+            RoleRouter,
+            RoutingContext,
+            available_local_models,
+        )
+
+        context = RoutingContext(
+            available_local_models=available_local_models(
+                self._settings,
+                scenario_name=self._scenario,
+            ),
+            scenario_name=self._scenario,
+        )
+        router = RoleRouter(self._settings)
+        # Generation gates price RoleUsage via CostCalculator. MLX completions
+        # currently expose no token usage, so their calculated contribution is
+        # zero. Other routes can contribute through model-based estimation even
+        # when their endpoint is locally hosted (for example Ollama or vLLM).
+        if all(router.route(role, context=context).provider_type == "mlx" for role in DEFAULT_ROUTING_TABLE):
+            return "every generation role uses MLX, whose completions expose no token usage to the cost tracker"
+        return None
+
     def run_without_scenario_check(self) -> list[CheckResult]:
         """Everything except the registry lookup.
 
         Agent-task scenarios are resolved outside SCENARIO_REGISTRY, so that
         check would reject them; the endpoint checks apply just the same.
         """
-        return [self.check_knowledge_writable(), *self.check_endpoint()]
+        return [
+            self.check_knowledge_writable(),
+            *self.check_endpoint(),
+            *self.check_budget_gates_can_fire(),
+        ]
 
     def run_all(self) -> list[CheckResult]:
         """Run all preflight checks."""
@@ -137,6 +243,7 @@ class PreflightChecker:
             self.check_scenario_exists(),
             self.check_knowledge_writable(),
             *self.check_endpoint(),
+            *self.check_budget_gates_can_fire(),
         ]
 
     @staticmethod

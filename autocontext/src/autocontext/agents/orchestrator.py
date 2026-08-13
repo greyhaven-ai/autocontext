@@ -4,7 +4,6 @@ import logging
 from collections.abc import Callable, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from autocontext.agents import role_runtime_overrides
@@ -22,7 +21,7 @@ from autocontext.agents.orchestrator_helpers import (
     _run_translator_phase,
 )
 from autocontext.agents.parsers import parse_analyst_exec, parse_architect_exec, parse_coach_exec, parse_competitor_output
-from autocontext.agents.role_router import ProviderClass, RoleRouter, RoutingContext
+from autocontext.agents.role_router import ProviderClass, RoleRouter, RoutingContext, available_local_models
 from autocontext.agents.runtime_session_wiring import runtime_session_client_for_role
 from autocontext.agents.skeptic import SkepticAgent
 from autocontext.agents.subagent_runtime import SubagentRuntime
@@ -251,35 +250,11 @@ class AgentOrchestrator:
         return configured_role_provider(role, self.settings)
 
     def _available_local_models(self, scenario_name: str = "", runtime_type: str = "provider") -> list[str]:
-        model_path = self.settings.mlx_model_path.strip()
-        if not model_path:
-            if not scenario_name:
-                return []
-            try:
-                from autocontext.providers.scenario_routing import (
-                    ScenarioRoutingContext,
-                    resolve_provider_for_context,
-                )
-                from autocontext.training.model_registry import ModelRegistry
-
-                decision = resolve_provider_for_context(
-                    ScenarioRoutingContext(
-                        scenario=scenario_name,
-                        backend="mlx",
-                        runtime_type=runtime_type,
-                    ),
-                    ModelRegistry(self.settings.knowledge_root),
-                    fallback_provider="",
-                    fallback_model="",
-                )
-            except Exception:
-                logger.debug("agents.orchestrator: caught Exception", exc_info=True)
-                return []
-            if decision.fallback_used or decision.provider_type != "mlx":
-                return []
-            candidate_path = decision.model.strip()
-            return [candidate_path] if candidate_path and Path(candidate_path).exists() else []
-        return [model_path] if Path(model_path).exists() else []
+        return available_local_models(
+            self.settings,
+            scenario_name=scenario_name,
+            runtime_type=runtime_type,
+        )
 
     def _scenario_bound_runtime_client(
         self,
