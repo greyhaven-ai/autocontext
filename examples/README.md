@@ -62,7 +62,8 @@ Add this to your project-level `.claude/settings.json` and replace `/ABSOLUTE/PA
         "--directory",
         "/ABSOLUTE/PATH/TO/REPO/autocontext",
         "autoctx",
-        "mcp-serve"
+        "serve",
+        "mcp"
       ],
       "env": {
         "AUTOCONTEXT_AGENT_PROVIDER": "anthropic",

@@ -203,7 +203,7 @@ def _resolve_solve_description(
 
 
 def _resolve_solve_generations(gens: int | None, iterations: int | None) -> int:
-    return gens if gens is not None else iterations if iterations is not None else 5
+    return iterations if iterations is not None else gens if gens is not None else 5
 
 
 def register_solve_command(
@@ -230,20 +230,21 @@ def register_solve_command(
                 "Convenient for long descriptions stored on disk (AC-737)."
             ),
         ),
-        gens: int | None = typer.Option(
-            None,
-            "--gens",
-            "--generations",
-            min=1,
-            max=50,
-            help="Generations to run for the solve (--generations alias accepted).",
-        ),
         iterations: int | None = typer.Option(
             None,
             "--iterations",
             min=1,
             max=50,
-            help="Plain-language alias for --gens",
+            help="Number of refinement iterations to run.",
+        ),
+        gens: int | None = typer.Option(
+            None,
+            "--gens",
+            "--generations",
+            "-g",
+            min=1,
+            max=50,
+            help="Deprecated aliases for --iterations.",
         ),
         timeout: float | None = typer.Option(
             None,
@@ -281,6 +282,7 @@ def register_solve_command(
             help="Experimental minimal-output mode: off, guide, or enforce (enforce is guide-only for now).",
         ),
     ) -> None:
+        """Create and improve a scenario from a plain-language goal."""
         _validate_family_override(family)
         write_json_stderr = _cli_attr(dependency_module, "_write_json_stderr")
 
@@ -305,7 +307,7 @@ def register_solve_command(
                     write_json_stderr(str(exc))
                 else:
                     typer.echo(str(exc), err=True)
-                raise typer.Exit(code=1) from exc
+                raise typer.Exit(code=2) from exc
             resolved_description = resolved.text
         else:
             resolved_description = ""
@@ -316,7 +318,7 @@ def register_solve_command(
                 write_json_stderr(message)
             else:
                 typer.echo(message, err=True)
-            raise typer.Exit(code=1)
+            raise typer.Exit(code=2)
         run_solve_command(
             description=resolved_description,
             gens=_resolve_solve_generations(gens, iterations),

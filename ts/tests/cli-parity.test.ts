@@ -225,13 +225,15 @@ describe("CLI parity — help output", () => {
     expect(stdout).toContain("import-package");
   });
 
-  it("help includes new-scenario command", () => {
+  it("default help uses canonical scenario create and hides its legacy alias", () => {
     const { stdout } = runCli(["--help"]);
-    expect(stdout).toContain("new-scenario");
+    expect(stdout).toContain("scenario");
+    expect(stdout).not.toContain("new-scenario");
+    expect(runCli(["--help", "--all"]).stdout).toContain("new-scenario");
   });
 
   it("help includes benchmark command", () => {
-    const { stdout } = runCli(["--help"]);
+    const { stdout } = runCli(["--help", "--all"]);
     expect(stdout).toContain("benchmark");
   });
 });
@@ -255,6 +257,23 @@ describe("CLI status command", () => {
       expect(exitCode).toBe(1);
       expect(stdout).toBe("");
       expect(JSON.parse(stderr)).toEqual({ error: "run 'missing-run' not found" });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("CLI run defaults", () => {
+  it("does not silently select a built-in scenario", () => {
+    const dir = makeTempDir();
+    try {
+      const { stdout, stderr, exitCode } = runCli(["run", "--json"], {
+        AUTOCONTEXT_CONFIG_DIR: join(dir, "config"),
+      });
+
+      expect(exitCode).toBe(2);
+      expect(stdout).toBe("");
+      expect(JSON.parse(stderr)).toMatchObject({ error: expect.stringContaining("no scenario configured") });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

@@ -48,8 +48,13 @@ export async function cmdSolve(dbPath: string): Promise<void> {
   try {
     plan = planSolveCommand({ ...values, positionals }, parsePositiveInteger);
   } catch (error) {
-    console.error(errorMessage(error));
-    process.exit(1);
+    const message = errorMessage(error).replace(/^Error:\s*/, "");
+    if (values.json) {
+      process.stderr.write(`${JSON.stringify({ error: message })}\n`);
+    } else {
+      console.error(`Error: ${message}`);
+    }
+    process.exit(2);
   }
 
   const { SQLiteStore } = await import("../../storage/index.js");
@@ -78,7 +83,12 @@ export async function cmdSolve(dbPath: string): Promise<void> {
     }
     console.log(renderSolveCommandSummary(summary, plan.json));
   } catch (error) {
-    console.error(errorMessage(error));
+    const message = errorMessage(error).replace(/^Error:\s*/, "");
+    if (plan.json) {
+      process.stderr.write(`${JSON.stringify({ error: message })}\n`);
+    } else {
+      console.error(`Error: ${message}`);
+    }
     provider?.close?.();
     process.exit(1);
   } finally {

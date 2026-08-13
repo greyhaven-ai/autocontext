@@ -1,16 +1,21 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 import {
   buildCliHelp,
   resolveCliCommand,
-  visibleCommandNames,
   visibleSupportedCommandNames,
 } from "../src/cli/command-registry.js";
 
+const HELP_LAYOUT = JSON.parse(
+  readFileSync(resolve(import.meta.dirname, "..", "..", "docs", "cli-fixtures", "help-layout-v1.json"), "utf-8"),
+) as { categories: string[]; paved_road: string[] };
+
 describe("CLI command registry", () => {
   it("keeps visible command metadata unique and present in help", () => {
-    const names = visibleCommandNames();
-    const help = buildCliHelp();
+    const names = visibleSupportedCommandNames();
+    const help = buildCliHelp({ all: true });
 
     expect(new Set(names).size).toBe(names.length);
     for (const name of names) {
@@ -18,11 +23,39 @@ describe("CLI command registry", () => {
     }
   });
 
+  it("keeps the six paved-road commands first in workflow order", () => {
+    const help = buildCliHelp();
+    const offsets = HELP_LAYOUT.paved_road.map((name) =>
+      help.indexOf(`  ${name}`),
+    );
+
+    expect(offsets.every((offset) => offset >= 0)).toBe(true);
+    expect(offsets).toEqual([...offsets].sort((left, right) => left - right));
+    for (const category of HELP_LAYOUT.categories) {
+      expect(help).toContain(`${category}:`);
+    }
+    expect(help).not.toContain("new-scenario");
+    expect(help).not.toContain("mcp-serve");
+    expect(help).not.toContain("Python-only");
+    expect(help).toContain("--help --all");
+  });
+
   it("describes top-level status as run status", () => {
     const help = buildCliHelp();
 
     expect(help).toMatch(/status\s+Show run status/);
     expect(help).not.toMatch(/status\s+Show queue status/);
+  });
+
+  it("keeps advanced commands and compatibility aliases in expanded help", () => {
+    const help = buildCliHelp({ all: true });
+
+    expect(help).toContain("Advanced:");
+    expect(help).toContain("benchmark");
+    expect(help).toContain("Compatibility aliases (deprecated):");
+    expect(help).toContain("new-scenario");
+    expect(help).toContain("mcp-serve");
+    expect(help).not.toContain("Python-only");
   });
 
   it("exposes supported commands separately from Python-only help entries", () => {

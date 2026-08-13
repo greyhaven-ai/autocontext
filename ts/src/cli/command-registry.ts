@@ -344,27 +344,25 @@ const COMMANDS: readonly CommandDescriptor[] = [
   },
   {
     name: "production-traces",
-    description:
-      "Ingest/list/show/stats/build-dataset/export/policy/rotate-salt/prune (Foundation A — AC-539)",
+    description: "Ingest, inspect, curate, and export production traces",
     group: "control-plane",
     route: { kind: "no-db", command: "production-traces" },
   },
   {
     name: "instrument",
-    description:
-      "Scan a repo for LLM clients and propose/apply Autocontext wrappers (A2-I — AC-540)",
+    description: "Scan a repo for LLM clients and propose or apply wrappers",
     group: "control-plane",
     route: { kind: "no-db", command: "instrument" },
   },
   {
     name: "trace-findings",
-    description: "Extract structured findings from a PublicTrace JSON file (AC-679)",
+    description: "Extract structured findings from a PublicTrace JSON file",
     group: "primary",
     route: { kind: "no-db", command: "trace-findings" },
   },
   {
     name: "probes",
-    description: "Run AC-728 contract probes against observed harness state (subcommand: check)",
+    description: "Check observed harness state against contract probes",
     group: "control-plane",
     route: { kind: "no-db", command: "probes" },
   },
@@ -406,30 +404,63 @@ export function resolveCliCommand(command: string): CliCommandRoute {
   return COMMAND_ROUTE_BY_NAME.get(command) ?? { kind: "unknown", command };
 }
 
-export function buildCliHelp(): string {
+const PAVED_ROAD_COMMANDS = ["solve", "run", "status", "watch", "show", "export"] as const;
+const SETUP_COMMANDS = ["init", "login", "whoami", "logout", "providers", "models", "capabilities"] as const;
+const MANAGE_COMMANDS = [
+  "list",
+  "replay",
+  "scenario",
+  "runtime-sessions",
+  "queue",
+  "mission",
+  "campaign",
+  "import-package",
+] as const;
+const SERVICE_COMMANDS = ["serve", "tui", "agent"] as const;
+const COMPATIBILITY_ALIASES = ["new-scenario", "mcp-serve"] as const;
+
+export function buildCliHelp(options: { all?: boolean } = {}): string {
+  const defaultNames = new Set<string>([
+    ...PAVED_ROAD_COMMANDS,
+    ...SETUP_COMMANDS,
+    ...MANAGE_COMMANDS,
+    ...SERVICE_COMMANDS,
+  ]);
+  const compatibilityNames = new Set<string>(COMPATIBILITY_ALIASES);
+  const advancedCommands = COMMANDS.filter(
+    (command) =>
+      command.group !== "python-only"
+      && command.visible !== false
+      && !defaultNames.has(command.name)
+      && !compatibilityNames.has(command.name),
+  );
+  const expanded = options.all
+    ? `
+
+Advanced:
+${formatCommands(advancedCommands)}
+
+Compatibility aliases (deprecated):
+${formatNamedCommandList(COMPATIBILITY_ALIASES)}`
+    : "\n\nRun `autoctx --help --all` for advanced commands and compatibility aliases.";
+
   return `
 autoctx — always-on agent evaluation harness
 
-Plain-language first:
-  autoctx solve "build an orbital transfer optimizer" --iterations 3
-  autoctx run grid_ctf --iterations 3
-  autoctx status <run-id>
-  autoctx watch <run-id>
-  autoctx show <run-id> --best
-  autoctx export <run-id>
+Paved road:
+${formatNamedCommandList(PAVED_ROAD_COMMANDS)}
 
-Commands:
-${formatCommandList("primary")}
+Setup:
+${formatNamedCommandList(SETUP_COMMANDS)}
 
-Control plane (Layer 7-9):
-${formatCommandList("control-plane")}
+Manage:
+${formatNamedCommandList(MANAGE_COMMANDS)}
 
-Python-only commands (not supported in npm package):
-  ${visibleCommands("python-only")
-    .map((command) => command.name)
-    .join(", ")}
+Services:
+${formatNamedCommandList(SERVICE_COMMANDS)}${expanded}
 
 Run \`autoctx <command> --help\` for command-specific options.
+Next: \`autoctx solve "your goal" --iterations 3\`
 
 Install: npm install -g autoctx
 Note: The npm package is \`autoctx\`, not \`autocontext\` (different package).
@@ -446,12 +477,15 @@ export function visibleSupportedCommandNames(): string[] {
   ).map((command) => command.name);
 }
 
-function visibleCommands(group: CommandGroup): CommandDescriptor[] {
-  return COMMANDS.filter((command) => command.group === group && command.visible !== false);
+function formatNamedCommandList(names: readonly string[]): string {
+  return formatCommands(
+    names.map((name) => COMMANDS.find((command) => command.name === name)).filter(
+      (command): command is CommandDescriptor => command !== undefined,
+    ),
+  );
 }
 
-function formatCommandList(group: CommandGroup): string {
-  const commands = visibleCommands(group);
+function formatCommands(commands: readonly CommandDescriptor[]): string {
   const width = Math.max(...commands.map((command) => command.name.length)) + 2;
   return commands
     .map((command) => `  ${command.name.padEnd(width)}${command.description}`)

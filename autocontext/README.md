@@ -112,7 +112,7 @@ prompt-derived data and should be redacted before persistence or export.
 | `uv run autoctx queue add --task-prompt "..." --rubric "..."`                          | Queue evaluation/improvement work                                                                      |
 | `uv run autoctx serve --host 127.0.0.1 --port 8000`                                    | Start the local HTTP API                                                                               |
 | `uv run autoctx worker --poll-interval 5 --concurrency 2`                              | Process queued tasks beside the API server                                                             |
-| `uv run autoctx mcp-serve`                                                             | Expose the MCP tool surface                                                                            |
+| `uv run autoctx serve mcp`                                                             | Expose the MCP tool surface                                                                            |
 | `uv run autoctx export-training-data --scenario <name> --all-runs --output data.jsonl` | Build a training corpus (quarantined scores excluded by default; `--include-quarantined` to keep them) |
 | `uv run autoctx train --scenario <name> --data data.jsonl --time-budget 300`           | Run the local training hook                                                                            |
 | `uv run autoctx epoch list [--scenario <name>]`                                        | List evaluator-epoch registry records (candidate/active)                                               |
@@ -125,7 +125,7 @@ Saved custom scenarios under `knowledge/_custom_scenarios/` can be rerun and ben
 
 ```bash
 uv sync --group dev --extra mcp
-uv run autoctx mcp-serve
+uv run autoctx serve mcp
 ```
 
 Python runtime-backed `run` and `solve` calls append provider prompts/responses to run-scoped runtime-session logs. The same logs are readable through the cockpit HTTP API and MCP tools.

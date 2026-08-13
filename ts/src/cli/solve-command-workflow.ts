@@ -5,13 +5,13 @@ export const SOLVE_HELP_TEXT = `autoctx solve — create and solve a scenario fr
 
 Usage:
   autoctx solve "..." [--iterations N] [--family name] [--json]
-  autoctx solve --description "..." [--gens N] [--family name] [--json]
+  autoctx solve --description "..." [--iterations N] [--family name] [--json]
 
 Options:
   <text>                     Plain-language scenario/problem description
   -d, --description <text>   Same description as a named option
-  -g, --gens <N>             Generations to run (default: 5)
-  --iterations <N>           Plain-language alias for --gens
+  --iterations <N>           Refinement iterations to run (default: 5)
+  -g, --gens <N>             Deprecated alias for --iterations
   --family <name>            Force a scenario family before creation/routing
   --timeout <seconds>        Maximum time to wait for solve completion (default: 300)
   --generation-time-budget <seconds>
@@ -22,7 +22,7 @@ Options:
 
 Examples:
   autoctx solve "improve customer-support replies for billing disputes" --iterations 3
-  autoctx solve -d "investigate a production outage from logs" --family investigation --gens 2 --json`;
+  autoctx solve -d "investigate a production outage from logs" --family investigation --iterations 2 --json`;
 
 export interface SolveCommandValues {
   description?: string;
@@ -95,8 +95,8 @@ export function planSolveCommand(
     ? null
     : parseNonNegativeInteger(values["generation-time-budget"], "--generation-time-budget");
 
-  const generationsRaw = values.gens ?? values.iterations;
-  const generationsLabel = values.gens ? "--gens" : "--iterations";
+  const generationsRaw = values.iterations ?? values.gens;
+  const generationsLabel = values.iterations ? "--iterations" : "--gens";
 
   return {
     description,

@@ -7,45 +7,45 @@ import { buildCliHelp, resolveCliCommand } from "./command-registry.js";
 import {
   DB_COMMAND_HANDLERS,
   NO_DB_COMMAND_HANDLERS,
-  buildProjectConfigSummary,
   cmdControlPlane,
   formatFatalCliError,
   getDbPath,
 } from "./command-handlers.js";
 
 const HELP = buildCliHelp();
+const FULL_HELP = buildCliHelp({ all: true });
+
+async function printVersion(json: boolean): Promise<void> {
+  const pkg = await import("../../package.json", { with: { type: "json" } });
+  if (json) {
+    console.log(JSON.stringify({ package: "autoctx", version: pkg.default.version, runtime: "typescript" }));
+  } else {
+    console.log(pkg.default.version);
+  }
+}
 
 async function main(): Promise<void> {
   const command = process.argv[2];
 
   if (command === "--help" || command === "-h") {
+    console.log(process.argv.slice(3).includes("--all") ? FULL_HELP : HELP);
+    process.exit(0);
+  }
+
+  if (!command) {
     console.log(HELP);
     process.exit(0);
   }
 
-  // AC-394: Smart no-args — show project status if config exists, suggest init otherwise
-  if (!command) {
-    const projectConfig = await buildProjectConfigSummary();
-    if (projectConfig) {
-      console.log(JSON.stringify(projectConfig, null, 2));
-    } else {
-      console.log(HELP);
-      console.log("\nTip: Run `autoctx init` to set up this project with a .autoctx.json config.");
-    }
-    process.exit(0);
-  }
-
   if (command === "--version") {
-    const pkg = await import("../../package.json", { with: { type: "json" } });
-    console.log(pkg.default.version);
+    await printVersion(process.argv.slice(3).includes("--json"));
     process.exit(0);
   }
 
   const route = resolveCliCommand(command);
   switch (route.kind) {
     case "version": {
-      const pkg = await import("../../package.json", { with: { type: "json" } });
-      console.log(pkg.default.version);
+      await printVersion(process.argv.slice(3).includes("--json"));
       break;
     }
     case "no-db":

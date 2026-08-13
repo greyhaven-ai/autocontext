@@ -19,6 +19,7 @@ import uvicorn
 from rich.console import Console
 from rich.table import Table
 
+from autocontext import __version__
 from autocontext.agents.orchestrator import AgentOrchestrator
 from autocontext.cli_ambient import ambient_app
 from autocontext.cli_analytics import register_analytics_command
@@ -95,19 +96,55 @@ class AgentTaskRunSummary:
     optimizer_metadata: dict[str, str] | None = None
 
 
-app = typer.Typer(help="autocontext control-plane CLI", invoke_without_command=True)
+app = typer.Typer(
+    help="Run, inspect, and export agent-evaluation workflows.",
+    epilog="Start with `autoctx solve \"your goal\"`. Run `autoctx commands --all` for the full catalog.",
+    invoke_without_command=True,
+)
 console = Console()
+
+_PAVED_ROAD_COMMANDS = ("solve", "run", "status", "watch", "show", "export")
+_SETUP_COMMANDS = ("commands", "capabilities")
+_MANAGE_COMMANDS = ("list", "replay", "resume", "scenario", "queue")
+_SERVICE_COMMANDS = ("serve", "tui")
+_COMPATIBILITY_ALIASES = {"mcp-serve": "serve mcp", "new-scenario": "scenario create"}
+_DEFAULT_HELP_ORDER = (*_PAVED_ROAD_COMMANDS, *_SETUP_COMMANDS, *_MANAGE_COMMANDS, *_SERVICE_COMMANDS)
 
 _PRESET_HELP = f"Apply a named preset ({', '.join(sorted(VALID_PRESET_NAMES))}). Overrides AUTOCONTEXT_PRESET env var."
 
 
 @app.callback()
-def _main_callback(ctx: typer.Context) -> None:
-    """Show the banner when invoked without a subcommand."""
+def _main_callback(
+    ctx: typer.Context,
+    version: bool = typer.Option(False, "--version", is_eager=True, help="Show package version and exit."),
+    json_output: bool = typer.Option(False, "--json", hidden=True),
+) -> None:
+    """Render version metadata or the concise default help surface."""
+    if version:
+        if json_output:
+            _write_json_stdout({"package": "autocontext", "version": __version__, "runtime": "python"})
+        else:
+            typer.echo(__version__)
+        raise typer.Exit()
     if ctx.invoked_subcommand is None:
-        from autocontext.banner import print_banner_rich
+        typer.echo(ctx.get_help())
 
-        print_banner_rich()
+
+@app.command("commands", rich_help_panel="Setup")
+def commands_catalog(
+    all_commands: bool = typer.Option(False, "--all", help="Include advanced commands and compatibility aliases."),
+) -> None:
+    """List the concise command set or the full command catalog."""
+    entries = _command_catalog_entries(include_all=all_commands)
+    table = Table(title="All commands" if all_commands else "Recommended commands")
+    table.add_column("Category")
+    table.add_column("Command")
+    table.add_column("Outcome")
+    for category, name, summary in entries:
+        table.add_row(category, name, summary)
+    console.print(table)
+    if not all_commands:
+        console.print("[dim]Run `autoctx commands --all` for advanced commands and compatibility aliases.[/dim]")
 
 
 def _warn(message: str, *, json_output: bool) -> None:
@@ -407,9 +444,9 @@ def _run_agent_task(
 @app.command()
 def run(
     scenario_text: str | None = typer.Argument(None, help="Scenario to run"),
-    scenario: str = typer.Option("", "--scenario"),
-    gens: int | None = typer.Option(None, "--gens", min=1),
-    iterations: int | None = typer.Option(None, "--iterations", min=1, help="Plain-language alias for --gens"),
+    scenario: str = typer.Option("", "--scenario", "-s", help="Scenario to run; required unless passed positionally."),
+    iterations: int | None = typer.Option(None, "--iterations", min=1, help="Number of generations to run."),
+    gens: int | None = typer.Option(None, "--gens", "-g", min=1, help="Deprecated alias for --iterations."),
     run_id: str | None = typer.Option(None, "--run-id"),
     serve: bool = typer.Option(False, "--serve", help="Start interactive server alongside generation loop"),
     port: int = typer.Option(8000, "--port", help="Server port (only used with --serve)"),
@@ -420,8 +457,15 @@ def run(
     ),
 ) -> None:
     """Run generation loop."""
-    scenario = scenario.strip() or (scenario_text or "").strip() or "grid_ctf"
-    gens = gens if gens is not None else iterations if iterations is not None else 1
+    scenario = scenario.strip() or (scenario_text or "").strip()
+    if not scenario:
+        message = "no scenario configured; pass <scenario> or --scenario <name>."
+        if json_output:
+            _write_json_stderr(message)
+        else:
+            typer.secho(f"Error: {message}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    gens = iterations if iterations is not None else gens if gens is not None else 1
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -1293,6 +1337,80 @@ register_share_command(app, console=console)
 register_train_command(app, console)
 register_worker_command(app, console=console)
 app.command("rescore")(rescore_command)
+
+
+def _registered_command_name(info: Any) -> str:
+    return str(info.name or (info.callback.__name__ if info.callback else ""))
+
+
+def _command_category(name: str) -> str:
+    if name in _PAVED_ROAD_COMMANDS:
+        return "Paved road"
+    if name in _SETUP_COMMANDS:
+        return "Setup"
+    if name in _MANAGE_COMMANDS:
+        return "Manage"
+    if name in _SERVICE_COMMANDS:
+        return "Services"
+    if name in _COMPATIBILITY_ALIASES:
+        return "Compatibility"
+    return "Advanced"
+
+
+def _command_summary(info: Any, name: str) -> str:
+    if name in _COMPATIBILITY_ALIASES:
+        return f"Deprecated alias for `autoctx {_COMPATIBILITY_ALIASES[name]}`."
+    callback = getattr(info, "callback", None)
+    summary = getattr(info, "help", None) or (getattr(callback, "__doc__", None) if callback else None)
+    return str(summary or "Advanced command.").strip().splitlines()[0]
+
+
+def _command_catalog_entries(*, include_all: bool) -> list[tuple[str, str, str]]:
+    entries: list[tuple[str, str, str]] = []
+    for command_info in app.registered_commands:
+        name = _registered_command_name(command_info)
+        category = _command_category(name)
+        if include_all or name in _DEFAULT_HELP_ORDER:
+            entries.append((category, name, _command_summary(command_info, name)))
+    for group_info in app.registered_groups:
+        name = str(group_info.name or "")
+        category = _command_category(name)
+        if include_all or name in _DEFAULT_HELP_ORDER:
+            entries.append((category, name, str(group_info.help or "Command group.")))
+    category_order = {"Paved road": 0, "Setup": 1, "Manage": 2, "Services": 3, "Advanced": 4, "Compatibility": 5}
+    command_order = {name: index for index, name in enumerate(_DEFAULT_HELP_ORDER)}
+    return sorted(entries, key=lambda entry: (category_order[entry[0]], command_order.get(entry[1], 999), entry[1]))
+
+
+def _configure_default_help_surface() -> None:
+    command_order = {name: index for index, name in enumerate(_DEFAULT_HELP_ORDER)}
+    for command_info in app.registered_commands:
+        name = _registered_command_name(command_info)
+        category = _command_category(name)
+        command_info.rich_help_panel = category
+        command_info.hidden = name not in _DEFAULT_HELP_ORDER
+        if name in _COMPATIBILITY_ALIASES:
+            command_info.deprecated = True
+    app.registered_commands.sort(
+        key=lambda info: (
+            command_order.get(_registered_command_name(info), 999),
+            _registered_command_name(info),
+        )
+    )
+
+    for group_info in app.registered_groups:
+        name = str(group_info.name or "")
+        group_info.rich_help_panel = _command_category(name)
+        group_info.hidden = name not in _DEFAULT_HELP_ORDER
+    app.registered_groups.sort(
+        key=lambda group_info: (
+            command_order.get(str(group_info.name or ""), 999),
+            str(group_info.name or ""),
+        )
+    )
+
+
+_configure_default_help_surface()
 
 
 if __name__ == "__main__":

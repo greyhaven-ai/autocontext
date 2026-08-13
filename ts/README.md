@@ -108,8 +108,8 @@ const orchestrator = new AgentOrchestrator(provider, {
 | `autoctx benchmark --scenario <name> --runs 5`         | Run a scenario repeatedly and summarize outcomes             |
 | `autoctx export <run_id> [--format json\|pi-package]`  | Export portable knowledge (JSON defaults to stdout)           |
 | `autoctx import-package --file pkg.json`               | Import a portable knowledge package                          |
-| `autoctx new-scenario --description "..."`             | Generate a scenario from a plain-language description        |
-| `autoctx mcp-serve`                                    | Expose MCP tools                                             |
+| `autoctx scenario create --description "..."`          | Generate a scenario from a plain-language description        |
+| `autoctx serve mcp`                                    | Expose MCP tools                                             |
 | `autoctx tui`                                          | Start the terminal UI                                        |
 | `autoctx train --scenario <name> --dataset <jsonl>`    | Validate training input and call an injected training runner |
 | `autoctx agent run <name> --payload '{...}'`           | Invoke experimental `.autoctx/agents` handlers               |
@@ -127,7 +127,7 @@ pipeline). They are available via `pip install autocontext`; the npm package's
 ## MCP and control plane
 
 ```bash
-autoctx mcp-serve
+autoctx serve mcp
 ```
 
 The MCP server exposes 40+ tools across scenarios, runs, knowledge, evaluation, feedback, solve (`solve_scenario`, `solve_status`, `solve_result`), sandbox (`sandbox_create`, `sandbox_run`, `sandbox_status`, ...), export, and discovery (`capabilities`). Python and TypeScript share the same high-level vocabulary; parity details are tracked in [../docs/scenario-parity-matrix.md](../docs/scenario-parity-matrix.md).

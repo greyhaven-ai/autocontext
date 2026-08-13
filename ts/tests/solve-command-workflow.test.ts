@@ -55,7 +55,7 @@ describe("solve command workflow", () => {
     });
   });
 
-  it("accepts iterations as a plain-language alias for generations", () => {
+  it("accepts iterations as the canonical generation count", () => {
     const parsePositiveInteger = vi.fn((raw: string | undefined) => Number(raw));
 
     expect(
@@ -72,7 +72,7 @@ describe("solve command workflow", () => {
     expect(parsePositiveInteger).toHaveBeenCalledWith("4", "--iterations");
   });
 
-  it("prefers precise gens over iterations when both are present", () => {
+  it("prefers canonical iterations over gens when both are present", () => {
     expect(
       planSolveCommand(
         {
@@ -82,7 +82,7 @@ describe("solve command workflow", () => {
         },
         (raw: string | undefined) => Number(raw),
       ).generations,
-    ).toBe(3);
+    ).toBe(4);
   });
 
   it("prefers explicit descriptions over positional shorthand", () => {

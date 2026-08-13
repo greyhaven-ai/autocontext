@@ -18,6 +18,24 @@ In practice, users have reported better experiences integrating via the CLI than
 
 ## CLI Integration Patterns
 
+### Discovery, Defaults, and Compatibility
+
+Running bare `autoctx` shows the paved-road workflow in order: `solve`, `run`,
+`status`, `watch`, `show`, then `export`. The npm CLI exposes its expanded
+catalog with `autoctx --help --all`; the Python CLI uses `autoctx commands
+--all`.
+
+`run` needs a scenario. Pass it positionally or with `--scenario`; the npm CLI
+may also read a `default_scenario` from project configuration. The Python CLI
+does not silently choose a built-in scenario. Use `--iterations` for iteration
+counts. `--gens` remains accepted for existing scripts.
+
+The canonical creation and MCP paths are `autoctx scenario create` and
+`autoctx serve mcp`. The older `new-scenario` and `mcp-serve` spellings remain
+callable as deprecated compatibility aliases but are omitted from default help.
+Use `autoctx --version --json` to detect the installed package version and
+runtime before generating runtime-specific invocations.
+
 ### Machine-Readable Output (`--json` and `--ndjson`)
 
 Most `autoctx` commands accept a `--json` flag that switches output to structured JSON:
@@ -1034,7 +1052,7 @@ Use MCP when your agent framework specifically requires a tool-catalog protocol 
 uv sync --group dev --extra mcp
 
 # Start on stdio
-uv run autoctx mcp-serve
+uv run autoctx serve mcp
 ```
 
 The server uses the stdio transport and exposes tools with the `autocontext_` prefix. Key tool groups:
@@ -1054,7 +1072,7 @@ Add to your project's `.claude/settings.json`:
   "mcpServers": {
     "autocontext": {
       "command": "uv",
-      "args": ["run", "--directory", "/path/to/autocontext", "autoctx", "mcp-serve"],
+      "args": ["run", "--directory", "/path/to/autocontext", "autoctx", "serve", "mcp"],
       "env": {
         "AUTOCONTEXT_AGENT_PROVIDER": "anthropic",
         "ANTHROPIC_API_KEY": "sk-ant-..."
@@ -1112,7 +1130,8 @@ mcp_servers:
       - --directory
       - /path/to/autocontext
       - autoctx
-      - mcp-serve
+      - serve
+      - mcp
     env:
       AUTOCONTEXT_AGENT_PROVIDER: openai-compatible
       AUTOCONTEXT_AGENT_BASE_URL: http://localhost:8080/v1
@@ -1318,7 +1337,7 @@ npx autoctx judge -p "Write a haiku" -o "output text" -r "evaluate quality"
 npx autoctx improve -p "Write a haiku" -o "draft" -r "evaluate quality" -n 3
 npx autoctx status <run-id>
 npx autoctx worker --once --json
-npx autoctx mcp-serve  # MCP server on stdio
+npx autoctx serve mcp  # MCP server on stdio
 ```
 
 Key entrypoints live in:

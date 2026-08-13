@@ -14,19 +14,20 @@ Usage: autoctx run [options]
 Usage: autoctx run <scenario> [options]
 
 Options:
-  --scenario <name>    Scenario to run (built-in or saved custom agent_task)
-  --gens N             Number of generations to run (default: from config or 1)
-  --iterations N       Plain-language alias for --gens
+  -s, --scenario <name>
+                       Scenario to run (built-in or saved custom agent_task)
+  --iterations N       Number of generations to run (default: from config or 1)
+  -g, --gens N         Deprecated alias for --iterations
   --run-id <id>        Custom run identifier (default: auto-generated)
   --provider <type>    LLM provider: anthropic, openai, ollama, deterministic, etc.
   --matches N          Matches per generation (default: 3)
   --json               Output results as JSON
 
-If project config (.autoctx.json) exists, --scenario and --gens default from it.
+If project config (.autoctx.json) exists, scenario and iteration count can default from it.
 
 Examples:
   autoctx run grid_ctf --iterations 3
-  autoctx run --scenario grid_ctf --provider deterministic --gens 3
+  autoctx run --scenario grid_ctf --provider deterministic --iterations 3
   autoctx run                          # uses defaults from .autoctx.json
 
 See also: list, replay, export, benchmark`;
@@ -235,8 +236,8 @@ export async function planRunCommand(
       "Error: no scenario configured. Run `autoctx init` or pass <scenario> / --scenario <name>.",
     );
   }
-  const generationRaw = values.gens ?? values.iterations;
-  const generationLabel = values.gens ? "--gens" : "--iterations";
+  const generationRaw = values.iterations ?? values.gens;
+  const generationLabel = values.iterations ? "--iterations" : "--gens";
 
   return {
     scenarioName,

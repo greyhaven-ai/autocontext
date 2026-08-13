@@ -61,7 +61,7 @@ describe("AC-394: smart no-args", () => {
     expect(stdout.toLowerCase()).toContain("init");
   });
 
-  it("with config: shows project status instead of generic help", () => {
+  it("with config: still shows the same concise help and next step", () => {
     writeFileSync(join(dir, ".autoctx.json"), JSON.stringify({
       default_scenario: "grid_ctf",
       provider: "deterministic",
@@ -72,12 +72,8 @@ describe("AC-394: smart no-args", () => {
 
     const { stdout, exitCode } = runCli([], { cwd: dir });
     expect(exitCode).toBe(0);
-    const parsed = JSON.parse(stdout) as Record<string, unknown>;
-    expect(parsed.default_scenario).toBe("grid_ctf");
-    expect(parsed.provider).toBe("deterministic");
-    expect(parsed.config_source).toBe("autoctx_json");
-    expect(parsed).toHaveProperty("active_runs");
-    expect(parsed).toHaveProperty("total_runs");
+    expect(stdout).toContain("Paved road:");
+    expect(stdout).toContain('autoctx solve "your goal"');
   });
 
   it("init scaffolds project config, artifact roots, and AGENTS guidance", () => {
@@ -118,7 +114,7 @@ describe("AC-394: smart no-args", () => {
 
   it("run without defaults points users to init", () => {
     const { stderr, exitCode } = runCli(["run"], { cwd: dir });
-    expect(exitCode).toBe(1);
+    expect(exitCode).toBe(2);
     expect(stderr).toContain("autoctx init");
   });
 });
@@ -214,7 +210,7 @@ describe("AC-397: package.json autoctx key", () => {
     expect(config!.provider).toBe("deterministic");
   });
 
-  it("no-args status detects package.json autoctx key from nested directories", () => {
+  it("bare help stays consistent when package.json has an autoctx key", () => {
     writeFileSync(join(dir, "package.json"), JSON.stringify({
       name: "test-project",
       autoctx: {
@@ -228,10 +224,7 @@ describe("AC-397: package.json autoctx key", () => {
 
     const { stdout, exitCode } = runCli([], { cwd: nested });
     expect(exitCode).toBe(0);
-    const parsed = JSON.parse(stdout) as Record<string, unknown>;
-    expect(parsed.default_scenario).toBe("grid_ctf");
-    expect(parsed.provider).toBe("deterministic");
-    expect(parsed.config_source).toBe("package_json");
-    expect(String(parsed.path)).toContain("package.json");
+    expect(stdout).toContain("Paved road:");
+    expect(stdout).toContain('autoctx solve "your goal"');
   });
 });

@@ -223,15 +223,14 @@ describe("AC-697 CLI contract — friction-point invariants", () => {
     expect(solve?.domain_concept).not.toBe("Scenario");
   });
 
-  it("iterations is the canonical iteration-control flag (no advertised aliases in slice 1)", () => {
-    // PR #981 review (P2): aliases were dropped until AC-697
-    // follow-up slices ship the alias plumbing in both runtimes.
-    // The contract documents only honored options today.
+  it("iterations is canonical and records the shipped compatibility aliases", () => {
     const contract = loadContract(CONTRACT_PATH);
     const solve = contract.commands.find((c: CommandSpec) => c.id === "solve");
     const iterFlag = solve?.flags.find((f) => f.name === "iterations");
     expect(iterFlag).toBeDefined();
-    expect(iterFlag?.aliases).toEqual([]);
+    expect(iterFlag?.aliases).toEqual(["gens", "generations"]);
+    expect(iterFlag?.short_names).toEqual(["g"]);
+    expect(iterFlag?.default).toBe(5);
   });
 
   it("queue status does not occupy top-level status semantic", () => {

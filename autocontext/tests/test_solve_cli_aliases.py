@@ -45,6 +45,16 @@ class TestFlagSurface:
         params = _solve_command_params()
         flat = {flag for opts in params.values() for flag in opts}
         assert "--gens" in flat
+        assert "-g" in flat
+
+    def test_iterations_is_the_primary_flag(self):
+        params = _solve_command_params()
+        assert "--iterations" in params["iterations"]
+
+    def test_iterations_wins_when_both_forms_are_supplied(self):
+        from autocontext.cli_solve import _resolve_solve_generations
+
+        assert _resolve_solve_generations(gens=2, iterations=4) == 4
 
 
 # -- End-to-end CLI invocation --

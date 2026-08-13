@@ -251,21 +251,16 @@ def test_solve_is_not_a_domain_noun(contract: Contract) -> None:
 
 
 def test_iterations_is_the_canonical_iteration_flag(contract: Contract) -> None:
-    """``--iterations`` is the canonical name. PR #981 review (P2):
-    the legacy aliases (``--gens``, ``--rounds``,
-    ``--max-iterations``) are not yet honored by either runtime,
-    so they are intentionally absent from the contract until
-    AC-697 follow-up slices ship the alias plumbing. The contract
-    documents only honored options today."""
+    """``--iterations`` is canonical while shipped aliases stay contracted."""
     cmd = next(c for c in contract.commands if c.id == "solve")
     iter_flag = next(
         (f for f in cmd.flags if f.name == "iterations"),
         None,
     )
     assert iter_flag is not None, "solve should expose canonical --iterations flag"
-    # Aliases are intentionally empty in slice 1; follow-up slices
-    # add them once both runtimes accept the alias.
-    assert iter_flag.aliases == ()
+    assert iter_flag.aliases == ("gens", "generations")
+    assert iter_flag.short_names == ("g",)
+    assert iter_flag.default == 5
 
 
 def test_queue_status_is_not_top_level_status(contract: Contract) -> None:

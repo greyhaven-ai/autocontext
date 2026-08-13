@@ -52,7 +52,7 @@ Self-hosted endpoints can additionally declare `AUTOCONTEXT_PROVIDER_HOSTING=loc
 ## Agent Entry Points
 
 - **Pi:** install `pi-autocontext`, then ask Pi to solve, judge, improve, list, or inspect runs through the packaged skill.
-- **MCP clients:** run `autoctx mcp-serve` or `bunx autoctx mcp-serve` and expose the tools to Claude Code, Cursor, or another MCP client.
+- **MCP clients:** run `autoctx serve mcp` or `bunx autoctx serve mcp` and expose the tools to Claude Code, Cursor, or another MCP client.
 - **Hermes:** export the CLI-first skill with `uv run autoctx hermes export-skill --with-references --json`.
 
 Full setup: [autocontext/docs/agent-integration.md](autocontext/docs/agent-integration.md).
@@ -87,7 +87,13 @@ Everything is filesystem-first: inspect it, diff it, replay it, export it, or fe
 | `investigate` | `autoctx investigate -d "..."`                          | Evidence-driven diagnosis                               |
 | `mission`     | `autoctx mission create --name "..." --goal "..."`      | Verifier-driven multi-step goals                        |
 | `train`       | `uv run autoctx train --scenario <name> --data <jsonl>` | Distill stable behavior into a cheaper runtime (Python) |
-| `mcp-serve`   | `autoctx mcp-serve`                                     | Give an agent the autocontext tool surface              |
+| `serve mcp`   | `autoctx serve mcp`                                     | Give an agent the autocontext tool surface              |
+
+Running bare `autoctx` shows the concise paved-road workflow. Use `autoctx
+--help --all` in the npm CLI or `autoctx commands --all` in the Python CLI for
+the full catalog. `--iterations` is the primary iteration flag; `--gens` is a
+compatibility alias. `autoctx --version --json` reports the package version and
+runtime (`python` or `typescript`).
 
 Python owns the full control-plane package; TypeScript owns several operator-facing surfaces, the TUI, and Node runtime adapters. Start with [autocontext/README.md](autocontext/README.md) or [ts/README.md](ts/README.md).
 

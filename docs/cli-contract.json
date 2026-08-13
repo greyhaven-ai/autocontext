@@ -18,18 +18,29 @@
           "status": "yes"
         }
       },
+      "positionals": [
+        {
+          "name": "goal",
+          "type": "string",
+          "required": false,
+          "description": "Plain-language goal; required unless --description is supplied."
+        }
+      ],
       "flags": [
         {
           "name": "iterations",
           "type": "int",
-          "aliases": [],
+          "aliases": ["gens", "generations"],
+          "short_names": ["g"],
           "required": false,
-          "description": "Number of refinement rounds. Canonical name across both runtimes. Legacy aliases (--gens, --rounds, --max-iterations) are tracked in AC-697 follow-up slices that add alias plumbing; the contract documents only honored options today."
+          "default": 5,
+          "description": "Number of refinement iterations. --gens and --generations remain compatibility aliases."
         },
         {
           "name": "description",
           "type": "string",
           "aliases": [],
+          "short_names": ["d"],
           "required": false,
           "description": "Plain-language goal. The positional form (`autoctx solve \"goal\"`) is canonical shorthand."
         }
@@ -52,13 +63,30 @@
           "status": "yes"
         }
       },
+      "positionals": [
+        {
+          "name": "scenario",
+          "type": "string",
+          "required": false,
+          "description": "Scenario to run; required unless --scenario or a project default supplies it."
+        }
+      ],
       "flags": [
+        {
+          "name": "scenario",
+          "type": "string",
+          "aliases": [],
+          "short_names": ["s"],
+          "required": false,
+          "description": "Named alternative to the scenario positional."
+        },
         {
           "name": "iterations",
           "type": "int",
-          "aliases": [],
+          "aliases": ["gens"],
+          "short_names": ["g"],
           "required": false,
-          "description": "Number of generations to execute. Canonical name across both runtimes. Legacy aliases (--gens, --rounds) are tracked in AC-697 follow-up slices."
+          "description": "Number of generations to execute. --gens remains a compatibility alias."
         },
         {
           "name": "run-id",

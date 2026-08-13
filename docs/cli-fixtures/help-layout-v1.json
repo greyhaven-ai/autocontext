@@ -1,0 +1,4 @@
+{
+  "categories": ["Paved road", "Setup", "Manage", "Services"],
+  "paved_road": ["solve", "run", "status", "watch", "show", "export"]
+}

@@ -75,8 +75,8 @@ export async function cmdRun(dbPath: string): Promise<void> {
       parsePositiveInteger,
     );
   } catch (error) {
-    console.error(errorMessage(error));
-    process.exit(1);
+    writeRunInspectionError(error, !!values.json);
+    process.exit(2);
   }
 
   const { hookBus, loadedExtensions } = await initializeHookBus({
