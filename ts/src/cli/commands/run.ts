@@ -450,13 +450,13 @@ export async function cmdStatus(dbPath: string): Promise<void> {
   // rendered queue-pending counts moved to `autoctx queue status`.
   if (!runId) {
     const message =
-      "Error: `autoctx status` requires <run-id>. Use `autoctx queue status` for the queue-pending count.";
+      "`autoctx status` requires <run-id>. Use `autoctx queue status` for queue status.";
     if (values.json) {
-      process.stdout.write(JSON.stringify({ error: message }) + "\n");
+      process.stderr.write(JSON.stringify({ error: message }) + "\n");
     } else {
-      console.error(message);
+      console.error(`Error: ${message}`);
     }
-    process.exit(1);
+    process.exit(2);
   }
 
   const { SQLiteStore } = await import("../../storage/index.js");
@@ -465,7 +465,12 @@ export async function cmdStatus(dbPath: string): Promise<void> {
   store.migrate(getMigrationsDir());
   const run = store.getRun(runId);
   if (!run) {
-    console.error(`Error: run '${runId}' not found`);
+    const message = `run '${runId}' not found`;
+    if (values.json) {
+      process.stderr.write(JSON.stringify({ error: message }) + "\n");
+    } else {
+      console.error(`Error: ${message}`);
+    }
     store.close();
     process.exit(1);
   }

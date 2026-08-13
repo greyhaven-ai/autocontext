@@ -271,16 +271,28 @@ class TestStatusJson:
         assert data["run_id"] == "run-empty"
         assert data["generations"] == []
 
-    def test_status_json_bootstraps_fresh_workspace(self, tmp_path: Path) -> None:
-        """status --json should not crash before the workspace DB is initialized."""
+    def test_status_accepts_named_run_id(self, tmp_path: Path) -> None:
+        """The named run-id form matches the TypeScript CLI and rendered help."""
+        settings = _make_settings(tmp_path)
+        db, _ = _setup_db(tmp_path)
+        db.create_run("run-named", scenario="grid_ctf", generations=1, executor_mode="local")
+
+        with patch("autocontext.cli.load_settings", return_value=settings):
+            result = runner.invoke(app, ["status", "--run-id", "run-named", "--json"])
+
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.output)["run_id"] == "run-named"
+
+    def test_status_json_missing_run_is_execution_error(self, tmp_path: Path) -> None:
+        """A nonexistent run fails on stderr instead of returning a false success."""
         settings = _make_settings(tmp_path)
 
         with patch("autocontext.cli.load_settings", return_value=settings):
             result = runner.invoke(app, ["status", "missing-run", "--json"])
 
-        assert result.exit_code == 0, result.output
-        data = json.loads(result.output.strip())
-        assert data == {"run_id": "missing-run", "generations": [], "active_evaluator_epoch": None}
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        assert json.loads(result.stderr) == {"error": "run 'missing-run' not found"}
 
     def test_status_json_is_valid_json(self, tmp_path: Path) -> None:
         """status --json output should be parseable as JSON without error."""
@@ -767,6 +779,23 @@ class TestErrorStderr:
 
 
 class TestFlagPresence:
+    def test_status_help_is_run_only(self) -> None:
+        result = runner.invoke(app, ["status", "--help"])
+        help_text = _strip_ansi(result.output)
+
+        assert result.exit_code == 0
+        assert "Show status for one run" in help_text
+        assert "autoctx queue status" in help_text
+        assert "--run-id" in help_text
+        assert "run_id_text" not in help_text
+
+    def test_status_requires_run_id_with_usage_exit(self) -> None:
+        result = runner.invoke(app, ["status", "--json"])
+
+        assert result.exit_code == 2
+        assert result.stdout == ""
+        assert "requires <run-id>" in json.loads(result.stderr)["error"]
+
     def test_json_flag_in_run_help(self) -> None:
         """--json flag should appear in run command help."""
         result = runner.invoke(app, ["run", "--help"])

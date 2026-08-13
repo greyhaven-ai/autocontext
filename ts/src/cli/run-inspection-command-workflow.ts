@@ -1,16 +1,22 @@
 import { progressReportReference, type RunProgressReport } from "../analytics/progress-report.js";
 import type { RuntimeSessionSummary } from "../session/runtime-session-read-model.js";
 
-export const RUN_STATUS_HELP_TEXT = `autoctx status — show queue status or a run status
+export const RUN_STATUS_HELP_TEXT = `autoctx status — show status for one run
 
 Usage:
-  autoctx status
   autoctx status <run-id> [--json]
   autoctx status --run-id <run-id> [--json]
 
+Options:
+  --run-id <run-id>    Named alternative to the run-id positional
+  --json               Emit one structured JSON value
+
+Queue status:
+  autoctx queue status
+
 Examples:
-  autoctx status
-  autoctx status run-123`;
+  autoctx status run-123
+  autoctx status --run-id run-123 --json`;
 
 export const SHOW_HELP_TEXT = `autoctx show — show the best or latest generation for a run
 

@@ -30,6 +30,7 @@ import pytest
 from autocontext.cli_contract import (
     PAVED_ROAD,
     Contract,
+    PositionalArgument,
     RuntimeStatus,
     iter_python_command_paths,
     load_contract,
@@ -214,6 +215,19 @@ def test_status_canonical_meaning_is_run_status(contract: Contract) -> None:
     cmd = next(c for c in contract.commands if c.id == "status")
     assert cmd.domain_concept == "Run"
     assert "run" in cmd.summary.lower()
+    assert cmd.positionals == (
+        PositionalArgument(
+            name="run-id",
+            type="string",
+            required=False,
+            description=(
+                "Run to inspect; required unless the named --run-id form is supplied. "
+                "Queue status is available only through `autoctx queue status`."
+            ),
+        ),
+    )
+    assert cmd.examples
+    assert all(example != "autoctx status" for example in cmd.examples)
 
 
 def test_solve_is_not_a_domain_noun(contract: Contract) -> None:

@@ -86,8 +86,52 @@
           "status": "yes"
         }
       },
-      "flags": [],
-      "output_contract": "json"
+      "positionals": [
+        {
+          "name": "run-id",
+          "type": "string",
+          "required": false,
+          "description": "Run to inspect; required unless the named --run-id form is supplied. Queue status is available only through `autoctx queue status`."
+        }
+      ],
+      "flags": [
+        {
+          "name": "run-id",
+          "type": "string",
+          "aliases": [],
+          "short_names": [],
+          "required": false,
+          "description": "Named alternative to the run-id positional."
+        },
+        {
+          "name": "json",
+          "type": "bool",
+          "aliases": [],
+          "short_names": [],
+          "required": false,
+          "default": false,
+          "description": "Emit one structured JSON value."
+        }
+      ],
+      "output_contract": "json",
+      "output": {
+        "modes": ["json", "text"],
+        "streaming": "single",
+        "success_stream": "stdout",
+        "error_stream": "stderr",
+        "schemas": {
+          "error": "cli-schemas/cli-error-v1.schema.json"
+        }
+      },
+      "exit_codes": {
+        "success": 0,
+        "usage": 2,
+        "execution": 1
+      },
+      "examples": [
+        "autoctx status <run-id>",
+        "autoctx status --run-id <run-id> --json"
+      ]
     },
     {
       "id": "watch",

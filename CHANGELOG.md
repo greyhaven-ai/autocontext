@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Top-level `autoctx status` help now consistently describes run status in both runtimes, requires a positional or named run id in every documented invocation, and points queue users to `autoctx queue status`. Python now accepts `--run-id` for parity. Missing run IDs are usage errors (exit 2), nonexistent runs are execution errors (exit 1), and JSON errors are written only to stderr (AC-941).
 - Python and TypeScript now share the same `autoctx export` format and output contract: `json` is the default, `pi-package` is supported by both runtimes, and `strategy` remains a deprecated alias for `json`. JSON artifacts go to stdout when `--output` is omitted; Pi packages use a scenario-derived directory. The version-2 CLI contract records export positionals, flags, defaults, schemas, streams, exit codes, and examples as the first full conformance slice (AC-939, AC-942).
 
 ## [0.15.1] - 2026-08-13

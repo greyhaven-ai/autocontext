@@ -247,7 +247,7 @@ const COMMANDS: readonly CommandDescriptor[] = [
   },
   {
     name: "status",
-    description: "Show queue status",
+    description: "Show run status",
     group: "primary",
     route: { kind: "db", command: "status" },
   },

@@ -599,18 +599,39 @@ def list_runs(
 
 @app.command()
 def status(
-    run_id: str = typer.Argument(...),
+    run_id: str | None = typer.Argument(None, metavar="RUN_ID", help="Run id to inspect."),
+    run_id_option: str | None = typer.Option(
+        None,
+        "--run-id",
+        help="Named alternative to the run-id positional.",
+    ),
     json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
 ) -> None:
-    """Show generation status for a run."""
+    """Show status for one run. Queue status lives under `autoctx queue status`."""
+
+    resolved_run_id = (run_id_option or run_id or "").strip()
+    if not resolved_run_id:
+        message = "`autoctx status` requires <run-id>. Use `autoctx queue status` for queue status."
+        if json_output:
+            _write_json_stderr(message)
+        else:
+            typer.secho(f"Error: {message}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
 
     settings = load_settings()
     store = _sqlite_from_settings(settings)
-    rows = store.run_status(run_id)
+    run = store.get_run(resolved_run_id)
+    if run is None:
+        message = f"run '{resolved_run_id}' not found"
+        if json_output:
+            _write_json_stderr(message)
+        else:
+            typer.secho(f"Error: {message}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1)
 
-    run = store.get_run(run_id)
-    scenario = run.get("scenario") if run else None
-    rows, active_epoch_id = annotate_run_status_rows(settings, scenario, rows, store, run_id)
+    rows = store.run_status(resolved_run_id)
+    scenario = run.get("scenario")
+    rows, active_epoch_id = annotate_run_status_rows(settings, scenario, rows, store, resolved_run_id)
 
     if json_output:
         generations = []
@@ -637,7 +658,7 @@ def status(
         sys.stdout.write(
             json.dumps(
                 {
-                    "run_id": run_id,
+                    "run_id": resolved_run_id,
                     "active_evaluator_epoch": active_epoch_id,
                     "generations": generations,
                 }
@@ -645,7 +666,7 @@ def status(
             + "\n"
         )
     else:
-        table = Table(title=f"Run Status: {run_id}")
+        table = Table(title=f"Run Status: {resolved_run_id}")
         table.add_column("Gen")
         table.add_column("Mean")
         table.add_column("Best")

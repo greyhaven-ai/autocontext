@@ -18,6 +18,13 @@ describe("CLI command registry", () => {
     }
   });
 
+  it("describes top-level status as run status", () => {
+    const help = buildCliHelp();
+
+    expect(help).toMatch(/status\s+Show run status/);
+    expect(help).not.toMatch(/status\s+Show queue status/);
+  });
+
   it("exposes supported commands separately from Python-only help entries", () => {
     const names = visibleSupportedCommandNames();
 

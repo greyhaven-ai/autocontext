@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  RUN_STATUS_HELP_TEXT,
   parseWatchIntervalSeconds,
   renderRunStatusJsonLine,
   renderRunShow,
@@ -60,6 +61,20 @@ const runtimeSession = {
 };
 
 describe("run inspection command workflow", () => {
+  it("documents status as run-only and never advertises a bare invocation", () => {
+    const invocations = RUN_STATUS_HELP_TEXT.split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith("autoctx status"));
+
+    expect(RUN_STATUS_HELP_TEXT).toContain("show status for one run");
+    expect(RUN_STATUS_HELP_TEXT).toContain("autoctx queue status");
+    expect(invocations).not.toContain("autoctx status");
+    expect(invocations).toEqual(expect.arrayContaining([
+      "autoctx status <run-id> [--json]",
+      "autoctx status --run-id <run-id> [--json]",
+    ]));
+  });
+
   it("accepts run ids as either plain positionals or named options", () => {
     expect(resolveRunId({}, ["run-positional"], "show")).toBe("run-positional");
     expect(resolveRunId({ "run-id": "run-named" }, ["run-positional"], "show")).toBe("run-named");

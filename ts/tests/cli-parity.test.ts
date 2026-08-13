@@ -18,17 +18,20 @@ const CLI = join(import.meta.dirname, "..", "src", "cli", "index.ts");
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-function runCli(args: string[], envOverrides: Record<string, string> = {}): { stdout: string; exitCode: number } {
+function runCli(
+  args: string[],
+  envOverrides: Record<string, string> = {},
+): { stdout: string; stderr: string; exitCode: number } {
   try {
     const stdout = execFileSync("npx", ["tsx", CLI, ...args], {
       encoding: "utf8",
       timeout: 10000,
       env: { ...process.env, NODE_NO_WARNINGS: "1", ...envOverrides },
     });
-    return { stdout, exitCode: 0 };
+    return { stdout, stderr: "", exitCode: 0 };
   } catch (err: unknown) {
-    const e = err as { stdout?: string; status?: number };
-    return { stdout: e.stdout ?? "", exitCode: e.status ?? 1 };
+    const e = err as { stdout?: string; stderr?: string; status?: number };
+    return { stdout: e.stdout ?? "", stderr: e.stderr ?? "", exitCode: e.status ?? 1 };
   }
 }
 
@@ -192,6 +195,16 @@ describe("CLI parity fixtures", () => {
 // ---------------------------------------------------------------------------
 
 describe("CLI parity — help output", () => {
+  it("status help describes run status and requires a run id", () => {
+    const { stdout, exitCode } = runCli(["status", "--help"]);
+    const invocations = stdout.split("\n").map((line) => line.trim());
+
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("show status for one run");
+    expect(stdout).toContain("autoctx queue status");
+    expect(invocations).not.toContain("autoctx status");
+  });
+
   it("help includes list command", () => {
     const { stdout } = runCli(["--help"]);
     expect(stdout).toContain("list");
@@ -220,6 +233,31 @@ describe("CLI parity — help output", () => {
   it("help includes benchmark command", () => {
     const { stdout } = runCli(["--help"]);
     expect(stdout).toContain("benchmark");
+  });
+});
+
+describe("CLI status command", () => {
+  it("uses usage exit 2 and keeps JSON errors off stdout when run id is missing", () => {
+    const { stdout, stderr, exitCode } = runCli(["status", "--json"]);
+
+    expect(exitCode).toBe(2);
+    expect(stdout).toBe("");
+    expect(JSON.parse(stderr)).toMatchObject({ error: expect.stringContaining("requires <run-id>") });
+  });
+
+  it("uses execution exit 1 and keeps missing-run JSON errors off stdout", () => {
+    const dir = makeTempDir();
+    try {
+      const { stdout, stderr, exitCode } = runCli(["status", "missing-run", "--json"], {
+        AUTOCONTEXT_DB_PATH: join(dir, "autocontext.db"),
+      });
+
+      expect(exitCode).toBe(1);
+      expect(stdout).toBe("");
+      expect(JSON.parse(stderr)).toEqual({ error: "run 'missing-run' not found" });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

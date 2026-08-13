@@ -185,6 +185,13 @@ describe("AC-697 CLI contract — friction-point invariants", () => {
     expect(status).toBeDefined();
     expect(status?.domain_concept).toBe("Run");
     expect(status?.summary.toLowerCase()).toContain("run");
+    expect(status?.positionals).toEqual([
+      expect.objectContaining({ name: "run-id", type: "string", required: false }),
+    ]);
+    expect(status?.flags.map((flag) => flag.name)).toEqual(["run-id", "json"]);
+    expect(status?.output?.error_stream).toBe("stderr");
+    expect(status?.exit_codes).toEqual({ success: 0, usage: 2, execution: 1 });
+    expect(status?.examples).not.toContain("autoctx status");
   });
 
   it("solve is not a domain noun", () => {

@@ -173,7 +173,7 @@ Returns an array of run summaries:
 
 #### Monitoring long-running work
 
-For run completion, external agents should still poll `autoctx status --json` (and related read surfaces such as `list --json`) until the desired condition is visible.
+For run completion, external agents should poll `autoctx status <run-id> --json` (and related read surfaces such as `list --json`) until the desired condition is visible. Queue state is a separate surface at `autoctx queue status`.
 
 Simple polling pattern:
 
@@ -1299,7 +1299,7 @@ The TypeScript package also publishes a narrower `autoctx` CLI for Node.js envir
 ```bash
 npx autoctx judge -p "Write a haiku" -o "output text" -r "evaluate quality"
 npx autoctx improve -p "Write a haiku" -o "draft" -r "evaluate quality" -n 3
-npx autoctx status
+npx autoctx status <run-id>
 npx autoctx worker --once --json
 npx autoctx mcp-serve  # MCP server on stdio
 ```
