@@ -1,6 +1,6 @@
 {
-  "schema_version": 1,
-  "description": "AC-697 slice 1 \u2014 canonical autoctx command contract. Single source of truth for Python and TypeScript parity. Each runtime's loader walks its CLI surface and a parity test verifies that every command claiming runtime_support.<runtime> == \"yes\" is actually registered at the canonical path. Follow-up AC-697 slices fill in friction fixes (status semantics, queue add parity, --iterations alias plumbing) and expand contract coverage to internal commands.",
+  "schema_version": 2,
+  "description": "Canonical autoctx command contract for Python and TypeScript parity. Version 2 adds positionals, option defaults and constraints, output modes and schemas, stream routing, exit codes, and canonical examples. Loaders retain defaults for version-1 command entries while commands migrate incrementally; export is the first fully specified v2 conformance slice.",
   "commands": [
     {
       "id": "solve",
@@ -138,7 +138,7 @@
     {
       "id": "export",
       "path": ["export"],
-      "summary": "Export a Run's learned knowledge as a portable artifact (JSON package, Pi-package directory, or Hermes skill).",
+      "summary": "Export a Run's learned knowledge as a portable JSON package or Pi-package directory.",
       "audience": "paved_road",
       "maturity": "stable",
       "domain_concept": "Artifact",
@@ -151,16 +151,84 @@
           "status": "yes"
         }
       },
+      "positionals": [
+        {
+          "name": "run-id",
+          "type": "string",
+          "required": false,
+          "description": "Run whose learned knowledge should be exported. Omit when --scenario is supplied."
+        }
+      ],
       "flags": [
         {
           "name": "format",
           "type": "string",
           "aliases": [],
+          "short_names": [],
           "required": false,
-          "description": "Artifact format: json | pi-package | hermes-skill."
+          "default": "json",
+          "choices": ["json", "pi-package"],
+          "value_aliases": {
+            "strategy": "json"
+          },
+          "description": "Artifact format. Use json for the portable strategy package or pi-package for a local Pi package directory; strategy remains a deprecated alias for json."
+        },
+        {
+          "name": "scenario",
+          "type": "string",
+          "aliases": [],
+          "short_names": ["s"],
+          "required": false,
+          "description": "Scenario whose accumulated knowledge should be exported."
+        },
+        {
+          "name": "run-id",
+          "type": "string",
+          "aliases": [],
+          "short_names": [],
+          "required": false,
+          "description": "Named form of the optional run-id positional."
+        },
+        {
+          "name": "output",
+          "type": "path",
+          "aliases": [],
+          "short_names": ["o"],
+          "required": false,
+          "description": "Destination JSON file or Pi-package directory. JSON is written to stdout when omitted; Pi packages use <scenario>-pi-package."
+        },
+        {
+          "name": "json",
+          "type": "bool",
+          "aliases": [],
+          "short_names": [],
+          "required": false,
+          "default": false,
+          "description": "Emit a structured receipt when an artifact is written to a file or directory."
         }
       ],
-      "output_contract": "json"
+      "output_contract": "json",
+      "output": {
+        "modes": ["json", "text"],
+        "streaming": "single",
+        "success_stream": "stdout",
+        "error_stream": "stderr",
+        "schemas": {
+          "artifact": "cli-schemas/strategy-package-v1.schema.json",
+          "receipt": "cli-schemas/export-receipt-v1.schema.json",
+          "error": "cli-schemas/cli-error-v1.schema.json"
+        }
+      },
+      "exit_codes": {
+        "success": 0,
+        "usage": 2,
+        "execution": 1
+      },
+      "examples": [
+        "autoctx export <run-id>",
+        "autoctx export <run-id> --format json --output package.json --json",
+        "autoctx export --scenario grid_ctf --format pi-package --output grid-ctf-pi-package --json"
+      ]
     },
     {
       "id": "run.list",

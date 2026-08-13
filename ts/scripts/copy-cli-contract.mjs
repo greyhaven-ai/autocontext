@@ -14,7 +14,7 @@
  * contract from there at runtime.
  */
 
-import { copyFileSync, existsSync, mkdirSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -33,3 +33,21 @@ if (!existsSync(source)) {
 mkdirSync(distDir, { recursive: true });
 copyFileSync(source, destination);
 console.log(`copy-cli-contract: ${source} -> ${destination}`);
+
+const contract = JSON.parse(readFileSync(source, "utf-8"));
+const schemaPaths = new Set(
+  contract.commands.flatMap((command) => Object.values(command.output?.schemas ?? {})),
+);
+for (const schemaPath of schemaPaths) {
+  if (typeof schemaPath !== "string" || schemaPath.includes("..")) {
+    throw new Error(`copy-cli-contract: unsafe schema path: ${String(schemaPath)}`);
+  }
+  const schemaSource = resolve(repoRoot, "docs", schemaPath);
+  const schemaDestination = resolve(distDir, schemaPath);
+  if (!existsSync(schemaSource)) {
+    throw new Error(`copy-cli-contract: schema not found: ${schemaSource}`);
+  }
+  mkdirSync(dirname(schemaDestination), { recursive: true });
+  copyFileSync(schemaSource, schemaDestination);
+  console.log(`copy-cli-contract: ${schemaSource} -> ${schemaDestination}`);
+}

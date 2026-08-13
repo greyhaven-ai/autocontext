@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+
+- Python and TypeScript now share the same `autoctx export` format and output contract: `json` is the default, `pi-package` is supported by both runtimes, and `strategy` remains a deprecated alias for `json`. JSON artifacts go to stdout when `--output` is omitted; Pi packages use a scenario-derived directory. The version-2 CLI contract records export positionals, flags, defaults, schemas, streams, exit codes, and examples as the first full conformance slice (AC-939, AC-942).
+
 ## [0.15.1] - 2026-08-13
 
 ### Added

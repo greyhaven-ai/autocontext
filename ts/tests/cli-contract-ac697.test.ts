@@ -15,7 +15,9 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { resolve } from "node:path";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import {
   loadContract,
   PAVED_ROAD,
@@ -29,8 +31,69 @@ const CONTRACT_PATH = resolve(import.meta.dirname, "..", "..", "docs", "cli-cont
 describe("AC-697 CLI contract — schema sanity", () => {
   it("file exists and parses", () => {
     const contract = loadContract(CONTRACT_PATH);
-    expect(contract.schema_version).toBe(1);
+    expect(contract.schema_version).toBe(2);
     expect(contract.commands.length).toBeGreaterThan(0);
+  });
+
+  it("fully specifies export as the first v2 conformance command", () => {
+    const contract = loadContract(CONTRACT_PATH);
+    const command = contract.commands.find((candidate) => candidate.id === "export");
+    expect(command?.positionals[0]?.name).toBe("run-id");
+    const format = command?.flags.find((flag) => flag.name === "format");
+    expect(format?.default).toBe("json");
+    expect(format?.choices).toEqual(["json", "pi-package"]);
+    expect(format?.value_aliases).toEqual({ strategy: "json" });
+    expect(command?.output).toEqual({
+      modes: ["json", "text"],
+      streaming: "single",
+      success_stream: "stdout",
+      error_stream: "stderr",
+      schemas: {
+        artifact: "cli-schemas/strategy-package-v1.schema.json",
+        receipt: "cli-schemas/export-receipt-v1.schema.json",
+        error: "cli-schemas/cli-error-v1.schema.json",
+      },
+    });
+    for (const schemaPath of Object.values(command?.output?.schemas ?? {})) {
+      expect(readFileSync(resolve(CONTRACT_PATH, "..", schemaPath), "utf-8")).toBeTruthy();
+    }
+    expect(command?.exit_codes).toEqual({ success: 0, usage: 2, execution: 1 });
+    expect(command?.examples.length).toBeGreaterThan(0);
+  });
+
+  it("keeps version-1 command entries loadable with compatibility defaults", () => {
+    const raw = JSON.parse(readFileSync(CONTRACT_PATH, "utf-8")) as {
+      schema_version: number;
+      commands: Array<Record<string, unknown>>;
+    };
+    raw.schema_version = 1;
+    const command = raw.commands.find((candidate) => candidate.id === "export");
+    expect(command).toBeDefined();
+    for (const field of ["positionals", "output", "exit_codes", "examples"]) {
+      delete command?.[field];
+    }
+    if (Array.isArray(command?.flags)) {
+      for (const flag of command.flags) {
+        if (flag && typeof flag === "object" && !Array.isArray(flag)) {
+          for (const field of ["short_names", "default", "choices", "value_aliases"]) {
+            delete (flag as Record<string, unknown>)[field];
+          }
+        }
+      }
+    }
+    const directory = mkdtempSync(join(tmpdir(), "autoctx-cli-contract-v1-"));
+    const path = join(directory, "cli-contract.json");
+    try {
+      writeFileSync(path, JSON.stringify(raw), "utf-8");
+      const loaded = loadContract(path);
+      const exportCommand = loaded.commands.find((candidate) => candidate.id === "export");
+      expect(loaded.schema_version).toBe(1);
+      expect(exportCommand?.positionals).toEqual([]);
+      expect(exportCommand?.output?.success_stream).toBe("stdout");
+      expect(exportCommand?.exit_codes).toEqual({ success: 0, usage: 2, execution: 1 });
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it("contract covers every paved-road command id", () => {

@@ -103,7 +103,7 @@ const orchestrator = new AgentOrchestrator(provider, {
 | `autoctx queue add --task-prompt "..." --rubric "..."` | Add evaluation/improvement work                              |
 | `autoctx runtime-sessions timeline --run-id <run_id>`  | Inspect provider/tool/child-task timelines                   |
 | `autoctx benchmark --scenario <name> --runs 5`         | Run a scenario repeatedly and summarize outcomes             |
-| `autoctx export <run_id> --output pkg.json`            | Export a run's playbook/skills as a portable package         |
+| `autoctx export <run_id> [--format json\|pi-package]`  | Export portable knowledge (JSON defaults to stdout)           |
 | `autoctx import-package --file pkg.json`               | Import a portable knowledge package                          |
 | `autoctx new-scenario --description "..."`             | Generate a scenario from a plain-language description        |
 | `autoctx mcp-serve`                                    | Expose MCP tools                                             |

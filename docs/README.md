@@ -35,6 +35,7 @@ This directory is the maintainer-facing landing page for repository docs. Use it
 
 ## Architecture And Parity
 
+- [Cross-runtime CLI contract](cli-contract.json) and its [wire-output schemas](cli-schemas/)
 - [Interactive WebSocket protocol contract](websocket-protocol-contract.json)
 
 The contract pins the TypeScript-only `agent_progress_notes_v1` extension,

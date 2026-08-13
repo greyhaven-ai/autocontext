@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "strategy-package-v1.schema.json",
+  "title": "Autocontext strategy package v1",
+  "type": "object",
+  "required": [
+    "format_version",
+    "scenario_name",
+    "display_name",
+    "description",
+    "playbook",
+    "lessons",
+    "best_strategy",
+    "best_score",
+    "best_elo",
+    "hints",
+    "harness",
+    "metadata"
+  ],
+  "properties": {
+    "format_version": { "type": "integer", "minimum": 1 },
+    "scenario_name": { "type": "string", "minLength": 1 },
+    "display_name": { "type": "string" },
+    "description": { "type": "string" },
+    "playbook": { "type": "string" },
+    "lessons": { "type": "array", "items": { "type": "string" } },
+    "best_strategy": { "type": ["object", "null"] },
+    "best_score": { "type": "number" },
+    "best_elo": { "type": "number" },
+    "hints": { "type": "string" },
+    "harness": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "metadata": { "type": "object" },
+    "skill_markdown": { "type": "string" }
+  },
+  "additionalProperties": true
+}

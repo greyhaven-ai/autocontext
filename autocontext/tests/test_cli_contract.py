@@ -22,6 +22,7 @@ JSON so a single edit to the contract drives both sides.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -126,6 +127,50 @@ def test_paved_road_constant_matches_audience_filter(contract: Contract) -> None
     rely on either."""
     from_tag = {cmd.id for cmd in contract.commands if cmd.audience == "paved_road"}
     assert PAVED_ROAD == from_tag
+
+
+def test_export_is_the_first_fully_specified_v2_command(contract: Contract) -> None:
+    assert contract.schema_version == 2
+    command = next(cmd for cmd in contract.commands if cmd.id == "export")
+    assert command.positionals[0].name == "run-id"
+    format_flag = next(flag for flag in command.flags if flag.name == "format")
+    assert format_flag.default == "json"
+    assert format_flag.choices == ("json", "pi-package")
+    assert dict(format_flag.value_aliases) == {"strategy": "json"}
+    assert command.output.streaming == "single"
+    assert command.output.success_stream == "stdout"
+    assert command.output.error_stream == "stderr"
+    assert dict(command.output.schemas) == {
+        "artifact": "cli-schemas/strategy-package-v1.schema.json",
+        "error": "cli-schemas/cli-error-v1.schema.json",
+        "receipt": "cli-schemas/export-receipt-v1.schema.json",
+    }
+    for schema_path in dict(command.output.schemas).values():
+        assert (_contract_path().parent / schema_path).is_file()
+    assert command.exit_codes.success == 0
+    assert command.exit_codes.usage == 2
+    assert command.exit_codes.execution == 1
+    assert command.examples
+
+
+def test_loader_keeps_version_1_entries_compatible(tmp_path: Path) -> None:
+    raw = json.loads(_contract_path().read_text(encoding="utf-8"))
+    raw["schema_version"] = 1
+    export = next(command for command in raw["commands"] if command["id"] == "export")
+    for field in ("positionals", "output", "exit_codes", "examples"):
+        export.pop(field, None)
+    for flag in export["flags"]:
+        for field in ("short_names", "default", "choices", "value_aliases"):
+            flag.pop(field, None)
+    path = tmp_path / "cli-contract-v1.json"
+    path.write_text(json.dumps(raw), encoding="utf-8")
+
+    loaded = load_contract(path)
+    command = next(candidate for candidate in loaded.commands if candidate.id == "export")
+    assert loaded.schema_version == 1
+    assert command.positionals == ()
+    assert command.output.success_stream == "stdout"
+    assert command.exit_codes == command.exit_codes.__class__()
 
 
 # --- Python parity ---------------------------------------------------------

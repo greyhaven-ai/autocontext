@@ -26,6 +26,21 @@ def _write_json_stderr(message: str) -> None:
 
 console = Console()
 
+_EXPORT_FORMAT_ALIASES = {"strategy": "json"}
+_EXPORT_FORMATS = frozenset({"json", "pi-package"})
+
+
+def _normalize_export_format(value: str) -> str:
+    normalized = value.strip().lower()
+    return _EXPORT_FORMAT_ALIASES.get(normalized, normalized)
+
+
+def _write_export_error(message: str, *, json_output: bool) -> None:
+    if json_output:
+        _write_json_stderr(message)
+    else:
+        typer.secho(message, fg=typer.colors.RED, err=True)
+
 
 def _resolve_export_artifact_roots(
     *,
@@ -148,17 +163,22 @@ def export_training_data_cmd(
 
 def export_cmd(
     run_id_text: str | None = typer.Argument(None, help="Run id to export"),
-    scenario: str = typer.Option("", "--scenario", help="Scenario to export"),
+    scenario: str = typer.Option("", "--scenario", "-s", help="Scenario to export"),
     run_id: str | None = typer.Option(None, "--run-id", help="Run id to export"),
     output: str = typer.Option(
         "",
         "--output",
+        "-o",
         help=(
-            "Output path: strategy JSON file (default: <scenario-or-run-id>_package.json) "
-            "or pi-package directory (default: <scenario>-pi-package)"
+            "Destination JSON file or pi-package directory. JSON is written to stdout when omitted; "
+            "pi-package defaults to <scenario>-pi-package."
         ),
     ),
-    export_format: str = typer.Option("strategy", "--format", help="Export format: strategy or pi-package"),
+    export_format: str = typer.Option(
+        "json",
+        "--format",
+        help="Export format: json or pi-package (strategy is a deprecated alias for json)",
+    ),
     db_path: str | None = typer.Option(None, "--db-path", help="Override database path"),
     runs_root: str | None = typer.Option(None, "--runs-root", help="Override runs root"),
     knowledge_root: str | None = typer.Option(None, "--knowledge-root", help="Override knowledge root"),
@@ -169,6 +189,12 @@ def export_cmd(
     """Export a portable strategy package for a scenario."""
     from autocontext.knowledge.export import export_strategy_package
     from autocontext.mcp.tools import MtsToolContext
+
+    normalized_format = _normalize_export_format(export_format)
+    if normalized_format not in _EXPORT_FORMATS:
+        message = "--format must be one of json, pi-package (strategy is accepted as an alias for json)"
+        _write_export_error(message, json_output=json_output)
+        raise typer.Exit(code=2)
 
     settings = load_settings()
     resolved_db = Path(db_path) if db_path is not None else settings.db_path
@@ -202,38 +228,20 @@ def export_cmd(
         source_run_id = source_run_id or ((run_id_text or "").strip() or None)
         if source_run_id is None:
             message = "--scenario or <run-id> is required"
-            if json_output:
-                _write_json_stderr(message)
-            else:
-                console.print(f"[red]{message}[/red]")
-            raise typer.Exit(code=1)
+            _write_export_error(message, json_output=json_output)
+            raise typer.Exit(code=2)
         run_row = sqlite.get_run(source_run_id)
         if run_row is None:
             message = f"run '{source_run_id}' not found"
-            if json_output:
-                _write_json_stderr(message)
-            else:
-                console.print(f"[red]{message}[/red]")
+            _write_export_error(message, json_output=json_output)
             raise typer.Exit(code=1)
         scenario_name = str(run_row["scenario"])
 
     try:
         pkg = export_strategy_package(ctx, scenario_name, source_run_id=source_run_id)
     except ValueError as exc:
-        if json_output:
-            _write_json_stderr(str(exc))
-        else:
-            console.print(f"[red]{exc}[/red]")
+        _write_export_error(str(exc), json_output=json_output)
         raise typer.Exit(code=1) from exc
-
-    normalized_format = export_format.strip().lower()
-    if normalized_format not in {"strategy", "pi-package"}:
-        message = "--format must be one of strategy, pi-package"
-        if json_output:
-            _write_json_stderr(message)
-        else:
-            console.print(f"[red]{message}[/red]")
-        raise typer.Exit(code=1)
 
     if normalized_format == "pi-package":
         from autocontext.knowledge.pi_package import (
@@ -259,15 +267,18 @@ def export_cmd(
             console.print(f"[dim]files={len(written.files)} best_score={pkg.best_score:.4f}[/dim]")
         return
 
-    output_stem = source_run_id or scenario_name
-    output_path = Path(output) if output else Path(f"{output_stem}_package.json")
+    if not output:
+        typer.echo(pkg.to_json())
+        return
+
+    output_path = Path(output)
     pkg.to_file(output_path)
 
     if json_output:
         _write_json_stdout(
             {
                 "scenario": scenario_name,
-                "format": normalized_format,
+                "format": "json",
                 "output_path": str(output_path),
                 "best_score": pkg.best_score,
                 "lessons_count": len(pkg.lessons),

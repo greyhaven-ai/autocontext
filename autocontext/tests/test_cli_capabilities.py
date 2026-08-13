@@ -25,7 +25,7 @@ def test_build_capabilities_payload_shape() -> None:
     """The Python payload has `schema_version` and a `commands` list
     of dicts that mirror the slice-1 contract entries."""
     payload = build_capabilities_payload(_contract_path())
-    assert payload["schema_version"] == 1
+    assert payload["schema_version"] == 2
     assert isinstance(payload["commands"], list)
     assert len(payload["commands"]) > 0
     sample = payload["commands"][0]
@@ -33,6 +33,10 @@ def test_build_capabilities_payload_shape() -> None:
         assert key in sample, f"missing key {key!r} in capabilities command payload"
     assert "python" in sample["runtime_support"]
     assert "typescript" in sample["runtime_support"]
+    export = next(command for command in payload["commands"] if command["id"] == "export")
+    assert export["positionals"][0]["name"] == "run-id"
+    assert export["output"]["success_stream"] == "stdout"
+    assert export["exit_codes"] == {"success": 0, "usage": 2, "execution": 1}
 
 
 def test_capabilities_payload_includes_paved_road_commands() -> None:
@@ -65,7 +69,7 @@ def test_cli_autoctx_capabilities_json_emits_contract_payload(tmp_path, monkeypa
     result = CliRunner().invoke(app, ["capabilities", "--json"])
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output.strip())
-    assert payload["schema_version"] == 1
+    assert payload["schema_version"] == 2
     assert any(cmd["id"] == "capabilities" for cmd in payload["commands"])
 
 

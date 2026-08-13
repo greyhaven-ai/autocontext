@@ -68,8 +68,8 @@ class TestExportCommand:
 
         result = runner.invoke(app, [
             "export",
-            "--scenario", "grid_ctf",
-            "--output", str(output),
+            "-s", "grid_ctf",
+            "-o", str(output),
             "--db-path", str(db_path),
             "--knowledge-root", str(tmp_path / "knowledge"),
             "--skills-root", str(tmp_path / "skills"),
@@ -81,7 +81,7 @@ class TestExportCommand:
         assert data["scenario_name"] == "grid_ctf"
         assert data["format_version"] == 1
 
-    def test_export_default_filename(self, tmp_path: Path) -> None:
+    def test_export_without_output_writes_json_to_stdout(self, tmp_path: Path) -> None:
         db, artifacts, db_path = _setup_db_and_artifacts(tmp_path)
         _seed_scenario(db, artifacts)
 
@@ -94,9 +94,39 @@ class TestExportCommand:
             "--claude-skills-path", str(tmp_path / ".claude" / "skills"),
         ])
         assert result.exit_code == 0, result.output
-        default_file = Path("grid_ctf_package.json")
-        if default_file.exists():
-            default_file.unlink()
+        payload = json.loads(result.output)
+        assert payload["scenario_name"] == "grid_ctf"
+        assert payload["format_version"] == 1
+
+    def test_export_accepts_strategy_as_json_alias(self, tmp_path: Path) -> None:
+        db, artifacts, db_path = _setup_db_and_artifacts(tmp_path)
+        _seed_scenario(db, artifacts)
+
+        result = runner.invoke(app, [
+            "export",
+            "--scenario", "grid_ctf",
+            "--format", "strategy",
+            "--db-path", str(db_path),
+            "--knowledge-root", str(tmp_path / "knowledge"),
+            "--skills-root", str(tmp_path / "skills"),
+            "--claude-skills-path", str(tmp_path / ".claude" / "skills"),
+        ])
+
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.output)["scenario_name"] == "grid_ctf"
+
+    def test_export_rejects_unknown_format_as_usage_error(self, tmp_path: Path) -> None:
+        _, _, db_path = _setup_db_and_artifacts(tmp_path)
+
+        result = runner.invoke(app, [
+            "export",
+            "--scenario", "grid_ctf",
+            "--format", "hermes-skill",
+            "--db-path", str(db_path),
+        ])
+
+        assert result.exit_code == 2
+        assert "--format must be one of json, pi-package" in result.output
 
     def test_export_unknown_scenario_fails(self, tmp_path: Path) -> None:
         db, artifacts, db_path = _setup_db_and_artifacts(tmp_path)

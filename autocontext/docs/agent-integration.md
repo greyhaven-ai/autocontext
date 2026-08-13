@@ -219,7 +219,7 @@ JSON output shape on timeout:
 #### `autoctx export` — Export a strategy package
 
 ```bash
-autoctx export <run_id> --output pkg.json --json
+autoctx export <run_id> --format json --output pkg.json --json
 ```
 
 JSON output shape:
@@ -227,12 +227,18 @@ JSON output shape:
 ```json
 {
   "scenario": "grid_ctf",
+  "format": "json",
   "output_path": "pkg.json",
   "best_score": 0.92,
   "lessons_count": 12,
   "harness_count": 3
 }
 ```
+
+The canonical formats are `json` (default) and `pi-package` in both runtimes.
+With JSON, omitting `--output` prints the strategy package itself to stdout;
+`--format strategy` remains a deprecated compatibility alias for JSON. A Pi
+package always writes a directory, defaulting to `<scenario>-pi-package`.
 
 For Pi-local package installation, export the same strategy knowledge as a
 package directory with a `package.json`, one `SKILL.md`, one prompt file, and

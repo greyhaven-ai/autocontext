@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   executeExportCommandWorkflow,
   EXPORT_HELP_TEXT,
+  normalizeExportFormat,
   planExportCommand,
 } from "../src/cli/export-command-workflow.js";
 
@@ -11,7 +12,20 @@ describe("export command workflow", () => {
     expect(EXPORT_HELP_TEXT).toContain("autoctx export");
     expect(EXPORT_HELP_TEXT).toContain("autoctx export <run-id>");
     expect(EXPORT_HELP_TEXT).toContain("--scenario");
+    expect(EXPORT_HELP_TEXT).toContain("--format <format>");
+    expect(EXPORT_HELP_TEXT).toContain("json or pi-package");
+    expect(EXPORT_HELP_TEXT).toContain("JSON defaults to stdout");
     expect(EXPORT_HELP_TEXT).toContain("import-package");
+  });
+
+  it("normalizes the canonical formats and legacy strategy alias", () => {
+    expect(normalizeExportFormat(undefined)).toBe("json");
+    expect(normalizeExportFormat("JSON")).toBe("json");
+    expect(normalizeExportFormat("pi-package")).toBe("pi-package");
+    expect(normalizeExportFormat("strategy")).toBe("json");
+    expect(() => normalizeExportFormat("hermes-skill")).toThrow(
+      "--format must be one of json, pi-package",
+    );
   });
 
   it("requires a scenario after resolution", async () => {
@@ -35,6 +49,7 @@ describe("export command workflow", () => {
       scenarioName: "grid_ctf_resolved",
       runId: undefined,
       output: "/tmp/pkg.json",
+      format: "json",
       json: true,
     });
   });
@@ -50,6 +65,7 @@ describe("export command workflow", () => {
       scenarioName: "grid_ctf",
       runId: "run-123",
       output: undefined,
+      format: "json",
       json: true,
     });
   });
@@ -119,7 +135,7 @@ describe("export command workflow", () => {
       "/tmp/pkg.json",
       `${JSON.stringify({ scenario_name: "grid_ctf" }, null, 2)}\n`,
     );
-    expect(rendered).toBe("Exported to /tmp/pkg.json");
+    expect(rendered).toBe("Exported grid_ctf package to /tmp/pkg.json");
   });
 
   it("writes export packages to files and returns json output when requested", () => {
@@ -135,6 +151,50 @@ describe("export command workflow", () => {
       writeOutputFile,
     });
 
-    expect(rendered).toBe(JSON.stringify({ output: "/tmp/pkg.json" }));
+    expect(JSON.parse(rendered)).toEqual({
+      scenario: "grid_ctf",
+      format: "json",
+      output_path: "/tmp/pkg.json",
+      best_score: 0,
+      lessons_count: 0,
+      harness_count: 0,
+    });
+  });
+
+  it("writes Pi packages to the default directory and returns a structured receipt", () => {
+    const writePiPackageOutput = vi.fn((_pkg, outputDir: string) => ({
+      outputDir,
+      files: [`${outputDir}/README.md`, `${outputDir}/package.json`],
+    }));
+
+    const rendered = executeExportCommandWorkflow({
+      scenarioName: "grid_ctf",
+      format: "pi-package",
+      json: true,
+      packageVersion: "0.15.0",
+      exportStrategyPackage: () => ({
+        scenario_name: "grid_ctf",
+        display_name: "Grid CTF",
+        description: "Capture the flag.",
+        lessons: [],
+        best_strategy: null,
+        skill_markdown: "---\nname: grid-ctf\n---",
+      }),
+      artifacts: { kind: "artifacts" },
+      store: { kind: "store" },
+      writePiPackageOutput,
+    });
+
+    expect(writePiPackageOutput).toHaveBeenCalledWith(
+      expect.objectContaining({ packageDirName: "grid-ctf-pi-package" }),
+      "grid-ctf-pi-package",
+    );
+    expect(JSON.parse(rendered)).toEqual({
+      scenario: "grid_ctf",
+      format: "pi-package",
+      output_path: "grid-ctf-pi-package",
+      file_count: 2,
+      files: ["README.md", "package.json"],
+    });
   });
 });

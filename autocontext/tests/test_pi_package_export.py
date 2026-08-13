@@ -145,6 +145,10 @@ def test_export_help_describes_format_dependent_output_path() -> None:
     result = runner.invoke(app, ["export", "--help"])
 
     assert result.exit_code == 0, result.output
-    assert "Output path: strategy JSON file" in result.output
-    assert "pi-package directory" in result.output
+    assert "JSON is written to stdout" in result.output
+    assert "when omitted" in result.output
+    assert "pi-package" in result.output
+    assert "directory" in result.output
+    assert "json or pi-package" in result.output
+    assert "strategy is a deprecated alias for" in result.output
     assert "Output JSON file path" not in result.output

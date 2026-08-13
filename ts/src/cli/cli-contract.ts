@@ -1,5 +1,5 @@
 /**
- * AC-697 slice 1: shared CLI contract loader (TypeScript side).
+ * Shared CLI contract loader (TypeScript side).
  *
  * Loads the canonical contract at `docs/cli-contract.json` (the same
  * JSON the Python `cli_contract.py` loader consumes) and validates
@@ -31,8 +31,33 @@ export const FlagSchema = z.object({
   name: z.string(),
   type: z.string().default("string"),
   aliases: z.array(z.string()).default([]),
+  short_names: z.array(z.string()).default([]),
   required: z.boolean().default(false),
   description: z.string().default(""),
+  default: z.unknown().optional(),
+  choices: z.array(z.string()).default([]),
+  value_aliases: z.record(z.string()).default({}),
+});
+
+export const PositionalArgumentSchema = z.object({
+  name: z.string(),
+  type: z.string().default("string"),
+  required: z.boolean().default(false),
+  description: z.string().default(""),
+});
+
+export const OutputSpecSchema = z.object({
+  modes: z.array(z.enum(["json", "ndjson", "text", "none"])).default(["text"]),
+  streaming: z.enum(["single", "ndjson"]).default("single"),
+  success_stream: z.enum(["stdout", "stderr"]).default("stdout"),
+  error_stream: z.enum(["stdout", "stderr"]).default("stderr"),
+  schemas: z.record(z.string()).default({}),
+});
+
+export const ExitCodesSchema = z.object({
+  success: z.number().int().default(0),
+  usage: z.number().int().default(2),
+  execution: z.number().int().default(1),
 });
 
 export const CommandSpecSchema = z.object({
@@ -47,8 +72,12 @@ export const CommandSpecSchema = z.object({
     .default(null),
   aliases: z.array(z.string()).default([]),
   runtime_support: RuntimeSupportPairSchema,
+  positionals: z.array(PositionalArgumentSchema).default([]),
   flags: z.array(FlagSchema).default([]),
   output_contract: z.enum(["json", "text", "none"]).default("text"),
+  output: OutputSpecSchema.optional(),
+  exit_codes: ExitCodesSchema.default({}),
+  examples: z.array(z.string()).default([]),
 });
 
 export const ContractSchema = z.object({
@@ -76,7 +105,20 @@ import { readFileSync } from "node:fs";
 export function loadContract(path: string): Contract {
   const raw = readFileSync(path, "utf-8");
   const parsed: unknown = JSON.parse(raw);
-  return ContractSchema.parse(parsed);
+  const contract = ContractSchema.parse(parsed);
+  return {
+    ...contract,
+    commands: contract.commands.map((command) => ({
+      ...command,
+      output: command.output ?? {
+        modes: [command.output_contract],
+        streaming: "single",
+        success_stream: "stdout",
+        error_stream: "stderr",
+        schemas: {},
+      },
+    })),
+  };
 }
 
 /** Return the canonical command id every alias resolves to, or

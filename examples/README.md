@@ -34,6 +34,7 @@ uv run autoctx status "$RUN_ID" --json | jq .
 mkdir -p exports
 uv run autoctx export \
   "$RUN_ID" \
+  --format json \
   --output "exports/${RUN_ID}.json" \
   --json | jq .
 
@@ -43,6 +44,9 @@ uv run autoctx export \
   --output "exports/${RUN_ID}-pi-package" \
   --json | jq .
 ```
+
+Omit `--output` for JSON to print the portable strategy package directly to
+stdout. `--format strategy` remains a compatibility alias for `--format json`.
 
 ## Claude Code MCP Config
 

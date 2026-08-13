@@ -273,7 +273,7 @@ describe("CLI export command", () => {
 
   it("export requires scenario", () => {
     const { exitCode } = runCli(["export"]);
-    expect(exitCode).toBe(1);
+    expect(exitCode).toBe(2);
   });
 });
 
