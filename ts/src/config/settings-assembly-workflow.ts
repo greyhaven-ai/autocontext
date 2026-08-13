@@ -2,6 +2,7 @@ import process from "node:process";
 
 import type { AppSettings } from "./app-settings-schema.js";
 import { AppSettingsSchema } from "./app-settings-schema.js";
+import { assertOfflineSupported } from "./offline.js";
 import { applyPreset } from "./presets.js";
 import type { ProjectConfig } from "./project-config.js";
 import {
@@ -21,6 +22,11 @@ export function buildSettingsAssemblyInput(opts?: {
 }): Record<string, unknown> {
   const presetName = opts?.presetName ?? process.env.AUTOCONTEXT_PRESET ?? "";
   const env = opts?.env ?? process.env;
+
+  // AC-938: this engine does not enforce offline mode, so it refuses rather
+  // than running unenforced. Checked here because every run assembles settings;
+  // a CLI entry point added later would otherwise bypass it silently.
+  assertOfflineSupported(env);
   const defaults = opts?.defaults ?? getDefaultSettingsRecord();
 
   const assembled = {

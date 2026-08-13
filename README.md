@@ -27,10 +27,10 @@ autocontext is a harness for agent improvement. Give it a goal, it runs the task
 
 | Surface             | Command                               |
 | ------------------- | ------------------------------------- |
-| Python CLI          | `uv tool install autocontext==0.14.0` |
-| Python library/dev  | `uv pip install autocontext==0.14.0`  |
-| TypeScript/Node CLI | `bun add -g autoctx@0.14.0`           |
-| Pi extension        | `pi install npm:pi-autocontext@0.9.0` |
+| Python CLI          | `uv tool install autocontext==0.15.0` |
+| Python library/dev  | `uv pip install autocontext==0.15.0`  |
+| TypeScript/Node CLI | `bun add -g autoctx@0.15.0`           |
+| Pi extension        | `pi install npm:pi-autocontext@0.10.0` |
 
 The PyPI package is `autocontext`; the CLI is `autoctx`. The npm package is `autoctx` (not the unrelated `autocontext` npm package). Provider variables live in [`.env.example`](.env.example).
 
@@ -89,10 +89,13 @@ Everything is filesystem-first: inspect it, diff it, replay it, export it, or fe
 Python owns the full control-plane package; TypeScript owns several operator-facing surfaces, the TUI, and Node runtime adapters. Start with [autocontext/README.md](autocontext/README.md) or [ts/README.md](ts/README.md).
 
 <!-- autocontext-whats-new:start -->
-## What's New in 0.14.0
+## What's New in 0.15.0
 
-- **Live TypeScript task plans:** interactive runs now advertise `agent_task_plan_v1` and emit semantic `task_plan_updated` snapshots for initial planning, meaningful progress, replanning, completion, failure, and safe stop.
-- **Durable, privacy-safe replay:** task-plan snapshots use stable identity and monotonic revisions, redact credential-shaped values, reject malformed or oversized frames atomically, and restore exactly across reconnects and server restarts. Python producer parity remains explicitly deferred.
+- **Local models as a first-class peer tier:** endpoints now declare hosting (`local`/`remote`) and capability (`fast`/`mid_tier`/`frontier`) separately, so a self-hosted frontier-class model is no longer permanently misclassified as mid-tier. Per-provider model defaults stop leaking Claude ids into local endpoints, providers that serve real tiers get a model per tier, and `autoctx run` preflights every configured endpoint before spending generation tokens.
+- **Offline mode:** `AUTOCONTEXT_OFFLINE=1` enforces that the engine never initiates an outbound connection, verified by a test that runs a full generation with a socket-level guard and asserts zero connection attempts. Operator-initiated access such as SSH stays in scope, so an airgapped host does not have to be unreachable.
+- **Schema-enforced role output:** analyst, coach and architect responses are constrained to a JSON Schema on OpenAI-compatible and Anthropic backends instead of being scraped out of Markdown headings. Measured on llama3.1:8b, analyst format drift went from 100% to 0%. Set `AUTOCONTEXT_CONSTRAINED_OUTPUT=false` to keep the previous behavior.
+- **Judge scoring correctness:** a reasoning block emitted before the answer could win the judge's score parse, recording 0.05 for a run the judge scored 0.88. Both engines now share one model-JSON extractor that prefers the answer over the scratchpad.
+- **Refreshed model ids:** shipped defaults move to Claude Opus 5 / Sonnet 5 and the GPT-5.6 family. Cost attribution moves with them; the previous table still priced Opus 4.6 at $15/$75 per M, overstating spend on a default run by roughly 3x.
 <!-- autocontext-whats-new:end -->
 
 ## Scenario Families
