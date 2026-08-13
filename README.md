@@ -85,6 +85,7 @@ Everything is filesystem-first: inspect it, diff it, replay it, export it, or fe
 | `show`        | `autoctx show <run-id> --best --json`                   | Inspect a selected generation                           |
 | `simulate`    | `autoctx simulate -d "..."`                             | Model/replay/compare system behavior                    |
 | `investigate` | `autoctx investigate -d "..."`                          | Evidence-driven diagnosis                               |
+| `scenario`    | `autoctx scenario create --description "..."`           | Create a reusable scenario from a description           |
 | `mission`     | `autoctx mission create --name "..." --goal "..."`      | Verifier-driven multi-step goals                        |
 | `train`       | `uv run autoctx train --scenario <name> --data <jsonl>` | Distill stable behavior into a cheaper runtime (Python) |
 | `serve mcp`   | `autoctx serve mcp`                                     | Give an agent the autocontext tool surface              |

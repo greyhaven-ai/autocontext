@@ -33,6 +33,25 @@ import { visibleSupportedCommandNames } from "../src/cli/command-registry.js";
 
 const CONTRACT_PATH = resolve(import.meta.dirname, "..", "..", "docs", "cli-contract.json");
 const CLI_PATH = resolve(import.meta.dirname, "..", "src", "cli", "index.ts");
+const LIVE_HELP = new Map<string, string>();
+const IMPLEMENTATION_HISTORY = /\bAC-\d+\b|\bPR\s*#?\d+\b|\bslice(?:s|[- ]\d+[a-z]?)?\b|\binternal[- ]layer\b/i;
+
+function loadLiveHelp(path: readonly string[]): string {
+  const key = path.join("\0");
+  const cached = LIVE_HELP.get(key);
+  if (cached !== undefined) return cached;
+  const help = execFileSync(
+    "npx",
+    ["tsx", CLI_PATH, ...path, "--help"],
+    {
+      encoding: "utf8",
+      env: { ...process.env, NODE_NO_WARNINGS: "1" },
+      timeout: 10_000,
+    },
+  );
+  LIVE_HELP.set(key, help);
+  return help;
+}
 
 // ---------------------------------------------------------------------------
 // Reverse direction: observed -> contract / alias
@@ -98,15 +117,7 @@ describe("AC-697 cross-runtime parity audit (TypeScript side)", () => {
         if (command.runtime_support.typescript.status !== "yes") continue;
         const shape = command.runtime_shapes.typescript;
         if (!shape || shape.flags.length === 0) continue;
-        const help = execFileSync(
-          "npx",
-          ["tsx", CLI_PATH, ...command.path, "--help"],
-          {
-            encoding: "utf8",
-            env: { ...process.env, NODE_NO_WARNINGS: "1" },
-            timeout: 10_000,
-          },
-        );
+        const help = loadLiveHelp(command.path);
         for (const flag of shape.flags) {
           for (const longName of [flag.name, ...flag.aliases]) {
             expect(
@@ -115,6 +126,22 @@ describe("AC-697 cross-runtime parity audit (TypeScript side)", () => {
             ).toBe(true);
           }
         }
+      }
+    },
+    30_000,
+  );
+
+  it(
+    "keeps implementation history out of every live npm help surface",
+    () => {
+      const contract = loadContract(CONTRACT_PATH);
+      for (const command of contract.commands) {
+        if (command.runtime_support.typescript.status !== "yes") continue;
+        const help = loadLiveHelp(command.path);
+        expect(
+          IMPLEMENTATION_HISTORY.test(help),
+          `${command.id} help exposes implementation history`,
+        ).toBe(false);
       }
     },
     30_000,

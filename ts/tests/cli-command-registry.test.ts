@@ -10,7 +10,7 @@ import {
 
 const HELP_LAYOUT = JSON.parse(
   readFileSync(resolve(import.meta.dirname, "..", "..", "docs", "cli-fixtures", "help-layout-v1.json"), "utf-8"),
-) as { categories: string[]; paved_road: string[] };
+) as { categories: string[]; paved_road: string[]; summaries: Record<string, string> };
 
 describe("CLI command registry", () => {
   it("keeps visible command metadata unique and present in help", () => {
@@ -38,12 +38,15 @@ describe("CLI command registry", () => {
     expect(help).not.toContain("mcp-serve");
     expect(help).not.toContain("Python-only");
     expect(help).toContain("--help --all");
+    for (const summary of Object.values(HELP_LAYOUT.summaries)) {
+      expect(help).toContain(summary);
+    }
   });
 
   it("describes top-level status as run status", () => {
     const help = buildCliHelp();
 
-    expect(help).toMatch(/status\s+Show run status/);
+    expect(help).toContain(HELP_LAYOUT.summaries.status);
     expect(help).not.toMatch(/status\s+Show queue status/);
   });
 

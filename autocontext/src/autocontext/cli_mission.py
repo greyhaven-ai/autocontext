@@ -279,9 +279,7 @@ def register_mission_command(app: typer.Typer, *, console: Console) -> None:
         build_command: str = typer.Option("", "--build-command", help="Optional secondary build command."),
         json_output: bool = typer.Option(False, "--json", help="Emit a structured JSON payload."),
     ) -> None:
-        """Create a new mission. Writes a checkpoint immediately so
-        the slice-4 `artifacts` subcommand always has a baseline to
-        list."""
+        """Create a mission and write its initial checkpoint."""
         try:
             plan = plan_mission_create(
                 mission_type=mission_type or None,
@@ -335,9 +333,7 @@ def register_mission_command(app: typer.Typer, *, console: Console) -> None:
         ),
         json_output: bool = typer.Option(False, "--json", help="Emit a structured JSON payload."),
     ) -> None:
-        """Advance the mission via the slice-3 legacy mission loop
-        and write a checkpoint. Adaptive LLM-driven planning lands
-        in a follow-up slice."""
+        """Advance a mission and write a checkpoint."""
         try:
             plan = plan_mission_run(
                 mission_id=mission_id or None,
@@ -485,9 +481,7 @@ def register_mission_command(app: typer.Typer, *, console: Console) -> None:
         mission_id: str = typer.Option("", "--id", help="Mission id."),
         json_output: bool = typer.Option(False, "--json", help="Emit a structured JSON payload."),
     ) -> None:
-        """Cancel a mission. Per the slice-2 transition table only
-        ``completed`` is truly terminal; ``canceled`` can be reopened
-        via ``resume`` if the operator changes their mind."""
+        """Cancel a mission; canceled missions can be resumed later."""
         _lifecycle("cancel", mission_id=mission_id, json_output=json_output)
 
     app.add_typer(mission_app, name="mission")

@@ -15,6 +15,9 @@ This directory is the maintainer-facing landing page for repository docs. Use it
 - [TypeScript package guide](../ts/README.md)
 - [Demo data notes](../autocontext/demo_data/README.md)
 
+Public examples use the canonical nested CLI paths: `autoctx scenario create`
+for scenario authoring and `autoctx serve mcp` for MCP clients.
+
 ## Integrating External Agents
 
 - [External agent integration guide](../autocontext/docs/agent-integration.md)

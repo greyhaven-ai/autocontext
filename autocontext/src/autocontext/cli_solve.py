@@ -227,7 +227,7 @@ def register_solve_command(
             help=(
                 "Path to a file whose contents are used as the task "
                 "description (mutually exclusive with --description). "
-                "Convenient for long descriptions stored on disk (AC-737)."
+                "Convenient for long descriptions stored on disk."
             ),
         ),
         iterations: int | None = typer.Option(
@@ -269,7 +269,7 @@ def register_solve_command(
             "",
             "--task-prompt",
             help=(
-                "Verbatim task_prompt for the agent (AC-734). When set, the "
+                "Verbatim task_prompt for the agent. When set, the "
                 "LLM scenario designer is bypassed and this exact text becomes "
                 "the compiled scenario's task_prompt — preserves long, "
                 "detail-laden prompts (e.g. Lean lemma signatures) that the "

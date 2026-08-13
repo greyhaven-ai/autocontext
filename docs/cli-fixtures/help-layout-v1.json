@@ -1,4 +1,12 @@
 {
   "categories": ["Paved road", "Setup", "Manage", "Services"],
-  "paved_road": ["solve", "run", "status", "watch", "show", "export"]
+  "paved_road": ["solve", "run", "status", "watch", "show", "export"],
+  "summaries": {
+    "solve": "Solve a required plain-language goal; defaults to 5 iterations. Next: show.",
+    "run": "Run a scenario (required unless configured); defaults to 1 iteration. Next: status.",
+    "status": "Show a required run's current snapshot; defaults to text output. Next: watch.",
+    "watch": "Follow a required run; defaults to polling every 2 seconds. Next: show.",
+    "show": "Inspect a required run; defaults to its latest generation. Next: export.",
+    "export": "Export a required run or scenario; defaults to JSON on stdout. Next: import-package."
+  }
 }

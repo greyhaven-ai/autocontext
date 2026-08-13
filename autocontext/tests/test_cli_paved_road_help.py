@@ -20,8 +20,12 @@ def _plain(value: str) -> str:
     return re.sub(r"\x1b\[[0-9;]*m", "", value)
 
 
+def _squash(value: str) -> str:
+    return re.sub(r"\s+", " ", _plain(value).replace("│", " ")).strip()
+
+
 def test_default_help_is_paved_road_first_and_concise() -> None:
-    result = runner.invoke(app, ["--help"])
+    result = runner.invoke(app, ["--help"], terminal_width=240)
     output = _plain(result.stdout)
 
     assert result.exit_code == 0
@@ -32,6 +36,16 @@ def test_default_help_is_paved_road_first_and_concise() -> None:
     assert "new-scenario" not in output
     assert "mcp-serve" not in output
     assert "commands --all" in output
+    for summary in HELP_LAYOUT["summaries"].values():
+        assert summary in _squash(output)
+
+
+def test_paved_road_command_help_uses_shared_outcome_summaries() -> None:
+    for command, summary in HELP_LAYOUT["summaries"].items():
+        result = runner.invoke(app, [command, "--help"], terminal_width=240)
+
+        assert result.exit_code == 0, result.output
+        assert summary in _squash(result.stdout)
 
 
 def test_full_catalog_keeps_advanced_commands_and_aliases_discoverable() -> None:

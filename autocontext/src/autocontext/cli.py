@@ -104,6 +104,14 @@ app = typer.Typer(
 console = Console()
 
 _PAVED_ROAD_COMMANDS = ("solve", "run", "status", "watch", "show", "export")
+_PAVED_ROAD_SUMMARIES = {
+    "solve": "Solve a required plain-language goal; defaults to 5 iterations. Next: show.",
+    "run": "Run a scenario (required unless configured); defaults to 1 iteration. Next: status.",
+    "status": "Show a required run's current snapshot; defaults to text output. Next: watch.",
+    "watch": "Follow a required run; defaults to polling every 2 seconds. Next: show.",
+    "show": "Inspect a required run; defaults to its latest generation. Next: export.",
+    "export": "Export a required run or scenario; defaults to JSON on stdout. Next: import-package.",
+}
 _SETUP_COMMANDS = ("commands", "capabilities")
 _MANAGE_COMMANDS = ("list", "replay", "resume", "scenario", "queue")
 _SERVICE_COMMANDS = ("serve", "tui")
@@ -1207,7 +1215,7 @@ def wait(
     timeout: float = typer.Option(30.0, "--timeout", help="Timeout in seconds"),
     json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
 ) -> None:
-    """Wait for a monitor condition to fire (AC-209 integration)."""
+    """Wait for a monitor condition to fire."""
     settings = load_settings()
     store = SQLiteStore(settings.db_path)
     migrations_dir = Path(__file__).resolve().parents[2] / "migrations"
@@ -1358,6 +1366,8 @@ def _command_category(name: str) -> str:
 
 
 def _command_summary(info: Any, name: str) -> str:
+    if name in _PAVED_ROAD_SUMMARIES:
+        return _PAVED_ROAD_SUMMARIES[name]
     if name in _COMPATIBILITY_ALIASES:
         return f"Deprecated alias for `autoctx {_COMPATIBILITY_ALIASES[name]}`."
     callback = getattr(info, "callback", None)
@@ -1389,6 +1399,8 @@ def _configure_default_help_surface() -> None:
         category = _command_category(name)
         command_info.rich_help_panel = category
         command_info.hidden = name not in _DEFAULT_HELP_ORDER
+        if name in _PAVED_ROAD_SUMMARIES:
+            command_info.help = _PAVED_ROAD_SUMMARIES[name]
         if name in _COMPATIBILITY_ALIASES:
             command_info.deprecated = True
     app.registered_commands.sort(

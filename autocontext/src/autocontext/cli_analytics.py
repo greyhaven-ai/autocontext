@@ -61,7 +61,7 @@ def run_render_timeline_command(
     console: Console,
     load_settings_fn: Callable[[], AppSettings],
 ) -> None:
-    """Render a persisted RunTrace as an interactive HTML timeline (AC-749).
+    """Render a persisted RunTrace as an interactive HTML timeline.
 
     Loads the trace by id from the analytics `TraceStore`, runs the existing
     `timeline_inspection_view` + `render_timeline_inspection_html` pipeline,
@@ -105,7 +105,7 @@ def run_trace_findings_command(
     load_settings_fn: Callable[[], AppSettings],
     write_json_stdout: Callable[[object], None],
 ) -> None:
-    """Emit a trace-grounded findings report for a stored RunTrace (AC-678).
+    """Emit a trace-grounded findings report for a stored RunTrace.
 
     Exposes the existing :class:`TraceReporter` pipeline as an operator CLI
     so structured findings, failure motifs, and recovery paths can be pulled
@@ -364,7 +364,7 @@ def register_analytics_command(
             ),
         ] = None,
     ) -> None:
-        """Render an existing RunTrace as an interactive HTML timeline (AC-749)."""
+        """Render an existing RunTrace as an interactive HTML timeline."""
         run_render_timeline_command(
             trace_id=trace_id,
             output_path=output,
@@ -384,7 +384,7 @@ def register_analytics_command(
         ] = "writeup",
         json_output: Annotated[bool, typer.Option("--json", help="Emit JSON instead of Markdown")] = False,
     ) -> None:
-        """Emit a trace-grounded findings report for a stored RunTrace (AC-678)."""
+        """Emit a trace-grounded findings report for a stored RunTrace."""
         run_trace_findings_command(
             trace_id=trace_id,
             kind=kind,

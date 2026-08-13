@@ -342,15 +342,15 @@ autoctx hermes inspect --home "$HERMES_HOME" --json
 # Export the Hermes autocontext skill for Hermes to load
 autoctx hermes export-skill --output ~/.hermes/skills/autocontext/SKILL.md --json
 
-# Also write progressive-disclosure reference files next to SKILL.md (AC-702)
+# Also write progressive-disclosure reference files next to SKILL.md
 autoctx hermes export-skill \
     --output ~/.hermes/skills/autocontext/SKILL.md \
     --with-references --json
 
-# Or install from the committed snapshot at the repo root (AC-712).
+# Or install from the committed snapshot at the repo root.
 # See docs/hermes-skill-distribution.md for curl + sparse-clone alternatives.
 
-# Ingest Hermes curator run reports as autocontext ProductionTrace JSONL (AC-704)
+# Ingest Hermes curator run reports as autocontext ProductionTrace JSONL
 autoctx hermes ingest-curator \
     --home ~/.hermes \
     --output traces/hermes-curator.jsonl \
@@ -360,13 +360,13 @@ autoctx hermes ingest-curator \
     [--include-tool-args] \
     --json
 
-# Export Curator decisions as training JSONL for narrow advisors (AC-705)
+# Export Curator decisions as training JSONL for narrow advisors
 autoctx hermes export-dataset --kind curator-decisions \
   --home "$HERMES_HOME" \
   --output training/hermes-curator-decisions.jsonl \
   --since 2026-05-01T00:00:00Z --limit 5000 --json
 
-# Ingest Hermes trajectory JSONL with redaction (AC-706 slice 1)
+# Ingest Hermes trajectory JSONL with redaction
 autoctx hermes ingest-trajectories \
   --input "$HERMES_HOME/trajectory_samples.jsonl" \
   --output training/hermes-trajectories-redacted.jsonl \
@@ -380,19 +380,19 @@ autoctx hermes ingest-trajectories \
   --user-patterns '[{"name":"ticket","pattern":"TKT-\\d+"}]' \
   --dry-run --json
 
-# Ingest Hermes session DB into ProductionTrace JSONL (AC-706 slice 2)
+# Ingest Hermes session DB into ProductionTrace JSONL
 autoctx hermes ingest-sessions \
   --home "$HERMES_HOME" \
   --output traces/hermes-sessions.jsonl \
   --redact standard --json
 
-# Train a baseline curator advisor from AC-705 JSONL (AC-708 slice 1)
+# Train a baseline curator advisor from the curator-decisions JSONL
 autoctx hermes train-advisor \
   --data training/hermes-curator-decisions.jsonl \
   --baseline \
   --output training/advisor-metrics.json --json
 
-# Train the pure-Python logistic-regression advisor (AC-708 slice 2a)
+# Train the pure-Python logistic-regression advisor
 # and persist a checkpoint for later --advisor loading. Exactly one of
 # --baseline / --logistic / --mlx must be passed.
 autoctx hermes train-advisor \
@@ -401,7 +401,7 @@ autoctx hermes train-advisor \
   --output training/advisor-metrics.json \
   --checkpoint training/curator-advisor.json --json
 
-# Same model trained via MLX (AC-708 slice 2b; Apple-silicon GPU
+# Same model trained via MLX (Apple-silicon GPU
 # backend). Requires `pip install autocontext[mlx]`. Same JSON
 # checkpoint schema as --logistic with a backend-specific `kind` so
 # audits can tell which backend produced the file; either kind loads
@@ -412,8 +412,8 @@ autoctx hermes train-advisor \
   --output training/advisor-metrics.json \
   --checkpoint training/mlx-advisor.json --json
 
-# Same model trained via PyTorch with CUDA when available (AC-708
-# slice 2c; NVIDIA GPU backend, falls back transparently to CPU
+# Same model trained via PyTorch with CUDA when available (NVIDIA
+# GPU backend, falls back transparently to CPU
 # torch when CUDA is not available -- the `device` audit field in
 # the checkpoint records which path actually ran). Requires
 # `pip install autocontext[cuda]`. Same JSON schema as --logistic
@@ -424,9 +424,9 @@ autoctx hermes train-advisor \
   --output training/advisor-metrics.json \
   --checkpoint training/cuda-advisor.json --json
 
-# Emit read-only recommendations against a live Hermes home (AC-709).
-# --baseline-from trains the slice-1 baseline on the fly; --advisor
-# loads a previously trained checkpoint (e.g. the slice-2a logistic
+# Emit read-only recommendations against a live Hermes home.
+# --baseline-from trains a baseline on the fly; --advisor
+# loads a previously trained checkpoint (e.g. the logistic
 # regression above) and routes inference through it.
 autoctx hermes recommend \
   --home "$HERMES_HOME" \
@@ -438,7 +438,7 @@ autoctx hermes recommend \
   --advisor training/curator-advisor.json \
   --output recommendations.jsonl --json
 
-# Validate the rendered SKILL.md against the AC-711 content rubric
+# Validate the rendered SKILL.md against its content rubric
 autoctx hermes validate-skill \
   --output docs/hermes-skill-validation-report.md --json
 ```
@@ -464,7 +464,7 @@ mtime is the fallback comparison timestamp). The JSON summary reports
 
 - `--kind curator-decisions` (shipped). Other documented kinds
   (`consolidation-pairs`, `skill-selection`, `skill-quality-signals`)
-  raise `NotImplementedError` until their slices land.
+  raise `NotImplementedError` until they are implemented.
 - `--since <ISO-8601>`: skip curator runs strictly before this
   timestamp. Invalid timestamps raise `ValueError`; runs without a
   `started_at` field fall back to file mtime for the comparison.
@@ -488,7 +488,7 @@ Behavior notes:
   (with parents) if missing; ignored when `--dry-run` is set.
 - `--redact off | standard | strict` (default `standard`): redaction
   mode. `strict` requires `--user-patterns`. `off` writes raw
-  content and surfaces a CLI warning since AC-706 requires explicit
+  content and surfaces a CLI warning because raw content requires explicit
   operator opt-in for raw content.
 - `--user-patterns <json>`: JSON array of `{name, pattern}` regex
   objects. Hits are tagged `[REDACTED_USER_PATTERN:<name>]` so
@@ -501,7 +501,7 @@ blank lines are skipped with per-line warnings rather than aborting
 the whole import. The input file is never mutated; same-path
 `--input`/`--output` is rejected at the boundary.
 
-`ingest-sessions` flags (AC-706 slice 2):
+`ingest-sessions` flags:
 
 - `--home <path>`: Hermes home directory. Default `HERMES_HOME` or
   `~/.hermes`. The DB at `<home>/state.db` is opened read-only via
@@ -520,15 +520,15 @@ needs (`session_id`, `started_at`, `ended_at`, `agent_id`,
 missing optional columns are tolerated. WAL/SHM sidecars are not
 required. The importer never writes to the Hermes DB.
 
-`train-advisor` flags (AC-708 slices 1 + 2a + 2b + 2c):
+`train-advisor` flags:
 
-- `--data <jsonl>`: AC-705 `curator-decisions` export to train and
+- `--data <jsonl>`: `curator-decisions` export to train and
   evaluate on. Required.
-- `--baseline`: train the majority-class baseline advisor (slice 1).
+- `--baseline`: train the majority-class baseline advisor.
 - `--logistic`: train the pure-Python multinomial logistic-regression
-  advisor (slice 2a; gradient descent over the AC-705 feature set,
+  advisor (gradient descent over the curator feature set,
   no numpy / GPU dependency).
-- `--mlx`: train the MLX-backed logistic-regression advisor (slice 2b;
+- `--mlx`: train the MLX-backed logistic-regression advisor (the
   same model architecture as `--logistic` but the gradient descent
   runs on MLX so the matrix multiplies can be GPU-accelerated on
   Apple silicon). Requires `pip install autocontext[mlx]`. The
@@ -536,7 +536,7 @@ required. The importer never writes to the Hermes DB.
   - `backend: "mlx"` so audits can tell which backend produced a
     file; either kind loads through `recommend --advisor`.
 - `--cuda`: train the PyTorch/CUDA-backed logistic-regression advisor
-  (slice 2c; same model architecture as `--logistic` / `--mlx` but
+  (same model architecture as `--logistic` / `--mlx` but
   the gradient descent runs on PyTorch tensors so the matrix
   multiplies can be GPU-accelerated on NVIDIA hardware). Falls back
   transparently to CPU torch when `torch.cuda.is_available()` is
@@ -569,15 +569,15 @@ posture: rejects unknown `kind` values and dimension-mismatched
 weight matrices (`labels` / `weights` / `intercepts` row counts must
 agree, and each weight row must match `feature_names` length).
 
-`recommend` flags (AC-709 + AC-708 slice 2a):
+`recommend` flags:
 
 - `--home <path>`: Hermes home to inspect. Read-only; the surface
   never writes to `~/.hermes`.
-- `--baseline-from <jsonl>`: AC-705 export to train the baseline
+- `--baseline-from <jsonl>`: curator-decisions export to train the baseline
   advisor on. The same-file guard rejects `--output` equal to
   `--baseline-from`. Mutually exclusive with `--advisor`.
 - `--advisor <json>`: load a previously trained advisor checkpoint
-  (e.g. the slice-2a logistic regression produced by
+  (e.g. the logistic regression produced by
   `autoctx hermes train-advisor --logistic --checkpoint ...`). The
   loaded advisor drives `predicted_action` and `reason` in each
   recommendation row. Mutually exclusive with `--baseline-from`.
@@ -594,8 +594,8 @@ agree, and each weight row must match `feature_names` length).
 
 Read-only invariant: Curator stays the mutation owner. The
 recommendation surface emits suggestions; applying them is the
-operator's call. Slice 2a wires the trained-logistic backend through
-end-to-end; MLX (2b) and CUDA (2c) follow.
+operator's call. Trained logistic, MLX, and CUDA advisors all use the
+same read-only recommendation flow.
 
 JSON output shape for `inspect`:
 
@@ -1319,14 +1319,14 @@ repeated per round, followed by a single `final` event. Without a verifier the `
 - `judge_done` carries `round` and `score` (the judge's evaluation before any post-processing or veto).
 - `verifier_done` carries `round`, `verifier_ok`, and `verifier_exit_code`.
 - `round_summary` carries `round` and `effective_score` (post-veto, after fact-check penalty).
-- `checkpoint_done` carries `round`, `checkpoint_ok`, and `checkpoint_exit_code`. Unlike `verifier_done`, a failed checkpoint does NOT veto the round -- it is a side effect that preserves partial progress (e.g. a `git commit` or `cp` of the per-round output) before later rounds might overshoot or time out (AC-727).
+- `checkpoint_done` carries `round`, `checkpoint_ok`, and `checkpoint_exit_code`. Unlike `verifier_done`, a failed checkpoint does NOT veto the round -- it is a side effect that preserves partial progress (e.g. a `git commit` or `cp` of the per-round output) before later rounds might overshoot or time out.
 - `final` carries `best_score`, `best_round`, `total_rounds`, and `met_threshold`.
 
 Provider errors during a streaming run emit a single `{"event":"error","message":"..."}` line on stdout so the stream stays parseable.
 
 For lean streams pass `--no-ndjson-include-output`: this drops `revision_done` events entirely (their only payload is the output) and never writes the output payload anywhere on stdout. Default is `--ndjson-include-output`.
 
-The output the loop carries through `revision_done`, the judge call, and `--verify-cmd` is already passed through `clean_revision_output`: revision metadata sections (`## Revised Output`, `## Key Changes Made`, etc.) and a single outer markdown code fence (e.g. ` ```lean ... ``` `) are stripped automatically. This means `--verify-cmd <compiler>` doesn't see literal fence lines on round 1 or after any revision (AC-754).
+The output the loop carries through `revision_done`, the judge call, and `--verify-cmd` is already passed through `clean_revision_output`: revision metadata sections (`## Revised Output`, `## Key Changes Made`, etc.) and a single outer markdown code fence (e.g. ` ```lean ... ``` `) are stripped automatically. This means `--verify-cmd <compiler>` doesn't see literal fence lines on round 1 or after any revision.
 
 ## TypeScript CLI
 

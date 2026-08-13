@@ -60,7 +60,7 @@ Subcommands:
   list            List stored traces (local view, no redaction)
   show            Inspect a single trace (add --as-exported to preview redaction)
   stats           Aggregate counts by env / app / provider / outcome / cluster
-  build-dataset   Generate an evaluation dataset from curated traces (AC-541)
+  build-dataset   Generate an evaluation dataset from curated traces
   datasets        List or show generated datasets
   export          Export traces outbound with redaction applied
   policy          Show or set the redaction-mode policy (§7.4)

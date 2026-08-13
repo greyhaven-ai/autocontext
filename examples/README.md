@@ -48,6 +48,17 @@ uv run autoctx export \
 Omit `--output` for JSON to print the portable strategy package directly to
 stdout. `--format strategy` remains a compatibility alias for `--format json`.
 
+## Create A Scenario Or Start MCP
+
+Use the canonical nested commands in scripts and agent instructions:
+
+```bash
+uv run autoctx scenario create --description "evaluate concise support replies"
+uv run autoctx serve mcp
+```
+
+Both command paths are shared by the Python and npm CLIs.
+
 ## Claude Code MCP Config
 
 Add this to your project-level `.claude/settings.json` and replace `/ABSOLUTE/PATH/TO/REPO/autocontext` with the real path to this repo's Python package directory.

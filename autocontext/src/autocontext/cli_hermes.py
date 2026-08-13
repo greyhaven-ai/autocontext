@@ -62,7 +62,7 @@ def register_hermes_command(
             bool,
             typer.Option(
                 "--with-references",
-                help="Also write progressive-disclosure references next to SKILL.md (AC-702)",
+                help="Also write progressive-disclosure references next to SKILL.md",
             ),
         ] = False,
         json_output: Annotated[bool, typer.Option("--json", help="Output structured JSON")] = False,
@@ -113,7 +113,7 @@ def register_hermes_command(
         ] = False,
         json_output: Annotated[bool, typer.Option("--json", help="Output structured JSON")] = False,
     ) -> None:
-        """Ingest Hermes curator reports into ProductionTrace JSONL (AC-704)."""
+        """Ingest Hermes curator reports into ProductionTrace JSONL."""
 
         run_hermes_ingest_curator_command(
             home=home,
@@ -154,7 +154,7 @@ def register_hermes_command(
         ] = None,
         json_output: Annotated[bool, typer.Option("--json", help="Output structured JSON")] = False,
     ) -> None:
-        """Export Hermes curator decisions as training JSONL (AC-705)."""
+        """Export Hermes curator decisions as training JSONL."""
 
         run_hermes_export_dataset_command(
             kind=kind,
@@ -202,12 +202,12 @@ def register_hermes_command(
             bool,
             typer.Option(
                 "--dry-run",
-                help="Count and redact but do not write the output file (AC-706 privacy preview)",
+                help="Count and redact but do not write the output file",
             ),
         ] = False,
         json_output: Annotated[bool, typer.Option("--json", help="Output structured JSON")] = False,
     ) -> None:
-        """Ingest a Hermes trajectory JSONL with explicit redaction (AC-706 slice 1)."""
+        """Ingest a Hermes trajectory JSONL with explicit redaction."""
 
         run_hermes_ingest_trajectories_command(
             input_path=input_path,
@@ -258,12 +258,12 @@ def register_hermes_command(
             bool,
             typer.Option(
                 "--dry-run",
-                help="Count and redact but do not write the output file (AC-706 privacy preview)",
+                help="Count and redact but do not write the output file",
             ),
         ] = False,
         json_output: Annotated[bool, typer.Option("--json", help="Output structured JSON")] = False,
     ) -> None:
-        """Ingest Hermes session DB into ProductionTrace JSONL (AC-706 slice 2)."""
+        """Ingest Hermes session DB into ProductionTrace JSONL."""
 
         run_hermes_ingest_sessions_command(
             home=home,
@@ -285,28 +285,28 @@ def register_hermes_command(
             Path,
             typer.Option(
                 "--data",
-                help="AC-705 curator-decisions JSONL to train and evaluate on",
+                help="Curator-decisions JSONL to train and evaluate on",
             ),
         ],
         baseline: Annotated[
             bool,
             typer.Option(
                 "--baseline",
-                help="Train the majority-class baseline (AC-708 slice 1)",
+                help="Train the majority-class baseline",
             ),
         ] = False,
         logistic: Annotated[
             bool,
             typer.Option(
                 "--logistic",
-                help="Train the pure-Python logistic-regression advisor (AC-708 slice 2a)",
+                help="Train the pure-Python logistic-regression advisor",
             ),
         ] = False,
         mlx: Annotated[
             bool,
             typer.Option(
                 "--mlx",
-                help="Train the MLX-backed logistic-regression advisor (AC-708 slice 2b; "
+                help="Train the MLX-backed logistic-regression advisor ("
                 "requires `pip install autocontext[mlx]`)",
             ),
         ] = False,
@@ -314,7 +314,7 @@ def register_hermes_command(
             bool,
             typer.Option(
                 "--cuda",
-                help="Train the PyTorch/CUDA-backed logistic-regression advisor (AC-708 slice 2c; "
+                help="Train the PyTorch/CUDA-backed logistic-regression advisor ("
                 "requires `pip install autocontext[cuda]`; falls back to CPU torch when CUDA is unavailable)",
             ),
         ] = False,
@@ -336,7 +336,7 @@ def register_hermes_command(
         ] = None,
         json_output: Annotated[bool, typer.Option("--json", help="Output structured JSON")] = False,
     ) -> None:
-        """Train + evaluate a Hermes curator advisor (AC-708)."""
+        """Train and evaluate a Hermes curator advisor."""
 
         run_hermes_train_advisor_command(
             data=data,
@@ -362,7 +362,7 @@ def register_hermes_command(
             Path | None,
             typer.Option(
                 "--baseline-from",
-                help="AC-705 curator-decisions JSONL to train a baseline advisor from",
+                help="Curator-decisions JSONL to train a baseline advisor from",
             ),
         ] = None,
         advisor_path: Annotated[
@@ -385,7 +385,7 @@ def register_hermes_command(
         ] = False,
         json_output: Annotated[bool, typer.Option("--json", help="Output structured JSON")] = False,
     ) -> None:
-        """Emit read-only advisor recommendations against a live Hermes home (AC-709)."""
+        """Emit read-only advisor recommendations against a live Hermes home."""
 
         run_hermes_recommend_command(
             home=home,
@@ -410,7 +410,7 @@ def register_hermes_command(
         ] = None,
         json_output: Annotated[bool, typer.Option("--json", help="Output structured JSON")] = False,
     ) -> None:
-        """Validate the rendered Hermes autocontext SKILL.md (AC-711)."""
+        """Validate the rendered Hermes autocontext SKILL.md."""
 
         run_hermes_validate_skill_command(
             output=output,

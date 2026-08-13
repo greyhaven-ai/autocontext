@@ -79,7 +79,7 @@ const COMMANDS: readonly CommandDescriptor[] = [
   },
   {
     name: "run",
-    description: "Run generation loop for a scenario",
+    description: "Run a scenario (required unless configured); defaults to 1 iteration. Next: status.",
     group: "primary",
     route: { kind: "db", command: "run" },
   },
@@ -103,13 +103,13 @@ const COMMANDS: readonly CommandDescriptor[] = [
   },
   {
     name: "show",
-    description: "Show the best or latest generation for a run",
+    description: "Inspect a required run; defaults to its latest generation. Next: export.",
     group: "primary",
     route: { kind: "db", command: "show" },
   },
   {
     name: "watch",
-    description: "Follow a run until it finishes",
+    description: "Follow a required run; defaults to polling every 2 seconds. Next: show.",
     group: "primary",
     route: { kind: "db", command: "watch" },
   },
@@ -121,7 +121,7 @@ const COMMANDS: readonly CommandDescriptor[] = [
   },
   {
     name: "export",
-    description: "Export strategy package for a scenario",
+    description: "Export a required run or scenario; defaults to JSON on stdout. Next: import-package.",
     group: "primary",
     route: { kind: "db", command: "export" },
   },
@@ -205,7 +205,7 @@ const COMMANDS: readonly CommandDescriptor[] = [
   },
   {
     name: "solve",
-    description: "Create and solve a scenario from plain language",
+    description: "Solve a required plain-language goal; defaults to 5 iterations. Next: show.",
     group: "primary",
     route: { kind: "db", command: "solve" },
   },
@@ -247,7 +247,7 @@ const COMMANDS: readonly CommandDescriptor[] = [
   },
   {
     name: "status",
-    description: "Show run status",
+    description: "Show a required run's current snapshot; defaults to text output. Next: watch.",
     group: "primary",
     route: { kind: "db", command: "status" },
   },
