@@ -53,9 +53,15 @@ describe("AC-697 CLI contract — schema sanity", () => {
         receipt: "cli-schemas/export-receipt-v1.schema.json",
         error: "cli-schemas/cli-error-v1.schema.json",
       },
+      fixtures: {
+        artifact: "cli-fixtures/strategy-package-v1.json",
+      },
     });
     for (const schemaPath of Object.values(command?.output?.schemas ?? {})) {
       expect(readFileSync(resolve(CONTRACT_PATH, "..", schemaPath), "utf-8")).toBeTruthy();
+    }
+    for (const fixturePath of Object.values(command?.output?.fixtures ?? {})) {
+      expect(readFileSync(resolve(CONTRACT_PATH, "..", fixturePath), "utf-8")).toBeTruthy();
     }
     expect(command?.exit_codes).toEqual({ success: 0, usage: 2, execution: 1 });
     expect(command?.examples.length).toBeGreaterThan(0);
@@ -108,6 +114,21 @@ describe("AC-697 CLI contract — schema sanity", () => {
     const contract = loadContract(CONTRACT_PATH);
     const ids = contract.commands.map((c) => c.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("all referenced wire schemas and fixtures exist", () => {
+    const contract = loadContract(CONTRACT_PATH);
+    for (const command of contract.commands) {
+      for (const assetPath of [
+        ...Object.values(command.output?.schemas ?? {}),
+        ...Object.values(command.output?.fixtures ?? {}),
+      ]) {
+        expect(
+          readFileSync(resolve(CONTRACT_PATH, "..", assetPath), "utf-8"),
+          `${command.id}: ${assetPath}`,
+        ).toBeTruthy();
+      }
+    }
   });
 
   it("alias paths are unique across commands", () => {

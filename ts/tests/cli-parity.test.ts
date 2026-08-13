@@ -261,6 +261,32 @@ describe("CLI status command", () => {
   });
 });
 
+describe("CLI show and watch contracts", () => {
+  it("show uses usage exit 2 and JSON stderr when the run id is missing", () => {
+    const { stdout, stderr, exitCode } = runCli(["show", "--json"]);
+
+    expect(exitCode).toBe(2);
+    expect(stdout).toBe("");
+    expect(JSON.parse(stderr)).toMatchObject({ error: expect.stringContaining("needs a run id") });
+  });
+
+  it("watch uses usage exit 2 and JSON stderr when the run id is missing", () => {
+    const { stdout, stderr, exitCode } = runCli(["watch", "--ndjson"]);
+
+    expect(exitCode).toBe(2);
+    expect(stdout).toBe("");
+    expect(JSON.parse(stderr)).toMatchObject({ error: expect.stringContaining("needs a run id") });
+  });
+
+  it("watch treats a non-positive interval as a usage error", () => {
+    const { stdout, stderr, exitCode } = runCli(["watch", "run-123", "--interval", "0", "--ndjson"]);
+
+    expect(exitCode).toBe(2);
+    expect(stdout).toBe("");
+    expect(JSON.parse(stderr)).toEqual({ error: "--interval must be a positive number of seconds" });
+  });
+});
+
 // ---------------------------------------------------------------------------
 // list command
 // ---------------------------------------------------------------------------

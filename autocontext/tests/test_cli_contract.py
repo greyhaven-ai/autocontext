@@ -146,12 +146,23 @@ def test_export_is_the_first_fully_specified_v2_command(contract: Contract) -> N
         "error": "cli-schemas/cli-error-v1.schema.json",
         "receipt": "cli-schemas/export-receipt-v1.schema.json",
     }
+    assert dict(command.output.fixtures) == {
+        "artifact": "cli-fixtures/strategy-package-v1.json",
+    }
     for schema_path in dict(command.output.schemas).values():
         assert (_contract_path().parent / schema_path).is_file()
+    for fixture_path in dict(command.output.fixtures).values():
+        assert (_contract_path().parent / fixture_path).is_file()
     assert command.exit_codes.success == 0
     assert command.exit_codes.usage == 2
     assert command.exit_codes.execution == 1
     assert command.examples
+
+
+def test_all_contract_wire_assets_exist(contract: Contract) -> None:
+    for command in contract.commands:
+        for asset_path in (*dict(command.output.schemas).values(), *dict(command.output.fixtures).values()):
+            assert (_contract_path().parent / asset_path).is_file(), f"missing {command.id} asset: {asset_path}"
 
 
 def test_loader_keeps_version_1_entries_compatible(tmp_path: Path) -> None:

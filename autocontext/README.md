@@ -103,6 +103,8 @@ prompt-derived data and should be redacted before persistence or export.
 | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | `uv run autoctx solve "..." --iterations 3`                                            | Generate and run a scenario from a plain-language goal                                                 |
 | `uv run autoctx run <scenario> --iterations 3`                                         | Improve an existing scenario                                                                           |
+| `uv run autoctx status <run-id> --json` / `watch <run-id> --ndjson`                    | Read one run snapshot or stream snapshots                                                              |
+| `uv run autoctx show <run-id> --best --json`                                           | Inspect the best generation                                                                            |
 | `uv run autoctx simulate --description "..."`                                          | Create/replay/compare modeled-world simulations                                                        |
 | `uv run autoctx investigate --description "..."`                                       | Run synthetic or iterative investigations                                                              |
 | `uv run autoctx list` / `status <run_id>` / `show <run_id>`                            | Inspect runs                                                                                           |

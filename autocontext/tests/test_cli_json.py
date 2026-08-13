@@ -250,6 +250,12 @@ class TestStatusJson:
         assert result.exit_code == 0, result.output
         data = json.loads(result.output.strip())
         assert data["run_id"] == "run-status"
+        assert data["run"]["run_id"] == "run-status"
+        assert data["run"]["scenario"] == "grid_ctf"
+        assert data["latest_generation"]["generation_index"] == 1
+        assert data["latest_generation"]["mean_score"] == 0.4
+        assert data["runtime_session"] is None
+        assert data["progress_report"] is None
         assert isinstance(data["generations"], list)
         assert len(data["generations"]) == 1
         gen = data["generations"][0]
@@ -269,6 +275,7 @@ class TestStatusJson:
         assert result.exit_code == 0, result.output
         data = json.loads(result.output.strip())
         assert data["run_id"] == "run-empty"
+        assert data["latest_generation"] is None
         assert data["generations"] == []
 
     def test_status_accepts_named_run_id(self, tmp_path: Path) -> None:

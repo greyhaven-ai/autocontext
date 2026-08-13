@@ -80,6 +80,9 @@ Everything is filesystem-first: inspect it, diff it, replay it, export it, or fe
 | ------------- | ------------------------------------------------------- | ------------------------------------------------------- |
 | `solve`       | `autoctx solve "..." --iterations 3`                    | Start from a plain-language goal                        |
 | `run`         | `autoctx run <scenario> --iterations 3`                 | Improve a saved scenario                                |
+| `status`      | `autoctx status <run-id> --json`                        | Read one run snapshot                                   |
+| `watch`       | `autoctx watch <run-id> --ndjson`                       | Stream run snapshots                                    |
+| `show`        | `autoctx show <run-id> --best --json`                   | Inspect a selected generation                           |
 | `simulate`    | `autoctx simulate -d "..."`                             | Model/replay/compare system behavior                    |
 | `investigate` | `autoctx investigate -d "..."`                          | Evidence-driven diagnosis                               |
 | `mission`     | `autoctx mission create --name "..." --goal "..."`      | Verifier-driven multi-step goals                        |

@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "run-status-v1.schema.json",
+  "title": "Autocontext run status v1",
+  "type": "object",
+  "required": ["run", "latest_generation", "runtime_session", "progress_report"],
+  "properties": {
+    "run": { "$ref": "#/$defs/run" },
+    "latest_generation": {
+      "oneOf": [
+        { "$ref": "#/$defs/generation" },
+        { "type": "null" }
+      ]
+    },
+    "runtime_session": { "type": ["object", "null"] },
+    "progress_report": { "type": ["object", "null"] }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "run": {
+      "type": "object",
+      "required": [
+        "run_id",
+        "scenario",
+        "target_generations",
+        "executor_mode",
+        "status",
+        "agent_provider",
+        "created_at",
+        "updated_at"
+      ],
+      "properties": {
+        "run_id": { "type": "string", "minLength": 1 },
+        "scenario": { "type": "string" },
+        "target_generations": { "type": "integer", "minimum": 0 },
+        "executor_mode": { "type": "string" },
+        "status": { "type": "string" },
+        "agent_provider": { "type": "string" },
+        "created_at": { "type": ["string", "null"] },
+        "updated_at": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "generation": {
+      "type": "object",
+      "required": [
+        "generation_index",
+        "mean_score",
+        "best_score",
+        "elo",
+        "wins",
+        "losses",
+        "gate_decision",
+        "status",
+        "duration_seconds",
+        "evaluator_epoch",
+        "quarantined",
+        "created_at",
+        "updated_at"
+      ],
+      "properties": {
+        "generation_index": { "type": "integer", "minimum": 0 },
+        "mean_score": { "type": "number" },
+        "best_score": { "type": "number" },
+        "elo": { "type": "number" },
+        "wins": { "type": "integer", "minimum": 0 },
+        "losses": { "type": "integer", "minimum": 0 },
+        "gate_decision": { "type": "string" },
+        "status": { "type": "string" },
+        "duration_seconds": { "type": ["number", "null"] },
+        "evaluator_epoch": { "type": ["string", "null"] },
+        "quarantined": { "type": ["integer", "null"] },
+        "created_at": { "type": ["string", "null"] },
+        "updated_at": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    }
+  }
+}

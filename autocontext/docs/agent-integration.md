@@ -18,7 +18,7 @@ In practice, users have reported better experiences integrating via the CLI than
 
 ## CLI Integration Patterns
 
-### Machine-Readable Output (`--json`)
+### Machine-Readable Output (`--json` and `--ndjson`)
 
 Most `autoctx` commands accept a `--json` flag that switches output to structured JSON:
 
@@ -33,10 +33,14 @@ autoctx train --scenario grid_ctf --data data.jsonl --json
 
 **Contract:**
 
-- **stdout** receives the JSON payload (one JSON object per line).
+- **`--json`** writes exactly one JSON value to stdout.
+- **`--ndjson`** writes a stream of complete JSON values, one per line. `watch`
+  uses this mode for live run-status snapshots; its old `--json` spelling remains
+  as a deprecated streaming alias.
 - **stderr** receives errors in the format `{"error": "description"}`.
 - **Exit code 0** means the command succeeded. The JSON payload is on stdout.
-- **Exit code 1** means the command failed. An error JSON is on stderr.
+- **Exit code 1** means execution failed. An error JSON is on stderr.
+- **Exit code 2** means the invocation was invalid or incomplete.
 
 ### Command Reference
 
@@ -78,41 +82,54 @@ JSON output shape:
 
 ```json
 {
-  "run_id": "abc123",
-  "active_evaluator_epoch": "e2sha256...",
-  "generations": [
-    {
-      "generation": 1,
-      "mean_score": 0.72,
-      "best_score": 0.85,
-      "elo": 1523.4,
-      "wins": 3,
-      "losses": 2,
-      "gate_decision": "advance",
-      "status": "completed",
-      "evaluator_epoch": "e1sha256...",
-      "evaluator_epoch_status": "stale",
-      "quarantined": false,
-      "has_active_revision": true,
-      "revised_score": 0.55,
-      "revised_by": "jay",
-      "revised_at": "2026-07-13T19:12:05Z"
-    }
-  ]
+  "run": {
+    "run_id": "abc123",
+    "scenario": "grid_ctf",
+    "target_generations": 5,
+    "executor_mode": "local",
+    "status": "completed",
+    "agent_provider": "deterministic",
+    "created_at": "2026-07-13T19:10:00Z",
+    "updated_at": "2026-07-13T19:12:05Z"
+  },
+  "latest_generation": {
+    "generation_index": 1,
+    "mean_score": 0.72,
+    "best_score": 0.85,
+    "elo": 1523.4,
+    "wins": 3,
+    "losses": 2,
+    "gate_decision": "advance",
+    "status": "completed",
+    "duration_seconds": 14.2,
+    "evaluator_epoch": "e1sha256...",
+    "quarantined": 0,
+    "created_at": "2026-07-13T19:11:30Z",
+    "updated_at": "2026-07-13T19:12:05Z"
+  },
+  "runtime_session": null,
+  "progress_report": null
 }
 ```
 
-The evaluator-epoch lineage fields (AC-885) are Python-only and always present. `active_evaluator_epoch`
-(top level) is the scenario's active evaluator epoch, or null. Per generation, `evaluator_epoch` is the
-epoch that produced `best_score` and `evaluator_epoch_status` classifies it against the active epoch
-(`current` / `stale` / `unknown` / `no_active_epoch`). When `autoctx rescore --apply` has recorded a
-re-score under the active epoch, `has_active_revision` is true and `revised_score` / `revised_by` /
-`revised_at` describe it. `revised_score` SUPPLEMENTS `best_score` (the unchanged score of record), it
-does not replace it; the fields are null when no active-epoch revision exists. `show --json` carries the
-same fields (its top-level payload also includes `scenario` and `status`).
+The stable cross-runtime fields are defined by
+[`run-status-v1.schema.json`](../../docs/cli-schemas/run-status-v1.schema.json).
+The Python CLI retains its earlier top-level `run_id`, `active_evaluator_epoch`,
+and `generations` fields as compatibility additions. `show --json` returns the
+same `run` projection plus one selected `generation`; its schema is
+[`run-show-v1.schema.json`](../../docs/cli-schemas/run-show-v1.schema.json).
+
+To follow a run as a stream, use:
+
+```bash
+autoctx watch <run_id> --ndjson
+```
+
+Each stdout line conforms to the run-status schema. Diagnostics and structured
+errors remain on stderr, so they cannot corrupt the stream.
 
 The TypeScript CLI also includes an optional `runtime_session` object in
-`status`, `show`, and `watch --json` output when a CLI-backed provider run has a
+`status`, `show`, and `watch --ndjson` output when a CLI-backed provider run has a
 persisted runtime-session event log. Python runtime-backed `run` and `solve`
 role calls write the same run-scoped log automatically. Use
 `autoctx runtime-sessions show
@@ -180,7 +197,7 @@ Simple polling pattern:
 ```bash
 while true; do
   current=$(autoctx status "$RUN_ID" --json)
-  state=$(echo "$current" | jq -r '.generations[-1].status // "unknown"')
+  state=$(echo "$current" | jq -r '.latest_generation.status // .run.status // "unknown"')
   if [ "$state" = "completed" ] || [ "$state" = "failed" ]; then
     break
   fi
@@ -858,7 +875,7 @@ best_score=$(echo "$result" | jq -r '.best_score')
 echo "Run completed. Best score: $best_score" >&2
 
 # 2. Check detailed status
-autoctx status "$RUN_ID" --json | jq '.generations[-1]'
+autoctx status "$RUN_ID" --json | jq '.latest_generation'
 
 # 3. Export the strategy package
 autoctx export "$RUN_ID" --output "${SCENARIO}_pkg.json" --json
@@ -937,7 +954,7 @@ For runs with many generations, poll `autoctx status` while the backgrounded `ru
 ```bash
 while kill -0 "$RUN_PID" 2>/dev/null; do
   status=$(autoctx status "$RUN_ID" --json 2>/dev/null)
-  last_gate=$(echo "$status" | jq -r '.generations[-1].gate_decision // "pending"')
+  last_gate=$(echo "$status" | jq -r '.latest_generation.gate_decision // "pending"')
   last_gen=$(echo "$status" | jq -r '.generations | length')
   echo "Generation $last_gen: gate=$last_gate" >&2
   sleep 10

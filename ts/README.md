@@ -95,6 +95,9 @@ const orchestrator = new AgentOrchestrator(provider, {
 | ------------------------------------------------------ | ------------------------------------------------------------ |
 | `autoctx solve "..." --iterations 3`                   | Generate and run a scenario from a plain-language goal       |
 | `autoctx run --scenario <name> --iterations 3`         | Run a saved scenario                                         |
+| `autoctx status <run-id> --json`                       | Read one run snapshot                                        |
+| `autoctx watch <run-id> --ndjson`                      | Stream run snapshots                                         |
+| `autoctx show <run-id> --best --json`                  | Inspect the best generation                                  |
 | `autoctx simulate -d "..."`                            | Build/replay/compare simulations                             |
 | `autoctx investigate -d "..."`                         | Evidence-driven diagnosis                                    |
 | `autoctx analyze --id <id> --type <kind>`              | Inspect runs, simulations, investigations, or missions       |

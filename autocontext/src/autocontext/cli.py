@@ -51,6 +51,7 @@ from autocontext.cli_share import register_share_command
 from autocontext.cli_skills import register_skills_command
 from autocontext.cli_solve import register_solve_command
 from autocontext.cli_train import register_train_command
+from autocontext.cli_wire import run_status_wire_payload
 from autocontext.cli_worker import register_worker_command
 from autocontext.config import load_settings
 from autocontext.config.presets import VALID_PRESET_NAMES
@@ -655,16 +656,16 @@ def status(
                     "revised_at": row.get("revised_at"),
                 }
             )
-        sys.stdout.write(
-            json.dumps(
-                {
-                    "run_id": resolved_run_id,
-                    "active_evaluator_epoch": active_epoch_id,
-                    "generations": generations,
-                }
-            )
-            + "\n"
+        payload = run_status_wire_payload(run, rows, run_id=resolved_run_id)
+        payload.update(
+            {
+                # Compatibility fields retained for Python CLI consumers.
+                "run_id": resolved_run_id,
+                "active_evaluator_epoch": active_epoch_id,
+                "generations": generations,
+            }
         )
+        _write_json_stdout(payload)
     else:
         table = Table(title=f"Run Status: {resolved_run_id}")
         table.add_column("Gen")

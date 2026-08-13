@@ -120,7 +120,11 @@
         "success_stream": "stdout",
         "error_stream": "stderr",
         "schemas": {
+          "success": "cli-schemas/run-status-v1.schema.json",
           "error": "cli-schemas/cli-error-v1.schema.json"
+        },
+        "fixtures": {
+          "success": "cli-fixtures/run-status-v1.json"
         }
       },
       "exit_codes": {
@@ -149,8 +153,74 @@
           "status": "yes"
         }
       },
-      "flags": [],
-      "output_contract": "text"
+      "positionals": [
+        {
+          "name": "run-id",
+          "type": "string",
+          "required": false,
+          "description": "Run to watch; required unless --run-id is supplied."
+        }
+      ],
+      "flags": [
+        {
+          "name": "run-id",
+          "type": "string",
+          "aliases": [],
+          "short_names": [],
+          "required": false,
+          "description": "Named alternative to the run-id positional."
+        },
+        {
+          "name": "interval",
+          "type": "float",
+          "aliases": [],
+          "short_names": [],
+          "required": false,
+          "default": 2.0,
+          "description": "Polling interval in seconds; must be positive."
+        },
+        {
+          "name": "ndjson",
+          "type": "bool",
+          "aliases": [],
+          "short_names": [],
+          "required": false,
+          "default": false,
+          "description": "Emit newline-delimited run-status snapshots."
+        },
+        {
+          "name": "json",
+          "type": "bool",
+          "aliases": [],
+          "short_names": [],
+          "required": false,
+          "default": false,
+          "description": "Deprecated compatibility alias for --ndjson."
+        }
+      ],
+      "output_contract": "json",
+      "output": {
+        "modes": ["ndjson", "text"],
+        "streaming": "ndjson",
+        "success_stream": "stdout",
+        "error_stream": "stderr",
+        "schemas": {
+          "event": "cli-schemas/run-status-v1.schema.json",
+          "error": "cli-schemas/cli-error-v1.schema.json"
+        },
+        "fixtures": {
+          "event": "cli-fixtures/run-status-v1.json"
+        }
+      },
+      "exit_codes": {
+        "success": 0,
+        "usage": 2,
+        "execution": 1
+      },
+      "examples": [
+        "autoctx watch <run-id>",
+        "autoctx watch --run-id <run-id> --ndjson"
+      ]
     },
     {
       "id": "show",
@@ -168,16 +238,73 @@
           "status": "yes"
         }
       },
+      "positionals": [
+        {
+          "name": "run-id",
+          "type": "string",
+          "required": false,
+          "description": "Run to inspect; required unless --run-id is supplied."
+        }
+      ],
       "flags": [
+        {
+          "name": "run-id",
+          "type": "string",
+          "aliases": [],
+          "short_names": [],
+          "required": false,
+          "description": "Named alternative to the run-id positional."
+        },
         {
           "name": "best",
           "type": "bool",
           "aliases": [],
+          "short_names": [],
           "required": false,
+          "default": false,
           "description": "Show only the best-scoring generation. Demo / agent-friendly."
+        },
+        {
+          "name": "generation",
+          "type": "int",
+          "aliases": [],
+          "short_names": [],
+          "required": false,
+          "description": "Show a specific positive generation index."
+        },
+        {
+          "name": "json",
+          "type": "bool",
+          "aliases": [],
+          "short_names": [],
+          "required": false,
+          "default": false,
+          "description": "Emit one structured JSON value."
         }
       ],
-      "output_contract": "text"
+      "output_contract": "json",
+      "output": {
+        "modes": ["json", "text"],
+        "streaming": "single",
+        "success_stream": "stdout",
+        "error_stream": "stderr",
+        "schemas": {
+          "success": "cli-schemas/run-show-v1.schema.json",
+          "error": "cli-schemas/cli-error-v1.schema.json"
+        },
+        "fixtures": {
+          "success": "cli-fixtures/run-show-v1.json"
+        }
+      },
+      "exit_codes": {
+        "success": 0,
+        "usage": 2,
+        "execution": 1
+      },
+      "examples": [
+        "autoctx show <run-id> --best",
+        "autoctx show --run-id <run-id> --generation 2 --json"
+      ]
     },
     {
       "id": "export",
@@ -261,6 +388,9 @@
           "artifact": "cli-schemas/strategy-package-v1.schema.json",
           "receipt": "cli-schemas/export-receipt-v1.schema.json",
           "error": "cli-schemas/cli-error-v1.schema.json"
+        },
+        "fixtures": {
+          "artifact": "cli-fixtures/strategy-package-v1.json"
         }
       },
       "exit_codes": {
@@ -385,8 +515,40 @@
           "status": "yes"
         }
       },
-      "flags": [],
-      "output_contract": "json"
+      "flags": [
+        {
+          "name": "json",
+          "type": "bool",
+          "aliases": [],
+          "short_names": [],
+          "required": false,
+          "default": false,
+          "description": "Emit one structured JSON value."
+        }
+      ],
+      "output_contract": "json",
+      "output": {
+        "modes": ["json", "text"],
+        "streaming": "single",
+        "success_stream": "stdout",
+        "error_stream": "stderr",
+        "schemas": {
+          "success": "cli-schemas/queue-status-v1.schema.json",
+          "error": "cli-schemas/cli-error-v1.schema.json"
+        },
+        "fixtures": {
+          "success": "cli-fixtures/queue-status-v1.json"
+        }
+      },
+      "exit_codes": {
+        "success": 0,
+        "usage": 2,
+        "execution": 1
+      },
+      "examples": [
+        "autoctx queue status",
+        "autoctx queue status --json"
+      ]
     },
     {
       "id": "scenario.create",

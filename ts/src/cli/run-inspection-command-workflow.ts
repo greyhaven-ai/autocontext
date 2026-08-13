@@ -31,11 +31,12 @@ Examples:
 export const WATCH_HELP_TEXT = `autoctx watch — follow a run until it finishes
 
 Usage:
-  autoctx watch <run-id> [--interval seconds] [--json]
-  autoctx watch --run-id <run-id> [--interval seconds] [--json]
+  autoctx watch <run-id> [--interval seconds] [--ndjson]
+  autoctx watch --run-id <run-id> [--interval seconds] [--ndjson]
 
 Options:
-  --json               Emit compact newline-delimited JSON snapshots
+  --ndjson             Emit newline-delimited JSON snapshots
+  --json               Deprecated alias for --ndjson
 
 Examples:
   autoctx watch run-123
@@ -57,6 +58,8 @@ export interface RunInspectionGeneration {
   mean_score: number;
   best_score: number;
   elo: number;
+  wins: number;
+  losses: number;
   gate_decision: string;
   status: string;
   duration_seconds: number | null;
@@ -69,6 +72,8 @@ export interface RunInspectionGeneration {
 export interface RunIdValues {
   "run-id"?: string;
 }
+
+export class RunInspectionUsageError extends Error {}
 
 export interface ShowValues extends RunIdValues {
   generation?: string;
@@ -83,7 +88,9 @@ export function resolveRunId(
 ): string {
   const runId = values["run-id"]?.trim() || positionals[0]?.trim();
   if (!runId) {
-    throw new Error(`Error: ${commandName} needs a run id. Use 'autoctx ${commandName} <run-id>'.`);
+    throw new RunInspectionUsageError(
+      `Error: ${commandName} needs a run id. Use 'autoctx ${commandName} <run-id>'.`,
+    );
   }
   return runId;
 }
@@ -91,7 +98,7 @@ export function resolveRunId(
 export function parseWatchIntervalSeconds(raw: string | undefined): number {
   const parsed = Number.parseFloat(raw ?? "2");
   if (!Number.isFinite(parsed) || parsed <= 0) {
-    throw new Error("Error: --interval must be a positive number of seconds");
+    throw new RunInspectionUsageError("Error: --interval must be a positive number of seconds");
   }
   return parsed;
 }
@@ -164,7 +171,7 @@ function selectGeneration(
   if (values.generation) {
     const requested = Number.parseInt(values.generation, 10);
     if (!Number.isInteger(requested) || requested <= 0) {
-      throw new Error("Error: --generation must be a positive integer");
+      throw new RunInspectionUsageError("Error: --generation must be a positive integer");
     }
     return generations.find((generation) => generation.generation_index === requested) ?? null;
   }

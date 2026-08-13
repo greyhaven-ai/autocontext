@@ -1,0 +1,15 @@
+{
+  "format_version": 1,
+  "scenario_name": "grid_ctf",
+  "display_name": "Grid CTF",
+  "description": "Capture the flag.",
+  "playbook": "Scout first.",
+  "lessons": ["Prefer short routes."],
+  "best_strategy": {"aggression": 0.7},
+  "best_score": 0.88,
+  "best_elo": 1710,
+  "hints": "Watch borders.",
+  "harness": {},
+  "metadata": {},
+  "skill_markdown": "---\nname: grid-ctf\n---"
+}

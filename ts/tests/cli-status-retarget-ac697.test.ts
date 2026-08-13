@@ -116,7 +116,8 @@ describe("AC-697 slice 2: queue-pending workflow shape is preserved across the m
     });
     expect(result).toEqual({ pendingCount: 7 });
     const json = renderStatusResult(result);
-    const parsed = JSON.parse(json) as { pendingCount: number };
+    const parsed = JSON.parse(json) as { pending_count: number; pendingCount: number };
+    expect(parsed.pending_count).toBe(7);
     expect(parsed.pendingCount).toBe(7);
   });
 });

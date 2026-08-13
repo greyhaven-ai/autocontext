@@ -86,15 +86,26 @@ def run_queue_command(
     # so this slice fills the parity gap by adding the queue subcommand.
     # No spec / task_prompt is required for the status action.
     if normalized_action == "status":
-        settings = load_settings_fn()
-        store = sqlite_from_settings(settings)
+        store: SQLiteStore | None = None
         try:
+            settings = load_settings_fn()
+            store = sqlite_from_settings(settings)
             pending = int(store.pending_task_count())
+        except Exception as exc:
+            if json_output:
+                write_json_stderr(str(exc))
+            else:
+                console.print(f"[red]Error: {exc}[/red]")
+            raise typer.Exit(code=1) from exc
         finally:
-            close = getattr(store, "close", None)
+            close = getattr(store, "close", None) if store is not None else None
             if callable(close):
                 close()
-        payload: dict[str, Any] = {"pending_count": pending}
+        payload: dict[str, Any] = {
+            "pending_count": pending,
+            # Compatibility field retained for existing npm CLI consumers.
+            "pendingCount": pending,
+        }
         if json_output:
             write_json_stdout(payload)
         else:

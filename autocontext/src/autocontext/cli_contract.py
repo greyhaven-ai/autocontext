@@ -100,6 +100,7 @@ class OutputSpec:
     success_stream: str = "stdout"
     error_stream: str = "stderr"
     schemas: tuple[tuple[str, str], ...] = ()
+    fixtures: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -180,6 +181,7 @@ def load_contract(path: Path) -> Contract:
             success_stream=output_raw.get("success_stream", "stdout"),
             error_stream=output_raw.get("error_stream", "stderr"),
             schemas=tuple(sorted(output_raw.get("schemas", {}).items())),
+            fixtures=tuple(sorted(output_raw.get("fixtures", {}).items())),
         )
         exit_codes_raw = entry.get("exit_codes", {})
         exit_codes = ExitCodes(

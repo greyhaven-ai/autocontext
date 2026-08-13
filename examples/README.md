@@ -29,7 +29,7 @@ uv run autoctx run \
   --run-id "$RUN_ID" \
   --json | jq .
 
-uv run autoctx status "$RUN_ID" --json | jq .
+uv run autoctx status "$RUN_ID" --json | jq '.latest_generation'
 
 mkdir -p exports
 uv run autoctx export \
@@ -238,7 +238,7 @@ mkdir -p logs
 uv run autoctx run grid_ctf --iterations 3 --run-id "$RUN_ID" --json >"logs/${RUN_ID}.json" 2>"logs/${RUN_ID}.err" &
 RUN_PID=$!
 while kill -0 "$RUN_PID" 2>/dev/null; do
-  uv run autoctx status "$RUN_ID" --json | jq '.generations[-1]'
+  uv run autoctx status "$RUN_ID" --json | jq '.latest_generation'
   sleep 5
 done
 wait "$RUN_PID"

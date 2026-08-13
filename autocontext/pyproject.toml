@@ -90,6 +90,7 @@ exclude = [".claude", ".claude/**"]
 # it. The dev tree reaches into ../docs/ directly via hatch_build.py.
 "../docs/cli-contract.json" = "docs/cli-contract.json"
 "../docs/cli-schemas" = "docs/cli-schemas"
+"../docs/cli-fixtures" = "docs/cli-fixtures"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/autocontext"]
@@ -98,9 +99,9 @@ packages = ["src/autocontext"]
 "assets" = "autocontext/assets"
 
 [tool.hatch.build.targets.wheel.hooks.custom]
-# Stages docs/cli-contract.json and its referenced cli-schemas into the wheel
-# from whichever location actually exists (parent docs/ in dev, in-sdist docs/
-# during release builds).
+# Stages docs/cli-contract.json plus its referenced schemas and fixtures into
+# the wheel from whichever location exists (parent docs/ in dev, in-sdist
+# docs/ during release builds).
 path = "hatch_build.py"
 
 [tool.pytest.ini_options]

@@ -52,6 +52,7 @@ export const OutputSpecSchema = z.object({
   success_stream: z.enum(["stdout", "stderr"]).default("stdout"),
   error_stream: z.enum(["stdout", "stderr"]).default("stderr"),
   schemas: z.record(z.string()).default({}),
+  fixtures: z.record(z.string()).default({}),
 });
 
 export const ExitCodesSchema = z.object({
@@ -116,6 +117,7 @@ export function loadContract(path: string): Contract {
         success_stream: "stdout",
         error_stream: "stderr",
         schemas: {},
+        fixtures: {},
       },
     })),
   };

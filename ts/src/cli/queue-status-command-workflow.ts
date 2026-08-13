@@ -124,5 +124,9 @@ export function executeStatusCommandWorkflow(opts: {
 }
 
 export function renderStatusResult(result: { pendingCount: number }): string {
-  return JSON.stringify(result);
+  return JSON.stringify({
+    pending_count: result.pendingCount,
+    // Compatibility field retained for existing npm CLI consumers.
+    pendingCount: result.pendingCount,
+  });
 }

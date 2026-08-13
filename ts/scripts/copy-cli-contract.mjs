@@ -35,19 +35,22 @@ copyFileSync(source, destination);
 console.log(`copy-cli-contract: ${source} -> ${destination}`);
 
 const contract = JSON.parse(readFileSync(source, "utf-8"));
-const schemaPaths = new Set(
-  contract.commands.flatMap((command) => Object.values(command.output?.schemas ?? {})),
+const contractAssetPaths = new Set(
+  contract.commands.flatMap((command) => [
+    ...Object.values(command.output?.schemas ?? {}),
+    ...Object.values(command.output?.fixtures ?? {}),
+  ]),
 );
-for (const schemaPath of schemaPaths) {
-  if (typeof schemaPath !== "string" || schemaPath.includes("..")) {
-    throw new Error(`copy-cli-contract: unsafe schema path: ${String(schemaPath)}`);
+for (const assetPath of contractAssetPaths) {
+  if (typeof assetPath !== "string" || assetPath.includes("..")) {
+    throw new Error(`copy-cli-contract: unsafe asset path: ${String(assetPath)}`);
   }
-  const schemaSource = resolve(repoRoot, "docs", schemaPath);
-  const schemaDestination = resolve(distDir, schemaPath);
-  if (!existsSync(schemaSource)) {
-    throw new Error(`copy-cli-contract: schema not found: ${schemaSource}`);
+  const assetSource = resolve(repoRoot, "docs", assetPath);
+  const assetDestination = resolve(distDir, assetPath);
+  if (!existsSync(assetSource)) {
+    throw new Error(`copy-cli-contract: asset not found: ${assetSource}`);
   }
-  mkdirSync(dirname(schemaDestination), { recursive: true });
-  copyFileSync(schemaSource, schemaDestination);
-  console.log(`copy-cli-contract: ${schemaSource} -> ${schemaDestination}`);
+  mkdirSync(dirname(assetDestination), { recursive: true });
+  copyFileSync(assetSource, assetDestination);
+  console.log(`copy-cli-contract: ${assetSource} -> ${assetDestination}`);
 }
