@@ -99,12 +99,26 @@ describe("settings assembly workflow", () => {
       }),
     );
 
+    // AC-935: competitor is a FRONTIER role, so it now resolves to the frontier
+    // tier model rather than the one-per-provider default. The point of this
+    // test is unchanged -- that provider-aware resolution reaches production
+    // settings -- but the expected value follows the tier, which is the whole
+    // reason per-tier defaults exist.
     expect(
       routeRoleProvider(settings, "competitor", {
         providerOverride: "openai-compatible",
         preferProviderOverride: true,
       }).model,
-    ).toBe("gpt-5.6-terra");
+    ).toBe("gpt-5.6-sol");
+
+    // The fast tier proves the same path still distinguishes tiers rather than
+    // having simply moved the single default.
+    expect(
+      routeRoleProvider(settings, "curator", {
+        providerOverride: "openai-compatible",
+        preferProviderOverride: true,
+      }).model,
+    ).toBe("gpt-5.6-luna");
   });
 
   it("rejects invalid endpoint declarations", () => {

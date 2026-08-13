@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from autocontext.agents import role_runtime_overrides
 from autocontext.agents.analyst import AnalystRunner
 from autocontext.agents.architect import ArchitectRunner
 from autocontext.agents.coach import CoachRunner
@@ -22,7 +23,6 @@ from autocontext.agents.orchestrator_helpers import (
 )
 from autocontext.agents.parsers import parse_analyst_exec, parse_architect_exec, parse_coach_exec, parse_competitor_output
 from autocontext.agents.role_router import ProviderClass, RoleRouter, RoutingContext
-from autocontext.agents.role_runtime_overrides import apply_role_overrides, settings_for_budgeted_role_call
 from autocontext.agents.runtime_session_wiring import runtime_session_client_for_role
 from autocontext.agents.skeptic import SkepticAgent
 from autocontext.agents.subagent_runtime import SubagentRuntime
@@ -238,7 +238,7 @@ class AgentOrchestrator:
         orch = cls(client=client, settings=settings, artifacts=artifacts, sqlite=sqlite, hook_bus=hook_bus)
 
         # Apply per-role provider overrides (AC-184)
-        apply_role_overrides(orch, settings)
+        role_runtime_overrides.apply_role_overrides(orch, settings)
 
         return orch
 
@@ -380,7 +380,7 @@ class AgentOrchestrator:
 
         from autocontext.agents.provider_bridge import create_role_client
 
-        call_settings, is_budgeted = settings_for_budgeted_role_call(
+        call_settings, is_budgeted = role_runtime_overrides.settings_for_budgeted_role_call(
             self.settings,
             config.provider_type,
             role,
@@ -444,12 +444,11 @@ class AgentOrchestrator:
             if self._role_router.role_model_is_explicit(role):
                 return client, self._role_router.resolved_role_model(role, effective_config.provider_type)
             return client, model or effective_config.model
-        client = self._client_for_provider_config(role, provider_config, scenario_name=scenario_name)
-        if provider_config.provider_class == ProviderClass.LOCAL:
-            return client, provider_config.model
-        if self._role_router.role_model_is_explicit(role):
-            return client, self._role_router.resolved_role_model(role, provider_config.provider_type)
-        return client, model or provider_config.model
+        effective_config, effective_model = role_runtime_overrides.resolve_routed_provider_config(
+            self._role_router, role, provider_config, model
+        )
+        client = self._client_for_provider_config(role, effective_config, scenario_name=scenario_name)
+        return client, effective_model
 
     def resolve_role_execution(
         self,
@@ -781,12 +780,14 @@ class AgentOrchestrator:
             return None
         field_name = f"tier_{tier}_model"
         configured: str = getattr(self.settings, field_name)
+        provider_class = {"haiku": "fast", "sonnet": "mid_tier", "opus": "frontier"}.get(tier)
         return (
             resolve_model_default(
                 self.settings,
                 provider=provider or self.settings.agent_provider,
                 field_name=field_name,
                 configured=configured,
+                provider_class=provider_class,
             )
             or configured
         )

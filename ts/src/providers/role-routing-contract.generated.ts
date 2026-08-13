@@ -68,6 +68,15 @@ export const PROVIDER_DEFAULT_MODEL: Record<string, string> = {
   vllm: "default",
 };
 
+// Per-tier defaults for providers that actually SERVE tiers (AC-935). A provider
+// absent here keeps the single PROVIDER_DEFAULT_MODEL entry, which is correct for
+// an endpoint serving one model rather than an omission.
+export const PROVIDER_TIER_MODELS: Record<string, Record<string, string>> = {
+  openai: {"frontier":"gpt-5.6-sol","mid_tier":"gpt-5.6-terra","fast":"gpt-5.6-luna"},
+  "openai-compatible": {"frontier":"gpt-5.6-sol","mid_tier":"gpt-5.6-terra","fast":"gpt-5.6-luna"},
+  openrouter: {"frontier":"anthropic/claude-opus-5","mid_tier":"anthropic/claude-sonnet-5","fast":"anthropic/claude-haiku-4.5"},
+};
+
 // Providers whose shipped model defaults must never be rewritten.
 export const MODEL_DEFAULT_PRESERVED_PROVIDERS = ["anthropic"] as const;
 

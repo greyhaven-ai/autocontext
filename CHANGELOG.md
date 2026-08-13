@@ -6,6 +6,13 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Automatic role routing now uses provider-specific tier defaults in both
+  runtimes: OpenAI and OpenAI-compatible endpoints map frontier/mid-tier/fast
+  roles to GPT-5.6 Sol/Terra/Luna, while OpenRouter maps them to Claude
+  Opus/Sonnet/Haiku. Explicit tier or role models and
+  `AUTOCONTEXT_LOCAL_MODEL` retain precedence. Python dynamic tier routing now
+  constructs the provider client with the final selected model, and preflight
+  checks every distinct routed tier before execution (AC-935).
 - Python `autoctx run` now performs preflight checks against each distinct OpenAI-compatible agent, explicit role, automatically routed role, and judge endpoint before spending generation tokens. It blocks on confirmed dead endpoints, rejected credentials, and unavailable models; transient/indeterminate failures remain advisory, structured-output support is verified against the requested schema, persisted custom scenarios resolve through their configured knowledge root, and `--skip-preflight` provides an explicit escape hatch (AC-914).
 - Python and TypeScript provider contracts now support bounded `deep_think` collection with
   native OpenAI-compatible and Anthropic tool loops. Both runtimes force the first scratchpad

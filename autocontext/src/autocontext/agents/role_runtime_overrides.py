@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any
+from dataclasses import replace
+from typing import TYPE_CHECKING, Any
 
 from autocontext.agents.subagent_runtime import SubagentRuntime
 from autocontext.config.settings import AppSettings
+
+if TYPE_CHECKING:
+    from autocontext.agents.role_router import ProviderConfig, RoleRouter
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +20,27 @@ _ROLE_RUNTIME_TIMEOUT_FIELDS = {
     "codex": "codex_timeout",
     "hermes": "hermes_timeout",
 }
+
+
+def resolve_routed_provider_config(
+    router: RoleRouter,
+    role: str,
+    config: ProviderConfig,
+    dynamic_model: str | None,
+) -> tuple[ProviderConfig, str | None]:
+    """Apply final model precedence before constructing a routed client.
+
+    OpenAI-shaped bridges use the provider's configured default and ignore the
+    runner's per-call model argument, so the client and returned model must be
+    resolved together at this boundary.
+    """
+    if config.provider_class.value == "local":
+        model = config.model
+    elif router.role_model_is_explicit(role):
+        model = router.resolved_role_model(role, config.provider_type)
+    else:
+        model = dynamic_model or config.model
+    return replace(config, model=model), model
 
 
 def settings_for_budgeted_role_call(

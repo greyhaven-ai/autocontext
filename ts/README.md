@@ -53,6 +53,12 @@ AUTOCONTEXT_AGENT_PROVIDER=pi AUTOCONTEXT_PI_COMMAND=pi autoctx solve "..." --it
 
 Supported providers: `anthropic`, `openai`, `openai-compatible`, `gemini`, `mistral`, `groq`, `openrouter`, `azure-openai`, `ollama`, `vllm`, `hermes`, `claude-cli`, `codex`, `pi`, `pi-rpc`, `deterministic`.
 
+With `AUTOCONTEXT_ROLE_ROUTING=auto`, unset OpenAI and OpenAI-compatible tier
+slots resolve to GPT-5.6 Sol/Terra/Luna for frontier/mid-tier/fast roles;
+OpenRouter resolves those tiers to Claude Opus/Sonnet/Haiku. Set
+`AUTOCONTEXT_LOCAL_MODEL` for a generic OpenAI-compatible endpoint that serves
+one model. Explicit role and tier models still win.
+
 Anthropic and OpenAI-compatible providers expose native, bounded `deep_think`
 tool collection through the optional `LLMProvider.completeWithThinking` method.
 Use `completeWithThinkingFallback(provider, options)` for arbitrary providers:

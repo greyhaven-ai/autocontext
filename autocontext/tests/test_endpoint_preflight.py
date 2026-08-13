@@ -130,6 +130,25 @@ def test_identical_run_endpoints_are_probed_once() -> None:
     assert [(target.name, target.model) for target in targets] == [("agent", "llama3.1")]
 
 
+def test_automatic_routing_probes_every_distinct_tier_model() -> None:
+    """Fast-only curator/translator models must be checked before execution."""
+    from autocontext.config.settings import AppSettings
+    from autocontext.endpoint_probe import resolve_run_endpoints
+
+    settings = AppSettings(
+        agent_provider="openai",
+        agent_api_key="test-key",
+        role_routing="auto",
+    )
+    targets = resolve_run_endpoints(settings)
+
+    assert {(target.name, target.model) for target in targets} == {
+        ("agent", "gpt-5.6-terra"),
+        ("architect-routed", "gpt-5.6-sol"),
+        ("curator-routed", "gpt-5.6-luna"),
+    }
+
+
 @pytest.mark.parametrize("exc", [TimeoutError("slow"), pytest.param(None, id="http-429")])
 def test_transient_reachability_failures_are_uncertain(monkeypatch: pytest.MonkeyPatch, exc: BaseException | None) -> None:
     from urllib.error import HTTPError

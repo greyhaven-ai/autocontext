@@ -65,6 +65,12 @@ An explicit `AUTOCONTEXT_MODEL_<ROLE>` or `AUTOCONTEXT_TIER_<TIER>_MODEL`
 still takes precedence. `AUTOCONTEXT_LOCAL_MODEL` does not alter Anthropic's
 shipped per-role defaults.
 
+With `AUTOCONTEXT_ROLE_ROUTING=auto`, unset OpenAI and OpenAI-compatible tier
+slots resolve to GPT-5.6 Sol/Terra/Luna for frontier/mid-tier/fast roles;
+OpenRouter resolves the same tiers to Claude Opus/Sonnet/Haiku. A generic
+OpenAI-compatible endpoint does not necessarily serve those ids, so set
+`AUTOCONTEXT_LOCAL_MODEL` when one gateway model should serve every role.
+
 For endpoint-aware routing and cost estimates, set
 `AUTOCONTEXT_PROVIDER_HOSTING` to `local` or `remote` and, for a local
 endpoint, set `AUTOCONTEXT_PROVIDER_CAPABILITY` to `fast`, `mid_tier`, or

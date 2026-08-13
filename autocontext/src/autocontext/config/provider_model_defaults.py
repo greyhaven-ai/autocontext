@@ -71,6 +71,16 @@ class _SupportsFieldsSet(Protocol):
 # moving it into the shared contract is what stops the two from drifting again.
 PROVIDER_DEFAULT_MODEL: dict[str, str] = dict(_contract.PROVIDER_DEFAULT_MODEL)
 
+# AC-935: per-tier defaults for providers that actually serve tiers. The single
+# default above assumes one endpoint serves one model, which is true of ollama,
+# vllm and mlx and false of OpenAI and OpenRouter -- an OpenAI user was getting
+# the same model for the architect and the curator, which defeats the point of
+# routing by role. A provider absent here keeps the single default.
+PROVIDER_TIER_MODELS: dict[str, dict[str, str]] = {
+    provider: dict(tiers) for provider, tiers in _contract.PROVIDER_TIER_MODELS.items()
+}
+
+
 # Providers whose defaults must not change. Anthropic is the shipped default
 # and its per-role tiering is the behavior AC-912 promises to preserve exactly.
 _PRESERVED_PROVIDERS = frozenset(_contract.MODEL_DEFAULT_PRESERVED_PROVIDERS)
@@ -82,6 +92,7 @@ def resolve_model_default(
     provider: str,
     field_name: str,
     configured: str | None,
+    provider_class: str | None = None,
 ) -> str | None:
     """Return the model a role/tier slot should use for ``provider``.
 
@@ -117,6 +128,16 @@ def resolve_model_default(
     local_model = (settings.local_model or "").strip()
     if local_model:
         return local_model
+
+    # Per-tier before per-provider: a provider that serves tiers should answer
+    # with the tier's model, not with one id for every slot. The class is passed
+    # in rather than inferred from the field name -- the caller already knows it,
+    # and inverting the field map here would duplicate a table that lives in
+    # role_router.
+    if provider_class is not None:
+        tier_model = PROVIDER_TIER_MODELS.get(normalized, {}).get(provider_class)
+        if tier_model:
+            return tier_model
 
     return PROVIDER_DEFAULT_MODEL.get(normalized, configured)
 

@@ -319,15 +319,15 @@ def resolve_run_endpoints(settings: Any) -> list[EndpointTarget]:
         configured_role_provider,
         has_role_client_override,
     )
-    from autocontext.agents.role_router import RoleRouter, RoutingContext
+    from autocontext.agents.role_router import DEFAULT_ROUTING_TABLE, RoleRouter, RoutingContext
     from autocontext.providers.registry import resolve_auto_judge_provider, transport_env_api_key
 
     candidates: list[EndpointTarget | None] = [_resolve_agent_target(settings)]
-    roles = ("competitor", "analyst", "coach", "architect")
+    explicit_role_overrides = ("competitor", "analyst", "coach", "architect")
 
     # Dedicated role clients are constructed even when automatic role routing
     # is disabled, so they are independently capable of failing a run.
-    for role in roles:
+    for role in explicit_role_overrides:
         if not has_role_client_override(role, settings):
             continue
         provider = configured_role_provider(role, settings) or settings.agent_provider.strip().lower()
@@ -345,7 +345,7 @@ def resolve_run_endpoints(settings: Any) -> list[EndpointTarget]:
     # client. Probe the initial routing decision for every executing role.
     if settings.role_routing == "auto":
         router = RoleRouter(settings)
-        for role in roles:
+        for role in DEFAULT_ROUTING_TABLE:
             config = router.route(role, context=RoutingContext())
             candidates.append(
                 _endpoint_target(
