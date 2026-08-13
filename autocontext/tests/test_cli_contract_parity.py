@@ -76,6 +76,10 @@ UNCONTRACTED_TOP_LEVEL_ALLOWLIST: frozenset[str] = frozenset(
         "resume",
         "self-improve",
         "share",
+        # AC-925. Emits SKILL.md files for agent hosts; it is tooling for
+        # setting autocontext up rather than a way to run it, so it stays
+        # uncontracted alongside `hermes` rather than joining the paved road.
+        "skills",
         "simulate",
         "train",
         "train-r1",
