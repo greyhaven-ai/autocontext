@@ -29,7 +29,7 @@ autocontext is a harness for agent improvement. Give it a goal, it runs the task
 | ------------------- | ------------------------------------- |
 | Python CLI          | `uv tool install autocontext==0.15.1` |
 | Python library/dev  | `uv pip install autocontext==0.15.1`  |
-| TypeScript/Node CLI | `bun add -g autoctx@0.15.1`           |
+| TypeScript/Node CLI | `bun add -g autoctx@0.16.0`           |
 | Pi extension        | `pi install npm:pi-autocontext@0.10.0` |
 
 The PyPI package is `autocontext`; the CLI is `autoctx`. The npm package is `autoctx` (not the unrelated `autocontext` npm package). Provider variables live in [`.env.example`](.env.example).

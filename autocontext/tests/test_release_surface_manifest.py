@@ -31,20 +31,42 @@ def test_release_manifest_syncs_public_surfaces() -> None:
 def test_release_manifest_renders_whats_new_asset() -> None:
     sync = _load_sync_module()
     manifest = sync.ReleaseManifest(
-        core_version="1.2.3",
+        python_version="1.2.3",
+        npm_version="4.5.6",
+        whats_new_version="7.8.9",
         pi_version="0.8.0",
         pi_autoctx_dependency="^0.8.0",
         whats_new=("**One** thing.", "**Two** thing."),
     )
 
     assert sync.render_whats_new_asset(manifest) == "**One** thing.\n**Two** thing.\n"
-    assert sync.render_whats_new_heading(manifest) == "What's New in 1.2.3"
+    assert sync.render_whats_new_heading(manifest) == "What's New in 7.8.9"
+
+
+def test_core_package_versions_can_advance_independently() -> None:
+    sync = _load_sync_module()
+    manifest = sync.ReleaseManifest(
+        python_version="1.2.3",
+        npm_version="4.5.6",
+        whats_new_version="7.8.9",
+        pi_version="0.8.0",
+        pi_autoctx_dependency="^4.0.0",
+        whats_new=("**One** thing.",),
+    )
+
+    root = sync.sync_root_readme((REPO_ROOT / "README.md").read_text(encoding="utf-8"), manifest)
+
+    assert "autocontext==1.2.3" in root
+    assert "autoctx@4.5.6" in root
+    assert "What's New in 7.8.9" in root
 
 
 def test_pi_version_syncs_install_snippets() -> None:
     sync = _load_sync_module()
     manifest = sync.ReleaseManifest(
-        core_version="0.14.0",
+        python_version="0.14.0",
+        npm_version="0.14.0",
+        whats_new_version="0.14.0",
         pi_version="0.9.0",
         pi_autoctx_dependency="^0.9.0",
         whats_new=("**One** thing.",),
@@ -63,7 +85,9 @@ def test_pi_version_syncs_install_snippets() -> None:
 def test_release_manifest_checks_package_version_files() -> None:
     sync = _load_sync_module()
     manifest = sync.ReleaseManifest(
-        core_version="9.9.9",
+        python_version="9.9.9",
+        npm_version="8.8.8",
+        whats_new_version="9.9.9",
         pi_version="0.8.0",
         pi_autoctx_dependency="^0.9.0",
         whats_new=("**One** thing.",),
@@ -81,7 +105,14 @@ def test_release_manifest_checks_package_version_files() -> None:
         (Path(__file__).resolve().parents[1] / "src" / "autocontext" / "__init__.py").read_text(encoding="utf-8"),
     )
     assert shipped is not None
-    assert f"autocontext/src/autocontext/__init__.py version {shipped.group(1)} != manifest 9.9.9" in issues
+    assert (
+        "autocontext/src/autocontext/__init__.py version "
+        f"{shipped.group(1)} != manifest python_version 9.9.9"
+    ) in issues
+    npm_package = json.loads((REPO_ROOT / "ts" / "package.json").read_text(encoding="utf-8"))
+    assert (
+        f"ts/package.json version {npm_package['version']} != manifest npm_version 8.8.8"
+    ) in issues
     # Read from the file for the same reason as the version above: hardcoding
     # the shipped pi values turned every pi bump into a test edit, which is
     # exactly what happened bumping the autoctx pin to ^0.15.0.
