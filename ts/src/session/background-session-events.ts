@@ -245,6 +245,27 @@ export function normalizeRuntimeSessionEvent(event: RuntimeSessionEvent): Normal
         }),
       });
     }
+    case "runtime_activation": {
+      const outcome = readNonEmptyString(event.payload.outcome);
+      return baseEvent(event, {
+        normalizedEvent: "runtime_event",
+        status: outcome === "failed" || outcome === "diverged"
+          ? "failed"
+          : outcome === "succeeded" || outcome === "recovered"
+            ? "completed"
+            : "running",
+        title: "Runtime activation transaction",
+        payloadSummary: pickPayload(event.payload, {
+          transaction_id: "transactionId",
+          operation: "operation",
+          candidate_artifact_id: "candidateArtifactId",
+          prior_artifact_id: "priorArtifactId",
+          stage: "stage",
+          outcome: "outcome",
+          failure_code: "failureCode",
+        }),
+      });
+    }
   }
 }
 

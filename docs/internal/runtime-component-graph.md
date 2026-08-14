@@ -84,6 +84,7 @@ text. `createRuntimeSessionComponentGraphEventSink` records the same safe
 identities and transitions as `component_graph` runtime-session events, which
 the generic timeline and background-session normalizer can render.
 
-The transaction journal, active candidate pointer, promotion policy, rollback,
-and restart recovery remain control-plane responsibilities owned by AC-961.
-Python parity is deferred until this experimental contract stabilizes.
+The AC-961 control-plane activation supervisor now owns the transaction
+journal, active candidate pointer, promotion connection, rollback, and restart
+recovery. Python parity is deferred until this experimental contract
+stabilizes.

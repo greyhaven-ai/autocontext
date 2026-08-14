@@ -308,6 +308,9 @@ function eventTitleDetails(
     "revision",
     "capabilityId",
     "reason",
+    "transactionId",
+    "stage",
+    "failureCode",
   ]) {
     const value = details[key];
     if (value !== undefined) titleDetails[key] = value;
@@ -343,6 +346,11 @@ function eventDetails(payload: Record<string, unknown>): Record<string, string |
     "providerComponentId",
     "providerInstanceId",
     "reason",
+    "transactionId",
+    "candidateArtifactId",
+    "priorArtifactId",
+    "stage",
+    "failureCode",
   ]) {
     const value = payload[key];
     if (typeof value === "string" && value !== "") details[key] = preview(value);

@@ -19,6 +19,7 @@ export {
   RuntimeComponentGraphError,
   defineRuntimeCapability,
   provideRuntimeCapability,
+  validateRuntimeComponentGraph,
 } from "./component-graph.js";
 export type {
   RuntimeCapabilityKey,

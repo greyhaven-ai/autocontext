@@ -89,6 +89,7 @@ export * from "./server/index.js";
 export * from "./rlm/index.js";
 export * from "./mission/index.js";
 export * from "./control-plane/runtime/index.js";
+export * from "./control-plane/activation/index.js";
 export * from "./control-plane/eval-ledger/index.js";
 export * from "./control-plane/contract-probes/index.js";
 export * from "./control-plane/memory-packs/index.js";

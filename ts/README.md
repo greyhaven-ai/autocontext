@@ -336,6 +336,13 @@ duplicate exclusive providers fail before the live graph changes. See the
 [effect policy](../docs/internal/runtime-effect-policy.md) before exposing live
 composition to generated code.
 
+Live promotion is available through `RuntimeActivationSupervisor` and the
+graph-backed activation driver. Durable journals make activation and rollback
+idempotent and restart-recoverable; registry/actuator adapters connect the live
+operation to existing artifact promotion state. Configure these APIs in a
+trusted host with an artifact-to-component manifest resolver. See the
+[transactional activation contract](../docs/internal/runtime-transactional-activation.md).
+
 ## Production traces
 
 Requires the optional `@anthropic-ai/sdk` peer (`npm install @anthropic-ai/sdk`, or `openai` for the OpenAI integration). See [Optional provider SDKs](#optional-provider-sdks).

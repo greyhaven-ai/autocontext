@@ -45,6 +45,11 @@ when recovering, and define the externally observable state that counts as an
 equivalent rollback. The AC-961 transaction journal owns restart recovery and
 durable candidate activation records.
 
+AC-961 now supplies that journal and always stages active promotions under
+candidate policy. The trusted supervisor performs the commit/cutover outside
+the candidate graph; staging code never receives active-mode irreversible
+authority.
+
 An irreversible effect has no automatic recovery path. Its commit boundary is
 therefore a supervisor decision outside the mutable candidate graph.
 

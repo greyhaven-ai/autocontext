@@ -539,6 +539,13 @@ export function provideRuntimeCapability<T>(
   return Object.freeze({ key, value });
 }
 
+/** Validate a desired graph without activating or disposing any component. */
+export function validateRuntimeComponentGraph(
+  manifests: readonly RuntimeComponentManifest[],
+): void {
+  prepareGraph(manifests);
+}
+
 function prepareGraph(manifests: readonly RuntimeComponentManifest[]): PreparedGraph {
   const components = new Map<string, PreparedComponent>();
   const providers = new Map<string, PreparedComponent>();
