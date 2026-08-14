@@ -29,6 +29,18 @@ Remote sandbox snapshot and warming support is similarly adapter-neutral. Adapte
 
 The contract carries policy and secret references, not secret values. Hosted fleet orchestration, tenant scheduling, policy UI, billing, proactive warm-pool management, image-cache economics, and managed audit retention remain deployment concerns outside this OSS boundary. A deployment is not multi-tenant safe merely because it uses a remote sandbox; it also needs tenant-aware credential brokering, per-tenant filesystem/network isolation, egress policy, audit, retention, and abuse controls. See [Background execution trust boundaries and credential model](../../docs/background-execution-trust-boundaries.md).
 
+## Live Component Effects
+
+TypeScript live components may run scoped commands and tools through a host-owned
+effect policy. Each invocation must be declared `reversible`, `compensatable`,
+or `irreversible`; candidate, shadow, and canary runtimes cannot perform an
+irreversible effect before an explicit matching commit boundary. This policy is
+an invocation gate, not a sandbox. Untrusted components require an available
+external process, interpreter, or microVM boundary and must not receive ambient
+filesystem, shell, network, or direct MCP access. See the
+[runtime effect policy](../../docs/internal/runtime-effect-policy.md) for the
+recovery and audit contracts.
+
 ## Relevant Environment Variables
 
 - `AUTOCONTEXT_EXECUTOR_MODE` (`local`, `primeintellect`, `monty`, `ssh`; `gondolin` is reserved/fail-closed)

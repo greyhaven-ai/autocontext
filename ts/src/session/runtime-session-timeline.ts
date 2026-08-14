@@ -300,6 +300,17 @@ function eventTitleDetails(
     "entryId",
     "entryCount",
     "components",
+    "componentId",
+    "state",
+    "outcome",
+    "effectClass",
+    "effectOutcome",
+    "revision",
+    "capabilityId",
+    "reason",
+    "transactionId",
+    "stage",
+    "failureCode",
   ]) {
     const value = details[key];
     if (value !== undefined) titleDetails[key] = value;
@@ -322,6 +333,24 @@ function eventDetails(payload: Record<string, unknown>): Record<string, string |
     "components",
     "ledgerPath",
     "generation",
+    "componentId",
+    "previousState",
+    "state",
+    "operation",
+    "outcome",
+    "effectClass",
+    "effectOutcome",
+    "revision",
+    "instanceId",
+    "capabilityId",
+    "providerComponentId",
+    "providerInstanceId",
+    "reason",
+    "transactionId",
+    "candidateArtifactId",
+    "priorArtifactId",
+    "stage",
+    "failureCode",
   ]) {
     const value = payload[key];
     if (typeof value === "string" && value !== "") details[key] = preview(value);

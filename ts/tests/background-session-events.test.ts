@@ -194,6 +194,57 @@ describe("background session normalized events", () => {
     expect(JSON.stringify(events)).not.toContain("SECRET_VALUE");
   });
 
+  it("normalizes component lifecycle events using only the safe audit fields", () => {
+    const log = RuntimeSessionEventLog.fromJSON({
+      sessionId: "run:component-runtime",
+      parentSessionId: "",
+      taskId: "",
+      workerId: "",
+      metadata: {},
+      createdAt: "2026-06-01T00:00:00.000Z",
+      updatedAt: "2026-06-01T00:00:01.000Z",
+      events: [{
+        eventId: "component-event",
+        sessionId: "run:component-runtime",
+        sequence: 0,
+        eventType: RuntimeSessionEventType.COMPONENT_LIFECYCLE,
+        timestamp: "2026-06-01T00:00:01.000Z",
+        payload: {
+          componentId: "extension:metrics",
+          previousState: "loading",
+          state: "failed",
+          operation: "activate",
+          outcome: "failed",
+          error: "SECRET_VALUE",
+        },
+        parentSessionId: "",
+        taskId: "",
+        workerId: "",
+      }],
+    });
+
+    const [event] = normalizeBackgroundSessionTimeline(log);
+
+    expect(event).toEqual({
+      event_id: "component-event",
+      session_id: "run:component-runtime",
+      sequence: 0,
+      ts: "2026-06-01T00:00:01.000Z",
+      event: "runtime_event",
+      source_event_type: "component_lifecycle",
+      status: "failed",
+      title: "Runtime component lifecycle",
+      payload_summary: {
+        component_id: "extension:metrics",
+        previous_state: "loading",
+        state: "failed",
+        operation: "activate",
+        outcome: "failed",
+      },
+    });
+    expect(JSON.stringify(event)).not.toContain("SECRET_VALUE");
+  });
+
   it("marks failed runtime payloads from assistants and grants as failed", () => {
     const log = RuntimeSessionEventLog.fromJSON({
       sessionId: "run:failed-runtime:runtime",

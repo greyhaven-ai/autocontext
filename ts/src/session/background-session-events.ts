@@ -148,6 +148,8 @@ export function normalizeRuntimeSessionEvent(event: RuntimeSessionEvent): Normal
           command: "command",
           cwd: "cwd",
           exit_code: "exitCode",
+          effect_class: "effectClass",
+          effect_outcome: "effectOutcome",
         }),
       });
     case "tool_call":
@@ -158,6 +160,8 @@ export function normalizeRuntimeSessionEvent(event: RuntimeSessionEvent): Normal
         payloadSummary: pickPayload(event.payload, {
           tool: "tool",
           name: "name",
+          effect_class: "effectClass",
+          effect_outcome: "effectOutcome",
         }),
       });
     case "child_task_started":
@@ -196,6 +200,72 @@ export function normalizeRuntimeSessionEvent(event: RuntimeSessionEvent): Normal
           summary_artifact_id: "summaryArtifactId",
         }),
       });
+    case "component_lifecycle": {
+      const outcome = readNonEmptyString(event.payload.outcome);
+      const state = readNonEmptyString(event.payload.state);
+      return baseEvent(event, {
+        normalizedEvent: "runtime_event",
+        status: outcome === "failed"
+          ? "failed"
+          : state === "active" || state === "inactive"
+            ? "completed"
+            : "running",
+        title: "Runtime component lifecycle",
+        payloadSummary: pickPayload(event.payload, {
+          component_id: "componentId",
+          previous_state: "previousState",
+          state: "state",
+          operation: "operation",
+          outcome: "outcome",
+        }),
+      });
+    }
+    case "component_graph": {
+      const outcome = readNonEmptyString(event.payload.outcome);
+      return baseEvent(event, {
+        normalizedEvent: "runtime_event",
+        status: outcome === "failed"
+          ? "failed"
+          : outcome === "waiting"
+            ? "queued"
+            : outcome === "succeeded"
+              ? "completed"
+              : "running",
+        title: "Runtime component graph",
+        payloadSummary: pickPayload(event.payload, {
+          revision: "revision",
+          operation: "operation",
+          outcome: "outcome",
+          component_id: "componentId",
+          instance_id: "instanceId",
+          capability_id: "capabilityId",
+          provider_component_id: "providerComponentId",
+          provider_instance_id: "providerInstanceId",
+          reason: "reason",
+        }),
+      });
+    }
+    case "runtime_activation": {
+      const outcome = readNonEmptyString(event.payload.outcome);
+      return baseEvent(event, {
+        normalizedEvent: "runtime_event",
+        status: outcome === "failed" || outcome === "diverged"
+          ? "failed"
+          : outcome === "succeeded" || outcome === "recovered"
+            ? "completed"
+            : "running",
+        title: "Runtime activation transaction",
+        payloadSummary: pickPayload(event.payload, {
+          transaction_id: "transactionId",
+          operation: "operation",
+          candidate_artifact_id: "candidateArtifactId",
+          prior_artifact_id: "priorArtifactId",
+          stage: "stage",
+          outcome: "outcome",
+          failure_code: "failureCode",
+        }),
+      });
+    }
   }
 }
 

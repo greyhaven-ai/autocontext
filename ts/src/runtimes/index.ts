@@ -1,4 +1,88 @@
 export type { AgentOutput, AgentRuntime } from "./base.js";
+export {
+  RuntimeComponentLifecycleState,
+  RuntimeComponentScope,
+  activateRuntimeComponent,
+} from "./component-lifecycle.js";
+export type {
+  RuntimeComponentActivator,
+  RuntimeComponentDisposer,
+  RuntimeComponentLifecycleEvent,
+  RuntimeComponentLifecycleEventSink,
+  RuntimeComponentLifecycleOperation,
+  RuntimeComponentLifecycleOutcome,
+  RuntimeComponentScopeOptions,
+  RuntimeOwnedComponentDisposer,
+} from "./component-lifecycle.js";
+export {
+  RuntimeComponentGraph,
+  RuntimeComponentGraphError,
+  defineRuntimeCapability,
+  provideRuntimeCapability,
+  validateRuntimeComponentGraph,
+} from "./component-graph.js";
+export {
+  RuntimeCompositionInventory,
+  assertRuntimeCompositionQuiescent,
+  captureRuntimeCompositionSnapshot,
+  compareRuntimeCompositionSnapshots,
+  runtimeCompositionEquivalenceView,
+} from "./composition-observability.js";
+export type {
+  RuntimeCompositionEquivalenceResult,
+  RuntimeCompositionEquivalenceView,
+  RuntimeCompositionInventorySnapshot,
+  RuntimeCompositionLifecycleError,
+  RuntimeCompositionObservableSnapshot,
+  RuntimeCompositionRegistrationSnapshot,
+  RuntimeCompositionResourceDescriptor,
+  RuntimeCompositionResourceKind,
+  RuntimeCompositionSnapshotInput,
+} from "./composition-observability.js";
+export { DeterministicRuntimeTransitionScheduler } from "./transition-scheduler.js";
+export type {
+  RuntimeScheduledTransition,
+  RuntimeScheduledTransitionFactory,
+  RuntimeTransitionSchedulerResult,
+} from "./transition-scheduler.js";
+export type {
+  RuntimeCapabilityKey,
+  RuntimeCapabilityProvision,
+  RuntimeComponentActivationContext,
+  RuntimeComponentActivatorWithContext,
+  RuntimeComponentGraphComponentSnapshot,
+  RuntimeComponentGraphComponentState,
+  RuntimeComponentGraphErrorCode,
+  RuntimeComponentGraphEvent,
+  RuntimeComponentGraphEventSink,
+  RuntimeComponentGraphOperation,
+  RuntimeComponentGraphOptions,
+  RuntimeComponentGraphOutcome,
+  RuntimeComponentGraphProviderSnapshot,
+  RuntimeComponentGraphReason,
+  RuntimeComponentGraphSnapshot,
+  RuntimeComponentManifest,
+} from "./component-graph.js";
+export {
+  RuntimeEffectClass,
+  RuntimeEffectExecutionMode,
+  RuntimeEffectPolicy,
+  RuntimeEffectPolicyError,
+  assertRuntimeEffectDeclaration,
+  runtimeEffectClassForAudit,
+  runtimeEffectPolicyErrorCode,
+} from "./effect-policy.js";
+export type {
+  CompensatableRuntimeEffect,
+  IrreversibleRuntimeEffect,
+  ReversibleRuntimeEffect,
+  RuntimeEffectCompensation,
+  RuntimeEffectDeclaration,
+  RuntimeEffectPolicyErrorCode,
+  RuntimeEffectPolicyOptions,
+  RuntimeEffectSandboxBoundary,
+  RuntimeEffectSandboxPolicy,
+} from "./effect-policy.js";
 export { RuntimeSessionAgentRuntime } from "./runtime-session-agent.js";
 export type { RuntimeSessionAgentRuntimeOpts } from "./runtime-session-agent.js";
 export {
@@ -21,6 +105,7 @@ export type {
   RuntimeGrantEvent,
   RuntimeGrantEventPhase,
   RuntimeGrantEventSink,
+  RuntimeGrantEffectOutcome,
   RuntimeGrantInheritanceMode,
   RuntimeGrantKind,
   RuntimeGrantOutputRedactionMetadata,

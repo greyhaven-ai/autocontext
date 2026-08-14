@@ -9,13 +9,13 @@ import { runHarness, HARNESS_HELP_TEXT } from "./harness.js";
 import { runRegistryOps, REGISTRY_HELP_TEXT } from "./registry-ops.js";
 import { runEmitPr, EMIT_PR_HELP_TEXT } from "./emit-pr.js";
 import { EXIT } from "./_shared/exit-codes.js";
-import type { CliContext, CliResult } from "./types.js";
+import type { CliContext, CliResult, CliRuntimeActivation } from "./types.js";
 
 export { EXIT } from "./_shared/exit-codes.js";
 export type { ExitCode } from "./_shared/exit-codes.js";
 export { formatOutput } from "./_shared/output-formatters.js";
 export type { OutputMode } from "./_shared/output-formatters.js";
-export type { CliContext, CliResult } from "./types.js";
+export type { CliContext, CliResult, CliRuntimeActivation } from "./types.js";
 export {
   CANDIDATE_HELP_TEXT,
   EVAL_HELP_TEXT,
@@ -51,6 +51,8 @@ export interface RunControlPlaneOptions {
   readonly cwd?: string;
   /** Optional now() override for deterministic tests. */
   readonly now?: () => string;
+  /** Optional host integration for live promotion and rollback transactions. */
+  readonly runtimeActivation?: CliRuntimeActivation;
 }
 
 /**
@@ -73,6 +75,7 @@ export async function runControlPlaneCommand(
     cwd,
     resolve: (p) => pathResolve(cwd, p),
     now: nowFn,
+    runtimeActivation: opts.runtimeActivation,
   };
 
   const namespace = argv[0];

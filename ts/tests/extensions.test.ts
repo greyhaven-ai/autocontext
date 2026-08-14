@@ -8,6 +8,7 @@ import {
   HookBus,
   HookEvents,
   HookResult,
+  loadExtensionComponents,
   loadExtensions,
 } from "../src/extensions/index.js";
 
@@ -95,6 +96,65 @@ describe("TypeScript extension hooks", () => {
     const event = api.emit(HookEvents.AFTER_PROVIDER_RESPONSE, { text: "response" });
 
     expect(event.payload.text).toBe("response decorated");
+  });
+
+  it("loads and unloads a lifecycle-owned extension component", async () => {
+    const root = mkdtempSync(join(tmpdir(), "autoctx-ts-managed-ext-"));
+    try {
+      const extensionPath = join(root, "managed-hook.mjs");
+      writeFileSync(
+        extensionPath,
+        `
+          export function register(api) {
+            api.on("context", () => ({ managed: true }));
+          }
+        `,
+        "utf-8",
+      );
+      const bus = new HookBus();
+      const [component] = await loadExtensionComponents(extensionPath, bus);
+
+      expect(bus.emit(HookEvents.CONTEXT).payload.managed).toBe(true);
+      expect(bus.loadedExtensions).toEqual([extensionPath]);
+
+      await component.unload();
+
+      expect(bus.emit(HookEvents.CONTEXT).payload.managed).toBeUndefined();
+      expect(bus.loadedExtensions).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("unwinds the successful prefix when a later extension fails to load", async () => {
+    const root = mkdtempSync(join(tmpdir(), "autoctx-ts-extension-batch-"));
+    try {
+      const firstPath = join(root, "first.mjs");
+      const failingPath = join(root, "failing.mjs");
+      writeFileSync(
+        firstPath,
+        `export function register(api) { api.on("context", () => ({ leaked: true })); }`,
+        "utf-8",
+      );
+      writeFileSync(
+        failingPath,
+        `export function register(api) {
+          api.on("context", () => ({ partial: true }));
+          throw new Error("batch activation failed");
+        }`,
+        "utf-8",
+      );
+      const bus = new HookBus();
+
+      await expect(loadExtensionComponents([firstPath, failingPath], bus))
+        .rejects.toThrow("batch activation failed");
+
+      expect(bus.loadedExtensions).toEqual([]);
+      expect(bus.hasHandlers(HookEvents.CONTEXT)).toBe(false);
+      expect(bus.emit(HookEvents.CONTEXT).payload).toEqual({});
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, afterEach } from "vitest";
+import { describe, test, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, rmSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -537,5 +537,58 @@ describe("candidate rollback", () => {
       { cwd: tmp },
     );
     expect(rRb.exitCode).toBe(0);
+  });
+
+  test("routes live rollback through the transactional runtime controller", async () => {
+    const rReg = await runControlPlaneCommand(
+      [
+        "candidate", "register",
+        "--scenario", "grid_ctf",
+        "--actuator", "prompt-patch",
+        "--payload", payload,
+        "--output", "json",
+      ],
+      { cwd: tmp },
+    );
+    const registered = JSON.parse(rReg.stdout);
+    await runControlPlaneCommand(
+      ["promotion", "apply", registered.id, "--to", "shadow", "--reason", "initial-eval"],
+      { cwd: tmp },
+    );
+    const rollback = vi.fn(async () => ({
+      runtime: {
+        transactionId: "rollback-tx",
+        operation: "rollback" as const,
+        outcome: "succeeded" as const,
+        activeArtifactId: null,
+        idempotentReplay: false,
+      },
+      candidate: { ...registered, activationState: "candidate" as const },
+      baseline: null,
+    }));
+
+    const rRb = await runControlPlaneCommand(
+      [
+        "candidate", "rollback", registered.id,
+        "--reason", "test-rollback",
+        "--baseline", "none",
+        "--transaction-id", "rollback-tx",
+      ],
+      {
+        cwd: tmp,
+        runtimeActivation: {
+          promote: vi.fn(),
+          rollback,
+        },
+      },
+    );
+
+    expect(rRb.exitCode).toBe(0);
+    expect(rollback).toHaveBeenCalledWith({
+      transactionId: "rollback-tx",
+      candidateArtifactId: registered.id,
+      baselineArtifactId: null,
+      reason: "test-rollback",
+    });
   });
 });

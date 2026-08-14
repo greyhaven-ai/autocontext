@@ -152,6 +152,7 @@
     "check:root-index": "node scripts/generate-root-index.mjs --check",
     "build:production-traces-sdk-cjs": "node scripts/build-production-traces-sdk-cjs.mjs",
     "test": "vitest run",
+    "test:runtime-confluence:sweep": "AUTOCTX_CONFLUENCE_RUNS=500 vitest run tests/runtime-composition-confluence.test.ts tests/runtime-composition-faults.test.ts tests/runtime-composition-observability.test.ts",
     "test:watch": "vitest",
     "check:test-types": "tsc -p tsconfig.test.json",
     "lint": "npm run check:root-index && tsc --noEmit && npm run check:test-types",

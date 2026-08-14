@@ -63,6 +63,8 @@ describe("package root exports", () => {
     expect(pkg.assembleRuntimeContext).toBeDefined();
     expect(pkg.RuntimeContextAssemblyRequest).toBeDefined();
     expect(pkg.RuntimeContextBundle).toBeDefined();
+    expect(pkg.RuntimeComponentGraph).toBeDefined();
+    expect(pkg.RuntimeActivationSupervisor).toBeDefined();
     expect(_legacyRoleRoutingCostEstimateTypecheck).toBeUndefined();
   }, 30_000);
 

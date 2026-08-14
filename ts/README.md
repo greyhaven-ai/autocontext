@@ -113,8 +113,21 @@ const orchestrator = new AgentOrchestrator(provider, {
 | `autoctx tui`                                          | Start the terminal UI                                        |
 | `autoctx train --scenario <name> --dataset <jsonl>`    | Validate training input and call an injected training runner |
 | `autoctx agent run <name> --payload '{...}'`           | Invoke experimental `.autoctx/agents` handlers               |
+| `autoctx promotion apply <id> --to <mode> --reason ...` | Promote a control-plane artifact                              |
+| `autoctx candidate rollback <id> --reason ...`         | Roll back a control-plane artifact                            |
 
 `train` is a validation/executor-hook surface in TypeScript; end-to-end MLX/CUDA training lives in the Python package unless your application injects a real `TrainingRunner`.
+
+Applications with an in-process component host can pass a
+`RegistryRuntimeActivationController` through the `runtimeActivation` option of
+`runControlPlaneCommand`. In that configuration, `promotion apply` and
+`candidate rollback` execute the durable runtime transaction before committing
+registry metadata. Supply `--transaction-id <id>` when a retry must reuse the
+same operation identity; live rollback also requires
+`--baseline <artifactId|none>`. The standalone command has no generic component
+manifest resolver and therefore retains metadata-only behavior unless the host
+provides this integration. See
+[transactional runtime activation](../docs/internal/runtime-transactional-activation.md).
 
 ## Python-Only commands
 
@@ -324,6 +337,25 @@ import { instrumentClient } from "autoctx/integrations/anthropic";
 import type { AutoctxAgentContext } from "autoctx/agent-runtime";
 import { connectMcpRuntimeTools } from "autoctx/runtimes/mcp";
 ```
+
+### Live runtime composition
+
+The package root exports a host-owned `RuntimeComponentGraph` for reactive live
+components. Manifests use typed capability keys and concrete `instanceId`
+values; changing provider identity drains affected consumers before replacing
+the provider, while unrelated components remain active. Invalid cycles and
+duplicate exclusive providers fail before the live graph changes. See the
+[component graph contract](../docs/internal/runtime-component-graph.md) and
+[effect policy](../docs/internal/runtime-effect-policy.md) before exposing live
+composition to generated code.
+
+Live promotion is available through `RuntimeActivationSupervisor` and the
+graph-backed activation driver. Durable journals make activation and rollback
+idempotent and restart-recoverable; registry/actuator adapters connect the live
+operation to existing artifact promotion state. Configure these APIs in a
+trusted host with an artifact-to-component manifest resolver. See the
+[transactional activation contract](../docs/internal/runtime-transactional-activation.md)
+and [composition confluence harness](../docs/internal/runtime-composition-confluence.md).
 
 ## Production traces
 

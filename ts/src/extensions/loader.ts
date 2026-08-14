@@ -1,22 +1,78 @@
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { isAbsolute, resolve } from "node:path";
+import { basename, isAbsolute, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import {
+  activateRuntimeComponent,
+  type RuntimeComponentLifecycleEventSink,
+  type RuntimeComponentScope,
+} from "../runtimes/component-lifecycle.js";
 import { ExtensionAPI, HookBus } from "./hooks.js";
 
 type ExtensionCallable = (api?: ExtensionAPI) => unknown | Promise<unknown>;
+
+export interface LoadExtensionComponentsOptions {
+  eventSink?: RuntimeComponentLifecycleEventSink;
+}
+
+export interface LoadedExtensionComponent {
+  readonly ref: string;
+  readonly scope: RuntimeComponentScope;
+  unload(): Promise<void>;
+}
 
 export async function loadExtensions(
   refs: string | Iterable<string>,
   bus: HookBus,
 ): Promise<string[]> {
-  const loaded: string[] = [];
-  const api = new ExtensionAPI(bus);
-  for (const ref of splitRefs(refs)) {
-    const target = await loadTarget(ref);
-    await invokeExtension(target, api);
-    loaded.push(ref);
-    bus.loadedExtensions.push(ref);
+  const loaded = await loadExtensionComponents(refs, bus);
+  return loaded.map((component) => component.ref);
+}
+
+export async function loadExtensionComponents(
+  refs: string | Iterable<string>,
+  bus: HookBus,
+  options: LoadExtensionComponentsOptions = {},
+): Promise<LoadedExtensionComponent[]> {
+  const loaded: LoadedExtensionComponent[] = [];
+  try {
+    for (const ref of splitRefs(refs)) {
+      const target = await loadTarget(ref);
+      const scope = await activateRuntimeComponent(
+        {
+          componentId: extensionComponentId(ref),
+          eventSink: options.eventSink,
+        },
+        async (componentScope) => {
+          const api = new ExtensionAPI(bus, componentScope);
+          await invokeExtension(target, api);
+          bus.loadedExtensions.push(ref);
+          componentScope.defer(() => removeLoadedExtension(bus, ref));
+        },
+      );
+      loaded.push({
+        ref,
+        scope,
+        unload: () => scope.dispose(),
+      });
+    }
+  } catch (loadError) {
+    const cleanupErrors: unknown[] = [];
+    for (const component of [...loaded].reverse()) {
+      try {
+        await component.unload();
+      } catch (cleanupError) {
+        cleanupErrors.push(cleanupError);
+      }
+    }
+    if (cleanupErrors.length > 0) {
+      throw new AggregateError(
+        [loadError, ...cleanupErrors],
+        "extension batch activation and cleanup failed",
+      );
+    }
+    throw loadError;
   }
   return loaded;
 }
@@ -122,4 +178,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isCallable(value: unknown): value is ExtensionCallable {
   return typeof value === "function";
+}
+
+function extensionComponentId(ref: string): string {
+  const [moduleRef] = splitModuleRef(ref);
+  const label = basename(moduleRef).replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 80) || "module";
+  const digest = createHash("sha256").update(ref).digest("hex").slice(0, 12);
+  return `extension:${label}:${digest}`;
+}
+
+function removeLoadedExtension(bus: HookBus, ref: string): void {
+  const index = bus.loadedExtensions.lastIndexOf(ref);
+  if (index !== -1) bus.loadedExtensions.splice(index, 1);
 }

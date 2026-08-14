@@ -1,3 +1,6 @@
+import type { RuntimeComponentScope } from "../runtimes/component-lifecycle.js";
+import type { RuntimeCompositionInventory } from "../runtimes/composition-observability.js";
+
 export enum HookEvents {
   RUN_START = "run_start",
   RUN_END = "run_end",
@@ -73,6 +76,12 @@ export class HookEvent {
 }
 
 export type HookHandler = (event: HookEvent) => HookResult | Record<string, unknown> | undefined | null;
+export type HookDisposer = () => void | Promise<void>;
+
+interface HookRegistration {
+  readonly handler: HookHandler;
+  active: boolean;
+}
 
 export function eventName(value: HookEvents | string): string {
   return typeof value === "string" ? value : String(value);
@@ -86,7 +95,7 @@ export function eventBlockError(event: HookEvent): Error {
 export class HookBus {
   readonly failFast: boolean;
   readonly loadedExtensions: string[];
-  private handlers: Map<string, HookHandler[]>;
+  private handlers: Map<string, HookRegistration[]>;
 
   constructor(opts: { failFast?: boolean; loadedExtensions?: string[] } = {}) {
     this.failFast = opts.failFast ?? false;
@@ -95,11 +104,29 @@ export class HookBus {
   }
 
   on(name: HookEvents | string, handler: HookHandler): HookHandler {
+    this.register(name, handler);
+    return handler;
+  }
+
+  subscribe(name: HookEvents | string, handler: HookHandler): HookDisposer {
+    return this.register(name, handler);
+  }
+
+  private register(name: HookEvents | string, handler: HookHandler): HookDisposer {
     const normalized = eventName(name);
     const handlers = this.handlers.get(normalized) ?? [];
-    handlers.push(handler);
+    const registration: HookRegistration = { handler, active: true };
+    handlers.push(registration);
     this.handlers.set(normalized, handlers);
-    return handler;
+    return () => {
+      if (!registration.active) return;
+      registration.active = false;
+      const current = this.handlers.get(normalized);
+      if (!current) return;
+      const index = current.indexOf(registration);
+      if (index !== -1) current.splice(index, 1);
+      if (current.length === 0) this.handlers.delete(normalized);
+    };
   }
 
   hasHandlers(name: HookEvents | string): boolean {
@@ -119,7 +146,9 @@ export class HookBus {
       ...(this.handlers.get("*") ?? []),
     ];
 
-    for (const handler of handlers) {
+    for (const registration of handlers) {
+      if (!registration.active) continue;
+      const handler = registration.handler;
       try {
         const result = handler(event);
         applyHookResult(event, result);
@@ -143,9 +172,17 @@ export class HookBus {
 
 export class ExtensionAPI {
   readonly bus: HookBus;
+  readonly scope?: RuntimeComponentScope;
+  readonly compositionInventory?: RuntimeCompositionInventory;
 
-  constructor(bus: HookBus) {
+  constructor(
+    bus: HookBus,
+    scope?: RuntimeComponentScope,
+    compositionInventory?: RuntimeCompositionInventory,
+  ) {
     this.bus = bus;
+    this.scope = scope;
+    this.compositionInventory = compositionInventory;
   }
 
   on(name: HookEvents | string, handler: HookHandler): HookHandler;
@@ -155,9 +192,13 @@ export class ExtensionAPI {
     handler?: HookHandler,
   ): HookHandler | ((handler: HookHandler) => HookHandler) {
     if (handler) {
-      return this.bus.on(name, handler);
+      this.register(name, handler);
+      return handler;
     }
-    return (actual: HookHandler) => this.bus.on(name, actual);
+    return (actual: HookHandler) => {
+      this.register(name, actual);
+      return actual;
+    };
   }
 
   emit(
@@ -166,6 +207,23 @@ export class ExtensionAPI {
     opts: { metadata?: Record<string, unknown> } = {},
   ): HookEvent {
     return this.bus.emit(name, payload, opts);
+  }
+
+  private register(name: HookEvents | string, handler: HookHandler): void {
+    const unsubscribe = this.bus.subscribe(name, handler);
+    if (this.scope) {
+      try {
+        this.scope.defer(unsubscribe);
+        this.compositionInventory?.own(this.scope, {
+          kind: "hook",
+          resourceId: eventName(name),
+          effectClass: "reversible",
+        });
+      } catch (error) {
+        void unsubscribe();
+        throw error;
+      }
+    }
   }
 }
 

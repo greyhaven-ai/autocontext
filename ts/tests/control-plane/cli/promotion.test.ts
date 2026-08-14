@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, afterEach } from "vitest";
+import { describe, test, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -259,6 +259,54 @@ describe("promotion apply", () => {
       { cwd: tmp },
     );
     expect(JSON.parse(rShow.stdout).activationState).toBe("shadow");
+  });
+
+  test("routes live targets through the transactional runtime controller", async () => {
+    const id = await registerPayload("v1");
+    const before = JSON.parse((await runControlPlaneCommand(
+      ["candidate", "show", id, "--output", "json"],
+      { cwd: tmp },
+    )).stdout);
+    const promote = vi.fn(async () => ({
+      runtime: {
+        transactionId: "promotion-tx",
+        operation: "activate" as const,
+        outcome: "succeeded" as const,
+        activeArtifactId: id,
+        idempotentReplay: false,
+      },
+      candidate: { ...before, activationState: "shadow" as const },
+      baseline: null,
+    }));
+
+    const r = await runControlPlaneCommand(
+      [
+        "promotion", "apply", id,
+        "--to", "shadow",
+        "--reason", "initial-eval",
+        "--transaction-id", "promotion-tx",
+      ],
+      {
+        cwd: tmp,
+        runtimeActivation: {
+          promote,
+          rollback: vi.fn(),
+        },
+      },
+    );
+
+    expect(r.exitCode).toBe(0);
+    expect(promote).toHaveBeenCalledWith(expect.objectContaining({
+      transactionId: "promotion-tx",
+      candidateArtifactId: id,
+      targetMode: "shadow",
+      reason: "initial-eval",
+    }));
+    const after = await runControlPlaneCommand(
+      ["candidate", "show", id, "--output", "json"],
+      { cwd: tmp },
+    );
+    expect(JSON.parse(after.stdout).activationState).toBe("candidate");
   });
 
   test("--dry-run makes no state changes", async () => {

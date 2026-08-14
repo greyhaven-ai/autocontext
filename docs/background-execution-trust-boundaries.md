@@ -19,6 +19,14 @@ The hosted/proprietary product or deployment adapter owns:
 
 The OSS package must not claim multi-tenant safety unless the blockers in this document are satisfied by a concrete deployment.
 
+Runtime effect classification does not change this boundary. The TypeScript
+`RuntimeEffectPolicy` can reject undeclared, premature, or uncompensated scoped
+command/tool calls, but it does not isolate code. Untrusted live components
+must run behind an enforced external process, interpreter, or microVM boundary
+and must not receive ambient host capabilities. A trusted supervisor owns the
+policy and irreversible commit decision outside the candidate's mutable
+component graph.
+
 ## Deployment safety matrix
 
 | Deployment shape | Trust classification | Safe for | Not safe for | Notes |

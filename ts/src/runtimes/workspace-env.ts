@@ -2,6 +2,21 @@ import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 
+import {
+  RuntimeComponentLifecycleState,
+  type RuntimeComponentScope,
+} from "./component-lifecycle.js";
+import type { RuntimeCompositionInventory } from "./composition-observability.js";
+import {
+  assertRuntimeEffectDeclaration,
+  RuntimeEffectPolicyError,
+  runtimeEffectClassForAudit,
+  runtimeEffectPolicyErrorCode,
+  type RuntimeEffectClass,
+  type RuntimeEffectDeclaration,
+  type RuntimeEffectPolicy,
+} from "./effect-policy.js";
+
 export interface RuntimeExecOptions {
   cwd?: string;
   env?: Record<string, string>;
@@ -29,6 +44,9 @@ export interface RuntimeScopeOptions {
   tools?: RuntimeToolGrant[];
   grantEventSink?: RuntimeGrantEventSink;
   grantInheritance?: RuntimeGrantInheritanceMode;
+  effectPolicy?: RuntimeEffectPolicy;
+  componentScope?: RuntimeComponentScope;
+  compositionInventory?: RuntimeCompositionInventory;
 }
 
 export interface RuntimeWorkspaceEnv {
@@ -80,6 +98,7 @@ export interface RuntimeCommandGrantOptions {
   provenance?: RuntimeGrantProvenance;
   scope?: RuntimeGrantScopePolicy;
   outputLimitBytes?: number;
+  effect?: RuntimeEffectDeclaration;
 }
 
 export interface RuntimeCommandGrant {
@@ -91,6 +110,7 @@ export interface RuntimeCommandGrant {
   provenance?: RuntimeGrantProvenance;
   scope?: RuntimeGrantScopePolicy;
   outputLimitBytes?: number;
+  effect?: RuntimeEffectDeclaration;
 }
 
 export interface LocalRuntimeCommandGrantOptions extends RuntimeCommandGrantOptions {
@@ -107,6 +127,7 @@ export interface RuntimeToolGrant {
   execute?: RuntimeToolHandler;
   provenance?: RuntimeGrantProvenance;
   scope?: RuntimeGrantScopePolicy;
+  effect?: RuntimeEffectDeclaration;
 }
 
 export interface RuntimeToolCallContext {
@@ -141,6 +162,7 @@ export interface RuntimeGrantScopePolicy {
 }
 
 export type RuntimeGrantEventPhase = "start" | "end" | "error";
+export type RuntimeGrantEffectOutcome = "allowed" | "denied" | "completed" | "failed";
 
 export interface RuntimeGrantOutputRedactionMetadata {
   redacted: boolean;
@@ -172,6 +194,8 @@ export interface RuntimeGrantEvent {
   error?: string;
   redaction: RuntimeGrantRedactionMetadata;
   provenance?: RuntimeGrantProvenance;
+  effectClass?: RuntimeEffectClass | "undeclared";
+  effectOutcome?: RuntimeGrantEffectOutcome;
 }
 
 export interface RuntimeGrantEventSink {
@@ -226,6 +250,7 @@ export function defineRuntimeCommand(
     provenance: options.provenance,
     scope: options.scope,
     outputLimitBytes: normalizeOutputLimit(options.outputLimitBytes),
+    effect: options.effect,
   };
 }
 
@@ -356,6 +381,9 @@ class InMemoryWorkspaceEnv implements RuntimeWorkspaceEnv {
   #commands: Map<string, RuntimeCommandGrant>;
   #tools: Map<string, RuntimeToolGrant>;
   #grantEventSink?: RuntimeGrantEventSink;
+  #effectPolicy?: RuntimeEffectPolicy;
+  #componentScope?: RuntimeComponentScope;
+  #compositionInventory?: RuntimeCompositionInventory;
   #state: MemoryState;
 
   constructor(
@@ -364,17 +392,30 @@ class InMemoryWorkspaceEnv implements RuntimeWorkspaceEnv {
     commands: RuntimeCommandGrant[] = [],
     tools: RuntimeToolGrant[] = [],
     grantEventSink?: RuntimeGrantEventSink,
+    effectPolicy?: RuntimeEffectPolicy,
+    componentScope?: RuntimeComponentScope,
+    compositionInventory?: RuntimeCompositionInventory,
   ) {
     this.#state = state;
     this.cwd = normalizeVirtualPath(cwd, "/");
     this.#commands = commandMap(commands);
     this.#tools = toolMap(tools);
     this.#grantEventSink = grantEventSink;
+    this.#effectPolicy = effectPolicy;
+    this.#componentScope = componentScope;
+    this.#compositionInventory = compositionInventory;
     ensureMemoryParentDirs(this.#state, this.cwd);
   }
 
   get tools(): readonly RuntimeToolGrant[] {
-    return runtimeToolsForWorkspace([...this.#tools.values()], this.cwd, this.#grantEventSink);
+    this.#assertOpen();
+    return runtimeToolsForWorkspace(
+      [...this.#tools.values()],
+      this.cwd,
+      this.#grantEventSink,
+      this.#effectPolicy,
+      this.#componentScope,
+    );
   }
 
   async exec(command: string, options: RuntimeExecOptions = {}): Promise<RuntimeExecResult> {
@@ -386,8 +427,13 @@ class InMemoryWorkspaceEnv implements RuntimeWorkspaceEnv {
       options.cwd ? this.resolvePath(options.cwd) : this.cwd,
       undefined,
       this.#grantEventSink,
+      this.#effectPolicy,
+      this.#componentScope,
     );
     if (granted) return granted;
+    if (this.#effectPolicy) {
+      throw new RuntimeEffectPolicyError("effect_metadata_required");
+    }
     return {
       stdout: "",
       stderr: `In-memory workspace does not provide shell execution: ${command}`,
@@ -397,6 +443,14 @@ class InMemoryWorkspaceEnv implements RuntimeWorkspaceEnv {
 
   async scope(options: RuntimeScopeOptions = {}): Promise<RuntimeWorkspaceEnv> {
     this.#assertOpen();
+    const componentScope = options.componentScope ?? this.#componentScope;
+    const compositionInventory = options.compositionInventory ?? this.#compositionInventory;
+    registerCompositionGrants(
+      compositionInventory,
+      componentScope,
+      options.commands ?? [],
+      options.tools ?? [],
+    );
     return new InMemoryWorkspaceEnv(
       this.#state,
       options.cwd ? this.resolvePath(options.cwd) : this.cwd,
@@ -409,6 +463,9 @@ class InMemoryWorkspaceEnv implements RuntimeWorkspaceEnv {
         options.tools ?? [],
       ),
       options.grantEventSink ?? this.#grantEventSink,
+      options.effectPolicy ?? this.#effectPolicy,
+      componentScope,
+      compositionInventory,
     );
   }
 
@@ -509,6 +566,7 @@ class InMemoryWorkspaceEnv implements RuntimeWorkspaceEnv {
 
   #assertOpen(): void {
     if (this.#closed) throw new Error("Workspace environment has been cleaned up");
+    assertRuntimeComponentScopeAvailable(this.#componentScope);
   }
 }
 
@@ -518,6 +576,9 @@ class LocalWorkspaceEnv implements RuntimeWorkspaceEnv {
   #commands: Map<string, RuntimeCommandGrant>;
   #tools: Map<string, RuntimeToolGrant>;
   #grantEventSink?: RuntimeGrantEventSink;
+  #effectPolicy?: RuntimeEffectPolicy;
+  #componentScope?: RuntimeComponentScope;
+  #compositionInventory?: RuntimeCompositionInventory;
 
   constructor(
     root: string,
@@ -525,19 +586,33 @@ class LocalWorkspaceEnv implements RuntimeWorkspaceEnv {
     commands: RuntimeCommandGrant[] = [],
     tools: RuntimeToolGrant[] = [],
     grantEventSink?: RuntimeGrantEventSink,
+    effectPolicy?: RuntimeEffectPolicy,
+    componentScope?: RuntimeComponentScope,
+    compositionInventory?: RuntimeCompositionInventory,
   ) {
     this.#root = path.resolve(root);
     this.cwd = normalizeVirtualPath(cwd, "/");
     this.#commands = commandMap(commands);
     this.#tools = toolMap(tools);
     this.#grantEventSink = grantEventSink;
+    this.#effectPolicy = effectPolicy;
+    this.#componentScope = componentScope;
+    this.#compositionInventory = compositionInventory;
   }
 
   get tools(): readonly RuntimeToolGrant[] {
-    return runtimeToolsForWorkspace([...this.#tools.values()], this.cwd, this.#grantEventSink);
+    assertRuntimeComponentScopeAvailable(this.#componentScope);
+    return runtimeToolsForWorkspace(
+      [...this.#tools.values()],
+      this.cwd,
+      this.#grantEventSink,
+      this.#effectPolicy,
+      this.#componentScope,
+    );
   }
 
   async exec(command: string, options: RuntimeExecOptions = {}): Promise<RuntimeExecResult> {
+    assertRuntimeComponentScopeAvailable(this.#componentScope);
     if (options.signal?.aborted) {
       return { stdout: "", stderr: "Operation aborted", exitCode: 130 };
     }
@@ -550,12 +625,26 @@ class LocalWorkspaceEnv implements RuntimeWorkspaceEnv {
       virtualCwd,
       hostCwd,
       this.#grantEventSink,
+      this.#effectPolicy,
+      this.#componentScope,
     );
     if (granted) return granted;
+    if (this.#effectPolicy) {
+      throw new RuntimeEffectPolicyError("effect_metadata_required");
+    }
     return runShell(command, hostCwd, options);
   }
 
   async scope(options: RuntimeScopeOptions = {}): Promise<RuntimeWorkspaceEnv> {
+    assertRuntimeComponentScopeAvailable(this.#componentScope);
+    const componentScope = options.componentScope ?? this.#componentScope;
+    const compositionInventory = options.compositionInventory ?? this.#compositionInventory;
+    registerCompositionGrants(
+      compositionInventory,
+      componentScope,
+      options.commands ?? [],
+      options.tools ?? [],
+    );
     return new LocalWorkspaceEnv(
       this.#root,
       options.cwd ? this.resolvePath(options.cwd) : this.cwd,
@@ -568,25 +657,32 @@ class LocalWorkspaceEnv implements RuntimeWorkspaceEnv {
         options.tools ?? [],
       ),
       options.grantEventSink ?? this.#grantEventSink,
+      options.effectPolicy ?? this.#effectPolicy,
+      componentScope,
+      compositionInventory,
     );
   }
 
   async readFile(filePath: string): Promise<string> {
+    assertRuntimeComponentScopeAvailable(this.#componentScope);
     return fs.readFile(this.#toHostPath(this.resolvePath(filePath)), "utf-8");
   }
 
   async readFileBytes(filePath: string): Promise<Uint8Array> {
+    assertRuntimeComponentScopeAvailable(this.#componentScope);
     const content = await fs.readFile(this.#toHostPath(this.resolvePath(filePath)));
     return new Uint8Array(content);
   }
 
   async writeFile(filePath: string, content: string | Uint8Array): Promise<void> {
+    assertRuntimeComponentScopeAvailable(this.#componentScope);
     const hostPath = this.#toHostPath(this.resolvePath(filePath));
     await fs.mkdir(path.dirname(hostPath), { recursive: true });
     await fs.writeFile(hostPath, content);
   }
 
   async stat(filePath: string): Promise<RuntimeFileStat> {
+    assertRuntimeComponentScopeAvailable(this.#componentScope);
     const stat = await fs.lstat(this.#toHostPath(this.resolvePath(filePath)));
     return {
       isFile: stat.isFile(),
@@ -598,10 +694,12 @@ class LocalWorkspaceEnv implements RuntimeWorkspaceEnv {
   }
 
   async readdir(dirPath: string): Promise<string[]> {
+    assertRuntimeComponentScopeAvailable(this.#componentScope);
     return (await fs.readdir(this.#toHostPath(this.resolvePath(dirPath)))).sort();
   }
 
   async exists(filePath: string): Promise<boolean> {
+    assertRuntimeComponentScopeAvailable(this.#componentScope);
     try {
       await fs.access(this.#toHostPath(this.resolvePath(filePath)));
       return true;
@@ -611,12 +709,14 @@ class LocalWorkspaceEnv implements RuntimeWorkspaceEnv {
   }
 
   async mkdir(dirPath: string, options: { recursive?: boolean } = {}): Promise<void> {
+    assertRuntimeComponentScopeAvailable(this.#componentScope);
     await fs.mkdir(this.#toHostPath(this.resolvePath(dirPath)), {
       recursive: options.recursive ?? false,
     });
   }
 
   async rm(filePath: string, options: { recursive?: boolean; force?: boolean } = {}): Promise<void> {
+    assertRuntimeComponentScopeAvailable(this.#componentScope);
     await fs.rm(this.#toHostPath(this.resolvePath(filePath)), {
       recursive: options.recursive ?? false,
       force: options.force ?? false,
@@ -643,6 +743,7 @@ class LocalWorkspaceEnv implements RuntimeWorkspaceEnv {
 function commandMap(commands: RuntimeCommandGrant[]): Map<string, RuntimeCommandGrant> {
   const result = new Map<string, RuntimeCommandGrant>();
   for (const command of commands) {
+    if (command.effect) assertRuntimeEffectDeclaration(command.effect);
     result.set(command.name, command);
   }
   return result;
@@ -652,6 +753,7 @@ function toolMap(tools: RuntimeToolGrant[]): Map<string, RuntimeToolGrant> {
   const result = new Map<string, RuntimeToolGrant>();
   for (const tool of tools) {
     const rawTool = rawRuntimeToolGrant(tool);
+    if (rawTool.effect) assertRuntimeEffectDeclaration(rawTool.effect);
     result.set(rawTool.name, rawTool);
   }
   return result;
@@ -663,6 +765,7 @@ function mergeCommandGrants(
 ): RuntimeCommandGrant[] {
   const result = commandMap(base);
   for (const command of overrides) {
+    if (command.effect) assertRuntimeEffectDeclaration(command.effect);
     result.set(command.name, command);
   }
   return [...result.values()];
@@ -675,6 +778,7 @@ function mergeToolGrants(
   const result = toolMap(base);
   for (const tool of overrides) {
     const rawTool = rawRuntimeToolGrant(tool);
+    if (rawTool.effect) assertRuntimeEffectDeclaration(rawTool.effect);
     result.set(rawTool.name, rawTool);
   }
   return [...result.values()];
@@ -703,7 +807,10 @@ async function maybeRunGrantedCommand(
   cwd: string,
   hostCwd: string | undefined,
   grantEventSink: RuntimeGrantEventSink | undefined,
+  effectPolicy: RuntimeEffectPolicy | undefined,
+  componentScope: RuntimeComponentScope | undefined,
 ): Promise<RuntimeExecResult | null> {
+  assertRuntimeComponentScopeAvailable(componentScope);
   const parsed = parseCommandLine(commandLine);
   if (!parsed) return null;
   const grant = commands.get(parsed.name);
@@ -712,14 +819,37 @@ async function maybeRunGrantedCommand(
   const secrets = secretValues(commandEnv);
   const args = summarizeArgs(parsed.args, secrets);
   const redaction = baseGrantRedaction(commandEnv, args);
+  const effectClass = runtimeEffectClassForAudit(grant.effect);
+  try {
+    effectPolicy?.authorize(grant.effect, componentScope);
+  } catch (error) {
+    emitRuntimeGrantEvent(grantEventSink, {
+      kind: "command",
+      phase: "error",
+      name: grant.name,
+      cwd,
+      argsSummary: [],
+      error: runtimeEffectPolicyErrorCode(error),
+      redaction,
+      effectClass,
+      effectOutcome: "denied",
+    });
+    throw error;
+  }
+  const effectAuditEnabled = Boolean(effectPolicy || grant.effect);
+  const auditArgs = effectAuditEnabled ? [] : args.summary;
+  const effectAudit = effectAuditEnabled
+    ? { effectClass, effectOutcome: "allowed" as const }
+    : {};
   emitRuntimeGrantEvent(grantEventSink, {
     kind: "command",
     phase: "start",
     name: grant.name,
     cwd,
-    argsSummary: args.summary,
+    argsSummary: auditArgs,
     redaction,
-    provenance: grant.provenance,
+    provenance: effectAuditEnabled ? undefined : grant.provenance,
+    ...effectAudit,
   });
   try {
     const result = await grant.execute(parsed.args, {
@@ -737,16 +867,19 @@ async function maybeRunGrantedCommand(
       phase: "end",
       name: grant.name,
       cwd,
-      argsSummary: args.summary,
+      argsSummary: auditArgs,
       exitCode: result.exitCode,
-      stdout: stdout.text,
-      stderr: stderr.text,
+      stdout: effectAuditEnabled ? undefined : stdout.text,
+      stderr: effectAuditEnabled ? undefined : stderr.text,
       redaction: {
         ...redaction,
         stdout: stdout.metadata,
         stderr: stderr.metadata,
       },
-      provenance: grant.provenance,
+      provenance: effectAuditEnabled ? undefined : grant.provenance,
+      ...(effectAuditEnabled
+        ? { effectClass, effectOutcome: "completed" as const }
+        : {}),
     });
     return result;
   } catch (error) {
@@ -757,13 +890,16 @@ async function maybeRunGrantedCommand(
       phase: "error",
       name: grant.name,
       cwd,
-      argsSummary: args.summary,
-      error: message.text,
+      argsSummary: auditArgs,
+      error: effectAuditEnabled ? "effect_invocation_failed" : message.text,
       redaction: {
         ...redaction,
         error: message.metadata,
       },
-      provenance: grant.provenance,
+      provenance: effectAuditEnabled ? undefined : grant.provenance,
+      ...(effectAuditEnabled
+        ? { effectClass, effectOutcome: "failed" as const }
+        : {}),
     });
     throw error;
   }
@@ -773,22 +909,40 @@ function runtimeToolsForWorkspace(
   tools: RuntimeToolGrant[],
   cwd: string,
   grantEventSink: RuntimeGrantEventSink | undefined,
+  effectPolicy: RuntimeEffectPolicy | undefined,
+  componentScope: RuntimeComponentScope | undefined,
 ): RuntimeToolGrant[] {
-  if (!grantEventSink) return tools;
-  return tools.map((tool) => runtimeToolWithGrantEvents(tool, cwd, grantEventSink));
+  if (!grantEventSink && !effectPolicy && !componentScope) return tools;
+  return tools.map((tool) => runtimeToolWithGrantEvents(
+    tool,
+    cwd,
+    grantEventSink,
+    effectPolicy,
+    componentScope,
+  ));
 }
 
 function runtimeToolWithGrantEvents(
   tool: RuntimeToolGrant,
   cwd: string,
-  grantEventSink: RuntimeGrantEventSink,
+  grantEventSink: RuntimeGrantEventSink | undefined,
+  effectPolicy: RuntimeEffectPolicy | undefined,
+  componentScope: RuntimeComponentScope | undefined,
 ): RuntimeToolGrant {
   const rawTool = rawRuntimeToolGrant(tool);
   if (!rawTool.execute) return rawTool;
   const wrapped: RuntimeToolGrantEventWrapper = {
     ...rawTool,
     execute: (args, context) =>
-      executeRuntimeToolWithGrantEvents(rawTool, args, context, cwd, grantEventSink),
+      executeRuntimeToolWithGrantEvents(
+        rawTool,
+        args,
+        context,
+        cwd,
+        grantEventSink,
+        effectPolicy,
+        componentScope,
+      ),
   };
   Object.defineProperty(wrapped, RUNTIME_TOOL_EVENT_SOURCE, { value: rawTool });
   return wrapped;
@@ -799,19 +953,44 @@ async function executeRuntimeToolWithGrantEvents(
   args: Record<string, unknown>,
   context: RuntimeToolCallContext | undefined,
   cwd: string,
-  grantEventSink: RuntimeGrantEventSink,
+  grantEventSink: RuntimeGrantEventSink | undefined,
+  effectPolicy: RuntimeEffectPolicy | undefined,
+  componentScope: RuntimeComponentScope | undefined,
 ): Promise<RuntimeToolCallResult> {
+  assertRuntimeComponentScopeAvailable(componentScope);
   const secrets = runtimeToolRedactionSecrets(tool);
   const argsSummary = summarizeArgs([safeJsonOrString(args)], secrets);
   const redaction = baseGrantRedaction({}, argsSummary);
+  const effectClass = runtimeEffectClassForAudit(tool.effect);
+  try {
+    effectPolicy?.authorize(tool.effect, componentScope);
+  } catch (error) {
+    emitRuntimeGrantEvent(grantEventSink, {
+      kind: "tool",
+      phase: "error",
+      name: tool.name,
+      cwd,
+      argsSummary: [],
+      error: runtimeEffectPolicyErrorCode(error),
+      redaction,
+      effectClass,
+      effectOutcome: "denied",
+    });
+    throw error;
+  }
+  const effectAuditEnabled = Boolean(effectPolicy || tool.effect);
+  const auditArgs = effectAuditEnabled ? [] : argsSummary.summary;
   emitRuntimeGrantEvent(grantEventSink, {
     kind: "tool",
     phase: "start",
     name: tool.name,
     cwd,
-    argsSummary: argsSummary.summary,
+    argsSummary: auditArgs,
     redaction,
-    provenance: tool.provenance,
+    provenance: effectAuditEnabled ? undefined : tool.provenance,
+    ...(effectAuditEnabled
+      ? { effectClass, effectOutcome: "allowed" as const }
+      : {}),
   });
   try {
     const result = await tool.execute!(args, context);
@@ -821,14 +1000,17 @@ async function executeRuntimeToolWithGrantEvents(
       phase: "end",
       name: tool.name,
       cwd,
-      argsSummary: argsSummary.summary,
+      argsSummary: auditArgs,
       exitCode: result.isError ? 1 : 0,
-      stdout: stdout.text,
+      stdout: effectAuditEnabled ? undefined : stdout.text,
       redaction: {
         ...redaction,
         stdout: stdout.metadata,
       },
-      provenance: tool.provenance,
+      provenance: effectAuditEnabled ? undefined : tool.provenance,
+      ...(effectAuditEnabled
+        ? { effectClass, effectOutcome: "completed" as const }
+        : {}),
     });
     return result;
   } catch (error) {
@@ -839,24 +1021,74 @@ async function executeRuntimeToolWithGrantEvents(
       phase: "error",
       name: tool.name,
       cwd,
-      argsSummary: argsSummary.summary,
-      error: message.text,
+      argsSummary: auditArgs,
+      error: effectAuditEnabled ? "effect_invocation_failed" : message.text,
       redaction: {
         ...redaction,
         error: message.metadata,
       },
-      provenance: tool.provenance,
+      provenance: effectAuditEnabled ? undefined : tool.provenance,
+      ...(effectAuditEnabled
+        ? { effectClass, effectOutcome: "failed" as const }
+        : {}),
     });
     throw error;
   }
 }
 
 function rawRuntimeToolGrant(tool: RuntimeToolGrant): RuntimeToolGrant {
-  return (tool as RuntimeToolGrantEventWrapper)[RUNTIME_TOOL_EVENT_SOURCE] ?? tool;
+  if (!isRuntimeToolGrantEventWrapper(tool)) return tool;
+  return tool[RUNTIME_TOOL_EVENT_SOURCE] ?? tool;
+}
+
+function isRuntimeToolGrantEventWrapper(
+  tool: RuntimeToolGrant,
+): tool is RuntimeToolGrantEventWrapper {
+  return RUNTIME_TOOL_EVENT_SOURCE in tool;
 }
 
 function runtimeToolRedactionSecrets(tool: RuntimeToolGrant): string[] {
   return runtimeToolSecretValues.get(rawRuntimeToolGrant(tool)) ?? [];
+}
+
+function registerCompositionGrants(
+  inventory: RuntimeCompositionInventory | undefined,
+  componentScope: RuntimeComponentScope | undefined,
+  commands: readonly RuntimeCommandGrant[],
+  tools: readonly RuntimeToolGrant[],
+): void {
+  if (!inventory || (commands.length === 0 && tools.length === 0)) return;
+  if (!componentScope) {
+    throw new Error("runtime composition inventory requires a component scope");
+  }
+  for (const command of commands) {
+    inventory.own(componentScope, {
+      kind: "grant",
+      resourceId: `command:${command.name}`,
+      effectClass: "reversible",
+    });
+  }
+  for (const tool of tools) {
+    inventory.own(componentScope, {
+      kind: "tool",
+      resourceId: tool.name,
+      effectClass: "reversible",
+    });
+  }
+}
+
+function assertRuntimeComponentScopeAvailable(
+  componentScope: RuntimeComponentScope | undefined,
+): void {
+  if (!componentScope) return;
+  if (
+    componentScope.state !== RuntimeComponentLifecycleState.LOADING
+    && componentScope.state !== RuntimeComponentLifecycleState.ACTIVE
+  ) {
+    throw new Error(
+      `runtime component ${componentScope.componentId} workspace is unavailable while ${componentScope.state}`,
+    );
+  }
 }
 
 function parseCommandLine(commandLine: string): { name: string; args: string[] } | null {
