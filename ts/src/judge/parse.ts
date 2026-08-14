@@ -19,7 +19,7 @@
  * general model-JSON parser shared with other call sites and has no business
  * knowing about scores.
  */
-import { extractJson } from "../execution/model-json.js";
+import { extractJson } from "../domain/model-json.js";
 
 const RESULT_START = "<!-- JUDGE_RESULT_START -->";
 const RESULT_END = "<!-- JUDGE_RESULT_END -->";

@@ -1,9 +1,8 @@
 // `autoctx production-traces build-dataset ...`
 //
 // Loads source traces (filtered by --since/--until/--provider/--app/--env/--outcome),
-// reads cluster + rubric configs, wires a registry-backed RubricLookup (the ONE allowed
-// cross-module import from `control-plane/registry/` per the Layer 7 brief), and invokes
-// Layer 5's `buildDataset(inputs)` orchestrator.
+// reads cluster + rubric configs, accepts an optional registry-backed RubricLookup
+// from the composition root, and invokes Layer 5's `buildDataset(inputs)` orchestrator.
 //
 // Exit-code contract (spec §9.7):
 //   0  dataset written successfully
@@ -21,9 +20,7 @@ import type {
   BuildDatasetResult,
   ClusterConfig,
   ClusterStrategy,
-  Rubric,
   RubricConfig,
-  RubricLookup,
   SelectionRule,
 } from "../dataset/index.js";
 import { loadRedactionPolicy, loadInstallSalt } from "../redaction/index.js";
@@ -145,7 +142,11 @@ export async function runBuildDataset(
   if (configPath !== undefined) {
     const resolved = resolvePath(ctx.cwd, configPath);
     if (!existsSync(resolved)) {
-      return { stdout: "", stderr: `--config file not found: ${resolved}`, exitCode: EXIT.INVALID_CONFIG };
+      return {
+        stdout: "",
+        stderr: `--config file not found: ${resolved}`,
+        exitCode: EXIT.INVALID_CONFIG,
+      };
     }
     try {
       configBundle = JSON.parse(readFileSync(resolved, "utf-8")) as DatasetConfigBundle;
@@ -163,12 +164,20 @@ export async function runBuildDataset(
   if (rulesPath !== undefined) {
     const resolved = resolvePath(ctx.cwd, rulesPath);
     if (!existsSync(resolved)) {
-      return { stdout: "", stderr: `--rules file not found: ${resolved}`, exitCode: EXIT.INVALID_CONFIG };
+      return {
+        stdout: "",
+        stderr: `--rules file not found: ${resolved}`,
+        exitCode: EXIT.INVALID_CONFIG,
+      };
     }
     try {
       clusterConfig = JSON.parse(readFileSync(resolved, "utf-8")) as ClusterConfig;
     } catch (err) {
-      return { stdout: "", stderr: `--rules malformed JSON: ${msgOf(err)}`, exitCode: EXIT.INVALID_CONFIG };
+      return {
+        stdout: "",
+        stderr: `--rules malformed JSON: ${msgOf(err)}`,
+        exitCode: EXIT.INVALID_CONFIG,
+      };
     }
   } else if (configBundle.clusterConfig !== undefined) {
     clusterConfig = configBundle.clusterConfig;
@@ -186,12 +195,20 @@ export async function runBuildDataset(
   if (rubricsPath !== undefined) {
     const resolved = resolvePath(ctx.cwd, rubricsPath);
     if (!existsSync(resolved)) {
-      return { stdout: "", stderr: `--rubrics file not found: ${resolved}`, exitCode: EXIT.INVALID_CONFIG };
+      return {
+        stdout: "",
+        stderr: `--rubrics file not found: ${resolved}`,
+        exitCode: EXIT.INVALID_CONFIG,
+      };
     }
     try {
       rubricConfig = JSON.parse(readFileSync(resolved, "utf-8")) as RubricConfig;
     } catch (err) {
-      return { stdout: "", stderr: `--rubrics malformed JSON: ${msgOf(err)}`, exitCode: EXIT.INVALID_CONFIG };
+      return {
+        stdout: "",
+        stderr: `--rubrics malformed JSON: ${msgOf(err)}`,
+        exitCode: EXIT.INVALID_CONFIG,
+      };
     }
   } else if (configBundle.rubricConfig !== undefined) {
     rubricConfig = configBundle.rubricConfig;
@@ -229,24 +246,26 @@ export async function runBuildDataset(
     return { stdout: "", stderr: `policy: ${msgOf(err)}`, exitCode: EXIT.INVALID_CONFIG };
   }
 
-  // --- Build registry-backed RubricLookup ---------------------------------
-  // This is the ONLY allowed cross-import from control-plane/registry/ in the
-  // entire production-traces module (§4 of the brief). It lives at the CLI
-  // layer because Layer 5 is explicitly registry-agnostic (RubricLookup is
-  // dependency-injected so Layer 5 stays testable without Foundation B).
-  const rubricLookup = await buildRegistryRubricLookup(ctx.cwd);
+  // --- Resolve optional registry-backed RubricLookup ----------------------
+  // The top-level CLI/MCP composition roots inject the control-plane adapter.
+  // The production-traces domain remains usable on its own without importing
+  // control-plane implementation modules.
+  const rubricLookup = ctx.rubricLookup ?? null;
 
   // --- Invoke dataset pipeline under lock ---------------------------------
   let lock;
   try {
     lock = acquireLock(ctx.cwd);
   } catch (err) {
-    return { stdout: "", stderr: `build-dataset: lock timeout: ${msgOf(err)}`, exitCode: EXIT.LOCK_TIMEOUT };
+    return {
+      stdout: "",
+      stderr: `build-dataset: lock timeout: ${msgOf(err)}`,
+      exitCode: EXIT.LOCK_TIMEOUT,
+    };
   }
   let result: BuildDatasetResult;
   try {
-    const selectionRules =
-      (configBundle.selectionRules as SelectionRule[] | undefined) ?? [];
+    const selectionRules = (configBundle.selectionRules as SelectionRule[] | undefined) ?? [];
     const inputs: BuildDatasetInputs = {
       cwd: ctx.cwd,
       name,
@@ -287,75 +306,6 @@ export async function runBuildDataset(
     stdout: formatOutput(summary, output),
     stderr: "",
     exitCode: EXIT.SUCCESS,
-  };
-}
-
-// ----------------------------------------------------------------------------
-// Registry-backed RubricLookup
-// ----------------------------------------------------------------------------
-
-/**
- * Build a `RubricLookup` that consults the Foundation B registry at
- * `<cwd>/.autocontext/...` for active Artifacts associated with a scenario.
- *
- * Resolution strategy (v1, deliberately minimal):
- *   1. For a given scenarioId, ask the registry for ANY active artifact in
- *      that scenario (any actuator type, default environment tag).
- *   2. If found, synthesize a `Rubric` whose `rubricId` is the artifact id
- *      so the dataset manifest records a stable reference back to Foundation B.
- *   3. If not found, return null — the Layer 5 pipeline will fall through to
- *      synthetic (if --allow-synthetic-rubrics) or skip the cluster.
- *
- * Returns `null` if the registry itself can't be opened (pre-init workspaces,
- * I/O errors) — the pipeline then behaves exactly as if there were no
- * registry, which is the right semantic for standalone Foundation A installs.
- *
- * NOTE: a future Layer 8+ change may introduce a dedicated rubric Artifact
- * type — at that point this lookup should search for rubric artifacts
- * specifically rather than accepting any active artifact. The rubric shape
- * below is deliberately thin so that change is a non-breaking update.
- */
-async function buildRegistryRubricLookup(cwd: string): Promise<RubricLookup | null> {
-  let registry;
-  try {
-    const mod = await import("../../control-plane/registry/index.js");
-    registry = mod.openRegistry(cwd);
-  } catch {
-    return null;
-  }
-  // Defensive: if opening didn't throw but the underlying registry has no
-  // artifacts, still return a lookup (it'll just return null for every call).
-  const activeArtifactTypes: readonly (
-    | "prompt-patch"
-    | "tool-policy"
-    | "routing-rule"
-    | "fine-tuned-model"
-    | "model-routing"
-  )[] = ["prompt-patch", "tool-policy", "routing-rule", "fine-tuned-model", "model-routing"];
-
-  return async (scenarioId) => {
-    try {
-      for (const actuatorType of activeArtifactTypes) {
-        const matches = registry.listCandidates({
-          scenario: scenarioId,
-          actuatorType,
-          activationState: "active",
-        });
-        if (matches.length === 0) continue;
-        const first = matches[0]!;
-        const rubric: Rubric = {
-          rubricId: first.id,
-          dimensions: ["registry-active-artifact"],
-          description: `Auto-imported from Foundation B registry: active ${first.actuatorType} for scenario=${first.scenario}, env=${first.environmentTag}.`,
-        };
-        return rubric;
-      }
-    } catch {
-      // Registry read failed; treat as "no rubric" and let the pipeline
-      // fall through to synthetic/skip per §8.3.
-      return null;
-    }
-    return null;
   };
 }
 

@@ -15,7 +15,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from autocontext.agents import role_routing_contract_generated as _contract
+from autocontext.config import role_routing_contract_generated as _contract
 
 if TYPE_CHECKING:
     from autocontext.config.settings import AppSettings
@@ -96,7 +96,7 @@ def available_local_models(
 
 
 # The values below derive from docs/role-routing-contract.json via the
-# generated module autocontext.agents.role_routing_contract_generated.
+# generated module autocontext.config.role_routing_contract_generated.
 # To change a value, edit the contract and regenerate — do not edit here.
 
 # The contract is the source of truth for which provider classes exist;
@@ -473,8 +473,7 @@ class RoleRouter:
             return ProviderConfig(
                 provider_type="mlx",
                 model=(
-                    _clean_setting(local_model_path, "")
-                    or _clean_setting(self._settings.mlx_model_path, _DEFAULT_LOCAL_ARTIFACT)
+                    _clean_setting(local_model_path, "") or _clean_setting(self._settings.mlx_model_path, _DEFAULT_LOCAL_ARTIFACT)
                 ),
                 provider_class=ProviderClass.LOCAL,
                 estimated_cost_per_1k_tokens=self._cost_for(

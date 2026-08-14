@@ -5,7 +5,6 @@ import json
 import logging
 import os
 from collections.abc import Callable
-from importlib import import_module
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
@@ -17,14 +16,13 @@ from autocontext.agents.feedback_loops import (
 )
 from autocontext.agents.hint_feedback import HintFeedback
 from autocontext.analytics.credit_assignment import CreditAssignmentRecord
+from autocontext.domain.context_compaction import CompactionEntry, compact_prompt_components
+from autocontext.domain.hints import HintManager, HintVolumePolicy
+from autocontext.domain.soft_hints import build_hint_metadata
 from autocontext.extensions import HookBus
 from autocontext.harness.mutations.spec import HarnessMutation
 from autocontext.harness.mutations.store import MutationStore
 from autocontext.harness.storage.versioned_store import VersionedFileStore
-from autocontext.knowledge.compaction import CompactionEntry, compact_prompt_components
-from autocontext.knowledge.hint_volume import HintManager, HintVolumePolicy
-from autocontext.knowledge.lessons import LessonStore
-from autocontext.knowledge.mutation_log import MutationEntry, MutationLog
 from autocontext.storage.artifact_generation_persistence import ArtifactGenerationPersistenceMethods
 from autocontext.storage.artifact_harness_codegen import HarnessCodegenMethods
 from autocontext.storage.artifact_skill_lessons import SkillLessonMethods
@@ -33,6 +31,8 @@ from autocontext.storage.artifact_write_methods import ArtifactWriteMethods
 from autocontext.storage.blob_integration import BlobAwareWriter, mirror_path_append_bytes, mirror_path_bytes
 from autocontext.storage.buffered_writer import BufferedWriter
 from autocontext.storage.compaction_ledger import CompactionLedgerStore
+from autocontext.storage.context_mutation_log import MutationEntry, MutationLog
+from autocontext.storage.lesson_store import LessonStore
 from autocontext.storage.playbook_approval import PlaybookApprovalMethods
 from autocontext.storage.scenario_paths import (
     normalize_scenario_name_segment,
@@ -259,7 +259,7 @@ class ArtifactStore(
         if metadata is None:
             enabled = os.getenv("AUTOCONTEXT_SOFT_HINTS_ENABLED", "").lower() in {"1", "true", "yes"}
             style = "structural" if enabled else os.getenv("AUTOCONTEXT_HINT_STYLE", "default")
-            metadata = dict(import_module("autocontext.knowledge.soft_hints").build_hint_metadata(content, hint_style=style))
+            metadata = dict(build_hint_metadata(content, hint_style=style))
         if metadata:
             self.write_json(self._scenario_dir(scenario_name) / "hints.meta.json", metadata)
 
@@ -749,7 +749,7 @@ class ArtifactStore(
             from autocontext.analytics.progress_report import RunProgressReport as CurveReport
 
             return CurveReport.from_dict(data)
-        from autocontext.knowledge.normalized_metrics import RunProgressReport as NormalizedReport
+        from autocontext.analytics.normalized_metrics import RunProgressReport as NormalizedReport
 
         return NormalizedReport.from_dict(data)
 
@@ -845,7 +845,7 @@ class ArtifactStore(
     def _deserialize_weakness_report(self, data: dict[str, Any]) -> object:
         """Load either the legacy or trace-grounded weakness-report schema."""
         if "total_generations" in data:
-            from autocontext.knowledge.weakness import WeaknessReport as LegacyWeaknessReport
+            from autocontext.analytics.weakness import WeaknessReport as LegacyWeaknessReport
 
             return LegacyWeaknessReport.from_dict(data)
 

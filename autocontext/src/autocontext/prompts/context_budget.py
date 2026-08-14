@@ -17,6 +17,8 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
+from autocontext.domain.token_estimation import estimate_tokens
+
 logger = logging.getLogger(__name__)
 
 # Trim cascade: first entry trimmed first (least critical)
@@ -170,11 +172,6 @@ class ContextBudgetResult:
 
     components: dict[str, str]
     telemetry: ContextBudgetTelemetry
-
-
-def estimate_tokens(text: str) -> int:
-    """Estimate token count using char/4 heuristic."""
-    return len(text) // 4
 
 
 def _truncate_to_tokens(text: str, max_tokens: int) -> str:

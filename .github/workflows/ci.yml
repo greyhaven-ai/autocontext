@@ -94,6 +94,10 @@ jobs:
       - name: TypeScript package boundary checks
         working-directory: ts
         run: npx vitest run tests/package-topology.test.ts tests/package-boundaries.test.ts
+      - name: Source dependency boundary ratchet
+        run: |
+          python scripts/test_dependency_boundaries.py
+          python scripts/check_dependency_boundaries.py
       - name: Role output schema drift check
         working-directory: autocontext
         run: uv run --frozen python scripts/generate_role_output_schemas.py --check

@@ -21,7 +21,7 @@ const CONTRACT_FILE = join(REPO_ROOT, "docs", "role-routing-contract.json");
 const TS_OUT = join(TS_ROOT, "src/providers/role-routing-contract.generated.ts");
 const PY_OUT = join(
   REPO_ROOT,
-  "autocontext/src/autocontext/agents/role_routing_contract_generated.py",
+  "autocontext/src/autocontext/config/role_routing_contract_generated.py",
 );
 
 const contract = JSON.parse(readFileSync(CONTRACT_FILE, "utf-8"));

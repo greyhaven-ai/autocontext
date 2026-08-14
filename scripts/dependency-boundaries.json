@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "rules": [
+    {
+      "runtime": "python",
+      "sourceDomain": "storage",
+      "targetDomain": "knowledge",
+      "reason": "Knowledge may compose persistence; storage must not import knowledge implementations.",
+      "allowedLegacyEdges": [
+        {
+          "source": "storage/context_selection_store.py",
+          "import": "autocontext.knowledge.context_selection"
+        }
+      ]
+    },
+    {
+      "runtime": "python",
+      "sourceDomain": "config",
+      "targetDomain": "agents",
+      "reason": "Agents consume configuration; configuration must remain independent of agents.",
+      "allowedLegacyEdges": []
+    },
+    {
+      "runtime": "typescript",
+      "sourceDomain": "judge",
+      "targetDomain": "execution",
+      "reason": "Execution orchestrates judges; shared parsers belong in a neutral domain leaf.",
+      "allowedLegacyEdges": []
+    },
+    {
+      "runtime": "typescript",
+      "sourceDomain": "providers",
+      "targetDomain": "agents",
+      "reason": "Agents consume providers; provider implementations must not be agent-owned.",
+      "allowedLegacyEdges": []
+    },
+    {
+      "runtime": "typescript",
+      "sourceDomain": "production-traces",
+      "targetDomain": "control-plane",
+      "reason": "Control-plane may adapt production traces; production traces must remain independently usable.",
+      "allowedLegacyEdges": []
+    }
+  ]
+}
