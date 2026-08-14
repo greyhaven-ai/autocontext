@@ -148,6 +148,8 @@ export function normalizeRuntimeSessionEvent(event: RuntimeSessionEvent): Normal
           command: "command",
           cwd: "cwd",
           exit_code: "exitCode",
+          effect_class: "effectClass",
+          effect_outcome: "effectOutcome",
         }),
       });
     case "tool_call":
@@ -158,6 +160,8 @@ export function normalizeRuntimeSessionEvent(event: RuntimeSessionEvent): Normal
         payloadSummary: pickPayload(event.payload, {
           tool: "tool",
           name: "name",
+          effect_class: "effectClass",
+          effect_outcome: "effectOutcome",
         }),
       });
     case "child_task_started":

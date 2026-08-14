@@ -1,6 +1,7 @@
 import { Buffer } from "node:buffer";
 
 import { registerRuntimeToolGrantSecrets } from "./workspace-env.js";
+import type { RuntimeEffectDeclaration } from "./effect-policy.js";
 import type {
   RuntimeGrantProvenance,
   RuntimeGrantScopePolicy,
@@ -20,6 +21,7 @@ export interface ConnectMcpRuntimeToolsOptions {
   clientName?: string;
   clientVersion?: string;
   clientFactory?: McpRuntimeToolClientFactory;
+  effect?: RuntimeEffectDeclaration;
 }
 
 export interface McpRuntimeToolClientFactoryInput {
@@ -134,6 +136,7 @@ export async function connectMcpRuntimeTools(
     provenance: options.provenance,
     scope: options.scope,
     trustedSecrets: trustedHeaderSecrets(headers),
+    effect: options.effect,
   });
 }
 
@@ -153,6 +156,7 @@ export class McpRuntimeToolSet {
     provenance?: RuntimeGrantProvenance;
     scope?: RuntimeGrantScopePolicy;
     trustedSecrets?: string[];
+    effect?: RuntimeEffectDeclaration;
   }) {
     this.url = options.url;
     this.#client = options.client;
@@ -195,6 +199,7 @@ export class McpRuntimeToolSet {
     provenance?: RuntimeGrantProvenance;
     scope?: RuntimeGrantScopePolicy;
     trustedSecrets?: string[];
+    effect?: RuntimeEffectDeclaration;
   }): RuntimeToolGrant[] {
     const names = uniqueRuntimeToolNames(options.tools, options.namePrefix);
     return options.tools.map((tool, index) => {
@@ -212,6 +217,7 @@ export class McpRuntimeToolSet {
           description: options.provenance?.description ?? `Remote MCP tool ${tool.name}`,
         },
         scope: options.scope,
+        effect: options.effect,
       };
       return registerRuntimeToolGrantSecrets(runtimeTool, options.trustedSecrets ?? []);
     });

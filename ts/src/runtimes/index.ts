@@ -14,6 +14,26 @@ export type {
   RuntimeComponentScopeOptions,
   RuntimeOwnedComponentDisposer,
 } from "./component-lifecycle.js";
+export {
+  RuntimeEffectClass,
+  RuntimeEffectExecutionMode,
+  RuntimeEffectPolicy,
+  RuntimeEffectPolicyError,
+  assertRuntimeEffectDeclaration,
+  runtimeEffectClassForAudit,
+  runtimeEffectPolicyErrorCode,
+} from "./effect-policy.js";
+export type {
+  CompensatableRuntimeEffect,
+  IrreversibleRuntimeEffect,
+  ReversibleRuntimeEffect,
+  RuntimeEffectCompensation,
+  RuntimeEffectDeclaration,
+  RuntimeEffectPolicyErrorCode,
+  RuntimeEffectPolicyOptions,
+  RuntimeEffectSandboxBoundary,
+  RuntimeEffectSandboxPolicy,
+} from "./effect-policy.js";
 export { RuntimeSessionAgentRuntime } from "./runtime-session-agent.js";
 export type { RuntimeSessionAgentRuntimeOpts } from "./runtime-session-agent.js";
 export {
@@ -36,6 +56,7 @@ export type {
   RuntimeGrantEvent,
   RuntimeGrantEventPhase,
   RuntimeGrantEventSink,
+  RuntimeGrantEffectOutcome,
   RuntimeGrantInheritanceMode,
   RuntimeGrantKind,
   RuntimeGrantOutputRedactionMetadata,

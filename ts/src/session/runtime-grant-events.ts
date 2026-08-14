@@ -48,6 +48,8 @@ function runtimeGrantEventPayload(event: RuntimeGrantEvent): Record<string, unkn
   if (event.stderr !== undefined) payload.stderr = event.stderr;
   if (event.error !== undefined) payload.error = event.error;
   if (event.provenance) payload.provenance = event.provenance;
+  if (event.effectClass) payload.effectClass = event.effectClass;
+  if (event.effectOutcome) payload.effectOutcome = event.effectOutcome;
   return payload;
 }
 

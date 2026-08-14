@@ -49,6 +49,7 @@ metadata is available.
 
 - [Core/control package split](core-control-package-split.md)
 - [Runtime component lifecycle](internal/runtime-component-lifecycle.md)
+- [Runtime effect policy](internal/runtime-effect-policy.md)
 - [Strategy package import side-effect contract](strategy-package-import-contract.json)
 - [Generic edge runtime compatibility spike](edge-runtime-compatibility.md)
 - [Fetch adapter API reference](fetch-api-reference.md)
