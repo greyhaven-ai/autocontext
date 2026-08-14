@@ -14,6 +14,7 @@ import type {
   ProviderRuntimeSessionOpts,
   RoleProviderBundle,
 } from "../providers/index.js";
+import { providerSupportsImageAttachments } from "../providers/index.js";
 import { runtimeSessionIdForRun } from "../session/runtime-session-ids.js";
 import type { ScenarioPreviewInfo } from "../scenarios/draft-workflow.js";
 import {
@@ -114,6 +115,8 @@ export class RunManager {
   readonly #customScenarioRegistry: RunCustomScenarioRegistry;
   readonly #providerSession: RunManagerProviderSession;
   readonly #scenarioSession: InteractiveScenarioSession;
+  #providerChangeLeaseActive = false;
+  #activeHintSupportsImageAttachments = false;
 
   constructor(opts: RunManagerOpts) {
     this.#opts = opts;
@@ -190,11 +193,33 @@ export class RunManager {
     baseUrl?: string;
     model?: string;
   }): void {
+    this.#assertProviderCanChange();
     this.#providerSession.setActiveProvider(config);
   }
 
   clearActiveProvider(): void {
+    this.#assertProviderCanChange();
     this.#providerSession.clearActiveProvider();
+  }
+
+  /**
+   * Reserve provider configuration while an auth workflow validates and
+   * persists credentials. Starting a run is rejected until the lease is
+   * released, so persistence cannot succeed only to have the in-memory switch
+   * fail because another client started a run in the meantime.
+   */
+  acquireProviderChangeLease(): () => void {
+    this.#assertProviderCanChange();
+    if (this.#providerChangeLeaseActive) {
+      throw new Error("Another provider configuration change is already in progress");
+    }
+    this.#providerChangeLeaseActive = true;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.#providerChangeLeaseActive = false;
+    };
   }
 
   getState(): RunManagerState {
@@ -224,12 +249,14 @@ export class RunManager {
     }
   }
 
-  pause(): void {
+  pause(expectedRunId?: string | null): void {
+    if (expectedRunId !== undefined) this.#assertActiveRunControl("pause", expectedRunId);
     this.#controller.pause();
     this.#updateState({ paused: true });
   }
 
-  resume(): void {
+  resume(expectedRunId?: string | null): void {
+    if (expectedRunId !== undefined) this.#assertActiveRunControl("resume", expectedRunId);
     this.#controller.resume();
     this.#updateState({ paused: false });
   }
@@ -249,17 +276,36 @@ export class RunManager {
     return decision;
   }
 
-  injectHint(text: string, imageAttachments: readonly ValidatedImageAttachment[] = []): void {
+  injectHint(
+    text: string,
+    imageAttachments: readonly ValidatedImageAttachment[] = [],
+    expectedRunId?: string | null,
+  ): void {
+    if (!this.#active || isTerminalRunPhase(this.#state.phase)) {
+      throw new Error("Cannot inject a hint when no run is active");
+    }
+    if (expectedRunId !== undefined && this.#state.runId !== expectedRunId) {
+      throw new Error("run_id does not match the current engine run");
+    }
     if (
       imageAttachments.length > 0 &&
-      !this.#providerSession.supportsImageAttachments("competitor")
+      !this.#activeHintSupportsImageAttachments
     ) {
       throw new Error("The active competitor provider/model does not support image attachments");
     }
     this.#controller.injectHint(text, imageAttachments);
   }
 
-  overrideGate(decision: "advance" | "retry" | "rollback"): void {
+  overrideGate(
+    decision: "advance" | "retry" | "rollback",
+    expectedRunId?: string | null,
+  ): void {
+    if (!this.#active || isTerminalRunPhase(this.#state.phase)) {
+      throw new Error("Cannot override a gate when no run is active");
+    }
+    if (expectedRunId !== undefined && this.#state.runId !== expectedRunId) {
+      throw new Error("run_id does not match the current engine run");
+    }
     this.#controller.setGateOverride(decision);
   }
 
@@ -267,7 +313,11 @@ export class RunManager {
     role: string,
     message: string,
     imageAttachments: readonly ValidatedImageAttachment[] = [],
+    expectedRunId?: string | null,
   ): Promise<string> {
+    if (expectedRunId !== undefined && this.#state.runId !== expectedRunId) {
+      throw new Error("run_id does not match the current engine run");
+    }
     return executeChatAgentInteraction({
       role,
       message,
@@ -299,6 +349,9 @@ export class RunManager {
     if (this.#active) {
       throw new Error("A run is already active");
     }
+    if (this.#providerChangeLeaseActive) {
+      throw new Error("Cannot start a run while a provider configuration change is in progress");
+    }
 
     const customScenario = this.#customScenarioRegistry.get(scenario);
     const family = customScenario ? readScenarioFamily(customScenario.path) : null;
@@ -310,15 +363,6 @@ export class RunManager {
     });
 
     const id = runId ?? `tui_${Date.now().toString(16).slice(-8)}`;
-    this.#controller.beginRun();
-    this.#completedGenerations = 0;
-    this.#bestScore = null;
-    this.#active = true;
-    this.#updateState(buildQueuedRunStatePatch({
-      runId: id,
-      scenario,
-      paused: this.#controller.isPaused(),
-    }));
 
     if (plan.kind === "builtin_game") {
       const settings = loadSettings();
@@ -329,6 +373,15 @@ export class RunManager {
       const scenarioInstance = resolveBuiltInGameScenario({
         scenarioName: plan.scenarioName,
       });
+      const competitorProvider =
+        providerBundle.roleProviders.competitor ?? providerBundle.defaultProvider;
+      const competitorModel =
+        providerBundle.roleModels.competitor ?? providerBundle.defaultConfig.model;
+      this.#activateRun(
+        id,
+        scenario,
+        providerSupportsImageAttachments(competitorProvider, competitorModel),
+      );
       this.#startManagedExecution(
         id,
         () => executeBuiltInGameStartRun({
@@ -353,6 +406,14 @@ export class RunManager {
         settings,
         this.#runtimeSessionOptsForRun(id, plan.scenarioName),
       );
+      this.#activateRun(
+        id,
+        scenario,
+        providerSupportsImageAttachments(
+          providerBundle.defaultProvider,
+          providerBundle.defaultConfig.model,
+        ),
+      );
       this.#startManagedExecution(
         id,
         async () => {
@@ -375,6 +436,7 @@ export class RunManager {
       return id;
     }
 
+    this.#activateRun(id, scenario, false);
     this.#startManagedExecution(
       id,
       () => executeGeneratedCustomStartRun({
@@ -461,7 +523,12 @@ export class RunManager {
   #startManagedExecution(runId: string, execute: () => Promise<void>): void {
     void createManagedRunExecution({
       runId,
-      execute,
+      // Let the WebSocket start command record and send run_accepted before
+      // execution can synchronously emit run/task-plan frames.
+      execute: async () => {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        await execute();
+      },
       events: this.#events,
       getPaused: () => this.#controller.isPaused(),
       getRunPhase: () => this.#state.phase,
@@ -472,11 +539,41 @@ export class RunManager {
       getStopRequest: () => this.#controller.getStopRequest(),
       setActive: (active) => {
         this.#active = active;
+        if (!active) {
+          this.#activeHintSupportsImageAttachments = false;
+          this.#controller.endRun(runId);
+        }
       },
       updateState: (patch) => {
         this.#updateState(patch);
       },
     });
+  }
+
+  #activateRun(
+    runId: string,
+    scenario: string,
+    hintSupportsImageAttachments: boolean,
+  ): void {
+    this.#controller.beginRun(runId);
+    this.#activeHintSupportsImageAttachments = hintSupportsImageAttachments;
+    this.#completedGenerations = 0;
+    this.#bestScore = null;
+    this.#active = true;
+    this.#updateState(buildQueuedRunStatePatch({
+      runId,
+      scenario,
+      paused: this.#controller.isPaused(),
+    }));
+  }
+
+  #assertActiveRunControl(action: "pause" | "resume", expectedRunId?: string | null): void {
+    if (!this.#active || isTerminalRunPhase(this.#state.phase)) {
+      throw new Error(`Cannot ${action} when no run is active`);
+    }
+    if (expectedRunId !== undefined && this.#state.runId !== expectedRunId) {
+      throw new Error("run_id does not match the current engine run");
+    }
   }
 
   #applyEventProgress(event: string, payload: Record<string, unknown>): void {
@@ -515,5 +612,11 @@ export class RunManager {
       .filter(Boolean)
       .map((part) => part[0]!.toUpperCase() + part.slice(1))
       .join(" ");
+  }
+
+  #assertProviderCanChange(): void {
+    if (this.#active) {
+      throw new Error("Cannot change providers while a run is active");
+    }
   }
 }

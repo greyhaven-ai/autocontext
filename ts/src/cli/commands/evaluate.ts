@@ -124,10 +124,12 @@ export async function cmdTui(dbPath: string): Promise<void> {
 
   const { InteractiveServer, RunManager } = await import("../../server/index.js");
   const { loadSettings } = await import("../../config/index.js");
-  const { resolveProviderConfig } = await import("../../providers/index.js");
   const settings = loadSettings();
-  const providerConfig = resolveProviderConfig();
-  const mgr = plan.connect ? null : new RunManager({
+  let mgr: InstanceType<typeof RunManager> | null = null;
+  if (!plan.connect) {
+    const { resolveProviderConfig } = await import("../../providers/index.js");
+    const providerConfig = resolveProviderConfig();
+    mgr = new RunManager({
       dbPath,
       migrationsDir: getMigrationsDir(),
       runsRoot: resolve(settings.runsRoot),
@@ -138,6 +140,7 @@ export async function cmdTui(dbPath: string): Promise<void> {
       baseUrl: providerConfig.baseUrl,
       model: providerConfig.model,
     });
+  }
   const server = mgr ? new InteractiveServer({ runManager: mgr, port: plan.port }) : null;
   if (server) await server.start();
   const endpoint = plan.connect ?? server!.url;
@@ -177,9 +180,14 @@ export async function cmdTui(dbPath: string): Promise<void> {
       readModels: new TuiReadModelClient(endpoint),
       logDirectory,
     });
+    const stopOnSignal = () => app.stop();
+    process.once("SIGINT", stopOnSignal);
+    process.once("SIGTERM", stopOnSignal);
     try {
       await app.done;
     } finally {
+      process.off("SIGINT", stopOnSignal);
+      process.off("SIGTERM", stopOnSignal);
       app.stop();
     }
   } finally {

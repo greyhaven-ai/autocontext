@@ -11,6 +11,7 @@
  */
 
 import { execFileSync } from "node:child_process";
+import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, extname, join, resolve } from "node:path";
 
@@ -34,7 +35,17 @@ function childExecArgvFor(realCli: string): string[] {
 
 function isDirectExecution(metaUrl: string, argvPath = process.argv[1]): boolean {
   if (!argvPath) return false;
-  return resolve(fileURLToPath(metaUrl)) === resolve(argvPath);
+
+  const canonicalPath = (path: string): string => {
+    const absolutePath = resolve(path);
+    try {
+      return realpathSync(absolutePath);
+    } catch {
+      return absolutePath;
+    }
+  };
+
+  return canonicalPath(fileURLToPath(metaUrl)) === canonicalPath(argvPath);
 }
 
 export function main(currentFile = fileURLToPath(import.meta.url), args = process.argv.slice(2)): void {

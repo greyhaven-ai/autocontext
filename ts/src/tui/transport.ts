@@ -43,7 +43,9 @@ export class WebSocketTuiTransport implements TuiTransport {
   #initialConnect: { resolve: () => void; reject: (error: Error) => void } | null = null;
 
   constructor(endpoint: string, options: WebSocketTuiTransportOptions = {}) {
-    this.endpoint = normalizeTuiEndpoint(endpoint);
+    const normalizedEndpoint = normalizeTuiEndpoint(endpoint);
+    assertSecureTuiEndpoint(normalizedEndpoint);
+    this.endpoint = normalizedEndpoint;
     this.#reconnectBaseMs = options.reconnectBaseMs ?? 250;
     this.#reconnectMaxMs = options.reconnectMaxMs ?? 5_000;
     this.#createSocket = options.createSocket ?? ((url) => new WebSocket(url));
@@ -209,6 +211,63 @@ export function tuiHttpBaseUrl(endpoint: string): string {
   url.search = "";
   url.hash = "";
   return url.toString().replace(/\/$/, "");
+}
+
+/** Return an endpoint suitable for terminal display without embedded credentials. */
+export function displayTuiEndpoint(endpoint: string): string {
+  const url = new URL(normalizeTuiEndpoint(endpoint));
+  url.username = "";
+  url.password = "";
+  for (const key of [...url.searchParams.keys()]) {
+    if (isSensitiveQueryParameter(key)) url.searchParams.set(key, "REDACTED");
+  }
+  if (url.hash.includes("=")) {
+    const fragment = new URLSearchParams(url.hash.slice(1));
+    for (const key of [...fragment.keys()]) {
+      if (isSensitiveQueryParameter(key)) fragment.set(key, "REDACTED");
+    }
+    url.hash = fragment.toString();
+  }
+  return url.toString();
+}
+
+/** Plaintext WebSockets are safe only when they never leave the local loopback. */
+export function assertSecureTuiEndpoint(endpoint: string): void {
+  const url = new URL(normalizeTuiEndpoint(endpoint));
+  if (url.protocol === "ws:" && !isLoopbackHostname(url.hostname)) {
+    throw new Error("Remote TUI endpoints must use wss or https");
+  }
+}
+
+function isLoopbackHostname(hostname: string): boolean {
+  const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (normalized === "localhost" || normalized === "::1") return true;
+  const octets = normalized.split(".");
+  return octets.length === 4 && octets[0] === "127" && octets.every((octet) => {
+    if (!/^\d{1,3}$/.test(octet)) return false;
+    const value = Number(octet);
+    return value >= 0 && value <= 255;
+  });
+}
+
+function isSensitiveQueryParameter(key: string): boolean {
+  const normalized = key.toLowerCase().replace(/[^a-z0-9]/g, "");
+  return [
+    "apikey",
+    "accesstoken",
+    "auth",
+    "authtoken",
+    "authorization",
+    "bearer",
+    "credential",
+    "jwt",
+    "key",
+    "password",
+    "secret",
+    "signature",
+    "sig",
+    "token",
+  ].some((sensitive) => normalized === sensitive || normalized.endsWith(sensitive));
 }
 
 function errorMessage(error: unknown): string {

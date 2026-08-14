@@ -172,7 +172,13 @@ export class TuiReadModelClient {
       if (options.signal?.aborted) {
         return { ok: false, kind: "unavailable", detail: "watch detached" };
       }
-      const result = await this.runStatus(runId);
+      const result = await this.#read<TuiRunStatusReadModel>(
+        `/api/cockpit/runs/${encodeURIComponent(runId)}/status`,
+        options.signal ? { signal: options.signal } : undefined,
+      );
+      if (options.signal?.aborted) {
+        return { ok: false, kind: "unavailable", detail: "watch detached" };
+      }
       if (!result.ok) return result;
       const fingerprint = JSON.stringify(result.value);
       if (fingerprint !== previousFingerprint) {
@@ -188,14 +194,23 @@ export class TuiReadModelClient {
     }
   }
 
-  async #read<T>(path: string): Promise<TuiReadResult<T>> {
-    return this.#request(path);
+  async #read<T>(path: string, init?: RequestInit): Promise<TuiReadResult<T>> {
+    return this.#request(path, init);
   }
 
   async #request<T>(path: string, init?: RequestInit): Promise<TuiReadResult<T>> {
-    let response: Response;
     try {
-      response = await this.#fetch(new URL(path, `${this.baseUrl}/`), init);
+      const response = await this.#fetch(new URL(path, `${this.baseUrl}/`), init);
+      const body = await readResponseBody(response);
+      if (response.ok) return { ok: true, value: body as T };
+      const detail = readDetail(body) ?? `server returned HTTP ${response.status}`;
+      if (response.status === 404) {
+        return { ok: false, kind: "not_found", status: response.status, detail };
+      }
+      if (response.status === 405 || response.status === 501) {
+        return { ok: false, kind: "unsupported", status: response.status, detail };
+      }
+      return { ok: false, kind: "server_error", status: response.status, detail };
     } catch (error) {
       return {
         ok: false,
@@ -203,16 +218,6 @@ export class TuiReadModelClient {
         detail: `server unavailable: ${errorMessage(error)}`,
       };
     }
-    const body = await readResponseBody(response);
-    if (response.ok) return { ok: true, value: body as T };
-    const detail = readDetail(body) ?? `server returned HTTP ${response.status}`;
-    if (response.status === 404) {
-      return { ok: false, kind: "not_found", status: response.status, detail };
-    }
-    if (response.status === 405 || response.status === 501) {
-      return { ok: false, kind: "unsupported", status: response.status, detail };
-    }
-    return { ok: false, kind: "server_error", status: response.status, detail };
   }
 }
 
@@ -253,12 +258,19 @@ function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
       reject(signal.reason);
       return;
     }
-    const timer = setTimeout(resolve, ms);
-    timer.unref?.();
-    signal?.addEventListener("abort", () => {
+    let timer: ReturnType<typeof setTimeout>;
+    const finish = () => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    };
+    const onAbort = () => {
       clearTimeout(timer);
-      reject(signal.reason);
-    }, { once: true });
+      signal?.removeEventListener("abort", onAbort);
+      reject(signal?.reason);
+    };
+    timer = setTimeout(finish, ms);
+    timer.unref?.();
+    signal?.addEventListener("abort", onAbort, { once: true });
   });
 }
 

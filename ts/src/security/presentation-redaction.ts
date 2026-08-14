@@ -1,12 +1,36 @@
 export const REDACTED_PRESENTATION_VALUE = "[Redacted]";
 
-const AUTHORIZATION_PATTERN =
-  /\b(?:authorization|proxy-authorization)\s*[:=]\s*(?:bearer\s+)?[^\s,;]+/gi;
-const CREDENTIAL_ASSIGNMENT_PATTERN =
-  /\b(?:api[_-]?key|access[_-]?key|client[_-]?secret|refresh[_-]?token|session[_-]?(?:key|token)|token|secret|password|passphrase|cookie|credential)\b\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi;
+const CREDENTIAL_NAME_PATTERN =
+  "(?:[a-z0-9]+[_-])*(?:api[ _-]?key|access[ _-]?key|client[ _-]?secret|refresh[ _-]?token|session[ _-]?(?:key|token)|authorization|auth|bearer|token|secret|password|passphrase|cookie|credential)";
+const QUOTED_SECRET_PATTERN = String.raw`(?:"(?:\\.|[^"\\\r\n])*"|'(?:\\.|[^'\\\r\n])*')`;
+const AUTHORIZATION_PATTERN = new RegExp(
+  String.raw`(?:"(?:authorization|proxy-authorization)"|'(?:authorization|proxy-authorization)'|\b(?:authorization|proxy-authorization)\b)\s*[:=]\s*(?:${QUOTED_SECRET_PATTERN}|(?:bearer|basic)\s+[^\s,;]+|digest\s+[^\r\n]+|[^\s,;]+)`,
+  "gi",
+);
+const CREDENTIAL_ASSIGNMENT_PATTERN = new RegExp(
+  String.raw`(?<![?&#a-z0-9])(?:"(?:${CREDENTIAL_NAME_PATTERN})"|'(?:${CREDENTIAL_NAME_PATTERN})'|(?:${CREDENTIAL_NAME_PATTERN})\b)\s*[:=]\s*(?:${QUOTED_SECRET_PATTERN}|\[Redacted\]|[^\s,;}\]]+)`,
+  "gi",
+);
 const QUERY_CREDENTIAL_PATTERN =
-  /([?&](?:api[_-]?key|access[_-]?key|client[_-]?secret|refresh[_-]?token|session[_-]?(?:key|token)|token|secret|password|passphrase|signature)=)[^&#\s]+/gi;
-const URL_USERINFO_PATTERN = /(https?:\/\/)[^/@\s]+@/gi;
+  /([?&#](?:(?:[a-z0-9]+[_-])*(?:api[_-]?key|access[_-]?key|auth|authorization|bearer|client[_-]?secret|refresh[_-]?token|session[_-]?(?:key|token)|token|secret|password|passphrase|signature))=)[^&#\s]+/gi;
+const QUERY_ASSIGNMENT_PATTERN = /([?&#])([^=&#\s]{1,256})=([^&#\s]*)/g;
+const SENSITIVE_QUERY_KEY_SUFFIXES = [
+  "apikey",
+  "accesskey",
+  "auth",
+  "authorization",
+  "bearer",
+  "clientsecret",
+  "refreshtoken",
+  "sessionkey",
+  "sessiontoken",
+  "token",
+  "secret",
+  "password",
+  "passphrase",
+  "signature",
+] as const;
+const URL_USERINFO_PATTERN = /((?:https?|wss?):\/\/)[^/@\s]+@/gi;
 const BARE_BEARER_PATTERN =
   /\bbearer\s+[A-Za-z0-9._~+/-]{12,}={0,2}(?=\s|$|[,;])/gi;
 const JWT_PATTERN = /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g;
@@ -29,7 +53,7 @@ const RECEIVER_SENSITIVE_ID_PATTERN =
   /(?:(?:sk[-_]|ghp_|github_pat_|xox[baprs]-|dp_)[A-Za-z0-9_-]{8,}|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)/;
 
 export function redactPresentationText(value: string): string {
-  return value
+  const redacted = value
     .replace(AUTHORIZATION_PATTERN, REDACTED_PRESENTATION_VALUE)
     .replace(CREDENTIAL_ASSIGNMENT_PATTERN, REDACTED_PRESENTATION_VALUE)
     .replace(QUERY_CREDENTIAL_PATTERN, `$1${REDACTED_PRESENTATION_VALUE}`)
@@ -49,6 +73,25 @@ export function redactPresentationText(value: string): string {
     .replace(PYPI_TOKEN_PATTERN, REDACTED_PRESENTATION_VALUE)
     .replace(SENDGRID_TOKEN_PATTERN, REDACTED_PRESENTATION_VALUE)
     .replace(SLACK_TOKEN_PATTERN, REDACTED_PRESENTATION_VALUE);
+  return redactEncodedQueryCredentials(redacted);
+}
+
+function redactEncodedQueryCredentials(value: string): string {
+  return value.replace(
+    QUERY_ASSIGNMENT_PATTERN,
+    (assignment, delimiter: string, encodedKey: string) => {
+      let decodedKey = encodedKey;
+      try {
+        decodedKey = decodeURIComponent(encodedKey.replace(/\+/g, "%20"));
+      } catch {
+        // Fail closed against recognizable undecoded key text below.
+      }
+      const normalized = decodedKey.toLowerCase().replace(/[^a-z0-9]/g, "");
+      return SENSITIVE_QUERY_KEY_SUFFIXES.some((suffix) => normalized.endsWith(suffix))
+        ? `${delimiter}${encodedKey}=${REDACTED_PRESENTATION_VALUE}`
+        : assignment;
+    },
+  );
 }
 
 export function isCredentialShapedPresentationId(value: string): boolean {

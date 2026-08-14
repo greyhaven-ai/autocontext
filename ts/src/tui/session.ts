@@ -16,6 +16,7 @@ import type { TuiTransport } from "./transport.js";
 interface PendingResponse {
   readonly commandId?: string;
   readonly accept: (message: ServerMessage) => boolean;
+  readonly failureMessage?: (message: ServerMessage) => string | undefined;
   readonly resolve: (message: ServerMessage) => void;
   readonly reject: (error: Error) => void;
   readonly timeout: ReturnType<typeof setTimeout>;
@@ -31,6 +32,12 @@ export class TuiSession {
   #connectionEpoch = 0;
   #resumedEpoch = -1;
   #started = false;
+  #protocolNegotiated = false;
+  #handshake: {
+    resolve: () => void;
+    reject: (error: Error) => void;
+    timeout: ReturnType<typeof setTimeout>;
+  } | null = null;
 
   constructor(transport: TuiTransport) {
     this.transport = transport;
@@ -40,6 +47,7 @@ export class TuiSession {
         if (event.status === "connected") {
           this.#connectionEpoch += 1;
           this.#resumedEpoch = -1;
+          this.#protocolNegotiated = false;
         }
         this.#reduce({
           kind: "connection",
@@ -63,7 +71,14 @@ export class TuiSession {
   async start(): Promise<void> {
     if (this.#started) return;
     this.#started = true;
-    await this.transport.connect();
+    const handshake = this.#waitForProtocolHandshake();
+    try {
+      await Promise.all([this.transport.connect(), handshake]);
+    } catch (error) {
+      this.#settleHandshake(error instanceof Error ? error : new Error(String(error)));
+      this.#started = false;
+      throw error;
+    }
   }
 
   close(): void {
@@ -73,6 +88,7 @@ export class TuiSession {
       pending.reject(new Error("TUI session detached"));
     }
     this.#pending.clear();
+    this.#settleHandshake(new Error("TUI session detached"));
     for (const cleanup of this.#cleanup.splice(0)) cleanup();
     this.#started = false;
   }
@@ -141,7 +157,7 @@ export class TuiSession {
     if (!this.#model.capabilities.includes("safe_run_stop_v1")) {
       throw new Error("The connected server does not advertise safe run stopping");
     }
-    return this.#serialize("stop", async (commandId) => {
+    return this.#executePriority("stop", async (commandId) => {
       const clientRunId = this.#requireActiveClientRunId();
       const response = await this.#request({
         type: "stop",
@@ -179,6 +195,7 @@ export class TuiSession {
       const response = await this.#request(
         { type: "create_scenario", description },
         (message) => message.type === "scenario_preview",
+        { failureMessage: scenarioFailureMessage },
       );
       if (response.type !== "scenario_preview") throw new Error("Scenario preview unavailable");
       return { name: response.name };
@@ -190,6 +207,7 @@ export class TuiSession {
       const response = await this.#request(
         { type: "confirm_scenario" },
         (message) => message.type === "scenario_ready",
+        { failureMessage: scenarioFailureMessage },
       );
       if (response.type !== "scenario_ready") throw new Error("Scenario was not confirmed");
       return { name: response.name };
@@ -204,7 +222,9 @@ export class TuiSession {
         ...(apiKey ? { apiKey } : {}),
         ...(model ? { model } : {}),
         ...(baseUrl ? { baseUrl } : {}),
-      }, (message) => message.type === "auth_status");
+      }, (message) => message.type === "auth_status", {
+        failureMessage: uncorrelatedCommandFailureMessage,
+      });
       if (response.type !== "auth_status" || !response.authenticated) {
         throw new Error(`Unable to authenticate ${provider}`);
       }
@@ -216,6 +236,7 @@ export class TuiSession {
       await this.#request(
         { type: "logout", ...(provider ? { provider } : {}) },
         (message) => message.type === "auth_status",
+        { failureMessage: uncorrelatedCommandFailureMessage },
       );
     });
   }
@@ -225,6 +246,7 @@ export class TuiSession {
       await this.#request(
         { type: "switch_provider", provider },
         (message) => message.type === "auth_status",
+        { failureMessage: uncorrelatedCommandFailureMessage },
       );
     });
   }
@@ -234,6 +256,7 @@ export class TuiSession {
       const response = await this.#request(
         { type: "whoami" },
         (message) => message.type === "auth_status",
+        { failureMessage: uncorrelatedCommandFailureMessage },
       );
       if (response.type !== "auth_status") throw new Error("Authentication status unavailable");
       return response;
@@ -257,18 +280,22 @@ export class TuiSession {
   #request(
     message: ClientMessage,
     accept: (message: ServerMessage) => boolean,
-    timeoutMs = 120_000,
+    options: {
+      readonly failureMessage?: (message: ServerMessage) => string | undefined;
+      readonly timeoutMs?: number;
+    } = {},
   ): Promise<ServerMessage> {
     return new Promise<ServerMessage>((resolve, reject) => {
       const pending: PendingResponse = {
         ...(readClientCommandId(message) ? { commandId: readClientCommandId(message) } : {}),
         accept,
+        ...(options.failureMessage ? { failureMessage: options.failureMessage } : {}),
         resolve,
         reject,
         timeout: setTimeout(() => {
           this.#pending.delete(pending);
           reject(new Error(`Timed out waiting for '${message.type}' response`));
-        }, timeoutMs),
+        }, options.timeoutMs ?? 120_000),
       };
       pending.timeout.unref?.();
       this.#pending.add(pending);
@@ -293,6 +320,9 @@ export class TuiSession {
     this.#commandTail = this.#commandTail.then(async () => {
       this.#reduce({ kind: "busy", commandId });
       try {
+        if (!this.#protocolNegotiated || !this.#model.protocolCompatible) {
+          throw new Error("The connected server does not support the required transcript protocol");
+        }
         resolveResult(await execute(commandId));
       } catch (error) {
         rejectResult(error);
@@ -303,8 +333,33 @@ export class TuiSession {
     return result;
   }
 
+  #executePriority<T>(action: string, execute: (commandId: string) => Promise<T>): Promise<T> {
+    if (!this.#protocolNegotiated || !this.#model.protocolCompatible) {
+      return Promise.reject(
+        new Error("The connected server does not support the required transcript protocol"),
+      );
+    }
+    return execute(`${action}-${randomUUID()}`);
+  }
+
   #handleMessage(message: ServerMessage): void {
     this.#reduce({ kind: "message", message });
+    if (message.type === "hello") {
+      this.#protocolNegotiated = true;
+      this.#settleHandshake(
+        this.#model.protocolCompatible
+          ? undefined
+          : new Error("The connected server does not support the required transcript protocol"),
+      );
+    }
+    if (message.type === "hello" && !this.#model.protocolCompatible) {
+      for (const pending of this.#pending) {
+        clearTimeout(pending.timeout);
+        pending.reject(new Error("The connected server does not support the required transcript protocol"));
+      }
+      this.#pending.clear();
+      return;
+    }
     for (const pending of [...this.#pending]) {
       if (
         message.type === "error" &&
@@ -316,12 +371,45 @@ export class TuiSession {
         pending.reject(new Error(message.message));
         continue;
       }
+      const failureMessage = pending.failureMessage?.(message);
+      if (failureMessage !== undefined) {
+        clearTimeout(pending.timeout);
+        this.#pending.delete(pending);
+        pending.reject(new Error(failureMessage));
+        continue;
+      }
       if (!pending.accept(message)) continue;
       clearTimeout(pending.timeout);
       this.#pending.delete(pending);
       pending.resolve(message);
     }
     if (message.type === "state") this.#resumeTranscriptIfNeeded();
+  }
+
+  #waitForProtocolHandshake(): Promise<void> {
+    if (this.#protocolNegotiated) {
+      return this.#model.protocolCompatible
+        ? Promise.resolve()
+        : Promise.reject(new Error("The connected server does not support the required transcript protocol"));
+    }
+    return new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        if (this.#handshake?.timeout !== timeout) return;
+        this.#handshake = null;
+        reject(new Error("Timed out waiting for transcript protocol negotiation"));
+      }, 10_000);
+      timeout.unref?.();
+      this.#handshake = { resolve, reject, timeout };
+    });
+  }
+
+  #settleHandshake(error?: Error): void {
+    const handshake = this.#handshake;
+    if (!handshake) return;
+    this.#handshake = null;
+    clearTimeout(handshake.timeout);
+    if (error) handshake.reject(error);
+    else handshake.resolve();
   }
 
   #resumeTranscriptIfNeeded(): void {
@@ -376,4 +464,14 @@ function ackFor(commandId: string, action: string): (message: ServerMessage) => 
   return (message) =>
     (message.type === "ack" && message.command_id === commandId && message.action === action) ||
     (message.type === "error" && message.command_id === commandId);
+}
+
+function scenarioFailureMessage(message: ServerMessage): string | undefined {
+  return message.type === "scenario_error" ? message.message : undefined;
+}
+
+function uncorrelatedCommandFailureMessage(message: ServerMessage): string | undefined {
+  return message.type === "error" && !message.command_id && !message.client_run_id
+    ? message.message
+    : undefined;
 }

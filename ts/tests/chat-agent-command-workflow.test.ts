@@ -21,6 +21,7 @@ describe("chat agent command workflow", () => {
 
   it("delegates chat_agent commands to run manager chatAgent", async () => {
     const runManager = {
+      getState: vi.fn(() => ({ runId: "run-before-decode" })),
       chatAgent: vi.fn(async () => "## Findings\n- Issue found"),
     };
 
@@ -41,11 +42,17 @@ describe("chat agent command workflow", () => {
       },
     ]);
 
-    expect(runManager.chatAgent).toHaveBeenCalledWith("analyst", "What changed?", []);
+    expect(runManager.chatAgent).toHaveBeenCalledWith(
+      "analyst",
+      "What changed?",
+      [],
+      "run-before-decode",
+    );
   });
 
   it("echoes run and command correlation on chat responses", async () => {
     const runManager = {
+      getState: vi.fn(() => ({ runId: null })),
       chatAgent: vi.fn(async () => "Correlated response"),
     };
 

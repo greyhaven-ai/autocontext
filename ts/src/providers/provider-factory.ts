@@ -300,7 +300,24 @@ function isOfficialOpenAIBaseUrl(baseUrl: string): boolean {
 }
 
 function supportsOpenAIImages(model: string): boolean {
-  return /(?:^|\/)(?:chatgpt-4o|gpt-(?:4o|4\.1|4-vision|5(?:[.-]\d+)*)(?:$|[-:.])|o[134](?:-|$))/i.test(model);
+  const modelId = model.trim().toLowerCase().split("/").at(-1) ?? "";
+
+  // These reasoning-model variants are text-only even though their family has
+  // multimodal members. Keep the denylist ahead of the family rules.
+  if (/^(?:o1-(?:mini|preview)|o3-mini)(?:$|-)/.test(modelId)) return false;
+
+  return [
+    /^chatgpt-4o-latest$/,
+    /^gpt-4o(?:$|-)/,
+    /^gpt-4\.1(?:$|-)/,
+    /^gpt-4\.5-preview(?:$|-)/,
+    /^gpt-4-turbo(?:$|-2024-04-09$)/,
+    /^gpt-4-vision-preview(?:$|-)/,
+    /^gpt-5(?:$|[.-])/,
+    /^o1(?:$|-)/,
+    /^o3(?:$|-)/,
+    /^o4-mini(?:$|-)/,
+  ].some((pattern) => pattern.test(modelId));
 }
 
 function openAIUserContent(opts: CompletionOptions): string | Array<Record<string, unknown>> {

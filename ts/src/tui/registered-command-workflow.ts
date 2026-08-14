@@ -1,5 +1,17 @@
-import { formatTuiChatResponseLines } from "./chat-command.js";
+import { getKnownProvider, resolveConfigDir } from "../config/index.js";
 import { renderRunStatusPresentation } from "../domain/run-status-presentation.js";
+import { assertProviderBaseUrlIsSafe } from "../security/provider-endpoint.js";
+import {
+  executeTuiActivityCommandPlan,
+  planTuiActivityCommand,
+  type TuiActivityCommandEffects,
+} from "./activity-command.js";
+import {
+  loadTuiActivitySettings,
+  resetTuiActivitySettings,
+  saveTuiActivitySettings,
+} from "./activity-settings-store.js";
+import type { TuiActivitySettings } from "./activity-summary.js";
 import {
   assertTuiCommandAvailable,
   formatTuiCommandHelp,
@@ -12,13 +24,15 @@ import {
   type TuiRunStatusReadModel,
 } from "./read-model-client.js";
 import type { TuiSession } from "./session.js";
-import { hyperlink } from "./pi-tui-adapter.js";
 
 export interface TuiSecretRequest {
   readonly provider: string;
   readonly model?: string;
   readonly baseUrl?: string;
+  readonly requiresKey: boolean;
 }
+
+export { assertProviderBaseUrlIsSafe } from "../security/provider-endpoint.js";
 
 export interface TuiRegisteredCommandResult {
   readonly lines: readonly string[];
@@ -30,12 +44,17 @@ export interface TuiCommandRuntimeOptions {
   readonly session: TuiSession;
   readonly readModels: TuiReadModelClient;
   readonly onAsyncLines?: (lines: readonly string[]) => void;
+  readonly activityEffects?: TuiActivityCommandEffects & { load(): TuiActivitySettings };
+  readonly onActivitySettings?: (settings: TuiActivitySettings) => void;
 }
 
 export class TuiCommandRuntime {
   readonly session: TuiSession;
   readonly readModels: TuiReadModelClient;
   readonly #onAsyncLines: (lines: readonly string[]) => void;
+  readonly #activityEffects: TuiActivityCommandEffects & { load(): TuiActivitySettings };
+  readonly #onActivitySettings: (settings: TuiActivitySettings) => void;
+  #activitySettings: TuiActivitySettings;
   #pendingStopRunId: string | null = null;
   #watchController: AbortController | null = null;
 
@@ -43,6 +62,15 @@ export class TuiCommandRuntime {
     this.session = options.session;
     this.readModels = options.readModels;
     this.#onAsyncLines = options.onAsyncLines ?? (() => undefined);
+    const configDir = resolveConfigDir();
+    this.#activityEffects = options.activityEffects ?? {
+      load: () => loadTuiActivitySettings(configDir),
+      reset: () => resetTuiActivitySettings(configDir),
+      save: (settings) => saveTuiActivitySettings(configDir, settings),
+    };
+    this.#onActivitySettings = options.onActivitySettings ?? (() => undefined);
+    this.#activitySettings = this.#activityEffects.load();
+    this.#onActivitySettings(this.#activitySettings);
   }
 
   detach(): void {
@@ -51,8 +79,15 @@ export class TuiCommandRuntime {
   }
 
   async submitSecret(request: TuiSecretRequest, secret: string): Promise<readonly string[]> {
-    if (!secret) throw new Error("credential cannot be empty");
-    await this.session.login(request.provider, secret, request.model, request.baseUrl);
+    if (request.requiresKey && !secret) throw new Error("credential cannot be empty");
+    assertSecretTransportIsSafe(this.session.viewModel.endpoint);
+    assertProviderBaseUrlIsSafe(request.baseUrl);
+    await this.session.login(
+      request.provider,
+      request.requiresKey ? secret : undefined,
+      request.model,
+      request.baseUrl,
+    );
     return [`authenticated ${request.provider}`];
   }
 
@@ -148,7 +183,7 @@ export class TuiCommandRuntime {
         };
       }
       case "activity":
-        return { lines: ["Activity filters apply to detail rows only; lifecycle and operator events always remain visible."] };
+        return this.#activity(args);
       default:
         return assertNever(executor);
     }
@@ -227,7 +262,9 @@ export class TuiCommandRuntime {
 
   #artifactLink(name: string, path: string): string {
     const url = new URL(path, `${this.readModels.baseUrl}/`).toString();
-    return `${name}: ${hyperlink(url, url)}`;
+    // The renderer sanitizes all command output, then introduces trusted OSC 8
+    // links for bare http(s) URLs. Never put terminal controls in data here.
+    return `${name}: ${url}`;
   }
 
   async #sessionListLines(): Promise<readonly string[]> {
@@ -276,6 +313,11 @@ export class TuiCommandRuntime {
       } else if (result.ok) {
         this.#onAsyncLines([`watch ended · ${runId} · ${result.value.status}`]);
       }
+    }).catch((error: unknown) => {
+      if (this.#watchController === controller) this.#watchController = null;
+      if (!controller.signal.aborted) {
+        this.#onAsyncLines([`watch unavailable: ${errorMessage(error)}`]);
+      }
     });
     return { lines: [`watching ${runId}; /quit detaches without stopping it`] };
   }
@@ -284,8 +326,11 @@ export class TuiCommandRuntime {
     const match = args.match(/^(\S+)\s+([\s\S]+)$/);
     if (!match) return { lines: ["usage: /chat <role> <message>"] };
     const [, role, message] = match;
-    const response = await this.session.chat(role!, message!);
-    return { lines: formatTuiChatResponseLines(role!, response) };
+    // The correlated chat_response is already appended to the semantic
+    // transcript by the session reducer. Returning it again here would render
+    // every assistant message twice.
+    await this.session.chat(role!, message!);
+    return { lines: [] };
   }
 
   async #playbookDecision(
@@ -312,19 +357,37 @@ export class TuiCommandRuntime {
     return { lines: [`created scenario ${scenario.name}`, `accepted run ${runId}`] };
   }
 
-  #login(args: string): TuiRegisteredCommandResult {
+  async #login(args: string): Promise<TuiRegisteredCommandResult> {
     const [provider, model, baseUrl, ...extra] = args.split(/\s+/).filter(Boolean);
     if (!provider || extra.length) {
       return { lines: ["usage: /login <provider> [model] [baseUrl]"] };
+    }
+    assertProviderBaseUrlIsSafe(baseUrl);
+    const requiresKey = getKnownProvider(provider)?.requiresKey ?? true;
+    if (!requiresKey) {
+      await this.session.login(provider, undefined, model, baseUrl);
+      return { lines: [`configured keyless provider ${provider}`] };
     }
     return {
       lines: [`enter API key for ${provider}; input is masked and excluded from history`],
       requestSecret: {
         provider,
+        requiresKey,
         ...(model ? { model } : {}),
         ...(baseUrl ? { baseUrl } : {}),
       },
     };
+  }
+
+  #activity(args: string): TuiRegisteredCommandResult {
+    const plan = planTuiActivityCommand(`/activity${args ? ` ${args}` : ""}`, this.#activitySettings);
+    const result = executeTuiActivityCommandPlan(plan, this.#activityEffects);
+    if (!result) return { lines: [] };
+    if (result.activitySettings) {
+      this.#activitySettings = result.activitySettings;
+      this.#onActivitySettings(this.#activitySettings);
+    }
+    return { lines: result.logLines };
   }
 
   async #statusLines(runId: string): Promise<readonly string[]> {
@@ -454,6 +517,33 @@ function formatRouting(session: TuiSession): string[] {
 
 function isGateDecision(value: string): value is "advance" | "retry" | "rollback" {
   return value === "advance" || value === "retry" || value === "rollback";
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Credentials may only cross TLS, except when the TUI is attached to a
+ * loopback development server. This check happens immediately before the
+ * secret is handed to the WebSocket session.
+ */
+export function assertSecretTransportIsSafe(endpoint: string): void {
+  let url: URL;
+  try {
+    url = new URL(endpoint);
+  } catch {
+    throw new Error("refusing to send a credential to an invalid server endpoint");
+  }
+  if (url.protocol === "wss:" || url.protocol === "https:") return;
+  const hostname = url.hostname.toLowerCase();
+  const loopback = hostname === "localhost" || hostname.endsWith(".localhost") ||
+    hostname === "127.0.0.1" || hostname.startsWith("127.") ||
+    hostname === "[::1]" || hostname === "::1";
+  if ((url.protocol === "ws:" || url.protocol === "http:") && loopback) return;
+  throw new Error(
+    `refusing to send a credential over insecure ${url.protocol || "unknown"} transport; use wss://`,
+  );
 }
 
 function assertNever(value: never): never {

@@ -35,6 +35,13 @@ describe("tui command workflow", () => {
     expect(() => planTuiCommand({ port: "65536" }, true)).toThrow("1 through 65535");
   });
 
+  it("rejects remote attach when output is headless or not a TTY", () => {
+    expect(() => planTuiCommand({ connect: "https://example.test", headless: true }, true))
+      .toThrow("requires an interactive TTY");
+    expect(() => planTuiCommand({ connect: "https://example.test" }, false))
+      .toThrow("requires an interactive TTY");
+  });
+
   it("renders headless startup output", () => {
     expect(
       buildHeadlessTuiOutput({

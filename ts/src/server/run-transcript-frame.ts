@@ -163,6 +163,13 @@ export function sanitizeRunTranscriptMessage(message: ServerMessage): ServerMess
 function sanitizeRunTranscriptMessageInternal(message: ServerMessage): ServerMessage | null {
   switch (message.type) {
     case "event": {
+      if (message.event === "runtime_session_event") {
+        return {
+          type: "event",
+          event: "runtime_session_event",
+          payload: sanitizeRuntimeSessionEventPayload(message.payload),
+        };
+      }
       const allowedFields = Object.prototype.hasOwnProperty.call(
         EVENT_PAYLOAD_FIELDS,
         message.event,
@@ -218,6 +225,124 @@ function sanitizeRunTranscriptMessageInternal(message: ServerMessage): ServerMes
       };
     default:
       return null;
+  }
+}
+
+function sanitizeRuntimeSessionEventPayload(
+  payload: Record<string, unknown>,
+): Record<string, PresentationValue> {
+  const safe = sanitizePayload(payload, [
+    "session_id",
+    "parent_session_id",
+    "task_id",
+    "worker_id",
+    "event_count",
+    "created_at",
+    "updated_at",
+  ]);
+  const event = isRecord(payload.event) ? payload.event : {};
+  const eventTypeValue = event.event_type ?? event.eventType;
+  const eventType = typeof eventTypeValue === "string" ? eventTypeValue : "";
+  const safeEvent = sanitizePayload(event, [
+    "event_id",
+    "eventId",
+    "event_type",
+    "eventType",
+    "sequence",
+    "timestamp",
+    "parent_session_id",
+    "parentSessionId",
+    "task_id",
+    "taskId",
+    "worker_id",
+    "workerId",
+  ]);
+  const rawEventPayload = isRecord(event.payload) ? event.payload : {};
+  const safeEventPayload = sanitizePayload(rawEventPayload, runtimeSessionPayloadFields(eventType));
+  if (
+    Boolean(rawEventPayload.error) ||
+    rawEventPayload.isError === true ||
+    rawEventPayload.is_error === true
+  ) {
+    safeEventPayload.has_error = true;
+  }
+  safeEvent.payload = safeEventPayload;
+  safe.event = safeEvent;
+  return safe;
+}
+
+function runtimeSessionPayloadFields(eventType: string): readonly string[] {
+  const common = [
+    "requestId",
+    "request_id",
+    "role",
+    "status",
+    "phase",
+    "isError",
+    "is_error",
+  ];
+  switch (eventType) {
+    case "prompt_submitted":
+      return common;
+    case "assistant_message":
+      return common;
+    case "shell_command":
+      return [
+        ...common,
+        "commandName",
+        "command_name",
+        "exitCode",
+        "exit_code",
+        "effectClass",
+        "effectOutcome",
+      ];
+    case "tool_call":
+      return [
+        ...common,
+        "tool",
+        "toolName",
+        "tool_name",
+        "name",
+        "effectClass",
+        "effectOutcome",
+      ];
+    case "child_task_started":
+    case "child_task_completed":
+      return [
+        ...common,
+        "taskId",
+        "task_id",
+        "childSessionId",
+        "child_session_id",
+        "workerId",
+        "worker_id",
+      ];
+    case "compaction":
+      return [...common, "summaryArtifactId", "summary_artifact_id"];
+    case "component_lifecycle":
+      return [
+        ...common,
+        "componentId",
+        "component_id",
+        "previousState",
+        "previous_state",
+        "state",
+        "operation",
+        "outcome",
+      ];
+    case "component_graph":
+      return [...common, "componentId", "component_id", "operation", "outcome"];
+    case "runtime_activation":
+      return [...common, "runtime", "mode", "operation", "outcome"];
+    default:
+      return [
+        ...common,
+        "tool",
+        "taskId",
+        "task_id",
+        "childSessionId",
+        "child_session_id",
+      ];
   }
 }
 

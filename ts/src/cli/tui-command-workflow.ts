@@ -24,9 +24,13 @@ export function planTuiCommand(
   if (!Number.isInteger(port) || port <= 0 || port > 65_535) {
     throw new Error("--port must be an integer from 1 through 65535");
   }
+  const headless = !!values.headless || !stdoutIsTTY;
+  if (connect && headless) {
+    throw new Error("--connect requires an interactive TTY and cannot be combined with --headless");
+  }
   return {
     port,
-    headless: !!values.headless || !stdoutIsTTY,
+    headless,
     ...(connect ? { connect } : {}),
   };
 }

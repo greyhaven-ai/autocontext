@@ -21,6 +21,7 @@ export {
   MAX_IMAGE_SOURCE_BYTES,
   encodeValidatedImage,
   validateImageAttachments,
+  validateImageAttachmentsForInference,
 } from "./image-attachments.js";
 export type {
   ImageAttachment,

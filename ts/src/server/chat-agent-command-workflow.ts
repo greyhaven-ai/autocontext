@@ -1,14 +1,16 @@
 import type { ClientMessage, ServerMessage } from "./protocol.js";
 import {
-  validateImageAttachments,
+  validateImageAttachmentsForInference,
   type ValidatedImageAttachment,
 } from "../types/index.js";
 
 export interface ChatAgentCommandRunManager {
+  getState(): { runId: string | null };
   chatAgent(
     role: string,
     message: string,
     imageAttachments?: readonly ValidatedImageAttachment[],
+    expectedRunId?: string | null,
   ): Promise<string>;
 }
 
@@ -31,11 +33,15 @@ export async function executeChatAgentCommand(opts: {
   command: Extract<ClientMessage, { type: "chat_agent" }>;
   runManager: ChatAgentCommandRunManager;
 }): Promise<ServerMessage[]> {
-  const imageAttachments = validateImageAttachments(opts.command.image_attachments ?? []);
+  const expectedRunId = opts.runManager.getState().runId;
+  const imageAttachments = await validateImageAttachmentsForInference(
+    opts.command.image_attachments ?? [],
+  );
   const text = await opts.runManager.chatAgent(
     opts.command.role,
     opts.command.message,
     imageAttachments,
+    expectedRunId,
   );
   return [
     buildChatResponseMessage({

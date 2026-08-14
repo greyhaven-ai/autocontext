@@ -18,6 +18,9 @@ export {
 } from "@earendil-works/pi-tui";
 
 export type {
+  AutocompleteItem,
+  AutocompleteProvider,
+  AutocompleteSuggestions,
   Component,
   EditorTheme,
   Focusable,
