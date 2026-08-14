@@ -15,6 +15,30 @@ export type {
   RuntimeOwnedComponentDisposer,
 } from "./component-lifecycle.js";
 export {
+  RuntimeComponentGraph,
+  RuntimeComponentGraphError,
+  defineRuntimeCapability,
+  provideRuntimeCapability,
+} from "./component-graph.js";
+export type {
+  RuntimeCapabilityKey,
+  RuntimeCapabilityProvision,
+  RuntimeComponentActivationContext,
+  RuntimeComponentActivatorWithContext,
+  RuntimeComponentGraphComponentSnapshot,
+  RuntimeComponentGraphComponentState,
+  RuntimeComponentGraphErrorCode,
+  RuntimeComponentGraphEvent,
+  RuntimeComponentGraphEventSink,
+  RuntimeComponentGraphOperation,
+  RuntimeComponentGraphOptions,
+  RuntimeComponentGraphOutcome,
+  RuntimeComponentGraphProviderSnapshot,
+  RuntimeComponentGraphReason,
+  RuntimeComponentGraphSnapshot,
+  RuntimeComponentManifest,
+} from "./component-graph.js";
+export {
   RuntimeEffectClass,
   RuntimeEffectExecutionMode,
   RuntimeEffectPolicy,

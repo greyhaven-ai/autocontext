@@ -45,5 +45,7 @@ extension and returns an unload handle. The compatibility `loadExtensions`
 function uses the same managed activation path but retains its existing
 `Promise<string[]>` return value.
 
-Python parity, a general reactive dependency graph, and transactional candidate
-activation are intentionally deferred to AC-960 and AC-961 or later slices.
+The typed reactive dependency graph is implemented by AC-960 on top of this
+scope. Transactional candidate activation remains a control-plane concern for
+AC-961. Python parity is intentionally deferred until these experimental
+TypeScript contracts stabilize.

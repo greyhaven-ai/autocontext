@@ -36,6 +36,7 @@ export * from "./session/types.js";
 export * from "./session/store.js";
 export * from "./session/runtime-events.js";
 export * from "./session/runtime-component-lifecycle-events.js";
+export * from "./session/runtime-component-graph-events.js";
 export * from "./session/runtime-session.js";
 export * from "./session/runtime-session-ids.js";
 export * from "./session/runtime-session-notifications.js";

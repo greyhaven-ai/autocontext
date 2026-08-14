@@ -220,6 +220,31 @@ export function normalizeRuntimeSessionEvent(event: RuntimeSessionEvent): Normal
         }),
       });
     }
+    case "component_graph": {
+      const outcome = readNonEmptyString(event.payload.outcome);
+      return baseEvent(event, {
+        normalizedEvent: "runtime_event",
+        status: outcome === "failed"
+          ? "failed"
+          : outcome === "waiting"
+            ? "queued"
+            : outcome === "succeeded"
+              ? "completed"
+              : "running",
+        title: "Runtime component graph",
+        payloadSummary: pickPayload(event.payload, {
+          revision: "revision",
+          operation: "operation",
+          outcome: "outcome",
+          component_id: "componentId",
+          instance_id: "instanceId",
+          capability_id: "capabilityId",
+          provider_component_id: "providerComponentId",
+          provider_instance_id: "providerInstanceId",
+          reason: "reason",
+        }),
+      });
+    }
   }
 }
 

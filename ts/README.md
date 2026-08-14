@@ -325,6 +325,17 @@ import type { AutoctxAgentContext } from "autoctx/agent-runtime";
 import { connectMcpRuntimeTools } from "autoctx/runtimes/mcp";
 ```
 
+### Live runtime composition
+
+The package root exports a host-owned `RuntimeComponentGraph` for reactive live
+components. Manifests use typed capability keys and concrete `instanceId`
+values; changing provider identity drains affected consumers before replacing
+the provider, while unrelated components remain active. Invalid cycles and
+duplicate exclusive providers fail before the live graph changes. See the
+[component graph contract](../docs/internal/runtime-component-graph.md) and
+[effect policy](../docs/internal/runtime-effect-policy.md) before exposing live
+composition to generated code.
+
 ## Production traces
 
 Requires the optional `@anthropic-ai/sdk` peer (`npm install @anthropic-ai/sdk`, or `openai` for the OpenAI integration). See [Optional provider SDKs](#optional-provider-sdks).

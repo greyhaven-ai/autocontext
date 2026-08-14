@@ -16,6 +16,7 @@ All notable changes to this project will be documented in this file.
 
 - TypeScript runtime components can own synchronous and asynchronous cleanup with deterministic LIFO, at-most-once disposal and automatic partial-activation unwind. Managed extension hooks now expose unload handles, and sanitized component transitions can be appended to runtime-session events (AC-959).
 - TypeScript scoped commands and tools can declare reversible, compensatable, or irreversible effects. Host-owned candidate/shadow policy now fails closed on missing recovery metadata, unavailable external isolation for untrusted components, and irreversible calls before an exact committed boundary; sanitized runtime-session events retain only effect class and outcome (AC-958).
+- TypeScript live runtime components can declare typed required/provided capabilities and reconcile through a host-owned reactive graph. Topology validation rejects cycles and duplicate providers before mutation; provider replacement marks capabilities unavailable, drains affected consumers first, preserves unrelated components, reacts to provider identity changes, serializes async races, and emits sanitized graph snapshots and runtime-session diagnostics (AC-960).
 
 ## [0.15.1] - 2026-08-13
 

@@ -32,6 +32,7 @@
     "./session/store.js",
     "./session/runtime-events.js",
     "./session/runtime-component-lifecycle-events.js",
+    "./session/runtime-component-graph-events.js",
     "./session/runtime-session.js",
     "./session/runtime-session-ids.js",
     "./session/runtime-session-notifications.js",
