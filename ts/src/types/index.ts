@@ -4,6 +4,31 @@
 
 import { z } from "zod";
 
+import type { ValidatedImageAttachment } from "./image-attachments.js";
+
+export {
+  IMAGE_ATTACHMENTS_CAPABILITY,
+  ImageAttachmentListSchema,
+  ImageAttachmentMediaTypeSchema,
+  ImageAttachmentSchema,
+  ImageAttachmentSourceSchema,
+  ImageAttachmentValidationError,
+  MAX_IMAGE_AGGREGATE_ENCODED_BYTES,
+  MAX_IMAGE_ATTACHMENTS,
+  MAX_IMAGE_DIMENSION,
+  MAX_IMAGE_ENCODED_BYTES,
+  MAX_IMAGE_RGBA_BYTES,
+  MAX_IMAGE_SOURCE_BYTES,
+  encodeValidatedImage,
+  validateImageAttachments,
+} from "./image-attachments.js";
+export type {
+  ImageAttachment,
+  ImageAttachmentMediaType,
+  ImageAttachmentSource,
+  ValidatedImageAttachment,
+} from "./image-attachments.js";
+
 // ---------------------------------------------------------------------------
 // Completion / Provider types
 // ---------------------------------------------------------------------------
@@ -78,6 +103,12 @@ export interface CompletionOptions {
    * still answer and must leave `constrained` false.
    */
   outputSchema?: OutputSchema;
+  /**
+   * Independently validated image bytes for providers with an advertised
+   * multimodal path. Optional so existing third-party providers remain source
+   * compatible; callers must capability-check before supplying it.
+   */
+  imageAttachments?: readonly ValidatedImageAttachment[];
 }
 
 export interface ThinkingCompletionOptions extends CompletionOptions {
@@ -103,6 +134,9 @@ export interface LLMProvider {
   readonly supportsConcurrentRequests?: boolean;
 
   readonly supportsThinkingStream?: boolean;
+
+  /** Model-sensitive, fail-closed multimodal capability probe. */
+  supportsImageAttachments?(model?: string): boolean;
 
   readonly name: string;
 }

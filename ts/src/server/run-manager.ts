@@ -5,6 +5,7 @@
 
 import { dirname, join } from "node:path";
 import type { AppSettings } from "../config/index.js";
+import { IMAGE_ATTACHMENTS_CAPABILITY, type ValidatedImageAttachment } from "../types/index.js";
 import { LoopController } from "../loop/controller.js";
 import { EventStreamEmitter } from "../loop/events.js";
 import type { EventCallback } from "../loop/events.js";
@@ -63,10 +64,22 @@ export interface RunManagerDeps {
 }
 
 export interface EnvironmentInfo {
-  scenarios: Array<{ name: string; description: string }>;
+  scenarios: Array<{
+    name: string;
+    description: string;
+    origin?: "builtin" | "custom" | "unknown";
+    available?: boolean;
+  }>;
   executors: Array<{ mode: string; available: boolean; description: string }>;
   currentExecutor: string;
   agentProvider: string;
+  routingContext?: {
+    provider: string;
+    model?: string;
+    hostingClass?: string;
+    capabilityTier?: string;
+    roles: Record<string, { provider: string; model: string; capabilityTier?: string }>;
+  };
 }
 
 export interface RunManagerState {
@@ -163,6 +176,7 @@ export class RunManager {
       getBuiltinScenarioClass: (name) => SCENARIO_REGISTRY[name],
       customScenarios: this.#customScenarioRegistry.asMap(),
       activeProviderType: this.getActiveProviderType(),
+      routingContext: this.#providerSession.describeRoutingContext(),
     });
   }
 
@@ -235,21 +249,42 @@ export class RunManager {
     return decision;
   }
 
-  injectHint(text: string): void {
-    this.#controller.injectHint(text);
+  injectHint(text: string, imageAttachments: readonly ValidatedImageAttachment[] = []): void {
+    if (
+      imageAttachments.length > 0 &&
+      !this.#providerSession.supportsImageAttachments("competitor")
+    ) {
+      throw new Error("The active competitor provider/model does not support image attachments");
+    }
+    this.#controller.injectHint(text, imageAttachments);
   }
 
   overrideGate(decision: "advance" | "retry" | "rollback"): void {
     this.#controller.setGateOverride(decision);
   }
 
-  async chatAgent(role: string, message: string): Promise<string> {
+  async chatAgent(
+    role: string,
+    message: string,
+    imageAttachments: readonly ValidatedImageAttachment[] = [],
+  ): Promise<string> {
     return executeChatAgentInteraction({
       role,
       message,
       state: this.getState(),
       resolveProviderBundle: () => this.#resolveProviderBundle(),
+      imageAttachments,
     });
+  }
+
+  getInteractiveCapabilities(): string[] {
+    try {
+      return this.#providerSession.supportsInteractiveImageAttachments()
+        ? [IMAGE_ATTACHMENTS_CAPABILITY]
+        : [];
+    } catch {
+      return [];
+    }
   }
 
   async startRun(

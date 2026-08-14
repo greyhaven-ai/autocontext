@@ -21,12 +21,12 @@ describe("TUI command help", () => {
   it("uses the same plain-language concepts as the CLI contract", () => {
     const help = formatCommandHelp().join("\n");
 
-    expect(help).toContain('/solve "plain-language goal"');
+    expect(help).toContain("/solve <plain-language goal>");
     expect(help).toContain("/run <scenario> [iterations]");
-    expect(help).toContain("/status <run-id>");
-    expect(help).toContain("/show <run-id> --best");
-    expect(help).toContain("/watch <run-id>");
-    expect(help).toContain("/timeline <run-id>");
+    expect(help).toContain("/status [run-id]");
+    expect(help).toContain("/show [run-id] [--best]");
+    expect(help).toContain("/watch [run-id]");
+    expect(help).toContain("/timeline [run-id]");
     expect(help).toContain(
       "/activity [status|reset|<all|runtime|prompts|commands|children|errors> [quiet|normal|verbose]]",
     );

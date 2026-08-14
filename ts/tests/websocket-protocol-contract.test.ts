@@ -25,6 +25,15 @@ import {
   TYPESCRIPT_ONLY_SERVER_MESSAGE_TYPES,
   parseClientMessage,
 } from "../src/server/protocol.js";
+import {
+  IMAGE_ATTACHMENTS_CAPABILITY,
+  MAX_IMAGE_AGGREGATE_ENCODED_BYTES,
+  MAX_IMAGE_ATTACHMENTS,
+  MAX_IMAGE_DIMENSION,
+  MAX_IMAGE_ENCODED_BYTES,
+  MAX_IMAGE_RGBA_BYTES,
+  MAX_IMAGE_SOURCE_BYTES,
+} from "../src/types/image-attachments.js";
 
 type RuntimeOnlyMessage = {
   reason: string;
@@ -41,6 +50,28 @@ type EventStreamEnvelopeContract = {
 };
 
 type WebSocketProtocolContract = {
+  image_attachment_extension: {
+    advertised_runtimes: ["typescript"];
+    additive_commands: ["chat_agent", "inject_hint"];
+    attachment: {
+      canonical_base64: true;
+      media_types: string[];
+      required_fields: string[];
+      sources: string[];
+      unique_fields: string[];
+      verified_before_provider: string[];
+    };
+    capability: "image_attachments_v1";
+    limits: {
+      max_aggregate_encoded_bytes: number;
+      max_attachments: number;
+      max_decoded_bytes_per_image: number;
+      max_decoded_rgba_bytes_per_image: number;
+      max_dimension: number;
+      max_encoded_bytes_per_image: number;
+    };
+    python_support: "deferred";
+  };
   agent_progress_note_extension: {
     advertised_runtimes: ["typescript"];
     capability: "agent_progress_notes_v1";
@@ -242,6 +273,30 @@ describe("WebSocket protocol shared contract", () => {
         unexpected: true,
       }),
     ).toThrow();
+  });
+
+  it("documents the exact additive image attachment contract and TypeScript parity boundary", () => {
+    expect(CONTRACT.image_attachment_extension).toMatchObject({
+      advertised_runtimes: ["typescript"],
+      additive_commands: ["chat_agent", "inject_hint"],
+      capability: IMAGE_ATTACHMENTS_CAPABILITY,
+      attachment: {
+        canonical_base64: true,
+        sources: ["picker", "paste", "drop"],
+        media_types: ["image/png", "image/jpeg", "image/gif", "image/webp"],
+        unique_fields: ["id", "content_sha256"],
+      },
+      limits: {
+        max_attachments: MAX_IMAGE_ATTACHMENTS,
+        max_decoded_bytes_per_image: MAX_IMAGE_SOURCE_BYTES,
+        max_encoded_bytes_per_image: MAX_IMAGE_ENCODED_BYTES,
+        max_dimension: MAX_IMAGE_DIMENSION,
+        max_decoded_rgba_bytes_per_image: MAX_IMAGE_RGBA_BYTES,
+        max_aggregate_encoded_bytes: MAX_IMAGE_AGGREGATE_ENCODED_BYTES,
+      },
+      python_support: "deferred",
+    });
+    expect(SERVER_CAPABILITIES).not.toContain(IMAGE_ATTACHMENTS_CAPABILITY);
   });
 
   it("keeps agent task plans strict, replayable, and TypeScript-only", () => {

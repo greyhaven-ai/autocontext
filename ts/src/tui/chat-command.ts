@@ -47,8 +47,12 @@ export function planTuiChatCommand(raw: string): TuiChatCommandPlan {
 }
 
 export function formatTuiChatResponseLine(role: string, response: string): string {
-  const firstLine = response.split("\n")[0] ?? response;
-  return `[${role}] ${firstLine}`;
+  return formatTuiChatResponseLines(role, response).join("\n");
+}
+
+export function formatTuiChatResponseLines(role: string, response: string): string[] {
+  const lines = response.split("\n");
+  return lines.map((line, index) => index === 0 ? `[${role}] ${line}` : line);
 }
 
 export async function executeTuiChatCommandPlan(
@@ -64,7 +68,7 @@ export async function executeTuiChatCommandPlan(
       try {
         const response = await effects.chatAgent(plan.role, plan.message);
         return {
-          logLines: [formatTuiChatResponseLine(plan.role, response)],
+          logLines: formatTuiChatResponseLines(plan.role, response),
         };
       } catch (err) {
         return { logLines: [err instanceof Error ? err.message : String(err)] };

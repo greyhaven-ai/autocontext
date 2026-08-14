@@ -10,7 +10,12 @@
  *   5. Persist to SQLite + artifacts
  */
 
-import type { CompletionResult, LLMProvider } from "../types/index.js";
+import type {
+  CompletionResult,
+  LLMProvider,
+  ValidatedImageAttachment,
+} from "../types/index.js";
+import { assertProviderSupportsImageAttachments } from "../providers/image-capability.js";
 import { asScenarioName, type RunId, type ScenarioName } from "../domain/ids.js";
 import type { ScenarioInterface } from "../scenarios/game-interface.js";
 import type { SQLiteStore } from "../storage/index.js";
@@ -412,7 +417,8 @@ export class GenerationRunner {
     events: GenerationLoopEventSequenceItem[];
   }> {
     await this.#controller?.waitAtBoundary();
-    const competitorPrompt = this.buildCompetitorPrompt(runId, generation);
+    const competitorInput = this.buildCompetitorInput(runId, generation);
+    const competitorPrompt = competitorInput.prompt;
     this.publishTaskPlan((taskPlan) =>
       taskPlan.progress({
         activeStepId: "iterate_strategies",
@@ -433,7 +439,13 @@ export class GenerationRunner {
         seedBase: this.#seedBase,
         matchesPerGeneration: this.#matchesPerGeneration,
         currentElo: this.#runState!.currentElo,
-        executeCompetitor: () => this.completeRole("competitor", competitorPrompt),
+        executeCompetitor: () =>
+          this.completeRole(
+            "competitor",
+            competitorPrompt,
+            "",
+            competitorInput.imageAttachments,
+          ),
         beforeTournament: async () => {
           await this.#controller?.waitAtBoundary();
         },
@@ -576,7 +588,10 @@ export class GenerationRunner {
     return this.#controller?.getStopRequest() ?? null;
   }
 
-  private buildCompetitorPrompt(runId: RunId, generation: number): string {
+  private buildCompetitorInput(
+    runId: RunId,
+    generation: number,
+  ): { prompt: string; imageAttachments: readonly ValidatedImageAttachment[] } {
     const consumedHint = consumeFreshStartHint(this.#runState!);
     this.#runState = consumedHint.state;
     const freshStartHint = consumedHint.hint;
@@ -598,9 +613,9 @@ export class GenerationRunner {
       ...compacted,
       dead_ends: this.#artifactStore.readDeadEnds(this.#scenarioName),
     });
-    const injectedHint = this.#controller?.takeHint();
+    const injectedHint = this.#controller?.takeHintInput();
     const operatorHint =
-      [trimmed.scout_mutation_guidance, injectedHint].filter(Boolean).join("\n\n") || null;
+      [trimmed.scout_mutation_guidance, injectedHint?.text].filter(Boolean).join("\n\n") || null;
 
     const competitor = buildCompetitorPrompt({
       scenarioName: this.#scenario.name,
@@ -614,7 +629,10 @@ export class GenerationRunner {
       freshStartHint,
       operatorHint,
     });
-    return this.applyContextHook(runId, generation, { competitor }).competitor ?? competitor;
+    return {
+      prompt: this.applyContextHook(runId, generation, { competitor }).competitor ?? competitor,
+      imageAttachments: injectedHint?.imageAttachments ?? [],
+    };
   }
 
   private applyContextComponentsHook(
@@ -746,14 +764,19 @@ export class GenerationRunner {
     role: GenerationRole,
     userPrompt: string,
     systemPrompt = "",
+    imageAttachments: readonly ValidatedImageAttachment[] = [],
   ): Promise<CompletionResult> {
+    const provider = this.providerForRole(role);
+    const model = this.modelForRole(role);
+    assertProviderSupportsImageAttachments(provider, model, imageAttachments);
     return completeWithProviderHooks({
       hookBus: this.#hookBus,
-      provider: this.providerForRole(role),
+      provider,
       role,
-      model: this.modelForRole(role),
+      model,
       systemPrompt,
       userPrompt,
+      imageAttachments,
     });
   }
 

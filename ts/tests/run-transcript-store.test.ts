@@ -55,6 +55,38 @@ afterEach(() => {
 });
 
 describe("RunTranscriptStore", () => {
+  it("retains actionable pending-playbook identity across restart and replay", () => {
+    const { path, store } = makeStore();
+    const frame = store.record({
+      clientRunId: "client-playbook-pending",
+      runId: "engine-playbook-pending",
+      message: {
+        type: "event",
+        event: "playbook_pending",
+        payload: {
+          run_id: "engine-playbook-pending",
+          scenario: "grid_ctf",
+          generation: 2,
+          proposed_markdown: "private draft",
+        },
+      },
+    });
+
+    expect(frame?.message).toMatchObject({
+      type: "event",
+      event: "playbook_pending",
+      payload: {
+        run_id: "engine-playbook-pending",
+        scenario: "grid_ctf",
+        generation: 2,
+      },
+    });
+    expect(JSON.stringify(frame?.message)).not.toContain("private draft");
+    const reloaded = new RunTranscriptStore(path);
+    expect(reloaded.framesAfter("client-playbook-pending", 0).at(0)?.message)
+      .toEqual(frame?.message);
+  });
+
   it("retains skipped playbook diagnostics across restart and replay", () => {
     const { path, store } = makeStore();
     const message: ServerMessage = {

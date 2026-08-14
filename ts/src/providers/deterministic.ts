@@ -3,7 +3,7 @@
  * Mirrors Python's DeterministicDevClient in agents/llm_client.py.
  */
 
-import type { CompletionResult, LLMProvider } from "../types/index.js";
+import { ProviderError, type CompletionOptions, type CompletionResult, type LLMProvider } from "../types/index.js";
 
 export class DeterministicProvider implements LLMProvider {
   readonly name = "deterministic";
@@ -13,13 +13,14 @@ export class DeterministicProvider implements LLMProvider {
     return "deterministic-dev";
   }
 
-  async complete(opts: {
-    systemPrompt: string;
-    userPrompt: string;
-    model?: string;
-    temperature?: number;
-    maxTokens?: number;
-  }): Promise<CompletionResult> {
+  supportsImageAttachments(): boolean {
+    return false;
+  }
+
+  async complete(opts: CompletionOptions): Promise<CompletionResult> {
+    if (opts.imageAttachments?.length) {
+      throw new ProviderError("Deterministic provider does not support image attachments");
+    }
     const prompt = opts.userPrompt.toLowerCase();
     let text: string;
 

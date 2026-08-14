@@ -36,7 +36,9 @@ describe("websocket session bootstrap", () => {
   it("builds the state message from run-manager state", () => {
     expect(buildStateMessage(state)).toEqual({
       type: "state",
+      active: false,
       paused: false,
+      scenario: null,
       generation: undefined,
       phase: undefined,
     });
@@ -57,7 +59,9 @@ describe("websocket session bootstrap", () => {
       },
       {
         type: "state",
+        active: false,
         paused: false,
+        scenario: null,
         generation: undefined,
         phase: undefined,
       },
@@ -86,7 +90,9 @@ describe("websocket session bootstrap", () => {
       },
       {
         type: "state",
+        active: false,
         paused: false,
+        scenario: null,
         generation: undefined,
         phase: undefined,
       },

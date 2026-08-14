@@ -15,6 +15,8 @@ export interface TaskQueueRow {
   error: string | null;
   created_at: string;
   updated_at: string;
+  /** Number of claims burned by the reliability workflow (AC-906). */
+  attempts?: number;
 }
 
 export interface HumanFeedbackRow {

@@ -332,6 +332,12 @@ export const HTTP_API_PARITY_ROUTES: readonly HttpApiParityEntry[] = [
   both("cockpit", "DELETE", "/api/cockpit/notebooks/:session_id", PY_COCKPIT_API),
   both("cockpit", "GET", "/api/cockpit/runs", PY_COCKPIT_API),
   both("cockpit", "GET", "/api/cockpit/runs/:run_id/status", PY_COCKPIT_API),
+  typescriptOnly(
+    "cockpit",
+    "GET",
+    "/api/cockpit/runs/:run_id/inspection",
+    "TypeScript exposes the consolidated TUI run-inspection read model.",
+  ),
   both("cockpit", "GET", "/api/cockpit/runs/:run_id/changelog", PY_COCKPIT_API),
   both("cockpit", "GET", "/api/cockpit/runs/:run_id/context-selection", PY_COCKPIT_API),
   both("cockpit", "GET", "/api/cockpit/runs/:run_id/trace-gates", PY_COCKPIT_API),
@@ -342,6 +348,12 @@ export const HTTP_API_PARITY_ROUTES: readonly HttpApiParityEntry[] = [
   both("cockpit", "GET", "/api/cockpit/runs/:run_id/consultations", PY_COCKPIT_API),
   both("cockpit", "GET", "/api/cockpit/background-sessions", PY_COCKPIT_API),
   both("cockpit", "GET", "/api/cockpit/background-sessions/:session_id", PY_COCKPIT_API),
+  typescriptOnly(
+    "cockpit",
+    "GET",
+    "/api/cockpit/queue",
+    "TypeScript exposes the consolidated queue and worker read model.",
+  ),
   typescriptOnly(
     "cockpit",
     "GET",

@@ -93,7 +93,12 @@ describe("run environment catalog", () => {
     );
     expect(info.agentProvider).toBe("deterministic");
     expect(info.scenarios).toEqual([
-      { name: "grid_ctf", description: "Capture the flag rules" },
+      {
+        name: "grid_ctf",
+        description: "Capture the flag rules",
+        origin: "builtin",
+        available: true,
+      },
       expect.objectContaining({ name: "saved_task" }),
     ]);
   });

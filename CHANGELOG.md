@@ -6,6 +6,9 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- The npm package now requires Node.js 22.19.0 or newer, matching the exact
+  pi-tui 0.84.2 engine floor and `ts/.nvmrc`. The Ink/React renderer and its
+  transitive terminal dependencies have been removed (AC-964).
 - CLI docs and live help now use outcome-oriented paved-road summaries, teach `autoctx scenario create` and `autoctx serve mcp` as the canonical nested paths, and keep implementation issue references out of user-facing command text. Shared checks validate the documented paths against the machine-readable CLI contract.
 - Default help now leads with the six-command paved road (`solve`, `run`, `status`, `watch`, `show`, `export`) and groups setup, management, and service commands beneath it. Advanced commands remain available through the expanded catalog, while `new-scenario` and `mcp-serve` are hidden compatibility aliases for `scenario create` and `serve mcp`. Bare invocation is concise and consistent across runtimes. `run` no longer silently chooses `grid_ctf`; Python requires an explicit scenario while npm can also use a project default. `--iterations` is primary, `--gens` remains compatible, and `--version --json` identifies the package version and runtime (AC-940, AC-944).
 - Run-inspection wire output is now versioned across Python and TypeScript. `status --json` and `show --json` emit one schema-backed value; `watch --ndjson` streams the same run-status envelope one value per line, with `watch --json` retained as a deprecated alias. Queue status now includes the shared `pending_count` field while preserving npm's `pendingCount`. Success data stays on stdout, structured errors stay on stderr, usage errors exit 2, and execution errors exit 1. The contract ships schemas and shared fixtures for status, show, queue status, and export (AC-943).
@@ -18,6 +21,30 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- The TypeScript operator TUI is now a pi-tui alternate-screen application
+  backed by one WebSocket transport and replayable typed view model in both
+  local and `--connect` modes. It renders durable plans, progress, lifecycle,
+  decisions, run state, and command receipts; safely degrades unknown events;
+  supports reconnect/resume/deduplication, narrow and Unicode terminals,
+  search/selection/mouse/follow-tail, multiline history and completion, masked
+  credentials, serialized commands, and a separately confirmed cooperative
+  stop. Help, aliases, completion, key hints, capability gates, and execution
+  all come from one command registry (AC-963–969).
+- TUI run inspection and cockpit commands now use shared server read models for
+  real status/watch/show/timeline/findings/artifact data, progress reports,
+  recent runs, task retry/backoff/dead-letter/stale state, worker liveness, and
+  runtime/child sessions. Renderers no longer open SQLite, and pending playbook
+  approvals have explicit confirmed approve/reject actions. Python retains its
+  existing CLI/API surfaces; parity for the full pi-tui client is deferred
+  (AC-970–971).
+- TypeScript protocol-v1 `chat_agent` and `inject_hint` commands accept an
+  additive, dynamically advertised `image_attachments_v1` payload. Validation
+  checks canonical base64, exact bytes/hash/header/dimensions, duplicate ids and
+  content, count/size/dimension/RGBA/aggregate budgets before provider work;
+  Anthropic and supported OpenAI models receive the exact verified bytes, while
+  unsupported models and unknown compatible gateways fail closed. Python
+  protocol/provider parity is deferred, and this capability must ship in the
+  next `autoctx` npm release (AC-972).
 - TypeScript runtime components can own synchronous and asynchronous cleanup with deterministic LIFO, at-most-once disposal and automatic partial-activation unwind. Managed extension hooks now expose unload handles, and sanitized component transitions can be appended to runtime-session events (AC-959).
 - TypeScript scoped commands and tools can declare reversible, compensatable, or irreversible effects. Host-owned candidate/shadow policy now fails closed on missing recovery metadata, unavailable external isolation for untrusted components, and irreversible calls before an exact committed boundary; sanitized runtime-session events retain only effect class and outcome (AC-958).
 - TypeScript live runtime components can declare typed required/provided capabilities and reconcile through a host-owned reactive graph. Topology validation rejects cycles and duplicate providers before mutation; provider replacement marks capabilities unavailable, drains affected consumers first, preserves unrelated components, reacts to provider identity changes, serializes async races, and emits sanitized graph snapshots and runtime-session diagnostics (AC-960).

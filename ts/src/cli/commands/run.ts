@@ -3,7 +3,7 @@
  * `show`, `watch`, `status`, `benchmark` (AC-853 split of command-handlers.ts).
  */
 import { parseArgs } from "node:util";
-import { resolve, join } from "node:path";
+import { resolve } from "node:path";
 import { asDbPath } from "../../domain/ids.js";
 import {
   errorMessage,
@@ -419,22 +419,14 @@ async function loadRuntimeSessionSummaryForRun(dbPath: string, runId: string) {
 }
 
 async function loadProgressReportForRun(run: { run_id: string; scenario: string }) {
-  const { existsSync, readFileSync } = await import("node:fs");
   const { loadSettings } = await import("../../config/index.js");
-  const { parseRunProgressReport } = await import("../../analytics/progress-report.js");
+  const { loadRunProgressReport } = await import("../../analytics/progress-report-store.js");
   const settings = loadSettings();
-  const path = join(
-    resolve(settings.knowledgeRoot),
-    run.scenario,
-    "progress_reports",
-    `${run.run_id}.json`,
-  );
-  if (!existsSync(path)) return null;
-  try {
-    return parseRunProgressReport(JSON.parse(readFileSync(path, "utf-8")) as unknown);
-  } catch {
-    return null;
-  }
+  return loadRunProgressReport({
+    knowledgeRoot: settings.knowledgeRoot,
+    runId: run.run_id,
+    scenario: run.scenario,
+  });
 }
 
 export async function cmdStatus(dbPath: string): Promise<void> {

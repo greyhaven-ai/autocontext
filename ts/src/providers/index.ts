@@ -66,3 +66,8 @@ export {
   DEEP_THINK_TOOL_NAME,
   completeWithThinkingFallback,
 } from "./thinking.js";
+
+export {
+  assertProviderSupportsImageAttachments,
+  providerSupportsImageAttachments,
+} from "./image-capability.js";

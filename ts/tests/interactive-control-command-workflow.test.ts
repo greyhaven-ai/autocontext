@@ -53,7 +53,7 @@ describe("interactive control command workflow", () => {
         runManager,
       }),
     ).resolves.toEqual([{ type: "ack", action: "inject_hint" }]);
-    expect(runManager.injectHint).toHaveBeenCalledWith("Focus on rollback safety");
+    expect(runManager.injectHint).toHaveBeenCalledWith("Focus on rollback safety", []);
 
     await expect(
       executeInteractiveControlCommand({

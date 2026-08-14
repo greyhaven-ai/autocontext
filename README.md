@@ -33,6 +33,8 @@ autocontext is a harness for agent improvement. Give it a goal, it runs the task
 | Pi extension        | `pi install npm:pi-autocontext@0.10.0` |
 
 The PyPI package is `autocontext`; the CLI is `autoctx`. The npm package is `autoctx` (not the unrelated `autocontext` npm package). Provider variables live in [`.env.example`](.env.example).
+The npm CLI and TUI require Node.js 22.19.0 or newer; contributors should use
+the version pinned in [`ts/.nvmrc`](ts/.nvmrc).
 
 ## 30-Second Run
 
@@ -89,6 +91,7 @@ Everything is filesystem-first: inspect it, diff it, replay it, export it, or fe
 | `mission`     | `autoctx mission create --name "..." --goal "..."`      | Verifier-driven multi-step goals                        |
 | `train`       | `uv run autoctx train --scenario <name> --data <jsonl>` | Distill stable behavior into a cheaper runtime (Python) |
 | `serve mcp`   | `autoctx serve mcp`                                     | Give an agent the autocontext tool surface              |
+| `tui`         | `autoctx tui [--connect <server>]`                       | Operate or attach to a run from the pi-tui terminal UI  |
 
 Running bare `autoctx` shows the concise paved-road workflow. Use `autoctx
 --help --all` in the npm CLI or `autoctx commands --all` in the Python CLI for

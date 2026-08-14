@@ -1,4 +1,6 @@
 import type { AppSettings } from "../config/index.js";
+import { progressReportReference } from "../analytics/progress-report.js";
+import { loadRunProgressReport } from "../analytics/progress-report-store.js";
 import { createProvider as defaultCreateProvider } from "../providers/provider-factory.js";
 import type { CreateProviderOpts } from "../providers/provider-factory.js";
 import { buildContextSelectionReport } from "../knowledge/context-selection-report.js";
@@ -8,8 +10,10 @@ import type {
   NotebookRow,
   RunRow,
   SQLiteStore,
+  TaskQueueRow,
 } from "../storage/index.js";
 import type { RuntimeSessionReadStore } from "../session/runtime-session-read-model.js";
+import { summarizeRuntimeSession } from "../session/runtime-session-read-model.js";
 import type { LLMProvider } from "../types/index.js";
 import { buildChangelog } from "./cockpit-changelog.js";
 import { requestConsultation } from "./cockpit-consultation.js";
@@ -31,7 +35,9 @@ export interface CockpitApiRoutes {
   upsertNotebook(sessionId: string, body: Record<string, unknown>): CockpitApiResponse;
   deleteNotebook(sessionId: string): CockpitApiResponse;
   listRuns(): CockpitApiResponse;
+  queueState(): CockpitApiResponse;
   runStatus(runId: string): CockpitApiResponse;
+  runInspection(runId: string): CockpitApiResponse;
   changelog(runId: string): CockpitApiResponse;
   contextSelection(runId: string): CockpitApiResponse;
   compareGenerations(runId: string, genA: number, genB: number): CockpitApiResponse;
@@ -100,6 +106,11 @@ export function buildCockpitApiRoutes(opts: {
           ...runtimeSessionDiscoveryForRun(runtimeStore, run.run_id),
         }))),
     })),
+    queueState: () => withStore(opts.openStore, (store) => ({
+      status: 200,
+      body: withRuntimeSessionStore(opts.openRuntimeSessionStore, (runtimeStore) =>
+        buildQueueCockpitState(store.listTasks({ limit: 200 }), runtimeStore)),
+    })),
     runStatus: (runId) => withStore(opts.openStore, (store) => {
       const run = store.getRun(runId);
       if (!run) {
@@ -111,10 +122,65 @@ export function buildCockpitApiRoutes(opts: {
           run_id: run.run_id,
           scenario_name: run.scenario,
           target_generations: run.target_generations,
+          executor_mode: run.executor_mode,
+          agent_provider: run.agent_provider,
           status: run.status,
           created_at: run.created_at,
           generations: store.getGenerations(runId).map(formatGenerationStatus),
+          progress_report: readProgressReportReference(opts.knowledgeRoot, run),
           ...runtimeSessionDiscoveryForRun(runtimeStore, runId),
+        },
+      }));
+    }),
+    runInspection: (runId) => withStore(opts.openStore, (store) => {
+      const run = store.getRun(runId);
+      if (!run) {
+        return { status: 404, body: { detail: `Run '${runId}' not found` } };
+      }
+      const generations = store.getGenerations(runId);
+      const latestGeneration = generations.reduce<GenerationRow | null>(
+        (latest, generation) =>
+          !latest || generation.generation_index > latest.generation_index ? generation : latest,
+        null,
+      );
+      const bestGeneration = generations.reduce<GenerationRow | null>(
+        (best, generation) => !best || generation.best_score > best.best_score ? generation : best,
+        null,
+      );
+      const outputs = (generation: GenerationRow | null) => generation
+        ? store.getAgentOutputs(runId, generation.generation_index).map((output) => ({
+            role: output.role,
+            content: output.content,
+            generation: output.generation_index,
+            created_at: output.created_at,
+          }))
+        : [];
+      return withRuntimeSessionStore(opts.openRuntimeSessionStore, (runtimeStore) => ({
+        status: 200,
+        body: {
+          run: {
+            run_id: run.run_id,
+            scenario: run.scenario,
+            target_generations: run.target_generations,
+            executor_mode: run.executor_mode,
+            status: run.status,
+            agent_provider: run.agent_provider,
+            created_at: run.created_at,
+            updated_at: run.updated_at,
+          },
+          generations: generations.map(formatGenerationStatus),
+          latest_generation: latestGeneration ? formatGenerationStatus(latestGeneration) : null,
+          best_generation: bestGeneration ? formatGenerationStatus(bestGeneration) : null,
+          latest_outputs: outputs(latestGeneration),
+          best_outputs: outputs(bestGeneration),
+          progress_report: readProgressReportReference(opts.knowledgeRoot, run),
+          ...runtimeSessionDiscoveryForRun(runtimeStore, runId),
+          artifact_discovery: {
+            trace_gates: `/api/cockpit/runs/${encodeURIComponent(runId)}/trace-gates`,
+            runtime_timeline: `/api/cockpit/runs/${encodeURIComponent(runId)}/runtime-session/timeline`,
+            writeup: `/api/cockpit/writeup/${encodeURIComponent(runId)}`,
+            export: `/api/knowledge/export/${encodeURIComponent(run.scenario)}`,
+          },
         },
       }));
     }),
@@ -225,6 +291,137 @@ export function buildCockpitApiRoutes(opts: {
       return { status: 200, body: store.getConsultationsForRun(runId) };
     }),
   };
+}
+
+function readProgressReportReference(
+  knowledgeRoot: string,
+  run: RunRow,
+): ReturnType<typeof progressReportReference> | null {
+  const report = loadRunProgressReport({
+    knowledgeRoot,
+    runId: run.run_id,
+    scenario: run.scenario,
+  });
+  return report ? progressReportReference(report) : null;
+}
+
+export type QueueCockpitTaskState =
+  | "waiting"
+  | "running"
+  | "retrying"
+  | "backoff"
+  | "dead_letter"
+  | "stale"
+  | "recovered"
+  | "failed"
+  | "completed";
+
+export interface QueueCockpitTask {
+  readonly id: string;
+  readonly spec_name: string;
+  readonly state: QueueCockpitTaskState;
+  readonly persisted_status: string;
+  readonly attempts: number;
+  readonly priority: number;
+  readonly scheduled_at: string | null;
+  readonly started_at: string | null;
+  readonly completed_at: string | null;
+  readonly updated_at: string;
+  readonly error: string | null;
+}
+
+export interface QueueCockpitWorker {
+  readonly worker_id: string;
+  readonly state: "connected" | "disconnected" | "unknown";
+  readonly current_task_id: string | null;
+  readonly progress_digest: string;
+  readonly last_update: string | null;
+  readonly failure_summary: string | null;
+}
+
+export interface QueueCockpitState {
+  readonly tasks: readonly QueueCockpitTask[];
+  readonly workers: readonly QueueCockpitWorker[];
+  readonly generated_at: string;
+}
+
+/**
+ * Shared queue/worker read model. Keeping classification here means the HTTP,
+ * TUI, and future clients do not reimplement persistence semantics.
+ */
+export function buildQueueCockpitState(
+  rows: readonly TaskQueueRow[],
+  runtimeStore: RuntimeSessionReadStore | null,
+  now = new Date(),
+): QueueCockpitState {
+  const tasks = rows.map((row): QueueCockpitTask => ({
+    id: row.id,
+    spec_name: row.spec_name,
+    state: classifyQueueTask(row, now),
+    persisted_status: row.status,
+    attempts: row.attempts ?? 0,
+    priority: row.priority,
+    scheduled_at: row.scheduled_at,
+    started_at: row.started_at,
+    completed_at: row.completed_at,
+    updated_at: row.updated_at,
+    error: row.error,
+  }));
+  const rowByTask = new Map(rows.map((row) => [row.id, row]));
+  const workersById = new Map<string, QueueCockpitWorker>();
+  for (const session of runtimeStore?.list({ limit: 200 }) ?? []) {
+    const summary = summarizeRuntimeSession(session);
+    if (!summary.worker_id) continue;
+    const ageMs = now.getTime() - parseTimestamp(summary.updated_at, now).getTime();
+    const task = rowByTask.get(summary.task_id);
+    const worker: QueueCockpitWorker = {
+      worker_id: summary.worker_id,
+      state: !summary.updated_at
+        ? "unknown"
+        : ageMs > 120_000
+          ? "disconnected"
+          : "connected",
+      current_task_id: task?.status === "running" ? summary.task_id : null,
+      progress_digest: `${summary.event_count} runtime event${summary.event_count === 1 ? "" : "s"}`,
+      last_update: summary.updated_at || null,
+      failure_summary: task?.error ?? null,
+    };
+    const current = workersById.get(summary.worker_id);
+    if (!current || (worker.last_update ?? "") > (current.last_update ?? "")) {
+      workersById.set(summary.worker_id, worker);
+    }
+  }
+  return {
+    tasks,
+    workers: [...workersById.values()].sort((a, b) => a.worker_id.localeCompare(b.worker_id)),
+    generated_at: now.toISOString(),
+  };
+}
+
+function classifyQueueTask(row: TaskQueueRow, now: Date): QueueCockpitTaskState {
+  const attempts = row.attempts ?? 0;
+  if (row.status === "completed") return "completed";
+  if (row.status === "failed") return attempts >= 3 ? "dead_letter" : "failed";
+  if (row.status === "running") {
+    const updated = parseTimestamp(row.updated_at || row.started_at, now);
+    return now.getTime() - updated.getTime() > 3_600_000 ? "stale" : "running";
+  }
+  if (row.status === "pending" && attempts > 0) {
+    if (row.scheduled_at) {
+      return parseTimestamp(row.scheduled_at, now).getTime() > now.getTime()
+        ? "backoff"
+        : "retrying";
+    }
+    return "recovered";
+  }
+  return "waiting";
+}
+
+function parseTimestamp(value: string | null, fallback: Date): Date {
+  if (!value) return fallback;
+  const normalized = value.includes("T") ? value : `${value.replace(" ", "T")}Z`;
+  const parsed = new Date(normalized);
+  return Number.isNaN(parsed.getTime()) ? fallback : parsed;
 }
 
 function withStore(

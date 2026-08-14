@@ -1,4 +1,9 @@
-import type { CompletionResult, LLMProvider } from "../types/index.js";
+import {
+  ProviderError,
+  type CompletionOptions,
+  type CompletionResult,
+  type LLMProvider,
+} from "../types/index.js";
 
 export interface PanelParticipant {
   provider: string;
@@ -79,17 +84,18 @@ export class PanelProvider implements LLMProvider {
     return this.opts.config.synthesizerModel || this.opts.baseProvider.defaultModel();
   }
 
+  supportsImageAttachments(): boolean {
+    return false;
+  }
+
   close(): void {
     this.opts.baseProvider.close?.();
   }
 
-  async complete(callOpts: {
-    systemPrompt: string;
-    userPrompt: string;
-    model?: string;
-    temperature?: number;
-    maxTokens?: number;
-  }): Promise<CompletionResult> {
+  async complete(callOpts: CompletionOptions): Promise<CompletionResult> {
+    if (callOpts.imageAttachments?.length) {
+      throw new ProviderError("Panel providers do not support image attachments");
+    }
     const started = Date.now();
     const participants = [] as Array<Record<string, unknown>>;
     let totalCost = 0;

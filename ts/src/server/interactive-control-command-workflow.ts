@@ -1,10 +1,14 @@
 import type { ClientMessage, ServerMessage } from "./protocol.js";
 import { buildEnvironmentMessage } from "./websocket-session-bootstrap.js";
+import {
+  validateImageAttachments,
+  type ValidatedImageAttachment,
+} from "../types/index.js";
 
 export interface InteractiveControlRunManager {
   pause(): void;
   resume(): void;
-  injectHint(text: string): void;
+  injectHint(text: string, imageAttachments?: readonly ValidatedImageAttachment[]): void;
   overrideGate(decision: "advance" | "retry" | "rollback"): void;
   startRun(
     scenario: string,
@@ -51,7 +55,10 @@ export async function executeInteractiveControlCommand(opts: {
       opts.runManager.resume();
       return [{ type: "ack", action: "resume", ...commandResponseMetadata(opts.command) }];
     case "inject_hint":
-      opts.runManager.injectHint(opts.command.text);
+      opts.runManager.injectHint(
+        opts.command.text,
+        validateImageAttachments(opts.command.image_attachments ?? []),
+      );
       return [{ type: "ack", action: "inject_hint", ...commandResponseMetadata(opts.command) }];
     case "override_gate":
       opts.runManager.overrideGate(opts.command.decision);

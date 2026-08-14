@@ -2,6 +2,10 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 
+import {
+  parseRunProgressReport,
+  progressReportReference,
+} from "../analytics/progress-report.js";
 import { detectFamily } from "../scenarios/family-interfaces.js";
 import { SCENARIO_REGISTRY } from "../scenarios/registry.js";
 import type {
@@ -602,6 +606,18 @@ function buildRunEvidence(opts: {
 function progressSummaryFromReport(report: Record<string, unknown> | null, fallback: string): string {
   if (!report) {
     return fallback;
+  }
+  try {
+    const reference = progressReportReference(parseRunProgressReport(report));
+    if (reference.best_score !== null) {
+      const thresholdProgress = reference.threshold > 0
+        ? ` (${((reference.best_score / reference.threshold) * 100).toFixed(2)}% of threshold)`
+        : "";
+      return `best score ${reference.best_score.toFixed(3)} / threshold ${reference.threshold.toFixed(3)}`
+        + `${thresholdProgress}, ${fallback}`;
+    }
+  } catch {
+    // Older progress reports use the normalized-ceiling shape handled below.
   }
   const progress = readRecordValue(report.progress);
   const pctOfCeiling = numberFrom(progress.pct_of_ceiling);

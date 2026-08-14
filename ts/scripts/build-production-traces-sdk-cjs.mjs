@@ -14,7 +14,7 @@
  *
  * Bundles all contract / redaction / canonical-json dependencies into the
  * one file. The ESM entry at `dist/production-traces/sdk/index.js` (from
- * `tsc`) retains tree-shakability; CJS customers on Node 18+ get a
+ * `tsc`) retains tree-shakability; CJS customers on Node 22.19+ get a
  * functional `require()` without the native-ESM-from-CJS gymnastics.
  *
  * Enterprise-discipline anchors:

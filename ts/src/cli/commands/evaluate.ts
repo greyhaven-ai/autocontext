@@ -106,12 +106,13 @@ export async function cmdTui(dbPath: string): Promise<void> {
     args: process.argv.slice(3),
     options: {
       port: { type: "string", default: "8000" },
+      connect: { type: "string" },
       headless: { type: "boolean" },
       help: { type: "boolean", short: "h" },
     },
   });
 
-  const { buildHeadlessTuiOutput, buildInteractiveTuiRequest, planTuiCommand, TUI_HELP_TEXT } =
+  const { buildHeadlessTuiOutput, planTuiCommand, TUI_HELP_TEXT } =
     await import("../tui-command-workflow.js");
 
   if (values.help) {
@@ -121,29 +122,30 @@ export async function cmdTui(dbPath: string): Promise<void> {
 
   const plan = planTuiCommand(values, !!process.stdout.isTTY);
 
-  const { RunManager, InteractiveServer } = await import("../../server/index.js");
+  const { InteractiveServer, RunManager } = await import("../../server/index.js");
   const { loadSettings } = await import("../../config/index.js");
   const { resolveProviderConfig } = await import("../../providers/index.js");
   const settings = loadSettings();
   const providerConfig = resolveProviderConfig();
-  const mgr = new RunManager({
-    dbPath,
-    migrationsDir: getMigrationsDir(),
-    runsRoot: resolve(settings.runsRoot),
-    knowledgeRoot: resolve(settings.knowledgeRoot),
-    skillsRoot: resolve(settings.skillsRoot),
-    providerType: providerConfig.providerType,
-    apiKey: providerConfig.apiKey,
-    baseUrl: providerConfig.baseUrl,
-    model: providerConfig.model,
-  });
-  const server = new InteractiveServer({ runManager: mgr, port: plan.port });
-  await server.start();
+  const mgr = plan.connect ? null : new RunManager({
+      dbPath,
+      migrationsDir: getMigrationsDir(),
+      runsRoot: resolve(settings.runsRoot),
+      knowledgeRoot: resolve(settings.knowledgeRoot),
+      skillsRoot: resolve(settings.skillsRoot),
+      providerType: providerConfig.providerType,
+      apiKey: providerConfig.apiKey,
+      baseUrl: providerConfig.baseUrl,
+      model: providerConfig.model,
+    });
+  const server = mgr ? new InteractiveServer({ runManager: mgr, port: plan.port }) : null;
+  if (server) await server.start();
+  const endpoint = plan.connect ?? server!.url;
 
   if (plan.headless) {
     for (const line of buildHeadlessTuiOutput({
-      serverUrl: server.url,
-      scenarios: mgr.listScenarios(),
+      serverUrl: endpoint,
+      scenarios: mgr?.listScenarios() ?? [],
     })) {
       console.log(line);
     }
@@ -156,28 +158,32 @@ export async function cmdTui(dbPath: string): Promise<void> {
       process.on("SIGINT", cleanup);
       process.on("SIGTERM", cleanup);
     });
-    await server.stop();
+    if (server) await server.stop();
     return;
   }
 
-  const React = await import("react");
-  const { render } = await import("ink");
-  const { InteractiveTui } = await import("../../tui/app.js");
-
-  const app = render(
-    React.createElement(
-      InteractiveTui,
-      buildInteractiveTuiRequest({
-        manager: mgr,
-        serverUrl: server.url,
-      }),
-    ),
-  );
-
   try {
-    await app.waitUntilExit();
+    const { mkdirSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const { startInteractiveTui } = await import("../../tui/app.js");
+    const { TuiReadModelClient } = await import("../../tui/read-model-client.js");
+    const { TuiSession } = await import("../../tui/session.js");
+    const { WebSocketTuiTransport } = await import("../../tui/transport.js");
+    const logDirectory = join(resolve(settings.runsRoot), "_tui", "logs");
+    mkdirSync(logDirectory, { recursive: true });
+    const session = new TuiSession(new WebSocketTuiTransport(endpoint));
+    const app = startInteractiveTui({
+      session,
+      readModels: new TuiReadModelClient(endpoint),
+      logDirectory,
+    });
+    try {
+      await app.done;
+    } finally {
+      app.stop();
+    }
   } finally {
-    await server.stop();
+    if (server) await server.stop();
   }
 }
 

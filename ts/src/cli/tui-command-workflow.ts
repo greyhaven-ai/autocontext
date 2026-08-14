@@ -1,25 +1,33 @@
 export const TUI_HELP_TEXT = [
-  "autoctx tui [--port 8000] [--headless]",
-  "Starts the interactive WebSocket server and bundled terminal UI.",
+  "autoctx tui [--port 8000] [--connect http://host:port] [--headless]",
+  "Starts the pi-tui operator UI with a local server, or attaches to an existing autoctx serve endpoint.",
 ].join("\n");
 
 export interface TuiCommandValues {
   port?: string;
   headless?: boolean;
+  connect?: string;
 }
 
 export interface PlannedTuiCommand {
   port: number;
   headless: boolean;
+  connect?: string;
 }
 
 export function planTuiCommand(
   values: TuiCommandValues,
   stdoutIsTTY: boolean,
 ): PlannedTuiCommand {
+  const connect = values.connect?.trim();
+  const port = Number(values.port ?? "8000");
+  if (!Number.isInteger(port) || port <= 0 || port > 65_535) {
+    throw new Error("--port must be an integer from 1 through 65535");
+  }
   return {
-    port: Number.parseInt(values.port ?? "8000", 10),
+    port,
     headless: !!values.headless || !stdoutIsTTY,
+    ...(connect ? { connect } : {}),
   };
 }
 

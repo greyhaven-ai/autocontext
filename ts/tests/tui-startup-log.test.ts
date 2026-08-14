@@ -18,8 +18,10 @@ describe("TUI startup log", () => {
       "available scenarios: grid_ctf, support_triage",
       "loaded activity filter=commands verbosity=quiet",
     ]);
-    expect(lines).toContain(
-      "/activity [status|reset|<all|runtime|prompts|commands|children|errors> [quiet|normal|verbose]]",
-    );
+    expect(lines).toEqual(expect.arrayContaining([
+      expect.stringContaining(
+        "/activity [status|reset|<all|runtime|prompts|commands|children|errors> [quiet|normal|verbose]]",
+      ),
+    ]));
   });
 });
