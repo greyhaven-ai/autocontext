@@ -3,6 +3,8 @@
  * Mirrors Python's autocontext/harness/core/controller.py.
  */
 
+import type { ValidatedImageAttachment } from "../types/index.js";
+
 export interface RunStopProgress {
   completedGenerations: number;
   bestScore?: number;
@@ -57,7 +59,7 @@ export class LoopController {
   #resumeResolvers: Array<() => void> = [];
   #stopRequest: RunStopRequestedError | null = null;
   #gateOverride: string | null = null;
-  #pendingHint: string | null = null;
+  #pendingHint: OperatorHintInput | null = null;
   #chatQueue: Array<{ role: string; message: string; resolve: (response: string) => void }> = [];
   #pendingChatResolvers: Array<(response: string) => void> = [];
 
@@ -125,14 +127,21 @@ export class LoopController {
     return val;
   }
 
-  injectHint(text: string): void {
-    this.#pendingHint = text;
+  injectHint(text: string, imageAttachments: readonly ValidatedImageAttachment[] = []): void {
+    this.#pendingHint = {
+      text,
+      imageAttachments: [...imageAttachments],
+    };
   }
 
   takeHint(): string | null {
-    const val = this.#pendingHint;
+    return this.takeHintInput()?.text ?? null;
+  }
+
+  takeHintInput(): OperatorHintInput | null {
+    const value = this.#pendingHint;
     this.#pendingHint = null;
-    return val;
+    return value;
   }
 
   submitChat(role: string, message: string): Promise<string> {
@@ -161,4 +170,9 @@ export class LoopController {
       resolve();
     }
   }
+}
+
+export interface OperatorHintInput {
+  readonly text: string;
+  readonly imageAttachments: readonly ValidatedImageAttachment[];
 }

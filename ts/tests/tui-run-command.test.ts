@@ -283,24 +283,26 @@ describe("TUI start run command planner", () => {
     });
   });
 
-  it("defaults missing or invalid iteration text to five", () => {
+  it("defaults a missing iteration count and rejects invalid counts", () => {
     expect(planTuiStartRunCommand("/run support_triage")).toEqual({
       kind: "start",
       scenario: "support_triage",
       iterations: 5,
     });
     expect(planTuiStartRunCommand("/run support_triage many")).toEqual({
-      kind: "start",
-      scenario: "support_triage",
-      iterations: 5,
+      kind: "usage",
+      usageLine: "usage: /run <scenario> [positive-iterations]",
+    });
+    expect(planTuiStartRunCommand("/run support_triage 0")).toEqual({
+      kind: "usage",
+      usageLine: "usage: /run <scenario> [positive-iterations]",
     });
   });
 
-  it("keeps current token parsing behavior for numeric prefixes and trailing tokens", () => {
+  it("rejects numeric prefixes and trailing tokens instead of silently changing intent", () => {
     expect(planTuiStartRunCommand("/run support_triage 7extra ignored")).toEqual({
-      kind: "start",
-      scenario: "support_triage",
-      iterations: 7,
+      kind: "usage",
+      usageLine: "usage: /run <scenario> [positive-iterations]",
     });
   });
 

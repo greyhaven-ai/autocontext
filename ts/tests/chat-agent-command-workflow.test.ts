@@ -41,7 +41,7 @@ describe("chat agent command workflow", () => {
       },
     ]);
 
-    expect(runManager.chatAgent).toHaveBeenCalledWith("analyst", "What changed?");
+    expect(runManager.chatAgent).toHaveBeenCalledWith("analyst", "What changed?", []);
   });
 
   it("echoes run and command correlation on chat responses", async () => {

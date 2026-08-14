@@ -29,6 +29,12 @@ describe("tui command workflow", () => {
     });
   });
 
+  it("rejects invalid or partially parsed ports", () => {
+    expect(() => planTuiCommand({ port: "0" }, true)).toThrow("1 through 65535");
+    expect(() => planTuiCommand({ port: "8000oops" }, true)).toThrow("1 through 65535");
+    expect(() => planTuiCommand({ port: "65536" }, true)).toThrow("1 through 65535");
+  });
+
   it("renders headless startup output", () => {
     expect(
       buildHeadlessTuiOutput({

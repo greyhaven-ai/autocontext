@@ -37,14 +37,14 @@ describe("TUI chat command planner", () => {
     expect(planTuiChatCommand("/chatter analyst hello")).toEqual({ kind: "unhandled" });
   });
 
-  it("formats response first lines", () => {
-    expect(formatTuiChatResponseLine("analyst", "first\nsecond")).toBe("[analyst] first");
+  it("preserves multiline responses", () => {
+    expect(formatTuiChatResponseLine("analyst", "first\nsecond")).toBe("[analyst] first\nsecond");
     expect(formatTuiChatResponseLine("coach", "")).toBe("[coach] ");
   });
 });
 
 describe("TUI chat command executor", () => {
-  it("routes chats through a narrow command port and formats the first response line", async () => {
+  it("routes chats through a narrow command port without truncating the response", async () => {
     const effects = {
       chatAgent: vi.fn(async () => "First line\nSecond line"),
     };
@@ -54,7 +54,7 @@ describe("TUI chat command executor", () => {
       role: "analyst",
       message: "What changed?",
     }, effects)).resolves.toEqual({
-      logLines: ["[analyst] First line"],
+      logLines: ["[analyst] First line", "Second line"],
     });
     expect(effects.chatAgent).toHaveBeenCalledWith("analyst", "What changed?");
   });
@@ -104,7 +104,7 @@ describe("TUI chat command handler", () => {
         raw: "/chat analyst What changed?",
         pendingLogin: null,
       }),
-    ).resolves.toMatchObject({ logLines: ["[analyst] First line"] });
+    ).resolves.toMatchObject({ logLines: ["[analyst] First line", "Second line"] });
     expect(manager.chatAgent).toHaveBeenCalledWith("analyst", "What changed?");
   });
 

@@ -87,6 +87,7 @@ const EVENT_PAYLOAD_FIELDS: Readonly<Record<string, readonly string[]>> = {
   generation_started: ["run_id", "generation"],
   generation_timing: ["run_id", "generation", "elapsed_seconds"],
   match_completed: ["run_id", "generation", "match_index", "score"],
+  playbook_pending: ["run_id", "scenario", "generation"],
   [PLAYBOOK_UPDATE_SKIPPED_EVENT]: [
     "run_id",
     "scenario",

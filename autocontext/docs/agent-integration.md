@@ -172,18 +172,45 @@ paths. TypeScript `/ws/events` also streams live `runtime_session_event`
 envelopes on the `runtime_session` channel, with the current session summary and
 newly appended event in each payload.
 
-In the TypeScript interactive TUI, `/timeline <run_id>` renders the same
-operator-facing runtime-session timeline; `/timeline` uses the active run id
-when one is available. The TUI recent-activity feed also summarizes live
-runtime-session prompt, assistant, shell, tool, and child-task events as they
-arrive. Operators can run
-`/activity [status|reset|<all|runtime|prompts|commands|children|errors> [quiet|normal|verbose]]`
-to focus that live feed and tune event detail while a run is active. The TUI
-saves those activity settings in the resolved autoctx config directory and
-reloads them on restart; `/activity reset` clears the saved preference and
-returns the feed to `all normal`. On startup, Recent Activity logs the loaded
-activity setting before the command help. Bare `/activity` and `/activity status`
-report the current setting without rewriting the saved preference.
+The TypeScript package requires Node 22.19.0 or newer and uses pi-tui for its
+interactive operator surface. Run `autoctx tui` to start a local server or
+`autoctx tui --connect <http-or-ws-url>` to attach to an existing TypeScript
+server. Both modes use the same WebSocket transport, replay-aware typed view
+model, registry-driven command executor, and HTTP cockpit read models; renderer
+components never open SQLite or call the run manager directly.
+
+The TUI renders durable plan/progress/lifecycle/decision rows without exposing
+private thinking or raw unknown payloads. `/timeline [run_id]`, `/status`,
+`/show`, `/watch`, `/findings`, `/artifacts`, and `/export` reuse the server's
+canonical run and runtime-session read paths. `/runs`, `/queue`, `/workers`, and
+`/sessions` expose recent runs, retry/backoff/dead-letter/stale task state,
+worker liveness, and child/runtime sessions; `/session <session-id>` drills into
+either session surface and shows parent/child relationships. Artifact discovery
+renders OSC 8 links when supported, with readable URL fallbacks. Pending playbook decisions are
+actionable through `/approve <scenario> confirm` and `/reject <scenario>
+confirm`. `/activity
+[status|reset|<all|runtime|prompts|commands|children|errors>
+[quiet|normal|verbose]]` remains available on the legacy activity adapter.
+
+Use PageUp/PageDown or the mouse to scroll, `Ctrl+Shift+F` to search, `End` to
+resume follow-tail, and `Shift+Enter` for multiline editor input. `/help` and
+completion are generated from one capability-aware registry. `/quit`,
+`/detach`, and `Ctrl+C` disconnect without stopping the run; `/stop` is a
+separate capability-gated operation requiring `/stop confirm` for the attached
+run. Login credentials use a masked overlay and are excluded from editor
+history, logs, errors, and rendered state. TUI logs are stored under
+`<runsRoot>/_tui/logs`; normal and failure shutdown restore the main screen.
+
+TypeScript WebSocket clients can also attach bounded images to `chat_agent` and
+`inject_hint` when the dynamic `image_attachments_v1` capability is present.
+Each attachment includes a unique id/name, `picker|paste|drop` source,
+`image/png|image/jpeg|image/gif|image/webp` media type, canonical base64,
+decoded byte count, SHA-256, width, and height. The server verifies exact bytes,
+hash, format, and dimensions before provider invocation and enforces four
+images maximum; 5 MiB decoded, 7 MiB encoded, 8192×8192, and 64 MiB RGBA per
+image; and 20 MiB encoded aggregate. Unsupported providers and unrecognized
+OpenAI-compatible gateways fail closed. This capability and the full pi-tui
+operator client are TypeScript-first; Python parity is deferred.
 
 #### `autoctx list` — List recent runs
 
@@ -1330,7 +1357,10 @@ The output the loop carries through `revision_done`, the judge call, and `--veri
 
 ## TypeScript CLI
 
-The TypeScript package also publishes a narrower `autoctx` CLI for Node.js environments. It focuses on judge-based evaluation, improvement loops, task queueing, worker execution, and MCP serving rather than the full multi-generation control plane:
+The TypeScript package also publishes a narrower `autoctx` CLI for Node.js
+22.19.0-or-newer environments. It focuses on judge-based evaluation,
+improvement loops, task queueing, worker execution, and MCP serving rather than
+the full multi-generation control plane:
 
 ```bash
 npx autoctx judge -p "Write a haiku" -o "output text" -r "evaluate quality"

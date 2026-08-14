@@ -1,4 +1,6 @@
 import type { GenerationRole, RoleProviderBundle } from "../providers/index.js";
+import { assertProviderSupportsImageAttachments } from "../providers/index.js";
+import type { ValidatedImageAttachment } from "../types/index.js";
 import type { RunManagerState } from "./run-manager.js";
 
 export function normalizeChatAgentRole(role: string): GenerationRole | undefined {
@@ -32,6 +34,7 @@ export async function executeChatAgentInteraction(opts: {
   message: string;
   state: RunManagerState;
   resolveProviderBundle: () => RoleProviderBundle;
+  imageAttachments?: readonly ValidatedImageAttachment[];
 }): Promise<string> {
   const normalizedRole = normalizeChatAgentRole(opts.role);
   const bundle = opts.resolveProviderBundle();
@@ -39,14 +42,17 @@ export async function executeChatAgentInteraction(opts: {
     ? bundle.roleProviders[normalizedRole] ?? bundle.defaultProvider
     : bundle.defaultProvider;
   try {
+    const model = normalizedRole ? bundle.roleModels[normalizedRole] : bundle.defaultConfig.model;
+    assertProviderSupportsImageAttachments(provider, model, opts.imageAttachments);
     const response = await provider.complete({
       systemPrompt: "",
-      model: normalizedRole ? bundle.roleModels[normalizedRole] : bundle.defaultConfig.model,
+      model,
       userPrompt: buildChatAgentUserPrompt({
         role: opts.role,
         message: opts.message,
         state: opts.state,
       }),
+      imageAttachments: opts.imageAttachments,
     });
     return response.text;
   } finally {

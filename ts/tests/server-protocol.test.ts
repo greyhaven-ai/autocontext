@@ -51,7 +51,11 @@ const LegacyRunMessageSchema = z.discriminatedUnion("type", [
   z
     .object({
       type: z.literal("state"),
+      active: z.boolean().optional(),
       paused: z.boolean(),
+      client_run_id: z.string().optional().nullable(),
+      run_id: z.string().optional().nullable(),
+      scenario: z.string().optional().nullable(),
       generation: z.number().int().optional(),
       phase: z.string().optional(),
     })

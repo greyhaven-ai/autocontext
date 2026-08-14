@@ -3,7 +3,12 @@
  * Adapts AgentRuntime into LLMProvider interface with retry support.
  */
 
-import type { CompletionResult, LLMProvider, ThinkingCompletionOptions } from "../types/index.js";
+import type {
+  CompletionOptions,
+  CompletionResult,
+  LLMProvider,
+  ThinkingCompletionOptions,
+} from "../types/index.js";
 import { ProviderError } from "../types/index.js";
 import { addCompletionUsage, completeWithThinkingFallback } from "./thinking.js";
 import type { AgentRuntime } from "../runtimes/base.js";
@@ -41,6 +46,10 @@ export class RuntimeBridgeProvider implements LLMProvider {
     return false;
   }
 
+  supportsImageAttachments(): boolean {
+    return false;
+  }
+
   defaultModel() {
     return this.#model;
   }
@@ -49,13 +58,10 @@ export class RuntimeBridgeProvider implements LLMProvider {
     this.#runtime.close?.();
   }
 
-  async complete(opts: {
-    systemPrompt: string;
-    userPrompt: string;
-    model?: string;
-    temperature?: number;
-    maxTokens?: number;
-  }): Promise<CompletionResult> {
+  async complete(opts: CompletionOptions): Promise<CompletionResult> {
+    if (opts.imageAttachments?.length) {
+      throw new ProviderError("Runtime-backed providers do not support image attachments");
+    }
     const output = await this.#runtime.generate({
       prompt: opts.userPrompt,
       system: opts.systemPrompt || undefined,
@@ -108,6 +114,10 @@ export class RetryProvider implements LLMProvider {
     return this.#inner.supportsThinkingStream === true;
   }
 
+  supportsImageAttachments(model?: string): boolean {
+    return this.#inner.supportsImageAttachments?.(model ?? this.#inner.defaultModel()) === true;
+  }
+
   defaultModel() {
     return this.#inner.defaultModel();
   }
@@ -116,13 +126,7 @@ export class RetryProvider implements LLMProvider {
     this.#inner.close?.();
   }
 
-  async complete(opts: {
-    systemPrompt: string;
-    userPrompt: string;
-    model?: string;
-    temperature?: number;
-    maxTokens?: number;
-  }): Promise<CompletionResult> {
+  async complete(opts: CompletionOptions): Promise<CompletionResult> {
     return this.#withRetry(() => this.#inner.complete(opts));
   }
 

@@ -205,7 +205,7 @@ For the full walkthrough, see
 
 The TypeScript package exposes an experimental `autoctx/agent-runtime` subpath
 for local programmable handlers in `.autoctx/agents/*.ts`. It uses the bundled
-`tsx` loader for `.ts`, `.tsx`, and `.mts` files on Node 18+. This is an
+`tsx` loader for `.ts`, `.tsx`, and `.mts` files on Node 22.19+. This is an
 open-source local authoring surface, not the hosted deployment/orchestration
 layer.
 

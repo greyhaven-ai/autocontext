@@ -49,9 +49,11 @@ describe("TUI meta command planner", () => {
   it("formats stable command help", () => {
     expect(formatTuiCommandHelp()).toEqual(
       expect.arrayContaining([
-        '/solve "plain-language goal"',
-        "/activity [status|reset|<all|runtime|prompts|commands|children|errors> [quiet|normal|verbose]]",
-        "/quit",
+        expect.stringContaining("/solve <plain-language goal>"),
+        expect.stringContaining(
+          "/activity [status|reset|<all|runtime|prompts|commands|children|errors> [quiet|normal|verbose]]",
+        ),
+        expect.stringContaining("/quit"),
       ]),
     );
   });

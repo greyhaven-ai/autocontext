@@ -115,6 +115,17 @@ def test_agent_progress_note_capability_remains_typescript_only() -> None:
     assert "agent_progress_notes_v1" not in SERVER_CAPABILITIES
 
 
+def test_image_attachment_capability_remains_typescript_only() -> None:
+    extension = _contract()["image_attachment_extension"]
+
+    assert extension["capability"] == "image_attachments_v1"
+    assert extension["advertised_runtimes"] == ["typescript"]
+    assert extension["additive_commands"] == ["chat_agent", "inject_hint"]
+    assert extension["limits"]["max_attachments"] == 4
+    assert extension["python_support"] == "deferred"
+    assert "image_attachments_v1" not in SERVER_CAPABILITIES
+
+
 def test_python_event_stream_envelope_matches_shared_contract(tmp_path: Path) -> None:
     contract = _contract()["event_stream_envelope"]
     event_path = tmp_path / "events.ndjson"

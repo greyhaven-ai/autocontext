@@ -6,6 +6,8 @@ import type { EnvironmentInfo } from "./run-manager.js";
 export interface EnvironmentScenarioInfo {
   name: string;
   description: string;
+  origin: "builtin" | "custom";
+  available: boolean;
 }
 
 type ScenarioClass = new () => ScenarioInterface;
@@ -37,7 +39,12 @@ export function listBuiltinScenarioInfo(opts: {
     }
     const instance = new ScenarioClass();
     assertFamilyContract(instance, "game", `scenario '${name}'`);
-    return { name, description: instance.describeRules() };
+    return {
+      name,
+      description: instance.describeRules(),
+      origin: "builtin",
+      available: true,
+    };
   });
 }
 
@@ -52,6 +59,8 @@ export function listCustomScenarioInfo(opts: {
     .map((entry) => ({
       name: entry.name,
       description: describeCustomScenarioEntry(entry),
+      origin: "custom" as const,
+      available: entry.type === "agent_task" || entry.hasGeneratedSource === true,
     }));
 }
 
@@ -60,6 +69,7 @@ export function buildEnvironmentInfo(opts: {
   getBuiltinScenarioClass: (name: string) => ScenarioClass | undefined;
   customScenarios: Map<string, CustomScenarioEntry>;
   activeProviderType: string | null;
+  routingContext?: EnvironmentInfo["routingContext"];
 }): EnvironmentInfo {
   return {
     scenarios: [
@@ -82,5 +92,6 @@ export function buildEnvironmentInfo(opts: {
     ],
     currentExecutor: "local",
     agentProvider: opts.activeProviderType ?? "none",
+    ...(opts.routingContext ? { routingContext: opts.routingContext } : {}),
   };
 }

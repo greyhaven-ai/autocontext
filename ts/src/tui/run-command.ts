@@ -74,6 +74,10 @@ export type TuiStartRunCommandPlan =
       readonly kind: "start";
       readonly scenario: string;
       readonly iterations: number;
+    }
+  | {
+      readonly kind: "usage";
+      readonly usageLine: string;
     };
 
 export interface TuiStartRunCommandEffects {
@@ -94,6 +98,9 @@ export function planTuiStartRunCommand(raw: string): TuiStartRunCommandPlan {
 
   const [, scenario = "grid_ctf", iterationsText = "5"] = value.split(/\s+/, 3);
   const iterations = Number.parseInt(iterationsText, 10);
+  if (!Number.isInteger(iterations) || iterations <= 0 || String(iterations) !== iterationsText) {
+    return { kind: "usage", usageLine: "usage: /run <scenario> [positive-iterations]" };
+  }
   return {
     kind: "start",
     scenario,
@@ -108,6 +115,7 @@ export async function executeTuiStartRunCommandPlan(
   if (plan.kind === "unhandled") {
     return null;
   }
+  if (plan.kind === "usage") return { logLines: [plan.usageLine] };
   try {
     const runId = await effects.startRun(plan.scenario, plan.iterations);
     return { logLines: [`accepted run ${runId}`] };

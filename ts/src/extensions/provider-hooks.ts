@@ -1,4 +1,8 @@
-import type { CompletionResult, LLMProvider } from "../types/index.js";
+import type {
+  CompletionResult,
+  LLMProvider,
+  ValidatedImageAttachment,
+} from "../types/index.js";
 import { HookEvents, type HookBus } from "./hooks.js";
 
 export interface HookedProviderCompletionOpts {
@@ -10,6 +14,7 @@ export interface HookedProviderCompletionOpts {
   model?: string;
   temperature?: number;
   maxTokens?: number;
+  imageAttachments?: readonly ValidatedImageAttachment[];
   metadata?: Record<string, unknown>;
 }
 
@@ -39,6 +44,7 @@ export async function completeWithProviderHooks(
     model: finalModel,
     temperature: finalTemperature,
     maxTokens: finalMaxTokens,
+    imageAttachments: opts.imageAttachments,
   });
   const after = emitHook(opts.hookBus ?? null, HookEvents.AFTER_PROVIDER_RESPONSE, {
     provider: opts.provider.name,

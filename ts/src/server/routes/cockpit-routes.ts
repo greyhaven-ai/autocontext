@@ -71,6 +71,15 @@ export async function tryCockpitRoutes(
     return true;
   }
 
+  if (
+    ctx.method === "GET" &&
+    (ctx.url === "/api/cockpit/queue" || ctx.url === "/api/cockpit/queue/")
+  ) {
+    const response = cockpitApi.queueState();
+    ctx.json(response.status, response.body);
+    return true;
+  }
+
   // Cockpit background-session routes
   if (
     ctx.method === "GET" &&
@@ -173,7 +182,7 @@ export async function tryCockpitRoutes(
   }
 
   const cockpitRunResourceMatch = ctx.url.match(
-    /^\/api\/cockpit\/runs\/([^/]+)\/(status|changelog|resume|consultations)$/,
+    /^\/api\/cockpit\/runs\/([^/]+)\/(status|inspection|changelog|resume|consultations)$/,
   );
   if (ctx.method === "GET" && cockpitRunResourceMatch) {
     const [, rawRunId, resource] = cockpitRunResourceMatch;
@@ -181,6 +190,8 @@ export async function tryCockpitRoutes(
     const response =
       resource === "status"
         ? cockpitApi.runStatus(runId)
+        : resource === "inspection"
+          ? cockpitApi.runInspection(runId)
         : resource === "changelog"
           ? cockpitApi.changelog(runId)
           : resource === "resume"

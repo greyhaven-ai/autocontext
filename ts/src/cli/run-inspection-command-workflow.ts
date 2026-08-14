@@ -1,4 +1,5 @@
 import { progressReportReference, type RunProgressReport } from "../analytics/progress-report.js";
+import { renderRunStatusPresentation } from "../domain/run-status-presentation.js";
 import type { RuntimeSessionSummary } from "../session/runtime-session-read-model.js";
 
 export const RUN_STATUS_HELP_TEXT = `autoctx status — show status for one run
@@ -115,16 +116,41 @@ export function renderRunStatus(
   }
 
   const latest = latestGeneration(generations);
-  return [
-    `Run ${run.run_id}`,
-    `  Status: ${run.status}`,
-    `  Scenario: ${run.scenario}`,
-    `  Generations: ${generations.length}/${run.target_generations}`,
-    latest ? `  Latest best score: ${formatScore(latest.best_score)} (generation ${latest.generation_index})` : null,
-    latest ? `  Latest gate: ${latest.gate_decision}` : null,
-    progressReport ? `  ${renderProgressReportReference(progressReport)}` : null,
-    runtimeSession ? `  Runtime session: ${runtimeSession.session_id}` : null,
-  ].filter((line): line is string => line !== null).join("\n");
+  const progress = progressReport ? progressReportReference(progressReport) : null;
+  const latestPassAtK = progress?.pass_at_k.at(-1);
+  return renderRunStatusPresentation({
+    runId: run.run_id,
+    status: run.status,
+    scenario: run.scenario,
+    completedGenerations: generations.length,
+    targetGenerations: run.target_generations,
+    ...(latest
+      ? {
+          latestGeneration: {
+            generation: latest.generation_index,
+            bestScore: latest.best_score,
+            gateDecision: latest.gate_decision,
+          },
+        }
+      : {}),
+    ...(progress
+      ? {
+          progress: {
+            bestScore: progress.best_score,
+            threshold: progress.threshold,
+            ...(latestPassAtK
+              ? {
+                  latestPassAtK: {
+                    k: latestPassAtK.k,
+                    passed: latestPassAtK.passed,
+                  },
+                }
+              : {}),
+          },
+        }
+      : {}),
+    ...(runtimeSession ? { runtimeSessionId: runtimeSession.session_id } : {}),
+  }).join("\n");
 }
 
 export function renderRunStatusJsonLine(
@@ -220,20 +246,6 @@ function bestGeneration(generations: RunInspectionGeneration[]): RunInspectionGe
       !best || generation.best_score > best.best_score ? generation : best,
     null,
   );
-}
-
-function renderProgressReportReference(report: RunProgressReport): string {
-  const reference = progressReportReference(report);
-  const latestPassAtK = reference.pass_at_k.at(-1);
-  return [
-    `Progress best score: ${formatNullableScore(reference.best_score)}`,
-    `(threshold ${formatScore(reference.threshold)},`,
-    latestPassAtK ? `pass@${latestPassAtK.k}: ${latestPassAtK.passed ? "pass" : "miss"})` : "pass@k: n/a)",
-  ].join(" ");
-}
-
-function formatNullableScore(score: number | null): string {
-  return score === null ? "n/a" : formatScore(score);
 }
 
 function formatScore(score: number): string {

@@ -19,6 +19,51 @@
       "idempotency_horizon": "same as retained command and response records"
     }
   },
+  "image_attachment_extension": {
+    "capability": "image_attachments_v1",
+    "advertised_runtimes": ["typescript"],
+    "advertisement": "dynamic_for_active_provider_and_model",
+    "protocol_version": 1,
+    "additive_commands": ["chat_agent", "inject_hint"],
+    "field": "image_attachments",
+    "attachment": {
+      "required_fields": [
+        "id",
+        "name",
+        "source",
+        "media_type",
+        "data_base64",
+        "byte_length",
+        "content_sha256",
+        "width",
+        "height"
+      ],
+      "sources": ["picker", "paste", "drop"],
+      "media_types": ["image/png", "image/jpeg", "image/gif", "image/webp"],
+      "canonical_base64": true,
+      "unique_fields": ["id", "content_sha256"],
+      "verified_before_provider": [
+        "decoded_byte_length",
+        "sha256",
+        "format_header",
+        "encoded_dimensions"
+      ]
+    },
+    "limits": {
+      "max_attachments": 4,
+      "max_decoded_bytes_per_image": 5242880,
+      "max_encoded_bytes_per_image": 7340032,
+      "max_dimension": 8192,
+      "max_decoded_rgba_bytes_per_image": 67108864,
+      "max_aggregate_encoded_bytes": 20971520
+    },
+    "provider_delivery": {
+      "anthropic": "base64_image_block_with_exact_verified_bytes",
+      "openai": "data_url_image_part_with_exact_verified_bytes",
+      "unknown_compatible_gateway": "fail_closed_unless_explicitly_opted_in"
+    },
+    "python_support": "deferred"
+  },
   "agent_task_plan_extension": {
     "capability": "agent_task_plan_v1",
     "advertised_runtimes": ["typescript"],

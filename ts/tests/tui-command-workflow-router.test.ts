@@ -117,7 +117,7 @@ describe("TUI interactive command workflow", () => {
         effects,
       ),
     ).resolves.toEqual({
-      logLines: ["[analyst] chat response"],
+      logLines: ["[analyst] chat response", "second line"],
       pendingLogin: null,
     });
 

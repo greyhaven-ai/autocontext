@@ -211,7 +211,7 @@ const COMMANDS: readonly CommandDescriptor[] = [
   },
   {
     name: "tui",
-    description: "Start interactive TUI (WebSocket server + Ink UI)",
+    description: "Start or attach the pi-tui agent operator surface",
     group: "primary",
     route: { kind: "db", command: "tui" },
   },

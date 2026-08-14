@@ -1,9 +1,12 @@
 import { ProviderError, ThinkingUnsupportedError } from "../types/index.js";
 import { clampOutputTokens } from "./token-caps.js";
 import type {
+  CompletionOptions,
   CompletionResult,
   LLMProvider,
+  ValidatedImageAttachment,
 } from "../types/index.js";
+import { encodeValidatedImage } from "../types/index.js";
 import { DeterministicProvider } from "./deterministic.js";
 import {
   DEEP_THINK_DESCRIPTION,
@@ -36,6 +39,38 @@ export interface AnthropicProviderOpts {
   model?: string;
 }
 
+function supportsAnthropicImages(model: string): boolean {
+  return /(?:^|\/)claude-(?:3|haiku|sonnet|opus|fable|mythos)(?:$|[-:.])/i.test(model);
+}
+
+function assertImagePath(
+  provider: string,
+  model: string,
+  supported: boolean,
+  attachments: readonly ValidatedImageAttachment[] | undefined,
+): void {
+  if (attachments?.length && !supported) {
+    throw new ProviderError(
+      `Provider '${provider}' model '${model}' does not support image attachments`,
+    );
+  }
+}
+
+function anthropicUserContent(opts: CompletionOptions): string | Array<Record<string, unknown>> {
+  if (!opts.imageAttachments?.length) return opts.userPrompt;
+  return [
+    ...opts.imageAttachments.map((attachment) => ({
+      type: "image",
+      source: {
+        type: "base64",
+        media_type: attachment.mediaType,
+        data: encodeValidatedImage(attachment),
+      },
+    })),
+    { type: "text", text: opts.userPrompt },
+  ];
+}
+
 function claudeRequestControls(model: string, temperature: number): Record<string, unknown> {
   const isClaude5 = /(?:^|\/)claude-(?:sonnet|opus|fable|mythos)-5(?:$|[-:])/i.test(model);
   if (!isClaude5) return { temperature };
@@ -46,6 +81,7 @@ function claudeRequestControls(model: string, temperature: number): Record<strin
 
 export function createAnthropicProvider(opts: AnthropicProviderOpts): LLMProvider {
   const defaultModel = opts.model || "claude-sonnet-5";
+  const supportsImages = (model = defaultModel) => supportsAnthropicImages(model);
 
   const post = async (body: Record<string, unknown>): Promise<AnthropicMessageResponse> => {
     const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -68,14 +104,16 @@ export function createAnthropicProvider(opts: AnthropicProviderOpts): LLMProvide
   return {
     name: "anthropic",
     supportsThinkingStream: true,
+    supportsImageAttachments: supportsImages,
     defaultModel: () => defaultModel,
     complete: async (callOpts) => {
       const model = callOpts.model || defaultModel;
+      assertImagePath("anthropic", model, supportsImages(model), callOpts.imageAttachments);
       const data = await post({
         model,
         max_tokens: clampOutputTokens(callOpts.maxTokens ?? 4096, model),
         system: callOpts.systemPrompt,
-        messages: [{ role: "user", content: callOpts.userPrompt }],
+        messages: [{ role: "user", content: anthropicUserContent(callOpts) }],
         ...claudeRequestControls(model, callOpts.temperature ?? 0),
       });
 
@@ -96,8 +134,9 @@ export function createAnthropicProvider(opts: AnthropicProviderOpts): LLMProvide
       if (maxToolTurns < 1) throw new RangeError("maxToolTurns must be at least 1");
 
       const model = callOpts.model || defaultModel;
+      assertImagePath("anthropic", model, supportsImages(model), callOpts.imageAttachments);
       const messages: Array<Record<string, unknown>> = [
-        { role: "user", content: callOpts.userPrompt },
+        { role: "user", content: anthropicUserContent(callOpts) },
       ];
       const thinkingStream: string[] = [];
       const usage: Record<string, number> = {};
@@ -247,6 +286,34 @@ export interface OpenAICompatibleProviderOpts {
   apiKey?: string;
   baseUrl?: string;
   model?: string;
+  /** Explicit opt-in for compatible gateways whose multimodal contract is known. */
+  imageSupport?: boolean | ((model: string) => boolean);
+}
+
+function isOfficialOpenAIBaseUrl(baseUrl: string): boolean {
+  try {
+    const parsed = new URL(baseUrl);
+    return parsed.protocol === "https:" && parsed.hostname === "api.openai.com";
+  } catch {
+    return false;
+  }
+}
+
+function supportsOpenAIImages(model: string): boolean {
+  return /(?:^|\/)(?:chatgpt-4o|gpt-(?:4o|4\.1|4-vision|5(?:[.-]\d+)*)(?:$|[-:.])|o[134](?:-|$))/i.test(model);
+}
+
+function openAIUserContent(opts: CompletionOptions): string | Array<Record<string, unknown>> {
+  if (!opts.imageAttachments?.length) return opts.userPrompt;
+  return [
+    { type: "text", text: opts.userPrompt },
+    ...opts.imageAttachments.map((attachment) => ({
+      type: "image_url",
+      image_url: {
+        url: `data:${attachment.mediaType};base64,${encodeValidatedImage(attachment)}`,
+      },
+    })),
+  ];
 }
 
 function isUnsupportedResponseFormatError(status: number, body: string): boolean {
@@ -366,13 +433,19 @@ export function createOpenAICompatibleProvider(opts: OpenAICompatibleProviderOpt
   const defaultModel = opts.model || "gpt-5.6-terra";
   const baseUrl = (opts.baseUrl ?? "https://api.openai.com/v1").replace(/\/+$/, "");
   const apiKey = opts.apiKey ?? "";
+  const supportsImages = (model = defaultModel) =>
+    typeof opts.imageSupport === "function"
+      ? opts.imageSupport(model)
+      : opts.imageSupport ?? (isOfficialOpenAIBaseUrl(baseUrl) && supportsOpenAIImages(model));
 
   return {
     name: "openai-compatible",
     supportsThinkingStream: true,
+    supportsImageAttachments: supportsImages,
     defaultModel: () => defaultModel,
     complete: async (callOpts) => {
       const model = callOpts.model || defaultModel;
+      assertImagePath("openai-compatible", model, supportsImages(model), callOpts.imageAttachments);
       let wireReasoningEffort: string | undefined = isGpt56Plus(model) ? "none" : undefined;
       let tokenField = outputTokenField(model);
       const buildBody = (withSchema: boolean) =>
@@ -385,7 +458,7 @@ export function createOpenAICompatibleProvider(opts: OpenAICompatibleProviderOpt
             : {}),
           messages: [
             { role: "system", content: callOpts.systemPrompt },
-            { role: "user", content: callOpts.userPrompt },
+            { role: "user", content: openAIUserContent(callOpts) },
           ],
           ...(withSchema && callOpts.outputSchema
             ? {
@@ -460,12 +533,13 @@ export function createOpenAICompatibleProvider(opts: OpenAICompatibleProviderOpt
       if (maxToolTurns < 1) throw new RangeError("maxToolTurns must be at least 1");
 
       const model = callOpts.model || defaultModel;
+      assertImagePath("openai-compatible", model, supportsImages(model), callOpts.imageAttachments);
       const juice = isGpt56Plus(model)
         ? deepThinkJuice(callOpts.reasoningEffort ?? "medium")
         : undefined;
       const messages: Array<Record<string, unknown>> = [
         { role: "system", content: withDeepThinkInstruction(callOpts.systemPrompt, juice) },
-        { role: "user", content: callOpts.userPrompt },
+        { role: "user", content: openAIUserContent(callOpts) },
       ];
       const thinkingStream: string[] = [];
       const usage: Record<string, number> = {};

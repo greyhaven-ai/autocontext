@@ -145,25 +145,41 @@ async function createTestServer(dir: string) {
     join(progressDir, "test-run-1.json"),
     JSON.stringify(
       {
+        schema_version: 1,
         run_id: "test-run-1",
-        scenario: "grid_ctf",
-        total_generations: 1,
-        advances: 1,
-        rollbacks: 0,
-        retries: 0,
-        progress: {
-          raw_score: 0.7,
-          normalized_score: 0.7,
-          score_floor: 0,
-          score_ceiling: 1,
-          pct_of_ceiling: 70,
-        },
-        cost: {
-          total_input_tokens: 20000,
-          total_output_tokens: 10000,
-          total_tokens: 30000,
-          total_cost_usd: 0.15,
-        },
+        generated_at: "2026-08-14T12:00:00.000Z",
+        threshold: 0.7,
+        progress_points: [{
+          event_id: "progress-1",
+          timestamp: "2026-08-14T12:00:00.000Z",
+          elapsed_seconds: 0,
+          generation_index: 1,
+          hypothesis_node_id: null,
+          candidate_id: "candidate-1",
+          score: 0.7,
+          best_score: 0.7,
+          improved: true,
+          milestone_names: ["first_valid_candidate", "threshold_success"],
+        }],
+        milestones: [{
+          name: "first_valid_candidate",
+          reached: true,
+          event_id: "progress-1",
+          timestamp: "2026-08-14T12:00:00.000Z",
+          elapsed_seconds: 0,
+          generation_index: 1,
+          hypothesis_node_id: null,
+          score: 0.7,
+        }],
+        pass_at_k: [{
+          k: 1,
+          trials_considered: 1,
+          successes: 1,
+          passed: true,
+          best_score: 0.7,
+          threshold: 0.7,
+        }],
+        branch_lineage: [],
       },
       null,
       2,
@@ -968,8 +984,66 @@ describe("HTTP API — cockpit", () => {
           quarantined: null,
         }),
       ],
+      progress_report: {
+        run_id: "test-run-1",
+        threshold: 0.7,
+        best_score: 0.7,
+        milestones_reached: 1,
+      },
     });
     expectTestRunRuntimeSessionDiscovery(body);
+  });
+
+  it("GET /api/cockpit/runs/:run_id/inspection returns the complete shared read model", async () => {
+    await persistRuntimeSession(dir);
+
+    const { status, body } = await fetchJson(
+      `${baseUrl}/api/cockpit/runs/test-run-1/inspection`,
+    );
+
+    expect(status).toBe(200);
+    expect(body).toMatchObject({
+      run: {
+        run_id: "test-run-1",
+        scenario: "grid_ctf",
+        status: "running",
+      },
+      latest_generation: { generation: 1, best_score: 0.7 },
+      best_generation: { generation: 1, best_score: 0.7 },
+      latest_outputs: [
+        { role: "competitor", content: '{"aggression": 0.6}', generation: 1 },
+      ],
+      best_outputs: [
+        { role: "competitor", content: '{"aggression": 0.6}', generation: 1 },
+      ],
+      progress_report: {
+        run_id: "test-run-1",
+        best_score: 0.7,
+        milestones_reached: 1,
+      },
+      artifact_discovery: {
+        trace_gates: "/api/cockpit/runs/test-run-1/trace-gates",
+        runtime_timeline: "/api/cockpit/runs/test-run-1/runtime-session/timeline",
+        writeup: "/api/cockpit/writeup/test-run-1",
+        export: "/api/knowledge/export/grid_ctf",
+      },
+    });
+    expectTestRunRuntimeSessionDiscovery(body);
+  });
+
+  it("GET /api/cockpit/runs/:run_id/inspection distinguishes a missing run", async () => {
+    const { status, body } = await fetchJson(`${baseUrl}/api/cockpit/runs/missing/inspection`);
+
+    expect(status).toBe(404);
+    expect(body).toEqual({ detail: "Run 'missing' not found" });
+  });
+
+  it("GET /api/cockpit/queue returns truthful empty queue and worker state", async () => {
+    const { status, body } = await fetchJson(`${baseUrl}/api/cockpit/queue`);
+
+    expect(status).toBe(200);
+    expect(body).toMatchObject({ tasks: [], workers: [] });
+    expect((body as Record<string, unknown>).generated_at).toEqual(expect.any(String));
   });
 
   it("GET /api/cockpit/runs/:run_id/status carries evaluator_epoch and quarantined lineage", async () => {
@@ -1473,7 +1547,7 @@ describe("HTTP API — research hub", () => {
       title: "Grid result",
       best_score: 0.7,
       best_elo: 1050,
-      normalized_progress: expect.stringContaining("70.00% of ceiling"),
+      normalized_progress: expect.stringContaining("100.00% of threshold"),
       cost_summary: "$0.15 total, 30000 tokens",
       weakness_summary: expect.stringContaining("Parse failure"),
       friction_signals: ["Parse failure on generation 1"],

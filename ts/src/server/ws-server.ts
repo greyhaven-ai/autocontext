@@ -41,7 +41,12 @@ import { buildBackgroundSessionApiRoutes } from "./background-session-api.js";
 import { buildRuntimeSessionApiRoutes } from "./runtime-session-api.js";
 import { buildSimulationApiRoutes } from "./simulation-api.js";
 import { buildTraceGateReviewApiRoutes } from "./trace-gate-review-api.js";
-import { buildSessionBootstrapMessages, buildStateMessage } from "./websocket-session-bootstrap.js";
+import {
+  buildEnvironmentMessage,
+  buildHelloMessage,
+  buildSessionBootstrapMessages,
+  buildStateMessage,
+} from "./websocket-session-bootstrap.js";
 import {
   loadReplayArtifactResponse,
   type RunSimulationReadDeps,
@@ -511,14 +516,21 @@ export class InteractiveServer {
     });
 
     const state = this.#runManager.getState();
-    for (const message of buildSessionBootstrapMessages(env, state, { runTranscript })) {
+    for (const message of buildSessionBootstrapMessages(env, state, {
+      runTranscript,
+      capabilities: this.#runManager.getInteractiveCapabilities(),
+    })) {
       if (message.type !== "state") {
         this.#send(ws, message);
         continue;
       }
       const clientRunId = state.runId ? this.#runTranscripts.resolveClientRunId(state.runId) : null;
       if (runTranscript && clientRunId) {
-        this.#send(ws, { type: "state", paused: state.paused });
+        this.#send(ws, {
+          ...message,
+          client_run_id: clientRunId,
+          ...(state.runId ? { run_id: state.runId } : {}),
+        });
         continue;
       }
       this.#send(ws, message);
@@ -719,13 +731,17 @@ export class InteractiveServer {
       case "logout":
       case "switch_provider":
       case "whoami": {
-        this.#send(
-          ws,
-          await executeAuthCommand({
-            command: msg,
-            runManager: this.#runManager,
-          }),
-        );
+        this.#send(ws, await executeAuthCommand({
+          command: msg,
+          runManager: this.#runManager,
+        }));
+        if (this.#transcriptClients.has(ws)) {
+          this.#send(ws, buildHelloMessage({
+            runTranscript: true,
+            capabilities: this.#runManager.getInteractiveCapabilities(),
+          }));
+          this.#send(ws, buildEnvironmentMessage(this.#runManager.getEnvironmentInfo()));
+        }
         return;
       }
     }

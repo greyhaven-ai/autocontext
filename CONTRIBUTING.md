@@ -26,7 +26,9 @@ cd ts
 npm install
 ```
 
-Native modules (`isolated-vm`, `better-sqlite3`) need Node 22; use the version pinned in `ts/.nvmrc` (also applies to `pi/`, which depends on `ts/` and inherits the same native-module requirement).
+The TypeScript package requires Node 22.19.0 or newer. Native modules
+(`isolated-vm`, `better-sqlite3`) and pi-tui share the version pinned in
+`ts/.nvmrc` (also applies to `pi/`, which depends on `ts/`).
 
 ## Common Checks
 
@@ -58,7 +60,7 @@ npm test
 ## Repo Map
 
 - `autocontext/`: Python package, CLI, API server, and tests
-- `ts/`: published TypeScript package, Node CLI, MCP server, and bundled Ink terminal UI
+- `ts/`: published TypeScript package, Node CLI, MCP server, and bundled pi-tui terminal UI
 - `scripts/`: repo maintenance and protocol generation helpers
 
 ## Development Notes

@@ -1,4 +1,4 @@
-import { TUI_ACTIVITY_USAGE } from "./activity-summary.js";
+import { formatTuiCommandHelp as formatRegisteredTuiCommandHelp } from "./command-registry.js";
 
 export interface TuiMetaCommandContext {
   readonly hasPendingLogin: boolean;
@@ -58,24 +58,5 @@ export function planTuiMetaCommand(
 }
 
 export function formatTuiCommandHelp(): string[] {
-  return [
-    '/solve "plain-language goal"',
-    "/run <scenario> [iterations]",
-    "/status <run-id>",
-    "/show <run-id> --best",
-    "/watch <run-id>",
-    "/timeline <run-id>",
-    "/findings <run-id> (alias: /trace-gates <run-id>)",
-    TUI_ACTIVITY_USAGE,
-    "/pause or /resume",
-    "/hint <text>",
-    "/gate <advance|retry|rollback>",
-    "/chat <role> <message>",
-    "/login <provider> [apiKey]",
-    "/logout [provider]",
-    "/provider <name>",
-    "/whoami",
-    "/scenarios",
-    "/quit",
-  ];
+  return formatRegisteredTuiCommandHelp();
 }

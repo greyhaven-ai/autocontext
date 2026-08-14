@@ -7,6 +7,16 @@ import { z } from "zod";
 
 import { AGENT_PROGRESS_NOTE_CAPABILITY } from "../loop/agent-progress-note.js";
 import { AGENT_TASK_PLAN_CAPABILITY } from "../loop/agent-task-plan.js";
+import { ImageAttachmentListSchema } from "../types/image-attachments.js";
+
+export {
+  IMAGE_ATTACHMENTS_CAPABILITY,
+  ImageAttachmentListSchema,
+  ImageAttachmentMediaTypeSchema,
+  ImageAttachmentSchema,
+  ImageAttachmentSourceSchema,
+} from "../types/image-attachments.js";
+export type { ImageAttachment } from "../types/image-attachments.js";
 
 export {
   AGENT_PROGRESS_NOTE_CAPABILITY,
@@ -110,6 +120,22 @@ export const CLIENT_MESSAGE_TYPES = [
 export const ScenarioInfoSchema = protocolObject({
   name: z.string(),
   description: z.string(),
+  origin: z.enum(["builtin", "custom", "unknown"]).optional(),
+  available: z.boolean().optional(),
+});
+
+export const RoutingRoleInfoSchema = protocolObject({
+  provider: z.string(),
+  model: z.string(),
+  capabilityTier: z.string().optional(),
+});
+
+export const RoutingContextSchema = protocolObject({
+  provider: z.string(),
+  model: z.string().optional(),
+  hostingClass: z.string().optional(),
+  capabilityTier: z.string().optional(),
+  roles: z.record(RoutingRoleInfoSchema),
 });
 
 export const ExecutorResourcesSchema = protocolObject({
@@ -171,7 +197,9 @@ export const EventMsgSchema = protocolObject({
 
 export const StateMsgSchema = protocolObject({
   type: z.literal("state"),
+  active: z.boolean().optional(),
   paused: z.boolean(),
+  scenario: z.string().optional().nullable(),
   generation: z.number().int().optional(),
   phase: z.string().optional(),
   ...RunMessageMetadataSchema,
@@ -191,6 +219,7 @@ export const EnvironmentsMsgSchema = protocolObject({
   executors: z.array(ExecutorInfoSchema),
   current_executor: z.string(),
   agent_provider: z.string(),
+  routing_context: RoutingContextSchema.optional(),
 });
 
 export const RunAcceptedMsgSchema = protocolObject({
@@ -305,6 +334,7 @@ export const StopCmdSchema = protocolObject({
 export const InjectHintCmdSchema = protocolObject({
   type: z.literal("inject_hint"),
   text: z.string().min(1),
+  image_attachments: ImageAttachmentListSchema.optional(),
   ...RunCommandMetadataSchema,
 });
 
@@ -318,6 +348,7 @@ export const ChatAgentCmdSchema = protocolObject({
   type: z.literal("chat_agent"),
   role: z.string(),
   message: z.string().min(1),
+  image_attachments: ImageAttachmentListSchema.optional(),
   ...RunCommandMetadataSchema,
 });
 

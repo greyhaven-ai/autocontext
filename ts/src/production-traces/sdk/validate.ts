@@ -27,7 +27,7 @@ export class ValidationError extends Error {
     this.name = "ValidationError";
     this.fieldErrors = fieldErrors;
     // Set prototype so `instanceof` works after transpilation targeting ES5+
-    // environments. Node 18+ / modern runtimes honor this pattern.
+    // environments. The supported Node 22.19+ runtime honors this pattern.
     Object.setPrototypeOf(this, ValidationError.prototype);
   }
 }

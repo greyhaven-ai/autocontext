@@ -89,6 +89,8 @@ metadata is available.
 - **`context-selection`** — inspect persisted prompt context telemetry for run budget/cache tuning
 - **`mission`** — real-world goal execution with adaptive planning and campaigns
 - **`agent`** — TypeScript local runner/dev server and self-hosted Node build target for experimental `.autoctx/agents` handlers
+- **`tui`** — Node 22.19+ pi-tui operator client for local runs or remote
+  TypeScript server attachment, with durable transcript replay and cockpit reads
 - **`train`** — distill curated datasets into scenario-local models
 - **`hermes`** — read-only Hermes v0.12 skill/Curator inspection plus Hermes skill export
 

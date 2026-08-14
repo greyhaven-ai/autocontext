@@ -6,6 +6,10 @@ Use the Python package when you need the full Python control plane or local MLX/
 
 ## Install
 
+The npm package requires Node.js 22.19.0 or newer. The pinned development
+version is recorded in [`.nvmrc`](.nvmrc); pi-tui and the native SQLite module
+both rely on this baseline.
+
 ```bash
 bun add -g autoctx
 # or
@@ -118,6 +122,53 @@ const orchestrator = new AgentOrchestrator(provider, {
 
 `train` is a validation/executor-hook surface in TypeScript; end-to-end MLX/CUDA training lives in the Python package unless your application injects a real `TrainingRunner`.
 
+## Operator TUI
+
+Start a local interactive server and attach the pi-tui client:
+
+```bash
+autoctx tui
+```
+
+Attach the same client to an existing TypeScript `autoctx serve` endpoint:
+
+```bash
+autoctx tui --connect https://host.example
+```
+
+Local and remote mode use the same WebSocket transport, durable transcript
+view model, command registry, and HTTP cockpit read models. The renderer never
+opens SQLite or calls `RunManager` directly. The alternate-screen layout keeps
+connection/run state at the top, the current task plan on wide terminals, a
+scrollable durable transcript, sticky run status, and a multiline editor. It
+supports 40-column through wide layouts, Unicode-aware wrapping, mouse and
+PageUp/PageDown scrolling, selection, `Ctrl+Shift+F` search, `End` to resume
+follow-tail, `Shift+Enter` for a newline, history, paste, and registry-driven
+slash completion. TUI logs live under `<runsRoot>/_tui/logs`; shutdown restores
+the main screen and prints the final transcript document.
+
+Use `/help` or `F1` for the capability-aware command list. The main command
+families are:
+
+- Run control: `/run`, `/pause`, `/resume`, `/hint`, `/gate`, and `/stop`.
+- Inspection: `/status`, `/show`, `/watch` (`/follow`), `/timeline`,
+  `/findings`, `/artifacts`, and `/export`.
+- Cockpit: `/runs` (`/list`), `/queue`, `/workers`, `/sessions`, and
+  `/session <session-id>` for parent/child drill-down.
+- Agent/scenario: `/chat`, `/solve`, `/scenarios`, `/routing`, `/approve`,
+  and `/reject`.
+- Authentication: `/login`, `/logout`, `/provider`, and `/whoami`.
+
+`/quit`, `/exit`, `/detach`, and `Ctrl+C` only detach the TUI; they never stop
+the run. `/stop` is separately capability-gated, run-scoped, and requires the
+same run to be confirmed with `/stop confirm`. Playbook approval and rejection
+likewise require `/approve <scenario> confirm` or `/reject <scenario> confirm`.
+Commands are serialized so overlapping submissions cannot race. API keys are
+entered in a masked overlay, never inserted into editor history, and are
+cleared from the input component before it closes.
+Artifact discovery output uses OSC 8 hyperlinks when the terminal supports
+them, while retaining the full URL as readable fallback text.
+
 Applications with an in-process component host can pass a
 `RegistryRuntimeActivationController` through the `runtimeActivation` option of
 `runControlPlaneCommand`. In that configuration, `promotion apply` and
@@ -180,6 +231,48 @@ idempotency has the same finite horizon as its retained request and response.
 Compaction uses an fsync-backed atomic replacement. The Python server accepts the
 additive metadata fields for schema compatibility but does not advertise this
 TypeScript-only retention capability.
+
+#### Image attachments
+
+When the active provider and model can consume images, transcript-enabled
+TypeScript connections advertise `image_attachments_v1`. The capability is
+dynamic: provider or model changes refresh the hello/environment frames, and a
+client must fail closed when the capability is absent. Python parity is
+deferred; its interactive server does not advertise this capability.
+
+`chat_agent` and `inject_hint` accept the same optional additive
+`image_attachments` array without changing `protocol_version: 1`:
+
+```json
+{
+  "type": "chat_agent",
+  "role": "analyst",
+  "message": "Inspect this image",
+  "image_attachments": [
+    {
+      "id": "image-1",
+      "name": "pixel.png",
+      "source": "picker",
+      "media_type": "image/png",
+      "data_base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZsOkAAAAASUVORK5CYII=",
+      "byte_length": 68,
+      "content_sha256": "786ada68a10b8f04d3ebb48883677ce6fb4d3f6fd11b4d6229ffba1698a4ad03",
+      "width": 1,
+      "height": 1
+    }
+  ]
+}
+```
+
+`source` is `picker`, `paste`, or `drop`; supported media types are PNG, JPEG,
+GIF, and WebP. Before any provider call, the server enforces canonical base64,
+unique ids and content hashes, exact decoded byte count and SHA-256, matching
+format headers and dimensions, and these limits: at most four images, 5 MiB
+decoded source bytes and 7 MiB encoded bytes per image, dimensions no larger
+than 8192×8192, a 64 MiB decoded RGBA budget per image, and 20 MiB aggregate
+encoded bytes. Anthropic receives exact base64 image blocks; supported OpenAI
+models receive exact data-URL image parts. Unknown OpenAI-compatible gateways
+are unsupported unless the embedding application explicitly opts them in.
 
 Transcript-enabled TypeScript runs expose their current semantic execution plan
 as `task_plan_updated` events. Every event is a complete snapshot rather than a
