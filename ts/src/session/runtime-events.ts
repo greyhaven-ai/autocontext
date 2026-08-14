@@ -9,6 +9,7 @@ export const RuntimeSessionEventType = {
   CHILD_TASK_STARTED: "child_task_started",
   CHILD_TASK_COMPLETED: "child_task_completed",
   COMPACTION: "compaction",
+  COMPONENT_LIFECYCLE: "component_lifecycle",
 } as const;
 export type RuntimeSessionEventType =
   (typeof RuntimeSessionEventType)[keyof typeof RuntimeSessionEventType];
@@ -85,6 +86,8 @@ function readEventType(value: unknown): RuntimeSessionEventType {
       return RuntimeSessionEventType.CHILD_TASK_COMPLETED;
     case RuntimeSessionEventType.COMPACTION:
       return RuntimeSessionEventType.COMPACTION;
+    case RuntimeSessionEventType.COMPONENT_LIFECYCLE:
+      return RuntimeSessionEventType.COMPONENT_LIFECYCLE;
     default:
       throw new Error(`Unknown runtime session event type: ${String(value)}`);
   }

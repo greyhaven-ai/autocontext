@@ -1,4 +1,19 @@
 export type { AgentOutput, AgentRuntime } from "./base.js";
+export {
+  RuntimeComponentLifecycleState,
+  RuntimeComponentScope,
+  activateRuntimeComponent,
+} from "./component-lifecycle.js";
+export type {
+  RuntimeComponentActivator,
+  RuntimeComponentDisposer,
+  RuntimeComponentLifecycleEvent,
+  RuntimeComponentLifecycleEventSink,
+  RuntimeComponentLifecycleOperation,
+  RuntimeComponentLifecycleOutcome,
+  RuntimeComponentScopeOptions,
+  RuntimeOwnedComponentDisposer,
+} from "./component-lifecycle.js";
 export { RuntimeSessionAgentRuntime } from "./runtime-session-agent.js";
 export type { RuntimeSessionAgentRuntimeOpts } from "./runtime-session-agent.js";
 export {

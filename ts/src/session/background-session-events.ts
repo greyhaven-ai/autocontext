@@ -196,6 +196,26 @@ export function normalizeRuntimeSessionEvent(event: RuntimeSessionEvent): Normal
           summary_artifact_id: "summaryArtifactId",
         }),
       });
+    case "component_lifecycle": {
+      const outcome = readNonEmptyString(event.payload.outcome);
+      const state = readNonEmptyString(event.payload.state);
+      return baseEvent(event, {
+        normalizedEvent: "runtime_event",
+        status: outcome === "failed"
+          ? "failed"
+          : state === "active" || state === "inactive"
+            ? "completed"
+            : "running",
+        title: "Runtime component lifecycle",
+        payloadSummary: pickPayload(event.payload, {
+          component_id: "componentId",
+          previous_state: "previousState",
+          state: "state",
+          operation: "operation",
+          outcome: "outcome",
+        }),
+      });
+    }
   }
 }
 

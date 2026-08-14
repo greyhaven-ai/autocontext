@@ -48,6 +48,7 @@ Python intentionally does not advertise it until equivalent durable transcript
 metadata is available.
 
 - [Core/control package split](core-control-package-split.md)
+- [Runtime component lifecycle](internal/runtime-component-lifecycle.md)
 - [Strategy package import side-effect contract](strategy-package-import-contract.json)
 - [Generic edge runtime compatibility spike](edge-runtime-compatibility.md)
 - [Fetch adapter API reference](fetch-api-reference.md)

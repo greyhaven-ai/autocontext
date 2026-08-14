@@ -66,3 +66,18 @@ inside the original managed root (`runs`, `knowledge`, `skills`, or
 ## Design Notes
 
 The hook bus follows the same spirit as Pi extensions: small contracts, ordered handlers, branch/run-safe payloads, and no hidden prompt parsing. Autocontext keeps its full control plane by default; use hooks for local policy, observability, context shaping, and Pi-like harness adaptation.
+
+TypeScript callers that need unloadable extensions can use
+`loadExtensionComponents`. Each returned component owns its hook registrations;
+`await component.unload()` removes them in reverse registration order and is
+safe to call more than once. The existing `loadExtensions` API remains
+compatible and uses the same lifecycle-owned registration path.
+
+```ts
+const [component] = await loadExtensionComponents("./local-hooks.mjs", hookBus);
+// ...use the extension...
+await component.unload();
+```
+
+The lifecycle primitive is TypeScript-first. Python extension hooks retain
+their process-lifetime behavior in this slice.
