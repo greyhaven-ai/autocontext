@@ -95,3 +95,7 @@ Cross-process locking, distributed transactions, arbitrary Git patch
 application, and Python parity remain out of scope. A deployment running more
 than one activation supervisor for the same pointer must add a process-level
 lease around this single-process transaction contract.
+
+The [runtime composition confluence harness](runtime-composition-confluence.md)
+exercises every durable precommit boundary, activation/cutover/disposal fault,
+and seeded async provider race against the observable clean-boot contract.

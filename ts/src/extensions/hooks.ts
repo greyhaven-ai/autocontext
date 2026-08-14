@@ -1,4 +1,5 @@
 import type { RuntimeComponentScope } from "../runtimes/component-lifecycle.js";
+import type { RuntimeCompositionInventory } from "../runtimes/composition-observability.js";
 
 export enum HookEvents {
   RUN_START = "run_start",
@@ -172,10 +173,16 @@ export class HookBus {
 export class ExtensionAPI {
   readonly bus: HookBus;
   readonly scope?: RuntimeComponentScope;
+  readonly compositionInventory?: RuntimeCompositionInventory;
 
-  constructor(bus: HookBus, scope?: RuntimeComponentScope) {
+  constructor(
+    bus: HookBus,
+    scope?: RuntimeComponentScope,
+    compositionInventory?: RuntimeCompositionInventory,
+  ) {
     this.bus = bus;
     this.scope = scope;
+    this.compositionInventory = compositionInventory;
   }
 
   on(name: HookEvents | string, handler: HookHandler): HookHandler;
@@ -207,6 +214,11 @@ export class ExtensionAPI {
     if (this.scope) {
       try {
         this.scope.defer(unsubscribe);
+        this.compositionInventory?.own(this.scope, {
+          kind: "hook",
+          resourceId: eventName(name),
+          effectClass: "reversible",
+        });
       } catch (error) {
         void unsubscribe();
         throw error;

@@ -341,7 +341,8 @@ graph-backed activation driver. Durable journals make activation and rollback
 idempotent and restart-recoverable; registry/actuator adapters connect the live
 operation to existing artifact promotion state. Configure these APIs in a
 trusted host with an artifact-to-component manifest resolver. See the
-[transactional activation contract](../docs/internal/runtime-transactional-activation.md).
+[transactional activation contract](../docs/internal/runtime-transactional-activation.md)
+and [composition confluence harness](../docs/internal/runtime-composition-confluence.md).
 
 ## Production traces
 

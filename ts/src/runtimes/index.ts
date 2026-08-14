@@ -21,6 +21,30 @@ export {
   provideRuntimeCapability,
   validateRuntimeComponentGraph,
 } from "./component-graph.js";
+export {
+  RuntimeCompositionInventory,
+  assertRuntimeCompositionQuiescent,
+  captureRuntimeCompositionSnapshot,
+  compareRuntimeCompositionSnapshots,
+  runtimeCompositionEquivalenceView,
+} from "./composition-observability.js";
+export type {
+  RuntimeCompositionEquivalenceResult,
+  RuntimeCompositionEquivalenceView,
+  RuntimeCompositionInventorySnapshot,
+  RuntimeCompositionLifecycleError,
+  RuntimeCompositionObservableSnapshot,
+  RuntimeCompositionRegistrationSnapshot,
+  RuntimeCompositionResourceDescriptor,
+  RuntimeCompositionResourceKind,
+  RuntimeCompositionSnapshotInput,
+} from "./composition-observability.js";
+export { DeterministicRuntimeTransitionScheduler } from "./transition-scheduler.js";
+export type {
+  RuntimeScheduledTransition,
+  RuntimeScheduledTransitionFactory,
+  RuntimeTransitionSchedulerResult,
+} from "./transition-scheduler.js";
 export type {
   RuntimeCapabilityKey,
   RuntimeCapabilityProvision,

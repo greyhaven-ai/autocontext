@@ -52,6 +52,7 @@ metadata is available.
 - [Runtime effect policy](internal/runtime-effect-policy.md)
 - [Runtime component graph](internal/runtime-component-graph.md)
 - [Transactional runtime activation](internal/runtime-transactional-activation.md)
+- [Runtime composition confluence harness](internal/runtime-composition-confluence.md)
 - [Strategy package import side-effect contract](strategy-package-import-contract.json)
 - [Generic edge runtime compatibility spike](edge-runtime-compatibility.md)
 - [Fetch adapter API reference](fetch-api-reference.md)

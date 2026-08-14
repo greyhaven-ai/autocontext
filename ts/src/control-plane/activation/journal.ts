@@ -12,8 +12,13 @@ import { dirname, join } from "node:path";
 
 import { canonicalJsonStringify } from "../contract/canonical-json.js";
 import type {
+  RuntimeActivationFailureCode,
+  RuntimeActivationJournalOutcome,
   RuntimeActivationJournalRecord,
   RuntimeActivationJournalStore,
+  RuntimeActivationOperation,
+  RuntimeActivationStage,
+  RuntimeActivationTargetMode,
 } from "./types.js";
 
 const JOURNAL_DIR = join(".autocontext", "state", "runtime-activation-journal");
@@ -80,14 +85,55 @@ export class FileRuntimeActivationJournalStore implements RuntimeActivationJourn
 }
 
 export function validateRuntimeActivationJournalRecord(
-  record: RuntimeActivationJournalRecord,
-): void {
+  record: unknown,
+): asserts record is RuntimeActivationJournalRecord {
+  if (!isUnknownRecord(record)) {
+    throw new Error("runtime activation journal must be an object");
+  }
+  if (typeof record.transactionId !== "string") {
+    throw new Error("runtime activation journal transaction id required");
+  }
   validateTransactionId(record.transactionId);
   if (record.schemaVersion !== 1) throw new Error("unsupported runtime activation journal schema");
+  if (!isRuntimeActivationOperation(record.operation)) {
+    throw new Error("runtime activation journal operation is invalid");
+  }
+  if (!isNullableString(record.candidateArtifactId) || !isNullableString(record.priorArtifactId)) {
+    throw new Error("runtime activation journal artifact id is invalid");
+  }
+  if (!isRuntimeActivationTargetMode(record.targetMode)) {
+    throw new Error("runtime activation journal target mode is invalid");
+  }
+  if (!isRuntimeActivationStage(record.stage)) {
+    throw new Error("runtime activation journal stage is invalid");
+  }
+  if (!isRuntimeActivationJournalOutcome(record.outcome)) {
+    throw new Error("runtime activation journal outcome is invalid");
+  }
+  if (
+    record.failureCode !== undefined
+    && !isRuntimeActivationFailureCode(record.failureCode)
+  ) {
+    throw new Error("runtime activation journal failure code is invalid");
+  }
+  if (typeof record.createdAt !== "string" || typeof record.updatedAt !== "string") {
+    throw new Error("runtime activation journal timestamps required");
+  }
   if (!Array.isArray(record.entries)) throw new Error("runtime activation journal entries required");
   for (let index = 0; index < record.entries.length; index += 1) {
-    if (record.entries[index]?.sequence !== index) {
-      throw new Error("runtime activation journal sequence is invalid");
+    const entry = record.entries[index];
+    if (
+      !isUnknownRecord(entry)
+      || entry.sequence !== index
+      || !isRuntimeActivationStage(entry.stage)
+      || (entry.outcome !== "started" && entry.outcome !== "succeeded" && entry.outcome !== "failed")
+      || typeof entry.timestamp !== "string"
+      || (
+        entry.failureCode !== undefined
+        && !isRuntimeActivationFailureCode(entry.failureCode)
+      )
+    ) {
+      throw new Error("runtime activation journal entry is invalid");
     }
   }
 }
@@ -99,12 +145,73 @@ function readJournalRecord(path: string): RuntimeActivationJournalRecord {
   } catch {
     throw new Error(`runtime activation journal is unreadable: ${path}`);
   }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+  try {
+    validateRuntimeActivationJournalRecord(parsed);
+  } catch {
     throw new Error(`runtime activation journal is invalid: ${path}`);
   }
-  const record = parsed as RuntimeActivationJournalRecord;
-  validateRuntimeActivationJournalRecord(record);
-  return cloneRecord(record);
+  return cloneRecord(parsed);
+}
+
+function isUnknownRecord(value: unknown): value is Record<PropertyKey, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isNullableString(value: unknown): value is string | null {
+  return typeof value === "string" || value === null;
+}
+
+function isRuntimeActivationOperation(value: unknown): value is RuntimeActivationOperation {
+  return value === "activate" || value === "rollback" || value === "repair";
+}
+
+function isRuntimeActivationTargetMode(value: unknown): value is RuntimeActivationTargetMode {
+  return value === "candidate" || value === "shadow" || value === "canary" || value === "active";
+}
+
+function isRuntimeActivationStage(value: unknown): value is RuntimeActivationStage {
+  return value === "staged"
+    || value === "applying"
+    || value === "applied"
+    || value === "validating"
+    || value === "validated"
+    || value === "activating"
+    || value === "activated"
+    || value === "draining"
+    || value === "drained"
+    || value === "cutting_over"
+    || value === "runtime_cutover"
+    || value === "pointer_cutover"
+    || value === "disposing_prior"
+    || value === "reverting"
+    || value === "restored"
+    || value === "committed"
+    || value === "failed";
+}
+
+function isRuntimeActivationJournalOutcome(
+  value: unknown,
+): value is RuntimeActivationJournalOutcome {
+  return value === "in_progress"
+    || value === "succeeded"
+    || value === "failed"
+    || value === "recovered"
+    || value === "diverged";
+}
+
+function isRuntimeActivationFailureCode(value: unknown): value is RuntimeActivationFailureCode {
+  return value === "apply_failed"
+    || value === "validation_failed"
+    || value === "activation_failed"
+    || value === "drain_failed"
+    || value === "cutover_failed"
+    || value === "pointer_failed"
+    || value === "disposal_failed"
+    || value === "rollback_failed"
+    || value === "restore_failed"
+    || value === "effect_policy_denied"
+    || value === "metadata_failed"
+    || value === "observed_state_mismatch";
 }
 
 function validateTransactionId(transactionId: string): string {

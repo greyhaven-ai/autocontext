@@ -2,7 +2,11 @@ import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 
-import type { RuntimeComponentScope } from "./component-lifecycle.js";
+import {
+  RuntimeComponentLifecycleState,
+  type RuntimeComponentScope,
+} from "./component-lifecycle.js";
+import type { RuntimeCompositionInventory } from "./composition-observability.js";
 import {
   assertRuntimeEffectDeclaration,
   RuntimeEffectPolicyError,
@@ -42,6 +46,7 @@ export interface RuntimeScopeOptions {
   grantInheritance?: RuntimeGrantInheritanceMode;
   effectPolicy?: RuntimeEffectPolicy;
   componentScope?: RuntimeComponentScope;
+  compositionInventory?: RuntimeCompositionInventory;
 }
 
 export interface RuntimeWorkspaceEnv {
@@ -378,6 +383,7 @@ class InMemoryWorkspaceEnv implements RuntimeWorkspaceEnv {
   #grantEventSink?: RuntimeGrantEventSink;
   #effectPolicy?: RuntimeEffectPolicy;
   #componentScope?: RuntimeComponentScope;
+  #compositionInventory?: RuntimeCompositionInventory;
   #state: MemoryState;
 
   constructor(
@@ -388,6 +394,7 @@ class InMemoryWorkspaceEnv implements RuntimeWorkspaceEnv {
     grantEventSink?: RuntimeGrantEventSink,
     effectPolicy?: RuntimeEffectPolicy,
     componentScope?: RuntimeComponentScope,
+    compositionInventory?: RuntimeCompositionInventory,
   ) {
     this.#state = state;
     this.cwd = normalizeVirtualPath(cwd, "/");
@@ -396,10 +403,12 @@ class InMemoryWorkspaceEnv implements RuntimeWorkspaceEnv {
     this.#grantEventSink = grantEventSink;
     this.#effectPolicy = effectPolicy;
     this.#componentScope = componentScope;
+    this.#compositionInventory = compositionInventory;
     ensureMemoryParentDirs(this.#state, this.cwd);
   }
 
   get tools(): readonly RuntimeToolGrant[] {
+    this.#assertOpen();
     return runtimeToolsForWorkspace(
       [...this.#tools.values()],
       this.cwd,
@@ -434,6 +443,14 @@ class InMemoryWorkspaceEnv implements RuntimeWorkspaceEnv {
 
   async scope(options: RuntimeScopeOptions = {}): Promise<RuntimeWorkspaceEnv> {
     this.#assertOpen();
+    const componentScope = options.componentScope ?? this.#componentScope;
+    const compositionInventory = options.compositionInventory ?? this.#compositionInventory;
+    registerCompositionGrants(
+      compositionInventory,
+      componentScope,
+      options.commands ?? [],
+      options.tools ?? [],
+    );
     return new InMemoryWorkspaceEnv(
       this.#state,
       options.cwd ? this.resolvePath(options.cwd) : this.cwd,
@@ -447,7 +464,8 @@ class InMemoryWorkspaceEnv implements RuntimeWorkspaceEnv {
       ),
       options.grantEventSink ?? this.#grantEventSink,
       options.effectPolicy ?? this.#effectPolicy,
-      options.componentScope ?? this.#componentScope,
+      componentScope,
+      compositionInventory,
     );
   }
 
@@ -548,6 +566,7 @@ class InMemoryWorkspaceEnv implements RuntimeWorkspaceEnv {
 
   #assertOpen(): void {
     if (this.#closed) throw new Error("Workspace environment has been cleaned up");
+    assertRuntimeComponentScopeAvailable(this.#componentScope);
   }
 }
 
@@ -559,6 +578,7 @@ class LocalWorkspaceEnv implements RuntimeWorkspaceEnv {
   #grantEventSink?: RuntimeGrantEventSink;
   #effectPolicy?: RuntimeEffectPolicy;
   #componentScope?: RuntimeComponentScope;
+  #compositionInventory?: RuntimeCompositionInventory;
 
   constructor(
     root: string,
@@ -568,6 +588,7 @@ class LocalWorkspaceEnv implements RuntimeWorkspaceEnv {
     grantEventSink?: RuntimeGrantEventSink,
     effectPolicy?: RuntimeEffectPolicy,
     componentScope?: RuntimeComponentScope,
+    compositionInventory?: RuntimeCompositionInventory,
   ) {
     this.#root = path.resolve(root);
     this.cwd = normalizeVirtualPath(cwd, "/");
@@ -576,9 +597,11 @@ class LocalWorkspaceEnv implements RuntimeWorkspaceEnv {
     this.#grantEventSink = grantEventSink;
     this.#effectPolicy = effectPolicy;
     this.#componentScope = componentScope;
+    this.#compositionInventory = compositionInventory;
   }
 
   get tools(): readonly RuntimeToolGrant[] {
+    assertRuntimeComponentScopeAvailable(this.#componentScope);
     return runtimeToolsForWorkspace(
       [...this.#tools.values()],
       this.cwd,
@@ -589,6 +612,7 @@ class LocalWorkspaceEnv implements RuntimeWorkspaceEnv {
   }
 
   async exec(command: string, options: RuntimeExecOptions = {}): Promise<RuntimeExecResult> {
+    assertRuntimeComponentScopeAvailable(this.#componentScope);
     if (options.signal?.aborted) {
       return { stdout: "", stderr: "Operation aborted", exitCode: 130 };
     }
@@ -612,6 +636,15 @@ class LocalWorkspaceEnv implements RuntimeWorkspaceEnv {
   }
 
   async scope(options: RuntimeScopeOptions = {}): Promise<RuntimeWorkspaceEnv> {
+    assertRuntimeComponentScopeAvailable(this.#componentScope);
+    const componentScope = options.componentScope ?? this.#componentScope;
+    const compositionInventory = options.compositionInventory ?? this.#compositionInventory;
+    registerCompositionGrants(
+      compositionInventory,
+      componentScope,
+      options.commands ?? [],
+      options.tools ?? [],
+    );
     return new LocalWorkspaceEnv(
       this.#root,
       options.cwd ? this.resolvePath(options.cwd) : this.cwd,
@@ -625,26 +658,31 @@ class LocalWorkspaceEnv implements RuntimeWorkspaceEnv {
       ),
       options.grantEventSink ?? this.#grantEventSink,
       options.effectPolicy ?? this.#effectPolicy,
-      options.componentScope ?? this.#componentScope,
+      componentScope,
+      compositionInventory,
     );
   }
 
   async readFile(filePath: string): Promise<string> {
+    assertRuntimeComponentScopeAvailable(this.#componentScope);
     return fs.readFile(this.#toHostPath(this.resolvePath(filePath)), "utf-8");
   }
 
   async readFileBytes(filePath: string): Promise<Uint8Array> {
+    assertRuntimeComponentScopeAvailable(this.#componentScope);
     const content = await fs.readFile(this.#toHostPath(this.resolvePath(filePath)));
     return new Uint8Array(content);
   }
 
   async writeFile(filePath: string, content: string | Uint8Array): Promise<void> {
+    assertRuntimeComponentScopeAvailable(this.#componentScope);
     const hostPath = this.#toHostPath(this.resolvePath(filePath));
     await fs.mkdir(path.dirname(hostPath), { recursive: true });
     await fs.writeFile(hostPath, content);
   }
 
   async stat(filePath: string): Promise<RuntimeFileStat> {
+    assertRuntimeComponentScopeAvailable(this.#componentScope);
     const stat = await fs.lstat(this.#toHostPath(this.resolvePath(filePath)));
     return {
       isFile: stat.isFile(),
@@ -656,10 +694,12 @@ class LocalWorkspaceEnv implements RuntimeWorkspaceEnv {
   }
 
   async readdir(dirPath: string): Promise<string[]> {
+    assertRuntimeComponentScopeAvailable(this.#componentScope);
     return (await fs.readdir(this.#toHostPath(this.resolvePath(dirPath)))).sort();
   }
 
   async exists(filePath: string): Promise<boolean> {
+    assertRuntimeComponentScopeAvailable(this.#componentScope);
     try {
       await fs.access(this.#toHostPath(this.resolvePath(filePath)));
       return true;
@@ -669,12 +709,14 @@ class LocalWorkspaceEnv implements RuntimeWorkspaceEnv {
   }
 
   async mkdir(dirPath: string, options: { recursive?: boolean } = {}): Promise<void> {
+    assertRuntimeComponentScopeAvailable(this.#componentScope);
     await fs.mkdir(this.#toHostPath(this.resolvePath(dirPath)), {
       recursive: options.recursive ?? false,
     });
   }
 
   async rm(filePath: string, options: { recursive?: boolean; force?: boolean } = {}): Promise<void> {
+    assertRuntimeComponentScopeAvailable(this.#componentScope);
     await fs.rm(this.#toHostPath(this.resolvePath(filePath)), {
       recursive: options.recursive ?? false,
       force: options.force ?? false,
@@ -768,6 +810,7 @@ async function maybeRunGrantedCommand(
   effectPolicy: RuntimeEffectPolicy | undefined,
   componentScope: RuntimeComponentScope | undefined,
 ): Promise<RuntimeExecResult | null> {
+  assertRuntimeComponentScopeAvailable(componentScope);
   const parsed = parseCommandLine(commandLine);
   if (!parsed) return null;
   const grant = commands.get(parsed.name);
@@ -869,7 +912,7 @@ function runtimeToolsForWorkspace(
   effectPolicy: RuntimeEffectPolicy | undefined,
   componentScope: RuntimeComponentScope | undefined,
 ): RuntimeToolGrant[] {
-  if (!grantEventSink && !effectPolicy) return tools;
+  if (!grantEventSink && !effectPolicy && !componentScope) return tools;
   return tools.map((tool) => runtimeToolWithGrantEvents(
     tool,
     cwd,
@@ -914,6 +957,7 @@ async function executeRuntimeToolWithGrantEvents(
   effectPolicy: RuntimeEffectPolicy | undefined,
   componentScope: RuntimeComponentScope | undefined,
 ): Promise<RuntimeToolCallResult> {
+  assertRuntimeComponentScopeAvailable(componentScope);
   const secrets = runtimeToolRedactionSecrets(tool);
   const argsSummary = summarizeArgs([safeJsonOrString(args)], secrets);
   const redaction = baseGrantRedaction({}, argsSummary);
@@ -993,11 +1037,58 @@ async function executeRuntimeToolWithGrantEvents(
 }
 
 function rawRuntimeToolGrant(tool: RuntimeToolGrant): RuntimeToolGrant {
-  return (tool as RuntimeToolGrantEventWrapper)[RUNTIME_TOOL_EVENT_SOURCE] ?? tool;
+  if (!isRuntimeToolGrantEventWrapper(tool)) return tool;
+  return tool[RUNTIME_TOOL_EVENT_SOURCE] ?? tool;
+}
+
+function isRuntimeToolGrantEventWrapper(
+  tool: RuntimeToolGrant,
+): tool is RuntimeToolGrantEventWrapper {
+  return RUNTIME_TOOL_EVENT_SOURCE in tool;
 }
 
 function runtimeToolRedactionSecrets(tool: RuntimeToolGrant): string[] {
   return runtimeToolSecretValues.get(rawRuntimeToolGrant(tool)) ?? [];
+}
+
+function registerCompositionGrants(
+  inventory: RuntimeCompositionInventory | undefined,
+  componentScope: RuntimeComponentScope | undefined,
+  commands: readonly RuntimeCommandGrant[],
+  tools: readonly RuntimeToolGrant[],
+): void {
+  if (!inventory || (commands.length === 0 && tools.length === 0)) return;
+  if (!componentScope) {
+    throw new Error("runtime composition inventory requires a component scope");
+  }
+  for (const command of commands) {
+    inventory.own(componentScope, {
+      kind: "grant",
+      resourceId: `command:${command.name}`,
+      effectClass: "reversible",
+    });
+  }
+  for (const tool of tools) {
+    inventory.own(componentScope, {
+      kind: "tool",
+      resourceId: tool.name,
+      effectClass: "reversible",
+    });
+  }
+}
+
+function assertRuntimeComponentScopeAvailable(
+  componentScope: RuntimeComponentScope | undefined,
+): void {
+  if (!componentScope) return;
+  if (
+    componentScope.state !== RuntimeComponentLifecycleState.LOADING
+    && componentScope.state !== RuntimeComponentLifecycleState.ACTIVE
+  ) {
+    throw new Error(
+      `runtime component ${componentScope.componentId} workspace is unavailable while ${componentScope.state}`,
+    );
+  }
 }
 
 function parseCommandLine(commandLine: string): { name: string; args: string[] } | null {
