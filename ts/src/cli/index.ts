@@ -8,8 +8,9 @@ import {
   DB_COMMAND_HANDLERS,
   NO_DB_COMMAND_HANDLERS,
   cmdControlPlane,
-  formatFatalCliError,
   getDbPath,
+  parseVersionOptions,
+  reportFatalCliError,
 } from "./command-handlers.js";
 
 const HELP = buildCliHelp();
@@ -39,18 +40,24 @@ async function main(): Promise<void> {
   }
 
   if (command === "--version") {
-    await printVersion(process.argv.slice(3).includes("--json"));
+    const options = parseVersionOptions(process.argv.slice(3));
+    if (options.help) {
+      console.log(VERSION_HELP);
+      process.exit(0);
+    }
+    await printVersion(options.json);
     process.exit(0);
   }
 
   const route = resolveCliCommand(command);
   switch (route.kind) {
     case "version": {
-      if (process.argv.slice(3).some((arg) => arg === "--help" || arg === "-h")) {
+      const options = parseVersionOptions(process.argv.slice(3));
+      if (options.help) {
         console.log(VERSION_HELP);
         break;
       }
-      await printVersion(process.argv.slice(3).includes("--json"));
+      await printVersion(options.json);
       break;
     }
     case "no-db":
@@ -74,6 +81,5 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  console.error(formatFatalCliError(err));
-  process.exit(1);
+  process.exit(reportFatalCliError(err));
 });

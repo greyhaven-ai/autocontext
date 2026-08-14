@@ -25,6 +25,7 @@ from autocontext.cli_ambient import ambient_app
 from autocontext.cli_analytics import register_analytics_command
 from autocontext.cli_capabilities import register_capabilities_command
 from autocontext.cli_epoch import epoch_app
+from autocontext.cli_errors import StructuredUsageGroup
 from autocontext.cli_help import configure_help_surface
 from autocontext.cli_hermes import register_hermes_command
 from autocontext.cli_improve import register_improve_command
@@ -95,12 +96,9 @@ class AgentTaskRunSummary:
     termination_reason: str
     optimizer_metadata: dict[str, str] | None = None
 
-
-app = typer.Typer(
-    help="Run, inspect, and export agent-evaluation workflows.",
+app = typer.Typer(cls=StructuredUsageGroup, help="Run, inspect, and export agent-evaluation workflows.",
     epilog="Start with `autoctx solve \"your goal\"`. Run `autoctx commands --all` for the full catalog.",
-    invoke_without_command=True,
-)
+    invoke_without_command=True)
 console = Console()
 _PRESET_HELP = f"Apply a named preset ({', '.join(sorted(VALID_PRESET_NAMES))}). Overrides AUTOCONTEXT_PRESET env var."
 

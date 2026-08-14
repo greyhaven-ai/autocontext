@@ -432,6 +432,14 @@ describe("AC-418: capabilities version", () => {
     });
     expect(JSON.parse(commandForm.stdout)).toEqual(JSON.parse(structured.stdout));
   });
+
+  it("version rejects unknown options instead of silently succeeding", () => {
+    const result = runCli(["version", "--json", "--not-a-real-option"]);
+
+    expect(result.exitCode).toBe(2);
+    expect(result.stdout).toBe("");
+    expect(JSON.parse(result.stderr).error).toContain("not-a-real-option");
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -51,16 +51,7 @@ export async function cmdRun(dbPath: string): Promise<void> {
     process.exit(0);
   }
 
-  const { SQLiteStore } = await import("../../storage/index.js");
-  const { GenerationRunner } = await import("../../loop/generation-runner.js");
-  const { SCENARIO_REGISTRY } = await import("../../scenarios/registry.js");
-  const { assertFamilyContract } = await import("../../scenarios/family-interfaces.js");
   const { loadSettings } = await import("../../config/index.js");
-  const { buildRoleProviderBundle } = await import("../../providers/index.js");
-  const { initializeHookBus } = await import("../../extensions/index.js");
-  const { resolveRunnableScenarioClass } = await import("../runnable-scenario-resolution.js");
-  const { runtimeSessionIdForRun } = await import("../../session/runtime-session-ids.js");
-
   const settings = loadSettings();
   let plan;
   try {
@@ -79,6 +70,14 @@ export async function cmdRun(dbPath: string): Promise<void> {
     process.exit(2);
   }
 
+  const { SQLiteStore } = await import("../../storage/index.js");
+  const { SCENARIO_REGISTRY } = await import("../../scenarios/registry.js");
+  const { assertFamilyContract } = await import("../../scenarios/family-interfaces.js");
+  const { resolveRunnableScenarioClass } = await import("../runnable-scenario-resolution.js");
+  const { GenerationRunner } = await import("../../loop/generation-runner.js");
+  const { buildRoleProviderBundle } = await import("../../providers/index.js");
+  const { initializeHookBus } = await import("../../extensions/index.js");
+  const { runtimeSessionIdForRun } = await import("../../session/runtime-session-ids.js");
   const { hookBus, loadedExtensions } = await initializeHookBus({
     extensions: settings.extensions,
     failFast: settings.extensionFailFast,
@@ -137,7 +136,7 @@ export async function cmdRun(dbPath: string): Promise<void> {
       knowledgeRoot: resolve(settings.knowledgeRoot),
     });
   } catch (error) {
-    console.error(errorMessage(error));
+    writeRunInspectionError(error, !!values.json);
     process.exit(1);
   }
 
@@ -304,7 +303,7 @@ export async function cmdShow(dbPath: string): Promise<void> {
     },
   });
 
-  const { renderRunShow, resolveRunId, RunInspectionUsageError, SHOW_HELP_TEXT } =
+  const { renderRunShow, resolveRunId, RunInspectionUsageError, SHOW_HELP_TEXT, validateShowSelection } =
     await import("../run-inspection-command-workflow.js");
 
   if (values.help) {
@@ -314,6 +313,7 @@ export async function cmdShow(dbPath: string): Promise<void> {
 
   let runId;
   try {
+    validateShowSelection(values);
     runId = resolveRunId(values, positionals, "show");
   } catch (error) {
     writeRunInspectionError(error, !!values.json);

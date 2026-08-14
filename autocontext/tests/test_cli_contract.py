@@ -177,6 +177,47 @@ def test_all_contract_wire_assets_exist(contract: Contract) -> None:
             assert (_contract_path().parent / asset_path).is_file(), f"missing {command.id} asset: {asset_path}"
 
 
+def test_runtime_structured_flags_are_declared_as_output_modes(contract: Contract) -> None:
+    for command in contract.commands:
+        flag_names = {
+            flag.name
+            for shape in (command.runtime_shapes.python, command.runtime_shapes.typescript)
+            if shape is not None
+            for flag in shape.flags
+        }
+        if "json" in flag_names:
+            expected_mode = "ndjson" if command.id == "watch" else "json"
+            assert expected_mode in command.output.modes, command.id
+        if "ndjson" in flag_names:
+            assert "ndjson" in command.output.modes, command.id
+
+
+def test_human_readable_commands_declare_text_output(contract: Contract) -> None:
+    expected = {
+        "solve",
+        "run",
+        "run.list",
+        "task.judge",
+        "task.improve",
+        "queue",
+        "scenario.create",
+        "mission",
+        "capabilities",
+        "epoch.list",
+        "epoch.approve",
+        "epoch.reject",
+        "rescore",
+        "serve.http",
+        "benchmark",
+        "queue.add",
+    }
+    expected.update(command.id for command in contract.commands if command.id.startswith("mission."))
+    by_id = {command.id: command for command in contract.commands}
+
+    for command_id in expected:
+        assert "text" in by_id[command_id].output.modes, command_id
+
+
 def test_loader_keeps_version_1_entries_compatible(tmp_path: Path) -> None:
     raw = json.loads(_contract_path().read_text(encoding="utf-8"))
     raw["schema_version"] = 1

@@ -153,10 +153,16 @@ def test_show_with_explicit_generation_filters_to_that_row(tmp_path, monkeypatch
     assert payload["generations"][0]["generation"] == 1
 
 
-def test_watch_breaks_immediately_on_a_terminal_generation(tmp_path, monkeypatch) -> None:
-    """`watch` polls until the latest generation status is terminal
-    (completed / failed / etc). When the latest generation is already
-    terminal, the loop emits one line and returns without sleeping."""
+def test_show_rejects_conflicting_generation_selectors() -> None:
+    result = CliRunner().invoke(app, ["show", "abc123", "--best", "--generation", "1", "--json"])
+
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    assert json.loads(result.stderr) == {"error": "--best cannot be combined with --generation"}
+
+
+def test_watch_breaks_immediately_on_a_terminal_run(tmp_path, monkeypatch) -> None:
+    """A terminal run emits its latest generation and returns without sleeping."""
     monkeypatch.setenv("AUTOCONTEXT_DB_PATH", str(tmp_path / "autocontext.db"))
     monkeypatch.setenv("AUTOCONTEXT_CONFIG_DIR", str(tmp_path / "config"))
 
@@ -176,9 +182,6 @@ def test_watch_breaks_immediately_on_a_terminal_generation(tmp_path, monkeypatch
         "autocontext.cli._sqlite_from_settings",
         lambda _: _make_store_stub({"scenario": "x", "status": "completed"}, rows),
     )
-    # Patch time.sleep to assert no actual sleeping happens. The loop
-    # should return on the very first poll because the latest row is
-    # already in a terminal status.
     sleep_calls: list[float] = []
     monkeypatch.setattr("time.sleep", lambda s: sleep_calls.append(s))
 
@@ -192,8 +195,55 @@ def test_watch_breaks_immediately_on_a_terminal_generation(tmp_path, monkeypatch
     assert payload["latest_generation"]["gate_decision"] == "advance"
     assert payload["runtime_session"] is None
     assert payload["progress_report"] is None
-    # Terminal on first poll -> no sleep needed.
     assert sleep_calls == []
+
+
+def test_watch_continues_after_a_completed_generation_while_run_is_active(tmp_path, monkeypatch) -> None:
+    """A completed generation is not the end of a multi-generation run."""
+    monkeypatch.setenv("AUTOCONTEXT_DB_PATH", str(tmp_path / "autocontext.db"))
+    monkeypatch.setenv("AUTOCONTEXT_CONFIG_DIR", str(tmp_path / "config"))
+
+    first = {
+        "generation_index": 1,
+        "best_score": 0.7,
+        "gate_decision": "advance",
+        "status": "completed",
+    }
+    second = {
+        "generation_index": 2,
+        "best_score": 0.8,
+        "gate_decision": "advance",
+        "status": "completed",
+    }
+
+    class _MultiGenerationStore:
+        get_run_calls = 0
+        status_calls = 0
+
+        def get_run(self, _run_id: str) -> dict[str, Any]:
+            self.get_run_calls += 1
+            status = "completed" if self.get_run_calls >= 3 else "running"
+            return {"run_id": "abc123", "scenario": "x", "status": status}
+
+        def run_status(self, _run_id: str) -> list[dict[str, Any]]:
+            self.status_calls += 1
+            return [first] if self.status_calls == 1 else [first, second]
+
+        def close(self) -> None:
+            pass
+
+    store = _MultiGenerationStore()
+    monkeypatch.setattr("autocontext.cli._sqlite_from_settings", lambda _: store)
+    sleep_calls: list[float] = []
+    monkeypatch.setattr("time.sleep", lambda seconds: sleep_calls.append(seconds))
+
+    result = CliRunner().invoke(app, ["watch", "abc123", "--interval", "0.1", "--ndjson"])
+
+    assert result.exit_code == 0, result.output
+    payloads = [json.loads(line) for line in result.stdout.splitlines()]
+    assert [payload["latest_generation"]["generation_index"] for payload in payloads] == [1, 2]
+    assert [payload["run"]["status"] for payload in payloads] == ["running", "completed"]
+    assert sleep_calls == [0.1]
 
 
 def test_watch_terminal_run_with_no_generations_exits(tmp_path, monkeypatch) -> None:

@@ -60,3 +60,10 @@ def test_every_python_command_help_omits_implementation_history() -> None:
 
         assert result.exit_code == 0, f"{' '.join(path)}: {output}"
         assert IMPLEMENTATION_HISTORY.search(output) is None, f"{' '.join(path)}: {output}"
+
+
+def test_contract_summaries_omit_implementation_history() -> None:
+    contract = load_contract(REPO_ROOT / "docs" / "cli-contract.json")
+
+    for command in contract.commands:
+        assert IMPLEMENTATION_HISTORY.search(command.summary) is None, f"{command.id}: {command.summary}"

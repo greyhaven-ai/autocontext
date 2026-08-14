@@ -239,6 +239,14 @@ describe("CLI parity — help output", () => {
 });
 
 describe("CLI status command", () => {
+  it("uses usage exit 2 and JSON stderr for unknown options", () => {
+    const { stdout, stderr, exitCode } = runCli(["status", "run-123", "--json", "--not-a-real-option"]);
+
+    expect(exitCode).toBe(2);
+    expect(stdout).toBe("");
+    expect(JSON.parse(stderr).error).toContain("not-a-real-option");
+  });
+
   it("uses usage exit 2 and keeps JSON errors off stdout when run id is missing", () => {
     const { stdout, stderr, exitCode } = runCli(["status", "--json"]);
 
@@ -278,6 +286,23 @@ describe("CLI run defaults", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it("keeps execution failures structured in JSON mode", () => {
+    const dir = makeTempDir();
+    try {
+      const { stdout, stderr, exitCode } = runCli(["run", "not-a-scenario", "--json"], {
+        AUTOCONTEXT_CONFIG_DIR: join(dir, "config"),
+        AUTOCONTEXT_PROVIDER: "deterministic",
+        AUTOCONTEXT_AGENT_PROVIDER: "deterministic",
+      });
+
+      expect(exitCode).toBe(1);
+      expect(stdout).toBe("");
+      expect(JSON.parse(stderr).error).toContain("not-a-scenario");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("CLI show and watch contracts", () => {
@@ -303,6 +328,21 @@ describe("CLI show and watch contracts", () => {
     expect(exitCode).toBe(2);
     expect(stdout).toBe("");
     expect(JSON.parse(stderr)).toEqual({ error: "--interval must be a positive number of seconds" });
+  });
+
+  it("show rejects conflicting generation selectors as a usage error", () => {
+    const { stdout, stderr, exitCode } = runCli([
+      "show",
+      "run-123",
+      "--best",
+      "--generation",
+      "1",
+      "--json",
+    ]);
+
+    expect(exitCode).toBe(2);
+    expect(stdout).toBe("");
+    expect(JSON.parse(stderr)).toEqual({ error: "--best cannot be combined with --generation" });
   });
 });
 

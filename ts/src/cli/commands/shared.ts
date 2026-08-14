@@ -1,6 +1,7 @@
 /**
  * Helpers shared across command family modules (AC-853 split of command-handlers.ts).
  */
+import { parseArgs } from "node:util";
 import { resolve, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { asDbPath } from "../../domain/ids.js";
@@ -19,6 +20,33 @@ export function formatFatalCliError(err: unknown): string {
     return `Error: ${err.message}`;
   }
   return String(err);
+}
+
+export function parseVersionOptions(args: string[]): { json: boolean; help: boolean } {
+  const { values } = parseArgs({
+    args,
+    options: {
+      json: { type: "boolean" },
+      help: { type: "boolean", short: "h" },
+    },
+  });
+  return { json: !!values.json, help: !!values.help };
+}
+
+export function reportFatalCliError(error: unknown): 1 | 2 {
+  const structured = process.argv.includes("--json") || process.argv.includes("--ndjson");
+  if (structured) {
+    const message = (error instanceof Error ? error.message : String(error)).replace(/^Error:\s*/, "");
+    process.stderr.write(`${JSON.stringify({ error: message })}\n`);
+  } else {
+    console.error(formatFatalCliError(error));
+  }
+
+  const code =
+    error && typeof error === "object" && "code" in error
+      ? String(error.code)
+      : "";
+  return code.startsWith("ERR_PARSE_ARGS_") ? 2 : 1;
 }
 
 export function errorMessage(err: unknown): string {

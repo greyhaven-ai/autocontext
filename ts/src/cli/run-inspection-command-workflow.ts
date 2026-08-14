@@ -164,10 +164,18 @@ export function renderRunShow(
   ].filter((line): line is string => line !== null).join("\n");
 }
 
+export function validateShowSelection(values: ShowValues): void {
+  if (values.best && values.generation !== undefined) {
+    throw new RunInspectionUsageError("Error: --best cannot be combined with --generation");
+  }
+}
+
 function selectGeneration(
   generations: RunInspectionGeneration[],
   values: ShowValues,
 ): RunInspectionGeneration | null {
+  validateShowSelection(values);
+
   if (values.generation) {
     const requested = Number.parseInt(values.generation, 10);
     if (!Number.isInteger(requested) || requested <= 0) {

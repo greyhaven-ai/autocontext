@@ -116,6 +116,13 @@ class TestRunJson:
         error_data = json.loads(result.stderr.strip())
         assert "--json cannot be used with --serve" in error_data["error"]
 
+    def test_unknown_option_uses_json_stderr_and_usage_exit(self) -> None:
+        result = runner.invoke(app, ["run", "grid_ctf", "--json", "--not-a-real-option"])
+
+        assert result.exit_code == 2
+        assert result.stdout == ""
+        assert "not-a-real-option" in json.loads(result.stderr)["error"]
+
 
 # ---------------------------------------------------------------------------
 # 2. resume --json

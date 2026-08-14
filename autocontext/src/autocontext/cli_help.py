@@ -11,7 +11,7 @@ from rich.table import Table
 
 PAVED_ROAD_SUMMARIES = {
     "solve": "Solve a required plain-language goal; defaults to 5 iterations. Next: show.",
-    "run": "Run a scenario (required unless configured); defaults to 1 iteration. Next: status.",
+    "run": "Run a scenario; pass it explicitly in Python or configure it for npm. Defaults to 1 iteration. Next: status.",
     "status": "Show a required run's current snapshot; defaults to text output. Queue: autoctx queue status. Next: watch.",
     "watch": "Follow a required run; defaults to polling every 2 seconds. Next: show.",
     "show": "Inspect a required run; defaults to its latest generation. Next: export.",

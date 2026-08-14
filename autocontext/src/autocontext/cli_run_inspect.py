@@ -11,10 +11,9 @@ stays under the 1600-line guard. Both commands compose the existing
 
 ``watch <run-id> [--interval N] [--json]``
     Polls run status on an interval and emits one transition-aware
-    line / JSONL row per change. Exits when EITHER the latest
-    generation is in a terminal status OR the run row itself is in
-    a terminal status with no generations (PR #1002 review P2: a
-    failed run with ``run_status=[]`` previously looped forever).
+    line / JSONL row per change. Exits when the run row reaches a
+    terminal status, including runs that fail before recording a
+    generation.
 """
 
 from __future__ import annotations
@@ -67,7 +66,9 @@ def _watch_run_until_terminal(
                         f"best={latest['best_score']:.4f} gate={latest['gate_decision']}"
                     )
                 last_emit = current
-            if str(latest["status"]).lower() in _TERMINAL_STATUSES:
+            # A generation can be complete while the parent run is still
+            # producing later generations. The run row owns the lifecycle.
+            if run_status in _TERMINAL_STATUSES:
                 return
         elif run_status in _TERMINAL_STATUSES:
             if stream_output:
@@ -192,6 +193,14 @@ def register_run_inspect_commands(
         resolved_run_id = (run_id_option or run_id or "").strip()
         if not resolved_run_id:
             message = "`autoctx show` requires <run-id>."
+            if json_output:
+                write_json_stderr(message)
+            else:
+                console.print(f"[red]Error: {message}[/red]")
+            raise typer.Exit(code=2)
+
+        if best and generation is not None:
+            message = "--best cannot be combined with --generation"
             if json_output:
                 write_json_stderr(message)
             else:

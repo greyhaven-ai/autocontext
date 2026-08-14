@@ -249,7 +249,8 @@
       },
       "output": {
         "modes": [
-          "json"
+          "json",
+          "text"
         ],
         "streaming": "single",
         "success_stream": "stdout",
@@ -489,7 +490,8 @@
       },
       "output": {
         "modes": [
-          "json"
+          "json",
+          "text"
         ],
         "streaming": "single",
         "success_stream": "stdout",
@@ -1351,7 +1353,8 @@
       "positionals": [],
       "output": {
         "modes": [
-          "json"
+          "json",
+          "text"
         ],
         "streaming": "single",
         "success_stream": "stdout",
@@ -1602,7 +1605,8 @@
       "positionals": [],
       "output": {
         "modes": [
-          "json"
+          "json",
+          "text"
         ],
         "streaming": "single",
         "success_stream": "stdout",
@@ -1970,7 +1974,9 @@
       "positionals": [],
       "output": {
         "modes": [
-          "json"
+          "json",
+          "ndjson",
+          "text"
         ],
         "streaming": "single",
         "success_stream": "stdout",
@@ -2244,7 +2250,8 @@
       "positionals": [],
       "output": {
         "modes": [
-          "json"
+          "json",
+          "text"
         ],
         "streaming": "single",
         "success_stream": "stdout",
@@ -2524,7 +2531,8 @@
       "positionals": [],
       "output": {
         "modes": [
-          "json"
+          "json",
+          "text"
         ],
         "streaming": "single",
         "success_stream": "stdout",
@@ -2581,7 +2589,8 @@
       "positionals": [],
       "output": {
         "modes": [
-          "json"
+          "json",
+          "text"
         ],
         "streaming": "single",
         "success_stream": "stdout",
@@ -2678,6 +2687,7 @@
       "positionals": [],
       "output": {
         "modes": [
+          "json",
           "text"
         ],
         "streaming": "single",
@@ -2791,7 +2801,8 @@
       "positionals": [],
       "output": {
         "modes": [
-          "json"
+          "json",
+          "text"
         ],
         "streaming": "single",
         "success_stream": "stdout",
@@ -2857,7 +2868,8 @@
       "positionals": [],
       "output": {
         "modes": [
-          "json"
+          "json",
+          "text"
         ],
         "streaming": "single",
         "success_stream": "stdout",
@@ -2951,7 +2963,8 @@
       "positionals": [],
       "output": {
         "modes": [
-          "json"
+          "json",
+          "text"
         ],
         "streaming": "single",
         "success_stream": "stdout",
@@ -3045,7 +3058,8 @@
       "positionals": [],
       "output": {
         "modes": [
-          "json"
+          "json",
+          "text"
         ],
         "streaming": "single",
         "success_stream": "stdout",
@@ -3157,7 +3171,8 @@
       "positionals": [],
       "output": {
         "modes": [
-          "json"
+          "json",
+          "text"
         ],
         "streaming": "single",
         "success_stream": "stdout",
@@ -5473,6 +5488,7 @@
       "output_contract": "text",
       "output": {
         "modes": [
+          "json",
           "text"
         ],
         "streaming": "single",
@@ -8857,6 +8873,7 @@
       "output_contract": "text",
       "output": {
         "modes": [
+          "json",
           "text"
         ],
         "streaming": "single",
@@ -8918,7 +8935,7 @@
         "mission",
         "cancel"
       ],
-      "summary": "Cancel a mission. Per the slice-2 transition table only",
+      "summary": "Cancel a mission; canceled missions can be resumed later.",
       "audience": "advanced",
       "maturity": "stable",
       "domain_concept": "Mission",
@@ -8945,6 +8962,7 @@
       "output_contract": "text",
       "output": {
         "modes": [
+          "json",
           "text"
         ],
         "streaming": "single",
@@ -9089,6 +9107,7 @@
       "output_contract": "text",
       "output": {
         "modes": [
+          "json",
           "text"
         ],
         "streaming": "single",
@@ -9295,6 +9314,7 @@
       "output_contract": "text",
       "output": {
         "modes": [
+          "json",
           "text"
         ],
         "streaming": "single",
@@ -9383,6 +9403,7 @@
       "output_contract": "text",
       "output": {
         "modes": [
+          "json",
           "text"
         ],
         "streaming": "single",
@@ -9471,6 +9492,7 @@
       "output_contract": "text",
       "output": {
         "modes": [
+          "json",
           "text"
         ],
         "streaming": "single",
@@ -9532,7 +9554,7 @@
         "mission",
         "run"
       ],
-      "summary": "Advance the mission via the slice-3 legacy mission loop",
+      "summary": "Advance a mission and write a checkpoint.",
       "audience": "advanced",
       "maturity": "stable",
       "domain_concept": "Mission",
@@ -9575,6 +9597,7 @@
       "output_contract": "text",
       "output": {
         "modes": [
+          "json",
           "text"
         ],
         "streaming": "single",
@@ -9697,6 +9720,7 @@
       "output_contract": "text",
       "output": {
         "modes": [
+          "json",
           "text"
         ],
         "streaming": "single",
@@ -10310,6 +10334,7 @@
       "output_contract": "text",
       "output": {
         "modes": [
+          "json",
           "text"
         ],
         "streaming": "single",
@@ -11764,6 +11789,192 @@
               "short_names": [],
               "required": false,
               "description": "Print the prepare report as JSON",
+              "default": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "skills.list",
+      "path": [
+        "skills",
+        "list"
+      ],
+      "summary": "List the host-agnostic Autocontext skills available for export.",
+      "audience": "advanced",
+      "maturity": "stable",
+      "domain_concept": null,
+      "aliases": [],
+      "runtime_support": {
+        "python": {
+          "status": "yes"
+        },
+        "typescript": {
+          "status": "intentional_gap",
+          "reason": "This command is not implemented by the npm CLI."
+        }
+      },
+      "positionals": [],
+      "flags": [
+        {
+          "name": "json",
+          "type": "bool",
+          "aliases": [],
+          "short_names": [],
+          "required": false,
+          "description": "Output structured JSON",
+          "default": false
+        }
+      ],
+      "output_contract": "json",
+      "output": {
+        "modes": [
+          "json",
+          "text"
+        ],
+        "streaming": "single",
+        "success_stream": "stdout",
+        "error_stream": "stderr",
+        "schemas": {},
+        "fixtures": {}
+      },
+      "exit_codes": {
+        "success": 0,
+        "usage": 2,
+        "execution": 1
+      },
+      "examples": [
+        "autoctx skills list --help"
+      ],
+      "runtime_shapes": {
+        "python": {
+          "positionals": [],
+          "flags": [
+            {
+              "name": "json",
+              "type": "bool",
+              "aliases": [],
+              "short_names": [],
+              "required": false,
+              "description": "Output structured JSON",
+              "default": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "skills.export",
+      "path": [
+        "skills",
+        "export"
+      ],
+      "summary": "Emit a host-agnostic Autocontext SKILL.md.",
+      "audience": "advanced",
+      "maturity": "stable",
+      "domain_concept": null,
+      "aliases": [],
+      "runtime_support": {
+        "python": {
+          "status": "yes"
+        },
+        "typescript": {
+          "status": "intentional_gap",
+          "reason": "This command is not implemented by the npm CLI."
+        }
+      },
+      "positionals": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "description": "Which host-agnostic skill to emit"
+        }
+      ],
+      "flags": [
+        {
+          "name": "output",
+          "type": "path",
+          "aliases": [],
+          "short_names": [],
+          "required": false,
+          "description": "Write SKILL.md to this path; omit to print it"
+        },
+        {
+          "name": "force",
+          "type": "bool",
+          "aliases": [],
+          "short_names": [],
+          "required": false,
+          "description": "Overwrite --output if it exists",
+          "default": false
+        },
+        {
+          "name": "json",
+          "type": "bool",
+          "aliases": [],
+          "short_names": [],
+          "required": false,
+          "description": "Output structured JSON",
+          "default": false
+        }
+      ],
+      "output_contract": "json",
+      "output": {
+        "modes": [
+          "json",
+          "text"
+        ],
+        "streaming": "single",
+        "success_stream": "stdout",
+        "error_stream": "stderr",
+        "schemas": {},
+        "fixtures": {}
+      },
+      "exit_codes": {
+        "success": 0,
+        "usage": 2,
+        "execution": 1
+      },
+      "examples": [
+        "autoctx skills export --help"
+      ],
+      "runtime_shapes": {
+        "python": {
+          "positionals": [
+            {
+              "name": "name",
+              "type": "string",
+              "required": true,
+              "description": "Which host-agnostic skill to emit"
+            }
+          ],
+          "flags": [
+            {
+              "name": "output",
+              "type": "path",
+              "aliases": [],
+              "short_names": [],
+              "required": false,
+              "description": "Write SKILL.md to this path; omit to print it"
+            },
+            {
+              "name": "force",
+              "type": "bool",
+              "aliases": [],
+              "short_names": [],
+              "required": false,
+              "description": "Overwrite --output if it exists",
+              "default": false
+            },
+            {
+              "name": "json",
+              "type": "bool",
+              "aliases": [],
+              "short_names": [],
+              "required": false,
+              "description": "Output structured JSON",
               "default": false
             }
           ]

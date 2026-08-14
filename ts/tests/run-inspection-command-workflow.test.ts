@@ -121,6 +121,12 @@ describe("run inspection command workflow", () => {
     expect(text).toContain("Runtime session: run:run-123:runtime");
   });
 
+  it("rejects conflicting generation selectors", () => {
+    expect(() => renderRunShow(run, generations, { best: true, generation: "1" })).toThrow(
+      "--best cannot be combined with --generation",
+    );
+  });
+
   it("includes the runtime session summary in show JSON", () => {
     const payload = JSON.parse(
       renderRunShow(run, generations, { best: true, json: true }, runtimeSession),

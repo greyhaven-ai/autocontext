@@ -87,6 +87,22 @@ describe("AC-697 CLI contract — schema sanity", () => {
     }
   });
 
+  it("declares structured output modes for every structured runtime flag", () => {
+    const contract = loadContract(CONTRACT_PATH);
+    for (const command of contract.commands) {
+      const flagNames = new Set([
+        ...(command.runtime_shapes.python?.flags ?? []).map((flag) => flag.name),
+        ...(command.runtime_shapes.typescript?.flags ?? []).map((flag) => flag.name),
+      ]);
+      if (flagNames.has("json")) {
+        expect(command.output?.modes, command.id).toContain(command.id === "watch" ? "ndjson" : "json");
+      }
+      if (flagNames.has("ndjson")) {
+        expect(command.output?.modes, command.id).toContain("ndjson");
+      }
+    }
+  });
+
   it("keeps version-1 command entries loadable with compatibility defaults", () => {
     const raw = JSON.parse(readFileSync(CONTRACT_PATH, "utf-8")) as {
       schema_version: number;

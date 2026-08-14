@@ -79,7 +79,7 @@ const COMMANDS: readonly CommandDescriptor[] = [
   },
   {
     name: "run",
-    description: "Run a scenario (required unless configured); defaults to 1 iteration. Next: status.",
+    description: "Run a scenario; pass it explicitly in Python or configure it for npm. Defaults to 1 iteration. Next: status.",
     group: "primary",
     route: { kind: "db", command: "run" },
   },
