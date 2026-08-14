@@ -31,4 +31,8 @@ Run the complete check from the repository root:
 python3 scripts/check_dependency_boundaries.py
 ```
 
+The TypeScript scan uses the compiler installed by `npm install` under `ts/`
+so it follows actual syntax, including `.tsx`, without treating comments or
+string examples as imports. Python-only scans do not require Node dependencies.
+
 Use `--runtime python` or `--runtime typescript` for a focused scan.

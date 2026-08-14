@@ -11,7 +11,7 @@ from __future__ import annotations
 import argparse
 import ast
 import json
-import re
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,12 +21,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 PYTHON_ROOT = REPO_ROOT / "autocontext" / "src" / "autocontext"
 TYPESCRIPT_ROOT = REPO_ROOT / "ts" / "src"
 RULES_PATH = REPO_ROOT / "scripts" / "dependency-boundaries.json"
-
-TS_STATIC_IMPORT_RE = re.compile(
-    r"\b(?:import|export)\s+(?:type\s+)?(?:[^\"';]*?\s+from\s+)?[\"']([^\"']+)[\"']",
-    re.MULTILINE,
-)
-TS_DYNAMIC_IMPORT_RE = re.compile(r"\bimport\(\s*[\"']([^\"']+)[\"']")
+TS_IMPORT_SCANNER = REPO_ROOT / "scripts" / "scan_typescript_imports.mjs"
 
 
 @dataclass(frozen=True, order=True)
@@ -121,7 +116,7 @@ def _python_edges() -> list[ImportEdge]:
             elif isinstance(node, ast.ImportFrom):
                 module = _resolve_python_import(relative, node.module, node.level)
                 if module is not None:
-                    modules.append(module)
+                    modules.extend(_python_from_import_modules(module, node.names))
             elif isinstance(node, ast.Call):
                 dynamic = _literal_python_import(node)
                 if dynamic is not None:
@@ -144,6 +139,22 @@ def _python_edges() -> list[ImportEdge]:
                     )
                 )
     return edges
+
+
+def _python_from_import_modules(module: str, names: list[ast.alias]) -> list[str]:
+    """Return modules represented by a ``from ... import ...`` statement.
+
+    Most imports already identify their domain in ``module``. Package-root
+    imports are different: ``from autocontext import knowledge`` names the
+    target domain in the imported alias, not in ``module`` itself.
+    """
+    if module != "autocontext":
+        return [module]
+    return [
+        f"{module}.{alias.name}"
+        for alias in names
+        if alias.name != "*" and (PYTHON_ROOT / alias.name).is_dir()
+    ]
 
 
 def _resolve_python_import(relative: Path, module: str | None, level: int) -> str | None:
@@ -186,32 +197,58 @@ def _python_domain(module: str) -> str | None:
 
 def _typescript_edges() -> list[ImportEdge]:
     edges: list[ImportEdge] = []
-    for path in sorted(TYPESCRIPT_ROOT.rglob("*.ts")):
-        relative = path.relative_to(TYPESCRIPT_ROOT)
+    raw_edges = _scan_typescript_imports()
+    seen: set[tuple[str, int, str]] = set()
+    for raw in raw_edges:
+        if not isinstance(raw, dict):
+            raise ValueError(f"{TS_IMPORT_SCANNER}: every import must be an object")
+        source = raw.get("source")
+        line = raw.get("line")
+        imported = raw.get("imported")
+        if not isinstance(source, str) or not source:
+            raise ValueError(f"{TS_IMPORT_SCANNER}: source must be a non-empty string")
+        if not isinstance(line, int) or line < 1:
+            raise ValueError(f"{TS_IMPORT_SCANNER}: line must be a positive integer")
+        if not isinstance(imported, str) or not imported:
+            raise ValueError(f"{TS_IMPORT_SCANNER}: imported must be a non-empty string")
+        key = (source, line, imported)
+        if key in seen:
+            continue
+        seen.add(key)
+
+        relative = Path(source)
+        path = TYPESCRIPT_ROOT / relative
         source_domain = relative.parts[0] if len(relative.parts) > 1 else "<root>"
-        text = path.read_text(encoding="utf-8")
-        matches = [*TS_STATIC_IMPORT_RE.finditer(text), *TS_DYNAMIC_IMPORT_RE.finditer(text)]
-        seen: set[tuple[int, str]] = set()
-        for match in sorted(matches, key=lambda item: item.start()):
-            imported = match.group(1)
-            line = text.count("\n", 0, match.start()) + 1
-            if (line, imported) in seen:
-                continue
-            seen.add((line, imported))
-            target_domain = _typescript_domain(path, imported)
-            if target_domain is None or target_domain == source_domain:
-                continue
-            edges.append(
-                ImportEdge(
-                    runtime="typescript",
-                    source=relative.as_posix(),
-                    line=line,
-                    source_domain=source_domain,
-                    target_domain=target_domain,
-                    imported=imported,
-                )
+        target_domain = _typescript_domain(path, imported)
+        if target_domain is None or target_domain == source_domain:
+            continue
+        edges.append(
+            ImportEdge(
+                runtime="typescript",
+                source=relative.as_posix(),
+                line=line,
+                source_domain=source_domain,
+                target_domain=target_domain,
+                imported=imported,
             )
+        )
     return edges
+
+
+def _scan_typescript_imports() -> list[Any]:
+    completed = subprocess.run(
+        ["node", str(TS_IMPORT_SCANNER), str(TYPESCRIPT_ROOT)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or completed.stdout.strip() or f"exit code {completed.returncode}"
+        raise ValueError(f"TypeScript import scan failed: {detail}")
+    parsed: Any = json.loads(completed.stdout)
+    if not isinstance(parsed, list):
+        raise ValueError(f"{TS_IMPORT_SCANNER}: expected a JSON list")
+    return parsed
 
 
 def _typescript_domain(source: Path, imported: str) -> str | None:
