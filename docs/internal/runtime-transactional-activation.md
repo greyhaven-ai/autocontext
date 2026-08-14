@@ -46,17 +46,23 @@ attach that policy to candidate command/tool scopes. All pre-cutover activation
 uses candidate, shadow, or canary policy. Even a candidate targeting `active`
 does not receive active-mode irreversible authority while it is staging.
 
-Shadow and canary graphs remain side-by-side deployments: they do not replace
-the active runtime pointer or dispose the baseline. An explicit rollback names
-the shadow/canary candidate and removes its graph while preserving the active
-pointer.
+Shadow and canary graphs remain side-by-side deployments: they neither drain
+nor replace the active runtime, change its pointer, or dispose the baseline.
+Changing a sidecar artifact from shadow to canary (or the reverse) disposes the
+old graph before installing the new mode, so the deployment map cannot orphan
+the prior component scopes. The currently active artifact cannot simultaneously
+be staged as its own sidecar. An explicit rollback names the shadow/canary
+candidate and removes its graph while preserving the active pointer.
 
 ## Registry and actuator connection
 
 `createActuatorRuntimeArtifactHooks` connects staged host configuration to the
 existing actuator `apply` contract. Its rollback hook invokes the actuator's
-declared live `rollback` path and then applies the validated baseline payload;
-rollback is therefore not only a registry state change.
+declared live `rollback` path, applies every returned patch, and then applies
+the validated baseline payload. The hook snapshots every affected target first;
+if patching or baseline application fails, it restores those preimages before
+reporting failure. Rollback is therefore an atomic host-state change rather
+than only a registry transition.
 
 `createRegistryRuntimeActivationPointerStore` adapts the existing atomic state
 pointer. `RegistryRuntimeActivationController` advances promotion history only
@@ -66,16 +72,23 @@ metadata transition fails, the controller starts a separately journaled
 compensating runtime rollback before restoring registry state.
 
 Hosts build the component manifests for an artifact and inject their resolver,
-workspace layout, registry, and actuator hooks. The ordinary CLI does not
-invent a live component resolver: deployments that want in-process hot
-activation must configure this host integration explicitly.
+workspace layout, registry, and actuator hooks. A host passes its
+`RegistryRuntimeActivationController` as `runtimeActivation` to
+`runControlPlaneCommand`; `promotion apply` and `candidate rollback` then use
+the live transaction before changing metadata. `--transaction-id` supplies a
+retry-stable id, and live rollback additionally requires
+`--baseline <artifactId|none>`. The standalone CLI does not invent a component
+resolver: deployments that want in-process hot activation must configure this
+host integration explicitly.
 
 ## Restart recovery and idempotency
 
-Transaction ids are idempotency keys. Repeating a completed activation or
-rollback returns its stored result and does not repeat effects. A repeated
-unfinished operation first recovers it instead of resuming from an ambiguous
-instruction boundary.
+Transaction ids are idempotency keys bound to a hash of the complete runtime
+request. Repeating a completed activation or rollback with the same request
+returns its stored result and does not repeat effects; reusing that id for a
+different candidate, target mode, baseline, trust setting, or sandbox boundary
+is rejected. A repeated unfinished operation first recovers it instead of
+resuming from an ambiguous instruction boundary.
 
 On startup, `recover()` rolls every unfinished activation or rollback back to
 the journaled baseline, verifies the observed runtime, restores the pointer,
@@ -85,14 +98,19 @@ target through a separately journaled `repair` operation. `status()` exposes
 pointer/observed ids, convergence, unfinished transaction ids, and divergent
 transaction ids.
 
-A failed provider disposer is different from an ordinary process interruption:
-the external state may still exist. The graph driver records durable divergence
-and refuses to instantiate that baseline again until the trusted operator has
-repaired or verified the effect and calls `acknowledgeCleanupRepair`. It never
-pretends an uncertain inverse succeeded.
+A failed disposer is different from an ordinary process interruption: the
+external state may still exist. The graph records both provider and leaf
+component cleanup blocks (including failed partial-activation unwind), exposes
+them to composition quiescence checks, and refuses to instantiate the blocked
+component again. A trusted operator clears a repaired leaf with
+`acknowledgeComponentCleanup`, while provider repair also clears its capability
+block through `acknowledgeProviderCleanup`. The graph driver likewise refuses
+to restore an artifact with unresolved cleanup until the supervisor calls
+`acknowledgeCleanupRepair`; it never pretends an uncertain inverse succeeded.
 
-Cross-process locking, distributed transactions, arbitrary Git patch
-application, and Python parity remain out of scope. A deployment running more
+Cross-process locking, distributed transactions, general-purpose Git patch
+application outside actuator-declared working-tree targets, and Python parity
+remain out of scope. A deployment running more
 than one activation supervisor for the same pointer must add a process-level
 lease around this single-process transaction contract.
 

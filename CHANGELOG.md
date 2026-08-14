@@ -12,6 +12,10 @@ All notable changes to this project will be documented in this file.
 - Top-level `autoctx status` help now consistently describes run status in both runtimes, requires a positional or named run id in every documented invocation, and points queue users to `autoctx queue status`. Python now accepts `--run-id` for parity. Missing run IDs are usage errors (exit 2), nonexistent runs are execution errors (exit 1), and JSON errors are written only to stderr (AC-941).
 - Python and TypeScript now share the same `autoctx export` format and output contract: `json` is the default, `pi-package` is supported by both runtimes, and `strategy` remains a deprecated alias for `json`. JSON artifacts go to stdout when `--output` is omitted; Pi packages use a scenario-derived directory. The version-2 CLI contract records export positionals, flags, defaults, schemas, streams, exit codes, and examples as the first full conformance slice (AC-939, AC-942).
 
+### Fixed
+
+- Transactional runtime activation now preserves the active graph while staging shadow/canary deployments, cleans up an earlier sidecar mode before replacing it, applies actuator rollback patches atomically with baseline restoration, binds idempotency keys to the complete runtime request, and lets host-integrated promotion/rollback commands enter the transaction controller. Provider and leaf cleanup failures both remain fail-closed until trusted repair, including partial-activation unwind failures, and multi-extension loading unwinds an already-loaded prefix if a later extension fails.
+
 ### Added
 
 - TypeScript runtime components can own synchronous and asynchronous cleanup with deterministic LIFO, at-most-once disposal and automatic partial-activation unwind. Managed extension hooks now expose unload handles, and sanitized component transitions can be appended to runtime-session events (AC-959).

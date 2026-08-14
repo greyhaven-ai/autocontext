@@ -306,6 +306,7 @@ describe("RuntimeComponentGraph", () => {
     const blocked = await graph.reconcile([replacement]);
     expect(replacementActivate).not.toHaveBeenCalled();
     expect(blocked.blockedCapabilities).toEqual(["service.cleanup"]);
+    expect(blocked.blockedComponentIds).toEqual(["original"]);
     expect(blocked.components).toMatchObject([{
       componentId: "replacement",
       state: "failed",
@@ -316,6 +317,71 @@ describe("RuntimeComponentGraph", () => {
     const repaired = await graph.reconcile([replacement]);
     expect(replacementActivate).toHaveBeenCalledOnce();
     expect(repaired.providers[0]?.instanceId).toBe("replacement@1");
+    expect(repaired.blockedComponentIds).toEqual([]);
+  });
+
+  it("blocks a leaf replacement after cleanup fails until component repair is acknowledged", async () => {
+    const replacementActivate = vi.fn();
+    const original: RuntimeComponentManifest = {
+      id: "leaf",
+      instanceId: "leaf@1",
+      activate: ({ scope }) => {
+        scope.defer(() => {
+          throw new Error("leaf cleanup failed");
+        });
+      },
+    };
+    const replacement: RuntimeComponentManifest = {
+      id: "leaf",
+      instanceId: "leaf@2",
+      activate: replacementActivate,
+    };
+    const graph = new RuntimeComponentGraph();
+    await graph.reconcile([original]);
+
+    const blocked = await graph.reconcile([replacement]);
+    expect(replacementActivate).not.toHaveBeenCalled();
+    expect(blocked.blockedCapabilities).toEqual([]);
+    expect(blocked.blockedComponentIds).toEqual(["leaf"]);
+    expect(blocked.components).toMatchObject([{
+      componentId: "leaf",
+      state: "failed",
+      reason: "cleanup_failed",
+    }]);
+
+    graph.acknowledgeComponentCleanup("leaf");
+    const repaired = await graph.reconcile([replacement]);
+    expect(replacementActivate).toHaveBeenCalledOnce();
+    expect(repaired.blockedComponentIds).toEqual([]);
+  });
+
+  it("blocks a leaf retry when partial-activation unwind fails", async () => {
+    const retry = vi.fn();
+    const graph = new RuntimeComponentGraph();
+    const failed = await graph.reconcile([{
+      id: "leaf",
+      instanceId: "leaf@1",
+      activate: ({ scope }) => {
+        scope.defer(() => {
+          throw new Error("partial cleanup failed");
+        });
+        throw new Error("activation failed");
+      },
+    }]);
+
+    expect(failed.blockedComponentIds).toEqual(["leaf"]);
+    expect(failed.blockedCapabilities).toEqual([]);
+    const blocked = await graph.reconcile([{
+      id: "leaf",
+      instanceId: "leaf@2",
+      activate: retry,
+    }]);
+    expect(retry).not.toHaveBeenCalled();
+    expect(blocked.components).toMatchObject([{
+      componentId: "leaf",
+      state: "failed",
+      reason: "cleanup_failed",
+    }]);
   });
 
   it("serializes async races and converges to the latest requested graph", async () => {

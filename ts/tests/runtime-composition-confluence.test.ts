@@ -122,6 +122,26 @@ describe("runtime composition confluence", () => {
     fixture.inventory.resolveLifecycleError("consumer", "stale_subscription");
     await fixture.disposeAndAssertNoLeaks();
   });
+
+  it("fails quiescence when cleanup of a capability-free component is unresolved", async () => {
+    const graph = new RuntimeComponentGraph();
+    const inventory = new RuntimeCompositionInventory();
+    await graph.reconcile([{
+      id: "leaf",
+      instanceId: "leaf@1",
+      activate: ({ scope }) => {
+        scope.defer(() => {
+          throw new Error("leaf cleanup failed");
+        });
+      },
+    }]);
+    await graph.reconcile([]);
+
+    const snapshot = captureRuntimeCompositionSnapshot({ graph: graph.snapshot(), inventory });
+    expect(snapshot.blockedCapabilities).toEqual([]);
+    expect(snapshot.blockedComponents).toEqual(["leaf"]);
+    expect(() => assertRuntimeCompositionQuiescent(snapshot)).toThrow("blocked components");
+  });
 });
 
 function compositionFixture() {

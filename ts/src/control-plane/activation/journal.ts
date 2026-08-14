@@ -104,6 +104,17 @@ export function validateRuntimeActivationJournalRecord(
   if (!isRuntimeActivationTargetMode(record.targetMode)) {
     throw new Error("runtime activation journal target mode is invalid");
   }
+  if (
+    record.requestKey !== undefined
+    && (
+      typeof record.requestKey !== "string"
+      || record.requestKey.length === 0
+      || record.requestKey.length > 1_000
+      || /[\u0000-\u001f\u007f]/.test(record.requestKey)
+    )
+  ) {
+    throw new Error("runtime activation journal request key is invalid");
+  }
   if (!isRuntimeActivationStage(record.stage)) {
     throw new Error("runtime activation journal stage is invalid");
   }

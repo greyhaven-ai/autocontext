@@ -61,6 +61,7 @@ export interface RuntimeCompositionObservableSnapshot {
   readonly ownedResources: readonly string[];
   readonly lifecycleErrors: readonly string[];
   readonly blockedCapabilities: readonly string[];
+  readonly blockedComponents: readonly string[];
   readonly excludedIrreversibleEffects: number;
 }
 
@@ -192,6 +193,7 @@ export function captureRuntimeCompositionSnapshot(
     ownedResources: byKind("resource"),
     lifecycleErrors: [...graphErrors, ...inventoryErrors].sort(),
     blockedCapabilities: [...input.graph.blockedCapabilities].sort(),
+    blockedComponents: [...input.graph.blockedComponentIds].sort(),
     excludedIrreversibleEffects: inventory.excludedIrreversibleEffects,
   };
 }
@@ -218,6 +220,9 @@ export function assertRuntimeCompositionQuiescent(
   }
   if (snapshot.blockedCapabilities.length > 0) {
     throw new Error("runtime composition has blocked capabilities");
+  }
+  if (snapshot.blockedComponents.length > 0) {
+    throw new Error("runtime composition has blocked components");
   }
 }
 

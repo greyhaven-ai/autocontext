@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import {
   RuntimeEffectExecutionMode,
   RuntimeEffectPolicy,
@@ -85,11 +87,17 @@ export class RuntimeActivationSupervisor {
   private async activateExclusive(
     request: RuntimeActivationRequest,
   ): Promise<RuntimeActivationResult> {
+    const requestKey = activationRequestKey(request);
     const existing = this.journal.load(request.transactionId);
     if (existing) {
       if (existing.operation !== "activate") {
         throw new Error("runtime activation transaction id belongs to another operation");
       }
+      assertMatchingReplay(existing, requestKey, {
+        candidateArtifactId: request.candidateArtifactId,
+        priorArtifactId: existing.priorArtifactId,
+        targetMode: request.targetMode,
+      });
       if (existing.outcome === "in_progress" || existing.outcome === "diverged") {
         await this.recoverRecord(existing);
       }
@@ -103,6 +111,7 @@ export class RuntimeActivationSupervisor {
       candidateArtifactId: request.candidateArtifactId,
       priorArtifactId,
       targetMode: request.targetMode,
+      requestKey,
     });
     record = this.append(record, "staged", "succeeded");
 
@@ -183,6 +192,16 @@ export class RuntimeActivationSupervisor {
       if (existing.operation !== "rollback") {
         throw new Error("runtime activation transaction id belongs to another operation");
       }
+      const candidateArtifactId = request.candidateArtifactId ?? existing.candidateArtifactId;
+      assertMatchingReplay(
+        existing,
+        rollbackRequestKey(candidateArtifactId, request.baselineArtifactId),
+        {
+          candidateArtifactId,
+          priorArtifactId: request.baselineArtifactId,
+          targetMode: existing.targetMode,
+        },
+      );
       if (existing.outcome === "in_progress" || existing.outcome === "diverged") {
         await this.recoverRecord(existing);
       }
@@ -206,6 +225,7 @@ export class RuntimeActivationSupervisor {
       candidateArtifactId,
       priorArtifactId: request.baselineArtifactId,
       targetMode,
+      requestKey: rollbackRequestKey(candidateArtifactId, request.baselineArtifactId),
     });
     record = this.append(record, "staged", "succeeded");
 
@@ -299,6 +319,7 @@ export class RuntimeActivationSupervisor {
       candidateArtifactId: pointerTarget,
       priorArtifactId: await this.driver.observedArtifactId(),
       targetMode: "active",
+      requestKey: repairRequestKey(pointerTarget),
     });
     record = this.append(record, "staged", "succeeded");
     try {
@@ -376,6 +397,7 @@ export class RuntimeActivationSupervisor {
     candidateArtifactId: string | null;
     priorArtifactId: string | null;
     targetMode: RuntimeActivationJournalRecord["targetMode"];
+    requestKey?: string;
   }): RuntimeActivationJournalRecord {
     const now = this.now();
     const record: RuntimeActivationJournalRecord = {
@@ -520,4 +542,54 @@ function stagingEffectMode(
   if (targetMode === "shadow") return RuntimeEffectExecutionMode.SHADOW;
   if (targetMode === "canary") return RuntimeEffectExecutionMode.CANARY;
   return RuntimeEffectExecutionMode.CANDIDATE;
+}
+
+function activationRequestKey(request: RuntimeActivationRequest): string {
+  return requestKey({
+    operation: "activate",
+    candidateArtifactId: request.candidateArtifactId,
+    targetMode: request.targetMode,
+    untrustedComponent: request.untrustedComponent ?? false,
+    sandbox: request.sandbox
+      ? { boundary: request.sandbox.boundary, available: request.sandbox.available }
+      : null,
+  });
+}
+
+function rollbackRequestKey(
+  candidateArtifactId: string | null,
+  baselineArtifactId: string | null,
+): string {
+  return requestKey({
+    operation: "rollback",
+    candidateArtifactId,
+    baselineArtifactId,
+  });
+}
+
+function repairRequestKey(artifactId: string | null): string {
+  return requestKey({ operation: "repair", artifactId });
+}
+
+function requestKey(value: unknown): string {
+  return `sha256:${createHash("sha256").update(JSON.stringify(value)).digest("hex")}`;
+}
+
+function assertMatchingReplay(
+  existing: RuntimeActivationJournalRecord,
+  requestKey: string,
+  legacy: {
+    candidateArtifactId: string | null;
+    priorArtifactId: string | null;
+    targetMode: RuntimeActivationJournalRecord["targetMode"];
+  },
+): void {
+  const matches = existing.requestKey !== undefined
+    ? existing.requestKey === requestKey
+    : existing.candidateArtifactId === legacy.candidateArtifactId
+      && existing.priorArtifactId === legacy.priorArtifactId
+      && existing.targetMode === legacy.targetMode;
+  if (!matches) {
+    throw new Error("runtime activation transaction id belongs to a different request");
+  }
 }

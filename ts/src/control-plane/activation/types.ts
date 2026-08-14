@@ -60,6 +60,8 @@ export interface RuntimeActivationJournalRecord {
   readonly candidateArtifactId: string | null;
   readonly priorArtifactId: string | null;
   readonly targetMode: RuntimeActivationTargetMode;
+  /** Stable, sanitized identity of the request bound to this transaction id. */
+  readonly requestKey?: string;
   readonly stage: RuntimeActivationStage;
   readonly outcome: RuntimeActivationJournalOutcome;
   readonly failureCode?: RuntimeActivationFailureCode;

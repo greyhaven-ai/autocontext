@@ -36,25 +36,43 @@ export async function loadExtensionComponents(
   options: LoadExtensionComponentsOptions = {},
 ): Promise<LoadedExtensionComponent[]> {
   const loaded: LoadedExtensionComponent[] = [];
-  for (const ref of splitRefs(refs)) {
-    const target = await loadTarget(ref);
-    const scope = await activateRuntimeComponent(
-      {
-        componentId: extensionComponentId(ref),
-        eventSink: options.eventSink,
-      },
-      async (componentScope) => {
-        const api = new ExtensionAPI(bus, componentScope);
-        await invokeExtension(target, api);
-        bus.loadedExtensions.push(ref);
-        componentScope.defer(() => removeLoadedExtension(bus, ref));
-      },
-    );
-    loaded.push({
-      ref,
-      scope,
-      unload: () => scope.dispose(),
-    });
+  try {
+    for (const ref of splitRefs(refs)) {
+      const target = await loadTarget(ref);
+      const scope = await activateRuntimeComponent(
+        {
+          componentId: extensionComponentId(ref),
+          eventSink: options.eventSink,
+        },
+        async (componentScope) => {
+          const api = new ExtensionAPI(bus, componentScope);
+          await invokeExtension(target, api);
+          bus.loadedExtensions.push(ref);
+          componentScope.defer(() => removeLoadedExtension(bus, ref));
+        },
+      );
+      loaded.push({
+        ref,
+        scope,
+        unload: () => scope.dispose(),
+      });
+    }
+  } catch (loadError) {
+    const cleanupErrors: unknown[] = [];
+    for (const component of [...loaded].reverse()) {
+      try {
+        await component.unload();
+      } catch (cleanupError) {
+        cleanupErrors.push(cleanupError);
+      }
+    }
+    if (cleanupErrors.length > 0) {
+      throw new AggregateError(
+        [loadError, ...cleanupErrors],
+        "extension batch activation and cleanup failed",
+      );
+    }
+    throw loadError;
   }
   return loaded;
 }

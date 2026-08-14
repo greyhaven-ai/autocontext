@@ -113,8 +113,21 @@ const orchestrator = new AgentOrchestrator(provider, {
 | `autoctx tui`                                          | Start the terminal UI                                        |
 | `autoctx train --scenario <name> --dataset <jsonl>`    | Validate training input and call an injected training runner |
 | `autoctx agent run <name> --payload '{...}'`           | Invoke experimental `.autoctx/agents` handlers               |
+| `autoctx promotion apply <id> --to <mode> --reason ...` | Promote a control-plane artifact                              |
+| `autoctx candidate rollback <id> --reason ...`         | Roll back a control-plane artifact                            |
 
 `train` is a validation/executor-hook surface in TypeScript; end-to-end MLX/CUDA training lives in the Python package unless your application injects a real `TrainingRunner`.
+
+Applications with an in-process component host can pass a
+`RegistryRuntimeActivationController` through the `runtimeActivation` option of
+`runControlPlaneCommand`. In that configuration, `promotion apply` and
+`candidate rollback` execute the durable runtime transaction before committing
+registry metadata. Supply `--transaction-id <id>` when a retry must reuse the
+same operation identity; live rollback also requires
+`--baseline <artifactId|none>`. The standalone command has no generic component
+manifest resolver and therefore retains metadata-only behavior unless the host
+provides this integration. See
+[transactional runtime activation](../docs/internal/runtime-transactional-activation.md).
 
 ## Python-Only commands
 

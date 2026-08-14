@@ -2,7 +2,8 @@
 //
 // Responsibilities:
 //   - decide: pure PromotionDecision computation (no state change).
-//   - apply : transactional state change via registry.appendPromotionEvent.
+//   - apply : live transaction through an injected host controller, then registry metadata;
+//             metadata-only registry transition when no live host is configured.
 //   - history: dump promotion-history.jsonl for an artifact.
 
 import { existsSync, readFileSync } from "node:fs";
@@ -38,7 +39,7 @@ Examples:
       [--thresholds ./thresholds.json] [--require-ablation] \\
       [--ablation-targets strategy,harness] [--output json]
   autoctx promotion apply <candidateId> --to <shadow|canary|active|disabled> \\
-      --reason "..." [--dry-run]
+      --reason "..." [--transaction-id <id>] [--dry-run]
   autoctx promotion history <artifactId>
 `;
 
@@ -194,7 +195,7 @@ async function runApply(args: readonly string[], ctx: CliContext): Promise<CliRe
   if (artifactId === null) {
     return { stdout: "", stderr: `Invalid artifact id: ${id}`, exitCode: EXIT.INVALID_ARTIFACT };
   }
-  const flags = parseSimpleFlags(args.slice(1), ["to", "reason", "dry-run"]);
+  const flags = parseSimpleFlags(args.slice(1), ["to", "reason", "transaction-id", "dry-run"]);
   if ("error" in flags) return { stdout: "", stderr: flags.error, exitCode: EXIT.HARD_FAIL };
 
   const to = flags.value.to;
@@ -226,6 +227,36 @@ async function runApply(args: readonly string[], ctx: CliContext): Promise<CliRe
       stderr: "",
       exitCode: EXIT.PASS_STRONG_OR_MODERATE,
     };
+  }
+
+  if (ctx.runtimeActivation && isRuntimePromotionTarget(to)) {
+    try {
+      const result = await ctx.runtimeActivation.promote({
+        transactionId: flags.value["transaction-id"]
+          ?? cliTransactionId("promotion", current, to),
+        candidateArtifactId: artifactId,
+        targetMode: to,
+        reason,
+      });
+      if (result.runtime.outcome !== "succeeded") {
+        return {
+          stdout: "",
+          stderr: `Runtime promotion failed: ${result.runtime.failureCode ?? "unknown_failure"}`,
+          exitCode: EXIT.HARD_FAIL,
+        };
+      }
+      return {
+        stdout: `${result.candidate.id}: ${current.activationState} → ${result.candidate.activationState}`,
+        stderr: "",
+        exitCode: EXIT.PASS_STRONG_OR_MODERATE,
+      };
+    } catch (err) {
+      return {
+        stdout: "",
+        stderr: err instanceof Error ? err.message : String(err),
+        exitCode: EXIT.HARD_FAIL,
+      };
+    }
   }
 
   try {
@@ -310,4 +341,12 @@ function parseAblationTargets(raw: string): { value: readonly AblationTarget[] }
     if (!targets.includes(part)) targets.push(part);
   }
   return { value: targets };
+}
+
+function isRuntimePromotionTarget(value: string): value is "shadow" | "canary" | "active" {
+  return value === "shadow" || value === "canary" || value === "active";
+}
+
+function cliTransactionId(operation: string, artifact: Artifact, target: string): string {
+  return `cli-${operation}-${artifact.id}-${artifact.promotionHistory.length}-${target}`;
 }

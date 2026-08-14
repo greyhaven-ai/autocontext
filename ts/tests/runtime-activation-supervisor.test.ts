@@ -112,6 +112,7 @@ describe("RuntimeActivationSupervisor", () => {
     expect(shadow).toMatchObject({ outcome: "succeeded", activeArtifactId: "baseline" });
     expect(fixture.driver.isActivated("shadow", "shadow")).toBe(true);
     expect(fixture.pointer.read()?.artifactId).toBe("baseline");
+    expect(order).not.toContain("drain:baseline");
     expect(order).not.toContain("baseline:provider:dispose");
 
     const denied = await fixture.supervisor.activate({
@@ -126,6 +127,58 @@ describe("RuntimeActivationSupervisor", () => {
     });
     expect(fixture.driver.isActivated("unsafe", "shadow")).toBe(false);
     expect(fixture.pointer.read()?.artifactId).toBe("baseline");
+  });
+
+  it("disposes the prior mode before redeploying the same artifact", async () => {
+    const order: string[] = [];
+    const fixture = await graphFixture(order);
+    await fixture.supervisor.activate({
+      transactionId: "multi-shadow",
+      candidateArtifactId: "multi",
+      targetMode: "shadow",
+    });
+    order.length = 0;
+
+    await fixture.supervisor.activate({
+      transactionId: "multi-canary",
+      candidateArtifactId: "multi",
+      targetMode: "canary",
+    });
+
+    expect(order).toContain("multi:consumer:dispose");
+    expect(order).toContain("multi:provider:dispose");
+    expect(fixture.driver.isActivated("multi", "shadow")).toBe(false);
+    expect(fixture.driver.isActivated("multi", "canary")).toBe(true);
+
+    order.length = 0;
+    await fixture.supervisor.rollback({
+      transactionId: "multi-rollback",
+      candidateArtifactId: "multi",
+      baselineArtifactId: "baseline",
+    });
+    expect(order.filter((item) => item === "multi:consumer:dispose")).toHaveLength(1);
+    expect(order.filter((item) => item === "multi:provider:dispose")).toHaveLength(1);
+    expect(fixture.driver.isActivated("multi", "canary")).toBe(false);
+  });
+
+  it("refuses to redeploy the active artifact as a sidecar mode", async () => {
+    const order: string[] = [];
+    const fixture = await graphFixture(order);
+    order.length = 0;
+
+    const result = await fixture.supervisor.activate({
+      transactionId: "baseline-shadow",
+      candidateArtifactId: "baseline",
+      targetMode: "shadow",
+    });
+
+    expect(result).toMatchObject({
+      outcome: "failed",
+      activeArtifactId: "baseline",
+    });
+    expect(order).not.toContain("baseline:consumer:dispose");
+    expect(order).not.toContain("baseline:provider:dispose");
+    expect(fixture.driver.isActivated("baseline", "active")).toBe(true);
   });
 
   it("rolls back through the live driver, restores the baseline, and is idempotent", async () => {
@@ -162,6 +215,47 @@ describe("RuntimeActivationSupervisor", () => {
     });
     expect(replay.idempotentReplay).toBe(true);
     expect(order).toEqual([]);
+  });
+
+  it("rejects reuse of an activation transaction id for a different request", async () => {
+    const fixture = await graphFixture([]);
+    await fixture.supervisor.activate({
+      transactionId: "bound-request",
+      candidateArtifactId: "candidate-one",
+      targetMode: "active",
+    });
+
+    await expect(fixture.supervisor.activate({
+      transactionId: "bound-request",
+      candidateArtifactId: "candidate-two",
+      targetMode: "active",
+    })).rejects.toThrow("different request");
+
+    await expect(fixture.supervisor.activate({
+      transactionId: "bound-request",
+      candidateArtifactId: "candidate-one",
+      targetMode: "canary",
+    })).rejects.toThrow("different request");
+  });
+
+  it("rejects reuse of a rollback transaction id for a different baseline", async () => {
+    const fixture = await graphFixture([]);
+    await fixture.supervisor.activate({
+      transactionId: "activate-before-bound-rollback",
+      candidateArtifactId: "candidate",
+      targetMode: "active",
+    });
+    await fixture.supervisor.rollback({
+      transactionId: "bound-rollback",
+      candidateArtifactId: "candidate",
+      baselineArtifactId: "baseline",
+    });
+
+    await expect(fixture.supervisor.rollback({
+      transactionId: "bound-rollback",
+      candidateArtifactId: "candidate",
+      baselineArtifactId: "other-baseline",
+    })).rejects.toThrow("different request");
   });
 
   it("removes a shadow deployment without moving the active pointer", async () => {

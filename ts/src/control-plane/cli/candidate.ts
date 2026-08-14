@@ -70,7 +70,8 @@ Examples:
   autoctx candidate list --scenario grid_ctf --output table
   autoctx candidate show <artifactId>
   autoctx candidate lineage <artifactId>
-  autoctx candidate rollback <artifactId> --reason "..."
+  autoctx candidate rollback <artifactId> --reason "..." \\
+      [--baseline <artifactId|none>] [--transaction-id <id>]
 `;
 
 export async function runCandidate(
@@ -458,9 +459,17 @@ async function runRollback(args: readonly string[], ctx: CliContext): Promise<Cl
   if (parsed === null) {
     return { stdout: "", stderr: `Invalid artifact id: ${id}`, exitCode: EXIT.INVALID_ARTIFACT };
   }
-  const flags = parseFlags(args.slice(1), { reason: { type: "string", required: true } });
+  const flags = parseFlags(args.slice(1), {
+    reason: { type: "string", required: true },
+    baseline: { type: "string" },
+    "transaction-id": { type: "string" },
+  });
   if ("error" in flags) {
     return { stdout: "", stderr: flags.error, exitCode: EXIT.HARD_FAIL };
+  }
+  const reason = flags.value.reason;
+  if (typeof reason !== "string") {
+    return { stdout: "", stderr: "--reason is required", exitCode: EXIT.HARD_FAIL };
   }
 
   const registry = openRegistry(ctx.cwd);
@@ -486,10 +495,59 @@ async function runRollback(args: readonly string[], ctx: CliContext): Promise<Cl
     };
   }
 
+  if (ctx.runtimeActivation) {
+    const baselineFlag = flags.value.baseline;
+    if (typeof baselineFlag !== "string") {
+      return {
+        stdout: "",
+        stderr: "--baseline <artifactId|none> is required for live runtime rollback",
+        exitCode: EXIT.HARD_FAIL,
+      };
+    }
+    const baselineArtifactId = baselineFlag === "none"
+      ? null
+      : parseArtifactId(baselineFlag);
+    if (baselineFlag !== "none" && baselineArtifactId === null) {
+      return {
+        stdout: "",
+        stderr: `Invalid baseline artifact id: ${baselineFlag}`,
+        exitCode: EXIT.INVALID_ARTIFACT,
+      };
+    }
+    try {
+      const result = await ctx.runtimeActivation.rollback({
+        transactionId: typeof flags.value["transaction-id"] === "string"
+          ? flags.value["transaction-id"]
+          : `cli-rollback-${current.id}-${current.promotionHistory.length}`,
+        candidateArtifactId: current.id,
+        baselineArtifactId,
+        reason,
+      });
+      if (result.runtime.outcome !== "succeeded") {
+        return {
+          stdout: "",
+          stderr: `Runtime rollback failed: ${result.runtime.failureCode ?? "unknown_failure"}`,
+          exitCode: EXIT.HARD_FAIL,
+        };
+      }
+      return {
+        stdout: `Rolled back ${result.candidate.id} to candidate`,
+        stderr: "",
+        exitCode: EXIT.PASS_STRONG_OR_MODERATE,
+      };
+    } catch (err) {
+      return {
+        stdout: "",
+        stderr: err instanceof Error ? err.message : String(err),
+        exitCode: EXIT.HARD_FAIL,
+      };
+    }
+  }
+
   const event = createPromotionEvent({
     from: current.activationState,
     to: "candidate",
-    reason: flags.value.reason as string,
+    reason,
     timestamp: ctx.now(),
   });
 

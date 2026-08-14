@@ -125,6 +125,37 @@ describe("TypeScript extension hooks", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it("unwinds the successful prefix when a later extension fails to load", async () => {
+    const root = mkdtempSync(join(tmpdir(), "autoctx-ts-extension-batch-"));
+    try {
+      const firstPath = join(root, "first.mjs");
+      const failingPath = join(root, "failing.mjs");
+      writeFileSync(
+        firstPath,
+        `export function register(api) { api.on("context", () => ({ leaked: true })); }`,
+        "utf-8",
+      );
+      writeFileSync(
+        failingPath,
+        `export function register(api) {
+          api.on("context", () => ({ partial: true }));
+          throw new Error("batch activation failed");
+        }`,
+        "utf-8",
+      );
+      const bus = new HookBus();
+
+      await expect(loadExtensionComponents([firstPath, failingPath], bus))
+        .rejects.toThrow("batch activation failed");
+
+      expect(bus.loadedExtensions).toEqual([]);
+      expect(bus.hasHandlers(HookEvents.CONTEXT)).toBe(false);
+      expect(bus.emit(HookEvents.CONTEXT).payload).toEqual({});
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
 
 function readStringRecord(value: unknown): Record<string, string> {

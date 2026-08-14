@@ -102,6 +102,7 @@ export interface RuntimeComponentGraphSnapshot {
   readonly components: readonly RuntimeComponentGraphComponentSnapshot[];
   readonly providers: readonly RuntimeComponentGraphProviderSnapshot[];
   readonly blockedCapabilities: readonly string[];
+  readonly blockedComponentIds: readonly string[];
 }
 
 export type RuntimeComponentGraphErrorCode =
@@ -178,6 +179,8 @@ export class RuntimeComponentGraph {
   private active = new Map<string, ActiveComponent>();
   private availableProviders = new Map<string, AvailableProvider>();
   private blockedCapabilities = new Set<string>();
+  private blockedComponentIds = new Set<string>();
+  private blockedComponentCapabilities = new Map<string, Set<string>>();
   private desired = new Map<string, PreparedComponent>();
   private statuses = new Map<string, ComponentStatus>();
   private requestedRevision = 0;
@@ -218,6 +221,23 @@ export class RuntimeComponentGraph {
    */
   acknowledgeProviderCleanup<T>(key: RuntimeCapabilityKey<T>): void {
     this.blockedCapabilities.delete(key.id);
+    for (const [componentId, capabilities] of this.blockedComponentCapabilities) {
+      const removed = capabilities.delete(key.id);
+      if (removed && capabilities.size === 0) {
+        this.blockedComponentCapabilities.delete(componentId);
+        this.blockedComponentIds.delete(componentId);
+      }
+    }
+  }
+
+  /** Clears a cleanup block after a trusted supervisor repairs a leaf component. */
+  acknowledgeComponentCleanup(componentId: string): void {
+    const normalized = validateGraphIdentifier(componentId, "component");
+    for (const capabilityId of this.blockedComponentCapabilities.get(normalized) ?? []) {
+      this.blockedCapabilities.delete(capabilityId);
+    }
+    this.blockedComponentCapabilities.delete(normalized);
+    this.blockedComponentIds.delete(normalized);
   }
 
   snapshot(): RuntimeComponentGraphSnapshot {
@@ -254,6 +274,7 @@ export class RuntimeComponentGraph {
       components,
       providers,
       blockedCapabilities: [...this.blockedCapabilities].sort(),
+      blockedComponentIds: [...this.blockedComponentIds].sort(),
     };
   }
 
@@ -342,9 +363,12 @@ export class RuntimeComponentGraph {
           instanceId: record.prepared.manifest.instanceId,
         });
       } catch {
-        for (const provision of record.prepared.provides) {
-          this.blockedCapabilities.add(provision.key.id);
-        }
+        const capabilities = new Set(
+          record.prepared.provides.map((provision) => provision.key.id),
+        );
+        for (const capabilityId of capabilities) this.blockedCapabilities.add(capabilityId);
+        this.blockedComponentIds.add(componentId);
+        this.blockedComponentCapabilities.set(componentId, capabilities);
         this.emit({
           revision,
           operation: "component_failed",
@@ -364,6 +388,22 @@ export class RuntimeComponentGraph {
       const component = prepared.components.get(componentId)!;
       if (this.active.has(componentId)) {
         this.statuses.set(componentId, { state: "active" });
+        continue;
+      }
+      if (this.blockedComponentIds.has(componentId)) {
+        const status: ComponentStatus = {
+          state: "failed",
+          reason: "cleanup_failed",
+        };
+        this.statuses.set(componentId, status);
+        this.emit({
+          revision,
+          operation: "component_failed",
+          outcome: "failed",
+          componentId,
+          instanceId: component.manifest.instanceId,
+          reason: status.reason,
+        });
         continue;
       }
       const unavailable = this.firstUnavailableRequirement(component);
@@ -440,9 +480,12 @@ export class RuntimeComponentGraph {
         });
       } catch (error) {
         if (error instanceof AggregateError) {
-          for (const provision of component.provides) {
-            this.blockedCapabilities.add(provision.key.id);
-          }
+          const capabilities = new Set(
+            component.provides.map((provision) => provision.key.id),
+          );
+          for (const capabilityId of capabilities) this.blockedCapabilities.add(capabilityId);
+          this.blockedComponentIds.add(componentId);
+          this.blockedComponentCapabilities.set(componentId, capabilities);
         }
         this.statuses.set(componentId, { state: "failed", reason: "activation_failed" });
         this.emit({

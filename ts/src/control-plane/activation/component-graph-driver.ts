@@ -86,6 +86,12 @@ export class RuntimeComponentGraphActivationDriver implements RuntimeActivationD
     if ((prior?.artifactId ?? null) !== input.priorArtifactId) {
       throw new Error("runtime observed state does not match the activation baseline");
     }
+    if (
+      prior?.artifactId === input.candidateArtifactId
+      && input.targetMode !== "active"
+    ) {
+      throw new Error("the active artifact cannot also be deployed as a sidecar mode");
+    }
 
     let manifests: readonly RuntimeComponentManifest[] | undefined;
     let staged: LiveGraphSlot | undefined;
@@ -115,12 +121,17 @@ export class RuntimeComponentGraphActivationDriver implements RuntimeActivationD
         assertFullyActive(snapshot);
       },
       drainPrior: async () => {
-        if (!prior) return;
+        if (!prior || input.targetMode !== "active") return;
         await this.options.drainArtifact?.(prior.artifactId);
         drained = true;
       },
       cutover: async () => {
         if (!staged) throw new Error("candidate graph has not activated");
+        const existing = this.deployed.get(staged.artifactId);
+        if (existing && existing !== staged) {
+          assertCleanupComplete(await existing.graph.reconcile([]));
+          this.deployed.delete(existing.artifactId);
+        }
         this.deployed.set(staged.artifactId, staged);
         if (input.targetMode === "active") this.active = staged;
         cutover = true;
@@ -232,6 +243,7 @@ export class RuntimeComponentGraphActivationDriver implements RuntimeActivationD
 function assertFullyActive(snapshot: RuntimeComponentGraphSnapshot): void {
   if (
     snapshot.blockedCapabilities.length > 0
+    || snapshot.blockedComponentIds.length > 0
     || snapshot.components.some((component) => component.state !== "active")
   ) {
     throw new Error("runtime component graph did not fully activate");
@@ -239,7 +251,10 @@ function assertFullyActive(snapshot: RuntimeComponentGraphSnapshot): void {
 }
 
 function assertCleanupComplete(snapshot: RuntimeComponentGraphSnapshot): void {
-  if (snapshot.blockedCapabilities.length > 0) {
+  if (
+    snapshot.blockedCapabilities.length > 0
+    || snapshot.blockedComponentIds.length > 0
+  ) {
     throw new Error("runtime component graph cleanup requires supervisor repair");
   }
 }
