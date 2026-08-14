@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-08-14
+
+This is a TypeScript-first release. The Python package remains at `0.15.1`;
+Python parity for the pi-tui client and image-attachment delivery is deferred.
+
 ### Changed
 
 - The npm package now requires Node.js 22.19.0 or newer, matching the exact
@@ -786,7 +791,8 @@ A new cross-runtime parity audit (`test_cli_contract_parity.py` + `cli-contract-
 - FastAPI dashboard with WebSocket events.
 - CLI via Typer (Python) and `parseArgs` (TypeScript).
 
-[Unreleased]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.14.0...HEAD
+[Unreleased]: https://github.com/greyhaven-ai/autocontext/compare/ts-v0.16.0...HEAD
+[0.16.0]: https://github.com/greyhaven-ai/autocontext/compare/ts-v0.15.1...ts-v0.16.0
 [0.14.0]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.13.0...py-v0.14.0
 [0.13.0]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.12.0...py-v0.13.0
 [0.12.0]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.11.0...py-v0.12.0

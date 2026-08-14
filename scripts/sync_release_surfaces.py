@@ -20,7 +20,9 @@ _VERSION_RE = r"\d+\.\d+\.\d+"
 
 @dataclass(frozen=True, slots=True)
 class ReleaseManifest:
-    core_version: str
+    python_version: str
+    npm_version: str
+    whats_new_version: str
     pi_version: str
     pi_autoctx_dependency: str
     whats_new: tuple[str, ...]
@@ -29,7 +31,9 @@ class ReleaseManifest:
 def load_release_manifest(path: Path = MANIFEST_PATH) -> ReleaseManifest:
     data = json.loads(path.read_text(encoding="utf-8"))
     return ReleaseManifest(
-        core_version=str(data["core_version"]),
+        python_version=str(data["python_version"]),
+        npm_version=str(data["npm_version"]),
+        whats_new_version=str(data["whats_new_version"]),
         pi_version=str(data["pi_version"]),
         pi_autoctx_dependency=str(data["pi_autoctx_dependency"]),
         whats_new=tuple(str(item) for item in data["whats_new"]),
@@ -41,7 +45,7 @@ def render_whats_new_asset(manifest: ReleaseManifest) -> str:
 
 
 def render_whats_new_heading(manifest: ReleaseManifest) -> str:
-    return f"What's New in {manifest.core_version}"
+    return f"What's New in {manifest.whats_new_version}"
 
 
 def render_readme_whats_new_block(manifest: ReleaseManifest) -> str:
@@ -68,9 +72,9 @@ def _replace_block(text: str, start: str, end: str, replacement: str) -> str:
 
 def _replace_versions(text: str, manifest: ReleaseManifest) -> str:
     text = re.sub(
-        rf"autocontext=={_VERSION_RE}", f"autocontext=={manifest.core_version}", text
+        rf"autocontext=={_VERSION_RE}", f"autocontext=={manifest.python_version}", text
     )
-    text = re.sub(rf"autoctx@{_VERSION_RE}", f"autoctx@{manifest.core_version}", text)
+    text = re.sub(rf"autoctx@{_VERSION_RE}", f"autoctx@{manifest.npm_version}", text)
     return re.sub(
         rf"pi-autocontext@{_VERSION_RE}", f"pi-autocontext@{manifest.pi_version}", text
     )
@@ -106,12 +110,12 @@ def sync_root_readme(text: str, manifest: ReleaseManifest) -> str:
 
 def sync_python_readme(text: str, manifest: ReleaseManifest) -> str:
     return re.sub(
-        rf"autocontext=={_VERSION_RE}", f"autocontext=={manifest.core_version}", text
+        rf"autocontext=={_VERSION_RE}", f"autocontext=={manifest.python_version}", text
     )
 
 
 def sync_ts_readme(text: str, manifest: ReleaseManifest) -> str:
-    return re.sub(rf"autoctx@{_VERSION_RE}", f"autoctx@{manifest.core_version}", text)
+    return re.sub(rf"autoctx@{_VERSION_RE}", f"autoctx@{manifest.npm_version}", text)
 
 
 def render_pi_package_note(manifest: ReleaseManifest) -> str:
@@ -192,21 +196,37 @@ def check_release_surfaces(manifest: ReleaseManifest) -> list[str]:
         REPO_ROOT / "autocontext" / "src" / "autocontext" / "__init__.py"
     )
     package_version = str(_read_json(REPO_ROOT / "ts" / "package.json")["version"])
+    package_lock = _read_json(REPO_ROOT / "ts" / "package-lock.json")
+    package_lock_version = str(package_lock["version"])
+    package_lock_root = cast(dict[str, Any], cast(dict[str, Any], package_lock["packages"])[""])
+    package_lock_root_version = str(package_lock_root["version"])
     pi_package = _read_json(REPO_ROOT / "pi" / "package.json")
     pi_version = str(pi_package["version"])
     pi_dependencies = cast(dict[str, Any], pi_package["dependencies"])
     pi_autoctx_dependency = str(pi_dependencies["autoctx"])
-    if pyproject_version != manifest.core_version:
+    if pyproject_version != manifest.python_version:
         issues.append(
-            f"autocontext/pyproject.toml version {pyproject_version} != manifest {manifest.core_version}"
+            "autocontext/pyproject.toml version "
+            f"{pyproject_version} != manifest python_version {manifest.python_version}"
         )
-    if python_init_version != manifest.core_version:
+    if python_init_version != manifest.python_version:
         issues.append(
-            f"autocontext/src/autocontext/__init__.py version {python_init_version} != manifest {manifest.core_version}"
+            "autocontext/src/autocontext/__init__.py version "
+            f"{python_init_version} != manifest python_version {manifest.python_version}"
         )
-    if package_version != manifest.core_version:
+    if package_version != manifest.npm_version:
         issues.append(
-            f"ts/package.json version {package_version} != manifest {manifest.core_version}"
+            f"ts/package.json version {package_version} != manifest npm_version {manifest.npm_version}"
+        )
+    if package_lock_version != manifest.npm_version:
+        issues.append(
+            "ts/package-lock.json version "
+            f"{package_lock_version} != manifest npm_version {manifest.npm_version}"
+        )
+    if package_lock_root_version != manifest.npm_version:
+        issues.append(
+            "ts/package-lock.json root package version "
+            f"{package_lock_root_version} != manifest npm_version {manifest.npm_version}"
         )
     if pi_version != manifest.pi_version:
         issues.append(f"pi/package.json version {pi_version} != manifest {manifest.pi_version}")
