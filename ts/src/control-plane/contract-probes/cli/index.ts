@@ -28,7 +28,7 @@ export type { HarnessTrace, ProbesCheckResult, ProbesExtractResult };
 
 export type ProbesCommandResult = ProbesCheckResult | ProbesExtractResult;
 
-const TOP_HELP = `autoctx probes -- run AC-728 contract probes against observed harness state.
+const TOP_HELP = `autoctx probes -- check observed harness state against contract probes.
 
 Subcommands:
   check     Run a JSON-defined probe suite and report pass/fail per probe.

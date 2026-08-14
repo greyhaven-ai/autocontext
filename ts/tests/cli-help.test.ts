@@ -30,12 +30,13 @@ describe("Top-level --help", () => {
     expect(out).toContain("replay");
   });
 
-  it("leads with plain-language paved-road examples", () => {
+  it("leads with the paved-road workflow and a concrete next step", () => {
     const out = runHelp("");
-    expect(out).toContain('autoctx solve "build an orbital transfer optimizer"');
-    expect(out).toContain("autoctx show <run-id> --best");
-    expect(out).toContain("autoctx watch <run-id>");
-    expect(out).toContain("autoctx export <run-id>");
+    const offsets = ["solve", "run", "status", "watch", "show", "export"].map((name) =>
+      out.indexOf(`  ${name}`),
+    );
+    expect(offsets).toEqual([...offsets].sort((left, right) => left - right));
+    expect(out).toContain('autoctx solve "your goal"');
   });
 });
 
@@ -58,6 +59,11 @@ describe("run --help", () => {
     expect(out).toMatch(/--scenario\s+.{10,}/);
     expect(out).toMatch(/--gens\s+.{10,}/);
     expect(out).toMatch(/--provider\s+.{10,}/);
+  });
+
+  it("presents iterations as canonical and gens as deprecated", () => {
+    expect(out.indexOf("--iterations")).toBeLessThan(out.indexOf("--gens"));
+    expect(out).toMatch(/--gens[^\n]*Deprecated alias for --iterations/);
   });
 
   it("includes usage examples", () => {

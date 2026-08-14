@@ -11,6 +11,17 @@ import { errorMessage } from "./shared.js";
 
 export async function cmdMission(dbPath: string): Promise<void> {
   const subcommand = process.argv[3];
+  const missionWorkflow = await import("../mission-command-workflow.js");
+
+  if (!subcommand || subcommand === "--help" || subcommand === "-h") {
+    console.log(missionWorkflow.MISSION_HELP_TEXT);
+    process.exit(0);
+  }
+  if (process.argv.slice(4).some((arg) => arg === "--help" || arg === "-h")) {
+    console.log(missionWorkflow.MISSION_HELP_TEXT);
+    process.exit(0);
+  }
+
   const { MissionManager } = await import("../../mission/manager.js");
   const { createCodeMission } = await import("../../mission/verifiers.js");
   const {
@@ -22,11 +33,10 @@ export async function cmdMission(dbPath: string): Promise<void> {
   } = await import("../../mission/control-plane.js");
   const {
     getMissionIdOrThrow,
-    MISSION_HELP_TEXT,
     planMissionCreate,
     planMissionList,
     planMissionRun,
-  } = await import("../mission-command-workflow.js");
+  } = missionWorkflow;
   const {
     executeMissionArtifactsCommand,
     executeMissionCreateCommand,
@@ -38,11 +48,6 @@ export async function cmdMission(dbPath: string): Promise<void> {
   const { loadSettings } = await import("../../config/index.js");
   const settings = loadSettings();
   const runsRoot = resolve(settings.runsRoot);
-
-  if (!subcommand || subcommand === "--help" || subcommand === "-h") {
-    console.log(MISSION_HELP_TEXT);
-    process.exit(0);
-  }
 
   const manager = new MissionManager(dbPath);
   try {

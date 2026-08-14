@@ -67,7 +67,7 @@ Exit codes:
   0   the trace parsed and a suite was emitted.
   1   the trace failed to load / parse, or a write to --output failed.
 
-The extractor covers all seven AC-728 probe kinds: terminal, directory,
+The extractor covers all seven probe kinds: terminal, directory,
 service, artifact, cleanup, media, distributed. Per-section
 observations and expectations must both be supplied for any kind the
 suite asserts on; orphan expectations (declared without a matching

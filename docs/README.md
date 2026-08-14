@@ -15,6 +15,9 @@ This directory is the maintainer-facing landing page for repository docs. Use it
 - [TypeScript package guide](../ts/README.md)
 - [Demo data notes](../autocontext/demo_data/README.md)
 
+Public examples use the canonical nested CLI paths: `autoctx scenario create`
+for scenario authoring and `autoctx serve mcp` for MCP clients.
+
 ## Integrating External Agents
 
 - [External agent integration guide](../autocontext/docs/agent-integration.md)
@@ -35,6 +38,7 @@ This directory is the maintainer-facing landing page for repository docs. Use it
 
 ## Architecture And Parity
 
+- [Cross-runtime CLI contract guide](cli-contract.md), [machine-readable contract](cli-contract.json), [wire-output schemas](cli-schemas/), and [shared fixtures](cli-fixtures/)
 - [Interactive WebSocket protocol contract](websocket-protocol-contract.json)
 
 The contract pins the TypeScript-only `agent_progress_notes_v1` extension,

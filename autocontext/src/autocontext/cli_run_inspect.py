@@ -11,10 +11,9 @@ stays under the 1600-line guard. Both commands compose the existing
 
 ``watch <run-id> [--interval N] [--json]``
     Polls run status on an interval and emits one transition-aware
-    line / JSONL row per change. Exits when EITHER the latest
-    generation is in a terminal status OR the run row itself is in
-    a terminal status with no generations (PR #1002 review P2: a
-    failed run with ``run_status=[]`` previously looped forever).
+    line / JSONL row per change. Exits when the run row reaches a
+    terminal status, including runs that fail before recording a
+    generation.
 """
 
 from __future__ import annotations
@@ -28,6 +27,7 @@ from typing import TYPE_CHECKING, Any
 import typer
 from rich.table import Table
 
+from autocontext.cli_wire import run_show_wire_payload, run_status_wire_payload
 from autocontext.execution.epoch_lineage import annotate_status_rows, revision_fields
 from autocontext.execution.evaluator_epoch_registry import EvaluatorEpochRegistry
 
@@ -38,6 +38,46 @@ if TYPE_CHECKING:
     from autocontext.storage.sqlite_store import SQLiteStore
 
 _TERMINAL_STATUSES = frozenset({"completed", "failed", "succeeded", "errored", "stopped"})
+
+
+def _watch_run_until_terminal(
+    store: Any,
+    *,
+    run_id: str,
+    interval: float,
+    stream_output: bool,
+    console: Any,
+) -> None:
+    last_emit: tuple[int, str] | None = None
+    while True:
+        run = store.get_run(run_id)
+        run_status = str((run or {}).get("status", "")).lower()
+        rows = store.run_status(run_id)
+        latest = rows[-1] if rows else None
+        if latest is not None:
+            current = (int(latest["generation_index"]), str(latest["status"]))
+            if current != last_emit:
+                if stream_output:
+                    sys.stdout.write(json.dumps(run_status_wire_payload(run or {}, rows, run_id=run_id)) + "\n")
+                    sys.stdout.flush()
+                else:
+                    console.print(
+                        f"gen={latest['generation_index']} status={latest['status']} "
+                        f"best={latest['best_score']:.4f} gate={latest['gate_decision']}"
+                    )
+                last_emit = current
+            # A generation can be complete while the parent run is still
+            # producing later generations. The run row owns the lifecycle.
+            if run_status in _TERMINAL_STATUSES:
+                return
+        elif run_status in _TERMINAL_STATUSES:
+            if stream_output:
+                sys.stdout.write(json.dumps(run_status_wire_payload(run or {}, rows, run_id=run_id)) + "\n")
+                sys.stdout.flush()
+            else:
+                console.print(f"run status={run_status} (no generations recorded)")
+            return
+        time.sleep(interval)
 
 # AC-885 Slice D1: map the four-state lineage classification to a compact rich "Lineage" cell.
 _LINEAGE_LABELS = {"current": "ok", "stale": "stale", "unknown": "legacy", "no_active_epoch": "-"}
@@ -134,7 +174,12 @@ def register_run_inspect_commands(
 
     @app.command()
     def show(
-        run_id: str = typer.Argument(...),
+        run_id: str | None = typer.Argument(None, metavar="RUN_ID", help="Run id to inspect."),
+        run_id_option: str | None = typer.Option(
+            None,
+            "--run-id",
+            help="Named alternative to the run-id positional.",
+        ),
         best: bool = typer.Option(False, "--best", help="Show only the best-scoring generation"),
         generation: int | None = typer.Option(None, "--generation", min=1, help="Show a specific generation by index"),
         json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
@@ -145,35 +190,74 @@ def register_run_inspect_commands(
         write_json_stdout = _cli_attr(dependency_module, "_write_json_stdout")
         write_json_stderr = _cli_attr(dependency_module, "_write_json_stderr")
 
+        resolved_run_id = (run_id_option or run_id or "").strip()
+        if not resolved_run_id:
+            message = "`autoctx show` requires <run-id>."
+            if json_output:
+                write_json_stderr(message)
+            else:
+                console.print(f"[red]Error: {message}[/red]")
+            raise typer.Exit(code=2)
+
+        if best and generation is not None:
+            message = "--best cannot be combined with --generation"
+            if json_output:
+                write_json_stderr(message)
+            else:
+                console.print(f"[red]Error: {message}[/red]")
+            raise typer.Exit(code=2)
+
         settings = load_settings()
         store = sqlite_from_settings(settings)
-        run = store.get_run(run_id)
+        run = store.get_run(resolved_run_id)
         if run is None:
-            message = f"run {run_id!r} not found"
+            message = f"run {resolved_run_id!r} not found"
             if json_output:
                 write_json_stderr(message)
             else:
                 console.print(f"[red]{message}[/red]")
             raise typer.Exit(code=1)
 
-        rows = store.run_status(run_id)
+        rows = store.run_status(resolved_run_id)
         if best and rows:
             rows = [max(rows, key=lambda r: r["best_score"])]
         elif generation is not None:
             rows = [r for r in rows if r["generation_index"] == generation]
             if not rows:
-                message = f"run {run_id!r} has no generation {generation}"
+                message = f"run {resolved_run_id!r} has no generation {generation}"
                 if json_output:
                     write_json_stderr(message)
                 else:
                     console.print(f"[red]{message}[/red]")
                 raise typer.Exit(code=1)
+        elif rows:
+            rows = [max(rows, key=lambda r: r["generation_index"])]
 
-        rows, active_epoch_id = annotate_run_status_rows(settings, run.get("scenario"), rows, store, run_id)
+        if not rows:
+            message = f"run {resolved_run_id!r} has no generations yet"
+            if json_output:
+                write_json_stderr(message)
+            else:
+                console.print(f"[red]{message}[/red]")
+            raise typer.Exit(code=1)
+
+        rows, active_epoch_id = annotate_run_status_rows(
+            settings,
+            run.get("scenario"),
+            rows,
+            store,
+            resolved_run_id,
+        )
 
         if json_output:
-            payload: dict[str, Any] = {
-                "run_id": run_id,
+            payload: dict[str, Any] = run_show_wire_payload(
+                run,
+                rows[0],
+                run_id=resolved_run_id,
+            )
+            payload.update({
+                # Compatibility fields retained for existing Python CLI consumers.
+                "run_id": resolved_run_id,
                 "scenario": run.get("scenario"),
                 "status": run.get("status"),
                 "active_evaluator_epoch": active_epoch_id,
@@ -197,14 +281,13 @@ def register_run_inspect_commands(
                     }
                     for r in rows
                 ],
-            }
+            })
             write_json_stdout(payload)
             return
 
-        console.print(f"[bold]Run {run_id}[/bold]  scenario={run.get('scenario')!r}  status={run.get('status')!r}")
-        if not rows:
-            console.print("[yellow]No generations recorded for this run.[/yellow]")
-            return
+        console.print(
+            f"[bold]Run {resolved_run_id}[/bold]  scenario={run.get('scenario')!r}  status={run.get('status')!r}"
+        )
         table = Table(title="Generations" + (" (best)" if best else ""))
         table.add_column("Gen")
         table.add_column("Mean")
@@ -239,79 +322,60 @@ def register_run_inspect_commands(
 
     @app.command()
     def watch(
-        run_id: str = typer.Argument(...),
+        run_id: str | None = typer.Argument(None, metavar="RUN_ID", help="Run id to watch."),
+        run_id_option: str | None = typer.Option(
+            None,
+            "--run-id",
+            help="Named alternative to the run-id positional.",
+        ),
         interval: float = typer.Option(2.0, "--interval", min=0.1, help="Poll interval in seconds"),
-        json_output: bool = typer.Option(False, "--json", help="Emit one JSONL row per poll"),
+        ndjson_output: bool = typer.Option(False, "--ndjson", help="Emit newline-delimited JSON snapshots"),
+        json_output: bool = typer.Option(False, "--json", help="Deprecated alias for --ndjson"),
     ) -> None:
         """Stream live status updates for an in-flight run."""
         load_settings = _cli_attr(dependency_module, "load_settings")
         sqlite_from_settings = _cli_attr(dependency_module, "_sqlite_from_settings")
         write_json_stderr = _cli_attr(dependency_module, "_write_json_stderr")
 
-        settings = load_settings()
-        store = sqlite_from_settings(settings)
-        if store.get_run(run_id) is None:
-            message = f"run {run_id!r} not found"
-            if json_output:
+        stream_output = ndjson_output or json_output
+        resolved_run_id = (run_id_option or run_id or "").strip()
+        if not resolved_run_id:
+            message = "`autoctx watch` requires <run-id>."
+            if stream_output:
                 write_json_stderr(message)
             else:
-                console.print(f"[red]{message}[/red]")
-            raise typer.Exit(code=1)
+                console.print(f"[red]Error: {message}[/red]")
+            raise typer.Exit(code=2)
 
-        last_emit: tuple[int, str] | None = None
-        while True:
-            # PR #1002 review (P2): re-read the run row each iteration
-            # so a terminal run with no generation rows (e.g. failed at
-            # spec-load time) breaks the loop instead of polling
-            # forever. Previously only the latest generation's status
-            # was checked, which never fired when `run_status` is
-            # empty.
-            run = store.get_run(run_id)
-            run_status = str((run or {}).get("status", "")).lower()
-
-            rows = store.run_status(run_id)
-            latest = rows[-1] if rows else None
-            if latest is not None:
-                current = (int(latest["generation_index"]), str(latest["status"]))
-                if current != last_emit:
-                    if json_output:
-                        sys.stdout.write(
-                            json.dumps(
-                                {
-                                    "run_id": run_id,
-                                    "generation": latest["generation_index"],
-                                    "status": latest["status"],
-                                    "best_score": latest["best_score"],
-                                    "gate_decision": latest["gate_decision"],
-                                }
-                            )
-                            + "\n"
-                        )
-                        sys.stdout.flush()
-                    else:
-                        console.print(
-                            f"gen={latest['generation_index']} status={latest['status']} "
-                            f"best={latest['best_score']:.4f} gate={latest['gate_decision']}"
-                        )
-                    last_emit = current
-                if str(latest["status"]).lower() in _TERMINAL_STATUSES:
-                    return
-            elif run_status in _TERMINAL_STATUSES:
-                # No generation rows yet but the run row itself is
-                # terminal -> emit a final status and exit.
-                if json_output:
-                    sys.stdout.write(
-                        json.dumps(
-                            {
-                                "run_id": run_id,
-                                "generation": None,
-                                "status": run_status,
-                            }
-                        )
-                        + "\n"
-                    )
-                    sys.stdout.flush()
+        store = None
+        try:
+            settings = load_settings()
+            store = sqlite_from_settings(settings)
+            if store.get_run(resolved_run_id) is None:
+                message = f"run {resolved_run_id!r} not found"
+                if stream_output:
+                    write_json_stderr(message)
                 else:
-                    console.print(f"run status={run_status} (no generations recorded)")
-                return
-            time.sleep(interval)
+                    console.print(f"[red]{message}[/red]")
+                raise typer.Exit(code=1)
+            _watch_run_until_terminal(
+                store,
+                run_id=resolved_run_id,
+                interval=interval,
+                stream_output=stream_output,
+                console=console,
+            )
+        except typer.Exit:
+            raise
+        except KeyboardInterrupt as exc:
+            raise typer.Exit(code=130) from exc
+        except Exception as exc:
+            if stream_output:
+                write_json_stderr(str(exc))
+            else:
+                console.print(f"[red]Error: {exc}[/red]")
+            raise typer.Exit(code=1) from exc
+        finally:
+            close = getattr(store, "close", None) if store is not None else None
+            if callable(close):
+                close()

@@ -18,17 +18,20 @@ const CLI = join(import.meta.dirname, "..", "src", "cli", "index.ts");
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-function runCli(args: string[], envOverrides: Record<string, string> = {}): { stdout: string; exitCode: number } {
+function runCli(
+  args: string[],
+  envOverrides: Record<string, string> = {},
+): { stdout: string; stderr: string; exitCode: number } {
   try {
     const stdout = execFileSync("npx", ["tsx", CLI, ...args], {
       encoding: "utf8",
       timeout: 10000,
       env: { ...process.env, NODE_NO_WARNINGS: "1", ...envOverrides },
     });
-    return { stdout, exitCode: 0 };
+    return { stdout, stderr: "", exitCode: 0 };
   } catch (err: unknown) {
-    const e = err as { stdout?: string; status?: number };
-    return { stdout: e.stdout ?? "", exitCode: e.status ?? 1 };
+    const e = err as { stdout?: string; stderr?: string; status?: number };
+    return { stdout: e.stdout ?? "", stderr: e.stderr ?? "", exitCode: e.status ?? 1 };
   }
 }
 
@@ -192,6 +195,16 @@ describe("CLI parity fixtures", () => {
 // ---------------------------------------------------------------------------
 
 describe("CLI parity — help output", () => {
+  it("status help describes run status and requires a run id", () => {
+    const { stdout, exitCode } = runCli(["status", "--help"]);
+    const invocations = stdout.split("\n").map((line) => line.trim());
+
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("show status for one run");
+    expect(stdout).toContain("autoctx queue status");
+    expect(invocations).not.toContain("autoctx status");
+  });
+
   it("help includes list command", () => {
     const { stdout } = runCli(["--help"]);
     expect(stdout).toContain("list");
@@ -212,14 +225,124 @@ describe("CLI parity — help output", () => {
     expect(stdout).toContain("import-package");
   });
 
-  it("help includes new-scenario command", () => {
+  it("default help uses canonical scenario create and hides its legacy alias", () => {
     const { stdout } = runCli(["--help"]);
-    expect(stdout).toContain("new-scenario");
+    expect(stdout).toContain("scenario");
+    expect(stdout).not.toContain("new-scenario");
+    expect(runCli(["--help", "--all"]).stdout).toContain("new-scenario");
   });
 
   it("help includes benchmark command", () => {
-    const { stdout } = runCli(["--help"]);
+    const { stdout } = runCli(["--help", "--all"]);
     expect(stdout).toContain("benchmark");
+  });
+});
+
+describe("CLI status command", () => {
+  it("uses usage exit 2 and JSON stderr for unknown options", () => {
+    const { stdout, stderr, exitCode } = runCli(["status", "run-123", "--json", "--not-a-real-option"]);
+
+    expect(exitCode).toBe(2);
+    expect(stdout).toBe("");
+    expect(JSON.parse(stderr).error).toContain("not-a-real-option");
+  });
+
+  it("uses usage exit 2 and keeps JSON errors off stdout when run id is missing", () => {
+    const { stdout, stderr, exitCode } = runCli(["status", "--json"]);
+
+    expect(exitCode).toBe(2);
+    expect(stdout).toBe("");
+    expect(JSON.parse(stderr)).toMatchObject({ error: expect.stringContaining("requires <run-id>") });
+  });
+
+  it("uses execution exit 1 and keeps missing-run JSON errors off stdout", () => {
+    const dir = makeTempDir();
+    try {
+      const { stdout, stderr, exitCode } = runCli(["status", "missing-run", "--json"], {
+        AUTOCONTEXT_DB_PATH: join(dir, "autocontext.db"),
+      });
+
+      expect(exitCode).toBe(1);
+      expect(stdout).toBe("");
+      expect(JSON.parse(stderr)).toEqual({ error: "run 'missing-run' not found" });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("CLI run defaults", () => {
+  it("does not silently select a built-in scenario", () => {
+    const dir = makeTempDir();
+    try {
+      const { stdout, stderr, exitCode } = runCli(["run", "--json"], {
+        AUTOCONTEXT_CONFIG_DIR: join(dir, "config"),
+      });
+
+      expect(exitCode).toBe(2);
+      expect(stdout).toBe("");
+      expect(JSON.parse(stderr)).toMatchObject({ error: expect.stringContaining("no scenario configured") });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps execution failures structured in JSON mode", () => {
+    const dir = makeTempDir();
+    try {
+      const { stdout, stderr, exitCode } = runCli(["run", "not-a-scenario", "--json"], {
+        AUTOCONTEXT_CONFIG_DIR: join(dir, "config"),
+        AUTOCONTEXT_PROVIDER: "deterministic",
+        AUTOCONTEXT_AGENT_PROVIDER: "deterministic",
+      });
+
+      expect(exitCode).toBe(1);
+      expect(stdout).toBe("");
+      expect(JSON.parse(stderr).error).toContain("not-a-scenario");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("CLI show and watch contracts", () => {
+  it("show uses usage exit 2 and JSON stderr when the run id is missing", () => {
+    const { stdout, stderr, exitCode } = runCli(["show", "--json"]);
+
+    expect(exitCode).toBe(2);
+    expect(stdout).toBe("");
+    expect(JSON.parse(stderr)).toMatchObject({ error: expect.stringContaining("needs a run id") });
+  });
+
+  it("watch uses usage exit 2 and JSON stderr when the run id is missing", () => {
+    const { stdout, stderr, exitCode } = runCli(["watch", "--ndjson"]);
+
+    expect(exitCode).toBe(2);
+    expect(stdout).toBe("");
+    expect(JSON.parse(stderr)).toMatchObject({ error: expect.stringContaining("needs a run id") });
+  });
+
+  it("watch treats a non-positive interval as a usage error", () => {
+    const { stdout, stderr, exitCode } = runCli(["watch", "run-123", "--interval", "0", "--ndjson"]);
+
+    expect(exitCode).toBe(2);
+    expect(stdout).toBe("");
+    expect(JSON.parse(stderr)).toEqual({ error: "--interval must be a positive number of seconds" });
+  });
+
+  it("show rejects conflicting generation selectors as a usage error", () => {
+    const { stdout, stderr, exitCode } = runCli([
+      "show",
+      "run-123",
+      "--best",
+      "--generation",
+      "1",
+      "--json",
+    ]);
+
+    expect(exitCode).toBe(2);
+    expect(stdout).toBe("");
+    expect(JSON.parse(stderr)).toEqual({ error: "--best cannot be combined with --generation" });
   });
 });
 
@@ -273,7 +396,7 @@ describe("CLI export command", () => {
 
   it("export requires scenario", () => {
     const { exitCode } = runCli(["export"]);
-    expect(exitCode).toBe(1);
+    expect(exitCode).toBe(2);
   });
 });
 

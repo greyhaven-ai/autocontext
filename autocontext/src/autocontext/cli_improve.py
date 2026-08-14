@@ -101,7 +101,7 @@ def register_improve_command(
             False,
             "--ndjson",
             help=(
-                "Stream per-round events as newline-delimited JSON to stdout (AC-752). "
+                "Stream per-round events as newline-delimited JSON to stdout. "
                 "Useful for long-running loops where --json would buffer all output until "
                 "completion. Emits one JSON line per event: round_start, revision_done, "
                 "judge_done, verifier_done, round_summary, and a final summary line."
@@ -112,7 +112,7 @@ def register_improve_command(
             "--ndjson-include-output/--no-ndjson-include-output",
             help=(
                 "Include per-round model output in ndjson stream as `revision_done` events "
-                "(default true, AC-753). Lets consumers salvage near-miss verifier-vetoed "
+                "(default true). Lets consumers salvage near-miss verifier-vetoed "
                 "rounds. Pass `--no-ndjson-include-output` for lean events when output content "
                 "is large or unnecessary."
             ),
@@ -121,7 +121,7 @@ def register_improve_command(
             "",
             "--verify-cmd",
             help=(
-                "External command to verify each round's output (AC-733). "
+                "External command to verify each round's output. "
                 "Non-zero exit forces the round score to 0 and feeds the "
                 "command's stderr/stdout into the next revision prompt. "
                 "Use the literal `{file}` placeholder to receive the output as a "
@@ -144,7 +144,7 @@ def register_improve_command(
             "",
             "--checkpoint-cmd",
             help=(
-                "External command to checkpoint each round's output (AC-727). "
+                "External command to checkpoint each round's output. "
                 "Runs after the round is judged and verified; non-zero exit is "
                 "logged but does NOT veto the round (unlike --verify-cmd). "
                 "Use this to preserve partial progress -- e.g. "

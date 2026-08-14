@@ -29,11 +29,12 @@ uv run autoctx run \
   --run-id "$RUN_ID" \
   --json | jq .
 
-uv run autoctx status "$RUN_ID" --json | jq .
+uv run autoctx status "$RUN_ID" --json | jq '.latest_generation'
 
 mkdir -p exports
 uv run autoctx export \
   "$RUN_ID" \
+  --format json \
   --output "exports/${RUN_ID}.json" \
   --json | jq .
 
@@ -43,6 +44,20 @@ uv run autoctx export \
   --output "exports/${RUN_ID}-pi-package" \
   --json | jq .
 ```
+
+Omit `--output` for JSON to print the portable strategy package directly to
+stdout. `--format strategy` remains a compatibility alias for `--format json`.
+
+## Create A Scenario Or Start MCP
+
+Use the canonical nested commands in scripts and agent instructions:
+
+```bash
+uv run autoctx scenario create --description "evaluate concise support replies"
+uv run autoctx serve mcp
+```
+
+Both command paths are shared by the Python and npm CLIs.
 
 ## Claude Code MCP Config
 
@@ -58,7 +73,8 @@ Add this to your project-level `.claude/settings.json` and replace `/ABSOLUTE/PA
         "--directory",
         "/ABSOLUTE/PATH/TO/REPO/autocontext",
         "autoctx",
-        "mcp-serve"
+        "serve",
+        "mcp"
       ],
       "env": {
         "AUTOCONTEXT_AGENT_PROVIDER": "anthropic",
@@ -234,7 +250,7 @@ mkdir -p logs
 uv run autoctx run grid_ctf --iterations 3 --run-id "$RUN_ID" --json >"logs/${RUN_ID}.json" 2>"logs/${RUN_ID}.err" &
 RUN_PID=$!
 while kill -0 "$RUN_PID" 2>/dev/null; do
-  uv run autoctx status "$RUN_ID" --json | jq '.generations[-1]'
+  uv run autoctx status "$RUN_ID" --json | jq '.latest_generation'
   sleep 5
 done
 wait "$RUN_PID"

@@ -1,0 +1,28 @@
+{
+  "run": {
+    "run_id": "run-123",
+    "scenario": "grid_ctf",
+    "target_generations": 3,
+    "executor_mode": "local",
+    "status": "completed",
+    "agent_provider": "deterministic",
+    "created_at": "2026-04-30T00:00:00Z",
+    "updated_at": "2026-04-30T00:01:00Z"
+  },
+  "generation": {
+    "generation_index": 2,
+    "mean_score": 0.3,
+    "best_score": 0.9,
+    "elo": 1300,
+    "wins": 2,
+    "losses": 0,
+    "gate_decision": "advance",
+    "status": "completed",
+    "duration_seconds": 1,
+    "evaluator_epoch": "epoch-2",
+    "quarantined": 1,
+    "created_at": "2026-04-30T00:00:30Z",
+    "updated_at": "2026-04-30T00:00:40Z"
+  },
+  "runtime_session": null
+}

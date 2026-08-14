@@ -18,7 +18,25 @@ In practice, users have reported better experiences integrating via the CLI than
 
 ## CLI Integration Patterns
 
-### Machine-Readable Output (`--json`)
+### Discovery, Defaults, and Compatibility
+
+Running bare `autoctx` shows the paved-road workflow in order: `solve`, `run`,
+`status`, `watch`, `show`, then `export`. The npm CLI exposes its expanded
+catalog with `autoctx --help --all`; the Python CLI uses `autoctx commands
+--all`.
+
+`run` needs a scenario. Pass it positionally or with `--scenario`; the npm CLI
+may also read a `default_scenario` from project configuration. The Python CLI
+does not silently choose a built-in scenario. Use `--iterations` for iteration
+counts. `--gens` remains accepted for existing scripts.
+
+The canonical creation and MCP paths are `autoctx scenario create` and
+`autoctx serve mcp`. The older `new-scenario` and `mcp-serve` spellings remain
+callable as deprecated compatibility aliases but are omitted from default help.
+Use `autoctx --version --json` to detect the installed package version and
+runtime before generating runtime-specific invocations.
+
+### Machine-Readable Output (`--json` and `--ndjson`)
 
 Most `autoctx` commands accept a `--json` flag that switches output to structured JSON:
 
@@ -33,10 +51,14 @@ autoctx train --scenario grid_ctf --data data.jsonl --json
 
 **Contract:**
 
-- **stdout** receives the JSON payload (one JSON object per line).
+- **`--json`** writes exactly one JSON value to stdout.
+- **`--ndjson`** writes a stream of complete JSON values, one per line. `watch`
+  uses this mode for live run-status snapshots; its old `--json` spelling remains
+  as a deprecated streaming alias.
 - **stderr** receives errors in the format `{"error": "description"}`.
 - **Exit code 0** means the command succeeded. The JSON payload is on stdout.
-- **Exit code 1** means the command failed. An error JSON is on stderr.
+- **Exit code 1** means execution failed. An error JSON is on stderr.
+- **Exit code 2** means the invocation was invalid or incomplete.
 
 ### Command Reference
 
@@ -78,41 +100,54 @@ JSON output shape:
 
 ```json
 {
-  "run_id": "abc123",
-  "active_evaluator_epoch": "e2sha256...",
-  "generations": [
-    {
-      "generation": 1,
-      "mean_score": 0.72,
-      "best_score": 0.85,
-      "elo": 1523.4,
-      "wins": 3,
-      "losses": 2,
-      "gate_decision": "advance",
-      "status": "completed",
-      "evaluator_epoch": "e1sha256...",
-      "evaluator_epoch_status": "stale",
-      "quarantined": false,
-      "has_active_revision": true,
-      "revised_score": 0.55,
-      "revised_by": "jay",
-      "revised_at": "2026-07-13T19:12:05Z"
-    }
-  ]
+  "run": {
+    "run_id": "abc123",
+    "scenario": "grid_ctf",
+    "target_generations": 5,
+    "executor_mode": "local",
+    "status": "completed",
+    "agent_provider": "deterministic",
+    "created_at": "2026-07-13T19:10:00Z",
+    "updated_at": "2026-07-13T19:12:05Z"
+  },
+  "latest_generation": {
+    "generation_index": 1,
+    "mean_score": 0.72,
+    "best_score": 0.85,
+    "elo": 1523.4,
+    "wins": 3,
+    "losses": 2,
+    "gate_decision": "advance",
+    "status": "completed",
+    "duration_seconds": 14.2,
+    "evaluator_epoch": "e1sha256...",
+    "quarantined": 0,
+    "created_at": "2026-07-13T19:11:30Z",
+    "updated_at": "2026-07-13T19:12:05Z"
+  },
+  "runtime_session": null,
+  "progress_report": null
 }
 ```
 
-The evaluator-epoch lineage fields (AC-885) are Python-only and always present. `active_evaluator_epoch`
-(top level) is the scenario's active evaluator epoch, or null. Per generation, `evaluator_epoch` is the
-epoch that produced `best_score` and `evaluator_epoch_status` classifies it against the active epoch
-(`current` / `stale` / `unknown` / `no_active_epoch`). When `autoctx rescore --apply` has recorded a
-re-score under the active epoch, `has_active_revision` is true and `revised_score` / `revised_by` /
-`revised_at` describe it. `revised_score` SUPPLEMENTS `best_score` (the unchanged score of record), it
-does not replace it; the fields are null when no active-epoch revision exists. `show --json` carries the
-same fields (its top-level payload also includes `scenario` and `status`).
+The stable cross-runtime fields are defined by
+[`run-status-v1.schema.json`](../../docs/cli-schemas/run-status-v1.schema.json).
+The Python CLI retains its earlier top-level `run_id`, `active_evaluator_epoch`,
+and `generations` fields as compatibility additions. `show --json` returns the
+same `run` projection plus one selected `generation`; its schema is
+[`run-show-v1.schema.json`](../../docs/cli-schemas/run-show-v1.schema.json).
+
+To follow a run as a stream, use:
+
+```bash
+autoctx watch <run_id> --ndjson
+```
+
+Each stdout line conforms to the run-status schema. Diagnostics and structured
+errors remain on stderr, so they cannot corrupt the stream.
 
 The TypeScript CLI also includes an optional `runtime_session` object in
-`status`, `show`, and `watch --json` output when a CLI-backed provider run has a
+`status`, `show`, and `watch --ndjson` output when a CLI-backed provider run has a
 persisted runtime-session event log. Python runtime-backed `run` and `solve`
 role calls write the same run-scoped log automatically. Use
 `autoctx runtime-sessions show
@@ -173,14 +208,14 @@ Returns an array of run summaries:
 
 #### Monitoring long-running work
 
-For run completion, external agents should still poll `autoctx status --json` (and related read surfaces such as `list --json`) until the desired condition is visible.
+For run completion, external agents should poll `autoctx status <run-id> --json` (and related read surfaces such as `list --json`) until the desired condition is visible. Queue state is a separate surface at `autoctx queue status`.
 
 Simple polling pattern:
 
 ```bash
 while true; do
   current=$(autoctx status "$RUN_ID" --json)
-  state=$(echo "$current" | jq -r '.generations[-1].status // "unknown"')
+  state=$(echo "$current" | jq -r '.latest_generation.status // .run.status // "unknown"')
   if [ "$state" = "completed" ] || [ "$state" = "failed" ]; then
     break
   fi
@@ -219,7 +254,7 @@ JSON output shape on timeout:
 #### `autoctx export` — Export a strategy package
 
 ```bash
-autoctx export <run_id> --output pkg.json --json
+autoctx export <run_id> --format json --output pkg.json --json
 ```
 
 JSON output shape:
@@ -227,12 +262,18 @@ JSON output shape:
 ```json
 {
   "scenario": "grid_ctf",
+  "format": "json",
   "output_path": "pkg.json",
   "best_score": 0.92,
   "lessons_count": 12,
   "harness_count": 3
 }
 ```
+
+The canonical formats are `json` (default) and `pi-package` in both runtimes.
+With JSON, omitting `--output` prints the strategy package itself to stdout;
+`--format strategy` remains a deprecated compatibility alias for JSON. A Pi
+package always writes a directory, defaulting to `<scenario>-pi-package`.
 
 For Pi-local package installation, export the same strategy knowledge as a
 package directory with a `package.json`, one `SKILL.md`, one prompt file, and
@@ -301,15 +342,15 @@ autoctx hermes inspect --home "$HERMES_HOME" --json
 # Export the Hermes autocontext skill for Hermes to load
 autoctx hermes export-skill --output ~/.hermes/skills/autocontext/SKILL.md --json
 
-# Also write progressive-disclosure reference files next to SKILL.md (AC-702)
+# Also write progressive-disclosure reference files next to SKILL.md
 autoctx hermes export-skill \
     --output ~/.hermes/skills/autocontext/SKILL.md \
     --with-references --json
 
-# Or install from the committed snapshot at the repo root (AC-712).
+# Or install from the committed snapshot at the repo root.
 # See docs/hermes-skill-distribution.md for curl + sparse-clone alternatives.
 
-# Ingest Hermes curator run reports as autocontext ProductionTrace JSONL (AC-704)
+# Ingest Hermes curator run reports as autocontext ProductionTrace JSONL
 autoctx hermes ingest-curator \
     --home ~/.hermes \
     --output traces/hermes-curator.jsonl \
@@ -319,13 +360,13 @@ autoctx hermes ingest-curator \
     [--include-tool-args] \
     --json
 
-# Export Curator decisions as training JSONL for narrow advisors (AC-705)
+# Export Curator decisions as training JSONL for narrow advisors
 autoctx hermes export-dataset --kind curator-decisions \
   --home "$HERMES_HOME" \
   --output training/hermes-curator-decisions.jsonl \
   --since 2026-05-01T00:00:00Z --limit 5000 --json
 
-# Ingest Hermes trajectory JSONL with redaction (AC-706 slice 1)
+# Ingest Hermes trajectory JSONL with redaction
 autoctx hermes ingest-trajectories \
   --input "$HERMES_HOME/trajectory_samples.jsonl" \
   --output training/hermes-trajectories-redacted.jsonl \
@@ -339,19 +380,19 @@ autoctx hermes ingest-trajectories \
   --user-patterns '[{"name":"ticket","pattern":"TKT-\\d+"}]' \
   --dry-run --json
 
-# Ingest Hermes session DB into ProductionTrace JSONL (AC-706 slice 2)
+# Ingest Hermes session DB into ProductionTrace JSONL
 autoctx hermes ingest-sessions \
   --home "$HERMES_HOME" \
   --output traces/hermes-sessions.jsonl \
   --redact standard --json
 
-# Train a baseline curator advisor from AC-705 JSONL (AC-708 slice 1)
+# Train a baseline curator advisor from the curator-decisions JSONL
 autoctx hermes train-advisor \
   --data training/hermes-curator-decisions.jsonl \
   --baseline \
   --output training/advisor-metrics.json --json
 
-# Train the pure-Python logistic-regression advisor (AC-708 slice 2a)
+# Train the pure-Python logistic-regression advisor
 # and persist a checkpoint for later --advisor loading. Exactly one of
 # --baseline / --logistic / --mlx must be passed.
 autoctx hermes train-advisor \
@@ -360,7 +401,7 @@ autoctx hermes train-advisor \
   --output training/advisor-metrics.json \
   --checkpoint training/curator-advisor.json --json
 
-# Same model trained via MLX (AC-708 slice 2b; Apple-silicon GPU
+# Same model trained via MLX (Apple-silicon GPU
 # backend). Requires `pip install autocontext[mlx]`. Same JSON
 # checkpoint schema as --logistic with a backend-specific `kind` so
 # audits can tell which backend produced the file; either kind loads
@@ -371,8 +412,8 @@ autoctx hermes train-advisor \
   --output training/advisor-metrics.json \
   --checkpoint training/mlx-advisor.json --json
 
-# Same model trained via PyTorch with CUDA when available (AC-708
-# slice 2c; NVIDIA GPU backend, falls back transparently to CPU
+# Same model trained via PyTorch with CUDA when available (NVIDIA
+# GPU backend, falls back transparently to CPU
 # torch when CUDA is not available -- the `device` audit field in
 # the checkpoint records which path actually ran). Requires
 # `pip install autocontext[cuda]`. Same JSON schema as --logistic
@@ -383,9 +424,9 @@ autoctx hermes train-advisor \
   --output training/advisor-metrics.json \
   --checkpoint training/cuda-advisor.json --json
 
-# Emit read-only recommendations against a live Hermes home (AC-709).
-# --baseline-from trains the slice-1 baseline on the fly; --advisor
-# loads a previously trained checkpoint (e.g. the slice-2a logistic
+# Emit read-only recommendations against a live Hermes home.
+# --baseline-from trains a baseline on the fly; --advisor
+# loads a previously trained checkpoint (e.g. the logistic
 # regression above) and routes inference through it.
 autoctx hermes recommend \
   --home "$HERMES_HOME" \
@@ -397,7 +438,7 @@ autoctx hermes recommend \
   --advisor training/curator-advisor.json \
   --output recommendations.jsonl --json
 
-# Validate the rendered SKILL.md against the AC-711 content rubric
+# Validate the rendered SKILL.md against its content rubric
 autoctx hermes validate-skill \
   --output docs/hermes-skill-validation-report.md --json
 ```
@@ -423,7 +464,7 @@ mtime is the fallback comparison timestamp). The JSON summary reports
 
 - `--kind curator-decisions` (shipped). Other documented kinds
   (`consolidation-pairs`, `skill-selection`, `skill-quality-signals`)
-  raise `NotImplementedError` until their slices land.
+  raise `NotImplementedError` until they are implemented.
 - `--since <ISO-8601>`: skip curator runs strictly before this
   timestamp. Invalid timestamps raise `ValueError`; runs without a
   `started_at` field fall back to file mtime for the comparison.
@@ -447,7 +488,7 @@ Behavior notes:
   (with parents) if missing; ignored when `--dry-run` is set.
 - `--redact off | standard | strict` (default `standard`): redaction
   mode. `strict` requires `--user-patterns`. `off` writes raw
-  content and surfaces a CLI warning since AC-706 requires explicit
+  content and surfaces a CLI warning because raw content requires explicit
   operator opt-in for raw content.
 - `--user-patterns <json>`: JSON array of `{name, pattern}` regex
   objects. Hits are tagged `[REDACTED_USER_PATTERN:<name>]` so
@@ -460,7 +501,7 @@ blank lines are skipped with per-line warnings rather than aborting
 the whole import. The input file is never mutated; same-path
 `--input`/`--output` is rejected at the boundary.
 
-`ingest-sessions` flags (AC-706 slice 2):
+`ingest-sessions` flags:
 
 - `--home <path>`: Hermes home directory. Default `HERMES_HOME` or
   `~/.hermes`. The DB at `<home>/state.db` is opened read-only via
@@ -479,15 +520,15 @@ needs (`session_id`, `started_at`, `ended_at`, `agent_id`,
 missing optional columns are tolerated. WAL/SHM sidecars are not
 required. The importer never writes to the Hermes DB.
 
-`train-advisor` flags (AC-708 slices 1 + 2a + 2b + 2c):
+`train-advisor` flags:
 
-- `--data <jsonl>`: AC-705 `curator-decisions` export to train and
+- `--data <jsonl>`: `curator-decisions` export to train and
   evaluate on. Required.
-- `--baseline`: train the majority-class baseline advisor (slice 1).
+- `--baseline`: train the majority-class baseline advisor.
 - `--logistic`: train the pure-Python multinomial logistic-regression
-  advisor (slice 2a; gradient descent over the AC-705 feature set,
+  advisor (gradient descent over the curator feature set,
   no numpy / GPU dependency).
-- `--mlx`: train the MLX-backed logistic-regression advisor (slice 2b;
+- `--mlx`: train the MLX-backed logistic-regression advisor (the
   same model architecture as `--logistic` but the gradient descent
   runs on MLX so the matrix multiplies can be GPU-accelerated on
   Apple silicon). Requires `pip install autocontext[mlx]`. The
@@ -495,7 +536,7 @@ required. The importer never writes to the Hermes DB.
   - `backend: "mlx"` so audits can tell which backend produced a
     file; either kind loads through `recommend --advisor`.
 - `--cuda`: train the PyTorch/CUDA-backed logistic-regression advisor
-  (slice 2c; same model architecture as `--logistic` / `--mlx` but
+  (same model architecture as `--logistic` / `--mlx` but
   the gradient descent runs on PyTorch tensors so the matrix
   multiplies can be GPU-accelerated on NVIDIA hardware). Falls back
   transparently to CPU torch when `torch.cuda.is_available()` is
@@ -528,15 +569,15 @@ posture: rejects unknown `kind` values and dimension-mismatched
 weight matrices (`labels` / `weights` / `intercepts` row counts must
 agree, and each weight row must match `feature_names` length).
 
-`recommend` flags (AC-709 + AC-708 slice 2a):
+`recommend` flags:
 
 - `--home <path>`: Hermes home to inspect. Read-only; the surface
   never writes to `~/.hermes`.
-- `--baseline-from <jsonl>`: AC-705 export to train the baseline
+- `--baseline-from <jsonl>`: curator-decisions export to train the baseline
   advisor on. The same-file guard rejects `--output` equal to
   `--baseline-from`. Mutually exclusive with `--advisor`.
 - `--advisor <json>`: load a previously trained advisor checkpoint
-  (e.g. the slice-2a logistic regression produced by
+  (e.g. the logistic regression produced by
   `autoctx hermes train-advisor --logistic --checkpoint ...`). The
   loaded advisor drives `predicted_action` and `reason` in each
   recommendation row. Mutually exclusive with `--baseline-from`.
@@ -553,8 +594,8 @@ agree, and each weight row must match `feature_names` length).
 
 Read-only invariant: Curator stays the mutation owner. The
 recommendation surface emits suggestions; applying them is the
-operator's call. Slice 2a wires the trained-logistic backend through
-end-to-end; MLX (2b) and CUDA (2c) follow.
+operator's call. Trained logistic, MLX, and CUDA advisors all use the
+same read-only recommendation flow.
 
 JSON output shape for `inspect`:
 
@@ -852,7 +893,7 @@ best_score=$(echo "$result" | jq -r '.best_score')
 echo "Run completed. Best score: $best_score" >&2
 
 # 2. Check detailed status
-autoctx status "$RUN_ID" --json | jq '.generations[-1]'
+autoctx status "$RUN_ID" --json | jq '.latest_generation'
 
 # 3. Export the strategy package
 autoctx export "$RUN_ID" --output "${SCENARIO}_pkg.json" --json
@@ -931,7 +972,7 @@ For runs with many generations, poll `autoctx status` while the backgrounded `ru
 ```bash
 while kill -0 "$RUN_PID" 2>/dev/null; do
   status=$(autoctx status "$RUN_ID" --json 2>/dev/null)
-  last_gate=$(echo "$status" | jq -r '.generations[-1].gate_decision // "pending"')
+  last_gate=$(echo "$status" | jq -r '.latest_generation.gate_decision // "pending"')
   last_gen=$(echo "$status" | jq -r '.generations | length')
   echo "Generation $last_gen: gate=$last_gate" >&2
   sleep 10
@@ -1011,7 +1052,7 @@ Use MCP when your agent framework specifically requires a tool-catalog protocol 
 uv sync --group dev --extra mcp
 
 # Start on stdio
-uv run autoctx mcp-serve
+uv run autoctx serve mcp
 ```
 
 The server uses the stdio transport and exposes tools with the `autocontext_` prefix. Key tool groups:
@@ -1031,7 +1072,7 @@ Add to your project's `.claude/settings.json`:
   "mcpServers": {
     "autocontext": {
       "command": "uv",
-      "args": ["run", "--directory", "/path/to/autocontext", "autoctx", "mcp-serve"],
+      "args": ["run", "--directory", "/path/to/autocontext", "autoctx", "serve", "mcp"],
       "env": {
         "AUTOCONTEXT_AGENT_PROVIDER": "anthropic",
         "ANTHROPIC_API_KEY": "sk-ant-..."
@@ -1089,7 +1130,8 @@ mcp_servers:
       - --directory
       - /path/to/autocontext
       - autoctx
-      - mcp-serve
+      - serve
+      - mcp
     env:
       AUTOCONTEXT_AGENT_PROVIDER: openai-compatible
       AUTOCONTEXT_AGENT_BASE_URL: http://localhost:8080/v1
@@ -1277,14 +1319,14 @@ repeated per round, followed by a single `final` event. Without a verifier the `
 - `judge_done` carries `round` and `score` (the judge's evaluation before any post-processing or veto).
 - `verifier_done` carries `round`, `verifier_ok`, and `verifier_exit_code`.
 - `round_summary` carries `round` and `effective_score` (post-veto, after fact-check penalty).
-- `checkpoint_done` carries `round`, `checkpoint_ok`, and `checkpoint_exit_code`. Unlike `verifier_done`, a failed checkpoint does NOT veto the round -- it is a side effect that preserves partial progress (e.g. a `git commit` or `cp` of the per-round output) before later rounds might overshoot or time out (AC-727).
+- `checkpoint_done` carries `round`, `checkpoint_ok`, and `checkpoint_exit_code`. Unlike `verifier_done`, a failed checkpoint does NOT veto the round -- it is a side effect that preserves partial progress (e.g. a `git commit` or `cp` of the per-round output) before later rounds might overshoot or time out.
 - `final` carries `best_score`, `best_round`, `total_rounds`, and `met_threshold`.
 
 Provider errors during a streaming run emit a single `{"event":"error","message":"..."}` line on stdout so the stream stays parseable.
 
 For lean streams pass `--no-ndjson-include-output`: this drops `revision_done` events entirely (their only payload is the output) and never writes the output payload anywhere on stdout. Default is `--ndjson-include-output`.
 
-The output the loop carries through `revision_done`, the judge call, and `--verify-cmd` is already passed through `clean_revision_output`: revision metadata sections (`## Revised Output`, `## Key Changes Made`, etc.) and a single outer markdown code fence (e.g. ` ```lean ... ``` `) are stripped automatically. This means `--verify-cmd <compiler>` doesn't see literal fence lines on round 1 or after any revision (AC-754).
+The output the loop carries through `revision_done`, the judge call, and `--verify-cmd` is already passed through `clean_revision_output`: revision metadata sections (`## Revised Output`, `## Key Changes Made`, etc.) and a single outer markdown code fence (e.g. ` ```lean ... ``` `) are stripped automatically. This means `--verify-cmd <compiler>` doesn't see literal fence lines on round 1 or after any revision.
 
 ## TypeScript CLI
 
@@ -1293,9 +1335,9 @@ The TypeScript package also publishes a narrower `autoctx` CLI for Node.js envir
 ```bash
 npx autoctx judge -p "Write a haiku" -o "output text" -r "evaluate quality"
 npx autoctx improve -p "Write a haiku" -o "draft" -r "evaluate quality" -n 3
-npx autoctx status
+npx autoctx status <run-id>
 npx autoctx worker --once --json
-npx autoctx mcp-serve  # MCP server on stdio
+npx autoctx serve mcp  # MCP server on stdio
 ```
 
 Key entrypoints live in:

@@ -286,7 +286,7 @@ describe("AC-393: autoctx init", () => {
   });
 
   it("auto-detects provider/model defaults and can create AGENTS.md guidance", () => {
-    const { exitCode } = runCli(["init", "--dir", dir, "--agents-md"], {
+    const { exitCode } = runCli(["init", "--dir", dir], {
       env: {
         AUTOCONTEXT_AGENT_PROVIDER: "ollama",
         AUTOCONTEXT_AGENT_DEFAULT_MODEL: "llama3.2",
@@ -400,7 +400,7 @@ describe("AC-619: autoctx solve", () => {
 
   it("requires a description", () => {
     const { stderr, exitCode } = runCli(["solve"]);
-    expect(exitCode).toBe(1);
+    expect(exitCode).toBe(2);
     expect(stderr).toContain("--description is required");
   });
 });
@@ -415,6 +415,30 @@ describe("AC-418: capabilities version", () => {
     const caps = JSON.parse(stdout);
     const pkg = JSON.parse(readFileSync(join(import.meta.dirname, "..", "package.json"), "utf-8"));
     expect(caps.version).toBe(pkg.version);
+  });
+
+  it("--version reports package and runtime identity in JSON mode", () => {
+    const pkg = JSON.parse(readFileSync(join(import.meta.dirname, "..", "package.json"), "utf-8"));
+    const plain = runCli(["--version"]);
+    const structured = runCli(["--version", "--json"]);
+    const commandForm = runCli(["version", "--json"]);
+
+    expect(plain.exitCode).toBe(0);
+    expect(plain.stdout.trim()).toBe(pkg.version);
+    expect(JSON.parse(structured.stdout)).toEqual({
+      package: "autoctx",
+      version: pkg.version,
+      runtime: "typescript",
+    });
+    expect(JSON.parse(commandForm.stdout)).toEqual(JSON.parse(structured.stdout));
+  });
+
+  it("version rejects unknown options instead of silently succeeding", () => {
+    const result = runCli(["version", "--json", "--not-a-real-option"]);
+
+    expect(result.exitCode).toBe(2);
+    expect(result.stdout).toBe("");
+    expect(JSON.parse(result.stderr).error).toContain("not-a-real-option");
   });
 });
 

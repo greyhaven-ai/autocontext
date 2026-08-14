@@ -126,7 +126,7 @@ Exit codes:
   0   the trace parsed and a suite was emitted.
   1   the trace failed to load / parse, or a write to --output failed.
 
-Covers all seven AC-728 probe kinds: terminal, directory, service,
+Covers all seven probe kinds: terminal, directory, service,
 artifact, cleanup, media, distributed. Per-section observations and
 expectations must both be supplied for any kind the suite asserts
 on; orphan expectations fail validation at parse time rather than
@@ -392,7 +392,7 @@ def run_probes_extract(args: list[str]) -> ProbesExtractResult:
 def register_probes_command(app: typer.Typer, *, console: Console) -> None:
     """Mount the `probes` sub-Typer on ``app`` with `check` and
     `extract` as the first two subcommands."""
-    probes_app = typer.Typer(help="AC-728 contract probes.")
+    probes_app = typer.Typer(help="Check observed harness behavior against contract probes.")
 
     @probes_app.command("check")
     def _check(

@@ -34,7 +34,7 @@ export interface TraceFindingsCommandContext {
   readonly cwd?: string;
 }
 
-export const TRACE_FINDINGS_HELP_TEXT = `autoctx trace-findings — extract structured findings from a trace (AC-679)
+export const TRACE_FINDINGS_HELP_TEXT = `autoctx trace-findings — extract structured findings from a trace
 
 Usage:
   autoctx trace-findings --trace <path> [--json]

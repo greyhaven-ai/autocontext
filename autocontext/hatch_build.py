@@ -1,4 +1,4 @@
-"""Build hook that bundles ``docs/cli-contract.json`` into the wheel.
+"""Build hook that bundles the CLI contract, schemas, and fixtures into the wheel.
 
 The contract lives at the repo root (``docs/cli-contract.json``) so the
 TypeScript and Python sides share a single source of truth. To ship it
@@ -11,10 +11,11 @@ from the freshly produced sdist. Inside the extracted sdist there is no
 parent ``docs/`` directory, so the static rule resolves to a missing
 file and the build fails.
 
-This hook resolves the contract from whichever location actually exists
-(repo tree during dev builds, in-sdist copy during release builds),
-stages it under ``build/`` next to the hook, and registers an absolute
-``force_include`` entry for the wheel.
+This hook resolves the contract and its ``cli-schemas`` and ``cli-fixtures``
+directories from whichever location actually exists (repo tree during dev
+builds, in-sdist copy during release builds), stages them under ``build/``
+next to the hook, and registers absolute ``force_include`` entries for the
+wheel.
 
 The sibling ``[tool.hatch.build.targets.sdist.force-include]`` rule in
 ``pyproject.toml`` is what places the file at ``docs/cli-contract.json``
@@ -49,3 +50,25 @@ class CliContractBuildHook(BuildHookInterface):
         shutil.copy2(source, staged)
         force_include = build_data.setdefault("force_include", {})
         force_include[str(staged)] = "autocontext/cli_contract.json"
+
+        schema_candidates = [candidate.parent / "cli-schemas" for candidate in candidates]
+        schema_source = next((path for path in schema_candidates if path.is_dir()), None)
+        if schema_source is None:
+            tried = ", ".join(str(candidate) for candidate in schema_candidates)
+            raise FileNotFoundError(f"cli-schemas not found; looked in: {tried}")
+        staged_schemas = staged.parent / "cli-schemas"
+        if staged_schemas.exists():
+            shutil.rmtree(staged_schemas)
+        shutil.copytree(schema_source, staged_schemas)
+        force_include[str(staged_schemas)] = "autocontext/cli-schemas"
+
+        fixture_candidates = [candidate.parent / "cli-fixtures" for candidate in candidates]
+        fixture_source = next((path for path in fixture_candidates if path.is_dir()), None)
+        if fixture_source is None:
+            tried = ", ".join(str(candidate) for candidate in fixture_candidates)
+            raise FileNotFoundError(f"cli-fixtures not found; looked in: {tried}")
+        staged_fixtures = staged.parent / "cli-fixtures"
+        if staged_fixtures.exists():
+            shutil.rmtree(staged_fixtures)
+        shutil.copytree(fixture_source, staged_fixtures)
+        force_include[str(staged_fixtures)] = "autocontext/cli-fixtures"

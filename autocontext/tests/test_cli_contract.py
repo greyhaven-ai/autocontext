@@ -22,13 +22,16 @@ JSON so a single edit to the contract drives both sides.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from autocontext.cli_contract import (
     PAVED_ROAD,
     Contract,
+    PositionalArgument,
     RuntimeStatus,
     iter_python_command_paths,
     load_contract,
@@ -128,6 +131,113 @@ def test_paved_road_constant_matches_audience_filter(contract: Contract) -> None
     assert PAVED_ROAD == from_tag
 
 
+def test_export_is_the_first_fully_specified_v2_command(contract: Contract) -> None:
+    assert contract.schema_version == 2
+    command = next(cmd for cmd in contract.commands if cmd.id == "export")
+    assert command.positionals[0].name == "run-id"
+    format_flag = next(flag for flag in command.flags if flag.name == "format")
+    assert format_flag.default == "json"
+    assert format_flag.choices == ("json", "pi-package")
+    assert dict(format_flag.value_aliases) == {"strategy": "json"}
+    assert command.output.streaming == "single"
+    assert command.output.success_stream == "stdout"
+    assert command.output.error_stream == "stderr"
+    assert dict(command.output.schemas) == {
+        "artifact": "cli-schemas/strategy-package-v1.schema.json",
+        "error": "cli-schemas/cli-error-v1.schema.json",
+        "receipt": "cli-schemas/export-receipt-v1.schema.json",
+    }
+    assert dict(command.output.fixtures) == {
+        "artifact": "cli-fixtures/strategy-package-v1.json",
+    }
+    for schema_path in dict(command.output.schemas).values():
+        assert (_contract_path().parent / schema_path).is_file()
+    for fixture_path in dict(command.output.fixtures).values():
+        assert (_contract_path().parent / fixture_path).is_file()
+    assert command.exit_codes.success == 0
+    assert command.exit_codes.usage == 2
+    assert command.exit_codes.execution == 1
+    assert command.examples
+
+
+def test_every_v2_entry_is_explicit_and_has_supported_runtime_shapes() -> None:
+    raw = json.loads(_contract_path().read_text(encoding="utf-8"))
+    required = {"positionals", "flags", "output", "exit_codes", "examples", "runtime_shapes"}
+    for command in raw["commands"]:
+        assert not (required - command.keys()), command["id"]
+        assert command["examples"], command["id"]
+        for runtime in ("python", "typescript"):
+            if command["runtime_support"][runtime]["status"] == "yes":
+                assert runtime in command["runtime_shapes"], f"{command['id']}.{runtime}"
+
+
+def test_all_contract_wire_assets_exist(contract: Contract) -> None:
+    for command in contract.commands:
+        for asset_path in (*dict(command.output.schemas).values(), *dict(command.output.fixtures).values()):
+            assert (_contract_path().parent / asset_path).is_file(), f"missing {command.id} asset: {asset_path}"
+
+
+def test_runtime_structured_flags_are_declared_as_output_modes(contract: Contract) -> None:
+    for command in contract.commands:
+        flag_names = {
+            flag.name
+            for shape in (command.runtime_shapes.python, command.runtime_shapes.typescript)
+            if shape is not None
+            for flag in shape.flags
+        }
+        if "json" in flag_names:
+            expected_mode = "ndjson" if command.id == "watch" else "json"
+            assert expected_mode in command.output.modes, command.id
+        if "ndjson" in flag_names:
+            assert "ndjson" in command.output.modes, command.id
+
+
+def test_human_readable_commands_declare_text_output(contract: Contract) -> None:
+    expected = {
+        "solve",
+        "run",
+        "run.list",
+        "task.judge",
+        "task.improve",
+        "queue",
+        "scenario.create",
+        "mission",
+        "capabilities",
+        "epoch.list",
+        "epoch.approve",
+        "epoch.reject",
+        "rescore",
+        "serve.http",
+        "benchmark",
+        "queue.add",
+    }
+    expected.update(command.id for command in contract.commands if command.id.startswith("mission."))
+    by_id = {command.id: command for command in contract.commands}
+
+    for command_id in expected:
+        assert "text" in by_id[command_id].output.modes, command_id
+
+
+def test_loader_keeps_version_1_entries_compatible(tmp_path: Path) -> None:
+    raw = json.loads(_contract_path().read_text(encoding="utf-8"))
+    raw["schema_version"] = 1
+    export = next(command for command in raw["commands"] if command["id"] == "export")
+    for field in ("positionals", "output", "exit_codes", "examples"):
+        export.pop(field, None)
+    for flag in export["flags"]:
+        for field in ("short_names", "default", "choices", "value_aliases"):
+            flag.pop(field, None)
+    path = tmp_path / "cli-contract-v1.json"
+    path.write_text(json.dumps(raw), encoding="utf-8")
+
+    loaded = load_contract(path)
+    command = next(candidate for candidate in loaded.commands if candidate.id == "export")
+    assert loaded.schema_version == 1
+    assert command.positionals == ()
+    assert command.output.success_stream == "stdout"
+    assert command.exit_codes == command.exit_codes.__class__()
+
+
 # --- Python parity ---------------------------------------------------------
 
 
@@ -145,6 +255,126 @@ def test_every_python_supported_command_exists_in_typer(contract: Contract) -> N
             assert tuple(cmd.path) in observed_paths, (
                 f"contract claims Python support for {cmd.id!r} at {cmd.path} but no matching Typer command was found"
             )
+
+
+def _python_click_commands() -> dict[tuple[str, ...], Any]:
+    from typer.main import get_command
+
+    from autocontext.cli import app
+
+    root = get_command(app)
+    result: dict[tuple[str, ...], Any] = {}
+
+    def walk(command: Any, path: tuple[str, ...] = ()) -> None:
+        if path:
+            result[path] = command
+        for name, child in getattr(command, "commands", {}).items():
+            walk(child, (*path, name))
+
+    walk(root)
+    return result
+
+
+def _click_type_name(raw: str) -> str:
+    if "integer" in raw:
+        return "int"
+    if "float" in raw:
+        return "float"
+    if "boolean" in raw:
+        return "bool"
+    if "path" in raw:
+        return "path"
+    return "string"
+
+
+def test_python_runtime_shapes_match_every_live_public_input(contract: Contract) -> None:
+    """The Python shape is a complete reverse audit, not a curated subset."""
+    commands = _python_click_commands()
+    for spec in contract.commands:
+        if spec.runtime_support.python.status is not RuntimeStatus.YES:
+            continue
+        shape = spec.runtime_shapes.python
+        assert shape is not None, f"{spec.id}: missing Python runtime shape"
+        command = commands[spec.path]
+        actual_positionals: list[tuple[str, str, bool]] = []
+        actual_flags: list[tuple[str, tuple[str, ...], tuple[str, ...], str, bool, Any]] = []
+        for parameter in command.params:
+            if getattr(parameter, "hidden", False):
+                continue
+            if "Argument" in type(parameter).__name__:
+                actual_positionals.append(
+                    (
+                        parameter.name.replace("_", "-"),
+                        _click_type_name(parameter.type.name),
+                        bool(parameter.required),
+                    )
+                )
+                continue
+            long_names = tuple(
+                item[2:]
+                for item in parameter.opts + parameter.secondary_opts
+                if item.startswith("--")
+            )
+            if not long_names:
+                continue
+            short_names = tuple(
+                item[1:]
+                for item in parameter.opts + parameter.secondary_opts
+                if item.startswith("-") and not item.startswith("--")
+            )
+            default = parameter.default
+            if isinstance(default, Path):
+                default = str(default)
+            actual_flags.append(
+                (
+                    long_names[0],
+                    long_names[1:],
+                    short_names,
+                    _click_type_name(parameter.type.name),
+                    bool(parameter.required),
+                    default,
+                )
+            )
+
+        contracted_positionals = [
+            (item.name, item.type, item.required) for item in shape.positionals
+        ]
+        contracted_flags = [
+            (
+                item.name,
+                item.aliases,
+                item.short_names,
+                item.type,
+                item.required,
+                item.default,
+            )
+            for item in shape.flags
+        ]
+        assert contracted_positionals == actual_positionals, spec.id
+        assert contracted_flags == actual_flags, spec.id
+
+
+def test_canonical_flags_are_accepted_by_each_supported_runtime_shape(contract: Contract) -> None:
+    """Shared flags cannot claim names that a supported runtime rejects."""
+    for command in contract.commands:
+        for runtime, support, shape in (
+            ("python", command.runtime_support.python, command.runtime_shapes.python),
+            ("typescript", command.runtime_support.typescript, command.runtime_shapes.typescript),
+        ):
+            if support.status is not RuntimeStatus.YES:
+                continue
+            assert shape is not None
+            accepted = {
+                spelling
+                for runtime_flag in shape.flags
+                for spelling in (runtime_flag.name, *runtime_flag.aliases, *runtime_flag.short_names)
+            }
+            for canonical in command.flags:
+                spellings = {canonical.name, *canonical.aliases, *canonical.short_names}
+                assert spellings <= accepted, (
+                    f"{command.id}.{runtime} does not accept canonical flag spellings "
+                    f"{sorted(spellings - accepted)}"
+                )
 
 
 def test_aliases_are_paths_not_command_ids(contract: Contract) -> None:
@@ -169,6 +399,19 @@ def test_status_canonical_meaning_is_run_status(contract: Contract) -> None:
     cmd = next(c for c in contract.commands if c.id == "status")
     assert cmd.domain_concept == "Run"
     assert "run" in cmd.summary.lower()
+    assert cmd.positionals == (
+        PositionalArgument(
+            name="run-id",
+            type="string",
+            required=False,
+            description=(
+                "Run to inspect; required unless the named --run-id form is supplied. "
+                "Queue status is available only through `autoctx queue status`."
+            ),
+        ),
+    )
+    assert cmd.examples
+    assert all(example != "autoctx status" for example in cmd.examples)
 
 
 def test_solve_is_not_a_domain_noun(contract: Contract) -> None:
@@ -181,21 +424,16 @@ def test_solve_is_not_a_domain_noun(contract: Contract) -> None:
 
 
 def test_iterations_is_the_canonical_iteration_flag(contract: Contract) -> None:
-    """``--iterations`` is the canonical name. PR #981 review (P2):
-    the legacy aliases (``--gens``, ``--rounds``,
-    ``--max-iterations``) are not yet honored by either runtime,
-    so they are intentionally absent from the contract until
-    AC-697 follow-up slices ship the alias plumbing. The contract
-    documents only honored options today."""
+    """``--iterations`` is canonical while shipped aliases stay contracted."""
     cmd = next(c for c in contract.commands if c.id == "solve")
     iter_flag = next(
         (f for f in cmd.flags if f.name == "iterations"),
         None,
     )
     assert iter_flag is not None, "solve should expose canonical --iterations flag"
-    # Aliases are intentionally empty in slice 1; follow-up slices
-    # add them once both runtimes accept the alias.
-    assert iter_flag.aliases == ()
+    assert iter_flag.aliases == ("gens", "generations")
+    assert iter_flag.short_names == ("g",)
+    assert iter_flag.default == 5
 
 
 def test_queue_status_is_not_top_level_status(contract: Contract) -> None:

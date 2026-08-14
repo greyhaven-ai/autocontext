@@ -69,6 +69,8 @@ npm test
 - Use parity-last changes: implement one runtime first unless cross-runtime parity is user-visible in the same release. Note deferred parity in the PR.
 - Keep protocol changes in sync with `scripts/generate_protocol.py`.
 - Avoid rewriting historical plan docs unless the change is user-facing or release-facing.
+- Use `autoctx scenario create` and `autoctx serve mcp` in public examples; reserve
+  legacy aliases for explicitly labeled compatibility documentation.
 
 ## Documentation Touch Points
 

@@ -103,14 +103,17 @@ prompt-derived data and should be redacted before persistence or export.
 | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | `uv run autoctx solve "..." --iterations 3`                                            | Generate and run a scenario from a plain-language goal                                                 |
 | `uv run autoctx run <scenario> --iterations 3`                                         | Improve an existing scenario                                                                           |
+| `uv run autoctx status <run-id> --json` / `watch <run-id> --ndjson`                    | Read one run snapshot or stream snapshots                                                              |
+| `uv run autoctx show <run-id> --best --json`                                           | Inspect the best generation                                                                            |
 | `uv run autoctx simulate --description "..."`                                          | Create/replay/compare modeled-world simulations                                                        |
 | `uv run autoctx investigate --description "..."`                                       | Run synthetic or iterative investigations                                                              |
 | `uv run autoctx list` / `status <run_id>` / `show <run_id>`                            | Inspect runs                                                                                           |
 | `uv run autoctx replay <run_id> --generation 1`                                        | Replay a generation before accepting knowledge                                                         |
 | `uv run autoctx queue add --task-prompt "..." --rubric "..."`                          | Queue evaluation/improvement work                                                                      |
+| `uv run autoctx scenario create --description "..."`                                   | Create a reusable scenario from a plain-language description                                            |
 | `uv run autoctx serve --host 127.0.0.1 --port 8000`                                    | Start the local HTTP API                                                                               |
 | `uv run autoctx worker --poll-interval 5 --concurrency 2`                              | Process queued tasks beside the API server                                                             |
-| `uv run autoctx mcp-serve`                                                             | Expose the MCP tool surface                                                                            |
+| `uv run autoctx serve mcp`                                                             | Expose the MCP tool surface                                                                            |
 | `uv run autoctx export-training-data --scenario <name> --all-runs --output data.jsonl` | Build a training corpus (quarantined scores excluded by default; `--include-quarantined` to keep them) |
 | `uv run autoctx train --scenario <name> --data data.jsonl --time-budget 300`           | Run the local training hook                                                                            |
 | `uv run autoctx epoch list [--scenario <name>]`                                        | List evaluator-epoch registry records (candidate/active)                                               |
@@ -123,7 +126,7 @@ Saved custom scenarios under `knowledge/_custom_scenarios/` can be rerun and ben
 
 ```bash
 uv sync --group dev --extra mcp
-uv run autoctx mcp-serve
+uv run autoctx serve mcp
 ```
 
 Python runtime-backed `run` and `solve` calls append provider prompts/responses to run-scoped runtime-session logs. The same logs are readable through the cockpit HTTP API and MCP tools.

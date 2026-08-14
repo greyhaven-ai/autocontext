@@ -12,6 +12,15 @@ import {
   parsePositiveInteger,
 } from "./shared.js";
 
+function writeRunInspectionError(error: unknown, structured: boolean): void {
+  const message = errorMessage(error).replace(/^Error:\s*/, "");
+  if (structured) {
+    process.stderr.write(`${JSON.stringify({ error: message })}\n`);
+  } else {
+    console.error(`Error: ${message}`);
+  }
+}
+
 export async function cmdRun(dbPath: string): Promise<void> {
   const { values, positionals } = parseArgs({
     args: process.argv.slice(3),
@@ -42,16 +51,7 @@ export async function cmdRun(dbPath: string): Promise<void> {
     process.exit(0);
   }
 
-  const { SQLiteStore } = await import("../../storage/index.js");
-  const { GenerationRunner } = await import("../../loop/generation-runner.js");
-  const { SCENARIO_REGISTRY } = await import("../../scenarios/registry.js");
-  const { assertFamilyContract } = await import("../../scenarios/family-interfaces.js");
   const { loadSettings } = await import("../../config/index.js");
-  const { buildRoleProviderBundle } = await import("../../providers/index.js");
-  const { initializeHookBus } = await import("../../extensions/index.js");
-  const { resolveRunnableScenarioClass } = await import("../runnable-scenario-resolution.js");
-  const { runtimeSessionIdForRun } = await import("../../session/runtime-session-ids.js");
-
   const settings = loadSettings();
   let plan;
   try {
@@ -66,10 +66,18 @@ export async function cmdRun(dbPath: string): Promise<void> {
       parsePositiveInteger,
     );
   } catch (error) {
-    console.error(errorMessage(error));
-    process.exit(1);
+    writeRunInspectionError(error, !!values.json);
+    process.exit(2);
   }
 
+  const { SQLiteStore } = await import("../../storage/index.js");
+  const { SCENARIO_REGISTRY } = await import("../../scenarios/registry.js");
+  const { assertFamilyContract } = await import("../../scenarios/family-interfaces.js");
+  const { resolveRunnableScenarioClass } = await import("../runnable-scenario-resolution.js");
+  const { GenerationRunner } = await import("../../loop/generation-runner.js");
+  const { buildRoleProviderBundle } = await import("../../providers/index.js");
+  const { initializeHookBus } = await import("../../extensions/index.js");
+  const { runtimeSessionIdForRun } = await import("../../session/runtime-session-ids.js");
   const { hookBus, loadedExtensions } = await initializeHookBus({
     extensions: settings.extensions,
     failFast: settings.extensionFailFast,
@@ -128,7 +136,7 @@ export async function cmdRun(dbPath: string): Promise<void> {
       knowledgeRoot: resolve(settings.knowledgeRoot),
     });
   } catch (error) {
-    console.error(errorMessage(error));
+    writeRunInspectionError(error, !!values.json);
     process.exit(1);
   }
 
@@ -295,7 +303,7 @@ export async function cmdShow(dbPath: string): Promise<void> {
     },
   });
 
-  const { renderRunShow, resolveRunId, SHOW_HELP_TEXT } =
+  const { renderRunShow, resolveRunId, RunInspectionUsageError, SHOW_HELP_TEXT, validateShowSelection } =
     await import("../run-inspection-command-workflow.js");
 
   if (values.help) {
@@ -305,10 +313,11 @@ export async function cmdShow(dbPath: string): Promise<void> {
 
   let runId;
   try {
+    validateShowSelection(values);
     runId = resolveRunId(values, positionals, "show");
   } catch (error) {
-    console.error(errorMessage(error));
-    process.exit(1);
+    writeRunInspectionError(error, !!values.json);
+    process.exit(error instanceof RunInspectionUsageError ? 2 : 1);
   }
 
   const { SQLiteStore } = await import("../../storage/index.js");
@@ -322,8 +331,8 @@ export async function cmdShow(dbPath: string): Promise<void> {
     const runtimeSession = await loadRuntimeSessionSummaryForRun(dbPath, runId);
     console.log(renderRunShow(run, store.getGenerations(runId), values, runtimeSession));
   } catch (error) {
-    console.error(errorMessage(error));
-    process.exit(1);
+    writeRunInspectionError(error, !!values.json);
+    process.exit(error instanceof RunInspectionUsageError ? 2 : 1);
   } finally {
     store.close();
   }
@@ -336,6 +345,7 @@ export async function cmdWatch(dbPath: string): Promise<void> {
     options: {
       "run-id": { type: "string" },
       interval: { type: "string" },
+      ndjson: { type: "boolean" },
       json: { type: "boolean" },
       help: { type: "boolean", short: "h" },
     },
@@ -346,6 +356,7 @@ export async function cmdWatch(dbPath: string): Promise<void> {
     renderRunStatus,
     renderRunStatusJsonLine,
     resolveRunId,
+    RunInspectionUsageError,
     WATCH_HELP_TEXT,
   } = await import("../run-inspection-command-workflow.js");
 
@@ -360,8 +371,8 @@ export async function cmdWatch(dbPath: string): Promise<void> {
     runId = resolveRunId(values, positionals, "watch");
     intervalSeconds = parseWatchIntervalSeconds(values.interval);
   } catch (error) {
-    console.error(errorMessage(error));
-    process.exit(1);
+    writeRunInspectionError(error, !!values.ndjson || !!values.json);
+    process.exit(error instanceof RunInspectionUsageError ? 2 : 1);
   }
 
   const { SQLiteStore } = await import("../../storage/index.js");
@@ -377,7 +388,7 @@ export async function cmdWatch(dbPath: string): Promise<void> {
       const runtimeSession = await loadRuntimeSessionSummaryForRun(dbPath, runId);
       const progressReport = await loadProgressReportForRun(run);
       console.log(
-        values.json
+        values.ndjson || values.json
           ? renderRunStatusJsonLine(run, generations, runtimeSession, progressReport)
           : renderRunStatus(run, generations, false, runtimeSession, progressReport),
       );
@@ -387,8 +398,8 @@ export async function cmdWatch(dbPath: string): Promise<void> {
       await new Promise((resolveSleep) => setTimeout(resolveSleep, intervalSeconds * 1000));
     }
   } catch (error) {
-    console.error(errorMessage(error));
-    process.exit(1);
+    writeRunInspectionError(error, !!values.ndjson || !!values.json);
+    process.exit(error instanceof RunInspectionUsageError ? 2 : 1);
   } finally {
     store.close();
   }
@@ -450,13 +461,13 @@ export async function cmdStatus(dbPath: string): Promise<void> {
   // rendered queue-pending counts moved to `autoctx queue status`.
   if (!runId) {
     const message =
-      "Error: `autoctx status` requires <run-id>. Use `autoctx queue status` for the queue-pending count.";
+      "`autoctx status` requires <run-id>. Use `autoctx queue status` for queue status.";
     if (values.json) {
-      process.stdout.write(JSON.stringify({ error: message }) + "\n");
+      process.stderr.write(JSON.stringify({ error: message }) + "\n");
     } else {
-      console.error(message);
+      console.error(`Error: ${message}`);
     }
-    process.exit(1);
+    process.exit(2);
   }
 
   const { SQLiteStore } = await import("../../storage/index.js");
@@ -465,7 +476,12 @@ export async function cmdStatus(dbPath: string): Promise<void> {
   store.migrate(getMigrationsDir());
   const run = store.getRun(runId);
   if (!run) {
-    console.error(`Error: run '${runId}' not found`);
+    const message = `run '${runId}' not found`;
+    if (values.json) {
+      process.stderr.write(JSON.stringify({ error: message }) + "\n");
+    } else {
+      console.error(`Error: ${message}`);
+    }
     store.close();
     process.exit(1);
   }

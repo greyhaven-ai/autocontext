@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "queue-status-v1.schema.json",
+  "title": "Autocontext queue status v1",
+  "type": "object",
+  "required": ["pending_count"],
+  "properties": {
+    "pending_count": { "type": "integer", "minimum": 0 },
+    "pendingCount": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Deprecated npm compatibility field."
+    }
+  },
+  "additionalProperties": false
+}

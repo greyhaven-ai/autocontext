@@ -153,10 +153,16 @@ def test_show_with_explicit_generation_filters_to_that_row(tmp_path, monkeypatch
     assert payload["generations"][0]["generation"] == 1
 
 
-def test_watch_breaks_immediately_on_a_terminal_generation(tmp_path, monkeypatch) -> None:
-    """`watch` polls until the latest generation status is terminal
-    (completed / failed / etc). When the latest generation is already
-    terminal, the loop emits one line and returns without sleeping."""
+def test_show_rejects_conflicting_generation_selectors() -> None:
+    result = CliRunner().invoke(app, ["show", "abc123", "--best", "--generation", "1", "--json"])
+
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    assert json.loads(result.stderr) == {"error": "--best cannot be combined with --generation"}
+
+
+def test_watch_breaks_immediately_on_a_terminal_run(tmp_path, monkeypatch) -> None:
+    """A terminal run emits its latest generation and returns without sleeping."""
     monkeypatch.setenv("AUTOCONTEXT_DB_PATH", str(tmp_path / "autocontext.db"))
     monkeypatch.setenv("AUTOCONTEXT_CONFIG_DIR", str(tmp_path / "config"))
 
@@ -176,24 +182,68 @@ def test_watch_breaks_immediately_on_a_terminal_generation(tmp_path, monkeypatch
         "autocontext.cli._sqlite_from_settings",
         lambda _: _make_store_stub({"scenario": "x", "status": "completed"}, rows),
     )
-    # Patch time.sleep to assert no actual sleeping happens. The loop
-    # should return on the very first poll because the latest row is
-    # already in a terminal status.
     sleep_calls: list[float] = []
     monkeypatch.setattr("time.sleep", lambda s: sleep_calls.append(s))
 
-    result = CliRunner().invoke(app, ["watch", "abc123", "--json"])
+    result = CliRunner().invoke(app, ["watch", "abc123", "--ndjson"])
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output.strip())
-    assert payload == {
-        "run_id": "abc123",
-        "generation": 1,
-        "status": "completed",
+    assert payload["run"]["run_id"] == "abc123"
+    assert payload["run"]["status"] == "completed"
+    assert payload["latest_generation"]["generation_index"] == 1
+    assert payload["latest_generation"]["best_score"] == 0.7
+    assert payload["latest_generation"]["gate_decision"] == "advance"
+    assert payload["runtime_session"] is None
+    assert payload["progress_report"] is None
+    assert sleep_calls == []
+
+
+def test_watch_continues_after_a_completed_generation_while_run_is_active(tmp_path, monkeypatch) -> None:
+    """A completed generation is not the end of a multi-generation run."""
+    monkeypatch.setenv("AUTOCONTEXT_DB_PATH", str(tmp_path / "autocontext.db"))
+    monkeypatch.setenv("AUTOCONTEXT_CONFIG_DIR", str(tmp_path / "config"))
+
+    first = {
+        "generation_index": 1,
         "best_score": 0.7,
         "gate_decision": "advance",
+        "status": "completed",
     }
-    # Terminal on first poll -> no sleep needed.
-    assert sleep_calls == []
+    second = {
+        "generation_index": 2,
+        "best_score": 0.8,
+        "gate_decision": "advance",
+        "status": "completed",
+    }
+
+    class _MultiGenerationStore:
+        get_run_calls = 0
+        status_calls = 0
+
+        def get_run(self, _run_id: str) -> dict[str, Any]:
+            self.get_run_calls += 1
+            status = "completed" if self.get_run_calls >= 3 else "running"
+            return {"run_id": "abc123", "scenario": "x", "status": status}
+
+        def run_status(self, _run_id: str) -> list[dict[str, Any]]:
+            self.status_calls += 1
+            return [first] if self.status_calls == 1 else [first, second]
+
+        def close(self) -> None:
+            pass
+
+    store = _MultiGenerationStore()
+    monkeypatch.setattr("autocontext.cli._sqlite_from_settings", lambda _: store)
+    sleep_calls: list[float] = []
+    monkeypatch.setattr("time.sleep", lambda seconds: sleep_calls.append(seconds))
+
+    result = CliRunner().invoke(app, ["watch", "abc123", "--interval", "0.1", "--ndjson"])
+
+    assert result.exit_code == 0, result.output
+    payloads = [json.loads(line) for line in result.stdout.splitlines()]
+    assert [payload["latest_generation"]["generation_index"] for payload in payloads] == [1, 2]
+    assert [payload["run"]["status"] for payload in payloads] == ["running", "completed"]
+    assert sleep_calls == [0.1]
 
 
 def test_watch_terminal_run_with_no_generations_exits(tmp_path, monkeypatch) -> None:
@@ -215,11 +265,12 @@ def test_watch_terminal_run_with_no_generations_exits(tmp_path, monkeypatch) -> 
     sleep_calls: list[float] = []
     monkeypatch.setattr("time.sleep", lambda s: sleep_calls.append(s))
 
-    result = CliRunner().invoke(app, ["watch", "abc123", "--json"])
+    result = CliRunner().invoke(app, ["watch", "abc123", "--ndjson"])
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output.strip())
-    # Run-level terminal status surfaced with `generation: null`.
-    assert payload == {"run_id": "abc123", "generation": None, "status": "failed"}
+    assert payload["run"]["run_id"] == "abc123"
+    assert payload["run"]["status"] == "failed"
+    assert payload["latest_generation"] is None
     # No sleep needed: terminal run is detected on the first poll.
     assert sleep_calls == []
 
@@ -231,3 +282,77 @@ def test_watch_missing_run_exits_non_zero(tmp_path, monkeypatch) -> None:
     result = CliRunner().invoke(app, ["watch", "nonexistent"])
     assert result.exit_code != 0
     assert "nonexistent" in result.output
+
+
+@pytest.mark.parametrize("command", ["show", "watch"])
+def test_run_inspection_missing_id_uses_usage_exit_and_json_stderr(command: str) -> None:
+    flag = "--json" if command == "show" else "--ndjson"
+    result = CliRunner().invoke(app, [command, flag])
+
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    assert json.loads(result.stderr)["error"] == f"`autoctx {command}` requires <run-id>."
+
+
+def test_watch_json_remains_a_deprecated_ndjson_alias(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("AUTOCONTEXT_DB_PATH", str(tmp_path / "autocontext.db"))
+    monkeypatch.setenv("AUTOCONTEXT_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setattr(
+        "autocontext.cli._sqlite_from_settings",
+        lambda _: _make_store_stub({"scenario": "x", "status": "failed"}, []),
+    )
+
+    result = CliRunner().invoke(app, ["watch", "abc123", "--json"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["run"]["run_id"] == "abc123"
+
+
+def test_watch_interruption_uses_standard_exit_130(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("AUTOCONTEXT_DB_PATH", str(tmp_path / "autocontext.db"))
+    monkeypatch.setenv("AUTOCONTEXT_CONFIG_DIR", str(tmp_path / "config"))
+    rows = [
+        {
+            "generation_index": 1,
+            "mean_score": 0.5,
+            "best_score": 0.7,
+            "elo": 1550.0,
+            "wins": 1,
+            "losses": 0,
+            "gate_decision": "advance",
+            "status": "running",
+        }
+    ]
+    monkeypatch.setattr(
+        "autocontext.cli._sqlite_from_settings",
+        lambda _: _make_store_stub({"scenario": "x", "status": "running"}, rows),
+    )
+    monkeypatch.setattr("time.sleep", lambda _seconds: (_ for _ in ()).throw(KeyboardInterrupt()))
+
+    result = CliRunner().invoke(app, ["watch", "abc123", "--ndjson"])
+
+    assert result.exit_code == 130
+    assert len(result.stdout.strip().splitlines()) == 1
+
+
+def test_watch_runtime_failure_uses_json_stderr(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("AUTOCONTEXT_DB_PATH", str(tmp_path / "autocontext.db"))
+    monkeypatch.setenv("AUTOCONTEXT_CONFIG_DIR", str(tmp_path / "config"))
+
+    class _FailingStore:
+        def get_run(self, _run_id: str) -> dict[str, Any]:
+            return {"scenario": "x", "status": "running"}
+
+        def run_status(self, _run_id: str) -> list[dict[str, Any]]:
+            raise RuntimeError("status read failed")
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr("autocontext.cli._sqlite_from_settings", lambda _: _FailingStore())
+
+    result = CliRunner().invoke(app, ["watch", "abc123", "--ndjson"])
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert json.loads(result.stderr) == {"error": "status read failed"}

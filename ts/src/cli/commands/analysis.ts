@@ -252,7 +252,6 @@ export async function cmdAnalyze(): Promise<void> {
       left: { type: "string" },
       right: { type: "string" },
       focus: { type: "string" },
-      "save-report": { type: "boolean" },
       json: { type: "boolean" },
       help: { type: "boolean", short: "h" },
     },

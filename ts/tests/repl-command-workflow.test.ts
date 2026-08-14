@@ -11,7 +11,7 @@ import {
 describe("repl command workflow", () => {
   it("exposes stable help text", () => {
     expect(REPL_HELP_TEXT).toContain("autoctx repl");
-    expect(REPL_HELP_TEXT).toContain("--phase generate|revise");
+    expect(REPL_HELP_TEXT).toContain("--phase <generate|revise>");
     expect(REPL_HELP_TEXT).toContain("--reference-context");
     expect(REPL_HELP_TEXT).toContain("--required-concept");
   });

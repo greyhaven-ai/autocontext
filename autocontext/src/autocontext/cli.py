@@ -19,11 +19,14 @@ import uvicorn
 from rich.console import Console
 from rich.table import Table
 
+from autocontext import __version__
 from autocontext.agents.orchestrator import AgentOrchestrator
 from autocontext.cli_ambient import ambient_app
 from autocontext.cli_analytics import register_analytics_command
 from autocontext.cli_capabilities import register_capabilities_command
 from autocontext.cli_epoch import epoch_app
+from autocontext.cli_errors import StructuredUsageGroup
+from autocontext.cli_help import configure_help_surface
 from autocontext.cli_hermes import register_hermes_command
 from autocontext.cli_improve import register_improve_command
 from autocontext.cli_investigate import run_investigate_command
@@ -51,6 +54,7 @@ from autocontext.cli_share import register_share_command
 from autocontext.cli_skills import register_skills_command
 from autocontext.cli_solve import register_solve_command
 from autocontext.cli_train import register_train_command
+from autocontext.cli_wire import run_status_wire_payload
 from autocontext.cli_worker import register_worker_command
 from autocontext.config import load_settings
 from autocontext.config.presets import VALID_PRESET_NAMES
@@ -83,7 +87,6 @@ if TYPE_CHECKING:
 @dataclass(slots=True)
 class AgentTaskRunSummary:
     """Result summary for an agent-task execution via the CLI."""
-
     run_id: str
     scenario: str
     best_score: float
@@ -93,20 +96,11 @@ class AgentTaskRunSummary:
     termination_reason: str
     optimizer_metadata: dict[str, str] | None = None
 
-
-app = typer.Typer(help="autocontext control-plane CLI", invoke_without_command=True)
+app = typer.Typer(cls=StructuredUsageGroup, help="Run, inspect, and export agent-evaluation workflows.",
+    epilog="Start with `autoctx solve \"your goal\"`. Run `autoctx commands --all` for the full catalog.",
+    invoke_without_command=True)
 console = Console()
-
 _PRESET_HELP = f"Apply a named preset ({', '.join(sorted(VALID_PRESET_NAMES))}). Overrides AUTOCONTEXT_PRESET env var."
-
-
-@app.callback()
-def _main_callback(ctx: typer.Context) -> None:
-    """Show the banner when invoked without a subcommand."""
-    if ctx.invoked_subcommand is None:
-        from autocontext.banner import print_banner_rich
-
-        print_banner_rich()
 
 
 def _warn(message: str, *, json_output: bool) -> None:
@@ -406,9 +400,9 @@ def _run_agent_task(
 @app.command()
 def run(
     scenario_text: str | None = typer.Argument(None, help="Scenario to run"),
-    scenario: str = typer.Option("", "--scenario"),
-    gens: int | None = typer.Option(None, "--gens", min=1),
-    iterations: int | None = typer.Option(None, "--iterations", min=1, help="Plain-language alias for --gens"),
+    scenario: str = typer.Option("", "--scenario", "-s", help="Scenario to run; required unless passed positionally."),
+    iterations: int | None = typer.Option(None, "--iterations", min=1, help="Number of generations to run."),
+    gens: int | None = typer.Option(None, "--gens", "-g", min=1, help="Deprecated alias for --iterations."),
     run_id: str | None = typer.Option(None, "--run-id"),
     serve: bool = typer.Option(False, "--serve", help="Start interactive server alongside generation loop"),
     port: int = typer.Option(8000, "--port", help="Server port (only used with --serve)"),
@@ -419,8 +413,15 @@ def run(
     ),
 ) -> None:
     """Run generation loop."""
-    scenario = scenario.strip() or (scenario_text or "").strip() or "grid_ctf"
-    gens = gens if gens is not None else iterations if iterations is not None else 1
+    scenario = scenario.strip() or (scenario_text or "").strip()
+    if not scenario:
+        message = "no scenario configured; pass <scenario> or --scenario <name>."
+        if json_output:
+            _write_json_stderr(message)
+        else:
+            typer.secho(f"Error: {message}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    gens = iterations if iterations is not None else gens if gens is not None else 1
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -599,18 +600,39 @@ def list_runs(
 
 @app.command()
 def status(
-    run_id: str = typer.Argument(...),
+    run_id: str | None = typer.Argument(None, metavar="RUN_ID", help="Run id to inspect."),
+    run_id_option: str | None = typer.Option(
+        None,
+        "--run-id",
+        help="Named alternative to the run-id positional.",
+    ),
     json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
 ) -> None:
-    """Show generation status for a run."""
+    """Show status for one run. Queue status lives under `autoctx queue status`."""
+
+    resolved_run_id = (run_id_option or run_id or "").strip()
+    if not resolved_run_id:
+        message = "`autoctx status` requires <run-id>. Use `autoctx queue status` for queue status."
+        if json_output:
+            _write_json_stderr(message)
+        else:
+            typer.secho(f"Error: {message}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
 
     settings = load_settings()
     store = _sqlite_from_settings(settings)
-    rows = store.run_status(run_id)
+    run = store.get_run(resolved_run_id)
+    if run is None:
+        message = f"run '{resolved_run_id}' not found"
+        if json_output:
+            _write_json_stderr(message)
+        else:
+            typer.secho(f"Error: {message}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1)
 
-    run = store.get_run(run_id)
-    scenario = run.get("scenario") if run else None
-    rows, active_epoch_id = annotate_run_status_rows(settings, scenario, rows, store, run_id)
+    rows = store.run_status(resolved_run_id)
+    scenario = run.get("scenario")
+    rows, active_epoch_id = annotate_run_status_rows(settings, scenario, rows, store, resolved_run_id)
 
     if json_output:
         generations = []
@@ -634,18 +656,18 @@ def status(
                     "revised_at": row.get("revised_at"),
                 }
             )
-        sys.stdout.write(
-            json.dumps(
-                {
-                    "run_id": run_id,
-                    "active_evaluator_epoch": active_epoch_id,
-                    "generations": generations,
-                }
-            )
-            + "\n"
+        payload = run_status_wire_payload(run, rows, run_id=resolved_run_id)
+        payload.update(
+            {
+                # Compatibility fields retained for Python CLI consumers.
+                "run_id": resolved_run_id,
+                "active_evaluator_epoch": active_epoch_id,
+                "generations": generations,
+            }
         )
+        _write_json_stdout(payload)
     else:
-        table = Table(title=f"Run Status: {run_id}")
+        table = Table(title=f"Run Status: {resolved_run_id}")
         table.add_column("Gen")
         table.add_column("Mean")
         table.add_column("Best")
@@ -1141,7 +1163,7 @@ def wait(
     timeout: float = typer.Option(30.0, "--timeout", help="Timeout in seconds"),
     json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
 ) -> None:
-    """Wait for a monitor condition to fire (AC-209 integration)."""
+    """Wait for a monitor condition to fire."""
     settings = load_settings()
     store = SQLiteStore(settings.db_path)
     migrations_dir = Path(__file__).resolve().parents[2] / "migrations"
@@ -1271,6 +1293,7 @@ register_share_command(app, console=console)
 register_train_command(app, console)
 register_worker_command(app, console=console)
 app.command("rescore")(rescore_command)
+configure_help_surface(app, console, version=__version__, write_json_stdout=_write_json_stdout)
 
 
 if __name__ == "__main__":

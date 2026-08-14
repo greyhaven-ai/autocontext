@@ -126,7 +126,7 @@ describe("capabilities command workflow", () => {
       },
       null,
     );
-    expect(payload.contract.schema_version).toBe(1);
+    expect(payload.contract.schema_version).toBe(2);
     expect(payload.contract.commands.length).toBeGreaterThan(0);
     // Paved-road commands from slice 1 must appear in the contract list.
     const ids = new Set(payload.contract.commands.map((c) => c.id));
@@ -139,6 +139,10 @@ describe("capabilities command workflow", () => {
     expect(ids.has("scenario.create")).toBe(true);
     const scenarioCreate = payload.contract.commands.find((c) => c.id === "scenario.create");
     expect(scenarioCreate?.aliases).toContain("new-scenario");
+    const exportCommand = payload.contract.commands.find((c) => c.id === "export");
+    expect(exportCommand?.positionals[0]?.name).toBe("run-id");
+    expect(exportCommand?.output?.success_stream).toBe("stdout");
+    expect(exportCommand?.exit_codes).toEqual({ success: 0, usage: 2, execution: 1 });
   });
 
   // PR #1000 review (P2): the npm package ships

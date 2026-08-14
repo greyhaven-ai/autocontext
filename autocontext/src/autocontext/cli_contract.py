@@ -1,4 +1,4 @@
-"""AC-697 slice 1: shared CLI contract loader (Python side).
+"""Shared CLI contract loader (Python side).
 
 The source of truth at ``docs/cli-contract.json`` describes every
 canonical ``autoctx`` command across the Python and TypeScript
@@ -68,13 +68,64 @@ class RuntimeSupportPair:
 
 @dataclass(frozen=True, slots=True)
 class Flag:
-    """A canonical flag (long form, plus optional legacy aliases)."""
+    """A canonical flag, including its value-level compatibility contract."""
 
     name: str
     type: str
     aliases: tuple[str, ...] = ()
+    short_names: tuple[str, ...] = ()
     required: bool = False
     description: str = ""
+    default: Any = None
+    choices: tuple[str, ...] = ()
+    value_aliases: tuple[tuple[str, str], ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class PositionalArgument:
+    """A canonical positional argument."""
+
+    name: str
+    type: str = "string"
+    required: bool = False
+    description: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeCommandShape:
+    """The complete public input shape exposed by one runtime."""
+
+    positionals: tuple[PositionalArgument, ...] = ()
+    flags: tuple[Flag, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeCommandShapes:
+    """Runtime-specific input shapes around the shared canonical subset."""
+
+    python: RuntimeCommandShape | None = None
+    typescript: RuntimeCommandShape | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class OutputSpec:
+    """Wire-output and stream conventions for a command."""
+
+    modes: tuple[str, ...] = ("text",)
+    streaming: str = "single"
+    success_stream: str = "stdout"
+    error_stream: str = "stderr"
+    schemas: tuple[tuple[str, str], ...] = ()
+    fixtures: tuple[tuple[str, str], ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class ExitCodes:
+    """Portable process exit-code meanings."""
+
+    success: int = 0
+    usage: int = 2
+    execution: int = 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,8 +140,13 @@ class CommandSpec:
     domain_concept: str | None
     aliases: tuple[str, ...]
     runtime_support: RuntimeSupportPair
+    positionals: tuple[PositionalArgument, ...] = ()
     flags: tuple[Flag, ...] = ()
     output_contract: str = "text"
+    output: OutputSpec = OutputSpec()
+    exit_codes: ExitCodes = ExitCodes()
+    examples: tuple[str, ...] = ()
+    runtime_shapes: RuntimeCommandShapes = RuntimeCommandShapes()
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,22 +166,37 @@ class Contract:
 def load_contract(path: Path) -> Contract:
     """Load ``docs/cli-contract.json`` into a :class:`Contract`."""
     raw = json.loads(path.read_text(encoding="utf-8"))
+    schema_version = int(raw.get("schema_version", 1))
+    if schema_version >= 2:
+        _validate_v2_entries(raw.get("commands", []))
     commands: list[CommandSpec] = []
     for entry in raw.get("commands", []):
-        flags = tuple(
-            Flag(
-                name=f["name"],
-                type=f.get("type", "string"),
-                aliases=tuple(f.get("aliases", [])),
-                required=bool(f.get("required", False)),
-                description=f.get("description", ""),
-            )
-            for f in entry.get("flags", [])
+        flags = _load_flags(entry.get("flags", []))
+        positionals = _load_positionals(entry.get("positionals", []))
+        output_raw = entry.get("output", {})
+        output = OutputSpec(
+            modes=tuple(output_raw.get("modes", [entry.get("output_contract", "text")])),
+            streaming=output_raw.get("streaming", "single"),
+            success_stream=output_raw.get("success_stream", "stdout"),
+            error_stream=output_raw.get("error_stream", "stderr"),
+            schemas=tuple(sorted(output_raw.get("schemas", {}).items())),
+            fixtures=tuple(sorted(output_raw.get("fixtures", {}).items())),
+        )
+        exit_codes_raw = entry.get("exit_codes", {})
+        exit_codes = ExitCodes(
+            success=int(exit_codes_raw.get("success", 0)),
+            usage=int(exit_codes_raw.get("usage", 2)),
+            execution=int(exit_codes_raw.get("execution", 1)),
         )
         support_raw = entry.get("runtime_support", {})
         runtime_support = RuntimeSupportPair(
             python=_load_runtime_support(support_raw.get("python", {})),
             typescript=_load_runtime_support(support_raw.get("typescript", {})),
+        )
+        runtime_shapes_raw = entry.get("runtime_shapes", {})
+        runtime_shapes = RuntimeCommandShapes(
+            python=_load_runtime_shape(runtime_shapes_raw.get("python")),
+            typescript=_load_runtime_shape(runtime_shapes_raw.get("typescript")),
         )
         commands.append(
             CommandSpec(
@@ -137,14 +208,72 @@ def load_contract(path: Path) -> Contract:
                 domain_concept=entry.get("domain_concept"),
                 aliases=tuple(entry.get("aliases", [])),
                 runtime_support=runtime_support,
+                positionals=positionals,
                 flags=flags,
                 output_contract=entry.get("output_contract", "text"),
+                output=output,
+                exit_codes=exit_codes,
+                examples=tuple(entry.get("examples", [])),
+                runtime_shapes=runtime_shapes,
             )
         )
     return Contract(
-        schema_version=int(raw.get("schema_version", 1)),
+        schema_version=schema_version,
         commands=tuple(commands),
     )
+
+
+def _load_flags(raw: Iterable[dict[str, Any]]) -> tuple[Flag, ...]:
+    return tuple(
+        Flag(
+            name=item["name"],
+            type=item.get("type", "string"),
+            aliases=tuple(item.get("aliases", [])),
+            short_names=tuple(item.get("short_names", [])),
+            required=bool(item.get("required", False)),
+            description=item.get("description", ""),
+            default=item.get("default"),
+            choices=tuple(item.get("choices", [])),
+            value_aliases=tuple(sorted(item.get("value_aliases", {}).items())),
+        )
+        for item in raw
+    )
+
+
+def _load_positionals(raw: Iterable[dict[str, Any]]) -> tuple[PositionalArgument, ...]:
+    return tuple(
+        PositionalArgument(
+            name=item["name"],
+            type=item.get("type", "string"),
+            required=bool(item.get("required", False)),
+            description=item.get("description", ""),
+        )
+        for item in raw
+    )
+
+
+def _load_runtime_shape(raw: dict[str, Any] | None) -> RuntimeCommandShape | None:
+    if raw is None:
+        return None
+    return RuntimeCommandShape(
+        positionals=_load_positionals(raw.get("positionals", [])),
+        flags=_load_flags(raw.get("flags", [])),
+    )
+
+
+def _validate_v2_entries(entries: Iterable[dict[str, Any]]) -> None:
+    """Reject partially specified v2 entries while v1 stays compatible."""
+    required = {"positionals", "flags", "output", "exit_codes", "examples", "runtime_shapes"}
+    for entry in entries:
+        missing = required - entry.keys()
+        if missing:
+            msg = f"contract v2 command {entry.get('id', '<unknown>')!r} missing fields: {sorted(missing)}"
+            raise ValueError(msg)
+        for runtime in ("python", "typescript"):
+            support = entry.get("runtime_support", {}).get(runtime, {}).get("status")
+            if support == "yes" and runtime not in entry["runtime_shapes"]:
+                msg = f"contract v2 command {entry.get('id', '<unknown>')!r} missing {runtime} runtime shape"
+                raise ValueError(msg)
 
 
 def _load_runtime_support(blob: dict[str, Any]) -> RuntimeSupport:
@@ -197,10 +326,15 @@ __all__ = [
     "PAVED_ROAD",
     "CommandSpec",
     "Contract",
+    "ExitCodes",
     "Flag",
+    "OutputSpec",
+    "PositionalArgument",
     "RuntimeStatus",
     "RuntimeSupport",
     "RuntimeSupportPair",
+    "RuntimeCommandShape",
+    "RuntimeCommandShapes",
     "iter_python_command_paths",
     "load_contract",
 ]

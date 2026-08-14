@@ -143,7 +143,7 @@ describe("run command workflow", () => {
     expect(parsePositiveInteger).toHaveBeenNthCalledWith(2, "2", "--matches");
   });
 
-  it("prefers precise --scenario and --gens flags over positional aliases", async () => {
+  it("prefers --scenario and canonical --iterations over compatibility forms", async () => {
     await expect(
       planRunCommand(
         {
@@ -162,7 +162,7 @@ describe("run command workflow", () => {
       ),
     ).resolves.toMatchObject({
       scenarioName: "support_triage",
-      gens: 5,
+      gens: 4,
     });
   });
 

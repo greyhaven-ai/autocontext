@@ -96,6 +96,10 @@ export async function cmdLogin(): Promise<void> {
 }
 
 export async function cmdWhoami(): Promise<void> {
+  if (process.argv.slice(3).some((arg) => arg === "--help" || arg === "-h")) {
+    console.log("autoctx whoami\n\nPrint the active provider, model, and authentication status as JSON.");
+    process.exit(0);
+  }
   const { buildWhoamiPayload } = await import("../auth-provider-command-workflow.js");
   const { loadPersistedCredentials, loadProjectConfig } = await import("../../config/index.js");
   const { resolveProviderConfig } = await import("../../providers/index.js");
@@ -199,6 +203,10 @@ export async function cmdLogout(): Promise<void> {
 }
 
 export async function cmdProviders(): Promise<void> {
+  if (process.argv.slice(3).some((arg) => arg === "--help" || arg === "-h")) {
+    console.log("autoctx providers\n\nList known providers and authentication status as JSON.");
+    process.exit(0);
+  }
   const { buildProvidersPayload } = await import("../auth-provider-command-workflow.js");
   const { KNOWN_PROVIDERS, discoverAllProviders } = await import("../../config/credentials.js");
   const { resolveConfigDir } = await import("../../config/index.js");
@@ -209,6 +217,10 @@ export async function cmdProviders(): Promise<void> {
 }
 
 export async function cmdModels(): Promise<void> {
+  if (process.argv.slice(3).some((arg) => arg === "--help" || arg === "-h")) {
+    console.log("autoctx models\n\nList models available through authenticated providers as JSON.");
+    process.exit(0);
+  }
   const { renderModelsResult } = await import("../auth-provider-command-workflow.js");
   const { listAuthenticatedModels } = await import("../../config/credentials.js");
   const { resolveConfigDir } = await import("../../config/index.js");

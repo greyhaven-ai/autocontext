@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "run-show-v1.schema.json",
+  "title": "Autocontext selected run generation v1",
+  "type": "object",
+  "required": ["run", "generation", "runtime_session"],
+  "properties": {
+    "run": { "$ref": "run-status-v1.schema.json#/$defs/run" },
+    "generation": { "$ref": "run-status-v1.schema.json#/$defs/generation" },
+    "runtime_session": { "type": ["object", "null"] }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "export-receipt-v1.schema.json",
+  "title": "Autocontext export receipt v1",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": [
+        "scenario",
+        "format",
+        "output_path",
+        "best_score",
+        "lessons_count",
+        "harness_count"
+      ],
+      "properties": {
+        "scenario": { "type": "string" },
+        "format": { "const": "json" },
+        "output_path": { "type": "string" },
+        "best_score": { "type": "number" },
+        "lessons_count": { "type": "integer", "minimum": 0 },
+        "harness_count": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": ["scenario", "format", "output_path", "file_count", "files"],
+      "properties": {
+        "scenario": { "type": "string" },
+        "format": { "const": "pi-package" },
+        "output_path": { "type": "string" },
+        "file_count": { "type": "integer", "minimum": 0 },
+        "files": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    }
+  ]
+}

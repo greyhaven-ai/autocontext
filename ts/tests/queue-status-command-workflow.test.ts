@@ -122,8 +122,9 @@ describe("queue/status command workflow", () => {
   });
 
   it("renders status payloads", () => {
-    expect(renderStatusResult({ pendingCount: 4 })).toBe(
-      JSON.stringify({ pendingCount: 4 }),
-    );
+    expect(JSON.parse(renderStatusResult({ pendingCount: 4 }))).toEqual({
+      pending_count: 4,
+      pendingCount: 4,
+    });
   });
 });

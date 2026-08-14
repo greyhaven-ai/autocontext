@@ -29,11 +29,17 @@ describe("CLI", () => {
     expect(exitCode).toBe(0);
     expect(stdout).toContain("autoctx");
     expect(stdout).toContain("init");
-    expect(stdout).toContain("judge");
-    expect(stdout).toContain("improve");
-    expect(stdout).toContain("repl");
+    expect(stdout).toContain("solve");
+    expect(stdout).toContain("watch");
     expect(stdout).toContain("queue");
     expect(stdout).toContain("serve");
+    expect(stdout).toContain("--help --all");
+
+    const expanded = runCli(["--help", "--all"]);
+    expect(expanded.exitCode).toBe(0);
+    expect(expanded.stdout).toContain("judge");
+    expect(expanded.stdout).toContain("improve");
+    expect(expanded.stdout).toContain("repl");
   });
 
   it("shows version", () => {

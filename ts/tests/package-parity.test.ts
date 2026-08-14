@@ -118,12 +118,11 @@ describe("README positioning", () => {
   it("describes the full command surface", () => {
     const readme = readFileSync(join(import.meta.dirname, "..", "README.md"), "utf-8");
     expect(readme).toContain("run --scenario");
-    expect(readme).toContain("mcp-serve");
-    expect(readme).toContain("serve");
+    expect(readme).toContain("serve mcp");
     expect(readme).toContain("export");
     expect(readme).toContain("import-package");
     expect(readme).toContain("benchmark");
-    expect(readme).toContain("new-scenario");
+    expect(readme).toContain("scenario create");
   });
 
   it("documents Python-only exclusions explicitly", () => {
@@ -160,7 +159,7 @@ describe("README positioning", () => {
 
 describe("CLI help matches README", () => {
   it("lists all documented commands in help", () => {
-    const help = runCli(["--help"]);
+    const help = runCli(["--help", "--all"]);
     const expected = [
       "init",
       "capabilities",

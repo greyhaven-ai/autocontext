@@ -3,7 +3,7 @@
  */
 import { parseArgs } from "node:util";
 import { asDbPath } from "../../domain/ids.js";
-import { getMigrationsDir, getProvider, loadSavedAgentTaskScenario } from "./shared.js";
+import { errorMessage, getMigrationsDir, getProvider, loadSavedAgentTaskScenario } from "./shared.js";
 
 export async function cmdQueue(dbPath: string): Promise<void> {
   // AC-697 slice 2: detect `autoctx queue status` subcommand before
@@ -31,18 +31,30 @@ export async function cmdQueue(dbPath: string): Promise<void> {
       );
       process.exit(0);
     }
-    const { executeStatusCommandWorkflow, renderStatusResult } =
-      await import("../queue-status-command-workflow.js");
     const { SQLiteStore } = await import("../../storage/index.js");
     const store = new SQLiteStore(asDbPath(dbPath));
-    const result = executeStatusCommandWorkflow({
-      store,
-      migrationsDir: getMigrationsDir(),
-    });
-    if (statusValues.json) {
-      console.log(renderStatusResult(result));
-    } else {
-      console.log(`Pending queued tasks: ${result.pendingCount}`);
+    try {
+      const { executeStatusCommandWorkflow, renderStatusResult } =
+        await import("../queue-status-command-workflow.js");
+      const result = executeStatusCommandWorkflow({
+        store,
+        migrationsDir: getMigrationsDir(),
+      });
+      if (statusValues.json) {
+        console.log(renderStatusResult(result));
+      } else {
+        console.log(`Pending queued tasks: ${result.pendingCount}`);
+      }
+    } catch (error) {
+      const message = errorMessage(error).replace(/^Error:\s*/, "");
+      if (statusValues.json) {
+        process.stderr.write(`${JSON.stringify({ error: message })}\n`);
+      } else {
+        console.error(`Error: ${message}`);
+      }
+      process.exitCode = 1;
+    } finally {
+      store.close();
     }
     return;
   }

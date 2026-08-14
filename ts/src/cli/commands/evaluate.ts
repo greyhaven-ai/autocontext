@@ -21,6 +21,7 @@ export async function cmdSolve(dbPath: string): Promise<void> {
     options: {
       description: { type: "string", short: "d" },
       gens: { type: "string", short: "g" },
+      generations: { type: "string" },
       iterations: { type: "string" },
       timeout: { type: "string" },
       "generation-time-budget": { type: "string" },
@@ -46,10 +47,18 @@ export async function cmdSolve(dbPath: string): Promise<void> {
 
   let plan;
   try {
-    plan = planSolveCommand({ ...values, positionals }, parsePositiveInteger);
+    plan = planSolveCommand(
+      { ...values, gens: values.gens ?? values.generations, positionals },
+      parsePositiveInteger,
+    );
   } catch (error) {
-    console.error(errorMessage(error));
-    process.exit(1);
+    const message = errorMessage(error).replace(/^Error:\s*/, "");
+    if (values.json) {
+      process.stderr.write(`${JSON.stringify({ error: message })}\n`);
+    } else {
+      console.error(`Error: ${message}`);
+    }
+    process.exit(2);
   }
 
   const { SQLiteStore } = await import("../../storage/index.js");
@@ -78,7 +87,12 @@ export async function cmdSolve(dbPath: string): Promise<void> {
     }
     console.log(renderSolveCommandSummary(summary, plan.json));
   } catch (error) {
-    console.error(errorMessage(error));
+    const message = errorMessage(error).replace(/^Error:\s*/, "");
+    if (plan.json) {
+      process.stderr.write(`${JSON.stringify({ error: message })}\n`);
+    } else {
+      console.error(`Error: ${message}`);
+    }
     provider?.close?.();
     process.exit(1);
   } finally {

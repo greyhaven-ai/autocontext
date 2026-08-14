@@ -41,7 +41,7 @@ def test_queue_status_action_reports_pending_count(tmp_path, monkeypatch) -> Non
     import json as _json
 
     payload = _json.loads(result.output.strip())
-    assert payload["pending_count"] == 0
+    assert payload == {"pending_count": 0, "pendingCount": 0}
 
 
 def test_queue_status_unknown_subcommand_emits_typer_usage_error(tmp_path, monkeypatch) -> None:
@@ -102,7 +102,7 @@ def test_queue_json_flag_before_status_subcommand_still_emits_json(tmp_path, mon
     import json as _json
 
     payload = _json.loads(result.output.strip())
-    assert payload == {"pending_count": 0}
+    assert payload == {"pending_count": 0, "pendingCount": 0}
 
 
 def test_queue_dash_s_before_add_subcommand_still_routes_to_add(tmp_path, monkeypatch) -> None:

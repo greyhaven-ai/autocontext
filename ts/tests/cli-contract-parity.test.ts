@@ -9,12 +9,9 @@
  * What this pins:
  *
  * 1. **Reverse direction**: every visible command in
- *    `visibleSupportedCommandNames()` is either contracted, a
- *    contracted alias, OR named in
- *    `UNCONTRACTED_TOP_LEVEL_ALLOWLIST`. Adding a new top-level
- *    command without a contract entry (or an allowlist line) fails
- *    the test, so the operator is forced to either advertise it in
- *    the contract or document why it stays uncontracted.
+ *    `visibleSupportedCommandNames()` is contracted or is a
+ *    contracted compatibility alias. Public commands cannot escape
+ *    the contract through an allowlist.
  *
  * 2. **Alias registration**: every contracted alias must still
  *    resolve to a registered TS command name. Pins that the legacy
@@ -29,59 +26,40 @@
  */
 
 import { describe, it, expect } from "vitest";
+import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import { loadContract } from "../src/cli/cli-contract.js";
 import { visibleSupportedCommandNames } from "../src/cli/command-registry.js";
 
 const CONTRACT_PATH = resolve(import.meta.dirname, "..", "..", "docs", "cli-contract.json");
+const CLI_PATH = resolve(import.meta.dirname, "..", "src", "cli", "index.ts");
+const TSX_PATH = resolve(import.meta.dirname, "..", "node_modules", ".bin", "tsx");
+const LIVE_HELP = new Map<string, string>();
+const IMPLEMENTATION_HISTORY = /\bAC-\d+\b|\bPR\s*#?\d+\b|\bslice(?:s|[- ]\d+[a-z]?)?\b|\binternal[- ]layer\b/i;
 
-/**
- * Top-level visible TS commands that are intentionally NOT advertised
- * in docs/cli-contract.json. The TS surface ships a richer set of
- * non-paved-road commands today; this allowlist documents the
- * "uncontracted by design" set so a new top-level command can't slip
- * through silently.
- */
-const UNCONTRACTED_TOP_LEVEL_ALLOWLIST = new Set<string>([
-  "agent",
-  "analyze",
-  "benchmark",
-  "campaign",
-  "candidate",
-  "context-selection",
-  "emit-pr",
-  "eval",
-  "export-training-data",
-  "harness",
-  "import-package",
-  "init",
-  "instrument",
-  "investigate",
-  "login",
-  "logout",
-  "models",
-  "probes",
-  "production-traces",
-  "promotion",
-  "providers",
-  "registry",
-  "repl",
-  "runtime-sessions",
-  "simulate",
-  "trace-findings",
-  "train",
-  "tui",
-  "version",
-  "whoami",
-  "worker",
-]);
+function loadLiveHelp(path: readonly string[]): string {
+  const key = path.join("\0");
+  const cached = LIVE_HELP.get(key);
+  if (cached !== undefined) return cached;
+  const help = execFileSync(
+    TSX_PATH,
+    [CLI_PATH, ...path, "--help"],
+    {
+      encoding: "utf8",
+      env: { ...process.env, NODE_NO_WARNINGS: "1" },
+      timeout: 10_000,
+    },
+  );
+  LIVE_HELP.set(key, help);
+  return help;
+}
 
 // ---------------------------------------------------------------------------
-// Reverse direction: observed -> contract / alias / allowlist
+// Reverse direction: observed -> contract / alias
 // ---------------------------------------------------------------------------
 
 describe("AC-697 cross-runtime parity audit (TypeScript side)", () => {
-  it("every observed top-level command is contracted, aliased, or on the explicit allowlist", () => {
+  it("every observed top-level command is contracted or aliased", () => {
     const contract = loadContract(CONTRACT_PATH);
     const observed = new Set(visibleSupportedCommandNames());
 
@@ -100,7 +78,6 @@ describe("AC-697 cross-runtime parity audit (TypeScript side)", () => {
     const accountedFor = new Set<string>([
       ...contractedTopLevel,
       ...contractedAliases,
-      ...UNCONTRACTED_TOP_LEVEL_ALLOWLIST,
     ]);
 
     const leaked: string[] = [];
@@ -112,9 +89,9 @@ describe("AC-697 cross-runtime parity audit (TypeScript side)", () => {
     leaked.sort();
     expect(
       leaked,
-      `Top-level TS commands shipped without a contract entry or allowlist line: ${JSON.stringify(
+      `Top-level TS commands shipped without a contract entry: ${JSON.stringify(
         leaked,
-      )}. Either add them to docs/cli-contract.json or to UNCONTRACTED_TOP_LEVEL_ALLOWLIST in this test.`,
+      )}. Add them to docs/cli-contract.json or hide them from public help.`,
     ).toEqual([]);
   });
 
@@ -133,35 +110,54 @@ describe("AC-697 cross-runtime parity audit (TypeScript side)", () => {
     }
   });
 
-  it("allowlist is minimal (no entries also present in the contract)", () => {
-    const contract = loadContract(CONTRACT_PATH);
-    const contractedTopLevel = new Set<string>();
-    for (const cmd of contract.commands) {
-      if (cmd.path.length >= 1) {
-        contractedTopLevel.add(cmd.path[0]);
+  it(
+    "every contracted npm flag is discoverable from live command help",
+    () => {
+      const contract = loadContract(CONTRACT_PATH);
+      for (const command of contract.commands) {
+        if (command.runtime_support.typescript.status !== "yes") continue;
+        const shape = command.runtime_shapes.typescript;
+        if (!shape || shape.flags.length === 0) continue;
+        const help = loadLiveHelp(command.path);
+        for (const flag of shape.flags) {
+          for (const longName of [flag.name, ...flag.aliases]) {
+            expect(
+              help.includes(`--${longName}`),
+              `${command.id} help omits --${longName}`,
+            ).toBe(true);
+          }
+        }
       }
-    }
-    const contractedAliases = new Set<string>();
-    for (const cmd of contract.commands) {
-      for (const alias of cmd.aliases) {
-        contractedAliases.add(alias);
-      }
-    }
-    const contracted = new Set<string>([...contractedTopLevel, ...contractedAliases]);
+    },
+    90_000,
+  );
 
-    const redundant: string[] = [];
-    for (const name of UNCONTRACTED_TOP_LEVEL_ALLOWLIST) {
-      if (contracted.has(name)) {
-        redundant.push(name);
+  it(
+    "keeps implementation history out of every live npm help surface",
+    () => {
+      const contract = loadContract(CONTRACT_PATH);
+      for (const command of contract.commands) {
+        if (command.runtime_support.typescript.status !== "yes") continue;
+        const help = loadLiveHelp(command.path);
+        expect(
+          IMPLEMENTATION_HISTORY.test(help),
+          `${command.id} help exposes implementation history`,
+        ).toBe(false);
       }
+    },
+    90_000,
+  );
+
+  it("keeps implementation history out of contract summaries", () => {
+    const contract = loadContract(CONTRACT_PATH);
+    for (const command of contract.commands) {
+      expect(
+        IMPLEMENTATION_HISTORY.test(command.summary),
+        `${command.id} summary exposes implementation history`,
+      ).toBe(false);
     }
-    expect(
-      redundant.sort(),
-      `Allowlist entries that are ALSO in the contract: ${JSON.stringify(
-        redundant,
-      )}. Remove them from the allowlist.`,
-    ).toEqual([]);
   });
+
 });
 
 // ---------------------------------------------------------------------------

@@ -1,16 +1,22 @@
 import { progressReportReference, type RunProgressReport } from "../analytics/progress-report.js";
 import type { RuntimeSessionSummary } from "../session/runtime-session-read-model.js";
 
-export const RUN_STATUS_HELP_TEXT = `autoctx status — show queue status or a run status
+export const RUN_STATUS_HELP_TEXT = `autoctx status — show status for one run
 
 Usage:
-  autoctx status
   autoctx status <run-id> [--json]
   autoctx status --run-id <run-id> [--json]
 
+Options:
+  --run-id <run-id>    Named alternative to the run-id positional
+  --json               Emit one structured JSON value
+
+Queue status:
+  autoctx queue status
+
 Examples:
-  autoctx status
-  autoctx status run-123`;
+  autoctx status run-123
+  autoctx status --run-id run-123 --json`;
 
 export const SHOW_HELP_TEXT = `autoctx show — show the best or latest generation for a run
 
@@ -25,11 +31,12 @@ Examples:
 export const WATCH_HELP_TEXT = `autoctx watch — follow a run until it finishes
 
 Usage:
-  autoctx watch <run-id> [--interval seconds] [--json]
-  autoctx watch --run-id <run-id> [--interval seconds] [--json]
+  autoctx watch <run-id> [--interval seconds] [--ndjson]
+  autoctx watch --run-id <run-id> [--interval seconds] [--ndjson]
 
 Options:
-  --json               Emit compact newline-delimited JSON snapshots
+  --ndjson             Emit newline-delimited JSON snapshots
+  --json               Deprecated alias for --ndjson
 
 Examples:
   autoctx watch run-123
@@ -51,6 +58,8 @@ export interface RunInspectionGeneration {
   mean_score: number;
   best_score: number;
   elo: number;
+  wins: number;
+  losses: number;
   gate_decision: string;
   status: string;
   duration_seconds: number | null;
@@ -63,6 +72,8 @@ export interface RunInspectionGeneration {
 export interface RunIdValues {
   "run-id"?: string;
 }
+
+export class RunInspectionUsageError extends Error {}
 
 export interface ShowValues extends RunIdValues {
   generation?: string;
@@ -77,7 +88,9 @@ export function resolveRunId(
 ): string {
   const runId = values["run-id"]?.trim() || positionals[0]?.trim();
   if (!runId) {
-    throw new Error(`Error: ${commandName} needs a run id. Use 'autoctx ${commandName} <run-id>'.`);
+    throw new RunInspectionUsageError(
+      `Error: ${commandName} needs a run id. Use 'autoctx ${commandName} <run-id>'.`,
+    );
   }
   return runId;
 }
@@ -85,7 +98,7 @@ export function resolveRunId(
 export function parseWatchIntervalSeconds(raw: string | undefined): number {
   const parsed = Number.parseFloat(raw ?? "2");
   if (!Number.isFinite(parsed) || parsed <= 0) {
-    throw new Error("Error: --interval must be a positive number of seconds");
+    throw new RunInspectionUsageError("Error: --interval must be a positive number of seconds");
   }
   return parsed;
 }
@@ -151,14 +164,22 @@ export function renderRunShow(
   ].filter((line): line is string => line !== null).join("\n");
 }
 
+export function validateShowSelection(values: ShowValues): void {
+  if (values.best && values.generation !== undefined) {
+    throw new RunInspectionUsageError("Error: --best cannot be combined with --generation");
+  }
+}
+
 function selectGeneration(
   generations: RunInspectionGeneration[],
   values: ShowValues,
 ): RunInspectionGeneration | null {
+  validateShowSelection(values);
+
   if (values.generation) {
     const requested = Number.parseInt(values.generation, 10);
     if (!Number.isInteger(requested) || requested <= 0) {
-      throw new Error("Error: --generation must be a positive integer");
+      throw new RunInspectionUsageError("Error: --generation must be a positive integer");
     }
     return generations.find((generation) => generation.generation_index === requested) ?? null;
   }

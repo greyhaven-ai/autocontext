@@ -15,7 +15,9 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { resolve } from "node:path";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import {
   loadContract,
   PAVED_ROAD,
@@ -29,8 +31,111 @@ const CONTRACT_PATH = resolve(import.meta.dirname, "..", "..", "docs", "cli-cont
 describe("AC-697 CLI contract — schema sanity", () => {
   it("file exists and parses", () => {
     const contract = loadContract(CONTRACT_PATH);
-    expect(contract.schema_version).toBe(1);
+    expect(contract.schema_version).toBe(2);
     expect(contract.commands.length).toBeGreaterThan(0);
+  });
+
+  it("fully specifies export as the first v2 conformance command", () => {
+    const contract = loadContract(CONTRACT_PATH);
+    const command = contract.commands.find((candidate) => candidate.id === "export");
+    expect(command?.positionals[0]?.name).toBe("run-id");
+    const format = command?.flags.find((flag) => flag.name === "format");
+    expect(format?.default).toBe("json");
+    expect(format?.choices).toEqual(["json", "pi-package"]);
+    expect(format?.value_aliases).toEqual({ strategy: "json" });
+    expect(command?.output).toEqual({
+      modes: ["json", "text"],
+      streaming: "single",
+      success_stream: "stdout",
+      error_stream: "stderr",
+      schemas: {
+        artifact: "cli-schemas/strategy-package-v1.schema.json",
+        receipt: "cli-schemas/export-receipt-v1.schema.json",
+        error: "cli-schemas/cli-error-v1.schema.json",
+      },
+      fixtures: {
+        artifact: "cli-fixtures/strategy-package-v1.json",
+      },
+    });
+    for (const schemaPath of Object.values(command?.output?.schemas ?? {})) {
+      expect(readFileSync(resolve(CONTRACT_PATH, "..", schemaPath), "utf-8")).toBeTruthy();
+    }
+    for (const fixturePath of Object.values(command?.output?.fixtures ?? {})) {
+      expect(readFileSync(resolve(CONTRACT_PATH, "..", fixturePath), "utf-8")).toBeTruthy();
+    }
+    expect(command?.exit_codes).toEqual({ success: 0, usage: 2, execution: 1 });
+    expect(command?.examples.length).toBeGreaterThan(0);
+  });
+
+  it("requires explicit v2 fields and a shape for every supported runtime", () => {
+    const raw = JSON.parse(readFileSync(CONTRACT_PATH, "utf-8")) as {
+      commands: Array<Record<string, unknown>>;
+    };
+    const required = ["positionals", "flags", "output", "exit_codes", "examples", "runtime_shapes"];
+    for (const command of raw.commands) {
+      for (const field of required) {
+        expect(field in command, `${String(command.id)} missing ${field}`).toBe(true);
+      }
+      expect((command.examples as unknown[]).length, `${String(command.id)} examples`).toBeGreaterThan(0);
+      const support = command.runtime_support as Record<string, { status: string }>;
+      const shapes = command.runtime_shapes as Record<string, unknown>;
+      for (const runtime of ["python", "typescript"] as const) {
+        if (support[runtime]?.status === "yes") {
+          expect(shapes[runtime], `${String(command.id)}.${runtime} shape`).toBeDefined();
+        }
+      }
+    }
+  });
+
+  it("declares structured output modes for every structured runtime flag", () => {
+    const contract = loadContract(CONTRACT_PATH);
+    for (const command of contract.commands) {
+      const flagNames = new Set([
+        ...(command.runtime_shapes.python?.flags ?? []).map((flag) => flag.name),
+        ...(command.runtime_shapes.typescript?.flags ?? []).map((flag) => flag.name),
+      ]);
+      if (flagNames.has("json")) {
+        expect(command.output?.modes, command.id).toContain(command.id === "watch" ? "ndjson" : "json");
+      }
+      if (flagNames.has("ndjson")) {
+        expect(command.output?.modes, command.id).toContain("ndjson");
+      }
+    }
+  });
+
+  it("keeps version-1 command entries loadable with compatibility defaults", () => {
+    const raw = JSON.parse(readFileSync(CONTRACT_PATH, "utf-8")) as {
+      schema_version: number;
+      commands: Array<Record<string, unknown>>;
+    };
+    raw.schema_version = 1;
+    const command = raw.commands.find((candidate) => candidate.id === "export");
+    expect(command).toBeDefined();
+    for (const field of ["positionals", "output", "exit_codes", "examples"]) {
+      delete command?.[field];
+    }
+    if (Array.isArray(command?.flags)) {
+      for (const flag of command.flags) {
+        if (flag && typeof flag === "object" && !Array.isArray(flag)) {
+          for (const field of ["short_names", "default", "choices", "value_aliases"]) {
+            delete (flag as Record<string, unknown>)[field];
+          }
+        }
+      }
+    }
+    const directory = mkdtempSync(join(tmpdir(), "autoctx-cli-contract-v1-"));
+    const path = join(directory, "cli-contract.json");
+    try {
+      writeFileSync(path, JSON.stringify(raw), "utf-8");
+      const loaded = loadContract(path);
+      const exportCommand = loaded.commands.find((candidate) => candidate.id === "export");
+      expect(loaded.schema_version).toBe(1);
+      expect(exportCommand?.positionals).toEqual([]);
+      expect(exportCommand?.output?.success_stream).toBe("stdout");
+      expect(exportCommand?.exit_codes).toEqual({ success: 0, usage: 2, execution: 1 });
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it("contract covers every paved-road command id", () => {
@@ -45,6 +150,21 @@ describe("AC-697 CLI contract — schema sanity", () => {
     const contract = loadContract(CONTRACT_PATH);
     const ids = contract.commands.map((c) => c.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("all referenced wire schemas and fixtures exist", () => {
+    const contract = loadContract(CONTRACT_PATH);
+    for (const command of contract.commands) {
+      for (const assetPath of [
+        ...Object.values(command.output?.schemas ?? {}),
+        ...Object.values(command.output?.fixtures ?? {}),
+      ]) {
+        expect(
+          readFileSync(resolve(CONTRACT_PATH, "..", assetPath), "utf-8"),
+          `${command.id}: ${assetPath}`,
+        ).toBeTruthy();
+      }
+    }
   });
 
   it("alias paths are unique across commands", () => {
@@ -113,6 +233,28 @@ describe("AC-697 CLI contract — TypeScript parity", () => {
       }
     }
   });
+
+  it("every canonical flag spelling is accepted by each yes-supported runtime shape", () => {
+    const contract = loadContract(CONTRACT_PATH);
+    for (const command of contract.commands) {
+      for (const runtime of ["python", "typescript"] as const) {
+        if (command.runtime_support[runtime].status !== "yes") continue;
+        const shape = command.runtime_shapes[runtime];
+        expect(shape, `${command.id}.${runtime} missing runtime shape`).toBeDefined();
+        const accepted = new Set(
+          shape?.flags.flatMap((flag) => [flag.name, ...flag.aliases, ...flag.short_names]),
+        );
+        for (const flag of command.flags) {
+          for (const spelling of [flag.name, ...flag.aliases, ...flag.short_names]) {
+            expect(
+              accepted.has(spelling),
+              `${command.id}.${runtime} does not accept canonical flag ${spelling}`,
+            ).toBe(true);
+          }
+        }
+      }
+    }
+  });
 });
 
 describe("AC-697 CLI contract — friction-point invariants", () => {
@@ -122,6 +264,13 @@ describe("AC-697 CLI contract — friction-point invariants", () => {
     expect(status).toBeDefined();
     expect(status?.domain_concept).toBe("Run");
     expect(status?.summary.toLowerCase()).toContain("run");
+    expect(status?.positionals).toEqual([
+      expect.objectContaining({ name: "run-id", type: "string", required: false }),
+    ]);
+    expect(status?.flags.map((flag) => flag.name)).toEqual(["run-id", "json"]);
+    expect(status?.output?.error_stream).toBe("stderr");
+    expect(status?.exit_codes).toEqual({ success: 0, usage: 2, execution: 1 });
+    expect(status?.examples).not.toContain("autoctx status");
   });
 
   it("solve is not a domain noun", () => {
@@ -132,15 +281,14 @@ describe("AC-697 CLI contract — friction-point invariants", () => {
     expect(solve?.domain_concept).not.toBe("Scenario");
   });
 
-  it("iterations is the canonical iteration-control flag (no advertised aliases in slice 1)", () => {
-    // PR #981 review (P2): aliases were dropped until AC-697
-    // follow-up slices ship the alias plumbing in both runtimes.
-    // The contract documents only honored options today.
+  it("iterations is canonical and records the shipped compatibility aliases", () => {
     const contract = loadContract(CONTRACT_PATH);
     const solve = contract.commands.find((c: CommandSpec) => c.id === "solve");
     const iterFlag = solve?.flags.find((f) => f.name === "iterations");
     expect(iterFlag).toBeDefined();
-    expect(iterFlag?.aliases).toEqual([]);
+    expect(iterFlag?.aliases).toEqual(["gens", "generations"]);
+    expect(iterFlag?.short_names).toEqual(["g"]);
+    expect(iterFlag?.default).toBe(5);
   });
 
   it("queue status does not occupy top-level status semantic", () => {

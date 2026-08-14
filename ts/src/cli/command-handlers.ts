@@ -44,7 +44,12 @@ import { cmdQueue, cmdWorker } from "./commands/queue.js";
 import { cmdNewScenario, cmdScenario } from "./commands/scenario.js";
 import { cmdTrain } from "./commands/train.js";
 
-export { getDbPath, formatFatalCliError, buildProjectConfigSummary } from "./commands/shared.js";
+export {
+  buildProjectConfigSummary,
+  getDbPath,
+  parseVersionOptions,
+  reportFatalCliError,
+} from "./commands/shared.js";
 export { cmdControlPlane };
 
 export const NO_DB_COMMAND_HANDLERS: Record<NoDbCommandName, () => Promise<void>> = {

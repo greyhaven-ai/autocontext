@@ -7,6 +7,11 @@ import { resolve, dirname } from "node:path";
 import { asDbPath } from "../../domain/ids.js";
 import { errorMessage, getMigrationsDir, resolveScenarioOption } from "./shared.js";
 
+function renderExportError(error: unknown, json: boolean): string {
+  const message = errorMessage(error).replace(/^Error:\s*/, "");
+  return json ? JSON.stringify({ error: message }) : `Error: ${message}`;
+}
+
 export async function cmdExport(dbPath: string): Promise<void> {
   const { values, positionals } = parseArgs({
     args: process.argv.slice(3),
@@ -15,12 +20,18 @@ export async function cmdExport(dbPath: string): Promise<void> {
       scenario: { type: "string", short: "s" },
       "run-id": { type: "string" },
       output: { type: "string", short: "o" },
+      format: { type: "string" },
       json: { type: "boolean" },
       help: { type: "boolean", short: "h" },
     },
   });
 
-  const { executeExportCommandWorkflow, EXPORT_HELP_TEXT, planExportCommand } =
+  const {
+    executeExportCommandWorkflow,
+    EXPORT_HELP_TEXT,
+    ExportUsageError,
+    planExportCommand,
+  } =
     await import("../export-command-workflow.js");
 
   if (values.help) {
@@ -45,9 +56,9 @@ export async function cmdExport(dbPath: string): Promise<void> {
       async (runId) => store.getRun(runId)?.scenario,
     );
   } catch (error) {
-    console.error(errorMessage(error));
+    console.error(renderExportError(error, !!values.json));
     store.close();
-    process.exit(1);
+    process.exit(error instanceof ExportUsageError ? 2 : 1);
   }
 
   const artifacts = new ArtifactStore({
@@ -56,12 +67,15 @@ export async function cmdExport(dbPath: string): Promise<void> {
   });
   try {
     const { writeFileSync, mkdirSync } = await import("node:fs");
+    const pkg = await import("../../../package.json", { with: { type: "json" } });
     console.log(
       executeExportCommandWorkflow({
         scenarioName: plan.scenarioName,
         runId: plan.runId,
         output: plan.output,
+        format: plan.format,
         json: plan.json,
+        packageVersion: pkg.default.version,
         exportStrategyPackage,
         artifacts,
         store,
@@ -71,6 +85,9 @@ export async function cmdExport(dbPath: string): Promise<void> {
         },
       }),
     );
+  } catch (error) {
+    console.error(renderExportError(error, !!values.json));
+    process.exit(1);
   } finally {
     store.close();
   }

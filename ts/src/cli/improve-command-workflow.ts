@@ -11,7 +11,13 @@ Options:
   -t, --threshold N       Quality threshold to stop early (default: 0.9)
   --min-rounds N          Minimum rounds before early stop (default: 1)
   --rlm                   Use REPL-loop mode (agent writes + runs code)
+  --rlm-model <name>      Model override for the iterative runtime
   --rlm-turns N           Max REPL turns per round
+  --rlm-max-tokens N      Maximum tokens per iterative-runtime turn
+  --rlm-temperature N     Sampling temperature for iterative-runtime turns
+  --rlm-max-stdout N      Maximum captured stdout characters
+  --rlm-timeout-ms N      Code execution timeout in milliseconds
+  --rlm-memory-mb N       Code execution memory limit in MiB
   -v, --verbose           Show detailed round-by-round output
 
 Provide either --scenario or both --prompt and --rubric.

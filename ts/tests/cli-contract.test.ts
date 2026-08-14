@@ -27,8 +27,8 @@ function runCli(args: string[]): { stdout: string; exitCode: number } {
 // ---------------------------------------------------------------------------
 
 describe("serve / mcp-serve contract alignment", () => {
-  it("help lists mcp-serve (matching Python)", () => {
-    const { stdout } = runCli(["--help"]);
+  it("expanded help lists the deprecated mcp-serve alias", () => {
+    const { stdout } = runCli(["--help", "--all"]);
     expect(stdout).toContain("mcp-serve");
   });
 
@@ -56,10 +56,11 @@ describe("serve / mcp-serve contract alignment", () => {
 // ---------------------------------------------------------------------------
 
 describe("Intentional command exclusions", () => {
-  it("help documents unsupported Python commands", () => {
+  it("npm help does not advertise unsupported Python-only commands", () => {
     const { stdout } = runCli(["--help"]);
-    // Should mention that some commands are Python-only
-    expect(stdout.toLowerCase()).toMatch(/python.only|not.supported|unsupported/i);
+    expect(stdout).not.toContain("ecosystem");
+    expect(stdout).not.toContain("ab-test");
+    expect(stdout).not.toContain("trigger-distillation");
   });
 });
 
@@ -69,7 +70,7 @@ describe("Intentional command exclusions", () => {
 
 describe("Full CLI command contract", () => {
   it("help lists all expected commands", () => {
-    const { stdout } = runCli(["--help"]);
+    const { stdout } = runCli(["--help", "--all"]);
     const expected = [
       "init",
       "run",

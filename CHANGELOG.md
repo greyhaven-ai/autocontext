@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+
+- CLI docs and live help now use outcome-oriented paved-road summaries, teach `autoctx scenario create` and `autoctx serve mcp` as the canonical nested paths, and keep implementation issue references out of user-facing command text. Shared checks validate the documented paths against the machine-readable CLI contract.
+- Default help now leads with the six-command paved road (`solve`, `run`, `status`, `watch`, `show`, `export`) and groups setup, management, and service commands beneath it. Advanced commands remain available through the expanded catalog, while `new-scenario` and `mcp-serve` are hidden compatibility aliases for `scenario create` and `serve mcp`. Bare invocation is concise and consistent across runtimes. `run` no longer silently chooses `grid_ctf`; Python requires an explicit scenario while npm can also use a project default. `--iterations` is primary, `--gens` remains compatible, and `--version --json` identifies the package version and runtime (AC-940, AC-944).
+- Run-inspection wire output is now versioned across Python and TypeScript. `status --json` and `show --json` emit one schema-backed value; `watch --ndjson` streams the same run-status envelope one value per line, with `watch --json` retained as a deprecated alias. Queue status now includes the shared `pending_count` field while preserving npm's `pendingCount`. Success data stays on stdout, structured errors stay on stderr, usage errors exit 2, and execution errors exit 1. The contract ships schemas and shared fixtures for status, show, queue status, and export (AC-943).
+- Top-level `autoctx status` help now consistently describes run status in both runtimes, requires a positional or named run id in every documented invocation, and points queue users to `autoctx queue status`. Python now accepts `--run-id` for parity. Missing run IDs are usage errors (exit 2), nonexistent runs are execution errors (exit 1), and JSON errors are written only to stderr (AC-941).
+- Python and TypeScript now share the same `autoctx export` format and output contract: `json` is the default, `pi-package` is supported by both runtimes, and `strategy` remains a deprecated alias for `json`. JSON artifacts go to stdout when `--output` is omitted; Pi packages use a scenario-derived directory. The version-2 CLI contract records export positionals, flags, defaults, schemas, streams, exit codes, and examples as the first full conformance slice (AC-939, AC-942).
+
 ## [0.15.1] - 2026-08-13
 
 ### Added

@@ -14,7 +14,7 @@
  * contract from there at runtime.
  */
 
-import { copyFileSync, existsSync, mkdirSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -33,3 +33,24 @@ if (!existsSync(source)) {
 mkdirSync(distDir, { recursive: true });
 copyFileSync(source, destination);
 console.log(`copy-cli-contract: ${source} -> ${destination}`);
+
+const contract = JSON.parse(readFileSync(source, "utf-8"));
+const contractAssetPaths = new Set(
+  contract.commands.flatMap((command) => [
+    ...Object.values(command.output?.schemas ?? {}),
+    ...Object.values(command.output?.fixtures ?? {}),
+  ]),
+);
+for (const assetPath of contractAssetPaths) {
+  if (typeof assetPath !== "string" || assetPath.includes("..")) {
+    throw new Error(`copy-cli-contract: unsafe asset path: ${String(assetPath)}`);
+  }
+  const assetSource = resolve(repoRoot, "docs", assetPath);
+  const assetDestination = resolve(distDir, assetPath);
+  if (!existsSync(assetSource)) {
+    throw new Error(`copy-cli-contract: asset not found: ${assetSource}`);
+  }
+  mkdirSync(dirname(assetDestination), { recursive: true });
+  copyFileSync(assetSource, assetDestination);
+  console.log(`copy-cli-contract: ${assetSource} -> ${assetDestination}`);
+}
