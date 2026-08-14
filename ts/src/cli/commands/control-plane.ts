@@ -23,9 +23,16 @@ export async function cmdControlPlane(topCommand: ControlPlaneCommandName): Prom
 // ---------------------------------------------------------------------------
 
 export async function cmdProductionTraces(): Promise<void> {
-  const { runProductionTracesCommand } = await import("../../production-traces/cli/index.js");
+  const [{ runProductionTracesCommand }, { createRegistryRubricLookup }] = await Promise.all([
+    import("../../production-traces/cli/index.js"),
+    import("../../control-plane/registry/rubric-lookup.js"),
+  ]);
   const subArgs = process.argv.slice(3);
-  const result = await runProductionTracesCommand(subArgs);
+  const cwd = process.cwd();
+  const result = await runProductionTracesCommand(subArgs, {
+    cwd,
+    rubricLookup: createRegistryRubricLookup(cwd),
+  });
   if (result.stdout) process.stdout.write(result.stdout + "\n");
   if (result.stderr) process.stderr.write(result.stderr + "\n");
   process.exit(result.exitCode);

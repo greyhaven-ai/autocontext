@@ -13,7 +13,7 @@
 
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { canonicalJsonStringify } from "../../control-plane/contract/canonical-json.js";
+import { canonicalJsonStringify } from "../contract/canonical-json.js";
 import { gcLogPath } from "../ingest/paths.js";
 import type { GcLogEntry } from "./enforce.js";
 

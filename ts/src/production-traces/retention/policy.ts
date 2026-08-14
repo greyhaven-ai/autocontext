@@ -16,7 +16,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { canonicalJsonStringify } from "../../control-plane/contract/canonical-json.js";
+import { canonicalJsonStringify } from "../contract/canonical-json.js";
 import { validateRetentionPolicy } from "../contract/validators.js";
 import { productionTracesRoot } from "../ingest/paths.js";
 

@@ -29,7 +29,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ulid } from "ulid";
 import { applyRedactions } from "../redaction/apply.js";
-import { canonicalJsonStringify } from "../../control-plane/contract/canonical-json.js";
+import { canonicalJsonStringify } from "../contract/canonical-json.js";
 import { deriveDatasetId } from "../contract/content-address.js";
 import type { ProductionTrace, ToolCall } from "../contract/types.js";
 import type {

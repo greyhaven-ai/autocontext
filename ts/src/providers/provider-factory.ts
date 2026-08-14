@@ -23,7 +23,7 @@ import { PiPersistentRPCRuntime, PiRPCRuntime, PiRPCConfig } from "../runtimes/p
 import {
   RuntimeBridgeProvider,
   type RuntimeBridgeProviderOpts,
-} from "../agents/provider-bridge.js";
+} from "./runtime-bridge.js";
 import type { AgentRuntime } from "../runtimes/base.js";
 import { SUPPORTED_PROVIDER_TYPES } from "./supported-provider-types.js";
 import type { RuntimeCommandGrant } from "../runtimes/workspace-env.js";

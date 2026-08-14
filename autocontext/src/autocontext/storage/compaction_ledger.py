@@ -7,7 +7,7 @@ import logging
 from collections.abc import Callable
 from pathlib import Path
 
-from autocontext.knowledge.compaction import CompactionEntry
+from autocontext.domain.context_compaction import CompactionEntry
 
 logger = logging.getLogger(__name__)
 
@@ -39,10 +39,7 @@ class CompactionLedgerStore:
             return
         path = self.ledger_path(run_id)
         path.parent.mkdir(parents=True, exist_ok=True)
-        ledger_payload = "".join(
-            json.dumps(entry.to_dict(), sort_keys=True) + "\n"
-            for entry in entries
-        ).encode()
+        ledger_payload = "".join(json.dumps(entry.to_dict(), sort_keys=True) + "\n" for entry in entries).encode()
         with path.open("ab") as handle:
             handle.write(ledger_payload)
         if self._mirror_append_bytes is not None:

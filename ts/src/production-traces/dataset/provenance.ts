@@ -15,7 +15,7 @@
  * `pipeline-idempotence.test.ts`).
  */
 import { createHash } from "node:crypto";
-import { canonicalJsonStringify } from "../../control-plane/contract/canonical-json.js";
+import { canonicalJsonStringify } from "../contract/canonical-json.js";
 import {
   parseContentHash,
   type ContentHash,

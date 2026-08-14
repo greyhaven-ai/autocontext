@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { validateRedactionPolicy } from "../contract/validators.js";
-import { canonicalJsonStringify } from "../../control-plane/contract/canonical-json.js";
+import { canonicalJsonStringify } from "../contract/canonical-json.js";
 import { productionTracesRoot } from "../ingest/paths.js";
 import type { LoadedRedactionPolicy } from "./types.js";
 

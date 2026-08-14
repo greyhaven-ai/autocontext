@@ -1,14 +1,14 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { canonicalJsonStringify } from "../../control-plane/contract/canonical-json.js";
+import { canonicalJsonStringify } from "../contract/canonical-json.js";
 
 /**
  * Companion-file writers for ingestion batches. Both `receipt.json` and
  * `error.json` use canonical JSON (RFC 8785 JCS) so identical input produces
  * byte-identical output — the foundation of P3 idempotence.
  *
- * We reuse `control-plane/contract/canonical-json.ts` here because canonical
- * JSON is a format primitive (not a registry concern); it's referenced
+ * We reuse the production-traces contract's neutral canonical serializer
+ * because JSON is a format primitive (not a registry concern); it's referenced
  * explicitly in Foundation A spec §6 as the serialization discipline for
  * receipts and dataset manifests.
  */

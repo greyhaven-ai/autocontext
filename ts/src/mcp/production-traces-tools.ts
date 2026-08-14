@@ -23,6 +23,7 @@
 // into the runner) or inspect stderr for advisory warnings.
 
 import { z } from "zod";
+import { createRegistryRubricLookup } from "../control-plane/registry/rubric-lookup.js";
 import { runProductionTracesCommand } from "../production-traces/cli/index.js";
 
 interface JsonToolResponse {
@@ -58,7 +59,11 @@ async function runTool(
   opts: { readonly cwd?: string } = {},
 ): Promise<JsonToolResponse> {
   const full = [...argv, ...extraArgs];
-  const res = await runProductionTracesCommand(full, opts.cwd ? { cwd: opts.cwd } : {});
+  const cwd = opts.cwd ?? process.cwd();
+  const res = await runProductionTracesCommand(full, {
+    cwd,
+    rubricLookup: createRegistryRubricLookup(cwd),
+  });
   return jsonText({
     stdout: res.stdout,
     stderr: res.stderr,

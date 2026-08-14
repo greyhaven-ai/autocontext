@@ -12,6 +12,7 @@
 // small for future refactors.
 
 import { resolve as pathResolve } from "node:path";
+import type { RubricLookup } from "../dataset/index.js";
 import { EXIT } from "./_shared/exit-codes.js";
 import type { CliContext, CliResult } from "./_shared/types.js";
 
@@ -75,6 +76,8 @@ export interface RunProductionTracesOptions {
   readonly cwd?: string;
   /** Optional now() override for deterministic tests. */
   readonly now?: () => string;
+  /** Optional control-plane adapter supplied by the composition root. */
+  readonly rubricLookup?: RubricLookup;
 }
 
 /**
@@ -99,6 +102,7 @@ export async function runProductionTracesCommand(
     cwd,
     resolve: (p) => pathResolve(cwd, p),
     now: nowFn,
+    ...(opts.rubricLookup !== undefined ? { rubricLookup: opts.rubricLookup } : {}),
   };
 
   const sub = argv[0];

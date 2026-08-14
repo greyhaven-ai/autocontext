@@ -40,7 +40,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Protocol
 
-from autocontext.agents import role_routing_contract_generated as _contract
+from autocontext.config import role_routing_contract_generated as _contract
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from collections.abc import Set as AbstractSet
