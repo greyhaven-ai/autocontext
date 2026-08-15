@@ -290,7 +290,7 @@ wheels = [
 
 [[package]]
 name = "autocontext"
-version = "0.15.1"
+version = "0.16.1"
 source = { editable = "." }
 dependencies = [
     { name = "anthropic" },

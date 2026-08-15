@@ -8,7 +8,7 @@ from autocontext.extensions import ExtensionAPI, HookBus, HookEvents, HookResult
 
 __all__ = ["AutoContext", "ExtensionAPI", "HookBus", "HookEvents", "HookResult", "__version__"]
 
-__version__ = "0.15.1"
+__version__ = "0.16.1"
 
 
 def __getattr__(name: str) -> Any:

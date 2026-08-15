@@ -4,6 +4,7 @@ import importlib.util
 import json
 import re
 import sys
+import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -41,6 +42,18 @@ def test_release_manifest_renders_whats_new_asset() -> None:
 
     assert sync.render_whats_new_asset(manifest) == "**One** thing.\n**Two** thing.\n"
     assert sync.render_whats_new_heading(manifest) == "What's New in 7.8.9"
+
+
+def test_python_distribution_declares_and_ships_repository_license() -> None:
+    project_root = REPO_ROOT / "autocontext"
+    package_license = project_root / "LICENSE"
+
+    assert package_license.read_bytes() == (REPO_ROOT / "LICENSE").read_bytes()
+
+    with (project_root / "pyproject.toml").open("rb") as file:
+        project = tomllib.load(file)["project"]
+    assert project["license"] == "Apache-2.0"
+    assert project["license-files"] == ["LICENSE"]
 
 
 def test_core_package_versions_can_advance_independently() -> None:
@@ -108,6 +121,11 @@ def test_release_manifest_checks_package_version_files() -> None:
     assert (
         "autocontext/src/autocontext/__init__.py version "
         f"{shipped.group(1)} != manifest python_version 9.9.9"
+    ) in issues
+    lock_version = sync._read_python_lock_version(REPO_ROOT / "autocontext" / "uv.lock")
+    assert (
+        "autocontext/uv.lock editable package version "
+        f"{lock_version} != manifest python_version 9.9.9"
     ) in issues
     npm_package = json.loads((REPO_ROOT / "ts" / "package.json").read_text(encoding="utf-8"))
     assert (
