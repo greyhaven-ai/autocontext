@@ -6,11 +6,37 @@ All notable changes to this project will be documented in this file.
 
 ## [0.16.1] - 2026-08-14
 
-This is a TypeScript-only security and reliability hotfix for `0.16.0`. The
-Python package remains at `0.15.1` and the Pi extension remains at `0.10.0`.
+This release aligns the PyPI `autocontext` and npm `autoctx` packages at
+`0.16.1`. For npm, it is a security and reliability hotfix for `0.16.0`. For
+Python, it publishes the CLI-contract and dependency-boundary changes merged
+since `py-v0.15.1`. Python parity for the pi-tui client and image attachments
+remains deferred, and the Pi extension remains at `0.10.0`.
+
+### Added
+
+- Python CLI contract v2 now ships its schemas and shared fixtures in wheels
+  and source distributions. `autoctx commands --all` exposes the complete command
+  catalog, and `autoctx --version --json` reports the package version and
+  runtime for automation.
+
+### Changed
+
+- Python's paved-road CLI now requires an explicit scenario for `run`, uses
+  `--iterations` as the primary spelling, keeps `--gens` and legacy command
+  aliases for compatibility, and standardizes usage and execution exit codes.
+- Python `status`, `show`, and `watch --ndjson` now emit versioned,
+  schema-backed run envelopes with consistent stdout/stderr behavior. Status
+  and show accept `--run-id`, and show defaults to the latest generation.
+- Python export now defaults to JSON on stdout, supports Pi packages, and keeps
+  `strategy` as a compatibility alias for JSON.
+- Python domain, analytics, configuration, and storage implementations now
+  follow ratcheted dependency directions; legacy module paths remain available
+  as compatibility re-exports.
 
 ### Fixed
 
+- Python `watch` no longer exits before the final completed generation becomes
+  visible, and `show` rejects conflicting selectors instead of guessing.
 - The pi-tui client now treats transcript identity, ordering, plans, receipts,
   and replay cursors as run-scoped state. Sequential runs no longer inherit a
   prior run's cursor or plan, transcript and deduplication state are bounded,
@@ -842,9 +868,10 @@ A new cross-runtime parity audit (`test_cli_contract_parity.py` + `cli-contract-
 - FastAPI dashboard with WebSocket events.
 - CLI via Typer (Python) and `parseArgs` (TypeScript).
 
-[Unreleased]: https://github.com/greyhaven-ai/autocontext/compare/ts-v0.16.1...HEAD
-[0.16.1]: https://github.com/greyhaven-ai/autocontext/compare/ts-v0.16.0...ts-v0.16.1
+[Unreleased]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.16.1...HEAD
+[0.16.1]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.15.1...py-v0.16.1
 [0.16.0]: https://github.com/greyhaven-ai/autocontext/compare/ts-v0.15.1...ts-v0.16.0
+[0.15.1]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.15.0...py-v0.15.1
 [0.14.0]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.13.0...py-v0.14.0
 [0.13.0]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.12.0...py-v0.13.0
 [0.12.0]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.11.0...py-v0.12.0

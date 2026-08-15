@@ -1,14 +1,15 @@
 {
-  "python_version": "0.15.1",
+  "python_version": "0.16.1",
   "npm_version": "0.16.1",
-  "whats_new_version": "0.15.1",
+  "whats_new_version": "0.16.1",
   "pi_version": "0.10.0",
   "pi_autoctx_dependency": "^0.15.0",
   "whats_new": [
-    "**Local models as a first-class peer tier:** endpoints now declare hosting (`local`/`remote`) and capability (`fast`/`mid_tier`/`frontier`) separately, so a self-hosted frontier-class model is no longer permanently misclassified as mid-tier. Per-provider model defaults stop leaking Claude ids into local endpoints, providers that serve real tiers get a model per tier, and `autoctx run` preflights every configured endpoint before spending generation tokens.",
-    "**Offline mode:** `AUTOCONTEXT_OFFLINE=1` enforces that the Python engine never initiates an outbound connection, verified by a test that runs a full generation with a socket-level guard and asserts zero connection attempts. Operator-initiated access such as SSH stays in scope, so an airgapped host does not have to be unreachable. The TypeScript engine refuses to start rather than run unenforced.",
-    "**Schema-enforced role output:** analyst, coach and architect responses are constrained to a JSON Schema on OpenAI-compatible and Anthropic backends instead of being scraped out of Markdown headings. Measured on llama3.1:8b, analyst format drift went from 100% to 0%. Set `AUTOCONTEXT_CONSTRAINED_OUTPUT=false` to keep the previous behavior.",
-    "**Judge scoring correctness:** a reasoning block emitted before the answer could win the judge's score parse, recording 0.05 for a run the judge scored 0.88. Both engines now share one model-JSON extractor that prefers the answer over the scratchpad.",
-    "**Refreshed model ids:** shipped defaults move to Claude Opus 5 / Sonnet 5 and the GPT-5.6 family. Cost attribution moves with them; the previous table still priced Opus 4.6 at $15/$75 per M, overstating spend on a default run by roughly 3x."
+    "**A clearer paved-road CLI:** `run` now requires an explicit scenario, `--iterations` is the primary spelling, concise help leads with the core workflow, and `autoctx commands --all` exposes the full catalog. Existing `--gens` and legacy command aliases remain available for compatibility.",
+    "**Stable machine-readable inspection:** `status`, `show`, and `watch --ndjson` emit versioned, schema-backed envelopes with consistent stdout, stderr, and exit-code behavior. Status and show accept `--run-id`, while `--version --json` identifies the Python runtime and package version.",
+    "**More reliable run inspection:** `watch` no longer exits before a completed generation becomes visible, and `show` defaults to the latest generation while rejecting conflicting selectors instead of guessing.",
+    "**Portable exports by default:** `export` now writes JSON to stdout when no output path is supplied, supports Pi packages, and retains `strategy` as a compatibility alias for the default JSON format.",
+    "**Contracts ship with the package:** CLI contract v2 schemas and shared fixtures are included in wheels and source distributions so downstream tools can validate the same status, show, queue, and export shapes as the CLI.",
+    "**Ratcheted package boundaries:** domain, analytics, configuration, and storage implementations now follow enforced dependency directions while legacy module paths remain available as compatibility shims."
   ]
 }

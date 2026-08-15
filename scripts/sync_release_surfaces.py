@@ -161,6 +161,20 @@ def _read_python_init_version(path: Path) -> str:
     return match.group(1)
 
 
+def _read_python_lock_version(path: Path) -> str:
+    lock = _read_toml(path)
+    packages = cast(list[dict[str, Any]], lock["package"])
+    matches = [
+        package
+        for package in packages
+        if package.get("name") == "autocontext"
+        and package.get("source") == {"editable": "."}
+    ]
+    if len(matches) != 1:
+        raise ValueError(f"{path} must contain exactly one editable autocontext package")
+    return str(matches[0]["version"])
+
+
 def planned_release_surface_updates(manifest: ReleaseManifest) -> dict[Path, str]:
     return {
         REPO_ROOT / "README.md": sync_root_readme(
@@ -195,6 +209,9 @@ def check_release_surfaces(manifest: ReleaseManifest) -> list[str]:
     python_init_version = _read_python_init_version(
         REPO_ROOT / "autocontext" / "src" / "autocontext" / "__init__.py"
     )
+    python_lock_version = _read_python_lock_version(
+        REPO_ROOT / "autocontext" / "uv.lock"
+    )
     package_version = str(_read_json(REPO_ROOT / "ts" / "package.json")["version"])
     package_lock = _read_json(REPO_ROOT / "ts" / "package-lock.json")
     package_lock_version = str(package_lock["version"])
@@ -213,6 +230,11 @@ def check_release_surfaces(manifest: ReleaseManifest) -> list[str]:
         issues.append(
             "autocontext/src/autocontext/__init__.py version "
             f"{python_init_version} != manifest python_version {manifest.python_version}"
+        )
+    if python_lock_version != manifest.python_version:
+        issues.append(
+            "autocontext/uv.lock editable package version "
+            f"{python_lock_version} != manifest python_version {manifest.python_version}"
         )
     if package_version != manifest.npm_version:
         issues.append(
