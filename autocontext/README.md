@@ -110,7 +110,7 @@ prompt-derived data and should be redacted before persistence or export.
 | `uv run autoctx list` / `status <run_id>` / `show <run_id>`                            | Inspect runs                                                                                           |
 | `uv run autoctx replay <run_id> --generation 1`                                        | Replay a generation before accepting knowledge                                                         |
 | `uv run autoctx queue add --task-prompt "..." --rubric "..."`                          | Queue evaluation/improvement work                                                                      |
-| `uv run autoctx scenario create --description "..."`                                   | Create a reusable scenario from a plain-language description                                            |
+| `uv run autoctx scenario create --family workflow --name support --description "..."`   | Create a reusable scenario through a family-specific pipeline                                            |
 | `uv run autoctx serve --host 127.0.0.1 --port 8000`                                    | Start the local HTTP API                                                                               |
 | `uv run autoctx worker --poll-interval 5 --concurrency 2`                              | Process queued tasks beside the API server                                                             |
 | `uv run autoctx serve mcp`                                                             | Expose the MCP tool surface                                                                            |

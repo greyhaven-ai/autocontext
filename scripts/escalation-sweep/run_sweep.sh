@@ -2,7 +2,7 @@
 # Run `autoctx solve` against each entry in a sweep manifest and capture results.
 #
 # Usage:
-#   scripts/escalation-sweep/run_sweep.sh <manifest.json> <output_dir> [--gens N] [--timeout SEC]
+#   scripts/escalation-sweep/run_sweep.sh <manifest.json> <output_dir> [--iterations N] [--timeout SEC]
 #
 # Writes one <identifier>.out.json per entry (structured solve output or error
 # payload) and one <identifier>.meta.json with {identifier, exit_code,
@@ -25,7 +25,7 @@ set -euo pipefail
 export AUTOCONTEXT_AGENT_PROVIDER
 
 if [[ $# -lt 2 ]]; then
-  echo "usage: $0 <manifest.json> <output_dir> [--gens N] [--timeout SEC]" >&2
+  echo "usage: $0 <manifest.json> <output_dir> [--iterations N] [--timeout SEC]" >&2
   exit 2
 fi
 
@@ -33,12 +33,13 @@ MANIFEST=$1
 OUTPUT_DIR=$2
 shift 2
 
-GENS=2
+ITERATIONS=2
 TIMEOUT=600
 
 while [[ $# -gt 0 ]]; do
   case $1 in
-    --gens) GENS=$2; shift 2 ;;
+    --iterations) ITERATIONS=$2; shift 2 ;;
+    --gens) ITERATIONS=$2; shift 2 ;;
     --timeout) TIMEOUT=$2; shift 2 ;;
     *) echo "unknown flag: $1" >&2; exit 2 ;;
   esac
@@ -56,7 +57,7 @@ mkdir -p "$WORKSPACES_DIR"
 
 COUNT=$(jq 'length' "$MANIFEST")
 echo "sweeping $COUNT scenarios from $MANIFEST → $OUTPUT_DIR" >&2
-echo "  provider=$AUTOCONTEXT_AGENT_PROVIDER gens=$GENS timeout=${TIMEOUT}s" >&2
+echo "  provider=$AUTOCONTEXT_AGENT_PROVIDER iterations=$ITERATIONS timeout=${TIMEOUT}s" >&2
 echo "  isolated_workspaces=$WORKSPACES_DIR" >&2
 
 INDEX=()
@@ -88,7 +89,7 @@ for i in $(seq 0 $((COUNT - 1))); do
   AUTOCONTEXT_AUDIT_LOG_PATH="$WORKSPACE_DIR/runs/audit.ndjson" \
   autoctx solve \
     --description "$(cat "$DESC_FILE")" \
-    --gens "$GENS" \
+    --iterations "$ITERATIONS" \
     --timeout "$TIMEOUT" \
     --json \
     > "$OUT_JSON" 2>&1

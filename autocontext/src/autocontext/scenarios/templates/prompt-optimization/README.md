@@ -16,7 +16,7 @@ This template sets up an agent task where the goal is to produce an optimized sy
 
 ```bash
 # Scaffold a new scenario from this template
-autoctx new-scenario --template prompt-optimization --name my-prompt-task
+autoctx scenario create --template prompt-optimization --name my-prompt-task
 
 # The scaffolded task is written under knowledge/_custom_scenarios/my-prompt-task
 # and becomes available to Autocontext's agent-task tooling after load/restart.

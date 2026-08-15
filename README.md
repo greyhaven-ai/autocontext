@@ -87,7 +87,7 @@ Everything is filesystem-first: inspect it, diff it, replay it, export it, or fe
 | `show`        | `autoctx show <run-id> --best --json`                   | Inspect a selected generation                           |
 | `simulate`    | `autoctx simulate -d "..."`                             | Model/replay/compare system behavior                    |
 | `investigate` | `autoctx investigate -d "..."`                          | Evidence-driven diagnosis                               |
-| `scenario`    | `autoctx scenario create --description "..."`           | Create a reusable scenario from a description           |
+| `scenario`    | `autoctx scenario create --help`                          | Create from a description, template, or harness spec    |
 | `mission`     | `autoctx mission create --name "..." --goal "..."`      | Verifier-driven multi-step goals                        |
 | `train`       | `uv run autoctx train --scenario <name> --data <jsonl>` | Distill stable behavior into a cheaper runtime (Python) |
 | `serve mcp`   | `autoctx serve mcp`                                     | Give an agent the autocontext tool surface              |
@@ -111,6 +111,29 @@ Python owns the full control-plane package; TypeScript owns several operator-fac
 - **Contracts ship with the package:** CLI contract v2 schemas and shared fixtures are included in wheels and source distributions so downstream tools can validate the same status, show, queue, and export shapes as the CLI.
 - **Ratcheted package boundaries:** domain, analytics, configuration, and storage implementations now follow enforced dependency directions while legacy module paths remain available as compatibility shims.
 <!-- autocontext-whats-new:end -->
+
+### npm runtime highlights included in 0.16.1
+
+The aligned `autoctx@0.16.1` package also carries the TypeScript-first runtime
+work introduced in 0.16.0 and hardened in 0.16.1:
+
+- **Host-owned live composition:** typed runtime capabilities, scoped cleanup
+  and effect policies, reactive component graphs, and durable transactional
+  activation/rollback for trusted hosts.
+- **A production-oriented operator TUI:** the pi-tui client supports local and
+  remote attachment, durable replay, run control and inspection, and bounded,
+  redacted terminal state on Node.js 22.19+.
+- **Image-aware interactive sessions:** compatible TypeScript providers can
+  advertise `image_attachments_v1`; attachment validation is bounded and
+  fail-closed before provider inference.
+- **Protocol and terminal hardening:** exact capability negotiation, protected
+  priority controls, bounded WebSocket resources, credential redaction, and
+  terminal-control sanitization are enforced across the interactive path.
+
+Python parity for the pi-tui client and image attachments remains deferred.
+See the [TypeScript guide](ts/README.md), [runtime composition
+contracts](docs/internal/runtime-component-graph.md), and the full
+[changelog](CHANGELOG.md) for details.
 
 ## Scenario Families
 

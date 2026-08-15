@@ -33,17 +33,17 @@ result programmatically; the human-readable form is not a stable interface.
 ## Running a Scenario
 
 ```bash
-autoctx run --scenario grid_ctf --gens 3 --json
+autoctx run grid_ctf --iterations 3 --json
 ```
 
-`--gens` is the number of generations. Each one produces a candidate, scores it,
+`--iterations` is the number of generations. Each one produces a candidate, scores it,
 and folds what it learned into the knowledge for that scenario.
 
 Give the run an id you choose when you need to refer back to it:
 
 ```bash
 RUN_ID="my_run_$(date +%s)"
-autoctx run --scenario grid_ctf --gens 3 --run-id "$RUN_ID" --json
+autoctx run grid_ctf --iterations 3 --run-id "$RUN_ID" --json
 autoctx status "$RUN_ID" --json
 ```
 
@@ -52,7 +52,7 @@ autoctx status "$RUN_ID" --json
 When there is no scenario, describe the task:
 
 ```bash
-autoctx solve --description "Improve the support-triage response policy." --gens 3 --json
+autoctx solve "Improve the support-triage response policy." --iterations 3 --json
 ```
 
 ## Scoring or Improving a Single Output
@@ -87,7 +87,8 @@ autoctx watch "$RUN_ID"
 ## Creating a New Scenario
 
 ```bash
-autoctx new-scenario
+autoctx scenario create --list
+autoctx scenario create --template content-generation --name support-content
 ```
 
 Scaffolds from the template library. Use this when the task recurs and deserves
@@ -103,7 +104,7 @@ export AUTOCONTEXT_AGENT_PROVIDER=openai-compatible
 export AUTOCONTEXT_AGENT_BASE_URL=http://localhost:11434/v1
 export AUTOCONTEXT_AGENT_API_KEY=no-key
 export AUTOCONTEXT_LOCAL_MODEL=llama3.1
-autoctx run --scenario grid_ctf --gens 3 --json
+autoctx run grid_ctf --iterations 3 --json
 ```
 
 Keep secrets and base URLs in the environment or the user's profile, never in a

@@ -90,7 +90,7 @@ Use `--json` whenever Hermes needs to parse the result.
 
 ```bash
 RUN_ID="hermes_$(date +%s)"
-uv run autoctx run --scenario grid_ctf --gens 3 --run-id "$RUN_ID" --json
+uv run autoctx run grid_ctf --iterations 3 --run-id "$RUN_ID" --json
 uv run autoctx status "$RUN_ID" --json
 uv run autoctx replay "$RUN_ID" --generation 1
 ```
@@ -98,7 +98,7 @@ uv run autoctx replay "$RUN_ID" --generation 1
 For a plain-language task:
 
 ```bash
-uv run autoctx solve --description "Improve the support-triage response policy." --gens 3 --json
+uv run autoctx solve "Improve the support-triage response policy." --iterations 3 --json
 ```
 
 For one-shot judgment or improvement:
@@ -117,7 +117,7 @@ export AUTOCONTEXT_AGENT_PROVIDER=openai-compatible
 export AUTOCONTEXT_AGENT_BASE_URL=http://localhost:8080/v1
 export AUTOCONTEXT_AGENT_API_KEY=no-key
 export AUTOCONTEXT_AGENT_DEFAULT_MODEL=hermes-3-llama-3.1-8b
-uv run autoctx solve --description "..." --gens 3 --json
+uv run autoctx solve "..." --iterations 3 --json
 ```
 
 Keep provider configuration outside the skill when possible. The user or profile should own secrets, base URLs, and model names.
@@ -176,7 +176,7 @@ MCP is optional. If the user has already configured Autocontext MCP, prefer it f
 Check the local integration guide before inventing tool names:
 
 ```bash
-uv run autoctx mcp-serve --help
+uv run autoctx serve mcp --help
 ```
 
 Use MCP only when it adds value beyond the CLI: stable schemas, lower parsing burden, managed tool discovery, or a host policy that disallows shell access.

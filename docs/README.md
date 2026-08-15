@@ -81,7 +81,7 @@ metadata is available.
 - [Background session domain and parity contract](background-session-domain.md)
 - [Background execution trust boundaries and credential model](background-execution-trust-boundaries.md)
 
-## Execution Surfaces (0.3.0)
+## Execution Surfaces
 
 - **`simulate`** — modeled-world exploration with sweeps, replay, compare, export
 - **`investigate`** — evidence-driven diagnosis in synthetic harness or iterative LLM modes
@@ -94,7 +94,7 @@ metadata is available.
 - **`train`** — distill curated datasets into scenario-local models
 - **`hermes`** — read-only Hermes v0.12 skill/Curator inspection plus Hermes skill export
 
-## Trace Pipeline (0.3.0)
+## Trace Pipeline
 
 - Public trace schema v1.0.0 for cross-harness interchange
 - Privacy-aware export with sensitive-data redaction (21 patterns)

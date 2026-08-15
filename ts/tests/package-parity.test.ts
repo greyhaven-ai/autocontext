@@ -117,7 +117,7 @@ describe("README positioning", () => {
 
   it("describes the full command surface", () => {
     const readme = readFileSync(join(import.meta.dirname, "..", "README.md"), "utf-8");
-    expect(readme).toContain("run --scenario");
+    expect(readme).toContain("run <name>");
     expect(readme).toContain("serve mcp");
     expect(readme).toContain("export");
     expect(readme).toContain("import-package");

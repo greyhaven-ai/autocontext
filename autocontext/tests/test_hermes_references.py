@@ -67,7 +67,7 @@ def test_cli_workflows_reference_includes_concrete_commands() -> None:
 
 def test_mcp_workflows_reference_maps_cli_to_tool_names() -> None:
     body = render_reference("mcp-workflows")
-    assert "autoctx mcp-serve" in body
+    assert "autoctx serve mcp" in body
     assert "autocontext_judge" in body
     assert "autocontext_improve" in body
     # Explicit guidance on CLI-vs-MCP preference.

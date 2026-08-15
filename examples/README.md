@@ -9,6 +9,8 @@ These are copy-paste starting points for people evaluating the repo, integrating
 - Want to wire Claude Code or another MCP client? Use the MCP config snippet.
 - Want a typed Python integration? Use the Python SDK example.
 - Want a Node/TypeScript integration? Use the TypeScript library example.
+- Want to operate local or remote runs in a terminal? Use the TypeScript TUI example.
+- Want to compose trusted live runtime components? Use the runtime composition example.
 - Want to package generic Fetch/ESM agent app artifacts? Use the generated Fetch packaging example.
 - Want to prototype a reusable TypeScript agent handler? Use the experimental agent-runtime example.
 - Want always-on queued work? Use the persistent host worker recipe.
@@ -50,14 +52,24 @@ stdout. `--format strategy` remains a compatibility alias for `--format json`.
 
 ## Create A Scenario Or Start MCP
 
-Use the canonical nested commands in scripts and agent instructions:
+Use the canonical nested commands in scripts and agent instructions. Python
+selects a family pipeline explicitly; TypeScript can classify a plain-language
+description and materialize the resulting scenario:
 
 ```bash
-uv run autoctx scenario create --description "evaluate concise support replies"
+uv run autoctx scenario create \
+  --family workflow \
+  --name billing_support_workflow \
+  --description "evaluate and route concise billing-support replies"
+
+bunx autoctx scenario create --description "evaluate concise support replies"
+
 uv run autoctx serve mcp
 ```
 
-Both command paths are shared by the Python and npm CLIs.
+The `scenario create` and `serve mcp` paths are shared by the Python and npm
+CLIs; their scenario-creation flag sets are documented in the
+[cross-runtime CLI contract](../docs/cli-contract.md).
 
 ## Claude Code MCP Config
 
@@ -188,6 +200,70 @@ Example provider setup:
 export AUTOCONTEXT_PROVIDER=anthropic
 export ANTHROPIC_API_KEY=sk-ant-...
 ```
+
+## TypeScript TUI
+
+The npm CLI includes the Node.js 22.19+ pi-tui operator client. Start a local
+interactive server and client together:
+
+```bash
+autoctx tui
+```
+
+Or attach the client to an existing TypeScript server:
+
+```bash
+autoctx tui --connect https://host.example
+```
+
+Non-loopback endpoints must use HTTPS/WSS. Python exposes its existing CLI and
+API surfaces but does not yet ship this TUI. See the [operator TUI
+guide](../ts/README.md#operator-tui) for commands, key bindings, replay, and
+security behavior.
+
+## Trusted-Host Runtime Composition
+
+The package root exposes a typed, host-owned component graph. A consumer waits
+until its declared provider is present, and reconciling to an empty graph
+drains both components:
+
+```ts
+import {
+  RuntimeComponentGraph,
+  defineRuntimeCapability,
+  provideRuntimeCapability,
+  type RuntimeComponentManifest,
+} from "autoctx";
+
+const endpoint = defineRuntimeCapability<string>("service.endpoint");
+
+const provider: RuntimeComponentManifest = {
+  id: "provider",
+  instanceId: "provider@1",
+  provides: [provideRuntimeCapability(endpoint, "https://api.example")],
+  activate: () => undefined,
+};
+
+const consumer: RuntimeComponentManifest = {
+  id: "consumer",
+  instanceId: "consumer@1",
+  requires: [endpoint],
+  activate: ({ get }) => {
+    console.log(get(endpoint));
+  },
+};
+
+const graph = new RuntimeComponentGraph();
+await graph.reconcile([consumer]);
+await graph.reconcile([consumer, provider]);
+await graph.reconcile([]);
+```
+
+Keep graph construction and artifact-to-manifest resolution in trusted host
+code. Before granting generated components live capabilities, read the
+[component graph](../docs/internal/runtime-component-graph.md), [effect
+policy](../docs/internal/runtime-effect-policy.md), and [transactional
+activation](../docs/internal/runtime-transactional-activation.md) contracts.
 
 ## Generated Fetch Packaging
 

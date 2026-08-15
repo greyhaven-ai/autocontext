@@ -16,7 +16,7 @@ This template sets up an agent task where the goal is to produce high-quality wr
 
 ```bash
 # Scaffold a new scenario from this template
-autoctx new-scenario --template content-generation --name my-blog-task
+autoctx scenario create --template content-generation --name my-blog-task
 
 # The scaffolded task is written under knowledge/_custom_scenarios/my-blog-task
 # and becomes available to Autocontext's agent-task tooling after load/restart.

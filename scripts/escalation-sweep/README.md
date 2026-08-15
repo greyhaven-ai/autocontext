@@ -6,7 +6,7 @@ Release-validation helper: run every "Scenarios"-state Linear issue through
 ## Prerequisites
 
 - `jq` and Python 3.11+ on PATH.
-- `autoctx` CLI installed (either a published release `pip install autocontext==0.4.6`
+- `autoctx` CLI installed (either a published release `pip install autocontext==0.16.1`
   or run the checked-out source via `cd autocontext && uv run autoctx ...`).
 - An agent provider. By default the harness uses `AUTOCONTEXT_AGENT_PROVIDER=claude-cli`,
   which invokes the locally-authenticated `claude` binary (Anthropic subscription) — no
@@ -19,16 +19,16 @@ Release-validation helper: run every "Scenarios"-state Linear issue through
 
 ```bash
 # 1. Fetch the current manifest of scenarios in the "Scenarios" workflow state.
-python scripts/escalation-sweep/fetch_manifest.py .sweep/0.4.4/manifest.json
+python scripts/escalation-sweep/fetch_manifest.py .sweep/0.16.1/manifest.json
 
 # 2. Run the sweep. One solve per scenario, 2 generations each by default.
 bash scripts/escalation-sweep/run_sweep.sh \
-    .sweep/0.4.4/manifest.json \
-    .sweep/0.4.4/results \
-    --gens 2 --timeout 600
+    .sweep/0.16.1/manifest.json \
+    .sweep/0.16.1/results \
+    --iterations 2 --timeout 600
 
 # 3. Classify + tally.
-python scripts/escalation-sweep/summarize.py .sweep/0.4.4/results
+python scripts/escalation-sweep/summarize.py .sweep/0.16.1/results
 ```
 
 Expect ~5-10 min per scenario. Runs serially by design.
