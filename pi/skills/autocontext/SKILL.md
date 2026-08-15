@@ -104,6 +104,6 @@ For standalone usage outside Pi, install the `autoctx` CLI:
 ```bash
 npm install -g autoctx
 autoctx init
-autoctx solve --description "your problem" --gens 5
+autoctx solve "your problem" --iterations 5
 autoctx simulate --description "your simulation" --runs 3
 ```

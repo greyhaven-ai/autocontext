@@ -6,7 +6,7 @@ Load extensions with `AUTOCONTEXT_EXTENSIONS`:
 
 ```bash
 AUTOCONTEXT_EXTENSIONS=my_project.autoctx_hooks,./local_hooks.py \
-uv run autoctx run --scenario grid_ctf --gens 3
+uv run autoctx run grid_ctf --iterations 3
 ```
 
 For the TypeScript package, point `AUTOCONTEXT_EXTENSIONS` at JavaScript/ESM
@@ -14,7 +14,7 @@ modules or `module:callable` targets:
 
 ```bash
 AUTOCONTEXT_EXTENSIONS=./local-hooks.mjs \
-bunx autoctx run --scenario grid_ctf --gens 3
+bunx autoctx run grid_ctf --iterations 3
 ```
 
 Set `AUTOCONTEXT_EXTENSION_FAIL_FAST=true` when hook failures should stop the run. By default, hook handler exceptions are recorded on the event and the run continues.

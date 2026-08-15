@@ -169,7 +169,7 @@ debuggability.
 ## Setting up the MCP server
 
 ```bash
-autoctx mcp-serve
+autoctx serve mcp
 ```
 
 The server speaks MCP on stdio. Add it to your Hermes config under
@@ -180,7 +180,7 @@ The server speaks MCP on stdio. Add it to your Hermes config under
   "mcp_servers": {
     "autocontext": {
       "command": "autoctx",
-      "args": ["mcp-serve"]
+      "args": ["serve", "mcp"]
     }
   }
 }

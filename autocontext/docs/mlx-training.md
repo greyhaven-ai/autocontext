@@ -76,7 +76,7 @@ run the loop with that model as the agent, set the MLX agent provider and leave 
 path unset, the harness resolves the active MLX checkpoint for the scenario automatically:
 
 ```bash
-AUTOCONTEXT_AGENT_PROVIDER=mlx uv run autoctx run --scenario grid_ctf --gens 1
+AUTOCONTEXT_AGENT_PROVIDER=mlx uv run autoctx run grid_ctf --iterations 1
 ```
 
 So a run can use the local model a prior run produced (the "repeated runs get better"
