@@ -82,6 +82,19 @@ import { asDbPath, asScenarioName } from "../domain/ids.js";
 import { ArtifactStore } from "../knowledge/artifact-store.js";
 import { SolveManager } from "../knowledge/solver.js";
 import type { LLMProvider } from "../types/index.js";
+import { MAX_IMAGE_AGGREGATE_ENCODED_BYTES } from "../types/image-attachments.js";
+
+export const MAX_INTERACTIVE_WEBSOCKET_PAYLOAD_BYTES =
+  MAX_IMAGE_AGGREGATE_ENCODED_BYTES + 1024 * 1024;
+export const MAX_GLOBAL_INTERACTIVE_MESSAGE_BYTES =
+  MAX_INTERACTIVE_WEBSOCKET_PAYLOAD_BYTES;
+export const MAX_CONCURRENT_INTERACTIVE_MESSAGE_HANDLERS = 2;
+export const MAX_INTERACTIVE_WEBSOCKET_CONNECTIONS = 4;
+export const MAX_INTERACTIVE_WEBSOCKET_BUFFERED_BYTES =
+  MAX_INTERACTIVE_WEBSOCKET_PAYLOAD_BYTES;
+const MAX_PENDING_INTERACTIVE_MESSAGES = 32;
+const MAX_PENDING_PRIORITY_CONTROL_MESSAGES = 8;
+const MAX_GLOBAL_PRIORITY_CONTROL_BYTES = 64 * 1024;
 
 export interface InteractiveServerOpts {
   runManager: RunManager;
@@ -111,8 +124,10 @@ export class InteractiveServer {
   readonly #requestedPort: number;
   readonly #runTranscripts: RunTranscriptStore;
   readonly #interactiveClients = new Set<WebSocket>();
+  readonly #eventStreamClients = new Set<WebSocket>();
   readonly #transcriptClients = new Set<WebSocket>();
   readonly #clientRunScopes = new Map<WebSocket, string>();
+  readonly #interactiveMessageWaiters: Array<() => void> = [];
   readonly #onRunEvent: EventCallback = (event, payload, record) => {
     this.#broadcastRunEvent(event, payload, record?.ts);
   };
@@ -123,7 +138,13 @@ export class InteractiveServer {
     clientRunId: string | null;
     runTranscript: boolean;
     ws: WebSocket;
+    queuedState: RunManagerState | null;
   } | null = null;
+  #pendingInteractiveMessageBytes = 0;
+  #pendingInteractiveMessageCount = 0;
+  #pendingPriorityControlBytes = 0;
+  #pendingPriorityControlCount = 0;
+  #activeInteractiveMessageHandlers = 0;
   #runSubscriptionsActive = false;
   #solveManager: SolveManager | null = null;
   #solveStore: SQLiteStore | null = null;
@@ -173,9 +194,25 @@ export class InteractiveServer {
       });
     });
 
-    const wsServer = new WebSocketServer({ noServer: true });
+    const wsServer = new WebSocketServer({
+      noServer: true,
+      maxPayload: MAX_INTERACTIVE_WEBSOCKET_PAYLOAD_BYTES,
+    });
     httpServer.on("upgrade", (req, socket, head) => {
       const requestUrl = new URL(req.url ?? "/", "http://localhost");
+      if (!isTrustedWebSocketOrigin(req.headers.origin, this.#host, this.#boundPort)) {
+        socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
+        socket.destroy();
+        return;
+      }
+      if (
+        this.#interactiveClients.size + this.#eventStreamClients.size >=
+        MAX_INTERACTIVE_WEBSOCKET_CONNECTIONS
+      ) {
+        socket.write("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n");
+        socket.destroy();
+        return;
+      }
       if (requestUrl.pathname === "/ws/interactive") {
         const runTranscript =
           requestUrl.searchParams.get(TRANSCRIPT_PROTOCOL_QUERY_PARAM) ===
@@ -496,6 +533,7 @@ export class InteractiveServer {
     this.#solveProvider = null;
     this.#solveManager = null;
     this.#interactiveClients.clear();
+    this.#eventStreamClients.clear();
     this.#transcriptClients.clear();
     this.#clientRunScopes.clear();
     this.#pendingStart = null;
@@ -536,31 +574,101 @@ export class InteractiveServer {
       this.#send(ws, message);
     }
 
-    ws.on("message", async (data: WebSocket.RawData) => {
+    let pendingMessageBytes = 0;
+    let pendingPriorityBytes = 0;
+    let messageTail = Promise.resolve();
+    ws.on("message", (data: WebSocket.RawData) => {
+      const messageBytes = rawDataByteLength(data);
+      const preReservedNormalLane = messageBytes > MAX_GLOBAL_PRIORITY_CONTROL_BYTES;
+      if (preReservedNormalLane) {
+        if (
+          pendingMessageBytes + messageBytes > MAX_INTERACTIVE_WEBSOCKET_PAYLOAD_BYTES
+        ) {
+          ws.close(1009, "interactive message queue exceeds the payload limit");
+          return;
+        }
+        if (!this.#reserveInteractiveMessage(messageBytes, false)) {
+          ws.close(1013, "interactive server message budget is busy");
+          return;
+        }
+        pendingMessageBytes += messageBytes;
+      }
       let parsedMessage: ClientMessage | null = null;
       try {
         parsedMessage = this.#parseMessage(data.toString());
-        await this.#handleClientMessage(ws, parsedMessage);
-      } catch (err) {
-        const response = buildClientErrorMessage(err, parsedMessage);
-        const clientRunId = readClientRunId(parsedMessage);
-        const commandId = readCommandId(parsedMessage);
-        if (
-          clientRunId &&
-          commandId &&
-          parsedMessage &&
-          this.#runTranscripts.canCompleteCommand({
-            clientRunId,
-            commandId,
-            command: parsedMessage,
-          })
-        ) {
-          this.#sendRunResponse(ws, response, clientRunId, parsedMessage);
-        } else {
-          this.#sendLegacyOrCurrent(ws, response);
+      } catch {
+        if (preReservedNormalLane) {
+          pendingMessageBytes -= messageBytes;
+          this.#releaseInteractiveMessage(messageBytes, false);
         }
+        this.#sendLegacyOrCurrent(ws, { type: "error", message: "invalid interactive message" });
+        ws.close(1008, "invalid interactive message");
+        return;
       }
+      const message = parsedMessage;
+      // Large frames are admitted to the normal lane before parsing. Even a
+      // syntactically valid priority command can exceed the priority envelope
+      // through insignificant JSON whitespace, so settlement must follow the
+      // lane that actually owns the reservation.
+      const priority = !preReservedNormalLane && isPriorityRunControlMessage(message);
+      if (!preReservedNormalLane) {
+        if (
+          (priority ? pendingPriorityBytes : pendingMessageBytes) + messageBytes >
+          (priority ? MAX_GLOBAL_PRIORITY_CONTROL_BYTES : MAX_INTERACTIVE_WEBSOCKET_PAYLOAD_BYTES)
+        ) {
+          ws.close(1009, "interactive message queue exceeds the payload limit");
+          return;
+        }
+        if (!this.#reserveInteractiveMessage(messageBytes, priority)) {
+          ws.close(1013, "interactive server message budget is busy");
+          return;
+        }
+        if (priority) pendingPriorityBytes += messageBytes;
+        else pendingMessageBytes += messageBytes;
+      }
+
+      const handleMessage = async () => {
+        const usesExpensiveSlot = interactiveMessageUsesExpensiveSlot(message);
+        if (usesExpensiveSlot) await this.#acquireInteractiveMessageHandler();
+        try {
+          if (ws.readyState !== WebSocket.OPEN) return;
+          await this.#handleClientMessage(ws, message);
+        } catch (err) {
+          const response = buildClientErrorMessage(err, message);
+          const clientRunId = readClientRunId(message);
+          const commandId = readCommandId(message);
+          if (
+            clientRunId &&
+            commandId &&
+            this.#runTranscripts.canCompleteCommand({
+              clientRunId,
+              commandId,
+              command: message,
+            })
+          ) {
+            this.#sendRunResponse(ws, response, clientRunId, message);
+          } else {
+            this.#sendLegacyOrCurrent(ws, response);
+          }
+        } finally {
+          if (usesExpensiveSlot) this.#releaseInteractiveMessageHandler();
+        }
+      };
+      const settleMessage = () => {
+        if (priority) pendingPriorityBytes -= messageBytes;
+        else pendingMessageBytes -= messageBytes;
+        this.#releaseInteractiveMessage(messageBytes, priority);
+      };
+      if (priority) {
+        void handleMessage().finally(settleMessage);
+        return;
+      }
+      messageTail = messageTail.then(handleMessage).finally(settleMessage);
     });
+
+    // Payload-limit and peer/network failures are connection-local and must not
+    // become uncaught EventEmitter errors for the server process.
+    ws.on("error", () => undefined);
 
     ws.on("close", () => {
       this.#interactiveClients.delete(ws);
@@ -571,6 +679,7 @@ export class InteractiveServer {
   }
 
   #attachEventStreamClient(ws: WebSocket): void {
+    this.#eventStreamClients.add(ws);
     let sequence = 0;
     const nextSequence = () => {
       sequence += 1;
@@ -584,17 +693,13 @@ export class InteractiveServer {
       if (ws.readyState !== WebSocket.OPEN) {
         return;
       }
-      ws.send(
-        JSON.stringify(
-          buildEventStreamEnvelope({
-            channel: record?.channel ?? "generation",
-            event,
-            payload,
-            seq: nextSequence(),
-            timestamp: record?.ts,
-          }),
-        ),
-      );
+      this.#sendWire(ws, JSON.stringify(buildEventStreamEnvelope({
+        channel: record?.channel ?? "generation",
+        event,
+        payload,
+        seq: nextSequence(),
+        timestamp: record?.ts,
+      })));
     };
 
     this.#runManager.subscribeEvents(eventCallback);
@@ -607,11 +712,16 @@ export class InteractiveServer {
         if (ws.readyState !== WebSocket.OPEN) {
           return;
         }
-        ws.send(JSON.stringify(buildMissionProgressEventEnvelope(progress, nextSequence())));
+        this.#sendWire(ws, JSON.stringify(buildMissionProgressEventEnvelope(progress, nextSequence())));
       },
     });
 
+    ws.on("message", () => {
+      ws.close(1008, "event stream sockets are read-only");
+    });
+    ws.on("error", () => undefined);
     ws.on("close", () => {
+      this.#eventStreamClients.delete(ws);
       this.#runManager.unsubscribeEvents(eventCallback);
       unsubscribeMissionProgress();
     });
@@ -735,13 +845,7 @@ export class InteractiveServer {
           command: msg,
           runManager: this.#runManager,
         }));
-        if (this.#transcriptClients.has(ws)) {
-          this.#send(ws, buildHelloMessage({
-            runTranscript: true,
-            capabilities: this.#runManager.getInteractiveCapabilities(),
-          }));
-          this.#send(ws, buildEnvironmentMessage(this.#runManager.getEnvironmentInfo()));
-        }
+        if (msg.type !== "whoami") this.#broadcastTranscriptEnvironmentRefresh();
         return;
       }
     }
@@ -753,8 +857,23 @@ export class InteractiveServer {
   ): Promise<void> {
     const requestedClientRunId = command.client_run_id ?? null;
     if (requestedClientRunId) {
-      this.#bindClientScope(ws, requestedClientRunId);
-      if (!this.#beginDurableCommand(ws, command, requestedClientRunId)) return;
+      const existingCommand = command.command_id
+        ? this.#runTranscripts.inspectCommand({
+            clientRunId: requestedClientRunId,
+            commandId: command.command_id,
+            command,
+          })
+        : null;
+      if (existingCommand) {
+        if (
+          existingCommand.outcome === "completed" &&
+          this.#runTranscripts.resolveRunId(requestedClientRunId)
+        ) {
+          this.#bindClientScope(ws, requestedClientRunId);
+        }
+        this.#beginDurableCommand(ws, command, requestedClientRunId);
+        return;
+      }
       const accepted = this.#runTranscripts.latestFrameOfType(requestedClientRunId, "run_accepted");
       if (accepted) {
         throw new Error("client_run_id is already associated with an existing run");
@@ -766,11 +885,15 @@ export class InteractiveServer {
     if (this.#runManager.getState().active) {
       throw new Error("A run is already active");
     }
+    if (requestedClientRunId) {
+      if (!this.#beginDurableCommand(ws, command, requestedClientRunId)) return;
+    }
 
     this.#pendingStart = {
       clientRunId: requestedClientRunId,
       runTranscript: this.#transcriptClients.has(ws),
       ws,
+      queuedState: null,
     };
     try {
       const responses = await executeInteractiveControlCommand({
@@ -788,6 +911,16 @@ export class InteractiveServer {
           this.#bindClientScope(ws, clientRunId);
         }
         this.#sendRunResponse(ws, response, clientRunId, command);
+        const queuedState = this.#pendingStart.queuedState;
+        if (queuedState) {
+          const stateFrame = this.#runTranscripts.record({
+            clientRunId,
+            message: buildStateMessage(queuedState),
+            runId: response.run_id,
+          });
+          if (stateFrame) this.#broadcastRetainedFrame(stateFrame);
+          this.#pendingStart.queuedState = null;
+        }
       }
     } finally {
       this.#pendingStart = null;
@@ -798,7 +931,14 @@ export class InteractiveServer {
     ws: WebSocket,
     command: Extract<ClientMessage, { type: "resume_run" }>,
   ): void {
-    this.#bindClientScope(ws, command.client_run_id);
+    if (!this.#runTranscripts.resolveRunId(command.client_run_id)) {
+      this.#sendCommandError(
+        ws,
+        command,
+        "client_run_id is not associated with an engine run",
+      );
+      return;
+    }
     const commandResult = command.command_id
       ? this.#runTranscripts.beginCommand({
           clientRunId: command.client_run_id,
@@ -822,6 +962,7 @@ export class InteractiveServer {
       );
       return;
     }
+    this.#bindClientScope(ws, command.client_run_id);
     const frames = this.#runTranscripts.framesAfter(command.client_run_id, command.after_sequence);
     for (const frame of frames) {
       this.#sendWire(ws, frame.wire);
@@ -903,16 +1044,14 @@ export class InteractiveServer {
   #broadcastRunState(state: RunManagerState): void {
     const runId = state.runId;
     let clientRunId = runId ? this.#runTranscripts.resolveClientRunId(runId) : null;
+    const message = buildStateMessage(state);
+    this.#broadcastLegacy(message);
     if (state.active && runId && this.#pendingStart) {
       clientRunId = this.#pendingStart.clientRunId ?? runId;
       this.#pendingStart.clientRunId = clientRunId;
-      this.#runTranscripts.registerRun(clientRunId, runId);
-      if (this.#pendingStart.runTranscript) {
-        this.#bindClientScope(this.#pendingStart.ws, clientRunId);
-      }
+      this.#pendingStart.queuedState = state;
+      return;
     }
-    const message = buildStateMessage(state);
-    this.#broadcastLegacy(message);
     if (!clientRunId) {
       for (const client of this.#transcriptClients) {
         if (!this.#clientRunScopes.has(client)) this.#send(client, message);
@@ -1015,6 +1154,81 @@ export class InteractiveServer {
     }
   }
 
+  #broadcastTranscriptEnvironmentRefresh(): void {
+    const hello = buildHelloMessage({
+      runTranscript: true,
+      capabilities: this.#runManager.getInteractiveCapabilities(),
+    });
+    const environments = buildEnvironmentMessage(this.#runManager.getEnvironmentInfo());
+    for (const client of this.#transcriptClients) {
+      this.#send(client, hello);
+      this.#send(client, environments);
+    }
+  }
+
+  #reserveInteractiveMessage(messageBytes: number, priority: boolean): boolean {
+    if (priority) {
+      if (
+        this.#pendingPriorityControlCount >= MAX_PENDING_PRIORITY_CONTROL_MESSAGES ||
+        this.#pendingPriorityControlBytes + messageBytes > MAX_GLOBAL_PRIORITY_CONTROL_BYTES
+      ) return false;
+      this.#pendingPriorityControlCount += 1;
+      this.#pendingPriorityControlBytes += messageBytes;
+      return true;
+    }
+    if (
+      this.#pendingInteractiveMessageCount >= MAX_PENDING_INTERACTIVE_MESSAGES ||
+      this.#pendingInteractiveMessageBytes + messageBytes >
+        MAX_GLOBAL_INTERACTIVE_MESSAGE_BYTES
+    ) return false;
+    this.#pendingInteractiveMessageCount += 1;
+    this.#pendingInteractiveMessageBytes += messageBytes;
+    return true;
+  }
+
+  #releaseInteractiveMessage(messageBytes: number, priority: boolean): void {
+    if (priority) {
+      this.#pendingPriorityControlCount = Math.max(0, this.#pendingPriorityControlCount - 1);
+      this.#pendingPriorityControlBytes = Math.max(
+        0,
+        this.#pendingPriorityControlBytes - messageBytes,
+      );
+      return;
+    }
+    this.#pendingInteractiveMessageCount = Math.max(
+      0,
+      this.#pendingInteractiveMessageCount - 1,
+    );
+    this.#pendingInteractiveMessageBytes = Math.max(
+      0,
+      this.#pendingInteractiveMessageBytes - messageBytes,
+    );
+  }
+
+  #acquireInteractiveMessageHandler(): Promise<void> {
+    if (
+      this.#activeInteractiveMessageHandlers <
+      MAX_CONCURRENT_INTERACTIVE_MESSAGE_HANDLERS
+    ) {
+      this.#activeInteractiveMessageHandlers += 1;
+      return Promise.resolve();
+    }
+    return new Promise<void>((resolve) => {
+      this.#interactiveMessageWaiters.push(() => {
+        this.#activeInteractiveMessageHandlers += 1;
+        resolve();
+      });
+    });
+  }
+
+  #releaseInteractiveMessageHandler(): void {
+    this.#activeInteractiveMessageHandlers = Math.max(
+      0,
+      this.#activeInteractiveMessageHandlers - 1,
+    );
+    this.#interactiveMessageWaiters.shift()?.();
+  }
+
   #bindClientScope(ws: WebSocket, clientRunId: string): void {
     this.#clientRunScopes.set(ws, clientRunId);
   }
@@ -1034,10 +1248,7 @@ export class InteractiveServer {
   }
 
   #send(ws: WebSocket, msg: ServerMessage): void {
-    if (ws.readyState !== WebSocket.OPEN) {
-      return;
-    }
-    ws.send(JSON.stringify(msg));
+    this.#sendWire(ws, JSON.stringify(msg));
   }
 
   #sendLegacy(ws: WebSocket, message: ServerMessage): void {
@@ -1054,6 +1265,13 @@ export class InteractiveServer {
 
   #sendWire(ws: WebSocket, wire: string): void {
     if (ws.readyState !== WebSocket.OPEN) return;
+    if (
+      ws.bufferedAmount + Buffer.byteLength(wire, "utf8") >
+      MAX_INTERACTIVE_WEBSOCKET_BUFFERED_BYTES
+    ) {
+      ws.terminate();
+      return;
+    }
     ws.send(wire);
   }
 
@@ -1061,6 +1279,66 @@ export class InteractiveServer {
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     return parseClientMessage(parsed);
   }
+}
+
+function rawDataByteLength(data: WebSocket.RawData): number {
+  return Array.isArray(data)
+    ? data.reduce((total, chunk) => total + chunk.byteLength, 0)
+    : data.byteLength;
+}
+
+function isPriorityRunControlMessage(message: ClientMessage): boolean {
+  return message.type === "stop" || message.type === "pause" || message.type === "resume";
+}
+
+function interactiveMessageUsesExpensiveSlot(message: ClientMessage): boolean {
+  switch (message.type) {
+    case "chat_agent":
+    case "create_scenario":
+    case "confirm_scenario":
+    case "revise_scenario":
+    case "login":
+      return true;
+    case "inject_hint":
+      return (message.image_attachments?.length ?? 0) > 0;
+    default:
+      return false;
+  }
+}
+
+function isTrustedWebSocketOrigin(
+  origin: string | string[] | undefined,
+  host: string,
+  port: number,
+): boolean {
+  if (origin === undefined) return true;
+  const requestedOrigin = Array.isArray(origin) ? origin[0] : origin;
+  if (!requestedOrigin) return false;
+  try {
+    const parsed = new URL(requestedOrigin);
+    if (parsed.protocol !== "http:") return false;
+    const originPort = parsed.port ? Number(parsed.port) : 80;
+    if (originPort !== port) return false;
+    const configuredHost = host.toLowerCase().replace(/^\[|\]$/g, "");
+    const originHost = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+    if (configuredHost === "0.0.0.0" || configuredHost === "::") {
+      return isLoopbackHost(originHost);
+    }
+    if (isLoopbackHost(configuredHost)) return isLoopbackHost(originHost);
+    return originHost === configuredHost;
+  } catch {
+    return false;
+  }
+}
+
+function isLoopbackHost(host: string): boolean {
+  if (host === "localhost" || host.endsWith(".localhost") || host === "::1") return true;
+  const octets = host.split(".");
+  return octets.length === 4 && octets[0] === "127" && octets.every((octet) => {
+    if (!/^\d{1,3}$/.test(octet)) return false;
+    const value = Number(octet);
+    return value >= 0 && value <= 255;
+  });
 }
 
 function resolveCorsOrigin(

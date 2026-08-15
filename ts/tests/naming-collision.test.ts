@@ -9,8 +9,9 @@
 
 import { describe, it, expect } from "vitest";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, relative } from "node:path";
 
 const CLI = join(import.meta.dirname, "..", "src", "cli", "index.ts");
 const SHIM = join(import.meta.dirname, "..", "src", "cli", "autocontext-shim.ts");
@@ -69,6 +70,24 @@ describe("autocontext redirect shim", () => {
     const { stdout, exitCode } = run(SHIM, ["version"]);
     expect(exitCode).toBe(0);
     expect(stdout).toMatch(/\d+\.\d+/);
+  });
+
+  it("executes through an npm-style bin symlink", () => {
+    const installRoot = mkdtempSync(join(tmpdir(), "autoctx-shim-install-"));
+    const binDir = join(installRoot, "node_modules", ".bin");
+    const binPath = join(binDir, "autocontext");
+
+    try {
+      mkdirSync(binDir, { recursive: true });
+      symlinkSync(relative(realpathSync(binDir), realpathSync(SHIM)), binPath);
+
+      const { stdout, stderr, exitCode } = run(binPath, ["--version"]);
+      expect(exitCode, stderr || stdout).toBe(0);
+      expect(stdout.trim()).toMatch(/^\d+\.\d+\.\d+$/);
+      expect(stderr).toContain("Forwarding to autoctx");
+    } finally {
+      rmSync(installRoot, { recursive: true, force: true });
+    }
   });
 
   it("shim --help still shows real help output", () => {

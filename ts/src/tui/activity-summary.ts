@@ -222,7 +222,11 @@ function runtimeEventHasError(
   eventType: string,
   payload: Record<string, unknown>,
 ): boolean {
-  return Boolean(payload.error) || eventType === "run_failed";
+  return Boolean(payload.error) ||
+    payload.isError === true ||
+    payload.is_error === true ||
+    payload.has_error === true ||
+    eventType === "run_failed";
 }
 
 function runtimeEventDetails(

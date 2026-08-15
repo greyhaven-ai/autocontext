@@ -158,4 +158,23 @@ describe("TUI HTTP read-model adapter", () => {
     expect(result).toMatchObject({ ok: true, value: { status: "completed" } });
     expect(updates).toEqual(["running:0", "running:1", "completed:2"]);
   });
+
+  it("aborts an in-flight watch request when the operator detaches", async () => {
+    const fetchImpl = vi.fn().mockImplementation((_url: URL, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          reject(new DOMException("aborted", "AbortError"));
+        }, { once: true });
+      }));
+    const client = new TuiReadModelClient("http://localhost:8000", { fetchImpl });
+    const controller = new AbortController();
+    const result = client.watchRun("run-1", { signal: controller.signal });
+    await vi.waitFor(() => expect(fetchImpl).toHaveBeenCalledOnce());
+    controller.abort("detached");
+    await expect(result).resolves.toEqual({
+      ok: false,
+      kind: "unavailable",
+      detail: "watch detached",
+    });
+  });
 });

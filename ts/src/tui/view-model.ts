@@ -34,6 +34,11 @@ export interface TuiTranscriptRow {
   readonly tone: "normal" | "muted" | "success" | "warning" | "error";
   readonly title: string;
   readonly detail?: string;
+  readonly activity: {
+    readonly family: "run" | "runtime";
+    readonly focus: "run" | "runtime" | "prompt" | "command" | "child";
+    readonly hasError: boolean;
+  };
   readonly commandId?: string;
   readonly runId?: string;
 }
@@ -104,6 +109,7 @@ export interface TuiViewModel {
   readonly pendingDecisions: readonly TuiPendingDecision[];
   readonly receipts: Readonly<Record<string, TuiCommandReceipt>>;
   readonly seenEventIds: Readonly<Record<string, true>>;
+  readonly retiredClientRunIds: readonly string[];
   readonly lastSequence: number;
   readonly busyCommandId: string | null;
 }
@@ -115,6 +121,8 @@ export type TuiViewModelInput =
   | { readonly kind: "message"; readonly message: ServerMessage };
 
 export const TUI_HIDDEN_EVENT_NAMES = new Set<string>();
+export const MAX_TUI_TRANSCRIPT_ROWS = 2_000;
+export const MAX_TUI_SEEN_EVENT_IDS = MAX_TUI_TRANSCRIPT_ROWS;
 
 const LIFECYCLE_LABELS: Readonly<Record<string, string>> = {
   run_started: "Run started",
@@ -147,7 +155,7 @@ export function createInitialTuiViewModel(endpoint: string): TuiViewModel {
     endpoint,
     connection: { status: "connecting", attempt: 0 },
     capabilities: [],
-    protocolCompatible: true,
+    protocolCompatible: false,
     scenarios: [],
     executors: [],
     routing: { provider: "unknown", roles: {} },
@@ -167,6 +175,7 @@ export function createInitialTuiViewModel(endpoint: string): TuiViewModel {
     pendingDecisions: [],
     receipts: {},
     seenEventIds: {},
+    retiredClientRunIds: [],
     lastSequence: 0,
     busyCommandId: null,
   };
@@ -179,6 +188,9 @@ export function reduceTuiViewModel(
   if (input.kind === "connection") {
     return {
       ...state,
+      ...(input.status === "connected" || input.status === "reconnecting"
+        ? { protocolCompatible: false, capabilities: [] }
+        : {}),
       connection: {
         status: input.status,
         attempt: input.attempt ?? state.connection.attempt,
@@ -197,22 +209,38 @@ export function reduceTuiViewModel(
   }
 
   const message = input.message;
+  const messageClientRunId = readMessageClientRunId(message);
   const eventId = readMessageString(message, "event_id");
   const sequence = readMessageNumber(message, "sequence");
-  const outOfOrder = sequence !== undefined && sequence < state.lastSequence;
-  if (eventId && state.seenEventIds[eventId]) return state;
-  const seenEventIds = eventId
-    ? { ...state.seenEventIds, [eventId]: true as const }
-    : state.seenEventIds;
-  const lastSequence = Math.max(state.lastSequence, sequence ?? 0);
-  const base = { ...state, seenEventIds, lastSequence };
+  if (
+    messageClientRunId &&
+    state.retiredClientRunIds.includes(messageClientRunId)
+  ) {
+    // A socket can drain delayed frames after a run transition. Never allow a
+    // scope that this reducer already left to become current again.
+    return state;
+  }
+  if (
+    messageClientRunId &&
+    state.run.clientRunId &&
+    messageClientRunId !== state.run.clientRunId &&
+    message.type !== "run_accepted" &&
+    !(message.type === "state" && sequence === undefined)
+  ) return state;
+  const scopedState = messageClientRunId && messageClientRunId !== state.run.clientRunId
+    ? resetRunScope(state, messageClientRunId, readMessageRunId(message))
+    : state;
+  const outOfOrder = sequence !== undefined && sequence < scopedState.lastSequence;
+  if (eventId && scopedState.seenEventIds[eventId]) return scopedState;
+  const seenEventIds = rememberEventId(scopedState.seenEventIds, eventId);
+  const lastSequence = Math.max(scopedState.lastSequence, sequence ?? 0);
+  const base = { ...scopedState, seenEventIds, lastSequence };
 
   switch (message.type) {
     case "hello": {
       const compatible =
-        (message.protocol_version ?? PROTOCOL_VERSION) === PROTOCOL_VERSION &&
-        (message.transcript_protocol_version ?? TRANSCRIPT_PROTOCOL_VERSION) ===
-          TRANSCRIPT_PROTOCOL_VERSION;
+        message.protocol_version === PROTOCOL_VERSION &&
+        message.transcript_protocol_version === TRANSCRIPT_PROTOCOL_VERSION;
       return {
         ...base,
         protocolCompatible: compatible,
@@ -432,12 +460,73 @@ function appendUnknownEvent(
 }
 
 function appendRow(state: TuiViewModel, row: TuiTranscriptRow): TuiViewModel {
-  const transcript = [...state.transcript, row].sort((a, b) => {
-    if (a.sequence === undefined) return b.sequence === undefined ? 0 : -1;
-    if (b.sequence === undefined) return 1;
-    return a.sequence - b.sequence;
-  });
+  const transcript = [...state.transcript];
+  if (row.sequence === undefined) {
+    transcript.push(row);
+  } else {
+    let low = 0;
+    let high = transcript.length;
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2);
+      const middleSequence = transcript[middle]!.sequence;
+      if (middleSequence !== undefined && middleSequence <= row.sequence) {
+        low = middle + 1;
+      } else {
+        high = middle;
+      }
+    }
+    transcript.splice(low, 0, row);
+  }
+  if (transcript.length > MAX_TUI_TRANSCRIPT_ROWS) {
+    transcript.splice(0, transcript.length - MAX_TUI_TRANSCRIPT_ROWS);
+  }
   return { ...state, transcript };
+}
+
+function resetRunScope(
+  state: TuiViewModel,
+  clientRunId: string,
+  runId: string | null,
+): TuiViewModel {
+  const retiredClientRunIds = state.run.clientRunId && state.run.clientRunId !== clientRunId
+    ? [...new Set([...state.retiredClientRunIds, state.run.clientRunId])].slice(-100)
+    : state.retiredClientRunIds;
+  return {
+    ...state,
+    run: {
+      active: false,
+      paused: false,
+      clientRunId,
+      runId,
+      scenario: null,
+      generation: null,
+      phase: null,
+      outcome: null,
+    },
+    transcript: [],
+    taskPlan: null,
+    progressNotes: [],
+    pendingDecisions: [],
+    receipts: {},
+    seenEventIds: {},
+    retiredClientRunIds,
+    lastSequence: 0,
+  };
+}
+
+function rememberEventId(
+  seenEventIds: Readonly<Record<string, true>>,
+  eventId: string | undefined,
+): Readonly<Record<string, true>> {
+  if (!eventId) return seenEventIds;
+  const retainedIds = Object.keys(seenEventIds);
+  const next: Record<string, true> = {};
+  const firstRetainedIndex = Math.max(0, retainedIds.length - MAX_TUI_SEEN_EVENT_IDS + 1);
+  for (let index = firstRetainedIndex; index < retainedIds.length; index += 1) {
+    next[retainedIds[index]!] = true;
+  }
+  next[eventId] = true;
+  return next;
 }
 
 function withReceipt(
@@ -487,12 +576,63 @@ function rowForMessage(
     kind,
     tone,
     title,
+    activity: transcriptActivity(message, tone),
     ...(detail ? { detail } : {}),
     ...(sequence === undefined ? {} : { sequence }),
     ...(occurredAt === undefined ? {} : { occurredAt }),
     ...("command_id" in message && message.command_id ? { commandId: message.command_id } : {}),
     ...("run_id" in message && message.run_id ? { runId: message.run_id } : {}),
   };
+}
+
+function transcriptActivity(
+  message: ServerMessage,
+  tone: TuiTranscriptRow["tone"],
+): TuiTranscriptRow["activity"] {
+  if (message.type !== "event" || message.event !== "runtime_session_event") {
+    return {
+      family: "run",
+      focus: "run",
+      hasError:
+        tone === "error" ||
+        (message.type === "event" &&
+          (message.event === "run_failed" || message.event === "playbook_update_skipped")),
+    };
+  }
+  const event = readRecord(message.payload.event);
+  const eventType = readString(event.event_type) ?? readString(event.eventType) ?? "";
+  const payload = readRecord(event.payload);
+  const focus = runtimeEventFocus(eventType);
+  return {
+    family: "runtime",
+    focus,
+    hasError:
+      tone === "error" ||
+      Boolean(payload.error) ||
+      payload.isError === true ||
+      payload.is_error === true ||
+      payload.has_error === true ||
+      eventType === "run_failed",
+  };
+}
+
+function runtimeEventFocus(
+  eventType: string,
+): TuiTranscriptRow["activity"]["focus"] {
+  if (eventType === "prompt_submitted" || eventType === "assistant_message") return "prompt";
+  if (eventType === "shell_command" || eventType === "tool_call") return "command";
+  if (eventType === "child_task_started" || eventType === "child_task_completed") return "child";
+  return "runtime";
+}
+
+function readRecord(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
 function readMessageString(
@@ -520,6 +660,16 @@ function readMessageStringOrNumber(
   if (!(key in message)) return undefined;
   const value = message[key];
   return typeof value === "string" || typeof value === "number" ? value : undefined;
+}
+
+function readMessageClientRunId(message: ServerMessage): string | null {
+  if (!("client_run_id" in message)) return null;
+  return typeof message.client_run_id === "string" ? message.client_run_id : null;
+}
+
+function readMessageRunId(message: ServerMessage): string | null {
+  if (!("run_id" in message)) return null;
+  return typeof message.run_id === "string" ? message.run_id : null;
 }
 
 function terminalOutcome(event: string): TuiRunView["outcome"] {

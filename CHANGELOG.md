@@ -4,6 +4,57 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.16.1] - 2026-08-14
+
+This is a TypeScript-only security and reliability hotfix for `0.16.0`. The
+Python package remains at `0.15.1` and the Pi extension remains at `0.10.0`.
+
+### Fixed
+
+- The pi-tui client now treats transcript identity, ordering, plans, receipts,
+  and replay cursors as run-scoped state. Sequential runs no longer inherit a
+  prior run's cursor or plan, transcript and deduplication state are bounded,
+  semantic events remain chronologically interleaved with operator output, and
+  scenario/authentication failures settle commands immediately.
+- All server/model text is stripped of terminal control sequences before
+  rendering, preventing OSC 52 clipboard writes and CSI/OSC terminal
+  manipulation. Terminal output, headers, URLs, fragments, JSON, environment
+  assignments, and authorization values redact credentials; editor and masked
+  input paths atomically discard terminal-control input, and unsafe filesystem
+  names are excluded from completion menus.
+- Remote `--connect` no longer resolves an unused local provider credential;
+  unsupported headless attach combinations fail explicitly, interactive
+  SIGINT/SIGTERM restores terminal state, live watches abort in-flight reads
+  cleanly, keyless providers no longer require a dummy secret, and `/activity`
+  persists and applies filters to bounded, redacted durable runtime events.
+- Protocol commands wait for an exact compatible hello before sending. Remote
+  control and provider endpoints reject plaintext credential transport, browser
+  WebSocket upgrades reject untrusted origins, and displayed endpoints redact
+  URL userinfo plus sensitive query and fragment values.
+- Cooperative stop, pause, and resume use a separately bounded priority lane,
+  so they remain responsive while provider work is stalled or the normal queue
+  is saturated. Interactive WebSockets cap connections, frame size, incomplete
+  messages, pending bytes, handler concurrency, and slow-consumer output; large
+  malformed frames enter bounded admission before parsing and close the sender.
+- Failed or duplicate starts no longer rebind a client, provider resolution
+  cannot strand a queued run, generated-run acceptance precedes durable events,
+  and run-scoped pause, gate, hint, and chat commands cannot mutate or leak into
+  a later run. Authentication/provider changes are leased so a rejected change
+  during an active run cannot partially persist credentials.
+- Image hints are accepted only for the active run and cannot survive into a
+  later run. Capability checks are pinned to the active provider, OpenAI model
+  support no longer classifies `o1-mini` or `o3-mini` as image-capable and does
+  recognize GPT-4 Turbo, and PNG/JPEG/GIF/WebP inputs must be structurally
+  complete, fully decodable within the pixel budget, and non-animated before
+  provider inference. Full decodes are serialized to bound peak memory.
+- The documented one-pixel PNG attachment example now contains valid PNG and
+  zlib checksums.
+- Durable runtime activity records retain only bounded typed metadata needed by
+  the TUI instead of raw prompts, commands, assistant text, or child results.
+  The compatibility `autocontext` binary now executes correctly through npm's
+  symlink, every advertised CommonJS subpath is built and smoke-tested, and the
+  npm tarball includes the repository's exact Apache-2.0 license text.
+
 ## [0.16.0] - 2026-08-14
 
 This is a TypeScript-first release. The Python package remains at `0.15.1`;
@@ -791,7 +842,8 @@ A new cross-runtime parity audit (`test_cli_contract_parity.py` + `cli-contract-
 - FastAPI dashboard with WebSocket events.
 - CLI via Typer (Python) and `parseArgs` (TypeScript).
 
-[Unreleased]: https://github.com/greyhaven-ai/autocontext/compare/ts-v0.16.0...HEAD
+[Unreleased]: https://github.com/greyhaven-ai/autocontext/compare/ts-v0.16.1...HEAD
+[0.16.1]: https://github.com/greyhaven-ai/autocontext/compare/ts-v0.16.0...ts-v0.16.1
 [0.16.0]: https://github.com/greyhaven-ai/autocontext/compare/ts-v0.15.1...ts-v0.16.0
 [0.14.0]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.13.0...py-v0.14.0
 [0.13.0]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.12.0...py-v0.13.0

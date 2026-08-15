@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import type { ClientMessage, ServerMessage } from "../src/server/protocol.js";
 import { RunTranscriptStore } from "../src/server/run-transcript-store.js";
+import { createInitialTuiViewModel, reduceTuiViewModel } from "../src/tui/view-model.js";
 
 const tempDirs: string[] = [];
 
@@ -55,6 +56,76 @@ afterEach(() => {
 });
 
 describe("RunTranscriptStore", () => {
+  it("retains bounded runtime activity metadata for real TUI filtering", () => {
+    const { store } = makeStore();
+    const accepted = store.record({
+      clientRunId: "client-runtime",
+      runId: "engine-runtime",
+      message: {
+        type: "run_accepted",
+        run_id: "engine-runtime",
+        scenario: "grid_ctf",
+        generations: 1,
+      },
+    });
+    const runtime = store.record({
+      clientRunId: "client-runtime",
+      runId: "engine-runtime",
+      message: {
+        type: "event",
+        event: "runtime_session_event",
+        payload: {
+          session_id: "runtime-1",
+          event: {
+            event_id: "runtime-event-1",
+            event_type: "shell_command",
+            sequence: 7,
+            timestamp: "2026-08-14T00:00:00.000Z",
+            payload: {
+              command: "pwd --token private-command-token",
+              prompt: "API key: private-prompt-value",
+              text: "private assistant text",
+              result: "private child result",
+              error: "Authorization: Bearer never-retain-this",
+            },
+          },
+        },
+      },
+    });
+
+    expect(accepted).not.toBeNull();
+    expect(runtime?.message).toMatchObject({
+      type: "event",
+      event: "runtime_session_event",
+      payload: {
+        session_id: "runtime-1",
+        event: {
+          event_type: "shell_command",
+          sequence: 7,
+          payload: { has_error: true },
+        },
+      },
+    });
+    for (const privateValue of [
+      "private-command-token",
+      "private-prompt-value",
+      "private assistant text",
+      "private child result",
+      "never-retain-this",
+    ]) {
+      expect(runtime?.wire).not.toContain(privateValue);
+    }
+
+    let model = createInitialTuiViewModel("ws://localhost/ws/interactive");
+    model = reduceTuiViewModel(model, { kind: "message", message: accepted!.message });
+    model = reduceTuiViewModel(model, { kind: "message", message: runtime!.message });
+    expect(model.transcript.at(-1)?.activity).toEqual({
+      family: "runtime",
+      focus: "command",
+      hasError: true,
+    });
+  });
+
   it("retains actionable pending-playbook identity across restart and replay", () => {
     const { path, store } = makeStore();
     const frame = store.record({

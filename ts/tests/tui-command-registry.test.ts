@@ -14,9 +14,12 @@ import {
   tuiSlashCommands,
 } from "../src/tui/command-registry.js";
 import {
+  assertProviderBaseUrlIsSafe,
+  assertSecretTransportIsSafe,
   formatTuiRunStatus,
   TuiCommandRuntime,
 } from "../src/tui/registered-command-workflow.js";
+import { DEFAULT_TUI_ACTIVITY_SETTINGS } from "../src/tui/activity-summary.js";
 import type { TuiReadModelClient } from "../src/tui/read-model-client.js";
 import type { TuiSession } from "../src/tui/session.js";
 import { createInitialTuiViewModel } from "../src/tui/view-model.js";
@@ -217,7 +220,7 @@ describe("registered command execution", () => {
     expect(runtimeSession).toHaveBeenCalledWith("runtime-only");
   });
 
-  it("renders artifact discoveries as OSC 8 links", async () => {
+  it("returns plain artifact URLs for the sanitizing renderer to link", async () => {
     const model = createInitialTuiViewModel("ws://example/ws/interactive");
     const runtime = new TuiCommandRuntime({
       session: { viewModel: model } as unknown as TuiSession,
@@ -231,8 +234,104 @@ describe("registered command execution", () => {
     });
     const result = await runtime.execute("/artifacts run-1");
     expect(result.lines).toEqual([
-      "export: \u001b]8;;http://localhost:8000/api/export/run-1\u001b\\http://localhost:8000/api/export/run-1\u001b]8;;\u001b\\",
+      "export: http://localhost:8000/api/export/run-1",
     ]);
+  });
+
+  it("persists and applies activity filter changes", async () => {
+    const model = createInitialTuiViewModel("ws://localhost:8000/ws/interactive");
+    const save = vi.fn();
+    const reset = vi.fn(() => DEFAULT_TUI_ACTIVITY_SETTINGS);
+    const onActivitySettings = vi.fn();
+    const runtime = new TuiCommandRuntime({
+      session: { viewModel: model } as unknown as TuiSession,
+      readModels: {} as TuiReadModelClient,
+      activityEffects: {
+        load: () => DEFAULT_TUI_ACTIVITY_SETTINGS,
+        save,
+        reset,
+      },
+      onActivitySettings,
+    });
+
+    await expect(runtime.execute("/activity commands quiet")).resolves.toEqual({
+      lines: ["activity filter=commands verbosity=quiet"],
+    });
+    expect(save).toHaveBeenCalledWith({ filter: "commands", verbosity: "quiet" });
+    expect(onActivitySettings).toHaveBeenLastCalledWith({
+      filter: "commands",
+      verbosity: "quiet",
+    });
+    await expect(runtime.execute("/activity reset")).resolves.toEqual({
+      lines: ["activity filter=all verbosity=normal"],
+    });
+    expect(reset).toHaveBeenCalledOnce();
+  });
+
+  it("configures known keyless providers without prompting for a dummy secret", async () => {
+    const model = createInitialTuiViewModel("ws://localhost:8000/ws/interactive");
+    const login = vi.fn().mockResolvedValue(undefined);
+    const runtime = new TuiCommandRuntime({
+      session: { viewModel: model, login } as unknown as TuiSession,
+      readModels: {} as TuiReadModelClient,
+    });
+
+    await expect(runtime.execute("/login ollama llama3 http://localhost:11434")).resolves.toEqual({
+      lines: ["configured keyless provider ollama"],
+    });
+    expect(login).toHaveBeenCalledWith(
+      "ollama",
+      undefined,
+      "llama3",
+      "http://localhost:11434",
+    );
+    expect((await runtime.execute("/login anthropic")).requestSecret).toMatchObject({
+      provider: "anthropic",
+      requiresKey: true,
+    });
+  });
+
+  it("does not duplicate chat responses already delivered to the semantic transcript", async () => {
+    const model = createInitialTuiViewModel("ws://localhost:8000/ws/interactive");
+    const chat = vi.fn().mockResolvedValue("multi-line\nresponse");
+    const runtime = new TuiCommandRuntime({
+      session: { viewModel: model, chat } as unknown as TuiSession,
+      readModels: {} as TuiReadModelClient,
+    });
+    await expect(runtime.execute("/chat analyst hello")).resolves.toEqual({ lines: [] });
+    expect(chat).toHaveBeenCalledWith("analyst", "hello");
+  });
+
+  it("refuses to send secrets over remote plaintext WebSockets", () => {
+    expect(() => assertSecretTransportIsSafe("ws://example.test/ws/interactive"))
+      .toThrow("use wss://");
+    expect(() => assertSecretTransportIsSafe("ws://127.0.0.1:8000/ws/interactive"))
+      .not.toThrow();
+    expect(() => assertSecretTransportIsSafe("wss://example.test/ws/interactive"))
+      .not.toThrow();
+  });
+
+  it("refuses remote plaintext or credential-bearing provider endpoints before login", async () => {
+    const model = createInitialTuiViewModel("ws://localhost:8000/ws/interactive");
+    const login = vi.fn().mockResolvedValue(undefined);
+    const runtime = new TuiCommandRuntime({
+      session: { viewModel: model, login } as unknown as TuiSession,
+      readModels: {} as TuiReadModelClient,
+    });
+
+    await expect(runtime.execute("/login openai gpt-4o http://attacker.example/v1"))
+      .rejects.toThrow("must use https");
+    await expect(runtime.submitSecret({
+      provider: "openai",
+      model: "gpt-4o",
+      baseUrl: "http://attacker.example/v1",
+      requiresKey: true,
+    }, "sk-private")).rejects.toThrow("must use https");
+    expect(login).not.toHaveBeenCalled();
+    expect(() => assertProviderBaseUrlIsSafe("https://user:pass@example.test/v1"))
+      .toThrow("embedded credentials");
+    expect(() => assertProviderBaseUrlIsSafe("http://127.0.0.1:11434/v1"))
+      .not.toThrow();
   });
 
   it("uses the same status presenter as the CLI for an identical fixture", () => {

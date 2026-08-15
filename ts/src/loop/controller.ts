@@ -60,11 +60,28 @@ export class LoopController {
   #stopRequest: RunStopRequestedError | null = null;
   #gateOverride: string | null = null;
   #pendingHint: OperatorHintInput | null = null;
+  #activeRunId: string | null = null;
+  #legacyRunSequence = 0;
   #chatQueue: Array<{ role: string; message: string; resolve: (response: string) => void }> = [];
   #pendingChatResolvers: Array<(response: string) => void> = [];
 
-  beginRun(): void {
+  beginRun(runId = `legacy-run-${++this.#legacyRunSequence}`): void {
+    if (!runId.trim()) throw new Error("runId must be non-empty");
+    // Operator input is scoped to exactly one run. Clearing here prevents a late,
+    // unconsumed hint (including its verified image bytes) from crossing a run boundary.
+    this.#pendingHint = null;
+    this.#gateOverride = null;
+    this.#activeRunId = runId;
     this.#stopRequest = null;
+  }
+
+  endRun(runId: string): void {
+    if (this.#activeRunId !== runId) return;
+    this.#pendingHint = null;
+    this.#gateOverride = null;
+    this.#paused = false;
+    this.#releasePausedWaiters();
+    this.#activeRunId = null;
   }
 
   pause(): void {
@@ -118,6 +135,9 @@ export class LoopController {
   }
 
   setGateOverride(decision: string): void {
+    if (this.#activeRunId === null) {
+      throw new Error("Cannot override a gate when no run is active");
+    }
     this.#gateOverride = decision;
   }
 
@@ -128,6 +148,9 @@ export class LoopController {
   }
 
   injectHint(text: string, imageAttachments: readonly ValidatedImageAttachment[] = []): void {
+    if (this.#activeRunId === null) {
+      throw new Error("Cannot inject a hint when no run is active");
+    }
     this.#pendingHint = {
       text,
       imageAttachments: [...imageAttachments],
@@ -139,6 +162,7 @@ export class LoopController {
   }
 
   takeHintInput(): OperatorHintInput | null {
+    if (this.#activeRunId === null) return null;
     const value = this.#pendingHint;
     this.#pendingHint = null;
     return value;

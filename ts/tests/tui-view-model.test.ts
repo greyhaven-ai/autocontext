@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import type { ServerMessage } from "../src/server/protocol.js";
 import {
   createInitialTuiViewModel,
+  MAX_TUI_SEEN_EVENT_IDS,
+  MAX_TUI_TRANSCRIPT_ROWS,
   reduceTuiViewModel,
   type TuiViewModel,
 } from "../src/tui/view-model.js";
@@ -53,6 +55,174 @@ describe("TUI durable view-model reducer", () => {
     ]);
     expect(model.run).toMatchObject({ active: false, outcome: "completed" });
     expect(model.transcript.map((row) => row.sequence)).toEqual([1, 5]);
+  });
+
+  it("resets every run-scoped cursor and presentation surface for a second run", () => {
+    const firstPlan = {
+      run_id: "run-1",
+      plan_id: "plan-1",
+      version: 3,
+      plan_revision: 9,
+      update_kind: "replan" as const,
+      active_step_id: "inspect",
+      steps: [{ id: "inspect", label: "Inspect", status: "in_progress" as const }],
+    };
+    const model = feed([
+      {
+        type: "run_accepted",
+        run_id: "run-1",
+        client_run_id: "client-1",
+        scenario: "grid",
+        generations: 2,
+        event_id: "accepted-1",
+        sequence: 1,
+      },
+      {
+        ...event("task_plan_updated", 2, firstPlan),
+        client_run_id: "client-1",
+      },
+      {
+        ...event("run_completed", 5, { completed_generations: 2 }),
+        client_run_id: "client-1",
+      },
+      {
+        type: "state",
+        active: true,
+        paused: false,
+        client_run_id: "client-2",
+        run_id: "run-2",
+        scenario: "incident",
+        phase: "queued",
+        event_id: "state-2",
+        sequence: 1,
+      },
+      {
+        type: "run_accepted",
+        run_id: "run-2",
+        client_run_id: "client-2",
+        scenario: "incident",
+        generations: 1,
+        event_id: "accepted-2",
+        sequence: 2,
+      },
+    ]);
+
+    expect(model.run).toMatchObject({
+      active: true,
+      clientRunId: "client-2",
+      runId: "run-2",
+      scenario: "incident",
+      outcome: null,
+    });
+    expect(model.lastSequence).toBe(2);
+    expect(model.taskPlan).toBeNull();
+    expect(model.progressNotes).toEqual([]);
+    expect(model.pendingDecisions).toEqual([]);
+    expect(model.receipts).toEqual({});
+    expect(model.seenEventIds).toEqual({ "accepted-2": true });
+    expect(model.retiredClientRunIds).toEqual(["client-1"]);
+    expect(model.transcript.map((row) => row.id)).toEqual(["accepted-2"]);
+  });
+
+  it("does not let a delayed old-scope frame switch an active second run back", () => {
+    const current = feed([{
+      type: "run_accepted",
+      run_id: "run-2",
+      client_run_id: "client-2",
+      scenario: "incident",
+      generations: 1,
+      event_id: "accepted-2",
+      sequence: 1,
+    }]);
+    const delayed = reduceTuiViewModel(current, {
+      kind: "message",
+      message: {
+        ...event("run_completed", 20, { completed_generations: 2 }),
+        client_run_id: "client-1",
+      },
+    });
+    expect(delayed).toBe(current);
+  });
+
+  it("never returns to a retired scope after the current run terminates", () => {
+    const current = feed([
+      {
+        type: "run_accepted",
+        run_id: "run-1",
+        client_run_id: "client-1",
+        scenario: "grid",
+        generations: 1,
+        event_id: "accepted-1",
+        sequence: 1,
+      },
+      {
+        ...event("run_completed", 2, { completed_generations: 1 }),
+        client_run_id: "client-1",
+      },
+      {
+        type: "run_accepted",
+        run_id: "run-2",
+        client_run_id: "client-2",
+        scenario: "incident",
+        generations: 1,
+        event_id: "accepted-2",
+        sequence: 1,
+      },
+      {
+        ...event("run_completed", 2, { completed_generations: 1 }),
+        event_id: "completed-2",
+        client_run_id: "client-2",
+        run_id: "run-2",
+      },
+    ]);
+    const delayedAcceptance = reduceTuiViewModel(current, {
+      kind: "message",
+      message: {
+        type: "run_accepted",
+        run_id: "run-1",
+        client_run_id: "client-1",
+        scenario: "grid",
+        generations: 1,
+        event_id: "late-accepted-1",
+        sequence: 3,
+      },
+    });
+    expect(delayedAcceptance).toBe(current);
+    expect(delayedAcceptance.run).toMatchObject({
+      clientRunId: "client-2",
+      runId: "run-2",
+      outcome: "completed",
+    });
+  });
+
+  it("adopts an unsequenced reconnect bootstrap state for a new server-current run", () => {
+    const prior = feed([{
+      type: "run_accepted",
+      run_id: "run-1",
+      client_run_id: "client-1",
+      scenario: "grid",
+      generations: 1,
+      event_id: "accepted-1",
+      sequence: 1,
+    }]);
+    const reconnected = reduceTuiViewModel(prior, {
+      kind: "message",
+      message: {
+        type: "state",
+        active: true,
+        paused: false,
+        client_run_id: "client-2",
+        run_id: "run-2",
+        scenario: "incident",
+      },
+    });
+    expect(reconnected.run).toMatchObject({
+      active: true,
+      clientRunId: "client-2",
+      runId: "run-2",
+    });
+    expect(reconnected.lastSequence).toBe(0);
+    expect(reconnected.retiredClientRunIds).toEqual(["client-1"]);
   });
 
   it("converges live and replay orders on latest plan and terminal state", () => {
@@ -149,6 +319,54 @@ describe("TUI durable view-model reducer", () => {
       "Match completed",
       "Generation timing",
     ]);
+  });
+
+  it("bounds retained transcript rows and replay deduplication ids", () => {
+    const messages = Array.from({ length: MAX_TUI_SEEN_EVENT_IDS + 4 }, (_, index) =>
+      event("generation_started", index + 1, { generation: index + 1 }));
+    const model = feed(messages);
+    expect(model.transcript).toHaveLength(MAX_TUI_TRANSCRIPT_ROWS);
+    expect(model.transcript[0]!.sequence).toBe(messages.length - MAX_TUI_TRANSCRIPT_ROWS + 1);
+    expect(Object.keys(model.seenEventIds)).toHaveLength(MAX_TUI_SEEN_EVENT_IDS);
+    expect(model.seenEventIds["event-1"]).toBeUndefined();
+    expect(model.seenEventIds[`event-${messages.length}`]).toBe(true);
+  });
+
+  it("classifies runtime transcript rows for activity filtering without retaining payloads", () => {
+    const model = feed([event("runtime_session_event", 1, {
+      session_id: "runtime-1",
+      event: {
+        event_type: "shell_command",
+        payload: { command: "npm test", error: "failed", private: "do-not-render" },
+      },
+    })]);
+    expect(model.transcript[0]!.activity).toEqual({
+      family: "runtime",
+      focus: "command",
+      hasError: true,
+    });
+    expect(JSON.stringify(model.transcript[0])).not.toContain("do-not-render");
+  });
+
+  it("marks failed and skipped lifecycle rows for the errors activity filter", () => {
+    const model = feed([
+      event("playbook_update_skipped", 1, { reason: "guarded" }),
+      event("run_failed", 2, { error: "provider unavailable" }),
+    ]);
+    expect(model.transcript.map((row) => row.activity.hasError)).toEqual([true, true]);
+  });
+
+  it("rejects hello messages that omit transcript negotiation", () => {
+    const model = feed([{
+      type: "hello",
+      protocol_version: 1,
+      capabilities: ["run_transcript_v1"],
+    }]);
+    expect(model.protocolCompatible).toBe(false);
+    expect(model.connection).toMatchObject({
+      status: "failed",
+      error: "Interactive protocol version is unsupported",
+    });
   });
 
   it("retains the last transcript while disconnected", () => {

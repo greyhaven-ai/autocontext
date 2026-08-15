@@ -64,6 +64,23 @@ describe("interactive control command workflow", () => {
     expect(runManager.overrideGate).toHaveBeenCalledWith("rollback");
   });
 
+  it("pins an injected hint to the run that was active before image validation", async () => {
+    const injectHint = vi.fn();
+    await expect(executeInteractiveControlCommand({
+      command: { type: "inject_hint", text: "run-scoped" },
+      runManager: {
+        pause: vi.fn(),
+        resume: vi.fn(),
+        injectHint,
+        overrideGate: vi.fn(),
+        startRun: vi.fn(),
+        getState: () => ({ runId: "run-before-decode" }),
+        getEnvironmentInfo: vi.fn(),
+      },
+    })).resolves.toEqual([{ type: "ack", action: "inject_hint" }]);
+    expect(injectHint).toHaveBeenCalledWith("run-scoped", [], "run-before-decode");
+  });
+
   it("executes start_run and list_scenarios commands", async () => {
     const runManager = {
       pause: vi.fn(),

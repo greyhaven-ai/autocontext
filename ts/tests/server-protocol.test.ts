@@ -2,7 +2,7 @@
  * Tests for AC-347: Interactive Server — Protocol types, Run Manager, WS Server.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -37,6 +37,7 @@ interface BufferedSocket {
     predicate: (msg: Record<string, unknown>) => boolean,
     timeoutMs?: number,
   ) => Promise<Record<string, unknown>>;
+  waitForClose: (timeoutMs?: number) => Promise<{ code: number; reason: string }>;
   close: () => void;
 }
 
@@ -100,6 +101,9 @@ async function openSocket(url: string): Promise<BufferedSocket> {
     reject: (err: Error) => void;
     timer: ReturnType<typeof setTimeout>;
   }> = [];
+  const closed = new Promise<{ code: number; reason: string }>((resolve) => {
+    ws.once("close", (code, reason) => resolve({ code, reason: reason.toString() }));
+  });
 
   const flush = () => {
     for (let i = 0; i < queue.length; i++) {
@@ -146,6 +150,18 @@ async function openSocket(url: string): Promise<BufferedSocket> {
           reject(new Error(`Timed out waiting for message at ${url}`));
         }, timeoutMs);
         waiters.push({ predicate, resolve, reject, timer });
+      });
+    },
+    waitForClose(timeoutMs = 5000) {
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(
+          () => reject(new Error(`Timed out waiting for socket close at ${url}`)),
+          timeoutMs,
+        );
+        void closed.then((result) => {
+          clearTimeout(timer);
+          resolve(result);
+        });
       });
     },
     close() {
@@ -474,6 +490,125 @@ describe("RunManager", () => {
     await new Promise((r) => setTimeout(r, 500));
   });
 
+  it("leaves the manager idle when provider construction fails before execution", async () => {
+    const { RunManager } = await import("../src/server/run-manager.js");
+    const mgr = new RunManager({
+      dbPath: join(dir, "test.db"),
+      migrationsDir: join(__dirname, "..", "migrations"),
+      runsRoot: join(dir, "runs"),
+      knowledgeRoot: join(dir, "knowledge"),
+      providerType: "deterministic",
+      deps: {
+        resolveProviderBundle: () => {
+          throw new Error("provider boom");
+        },
+      },
+    });
+
+    await expect(mgr.startRun("grid_ctf", 1)).rejects.toThrow("provider boom");
+    expect(mgr.getState()).toMatchObject({ active: false, phase: null, runId: null });
+    expect(() => mgr.injectHint("orphaned hint")).toThrow(/no run is active/);
+    await expect(mgr.startRun("grid_ctf", 1)).rejects.toThrow("provider boom");
+  });
+
+  it("scopes hints and provider selection to the active run", async () => {
+    const { RunManager } = await import("../src/server/run-manager.js");
+    const mgr = new RunManager({
+      dbPath: join(dir, "test.db"),
+      migrationsDir: join(__dirname, "..", "migrations"),
+      runsRoot: join(dir, "runs"),
+      knowledgeRoot: join(dir, "knowledge"),
+      providerType: "deterministic",
+    });
+
+    expect(() => mgr.injectHint("before the run")).toThrow(/no run is active/);
+    mgr.pause();
+    const runId = await mgr.startRun("grid_ctf", 1);
+    expect(mgr.isActive).toBe(true);
+    expect(() => mgr.setActiveProvider({ providerType: "anthropic" }))
+      .toThrow(/while a run is active/);
+    expect(() => mgr.clearActiveProvider()).toThrow(/while a run is active/);
+    expect(() => mgr.injectHint("owned by this run")).not.toThrow();
+    expect(() => mgr.injectHint("stale", [], "previous-run"))
+      .toThrow(/does not match the current engine run/);
+    expect(() => mgr.injectHint("arrived while idle", [], null))
+      .toThrow(/does not match the current engine run/);
+
+    expect(mgr.stop(runId, "stop-provider-lock-test")).toBe("requested");
+    await waitForCondition(() => !mgr.isActive);
+    expect(() => mgr.injectHint("after the run")).toThrow(/no run is active/);
+    expect(() => mgr.pause(runId)).toThrow(/no run is active/);
+    expect(() => mgr.resume(runId)).toThrow(/no run is active/);
+
+    const nextRunId = await mgr.startRun("grid_ctf", 1);
+    expect(mgr.getState()).toMatchObject({ active: true, paused: false, runId: nextRunId });
+    expect(mgr.stop(nextRunId, "stop-next-run")).toBe("requested");
+    await waitForCondition(() => !mgr.isActive);
+  });
+
+  it("pins image-hint capability to the provider bundle that started the run", async () => {
+    const { RunManager } = await import("../src/server/run-manager.js");
+    const { DeterministicProvider } = await import("../src/providers/deterministic.js");
+    const deterministicProvider = new DeterministicProvider();
+    let bundleResolutions = 0;
+    const imageCapableProvider = {
+      name: deterministicProvider.name,
+      defaultModel: () => deterministicProvider.defaultModel(),
+      supportsImageAttachments: () => true,
+      complete: (opts: Parameters<typeof deterministicProvider.complete>[0]) =>
+        deterministicProvider.complete(opts),
+    };
+    const imageIncapableProvider = {
+      ...imageCapableProvider,
+      supportsImageAttachments: () => false,
+    };
+    const mgr = new RunManager({
+      dbPath: join(dir, "test.db"),
+      migrationsDir: join(__dirname, "..", "migrations"),
+      runsRoot: join(dir, "runs"),
+      knowledgeRoot: join(dir, "knowledge"),
+      providerType: "deterministic",
+      deps: {
+        resolveProviderBundle: () => {
+          bundleResolutions += 1;
+          const provider = bundleResolutions === 1
+            ? imageCapableProvider
+            : imageIncapableProvider;
+          return {
+            defaultProvider: provider,
+            defaultConfig: {
+              providerType: "deterministic",
+              apiKey: "",
+              baseUrl: "",
+              model: "deterministic-dev",
+            },
+            roleProviders: { competitor: provider },
+            roleModels: { competitor: "deterministic-dev" },
+          };
+        },
+      },
+    });
+
+    mgr.pause();
+    const runId = await mgr.startRun("grid_ctf", 1);
+    expect(bundleResolutions).toBe(1);
+    expect(() => mgr.injectHint("use the run's provider", [{
+      id: "run-image",
+      name: "run-image.png",
+      source: "paste",
+      mediaType: "image/png",
+      byteLength: 1,
+      contentSha256: "0".repeat(64),
+      width: 1,
+      height: 1,
+      data: Uint8Array.of(0),
+    }], runId)).not.toThrow();
+    expect(bundleResolutions).toBe(1);
+
+    expect(mgr.stop(runId, "stop-pinned-capability-test")).toBe("requested");
+    await waitForCondition(() => !mgr.isActive);
+  });
+
   it("startRun rejects registry entries that fail the game-family contract", async () => {
     const { RunManager } = await import("../src/server/run-manager.js");
     const { SCENARIO_REGISTRY } = await import("../src/scenarios/registry.js");
@@ -562,6 +697,291 @@ describe("InteractiveServer", () => {
     }
   });
 
+  it("caps WebSocket payloads close to the aggregate image protocol limit", async () => {
+    const {
+      MAX_GLOBAL_INTERACTIVE_MESSAGE_BYTES,
+      MAX_INTERACTIVE_WEBSOCKET_PAYLOAD_BYTES,
+    } = await import(
+      "../src/server/ws-server.js"
+    );
+    const { MAX_IMAGE_AGGREGATE_ENCODED_BYTES } = await import(
+      "../src/types/image-attachments.js"
+    );
+    expect(MAX_INTERACTIVE_WEBSOCKET_PAYLOAD_BYTES).toBe(
+      MAX_IMAGE_AGGREGATE_ENCODED_BYTES + 1024 * 1024,
+    );
+    expect(MAX_GLOBAL_INTERACTIVE_MESSAGE_BYTES).toBe(
+      MAX_INTERACTIVE_WEBSOCKET_PAYLOAD_BYTES,
+    );
+  });
+
+  it("rejects cross-site WebSocket upgrades while accepting originless CLI clients", async () => {
+    const { RunManager, InteractiveServer } = await import("../src/server/index.js");
+    const { WebSocket } = await import("ws");
+    const mgr = new RunManager({
+      dbPath: join(dir, "test.db"),
+      migrationsDir: join(__dirname, "..", "migrations"),
+      runsRoot: join(dir, "runs"),
+      knowledgeRoot: join(dir, "knowledge"),
+      providerType: "deterministic",
+    });
+    const server = new InteractiveServer({ runManager: mgr, port: 0 });
+    await server.start();
+    const hostile = new WebSocket(server.url, { origin: "https://evil.example" });
+    try {
+      const status = await new Promise<number>((resolve, reject) => {
+        hostile.once("unexpected-response", (_request, response) => {
+          response.resume();
+          resolve(response.statusCode ?? 0);
+        });
+        hostile.once("open", () => reject(new Error("cross-site WebSocket unexpectedly opened")));
+        hostile.once("error", () => undefined);
+      });
+      expect(status).toBe(403);
+
+      const cli = await openSocket(server.url);
+      try {
+        await expect(cli.waitFor((message) => message.type === "hello")).resolves.toMatchObject({
+          protocol_version: 1,
+        });
+      } finally {
+        cli.close();
+      }
+    } finally {
+      hostile.terminate();
+      await server.stop();
+    }
+  });
+
+  it("admits large malformed frames to the bounded normal lane and closes the sender", async () => {
+    const { RunManager, InteractiveServer } = await import("../src/server/index.js");
+    const { WebSocket } = await import("ws");
+    const mgr = new RunManager({
+      dbPath: join(dir, "test.db"),
+      migrationsDir: join(__dirname, "..", "migrations"),
+      runsRoot: join(dir, "runs"),
+      knowledgeRoot: join(dir, "knowledge"),
+      providerType: "deterministic",
+    });
+    const server = new InteractiveServer({ runManager: mgr, port: 0 });
+    await server.start();
+    const socket = new WebSocket(server.url);
+    try {
+      await new Promise<void>((resolve, reject) => {
+        socket.once("open", resolve);
+        socket.once("error", reject);
+      });
+      const closed = new Promise<{ code: number; reason: string }>((resolve) => {
+        socket.once("close", (code, reason) => resolve({ code, reason: reason.toString() }));
+      });
+      socket.send(`{"type":"${"x".repeat(70 * 1024)}`);
+      await expect(closed).resolves.toEqual({
+        code: 1008,
+        reason: "invalid interactive message",
+      });
+    } finally {
+      socket.terminate();
+      await server.stop();
+    }
+  });
+
+  it("bounds incomplete fragmented frames with a server-wide connection cap", async () => {
+    const { RunManager, InteractiveServer } = await import("../src/server/index.js");
+    const { MAX_INTERACTIVE_WEBSOCKET_CONNECTIONS } = await import(
+      "../src/server/ws-server.js"
+    );
+    const { WebSocket } = await import("ws");
+    const mgr = new RunManager({
+      dbPath: join(dir, "test.db"),
+      migrationsDir: join(__dirname, "..", "migrations"),
+      runsRoot: join(dir, "runs"),
+      knowledgeRoot: join(dir, "knowledge"),
+      providerType: "deterministic",
+    });
+    const server = new InteractiveServer({ runManager: mgr, port: 0 });
+    let pauseQueuedRun = true;
+    const pauseOnQueued = (state: ReturnType<typeof mgr.getState>) => {
+      if (!pauseQueuedRun || !state.active || state.phase !== "queued") return;
+      pauseQueuedRun = false;
+      mgr.pause(state.runId);
+    };
+    mgr.subscribeState(pauseOnQueued);
+    await server.start();
+    const sockets: InstanceType<typeof WebSocket>[] = [];
+    try {
+      for (let index = 0; index < MAX_INTERACTIVE_WEBSOCKET_CONNECTIONS; index += 1) {
+        const url = index % 2 === 0
+          ? server.url
+          : server.url.replace("/ws/interactive", "/ws/events");
+        const socket = new WebSocket(url);
+        await new Promise<void>((resolve, reject) => {
+          socket.once("open", resolve);
+          socket.once("error", reject);
+        });
+        socket.send(Buffer.from([index]), { fin: false });
+        sockets.push(socket);
+      }
+
+      const excess = new WebSocket(server.url);
+      const status = await new Promise<number>((resolve, reject) => {
+        excess.once("unexpected-response", (_request, response) => {
+          response.resume();
+          resolve(response.statusCode ?? 0);
+        });
+        excess.once("open", () => reject(new Error("excess WebSocket unexpectedly opened")));
+        excess.once("error", () => undefined);
+      });
+      expect(status).toBe(503);
+      excess.terminate();
+    } finally {
+      for (const socket of sockets) socket.terminate();
+      await server.stop();
+    }
+  });
+
+  it("enforces one global byte budget across concurrent interactive clients", async () => {
+    const { RunManager, InteractiveServer } = await import("../src/server/index.js");
+    const { DeterministicProvider } = await import("../src/providers/deterministic.js");
+    const { MAX_GLOBAL_INTERACTIVE_MESSAGE_BYTES } = await import(
+      "../src/server/ws-server.js"
+    );
+    const deterministicProvider = new DeterministicProvider();
+    let providerEntered = false;
+    let releaseProvider!: () => void;
+    const providerGate = new Promise<void>((resolve) => {
+      releaseProvider = resolve;
+    });
+    const gatedProvider = {
+      name: deterministicProvider.name,
+      defaultModel: () => deterministicProvider.defaultModel(),
+      complete: async (opts: Parameters<typeof deterministicProvider.complete>[0]) => {
+        providerEntered = true;
+        await providerGate;
+        return deterministicProvider.complete(opts);
+      },
+    };
+    const mgr = new RunManager({
+      dbPath: join(dir, "test.db"),
+      migrationsDir: join(__dirname, "..", "migrations"),
+      runsRoot: join(dir, "runs"),
+      knowledgeRoot: join(dir, "knowledge"),
+      providerType: "deterministic",
+      deps: {
+        resolveProviderBundle: () => ({
+          defaultProvider: gatedProvider,
+          defaultConfig: {
+            providerType: "deterministic",
+            apiKey: "",
+            baseUrl: "",
+            model: "deterministic-dev",
+          },
+          roleProviders: {},
+          roleModels: {},
+        }),
+      },
+    });
+    const server = new InteractiveServer({ runManager: mgr, port: 0 });
+    await server.start();
+    const first = await openSocket(server.url);
+    const second = await openSocket(server.url);
+    try {
+      for (const socket of [first, second]) {
+        await socket.waitFor((msg) => msg.type === "hello");
+        await socket.waitFor((msg) => msg.type === "environments");
+        await socket.waitFor((msg) => msg.type === "state");
+      }
+      const largeMessage = "x".repeat(
+        Math.floor(MAX_GLOBAL_INTERACTIVE_MESSAGE_BYTES / 2) + 1024,
+      );
+      first.send({ type: "chat_agent", role: "analyst", message: largeMessage });
+      await waitForCondition(() => providerEntered);
+      second.send({ type: "chat_agent", role: "analyst", message: largeMessage });
+      await expect(second.waitForClose()).resolves.toEqual({
+        code: 1013,
+        reason: "interactive server message budget is busy",
+      });
+      releaseProvider();
+      await first.waitFor((msg) => msg.type === "chat_response", 10_000);
+    } finally {
+      releaseProvider();
+      first.close();
+      second.close();
+      await server.stop();
+    }
+  });
+
+  it("keeps safe run control responsive while both expensive handler slots are stalled", async () => {
+    const { RunManager, InteractiveServer } = await import("../src/server/index.js");
+    const mgr = new RunManager({
+      dbPath: join(dir, "test.db"),
+      migrationsDir: join(__dirname, "..", "migrations"),
+      runsRoot: join(dir, "runs"),
+      knowledgeRoot: join(dir, "knowledge"),
+      providerType: "deterministic",
+    });
+    const server = new InteractiveServer({ runManager: mgr, port: 0 });
+    let pauseQueuedRun = true;
+    const pauseOnQueued = (state: ReturnType<typeof mgr.getState>) => {
+      if (!pauseQueuedRun || !state.active || state.phase !== "queued") return;
+      pauseQueuedRun = false;
+      mgr.pause(state.runId);
+    };
+    mgr.subscribeState(pauseOnQueued);
+    await server.start();
+    const transcript = await openSocket(`${server.url}?transcript_protocol_version=1`);
+    const firstChat = await openSocket(server.url);
+    const secondChat = await openSocket(server.url);
+    let chatCalls = 0;
+    const stalledChat = new Promise<string>(() => undefined);
+    const chatSpy = vi.spyOn(mgr, "chatAgent").mockImplementation(() => {
+      chatCalls += 1;
+      return stalledChat;
+    });
+    try {
+      for (const socket of [transcript, firstChat, secondChat]) {
+        await socket.waitFor((message) => message.type === "hello");
+        await socket.waitFor((message) => message.type === "environments");
+        await socket.waitFor((message) => message.type === "state");
+      }
+      transcript.send({
+        type: "start_run",
+        scenario: "grid_ctf",
+        generations: 100,
+        client_run_id: "priority-stop-run",
+        command_id: "priority-start",
+      });
+      const accepted = await transcript.waitFor((message) => message.type === "run_accepted");
+      mgr.unsubscribeState(pauseOnQueued);
+
+      for (let index = 0; index < 16; index += 1) {
+        firstChat.send({ type: "chat_agent", role: "analyst", message: `stall one ${index}` });
+        secondChat.send({ type: "chat_agent", role: "analyst", message: `stall two ${index}` });
+      }
+      await waitForCondition(() => chatCalls === 2);
+
+      transcript.send({
+        type: "stop",
+        client_run_id: "priority-stop-run",
+        command_id: "priority-stop",
+      });
+      await expect(transcript.waitFor(
+        (message) => message.type === "ack" && message.command_id === "priority-stop",
+        1_000,
+      )).resolves.toMatchObject({
+        action: "stop",
+        decision: "requested",
+        run_id: accepted.run_id,
+      });
+    } finally {
+      mgr.unsubscribeState(pauseOnQueued);
+      chatSpy.mockRestore();
+      transcript.close();
+      firstChat.close();
+      secondChat.close();
+      await server.stop();
+    }
+  }, 10_000);
+
   it("routes interactive commands into the live run and forwards events", async () => {
     const { RunManager, InteractiveServer } = await import("../src/server/index.js");
     const mgr = new RunManager({
@@ -606,16 +1026,16 @@ describe("InteractiveServer", () => {
       );
 
       socket.send({ type: "inject_hint", text: "Hold the center lane." });
-      LegacyRunMessageSchema.parse(
-        await socket.waitFor((msg) => msg.type === "ack" && msg.action === "inject_hint"),
+      const inactiveHintError = LegacyRunMessageSchema.parse(
+        await socket.waitFor((msg) => msg.type === "error"),
       );
+      expect(inactiveHintError.type === "error" ? inactiveHintError.message : "")
+        .toContain("no run is active");
 
       socket.send({ type: "override_gate", decision: "rollback" });
-      expect(
-        LegacyRunMessageSchema.parse(
-          await socket.waitFor((msg) => msg.type === "ack" && msg.action === "override_gate"),
-        ),
-      ).toMatchObject({ decision: "rollback" });
+      expect(LegacyRunMessageSchema.parse(
+        await socket.waitFor((msg) => msg.type === "error"),
+      )).toMatchObject({ message: expect.stringContaining("no run is active") });
 
       socket.send({ type: "chat_agent", role: "analyst", message: "What changed?" });
       const chatResponse = LegacyRunMessageSchema.parse(
@@ -625,12 +1045,22 @@ describe("InteractiveServer", () => {
         "## Findings",
       );
 
+      socket.send({ type: "pause" });
+      await socket.waitFor((msg) => msg.type === "ack" && msg.action === "pause");
       socket.send({ type: "start_run", scenario: "grid_ctf", generations: 1 });
       const accepted = LegacyRunMessageSchema.parse(
         await socket.waitFor((msg) => msg.type === "run_accepted"),
       );
       if (accepted.type !== "run_accepted") throw new Error("expected run acceptance");
       expect(accepted.scenario).toBe("grid_ctf");
+      socket.send({ type: "override_gate", decision: "rollback" });
+      expect(
+        LegacyRunMessageSchema.parse(
+          await socket.waitFor((msg) => msg.type === "ack" && msg.action === "override_gate"),
+        ),
+      ).toMatchObject({ decision: "rollback" });
+      socket.send({ type: "resume" });
+      await socket.waitFor((msg) => msg.type === "ack" && msg.action === "resume");
       LegacyRunMessageSchema.parse(
         await socket.waitFor((msg) => msg.type === "event" && msg.event === "run_started"),
       );
@@ -655,7 +1085,7 @@ describe("InteractiveServer", () => {
         "gen_1",
         "competitor_prompt.md",
       );
-      expect(readFileSync(promptPath, "utf-8")).toContain("Operator Hint:\nHold the center lane.");
+      expect(readFileSync(promptPath, "utf-8")).not.toContain("Hold the center lane.");
     } finally {
       socket.close();
       await server.stop();
@@ -744,6 +1174,28 @@ describe("InteractiveServer", () => {
       await socket.waitFor((msg) => msg.type === "event" && msg.event === "run_started");
 
       socket.send({
+        type: "start_run",
+        scenario: "grid_ctf",
+        generations: 1,
+        client_run_id: "client-invalid-second-run",
+        command_id: "command-invalid-second-run",
+      });
+      expect(
+        await socket.waitFor(
+          (msg) => msg.type === "error" && msg.command_id === "command-invalid-second-run",
+        ),
+      ).toMatchObject({ message: expect.stringContaining("already active") });
+      mgr.events.emit("future_run_checkpoint", { run_id: accepted.run_id });
+      expect(
+        await socket.waitFor(
+          (msg) =>
+            msg.type === "event" &&
+            msg.event === "future_run_checkpoint" &&
+            msg.client_run_id === "client-stop-run",
+        ),
+      ).toMatchObject({ client_run_id: "client-stop-run" });
+
+      socket.send({
         type: "stop",
         client_run_id: "stale-client-run",
         command_id: "command-stale-stop",
@@ -806,6 +1258,32 @@ describe("InteractiveServer", () => {
       expect(
         seenEvents.some((entry) => entry.event === "run_completed" || entry.event === "run_failed"),
       ).toBe(false);
+
+      const invalidStart = {
+        type: "start_run",
+        scenario: "missing_scenario",
+        generations: 1,
+        client_run_id: "client-invalid-scenario",
+        command_id: "command-invalid-scenario",
+      };
+      socket.send(invalidStart);
+      const invalidStartError = await socket.waitFor(
+        (msg) => msg.type === "error" && msg.command_id === "command-invalid-scenario",
+      );
+      expect(invalidStartError.message).toContain("Unknown scenario");
+      socket.send(invalidStart);
+      expect(
+        await socket.waitFor((msg) => msg.event_id === invalidStartError.event_id),
+      ).toEqual(invalidStartError);
+      mgr.events.emit("future_run_checkpoint", { run_id: accepted.run_id });
+      expect(
+        await socket.waitFor(
+          (msg) =>
+            msg.type === "event" &&
+            msg.event === "future_run_checkpoint" &&
+            msg.client_run_id === "client-stop-run",
+        ),
+      ).toMatchObject({ client_run_id: "client-stop-run" });
 
       socket.send(stopCommand);
       expect(await socket.waitFor((msg) => msg.event_id === terminal.event_id)).toEqual(terminal);
@@ -1065,6 +1543,20 @@ describe("InteractiveServer", () => {
       });
       expect(JSON.stringify(futureCheckpoint)).not.toContain("must-not-cross-the-wire");
 
+      socket.send({
+        type: "resume_run",
+        client_run_id: "unknown-client-run",
+        after_sequence: 0,
+        command_id: "command-unknown-resume",
+      });
+      expect(await socket.waitFor(
+        (msg) => msg.type === "error" && msg.command_id === "command-unknown-resume",
+      )).toMatchObject({ message: expect.stringContaining("not associated") });
+      firstManager.events.emit("future_run_checkpoint", { run_id: accepted.run_id });
+      expect(await socket.waitFor(
+        (msg) => msg.type === "event" && msg.event === "future_run_checkpoint",
+      )).toMatchObject({ client_run_id: "client-run-1" });
+
       await expect(
         otherScope.waitFor((msg) => msg.client_run_id === "client-run-1", 250),
       ).rejects.toThrow(/Timed out/);
@@ -1107,9 +1599,10 @@ describe("InteractiveServer", () => {
         command_id: "command-pause-1",
       });
       pauseAck = await socket.waitFor(
-        (msg) => msg.type === "ack" && msg.command_id === "command-pause-1",
+        (msg) => msg.type === "error" && msg.command_id === "command-pause-1",
       );
       expect(pauseAck.client_run_id).toBe("client-run-1");
+      expect(pauseAck.message).toContain("no run is active");
 
       socket.send({
         type: "pause",
@@ -1117,7 +1610,7 @@ describe("InteractiveServer", () => {
         command_id: "command-pause-1",
       });
       expect(
-        await socket.waitFor((msg) => msg.type === "ack" && msg.command_id === "command-pause-1"),
+        await socket.waitFor((msg) => msg.type === "error" && msg.command_id === "command-pause-1"),
       ).toEqual(pauseAck);
 
       for (const connection of [reconnect, otherScope]) {
@@ -1183,17 +1676,17 @@ describe("InteractiveServer", () => {
         after_sequence: 0,
         command_id: "command-backfill-2",
       });
-      await otherScope.waitFor(
-        (msg) => msg.type === "ack" && msg.command_id === "command-backfill-2",
-      );
+      expect(await otherScope.waitFor(
+        (msg) => msg.type === "error" && msg.command_id === "command-backfill-2",
+      )).toMatchObject({ message: expect.stringContaining("not associated") });
       socket.send({
         type: "resume",
         client_run_id: "client-run-1",
         command_id: "command-client-1-only",
       });
-      await socket.waitFor(
-        (msg) => msg.type === "ack" && msg.command_id === "command-client-1-only",
-      );
+      await expect(socket.waitFor(
+        (msg) => msg.type === "error" && msg.command_id === "command-client-1-only",
+      )).resolves.toMatchObject({ message: expect.stringContaining("no run is active") });
       await expect(
         otherScope.waitFor((msg) => msg.command_id === "command-client-1-only", 250),
       ).rejects.toThrow(/Timed out/);
@@ -1301,6 +1794,13 @@ describe("InteractiveServer", () => {
         type: "create_scenario",
         description: "Create a custom scenario that tests summarizing technical incident reports.",
       });
+      // These arrive while scenario generation is still asynchronous. The
+      // server must preserve per-socket command order instead of racing them.
+      socket.send({
+        type: "revise_scenario",
+        feedback: "Keep it focused on incident triage summaries.",
+      });
+      socket.send({ type: "confirm_scenario" });
       expect((await socket.waitFor((msg) => msg.type === "scenario_generating")).type).toBe(
         "scenario_generating",
       );
@@ -1308,17 +1808,12 @@ describe("InteractiveServer", () => {
       expect(preview.name).toBeDefined();
       expect(preview.description).toContain("family");
 
-      socket.send({
-        type: "revise_scenario",
-        feedback: "Keep it focused on incident triage summaries.",
-      });
       expect((await socket.waitFor((msg) => msg.type === "scenario_generating")).type).toBe(
         "scenario_generating",
       );
       const revisedPreview = await socket.waitFor((msg) => msg.type === "scenario_preview");
       expect(revisedPreview.name).toBeDefined();
 
-      socket.send({ type: "confirm_scenario" });
       expect(
         (await socket.waitFor((msg) => msg.type === "ack" && msg.action === "confirm_scenario"))
           .action,
@@ -1369,11 +1864,15 @@ describe("InteractiveServer", () => {
     await server.start();
 
     const socket = await openSocket(server.url);
+    const observer = await openSocket(`${server.url}?transcript_protocol_version=1`);
 
     try {
       await socket.waitFor((msg) => msg.type === "hello");
       await socket.waitFor((msg) => msg.type === "environments");
       await socket.waitFor((msg) => msg.type === "state");
+      await observer.waitFor((msg) => msg.type === "hello");
+      await observer.waitFor((msg) => msg.type === "environments");
+      await observer.waitFor((msg) => msg.type === "state");
 
       socket.send({ type: "chat_agent", role: "analyst", message: "What changed?" });
       const initialError = await socket.waitFor((msg) => msg.type === "error");
@@ -1384,12 +1883,23 @@ describe("InteractiveServer", () => {
       expect(authStatus.provider).toBe("deterministic");
       expect(authStatus.authenticated).toBe(true);
       expect(mgr.getActiveProviderType()).toBe("deterministic");
+      expect(
+        await observer.waitFor(
+          (msg) => msg.type === "environments" && msg.agent_provider === "deterministic",
+        ),
+      ).toMatchObject({ agent_provider: "deterministic" });
+      expect(
+        await observer.waitFor(
+          (msg) => msg.type === "hello" && msg.transcript_protocol_version === 1,
+        ),
+      ).toMatchObject({ protocol_version: 1, transcript_protocol_version: 1 });
 
       socket.send({ type: "chat_agent", role: "analyst", message: "What changed?" });
       const reply = await socket.waitFor((msg) => msg.type === "chat_response");
       expect(String(reply.text)).toContain("## Findings");
     } finally {
       socket.close();
+      observer.close();
       await server.stop();
       if (previousConfigDir === undefined) {
         delete process.env.AUTOCONTEXT_CONFIG_DIR;

@@ -1,15 +1,23 @@
 import type { ClientMessage, ServerMessage } from "./protocol.js";
 import { buildEnvironmentMessage } from "./websocket-session-bootstrap.js";
 import {
-  validateImageAttachments,
+  validateImageAttachmentsForInference,
   type ValidatedImageAttachment,
 } from "../types/index.js";
 
 export interface InteractiveControlRunManager {
-  pause(): void;
-  resume(): void;
-  injectHint(text: string, imageAttachments?: readonly ValidatedImageAttachment[]): void;
-  overrideGate(decision: "advance" | "retry" | "rollback"): void;
+  pause(expectedRunId?: string | null): void;
+  resume(expectedRunId?: string | null): void;
+  injectHint(
+    text: string,
+    imageAttachments?: readonly ValidatedImageAttachment[],
+    expectedRunId?: string | null,
+  ): void;
+  getState?(): { runId: string | null };
+  overrideGate(
+    decision: "advance" | "retry" | "rollback",
+    expectedRunId?: string | null,
+  ): void;
   startRun(
     scenario: string,
     generations: number,
@@ -48,20 +56,41 @@ export async function executeInteractiveControlCommand(opts: {
   runManager: InteractiveControlRunManager;
 }): Promise<ServerMessage[]> {
   switch (opts.command.type) {
-    case "pause":
-      opts.runManager.pause();
+    case "pause": {
+      const expectedRunId = opts.command.client_run_id
+        ? opts.runManager.getState?.().runId
+        : undefined;
+      if (expectedRunId === undefined) opts.runManager.pause();
+      else opts.runManager.pause(expectedRunId);
       return [{ type: "ack", action: "pause", ...commandResponseMetadata(opts.command) }];
-    case "resume":
-      opts.runManager.resume();
+    }
+    case "resume": {
+      const expectedRunId = opts.command.client_run_id
+        ? opts.runManager.getState?.().runId
+        : undefined;
+      if (expectedRunId === undefined) opts.runManager.resume();
+      else opts.runManager.resume(expectedRunId);
       return [{ type: "ack", action: "resume", ...commandResponseMetadata(opts.command) }];
-    case "inject_hint":
-      opts.runManager.injectHint(
-        opts.command.text,
-        validateImageAttachments(opts.command.image_attachments ?? []),
+    }
+    case "inject_hint": {
+      const expectedRunId = opts.runManager.getState?.().runId;
+      const imageAttachments = await validateImageAttachmentsForInference(
+        opts.command.image_attachments ?? [],
       );
+      if (expectedRunId !== undefined) {
+        opts.runManager.injectHint(opts.command.text, imageAttachments, expectedRunId);
+      } else {
+        opts.runManager.injectHint(opts.command.text, imageAttachments);
+      }
       return [{ type: "ack", action: "inject_hint", ...commandResponseMetadata(opts.command) }];
-    case "override_gate":
-      opts.runManager.overrideGate(opts.command.decision);
+    }
+    case "override_gate": {
+      const expectedRunId = opts.runManager.getState?.().runId;
+      if (expectedRunId !== undefined) {
+        opts.runManager.overrideGate(opts.command.decision, expectedRunId);
+      } else {
+        opts.runManager.overrideGate(opts.command.decision);
+      }
       return [
         {
           type: "ack",
@@ -70,6 +99,7 @@ export async function executeInteractiveControlCommand(opts: {
           ...commandResponseMetadata(opts.command),
         },
       ];
+    }
     case "start_run": {
       const runId = await opts.runManager.startRun(
         opts.command.scenario,

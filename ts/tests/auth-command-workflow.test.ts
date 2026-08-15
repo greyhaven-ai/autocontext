@@ -55,6 +55,7 @@ describe("auth command workflow", () => {
   it("logs in, updates the active provider, and returns auth status", async () => {
     const runManager = {
       getActiveProviderType: vi.fn(() => "openai"),
+      acquireProviderChangeLease: vi.fn(() => vi.fn()),
       setActiveProvider: vi.fn(),
       clearActiveProvider: vi.fn(),
     };
@@ -104,6 +105,7 @@ describe("auth command workflow", () => {
   it("clears session overrides on full logout and reports status", async () => {
     const runManager = {
       getActiveProviderType: vi.fn(() => "anthropic"),
+      acquireProviderChangeLease: vi.fn(() => vi.fn()),
       setActiveProvider: vi.fn(),
       clearActiveProvider: vi.fn(),
     };
@@ -135,6 +137,7 @@ describe("auth command workflow", () => {
   it("switches providers using resolved persisted selection", async () => {
     const runManager = {
       getActiveProviderType: vi.fn(() => "anthropic"),
+      acquireProviderChangeLease: vi.fn(() => vi.fn()),
       setActiveProvider: vi.fn(),
       clearActiveProvider: vi.fn(),
     };
@@ -166,5 +169,90 @@ describe("auth command workflow", () => {
       authenticated: true,
       configuredProviders: [{ provider: "deterministic", hasApiKey: false }],
     });
+  });
+
+  it("rejects unsafe endpoints from persisted provider selections", async () => {
+    const release = vi.fn();
+    const runManager = {
+      getActiveProviderType: vi.fn(() => "anthropic"),
+      acquireProviderChangeLease: vi.fn(() => release),
+      setActiveProvider: vi.fn(),
+      clearActiveProvider: vi.fn(),
+    };
+
+    await expect(executeAuthCommand({
+      command: { type: "switch_provider", provider: "openai" },
+      runManager,
+      deps: {
+        resolveConfigDir: () => "/tmp/config",
+        handleTuiSwitchProvider: vi.fn(() => ({
+          provider: "openai",
+          authenticated: true,
+          configuredProviders: [{ provider: "openai", hasApiKey: true }],
+        })),
+        resolveTuiAuthSelection: vi.fn(() => ({
+          provider: "openai",
+          authenticated: true,
+          apiKey: "sk-private",
+          baseUrl: "http://attacker.example/v1",
+          configuredProviders: [{ provider: "openai", hasApiKey: true }],
+        })),
+      },
+    })).rejects.toThrow(/remote provider base URLs must use https/);
+
+    expect(runManager.setActiveProvider).not.toHaveBeenCalled();
+    expect(runManager.clearActiveProvider).not.toHaveBeenCalled();
+    expect(release).toHaveBeenCalledOnce();
+  });
+
+  it("rejects auth mutations before credential persistence when provider changes are locked", async () => {
+    const handleTuiLogin = vi.fn();
+    const runManager = {
+      getActiveProviderType: vi.fn(() => "anthropic"),
+      acquireProviderChangeLease: vi.fn(() => {
+        throw new Error("Cannot change providers while a run is active");
+      }),
+      setActiveProvider: vi.fn(),
+      clearActiveProvider: vi.fn(),
+    };
+
+    await expect(executeAuthCommand({
+      command: { type: "login", provider: "anthropic", apiKey: "sk-ant" },
+      runManager,
+      deps: {
+        resolveConfigDir: () => "/tmp/config",
+        handleTuiLogin,
+      },
+    })).rejects.toThrow(/while a run is active/);
+    expect(handleTuiLogin).not.toHaveBeenCalled();
+  });
+
+  it("rejects unsafe provider endpoints at the server boundary before persistence", async () => {
+    const handleTuiLogin = vi.fn();
+    const acquireProviderChangeLease = vi.fn(() => vi.fn());
+    const runManager = {
+      getActiveProviderType: vi.fn(() => "openai"),
+      acquireProviderChangeLease,
+      setActiveProvider: vi.fn(),
+      clearActiveProvider: vi.fn(),
+    };
+
+    for (const baseUrl of [
+      "http://attacker.example/v1",
+      "https://user:password@example.test/v1",
+      "file:///tmp/provider",
+    ]) {
+      await expect(executeAuthCommand({
+        command: { type: "login", provider: "openai", apiKey: "sk-private", baseUrl },
+        runManager,
+        deps: {
+          resolveConfigDir: () => "/tmp/config",
+          handleTuiLogin,
+        },
+      })).rejects.toThrow(/provider base URL/);
+    }
+
+    expect(handleTuiLogin).not.toHaveBeenCalled();
+    expect(acquireProviderChangeLease).not.toHaveBeenCalled();
   });
 });

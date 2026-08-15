@@ -111,11 +111,21 @@ describe("LoopController", () => {
     const ctrl = new LoopController();
     ctrl.requestStop("run_123", "cmd_stop_1");
 
-    ctrl.beginRun();
+    ctrl.beginRun("run_456");
 
     expect(ctrl.isStopRequested()).toBe(false);
     expect(ctrl.getStopRequest()).toBeNull();
     await expect(ctrl.waitAtBoundary()).resolves.toBeUndefined();
+  });
+
+  it("preserves the public zero-argument beginRun contract", async () => {
+    const { LoopController } = await import("../src/loop/controller.js");
+    const ctrl = new LoopController();
+
+    ctrl.beginRun();
+    ctrl.injectHint("legacy caller hint");
+
+    expect(ctrl.takeHint()).toBe("legacy caller hint");
   });
 
   it("should enrich a stop request with durable run progress", async () => {
@@ -147,6 +157,7 @@ describe("LoopController gate override", () => {
   it("should set and take gate override (one-shot)", async () => {
     const { LoopController } = await import("../src/loop/controller.js");
     const ctrl = new LoopController();
+    ctrl.beginRun("run-1");
     ctrl.setGateOverride("advance");
     expect(ctrl.takeGateOverride()).toBe("advance");
     // Second take should return null (consumed)
@@ -156,9 +167,21 @@ describe("LoopController gate override", () => {
   it("should overwrite previous override", async () => {
     const { LoopController } = await import("../src/loop/controller.js");
     const ctrl = new LoopController();
+    ctrl.beginRun("run-1");
     ctrl.setGateOverride("retry");
     ctrl.setGateOverride("rollback");
     expect(ctrl.takeGateOverride()).toBe("rollback");
+  });
+
+  it("rejects idle overrides and clears an unconsumed override at run boundaries", async () => {
+    const { LoopController } = await import("../src/loop/controller.js");
+    const ctrl = new LoopController();
+    expect(() => ctrl.setGateOverride("rollback")).toThrow(/no run is active/);
+    ctrl.beginRun("run-1");
+    ctrl.setGateOverride("rollback");
+    ctrl.endRun("run-1");
+    ctrl.beginRun("run-2");
+    expect(ctrl.takeGateOverride()).toBeNull();
   });
 });
 
@@ -172,9 +195,43 @@ describe("LoopController hint injection", () => {
   it("should inject and take hint (one-shot)", async () => {
     const { LoopController } = await import("../src/loop/controller.js");
     const ctrl = new LoopController();
+    ctrl.beginRun("run-1");
     ctrl.injectHint("Try a defensive strategy");
     expect(ctrl.takeHint()).toBe("Try a defensive strategy");
     expect(ctrl.takeHint()).toBeNull();
+  });
+
+  it("rejects hints while inactive and after the owning run ends", async () => {
+    const { LoopController } = await import("../src/loop/controller.js");
+    const ctrl = new LoopController();
+    expect(() => ctrl.injectHint("too early")).toThrow(/no run is active/);
+
+    ctrl.beginRun("run-1");
+    ctrl.endRun("run-1");
+    expect(() => ctrl.injectHint("too late")).toThrow(/no run is active/);
+  });
+
+  it("clears pending text and image bytes at run boundaries", async () => {
+    const { LoopController } = await import("../src/loop/controller.js");
+    const ctrl = new LoopController();
+    ctrl.beginRun("run-1");
+    ctrl.injectHint("run-one secret", [{
+      id: "image-1",
+      name: "secret.png",
+      source: "paste",
+      mediaType: "image/png",
+      byteLength: 3,
+      contentSha256: "0".repeat(64),
+      width: 1,
+      height: 1,
+      data: new Uint8Array([1, 2, 3]),
+    }]);
+
+    ctrl.beginRun("run-2");
+    ctrl.endRun("run-1");
+    expect(ctrl.takeHintInput()).toBeNull();
+    ctrl.injectHint("run-two");
+    expect(ctrl.takeHint()).toBe("run-two");
   });
 });
 

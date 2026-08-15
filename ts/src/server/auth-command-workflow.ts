@@ -1,4 +1,5 @@
 import type { ClientMessage, ServerMessage } from "./protocol.js";
+import { assertProviderBaseUrlIsSafe } from "../security/provider-endpoint.js";
 import type {
   ResolvedTuiAuthSelection,
   TuiAuthStatus,
@@ -7,6 +8,7 @@ import type {
 
 export interface AuthCommandRunManager {
   getActiveProviderType(): string | null;
+  acquireProviderChangeLease(): () => void;
   setActiveProvider(config: {
     providerType: string;
     apiKey?: string;
@@ -48,6 +50,7 @@ export function applyResolvedAuthSelection(
   runManager: Pick<AuthCommandRunManager, "setActiveProvider" | "clearActiveProvider">,
   selection: ResolvedTuiAuthSelection,
 ): void {
+  assertProviderBaseUrlIsSafe(selection.baseUrl);
   if (selection.provider === "none") {
     runManager.clearActiveProvider();
     return;
@@ -74,51 +77,67 @@ export async function executeAuthCommand(opts: {
 
   switch (opts.command.type) {
     case "login": {
-      const loginResult = await deps.handleTuiLogin(
-        configDir,
-        opts.command.provider,
-        opts.command.apiKey,
-        opts.command.model,
-        opts.command.baseUrl,
-      );
-      if (!loginResult.saved) {
-        throw new Error(loginResult.validationWarning ?? `Unable to log in to ${opts.command.provider}`);
+      assertProviderBaseUrlIsSafe(opts.command.baseUrl);
+      const release = opts.runManager.acquireProviderChangeLease();
+      try {
+        const loginResult = await deps.handleTuiLogin(
+          configDir,
+          opts.command.provider,
+          opts.command.apiKey,
+          opts.command.model,
+          opts.command.baseUrl,
+        );
+        if (!loginResult.saved) {
+          throw new Error(loginResult.validationWarning ?? `Unable to log in to ${opts.command.provider}`);
+        }
+        const selection = deps.resolveTuiAuthSelection(configDir, loginResult.provider);
+        if (selection.provider !== "none") {
+          applyResolvedAuthSelection(opts.runManager, selection);
+        }
+        return buildAuthStatusMessage(deps.handleTuiWhoami(configDir, loginResult.provider));
+      } finally {
+        release();
       }
-      const selection = deps.resolveTuiAuthSelection(configDir, loginResult.provider);
-      if (selection.provider !== "none") {
-        applyResolvedAuthSelection(opts.runManager, selection);
-      }
-      return buildAuthStatusMessage(deps.handleTuiWhoami(configDir, loginResult.provider));
     }
     case "logout": {
-      const currentProvider = opts.runManager.getActiveProviderType() ?? undefined;
-      const removedProvider = opts.command.provider?.trim().toLowerCase();
-      deps.handleTuiLogout(configDir, opts.command.provider);
-      if (!opts.command.provider) {
-        opts.runManager.clearActiveProvider();
-      } else {
-        const preferredProvider = currentProvider === removedProvider ? removedProvider : currentProvider;
-        applyResolvedAuthSelection(
-          opts.runManager,
-          deps.resolveTuiAuthSelection(configDir, preferredProvider),
+      const release = opts.runManager.acquireProviderChangeLease();
+      try {
+        const currentProvider = opts.runManager.getActiveProviderType() ?? undefined;
+        const removedProvider = opts.command.provider?.trim().toLowerCase();
+        deps.handleTuiLogout(configDir, opts.command.provider);
+        if (!opts.command.provider) {
+          opts.runManager.clearActiveProvider();
+        } else {
+          const preferredProvider = currentProvider === removedProvider ? removedProvider : currentProvider;
+          applyResolvedAuthSelection(
+            opts.runManager,
+            deps.resolveTuiAuthSelection(configDir, preferredProvider),
+          );
+        }
+        return buildAuthStatusMessage(
+          deps.handleTuiWhoami(
+            configDir,
+            opts.command.provider
+              ? (currentProvider === removedProvider ? removedProvider : currentProvider)
+              : undefined,
+          ),
         );
+      } finally {
+        release();
       }
-      return buildAuthStatusMessage(
-        deps.handleTuiWhoami(
-          configDir,
-          opts.command.provider
-            ? (currentProvider === removedProvider ? removedProvider : currentProvider)
-            : undefined,
-        ),
-      );
     }
     case "switch_provider": {
-      const status = deps.handleTuiSwitchProvider(configDir, opts.command.provider);
-      applyResolvedAuthSelection(
-        opts.runManager,
-        deps.resolveTuiAuthSelection(configDir, opts.command.provider),
-      );
-      return buildAuthStatusMessage(status);
+      const release = opts.runManager.acquireProviderChangeLease();
+      try {
+        const status = deps.handleTuiSwitchProvider(configDir, opts.command.provider);
+        applyResolvedAuthSelection(
+          opts.runManager,
+          deps.resolveTuiAuthSelection(configDir, opts.command.provider),
+        );
+        return buildAuthStatusMessage(status);
+      } finally {
+        release();
+      }
     }
     case "whoami":
       return buildAuthStatusMessage(

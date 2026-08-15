@@ -136,6 +136,10 @@ Attach the same client to an existing TypeScript `autoctx serve` endpoint:
 autoctx tui --connect https://host.example
 ```
 
+Non-loopback attach endpoints must use HTTPS/WSS. Credentials are never sent
+over a remote plaintext WebSocket, and URL userinfo or sensitive query values
+are redacted from the terminal and its preserved transcript.
+
 Local and remote mode use the same WebSocket transport, durable transcript
 view model, command registry, and HTTP cockpit read models. The renderer never
 opens SQLite or calls `RunManager` directly. The alternate-screen layout keeps
@@ -254,9 +258,9 @@ deferred; its interactive server does not advertise this capability.
       "name": "pixel.png",
       "source": "picker",
       "media_type": "image/png",
-      "data_base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZsOkAAAAASUVORK5CYII=",
+      "data_base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
       "byte_length": 68,
-      "content_sha256": "786ada68a10b8f04d3ebb48883677ce6fb4d3f6fd11b4d6229ffba1698a4ad03",
+      "content_sha256": "431ced6916a2a21a156e38701afe55bbd7f88969fbbfc56d7fe099d47f265460",
       "width": 1,
       "height": 1
     }
@@ -270,7 +274,9 @@ unique ids and content hashes, exact decoded byte count and SHA-256, matching
 format headers and dimensions, and these limits: at most four images, 5 MiB
 decoded source bytes and 7 MiB encoded bytes per image, dimensions no larger
 than 8192×8192, a 64 MiB decoded RGBA budget per image, and 20 MiB aggregate
-encoded bytes. Anthropic receives exact base64 image blocks; supported OpenAI
+encoded bytes. PNG, JPEG, GIF, and WebP inputs must pass a bounded full decode;
+animated images are rejected, and decode work is serialized and queue-bounded.
+Anthropic receives exact base64 image blocks; supported OpenAI
 models receive exact data-URL image parts. Unknown OpenAI-compatible gateways
 are unsupported unless the embedding application explicitly opts them in.
 
