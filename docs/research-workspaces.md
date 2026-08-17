@@ -19,7 +19,7 @@ from autocontext.execution.research_workspace import (
 
 request = WorkspaceCapabilityRequest(
     workspace_id="paper-analysis",
-    profile="isolated_sandbox",
+    profile="trusted_local",
     requested_capabilities=frozenset({
         "workspace_read",
         "workspace_write",
@@ -50,6 +50,7 @@ The request records the profile, requested grants, package and command
 allowlists, network-host allowlist, limits, approval context, and lifecycle
 policy. Elevated profiles default to deny when no approval hook is supplied.
 Network is a separate grant and only permits HTTPS hosts listed in the request.
+Redirects are denied instead of inheriting trust from the original URL.
 Credentialed or authoritative operations stay in the host control plane and
 use the typed `host_call()` bridge; credentials are never installed in the
 candidate namespace or child-process environment.
@@ -62,15 +63,23 @@ and network responses are bounded by explicit request limits. Path traversal,
 symbolic-link snapshots, unapproved imports/commands, and ungranted network or
 host calls fail closed.
 
+`package_import` and `subprocess` are available only to the explicitly approved
+`trusted_local` profile. `isolated_sandbox` rejects both until it is backed by a
+real OS sandbox: an allowed module can expose transitive file, network, or
+process primitives, and an executable allowlist cannot constrain what an
+interpreter or shell reads, writes, or connects to.
+
 Snapshots contain plain built-in variables, helper-function source, and
 workspace-rooted files. `snapshot()`, `restore()`, and `close()` are explicit;
 owned roots can be deterministically deleted with `delete_on_close`. Audit
 events record the profile, grants, resource action, outcome, limits/usage
 detail, host calls, and cleanup result.
 
-The standard library process boundary is not a hostile-code VM. Deployments
-that accept adversarial programs should run `isolated_sandbox` inside a real
-sandbox adapter as well.
+The standard library process boundary is not a hostile-code VM. Package code
+and the Python runtime still share the host kernel, so deployments that accept
+adversarial programs must supply a real sandbox adapter. The
+`isolated_sandbox` profile fails closed for package imports and subprocesses in
+the meantime.
 
 ## Runtime responsibilities
 

@@ -375,6 +375,7 @@ class GenerationPipeline:
             artifacts=self._artifacts,
             trajectory_builder=self._trajectory_builder,
         )
+        self._orchestrator.apply_active_context_routing(ctx.settings, ctx.active_context_routing)
 
         # Hook: PrimeIntellect warm provision
         if self._warm_provision_fn is not None:

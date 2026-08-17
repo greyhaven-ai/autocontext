@@ -37,7 +37,9 @@ typed artifacts, resource usage, session identity, and cleanup outcome. Its
 status keeps `timeout`, `provider_error`, `task_error`, `artifact_error`, and
 `cleanup_error` distinct. `to_ledger_entry()` produces the external-evaluation
 ledger projection so infrastructure failures cannot be counted as candidate
-losses.
+losses. When task/artifact processing and resource cleanup both fail,
+`cleanup_error` takes infrastructure precedence while the candidate failure is
+retained in the error detail.
 
 ## Prime Intellect adapter
 
@@ -48,9 +50,14 @@ secret-grant, reuse, or warm/snapshot requests it cannot honor. GPU resources
 are optional; ordinary CPU requests do not assume an accelerator exists.
 
 `ephemeral_per_eval` is the default and always attempts sandbox deletion.
-`execute_requests()` provides bounded reuse for compatible matched-trial
-cohorts: requests must share image, resources, network and secret policies, and
-all fit within the declared reuse bound. One sandbox is used and one cleanup is
+Prime Intellect session reuse is fail-closed by default: the adapter does not
+advertise reuse until a provider integration can prove a clean task boundary.
+When an operator explicitly enables that capability, `execute_requests()`
+provides bounded reuse only for compatible matched-trial cohorts. Requests
+must share lifecycle, image, resources, network and secret policies, secret
+grants, input artifacts, environment, and snapshot, and all fit within the
+declared reuse bound. Per-task metadata may differ because it is not supplied
+when the sandbox is provisioned. One sandbox is then used and one cleanup is
 recorded for the cohort. `warm_snapshot` requires both an explicit snapshot
 reference and advertised Prime Intellect snapshot/warm capabilities from the
 AC-784 adapter contract. There is no silent warm-to-cold substitution.
@@ -69,6 +76,13 @@ limits as a generic command; the remote image is responsible for containing
 the requested autocontext scenario package. `PrimeIntellectExecutor` consumes
 the typed result and preserves the existing `ScenarioInterface` execution
 surface. Local execution remains unchanged.
+
+The adapter's bare `python:3.11-slim` default does not contain Autocontext.
+Live scenario execution must configure a hermetic image containing the exact
+Autocontext/scenario sources and dependencies; otherwise the task fails (or
+returns the explicit unavailable result when fallback is explicitly enabled;
+fallback is disabled by default). Packaging
+custom scenario modules and instance state is not inferred from the host.
 
 Non-game code/research scenarios can construct `RemoteExecutionRequest`
 directly, so they do not need provider-specific code or a game-shaped result.

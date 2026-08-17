@@ -9,14 +9,14 @@
         "media_type": "text/markdown"
       },
       {
-        "content": "{\"competitor\":\"small\"}",
-        "digest": "1b8f6865638e5a4c34308f8adc45cb2d38496c5701f416d8cf3c747085994637",
+        "content": "{\"model_competitor\":\"small\"}",
+        "digest": "1216df4141f028530b5409e8a0edf95f475d836528237b168d09d288d2791f14",
         "key": "roles",
         "kind": "routing_config",
         "media_type": "application/json"
       }
     ],
-    "digest": "16e86c5ecb860d9bd23e4c45b597bc95247b31c36bcf2ecc74b60087a525a6a7",
+    "digest": "fec99f571c2b82be5e6056da3e4e9ee4492187348a63474eb33d4f13c4f10f63",
     "evaluator_epoch": "epoch-1",
     "parent_digest": null,
     "scenario": "demo",
@@ -32,16 +32,16 @@
         "media_type": "text/markdown"
       },
       {
-        "content": "{\"competitor\":\"small\"}",
-        "digest": "1b8f6865638e5a4c34308f8adc45cb2d38496c5701f416d8cf3c747085994637",
+        "content": "{\"model_competitor\":\"small\"}",
+        "digest": "1216df4141f028530b5409e8a0edf95f475d836528237b168d09d288d2791f14",
         "key": "roles",
         "kind": "routing_config",
         "media_type": "application/json"
       }
     ],
-    "digest": "b47086337be3565c3e7cc4a64f3a4a6353537b6bd1b8e393950c7b760009aff2",
+    "digest": "75a28f4545645422e2ab8d893ed58d10f7366109674f5486bb3b12948f498ff0",
     "evaluator_epoch": "epoch-1",
-    "parent_digest": "16e86c5ecb860d9bd23e4c45b597bc95247b31c36bcf2ecc74b60087a525a6a7",
+    "parent_digest": "fec99f571c2b82be5e6056da3e4e9ee4492187348a63474eb33d4f13c4f10f63",
     "scenario": "demo",
     "schema_version": 1
   }

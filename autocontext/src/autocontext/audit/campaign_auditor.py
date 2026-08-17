@@ -5,17 +5,16 @@ from __future__ import annotations
 import concurrent.futures
 import json
 import time
-from collections import Counter
+from collections import defaultdict
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Literal, Protocol
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from autocontext.analytics.campaign_mode_report import CampaignModeReport
+from autocontext.audit.campaign_audit_store import CampaignAuditStore
 from autocontext.context_bundles.models import canonical_json, stable_digest
 from autocontext.sharing.redactor import redact_content
-from autocontext.util.json_io import read_json_guarded, write_json
 from autocontext.util.models import StrictModel
 
 AuditCheckpoint = Literal["pre_promotion", "inconclusive_gate", "integrity_alert", "final_completion"]
@@ -86,6 +85,7 @@ class AuditMetricSummary(StrictModel):
     classification: Literal["candidate_result", "candidate_failure", "infrastructure_failure"]
     infrastructure_error: bool
     reconstruction_ref: str | None
+    experiment_id: str | None = None
 
 
 class AuditGateDecision(StrictModel):
@@ -108,7 +108,7 @@ class AuditNegativeResult(StrictModel):
 class CampaignAuditEvidencePacket(StrictModel):
     schema_version: Literal[1] = 1
     access_scope: Literal["read_only"] = "read_only"
-    hidden_holdout_answers_included: Literal[False] = False
+    hidden_holdout_answers_included: bool
     credentials_included: Literal[False] = False
     campaign_id: str
     run_id: str
@@ -149,6 +149,7 @@ class CampaignAudit(StrictModel):
     reviewed_at: str
     status: Literal["completed", "timed_out", "failed", "budget_exhausted"]
     evidence_fingerprint: str
+    configuration_fingerprint: str = ""
     findings: list[CampaignAuditFinding]
     recommended_action: str
     policy_outcome: AuditPolicyOutcome
@@ -157,11 +158,30 @@ class CampaignAudit(StrictModel):
     prompt_version: str
     route_distinct_from_proposer: bool
     frozen_non_trainable: Literal[True] = True
+    model_call_attempted: bool = True
+    model_call_attempt_id: str | None = None
     input_tokens: int = Field(ge=0)
     output_tokens: int = Field(ge=0)
     latency_ms: int = Field(ge=0)
     estimated_cost: float = Field(ge=0.0)
     failure_reason: str | None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _infer_legacy_attempt_status(cls, value: Any) -> Any:
+        """Migrate pre-field records without poisoning budgets after upgrade."""
+
+        if isinstance(value, dict) and "model_call_attempted" not in value:
+            migrated = dict(value)
+            # The former exhausted branch persisted a decision without making
+            # a provider call. Other legacy failures are charged
+            # conservatively because their pre-call/post-call origin is lost.
+            migrated["model_call_attempted"] = (
+                value.get("status") != "budget_exhausted"
+                and value.get("failure_reason") != "bounded evidence packet exceeds max_input_chars"
+            )
+            return migrated
+        return value
 
 
 class CampaignAuditDisposition(StrictModel):
@@ -195,47 +215,6 @@ class AuditorModelClient(Protocol):
     ) -> AuditorModelResponse: ...
 
 
-class CampaignAuditStore:
-    def __init__(self, root: Path) -> None:
-        self.root = root
-
-    def read_by_fingerprint(self, campaign_id: str, fingerprint: str) -> CampaignAuditRecord | None:
-        data = read_json_guarded(self._path(campaign_id, fingerprint))
-        if not isinstance(data, dict):
-            return None
-        try:
-            return CampaignAuditRecord.from_dict(data)
-        except (TypeError, ValueError):
-            return None
-
-    def write(self, record: CampaignAuditRecord) -> Path:
-        path = self._path(record.audit.campaign_id, record.audit.evidence_fingerprint)
-        write_json(path, record.to_dict())
-        return path
-
-    def count(self, campaign_id: str) -> int:
-        directory = self.root / _safe_segment(campaign_id)
-        return len(list(directory.glob("*.json"))) if directory.exists() else 0
-
-    def add_disposition(
-        self,
-        campaign_id: str,
-        evidence_fingerprint: str,
-        disposition: CampaignAuditDisposition,
-    ) -> CampaignAuditRecord:
-        record = self.read_by_fingerprint(campaign_id, evidence_fingerprint)
-        if record is None:
-            raise ValueError("audit record not found")
-        if disposition.audit_id != record.audit.audit_id:
-            raise ValueError("operator disposition references a different audit")
-        updated = record.model_copy(update={"dispositions": [*record.dispositions, disposition]})
-        self.write(updated)
-        return updated
-
-    def _path(self, campaign_id: str, fingerprint: str) -> Path:
-        return self.root / _safe_segment(campaign_id) / f"{_safe_segment(fingerprint)}.json"
-
-
 class CampaignAuditor:
     def __init__(
         self,
@@ -254,46 +233,106 @@ class CampaignAuditor:
 
         if not self.config.enabled or packet.checkpoint not in self.config.checkpoints:
             return None
-        cached = self.store.read_by_fingerprint(packet.campaign_id, packet.fingerprint)
+        _validate_evidence_boundary(packet)
+        # Cache lookup, call-budget claim, provider request, and durable write
+        # form one campaign transaction. This intentionally serializes the
+        # bounded advisory route so concurrent callers cannot duplicate a
+        # billable request or bypass max_calls_per_campaign.
+        with self.store.campaign_lock(packet.campaign_id):
+            return self._review_locked(packet)
+
+    def _review_locked(self, packet: CampaignAuditEvidencePacket) -> CampaignAudit:
+        configuration_fingerprint = stable_digest(self.config.to_dict())
+        cached = self.store.read_by_fingerprint(
+            packet.campaign_id,
+            packet.fingerprint,
+            configuration_fingerprint=configuration_fingerprint,
+        )
         if cached is not None:
             return cached.audit
-        if self.store.count(packet.campaign_id) >= self.config.max_calls_per_campaign:
-            audit = self._failure_audit(packet, "budget_exhausted", "campaign auditor call budget exhausted")
-            self.store.write(CampaignAuditRecord(audit=audit, dispositions=[]))
-            return audit
+        if self.store.call_count(packet.campaign_id) >= self.config.max_calls_per_campaign:
+            # This is a deterministic pre-call decision, not another audit
+            # attempt. Do not persist one record per denied packet: doing so
+            # would grow the store without bound and poison later budget raises.
+            return self._failure_audit(
+                packet,
+                "budget_exhausted",
+                "campaign auditor call budget exhausted",
+                model_call_attempted=False,
+            )
 
         prompt = _render_prompt(packet, self.config.prompt_version)
         if len(prompt) > self.config.max_input_chars:
-            audit = self._failure_audit(packet, "failed", "bounded evidence packet exceeds max_input_chars")
-            self.store.write(CampaignAuditRecord(audit=audit, dispositions=[]))
+            audit = self._failure_audit(
+                packet,
+                "failed",
+                "bounded evidence packet exceeds max_input_chars",
+                model_call_attempted=False,
+            )
+            self.store._write_unlocked(CampaignAuditRecord(audit=audit, dispositions=[]))
             return audit
 
-        started = time.perf_counter()
-        pool = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="campaign-auditor")
-        future = pool.submit(
-            self.client.generate,
-            model=self.config.model,
-            prompt=prompt,
-            max_tokens=self.config.max_output_tokens,
-            temperature=0.0,
-            role="auditor",
+        attempt_id = self.store._reserve_call_unlocked(
+            campaign_id=packet.campaign_id,
+            evidence_fingerprint=packet.fingerprint,
+            configuration_fingerprint=configuration_fingerprint,
         )
+        started = time.perf_counter()
+        pool: concurrent.futures.ThreadPoolExecutor | None = None
+        future: concurrent.futures.Future[Any] | None = None
         try:
-            response = future.result(timeout=self.config.timeout_seconds)
-        except concurrent.futures.TimeoutError:
-            future.cancel()
-            audit = self._failure_audit(packet, "timed_out", "auditor model call timed out")
-        except Exception as exc:
-            audit = self._failure_audit(packet, "failed", f"auditor model call failed: {type(exc).__name__}")
-        else:
-            latency_ms = int((time.perf_counter() - started) * 1000)
             try:
-                audit = self._completed_audit(packet, response, latency_ms)
-            except (TypeError, ValueError, json.JSONDecodeError) as exc:
-                audit = self._failure_audit(packet, "failed", f"invalid auditor response: {type(exc).__name__}")
+                pool = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="campaign-auditor")
+                future = pool.submit(
+                    self.client.generate,
+                    model=self.config.model,
+                    prompt=prompt,
+                    max_tokens=self.config.max_output_tokens,
+                    temperature=0.0,
+                    role="auditor",
+                )
+                response = future.result(timeout=self.config.timeout_seconds)
+            except concurrent.futures.TimeoutError:
+                if future is not None:
+                    future.cancel()
+                audit = self._failure_audit(
+                    packet,
+                    "timed_out",
+                    "auditor model call timed out",
+                    model_call_attempt_id=attempt_id,
+                )
+            except Exception as exc:
+                model_call_attempted = future is not None
+                model_call_attempt_id = attempt_id if model_call_attempted else None
+                if not model_call_attempted:
+                    self.store._release_call_unlocked(packet.campaign_id, attempt_id)
+                audit = self._failure_audit(
+                    packet,
+                    "failed",
+                    f"auditor model call failed: {type(exc).__name__}",
+                    model_call_attempted=model_call_attempted,
+                    model_call_attempt_id=model_call_attempt_id,
+                )
+            else:
+                latency_ms = int((time.perf_counter() - started) * 1000)
+                try:
+                    audit = self._completed_audit(
+                        packet,
+                        response,
+                        latency_ms,
+                        model_call_attempt_id=attempt_id,
+                    )
+                except Exception as exc:
+                    audit = self._failure_audit(
+                        packet,
+                        "failed",
+                        f"invalid auditor response: {type(exc).__name__}",
+                        model_call_attempt_id=attempt_id,
+                    )
         finally:
-            pool.shutdown(wait=False, cancel_futures=True)
-        self.store.write(CampaignAuditRecord(audit=audit, dispositions=[]))
+            if pool is not None:
+                pool.shutdown(wait=False, cancel_futures=True)
+        self.store._write_unlocked(CampaignAuditRecord(audit=audit, dispositions=[]))
         return audit
 
     def _validate_route(self) -> None:
@@ -306,6 +345,8 @@ class CampaignAuditor:
         packet: CampaignAuditEvidencePacket,
         response: AuditorModelResponse,
         latency_ms: int,
+        *,
+        model_call_attempt_id: str,
     ) -> CampaignAudit:
         parsed = json.loads(response.text)
         if not isinstance(parsed, dict):
@@ -318,12 +359,18 @@ class CampaignAuditor:
         input_tokens = _usage_int(response.usage, "input_tokens")
         output_tokens = _usage_int(response.usage, "output_tokens")
         return CampaignAudit(
-            audit_id=stable_digest({"fingerprint": packet.fingerprint, "prompt_version": self.config.prompt_version}),
+            audit_id=stable_digest(
+                {
+                    "fingerprint": packet.fingerprint,
+                    "configuration": stable_digest(self.config.to_dict()),
+                }
+            ),
             campaign_id=packet.campaign_id,
             checkpoint=packet.checkpoint,
             reviewed_at=datetime.now().astimezone().isoformat(),
             status="completed",
             evidence_fingerprint=packet.fingerprint,
+            configuration_fingerprint=stable_digest(self.config.to_dict()),
             findings=findings,
             recommended_action=recommended_action,
             policy_outcome=_policy_outcome(findings, self.config.policy),
@@ -333,6 +380,8 @@ class CampaignAuditor:
             route_distinct_from_proposer=(
                 self.config.provider != self.config.proposer_provider or self.config.model != self.config.proposer_model
             ),
+            model_call_attempted=True,
+            model_call_attempt_id=model_call_attempt_id,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             latency_ms=latency_ms,
@@ -349,25 +398,39 @@ class CampaignAuditor:
         packet: CampaignAuditEvidencePacket,
         status: Literal["timed_out", "failed", "budget_exhausted"],
         reason: str,
+        *,
+        model_call_attempted: bool = True,
+        model_call_attempt_id: str | None = None,
     ) -> CampaignAudit:
+        reviewed_at = datetime.now().astimezone().isoformat()
+        configuration_fingerprint = stable_digest(self.config.to_dict())
+        findings = detect_campaign_integrity_findings(packet)
         return CampaignAudit(
             audit_id=stable_digest(
-                {"fingerprint": packet.fingerprint, "prompt_version": self.config.prompt_version, "status": status}
+                {
+                    "fingerprint": packet.fingerprint,
+                    "configuration": configuration_fingerprint,
+                    "status": status,
+                    "reviewed_at": reviewed_at,
+                }
             ),
             campaign_id=packet.campaign_id,
             checkpoint=packet.checkpoint,
-            reviewed_at=datetime.now().astimezone().isoformat(),
+            reviewed_at=reviewed_at,
             status=status,
             evidence_fingerprint=packet.fingerprint,
-            findings=detect_campaign_integrity_findings(packet),
+            configuration_fingerprint=configuration_fingerprint,
+            findings=findings,
             recommended_action="Deterministic monitoring remains authoritative; retry or request operator review.",
-            policy_outcome="advisory",
+            policy_outcome=_policy_outcome(findings, self.config.policy),
             provider=self.config.provider,
             model=self.config.model,
             prompt_version=self.config.prompt_version,
             route_distinct_from_proposer=(
                 self.config.provider != self.config.proposer_provider or self.config.model != self.config.proposer_model
             ),
+            model_call_attempted=model_call_attempted,
+            model_call_attempt_id=model_call_attempt_id,
             input_tokens=0,
             output_tokens=0,
             latency_ms=0,
@@ -385,6 +448,7 @@ def build_campaign_audit_packet(
     gate_decisions: list[dict[str, Any]],
     negative_results: list[dict[str, Any]],
     artifact_refs: list[dict[str, Any]],
+    hidden_holdout_answers_included: bool,
     integrity_alerts: list[str] | None = None,
     max_items_per_section: int = 100,
 ) -> CampaignAuditEvidencePacket:
@@ -399,6 +463,7 @@ def build_campaign_audit_packet(
         for lane in report.eval_lanes[:max_items_per_section]
     ]
     return CampaignAuditEvidencePacket(
+        hidden_holdout_answers_included=hidden_holdout_answers_included,
         campaign_id=_redact(report.campaign_id),
         run_id=_redact(report.run_id),
         scenario_name=_redact(report.scenario_name),
@@ -413,19 +478,10 @@ def build_campaign_audit_packet(
             AuditMetricSummary.from_dict(_redacted_fields(item, AuditMetricSummary))
             for item in metric_summaries[:max_items_per_section]
         ],
-        gate_decisions=[
-            AuditGateDecision.from_dict(_redacted_fields(item, AuditGateDecision))
-            for item in gate_decisions[:max_items_per_section]
-        ],
-        negative_results=[
-            AuditNegativeResult.from_dict(_redacted_fields(item, AuditNegativeResult))
-            for item in negative_results[:max_items_per_section]
-        ],
-        integrity_alerts=[_redact(item) for item in (integrity_alerts or [])[:max_items_per_section]],
-        artifact_refs=[
-            AuditEvidenceReference.from_dict(_redacted_fields(item, AuditEvidenceReference))
-            for item in artifact_refs[:max_items_per_section]
-        ],
+        gate_decisions=[_safe_gate_decision(item) for item in gate_decisions[:max_items_per_section]],
+        negative_results=[_safe_negative_result(item) for item in negative_results[:max_items_per_section]],
+        integrity_alerts=[_classify_integrity_alert(item) for item in (integrity_alerts or [])[:max_items_per_section]],
+        artifact_refs=[_safe_evidence_reference(item) for item in artifact_refs[:max_items_per_section]],
     )
 
 
@@ -461,7 +517,7 @@ def detect_campaign_integrity_findings(packet: CampaignAuditEvidencePacket) -> l
                 fallback_refs,
             )
         )
-    if any("leakage" in alert.lower() or "holdout answer" in alert.lower() for alert in packet.integrity_alerts):
+    if "data_leakage" in packet.integrity_alerts:
         findings.append(
             _finding(
                 "data_leakage",
@@ -521,8 +577,11 @@ def detect_campaign_integrity_findings(packet: CampaignAuditEvidencePacket) -> l
                 source="deterministic_preflight",
             )
         )
-    digest_counts = Counter(metric.candidate_digest for metric in metrics)
-    repeated_digests = {digest for digest, count in digest_counts.items() if count >= 3}
+    experiment_ids: dict[str, set[str]] = defaultdict(set)
+    for metric in metrics:
+        if metric.experiment_id:
+            experiment_ids[metric.candidate_digest].add(metric.experiment_id)
+    repeated_digests = {digest for digest, experiments in experiment_ids.items() if len(experiments) >= 3}
     repeated = [metric for metric in metrics if metric.candidate_digest in repeated_digests]
     if repeated:
         findings.append(
@@ -645,6 +704,45 @@ def _usage_int(usage: Any, field: str) -> int:
     return value if isinstance(value, int) and value >= 0 else 0
 
 
+def _validate_evidence_boundary(packet: CampaignAuditEvidencePacket) -> None:
+    if packet.hidden_holdout_answers_included:
+        raise ValueError("campaign auditor refuses packets that include hidden holdout answers")
+
+
+def _safe_gate_decision(data: dict[str, Any]) -> AuditGateDecision:
+    fields = _redacted_fields(data, AuditGateDecision)
+    decision = str(fields.get("decision", ""))
+    claim = str(fields.get("claim", ""))
+    if "caus" in claim.lower():
+        fields["claim"] = "Causal claim text withheld; categorical claim retained."
+    elif decision in {"accepted", "promote", "kept"}:
+        fields["claim"] = "Promotion claim text withheld; categorical decision retained."
+    else:
+        fields["claim"] = "Free-text claim withheld from auditor packet."
+    return AuditGateDecision.from_dict(fields)
+
+
+def _safe_negative_result(data: dict[str, Any]) -> AuditNegativeResult:
+    fields = _redacted_fields(data, AuditNegativeResult)
+    fields["reason"] = "Free-text negative-result reason withheld from auditor packet."
+    return AuditNegativeResult.from_dict(fields)
+
+
+def _classify_integrity_alert(value: str) -> str:
+    lowered = value.lower()
+    if "leakage" in lowered or "holdout answer" in lowered or "answer key" in lowered:
+        return "data_leakage"
+    if "infrastructure" in lowered:
+        return "infrastructure_integrity_alert"
+    return "integrity_alert"
+
+
+def _safe_evidence_reference(data: dict[str, Any]) -> AuditEvidenceReference:
+    fields = _redacted_fields(data, AuditEvidenceReference)
+    fields["summary"] = "Artifact contents and free-text summary excluded; metadata reference only."
+    return AuditEvidenceReference.from_dict(fields)
+
+
 def _redacted_fields(data: dict[str, Any], model: type[BaseModel]) -> dict[str, Any]:
     allowed = model.model_fields
     return {key: _redact_value(value) for key, value in data.items() if key in allowed}
@@ -672,12 +770,6 @@ def _secret_key(key: str) -> bool:
 def _bounded_text(value: Any, max_chars: int) -> str:
     text = _redact(value) if isinstance(value, str) else ""
     return text if len(text) <= max_chars else text[: max_chars - 1].rstrip() + "…"
-
-
-def _safe_segment(value: str) -> str:
-    if not value or value in {".", ".."} or "/" in value or "\\" in value:
-        raise ValueError("audit path identity must be one non-empty segment")
-    return value
 
 
 __all__ = [

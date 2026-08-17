@@ -46,12 +46,19 @@ the corresponding requirements, an idempotency key, maximum attempts,
 campaign/branch reservations, and a complete evaluation-lane identity
 (fixtures, seeds, evaluator epoch, and verifier contract).
 
-`claim()` creates an expiring lease only after resource, capability,
-comparability, branch-budget, and campaign-budget checks succeed. `heartbeat()`
+`claim()` creates an expiring lease only after resource, capability, global
+concurrency, branch-budget, and campaign-budget checks succeed. `heartbeat()`
 extends leases owned by that worker. `reconcile()` releases an expired
 reservation and either requeues the job or records an infrastructure failure
-after the retry bound. Late or duplicate completion cannot count consumption
-twice, and duplicate enqueue returns the original job by idempotency key.
+after the retry bound. Duplicate enqueue returns the original job by
+idempotency key, and a reused `job_id` with a different key fails closed.
+Infrastructure retries persist and charge the usage of every completed attempt.
+
+Cancellation and lease expiry currently make scheduler state safe but do not
+cancel work already running at the provider. The worker protocol must gain a
+cancel-request/acknowledgment lifecycle before those leases can safely release
+their concurrency slots and before late provider usage can be accounted. Until
+then, operators must not treat scheduler cancellation as provider cancellation.
 
 The event store is an append-only, checksummed JSONL log that fsyncs every
 transition. Reconstructing a scheduler from the same store replays queued,

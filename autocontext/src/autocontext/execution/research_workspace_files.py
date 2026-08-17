@@ -47,16 +47,49 @@ def copy_workspace(source: Path, destination: Path, max_file_bytes: int) -> None
 
 
 def replace_workspace(source: Path, destination: Path, max_file_bytes: int) -> None:
+    """Replace ``destination`` and roll back its prior tree on failure.
+
+    The candidate tree is fully validated and materialized next to the live
+    workspace before the old tree is moved.  Both renames therefore stay on
+    one filesystem.  A failed activation restores the backup before the
+    exception is allowed to escape.
+    """
+
     files = snapshot_files(source, max_file_bytes)
-    for child in destination.iterdir():
-        if child.is_dir() and not child.is_symlink():
-            shutil.rmtree(child)
-        else:
-            child.unlink()
-    for relative, data in files.items():
-        target = destination / relative
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(data)
+    prepared = Path(tempfile.mkdtemp(prefix=".autocontext-commit-", dir=destination.parent)).resolve()
+    backup_parent: Path | None = None
+    backup: Path | None = None
+    activated = False
+    rollback_failed = False
+    try:
+        for relative, data in files.items():
+            target = prepared / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+        backup_parent = Path(tempfile.mkdtemp(prefix=".autocontext-backup-", dir=destination.parent)).resolve()
+        backup = backup_parent / "workspace"
+        destination.replace(backup)
+        try:
+            prepared.replace(destination)
+            activated = True
+        except BaseException as activation_error:  # noqa: BLE001 - rollback must also cover interrupts
+            try:
+                backup.replace(destination)
+            except BaseException as rollback_error:  # noqa: BLE001 - retain backup for manual recovery
+                rollback_failed = True
+                raise OSError(
+                    f"workspace activation failed and rollback is retained at {backup}"
+                ) from rollback_error
+            raise activation_error
+    finally:
+        if not activated and backup is not None and backup.exists() and not destination.exists():
+            try:
+                backup.replace(destination)
+            except OSError:
+                rollback_failed = True
+        shutil.rmtree(prepared, ignore_errors=True)
+        if backup_parent is not None and not rollback_failed:
+            shutil.rmtree(backup_parent, ignore_errors=True)
 
 
 def safe_workspace_id(value: str) -> str:

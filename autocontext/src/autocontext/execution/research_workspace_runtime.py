@@ -57,6 +57,40 @@ _SKIP = object()
 _PROCESS_START_TIMEOUT_SECONDS = 5.0
 
 
+class _DenyRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: Any,
+        code: int,
+        msg: str,
+        headers: Any,
+        newurl: str,
+    ) -> urllib.request.Request | None:
+        del req, fp, code, msg, headers, newurl
+        raise PermissionError("network redirects are denied")
+
+
+def _fetch_network_bytes(
+    url: str,
+    *,
+    allowed_hosts: frozenset[str],
+    limits: WorkspaceResourceLimits,
+) -> bytes:
+    require_online("use research workspace network access")
+    parsed = urllib.parse.urlparse(url)
+    normalized_hosts = {host.rstrip(".").lower() for host in allowed_hosts}
+    hostname = (parsed.hostname or "").rstrip(".").lower()
+    if parsed.scheme != "https" or not hostname or hostname not in normalized_hosts:
+        raise PermissionError(f"network host denied: {hostname}")
+    opener = urllib.request.build_opener(_DenyRedirectHandler())
+    with opener.open(url, timeout=limits.timeout_seconds) as response:  # noqa: S310
+        data = bytes(response.read(limits.max_network_bytes + 1))
+    if len(data) > limits.max_network_bytes:
+        raise ValueError("network response exceeds byte limit")
+    return data
+
+
 def run_in_child(payload: Mapping[str, Any], timeout_seconds: float) -> dict[str, Any] | None:
     context = multiprocessing.get_context("spawn")
     parent, child = context.Pipe(duplex=True)
@@ -103,6 +137,7 @@ def _child_entrypoint(connection: Any) -> None:
 
 
 def _execute_child(payload: Mapping[str, Any]) -> dict[str, Any]:
+    profile = str(payload["profile"])
     capabilities = frozenset(payload["capabilities"])
     allowed_imports = frozenset(payload["allowed_imports"])
     allowed_commands = frozenset(payload["allowed_commands"])
@@ -146,6 +181,8 @@ def _execute_child(payload: Mapping[str, Any]) -> dict[str, Any]:
         path.write_bytes(content)
 
     def run_command(argv: Iterable[str], timeout_seconds: float | None = None) -> dict[str, Any]:
+        if profile != "trusted_local":
+            raise PermissionError("subprocess execution requires the trusted_local profile")
         if "subprocess" not in capabilities:
             raise PermissionError("subprocess capability was not granted")
         args = [str(item) for item in argv]
@@ -166,15 +203,7 @@ def _execute_child(payload: Mapping[str, Any]) -> dict[str, Any]:
     def network_fetch(url: str) -> bytes:
         if "network" not in capabilities:
             raise PermissionError("network capability was not granted")
-        require_online("use research workspace network access")
-        parsed = urllib.parse.urlparse(url)
-        if parsed.scheme != "https" or not parsed.hostname or parsed.hostname not in allowed_hosts:
-            raise PermissionError(f"network host denied: {parsed.hostname or ''}")
-        with urllib.request.urlopen(url, timeout=limits.timeout_seconds) as response:  # noqa: S310
-            data = bytes(response.read(limits.max_network_bytes + 1))
-        if len(data) > limits.max_network_bytes:
-            raise ValueError("network response exceeds byte limit")
-        return data
+        return _fetch_network_bytes(url, allowed_hosts=allowed_hosts, limits=limits)
 
     safe_builtins["__import__"] = safe_import
     namespace: dict[str, Any] = {

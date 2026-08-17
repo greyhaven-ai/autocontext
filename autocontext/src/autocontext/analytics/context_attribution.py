@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import math
 from collections import defaultdict
 from statistics import fmean
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import Field
+from pydantic import Field, FiniteFloat, model_validator
 
-from autocontext.context_bundles.models import BundleComponent, ContextBundle, stable_digest
+from autocontext.context_bundles.models import BundleComponent, ContextBundle, stable_digest, utf16_sort_key
 from autocontext.util.models import StrictModel
 
 EvidenceLevel = Literal["causal_ablation", "paired_shadow", "component_correlated"]
@@ -29,15 +30,18 @@ class ControlledAttributionTrial(StrictModel):
     fixture_digest: str = Field(min_length=1)
     seed: int
     evidence_level: EvidenceLevel
-    with_component_score: float
-    without_component_score: float
+    with_component_score: FiniteFloat
+    without_component_score: FiniteFloat
     token_cost: int = Field(ge=0)
     tested_at: str = Field(min_length=1)
     interaction_component_digests: list[str] = Field(default_factory=list)
 
     @property
     def effect(self) -> float:
-        return round(self.with_component_score - self.without_component_score, 6)
+        effect = self.with_component_score - self.without_component_score
+        if not math.isfinite(effect):
+            raise ValueError("controlled attribution trial effect must be finite")
+        return _round_six(effect)
 
 
 class ComponentAttribution(StrictModel):
@@ -46,24 +50,37 @@ class ComponentAttribution(StrictModel):
     component_key: str = Field(min_length=1)
     component_digest: str = Field(min_length=1)
     evidence_level: EvidenceLevel
-    effect: float
+    effect: FiniteFloat
     confidence: float = Field(ge=0.0, le=1.0)
     evaluator_epoch: str = Field(min_length=1)
     trial_cohort: str = Field(min_length=1)
     token_cost: int = Field(ge=0)
     last_tested_bundle_digest: str = Field(min_length=1)
+    comparison_bundle_digest: str | None = None
     tested_at: str = Field(min_length=1)
     disposition: ComponentDisposition
+    classification_neutral_effect: FiniteFloat = Field(ge=0.0)
+    classification_high_token_cost: int = Field(ge=0)
     trial_ids: list[str]
+    matched_pair_keys: list[str] = Field(default_factory=list)
+    source_trial_digests: list[str] = Field(default_factory=list)
     interaction_component_digests: list[str]
     supersedes_attribution_id: str | None = None
+    legacy_unverified: bool = False
 
 
 class ContextAttributionLedger(StrictModel):
-    schema_version: int = 1
+    schema_version: Literal[2] = 2
     scenario: str = Field(min_length=1)
     trials: list[ControlledAttributionTrial]
     attributions: list[ComponentAttribution]
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_legacy_ledger(cls, value: Any) -> Any:
+        if isinstance(value, dict) and value.get("schema_version") == 1:
+            return _migrate_v1_attribution_ledger(value)
+        return value
 
 
 class ReablationCandidate(StrictModel):
@@ -116,8 +133,13 @@ def attribute_controlled_trials(
 ) -> list[ComponentAttribution]:
     """Aggregate matched trials without upgrading their declared evidence level."""
 
-    groups: dict[tuple[str, str, str, str, str, EvidenceLevel], list[ControlledAttributionTrial]] = defaultdict(list)
+    if not math.isfinite(neutral_effect) or neutral_effect < 0:
+        raise ValueError("neutral_effect must be finite and non-negative")
+    if isinstance(high_token_cost, bool) or not isinstance(high_token_cost, int) or high_token_cost < 0:
+        raise ValueError("high_token_cost must be a non-negative integer")
+    groups: dict[tuple[str, str, str, str, EvidenceLevel], list[ControlledAttributionTrial]] = defaultdict(list)
     seen_trial_ids: set[str] = set()
+    seen_pair_keys: set[str] = set()
     for trial in trials:
         if trial.trial_id in seen_trial_ids:
             raise ValueError(f"duplicate attribution trial: {trial.trial_id}")
@@ -126,36 +148,63 @@ def attribute_controlled_trials(
             raise ValueError("attribution trial evaluator epoch mismatch")
         if trial.evidence_level == "component_correlated":
             raise ValueError("component_correlated evidence cannot be constructed from a controlled trial")
+        if trial.tested_bundle_digest == trial.comparison_bundle_digest:
+            raise ValueError("controlled attribution requires distinct tested and comparison bundles")
+        pair_key = _controlled_trial_pair_key(trial)
+        if pair_key in seen_pair_keys:
+            raise ValueError("duplicate matched attribution pair")
+        seen_pair_keys.add(pair_key)
         groups[
             (
                 trial.component_kind,
                 trial.component_key,
                 trial.component_digest,
                 trial.tested_bundle_digest,
-                trial.trial_cohort,
                 trial.evidence_level,
             )
         ].append(trial)
 
     records: list[ComponentAttribution] = []
-    for key, group in sorted(groups.items(), key=lambda item: item[0]):
-        component_kind, component_key, component_digest, bundle_digest, cohort, evidence_level = key
+    for key, group in sorted(
+        groups.items(),
+        key=lambda item: tuple(utf16_sort_key(value) for value in item[0]),
+    ):
+        component_kind, component_key, component_digest, bundle_digest, evidence_level = key
+        comparison_digests = {trial.comparison_bundle_digest for trial in group}
+        if len(comparison_digests) != 1:
+            raise ValueError("controlled attribution group mixes comparison bundles")
+        cohorts = {trial.trial_cohort for trial in group}
+        if len(cohorts) != 1:
+            raise ValueError("controlled attribution group mixes trial cohorts")
+        comparison_digest = next(iter(comparison_digests))
+        cohort = next(iter(cohorts))
         effects = [trial.effect for trial in group]
-        effect = round(fmean(effects), 6)
+        effect = _round_six(fmean(effects))
         confidence = _trial_confidence(effects)
         token_cost = max(trial.token_cost for trial in group)
         disposition = _classify(effect, token_cost, neutral_effect, high_token_cost)
-        trial_ids = sorted(trial.trial_id for trial in group)
-        interactions = sorted({digest for trial in group for digest in trial.interaction_component_digests})
+        trial_ids = sorted((trial.trial_id for trial in group), key=utf16_sort_key)
+        matched_pair_keys = sorted((_controlled_trial_pair_key(trial) for trial in group), key=utf16_sort_key)
+        source_trial_digests = sorted((_controlled_trial_digest(trial) for trial in group), key=utf16_sort_key)
+        interactions = sorted(
+            {digest for trial in group for digest in trial.interaction_component_digests},
+            key=utf16_sort_key,
+        )
         tested_at = max(trial.tested_at for trial in group)
-        attribution_id = stable_digest(
-            {
-                "component_digest": component_digest,
-                "tested_bundle_digest": bundle_digest,
-                "evaluator_epoch": evaluator_epoch,
-                "trial_ids": trial_ids,
-                "evidence_level": evidence_level,
-            }
+        attribution_id = _controlled_attribution_id(
+            component_kind=component_kind,
+            component_key=component_key,
+            component_digest=component_digest,
+            tested_bundle_digest=bundle_digest,
+            comparison_bundle_digest=comparison_digest,
+            evaluator_epoch=evaluator_epoch,
+            trial_cohort=cohort,
+            evidence_level=evidence_level,
+            classification_neutral_effect=neutral_effect,
+            classification_high_token_cost=high_token_cost,
+            trial_ids=trial_ids,
+            matched_pair_keys=matched_pair_keys,
+            source_trial_digests=source_trial_digests,
         )
         records.append(
             ComponentAttribution(
@@ -170,9 +219,14 @@ def attribute_controlled_trials(
                 trial_cohort=cohort,
                 token_cost=token_cost,
                 last_tested_bundle_digest=bundle_digest,
+                comparison_bundle_digest=comparison_digest,
                 tested_at=tested_at,
                 disposition=disposition,
+                classification_neutral_effect=neutral_effect,
+                classification_high_token_cost=high_token_cost,
                 trial_ids=trial_ids,
+                matched_pair_keys=matched_pair_keys,
+                source_trial_digests=source_trial_digests,
                 interaction_component_digests=interactions,
             )
         )
@@ -187,23 +241,23 @@ def reconstruct_causal_credit(
 
     if attribution.evidence_level != "causal_ablation":
         raise ValueError("only causal_ablation records carry causal credit")
-    by_id = {trial.trial_id: trial for trial in trials}
+    by_id: dict[str, ControlledAttributionTrial] = {}
+    for trial in trials:
+        if trial.trial_id in by_id:
+            raise ValueError(f"duplicate attribution trial: {trial.trial_id}")
+        by_id[trial.trial_id] = trial
+    if attribution.trial_ids != sorted(set(attribution.trial_ids), key=utf16_sort_key):
+        raise ValueError("causal attribution trial IDs must be unique and sorted")
     try:
         referenced = [by_id[trial_id] for trial_id in attribution.trial_ids]
     except KeyError as exc:
         raise ValueError(f"missing referenced trial: {exc.args[0]}") from exc
     if not referenced:
         raise ValueError("causal attribution has no referenced trials")
-    for trial in referenced:
-        if (
-            trial.evidence_level != "causal_ablation"
-            or trial.component_digest != attribution.component_digest
-            or trial.tested_bundle_digest != attribution.last_tested_bundle_digest
-            or trial.evaluator_epoch != attribution.evaluator_epoch
-            or trial.trial_cohort != attribution.trial_cohort
-        ):
-            raise ValueError("referenced trial does not match the causal attribution")
-    return round(fmean(trial.effect for trial in referenced), 6)
+    effect = _validate_controlled_attribution_binding(attribution, referenced)
+    if effect != attribution.effect:
+        raise ValueError("causal attribution effect does not match its source trials")
+    return effect
 
 
 def append_reablation(
@@ -213,6 +267,50 @@ def append_reablation(
     attributions: list[ComponentAttribution],
 ) -> ContextAttributionLedger:
     """Append new evidence and link it to prior component attribution history."""
+
+    existing_trial_ids = {trial.trial_id for trial in ledger.trials}
+    if len(existing_trial_ids) != len(ledger.trials):
+        raise ValueError("attribution ledger contains duplicate trial IDs")
+    existing_pair_keys = {_controlled_trial_pair_key(trial) for trial in ledger.trials}
+    if len(existing_pair_keys) != len(ledger.trials):
+        raise ValueError("attribution ledger contains duplicate matched pairs")
+    new_by_id: dict[str, ControlledAttributionTrial] = {}
+    new_pair_keys: set[str] = set()
+    for trial in trials:
+        if trial.trial_id in existing_trial_ids or trial.trial_id in new_by_id:
+            raise ValueError(f"duplicate attribution trial: {trial.trial_id}")
+        pair_key = _controlled_trial_pair_key(trial)
+        if pair_key in existing_pair_keys or pair_key in new_pair_keys:
+            raise ValueError("duplicate matched attribution pair")
+        new_by_id[trial.trial_id] = trial
+        new_pair_keys.add(pair_key)
+
+    referenced_trial_ids: set[str] = set()
+    seen_attribution_ids = {record.attribution_id for record in ledger.attributions}
+    for record in attributions:
+        if record.attribution_id in seen_attribution_ids:
+            raise ValueError(f"duplicate component attribution: {record.attribution_id}")
+        seen_attribution_ids.add(record.attribution_id)
+        if record.evidence_level == "component_correlated":
+            raise ValueError("re-ablation evidence must come from controlled trials")
+        if record.trial_ids != sorted(set(record.trial_ids), key=utf16_sort_key):
+            raise ValueError("controlled attribution trial IDs must be unique and sorted")
+        try:
+            referenced = [new_by_id[trial_id] for trial_id in record.trial_ids]
+        except KeyError as exc:
+            raise ValueError(f"re-ablation attribution references a non-new trial: {exc.args[0]}") from exc
+        if not referenced:
+            raise ValueError("re-ablation attribution has no referenced trials")
+        overlap = referenced_trial_ids.intersection(record.trial_ids)
+        if overlap:
+            raise ValueError(f"re-ablation trial is referenced more than once: {min(overlap)}")
+        referenced_trial_ids.update(record.trial_ids)
+        effect = _validate_controlled_attribution_binding(record, referenced)
+        if effect != record.effect:
+            raise ValueError("controlled attribution effect does not match its source trials")
+    unreferenced = set(new_by_id).difference(referenced_trial_ids)
+    if unreferenced:
+        raise ValueError(f"re-ablation trial is not bound to an attribution: {min(unreferenced)}")
 
     latest: dict[tuple[str, str, str], ComponentAttribution] = {}
     for record in ledger.attributions:
@@ -248,8 +346,9 @@ def plan_reablation(
         candidates,
         key=lambda item: (
             -_reablation_priority(item, current_generation, current_bundle_digest),
-            item.component_kind,
-            item.component_key,
+            utf16_sort_key(item.component_kind),
+            utf16_sort_key(item.component_key),
+            utf16_sort_key(item.component_digest),
         ),
     )
     selected: list[ReablationCandidate] = []
@@ -312,6 +411,203 @@ def render_context_attribution_report(attributions: list[ComponentAttribution]) 
     return "\n".join(lines)
 
 
+def _controlled_trial_pair_key(trial: ControlledAttributionTrial) -> str:
+    """Identify one evaluation unit independently of its caller-provided trial ID."""
+
+    return stable_digest(
+        {
+            "component_kind": trial.component_kind,
+            "component_key": trial.component_key,
+            "component_digest": trial.component_digest,
+            "tested_bundle_digest": trial.tested_bundle_digest,
+            "comparison_bundle_digest": trial.comparison_bundle_digest,
+            "evaluator_epoch": trial.evaluator_epoch,
+            "trial_cohort": trial.trial_cohort,
+            "fixture_digest": trial.fixture_digest,
+            "seed": trial.seed,
+        }
+    )
+
+
+def _controlled_trial_digest(trial: ControlledAttributionTrial) -> str:
+    """Bind an attribution to the exact persisted source observation."""
+
+    return stable_digest(trial.to_dict())
+
+
+def _controlled_attribution_id(
+    *,
+    component_kind: str,
+    component_key: str,
+    component_digest: str,
+    tested_bundle_digest: str,
+    comparison_bundle_digest: str,
+    evaluator_epoch: str,
+    trial_cohort: str,
+    evidence_level: EvidenceLevel,
+    classification_neutral_effect: float,
+    classification_high_token_cost: int,
+    trial_ids: list[str],
+    matched_pair_keys: list[str],
+    source_trial_digests: list[str],
+) -> str:
+    return stable_digest(
+        {
+            "component_kind": component_kind,
+            "component_key": component_key,
+            "component_digest": component_digest,
+            "tested_bundle_digest": tested_bundle_digest,
+            "comparison_bundle_digest": comparison_bundle_digest,
+            "evaluator_epoch": evaluator_epoch,
+            "trial_cohort": trial_cohort,
+            "evidence_level": evidence_level,
+            "classification_neutral_effect": classification_neutral_effect,
+            "classification_high_token_cost": classification_high_token_cost,
+            "trial_ids": trial_ids,
+            "matched_pair_keys": matched_pair_keys,
+            "source_trial_digests": source_trial_digests,
+        }
+    )
+
+
+def _validate_controlled_attribution_binding(
+    attribution: ComponentAttribution,
+    trials: list[ControlledAttributionTrial],
+) -> float:
+    if attribution.legacy_unverified:
+        raise ValueError("legacy attribution lacks verified controlled-trial provenance")
+    if attribution.comparison_bundle_digest is None:
+        raise ValueError("controlled attribution is missing its comparison bundle")
+    if not trials:
+        raise ValueError("controlled attribution has no referenced trials")
+    _validate_classification_policy(attribution)
+
+    pair_keys: list[str] = []
+    for trial in trials:
+        if (
+            trial.evidence_level != attribution.evidence_level
+            or trial.component_kind != attribution.component_kind
+            or trial.component_key != attribution.component_key
+            or trial.component_digest != attribution.component_digest
+            or trial.tested_bundle_digest != attribution.last_tested_bundle_digest
+            or trial.comparison_bundle_digest != attribution.comparison_bundle_digest
+            or trial.evaluator_epoch != attribution.evaluator_epoch
+            or trial.trial_cohort != attribution.trial_cohort
+        ):
+            raise ValueError("referenced trial does not match the controlled attribution")
+        if trial.evidence_level == "component_correlated":
+            raise ValueError("component_correlated evidence cannot back a controlled attribution")
+        if trial.tested_bundle_digest == trial.comparison_bundle_digest:
+            raise ValueError("controlled attribution requires distinct tested and comparison bundles")
+        pair_keys.append(_controlled_trial_pair_key(trial))
+
+    if len(pair_keys) != len(set(pair_keys)):
+        raise ValueError("controlled attribution references duplicate matched pairs")
+    expected_pair_keys = sorted(pair_keys, key=utf16_sort_key)
+    if attribution.matched_pair_keys != expected_pair_keys:
+        raise ValueError("controlled attribution matched-pair binding mismatch")
+    expected_source_digests = sorted(
+        (_controlled_trial_digest(trial) for trial in trials),
+        key=utf16_sort_key,
+    )
+    if attribution.source_trial_digests != expected_source_digests:
+        raise ValueError("controlled attribution source-trial binding mismatch")
+
+    expected_id = _controlled_attribution_id(
+        component_kind=attribution.component_kind,
+        component_key=attribution.component_key,
+        component_digest=attribution.component_digest,
+        tested_bundle_digest=attribution.last_tested_bundle_digest,
+        comparison_bundle_digest=attribution.comparison_bundle_digest,
+        evaluator_epoch=attribution.evaluator_epoch,
+        trial_cohort=attribution.trial_cohort,
+        evidence_level=attribution.evidence_level,
+        classification_neutral_effect=attribution.classification_neutral_effect,
+        classification_high_token_cost=attribution.classification_high_token_cost,
+        trial_ids=attribution.trial_ids,
+        matched_pair_keys=attribution.matched_pair_keys,
+        source_trial_digests=attribution.source_trial_digests,
+    )
+    if attribution.attribution_id != expected_id:
+        raise ValueError("controlled attribution identity does not match its source trials")
+
+    effects = [trial.effect for trial in trials]
+    if attribution.confidence != _trial_confidence(effects):
+        raise ValueError("controlled attribution confidence does not match its source trials")
+    expected_token_cost = max(trial.token_cost for trial in trials)
+    if attribution.token_cost != expected_token_cost:
+        raise ValueError("controlled attribution token cost does not match its source trials")
+    if attribution.tested_at != max(trial.tested_at for trial in trials):
+        raise ValueError("controlled attribution test time does not match its source trials")
+    expected_interactions = sorted(
+        {digest for trial in trials for digest in trial.interaction_component_digests},
+        key=utf16_sort_key,
+    )
+    if attribution.interaction_component_digests != expected_interactions:
+        raise ValueError("controlled attribution interactions do not match its source trials")
+    effect = _round_six(fmean(effects))
+    expected_disposition = _classify(
+        effect,
+        expected_token_cost,
+        attribution.classification_neutral_effect,
+        attribution.classification_high_token_cost,
+    )
+    if attribution.disposition != expected_disposition:
+        raise ValueError("controlled attribution disposition does not match its classification policy")
+    return effect
+
+
+def _round_six(value: float) -> float:
+    """Round binary64 values to six decimals, breaking ties away from zero."""
+
+    scaled = abs(value) * 1_000_000
+    if not math.isfinite(scaled):
+        return value
+    rounded = math.floor(scaled + 0.5) / 1_000_000
+    result = math.copysign(rounded, value)
+    return 0.0 if result == 0 else result
+
+
+def _validate_classification_policy(attribution: ComponentAttribution) -> None:
+    neutral_effect = attribution.classification_neutral_effect
+    if (
+        isinstance(neutral_effect, bool)
+        or not isinstance(neutral_effect, (int, float))
+        or not math.isfinite(neutral_effect)
+        or neutral_effect < 0
+    ):
+        raise ValueError("classification neutral effect must be finite and non-negative")
+    high_token_cost = attribution.classification_high_token_cost
+    if (
+        isinstance(high_token_cost, bool)
+        or not isinstance(high_token_cost, int)
+        or high_token_cost < 0
+        or high_token_cost > (1 << 53) - 1
+    ):
+        raise ValueError("classification high token cost must be a non-negative safe integer")
+
+
+def _verified_disposition(attribution: ComponentAttribution) -> ComponentDisposition:
+    if attribution.legacy_unverified:
+        raise ValueError("legacy attribution lacks verified classification provenance")
+    _validate_classification_policy(attribution)
+    if not math.isfinite(attribution.effect):
+        raise ValueError("attribution effect must be finite")
+    if (
+        isinstance(attribution.token_cost, bool)
+        or not isinstance(attribution.token_cost, int)
+        or attribution.token_cost < 0
+        or attribution.token_cost > (1 << 53) - 1
+    ):
+        raise ValueError("attribution token cost must be a non-negative safe integer")
+    return _classify(
+        attribution.effect,
+        attribution.token_cost,
+        attribution.classification_neutral_effect,
+        attribution.classification_high_token_cost,
+    )
+
+
 def _trial_confidence(effects: list[float]) -> float:
     if not effects:
         return 0.0
@@ -321,7 +617,7 @@ def _trial_confidence(effects: list[float]) -> float:
     else:
         positive = sum(effect > 0 for effect in nonzero)
         agreement = max(positive, len(nonzero) - positive) / len(nonzero)
-    return round(min(1.0, len(effects) / 4.0) * agreement, 6)
+    return _round_six(min(1.0, len(effects) / 4.0) * agreement)
 
 
 def _classify(
@@ -391,13 +687,35 @@ def _select_component(
             token_cost=token_cost,
             reason="bundle composition changed; retain until interaction re-ablation",
         )
-    demoted = record.disposition in {"demotion_candidate", "harmful"}
+    try:
+        verified_disposition = _verified_disposition(record)
+    except (TypeError, ValueError):
+        verified_disposition = "uncertain"
+        policy_valid = False
+    else:
+        policy_valid = True
+    if not policy_valid or record.disposition != verified_disposition:
+        return PromptComponentSelection(
+            component_kind=component.kind.value,
+            component_key=component.key,
+            component_digest=component.digest,
+            included=True,
+            disposition="uncertain",
+            evidence_level=record.evidence_level,
+            confidence=record.confidence,
+            evaluator_epoch=record.evaluator_epoch,
+            trial_cohort=record.trial_cohort,
+            last_tested_bundle_digest=record.last_tested_bundle_digest,
+            token_cost=token_cost,
+            reason="attribution disposition failed classification-policy verification; retain pending re-ablation",
+        )
+    demoted = verified_disposition in {"demotion_candidate", "harmful"}
     return PromptComponentSelection(
         component_kind=component.kind.value,
         component_key=component.key,
         component_digest=component.digest,
         included=not demoted,
-        disposition=record.disposition,
+        disposition=verified_disposition,
         evidence_level=record.evidence_level,
         confidence=record.confidence,
         evaluator_epoch=record.evaluator_epoch,
@@ -408,6 +726,38 @@ def _select_component(
             "demoted from prompt assembly; attribution history retained" if demoted else "retained by current-bundle attribution"
         ),
     )
+
+
+def _migrate_v1_attribution_ledger(data: dict[str, Any]) -> dict[str, Any]:
+    """Preserve legacy history without treating invented bindings as verified."""
+
+    migrated = dict(data)
+    migrated["schema_version"] = 2
+    raw_attributions = data.get("attributions")
+    attributions: list[Any] = []
+    provenance_fields = {
+        "comparison_bundle_digest",
+        "classification_neutral_effect",
+        "classification_high_token_cost",
+        "matched_pair_keys",
+        "source_trial_digests",
+    }
+    if isinstance(raw_attributions, list):
+        for raw_record in raw_attributions:
+            if not isinstance(raw_record, dict):
+                attributions.append(raw_record)
+                continue
+            record = dict(raw_record)
+            has_verified_shape = provenance_fields.issubset(record)
+            record.setdefault("comparison_bundle_digest", None)
+            record.setdefault("classification_neutral_effect", 0.0)
+            record.setdefault("classification_high_token_cost", 256)
+            record.setdefault("matched_pair_keys", [])
+            record.setdefault("source_trial_digests", [])
+            record["legacy_unverified"] = bool(record.get("legacy_unverified", False) or not has_verified_shape)
+            attributions.append(record)
+    migrated["attributions"] = attributions
+    return migrated
 
 
 __all__ = [

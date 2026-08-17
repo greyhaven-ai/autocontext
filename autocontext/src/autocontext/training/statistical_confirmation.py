@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from statistics import fmean
 from typing import Any, Literal
@@ -39,6 +40,12 @@ class TrainingPromotionProtocol(StrictModel):
         del __context
         if self.max_confirmation_pairs < self.min_confirmation_pairs:
             raise ValueError("max_confirmation_pairs must be >= min_confirmation_pairs")
+        if not math.isfinite(self.min_effect):
+            raise ValueError("min_effect must be finite")
+        if not math.isfinite(self.confidence_z):
+            raise ValueError("confidence_z must be finite")
+        if not math.isfinite(self.dimension_regression_tolerance):
+            raise ValueError("dimension_regression_tolerance must be finite")
 
 
 class TrainingPromotionTrial(StrictModel):
@@ -70,16 +77,19 @@ class TrainingPromotionTrial(StrictModel):
 
     @property
     def pair_key(self) -> str:
+        # A fixture/seed observation is one experimental unit.  Re-labelling the
+        # same unit as screen, confirmation, or heldout must not turn it into
+        # independent evidence.
         return stable_digest(
             {
                 "scenario": self.scenario,
                 "evaluator_epoch": self.evaluator_epoch,
                 "verifier_digest": self.verifier_digest,
                 "cohort": self.cohort,
-                "fixture": self.fixture,
+                # ``fixture`` is a display/routing label and may have aliases.
+                # The digest is the canonical fixture identity.
                 "fixture_digest": self.fixture_digest,
                 "seed": self.seed,
-                "lane": self.lane,
             }
         )
 
@@ -131,7 +141,7 @@ def evaluate_training_promotion(
         cohort=cohort,
         dimension_tolerance=active.dimension_regression_tolerance,
     )
-    cost = round(sum(trial.evaluation_cost for trial in trials), 6)
+    cost = round(sum(trial.evaluation_cost for trial in trials if math.isfinite(trial.evaluation_cost)), 6)
     if invalid_reason:
         decision: PromotionDecision = "infrastructure_error" if invalid_reason.startswith("infrastructure error:") else "invalid"
         return _artifact(
@@ -153,13 +163,52 @@ def evaluate_training_promotion(
             active,
         )
 
-    usable = [trial for trial in trials if trial.lane != "heldout"]
+    screen = [trial for trial in trials if trial.lane == "screen"]
+    confirmation = [trial for trial in trials if trial.lane == "confirmation"]
     heldout = [trial for trial in trials if trial.lane == "heldout"]
-    effects = [trial.delta for trial in usable]
-    mean_effect, low, high = _effect_interval(effects, active)
+    if len(confirmation) > active.max_confirmation_pairs:
+        return _artifact(
+            incumbent_id,
+            challenger_id,
+            scenario,
+            evaluator_epoch,
+            verifier_digest,
+            cohort,
+            "invalid",
+            "complete",
+            "confirmation evidence exceeds the configured maximum pair count",
+            trials,
+            None,
+            None,
+            None,
+            cost,
+            0,
+            active,
+        )
+    if len(heldout) > active.heldout_pairs:
+        return _artifact(
+            incumbent_id,
+            challenger_id,
+            scenario,
+            evaluator_epoch,
+            verifier_digest,
+            cohort,
+            "invalid",
+            "complete",
+            "held-out evidence exceeds the configured pair count",
+            trials,
+            None,
+            None,
+            None,
+            cost,
+            0,
+            active,
+        )
+    screen_effects = [trial.delta for trial in screen]
+    screen_mean, screen_low, screen_high = _effect_interval(screen_effects, active)
 
     if active.mode == "deterministic":
-        if not effects:
+        if not screen_effects:
             return _needs_more(
                 incumbent_id,
                 challenger_id,
@@ -174,7 +223,44 @@ def evaluate_training_promotion(
                 1,
                 active,
             )
-        accepted = mean_effect is not None and mean_effect >= active.min_effect
+        accepted = screen_mean is not None and screen_mean >= active.min_effect
+        if accepted and len(heldout) < active.heldout_pairs:
+            return _needs_more(
+                incumbent_id,
+                challenger_id,
+                scenario,
+                evaluator_epoch,
+                verifier_digest,
+                cohort,
+                "heldout",
+                "deterministic comparison passed; held-out matched check is incomplete",
+                trials,
+                cost,
+                active.heldout_pairs - len(heldout),
+                active,
+                screen_mean,
+                screen_mean,
+                screen_mean,
+            )
+        if accepted and heldout and fmean(trial.delta for trial in heldout) < active.min_effect:
+            return _artifact(
+                incumbent_id,
+                challenger_id,
+                scenario,
+                evaluator_epoch,
+                verifier_digest,
+                cohort,
+                "rejected",
+                "complete",
+                "held-out matched effect did not meet the minimum",
+                trials,
+                screen_mean,
+                screen_mean,
+                screen_mean,
+                cost,
+                0,
+                active,
+            )
         return _artifact(
             incumbent_id,
             challenger_id,
@@ -188,15 +274,15 @@ def evaluate_training_promotion(
             if accepted
             else "deterministic matched effect did not meet the minimum",
             trials,
-            mean_effect,
-            mean_effect,
-            mean_effect,
+            screen_mean,
+            screen_mean,
+            screen_mean,
             cost,
             0,
             active,
         )
 
-    screen_count = sum(trial.lane == "screen" for trial in usable)
+    screen_count = len(screen)
     if screen_count < active.initial_screen_pairs:
         return _needs_more(
             incumbent_id,
@@ -211,12 +297,12 @@ def evaluate_training_promotion(
             cost,
             active.initial_screen_pairs - screen_count,
             active,
-            mean_effect,
-            low,
-            high,
+            screen_mean,
+            screen_low,
+            screen_high,
         )
 
-    if high is not None and high < active.min_effect:
+    if screen_high is not None and screen_high < active.min_effect:
         return _artifact(
             incumbent_id,
             challenger_id,
@@ -228,15 +314,18 @@ def evaluate_training_promotion(
             "complete",
             "upper confidence bound is below the minimum effect",
             trials,
-            mean_effect,
-            low,
-            high,
+            screen_mean,
+            screen_low,
+            screen_high,
             cost,
             0,
             active,
         )
 
-    if len(usable) < active.min_confirmation_pairs:
+    confirmation_effects = [trial.delta for trial in confirmation]
+    mean_effect, low, high = _effect_interval(confirmation_effects, active)
+    confirmation_count = len(confirmation)
+    if confirmation_count < active.min_confirmation_pairs:
         return _needs_more(
             incumbent_id,
             challenger_id,
@@ -248,7 +337,7 @@ def evaluate_training_promotion(
             "screen passed but minimum confirmation evidence is incomplete",
             trials,
             cost,
-            min(active.confirmation_batch_size, active.min_confirmation_pairs - len(usable)),
+            min(active.confirmation_batch_size, active.min_confirmation_pairs - confirmation_count),
             active,
             mean_effect,
             low,
@@ -312,7 +401,7 @@ def evaluate_training_promotion(
             active,
         )
 
-    if len(usable) >= active.max_confirmation_pairs:
+    if confirmation_count >= active.max_confirmation_pairs:
         return _artifact(
             incumbent_id,
             challenger_id,
@@ -343,7 +432,7 @@ def evaluate_training_promotion(
         "uncertainty warrants another matched confirmation batch",
         trials,
         cost,
-        min(active.confirmation_batch_size, active.max_confirmation_pairs - len(usable)),
+        min(active.confirmation_batch_size, active.max_confirmation_pairs - confirmation_count),
         active,
         mean_effect,
         low,
@@ -370,9 +459,11 @@ def run_adaptive_confirmation(
         raise ValueError("adaptive confirmation requires fixtures and seeds")
     active = protocol or TrainingPromotionProtocol()
     trials: list[TrainingPromotionTrial] = []
+    trial_pairs = list(dict.fromkeys((fixture, seed) for fixture in fixtures for seed in seeds))
     cursor = 0
-    while True:
-        artifact = evaluate_training_promotion(
+
+    def evaluate_collected() -> TrainingPromotionArtifact:
+        return evaluate_training_promotion(
             trials,
             incumbent_id=incumbent_id,
             challenger_id=challenger_id,
@@ -382,34 +473,120 @@ def run_adaptive_confirmation(
             cohort=cohort,
             protocol=active,
         )
+
+    while True:
+        artifact = evaluate_collected()
         if artifact.decision != "needs_more_trials":
             return artifact
         if artifact.phase == "complete":
             raise RuntimeError("needs_more_trials artifact cannot be complete")
         for _ in range(artifact.next_trial_count):
-            fixture = fixtures[cursor % len(fixtures)]
-            seed = seeds[cursor % len(seeds)]
+            if cursor >= len(trial_pairs):
+                return _artifact(
+                    incumbent_id,
+                    challenger_id,
+                    scenario,
+                    evaluator_epoch,
+                    verifier_digest,
+                    cohort,
+                    "invalid",
+                    "complete",
+                    "adaptive confirmation exhausted distinct fixture/seed pairs",
+                    trials,
+                    artifact.mean_effect,
+                    artifact.confidence_low,
+                    artifact.confidence_high,
+                    artifact.evaluation_cost,
+                    0,
+                    active,
+                )
+            fixture, seed = trial_pairs[cursor]
             cursor += 1
             try:
                 trial = executor(artifact.phase, seed, fixture)
             except Exception as exc:
-                trial = TrainingPromotionTrial(
-                    trial_id=f"infrastructure-error-{cursor}",
-                    incumbent_id=incumbent_id,
-                    challenger_id=challenger_id,
-                    scenario=scenario,
-                    evaluator_epoch=evaluator_epoch,
-                    verifier_digest=verifier_digest,
-                    cohort=cohort,
-                    fixture=fixture,
-                    fixture_digest=stable_digest(fixture),
-                    seed=seed,
-                    lane=artifact.phase,
-                    incumbent_score=0.0,
-                    challenger_score=0.0,
-                    infrastructure_error=f"{type(exc).__name__}: {exc}",
+                trials.append(
+                    _infrastructure_trial(
+                        cursor=cursor,
+                        incumbent_id=incumbent_id,
+                        challenger_id=challenger_id,
+                        scenario=scenario,
+                        evaluator_epoch=evaluator_epoch,
+                        verifier_digest=verifier_digest,
+                        cohort=cohort,
+                        fixture=fixture,
+                        seed=seed,
+                        lane=artifact.phase,
+                        error=f"{type(exc).__name__}: {exc}",
+                    )
                 )
+                return evaluate_collected()
+
+            mismatches: list[str] = []
+            if not isinstance(trial, TrainingPromotionTrial):
+                mismatches.append(f"result type {type(trial).__name__!r}")
+            else:
+                if trial.lane != artifact.phase:
+                    mismatches.append(f"lane {trial.lane!r} (expected {artifact.phase!r})")
+                if trial.fixture != fixture:
+                    mismatches.append(f"fixture {trial.fixture!r} (expected {fixture!r})")
+                if trial.seed != seed:
+                    mismatches.append(f"seed {trial.seed!r} (expected {seed!r})")
+            if mismatches:
+                trials.append(
+                    _infrastructure_trial(
+                        cursor=cursor,
+                        incumbent_id=incumbent_id,
+                        challenger_id=challenger_id,
+                        scenario=scenario,
+                        evaluator_epoch=evaluator_epoch,
+                        verifier_digest=verifier_digest,
+                        cohort=cohort,
+                        fixture=fixture,
+                        seed=seed,
+                        lane=artifact.phase,
+                        error="executor returned mismatched requested trial identity: " + ", ".join(mismatches),
+                    )
+                )
+                return evaluate_collected()
             trials.append(trial)
+
+
+def _infrastructure_trial(
+    *,
+    cursor: int,
+    incumbent_id: str,
+    challenger_id: str,
+    scenario: str,
+    evaluator_epoch: str,
+    verifier_digest: str,
+    cohort: str,
+    fixture: str,
+    seed: int,
+    lane: TrialLane,
+    error: str,
+) -> TrainingPromotionTrial:
+    """Record fail-closed evidence for an executor protocol failure."""
+
+    return TrainingPromotionTrial(
+        trial_id=f"infrastructure-error-{cursor}",
+        incumbent_id=incumbent_id,
+        challenger_id=challenger_id,
+        scenario=scenario,
+        evaluator_epoch=evaluator_epoch,
+        verifier_digest=verifier_digest,
+        cohort=cohort,
+        fixture=fixture,
+        # The collector receives fixture identifiers, not an expected digest
+        # manifest.  This digest identifies the requested fixture without
+        # claiming to validate an executor-specific content-digest contract.
+        fixture_digest=stable_digest(fixture),
+        seed=seed,
+        lane=lane,
+        incumbent_score=0.0,
+        challenger_score=0.0,
+        infrastructure_error=error,
+    )
 
 
 def _validate_trial_set(
@@ -423,11 +600,13 @@ def _validate_trial_set(
     cohort: str,
     dimension_tolerance: float,
 ) -> str | None:
-    seen: set[str] = set()
+    seen_trial_ids: set[str] = set()
+    seen_pair_keys: set[str] = set()
     for trial in trials:
-        if trial.trial_id in seen or trial.pair_key in seen:
+        if trial.trial_id in seen_trial_ids or trial.pair_key in seen_pair_keys:
             return f"duplicate matched trial: {trial.trial_id}"
-        seen.update({trial.trial_id, trial.pair_key})
+        seen_trial_ids.add(trial.trial_id)
+        seen_pair_keys.add(trial.pair_key)
         expected = (
             trial.incumbent_id == incumbent_id
             and trial.challenger_id == challenger_id
@@ -440,10 +619,23 @@ def _validate_trial_set(
             return "trial identity, evaluator epoch, verifier, or cohort mismatch"
         if trial.infrastructure_error:
             return f"infrastructure error: {trial.infrastructure_error}"
+        scalar_values = (
+            trial.incumbent_score,
+            trial.challenger_score,
+            trial.evaluation_cost,
+            *trial.incumbent_dimensions.values(),
+            *trial.challenger_dimensions.values(),
+        )
+        if any(not math.isfinite(value) for value in scalar_values):
+            return "matched trial contains a non-finite score, cost, or dimension"
         if trial.incumbent_valid and not trial.challenger_valid:
             return "challenger validity regressed"
+        if not trial.incumbent_valid or not trial.challenger_valid:
+            return "matched comparison requires both arms to be valid"
         if trial.incumbent_parse_ok and not trial.challenger_parse_ok:
             return "challenger parse validity regressed"
+        if not trial.incumbent_parse_ok or not trial.challenger_parse_ok:
+            return "matched comparison requires both arms to parse successfully"
         for dimension, incumbent_value in trial.incumbent_dimensions.items():
             challenger_value = trial.challenger_dimensions.get(dimension)
             if challenger_value is None:
@@ -459,7 +651,15 @@ def _effect_interval(
 ) -> tuple[float | None, float | None, float | None]:
     if not effects:
         return None, None, None
-    average, low, high = paired_confidence_interval(effects, protocol.confidence_z)
+    # Promotion may be inspected after every additional pair between the minimum
+    # and maximum sample sizes.  Reserve the configured family-wise error rate
+    # across all of those possible acceptance looks.
+    max_looks = protocol.max_confirmation_pairs - protocol.min_confirmation_pairs + 1
+    average, low, high = paired_confidence_interval(
+        effects,
+        protocol.confidence_z,
+        max_looks=max_looks,
+    )
     return (
         round(average, 12) if average is not None else None,
         round(low, 12) if low is not None else None,

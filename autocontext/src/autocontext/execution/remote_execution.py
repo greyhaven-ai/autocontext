@@ -230,17 +230,18 @@ def parse_remote_stdout(
         else:
             final_payload = parsed
     if exit_code != 0:
+        task_error = stderr.strip() or f"task exited with status {exit_code}"
         return RemoteExecutionResult(
             task_id=request.task_id,
             provider=provider,
-            status="task_error",
+            status="cleanup_error" if not cleanup.succeeded else "task_error",
             stdout=stdout,
             stderr=stderr,
             exit_code=exit_code,
             events=tuple(events),
             usage=usage,
             cleanup=cleanup,
-            error=stderr.strip() or f"task exited with status {exit_code}",
+            error=_cleanup_failure_detail(task_error, cleanup) if not cleanup.succeeded else task_error,
             session_id=session_id,
         )
 
@@ -248,10 +249,11 @@ def parse_remote_stdout(
     names = {artifact.name for artifact in artifacts}
     missing = [name for name in request.expected_outputs if name not in names]
     if missing:
+        artifact_error = f"missing declared output artifacts: {', '.join(missing)}"
         return RemoteExecutionResult(
             task_id=request.task_id,
             provider=provider,
-            status="artifact_error",
+            status="cleanup_error" if not cleanup.succeeded else "artifact_error",
             stdout=stdout,
             stderr=stderr,
             exit_code=exit_code,
@@ -259,7 +261,7 @@ def parse_remote_stdout(
             events=tuple(events),
             usage=usage,
             cleanup=cleanup,
-            error=f"missing declared output artifacts: {', '.join(missing)}",
+            error=_cleanup_failure_detail(artifact_error, cleanup) if not cleanup.succeeded else artifact_error,
             session_id=session_id,
         )
     status: RemoteExecutionStatus = "success" if cleanup.succeeded else "cleanup_error"
@@ -305,7 +307,21 @@ def _parse_artifacts(raw: object) -> tuple[RemoteOutputArtifact, ...]:
     return tuple(artifacts)
 
 
+def _cleanup_failure_detail(primary_error: str, cleanup: RemoteCleanupOutcome) -> str:
+    cleanup_error = cleanup.detail.strip() or "remote resource cleanup failed"
+    return f"{primary_error}; cleanup failed: {cleanup_error}" if primary_error else cleanup_error
+
+
 def requests_are_reuse_compatible(requests: Sequence[RemoteExecutionRequest]) -> bool:
+    """Return whether every request can safely share one provisioned sandbox.
+
+    Prime-style reusable sessions are created from the first request.  Every
+    value that can leave filesystem, credential, environment, or snapshot state
+    behind must therefore be identical across the cohort. Commands, task ids,
+    output declarations, timeouts, and opaque metadata may differ because they
+    do not alter the provisioned sandbox contract.
+    """
+
     if not requests:
         return False
     first = requests[0]
@@ -315,6 +331,10 @@ def requests_are_reuse_compatible(requests: Sequence[RemoteExecutionRequest]) ->
         and request.resources == first.resources
         and request.network_policy == first.network_policy
         and request.secrets_policy == first.secrets_policy
+        and request.secret_grants == first.secret_grants
+        and request.input_artifacts == first.input_artifacts
+        and dict(request.environment) == dict(first.environment)
+        and request.snapshot_id == first.snapshot_id
         for request in requests
     ) and len(requests) <= min(request.max_reuse_tasks for request in requests)
 

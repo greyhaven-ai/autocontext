@@ -22,6 +22,11 @@ from autocontext.context_bundles import (
     evaluator_epoch_for,
     routing_snapshot,
 )
+from autocontext.context_bundles.assembly import (
+    CONSTRUCTION_BOUND_ROUTING_FIELDS,
+    LIVE_CONTEXT_ROUTING_FIELDS,
+    bundle_routing_config,
+)
 from autocontext.harness.mutations.parser import parse_mutations
 from autocontext.harness.pipeline.holdout import HoldoutResult
 from autocontext.harness.pipeline.trend_gate import TrendAwareGate
@@ -108,6 +113,41 @@ from autocontext.loop.stage_helpers.tournament_prep import (
 logger = logging.getLogger(__name__)
 
 _NOTEBOOK_CONTEXT_PROVIDER = NotebookContextProvider()
+
+
+def _apply_active_bundle_routing(ctx: GenerationContext, bundle: ContextBundle) -> None:
+    try:
+        config = bundle_routing_config(bundle)
+    except ValueError as exc:
+        raise RuntimeError(f"active {exc}") from exc
+
+    for field in CONSTRUCTION_BOUND_ROUTING_FIELDS:
+        if field in config and config[field] != getattr(ctx.settings, field):
+            raise RuntimeError(
+                f"active context routing field {field!r} differs from the constructed runtime; "
+                "restart with matching settings before serving this bundle"
+            )
+    if config.get("dag_changes"):
+        raise RuntimeError("active context DAG changes require lifecycle-level orchestrator reconstruction")
+    if config.get("tuning_proposal"):
+        raise RuntimeError("active context tuning requires lifecycle-level gate and executor reconstruction")
+
+    updates: dict[str, Any] = {}
+    for field in LIVE_CONTEXT_ROUTING_FIELDS:
+        if field not in config or config[field] == getattr(ctx.settings, field):
+            continue
+        value = config[field]
+        if field.startswith("model_"):
+            if not isinstance(value, str) or not value.strip():
+                raise RuntimeError(f"active context routing field {field!r} must be a non-empty string")
+            updates[field] = value.strip()
+        elif not isinstance(value, bool):
+            raise RuntimeError(f"active context routing field {field!r} must be a boolean")
+        else:
+            updates[field] = value
+    if updates:
+        ctx.settings = ctx.settings.model_copy(update=updates)
+    ctx.active_context_routing = config
 
 
 class _ClientAsProvider(LLMProvider):
@@ -261,6 +301,8 @@ def stage_knowledge_setup(
         active_context = None
     ctx.evaluator_epoch = evaluator_epoch
     ctx.active_context_bundle_digest = active_context.digest if active_context is not None else None
+    if active_context is not None:
+        _apply_active_bundle_routing(ctx, active_context)
 
     playbook = "" if ablation else artifacts.read_playbook(ctx.scenario_name)
     tool_context = "" if ablation else artifacts.read_tool_context(ctx.scenario_name)
@@ -328,7 +370,12 @@ def stage_knowledge_setup(
 
     if not ablation and ctx.settings.evidence_freshness_enabled:
         skills_context, lesson_freshness = _load_fresh_skill_context(ctx, artifacts=artifacts)
-        coach_hints_for_prompt, hint_freshness = _load_fresh_hint_context(ctx, artifacts=artifacts)
+        hint_freshness = ""
+        # An immutable promoted bundle is the serving authority. Legacy
+        # hint_state.json may describe an older baseline and must not overwrite
+        # the bundle's matched-and-promoted hint component.
+        if active_context is None:
+            coach_hints_for_prompt, hint_freshness = _load_fresh_hint_context(ctx, artifacts=artifacts)
         if lesson_freshness:
             freshness_notes.append(lesson_freshness)
         if hint_freshness:
@@ -483,14 +530,9 @@ def stage_knowledge_setup(
     ctx.strategy_interface = strategy_interface
     ctx.tool_context = tool_context
     ctx.base_playbook = playbook
-    if not ablation and active_context is not None:
-        ctx.base_tool_names = sorted(
-            component.key
-            for component in active_context.components
-            if component.kind == ComponentKind.TOOL_SPEC
-        )
-    else:
-        ctx.base_tool_names = [] if ablation else _normalize_tool_names(artifacts.list_tool_names(ctx.scenario_name))
+    # TOOL_SPEC bundle components are reference source until a runtime installs
+    # them. Only names reported by the artifact store are actually callable.
+    ctx.base_tool_names = [] if ablation else _normalize_tool_names(artifacts.list_tool_names(ctx.scenario_name))
     ctx.base_analysis = recent_analysis
     ctx.base_lessons = skills_context
     return ctx

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+import math
+from datetime import UTC, datetime
 from typing import Any, Literal, Self
 
-from pydantic import Field
+from pydantic import Field, FiniteFloat, model_validator
 
+from autocontext.context_bundles.models import stable_digest
 from autocontext.util.models import StrictModel
 
 FailureKind = Literal[
@@ -93,6 +95,7 @@ class NegativeResultApplicabilityContext(StrictModel):
     context_bundle_family: str | None = None
     evaluator_epoch: str
     verifier_digest: str | None = None
+    trial_cohort: str | None = None
     component_digests: dict[str, str] = Field(default_factory=dict)
     environment_fingerprint: str | None = None
     observed_at: str | None = None
@@ -114,7 +117,7 @@ class NegativeResultEntry(StrictModel):
     failure_kind: FailureKind
     disposition: NegativeResultDisposition
     reason: str = Field(min_length=1)
-    score_delta: float | None
+    score_delta: FiniteFloat | None
     evaluated_seeds: list[str]
     evaluated_probes: list[str]
     branch_lineage: list[NegativeBranchLineageEdge]
@@ -142,6 +145,11 @@ class NegativeResultLedger(StrictModel):
     generated_at: str = Field(min_length=1)
     entries: list[NegativeResultEntry]
     failure_mode_summary: list[FailureModeSummary]
+
+    @model_validator(mode="after")
+    def _require_unique_result_ids(self) -> Self:
+        _ensure_unique_result_ids(self.entries)
+        return self
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Self:
@@ -193,7 +201,11 @@ def build_negative_result_ledger(
         component_dependencies=component_dependencies or [],
         environment_fingerprint=environment_fingerprint,
     )
-    entries = [_entry for event in events if (_entry := _entry_from_event(event, defaults)) is not None]
+    entries = [
+        _entry
+        for event_index, event in enumerate(events)
+        if (_entry := _entry_from_event(event, defaults, event_index=event_index)) is not None
+    ]
     return NegativeResultLedger(
         run_id=run_id,
         generated_at=generated_at or datetime.now().astimezone().isoformat(),
@@ -212,11 +224,15 @@ def render_negative_result_lessons(
 
     entries = [entry for entry in ledger.entries if entry.disposition != "noise" and entry.evidence_refs]
     rank = {"hard_ban": 0, "caution": 1, "noise": 2}
+    evaluated = [(entry, evaluate_negative_result_applicability(entry, applicability_context)) for entry in entries]
+    renderable = [
+        (entry, applicability) for entry, applicability in evaluated if applicability.state not in {"excluded", "superseded"}
+    ]
     lines: list[str] = []
-    for entry in sorted(entries, key=lambda item: (rank[item.disposition], item.result_id))[:max_entries]:
-        applicability = evaluate_negative_result_applicability(entry, applicability_context)
-        if applicability.state in {"excluded", "superseded"}:
-            continue
+    for entry, applicability in sorted(
+        renderable,
+        key=lambda item: (rank[item[0].disposition], item[0].result_id),
+    )[:max_entries]:
         evidence = "; ".join(ref.summary for ref in entry.evidence_refs[:2])
         delta = f", delta={entry.score_delta:g}" if entry.score_delta is not None else ""
         if applicability.effective_disposition == "hard_ban":
@@ -249,19 +265,9 @@ def evaluate_negative_result_applicability(
         return _applicability("qualified", "caution", "current context was not supplied; applicability is unverified", True)
 
     recorded = entry.context
-    scope_mismatch = _scope_mismatch(entry.applicability_scope, recorded, current)
-    if scope_mismatch:
-        return _applicability("retest_due", "caution", scope_mismatch, True)
-    if recorded.evaluator_epoch != current.evaluator_epoch:
-        return _applicability("retest_due", "caution", "evaluator epoch changed", True)
-    if recorded.verifier_digest and recorded.verifier_digest != current.verifier_digest:
-        return _applicability("retest_due", "caution", "verifier changed", True)
-    if recorded.environment_fingerprint and recorded.environment_fingerprint != current.environment_fingerprint:
-        return _applicability("retest_due", "caution", "environment fingerprint changed", True)
-    for dependency in recorded.component_dependencies:
-        key = f"{dependency.component_kind}:{dependency.key}"
-        if current.component_digests.get(key) != dependency.digest:
-            return _applicability("retest_due", "caution", f"dependency {key} changed", True)
+    context_mismatch = _context_mismatch(entry.applicability_scope, recorded, current)
+    if context_mismatch:
+        return _applicability("retest_due", "caution", context_mismatch, True)
     if entry.evidence_expires_at and _is_at_or_after(current.observed_at, entry.evidence_expires_at):
         return _applicability("retest_due", "caution", "evidence age limit was reached", True)
     if current.stronger_evidence_available:
@@ -279,14 +285,19 @@ def link_negative_result_retest(
 ) -> NegativeResultLedger:
     """Append a retest while preserving and, when disproved, superseding the original."""
 
+    _ensure_unique_result_ids(ledger.entries)
     if retest_entry.retest_of_result_id != original_result_id or retest_entry.retest_outcome is None:
         raise ValueError("retest entry must link to the original and declare an outcome")
+    if any(entry.result_id == retest_entry.result_id for entry in ledger.entries):
+        raise ValueError(f"retest result already exists: {retest_entry.result_id}")
     found = False
     entries: list[NegativeResultEntry] = []
     for entry in ledger.entries:
         if entry.result_id == original_result_id:
             found = True
-            superseded_by = retest_entry.result_id if retest_entry.retest_outcome == "not_reproduced" else None
+            superseded_by = entry.superseded_by_result_id
+            if _retest_can_supersede(entry, retest_entry):
+                superseded_by = retest_entry.result_id
             entries.append(entry.model_copy(update={"superseded_by_result_id": superseded_by}))
         else:
             entries.append(entry)
@@ -296,7 +307,12 @@ def link_negative_result_retest(
     return ledger.model_copy(update={"entries": entries, "failure_mode_summary": _failure_mode_summary(entries)})
 
 
-def _entry_from_event(event: dict[str, Any], defaults: NegativeResultContext) -> NegativeResultEntry | None:
+def _entry_from_event(
+    event: dict[str, Any],
+    defaults: NegativeResultContext,
+    *,
+    event_index: int,
+) -> NegativeResultEntry | None:
     raw_payload = event.get("payload")
     payload: dict[str, Any] = raw_payload if isinstance(raw_payload, dict) else {}
     event_type = _string(event.get("event_type") or event.get("event"))
@@ -307,7 +323,7 @@ def _entry_from_event(event: dict[str, Any], defaults: NegativeResultContext) ->
     if not branch_id:
         return None
     event_id = _string(event.get("event_id")) or (f"seq-{event.get('seq')}" if event.get("seq") is not None else "")
-    result_id = _string(payload.get("result_id")) or event_id or f"negative-{len(branch_id)}"
+    result_id = _string(payload.get("result_id")) or event_id or _fallback_result_id(event, event_index)
     score_delta = _score_delta(payload)
     context = _context_from_payload(payload, defaults)
     explicit_scope = _applicability_scope(payload.get("applicability_scope"))
@@ -340,6 +356,18 @@ def _entry_from_event(event: dict[str, Any], defaults: NegativeResultContext) ->
     )
 
 
+def _fallback_result_id(event: dict[str, Any], event_index: int) -> str:
+    return f"negative-{stable_digest({'event': event, 'event_index': event_index})}"
+
+
+def _ensure_unique_result_ids(entries: list[NegativeResultEntry]) -> None:
+    seen: set[str] = set()
+    for entry in entries:
+        if entry.result_id in seen:
+            raise ValueError(f"duplicate negative result ID: {entry.result_id}")
+        seen.add(entry.result_id)
+
+
 def _failure_mode_summary(entries: list[NegativeResultEntry]) -> list[FailureModeSummary]:
     groups: dict[tuple[FailureKind, NegativeResultDisposition], list[str]] = {}
     for entry in entries:
@@ -367,10 +395,10 @@ def _disposition(value: Any) -> NegativeResultDisposition:
 def _score_delta(payload: dict[str, Any]) -> float | None:
     explicit = _float_or_none(payload.get("score_delta"))
     if explicit is not None:
-        return round(explicit, 6)
+        return _round_six(explicit)
     score = _float_or_none(payload.get("score"))
     baseline = _float_or_none(payload.get("baseline_score"))
-    return round(score - baseline, 6) if score is not None and baseline is not None else None
+    return _round_six(score - baseline) if score is not None and baseline is not None else None
 
 
 def _branch_lineage(
@@ -482,6 +510,76 @@ def _scope_mismatch(
     return None
 
 
+def _context_mismatch(
+    scope: NegativeResultApplicabilityScope,
+    recorded: NegativeResultContext,
+    current: NegativeResultApplicabilityContext,
+) -> str | None:
+    scope_mismatch = _scope_mismatch(scope, recorded, current)
+    if scope_mismatch:
+        return scope_mismatch
+    if recorded.evaluator_epoch != current.evaluator_epoch:
+        return "evaluator epoch changed"
+    if recorded.verifier_digest and recorded.verifier_digest != current.verifier_digest:
+        return "verifier changed"
+    if recorded.trial_cohort and recorded.trial_cohort != current.trial_cohort:
+        return "trial cohort changed"
+    if recorded.environment_fingerprint and recorded.environment_fingerprint != current.environment_fingerprint:
+        return "environment fingerprint changed"
+    for dependency in recorded.component_dependencies:
+        key = f"{dependency.component_kind}:{dependency.key}"
+        if current.component_digests.get(key) != dependency.digest:
+            return f"dependency {key} changed"
+    return None
+
+
+def _retest_can_supersede(original: NegativeResultEntry, retest: NegativeResultEntry) -> bool:
+    if retest.retest_outcome != "not_reproduced":
+        return False
+    if retest.disposition == "noise":
+        return False
+    if not retest.evidence_refs or not (retest.evaluated_seeds or retest.evaluated_probes):
+        return False
+    original_time = _parse_iso_timestamp(original.occurred_at)
+    retest_time = _parse_iso_timestamp(retest.occurred_at)
+    if original_time is None or retest_time is None or retest_time < original_time:
+        return False
+    if original.safety_policy_authority != retest.safety_policy_authority:
+        return False
+    if original.applicability_scope != retest.applicability_scope:
+        return False
+
+    recorded = original.context
+    candidate = retest.context
+    recorded_identity = (
+        recorded.scenario_name,
+        recorded.context_bundle_digest,
+        recorded.context_bundle_family,
+        recorded.evaluator_epoch,
+        recorded.verifier_digest,
+        recorded.trial_cohort,
+        recorded.environment_fingerprint,
+    )
+    candidate_identity = (
+        candidate.scenario_name,
+        candidate.context_bundle_digest,
+        candidate.context_bundle_family,
+        candidate.evaluator_epoch,
+        candidate.verifier_digest,
+        candidate.trial_cohort,
+        candidate.environment_fingerprint,
+    )
+    if recorded_identity != candidate_identity:
+        return False
+    recorded_dependencies = sorted(
+        (dependency.component_kind, dependency.key, dependency.digest) for dependency in recorded.component_dependencies
+    )
+    candidate_dependencies = sorted(
+        (dependency.component_kind, dependency.key, dependency.digest) for dependency in candidate.component_dependencies
+    )
+    return recorded_dependencies == candidate_dependencies
+
+
 def _applicability(
     state: NegativeResultApplicabilityState,
     effective_disposition: NegativeResultDisposition | None,
@@ -497,12 +595,33 @@ def _applicability(
 
 
 def _is_at_or_after(observed_at: str | None, expires_at: str) -> bool:
-    try:
-        observed = datetime.fromisoformat(observed_at.replace("Z", "+00:00")) if observed_at else datetime.now().astimezone()
-        expires = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
-    except ValueError:
+    observed = _parse_iso_timestamp(observed_at) if observed_at else datetime.now(UTC)
+    expires = _parse_iso_timestamp(expires_at)
+    if observed is None or expires is None:
         return True
     return observed >= expires
+
+
+def _parse_iso_timestamp(value: str) -> datetime | None:
+    normalized = value[:-1] + "+00:00" if value.endswith(("Z", "z")) else value
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except (TypeError, ValueError):
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def _round_six(value: float) -> float:
+    """Round binary64 values half away from zero in both runtimes."""
+
+    scaled = abs(value) * 1_000_000
+    if not math.isfinite(scaled):
+        return value
+    rounded = math.floor(scaled + 0.5) / 1_000_000
+    result = math.copysign(rounded, value)
+    return 0.0 if result == 0 else result
 
 
 def _migrate_v1_ledger(data: dict[str, Any]) -> dict[str, Any]:
@@ -559,7 +678,13 @@ def _int_or_none(value: Any) -> int | None:
 
 
 def _float_or_none(value: Any) -> float | None:
-    return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return None
+    try:
+        result = float(value)
+    except OverflowError:
+        return None
+    return result if math.isfinite(result) else None
 
 
 __all__ = [

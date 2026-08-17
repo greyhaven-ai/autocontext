@@ -25,6 +25,7 @@ def build_scenario_remote_request(
     image: str,
     cpu_cores: float,
     disk_gb: float,
+    memory_gb: float | None = None,
 ) -> RemoteExecutionRequest:
     return _build_request(
         scenario_name=scenario.name,
@@ -36,6 +37,7 @@ def build_scenario_remote_request(
         image=image,
         cpu_cores=cpu_cores,
         disk_gb=disk_gb,
+        memory_gb=memory_gb,
     )
 
 
@@ -48,6 +50,7 @@ def build_builtin_scenario_remote_request(
     image: str,
     cpu_cores: float,
     disk_gb: float,
+    memory_gb: float | None = None,
 ) -> RemoteExecutionRequest:
     try:
         scenario_module, scenario_class = _BUILTIN_SCENARIOS[scenario_name]
@@ -63,6 +66,7 @@ def build_builtin_scenario_remote_request(
         image=image,
         cpu_cores=cpu_cores,
         disk_gb=disk_gb,
+        memory_gb=memory_gb,
     )
 
 
@@ -77,6 +81,7 @@ def _build_request(
     image: str,
     cpu_cores: float,
     disk_gb: float,
+    memory_gb: float | None,
 ) -> RemoteExecutionRequest:
     payload = {
         "scenario_name": scenario_name,
@@ -102,13 +107,15 @@ replay = {{
 }}
 print(json.dumps({{"result": result.model_dump(mode="json"), "replay": replay}}))
 """
+    limit_memory_gb = max(0.25, float(limits.max_memory_mb) / 1024.0)
+    requested_memory_gb = min(memory_gb, limit_memory_gb) if memory_gb is not None else limit_memory_gb
     return RemoteExecutionRequest(
         task_id=f"scenario:{scenario_name}:{seed}",
         image=image,
         command="python - <<'PY'\n" + script + "\nPY",
         resources=RemoteResourceRequest(
             cpu_cores=cpu_cores,
-            memory_gb=max(0.25, float(limits.max_memory_mb) / 1024.0),
+            memory_gb=requested_memory_gb,
             disk_gb=disk_gb,
         ),
         timeout_seconds=limits.timeout_seconds,

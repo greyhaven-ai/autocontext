@@ -12,6 +12,7 @@ from .campaign_scheduler import (
     RemoteCampaignWorker,
     SchedulerBudget,
     SchedulerResources,
+    StaleCampaignSchedulerError,
     WorkerDescriptor,
 )
 from .phased_execution import (
@@ -98,6 +99,7 @@ __all__ = [
     "RemoteResourceRequest",
     "SchedulerBudget",
     "SchedulerResources",
+    "StaleCampaignSchedulerError",
     "WorkspaceCapabilityRequest",
     "WorkspaceResourceLimits",
     "WorkerDescriptor",

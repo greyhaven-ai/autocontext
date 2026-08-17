@@ -11,6 +11,19 @@ from typing import Any, Protocol
 from autocontext.context_bundles.models import BundleComponent, ComponentKind, ContextBundle
 from autocontext.harness.mutations import HarnessMutation, evaluate_mutation
 
+LIVE_CONTEXT_ROUTING_FIELDS = frozenset(
+    {
+        "model_competitor",
+        "model_analyst",
+        "model_coach",
+        "model_architect",
+        "structural_role_isolation",
+        "harness_validators_enabled",
+    }
+)
+CONSTRUCTION_BOUND_ROUTING_FIELDS = frozenset({"agent_provider", "judge_provider", "judge_model"})
+DEFERRED_ROUTING_FIELDS = frozenset({"dag_changes", "tuning_proposal"})
+
 
 class LegacyContextReader(Protocol):
     def read_playbook(self, scenario_name: str) -> str: ...
@@ -20,6 +33,56 @@ class LegacyContextReader(Protocol):
     def list_harness(self, scenario_name: str) -> list[str]: ...
     def read_harness(self, scenario_name: str, name: str) -> str | None: ...
     def load_harness_mutations(self, scenario_name: str) -> list[HarnessMutation]: ...
+
+
+def bundle_routing_config(bundle: ContextBundle) -> dict[str, Any]:
+    """Parse and validate the one routing component understood by serving."""
+
+    components = [
+        component
+        for component in bundle.components
+        if component.kind == ComponentKind.ROUTING_CONFIG and component.key == "roles"
+    ]
+    if not components:
+        return {}
+    if len(components) != 1:
+        raise ValueError("context bundle must contain at most one roles routing component")
+    if components[0].media_type != "application/json":
+        raise ValueError("context bundle routing config must use application/json")
+    try:
+        raw = json.loads(components[0].content)
+    except json.JSONDecodeError as exc:
+        raise ValueError("context bundle routing config is not valid JSON") from exc
+    if not isinstance(raw, dict):
+        raise ValueError("context bundle routing config must be a JSON object")
+    config = {str(key): value for key, value in raw.items()}
+    known_fields = LIVE_CONTEXT_ROUTING_FIELDS | CONSTRUCTION_BOUND_ROUTING_FIELDS | DEFERRED_ROUTING_FIELDS
+    unknown = sorted(set(config) - known_fields)
+    if unknown:
+        raise ValueError(f"context bundle has unsupported routing fields: {', '.join(unknown)}")
+    return config
+
+
+def validate_bundle_promotion_contract(
+    bundle: ContextBundle,
+    *,
+    incumbent: ContextBundle | None = None,
+) -> dict[str, Any]:
+    """Reject an active pointer that the current serving lifecycle cannot honor."""
+
+    config = bundle_routing_config(bundle)
+    if config.get("dag_changes"):
+        raise ValueError("context bundle DAG changes require orchestrator reconstruction before promotion")
+    if config.get("tuning_proposal"):
+        raise ValueError("context bundle tuning requires gate and executor reconstruction before promotion")
+    if incumbent is not None:
+        incumbent_config = bundle_routing_config(incumbent)
+        for field in CONSTRUCTION_BOUND_ROUTING_FIELDS:
+            if config.get(field) != incumbent_config.get(field):
+                raise ValueError(
+                    f"construction-bound routing field {field!r} cannot change through context promotion"
+                )
+    return config
 
 
 def build_legacy_baseline(
@@ -164,7 +227,13 @@ def bundle_tool_context(bundle: ContextBundle) -> str:
                 continue
             description = str(spec.get("description", "")).strip()
             code = str(spec.get("code", "")).strip()
-            sections.append(f"### Tool: {component.key}\n{description}\n```python\n{code}\n```")
+            sections.append(
+                f"### Reference helper (not installed or callable): {component.key}\n"
+                f"{description}\n"
+                "This source is prompt context only. Inline or adapt it in the strategy; "
+                "do not invoke it as a runtime tool.\n"
+                f"```python\n{code}\n```"
+            )
     return "\n\n".join(sections) or "No generated tools available."
 
 

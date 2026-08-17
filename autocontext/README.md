@@ -47,8 +47,10 @@ comparable lanes, bounded retries and budgets, and capability-driven warm
 affinity. See the [campaign scheduler](../docs/campaign-scheduler.md).
 
 Code and research scenarios can opt into a process-backed `ResearchWorkspace`
-with explicit file, import, subprocess, network, and host-bridge grants. The
-existing restricted interpreter remains the default; see
+with explicit file, import, network, and host-bridge grants. Only approved
+`trusted_local` workspaces may import packages or run allow-listed subprocesses;
+`isolated_sandbox` denies both until an OS sandbox backend exists. The existing
+restricted interpreter remains the default; see
 [capability-scoped research workspaces](../docs/research-workspaces.md).
 
 Remote tasks use a provider-neutral request/result contract for resources,

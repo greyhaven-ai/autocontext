@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from typing import Any
 
 import pytest
@@ -9,6 +10,7 @@ from autocontext.execution.remote_execution import (
     RemoteExecutionRequest,
     RemoteInputArtifact,
     RemoteResourceRequest,
+    RemoteSecretGrant,
 )
 from autocontext.integrations.primeintellect.client import (
     PrimeIntellectClient,
@@ -108,6 +110,22 @@ def test_execute_strategy_uses_sandbox_lifecycle(monkeypatch: pytest.MonkeyPatch
     assert _SuccessAsyncClient.deleted_ids[-1] == "sbx-1"
 
 
+def test_execute_strategy_honors_configured_memory_cap(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("autocontext.integrations.primeintellect.client.AsyncSandboxClient", _SuccessAsyncClient)
+    client = PrimeIntellectClient(api_key="test-key", memory_gb=0.25)
+
+    client.execute_strategy(
+        scenario_name="grid_ctf",
+        strategy={"aggression": 0.6, "defense": 0.4, "path_bias": 0.5},
+        seed=123,
+        timeout_seconds=10.0,
+        max_memory_mb=512,
+        network_access=False,
+    )
+
+    assert _SuccessAsyncClient.created_requests[-1].memory_gb == 0.25
+
+
 def test_execute_strategy_falls_back_when_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("autocontext.integrations.primeintellect.client.AsyncSandboxClient", _FailingAsyncClient)
     client = PrimeIntellectClient(api_key="test-key", allow_fallback=True)
@@ -125,11 +143,37 @@ def test_execute_strategy_falls_back_when_enabled(monkeypatch: pytest.MonkeyPatc
     assert result["result"]["summary"] == "primeintellect execution unavailable"
 
 
+def test_prime_fallback_is_fail_closed_by_default() -> None:
+    assert PrimeIntellectClient(api_key="test-key").allow_fallback is False
+
+
 def test_execute_strategy_raises_when_fallback_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("autocontext.integrations.primeintellect.client.AsyncSandboxClient", _FailingAsyncClient)
     client = PrimeIntellectClient(api_key="test-key", allow_fallback=False)
+    before = len(_FailingAsyncClient.created_requests)
 
     with pytest.raises(RuntimeError, match="boom"):
+        client.execute_strategy(
+            scenario_name="grid_ctf",
+            strategy={"aggression": 0.6, "defense": 0.4, "path_bias": 0.5},
+            seed=123,
+            timeout_seconds=10.0,
+            max_memory_mb=512,
+            network_access=False,
+            max_retries=2,
+            backoff_seconds=0,
+        )
+
+    assert len(_FailingAsyncClient.created_requests) == before + 3
+
+
+def test_execute_strategy_does_not_hide_typed_task_failure_when_fallback_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("autocontext.integrations.primeintellect.client.AsyncSandboxClient", _TaskFailureAsyncClient)
+    client = PrimeIntellectClient(api_key="test-key", allow_fallback=False)
+
+    with pytest.raises(RuntimeError, match="primeintellect task_error: bad candidate"):
         client.execute_strategy(
             scenario_name="grid_ctf",
             strategy={"aggression": 0.6, "defense": 0.4, "path_bias": 0.5},
@@ -221,6 +265,50 @@ def test_accelerators_fail_clearly_unless_provider_advertises_support() -> None:
         PrimeIntellectClient(api_key="test-key").execute_request(request)
 
 
+def test_secret_grants_are_revalidated_at_dispatch(monkeypatch: pytest.MonkeyPatch) -> None:
+    expires_at = time.time() + 60
+    request = RemoteExecutionRequest(
+        task_id="secret-task",
+        image="research:latest",
+        command="python task.py",
+        secrets_policy="scoped_grants",
+        secret_grants=(RemoteSecretGrant("dataset", "grant-1", expires_at),),
+    )
+    client = PrimeIntellectClient(
+        api_key="test-key",
+        provider_capabilities={"secret_grants": True},
+    )
+    monkeypatch.setattr("autocontext.integrations.primeintellect.client.time.time", lambda: expires_at + 1)
+
+    with pytest.raises(ValueError, match="expired before dispatch: dataset"):
+        client.execute_request(request)
+
+
+def test_secret_grants_are_revalidated_before_every_retry(monkeypatch: pytest.MonkeyPatch) -> None:
+    expires_at = time.time() + 60
+    request = RemoteExecutionRequest(
+        task_id="secret-retry",
+        image="research:latest",
+        command="python task.py",
+        secrets_policy="scoped_grants",
+        secret_grants=(RemoteSecretGrant("dataset", "grant-1", expires_at),),
+    )
+    client = PrimeIntellectClient(
+        api_key="test-key",
+        allow_fallback=True,
+        provider_capabilities={"secret_grants": True},
+    )
+    monkeypatch.setattr("autocontext.integrations.primeintellect.client.AsyncSandboxClient", _FailingAsyncClient)
+    clock_values = iter((expires_at - 1, expires_at - 1, expires_at + 1))
+    monkeypatch.setattr("autocontext.integrations.primeintellect.client.time.time", lambda: next(clock_values))
+    before = len(_FailingAsyncClient.created_requests)
+
+    with pytest.raises(ValueError, match="expired before dispatch: dataset"):
+        client.execute_request(request, max_retries=1, backoff_seconds=0)
+
+    assert len(_FailingAsyncClient.created_requests) == before + 1
+
+
 def test_matched_trials_reuse_one_bounded_sandbox(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("autocontext.integrations.primeintellect.client.AsyncSandboxClient", _SuccessAsyncClient)
     before = len(_SuccessAsyncClient.created_requests)
@@ -235,7 +323,13 @@ def test_matched_trials_reuse_one_bounded_sandbox(monkeypatch: pytest.MonkeyPatc
         for index in range(2)
     )
 
-    results = PrimeIntellectClient(api_key="test-key").execute_requests(requests)
+    with pytest.raises(UnsupportedRemoteCapabilityError, match="session_reuse"):
+        PrimeIntellectClient(api_key="test-key").execute_requests(requests)
+
+    results = PrimeIntellectClient(
+        api_key="test-key",
+        provider_capabilities={"session_reuse": True},
+    ).execute_requests(requests)
 
     assert len(_SuccessAsyncClient.created_requests) == before + 1
     assert {result.session_id for result in results} == {"sbx-1"}

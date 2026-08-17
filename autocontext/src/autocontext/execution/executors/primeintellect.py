@@ -35,6 +35,7 @@ class PrimeIntellectExecutor:
             image=self.client.docker_image,
             cpu_cores=self.client.cpu_cores,
             disk_gb=self.client.disk_size_gb,
+            memory_gb=self.client.memory_gb,
         )
         remote = self.client.execute_request(
             request,
@@ -42,6 +43,9 @@ class PrimeIntellectExecutor:
             backoff_seconds=self.backoff_seconds,
         )
         if not remote.succeeded:
+            if self.client.allow_fallback:
+                fallback = self.client.fallback_local_response(scenario.name, seed)
+                return Result.model_validate(fallback["result"]), ReplayEnvelope.model_validate(fallback["replay"])
             raise RuntimeError(f"primeintellect {remote.status}: {remote.error}")
         execution: dict[str, Any] = {}
         for line in reversed(remote.stdout.splitlines()):

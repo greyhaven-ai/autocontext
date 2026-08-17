@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from autocontext.execution import research_workspace_runtime
 from autocontext.execution.research_workspace import (
     ResearchWorkspace,
     WorkspaceCapabilityRequest,
@@ -46,15 +47,12 @@ def test_capable_profile_requires_explicit_approval(tmp_path: Path) -> None:
         ResearchWorkspace(request, workspace_root=tmp_path)
 
 
-def test_isolated_workspace_persists_helpers_files_imports_and_subprocess(tmp_path: Path) -> None:
+def test_trusted_local_workspace_persists_helpers_files_and_imports(tmp_path: Path) -> None:
     request = WorkspaceCapabilityRequest(
         workspace_id="research",
-        profile="isolated_sandbox",
-        requested_capabilities=frozenset(
-            {"workspace_read", "workspace_write", "package_import", "subprocess"}
-        ),
+        profile="trusted_local",
+        requested_capabilities=frozenset({"workspace_read", "workspace_write", "package_import"}),
         allowed_imports=frozenset({"statistics"}),
-        allowed_commands=frozenset({sys.executable}),
     )
     workspace = ResearchWorkspace(request, workspace_root=tmp_path, approver=_approve, seed={"samples": [1, 3, 8]})
 
@@ -65,20 +63,50 @@ def test_isolated_workspace_persists_helpers_files_imports_and_subprocess(tmp_pa
         "workspace_write_text('notes/result.txt', str(summarize(samples)))\n"
         "mean = summarize(samples)"
     )
-    second = workspace.run(
-        f"probe = run_subprocess([{sys.executable!r}, '-c', 'print(21 * 2)'])\n"
-        "workspace_read_text('notes/result.txt'), mean, probe['stdout'].strip()"
-    )
+    second = workspace.run("workspace_read_text('notes/result.txt'), mean")
 
     assert first.error is None
     assert second.error is None
-    assert "('4', 4, '42')" in second.stdout
+    assert "('4', 4)" in second.stdout
     assert (tmp_path / "notes" / "result.txt").read_text() == "4"
     assert {item.name for item in workspace.variables()} >= {"samples", "mean", "summarize"}
     events = workspace.audit_events
-    assert events[0].profile == "isolated_sandbox"
-    assert "subprocess" in events[-1].capabilities
+    assert events[0].profile == "trusted_local"
+    assert set(events[-1].capabilities) >= {"workspace_read", "workspace_write", "package_import"}
     workspace.close()
+
+
+def test_isolated_subprocess_fails_closed_but_trusted_local_can_run_approved_command(tmp_path: Path) -> None:
+    isolated_request = WorkspaceCapabilityRequest(
+        workspace_id="isolated-process",
+        profile="isolated_sandbox",
+        requested_capabilities=frozenset({"subprocess"}),
+        allowed_commands=frozenset({sys.executable}),
+    )
+    with pytest.raises(PermissionError, match="unavailable until an OS sandbox"):
+        ResearchWorkspace(isolated_request, workspace_root=tmp_path / "isolated", approver=_approve)
+
+    isolated_import_request = WorkspaceCapabilityRequest(
+        workspace_id="isolated-import",
+        profile="isolated_sandbox",
+        requested_capabilities=frozenset({"package_import"}),
+        allowed_imports=frozenset({"statistics"}),
+    )
+    with pytest.raises(PermissionError, match="package_import"):
+        ResearchWorkspace(isolated_import_request, workspace_root=tmp_path / "isolated-import", approver=_approve)
+
+    trusted_request = WorkspaceCapabilityRequest(
+        workspace_id="trusted-process",
+        profile="trusted_local",
+        requested_capabilities=frozenset({"subprocess"}),
+        allowed_commands=frozenset({sys.executable}),
+    )
+    trusted = ResearchWorkspace(trusted_request, workspace_root=tmp_path / "trusted", approver=_approve)
+    result = trusted.run(f"run_subprocess([{sys.executable!r}, '-c', 'print(21 * 2)'])['stdout'].strip()")
+
+    assert result.error is None
+    assert result.stdout.strip() == "'42'"
+    trusted.close()
 
 
 def test_path_network_and_secret_access_fail_closed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -86,8 +114,7 @@ def test_path_network_and_secret_access_fail_closed(tmp_path: Path, monkeypatch:
     request = WorkspaceCapabilityRequest(
         workspace_id="denials",
         profile="isolated_sandbox",
-        requested_capabilities=frozenset({"workspace_read", "workspace_write", "package_import"}),
-        allowed_imports=frozenset({"json"}),
+        requested_capabilities=frozenset({"workspace_read", "workspace_write"}),
     )
     workspace = ResearchWorkspace(request, workspace_root=tmp_path, approver=_approve)
 
@@ -100,6 +127,41 @@ def test_path_network_and_secret_access_fail_closed(tmp_path: Path, monkeypatch:
     assert "import denied: os" in (secret.error or "")
     assert not (tmp_path.parent / "outside.txt").exists()
     workspace.close()
+
+
+def test_network_fetch_denies_redirects_before_opening_the_target(monkeypatch: pytest.MonkeyPatch) -> None:
+    redirected_to: list[str] = []
+
+    class RedirectingOpener:
+        def __init__(self, handler: research_workspace_runtime._DenyRedirectHandler) -> None:
+            self.handler = handler
+
+        def open(self, url: str, *, timeout: float) -> object:
+            del timeout
+            redirected_to.append("https://internal.example/secrets")
+            return self.handler.redirect_request(
+                research_workspace_runtime.urllib.request.Request(url),
+                None,
+                302,
+                "Found",
+                {},
+                redirected_to[-1],
+            )
+
+    def build_opener(handler: research_workspace_runtime._DenyRedirectHandler) -> RedirectingOpener:
+        assert isinstance(handler, research_workspace_runtime._DenyRedirectHandler)
+        return RedirectingOpener(handler)
+
+    monkeypatch.setattr(research_workspace_runtime, "require_online", lambda _: None)
+    monkeypatch.setattr(research_workspace_runtime.urllib.request, "build_opener", build_opener)
+
+    with pytest.raises(PermissionError, match="redirects are denied"):
+        research_workspace_runtime._fetch_network_bytes(
+            "https://allowed.example/start",
+            allowed_hosts=frozenset({"allowed.example"}),
+            limits=WorkspaceResourceLimits(),
+        )
+    assert redirected_to == ["https://internal.example/secrets"]
 
 
 def test_timeout_discards_memory_and_file_mutation(tmp_path: Path) -> None:
@@ -118,6 +180,46 @@ def test_timeout_discards_memory_and_file_mutation(tmp_path: Path) -> None:
     assert probe.stdout.strip() == "1"
     assert not (tmp_path / "late.txt").exists()
     assert any(event.outcome == "timeout" for event in workspace.audit_events)
+    workspace.close()
+
+
+def test_failed_file_activation_preserves_files_variables_and_helpers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = WorkspaceCapabilityRequest(
+        workspace_id="transaction",
+        profile="isolated_sandbox",
+        requested_capabilities=frozenset({"workspace_read", "workspace_write"}),
+    )
+    workspace = ResearchWorkspace(request, workspace_root=tmp_path, approver=_approve, seed={"counter": 1})
+    baseline = workspace.run("def keep():\n    return counter\nworkspace_write_text('state.txt', 'old')")
+    assert baseline.error is None
+
+    original_replace = Path.replace
+
+    def fail_candidate_activation(path: Path, target: str | Path) -> Path:
+        if path.name.startswith(".autocontext-commit-") and Path(target) == tmp_path:
+            raise OSError("simulated activation failure")
+        return original_replace(path, target)
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(Path, "replace", fail_candidate_activation)
+        failed = workspace.run(
+            "counter = 2\n"
+            "def discard():\n"
+            "    return counter\n"
+            "workspace_write_text('state.txt', 'new')\n"
+            "workspace_write_text('new.txt', 'uncommitted')"
+        )
+
+    assert failed.error and failed.error.startswith("WorkspaceCommitError: OSError")
+    assert (tmp_path / "state.txt").read_text() == "old"
+    assert not (tmp_path / "new.txt").exists()
+    assert workspace.run("counter, keep()").stdout.strip() == "(1, 1)"
+    assert {item.name for item in workspace.variables()} >= {"counter", "keep"}
+    assert "discard" not in {item.name for item in workspace.variables()}
+    assert any(event.outcome == "commit_error" for event in workspace.audit_events)
     workspace.close()
 
 

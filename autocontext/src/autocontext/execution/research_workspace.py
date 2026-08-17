@@ -59,7 +59,12 @@ def grant_workspace_access(
     if request.profile == "restricted_scratch":
         granted: frozenset[WorkspaceCapability] = frozenset()
     elif approver is not None and approver(request):
-        granted = requested
+        # Process isolation is not an OS security boundary. Until the isolated
+        # profile is backed by a real sandbox, an allow-listed module,
+        # interpreter, or shell can expose already-loaded file/network/process
+        # primitives and escape every workspace-level grant.
+        unsafe_without_os_sandbox = {"package_import", "subprocess"}
+        granted = requested - unsafe_without_os_sandbox if request.profile == "isolated_sandbox" else requested
     else:
         granted = frozenset()
     return WorkspaceGrant(
@@ -84,7 +89,7 @@ def benchmark_research_workspace() -> ResearchWorkspaceBenchmark:
 
     request = WorkspaceCapabilityRequest(
         workspace_id="benchmark-capable",
-        profile="isolated_sandbox",
+        profile="trusted_local",
         requested_capabilities=frozenset({"workspace_read", "workspace_write", "package_import", "subprocess"}),
         allowed_imports=frozenset({"statistics"}),
         allowed_commands=frozenset({sys.executable}),
@@ -139,6 +144,13 @@ class ResearchWorkspace:
         self.grant = grant_workspace_access(request, approver)
         if self.grant.denied_capabilities:
             denied = ", ".join(sorted(self.grant.denied_capabilities))
+            if request.profile == "isolated_sandbox" and self.grant.denied_capabilities & {
+                "package_import",
+                "subprocess",
+            }:
+                raise PermissionError(
+                    f"isolated_sandbox capabilities unavailable until an OS sandbox backend is configured: {denied}"
+                )
             raise PermissionError(f"workspace capabilities were not approved: {denied}")
         self._owned_root = workspace_root is None
         self._root = (
@@ -192,6 +204,7 @@ class ResearchWorkspace:
                     "variables": self._variables,
                     "helper_sources": tuple(self._helper_sources),
                     "workspace_root": str(staging),
+                    "profile": self.request.profile,
                     "capabilities": tuple(self.grant.granted_capabilities),
                     "allowed_imports": tuple(self.request.allowed_imports),
                     "allowed_commands": tuple(self.request.allowed_commands),
@@ -209,9 +222,19 @@ class ResearchWorkspace:
                 answer=dict(response.get("answer", {})),
             )
             if result.error is None:
-                self._variables = copy_plain_mapping(response.get("variables", {}))
-                self._helper_sources.extend(new_helper_sources(code, self._helper_sources))
-                replace_workspace(staging, self._root, self.request.limits.max_file_bytes)
+                next_variables = copy_plain_mapping(response.get("variables", {}))
+                next_helper_sources = [
+                    *self._helper_sources,
+                    *new_helper_sources(code, self._helper_sources),
+                ]
+                try:
+                    replace_workspace(staging, self._root, self.request.limits.max_file_bytes)
+                except (OSError, ValueError) as exc:
+                    detail = f"{type(exc).__name__}: {exc}"
+                    self._record("execute", "commit_error", detail=detail[-240:])
+                    return ReplResult(stdout=result.stdout, error=f"WorkspaceCommitError: {detail}", answer={})
+                self._variables = next_variables
+                self._helper_sources = next_helper_sources
                 self._record("execute", "success", detail=resource_detail(response))
             else:
                 self._record("execute", "candidate_error", detail=result.error[-240:])
@@ -292,14 +315,16 @@ class ResearchWorkspace:
         self._ensure_open()
         if snapshot.workspace_id != self.request.workspace_id:
             raise ValueError("snapshot belongs to a different workspace")
+        next_variables = copy_plain_mapping(snapshot.variables)
+        next_helper_sources = list(snapshot.helper_sources)
+        restore_files(self._root, snapshot.files, self.request.limits.max_file_bytes)
         if self._restricted is not None:
             from autocontext.execution.interpreter_workspace import WorkspaceSnapshot
 
-            self._restricted.restore(WorkspaceSnapshot(variables=dict(snapshot.variables)))
+            self._restricted.restore(WorkspaceSnapshot(variables=next_variables))
         else:
-            self._variables = copy_plain_mapping(snapshot.variables)
-            self._helper_sources = list(snapshot.helper_sources)
-        restore_files(self._root, snapshot.files, self.request.limits.max_file_bytes)
+            self._variables = next_variables
+            self._helper_sources = next_helper_sources
         self._record("restore", "success", detail=f"files={len(snapshot.files)}")
 
     def close(self) -> WorkspaceCleanupResult:

@@ -115,6 +115,24 @@ def test_parser_keeps_task_artifact_and_cleanup_failures_distinct(
     assert result.status == expected_status
 
 
+def test_cleanup_failure_takes_infrastructure_precedence_over_task_failure() -> None:
+    result = parse_remote_stdout(
+        _request(expected_outputs=()),
+        provider="fake",
+        stdout="{}",
+        stderr="candidate failed",
+        exit_code=2,
+        usage=RemoteResourceUsage(),
+        cleanup=RemoteCleanupOutcome(True, False, "sandbox-1", "delete failed"),
+        session_id="sandbox-1",
+    )
+
+    assert result.status == "cleanup_error"
+    assert "candidate failed" in result.error
+    assert "delete failed" in result.error
+    assert result.to_ledger_entry().infrastructure_succeeded is False
+
+
 def test_reuse_requires_a_bounded_equivalent_matched_lane() -> None:
     first = _request(
         task_id="trial-a",
@@ -133,3 +151,43 @@ def test_reuse_requires_a_bounded_equivalent_matched_lane() -> None:
 
     assert requests_are_reuse_compatible((first, second)) is True
     assert requests_are_reuse_compatible((first, _request(task_id="cold", expected_outputs=()))) is False
+
+
+@pytest.mark.parametrize(
+    ("first_overrides", "second_overrides"),
+    [
+        (
+            {
+                "secrets_policy": "scoped_grants",
+                    "secret_grants": (RemoteSecretGrant("dataset", "grant-a", 32_503_680_000.0),),
+            },
+            {
+                "secrets_policy": "scoped_grants",
+                    "secret_grants": (RemoteSecretGrant("dataset", "grant-b", 32_503_680_000.0),),
+            },
+        ),
+        (
+            {"input_artifacts": (RemoteInputArtifact("input.json", b"first"),)},
+            {"input_artifacts": (RemoteInputArtifact("input.json", b"second"),)},
+        ),
+        ({"environment": {"DATASET": "first"}}, {"environment": {"DATASET": "second"}}),
+        ({"snapshot_id": "snapshot-a"}, {"snapshot_id": "snapshot-b"}),
+    ],
+)
+def test_reuse_rejects_mismatched_provisioned_state(
+    first_overrides: dict[str, object],
+    second_overrides: dict[str, object],
+) -> None:
+    common = {"expected_outputs": (), "lifecycle": "reuse_matched_trials", "max_reuse_tasks": 2}
+    first = _request(task_id="trial-a", **common, **first_overrides)
+    second = _request(task_id="trial-b", **common, **second_overrides)
+
+    assert requests_are_reuse_compatible((first, second)) is False
+
+
+def test_reuse_allows_per_task_metadata_to_differ() -> None:
+    common = {"expected_outputs": (), "lifecycle": "reuse_matched_trials", "max_reuse_tasks": 2}
+    first = _request(task_id="trial-a", metadata={"seed": "1"}, **common)
+    second = _request(task_id="trial-b", metadata={"seed": "2"}, **common)
+
+    assert requests_are_reuse_compatible((first, second)) is True

@@ -13,7 +13,7 @@ import time
 import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict
-from typing import Any
+from typing import Any, Literal
 
 from autocontext.execution.campaign_scheduler_adapters import (
     CallableCampaignWorker,
@@ -56,7 +56,7 @@ from autocontext.execution.campaign_scheduler_models import (
     replace_lease_expiry,
     reuse_key,
 )
-from autocontext.execution.campaign_scheduler_store import CampaignSchedulerEventStore
+from autocontext.execution.campaign_scheduler_store import CampaignSchedulerEventStore, StaleCampaignSchedulerError
 
 
 class CampaignScheduler:
@@ -106,14 +106,15 @@ class CampaignScheduler:
     ) -> None:
         if not campaign_id.strip():
             raise ValueError("campaign_id must be non-empty")
-        self._record(
-            "campaign_configured",
-            {
-                "campaign_id": campaign_id,
-                "budget": asdict(budget),
-                "branch_budgets": {branch: asdict(limit) for branch, limit in (branch_budgets or {}).items()},
-            },
-        )
+        with self._lock:
+            self._record(
+                "campaign_configured",
+                {
+                    "campaign_id": campaign_id,
+                    "budget": asdict(budget),
+                    "branch_budgets": {branch: asdict(limit) for branch, limit in (branch_budgets or {}).items()},
+                },
+            )
 
     def register_worker(self, descriptor: WorkerDescriptor, executor: CampaignWorker | None = None) -> None:
         with self._lock:
@@ -148,20 +149,23 @@ class CampaignScheduler:
     def grant_evidence_share(self, grant: CampaignEvidenceGrant) -> None:
         if grant.token_cost < 0:
             raise ValueError("evidence token cost cannot be negative")
-        if grant.grant_id in self._evidence_grants:
-            return
-        limit = self._campaign_limits.get(grant.campaign_id)
-        consumed = self._campaign_consumed.get(grant.campaign_id, SchedulerBudget())
-        proposed = consumed.add(SchedulerBudget(shared_evidence_tokens=grant.token_cost))
-        if limit is not None and not proposed.within(limit):
-            raise RuntimeError("campaign shared-evidence budget exhausted")
-        self._record("evidence_granted", {"grant": asdict(grant)})
+        with self._lock:
+            if grant.grant_id in self._evidence_grants:
+                return
+            limit = self._campaign_limits.get(grant.campaign_id)
+            consumed = self._campaign_consumed.get(grant.campaign_id, SchedulerBudget())
+            proposed = consumed.add(SchedulerBudget(shared_evidence_tokens=grant.token_cost))
+            if limit is not None and not proposed.within(limit):
+                raise RuntimeError("campaign shared-evidence budget exhausted")
+            self._record("evidence_granted", {"grant": asdict(grant)})
 
     def enqueue(self, request: CampaignJobRequest) -> str:
         with self._lock:
             duplicate = self._idempotency.get((request.campaign_id, request.idempotency_key))
             if duplicate is not None:
                 return duplicate
+            if request.job_id in self._jobs:
+                raise ValueError(f"campaign job_id already exists: {request.job_id}")
             cohort_key = (request.campaign_id, request.cohort_id)
             if request.cohort_id:
                 lane = self._cohort_lanes.get(cohort_key)
@@ -175,15 +179,19 @@ class CampaignScheduler:
         with self._lock:
             worker = self._require_worker(worker_id)
             available_slots = worker.descriptor.concurrency - len(worker.active_leases)
-            take = max(0, min(available_slots, limit if limit is not None else available_slots))
+            global_slots = self.max_concurrency - sum(len(state.active_leases) for state in self._workers.values())
+            take = max(0, min(available_slots, global_slots, limit if limit is not None else available_slots))
             assignments: list[CampaignAssignment] = []
             for state in self._jobs.values():
                 if len(assignments) >= take:
                     break
                 if state.status != "queued" or not self._worker_matches(worker, state.request):
                     continue
-                if not self._budget_available(state.request):
+                budget_state = self._budget_state(state.request)
+                if budget_state == "exhausted":
                     self._record("job_budget_exhausted", {"job_id": state.request.job_id})
+                    continue
+                if budget_state == "reserved":
                     continue
                 now = self.clock()
                 lifecycle = self._select_lifecycle(worker.descriptor, state.request)
@@ -212,9 +220,12 @@ class CampaignScheduler:
             job_id = self._leases.get(lease_id)
             if job_id is None:
                 historical_job = self._lease_history.get(lease_id)
-                completed = self._jobs[historical_job].result if historical_job is not None else None
-                if completed is not None:
-                    return completed
+                if historical_job is not None:
+                    completed = self._jobs[historical_job].result
+                    # A worker can finish after cancellation, lease expiry, or a
+                    # replacement attempt.  The result is deliberately ignored,
+                    # but a known stale lease must not crash the dispatcher.
+                    return completed if completed is not None else result
                 raise ValueError("lease is stale or unknown")
             state = self._jobs[job_id]
             if state.status != "leased" or state.lease is None or state.lease.lease_id != lease_id:
@@ -224,7 +235,12 @@ class CampaignScheduler:
             if result.outcome == "infrastructure_failure" and state.attempts < state.request.max_attempts:
                 self._record(
                     "job_requeued",
-                    {"job_id": job_id, "lease_id": lease_id, "reason": result.detail or "infrastructure_failure"},
+                    {
+                        "job_id": job_id,
+                        "lease_id": lease_id,
+                        "reason": result.detail or "infrastructure_failure",
+                        "result": result_to_dict(result),
+                    },
                 )
                 return result
             self._record(
@@ -307,53 +323,60 @@ class CampaignScheduler:
         return dispatched
 
     def job_status(self, job_id: str) -> JobStatus:
-        return self._jobs[job_id].status
+        with self._lock:
+            return self._jobs[job_id].status
 
     def job_result(self, job_id: str) -> CampaignJobResult | None:
-        return self._jobs[job_id].result
+        with self._lock:
+            return self._jobs[job_id].result
 
     def report(self) -> CampaignSchedulerReport:
-        counts = {status: 0 for status in TERMINAL_STATUSES | {"queued", "leased"}}
-        for state in self._jobs.values():
-            counts[state.status] += 1
-        utilization = {
-            worker_id: {
-                "runtime": state.descriptor.runtime,
-                "locality": state.descriptor.locality,
-                "active_leases": len(state.active_leases),
-                "concurrency": state.descriptor.concurrency,
-                "completed_jobs": state.completed_jobs,
-                "failed_jobs": state.failed_jobs,
-                "consumed": asdict(state.consumed),
-                "last_heartbeat": state.last_heartbeat,
+        with self._lock:
+            counts = {status: 0 for status in TERMINAL_STATUSES | {"queued", "leased"}}
+            for state in self._jobs.values():
+                counts[state.status] += 1
+            utilization = {
+                worker_id: {
+                    "runtime": state.descriptor.runtime,
+                    "locality": state.descriptor.locality,
+                    "active_leases": len(state.active_leases),
+                    "concurrency": state.descriptor.concurrency,
+                    "completed_jobs": state.completed_jobs,
+                    "failed_jobs": state.failed_jobs,
+                    "consumed": asdict(state.consumed),
+                    "last_heartbeat": state.last_heartbeat,
+                }
+                for worker_id, state in sorted(self._workers.items())
             }
-            for worker_id, state in sorted(self._workers.items())
-        }
-        return CampaignSchedulerReport(
-            queued=counts["queued"],
-            running=counts["leased"],
-            succeeded=counts["succeeded"],
-            candidate_failed=counts["candidate_failed"],
-            infrastructure_failed=counts["infrastructure_failed"],
-            budget_exhausted=counts["budget_exhausted"],
-            canceled=counts["canceled"],
-            retries=self._retry_count,
-            reserved_by_campaign=dict(self._campaign_reserved),
-            consumed_by_campaign=dict(self._campaign_consumed),
-            worker_utilization=utilization,
-            events=self._sequence,
-        )
+            return CampaignSchedulerReport(
+                queued=counts["queued"],
+                running=counts["leased"],
+                succeeded=counts["succeeded"],
+                candidate_failed=counts["candidate_failed"],
+                infrastructure_failed=counts["infrastructure_failed"],
+                budget_exhausted=counts["budget_exhausted"],
+                canceled=counts["canceled"],
+                retries=self._retry_count,
+                reserved_by_campaign=dict(self._campaign_reserved),
+                consumed_by_campaign=dict(self._campaign_consumed),
+                worker_utilization=utilization,
+                events=self._sequence,
+            )
 
     def _record(self, event_type: str, payload: Mapping[str, Any]) -> None:
-        event = SchedulerEvent(
-            sequence=self._sequence + 1,
-            event_id=str(uuid.uuid4()),
-            timestamp=self.clock(),
-            event_type=event_type,
-            payload=dict(payload),
-        )
-        self.store.append(event)
-        self._apply(event)
+        # Keep sequence allocation, durable append, and in-memory application
+        # inside one critical section.  Several public methods already hold the
+        # re-entrant lock, but this boundary protects every caller by default.
+        with self._lock:
+            event = SchedulerEvent(
+                sequence=self._sequence + 1,
+                event_id=str(uuid.uuid4()),
+                timestamp=self.clock(),
+                event_type=event_type,
+                payload=dict(payload),
+            )
+            self.store.append(event)
+            self._apply(event)
 
     def _apply(self, event: SchedulerEvent) -> None:
         self._sequence = event.sequence
@@ -397,8 +420,13 @@ class CampaignScheduler:
             return
         if event.event_type == "job_enqueued":
             request = job_from(payload["job"])
+            if request.job_id in self._jobs:
+                raise ValueError(f"duplicate campaign job_id in event log: {request.job_id}")
+            idempotency_key = (request.campaign_id, request.idempotency_key)
+            if idempotency_key in self._idempotency:
+                raise ValueError("duplicate campaign idempotency key in event log")
             self._jobs[request.job_id] = _JobState(request=request)
-            self._idempotency[(request.campaign_id, request.idempotency_key)] = request.job_id
+            self._idempotency[idempotency_key] = request.job_id
             if request.cohort_id:
                 self._cohort_lanes[(request.campaign_id, request.cohort_id)] = request.lane.digest
             return
@@ -422,8 +450,17 @@ class CampaignScheduler:
             return
         if event.event_type in {"job_requeued", "job_lease_failed", "job_canceled"}:
             state = self._jobs[str(payload["job_id"])]
+            worker_id = state.lease.worker_id if state.lease else ""
             self._release_lease(state)
             if event.event_type == "job_requeued":
+                serialized_result = payload.get("result")
+                if serialized_result is not None:
+                    result = result_from(serialized_result)
+                    self._consume(state.request, result.consumed)
+                    if worker_id:
+                        worker = self._workers[worker_id]
+                        worker.failed_jobs += 1
+                        worker.consumed = worker.consumed.add(result.consumed)
                 state.status = "queued"
                 state.last_infrastructure_error = str(payload.get("reason", ""))
                 self._retry_count += 1
@@ -474,27 +511,30 @@ class CampaignScheduler:
                 return False
         return True
 
-    def _budget_available(self, request: CampaignJobRequest) -> bool:
+    def _budget_state(self, request: CampaignJobRequest) -> Literal["available", "reserved", "exhausted"]:
+        """Return available, reserved (transient), or exhausted (permanent)."""
+
+        temporarily_reserved = False
         campaign_limit = self._campaign_limits.get(request.campaign_id)
         if campaign_limit is not None:
-            projected = (
-                self._campaign_reserved.get(request.campaign_id, SchedulerBudget())
-                .add(self._campaign_consumed.get(request.campaign_id, SchedulerBudget()))
-                .add(request.reservation)
+            consumed = self._campaign_consumed.get(request.campaign_id, SchedulerBudget())
+            if not consumed.add(request.reservation).within(campaign_limit):
+                return "exhausted"
+            projected = self._campaign_reserved.get(request.campaign_id, SchedulerBudget()).add(consumed).add(
+                request.reservation
             )
             if not projected.within(campaign_limit):
-                return False
+                temporarily_reserved = True
         branch_key = (request.campaign_id, request.branch_id)
         branch_limit = self._branch_limits.get(branch_key)
         if branch_limit is not None:
-            projected = (
-                self._branch_reserved.get(branch_key, SchedulerBudget())
-                .add(self._branch_consumed.get(branch_key, SchedulerBudget()))
-                .add(request.reservation)
-            )
+            consumed = self._branch_consumed.get(branch_key, SchedulerBudget())
+            if not consumed.add(request.reservation).within(branch_limit):
+                return "exhausted"
+            projected = self._branch_reserved.get(branch_key, SchedulerBudget()).add(consumed).add(request.reservation)
             if not projected.within(branch_limit):
-                return False
-        return True
+                temporarily_reserved = True
+        return "reserved" if temporarily_reserved else "available"
 
     def _reserve(self, request: CampaignJobRequest) -> None:
         campaign = request.campaign_id
@@ -515,6 +555,7 @@ class CampaignScheduler:
         branch = (request.campaign_id, request.branch_id)
         self._campaign_reserved[campaign] = self._campaign_reserved.get(campaign, SchedulerBudget()).subtract(request.reservation)
         self._branch_reserved[branch] = self._branch_reserved.get(branch, SchedulerBudget()).subtract(request.reservation)
+        state.lease = None
 
     def _consume(self, request: CampaignJobRequest, consumed: SchedulerBudget) -> None:
         campaign = request.campaign_id
@@ -565,6 +606,7 @@ __all__ = [
     "SchedulerBudget",
     "SchedulerEvent",
     "SchedulerResources",
+    "StaleCampaignSchedulerError",
     "WorkerDescriptor",
     "campaign_result_from_remote",
 ]

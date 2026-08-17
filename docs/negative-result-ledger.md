@@ -24,9 +24,9 @@ A schema-v2 ledger contains:
 
 ## Applicability and retesting
 
-Callers supply the current bundle, evaluator, verifier, dependencies, environment, and observation time when rendering prompt lessons. A bundle/family/scenario mismatch, evaluator or verifier change, changed dependency, changed environment, expired evidence, or newly available stronger evidence marks the result `retest_due` and downgrades it to a caution. Every injected lesson states why it applies or why it is qualified.
+Callers supply the current bundle, evaluator, verifier, trial cohort, dependencies, environment, and observation time when rendering prompt lessons. A bundle/family/scenario mismatch, evaluator, verifier, or cohort change, changed dependency, changed environment, expired evidence, or newly available stronger evidence marks the result `retest_due` and downgrades it to a caution. Every injected lesson states why it applies or why it is qualified.
 
-A `not_reproduced` retest links back to the original and marks that original as superseded. Both records remain in the durable ledger, but the superseded lesson is no longer injected.
+A `not_reproduced` retest links back to the original. It supersedes the original negative result only when its applicability scope and recorded context match, including the evaluator, verifier, trial cohort, environment, and component dependencies. An unrelated retest remains durable evidence but leaves the original result active. Retest result IDs must be new within the ledger, and superseded lessons are no longer injected.
 
 Schema-v1 ledgers remain readable in Python and TypeScript. They migrate to v2 with `context_unknown`, so legacy evidence stays visible but cannot become an unscoped hard ban.
 

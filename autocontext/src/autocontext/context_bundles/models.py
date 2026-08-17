@@ -9,11 +9,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from dataclasses import dataclass
+from decimal import Decimal
 from enum import StrEnum
 from typing import Any
 
 SCHEMA_VERSION = 1
+MAX_SAFE_INTEGER = (1 << 53) - 1
 
 
 class ComponentKind(StrEnum):
@@ -52,9 +55,83 @@ class ComparisonDecision(StrEnum):
     INCONCLUSIVE = "inconclusive"
 
 
+def utf16_sort_key(value: str) -> bytes:
+    """Return the ECMAScript/JCS property-order key for ``value``."""
+    return value.encode("utf-16-be", errors="surrogatepass")
+
+
+def _validate_unicode_scalars(value: str) -> None:
+    if any(0xD800 <= ord(character) <= 0xDFFF for character in value):
+        raise ValueError("canonical JSON does not permit lone UTF-16 surrogates")
+
+
+def _canonical_number(value: int | float) -> str:
+    """Serialize a number with ECMAScript's binary64 JSON spelling."""
+
+    if isinstance(value, int) and abs(value) > MAX_SAFE_INTEGER:
+        raise ValueError("canonical JSON integers must be within the JavaScript safe integer range")
+    try:
+        number = float(value)
+    except OverflowError as exc:
+        raise ValueError("canonical JSON does not permit numbers outside binary64") from exc
+    if not math.isfinite(number):
+        raise ValueError("canonical JSON does not permit non-finite numbers")
+    if number.is_integer() and abs(number) > MAX_SAFE_INTEGER:
+        raise ValueError("canonical JSON integers must be within the JavaScript safe integer range")
+    if number == 0:
+        return "0"
+
+    negative = number < 0
+    decimal = Decimal(repr(abs(number)))
+    digits_tuple = decimal.as_tuple().digits
+    exponent = decimal.as_tuple().exponent
+    if not isinstance(exponent, int):  # Defensive: finite binary64 values always have an integer exponent.
+        raise ValueError("canonical JSON does not permit non-finite numbers")
+    while len(digits_tuple) > 1 and digits_tuple[-1] == 0:
+        digits_tuple = digits_tuple[:-1]
+        exponent += 1
+    digits = "".join(str(digit) for digit in digits_tuple)
+    decimal_point = len(digits) + exponent
+
+    if 0 < decimal_point <= 21:
+        if decimal_point >= len(digits):
+            result = digits + ("0" * (decimal_point - len(digits)))
+        else:
+            result = f"{digits[:decimal_point]}.{digits[decimal_point:]}"
+    elif -6 < decimal_point <= 0:
+        result = f"0.{('0' * -decimal_point)}{digits}"
+    else:
+        mantissa = digits if len(digits) == 1 else f"{digits[0]}.{digits[1:]}"
+        scientific_exponent = decimal_point - 1
+        result = f"{mantissa}e{'+' if scientific_exponent >= 0 else ''}{scientific_exponent}"
+    return f"-{result}" if negative else result
+
+
 def canonical_json(value: Any) -> str:
-    """Return the canonical JSON representation used by every digest."""
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    """Return JCS-compatible JSON used by every cross-runtime digest.
+
+    Object keys use UTF-16 code-unit order and numbers use ECMAScript's
+    binary64 representation so Python and TypeScript hash identical bytes.
+    Integral values outside JavaScript's safe range are rejected rather than
+    rounded into a colliding digest.
+    """
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, str):
+        _validate_unicode_scalars(value)
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    if isinstance(value, (int, float)):
+        return _canonical_number(value)
+    if isinstance(value, (list, tuple)):
+        return f"[{','.join(canonical_json(item) for item in value)}]"
+    if isinstance(value, dict):
+        if not all(isinstance(key, str) for key in value):
+            raise TypeError("canonical JSON object keys must be strings")
+        items = (f"{canonical_json(key)}:{canonical_json(value[key])}" for key in sorted(value, key=utf16_sort_key))
+        return f"{{{','.join(items)}}}"
+    raise TypeError(f"value is not canonical-JSON serializable: {type(value).__name__}")
 
 
 def stable_digest(value: Any) -> str:
@@ -134,7 +211,7 @@ class ContextBundle:
         identities = [(component.kind.value, component.key) for component in self.components]
         if len(identities) != len(set(identities)):
             raise ValueError("context bundle component kind/key pairs must be unique")
-        expected_order = sorted(identities)
+        expected_order = sorted(identities, key=lambda identity: (utf16_sort_key(identity[0]), utf16_sort_key(identity[1])))
         if identities != expected_order:
             raise ValueError("context bundle components must be sorted by kind and key")
 
@@ -147,7 +224,12 @@ class ContextBundle:
         components: list[BundleComponent] | tuple[BundleComponent, ...],
         parent_digest: str | None = None,
     ) -> ContextBundle:
-        ordered = tuple(sorted(components, key=lambda item: (item.kind.value, item.key)))
+        ordered = tuple(
+            sorted(
+                components,
+                key=lambda item: (utf16_sort_key(item.kind.value), utf16_sort_key(item.key)),
+            )
+        )
         return cls(
             scenario=scenario,
             evaluator_epoch=evaluator_epoch,
@@ -208,6 +290,21 @@ class MatchedTrial:
 
     @property
     def pair_key(self) -> str:
+        # Lane and display name are metadata, not independent evidence. The
+        # same evaluation unit must collide if either is relabeled.
+        return stable_digest(
+            {
+                "evaluator_epoch": self.evaluator_epoch,
+                "cohort": self.cohort,
+                "fixture_digest": self.fixture_digest,
+                "seed": self.seed,
+            }
+        )
+
+    @property
+    def legacy_pair_key(self) -> str:
+        """Return the schema-v1 identity used by persisted pre-migration rows."""
+
         return stable_digest(
             {
                 "evaluator_epoch": self.evaluator_epoch,
@@ -242,22 +339,63 @@ class MatchedTrial:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> MatchedTrial:
-        trial = cls(
-            candidate_digest=str(data["candidate_digest"]),
-            incumbent_digest=(str(data["incumbent_digest"]) if data.get("incumbent_digest") is not None else None),
-            evaluator_epoch=str(data["evaluator_epoch"]),
-            cohort=str(data["cohort"]),
-            fixture=str(data["fixture"]),
-            fixture_digest=str(data["fixture_digest"]),
-            seed=int(data["seed"]),
-            lane=TrialLane(str(data["lane"])),
-            candidate_score=float(data["candidate_score"]),
-            incumbent_score=float(data["incumbent_score"]),
-            candidate_valid=bool(data.get("candidate_valid", True)),
-            incumbent_valid=bool(data.get("incumbent_valid", True)),
+        required_strings = (
+            "candidate_digest",
+            "evaluator_epoch",
+            "cohort",
+            "fixture",
+            "fixture_digest",
+            "lane",
         )
+        for field_name in required_strings:
+            if not isinstance(data.get(field_name), str):
+                raise TypeError(f"matched trial {field_name} must be a string")
+        incumbent_digest = data.get("incumbent_digest")
+        if incumbent_digest is not None and not isinstance(incumbent_digest, str):
+            raise TypeError("matched trial incumbent_digest must be a string or null")
+        seed = data.get("seed")
+        if isinstance(seed, bool) or not isinstance(seed, int):
+            raise TypeError("matched trial seed must be an integer")
+        if abs(seed) > MAX_SAFE_INTEGER:
+            raise ValueError("matched trial seed must be within the JavaScript safe integer range")
+
+        scores: dict[str, float] = {}
+        for field_name in ("candidate_score", "incumbent_score"):
+            raw_score = data.get(field_name)
+            if isinstance(raw_score, bool) or not isinstance(raw_score, (int, float)):
+                raise TypeError(f"matched trial {field_name} must be numeric")
+            if isinstance(raw_score, int) and abs(raw_score) > MAX_SAFE_INTEGER:
+                raise ValueError(f"matched trial {field_name} integer must be within the JavaScript safe integer range")
+            score = float(raw_score)
+            if not math.isfinite(score):
+                raise ValueError(f"matched trial {field_name} must be finite")
+            scores[field_name] = score
+
+        validity: dict[str, bool] = {}
+        for field_name in ("candidate_valid", "incumbent_valid"):
+            raw_validity = data.get(field_name, True)
+            if not isinstance(raw_validity, bool):
+                raise TypeError(f"matched trial {field_name} must be a boolean")
+            validity[field_name] = raw_validity
         expected = data.get("pair_key")
-        if expected is not None and expected != trial.pair_key:
+        if expected is not None and not isinstance(expected, str):
+            raise TypeError("matched trial pair_key must be a string or null")
+
+        trial = cls(
+            candidate_digest=data["candidate_digest"],
+            incumbent_digest=incumbent_digest,
+            evaluator_epoch=data["evaluator_epoch"],
+            cohort=data["cohort"],
+            fixture=data["fixture"],
+            fixture_digest=data["fixture_digest"],
+            seed=seed,
+            lane=TrialLane(data["lane"]),
+            candidate_score=scores["candidate_score"],
+            incumbent_score=scores["incumbent_score"],
+            candidate_valid=validity["candidate_valid"],
+            incumbent_valid=validity["incumbent_valid"],
+        )
+        if expected is not None and expected not in {trial.pair_key, trial.legacy_pair_key}:
             raise ValueError("matched trial pair_key mismatch")
         return trial
 
@@ -272,6 +410,15 @@ class ConfirmationPolicy:
     confidence_z: float = 1.96
 
     def __post_init__(self) -> None:
+        counts = {
+            "min_screen_pairs": self.min_screen_pairs,
+            "min_confirmation_pairs": self.min_confirmation_pairs,
+            "max_confirmation_pairs": self.max_confirmation_pairs,
+            "min_heldout_pairs": self.min_heldout_pairs,
+        }
+        for name, value in counts.items():
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise ValueError(f"{name} must be an integer")
         if self.min_screen_pairs < 1:
             raise ValueError("min_screen_pairs must be positive")
         if self.min_confirmation_pairs < 2:
@@ -280,8 +427,10 @@ class ConfirmationPolicy:
             raise ValueError("max_confirmation_pairs must be >= min_confirmation_pairs")
         if self.min_heldout_pairs < 1:
             raise ValueError("min_heldout_pairs must be positive")
-        if self.confidence_z <= 0:
-            raise ValueError("confidence_z must be positive")
+        if not math.isfinite(self.min_effect):
+            raise ValueError("min_effect must be finite")
+        if not math.isfinite(self.confidence_z) or self.confidence_z <= 0:
+            raise ValueError("confidence_z must be finite and positive")
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -332,6 +481,8 @@ class PromotionArtifact:
     cohort: str
     rationale: str
     comparison: ComparisonResult
+    confirmation_policy: ConfirmationPolicy
+    confirmation_policy_digest: str
     promoted_at: str
 
     def to_dict(self) -> dict[str, Any]:
@@ -345,5 +496,7 @@ class PromotionArtifact:
             "cohort": self.cohort,
             "rationale": self.rationale,
             "comparison": self.comparison.to_dict(),
+            "confirmation_policy": self.confirmation_policy.to_dict(),
+            "confirmation_policy_digest": self.confirmation_policy_digest,
             "promoted_at": self.promoted_at,
         }

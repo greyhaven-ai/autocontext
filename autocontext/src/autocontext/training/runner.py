@@ -11,6 +11,7 @@ Orchestrates the autoresearch-style experiment loop:
 from __future__ import annotations
 
 import logging
+import math
 import os
 import re
 import shutil
@@ -25,6 +26,7 @@ from typing import Literal
 from autocontext.agents.llm_client import LanguageModelClient, build_client_from_settings
 from autocontext.config.settings import load_settings
 from autocontext.training.backends import TrainingBackend, default_backend_registry
+from autocontext.training.git_state import TrainingGitState
 from autocontext.training.model_registry import (
     ModelRegistry,
     TrainingCompletionOutput,
@@ -218,71 +220,54 @@ class TrainingRunner:
 
     def _init_git_repo(self) -> None:
         """Initialize git repo, commit workspace files, and create a training branch."""
-        git_dir = self.work_dir / ".git"
-        if not git_dir.exists():
-            subprocess.run(["git", "init"], cwd=self.work_dir, capture_output=True, check=True)
-            subprocess.run(
-                ["git", "config", "user.email", "autocontext-train@local"],
-                cwd=self.work_dir,
-                capture_output=True,
-                check=True,
-            )
-            subprocess.run(
-                ["git", "config", "user.name", "autocontext Training"],
-                cwd=self.work_dir,
-                capture_output=True,
-                check=True,
-            )
-
-        subprocess.run(["git", "add", "-A"], cwd=self.work_dir, capture_output=True, check=True)
-        subprocess.run(
-            ["git", "commit", "-m", f"autocontext-train: setup workspace for {self.config.scenario}"],
-            cwd=self.work_dir,
-            capture_output=True,
-            check=True,
-        )
-
-        timestamp = time.strftime("%Y%m%d-%H%M%S")
-        branch_name = f"autocontext-train/{self.config.scenario}/{timestamp}"
-        subprocess.run(
-            ["git", "checkout", "-b", branch_name],
-            cwd=self.work_dir,
-            capture_output=True,
-            check=True,
-        )
+        self._training_git_state().initialize()
 
     def _git_commit(self, message: str) -> None:
-        """Stage all changes and create a commit."""
-        subprocess.run(["git", "add", "-A"], cwd=self.work_dir, capture_output=True, check=True)
-        subprocess.run(
-            ["git", "commit", "-m", message, "--allow-empty"],
-            cwd=self.work_dir,
-            capture_output=True,
-            check=True,
+        """Stage candidate changes, excluding durable model checkpoints, and commit."""
+        self._training_git_state().commit_candidate(message)
+
+    def _stage_workspace_changes(self) -> None:
+        """Stage workspace state without putting checkpoint payloads in Git."""
+        self._training_git_state().stage_workspace_changes()
+
+    def _amend_current_commit_with_promotion(self, result: ExperimentResult) -> None:
+        """Make an accepted decision and result durable in its approved commit."""
+        if result.outcome != ExperimentOutcome.KEPT:
+            return
+        if not (self.work_dir / ".git").exists():
+            return
+        self._training_git_state().amend_decision(self._decision_record_paths(result))
+
+    def _commit_decision_record(self, result: ExperimentResult) -> None:
+        """Commit non-accepted evidence after candidate code has been reset."""
+        if not (self.work_dir / ".git").exists():
+            return
+        self._training_git_state().commit_decision(
+            self._decision_record_paths(result),
+            experiment_index=result.experiment_index,
+            outcome=result.outcome.value,
         )
+
+    def _decision_record_paths(self, result: ExperimentResult) -> list[Path]:
+        return self._training_git_state().decision_record_paths(result.promotion_artifact_path)
 
     def _git_head_sha(self) -> str:
         """Return current HEAD commit SHA."""
-        result = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=self.work_dir,
-            capture_output=True,
-            text=True,
-            check=True,
+        return self._training_git_state().head_sha()
+
+    def _training_git_state(self) -> TrainingGitState:
+        return TrainingGitState(
+            work_dir=self.work_dir,
+            scenario=self.config.scenario,
+            checkpoint_root=self._backend.default_checkpoint_dir(self.config.scenario),
         )
-        return result.stdout.strip()
 
     def keep_experiment(self) -> None:
         """Keep the current experiment (HEAD stays as-is)."""
 
-    def discard_experiment(self) -> None:
-        """Discard the current experiment by resetting HEAD~1."""
-        subprocess.run(
-            ["git", "reset", "--hard", "HEAD~1"],
-            cwd=self.work_dir,
-            capture_output=True,
-            check=True,
-        )
+    def discard_experiment(self, checkpoint_path: Path | None = None) -> None:
+        """Discard candidate code/checkpoint while leaving decision history intact."""
+        self._training_git_state().discard_candidate(checkpoint_path)
 
     def record_result(self, result: ExperimentResult) -> None:
         """Append an experiment result to results.tsv."""
@@ -334,6 +319,8 @@ class TrainingRunner:
 
         required = {"avg_score", "valid_rate", "peak_memory_mb", "training_seconds"}
         if not required.issubset(result.keys()):
+            return None
+        if any(not math.isfinite(result[key]) for key in required):
             return None
         return result
 
@@ -601,10 +588,13 @@ class TrainingRunner:
     def _update_best(self, result: ExperimentResult) -> None:
         if result.outcome != ExperimentOutcome.KEPT:
             return
-        if result.avg_score > self._best_score:
-            self._best_score = result.avg_score
-            self._best_valid_rate = result.valid_rate
-            self._best_experiment_index = result.experiment_index
+        # KEPT means the configured matched confirmation accepted this challenger
+        # against the current incumbent.  Raw summary averages need not preserve
+        # that ordering (the matched fixtures are the promotion authority), so the
+        # accepted challenger must always become the next incumbent.
+        self._best_score = result.avg_score
+        self._best_valid_rate = result.valid_rate
+        self._best_experiment_index = result.experiment_index
 
     def run(self) -> TrainingResult:
         """Run the full training loop and return the best kept result."""
@@ -613,9 +603,13 @@ class TrainingRunner:
         results: list[ExperimentResult] = []
 
         baseline = self._execute_experiment(0)
+        self.record_result(baseline)
+        if baseline.outcome == ExperimentOutcome.KEPT:
+            self._amend_current_commit_with_promotion(baseline)
+        else:
+            self._commit_decision_record(baseline)
         if baseline.outcome == ExperimentOutcome.ERROR:
             raise RuntimeError(baseline.error_message or "baseline training experiment failed")
-        self.record_result(baseline)
         self._update_best(baseline)
         results.append(baseline)
 
@@ -643,13 +637,16 @@ class TrainingRunner:
             result = self._execute_experiment(experiment_index)
             if result.outcome == ExperimentOutcome.KEPT:
                 self.keep_experiment()
+                self.record_result(result)
+                self._amend_current_commit_with_promotion(result)
                 self._update_best(result)
                 consecutive_discards = 0
             else:
-                self.discard_experiment()
+                self.discard_experiment(checkpoint_path=self._checkpoint_dir(experiment_index))
+                self.record_result(result)
+                self._commit_decision_record(result)
                 consecutive_discards += 1
 
-            self.record_result(result)
             results.append(result)
             experiment_index += 1
 
@@ -660,7 +657,10 @@ class TrainingRunner:
         kept = [r for r in results if r.outcome == ExperimentOutcome.KEPT]
         discarded = [r for r in results if r.outcome == ExperimentOutcome.DISCARDED]
 
-        best_result = max(kept, key=lambda r: r.avg_score, default=None)
+        # Accepted experiments form an incumbent chain.  The terminal accepted
+        # challenger, rather than the largest unpaired summary average, is what
+        # the matched confirmation policy authorized for publication.
+        best_result = kept[-1] if kept else None
         published_model_id = self._publish_best_model(best_result)
         return TrainingResult(
             scenario=self.config.scenario,

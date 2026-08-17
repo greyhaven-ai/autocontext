@@ -77,11 +77,15 @@ class PrimeIntellectClient:
     timeout_minutes: int = 30
     max_wait_attempts: int = 60
     network_access: bool = True
-    allow_fallback: bool = True
+    allow_fallback: bool = False
     provider_capabilities: Mapping[str, bool] = field(
         default_factory=lambda: {
             "accelerator": False,
-            "session_reuse": True,
+            # Reuse is unsafe unless the provider can prove a clean task
+            # boundary inside one sandbox. Prime currently exposes lifecycle
+            # reuse but no reset/isolation primitive, so production defaults
+            # must remain cold and ephemeral.
+            "session_reuse": False,
             "snapshot": False,
             "warm": False,
             "secret_grants": False,
@@ -113,9 +117,12 @@ class PrimeIntellectClient:
         backoff_seconds: float = 0.75,
     ) -> RemoteExecutionResult:
         require_online("use the PrimeIntellect executor")
-        self._validate_request(request)
         attempt = 0
         while True:
+            # Grants can expire while a failed attempt is backing off. Recheck
+            # policy immediately before every provider attempt; policy errors
+            # are deliberately outside the provider-fallback exception path.
+            self._validate_request(request)
             try:
                 result = asyncio.run(self._execute_request_once(request))
                 self._emit_ledger(result)
@@ -125,33 +132,34 @@ class PrimeIntellectClient:
             except Exception as exc:
                 logger.debug("integrations.primeintellect.client: provider failure", exc_info=True)
                 attempt += 1
+                if attempt <= max_retries:
+                    time.sleep(backoff_seconds * attempt)
+                    continue
                 if not self.allow_fallback:
                     raise
-                if attempt > max_retries:
-                    result = RemoteExecutionResult(
-                        task_id=request.task_id,
-                        provider="primeintellect",
-                        status="provider_error",
-                        cleanup=RemoteCleanupOutcome(attempted=False, succeeded=False),
-                        error=str(exc),
-                        events=(
-                            RemoteExecutionEvent(
-                                sequence=1,
-                                event_type="provider_error",
-                                message=str(exc),
-                                fields={"attempts": attempt},
-                            ),
+                result = RemoteExecutionResult(
+                    task_id=request.task_id,
+                    provider="primeintellect",
+                    status="provider_error",
+                    cleanup=RemoteCleanupOutcome(attempted=False, succeeded=False),
+                    error=str(exc),
+                    events=(
+                        RemoteExecutionEvent(
+                            sequence=1,
+                            event_type="provider_error",
+                            message=str(exc),
+                            fields={"attempts": attempt},
                         ),
-                    )
-                    self._emit_ledger(result)
-                    return result
-                time.sleep(backoff_seconds * attempt)
+                    ),
+                )
+                self._emit_ledger(result)
+                return result
 
     def execute_requests(
         self,
         requests: Sequence[RemoteExecutionRequest],
     ) -> tuple[RemoteExecutionResult, ...]:
-        """Execute a bounded matched cohort in one reusable sandbox."""
+        """Execute a bounded matched cohort when isolated reuse is explicitly advertised."""
 
         require_online("use the PrimeIntellect executor")
         if not self.capabilities()["session_reuse"]:
@@ -191,10 +199,13 @@ class PrimeIntellectClient:
             image=self.docker_image,
             cpu_cores=self.cpu_cores,
             disk_gb=self.disk_size_gb,
+            memory_gb=self.memory_gb,
         )
         result = self.execute_request(request, max_retries=max_retries, backoff_seconds=backoff_seconds)
         if not result.succeeded:
-            return self.fallback_local_response(scenario_name, seed)
+            if self.allow_fallback:
+                return self.fallback_local_response(scenario_name, seed)
+            raise RuntimeError(f"primeintellect {result.status}: {result.error}")
         payload = _last_json_object(result.stdout)
         if not isinstance(payload.get("result"), Mapping) or not isinstance(payload.get("replay"), Mapping):
             if self.allow_fallback:
@@ -215,6 +226,7 @@ class PrimeIntellectClient:
         timeout_error = ""
         cleanup = RemoteCleanupOutcome(attempted=False, succeeded=False)
         async with sandbox_client_cls(api_key=self.api_key) as client:
+            self._validate_request(request)
             sandbox = await client.create(create_sandbox_request(**self._create_kwargs(request)))
             sandbox_id = str(sandbox.id)
             try:
@@ -237,13 +249,14 @@ class PrimeIntellectClient:
             fields={"session_id": sandbox_id, "cleanup": cleanup.succeeded},
         )
         if timeout_error:
+            cleanup_detail = _cleanup_failure_detail(timeout_error, cleanup)
             return RemoteExecutionResult(
                 task_id=request.task_id,
                 provider="primeintellect",
-                status="timeout",
+                status="cleanup_error" if not cleanup.succeeded else "timeout",
                 usage=usage,
                 cleanup=cleanup,
-                error=timeout_error,
+                error=cleanup_detail if not cleanup.succeeded else timeout_error,
                 session_id=sandbox_id,
                 events=(lifecycle_event,),
             )
@@ -271,11 +284,13 @@ class PrimeIntellectClient:
         pending: list[RemoteExecutionResult] = []
         cleanup = RemoteCleanupOutcome(attempted=False, succeeded=False)
         async with sandbox_client_cls(api_key=self.api_key) as client:
+            self._validate_request(first)
             sandbox = await client.create(create_sandbox_request(**self._create_kwargs(first)))
             sandbox_id = str(sandbox.id)
             try:
                 await client.wait_for_creation(sandbox_id, max_attempts=self.max_wait_attempts)
                 for request in requests:
+                    self._validate_request(request)
                     started = time.perf_counter()
                     try:
                         response = await client.execute_command(
@@ -311,7 +326,7 @@ class PrimeIntellectClient:
                 cleanup = await self._cleanup(client, sandbox_id)
         results: list[RemoteExecutionResult] = []
         for index, (_request, result) in enumerate(zip(requests, pending, strict=True)):
-            status = "cleanup_error" if result.status == "success" and not cleanup.succeeded else result.status
+            status = "cleanup_error" if not cleanup.succeeded else result.status
             event = RemoteExecutionEvent(
                 sequence=1,
                 event_type="lifecycle",
@@ -323,7 +338,7 @@ class PrimeIntellectClient:
                     result,
                     status=status,
                     cleanup=cleanup,
-                    error=cleanup.detail if status == "cleanup_error" else result.error,
+                    error=(_cleanup_failure_detail(result.error, cleanup) if status == "cleanup_error" else result.error),
                     events=(event, *result.events),
                 )
             )
@@ -341,6 +356,9 @@ class PrimeIntellectClient:
 
     def _validate_request(self, request: RemoteExecutionRequest) -> None:
         capabilities = self.capabilities()
+        expired_grants = [grant.name for grant in request.secret_grants if grant.expires_at <= time.time()]
+        if expired_grants:
+            raise ValueError(f"remote secret grant expired before dispatch: {', '.join(sorted(expired_grants))}")
         if request.resources.accelerator is not None and not capabilities["accelerator"]:
             raise UnsupportedRemoteCapabilityError("Prime Intellect adapter does not advertise accelerator support")
         if request.lifecycle == "reuse_matched_trials" and not capabilities["session_reuse"]:
@@ -434,6 +452,7 @@ class PrimeIntellectClient:
             image=self.docker_image,
             cpu_cores=self.cpu_cores,
             disk_gb=self.disk_size_gb,
+            memory_gb=self.memory_gb,
         )
         return request.command
 
@@ -452,6 +471,11 @@ def _last_json_object(stdout: str) -> dict[str, Any]:
 def _safe_name(value: str) -> str:
     cleaned = "".join(char if char.isalnum() or char in {"-", "_"} else "-" for char in value)
     return cleaned[:48] or "task"
+
+
+def _cleanup_failure_detail(primary_error: str, cleanup: RemoteCleanupOutcome) -> str:
+    cleanup_error = cleanup.detail.strip() or "remote resource cleanup failed"
+    return f"{primary_error}; cleanup failed: {cleanup_error}" if primary_error else cleanup_error
 
 
 __all__ = [

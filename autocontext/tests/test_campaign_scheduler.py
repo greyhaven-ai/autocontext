@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import multiprocessing
 import threading
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -18,6 +20,7 @@ from autocontext.execution.campaign_scheduler import (
     RemoteCampaignWorker,
     SchedulerBudget,
     SchedulerResources,
+    StaleCampaignSchedulerError,
     WorkerDescriptor,
 )
 from autocontext.execution.remote_execution import (
@@ -68,6 +71,28 @@ def _success(assignment: CampaignAssignment) -> CampaignJobResult:
         consumed=SchedulerBudget(tokens=8, wall_seconds=1, compute_units=0.5, jobs=1),
         output_ref=f"artifact://{assignment.job.job_id}",
     )
+
+
+def _race_scheduler_writer(
+    path: str,
+    index: int,
+    ready: Any,
+    start: Any,
+    outcomes: Any,
+) -> None:
+    """Process target for exercising the event-store compare-and-append boundary."""
+
+    scheduler = CampaignScheduler(CampaignSchedulerEventStore(path))
+    ready.put(index)
+    if not start.wait(timeout=10):
+        outcomes.put(("timeout", index))
+        return
+    try:
+        scheduler.configure_campaign(f"campaign-{index}", SchedulerBudget(jobs=1))
+    except StaleCampaignSchedulerError:
+        outcomes.put(("stale", index))
+    else:
+        outcomes.put(("appended", index))
 
 
 def test_two_local_workers_dispatch_with_bounded_concurrency(tmp_path: Path) -> None:
@@ -307,3 +332,246 @@ def test_duplicate_enqueue_and_event_checksum_are_fail_closed(tmp_path: Path) ->
     path.write_text(path.read_text().replace("job-1", "job-x", 1))
     with pytest.raises(ValueError, match="checksum mismatch"):
         CampaignSchedulerEventStore(path).read()
+
+
+def test_duplicate_job_id_cannot_replace_a_leased_job_or_leak_its_reservation(tmp_path: Path) -> None:
+    scheduler = CampaignScheduler(CampaignSchedulerEventStore(tmp_path / "events.jsonl"))
+    scheduler.configure_campaign("campaign-1", SchedulerBudget(tokens=100, jobs=10))
+    scheduler.register_worker(_worker("local"))
+    scheduler.enqueue(_job(1))
+    assignment = scheduler.claim("local")[0]
+
+    with pytest.raises(ValueError, match="job_id already exists"):
+        scheduler.enqueue(_job(1, idempotency_key="different-key", branch_id="branch-b"))
+
+    assert scheduler.job_status("job-1") == "leased"
+    assert scheduler.report().reserved_by_campaign["campaign-1"] == SchedulerBudget(
+        tokens=10,
+        wall_seconds=5,
+        compute_units=1,
+        jobs=1,
+    )
+    scheduler.complete(assignment.lease.lease_id, _success(assignment))
+    assert scheduler.report().reserved_by_campaign["campaign-1"] == SchedulerBudget()
+
+
+def test_invalid_worker_outcome_is_rejected_before_it_can_poison_the_event_log(tmp_path: Path) -> None:
+    store = CampaignSchedulerEventStore(tmp_path / "events.jsonl")
+    scheduler = CampaignScheduler(store)
+    scheduler.register_worker(_worker("local"))
+    scheduler.enqueue(_job(1))
+    scheduler.claim("local")
+    event_count = scheduler.report().events
+
+    with pytest.raises(ValueError, match="unsupported campaign job outcome"):
+        CampaignJobResult(outcome="bogus")  # type: ignore[arg-type]
+
+    assert scheduler.report().events == event_count
+    assert CampaignScheduler(store).job_status("job-1") == "leased"
+
+
+def test_retried_infrastructure_attempt_charges_actual_usage(tmp_path: Path) -> None:
+    store = CampaignSchedulerEventStore(tmp_path / "events.jsonl")
+    scheduler = CampaignScheduler(store)
+    scheduler.configure_campaign("campaign-1", SchedulerBudget(tokens=100, jobs=10))
+    scheduler.register_worker(_worker("local"))
+    scheduler.enqueue(_job(1, max_attempts=2))
+    first = scheduler.claim("local")[0]
+
+    failed = CampaignJobResult(
+        outcome="infrastructure_failure",
+        consumed=SchedulerBudget(tokens=7, wall_seconds=2, compute_units=0.25, jobs=1),
+        detail="provider timeout",
+    )
+    scheduler.complete(first.lease.lease_id, failed)
+
+    report = scheduler.report()
+    assert scheduler.job_status("job-1") == "queued"
+    assert report.consumed_by_campaign["campaign-1"] == failed.consumed
+    assert report.reserved_by_campaign["campaign-1"] == SchedulerBudget()
+    assert report.worker_utilization["local"]["failed_jobs"] == 1
+    assert report.worker_utilization["local"]["consumed"] == {
+        "tokens": 7,
+        "wall_seconds": 2,
+        "compute_units": 0.25,
+        "jobs": 1,
+        "shared_evidence_tokens": 0,
+    }
+
+    second = scheduler.claim("local")[0]
+    scheduler.complete(second.lease.lease_id, _success(second))
+    assert scheduler.report().consumed_by_campaign["campaign-1"] == SchedulerBudget(
+        tokens=15,
+        wall_seconds=3,
+        compute_units=0.75,
+        jobs=2,
+    )
+    assert CampaignScheduler(store).report().consumed_by_campaign["campaign-1"] == SchedulerBudget(
+        tokens=15,
+        wall_seconds=3,
+        compute_units=0.75,
+        jobs=2,
+    )
+
+
+def test_direct_claim_honors_global_concurrency_limit(tmp_path: Path) -> None:
+    scheduler = CampaignScheduler(
+        CampaignSchedulerEventStore(tmp_path / "events.jsonl"),
+        max_concurrency=1,
+    )
+    scheduler.register_worker(_worker("worker-a"))
+    scheduler.register_worker(_worker("worker-b"))
+    scheduler.enqueue(_job(1))
+    scheduler.enqueue(_job(2))
+
+    first = scheduler.claim("worker-a")[0]
+    assert scheduler.claim("worker-b") == ()
+
+    scheduler.complete(first.lease.lease_id, _success(first))
+    assert scheduler.claim("worker-b")[0].job.job_id == "job-2"
+
+
+def test_temporary_reservation_pressure_keeps_job_queued(tmp_path: Path) -> None:
+    scheduler = CampaignScheduler(CampaignSchedulerEventStore(tmp_path / "events.jsonl"))
+    scheduler.configure_campaign("campaign-1", SchedulerBudget(tokens=10, jobs=2))
+    scheduler.register_worker(_worker("worker-a"))
+    scheduler.register_worker(_worker("worker-b"))
+    scheduler.enqueue(_job(1, reservation=SchedulerBudget(tokens=10, jobs=1)))
+    scheduler.enqueue(_job(2, reservation=SchedulerBudget(tokens=10, jobs=1)))
+
+    first = scheduler.claim("worker-a")[0]
+    assert scheduler.claim("worker-b") == ()
+    assert scheduler.job_status("job-2") == "queued"
+
+    scheduler.complete(
+        first.lease.lease_id,
+        CampaignJobResult(outcome="candidate_success", consumed=SchedulerBudget(jobs=1)),
+    )
+    assert scheduler.claim("worker-b")[0].job.job_id == "job-2"
+
+
+def test_cancel_during_dispatch_ignores_late_worker_completion(tmp_path: Path) -> None:
+    scheduler = CampaignScheduler(CampaignSchedulerEventStore(tmp_path / "events.jsonl"))
+    started = threading.Event()
+    release = threading.Event()
+
+    def execute(assignment: CampaignAssignment) -> CampaignJobResult:
+        started.set()
+        assert release.wait(timeout=2)
+        return _success(assignment)
+
+    scheduler.register_worker(_worker("local"), CallableCampaignWorker(execute))
+    scheduler.enqueue(_job(1))
+    dispatched: list[int] = []
+    dispatch_thread = threading.Thread(target=lambda: dispatched.append(scheduler.dispatch_once()))
+    dispatch_thread.start()
+    assert started.wait(timeout=2)
+
+    assert scheduler.cancel("job-1") is True
+    release.set()
+    dispatch_thread.join(timeout=2)
+
+    assert not dispatch_thread.is_alive()
+    assert dispatched == [1]
+    assert scheduler.job_status("job-1") == "canceled"
+    assert scheduler.report().running == 0
+
+
+def test_concurrent_evidence_events_have_contiguous_replayable_sequences(tmp_path: Path) -> None:
+    store = CampaignSchedulerEventStore(tmp_path / "events.jsonl")
+    scheduler = CampaignScheduler(store)
+    scheduler.configure_campaign("campaign-1", SchedulerBudget(shared_evidence_tokens=100))
+    barrier = threading.Barrier(16)
+
+    def grant(index: int) -> None:
+        barrier.wait()
+        scheduler.grant_evidence_share(
+            CampaignEvidenceGrant(
+                grant_id=f"share-{index}",
+                campaign_id="campaign-1",
+                from_branch_id="source",
+                to_branch_id="target",
+                evidence_ref=f"artifact://finding-{index}",
+                token_cost=1,
+            )
+        )
+
+    threads = [threading.Thread(target=grant, args=(index,)) for index in range(16)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=3)
+
+    assert all(not thread.is_alive() for thread in threads)
+    assert [event.sequence for event in store.read()] == list(range(1, 18))
+    restarted = CampaignScheduler(store)
+    assert restarted.report().consumed_by_campaign["campaign-1"].shared_evidence_tokens == 16
+
+
+def test_independent_scheduler_instances_compare_and_append_without_corrupting_replay(tmp_path: Path) -> None:
+    path = tmp_path / "events.jsonl"
+    schedulers = [
+        CampaignScheduler(CampaignSchedulerEventStore(path)),
+        CampaignScheduler(CampaignSchedulerEventStore(path)),
+    ]
+    barrier = threading.Barrier(2)
+    outcomes: list[str] = []
+    outcomes_lock = threading.Lock()
+
+    def configure(index: int) -> None:
+        barrier.wait()
+        try:
+            schedulers[index].configure_campaign(f"campaign-{index}", SchedulerBudget(jobs=1))
+        except StaleCampaignSchedulerError:
+            outcome = "stale"
+        else:
+            outcome = "appended"
+        with outcomes_lock:
+            outcomes.append(outcome)
+
+    threads = [threading.Thread(target=configure, args=(index,)) for index in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+
+    assert all(not thread.is_alive() for thread in threads)
+    assert sorted(outcomes) == ["appended", "stale"]
+    events = CampaignSchedulerEventStore(path).read()
+    assert [event.sequence for event in events] == [1]
+    assert CampaignScheduler(CampaignSchedulerEventStore(path)).report().events == 1
+
+
+def test_cross_process_scheduler_writers_compare_and_append_without_corrupting_replay(tmp_path: Path) -> None:
+    path = tmp_path / "events.jsonl"
+    context = multiprocessing.get_context("spawn")
+    ready = context.Queue()
+    start = context.Event()
+    outcomes = context.Queue()
+    processes = [
+        context.Process(
+            target=_race_scheduler_writer,
+            args=(str(path), index, ready, start, outcomes),
+        )
+        for index in range(2)
+    ]
+
+    for process in processes:
+        process.start()
+    try:
+        assert {ready.get(timeout=15) for _ in processes} == {0, 1}
+        start.set()
+        results = [outcomes.get(timeout=15) for _ in processes]
+    finally:
+        start.set()
+        for process in processes:
+            process.join(timeout=10)
+            if process.is_alive():
+                process.terminate()
+                process.join(timeout=5)
+
+    assert all(process.exitcode == 0 for process in processes)
+    assert sorted(result[0] for result in results) == ["appended", "stale"]
+    events = CampaignSchedulerEventStore(path).read()
+    assert [event.sequence for event in events] == [1]
+    assert CampaignScheduler(CampaignSchedulerEventStore(path)).report().events == 1

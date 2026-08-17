@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import statistics
 
 from autocontext.analytics.paired_statistics import paired_confidence_interval
@@ -38,6 +39,8 @@ def evaluate_matched_trials(
         "confirmation_pairs": len(confirmation),
         "heldout_pairs": len(heldout),
     }
+    if len(confirmation) > effective_policy.max_confirmation_pairs:
+        raise ValueError("confirmation pairs exceed the configured maximum")
     if len(screen) < effective_policy.min_screen_pairs:
         return ComparisonResult(
             decision=ComparisonDecision.NEEDS_SCREEN,
@@ -73,7 +76,12 @@ def evaluate_matched_trials(
         )
 
     deltas = [trial.delta for trial in confirmation]
-    mean_effect, low, high = paired_confidence_interval(deltas, effective_policy.confidence_z)
+    max_looks = effective_policy.max_confirmation_pairs - effective_policy.min_confirmation_pairs + 1
+    mean_effect, low, high = paired_confidence_interval(
+        deltas,
+        effective_policy.confidence_z,
+        max_looks=max_looks,
+    )
     assert mean_effect is not None and low is not None and high is not None
     if high <= effective_policy.min_effect:
         return ComparisonResult(
@@ -151,6 +159,10 @@ def _validate_trials(candidate: ContextBundle, trials: list[MatchedTrial] | tupl
             raise ValueError("trial evaluator epoch does not match the candidate bundle")
         if not trial.cohort.strip() or not trial.fixture.strip() or not trial.fixture_digest.strip():
             raise ValueError("matched trials require cohort, fixture, and fixture_digest")
+        if isinstance(trial.seed, bool) or not isinstance(trial.seed, int):
+            raise ValueError("matched trial seed must be an integer")
+        if not all(math.isfinite(value) for value in (trial.candidate_score, trial.incumbent_score, trial.delta)):
+            raise ValueError("matched trial scores and effect must be finite")
         if trial.pair_key in seen:
             raise ValueError("duplicate matched trial pair")
         seen.add(trial.pair_key)

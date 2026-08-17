@@ -19,10 +19,12 @@ artifact and comparison contract.
 ## Research workspace capabilities
 
 External agents that only need plain data exploration should use the default
-restricted interpreter. Code/research scenarios that need files, selected
-packages, or bounded subprocesses must explicitly request and receive a
-`trusted_local` or `isolated_sandbox` grant. Network and typed host-plane calls
-are separate grants, and credentials never enter the candidate kernel. See
+restricted interpreter. Code/research scenarios that need files or selected
+packages must explicitly request and receive a `trusted_local` or
+`isolated_sandbox` grant. Package imports and subprocess execution additionally
+require `trusted_local`; `isolated_sandbox` denies both until a real OS sandbox
+backend is available. Network and typed host-plane calls are separate grants, and
+credentials never enter the candidate kernel. See
 [capability-scoped research workspaces](../../docs/research-workspaces.md) for
 profiles, lifecycle, snapshots, timeout behavior, and Python/TypeScript
 responsibilities.

@@ -200,6 +200,18 @@ class CampaignJobResult:
     cleanup_succeeded: bool = True
     metadata: Mapping[str, object] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        if self.outcome not in {"candidate_success", "candidate_failure", "infrastructure_failure"}:
+            raise ValueError(f"unsupported campaign job outcome: {self.outcome}")
+        if not isinstance(self.consumed, SchedulerBudget):
+            raise TypeError("campaign result consumed usage must be SchedulerBudget")
+        if not isinstance(self.output_ref, str) or not isinstance(self.detail, str):
+            raise TypeError("campaign result output_ref and detail must be strings")
+        if not isinstance(self.cleanup_succeeded, bool):
+            raise TypeError("campaign result cleanup_succeeded must be boolean")
+        if not isinstance(self.metadata, Mapping):
+            raise TypeError("campaign result metadata must be a mapping")
+
 
 @dataclass(frozen=True, slots=True)
 class CampaignLease:

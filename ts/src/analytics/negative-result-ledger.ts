@@ -1,3 +1,5 @@
+import { stableDigest } from "../context-bundles/index.js";
+
 export const FAILURE_KINDS = [
   "verification_failed",
   "score_regression",
@@ -83,6 +85,7 @@ export interface NegativeResultApplicabilityContext {
   context_bundle_family?: string | null;
   evaluator_epoch: string;
   verifier_digest?: string | null;
+  trial_cohort?: string | null;
   component_digests?: Record<string, string>;
   environment_fingerprint?: string | null;
   observed_at?: string | null;
@@ -183,8 +186,8 @@ export function buildNegativeResultLedger(
     component_dependencies: input.componentDependencies ?? [],
     environment_fingerprint: input.environmentFingerprint ?? null,
   };
-  const entries = input.events.flatMap((event) => {
-    const entry = entryFromEvent(event, defaults);
+  const entries = input.events.flatMap((event, eventIndex) => {
+    const entry = entryFromEvent(event, defaults, eventIndex);
     return entry ? [entry] : [];
   });
   return parseNegativeResultLedger({
@@ -201,11 +204,13 @@ export function parseNegativeResultLedger(value: unknown): NegativeResultLedger 
   const ledger = original.schema_version === 1 ? migrateV1Ledger(original) : original;
   exact(ledger, ["schema_version", "run_id", "generated_at", "entries", "failure_mode_summary"]);
   if (ledger.schema_version !== 2) throw new Error("schema_version must be 2");
+  const entries = array(ledger.entries, "entries").map(parseEntry);
+  ensureUniqueResultIds(entries);
   return {
     schema_version: 2,
     run_id: string(ledger.run_id, "run_id"),
     generated_at: string(ledger.generated_at, "generated_at"),
-    entries: array(ledger.entries, "entries").map(parseEntry),
+    entries,
     failure_mode_summary: array(ledger.failure_mode_summary, "failure_mode_summary").map(
       parseFailureModeSummary,
     ),
@@ -219,18 +224,24 @@ export function renderNegativeResultLessons(
   const rank: Record<NegativeResultDisposition, number> = { hard_ban: 0, caution: 1, noise: 2 };
   return ledger.entries
     .filter((entry) => entry.disposition !== "noise" && entry.evidence_refs.length > 0)
-    .sort((left, right) => rank[left.disposition] - rank[right.disposition] || left.result_id.localeCompare(right.result_id))
+    .map((entry) => ({
+      entry,
+      applicability: evaluateNegativeResultApplicability(entry, opts.applicabilityContext),
+    }))
+    .filter(({ applicability }) => applicability.state !== "excluded" && applicability.state !== "superseded")
+    .sort((left, right) =>
+      rank[left.entry.disposition] - rank[right.entry.disposition]
+      || left.entry.result_id.localeCompare(right.entry.result_id)
+    )
     .slice(0, opts.maxEntries ?? 4)
-    .flatMap((entry) => {
-      const applicability = evaluateNegativeResultApplicability(entry, opts.applicabilityContext);
-      if (applicability.state === "excluded" || applicability.state === "superseded") return [];
+    .map(({ entry, applicability }) => {
       const evidence = entry.evidence_refs.slice(0, 2).map((ref) => ref.summary).join("; ");
       const delta = entry.score_delta === null ? "" : `, delta=${entry.score_delta}`;
       const prefix = applicability.effective_disposition === "hard_ban" ? "Hard ban" : "Caution";
       const suffix = applicability.effective_disposition === "hard_ban"
         ? "do not repeat without new evidence"
         : "not a ban; explore only with differentiating evidence";
-      return [`- ${prefix}: ${entry.failure_kind} on ${entry.branch_id} (${entry.result_id}${delta}) — ${entry.reason}; applicability: ${applicability.reason}; evidence: ${evidence}; ${suffix}.`];
+      return `- ${prefix}: ${entry.failure_kind} on ${entry.branch_id} (${entry.result_id}${delta}) — ${entry.reason}; applicability: ${applicability.reason}; evidence: ${evidence}; ${suffix}.`;
     })
     .join("\n");
 }
@@ -280,26 +291,8 @@ export function evaluateNegativeResultApplicability(
       true,
     );
   }
-  const mismatch = scopeMismatch(entry.applicability_scope, entry.context, current);
+  const mismatch = contextMismatch(entry.applicability_scope, entry.context, current);
   if (mismatch) return applicability("retest_due", "caution", mismatch, true);
-  if (entry.context.evaluator_epoch !== current.evaluator_epoch) {
-    return applicability("retest_due", "caution", "evaluator epoch changed", true);
-  }
-  if (entry.context.verifier_digest && entry.context.verifier_digest !== current.verifier_digest) {
-    return applicability("retest_due", "caution", "verifier changed", true);
-  }
-  if (
-    entry.context.environment_fingerprint
-    && entry.context.environment_fingerprint !== current.environment_fingerprint
-  ) {
-    return applicability("retest_due", "caution", "environment fingerprint changed", true);
-  }
-  for (const dependency of entry.context.component_dependencies) {
-    const key = `${dependency.component_kind}:${dependency.key}`;
-    if (current.component_digests?.[key] !== dependency.digest) {
-      return applicability("retest_due", "caution", `dependency ${key} changed`, true);
-    }
-  }
   if (entry.evidence_expires_at && isAtOrAfter(current.observed_at, entry.evidence_expires_at)) {
     return applicability("retest_due", "caution", "evidence age limit was reached", true);
   }
@@ -331,8 +324,12 @@ export function linkNegativeResultRetest(
   originalResultId: string,
   retestEntry: NegativeResultEntry,
 ): NegativeResultLedger {
+  ensureUniqueResultIds(ledger.entries);
   if (retestEntry.retest_of_result_id !== originalResultId || retestEntry.retest_outcome === null) {
     throw new Error("retest entry must link to the original and declare an outcome");
+  }
+  if (ledger.entries.some((entry) => entry.result_id === retestEntry.result_id)) {
+    throw new Error(`retest result already exists: ${retestEntry.result_id}`);
   }
   let found = false;
   const entries = ledger.entries.map((entry) => {
@@ -340,7 +337,9 @@ export function linkNegativeResultRetest(
     found = true;
     return {
       ...entry,
-      superseded_by_result_id: retestEntry.retest_outcome === "not_reproduced" ? retestEntry.result_id : null,
+      superseded_by_result_id: retestCanSupersede(entry, retestEntry)
+        ? retestEntry.result_id
+        : entry.superseded_by_result_id,
     };
   });
   if (!found) throw new Error(`unknown original result: ${originalResultId}`);
@@ -465,6 +464,7 @@ function parseFailureModeSummary(value: unknown): FailureModeSummary {
 function entryFromEvent(
   event: NegativeResultEventInput,
   defaults: NegativeResultContext,
+  eventIndex: number,
 ): NegativeResultEntry | null {
   const payload = event.payload ?? {};
   const eventType = event.event_type ?? event.event ?? "";
@@ -474,7 +474,7 @@ function entryFromEvent(
   const branchId = event.branch_id ?? maybeString(payload.branch_id) ?? "";
   if (branchId.length === 0) return null;
   const eventId = event.event_id ?? (event.seq !== undefined ? `seq-${event.seq}` : "");
-  const fallbackResultId = eventId || `negative-${branchId.length}`;
+  const fallbackResultId = eventId || fallbackResultIdForEvent(event, eventIndex);
   const resultId = maybeString(payload.result_id) ?? fallbackResultId;
   const context = contextFromPayload(payload, defaults);
   const explicitScope = maybeApplicabilityScope(payload.applicability_scope);
@@ -505,6 +505,18 @@ function entryFromEvent(
     retest_outcome: maybeRetestOutcome(payload.retest_outcome),
     superseded_by_result_id: maybeString(payload.superseded_by_result_id) ?? null,
   };
+}
+
+function fallbackResultIdForEvent(event: NegativeResultEventInput, eventIndex: number): string {
+  return `negative-${stableDigest({ event, event_index: eventIndex })}`;
+}
+
+function ensureUniqueResultIds(entries: readonly NegativeResultEntry[]): void {
+  const seen = new Set<string>();
+  for (const entry of entries) {
+    if (seen.has(entry.result_id)) throw new Error(`duplicate negative result ID: ${entry.result_id}`);
+    seen.add(entry.result_id);
+  }
 }
 
 function failureModeSummary(entries: NegativeResultEntry[]): FailureModeSummary[] {
@@ -539,10 +551,10 @@ function eventDisposition(value: unknown): NegativeResultDisposition {
 
 function scoreDelta(payload: Record<string, unknown>): number | null {
   const explicit = maybeNumber(payload.score_delta);
-  if (explicit !== undefined) return round(explicit);
+  if (explicit !== undefined) return roundSix(explicit);
   const score = maybeNumber(payload.score);
   const baseline = maybeNumber(payload.baseline_score);
-  return score !== undefined && baseline !== undefined ? round(score - baseline) : null;
+  return score !== undefined && baseline !== undefined ? roundSix(score - baseline) : null;
 }
 
 function branchLineage(
@@ -654,10 +666,76 @@ function scopeMismatch(
   return null;
 }
 
+function contextMismatch(
+  scope: NegativeResultApplicabilityScope,
+  recorded: NegativeResultContext,
+  current: NegativeResultApplicabilityContext,
+): string | null {
+  const mismatch = scopeMismatch(scope, recorded, current);
+  if (mismatch) return mismatch;
+  if (recorded.evaluator_epoch !== current.evaluator_epoch) return "evaluator epoch changed";
+  if (recorded.verifier_digest && recorded.verifier_digest !== current.verifier_digest) {
+    return "verifier changed";
+  }
+  if (recorded.trial_cohort && recorded.trial_cohort !== current.trial_cohort) {
+    return "trial cohort changed";
+  }
+  if (recorded.environment_fingerprint && recorded.environment_fingerprint !== current.environment_fingerprint) {
+    return "environment fingerprint changed";
+  }
+  for (const dependency of recorded.component_dependencies) {
+    const key = `${dependency.component_kind}:${dependency.key}`;
+    if (current.component_digests?.[key] !== dependency.digest) return `dependency ${key} changed`;
+  }
+  return null;
+}
+
+function retestCanSupersede(original: NegativeResultEntry, retest: NegativeResultEntry): boolean {
+  if (retest.retest_outcome !== "not_reproduced") return false;
+  if (retest.disposition === "noise") return false;
+  if (retest.evidence_refs.length === 0
+    || (retest.evaluated_seeds.length === 0 && retest.evaluated_probes.length === 0)) return false;
+  const originalTime = parseIsoTimestamp(original.occurred_at);
+  const retestTime = parseIsoTimestamp(retest.occurred_at);
+  if (originalTime === null || retestTime === null || retestTime < originalTime) return false;
+  if (original.safety_policy_authority !== retest.safety_policy_authority) return false;
+  if (original.applicability_scope !== retest.applicability_scope) return false;
+
+  const recorded = original.context;
+  const candidate = retest.context;
+  if (
+    recorded.scenario_name !== candidate.scenario_name
+    || recorded.context_bundle_digest !== candidate.context_bundle_digest
+    || recorded.context_bundle_family !== candidate.context_bundle_family
+    || recorded.evaluator_epoch !== candidate.evaluator_epoch
+    || recorded.verifier_digest !== candidate.verifier_digest
+    || recorded.trial_cohort !== candidate.trial_cohort
+    || recorded.environment_fingerprint !== candidate.environment_fingerprint
+  ) return false;
+
+  const dependencyIdentity = (dependency: NegativeComponentDependency): string =>
+    JSON.stringify([dependency.component_kind, dependency.key, dependency.digest]);
+  const recordedDependencies = recorded.component_dependencies.map(dependencyIdentity).sort();
+  const candidateDependencies = candidate.component_dependencies.map(dependencyIdentity).sort();
+  return recordedDependencies.length === candidateDependencies.length
+    && recordedDependencies.every((dependency, index) => dependency === candidateDependencies[index]);
+}
+
 function isAtOrAfter(observedAt: string | null | undefined, expiresAt: string): boolean {
-  const observed = observedAt ? Date.parse(observedAt) : Date.now();
-  const expires = Date.parse(expiresAt);
-  return Number.isNaN(observed) || Number.isNaN(expires) || observed >= expires;
+  const observed = observedAt ? parseIsoTimestamp(observedAt) : Date.now();
+  const expires = parseIsoTimestamp(expiresAt);
+  return observed === null || expires === null || observed >= expires;
+}
+
+function parseIsoTimestamp(value: string): number | null {
+  const hasTimeZone = /(?:[zZ]|[+-]\d{2}:?\d{2})$/.test(value);
+  const normalized = hasTimeZone
+    ? value
+    : /^\d{4}-\d{2}-\d{2}$/.test(value)
+      ? `${value}T00:00:00Z`
+      : `${value}Z`;
+  const parsed = Date.parse(normalized);
+  return Number.isNaN(parsed) ? null : parsed;
 }
 
 function migrateV1Ledger(ledger: Record<string, unknown>): Record<string, unknown> {
@@ -785,6 +863,7 @@ function stringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.length > 0) : [];
 }
 
-function round(value: number): number {
-  return Math.round(value * 1_000_000) / 1_000_000;
+function roundSix(value: number): number {
+  const rounded = Math.sign(value) * Math.floor(Math.abs(value) * 1_000_000 + 0.5) / 1_000_000;
+  return Object.is(rounded, -0) ? 0 : rounded;
 }

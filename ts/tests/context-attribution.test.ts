@@ -5,10 +5,12 @@ import { describe, expect, it } from "vitest";
 import {
   appendReablation,
   attributeControlledTrials,
+  parseContextAttributionLedger,
   planReablation,
   reconstructCausalCredit,
   renderContextAttributionReport,
   selectPromptComponents,
+  type ComponentAttribution,
   type ContextAttributionLedger,
   type ControlledAttributionTrial,
   type ReablationCandidate,
@@ -28,6 +30,11 @@ const fixture = JSON.parse(
   evaluator_epoch: string;
   initial_trials: ControlledAttributionTrial[];
   initial_expected: Record<string, unknown>;
+  unicode_trial_order: {
+    input_trial_ids: string[];
+    expected_trial_ids: string[];
+    expected_attribution_id: string;
+  };
   reablation_trials: ControlledAttributionTrial[];
   reablation_expected: Record<string, unknown>;
   budget_case: {
@@ -42,6 +49,12 @@ const fixture = JSON.parse(
   };
 };
 
+const roundingFixture = JSON.parse(
+  readFileSync(join(import.meta.dirname, "..", "..", "fixtures", "numeric-rounding-parity.json"), "utf-8"),
+) as {
+  cases: Array<{ name: string; value: number; expected: number }>;
+};
+
 describe("context attribution", () => {
   it("reconstructs single-component causal credit from shared stored trials", () => {
     const record = attributeControlledTrials(fixture.initial_trials, {
@@ -52,12 +65,42 @@ describe("context attribution", () => {
     expect(reconstructCausalCredit(record, fixture.initial_trials)).toBe(0.2);
   });
 
+  it("uses the shared UTF-16 order when trial IDs bind attribution identity", () => {
+    const trials = fixture.initial_trials.map((trial, index) => ({
+      ...trial,
+      trial_id: fixture.unicode_trial_order.input_trial_ids[index]!,
+    }));
+
+    const record = attributeControlledTrials(trials, {
+      evaluatorEpoch: fixture.evaluator_epoch,
+    })[0]!;
+
+    expect(record.trial_ids).toEqual(fixture.unicode_trial_order.expected_trial_ids);
+    expect(record.attribution_id).toBe(fixture.unicode_trial_order.expected_attribution_id);
+  });
+
+  it("matches shared half-away-from-zero effect rounding", () => {
+    const base = fixture.initial_trials[0]!;
+    for (const [index, fixtureCase] of roundingFixture.cases.entries()) {
+      const trial: ControlledAttributionTrial = {
+        ...base,
+        trial_id: `rounding-${index}`,
+        fixture_digest: `sha256:rounding-${index}`,
+        seed: index,
+        with_component_score: fixtureCase.value,
+        without_component_score: 0,
+      };
+      const record = attributeControlledTrials([trial], { evaluatorEpoch: trial.evaluator_epoch })[0]!;
+      expect(record.effect, fixtureCase.name).toBe(fixtureCase.expected);
+    }
+  });
+
   it("preserves history and finds an interacting component harmful after bundle change", () => {
     const initial = attributeControlledTrials(fixture.initial_trials, {
       evaluatorEpoch: fixture.evaluator_epoch,
     });
     const ledger: ContextAttributionLedger = {
-      schema_version: 1,
+      schema_version: 2,
       scenario: "grid_ctf",
       trials: fixture.initial_trials,
       attributions: initial,
@@ -92,6 +135,142 @@ describe("context attribution", () => {
       /evaluator epoch mismatch/,
     );
   });
+
+  it("rejects self-comparisons, duplicate pairs, and mixed matching context", () => {
+    const first = fixture.initial_trials[0]!;
+    const second = fixture.initial_trials[1]!;
+
+    expect(() => attributeControlledTrials([{
+      ...first,
+      comparison_bundle_digest: first.tested_bundle_digest,
+    }], { evaluatorEpoch: fixture.evaluator_epoch })).toThrow(/distinct tested and comparison bundles/);
+
+    expect(() => attributeControlledTrials([
+      first,
+      { ...first, trial_id: "duplicate-pair-with-a-new-id" },
+    ], { evaluatorEpoch: fixture.evaluator_epoch })).toThrow(/duplicate matched attribution pair/);
+
+    expect(() => attributeControlledTrials([
+      first,
+      { ...second, comparison_bundle_digest: "sha256:other-comparison" },
+    ], { evaluatorEpoch: fixture.evaluator_epoch })).toThrow(/mixes comparison bundles/);
+
+    expect(() => attributeControlledTrials([
+      first,
+      { ...second, trial_cohort: "cohort-b" },
+    ], { evaluatorEpoch: fixture.evaluator_epoch })).toThrow(/mixes trial cohorts/);
+  });
+
+  it("rejects duplicate, tampered, and self-asserted causal evidence during replay", () => {
+    const record = attributeControlledTrials(fixture.initial_trials, {
+      evaluatorEpoch: fixture.evaluator_epoch,
+    })[0]!;
+
+    expect(record.comparison_bundle_digest).toBe("sha256:bundle-a-minus-playbook");
+    expect(record.classification_neutral_effect).toBe(0);
+    expect(record.classification_high_token_cost).toBe(256);
+    expect(record.matched_pair_keys).toHaveLength(fixture.initial_trials.length);
+    expect(record.source_trial_digests).toHaveLength(fixture.initial_trials.length);
+
+    expect(() => reconstructCausalCredit(record, [
+      ...fixture.initial_trials,
+      fixture.initial_trials[0]!,
+    ])).toThrow(/duplicate attribution trial/);
+
+    expect(() => reconstructCausalCredit(record, [
+      { ...fixture.initial_trials[0]!, fixture_digest: "sha256:different-fixture" },
+      fixture.initial_trials[1]!,
+    ])).toThrow(/binding mismatch/);
+
+    expect(() => reconstructCausalCredit({ ...record, effect: 1 }, fixture.initial_trials)).toThrow(
+      /effect does not match/,
+    );
+    expect(() => reconstructCausalCredit({
+      ...record,
+      comparison_bundle_digest: "sha256:invented",
+    }, fixture.initial_trials)).toThrow(/does not match the controlled attribution/);
+    const selfAssertedDisposition = { ...record, disposition: "harmful" as const };
+    expect(() => reconstructCausalCredit(selfAssertedDisposition, fixture.initial_trials)).toThrow(
+      /disposition does not match/,
+    );
+    const { classification_neutral_effect: _missingPolicy, ...missingPolicy } = record;
+    expect(() => reconstructCausalCredit(
+      missingPolicy as ComponentAttribution,
+      fixture.initial_trials,
+    )).toThrow(/classification neutral effect/);
+
+    const ledger: ContextAttributionLedger = {
+      schema_version: 2,
+      scenario: "grid_ctf",
+      trials: [],
+      attributions: [],
+    };
+    expect(() => appendReablation(ledger, fixture.initial_trials, [{
+      ...record,
+      source_trial_digests: [],
+    }])).toThrow(/source-trial binding mismatch/);
+    expect(() => appendReablation(ledger, fixture.initial_trials, [selfAssertedDisposition])).toThrow(
+      /disposition does not match/,
+    );
+  });
+
+  it("migrates schema-v1 history without trusting invented controlled provenance", () => {
+    const current = attributeControlledTrials(fixture.initial_trials, {
+      evaluatorEpoch: fixture.evaluator_epoch,
+    })[0]!;
+    const legacyRecord: Record<string, unknown> = { ...current };
+    for (const field of [
+      "comparison_bundle_digest",
+      "classification_neutral_effect",
+      "classification_high_token_cost",
+      "matched_pair_keys",
+      "source_trial_digests",
+      "legacy_unverified",
+    ]) delete legacyRecord[field];
+    const migrated = parseContextAttributionLedger({
+      schema_version: 1,
+      scenario: "grid_ctf",
+      trials: fixture.initial_trials,
+      attributions: [legacyRecord],
+    });
+
+    expect(migrated.schema_version).toBe(2);
+    expect(migrated.attributions[0]!.legacy_unverified).toBe(true);
+    expect(() => reconstructCausalCredit(migrated.attributions[0]!, fixture.initial_trials)).toThrow(
+      /legacy attribution lacks verified controlled-trial provenance/,
+    );
+
+    const newRecords = attributeControlledTrials(fixture.reablation_trials, {
+      evaluatorEpoch: fixture.evaluator_epoch,
+    });
+    const updated = appendReablation(migrated, fixture.reablation_trials, newRecords);
+    expect(updated.attributions.at(-1)).toMatchObject({
+      legacy_unverified: false,
+      supersedes_attribution_id: migrated.attributions[0]!.attribution_id,
+    });
+  });
+
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
+    "rejects non-finite attribution score and threshold %s",
+    (score) => {
+      const trial = fixture.initial_trials[0]!;
+      expect(() => attributeControlledTrials([{
+        ...trial,
+        with_component_score: score,
+      }], { evaluatorEpoch: fixture.evaluator_epoch })).toThrow(/scores must be finite/);
+
+      expect(() => attributeControlledTrials([{
+        ...trial,
+        with_component_score: 1e308,
+        without_component_score: -1e308,
+      }], { evaluatorEpoch: fixture.evaluator_epoch })).toThrow(/effect must be finite/);
+
+      expect(() => attributeControlledTrials([trial], {
+        evaluatorEpoch: fixture.evaluator_epoch,
+        neutralEffect: score,
+      })).toThrow(/neutralEffect must be finite/);
+    },
+  );
 
   it("demotes neutral high-cost context but re-tests it after composition changes", () => {
     const playbook = createBundleComponent("playbook", "main", "costly guidance ".repeat(30));
@@ -136,6 +315,21 @@ describe("context attribution", () => {
     );
     expect(changed).toMatchObject({ included: true, disposition: "uncertain" });
     expect(changed?.reason).toContain("interaction re-ablation");
+
+    const positiveTrial: ControlledAttributionTrial = {
+      ...trial,
+      trial_id: "positive-playbook",
+      fixture_digest: "sha256:positive-fixture",
+      with_component_score: 0.8,
+      without_component_score: 0.7,
+    };
+    const retained = attributeControlledTrials([positiveTrial], { evaluatorEpoch: "eval-7" })[0]!;
+    expect(retained.disposition).toBe("retained");
+    expect(selectPromptComponents(originalBundle, [{ ...retained, disposition: "harmful" }])[0]).toMatchObject({
+      included: true,
+      disposition: "uncertain",
+      reason: expect.stringContaining("failed classification-policy verification"),
+    });
   });
 
   it("labels edit-size and promotion reports as noncausal", () => {
@@ -159,11 +353,17 @@ describe("context attribution", () => {
       trial_cohort: "generation-1",
       token_cost: 100,
       last_tested_bundle_digest: "sha256:bundle",
+      comparison_bundle_digest: null,
       tested_at: "2026-08-17T12:00:00Z",
       disposition: "uncertain",
+      classification_neutral_effect: 0,
+      classification_high_token_cost: 256,
       trial_ids: [],
+      matched_pair_keys: [],
+      source_trial_digests: [],
       interaction_component_digests: [],
       supersedes_attribution_id: null,
+      legacy_unverified: false,
     }]);
     expect(report).toContain("component_correlated");
     expect(report).toContain("not causal");

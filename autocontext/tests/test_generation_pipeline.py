@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 from autocontext.config.settings import AppSettings
 from autocontext.loop.generation_runner import GenerationRunner
@@ -77,6 +79,63 @@ class TestPipelineMetaOptimizer:
             curator=None,
         )
         assert pipeline._meta_optimizer is None
+
+
+@pytest.mark.parametrize(
+    ("exploration_mode", "branch_name"),
+    [("linear", "stage_agent_generation"), ("tree", "stage_tree_search")],
+)
+def test_pipeline_applies_active_routing_before_standard_or_tree_serving(
+    exploration_mode: str,
+    branch_name: str,
+) -> None:
+    from autocontext.loop.generation_pipeline import GenerationPipeline
+    from autocontext.loop.stage_types import GenerationContext
+
+    settings = AppSettings(agent_provider="deterministic", exploration_mode=exploration_mode)
+    ctx = GenerationContext(
+        run_id="routing-order",
+        scenario_name="grid_ctf",
+        scenario=MagicMock(),
+        generation=2,
+        settings=settings,
+        previous_best=0.0,
+        challenger_elo=1000.0,
+        score_history=[],
+        gate_decision_history=[],
+        coach_competitor_hints="",
+        replay_narrative="",
+        active_context_routing={"model_competitor": "promoted-model"},
+    )
+    orchestrator = MagicMock()
+    pipeline = GenerationPipeline(
+        orchestrator=orchestrator,
+        supervisor=MagicMock(),
+        gate=MagicMock(),
+        artifacts=MagicMock(),
+        sqlite=MagicMock(),
+        trajectory_builder=MagicMock(),
+        events=MagicMock(),
+        curator=None,
+    )
+
+    class ServingReached(RuntimeError):
+        pass
+
+    def branch(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        orchestrator.apply_active_context_routing.assert_called_once_with(
+            ctx.settings,
+            ctx.active_context_routing,
+        )
+        raise ServingReached
+
+    with (
+        patch("autocontext.loop.generation_pipeline.stage_knowledge_setup", return_value=ctx),
+        patch(f"autocontext.loop.generation_pipeline.{branch_name}", side_effect=branch),
+        pytest.raises(ServingReached),
+    ):
+        pipeline.run_generation(ctx)
 
 
 class TestPipelineControllerCheckpoints:

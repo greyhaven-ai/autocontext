@@ -25,14 +25,30 @@ requires all of the following:
 2. Adaptive matched confirmation whose confidence interval clears the minimum
    effect.
 3. A held-out matched lane with no regression.
-4. A final compare-and-swap confirming that the tested parent is still active.
+4. A replay of the persisted raw trials under the exact persisted
+   `ConfirmationPolicy`; the replayed result must field-for-field match the
+   recorded comparison.
+5. A static serveability check that rejects unsupported routing fields,
+   construction-bound route changes, and DAG/tuning changes that require
+   lifecycle reconstruction.
+6. A final compare-and-swap confirming that the tested parent is still active.
 
 The serving commit is one atomic replacement of `active.json`. Bundle manifests
 are immutable and written before that pointer, so a reader sees either the
 complete incumbent or the complete candidate. Rejected and inconclusive
-results do not write the pointer. Each promotion records the exact candidate,
-incumbent, evaluator epoch, cohort, rationale, evidence summary, and rollback
-target under `context_bundles/promotions/`.
+results do not write the pointer. A confirmation policy cannot change while
+evidence is being collected. `matched_trials.json` schema 2 stores raw pairs,
+the policy, and its digest in one atomically replaced envelope. The candidate
+record is updated second; if that write is interrupted, replaying the same
+request recovers the record from the already-bound evidence without allowing a
+policy change. Legacy array artifacts and their lane/display-name pair keys are
+accepted explicitly, then rewritten to schema 2 after a verified replay.
+Legacy rows that collapse to the same current fixture-digest/seed identity fail
+closed. Terminal legacy candidates can only migrate already-identical evidence;
+new or changed terminal trials are rejected. Each promotion records the exact candidate,
+incumbent, evaluator epoch, cohort, policy and policy digest, rationale,
+replayed evidence summary, and rollback target under
+`context_bundles/promotions/`.
 
 ## Python API
 
