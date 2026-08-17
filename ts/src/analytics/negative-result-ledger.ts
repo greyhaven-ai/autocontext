@@ -10,9 +10,29 @@ export const FAILURE_KINDS = [
 ] as const;
 
 export const NEGATIVE_RESULT_DISPOSITIONS = ["caution", "hard_ban", "noise"] as const;
+export const NEGATIVE_RESULT_APPLICABILITY_SCOPES = [
+  "exact_bundle",
+  "bundle_family",
+  "scenario_local",
+  "cross_scenario",
+  "context_unknown",
+] as const;
+export const NEGATIVE_RESULT_RETEST_OUTCOMES = [
+  "confirmed",
+  "not_reproduced",
+  "inconclusive",
+] as const;
 
 export type FailureKind = (typeof FAILURE_KINDS)[number];
 export type NegativeResultDisposition = (typeof NEGATIVE_RESULT_DISPOSITIONS)[number];
+export type NegativeResultApplicabilityScope = (typeof NEGATIVE_RESULT_APPLICABILITY_SCOPES)[number];
+export type NegativeResultRetestOutcome = (typeof NEGATIVE_RESULT_RETEST_OUTCOMES)[number];
+export type NegativeResultApplicabilityState =
+  | "applicable"
+  | "qualified"
+  | "retest_due"
+  | "superseded"
+  | "excluded";
 
 export interface NegativeResultEventInput {
   event_id?: string;
@@ -40,6 +60,42 @@ export interface NegativeBranchLineageEdge {
   event_id: string | null;
 }
 
+export interface NegativeComponentDependency {
+  component_kind: string;
+  key: string;
+  digest: string;
+}
+
+export interface NegativeResultContext {
+  scenario_name: string | null;
+  context_bundle_digest: string | null;
+  context_bundle_family: string | null;
+  evaluator_epoch: string | null;
+  verifier_digest: string | null;
+  trial_cohort: string | null;
+  component_dependencies: NegativeComponentDependency[];
+  environment_fingerprint: string | null;
+}
+
+export interface NegativeResultApplicabilityContext {
+  scenario_name: string;
+  context_bundle_digest: string;
+  context_bundle_family?: string | null;
+  evaluator_epoch: string;
+  verifier_digest?: string | null;
+  component_digests?: Record<string, string>;
+  environment_fingerprint?: string | null;
+  observed_at?: string | null;
+  stronger_evidence_available?: boolean;
+}
+
+export interface NegativeResultApplicability {
+  state: NegativeResultApplicabilityState;
+  effective_disposition: NegativeResultDisposition | null;
+  reason: string;
+  retest_eligible: boolean;
+}
+
 export interface NegativeResultEntry {
   result_id: string;
   branch_id: string;
@@ -54,6 +110,13 @@ export interface NegativeResultEntry {
   evaluated_probes: string[];
   branch_lineage: NegativeBranchLineageEdge[];
   evidence_refs: NegativeEvidenceReference[];
+  applicability_scope: NegativeResultApplicabilityScope;
+  context: NegativeResultContext;
+  evidence_expires_at: string | null;
+  safety_policy_authority: string | null;
+  retest_of_result_id: string | null;
+  retest_outcome: NegativeResultRetestOutcome | null;
+  superseded_by_result_id: string | null;
 }
 
 export interface FailureModeSummary {
@@ -64,7 +127,7 @@ export interface FailureModeSummary {
 }
 
 export interface NegativeResultLedger {
-  schema_version: 1;
+  schema_version: 2;
   run_id: string;
   generated_at: string;
   entries: NegativeResultEntry[];
@@ -74,7 +137,15 @@ export interface NegativeResultLedger {
 export interface BuildNegativeResultLedgerInput {
   runId: string;
   events: NegativeResultEventInput[];
+  scenarioName: string;
+  contextBundleDigest: string;
+  evaluatorEpoch: string;
   generatedAt?: string;
+  contextBundleFamily?: string;
+  verifierDigest?: string;
+  trialCohort?: string;
+  componentDependencies?: NegativeComponentDependency[];
+  environmentFingerprint?: string;
 }
 
 const NEGATIVE_EVENTS = new Set([
@@ -96,16 +167,28 @@ const EVENT_FAILURE_KIND: Record<string, FailureKind> = {
 };
 const FAILURE_KIND_SET = new Set<string>(FAILURE_KINDS);
 const DISPOSITION_SET = new Set<string>(NEGATIVE_RESULT_DISPOSITIONS);
+const APPLICABILITY_SCOPE_SET = new Set<string>(NEGATIVE_RESULT_APPLICABILITY_SCOPES);
+const RETEST_OUTCOME_SET = new Set<string>(NEGATIVE_RESULT_RETEST_OUTCOMES);
 
 export function buildNegativeResultLedger(
   input: BuildNegativeResultLedgerInput,
 ): NegativeResultLedger {
+  const defaults: NegativeResultContext = {
+    scenario_name: input.scenarioName ?? null,
+    context_bundle_digest: input.contextBundleDigest ?? null,
+    context_bundle_family: input.contextBundleFamily ?? null,
+    evaluator_epoch: input.evaluatorEpoch ?? null,
+    verifier_digest: input.verifierDigest ?? null,
+    trial_cohort: input.trialCohort ?? null,
+    component_dependencies: input.componentDependencies ?? [],
+    environment_fingerprint: input.environmentFingerprint ?? null,
+  };
   const entries = input.events.flatMap((event) => {
-    const entry = entryFromEvent(event);
+    const entry = entryFromEvent(event, defaults);
     return entry ? [entry] : [];
   });
   return parseNegativeResultLedger({
-    schema_version: 1,
+    schema_version: 2,
     run_id: input.runId,
     generated_at: input.generatedAt ?? new Date().toISOString(),
     entries,
@@ -114,11 +197,12 @@ export function buildNegativeResultLedger(
 }
 
 export function parseNegativeResultLedger(value: unknown): NegativeResultLedger {
-  const ledger = record(value, "negative result ledger");
+  const original = record(value, "negative result ledger");
+  const ledger = original.schema_version === 1 ? migrateV1Ledger(original) : original;
   exact(ledger, ["schema_version", "run_id", "generated_at", "entries", "failure_mode_summary"]);
-  if (ledger.schema_version !== 1) throw new Error("schema_version must be 1");
+  if (ledger.schema_version !== 2) throw new Error("schema_version must be 2");
   return {
-    schema_version: 1,
+    schema_version: 2,
     run_id: string(ledger.run_id, "run_id"),
     generated_at: string(ledger.generated_at, "generated_at"),
     entries: array(ledger.entries, "entries").map(parseEntry),
@@ -130,26 +214,31 @@ export function parseNegativeResultLedger(value: unknown): NegativeResultLedger 
 
 export function renderNegativeResultLessons(
   ledger: NegativeResultLedger,
-  opts: { maxEntries?: number } = {},
+  opts: { maxEntries?: number; applicabilityContext?: NegativeResultApplicabilityContext } = {},
 ): string {
   const rank: Record<NegativeResultDisposition, number> = { hard_ban: 0, caution: 1, noise: 2 };
   return ledger.entries
     .filter((entry) => entry.disposition !== "noise" && entry.evidence_refs.length > 0)
     .sort((left, right) => rank[left.disposition] - rank[right.disposition] || left.result_id.localeCompare(right.result_id))
     .slice(0, opts.maxEntries ?? 4)
-    .map((entry) => {
+    .flatMap((entry) => {
+      const applicability = evaluateNegativeResultApplicability(entry, opts.applicabilityContext);
+      if (applicability.state === "excluded" || applicability.state === "superseded") return [];
       const evidence = entry.evidence_refs.slice(0, 2).map((ref) => ref.summary).join("; ");
       const delta = entry.score_delta === null ? "" : `, delta=${entry.score_delta}`;
-      const prefix = entry.disposition === "hard_ban" ? "Hard ban" : "Caution";
-      const suffix = entry.disposition === "hard_ban"
+      const prefix = applicability.effective_disposition === "hard_ban" ? "Hard ban" : "Caution";
+      const suffix = applicability.effective_disposition === "hard_ban"
         ? "do not repeat without new evidence"
         : "not a ban; explore only with differentiating evidence";
-      return `- ${prefix}: ${entry.failure_kind} on ${entry.branch_id} (${entry.result_id}${delta}) — ${entry.reason}; evidence: ${evidence}; ${suffix}.`;
+      return [`- ${prefix}: ${entry.failure_kind} on ${entry.branch_id} (${entry.result_id}${delta}) — ${entry.reason}; applicability: ${applicability.reason}; evidence: ${evidence}; ${suffix}.`];
     })
     .join("\n");
 }
 
-export function negativeResultLedgerToMarkdown(ledger: NegativeResultLedger): string {
+export function negativeResultLedgerToMarkdown(
+  ledger: NegativeResultLedger,
+  applicabilityContext?: NegativeResultApplicabilityContext,
+): string {
   const summary = ledger.failure_mode_summary.map(
     (item) => `- ${item.failure_kind}/${item.disposition}: ${item.count} (${item.result_ids.join(", ")})`,
   );
@@ -160,9 +249,103 @@ export function negativeResultLedgerToMarkdown(ledger: NegativeResultLedger): st
     ...(summary.length ? summary : ["- None"]),
     "",
     "## Prompt Lessons",
-    renderNegativeResultLessons(ledger) || "- None",
+    renderNegativeResultLessons(ledger, { applicabilityContext }) || "- None",
     "",
   ].join("\n");
+}
+
+export function evaluateNegativeResultApplicability(
+  entry: NegativeResultEntry,
+  current?: NegativeResultApplicabilityContext,
+): NegativeResultApplicability {
+  if (entry.disposition === "noise") {
+    return applicability("excluded", null, "noise is retained for inspection but not injected", false);
+  }
+  if (entry.superseded_by_result_id) {
+    return applicability("superseded", null, `superseded by retest ${entry.superseded_by_result_id}`, false);
+  }
+  if (entry.applicability_scope === "context_unknown") {
+    return applicability(
+      "qualified",
+      "caution",
+      "legacy evidence has unknown context and cannot impose a hard ban",
+      true,
+    );
+  }
+  if (!current) {
+    return applicability(
+      "qualified",
+      "caution",
+      "current context was not supplied; applicability is unverified",
+      true,
+    );
+  }
+  const mismatch = scopeMismatch(entry.applicability_scope, entry.context, current);
+  if (mismatch) return applicability("retest_due", "caution", mismatch, true);
+  if (entry.context.evaluator_epoch !== current.evaluator_epoch) {
+    return applicability("retest_due", "caution", "evaluator epoch changed", true);
+  }
+  if (entry.context.verifier_digest && entry.context.verifier_digest !== current.verifier_digest) {
+    return applicability("retest_due", "caution", "verifier changed", true);
+  }
+  if (
+    entry.context.environment_fingerprint
+    && entry.context.environment_fingerprint !== current.environment_fingerprint
+  ) {
+    return applicability("retest_due", "caution", "environment fingerprint changed", true);
+  }
+  for (const dependency of entry.context.component_dependencies) {
+    const key = `${dependency.component_kind}:${dependency.key}`;
+    if (current.component_digests?.[key] !== dependency.digest) {
+      return applicability("retest_due", "caution", `dependency ${key} changed`, true);
+    }
+  }
+  if (entry.evidence_expires_at && isAtOrAfter(current.observed_at, entry.evidence_expires_at)) {
+    return applicability("retest_due", "caution", "evidence age limit was reached", true);
+  }
+  if (current.stronger_evidence_available) {
+    return applicability("retest_due", "caution", "stronger evidence is available", true);
+  }
+  if (
+    entry.disposition === "hard_ban"
+    && entry.applicability_scope === "cross_scenario"
+    && !entry.safety_policy_authority
+  ) {
+    return applicability(
+      "qualified",
+      "caution",
+      "cross-scenario hard ban lacks safety-policy authority",
+      true,
+    );
+  }
+  return applicability(
+    "applicable",
+    entry.disposition,
+    `matched ${entry.applicability_scope} context`,
+    true,
+  );
+}
+
+export function linkNegativeResultRetest(
+  ledger: NegativeResultLedger,
+  originalResultId: string,
+  retestEntry: NegativeResultEntry,
+): NegativeResultLedger {
+  if (retestEntry.retest_of_result_id !== originalResultId || retestEntry.retest_outcome === null) {
+    throw new Error("retest entry must link to the original and declare an outcome");
+  }
+  let found = false;
+  const entries = ledger.entries.map((entry) => {
+    if (entry.result_id !== originalResultId) return entry;
+    found = true;
+    return {
+      ...entry,
+      superseded_by_result_id: retestEntry.retest_outcome === "not_reproduced" ? retestEntry.result_id : null,
+    };
+  });
+  if (!found) throw new Error(`unknown original result: ${originalResultId}`);
+  entries.push(retestEntry);
+  return { ...ledger, entries, failure_mode_summary: failureModeSummary(entries) };
 }
 
 function parseEntry(value: unknown): NegativeResultEntry {
@@ -181,6 +364,13 @@ function parseEntry(value: unknown): NegativeResultEntry {
     "evaluated_probes",
     "branch_lineage",
     "evidence_refs",
+    "applicability_scope",
+    "context",
+    "evidence_expires_at",
+    "safety_policy_authority",
+    "retest_of_result_id",
+    "retest_outcome",
+    "superseded_by_result_id",
   ]);
   return {
     result_id: string(item.result_id, "result_id"),
@@ -196,6 +386,49 @@ function parseEntry(value: unknown): NegativeResultEntry {
     evaluated_probes: array(item.evaluated_probes, "evaluated_probes").map((probe) => string(probe, "probe")),
     branch_lineage: array(item.branch_lineage, "branch_lineage").map(parseLineageEdge),
     evidence_refs: array(item.evidence_refs, "evidence_refs").map(parseEvidenceReference),
+    applicability_scope: applicabilityScope(item.applicability_scope),
+    context: parseNegativeResultContext(item.context),
+    evidence_expires_at: nullableString(item.evidence_expires_at, "evidence_expires_at"),
+    safety_policy_authority: nullableString(item.safety_policy_authority, "safety_policy_authority"),
+    retest_of_result_id: nullableString(item.retest_of_result_id, "retest_of_result_id"),
+    retest_outcome: nullableRetestOutcome(item.retest_outcome),
+    superseded_by_result_id: nullableString(item.superseded_by_result_id, "superseded_by_result_id"),
+  };
+}
+
+function parseNegativeResultContext(value: unknown): NegativeResultContext {
+  const item = record(value, "negative result context");
+  exact(item, [
+    "scenario_name",
+    "context_bundle_digest",
+    "context_bundle_family",
+    "evaluator_epoch",
+    "verifier_digest",
+    "trial_cohort",
+    "component_dependencies",
+    "environment_fingerprint",
+  ]);
+  return {
+    scenario_name: nullableString(item.scenario_name, "scenario_name"),
+    context_bundle_digest: nullableString(item.context_bundle_digest, "context_bundle_digest"),
+    context_bundle_family: nullableString(item.context_bundle_family, "context_bundle_family"),
+    evaluator_epoch: nullableString(item.evaluator_epoch, "evaluator_epoch"),
+    verifier_digest: nullableString(item.verifier_digest, "verifier_digest"),
+    trial_cohort: nullableString(item.trial_cohort, "trial_cohort"),
+    component_dependencies: array(item.component_dependencies, "component_dependencies").map(
+      parseComponentDependency,
+    ),
+    environment_fingerprint: nullableString(item.environment_fingerprint, "environment_fingerprint"),
+  };
+}
+
+function parseComponentDependency(value: unknown): NegativeComponentDependency {
+  const item = record(value, "component dependency");
+  exact(item, ["component_kind", "key", "digest"]);
+  return {
+    component_kind: string(item.component_kind, "component_kind"),
+    key: string(item.key, "key"),
+    digest: string(item.digest, "digest"),
   };
 }
 
@@ -229,7 +462,10 @@ function parseFailureModeSummary(value: unknown): FailureModeSummary {
   };
 }
 
-function entryFromEvent(event: NegativeResultEventInput): NegativeResultEntry | null {
+function entryFromEvent(
+  event: NegativeResultEventInput,
+  defaults: NegativeResultContext,
+): NegativeResultEntry | null {
   const payload = event.payload ?? {};
   const eventType = event.event_type ?? event.event ?? "";
   const kind = eventFailureKind(payload, eventType);
@@ -240,6 +476,13 @@ function entryFromEvent(event: NegativeResultEventInput): NegativeResultEntry | 
   const eventId = event.event_id ?? (event.seq !== undefined ? `seq-${event.seq}` : "");
   const fallbackResultId = eventId || `negative-${branchId.length}`;
   const resultId = maybeString(payload.result_id) ?? fallbackResultId;
+  const context = contextFromPayload(payload, defaults);
+  const explicitScope = maybeApplicabilityScope(payload.applicability_scope);
+  const inferredScope: NegativeResultApplicabilityScope = context.scenario_name
+    && context.context_bundle_digest
+    && context.evaluator_epoch
+    ? "exact_bundle"
+    : "context_unknown";
   return {
     result_id: resultId,
     branch_id: branchId,
@@ -254,6 +497,13 @@ function entryFromEvent(event: NegativeResultEventInput): NegativeResultEntry | 
     evaluated_probes: stringArray(payload.evaluated_probes ?? payload.probes),
     branch_lineage: branchLineage(event, payload, eventId, branchId),
     evidence_refs: evidenceRefs(payload),
+    applicability_scope: explicitScope ?? inferredScope,
+    context,
+    evidence_expires_at: maybeString(payload.evidence_expires_at) ?? null,
+    safety_policy_authority: maybeString(payload.safety_policy_authority) ?? null,
+    retest_of_result_id: maybeString(payload.retest_of_result_id) ?? null,
+    retest_outcome: maybeRetestOutcome(payload.retest_outcome),
+    superseded_by_result_id: maybeString(payload.superseded_by_result_id) ?? null,
   };
 }
 
@@ -340,6 +590,99 @@ function evidenceRefFromRecord(value: unknown): NegativeEvidenceReference | null
   return uri && summary ? { uri, summary } : null;
 }
 
+function contextFromPayload(
+  payload: Record<string, unknown>,
+  defaults: NegativeResultContext,
+): NegativeResultContext {
+  const context = payload.context === undefined ? payload : record(payload.context, "negative result context");
+  const dependencies = Array.isArray(context.component_dependencies)
+    ? context.component_dependencies.flatMap((value) => {
+      try {
+        return [parseComponentDependency(value)];
+      } catch {
+        return [];
+      }
+    })
+    : defaults.component_dependencies;
+  return {
+    scenario_name: maybeString(context.scenario_name) ?? defaults.scenario_name,
+    context_bundle_digest: maybeString(context.context_bundle_digest) ?? defaults.context_bundle_digest,
+    context_bundle_family: maybeString(context.context_bundle_family) ?? defaults.context_bundle_family,
+    evaluator_epoch: maybeString(context.evaluator_epoch) ?? defaults.evaluator_epoch,
+    verifier_digest: maybeString(context.verifier_digest) ?? defaults.verifier_digest,
+    trial_cohort: maybeString(context.trial_cohort) ?? defaults.trial_cohort,
+    component_dependencies: dependencies,
+    environment_fingerprint: maybeString(context.environment_fingerprint) ?? defaults.environment_fingerprint,
+  };
+}
+
+function applicability(
+  state: NegativeResultApplicabilityState,
+  effectiveDisposition: NegativeResultDisposition | null,
+  reason: string,
+  retestEligible: boolean,
+): NegativeResultApplicability {
+  return {
+    state,
+    effective_disposition: effectiveDisposition,
+    reason,
+    retest_eligible: retestEligible,
+  };
+}
+
+function scopeMismatch(
+  scope: NegativeResultApplicabilityScope,
+  recorded: NegativeResultContext,
+  current: NegativeResultApplicabilityContext,
+): string | null {
+  if (!recorded.scenario_name || !recorded.evaluator_epoch) return "recorded context is incomplete";
+  if (scope === "exact_bundle" && recorded.context_bundle_digest !== current.context_bundle_digest) {
+    return "context bundle changed";
+  }
+  if (
+    scope === "bundle_family"
+    && (!recorded.context_bundle_family || recorded.context_bundle_family !== current.context_bundle_family)
+  ) {
+    return "context bundle family changed";
+  }
+  if (
+    ["exact_bundle", "bundle_family", "scenario_local"].includes(scope)
+    && recorded.scenario_name !== current.scenario_name
+  ) {
+    return "scenario changed";
+  }
+  return null;
+}
+
+function isAtOrAfter(observedAt: string | null | undefined, expiresAt: string): boolean {
+  const observed = observedAt ? Date.parse(observedAt) : Date.now();
+  const expires = Date.parse(expiresAt);
+  return Number.isNaN(observed) || Number.isNaN(expires) || observed >= expires;
+}
+
+function migrateV1Ledger(ledger: Record<string, unknown>): Record<string, unknown> {
+  const entries = array(ledger.entries, "entries").map((value) => ({
+    ...record(value, "negative result entry"),
+    applicability_scope: "context_unknown",
+    context: {
+      scenario_name: null,
+      context_bundle_digest: null,
+      context_bundle_family: null,
+      evaluator_epoch: null,
+      verifier_digest: null,
+      trial_cohort: null,
+      component_dependencies: [],
+      environment_fingerprint: null,
+    },
+    evidence_expires_at: null,
+    safety_policy_authority: null,
+    retest_of_result_id: null,
+    retest_outcome: null,
+    superseded_by_result_id: null,
+  }));
+  return { ...ledger, schema_version: 2, entries };
+}
+
 function record(value: unknown, label: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`);
   return value as Record<string, unknown>;
@@ -397,6 +740,28 @@ function disposition(value: unknown): NegativeResultDisposition {
   const result = string(value, "disposition");
   if (!DISPOSITION_SET.has(result)) throw new Error("disposition must be caution, hard_ban, or noise");
   return result as NegativeResultDisposition;
+}
+
+function applicabilityScope(value: unknown): NegativeResultApplicabilityScope {
+  const result = string(value, "applicability_scope");
+  const matched = NEGATIVE_RESULT_APPLICABILITY_SCOPES.find((candidate) => candidate === result);
+  if (!matched) throw new Error("applicability_scope must be known");
+  return matched;
+}
+
+function maybeApplicabilityScope(value: unknown): NegativeResultApplicabilityScope | undefined {
+  return NEGATIVE_RESULT_APPLICABILITY_SCOPES.find((candidate) => candidate === value);
+}
+
+function nullableRetestOutcome(value: unknown): NegativeResultRetestOutcome | null {
+  if (value === null) return null;
+  const matched = NEGATIVE_RESULT_RETEST_OUTCOMES.find((candidate) => candidate === value);
+  if (!matched) throw new Error("retest_outcome must be confirmed, not_reproduced, inconclusive, or null");
+  return matched;
+}
+
+function maybeRetestOutcome(value: unknown): NegativeResultRetestOutcome | null {
+  return NEGATIVE_RESULT_RETEST_OUTCOMES.find((candidate) => candidate === value) ?? null;
 }
 
 function array(value: unknown, label: string): unknown[] {

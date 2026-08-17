@@ -1,0 +1,227 @@
+{
+  "ledger": {
+    "schema_version": 2,
+    "run_id": "run-context-applicability",
+    "generated_at": "2026-08-17T12:00:00Z",
+    "entries": [
+      {
+        "result_id": "neg-caution",
+        "branch_id": "branch-caution",
+        "hypothesis_node_id": null,
+        "generation_index": 1,
+        "occurred_at": "2026-08-17T11:00:00Z",
+        "failure_kind": "verification_failed",
+        "disposition": "caution",
+        "reason": "Replay diverged under the active prompt.",
+        "score_delta": -0.1,
+        "evaluated_seeds": ["seed-1"],
+        "evaluated_probes": ["replay"],
+        "branch_lineage": [],
+        "evidence_refs": [{ "uri": "caution.json", "summary": "Replay diverged." }],
+        "applicability_scope": "exact_bundle",
+        "context": {
+          "scenario_name": "grid_ctf",
+          "context_bundle_digest": "sha256:bundle-a",
+          "context_bundle_family": "grid-family",
+          "evaluator_epoch": "eval-7",
+          "verifier_digest": "sha256:verifier-a",
+          "trial_cohort": "cohort-a",
+          "component_dependencies": [],
+          "environment_fingerprint": "linux-amd64:v1"
+        },
+        "evidence_expires_at": null,
+        "safety_policy_authority": null,
+        "retest_of_result_id": null,
+        "retest_outcome": null,
+        "superseded_by_result_id": null
+      },
+      {
+        "result_id": "neg-noise",
+        "branch_id": "branch-noise",
+        "hypothesis_node_id": null,
+        "generation_index": 1,
+        "occurred_at": "2026-08-17T11:05:00Z",
+        "failure_kind": "timeout",
+        "disposition": "noise",
+        "reason": "One worker timed out.",
+        "score_delta": null,
+        "evaluated_seeds": ["seed-2"],
+        "evaluated_probes": ["replay"],
+        "branch_lineage": [],
+        "evidence_refs": [{ "uri": "noise.json", "summary": "Retry passed." }],
+        "applicability_scope": "exact_bundle",
+        "context": {
+          "scenario_name": "grid_ctf",
+          "context_bundle_digest": "sha256:bundle-a",
+          "context_bundle_family": "grid-family",
+          "evaluator_epoch": "eval-7",
+          "verifier_digest": "sha256:verifier-a",
+          "trial_cohort": "cohort-a",
+          "component_dependencies": [],
+          "environment_fingerprint": "linux-amd64:v1"
+        },
+        "evidence_expires_at": null,
+        "safety_policy_authority": null,
+        "retest_of_result_id": null,
+        "retest_outcome": null,
+        "superseded_by_result_id": null
+      },
+      {
+        "result_id": "neg-hard-ban",
+        "branch_id": "branch-hard-ban",
+        "hypothesis_node_id": "node-hard-ban",
+        "generation_index": 2,
+        "occurred_at": "2026-08-17T11:10:00Z",
+        "failure_kind": "unsafe_action",
+        "disposition": "hard_ban",
+        "reason": "The scoped verifier rejected this action.",
+        "score_delta": -0.5,
+        "evaluated_seeds": ["seed-3"],
+        "evaluated_probes": ["contract"],
+        "branch_lineage": [],
+        "evidence_refs": [{ "uri": "hard-ban.json", "summary": "Violation reproduced." }],
+        "applicability_scope": "exact_bundle",
+        "context": {
+          "scenario_name": "grid_ctf",
+          "context_bundle_digest": "sha256:bundle-a",
+          "context_bundle_family": "grid-family",
+          "evaluator_epoch": "eval-7",
+          "verifier_digest": "sha256:verifier-a",
+          "trial_cohort": "cohort-a",
+          "component_dependencies": [
+            { "component_kind": "tool", "key": "move", "digest": "sha256:move-a" }
+          ],
+          "environment_fingerprint": "linux-amd64:v1"
+        },
+        "evidence_expires_at": "2026-09-01T00:00:00Z",
+        "safety_policy_authority": null,
+        "retest_of_result_id": null,
+        "retest_outcome": null,
+        "superseded_by_result_id": null
+      }
+    ],
+    "failure_mode_summary": [
+      {
+        "failure_kind": "timeout",
+        "disposition": "noise",
+        "count": 1,
+        "result_ids": ["neg-noise"]
+      },
+      {
+        "failure_kind": "unsafe_action",
+        "disposition": "hard_ban",
+        "count": 1,
+        "result_ids": ["neg-hard-ban"]
+      },
+      {
+        "failure_kind": "verification_failed",
+        "disposition": "caution",
+        "count": 1,
+        "result_ids": ["neg-caution"]
+      }
+    ]
+  },
+  "contexts": {
+    "matching": {
+      "scenario_name": "grid_ctf",
+      "context_bundle_digest": "sha256:bundle-a",
+      "context_bundle_family": "grid-family",
+      "evaluator_epoch": "eval-7",
+      "verifier_digest": "sha256:verifier-a",
+      "component_digests": { "tool:move": "sha256:move-a" },
+      "environment_fingerprint": "linux-amd64:v1",
+      "observed_at": "2026-08-17T12:00:00Z",
+      "stronger_evidence_available": false
+    },
+    "stale_evaluator": {
+      "scenario_name": "grid_ctf",
+      "context_bundle_digest": "sha256:bundle-a",
+      "context_bundle_family": "grid-family",
+      "evaluator_epoch": "eval-8",
+      "verifier_digest": "sha256:verifier-a",
+      "component_digests": { "tool:move": "sha256:move-a" },
+      "environment_fingerprint": "linux-amd64:v1",
+      "observed_at": "2026-08-17T12:00:00Z",
+      "stronger_evidence_available": false
+    }
+  },
+  "decisions": [
+    {
+      "result_id": "neg-caution",
+      "context": "matching",
+      "expected": {
+        "state": "applicable",
+        "effective_disposition": "caution",
+        "reason": "matched exact_bundle context",
+        "retest_eligible": true
+      }
+    },
+    {
+      "result_id": "neg-noise",
+      "context": "matching",
+      "expected": {
+        "state": "excluded",
+        "effective_disposition": null,
+        "reason": "noise is retained for inspection but not injected",
+        "retest_eligible": false
+      }
+    },
+    {
+      "result_id": "neg-hard-ban",
+      "context": "matching",
+      "expected": {
+        "state": "applicable",
+        "effective_disposition": "hard_ban",
+        "reason": "matched exact_bundle context",
+        "retest_eligible": true
+      }
+    },
+    {
+      "result_id": "neg-hard-ban",
+      "context": "stale_evaluator",
+      "expected": {
+        "state": "retest_due",
+        "effective_disposition": "caution",
+        "reason": "evaluator epoch changed",
+        "retest_eligible": true
+      }
+    }
+  ],
+  "successful_retest": {
+    "original_result_id": "neg-hard-ban",
+    "entry": {
+      "result_id": "neg-hard-ban-retest",
+      "branch_id": "branch-hard-ban-retest",
+      "hypothesis_node_id": "node-hard-ban",
+      "generation_index": 3,
+      "occurred_at": "2026-08-18T11:10:00Z",
+      "failure_kind": "verification_failed",
+      "disposition": "noise",
+      "reason": "The prior failure did not reproduce.",
+      "score_delta": 0.1,
+      "evaluated_seeds": ["seed-4"],
+      "evaluated_probes": ["contract"],
+      "branch_lineage": [],
+      "evidence_refs": [{ "uri": "retest.json", "summary": "Replay passed." }],
+      "applicability_scope": "exact_bundle",
+      "context": {
+        "scenario_name": "grid_ctf",
+        "context_bundle_digest": "sha256:bundle-a",
+        "context_bundle_family": "grid-family",
+        "evaluator_epoch": "eval-8",
+        "verifier_digest": "sha256:verifier-a",
+        "trial_cohort": "cohort-b",
+        "component_dependencies": [
+          { "component_kind": "tool", "key": "move", "digest": "sha256:move-a" }
+        ],
+        "environment_fingerprint": "linux-amd64:v1"
+      },
+      "evidence_expires_at": null,
+      "safety_policy_authority": null,
+      "retest_of_result_id": "neg-hard-ban",
+      "retest_outcome": "not_reproduced",
+      "superseded_by_result_id": null
+    },
+    "expected_superseded_by_result_id": "neg-hard-ban-retest"
+  }
+}

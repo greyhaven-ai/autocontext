@@ -9,6 +9,12 @@ All notable changes to this project will be documented in this file.
 - Python kernel evolution now supports a strict external benchmark contract,
   append-only champion lineage, fresh-protocol confirmation before promotion,
   and reproducible synthetic and live H100 examples.
+- Negative-result ledger schema v2 binds evidence to context-bundle,
+  evaluator, verifier, cohort, dependency, and environment identity. Scoped
+  applicability, explicit retest triggers, hard-ban authority, and durable
+  retest/supersession links prevent stale evidence from suppressing unrelated
+  exploration; Python and TypeScript safely migrate v1 ledgers as qualified
+  `context_unknown` evidence (AC-975).
 - Immutable, content-addressed `ContextBundle` manifests now group playbooks,
   hints, prompt and completion mutations, tool guidance/specifications,
   harness validators, and routing configuration under one evaluator epoch.
