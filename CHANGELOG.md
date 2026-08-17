@@ -9,6 +9,13 @@ All notable changes to this project will be documented in this file.
 - Python kernel evolution now supports a strict external benchmark contract,
   append-only champion lineage, fresh-protocol confirmation before promotion,
   and reproducible synthetic and live H100 examples.
+- Remote execution now has provider-neutral typed requests/results for images,
+  commands, resources, optional accelerators, network and scoped-secret policy,
+  artifacts, events, usage, and cleanup. The optional Prime Intellect adapter
+  contains no game scoring logic, supports bounded matched-trial reuse and
+  capability-gated warm/snapshot requests, and keeps infrastructure, task,
+  timeout, artifact, and cleanup failures distinct for external-eval ledgers
+  (AC-978).
 - Python code/research scenarios can now opt into capability-scoped,
   process-backed persistent workspaces with explicit file, import, subprocess,
   network, and typed host-bridge grants. Transactional executions, bounded

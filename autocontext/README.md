@@ -46,6 +46,11 @@ with explicit file, import, subprocess, network, and host-bridge grants. The
 existing restricted interpreter remains the default; see
 [capability-scoped research workspaces](../docs/research-workspaces.md).
 
+Remote tasks use a provider-neutral request/result contract for resources,
+artifacts, lifecycle, events, usage, and cleanup. Prime Intellect implements
+that contract as an optional adapter and no longer owns scenario scoring logic;
+see [remote execution sessions](../docs/remote-execution-sessions.md).
+
 ## Run from a checkout
 
 ```bash

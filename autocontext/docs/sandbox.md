@@ -3,7 +3,8 @@
 autocontext supports three shipped execution modes for game scenarios, plus judge-based evaluation for agent tasks:
 
 - `local` executor: runs strategies in a process pool with timeout controls, and applies memory limits in the subprocess path.
-- `primeintellect` executor: runs strategies remotely via PrimeIntellect sandbox lifecycle (create/wait/execute/delete).
+- `primeintellect` executor: runs declared tasks through the provider-neutral
+  remote-session contract and a Prime Intellect sandbox lifecycle.
 - `monty` executor: runs strategies in a pydantic-monty interpreter sandbox with external function callbacks and configurable timeout/call limits.
 - **Agent task evaluation**: Agent task scenarios bypass match execution entirely. `JudgeExecutor` delegates to `AgentTaskInterface.evaluate_output()`, which may use `LLMJudge` for LLM-based scoring against a rubric.
 
@@ -26,6 +27,14 @@ The public OSS contract for a future Gondolin adapter is intentionally narrow:
 - TypeScript: implement `GondolinBackend` from `autoctx` and start from `createDefaultGondolinSandboxPolicy()`.
 
 Remote sandbox snapshot and warming support is similarly adapter-neutral. Adapters may advertise `snapshot`, `restore`, `prebuild_repo_image`, `warm`, and `resolve_tunnel_ports` capabilities through the sandbox adapter contract. The core runner does not require those methods: local and persistent-host deployments can advertise no capabilities and boot fresh. Restore startup requires both an advertised restore capability and a non-empty snapshot reference. When a requested capability or required reference is missing, startup planning either fails closed or explicitly degrades to fresh according to policy, and sanitized capability events with safe reason codes can be shown in the background-session timeline.
+
+Prime Intellect requests use `RemoteExecutionRequest` rather than embedding
+scenario rules in the provider client. Ephemeral execution is the default;
+bounded matched-trial reuse and warm/snapshot startup are explicit,
+capability-checked lifecycle policies. Results distinguish task, provider,
+timeout, artifact, and cleanup failures and can be projected directly into an
+external-evaluation ledger. See
+[provider-neutral remote execution sessions](../../docs/remote-execution-sessions.md).
 
 The contract carries policy and secret references, not secret values. Hosted fleet orchestration, tenant scheduling, policy UI, billing, proactive warm-pool management, image-cache economics, and managed audit retention remain deployment concerns outside this OSS boundary. A deployment is not multi-tenant safe merely because it uses a remote sandbox; it also needs tenant-aware credential brokering, per-tenant filesystem/network isolation, egress policy, audit, retention, and abuse controls. See [Background execution trust boundaries and credential model](../../docs/background-execution-trust-boundaries.md).
 
@@ -65,5 +74,7 @@ recovery and audit contracts.
 ## Recovery Behavior
 
 - PrimeIntellect preflight probe retries according to control-plane backoff.
-- PrimeIntellect match execution retries with backoff around full sandbox lifecycle operations.
+- PrimeIntellect remote-session execution retries provider failures with
+  backoff around full sandbox lifecycle operations; candidate/task failures are
+  returned without infrastructure retry.
 - If remote execution remains unavailable, fallback replay/result payloads are generated and captured through normal recovery markers.

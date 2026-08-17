@@ -4,12 +4,15 @@ from __future__ import annotations
 
 from typing import Any
 
-__all__ = ["PrimeIntellectClient"]
+__all__ = ["PrimeIntellectClient", "UnsupportedRemoteCapabilityError"]
 
 
 def __getattr__(name: str) -> Any:
-    if name == "PrimeIntellectClient":
-        from .client import PrimeIntellectClient
+    if name in {"PrimeIntellectClient", "UnsupportedRemoteCapabilityError"}:
+        from .client import PrimeIntellectClient, UnsupportedRemoteCapabilityError
 
-        return PrimeIntellectClient
+        return {
+            "PrimeIntellectClient": PrimeIntellectClient,
+            "UnsupportedRemoteCapabilityError": UnsupportedRemoteCapabilityError,
+        }[name]
     raise AttributeError(name)

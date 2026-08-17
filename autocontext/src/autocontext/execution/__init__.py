@@ -11,6 +11,12 @@ from .phased_execution import (
     PhaseResult,
     split_budget,
 )
+from .remote_execution import (
+    RemoteAcceleratorRequest,
+    RemoteExecutionRequest,
+    RemoteExecutionResult,
+    RemoteResourceRequest,
+)
 from .research_workspace import (
     ResearchWorkspace,
     ResearchWorkspaceBenchmark,
@@ -69,6 +75,10 @@ __all__ = [
     "ResearchWorkspace",
     "ResearchWorkspaceBenchmark",
     "ResearchWorkspaceSnapshot",
+    "RemoteAcceleratorRequest",
+    "RemoteExecutionRequest",
+    "RemoteExecutionResult",
+    "RemoteResourceRequest",
     "WorkspaceCapabilityRequest",
     "WorkspaceResourceLimits",
     "benchmark_research_workspace",
