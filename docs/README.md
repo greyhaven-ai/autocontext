@@ -25,6 +25,7 @@ for scenario authoring and `autoctx serve mcp` for MCP clients.
 - [Hermes Curator + autocontext positioning](hermes-positioning.md)
 - [Python and TypeScript extension hooks](../autocontext/docs/extensions.md)
 - [Sandbox and executor notes](../autocontext/docs/sandbox.md)
+- [Capability-scoped research workspaces](research-workspaces.md)
 - [Persistent host worker](../autocontext/docs/persistent-host.md)
 - [Correctness-first external kernel evolution](../autocontext/docs/kernel-evolution.md)
 - [MLX host training notes](../autocontext/docs/mlx-training.md)

@@ -9,6 +9,13 @@ All notable changes to this project will be documented in this file.
 - Python kernel evolution now supports a strict external benchmark contract,
   append-only champion lineage, fresh-protocol confirmation before promotion,
   and reproducible synthetic and live H100 examples.
+- Python code/research scenarios can now opt into capability-scoped,
+  process-backed persistent workspaces with explicit file, import, subprocess,
+  network, and typed host-bridge grants. Transactional executions, bounded
+  resources, snapshots/restores, deterministic cleanup, and audit events keep
+  the current restricted interpreter as the safe default (AC-977). TypeScript
+  coordinates the shared runtime workspace boundary but does not embed a
+  parallel Python interpreter.
 - An optional Python `CampaignAuditor` now performs separately routed,
   read-only integrity reviews at bounded campaign checkpoints. Sanitized,
   fingerprinted evidence packets exclude holdout answers and credentials;

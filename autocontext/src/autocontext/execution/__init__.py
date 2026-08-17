@@ -11,6 +11,15 @@ from .phased_execution import (
     PhaseResult,
     split_budget,
 )
+from .research_workspace import (
+    ResearchWorkspace,
+    ResearchWorkspaceBenchmark,
+    ResearchWorkspaceSnapshot,
+    WorkspaceCapabilityRequest,
+    WorkspaceResourceLimits,
+    benchmark_research_workspace,
+    grant_workspace_access,
+)
 from .sandbox_adapter_contracts import (
     SANDBOX_CAPABILITY_NAMES,
     SandboxBootMode,
@@ -57,6 +66,13 @@ __all__ = [
     "PhasedExecutionPlan",
     "PhasedExecutionResult",
     "PhasedRunner",
+    "ResearchWorkspace",
+    "ResearchWorkspaceBenchmark",
+    "ResearchWorkspaceSnapshot",
+    "WorkspaceCapabilityRequest",
+    "WorkspaceResourceLimits",
+    "benchmark_research_workspace",
+    "grant_workspace_access",
     "lifecycle_hooks_for_boot_mode",
     "normalize_sandbox_adapter_capabilities",
     "plan_sandbox_startup",

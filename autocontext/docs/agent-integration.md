@@ -16,6 +16,17 @@ from generation artifacts rather than infer activation from a strategy
 `advance` decision. See [context bundles](../../docs/context-bundles.md) for the
 artifact and comparison contract.
 
+## Research workspace capabilities
+
+External agents that only need plain data exploration should use the default
+restricted interpreter. Code/research scenarios that need files, selected
+packages, or bounded subprocesses must explicitly request and receive a
+`trusted_local` or `isolated_sandbox` grant. Network and typed host-plane calls
+are separate grants, and credentials never enter the candidate kernel. See
+[capability-scoped research workspaces](../../docs/research-workspaces.md) for
+profiles, lifecycle, snapshots, timeout behavior, and Python/TypeScript
+responsibilities.
+
 ## Why CLI-First
 
 The `autoctx` CLI is the default integration surface for external agents. Unix-style CLI interfaces are a natural fit for LLM agents:
