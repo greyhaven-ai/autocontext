@@ -857,14 +857,15 @@ class TestStageAgentGeneration:
         ctx.strategy_interface = '{"aggression": float}'
 
         artifacts = MagicMock()
-        artifacts.persist_tools.return_value = ["tool1.py"]
         sqlite = MagicMock()
 
         result = stage_agent_generation(ctx, orchestrator=orch, artifacts=artifacts, sqlite=sqlite)
         assert result.outputs is not None
         assert len(result.outputs.role_executions) == 5
         assert isinstance(result.current_strategy, dict)
-        assert result.created_tools == ["tool1.py"]
+        assert result.created_tools == []
+        artifacts.persist_tools.assert_not_called()
+        artifacts.propose_context_bundle.assert_called_once()
 
     def test_raises_on_invalid_strategy(self) -> None:
         settings = _make_settings()
@@ -981,7 +982,7 @@ class TestStageAgentGeneration:
         assert isinstance(written_tracker, ToolUsageTracker)
         assert written_tracker.get_stats()["cluster_evaluator"].total_refs == 1
 
-    def test_persists_approved_harness_mutations_from_architect_output(self) -> None:
+    def test_stages_harness_mutations_in_context_candidate_namespace(self) -> None:
         scenario = _make_scenario_mock()
         ctx = _make_ctx(settings=_make_settings(), scenario=scenario)
 
@@ -1018,21 +1019,19 @@ class TestStageAgentGeneration:
         orchestrator = MagicMock()
         orchestrator.run_generation.return_value = outputs
         artifacts = MagicMock()
-        artifacts.persist_tools.return_value = []
-        artifacts.load_harness_mutations.return_value = []
         sqlite = MagicMock()
 
         stage_agent_generation(ctx, orchestrator=orchestrator, artifacts=artifacts, sqlite=sqlite)
 
-        artifacts.save_harness_mutations.assert_called_once()
-        call = artifacts.save_harness_mutations.call_args
+        artifacts.save_harness_mutations.assert_not_called()
+        call = artifacts.propose_context_bundle.call_args
         assert call.args[0] == ctx.scenario_name
-        saved = call.args[1]
-        assert len(saved) == 1
-        assert saved[0].target_role == "competitor"
-        assert saved[0].content == "Check edge cases"
-        assert call.kwargs["generation"] == ctx.generation
-        assert call.kwargs["run_id"] == ctx.run_id
+        proposed = call.kwargs["mutations"]
+        assert len(proposed) == 1
+        assert proposed[0].target_role == "competitor"
+        assert proposed[0].content == "Check edge cases"
+        assert call.kwargs["source_generation"] == ctx.generation
+        assert call.kwargs["source_run_id"] == ctx.run_id
 
     def test_multi_basin_branching_selects_best_candidate_in_live_path(self) -> None:
         from autocontext.prompts.templates import build_prompt_bundle

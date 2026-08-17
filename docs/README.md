@@ -72,6 +72,7 @@ metadata is available.
 - [Campaign mode report](campaign-mode-report.md)
 - [Goal run report](goal-run-report.md)
 - [Playbook approval gate](playbook-approval-gate.md)
+- [Immutable context bundles and outcome-gated promotion](context-bundles.md)
 - [Derived lesson curation](derived-lesson-curation.md)
 - [Soft structural hints](soft-structural-hints.md)
 - [Span-level credit attribution](span-credit-attribution.md)

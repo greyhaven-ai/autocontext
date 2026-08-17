@@ -4,6 +4,12 @@
 
 Use the Python package when you need the full Python control plane or local MLX/CUDA training implementation. Use this package when you need Node, npm, the TUI, Fetch/agent adapters, or TypeScript library APIs.
 
+The `autoctx/context-bundles` subpath provides the cross-runtime immutable
+manifest, canonical digest, and matched-confirmation contract used by the
+Python control plane. It validates the same shared fixtures and can be used by
+Node evaluators before they return promotion evidence. See
+[context bundles](../docs/context-bundles.md).
+
 ## Install
 
 The npm package requires Node.js 22.19.0 or newer. The pinned development

@@ -96,6 +96,12 @@ class GenerationContext:
     challenger_uncertainty: float | None = None
     require_playbook_approval: bool = False
 
+    # AC-973: immutable active/candidate context lineage. Architect and coach
+    # outputs remain candidates until matched confirmation promotes the digest.
+    active_context_bundle_digest: str | None = None
+    candidate_context_bundle_digest: str | None = None
+    evaluator_epoch: str | None = None
+
 
 @dataclass(slots=True)
 class StageResult:

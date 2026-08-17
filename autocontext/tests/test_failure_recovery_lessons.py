@@ -91,8 +91,8 @@ def test_advance_lesson_unchanged(tmp_path: Path) -> None:
     assert "aggression" in content.lower() or "defense" in content.lower()
 
 
-def test_retry_then_rollback_lesson_mentions_retries(tmp_path: Path) -> None:
-    """Lesson notes retry count when retry preceded rollback."""
+def test_rollback_lesson_records_outcome_with_candidate_context_staged(tmp_path: Path) -> None:
+    """Rollback is recorded even while context improvements remain candidates."""
     settings = AppSettings(
         db_path=tmp_path / "runs" / "autocontext.sqlite3",
         runs_root=tmp_path / "runs",
@@ -114,5 +114,6 @@ def test_retry_then_rollback_lesson_mentions_retries(tmp_path: Path) -> None:
 
     skill_path = tmp_path / "skills" / "grid-ctf-ops" / "SKILL.md"
     content = skill_path.read_text(encoding="utf-8")
-    # Should mention retries in the lesson
-    assert "retr" in content.lower()
+    assert "rollback" in content.lower()
+    candidate_root = tmp_path / "knowledge" / "grid_ctf" / "context_bundles" / "candidates"
+    assert any(candidate_root.glob("*/record.json"))

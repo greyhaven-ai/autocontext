@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 from autocontext.agents.architect import parse_dag_changes
 from autocontext.agents.parsers import parse_analyst_exec, parse_architect_exec, parse_coach_exec, parse_competitor_output
 from autocontext.agents.types import AgentOutputs
+from autocontext.context_bundles import CandidateRecord, evaluator_epoch_for, routing_snapshot
 from autocontext.harness.evaluation.failure_report import FailureReport, MatchDiagnosis
 from autocontext.harness.evaluation.runner import EvaluationRunner
 from autocontext.harness.evaluation.scenario_evaluator import ScenarioEvaluator
@@ -23,7 +24,6 @@ from autocontext.loop.remediation_router import (
     route_remediations,
 )
 from autocontext.loop.signature_surfacer import surface_for_strategy
-from autocontext.loop.stage_helpers.harness_mutations import persist_approved_harness_mutations
 from autocontext.loop.stage_types import GenerationContext
 
 
@@ -410,23 +410,39 @@ def stage_tree_search(
         ],
     )
 
-    created_tools = artifacts.persist_tools(ctx.scenario_name, ctx.generation, outputs.architect_tools)
-    if settings.harness_validators_enabled and outputs.architect_harness_specs:
-        artifacts.persist_harness(ctx.scenario_name, ctx.generation, outputs.architect_harness_specs)
-    persist_approved_harness_mutations(
-        artifacts,
-        ctx.scenario_name,
-        generation=ctx.generation,
-        run_id=ctx.run_id,
-        proposed=parse_mutations(outputs.architect_markdown),
-    )
-
     ctx.dag_changes = parse_dag_changes(outputs.architect_markdown)
 
     if settings.config_adaptive_enabled:
         from autocontext.knowledge.tuning import parse_tuning_proposal
 
         ctx.tuning_proposal = parse_tuning_proposal(outputs.architect_markdown)
+
+    proposed_routing = routing_snapshot(settings)
+    if ctx.dag_changes:
+        proposed_routing["dag_changes"] = ctx.dag_changes
+    if ctx.tuning_proposal is not None:
+        proposed_routing["tuning_proposal"] = ctx.tuning_proposal.to_json()
+    ctx.evaluator_epoch = ctx.evaluator_epoch or evaluator_epoch_for(ctx.scenario, settings)
+    candidate_record = (
+        None
+        if settings.ablation_no_feedback
+        else artifacts.propose_context_bundle(
+            ctx.scenario_name,
+            evaluator_epoch=ctx.evaluator_epoch,
+            source_run_id=ctx.run_id,
+            source_generation=ctx.generation,
+            playbook=outputs.coach_playbook,
+            hints=outputs.coach_competitor_hints,
+            mutations=parse_mutations(outputs.architect_markdown),
+            tool_specs=outputs.architect_tools,
+            harness_specs=(outputs.architect_harness_specs if settings.harness_validators_enabled else []),
+            routing_config=proposed_routing,
+            rationale="tree-search context proposal",
+        )
+    )
+    ctx.candidate_context_bundle_digest = (
+        candidate_record.bundle_digest if isinstance(candidate_record, CandidateRecord) else None
+    )
 
     # ── Replay narrative from best match ─────────────────────────────
     best_eval = max(final_tournament.results, key=lambda r: r.score)
@@ -438,7 +454,7 @@ def stage_tree_search(
     # ── Update ctx for downstream stages ─────────────────────────────
     ctx.outputs = outputs
     ctx.current_strategy = best_strategy
-    ctx.created_tools = created_tools
+    ctx.created_tools = []
     ctx.strategy_interface = strategy_interface
     ctx.tool_context = ctx.tool_context
     ctx.tournament = final_tournament

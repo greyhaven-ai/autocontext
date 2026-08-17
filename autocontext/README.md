@@ -4,6 +4,12 @@ This package is the Python control plane for autocontext: scenario runs, `solve`
 
 Use it when you want the full harness in Python, a CLI installed with `uv`/`pip`, or the MCP/HTTP server that coding agents can call.
 
+Generation output that changes prompts or harness behavior is staged as an
+immutable `ContextBundle`. It becomes active only after matched screening,
+adaptive confirmation, and held-out evaluation; a successful strategy gate by
+itself does not activate a context edit. The artifact layout and Python API are
+documented in [context bundles](../docs/context-bundles.md).
+
 ## Install
 
 ```bash

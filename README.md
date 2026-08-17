@@ -71,10 +71,14 @@ runs/<run_id>/
 knowledge/<scenario>/
 ├── playbook.md
 ├── hints.md
-└── tools/
+├── tools/
+└── context_bundles/{bundles,candidates,promotions,active.json}
 ```
 
 Everything is filesystem-first: inspect it, diff it, replay it, export it, or feed it into training.
+Coach and architect context changes are stored as immutable candidates and are
+not served until matched candidate/incumbent trials confirm them. See
+[context bundles and outcome-gated promotion](docs/context-bundles.md).
 
 ## Core Surfaces
 

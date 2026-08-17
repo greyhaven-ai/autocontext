@@ -12,6 +12,16 @@ from typing import TYPE_CHECKING, Any
 from autocontext.agents.architect import parse_dag_changes
 from autocontext.agents.runtime_session_wiring import run_runtime_session_scope
 from autocontext.config.harness_profile import render_harness_tool_context, resolve_harness_runtime_profile
+from autocontext.context_bundles import (
+    CandidateRecord,
+    ComponentKind,
+    ContextBundle,
+    bundle_mutations,
+    bundle_text,
+    bundle_tool_context,
+    evaluator_epoch_for,
+    routing_snapshot,
+)
 from autocontext.harness.mutations.parser import parse_mutations
 from autocontext.harness.pipeline.holdout import HoldoutResult
 from autocontext.harness.pipeline.trend_gate import TrendAwareGate
@@ -73,7 +83,6 @@ from autocontext.loop.stage_helpers.freshness import (
 from autocontext.loop.stage_helpers.harness_mutations import (
     apply_harness_mutations_to_prompts,
     load_active_harness_mutations,
-    persist_approved_harness_mutations,
     render_context_policy_block,
     render_tool_instruction_block,
 )
@@ -236,8 +245,33 @@ def stage_knowledge_setup(
     state = scenario.initial_state(seed=ctx.settings.seed_base + ctx.generation)
     observation = scenario.get_observation(state, player_id="challenger")
 
+    evaluator_epoch = evaluator_epoch_for(scenario, ctx.settings)
+    active_context = (
+        None
+        if ablation
+        else artifacts.ensure_context_bundle_baseline(
+            ctx.scenario_name,
+            evaluator_epoch=evaluator_epoch,
+            routing_config=routing_snapshot(ctx.settings),
+        )
+    )
+    if not isinstance(active_context, ContextBundle):
+        # Test doubles and older third-party ArtifactStore implementations keep
+        # the legacy read path until they implement the bundle surface.
+        active_context = None
+    ctx.evaluator_epoch = evaluator_epoch
+    ctx.active_context_bundle_digest = active_context.digest if active_context is not None else None
+
     playbook = "" if ablation else artifacts.read_playbook(ctx.scenario_name)
     tool_context = "" if ablation else artifacts.read_tool_context(ctx.scenario_name)
+    if not ablation and active_context is not None:
+        playbook = bundle_text(
+            active_context,
+            ComponentKind.PLAYBOOK,
+            "playbook",
+            default=playbook,
+        )
+        tool_context = bundle_tool_context(active_context)
     skills_context = "" if ablation else artifacts.read_skills(ctx.scenario_name)
     recent_analysis = "" if ablation else artifacts.read_latest_advance_analysis(ctx.scenario_name, ctx.generation)
     analyst_feedback = "" if ablation else _load_analyst_feedback_section(ctx, artifacts=artifacts)
@@ -281,6 +315,13 @@ def stage_knowledge_setup(
     score_trajectory = "" if ablation else trajectory_builder.build_trajectory(ctx.run_id)
     strategy_registry = "" if ablation else trajectory_builder.build_strategy_registry(ctx.run_id)
     coach_hints_for_prompt = "" if ablation else ctx.coach_competitor_hints
+    if not ablation and active_context is not None:
+        coach_hints_for_prompt = bundle_text(
+            active_context,
+            ComponentKind.HINTS,
+            "hints",
+            default=coach_hints_for_prompt,
+        )
     freshness_notes: list[str] = []
     if not isinstance(session_reports, str):
         session_reports = ""
@@ -357,6 +398,8 @@ def stage_knowledge_setup(
     evidence_cache_lookups = 0
     notebook_contexts: dict[str, str] | None = None
     active_harness_mutations = [] if ablation else load_active_harness_mutations(artifacts, ctx.scenario_name)
+    if not ablation and active_context is not None:
+        active_harness_mutations = bundle_mutations(active_context)
     if not ablation:
         raw_notebook = artifacts.read_notebook(ctx.run_id)
         if isinstance(raw_notebook, dict):
@@ -440,7 +483,14 @@ def stage_knowledge_setup(
     ctx.strategy_interface = strategy_interface
     ctx.tool_context = tool_context
     ctx.base_playbook = playbook
-    ctx.base_tool_names = [] if ablation else _normalize_tool_names(artifacts.list_tool_names(ctx.scenario_name))
+    if not ablation and active_context is not None:
+        ctx.base_tool_names = sorted(
+            component.key
+            for component in active_context.components
+            if component.kind == ComponentKind.TOOL_SPEC
+        )
+    else:
+        ctx.base_tool_names = [] if ablation else _normalize_tool_names(artifacts.list_tool_names(ctx.scenario_name))
     ctx.base_analysis = recent_analysis
     ctx.base_lessons = skills_context
     return ctx
@@ -548,19 +598,6 @@ def stage_agent_generation(
                     "tokens": role_execution.usage.input_tokens + role_execution.usage.output_tokens,
                 },
             )
-    created_tools = artifacts.persist_tools(ctx.scenario_name, ctx.generation, outputs.architect_tools)
-
-    # Persist harness validators if enabled
-    if ctx.settings.harness_validators_enabled and outputs.architect_harness_specs:
-        artifacts.persist_harness(ctx.scenario_name, ctx.generation, outputs.architect_harness_specs)
-    persist_approved_harness_mutations(
-        artifacts,
-        ctx.scenario_name,
-        generation=ctx.generation,
-        run_id=ctx.run_id,
-        proposed=parse_mutations(outputs.architect_markdown),
-    )
-
     # Parse DAG change directives from architect output
     ctx.dag_changes = parse_dag_changes(outputs.architect_markdown)
 
@@ -568,9 +605,36 @@ def stage_agent_generation(
     if ctx.settings.config_adaptive_enabled:
         ctx.tuning_proposal = parse_tuning_proposal(outputs.architect_markdown)
 
+    proposed_routing = routing_snapshot(ctx.settings)
+    if ctx.dag_changes:
+        proposed_routing["dag_changes"] = ctx.dag_changes
+    if ctx.tuning_proposal is not None:
+        proposed_routing["tuning_proposal"] = ctx.tuning_proposal.to_json()
+    candidate_record = (
+        None
+        if ctx.settings.ablation_no_feedback
+        else artifacts.propose_context_bundle(
+            ctx.scenario_name,
+            evaluator_epoch=ctx.evaluator_epoch or evaluator_epoch_for(ctx.scenario, ctx.settings),
+            source_run_id=ctx.run_id,
+            source_generation=ctx.generation,
+            playbook=outputs.coach_playbook,
+            hints=outputs.coach_competitor_hints,
+            mutations=parse_mutations(outputs.architect_markdown),
+            tool_specs=outputs.architect_tools,
+            harness_specs=(outputs.architect_harness_specs if ctx.settings.harness_validators_enabled else []),
+            routing_config=proposed_routing,
+            rationale="generation context proposal",
+        )
+    )
+    ctx.candidate_context_bundle_digest = (
+        candidate_record.bundle_digest if isinstance(candidate_record, CandidateRecord) else None
+    )
+
     ctx.outputs = outputs
     ctx.current_strategy = selected_strategy
-    ctx.created_tools = created_tools
+    # Candidate tools are not live or reported as created until promotion.
+    ctx.created_tools = []
     ctx.exploration_metadata = exploration_metadata
     _update_tool_usage_feedback(ctx, artifacts=artifacts)
     return ctx
@@ -1082,6 +1146,12 @@ def stage_persistence(
         metrics["exploration"] = ctx.exploration_metadata
     if ctx.cost_control_metadata:
         metrics["cost_control"] = ctx.cost_control_metadata
+    metrics["context_bundle"] = {
+        "active_digest": ctx.active_context_bundle_digest,
+        "candidate_digest": ctx.candidate_context_bundle_digest,
+        "evaluator_epoch": ctx.evaluator_epoch,
+        "candidate_namespace_only": bool(ctx.candidate_context_bundle_digest),
+    }
     credit_assignment = _build_credit_assignment_record(ctx, artifacts=artifacts)
     if credit_assignment is not None:
         metrics["credit_assignment"] = credit_assignment.to_dict()
@@ -1135,7 +1205,13 @@ def stage_persistence(
         coach_md=outputs.coach_markdown,
         architect_md=outputs.architect_markdown,
         scenario_name=scenario_name,
-        coach_playbook=outputs.coach_playbook if gate_decision == "advance" else "",
+        # AC-973: the coach output is already captured in an immutable candidate
+        # bundle. A strategy gate is not causal evidence for that context edit.
+        coach_playbook=(
+            outputs.coach_playbook
+            if gate_decision == "advance" and ctx.active_context_bundle_digest is None
+            else ""
+        ),
         require_playbook_approval=ctx.require_playbook_approval,
     )
     if playbook_result == "pending":
@@ -1189,7 +1265,11 @@ def stage_persistence(
     # 8. Carry forward coach hints.
     coach_competitor_hints = outputs.coach_competitor_hints
     hint_metadata = _hint_metadata(ctx, coach_competitor_hints, gate_decision=gate_decision)
-    if settings.hint_volume_enabled and not settings.ablation_no_feedback:
+    if (
+        settings.hint_volume_enabled
+        and not settings.ablation_no_feedback
+        and ctx.active_context_bundle_digest is None
+    ):
         raw_manager = artifacts.read_hint_manager(scenario_name, policy=_hint_volume_policy(ctx))
         manager = raw_manager if isinstance(raw_manager, HintManager) else HintManager(_hint_volume_policy(ctx))
         if not manager.active_hints() and ctx.applied_competitor_hints.strip():
@@ -1203,7 +1283,7 @@ def stage_persistence(
         ctx.coach_competitor_hints = manager.format_for_competitor()
         if ctx.coach_competitor_hints or manager.archived_hints():
             artifacts.write_hint_manager(scenario_name, manager)
-    else:
+    elif ctx.active_context_bundle_digest is None:
         ctx.coach_competitor_hints = coach_competitor_hints
         if gate_decision == "advance" and coach_competitor_hints:
             artifacts.write_hints(scenario_name, coach_competitor_hints, metadata=hint_metadata)
@@ -1213,7 +1293,12 @@ def stage_persistence(
         _persist_progress_snapshot(ctx, artifacts=artifacts)
 
     # 9. Persist tuning proposal on advance
-    if ctx.tuning_proposal is not None and settings.config_adaptive_enabled and gate_decision == "advance":
+    if (
+        ctx.tuning_proposal is not None
+        and settings.config_adaptive_enabled
+        and gate_decision == "advance"
+        and ctx.active_context_bundle_digest is None
+    ):
         artifacts.write_tuning(scenario_name, ctx.tuning_proposal.to_json())
 
     # 10. Emit generation_completed event
@@ -1235,6 +1320,9 @@ def stage_persistence(
             "cost_control": ctx.cost_control_metadata or {},
             "credit_assignment": credit_assignment.to_dict() if credit_assignment is not None else None,
             "created_tools": ctx.created_tools,
+            "active_context_bundle_digest": ctx.active_context_bundle_digest,
+            "candidate_context_bundle_digest": ctx.candidate_context_bundle_digest,
+            "evaluator_epoch": ctx.evaluator_epoch,
         },
     )
 

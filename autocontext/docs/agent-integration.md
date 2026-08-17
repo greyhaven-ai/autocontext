@@ -4,6 +4,18 @@ autocontext provides three integration surfaces for external agents: the `autoct
 
 For the canonical user-facing and runtime vocabulary behind those surfaces, see [../../docs/concept-model.md](../../docs/concept-model.md).
 
+## Context mutation safety
+
+Coach and architect output that would change the playbook, hints, prompts,
+tools, validators, or routing is a proposal, not an immediate live write. The
+Python control plane records it as an immutable context-bundle candidate. An
+external evaluator must return matched candidate/incumbent trials from the same
+fixtures, seeds, cohort, and evaluator epoch before promotion is possible.
+Integrations should retain and display the active and candidate bundle digests
+from generation artifacts rather than infer activation from a strategy
+`advance` decision. See [context bundles](../../docs/context-bundles.md) for the
+artifact and comparison contract.
+
 ## Why CLI-First
 
 The `autoctx` CLI is the default integration surface for external agents. Unix-style CLI interfaces are a natural fit for LLM agents:

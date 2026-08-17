@@ -9,6 +9,14 @@ All notable changes to this project will be documented in this file.
 - Python kernel evolution now supports a strict external benchmark contract,
   append-only champion lineage, fresh-protocol confirmation before promotion,
   and reproducible synthetic and live H100 examples.
+- Immutable, content-addressed `ContextBundle` manifests now group playbooks,
+  hints, prompt and completion mutations, tool guidance/specifications,
+  harness validators, and routing configuration under one evaluator epoch.
+  Architect and coach output lands in a candidate namespace; matched screening,
+  adaptive confirmation, and a held-out lane are required before one atomic
+  active-pointer promotion. Promotion records include exact lineage, cohort,
+  rationale, and rollback target. Python and TypeScript share canonical digests
+  and parity fixtures through `autoctx/context-bundles` (AC-973).
 
 ## [0.16.1] - 2026-08-14
 

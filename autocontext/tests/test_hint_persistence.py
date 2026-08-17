@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from autocontext.config import AppSettings
+from autocontext.context_bundles import ComponentKind, ContextBundleStore
 from autocontext.knowledge.hint_volume import HintManager, HintVolumePolicy
 from autocontext.loop import GenerationRunner
 from autocontext.storage import ArtifactStore
@@ -34,22 +35,35 @@ def _run_gen(tmp_path: Path, run_id: str, gens: int = 1, **overrides) -> Generat
     return runner
 
 
-def test_hints_written_on_advance(tmp_path: Path) -> None:
+def _proposed_bundles(tmp_path: Path):
+    store = ContextBundleStore(tmp_path / "knowledge")
+    records = (tmp_path / "knowledge" / "grid_ctf" / "context_bundles" / "candidates").glob("*/record.json")
+    for record_path in records:
+        if '"lifecycle": "proposed"' in record_path.read_text(encoding="utf-8"):
+            yield store.load_bundle("grid_ctf", record_path.parent.name)
+
+
+def test_hints_staged_as_candidate_on_advance(tmp_path: Path) -> None:
     _run_gen(tmp_path, "hints_w", gens=1)
     hints_path = tmp_path / "knowledge" / "grid_ctf" / "hints.md"
     assert hints_path.exists()
-    assert hints_path.read_text(encoding="utf-8").strip()
+    assert not hints_path.read_text(encoding="utf-8").strip()
+    assert any(
+        component.content.strip()
+        for bundle in _proposed_bundles(tmp_path)
+        for component in bundle.components_of_kind(ComponentKind.HINTS)
+    )
 
 
-def test_hints_not_written_on_rollback(tmp_path: Path) -> None:
+def test_candidate_hints_not_activated_on_rollback(tmp_path: Path) -> None:
     # High threshold forces rollback on gen 2
     _run_gen(tmp_path, "hints_rb", gens=2, backpressure_min_delta=0.4, max_retries=0)
     hints_path = tmp_path / "knowledge" / "grid_ctf" / "hints.md"
-    # Hints should exist from gen 1 advance, but shouldn't be overwritten by gen 2 rollback
-    if hints_path.exists():
-        content = hints_path.read_text(encoding="utf-8")
-        # The content should be from gen 1, not gen 2
-        assert content.strip()
+    # A strategy advance is not causal evidence for its proposed context. The
+    # active compatibility mirror therefore remains the empty baseline.
+    assert hints_path.exists()
+    assert not hints_path.read_text(encoding="utf-8").strip()
+    assert list(_proposed_bundles(tmp_path))
 
 
 def test_hints_loaded_on_run_start(tmp_path: Path) -> None:
