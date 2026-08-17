@@ -10,6 +10,7 @@ Orchestrates the autoresearch-style experiment loop:
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import re
@@ -20,6 +21,7 @@ import time
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
+from typing import Literal
 
 from autocontext.agents.llm_client import LanguageModelClient, build_client_from_settings
 from autocontext.config.settings import load_settings
@@ -30,6 +32,15 @@ from autocontext.training.model_registry import (
     publish_training_output,
 )
 from autocontext.training.scale import training_scale_metadata_from_config
+from autocontext.training.statistical_confirmation import (
+    TrainingPromotionArtifact,
+    TrainingPromotionProtocol,
+    TrainingPromotionTrial,
+    TrialExecutor,
+    evaluate_training_promotion,
+    run_adaptive_confirmation,
+)
+from autocontext.util.json_io import write_json
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +98,20 @@ class TrainingConfig:
     opd_pressure_mode: str = "full_kl"  # opd backend: full_kl | sample_positive | sample_positive_reverse_negative
     fine_tune_type: str = "lora"  # mlxlm backend: lora | dora | full
     num_layers: int = 8  # mlxlm backend: number of layers to fine-tune
+    promotion_mode: Literal["deterministic", "adaptive"] = "deterministic"
+    promotion_min_effect: float = 0.01
+    promotion_initial_screen_pairs: int = 2
+    promotion_min_confirmation_pairs: int = 4
+    promotion_max_confirmation_pairs: int = 12
+    promotion_confirmation_batch_size: int = 2
+    promotion_heldout_pairs: int = 0
+    promotion_confidence_z: float = 1.96
+    promotion_dimension_regression_tolerance: float = 0.0
+    promotion_evaluator_epoch: str = "training-evaluator-v1"
+    promotion_verifier_digest: str = "training-summary-v1"
+    promotion_trial_cohort: str = "trainer-local"
+    promotion_fixtures: tuple[str, ...] = ("validation",)
+    promotion_seeds: tuple[int, ...] = tuple(range(16))
 
 
 @dataclass(slots=True)
@@ -102,6 +127,8 @@ class ExperimentResult:
     error_message: str = ""
     checkpoint_path: Path | None = None
     summary_metrics: dict[str, float] = field(default_factory=dict)
+    promotion_decision: str = ""
+    promotion_artifact_path: Path | None = None
 
 
 @dataclass(slots=True)
@@ -128,7 +155,13 @@ class TrainingResult:
 class TrainingRunner:
     """Manages the autoresearch experiment loop with git state machine."""
 
-    def __init__(self, config: TrainingConfig, *, work_dir: Path) -> None:
+    def __init__(
+        self,
+        config: TrainingConfig,
+        *,
+        work_dir: Path,
+        promotion_trial_executor: TrialExecutor | None = None,
+    ) -> None:
         self.config = config
         self.work_dir = work_dir
         # Capture the invocation cwd before any subprocess runs from the workspace, so a
@@ -136,8 +169,10 @@ class TrainingRunner:
         # stays importable in the subprocess (which runs from runs/train_<scenario>).
         self._invocation_cwd = Path.cwd()
         self._best_score = float("-inf")
+        self._best_valid_rate = 0.0
         self._best_experiment_index = -1
         self._backend = self._resolve_backend()
+        self._promotion_trial_executor = promotion_trial_executor
 
     def _resolve_backend(self) -> TrainingBackend:
         backend = default_backend_registry().get(self.config.backend)
@@ -522,9 +557,17 @@ class TrainingRunner:
                 error_message="missing training summary",
             )
 
-        improved = summary["avg_score"] > self._best_score
-        outcome = ExperimentOutcome.KEPT if improved else ExperimentOutcome.DISCARDED
+        promotion = self._decide_checkpoint_promotion(
+            experiment_index=experiment_index,
+            summary=summary,
+            checkpoint_dir=checkpoint_dir,
+        )
+        outcome = {
+            "accepted": ExperimentOutcome.KEPT,
+            "infrastructure_error": ExperimentOutcome.ERROR,
+        }.get(promotion.decision, ExperimentOutcome.DISCARDED)
         checkpoint_path = checkpoint_dir if outcome == ExperimentOutcome.KEPT else None
+        promotion_path = self._write_promotion_artifact(experiment_index, promotion)
         return ExperimentResult(
             experiment_index=experiment_index,
             avg_score=summary["avg_score"],
@@ -532,15 +575,161 @@ class TrainingRunner:
             peak_memory_mb=summary["peak_memory_mb"],
             training_seconds=summary["training_seconds"],
             outcome=outcome,
+            error_message="" if outcome == ExperimentOutcome.KEPT else promotion.reason,
             checkpoint_path=checkpoint_path,
             summary_metrics=dict(summary),
+            promotion_decision=promotion.decision,
+            promotion_artifact_path=promotion_path,
         )
+
+    def _promotion_protocol(self) -> TrainingPromotionProtocol:
+        return TrainingPromotionProtocol(
+            mode=self.config.promotion_mode,
+            initial_screen_pairs=self.config.promotion_initial_screen_pairs,
+            min_confirmation_pairs=self.config.promotion_min_confirmation_pairs,
+            max_confirmation_pairs=self.config.promotion_max_confirmation_pairs,
+            confirmation_batch_size=self.config.promotion_confirmation_batch_size,
+            heldout_pairs=self.config.promotion_heldout_pairs,
+            min_effect=self.config.promotion_min_effect,
+            confidence_z=self.config.promotion_confidence_z,
+            dimension_regression_tolerance=self.config.promotion_dimension_regression_tolerance,
+        )
+
+    def _decide_checkpoint_promotion(
+        self,
+        *,
+        experiment_index: int,
+        summary: dict[str, float],
+        checkpoint_dir: Path,
+    ) -> TrainingPromotionArtifact:
+        protocol = self._promotion_protocol()
+        challenger_id = f"experiment-{experiment_index}:{checkpoint_dir}"
+        if self._best_experiment_index < 0:
+            return TrainingPromotionArtifact(
+                incumbent_id="trainer-baseline",
+                challenger_id=challenger_id,
+                scenario=self.config.scenario,
+                evaluator_epoch=self.config.promotion_evaluator_epoch,
+                verifier_digest=self.config.promotion_verifier_digest,
+                cohort=self.config.promotion_trial_cohort,
+                decision="accepted",
+                phase="complete",
+                reason="first successful experiment establishes the trainer-local baseline",
+                trials=[],
+                mean_effect=None,
+                confidence_low=None,
+                confidence_high=None,
+                evaluation_cost=0.0,
+                next_trial_count=0,
+                protocol=protocol,
+            )
+
+        incumbent_id = f"experiment-{self._best_experiment_index}"
+        if self.config.promotion_mode == "adaptive":
+            if self._promotion_trial_executor is None:
+                return self._missing_promotion_executor_artifact(
+                    incumbent_id=incumbent_id,
+                    challenger_id=challenger_id,
+                    protocol=protocol,
+                )
+            return run_adaptive_confirmation(
+                incumbent_id=incumbent_id,
+                challenger_id=challenger_id,
+                scenario=self.config.scenario,
+                evaluator_epoch=self.config.promotion_evaluator_epoch,
+                verifier_digest=self.config.promotion_verifier_digest,
+                cohort=self.config.promotion_trial_cohort,
+                fixtures=list(self.config.promotion_fixtures),
+                seeds=list(self.config.promotion_seeds),
+                executor=self._promotion_trial_executor,
+                protocol=protocol,
+            )
+
+        trial = TrainingPromotionTrial(
+            trial_id=f"deterministic-{experiment_index}",
+            incumbent_id=incumbent_id,
+            challenger_id=challenger_id,
+            scenario=self.config.scenario,
+            evaluator_epoch=self.config.promotion_evaluator_epoch,
+            verifier_digest=self.config.promotion_verifier_digest,
+            cohort=self.config.promotion_trial_cohort,
+            fixture="training-summary",
+            fixture_digest=self._training_fixture_digest(),
+            seed=self.config.seed,
+            lane="screen",
+            incumbent_score=self._best_score,
+            challenger_score=summary["avg_score"],
+            incumbent_valid=self._best_valid_rate > 0,
+            challenger_valid=summary["valid_rate"] > 0,
+            incumbent_dimensions={"valid_rate": self._best_valid_rate},
+            challenger_dimensions={"valid_rate": summary["valid_rate"]},
+        )
+        return evaluate_training_promotion(
+            [trial],
+            incumbent_id=incumbent_id,
+            challenger_id=challenger_id,
+            scenario=self.config.scenario,
+            evaluator_epoch=self.config.promotion_evaluator_epoch,
+            verifier_digest=self.config.promotion_verifier_digest,
+            cohort=self.config.promotion_trial_cohort,
+            protocol=protocol,
+        )
+
+    def _missing_promotion_executor_artifact(
+        self,
+        *,
+        incumbent_id: str,
+        challenger_id: str,
+        protocol: TrainingPromotionProtocol,
+    ) -> TrainingPromotionArtifact:
+        trial = TrainingPromotionTrial(
+            trial_id="adaptive-executor-unavailable",
+            incumbent_id=incumbent_id,
+            challenger_id=challenger_id,
+            scenario=self.config.scenario,
+            evaluator_epoch=self.config.promotion_evaluator_epoch,
+            verifier_digest=self.config.promotion_verifier_digest,
+            cohort=self.config.promotion_trial_cohort,
+            fixture="unavailable",
+            fixture_digest="unavailable",
+            seed=self.config.seed,
+            lane="screen",
+            incumbent_score=0.0,
+            challenger_score=0.0,
+            infrastructure_error="adaptive promotion trial executor is not configured",
+        )
+        return evaluate_training_promotion(
+            [trial],
+            incumbent_id=incumbent_id,
+            challenger_id=challenger_id,
+            scenario=self.config.scenario,
+            evaluator_epoch=self.config.promotion_evaluator_epoch,
+            verifier_digest=self.config.promotion_verifier_digest,
+            cohort=self.config.promotion_trial_cohort,
+            protocol=protocol,
+        )
+
+    def _training_fixture_digest(self) -> str:
+        try:
+            return hashlib.sha256(self.config.data_path.read_bytes()).hexdigest()
+        except OSError:
+            return hashlib.sha256(str(self.config.data_path).encode("utf-8")).hexdigest()
+
+    def _write_promotion_artifact(
+        self,
+        experiment_index: int,
+        artifact: TrainingPromotionArtifact,
+    ) -> Path:
+        path = self.work_dir / "promotion" / f"experiment_{experiment_index}.json"
+        write_json(path, artifact.to_dict())
+        return path
 
     def _update_best(self, result: ExperimentResult) -> None:
         if result.outcome != ExperimentOutcome.KEPT:
             return
         if result.avg_score > self._best_score:
             self._best_score = result.avg_score
+            self._best_valid_rate = result.valid_rate
             self._best_experiment_index = result.experiment_index
 
     def run(self) -> TrainingResult:
@@ -701,6 +890,10 @@ class TrainingRunner:
                 "backend_metadata": self._backend.metadata(),
                 "experiment_index": best_result.experiment_index,
                 "work_dir": str(self.work_dir),
+                "trainer_promotion_decision": best_result.promotion_decision,
+                "trainer_promotion_artifact": (
+                    str(best_result.promotion_artifact_path) if best_result.promotion_artifact_path else ""
+                ),
                 # Serving bridge: an adapter checkpoint (mlxlm/opd) is useless without
                 # the base model it was trained against, and a score-conditioned model
                 # must be prompted with the quality prefix at inference. Record both so

@@ -77,6 +77,7 @@ metadata is available.
 - [Soft structural hints](soft-structural-hints.md)
 - [Span-level credit attribution](span-credit-attribution.md)
 - [Ablation-backed context attribution](context-attribution.md)
+- [Trainer-local statistical confirmation](training-statistical-confirmation.md)
 - [OPD/GKD + GRPO mixture experiment protocol](opd-grpo-mixture-experiment.md)
 - [Exploration collapse guard](exploration-collapse-guard.md)
 - [Browser exploration contract](browser-exploration-contract.md)

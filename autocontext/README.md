@@ -31,6 +31,11 @@ pip install 'autocontext[mcp]'              # MCP server dependencies
 
 The CLI entrypoint is `autoctx`. Provider env vars are listed in the repo-level [`.env.example`](../.env.example).
 
+Autoresearch checkpoint selection uses a minimum-effect gate by default and
+supports adaptive matched-trial confirmation through the Python API. Raw
+trials and stopping rationale are persisted separately from deployment
+promotion; see [trainer-local statistical confirmation](../docs/training-statistical-confirmation.md).
+
 ## Run from a checkout
 
 ```bash

@@ -9,6 +9,12 @@ All notable changes to this project will be documented in this file.
 - Python kernel evolution now supports a strict external benchmark contract,
   append-only champion lineage, fresh-protocol confirmation before promotion,
   and reproducible synthetic and live H100 examples.
+- The Python autoresearch trainer now persists replayable checkpoint-promotion
+  artifacts and supports deterministic minimum-effect gating plus adaptive
+  matched screen/confirmation/held-out trials. Decisions distinguish accepted,
+  rejected, inconclusive, invalid, and infrastructure-error outcomes; validity,
+  parse, and dimensional regressions are binding (AC-976). TypeScript parity is
+  deferred because the autoresearch trainer is Python-only.
 - Ablation-backed context attribution records controlled trial pairs against
   stable component and bundle digests, reconstructs causal credit, schedules
   bounded cadence/plateau/composition re-tests, preserves attribution history,

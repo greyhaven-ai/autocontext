@@ -1,0 +1,566 @@
+"""Noise-aware, matched-trial checkpoint confirmation (AC-976)."""
+
+from __future__ import annotations
+
+import math
+from collections.abc import Callable
+from statistics import fmean, stdev
+from typing import Any, Literal, Self
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from autocontext.context_bundles.models import stable_digest
+
+PromotionDecision = Literal[
+    "accepted",
+    "rejected",
+    "inconclusive",
+    "invalid",
+    "infrastructure_error",
+    "needs_more_trials",
+]
+TrialLane = Literal["screen", "confirmation", "heldout"]
+ProtocolMode = Literal["adaptive", "deterministic"]
+
+
+class _StrictModel(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json")
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Self:
+        return cls.model_validate(data)
+
+
+class TrainingPromotionProtocol(_StrictModel):
+    mode: ProtocolMode = "adaptive"
+    initial_screen_pairs: int = Field(default=2, ge=1)
+    min_confirmation_pairs: int = Field(default=4, ge=2)
+    max_confirmation_pairs: int = Field(default=12, ge=2)
+    confirmation_batch_size: int = Field(default=2, ge=1)
+    heldout_pairs: int = Field(default=0, ge=0)
+    min_effect: float = 0.01
+    confidence_z: float = Field(default=1.96, gt=0)
+    dimension_regression_tolerance: float = Field(default=0.0, ge=0.0)
+
+    def model_post_init(self, __context: Any) -> None:
+        del __context
+        if self.max_confirmation_pairs < self.min_confirmation_pairs:
+            raise ValueError("max_confirmation_pairs must be >= min_confirmation_pairs")
+
+
+class TrainingPromotionTrial(_StrictModel):
+    trial_id: str = Field(min_length=1)
+    incumbent_id: str = Field(min_length=1)
+    challenger_id: str = Field(min_length=1)
+    scenario: str = Field(min_length=1)
+    evaluator_epoch: str = Field(min_length=1)
+    verifier_digest: str = Field(min_length=1)
+    cohort: str = Field(min_length=1)
+    fixture: str = Field(min_length=1)
+    fixture_digest: str = Field(min_length=1)
+    seed: int
+    lane: TrialLane
+    incumbent_score: float
+    challenger_score: float
+    incumbent_valid: bool = True
+    challenger_valid: bool = True
+    incumbent_parse_ok: bool = True
+    challenger_parse_ok: bool = True
+    incumbent_dimensions: dict[str, float] = Field(default_factory=dict)
+    challenger_dimensions: dict[str, float] = Field(default_factory=dict)
+    evaluation_cost: float = Field(default=0.0, ge=0.0)
+    infrastructure_error: str | None = None
+
+    @property
+    def delta(self) -> float:
+        return round(self.challenger_score - self.incumbent_score, 12)
+
+    @property
+    def pair_key(self) -> str:
+        return stable_digest(
+            {
+                "scenario": self.scenario,
+                "evaluator_epoch": self.evaluator_epoch,
+                "verifier_digest": self.verifier_digest,
+                "cohort": self.cohort,
+                "fixture": self.fixture,
+                "fixture_digest": self.fixture_digest,
+                "seed": self.seed,
+                "lane": self.lane,
+            }
+        )
+
+
+class TrainingPromotionArtifact(_StrictModel):
+    schema_version: int = 1
+    incumbent_id: str = Field(min_length=1)
+    challenger_id: str = Field(min_length=1)
+    scenario: str = Field(min_length=1)
+    evaluator_epoch: str = Field(min_length=1)
+    verifier_digest: str = Field(min_length=1)
+    cohort: str = Field(min_length=1)
+    decision: PromotionDecision
+    phase: Literal["screen", "confirmation", "heldout", "complete"]
+    reason: str = Field(min_length=1)
+    trials: list[TrainingPromotionTrial]
+    mean_effect: float | None
+    confidence_low: float | None
+    confidence_high: float | None
+    evaluation_cost: float = Field(ge=0.0)
+    next_trial_count: int = Field(ge=0)
+    protocol: TrainingPromotionProtocol
+
+
+TrialExecutor = Callable[[TrialLane, int, str], TrainingPromotionTrial]
+
+
+def evaluate_training_promotion(
+    trials: list[TrainingPromotionTrial],
+    *,
+    incumbent_id: str,
+    challenger_id: str,
+    scenario: str,
+    evaluator_epoch: str,
+    verifier_digest: str,
+    cohort: str,
+    protocol: TrainingPromotionProtocol | None = None,
+) -> TrainingPromotionArtifact:
+    """Reproduce a checkpoint decision from raw matched trials."""
+
+    active = protocol or TrainingPromotionProtocol()
+    invalid_reason = _validate_trial_set(
+        trials,
+        incumbent_id=incumbent_id,
+        challenger_id=challenger_id,
+        scenario=scenario,
+        evaluator_epoch=evaluator_epoch,
+        verifier_digest=verifier_digest,
+        cohort=cohort,
+        dimension_tolerance=active.dimension_regression_tolerance,
+    )
+    cost = round(sum(trial.evaluation_cost for trial in trials), 6)
+    if invalid_reason:
+        decision: PromotionDecision = (
+            "infrastructure_error" if invalid_reason.startswith("infrastructure error:") else "invalid"
+        )
+        return _artifact(
+            incumbent_id,
+            challenger_id,
+            scenario,
+            evaluator_epoch,
+            verifier_digest,
+            cohort,
+            decision,
+            "complete",
+            invalid_reason,
+            trials,
+            None,
+            None,
+            None,
+            cost,
+            0,
+            active,
+        )
+
+    usable = [trial for trial in trials if trial.lane != "heldout"]
+    heldout = [trial for trial in trials if trial.lane == "heldout"]
+    effects = [trial.delta for trial in usable]
+    mean_effect, low, high = _effect_interval(effects, active)
+
+    if active.mode == "deterministic":
+        if not effects:
+            return _needs_more(
+                incumbent_id,
+                challenger_id,
+                scenario,
+                evaluator_epoch,
+                verifier_digest,
+                cohort,
+                "screen",
+                "deterministic comparison requires one matched trial",
+                trials,
+                cost,
+                1,
+                active,
+            )
+        accepted = mean_effect is not None and mean_effect >= active.min_effect
+        return _artifact(
+            incumbent_id,
+            challenger_id,
+            scenario,
+            evaluator_epoch,
+            verifier_digest,
+            cohort,
+            "accepted" if accepted else "rejected",
+            "complete",
+            "deterministic matched effect met the minimum"
+            if accepted
+            else "deterministic matched effect did not meet the minimum",
+            trials,
+            mean_effect,
+            mean_effect,
+            mean_effect,
+            cost,
+            0,
+            active,
+        )
+
+    screen_count = sum(trial.lane == "screen" for trial in usable)
+    if screen_count < active.initial_screen_pairs:
+        return _needs_more(
+            incumbent_id,
+            challenger_id,
+            scenario,
+            evaluator_epoch,
+            verifier_digest,
+            cohort,
+            "screen",
+            "initial matched screen is incomplete",
+            trials,
+            cost,
+            active.initial_screen_pairs - screen_count,
+            active,
+            mean_effect,
+            low,
+            high,
+        )
+
+    if high is not None and high < active.min_effect:
+        return _artifact(
+            incumbent_id,
+            challenger_id,
+            scenario,
+            evaluator_epoch,
+            verifier_digest,
+            cohort,
+            "rejected",
+            "complete",
+            "upper confidence bound is below the minimum effect",
+            trials,
+            mean_effect,
+            low,
+            high,
+            cost,
+            0,
+            active,
+        )
+
+    if len(usable) < active.min_confirmation_pairs:
+        return _needs_more(
+            incumbent_id,
+            challenger_id,
+            scenario,
+            evaluator_epoch,
+            verifier_digest,
+            cohort,
+            "confirmation",
+            "screen passed but minimum confirmation evidence is incomplete",
+            trials,
+            cost,
+            min(active.confirmation_batch_size, active.min_confirmation_pairs - len(usable)),
+            active,
+            mean_effect,
+            low,
+            high,
+        )
+
+    if low is not None and low >= active.min_effect:
+        if active.heldout_pairs > len(heldout):
+            return _needs_more(
+                incumbent_id,
+                challenger_id,
+                scenario,
+                evaluator_epoch,
+                verifier_digest,
+                cohort,
+                "heldout",
+                "confirmation passed; held-out matched check is incomplete",
+                trials,
+                cost,
+                active.heldout_pairs - len(heldout),
+                active,
+                mean_effect,
+                low,
+                high,
+            )
+        if heldout and fmean(trial.delta for trial in heldout) < active.min_effect:
+            return _artifact(
+                incumbent_id,
+                challenger_id,
+                scenario,
+                evaluator_epoch,
+                verifier_digest,
+                cohort,
+                "rejected",
+                "complete",
+                "held-out matched effect did not meet the minimum",
+                trials,
+                mean_effect,
+                low,
+                high,
+                cost,
+                0,
+                active,
+            )
+        return _artifact(
+            incumbent_id,
+            challenger_id,
+            scenario,
+            evaluator_epoch,
+            verifier_digest,
+            cohort,
+            "accepted",
+            "complete",
+            "lower confidence bound met the minimum effect",
+            trials,
+            mean_effect,
+            low,
+            high,
+            cost,
+            0,
+            active,
+        )
+
+    if len(usable) >= active.max_confirmation_pairs:
+        return _artifact(
+            incumbent_id,
+            challenger_id,
+            scenario,
+            evaluator_epoch,
+            verifier_digest,
+            cohort,
+            "inconclusive",
+            "complete",
+            "confirmation budget exhausted while uncertainty overlapped the minimum effect",
+            trials,
+            mean_effect,
+            low,
+            high,
+            cost,
+            0,
+            active,
+        )
+
+    return _needs_more(
+        incumbent_id,
+        challenger_id,
+        scenario,
+        evaluator_epoch,
+        verifier_digest,
+        cohort,
+        "confirmation",
+        "uncertainty warrants another matched confirmation batch",
+        trials,
+        cost,
+        min(active.confirmation_batch_size, active.max_confirmation_pairs - len(usable)),
+        active,
+        mean_effect,
+        low,
+        high,
+    )
+
+
+def run_adaptive_confirmation(
+    *,
+    incumbent_id: str,
+    challenger_id: str,
+    scenario: str,
+    evaluator_epoch: str,
+    verifier_digest: str,
+    cohort: str,
+    fixtures: list[str],
+    seeds: list[int],
+    executor: TrialExecutor,
+    protocol: TrainingPromotionProtocol | None = None,
+) -> TrainingPromotionArtifact:
+    """Collect only the matched trials requested by the current decision."""
+
+    if not fixtures or not seeds:
+        raise ValueError("adaptive confirmation requires fixtures and seeds")
+    active = protocol or TrainingPromotionProtocol()
+    trials: list[TrainingPromotionTrial] = []
+    cursor = 0
+    while True:
+        artifact = evaluate_training_promotion(
+            trials,
+            incumbent_id=incumbent_id,
+            challenger_id=challenger_id,
+            scenario=scenario,
+            evaluator_epoch=evaluator_epoch,
+            verifier_digest=verifier_digest,
+            cohort=cohort,
+            protocol=active,
+        )
+        if artifact.decision != "needs_more_trials":
+            return artifact
+        if artifact.phase == "complete":
+            raise RuntimeError("needs_more_trials artifact cannot be complete")
+        for _ in range(artifact.next_trial_count):
+            fixture = fixtures[cursor % len(fixtures)]
+            seed = seeds[cursor % len(seeds)]
+            cursor += 1
+            try:
+                trial = executor(artifact.phase, seed, fixture)
+            except Exception as exc:
+                trial = TrainingPromotionTrial(
+                    trial_id=f"infrastructure-error-{cursor}",
+                    incumbent_id=incumbent_id,
+                    challenger_id=challenger_id,
+                    scenario=scenario,
+                    evaluator_epoch=evaluator_epoch,
+                    verifier_digest=verifier_digest,
+                    cohort=cohort,
+                    fixture=fixture,
+                    fixture_digest=stable_digest(fixture),
+                    seed=seed,
+                    lane=artifact.phase,
+                    incumbent_score=0.0,
+                    challenger_score=0.0,
+                    infrastructure_error=f"{type(exc).__name__}: {exc}",
+                )
+            trials.append(trial)
+
+
+def _validate_trial_set(
+    trials: list[TrainingPromotionTrial],
+    *,
+    incumbent_id: str,
+    challenger_id: str,
+    scenario: str,
+    evaluator_epoch: str,
+    verifier_digest: str,
+    cohort: str,
+    dimension_tolerance: float,
+) -> str | None:
+    seen: set[str] = set()
+    for trial in trials:
+        if trial.trial_id in seen or trial.pair_key in seen:
+            return f"duplicate matched trial: {trial.trial_id}"
+        seen.update({trial.trial_id, trial.pair_key})
+        expected = (
+            trial.incumbent_id == incumbent_id
+            and trial.challenger_id == challenger_id
+            and trial.scenario == scenario
+            and trial.evaluator_epoch == evaluator_epoch
+            and trial.verifier_digest == verifier_digest
+            and trial.cohort == cohort
+        )
+        if not expected:
+            return "trial identity, evaluator epoch, verifier, or cohort mismatch"
+        if trial.infrastructure_error:
+            return f"infrastructure error: {trial.infrastructure_error}"
+        if trial.incumbent_valid and not trial.challenger_valid:
+            return "challenger validity regressed"
+        if trial.incumbent_parse_ok and not trial.challenger_parse_ok:
+            return "challenger parse validity regressed"
+        for dimension, incumbent_value in trial.incumbent_dimensions.items():
+            challenger_value = trial.challenger_dimensions.get(dimension)
+            if challenger_value is None:
+                return f"challenger omitted required dimension: {dimension}"
+            if challenger_value < incumbent_value - dimension_tolerance:
+                return f"challenger regressed required dimension: {dimension}"
+    return None
+
+
+def _effect_interval(
+    effects: list[float],
+    protocol: TrainingPromotionProtocol,
+) -> tuple[float | None, float | None, float | None]:
+    if not effects:
+        return None, None, None
+    average = fmean(effects)
+    if len(effects) == 1:
+        return average, None, None
+    half_width = protocol.confidence_z * stdev(effects) / math.sqrt(len(effects))
+    return round(average, 12), round(average - half_width, 12), round(average + half_width, 12)
+
+
+def _needs_more(
+    incumbent_id: str,
+    challenger_id: str,
+    scenario: str,
+    evaluator_epoch: str,
+    verifier_digest: str,
+    cohort: str,
+    phase: Literal["screen", "confirmation", "heldout"],
+    reason: str,
+    trials: list[TrainingPromotionTrial],
+    cost: float,
+    next_trial_count: int,
+    protocol: TrainingPromotionProtocol,
+    mean_effect: float | None = None,
+    low: float | None = None,
+    high: float | None = None,
+) -> TrainingPromotionArtifact:
+    return _artifact(
+        incumbent_id,
+        challenger_id,
+        scenario,
+        evaluator_epoch,
+        verifier_digest,
+        cohort,
+        "needs_more_trials",
+        phase,
+        reason,
+        trials,
+        mean_effect,
+        low,
+        high,
+        cost,
+        next_trial_count,
+        protocol,
+    )
+
+
+def _artifact(
+    incumbent_id: str,
+    challenger_id: str,
+    scenario: str,
+    evaluator_epoch: str,
+    verifier_digest: str,
+    cohort: str,
+    decision: PromotionDecision,
+    phase: Literal["screen", "confirmation", "heldout", "complete"],
+    reason: str,
+    trials: list[TrainingPromotionTrial],
+    mean_effect: float | None,
+    low: float | None,
+    high: float | None,
+    cost: float,
+    next_trial_count: int,
+    protocol: TrainingPromotionProtocol,
+) -> TrainingPromotionArtifact:
+    return TrainingPromotionArtifact(
+        incumbent_id=incumbent_id,
+        challenger_id=challenger_id,
+        scenario=scenario,
+        evaluator_epoch=evaluator_epoch,
+        verifier_digest=verifier_digest,
+        cohort=cohort,
+        decision=decision,
+        phase=phase,
+        reason=reason,
+        trials=trials,
+        mean_effect=mean_effect,
+        confidence_low=low,
+        confidence_high=high,
+        evaluation_cost=cost,
+        next_trial_count=next_trial_count,
+        protocol=protocol,
+    )
+
+
+__all__ = [
+    "PromotionDecision",
+    "ProtocolMode",
+    "TrainingPromotionArtifact",
+    "TrainingPromotionProtocol",
+    "TrainingPromotionTrial",
+    "TrialExecutor",
+    "TrialLane",
+    "evaluate_training_promotion",
+    "run_adaptive_confirmation",
+]
