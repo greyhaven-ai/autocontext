@@ -4,7 +4,6 @@ The existing :class:`InterpreterWorkspace` remains the default restricted
 scratch surface.  This module adds an explicitly approved, process-backed
 surface for code/research tasks that need workspace files, selected imports,
 bounded subprocesses, or separately granted network access.
-
 This is a capability boundary, not a replacement for an OS/VM sandbox.  The
 ``isolated_sandbox`` profile is process-isolated and transactional at the
 workspace boundary; deployments handling hostile code should place that child
@@ -34,6 +33,7 @@ from typing import Any, Literal, TypeAlias
 
 from autocontext.execution.interpreter_workspace import InterpreterWorkspace, WorkspaceVariable
 from autocontext.harness.repl.types import ReplResult
+from autocontext.offline import require_online
 from autocontext.runtimes.workspace_env import RuntimeWorkspaceEnv, create_local_workspace_env
 
 WorkspaceProfile: TypeAlias = Literal["restricted_scratch", "trusted_local", "isolated_sandbox"]
@@ -578,6 +578,7 @@ def _execute_child(payload: Mapping[str, Any]) -> dict[str, Any]:
     def network_fetch(url: str) -> bytes:
         if "network" not in capabilities:
             raise PermissionError("network capability was not granted")
+        require_online("use research workspace network access")
         parsed = urllib.parse.urlparse(url)
         if parsed.scheme != "https" or not parsed.hostname or parsed.hostname not in allowed_hosts:
             raise PermissionError(f"network host denied: {parsed.hostname or ''}")

@@ -10,7 +10,6 @@ Orchestrates the autoresearch-style experiment loop:
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import os
 import re
@@ -31,16 +30,15 @@ from autocontext.training.model_registry import (
     TrainingCompletionOutput,
     publish_training_output,
 )
+from autocontext.training.promotion_confirmation_runner import (
+    decide_training_checkpoint_promotion,
+    write_training_promotion_artifact,
+)
 from autocontext.training.scale import training_scale_metadata_from_config
 from autocontext.training.statistical_confirmation import (
     TrainingPromotionArtifact,
-    TrainingPromotionProtocol,
-    TrainingPromotionTrial,
     TrialExecutor,
-    evaluate_training_promotion,
-    run_adaptive_confirmation,
 )
-from autocontext.util.json_io import write_json
 
 logger = logging.getLogger(__name__)
 
@@ -567,7 +565,7 @@ class TrainingRunner:
             "infrastructure_error": ExperimentOutcome.ERROR,
         }.get(promotion.decision, ExperimentOutcome.DISCARDED)
         checkpoint_path = checkpoint_dir if outcome == ExperimentOutcome.KEPT else None
-        promotion_path = self._write_promotion_artifact(experiment_index, promotion)
+        promotion_path = write_training_promotion_artifact(self.work_dir, experiment_index, promotion)
         return ExperimentResult(
             experiment_index=experiment_index,
             avg_score=summary["avg_score"],
@@ -582,19 +580,6 @@ class TrainingRunner:
             promotion_artifact_path=promotion_path,
         )
 
-    def _promotion_protocol(self) -> TrainingPromotionProtocol:
-        return TrainingPromotionProtocol(
-            mode=self.config.promotion_mode,
-            initial_screen_pairs=self.config.promotion_initial_screen_pairs,
-            min_confirmation_pairs=self.config.promotion_min_confirmation_pairs,
-            max_confirmation_pairs=self.config.promotion_max_confirmation_pairs,
-            confirmation_batch_size=self.config.promotion_confirmation_batch_size,
-            heldout_pairs=self.config.promotion_heldout_pairs,
-            min_effect=self.config.promotion_min_effect,
-            confidence_z=self.config.promotion_confidence_z,
-            dimension_regression_tolerance=self.config.promotion_dimension_regression_tolerance,
-        )
-
     def _decide_checkpoint_promotion(
         self,
         *,
@@ -602,127 +587,16 @@ class TrainingRunner:
         summary: dict[str, float],
         checkpoint_dir: Path,
     ) -> TrainingPromotionArtifact:
-        protocol = self._promotion_protocol()
-        challenger_id = f"experiment-{experiment_index}:{checkpoint_dir}"
-        if self._best_experiment_index < 0:
-            return TrainingPromotionArtifact(
-                incumbent_id="trainer-baseline",
-                challenger_id=challenger_id,
-                scenario=self.config.scenario,
-                evaluator_epoch=self.config.promotion_evaluator_epoch,
-                verifier_digest=self.config.promotion_verifier_digest,
-                cohort=self.config.promotion_trial_cohort,
-                decision="accepted",
-                phase="complete",
-                reason="first successful experiment establishes the trainer-local baseline",
-                trials=[],
-                mean_effect=None,
-                confidence_low=None,
-                confidence_high=None,
-                evaluation_cost=0.0,
-                next_trial_count=0,
-                protocol=protocol,
-            )
-
-        incumbent_id = f"experiment-{self._best_experiment_index}"
-        if self.config.promotion_mode == "adaptive":
-            if self._promotion_trial_executor is None:
-                return self._missing_promotion_executor_artifact(
-                    incumbent_id=incumbent_id,
-                    challenger_id=challenger_id,
-                    protocol=protocol,
-                )
-            return run_adaptive_confirmation(
-                incumbent_id=incumbent_id,
-                challenger_id=challenger_id,
-                scenario=self.config.scenario,
-                evaluator_epoch=self.config.promotion_evaluator_epoch,
-                verifier_digest=self.config.promotion_verifier_digest,
-                cohort=self.config.promotion_trial_cohort,
-                fixtures=list(self.config.promotion_fixtures),
-                seeds=list(self.config.promotion_seeds),
-                executor=self._promotion_trial_executor,
-                protocol=protocol,
-            )
-
-        trial = TrainingPromotionTrial(
-            trial_id=f"deterministic-{experiment_index}",
-            incumbent_id=incumbent_id,
-            challenger_id=challenger_id,
-            scenario=self.config.scenario,
-            evaluator_epoch=self.config.promotion_evaluator_epoch,
-            verifier_digest=self.config.promotion_verifier_digest,
-            cohort=self.config.promotion_trial_cohort,
-            fixture="training-summary",
-            fixture_digest=self._training_fixture_digest(),
-            seed=self.config.seed,
-            lane="screen",
-            incumbent_score=self._best_score,
-            challenger_score=summary["avg_score"],
-            incumbent_valid=self._best_valid_rate > 0,
-            challenger_valid=summary["valid_rate"] > 0,
-            incumbent_dimensions={"valid_rate": self._best_valid_rate},
-            challenger_dimensions={"valid_rate": summary["valid_rate"]},
+        return decide_training_checkpoint_promotion(
+            self.config,
+            experiment_index=experiment_index,
+            summary=summary,
+            checkpoint_dir=checkpoint_dir,
+            best_experiment_index=self._best_experiment_index,
+            best_score=self._best_score,
+            best_valid_rate=self._best_valid_rate,
+            executor=self._promotion_trial_executor,
         )
-        return evaluate_training_promotion(
-            [trial],
-            incumbent_id=incumbent_id,
-            challenger_id=challenger_id,
-            scenario=self.config.scenario,
-            evaluator_epoch=self.config.promotion_evaluator_epoch,
-            verifier_digest=self.config.promotion_verifier_digest,
-            cohort=self.config.promotion_trial_cohort,
-            protocol=protocol,
-        )
-
-    def _missing_promotion_executor_artifact(
-        self,
-        *,
-        incumbent_id: str,
-        challenger_id: str,
-        protocol: TrainingPromotionProtocol,
-    ) -> TrainingPromotionArtifact:
-        trial = TrainingPromotionTrial(
-            trial_id="adaptive-executor-unavailable",
-            incumbent_id=incumbent_id,
-            challenger_id=challenger_id,
-            scenario=self.config.scenario,
-            evaluator_epoch=self.config.promotion_evaluator_epoch,
-            verifier_digest=self.config.promotion_verifier_digest,
-            cohort=self.config.promotion_trial_cohort,
-            fixture="unavailable",
-            fixture_digest="unavailable",
-            seed=self.config.seed,
-            lane="screen",
-            incumbent_score=0.0,
-            challenger_score=0.0,
-            infrastructure_error="adaptive promotion trial executor is not configured",
-        )
-        return evaluate_training_promotion(
-            [trial],
-            incumbent_id=incumbent_id,
-            challenger_id=challenger_id,
-            scenario=self.config.scenario,
-            evaluator_epoch=self.config.promotion_evaluator_epoch,
-            verifier_digest=self.config.promotion_verifier_digest,
-            cohort=self.config.promotion_trial_cohort,
-            protocol=protocol,
-        )
-
-    def _training_fixture_digest(self) -> str:
-        try:
-            return hashlib.sha256(self.config.data_path.read_bytes()).hexdigest()
-        except OSError:
-            return hashlib.sha256(str(self.config.data_path).encode("utf-8")).hexdigest()
-
-    def _write_promotion_artifact(
-        self,
-        experiment_index: int,
-        artifact: TrainingPromotionArtifact,
-    ) -> Path:
-        path = self.work_dir / "promotion" / f"experiment_{experiment_index}.json"
-        write_json(path, artifact.to_dict())
-        return path
 
     def _update_best(self, result: ExperimentResult) -> None:
         if result.outcome != ExperimentOutcome.KEPT:
