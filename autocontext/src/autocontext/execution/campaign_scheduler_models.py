@@ -1,21 +1,13 @@
-"""Data, worker adapters, and durable codecs for the campaign scheduler."""
+"""Domain models and state for the resource-aware campaign scheduler."""
 
 from __future__ import annotations
 
-import hashlib
-import json
-import os
-import threading
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
-from pathlib import Path
-from typing import Any, Literal, Protocol, TypeAlias
+from typing import Literal, Protocol, TypeAlias
 
-from autocontext.execution.remote_execution import (
-    RemoteExecutionAdapter,
-    RemoteExecutionRequest,
-    RemoteExecutionResult,
-)
+from autocontext.context_bundles.models import stable_digest
+from autocontext.execution.remote_execution import RemoteLifecyclePolicy
 
 JobStatus: TypeAlias = Literal[
     "queued",
@@ -27,7 +19,7 @@ JobStatus: TypeAlias = Literal[
     "canceled",
 ]
 JobOutcome: TypeAlias = Literal["candidate_success", "candidate_failure", "infrastructure_failure"]
-AssignmentLifecycle: TypeAlias = Literal["ephemeral_per_eval", "reuse_matched_trials", "warm_snapshot"]
+AssignmentLifecycle: TypeAlias = RemoteLifecyclePolicy
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,8 +38,7 @@ class SchedulerResources:
 
     def fits(self, required: SchedulerResources) -> bool:
         accelerator_fits = required.accelerator_count == 0 or (
-            self.accelerator_kind == required.accelerator_kind
-            and self.accelerator_count >= required.accelerator_count
+            self.accelerator_kind == required.accelerator_kind and self.accelerator_count >= required.accelerator_count
         )
         return (
             self.cpu_cores >= required.cpu_cores
@@ -114,10 +105,7 @@ class SchedulerBudget:
             and (limit.wall_seconds == 0 or self.wall_seconds <= limit.wall_seconds)
             and (limit.compute_units == 0 or self.compute_units <= limit.compute_units)
             and (limit.jobs == 0 or self.jobs <= limit.jobs)
-            and (
-                limit.shared_evidence_tokens == 0
-                or self.shared_evidence_tokens <= limit.shared_evidence_tokens
-            )
+            and (limit.shared_evidence_tokens == 0 or self.shared_evidence_tokens <= limit.shared_evidence_tokens)
         )
 
 
@@ -136,7 +124,7 @@ class EvaluationLaneIdentity:
 
     @property
     def digest(self) -> str:
-        return _digest(asdict(self))
+        return stable_digest(asdict(self))
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,7 +144,7 @@ class WorkerDescriptor:
 
     @property
     def environment_fingerprint(self) -> str:
-        return _digest(
+        return stable_digest(
             {
                 "runtime": self.runtime,
                 "resources": asdict(self.resources),
@@ -236,27 +224,6 @@ class CampaignWorker(Protocol):
     def execute(self, assignment: CampaignAssignment) -> CampaignJobResult: ...
 
 
-class CallableCampaignWorker:
-    def __init__(self, execute: Callable[[CampaignAssignment], CampaignJobResult]) -> None:
-        self._execute = execute
-
-    def execute(self, assignment: CampaignAssignment) -> CampaignJobResult:
-        return self._execute(assignment)
-
-
-class RemoteCampaignWorker:
-    def __init__(
-        self,
-        adapter: RemoteExecutionAdapter,
-        request_factory: Callable[[CampaignAssignment], RemoteExecutionRequest],
-    ) -> None:
-        self._adapter = adapter
-        self._request_factory = request_factory
-
-    def execute(self, assignment: CampaignAssignment) -> CampaignJobResult:
-        return campaign_result_from_remote(self._adapter.execute_request(self._request_factory(assignment)))
-
-
 @dataclass(frozen=True, slots=True)
 class SchedulerEvent:
     sequence: int
@@ -264,60 +231,6 @@ class SchedulerEvent:
     timestamp: float
     event_type: str
     payload: Mapping[str, object]
-
-
-class CampaignSchedulerEventStore:
-    """Checksummed append-only JSONL event store with fsync durability."""
-
-    def __init__(self, path: str | Path) -> None:
-        self.path = Path(path)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._lock = threading.Lock()
-
-    def append(self, event: SchedulerEvent) -> None:
-        body = {
-            "sequence": event.sequence,
-            "event_id": event.event_id,
-            "timestamp": event.timestamp,
-            "event_type": event.event_type,
-            "payload": event.payload,
-        }
-        encoded = json.dumps(body, sort_keys=True, separators=(",", ":"))
-        line = json.dumps({**body, "checksum": hashlib.sha256(encoded.encode()).hexdigest()}, sort_keys=True) + "\n"
-        with self._lock:
-            descriptor = os.open(self.path, os.O_APPEND | os.O_CREAT | os.O_WRONLY, 0o600)
-            try:
-                os.write(descriptor, line.encode())
-                os.fsync(descriptor)
-            finally:
-                os.close(descriptor)
-
-    def read(self) -> tuple[SchedulerEvent, ...]:
-        if not self.path.exists():
-            return ()
-        events: list[SchedulerEvent] = []
-        for line_number, line in enumerate(self.path.read_text().splitlines(), start=1):
-            try:
-                data = json.loads(line)
-                checksum = str(data.pop("checksum"))
-                encoded = json.dumps(data, sort_keys=True, separators=(",", ":"))
-            except (json.JSONDecodeError, KeyError, TypeError) as exc:
-                raise ValueError(f"invalid scheduler event at line {line_number}") from exc
-            if hashlib.sha256(encoded.encode()).hexdigest() != checksum:
-                raise ValueError(f"scheduler event checksum mismatch at line {line_number}")
-            expected = len(events) + 1
-            if data.get("sequence") != expected:
-                raise ValueError(f"scheduler event sequence mismatch at line {line_number}")
-            events.append(
-                SchedulerEvent(
-                    sequence=expected,
-                    event_id=str(data["event_id"]),
-                    timestamp=float(data["timestamp"]),
-                    event_type=str(data["event_type"]),
-                    payload=dict(data["payload"]),
-                )
-            )
-        return tuple(events)
 
 
 @dataclass(slots=True)
@@ -356,26 +269,6 @@ class CampaignSchedulerReport:
     events: int
 
 
-def campaign_result_from_remote(result: RemoteExecutionResult) -> CampaignJobResult:
-    if result.status == "success":
-        outcome: JobOutcome = "candidate_success"
-    elif result.status in {"task_error", "artifact_error"}:
-        outcome = "candidate_failure"
-    else:
-        outcome = "infrastructure_failure"
-    return CampaignJobResult(
-        outcome=outcome,
-        consumed=SchedulerBudget(
-            wall_seconds=result.usage.wall_seconds,
-            compute_units=result.usage.accelerator_seconds or result.usage.cpu_seconds or 0.0,
-            jobs=1,
-        ),
-        detail=result.error,
-        cleanup_succeeded=result.cleanup.succeeded,
-        metadata={"remote_status": result.status, "provider": result.provider, "session_id": result.session_id},
-    )
-
-
 def replace_lease_expiry(lease: CampaignLease, expires_at: float) -> CampaignLease:
     return CampaignLease(
         lease_id=lease.lease_id,
@@ -390,145 +283,11 @@ def replace_lease_expiry(lease: CampaignLease, expires_at: float) -> CampaignLea
     )
 
 
-def _reuse_key(request: CampaignJobRequest) -> str:
+def reuse_key(request: CampaignJobRequest) -> str:
     scope = request.cohort_id or request.job_id
     return f"{request.campaign_id}:{request.branch_id}:{scope}"
 
 
-def _digest(value: object) -> str:
-    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-
-
-def _mapping(value: object) -> dict[str, Any]:
-    if not isinstance(value, Mapping):
-        raise TypeError("expected a mapping")
-    return {str(key): item for key, item in value.items()}
-
-
-def _sequence(value: object) -> Sequence[object]:
-    if not isinstance(value, Sequence) or isinstance(value, (str, bytes, bytearray)):
-        raise TypeError("expected a sequence")
-    return value
-
-
-def _float(value: object) -> float:
-    if not isinstance(value, (str, int, float)):
-        raise TypeError("expected a number")
-    return float(value)
-
-
-def _budget_from(value: object) -> SchedulerBudget:
-    return SchedulerBudget(**_mapping(value))
-
-
-def _resources_from(value: object) -> SchedulerResources:
-    return SchedulerResources(**_mapping(value))
-
-
-def _lane_from(value: object) -> EvaluationLaneIdentity:
-    data = _mapping(value)
-    return EvaluationLaneIdentity(
-        lane_id=str(data["lane_id"]),
-        fixture_digest=str(data["fixture_digest"]),
-        seeds=tuple(str(seed) for seed in data["seeds"]),
-        evaluator_epoch=str(data["evaluator_epoch"]),
-        verifier_contract_ref=str(data["verifier_contract_ref"]),
-    )
-
-
-def _worker_to_dict(worker: WorkerDescriptor) -> dict[str, Any]:
-    return {
-        **asdict(worker),
-        "capabilities": sorted(worker.capabilities),
-        "sandbox_features": sorted(worker.sandbox_features),
-    }
-
-
-def _worker_from(value: object) -> WorkerDescriptor:
-    data = _mapping(value)
-    return WorkerDescriptor(
-        worker_id=str(data["worker_id"]),
-        runtime=str(data["runtime"]),
-        resources=_resources_from(data["resources"]),
-        capabilities=frozenset(str(item) for item in data.get("capabilities", [])),
-        sandbox_features=frozenset(str(item) for item in data.get("sandbox_features", [])),
-        locality=str(data.get("locality", "local")),
-        concurrency=int(data.get("concurrency", 1)),
-        environment_labels={str(key): str(item) for key, item in _mapping(data.get("environment_labels", {})).items()},
-    )
-
-
-def _job_to_dict(job: CampaignJobRequest) -> dict[str, Any]:
-    return {
-        **asdict(job),
-        "required_capabilities": sorted(job.required_capabilities),
-        "lane": asdict(job.lane),
-    }
-
-
-def _job_from(value: object) -> CampaignJobRequest:
-    data = _mapping(value)
-    return CampaignJobRequest(
-        job_id=str(data["job_id"]),
-        idempotency_key=str(data["idempotency_key"]),
-        campaign_id=str(data["campaign_id"]),
-        branch_id=str(data["branch_id"]),
-        job_kind=str(data["job_kind"]),  # type: ignore[arg-type]
-        lane=_lane_from(data["lane"]),
-        resources=_resources_from(data["resources"]),
-        required_capabilities=frozenset(str(item) for item in data.get("required_capabilities", [])),
-        reservation=_budget_from(data["reservation"]),
-        max_attempts=int(data["max_attempts"]),
-        cohort_id=str(data.get("cohort_id", "")),
-        prefer_warm_reuse=bool(data.get("prefer_warm_reuse", False)),
-        evidence_grant_ids=tuple(str(item) for item in data.get("evidence_grant_ids", [])),
-        payload=_mapping(data.get("payload", {})),
-    )
-
-
-def _lease_from(value: object) -> CampaignLease:
-    data = _mapping(value)
-    return CampaignLease(
-        lease_id=str(data["lease_id"]),
-        job_id=str(data["job_id"]),
-        worker_id=str(data["worker_id"]),
-        attempt=int(data["attempt"]),
-        issued_at=float(data["issued_at"]),
-        expires_at=float(data["expires_at"]),
-        environment_fingerprint=str(data["environment_fingerprint"]),
-        lifecycle=str(data["lifecycle"]),  # type: ignore[arg-type]
-        reuse_key=str(data["reuse_key"]),
-    )
-
-
-def _result_to_dict(result: CampaignJobResult) -> dict[str, Any]:
-    return {**asdict(result), "consumed": asdict(result.consumed)}
-
-
-def _result_from(value: object) -> CampaignJobResult:
-    data = _mapping(value)
-    return CampaignJobResult(
-        outcome=str(data["outcome"]),  # type: ignore[arg-type]
-        consumed=_budget_from(data["consumed"]),
-        output_ref=str(data.get("output_ref", "")),
-        detail=str(data.get("detail", "")),
-        cleanup_succeeded=bool(data.get("cleanup_succeeded", True)),
-        metadata=_mapping(data.get("metadata", {})),
-    )
-
-
-def _evidence_from(value: object) -> CampaignEvidenceGrant:
-    data = _mapping(value)
-    return CampaignEvidenceGrant(
-        grant_id=str(data["grant_id"]),
-        campaign_id=str(data["campaign_id"]),
-        from_branch_id=str(data["from_branch_id"]),
-        to_branch_id=str(data["to_branch_id"]),
-        evidence_ref=str(data["evidence_ref"]),
-        token_cost=int(data["token_cost"]),
-    )
-
-
-_TERMINAL_STATUSES: frozenset[JobStatus] = frozenset(
+TERMINAL_STATUSES: frozenset[JobStatus] = frozenset(
     {"succeeded", "candidate_failed", "infrastructure_failed", "budget_exhausted", "canceled"}
 )

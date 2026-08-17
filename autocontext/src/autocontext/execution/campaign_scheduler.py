@@ -15,44 +15,48 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict
 from typing import Any
 
-from autocontext.execution.campaign_scheduler_models import (
-    _TERMINAL_STATUSES,
-    AssignmentLifecycle,
+from autocontext.execution.campaign_scheduler_adapters import (
     CallableCampaignWorker,
+    RemoteCampaignWorker,
+    campaign_result_from_remote,
+)
+from autocontext.execution.campaign_scheduler_codecs import (
+    as_float,
+    budget_from,
+    evidence_from,
+    job_from,
+    job_to_dict,
+    lease_from,
+    mapping,
+    result_from,
+    result_to_dict,
+    sequence,
+    worker_from,
+    worker_to_dict,
+)
+from autocontext.execution.campaign_scheduler_models import (
+    TERMINAL_STATUSES,
+    AssignmentLifecycle,
     CampaignAssignment,
     CampaignEvidenceGrant,
     CampaignJobRequest,
     CampaignJobResult,
     CampaignLease,
-    CampaignSchedulerEventStore,
     CampaignSchedulerReport,
     CampaignWorker,
     EvaluationLaneIdentity,
     JobOutcome,
     JobStatus,
-    RemoteCampaignWorker,
     SchedulerBudget,
     SchedulerEvent,
     SchedulerResources,
     WorkerDescriptor,
-    _budget_from,
-    _evidence_from,
-    _float,
-    _job_from,
-    _job_to_dict,
     _JobState,
-    _lease_from,
-    _mapping,
-    _result_from,
-    _result_to_dict,
-    _reuse_key,
-    _sequence,
-    _worker_from,
-    _worker_to_dict,
     _WorkerState,
-    campaign_result_from_remote,
     replace_lease_expiry,
+    reuse_key,
 )
+from autocontext.execution.campaign_scheduler_store import CampaignSchedulerEventStore
 
 
 class CampaignScheduler:
@@ -115,7 +119,7 @@ class CampaignScheduler:
         with self._lock:
             current = self._workers.get(descriptor.worker_id)
             if current is None or current.descriptor != descriptor:
-                self._record("worker_registered", {"worker": _worker_to_dict(descriptor), "at": self.clock()})
+                self._record("worker_registered", {"worker": worker_to_dict(descriptor), "at": self.clock()})
             if executor is not None:
                 self._executors[descriptor.worker_id] = executor
 
@@ -164,7 +168,7 @@ class CampaignScheduler:
                 if lane is not None and lane != request.lane.digest:
                     raise ValueError("matched cohort jobs must use the same evaluation lane identity")
             self._validate_evidence_grants(request)
-            self._record("job_enqueued", {"job": _job_to_dict(request)})
+            self._record("job_enqueued", {"job": job_to_dict(request)})
             return request.job_id
 
     def claim(self, worker_id: str, *, limit: int | None = None) -> tuple[CampaignAssignment, ...]:
@@ -197,7 +201,7 @@ class CampaignScheduler:
                     expires_at=now + self.lease_seconds,
                     environment_fingerprint=worker.descriptor.environment_fingerprint,
                     lifecycle=lifecycle,
-                    reuse_key=_reuse_key(state.request),
+                    reuse_key=reuse_key(state.request),
                 )
                 self._record("job_leased", {"lease": asdict(lease), "reservation": asdict(state.request.reservation)})
                 assignments.append(CampaignAssignment(job=state.request, lease=lease))
@@ -225,14 +229,14 @@ class CampaignScheduler:
                 return result
             self._record(
                 "job_finished",
-                {"job_id": job_id, "lease_id": lease_id, "result": _result_to_dict(result)},
+                {"job_id": job_id, "lease_id": lease_id, "result": result_to_dict(result)},
             )
             return result
 
     def cancel(self, job_id: str) -> bool:
         with self._lock:
             state = self._jobs.get(job_id)
-            if state is None or state.status in _TERMINAL_STATUSES:
+            if state is None or state.status in TERMINAL_STATUSES:
                 return False
             self._record("job_canceled", {"job_id": job_id})
             return True
@@ -261,9 +265,7 @@ class CampaignScheduler:
         assignments: list[CampaignAssignment] = []
         executors: list[CampaignWorker] = []
         with self._lock:
-            global_available = self.max_concurrency - sum(
-                len(worker.active_leases) for worker in self._workers.values()
-            )
+            global_available = self.max_concurrency - sum(len(worker.active_leases) for worker in self._workers.values())
             for worker_id in sorted(self._workers):
                 executor = self._executors.get(worker_id)
                 if executor is None or global_available <= 0:
@@ -311,7 +313,7 @@ class CampaignScheduler:
         return self._jobs[job_id].result
 
     def report(self) -> CampaignSchedulerReport:
-        counts = {status: 0 for status in _TERMINAL_STATUSES | {"queued", "leased"}}
+        counts = {status: 0 for status in TERMINAL_STATUSES | {"queued", "leased"}}
         for state in self._jobs.values():
             counts[state.status] += 1
         utilization = {
@@ -358,17 +360,17 @@ class CampaignScheduler:
         payload = event.payload
         if event.event_type == "campaign_configured":
             campaign_id = str(payload["campaign_id"])
-            self._campaign_limits[campaign_id] = _budget_from(payload["budget"])
-            branch_budgets = _mapping(payload.get("branch_budgets", {}))
+            self._campaign_limits[campaign_id] = budget_from(payload["budget"])
+            branch_budgets = mapping(payload.get("branch_budgets", {}))
             for branch, budget in branch_budgets.items():
-                self._branch_limits[(campaign_id, branch)] = _budget_from(budget)
+                self._branch_limits[(campaign_id, branch)] = budget_from(budget)
             return
         if event.event_type == "worker_registered":
-            descriptor = _worker_from(payload["worker"])
+            descriptor = worker_from(payload["worker"])
             prior = self._workers.get(descriptor.worker_id)
             self._workers[descriptor.worker_id] = _WorkerState(
                 descriptor=descriptor,
-                last_heartbeat=_float(payload["at"]),
+                last_heartbeat=as_float(payload["at"]),
                 active_leases=set(prior.active_leases) if prior else set(),
                 completed_jobs=prior.completed_jobs if prior else 0,
                 failed_jobs=prior.failed_jobs if prior else 0,
@@ -377,24 +379,24 @@ class CampaignScheduler:
             return
         if event.event_type == "worker_heartbeat":
             worker = self._workers[str(payload["worker_id"])]
-            worker.last_heartbeat = _float(payload["at"])
-            for lease_id in _sequence(payload.get("lease_ids", [])):
+            worker.last_heartbeat = as_float(payload["at"])
+            for lease_id in sequence(payload.get("lease_ids", [])):
                 job_id = self._leases.get(str(lease_id))
                 if job_id is None:
                     continue
                 lease = self._jobs[job_id].lease
                 if lease is not None:
-                    self._jobs[job_id].lease = replace_lease_expiry(lease, _float(payload["expires_at"]))
+                    self._jobs[job_id].lease = replace_lease_expiry(lease, as_float(payload["expires_at"]))
             return
         if event.event_type == "evidence_granted":
-            grant = _evidence_from(payload["grant"])
+            grant = evidence_from(payload["grant"])
             self._evidence_grants[grant.grant_id] = grant
-            self._campaign_consumed[grant.campaign_id] = self._campaign_consumed.get(
-                grant.campaign_id, SchedulerBudget()
-            ).add(SchedulerBudget(shared_evidence_tokens=grant.token_cost))
+            self._campaign_consumed[grant.campaign_id] = self._campaign_consumed.get(grant.campaign_id, SchedulerBudget()).add(
+                SchedulerBudget(shared_evidence_tokens=grant.token_cost)
+            )
             return
         if event.event_type == "job_enqueued":
-            request = _job_from(payload["job"])
+            request = job_from(payload["job"])
             self._jobs[request.job_id] = _JobState(request=request)
             self._idempotency[(request.campaign_id, request.idempotency_key)] = request.job_id
             if request.cohort_id:
@@ -403,7 +405,7 @@ class CampaignScheduler:
         if event.event_type == "warm_degraded":
             return
         if event.event_type == "job_leased":
-            lease = _lease_from(payload["lease"])
+            lease = lease_from(payload["lease"])
             state = self._jobs[lease.job_id]
             state.status = "leased"
             state.attempts = lease.attempt
@@ -413,9 +415,7 @@ class CampaignScheduler:
             self._workers[lease.worker_id].active_leases.add(lease.lease_id)
             self._reserve(state.request)
             if state.request.cohort_id:
-                self._cohort_environments[(state.request.campaign_id, state.request.cohort_id)] = (
-                    lease.environment_fingerprint
-                )
+                self._cohort_environments[(state.request.campaign_id, state.request.cohort_id)] = lease.environment_fingerprint
             return
         if event.event_type == "job_budget_exhausted":
             self._jobs[str(payload["job_id"])].status = "budget_exhausted"
@@ -439,7 +439,7 @@ class CampaignScheduler:
             return
         if event.event_type == "job_finished":
             state = self._jobs[str(payload["job_id"])]
-            result = _result_from(payload["result"])
+            result = result_from(payload["result"])
             worker_id = state.lease.worker_id if state.lease else ""
             self._release_lease(state)
             state.result = result
@@ -477,17 +477,21 @@ class CampaignScheduler:
     def _budget_available(self, request: CampaignJobRequest) -> bool:
         campaign_limit = self._campaign_limits.get(request.campaign_id)
         if campaign_limit is not None:
-            projected = self._campaign_reserved.get(request.campaign_id, SchedulerBudget()).add(
-                self._campaign_consumed.get(request.campaign_id, SchedulerBudget())
-            ).add(request.reservation)
+            projected = (
+                self._campaign_reserved.get(request.campaign_id, SchedulerBudget())
+                .add(self._campaign_consumed.get(request.campaign_id, SchedulerBudget()))
+                .add(request.reservation)
+            )
             if not projected.within(campaign_limit):
                 return False
         branch_key = (request.campaign_id, request.branch_id)
         branch_limit = self._branch_limits.get(branch_key)
         if branch_limit is not None:
-            projected = self._branch_reserved.get(branch_key, SchedulerBudget()).add(
-                self._branch_consumed.get(branch_key, SchedulerBudget())
-            ).add(request.reservation)
+            projected = (
+                self._branch_reserved.get(branch_key, SchedulerBudget())
+                .add(self._branch_consumed.get(branch_key, SchedulerBudget()))
+                .add(request.reservation)
+            )
             if not projected.within(branch_limit):
                 return False
         return True
@@ -495,9 +499,7 @@ class CampaignScheduler:
     def _reserve(self, request: CampaignJobRequest) -> None:
         campaign = request.campaign_id
         branch = (request.campaign_id, request.branch_id)
-        self._campaign_reserved[campaign] = self._campaign_reserved.get(campaign, SchedulerBudget()).add(
-            request.reservation
-        )
+        self._campaign_reserved[campaign] = self._campaign_reserved.get(campaign, SchedulerBudget()).add(request.reservation)
         self._branch_reserved[branch] = self._branch_reserved.get(branch, SchedulerBudget()).add(request.reservation)
 
     def _release_lease(self, state: _JobState) -> None:
@@ -511,12 +513,8 @@ class CampaignScheduler:
         request = state.request
         campaign = request.campaign_id
         branch = (request.campaign_id, request.branch_id)
-        self._campaign_reserved[campaign] = self._campaign_reserved.get(campaign, SchedulerBudget()).subtract(
-            request.reservation
-        )
-        self._branch_reserved[branch] = self._branch_reserved.get(branch, SchedulerBudget()).subtract(
-            request.reservation
-        )
+        self._campaign_reserved[campaign] = self._campaign_reserved.get(campaign, SchedulerBudget()).subtract(request.reservation)
+        self._branch_reserved[branch] = self._branch_reserved.get(branch, SchedulerBudget()).subtract(request.reservation)
 
     def _consume(self, request: CampaignJobRequest, consumed: SchedulerBudget) -> None:
         campaign = request.campaign_id
@@ -546,6 +544,7 @@ class CampaignScheduler:
             return self._workers[worker_id]
         except KeyError as exc:
             raise KeyError(f"unknown campaign worker: {worker_id}") from exc
+
 
 __all__ = [
     "AssignmentLifecycle",

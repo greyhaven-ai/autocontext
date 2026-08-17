@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-import math
 from collections.abc import Callable
-from statistics import fmean, stdev
-from typing import Any, Literal, Self
+from statistics import fmean
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field
 
+from autocontext.analytics.paired_statistics import paired_confidence_interval
 from autocontext.context_bundles.models import stable_digest
+from autocontext.util.models import StrictModel
 
 PromotionDecision = Literal[
     "accepted",
@@ -23,18 +24,7 @@ TrialLane = Literal["screen", "confirmation", "heldout"]
 ProtocolMode = Literal["adaptive", "deterministic"]
 
 
-class _StrictModel(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-
-    def to_dict(self) -> dict[str, Any]:
-        return self.model_dump(mode="json")
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Self:
-        return cls.model_validate(data)
-
-
-class TrainingPromotionProtocol(_StrictModel):
+class TrainingPromotionProtocol(StrictModel):
     mode: ProtocolMode = "adaptive"
     initial_screen_pairs: int = Field(default=2, ge=1)
     min_confirmation_pairs: int = Field(default=4, ge=2)
@@ -51,7 +41,7 @@ class TrainingPromotionProtocol(_StrictModel):
             raise ValueError("max_confirmation_pairs must be >= min_confirmation_pairs")
 
 
-class TrainingPromotionTrial(_StrictModel):
+class TrainingPromotionTrial(StrictModel):
     trial_id: str = Field(min_length=1)
     incumbent_id: str = Field(min_length=1)
     challenger_id: str = Field(min_length=1)
@@ -94,7 +84,7 @@ class TrainingPromotionTrial(_StrictModel):
         )
 
 
-class TrainingPromotionArtifact(_StrictModel):
+class TrainingPromotionArtifact(StrictModel):
     schema_version: int = 1
     incumbent_id: str = Field(min_length=1)
     challenger_id: str = Field(min_length=1)
@@ -143,9 +133,7 @@ def evaluate_training_promotion(
     )
     cost = round(sum(trial.evaluation_cost for trial in trials), 6)
     if invalid_reason:
-        decision: PromotionDecision = (
-            "infrastructure_error" if invalid_reason.startswith("infrastructure error:") else "invalid"
-        )
+        decision: PromotionDecision = "infrastructure_error" if invalid_reason.startswith("infrastructure error:") else "invalid"
         return _artifact(
             incumbent_id,
             challenger_id,
@@ -471,11 +459,12 @@ def _effect_interval(
 ) -> tuple[float | None, float | None, float | None]:
     if not effects:
         return None, None, None
-    average = fmean(effects)
-    if len(effects) == 1:
-        return average, None, None
-    half_width = protocol.confidence_z * stdev(effects) / math.sqrt(len(effects))
-    return round(average, 12), round(average - half_width, 12), round(average + half_width, 12)
+    average, low, high = paired_confidence_interval(effects, protocol.confidence_z)
+    return (
+        round(average, 12) if average is not None else None,
+        round(low, 12) if low is not None else None,
+        round(high, 12) if high is not None else None,
+    )
 
 
 def _needs_more(

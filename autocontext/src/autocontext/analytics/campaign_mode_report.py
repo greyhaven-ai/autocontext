@@ -3,32 +3,23 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal, Self
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field
+
+from autocontext.util.models import StrictModel
 
 CampaignTerminalState = Literal["active", "completed", "failed", "budget_exhausted", "canceled"]
 BranchTerminalState = Literal["pending", "running", "continued", "pruned", "succeeded", "failed", "budget_exhausted", "canceled"]
 
 
-class _StrictModel(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-
-    def to_dict(self) -> dict[str, Any]:
-        return self.model_dump(mode="json")
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Self:
-        return cls.model_validate(data)
-
-
-class CampaignBranchBudget(_StrictModel):
+class CampaignBranchBudget(StrictModel):
     max_tokens: int | None = Field(ge=0)
     max_seconds: float | None = Field(ge=0)
     max_evaluations: int | None = Field(ge=0)
 
 
-class CampaignBranchUsage(_StrictModel):
+class CampaignBranchUsage(StrictModel):
     input_tokens: int = Field(ge=0)
     output_tokens: int = Field(ge=0)
     total_tokens: int = Field(ge=0)
@@ -36,7 +27,7 @@ class CampaignBranchUsage(_StrictModel):
     runner_seconds: float = Field(ge=0)
 
 
-class CampaignEvalLane(_StrictModel):
+class CampaignEvalLane(StrictModel):
     lane_id: str = Field(min_length=1)
     label: str = Field(min_length=1)
     verifier_contract_ref: str = Field(min_length=1)
@@ -45,7 +36,7 @@ class CampaignEvalLane(_StrictModel):
     weight: float = Field(ge=0)
 
 
-class CampaignBranch(_StrictModel):
+class CampaignBranch(StrictModel):
     branch_id: str = Field(min_length=1)
     parent_branch_id: str | None
     hypothesis_node_id: str | None
@@ -58,17 +49,17 @@ class CampaignBranch(_StrictModel):
     terminal_reason: str = Field(min_length=1)
 
 
-class CampaignBranchLineageEdge(_StrictModel):
+class CampaignBranchLineageEdge(StrictModel):
     parent_branch_id: str = Field(min_length=1)
     child_branch_id: str = Field(min_length=1)
 
 
-class CampaignEvidenceReference(_StrictModel):
+class CampaignEvidenceReference(StrictModel):
     uri: str = Field(min_length=1)
     summary: str = Field(min_length=1)
 
 
-class CampaignEvidenceShareItem(_StrictModel):
+class CampaignEvidenceShareItem(StrictModel):
     share_id: str = Field(min_length=1)
     from_branch_id: str = Field(min_length=1)
     to_branch_ids: list[str]
@@ -77,17 +68,17 @@ class CampaignEvidenceShareItem(_StrictModel):
     evidence_refs: list[CampaignEvidenceReference]
 
 
-class CampaignEvidencePolicy(_StrictModel):
+class CampaignEvidencePolicy(StrictModel):
     max_shared_items: int = Field(ge=0)
     max_summary_chars: int = Field(ge=1)
 
 
-class CampaignEvidenceSharing(_StrictModel):
+class CampaignEvidenceSharing(StrictModel):
     policy: CampaignEvidencePolicy
     items: list[CampaignEvidenceShareItem]
 
 
-class CampaignBranchSummary(_StrictModel):
+class CampaignBranchSummary(StrictModel):
     branch_count: int = Field(ge=0)
     succeeded: int = Field(ge=0)
     failed: int = Field(ge=0)
@@ -96,19 +87,19 @@ class CampaignBranchSummary(_StrictModel):
     running: int = Field(ge=0)
 
 
-class CampaignRecommendation(_StrictModel):
+class CampaignRecommendation(StrictModel):
     branch_id: str = Field(min_length=1)
     score: float | None
     reason: str = Field(min_length=1)
 
 
-class CampaignLinkedReports(_StrictModel):
+class CampaignLinkedReports(StrictModel):
     progress_report_uri: str | None
     utilization_report_uri: str | None
     negative_result_ledger_uri: str | None
 
 
-class CampaignModeReport(_StrictModel):
+class CampaignModeReport(StrictModel):
     schema_version: Literal[1]
     campaign_id: str = Field(min_length=1)
     run_id: str = Field(min_length=1)

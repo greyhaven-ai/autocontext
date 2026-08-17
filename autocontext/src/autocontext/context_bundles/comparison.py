@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import math
 import statistics
 
+from autocontext.analytics.paired_statistics import paired_confidence_interval
 from autocontext.context_bundles.models import (
     ComparisonDecision,
     ComparisonResult,
@@ -73,7 +73,8 @@ def evaluate_matched_trials(
         )
 
     deltas = [trial.delta for trial in confirmation]
-    mean_effect, low, high = _confidence_interval(deltas, effective_policy.confidence_z)
+    mean_effect, low, high = paired_confidence_interval(deltas, effective_policy.confidence_z)
+    assert mean_effect is not None and low is not None and high is not None
     if high <= effective_policy.min_effect:
         return ComparisonResult(
             decision=ComparisonDecision.REJECTED,
@@ -153,10 +154,3 @@ def _validate_trials(candidate: ContextBundle, trials: list[MatchedTrial] | tupl
         if trial.pair_key in seen:
             raise ValueError("duplicate matched trial pair")
         seen.add(trial.pair_key)
-
-
-def _confidence_interval(deltas: list[float], z: float) -> tuple[float, float, float]:
-    mean = statistics.fmean(deltas)
-    standard_error = statistics.stdev(deltas) / math.sqrt(len(deltas))
-    half_width = z * standard_error
-    return mean, mean - half_width, mean + half_width

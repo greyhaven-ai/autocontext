@@ -8,14 +8,15 @@ import time
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Literal, Protocol, Self
+from typing import Any, Literal, Protocol
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 from autocontext.analytics.campaign_mode_report import CampaignModeReport
 from autocontext.context_bundles.models import canonical_json, stable_digest
 from autocontext.sharing.redactor import redact_content
 from autocontext.util.json_io import read_json_guarded, write_json
+from autocontext.util.models import StrictModel
 
 AuditCheckpoint = Literal["pre_promotion", "inconclusive_gate", "integrity_alert", "final_completion"]
 AuditSeverity = Literal["info", "low", "medium", "high", "critical"]
@@ -36,18 +37,7 @@ def _default_checkpoints() -> list[AuditCheckpoint]:
     return ["pre_promotion", "inconclusive_gate", "integrity_alert", "final_completion"]
 
 
-class _StrictModel(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-
-    def to_dict(self) -> dict[str, Any]:
-        return self.model_dump(mode="json")
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Self:
-        return cls.model_validate(data)
-
-
-class CampaignAuditConfig(_StrictModel):
+class CampaignAuditConfig(StrictModel):
     enabled: bool = False
     provider: str = Field(min_length=1)
     model: str = Field(min_length=1)
@@ -65,25 +55,25 @@ class CampaignAuditConfig(_StrictModel):
     output_cost_per_million: float = Field(default=0.0, ge=0.0)
 
 
-class AuditEvidenceReference(_StrictModel):
+class AuditEvidenceReference(StrictModel):
     uri: str = Field(min_length=1)
     digest: str | None
     summary: str = Field(min_length=1)
 
 
-class AuditProtocolLane(_StrictModel):
+class AuditProtocolLane(StrictModel):
     lane_id: str
     verifier_contract_ref: str
     seed_count: int = Field(ge=0)
 
 
-class AuditBundleLineage(_StrictModel):
+class AuditBundleLineage(StrictModel):
     bundle_digest: str
     parent_digest: str | None
     evaluator_epoch: str
 
 
-class AuditMetricSummary(_StrictModel):
+class AuditMetricSummary(StrictModel):
     trial_id: str
     branch_id: str
     candidate_digest: str
@@ -98,7 +88,7 @@ class AuditMetricSummary(_StrictModel):
     reconstruction_ref: str | None
 
 
-class AuditGateDecision(_StrictModel):
+class AuditGateDecision(StrictModel):
     gate_id: str
     decision: str
     claim: str
@@ -108,14 +98,14 @@ class AuditGateDecision(_StrictModel):
     artifact_ref: str | None
 
 
-class AuditNegativeResult(_StrictModel):
+class AuditNegativeResult(StrictModel):
     result_id: str
     disposition: str
     reason: str
     evidence_refs: list[str] = Field(min_length=1)
 
 
-class CampaignAuditEvidencePacket(_StrictModel):
+class CampaignAuditEvidencePacket(StrictModel):
     schema_version: Literal[1] = 1
     access_scope: Literal["read_only"] = "read_only"
     hidden_holdout_answers_included: Literal[False] = False
@@ -138,7 +128,7 @@ class CampaignAuditEvidencePacket(_StrictModel):
         return stable_digest(self.to_dict())
 
 
-class CampaignAuditFinding(_StrictModel):
+class CampaignAuditFinding(StrictModel):
     finding_id: str
     category: AuditCategory
     severity: AuditSeverity
@@ -151,7 +141,7 @@ class CampaignAuditFinding(_StrictModel):
     source: Literal["deterministic_preflight", "llm"]
 
 
-class CampaignAudit(_StrictModel):
+class CampaignAudit(StrictModel):
     schema_version: Literal[1] = 1
     audit_id: str
     campaign_id: str
@@ -174,7 +164,7 @@ class CampaignAudit(_StrictModel):
     failure_reason: str | None
 
 
-class CampaignAuditDisposition(_StrictModel):
+class CampaignAuditDisposition(StrictModel):
     disposition_id: str
     audit_id: str
     operator: str
@@ -183,7 +173,7 @@ class CampaignAuditDisposition(_StrictModel):
     recorded_at: str
 
 
-class CampaignAuditRecord(_StrictModel):
+class CampaignAuditRecord(StrictModel):
     audit: CampaignAudit
     dispositions: list[CampaignAuditDisposition]
 
@@ -307,9 +297,7 @@ class CampaignAuditor:
         return audit
 
     def _validate_route(self) -> None:
-        same_route = (
-            self.config.provider == self.config.proposer_provider and self.config.model == self.config.proposer_model
-        )
+        same_route = self.config.provider == self.config.proposer_provider and self.config.model == self.config.proposer_model
         if same_route and not self.config.allow_same_route:
             raise ValueError("auditor route must differ from proposer route unless explicitly overridden")
 
@@ -343,8 +331,7 @@ class CampaignAuditor:
             model=self.config.model,
             prompt_version=self.config.prompt_version,
             route_distinct_from_proposer=(
-                self.config.provider != self.config.proposer_provider
-                or self.config.model != self.config.proposer_model
+                self.config.provider != self.config.proposer_provider or self.config.model != self.config.proposer_model
             ),
             input_tokens=input_tokens,
             output_tokens=output_tokens,
@@ -379,8 +366,7 @@ class CampaignAuditor:
             model=self.config.model,
             prompt_version=self.config.prompt_version,
             route_distinct_from_proposer=(
-                self.config.provider != self.config.proposer_provider
-                or self.config.model != self.config.proposer_model
+                self.config.provider != self.config.proposer_provider or self.config.model != self.config.proposer_model
             ),
             input_tokens=0,
             output_tokens=0,
@@ -459,9 +445,11 @@ def detect_campaign_integrity_findings(packet: CampaignAuditEvidencePacket) -> l
                 fallback_refs,
             )
         )
-    epochs = {item.evaluator_epoch for item in packet.bundle_lineage} | {
-        item.evaluator_epoch for item in metrics
-    } | {item.evaluator_epoch for item in packet.gate_decisions}
+    epochs = (
+        {item.evaluator_epoch for item in packet.bundle_lineage}
+        | {item.evaluator_epoch for item in metrics}
+        | {item.evaluator_epoch for item in packet.gate_decisions}
+    )
     if len(epochs) > 1:
         findings.append(
             _finding(
@@ -499,11 +487,7 @@ def detect_campaign_integrity_findings(packet: CampaignAuditEvidencePacket) -> l
                 ],
             )
         )
-    misclassified = [
-        metric
-        for metric in metrics
-        if metric.infrastructure_error and metric.classification == "candidate_failure"
-    ]
+    misclassified = [metric for metric in metrics if metric.infrastructure_error and metric.classification == "candidate_failure"]
     if misclassified:
         findings.append(
             _finding(
@@ -583,7 +567,7 @@ def _render_prompt(packet: CampaignAuditEvidencePacket, prompt_version: str) -> 
             "Deterministic monitors and evaluators are authoritative.",
             "Do not rewrite scores, context, active state, or promotion decisions.",
             "Cite only artifact URIs present in artifact_refs.",
-            "Return JSON: {\"findings\": [...], \"recommended_action\": \"...\"}.",
+            'Return JSON: {"findings": [...], "recommended_action": "..."}.',
             "Each finding requires category, severity, confidence, summary, evidence_refs,",
             "affected_branches, affected_trials, and recommended_action.",
             "Evidence packet:",

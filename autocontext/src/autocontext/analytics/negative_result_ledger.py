@@ -5,7 +5,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field
+
+from autocontext.util.models import StrictModel
 
 FailureKind = Literal[
     "verification_failed",
@@ -57,35 +59,24 @@ _FAILURE_KINDS: set[str] = {
 }
 
 
-class _StrictModel(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-
-    def to_dict(self) -> dict[str, Any]:
-        return self.model_dump(mode="json")
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Self:
-        return cls.model_validate(data)
-
-
-class NegativeEvidenceReference(_StrictModel):
+class NegativeEvidenceReference(StrictModel):
     uri: str = Field(min_length=1)
     summary: str = Field(min_length=1)
 
 
-class NegativeBranchLineageEdge(_StrictModel):
+class NegativeBranchLineageEdge(StrictModel):
     parent_branch_id: str = Field(min_length=1)
     child_branch_id: str = Field(min_length=1)
     event_id: str | None
 
 
-class NegativeComponentDependency(_StrictModel):
+class NegativeComponentDependency(StrictModel):
     component_kind: str = Field(min_length=1)
     key: str = Field(min_length=1)
     digest: str = Field(min_length=1)
 
 
-class NegativeResultContext(_StrictModel):
+class NegativeResultContext(StrictModel):
     scenario_name: str | None
     context_bundle_digest: str | None
     context_bundle_family: str | None
@@ -96,7 +87,7 @@ class NegativeResultContext(_StrictModel):
     environment_fingerprint: str | None
 
 
-class NegativeResultApplicabilityContext(_StrictModel):
+class NegativeResultApplicabilityContext(StrictModel):
     scenario_name: str
     context_bundle_digest: str
     context_bundle_family: str | None = None
@@ -108,14 +99,14 @@ class NegativeResultApplicabilityContext(_StrictModel):
     stronger_evidence_available: bool = False
 
 
-class NegativeResultApplicability(_StrictModel):
+class NegativeResultApplicability(StrictModel):
     state: NegativeResultApplicabilityState
     effective_disposition: NegativeResultDisposition | None
     reason: str = Field(min_length=1)
     retest_eligible: bool
 
 
-class NegativeResultEntry(_StrictModel):
+class NegativeResultEntry(StrictModel):
     result_id: str = Field(min_length=1)
     branch_id: str = Field(min_length=1)
     hypothesis_node_id: str | None
@@ -138,14 +129,14 @@ class NegativeResultEntry(_StrictModel):
     superseded_by_result_id: str | None
 
 
-class FailureModeSummary(_StrictModel):
+class FailureModeSummary(StrictModel):
     failure_kind: FailureKind
     disposition: NegativeResultDisposition
     count: int = Field(ge=0)
     result_ids: list[str]
 
 
-class NegativeResultLedger(_StrictModel):
+class NegativeResultLedger(StrictModel):
     schema_version: Literal[2] = 2
     run_id: str = Field(min_length=1)
     generated_at: str = Field(min_length=1)
@@ -251,17 +242,11 @@ def evaluate_negative_result_applicability(
     if entry.disposition == "noise":
         return _applicability("excluded", None, "noise is retained for inspection but not injected", False)
     if entry.superseded_by_result_id:
-        return _applicability(
-            "superseded", None, f"superseded by retest {entry.superseded_by_result_id}", False
-        )
+        return _applicability("superseded", None, f"superseded by retest {entry.superseded_by_result_id}", False)
     if entry.applicability_scope == "context_unknown":
-        return _applicability(
-            "qualified", "caution", "legacy evidence has unknown context and cannot impose a hard ban", True
-        )
+        return _applicability("qualified", "caution", "legacy evidence has unknown context and cannot impose a hard ban", True)
     if current is None:
-        return _applicability(
-            "qualified", "caution", "current context was not supplied; applicability is unverified", True
-        )
+        return _applicability("qualified", "caution", "current context was not supplied; applicability is unverified", True)
 
     recorded = entry.context
     scope_mismatch = _scope_mismatch(entry.applicability_scope, recorded, current)
@@ -281,14 +266,8 @@ def evaluate_negative_result_applicability(
         return _applicability("retest_due", "caution", "evidence age limit was reached", True)
     if current.stronger_evidence_available:
         return _applicability("retest_due", "caution", "stronger evidence is available", True)
-    if (
-        entry.disposition == "hard_ban"
-        and entry.applicability_scope == "cross_scenario"
-        and not entry.safety_policy_authority
-    ):
-        return _applicability(
-            "qualified", "caution", "cross-scenario hard ban lacks safety-policy authority", True
-        )
+    if entry.disposition == "hard_ban" and entry.applicability_scope == "cross_scenario" and not entry.safety_policy_authority:
+        return _applicability("qualified", "caution", "cross-scenario hard ban lacks safety-policy authority", True)
     return _applicability("applicable", entry.disposition, f"matched {entry.applicability_scope} context", True)
 
 
@@ -450,16 +429,13 @@ def _context_from_payload(payload: dict[str, Any], defaults: NegativeResultConte
     )
     return NegativeResultContext(
         scenario_name=_string_or_none(context.get("scenario_name")) or defaults.scenario_name,
-        context_bundle_digest=_string_or_none(context.get("context_bundle_digest"))
-        or defaults.context_bundle_digest,
-        context_bundle_family=_string_or_none(context.get("context_bundle_family"))
-        or defaults.context_bundle_family,
+        context_bundle_digest=_string_or_none(context.get("context_bundle_digest")) or defaults.context_bundle_digest,
+        context_bundle_family=_string_or_none(context.get("context_bundle_family")) or defaults.context_bundle_family,
         evaluator_epoch=_string_or_none(context.get("evaluator_epoch")) or defaults.evaluator_epoch,
         verifier_digest=_string_or_none(context.get("verifier_digest")) or defaults.verifier_digest,
         trial_cohort=_string_or_none(context.get("trial_cohort")) or defaults.trial_cohort,
         component_dependencies=dependencies,
-        environment_fingerprint=_string_or_none(context.get("environment_fingerprint"))
-        or defaults.environment_fingerprint,
+        environment_fingerprint=_string_or_none(context.get("environment_fingerprint")) or defaults.environment_fingerprint,
     )
 
 
@@ -498,13 +474,10 @@ def _scope_mismatch(
     if scope == "exact_bundle" and recorded.context_bundle_digest != current.context_bundle_digest:
         return "context bundle changed"
     if scope == "bundle_family" and (
-        recorded.context_bundle_family is None
-        or recorded.context_bundle_family != current.context_bundle_family
+        recorded.context_bundle_family is None or recorded.context_bundle_family != current.context_bundle_family
     ):
         return "context bundle family changed"
-    if scope in {"exact_bundle", "bundle_family", "scenario_local"} and (
-        recorded.scenario_name != current.scenario_name
-    ):
+    if scope in {"exact_bundle", "bundle_family", "scenario_local"} and (recorded.scenario_name != current.scenario_name):
         return "scenario changed"
     return None
 

@@ -4,28 +4,18 @@ from __future__ import annotations
 
 from collections import defaultdict
 from statistics import fmean
-from typing import Any, Literal, Self
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field
 
 from autocontext.context_bundles.models import BundleComponent, ContextBundle, stable_digest
+from autocontext.util.models import StrictModel
 
 EvidenceLevel = Literal["causal_ablation", "paired_shadow", "component_correlated"]
 ComponentDisposition = Literal["retained", "uncertain", "demotion_candidate", "harmful"]
 
 
-class _StrictModel(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-
-    def to_dict(self) -> dict[str, Any]:
-        return self.model_dump(mode="json")
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Self:
-        return cls.model_validate(data)
-
-
-class ControlledAttributionTrial(_StrictModel):
+class ControlledAttributionTrial(StrictModel):
     """One matched with/without-component observation."""
 
     trial_id: str = Field(min_length=1)
@@ -50,7 +40,7 @@ class ControlledAttributionTrial(_StrictModel):
         return round(self.with_component_score - self.without_component_score, 6)
 
 
-class ComponentAttribution(_StrictModel):
+class ComponentAttribution(StrictModel):
     attribution_id: str = Field(min_length=1)
     component_kind: str = Field(min_length=1)
     component_key: str = Field(min_length=1)
@@ -69,14 +59,14 @@ class ComponentAttribution(_StrictModel):
     supersedes_attribution_id: str | None = None
 
 
-class ContextAttributionLedger(_StrictModel):
+class ContextAttributionLedger(StrictModel):
     schema_version: int = 1
     scenario: str = Field(min_length=1)
     trials: list[ControlledAttributionTrial]
     attributions: list[ComponentAttribution]
 
 
-class ReablationCandidate(_StrictModel):
+class ReablationCandidate(StrictModel):
     component_kind: str = Field(min_length=1)
     component_key: str = Field(min_length=1)
     component_digest: str = Field(min_length=1)
@@ -88,13 +78,13 @@ class ReablationCandidate(_StrictModel):
     interaction_risk: float = Field(ge=0.0, le=1.0)
 
 
-class ReablationPolicy(_StrictModel):
+class ReablationPolicy(StrictModel):
     cadence_generations: int = Field(default=5, ge=1)
     plateau_generations: int = Field(default=3, ge=1)
     budget: int = Field(default=10, ge=0)
 
 
-class ReablationPlan(_StrictModel):
+class ReablationPlan(StrictModel):
     trigger: str
     selected: list[ReablationCandidate]
     deferred: list[ReablationCandidate]
@@ -102,7 +92,7 @@ class ReablationPlan(_StrictModel):
     budget: int = Field(ge=0)
 
 
-class PromptComponentSelection(_StrictModel):
+class PromptComponentSelection(StrictModel):
     component_kind: str
     component_key: str
     component_digest: str
@@ -231,13 +221,9 @@ def append_reablation(
     for record in attributions:
         previous = latest.get((record.component_kind, record.component_key, record.component_digest))
         linked.append(
-            record.model_copy(
-                update={"supersedes_attribution_id": previous.attribution_id if previous is not None else None}
-            )
+            record.model_copy(update={"supersedes_attribution_id": previous.attribution_id if previous is not None else None})
         )
-    return ledger.model_copy(
-        update={"trials": [*ledger.trials, *trials], "attributions": [*ledger.attributions, *linked]}
-    )
+    return ledger.model_copy(update={"trials": [*ledger.trials, *trials], "attributions": [*ledger.attributions, *linked]})
 
 
 def plan_reablation(
@@ -419,9 +405,7 @@ def _select_component(
         last_tested_bundle_digest=record.last_tested_bundle_digest,
         token_cost=token_cost,
         reason=(
-            "demoted from prompt assembly; attribution history retained"
-            if demoted
-            else "retained by current-bundle attribution"
+            "demoted from prompt assembly; attribution history retained" if demoted else "retained by current-bundle attribution"
         ),
     )
 
