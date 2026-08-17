@@ -41,6 +41,11 @@ Long-running campaign operators can opt into a separately routed, frozen
 authority. Reviews are cached, bounded, and advisory; see the
 [read-only campaign auditor](../docs/campaign-auditor.md).
 
+Campaign plans can be executed through the optional, provider-neutral
+`CampaignScheduler`, with durable leases, resource/capability matching,
+comparable lanes, bounded retries and budgets, and capability-driven warm
+affinity. See the [campaign scheduler](../docs/campaign-scheduler.md).
+
 Code and research scenarios can opt into a process-backed `ResearchWorkspace`
 with explicit file, import, subprocess, network, and host-bridge grants. The
 existing restricted interpreter remains the default; see

@@ -9,6 +9,14 @@ All notable changes to this project will be documented in this file.
 - Python kernel evolution now supports a strict external benchmark contract,
   append-only champion lineage, fresh-protocol confirmation before promotion,
   and reproducible synthetic and live H100 examples.
+- An optional Python `CampaignScheduler` dispatches branch/trial jobs across
+  local workers and remote adapters using capability/resource matching,
+  expiring leases, heartbeats, bounded retry and concurrency, idempotent
+  completion, comparable-lane affinity, branch-scoped warm reuse, and enforced
+  campaign/branch/evidence budgets. A checksummed append-only event log enables
+  deterministic restart reconciliation, while reports separate candidate and
+  infrastructure outcomes and include utilization (AC-979). TypeScript retains
+  the shared campaign report artifact; executable scheduling is Python-first.
 - Remote execution now has provider-neutral typed requests/results for images,
   commands, resources, optional accelerators, network and scoped-secret policy,
   artifacts, events, usage, and cleanup. The optional Prime Intellect adapter

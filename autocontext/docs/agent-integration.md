@@ -27,6 +27,13 @@ are separate grants, and credentials never enter the candidate kernel. See
 profiles, lifecycle, snapshots, timeout behavior, and Python/TypeScript
 responsibilities.
 
+External worker daemons can participate in campaign execution through the
+Python `CampaignScheduler` lease protocol: advertise resources/capabilities,
+claim bounded jobs, heartbeat active leases, and complete with separate
+candidate/infrastructure outcomes. The checksummed event log supports restart
+reconciliation and idempotent delivery. See the
+[optional campaign scheduler](../../docs/campaign-scheduler.md).
+
 ## Why CLI-First
 
 The `autoctx` CLI is the default integration surface for external agents. Unix-style CLI interfaces are a natural fit for LLM agents:

@@ -3,6 +3,17 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from .action_filter import ActionFilterHarness
+from .campaign_scheduler import (
+    CallableCampaignWorker,
+    CampaignJobRequest,
+    CampaignJobResult,
+    CampaignScheduler,
+    CampaignSchedulerEventStore,
+    RemoteCampaignWorker,
+    SchedulerBudget,
+    SchedulerResources,
+    WorkerDescriptor,
+)
 from .phased_execution import (
     PhaseBudget,
     PhasedExecutionPlan,
@@ -51,6 +62,11 @@ _LAZY_SUPERVISOR_EXPORTS = frozenset({"ExecutionInput", "ExecutionOutput", "Exec
 
 __all__ = [
     "ActionFilterHarness",
+    "CallableCampaignWorker",
+    "CampaignJobRequest",
+    "CampaignJobResult",
+    "CampaignScheduler",
+    "CampaignSchedulerEventStore",
     "ExecutionSupervisor",
     "ExecutionInput",
     "ExecutionOutput",
@@ -76,11 +92,15 @@ __all__ = [
     "ResearchWorkspaceBenchmark",
     "ResearchWorkspaceSnapshot",
     "RemoteAcceleratorRequest",
+    "RemoteCampaignWorker",
     "RemoteExecutionRequest",
     "RemoteExecutionResult",
     "RemoteResourceRequest",
+    "SchedulerBudget",
+    "SchedulerResources",
     "WorkspaceCapabilityRequest",
     "WorkspaceResourceLimits",
+    "WorkerDescriptor",
     "benchmark_research_workspace",
     "grant_workspace_access",
     "lifecycle_hooks_for_boot_mode",
