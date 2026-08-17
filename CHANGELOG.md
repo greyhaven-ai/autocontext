@@ -9,6 +9,12 @@ All notable changes to this project will be documented in this file.
 - Python kernel evolution now supports a strict external benchmark contract,
   append-only champion lineage, fresh-protocol confirmation before promotion,
   and reproducible synthetic and live H100 examples.
+- An optional Python `CampaignAuditor` now performs separately routed,
+  read-only integrity reviews at bounded campaign checkpoints. Sanitized,
+  fingerprinted evidence packets exclude holdout answers and credentials;
+  duplicate reviews are cached, timeouts fail open to deterministic monitors,
+  findings remain advisory by default, and operator dispositions are durable
+  (AC-980). TypeScript parity is deferred with the Python campaign executor.
 - The Python autoresearch trainer now persists replayable checkpoint-promotion
   artifacts and supports deterministic minimum-effect gating plus adaptive
   matched screen/confirmation/held-out trials. Decisions distinguish accepted,

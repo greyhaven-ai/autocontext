@@ -70,6 +70,7 @@ metadata is available.
 - [Run utilization report](run-utilization-report.md)
 - [Negative result ledger](negative-result-ledger.md)
 - [Campaign mode report](campaign-mode-report.md)
+- [Read-only campaign auditor](campaign-auditor.md)
 - [Goal run report](goal-run-report.md)
 - [Playbook approval gate](playbook-approval-gate.md)
 - [Immutable context bundles and outcome-gated promotion](context-bundles.md)

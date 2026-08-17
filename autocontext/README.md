@@ -36,6 +36,11 @@ supports adaptive matched-trial confirmation through the Python API. Raw
 trials and stopping rationale are persisted separately from deployment
 promotion; see [trainer-local statistical confirmation](../docs/training-statistical-confirmation.md).
 
+Long-running campaign operators can opt into a separately routed, frozen
+`CampaignAuditor` that reviews a sanitized evidence packet without mutation
+authority. Reviews are cached, bounded, and advisory; see the
+[read-only campaign auditor](../docs/campaign-auditor.md).
+
 ## Run from a checkout
 
 ```bash
