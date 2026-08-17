@@ -9,6 +9,9 @@ manifest, canonical digest, and matched-confirmation contract used by the
 Python control plane. It validates the same shared fixtures and can be used by
 Node evaluators before they return promotion evidence. See
 [context bundles](../docs/context-bundles.md).
+The root library also exports ablation-backed component attribution, bounded
+re-testing, causal-credit reconstruction, and prompt-selection helpers; see
+[ablation-backed attribution](../docs/context-attribution.md).
 
 ## Install
 

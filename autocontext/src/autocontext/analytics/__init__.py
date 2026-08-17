@@ -1,6 +1,14 @@
 """Aggregate analytics for cross-run facets, signal extraction, and pattern clustering."""
 
 from autocontext.analytics.campaign_mode_report import CampaignModeReport, build_campaign_mode_report
+from autocontext.analytics.context_attribution import (
+    ComponentAttribution,
+    ContextAttributionLedger,
+    attribute_controlled_trials,
+    plan_reablation,
+    reconstruct_causal_credit,
+    select_prompt_components,
+)
 from autocontext.analytics.exploration_collapse_guard import (
     ExplorationCollapseReport,
     detect_exploration_collapse,
@@ -21,6 +29,8 @@ from autocontext.analytics.trace_gate_operator_view import (
 
 __all__ = [
     "CampaignModeReport",
+    "ComponentAttribution",
+    "ContextAttributionLedger",
     "ExplorationCollapseReport",
     "GoalRunReport",
     "NegativeResultLedger",
@@ -30,6 +40,7 @@ __all__ = [
     "TraceGateOperatorState",
     "TraceGateOperatorView",
     "build_campaign_mode_report",
+    "attribute_controlled_trials",
     "build_goal_run_report",
     "detect_exploration_collapse",
     "build_negative_result_ledger",
@@ -37,6 +48,9 @@ __all__ = [
     "build_run_utilization_report",
     "build_trace_gate_operator_view",
     "render_exploration_collapse_report",
+    "plan_reablation",
+    "reconstruct_causal_credit",
     "render_trace_gate_operator_view_lines",
     "runtime_session_log_to_run_trace",
+    "select_prompt_components",
 ]

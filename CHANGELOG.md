@@ -9,6 +9,12 @@ All notable changes to this project will be documented in this file.
 - Python kernel evolution now supports a strict external benchmark contract,
   append-only champion lineage, fresh-protocol confirmation before promotion,
   and reproducible synthetic and live H100 examples.
+- Ablation-backed context attribution records controlled trial pairs against
+  stable component and bundle digests, reconstructs causal credit, schedules
+  bounded cadence/plateau/composition re-tests, preserves attribution history,
+  and lets prompt selection demote harmful or neutral high-cost components.
+  Paired-shadow and edit-size correlation remain explicitly noncausal in Python
+  and TypeScript reports (AC-974).
 - Negative-result ledger schema v2 binds evidence to context-bundle,
   evaluator, verifier, cohort, dependency, and environment identity. Scoped
   applicability, explicit retest triggers, hard-ban authority, and durable

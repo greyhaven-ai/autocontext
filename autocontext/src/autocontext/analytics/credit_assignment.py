@@ -254,12 +254,13 @@ def compute_change_vector(
 
 
 def attribute_credit(vector: GenerationChangeVector) -> AttributionResult:
-    """Attribute score delta proportionally to change magnitudes."""
+    """Estimate correlated credit from edit size; this is never causal evidence."""
     if vector.score_delta <= 0 or not vector.changes:
         return AttributionResult(
             generation=vector.generation,
             total_delta=vector.score_delta,
             credits={c.component: 0.0 for c in vector.changes},
+            metadata={"evidence_level": "component_correlated", "causal": False},
         )
 
     total_mag = vector.total_change_magnitude
@@ -268,6 +269,7 @@ def attribute_credit(vector: GenerationChangeVector) -> AttributionResult:
             generation=vector.generation,
             total_delta=vector.score_delta,
             credits={c.component: 0.0 for c in vector.changes},
+            metadata={"evidence_level": "component_correlated", "causal": False},
         )
 
     credits = {
@@ -279,6 +281,7 @@ def attribute_credit(vector: GenerationChangeVector) -> AttributionResult:
         generation=vector.generation,
         total_delta=vector.score_delta,
         credits=credits,
+        metadata={"evidence_level": "component_correlated", "causal": False},
     )
 
 
@@ -297,10 +300,10 @@ _ROLE_TITLES: dict[str, str] = {
 }
 
 _ROLE_GUIDANCE: dict[str, str] = {
-    "analyst": "Use this to focus your next diagnosis on the changes that actually moved score.",
-    "coach": "Use this to reinforce the coaching changes that translated into measurable gains.",
-    "architect": "Use this to prioritize tool work only where tooling actually moved outcomes.",
-    "competitor": "Use this to lean into the strategy surfaces that correlated with progress.",
+    "analyst": "Use this correlation to prioritize diagnosis; require controlled trials for causal claims.",
+    "coach": "Treat this edit-size estimate as a lead, not proof that a coaching change caused the gain.",
+    "architect": "Prioritize follow-up tests where tooling changes correlated with outcomes.",
+    "competitor": "Use this correlation as a hypothesis for controlled follow-up.",
 }
 
 
@@ -332,6 +335,8 @@ def format_attribution_for_agent(
 
     positive_delta = result.total_delta > 0
     lines = [f"## {title} (Gen {result.generation})"]
+    evidence_level = str(result.metadata.get("evidence_level", "component_correlated"))
+    lines.append(f"Evidence: {evidence_level} (edit-size heuristic; not causal)")
     if positive_delta:
         lines.append(f"Total score improvement: +{result.total_delta:.4f}")
         if guidance:
