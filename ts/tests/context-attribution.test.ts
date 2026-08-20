@@ -135,6 +135,15 @@ describe("context attribution", () => {
         bundleManifests: new Map([[tested.digest, tested], [replacement.digest, replacement]]),
       },
     )).toThrow("target does not match");
+
+    const forgedTested = { ...tested, digest: "0".repeat(64) };
+    expect(() => attributeManifestVerifiedTrials(
+      [{ ...trial, tested_bundle_digest: forgedTested.digest }],
+      {
+        evaluatorEpoch: tested.evaluator_epoch,
+        bundleManifests: new Map([[forgedTested.digest, forgedTested], [comparison.digest, comparison]]),
+      },
+    )).toThrow("context bundle digest mismatch");
   });
 
   it("reconstructs single-component causal credit from shared stored trials", () => {

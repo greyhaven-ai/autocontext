@@ -20,6 +20,7 @@ from autocontext.knowledge.coherence import check_coherence
 from autocontext.loop.context_bundle_evaluation import evaluate_context_candidate
 from autocontext.loop.cost_control import CostBudget, CostPolicy, CostTracker, throttle_state
 from autocontext.loop.phase_timing import build_phase_result, phase_exhausted
+from autocontext.loop.stage_helpers.context_loaders import _load_validity_harness_loader
 from autocontext.loop.stage_helpers.tournament_prep import _build_empty_tournament
 from autocontext.loop.stage_leakage import stage_leakage
 from autocontext.loop.stage_preflight import stage_preflight
@@ -457,20 +458,11 @@ class GenerationPipeline:
 
                 # Stage 2.4: Pre-validation (optional — dry-run self-play before tournament)
                 if not _over_budget(ctx) and not _phase_exhausted(scaffolding_started_at, scaffolding_budget):
-                    harness_loader = None
-                    if ctx.settings.harness_validators_enabled:
-                        from autocontext.execution.harness_loader import HarnessLoader
-
-                        h_dir = self._artifacts.harness_dir(ctx.scenario_name)
-                        if h_dir.exists():
-                            harness_loader = HarnessLoader(h_dir, timeout_seconds=ctx.settings.harness_timeout_seconds)
-                            harness_loader.load()
-
                     ctx = stage_prevalidation(
                         ctx,
                         events=self._events,
                         agents=self._orchestrator,
-                        harness_loader=harness_loader,
+                        harness_loader=_load_validity_harness_loader(ctx, artifacts=self._artifacts),
                         artifacts=self._artifacts,
                         supervisor=self._supervisor,
                     )
@@ -649,7 +641,13 @@ class GenerationPipeline:
                     )
                     _record_phase_result(ctx, self._events, execution_result, phase_results)
 
-        evaluate_context_candidate(ctx, self._context_bundle_promotion, self._orchestrator, self._events)
+        evaluate_context_candidate(
+            ctx,
+            self._context_bundle_promotion,
+            self._orchestrator,
+            self._events,
+            cancellation_check=(self._controller.stop_requested if self._controller is not None else None),
+        )
 
         # Stage 3b: Stagnation check
         ctx = stage_stagnation_check(

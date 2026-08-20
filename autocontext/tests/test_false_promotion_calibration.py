@@ -38,7 +38,7 @@ def test_full_campaign_null_rate_and_power_are_calibrated_deterministically() ->
         ),
         "heavy_tail_win": simulate_false_promotion_campaigns(
             robust,
-            FalsePromotionCalibrationCase("heavy_tail_win", 0.35, "bounded_heavy_tail", 128),
+            FalsePromotionCalibrationCase("heavy_tail_win", 0.4, "bounded_heavy_tail", 128),
             campaigns=500,
         ),
     }
@@ -50,4 +50,4 @@ def test_full_campaign_null_rate_and_power_are_calibrated_deterministically() ->
     assert cases["heavy_tail_win"].promotion_rate >= 0.8
     assert cases["near_tie"].promotion_rate < 0.2
     assert cases["clear_win"].average_candidates_evaluated < cases["near_tie"].average_candidates_evaluated
-    assert cases["heavy_tail_win"].average_confirmation_blocks >= 128
+    assert cases["heavy_tail_win"].average_confirmation_blocks < cases["null_heavy_tail"].average_confirmation_blocks

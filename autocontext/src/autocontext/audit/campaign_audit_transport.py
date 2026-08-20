@@ -46,6 +46,10 @@ class CancellableAuditorModelClient(Protocol):
     ) -> AuditorCallHandle: ...
 
 
+class AuditorSubmissionNotStartedError(RuntimeError):
+    """A transport proved that no provider request was dispatched."""
+
+
 @dataclass(frozen=True)
 class AuditorCallOutcome:
     response: AuditorModelResponse | None
@@ -70,9 +74,13 @@ def execute_auditor_call(
     pool: concurrent.futures.ThreadPoolExecutor | None = None
     future: concurrent.futures.Future[AuditorModelResponse] | None = None
     call_handle: AuditorCallHandle | None = None
+    submission_started = False
     try:
         start_generate = getattr(client, "start_generate", None)
         if callable(start_generate):
+            # Once provider-native submission begins, an exception is
+            # ambiguous: the remote side may already have accepted the call.
+            submission_started = True
             call_handle = start_generate(
                 model=model,
                 prompt=prompt,
@@ -138,12 +146,15 @@ def execute_auditor_call(
                 model_call_attempted=True,
             )
     except Exception as exc:
+        attempted = submission_started or future is not None or call_handle is not None
+        if isinstance(exc, AuditorSubmissionNotStartedError):
+            attempted = False
         return AuditorCallOutcome(
             response=None,
             latency_ms=_latency_ms(started),
             failure_status="failed",
             failure_reason=f"auditor model call failed: {type(exc).__name__}",
-            model_call_attempted=future is not None or call_handle is not None,
+            model_call_attempted=attempted,
         )
     finally:
         if pool is not None:
@@ -168,6 +179,7 @@ __all__ = [
     "AuditorCallOutcome",
     "AuditorModelClient",
     "AuditorModelResponse",
+    "AuditorSubmissionNotStartedError",
     "CancellableAuditorModelClient",
     "execute_auditor_call",
 ]

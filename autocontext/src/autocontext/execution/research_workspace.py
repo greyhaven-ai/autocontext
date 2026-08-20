@@ -200,7 +200,18 @@ class ResearchWorkspace:
 
         staging = Path(tempfile.mkdtemp(prefix=".autocontext-stage-", dir=self._root.parent)).resolve()
         try:
-            copy_workspace(self._root, staging, self.request.limits.max_file_bytes)
+            try:
+                copy_workspace(
+                    self._root,
+                    staging,
+                    self.request.limits.max_file_bytes,
+                    self.request.limits.max_workspace_bytes,
+                    self.request.limits.max_workspace_inodes,
+                )
+            except (OSError, ValueError) as exc:
+                detail = f"{type(exc).__name__}: {exc}"
+                self._record("execute", "resource_error", detail=detail[-240:])
+                return ReplResult(stdout="", error=f"WorkspaceResourceError: {detail}", answer={})
             response = run_in_child(
                 {
                     "code": code,
@@ -231,7 +242,13 @@ class ResearchWorkspace:
                     *new_helper_sources(code, self._helper_sources),
                 ]
                 try:
-                    replace_workspace(staging, self._root, self.request.limits.max_file_bytes)
+                    replace_workspace(
+                        staging,
+                        self._root,
+                        self.request.limits.max_file_bytes,
+                        self.request.limits.max_workspace_bytes,
+                        self.request.limits.max_workspace_inodes,
+                    )
                 except (OSError, ValueError) as exc:
                     detail = f"{type(exc).__name__}: {exc}"
                     self._record("execute", "commit_error", detail=detail[-240:])
@@ -258,13 +275,25 @@ class ResearchWorkspace:
             detail = f"expired secret grants: {', '.join(sorted(expired))}"
             self._record("execute", "denied", detail=detail)
             return ReplResult(stdout="", error=f"PermissionError: {detail}", answer={})
+        try:
+            files = snapshot_files(
+                self._root,
+                self.request.limits.max_file_bytes,
+                self.request.limits.max_workspace_bytes,
+                self.request.limits.max_workspace_inodes,
+            )
+        except (OSError, ValueError) as exc:
+            detail = f"{type(exc).__name__}: {exc}"
+            self._record("execute", "resource_error", detail=detail[-240:])
+            return ReplResult(stdout="", error=f"WorkspaceResourceError: {detail}", answer={})
+        backend_files = files if "workspace_read" in self.grant.granted_capabilities else {}
         request = ResearchSandboxExecutionRequest(
             workspace_id=self.request.workspace_id,
             sequence=self._sequence + 1,
             code=code,
             variables=copy_plain_mapping(self._variables),
             helper_sources=tuple(self._helper_sources),
-            files=snapshot_files(self._root, self.request.limits.max_file_bytes),
+            files=backend_files,
             granted_capabilities=self.grant.granted_capabilities,
             allowed_imports=self.request.allowed_imports,
             allowed_commands=self.request.allowed_commands,
@@ -290,6 +319,13 @@ class ResearchWorkspace:
                 error="SandboxSecurityError: sandbox output contained an opaque secret grant reference",
                 answer={},
             )
+        if "workspace_write" not in self.grant.granted_capabilities and dict(response.files) != dict(request.files):
+            self._record("execute", "security_error", detail="sandbox changed files without a workspace_write grant")
+            return ReplResult(
+                stdout="",
+                error="SandboxSecurityError: sandbox changed files without a workspace_write grant",
+                answer={},
+            )
         stdout = response.stdout
         if len(stdout) > self.request.limits.max_stdout_chars:
             stdout = stdout[: self.request.limits.max_stdout_chars] + "\n... [truncated]"
@@ -301,12 +337,19 @@ class ResearchWorkspace:
 
         next_variables = copy_plain_mapping(response.variables)
         next_helper_sources = list(response.helper_sources)
-        try:
-            restore_files(self._root, response.files, self.request.limits.max_file_bytes)
-        except (OSError, ValueError) as exc:
-            detail = f"{type(exc).__name__}: {exc}"
-            self._record("execute", "commit_error", detail=detail[-240:])
-            return ReplResult(stdout=stdout, error=f"WorkspaceCommitError: {detail}", answer={})
+        if "workspace_write" in self.grant.granted_capabilities:
+            try:
+                restore_files(
+                    self._root,
+                    response.files,
+                    self.request.limits.max_file_bytes,
+                    self.request.limits.max_workspace_bytes,
+                    self.request.limits.max_workspace_inodes,
+                )
+            except (OSError, ValueError) as exc:
+                detail = f"{type(exc).__name__}: {exc}"
+                self._record("execute", "commit_error", detail=detail[-240:])
+                return ReplResult(stdout=stdout, error=f"WorkspaceCommitError: {detail}", answer={})
         self._variables = next_variables
         self._helper_sources = next_helper_sources
         detail = response.detail or f"backend={self._sandbox_capabilities.backend_name if self._sandbox_capabilities else ''}"
@@ -325,6 +368,29 @@ class ResearchWorkspace:
             raise RuntimeError("no host bridge is configured")
         result = self._host_bridge(name, dict(arguments))
         self._record("host_bridge", "success", resource=name)
+        return result
+
+    def credential_call(self, grant_name: str, operation: str, arguments: Mapping[str, Any]) -> Any:
+        """Invoke one allowlisted credentialed operation outside candidate execution."""
+
+        self._ensure_open()
+        matching = [grant for grant in self.request.secret_grants if grant.name == grant_name]
+        if len(matching) != 1:
+            self._record("credential_broker", "denied", resource=operation)
+            raise PermissionError(f"workspace credential grant is unavailable: {grant_name}")
+        grant = matching[0]
+        if grant.expires_at <= time.time():
+            self._record("credential_broker", "denied", resource=operation)
+            raise PermissionError(f"workspace credential grant is expired: {grant_name}")
+        if operation not in grant.allowed_operations:
+            self._record("credential_broker", "denied", resource=operation)
+            raise PermissionError(f"credential broker operation is not granted: {operation}")
+        broker_call = getattr(self._sandbox_backend, "broker_call", None)
+        if not callable(broker_call):
+            self._record("credential_broker", "unavailable", resource=operation)
+            raise RuntimeError("sandbox backend does not provide a credential broker")
+        result = broker_call(grant, operation, dict(arguments))
+        self._record("credential_broker", "success", resource=operation)
         return result
 
     def variables(self) -> list[WorkspaceVariable]:
@@ -374,7 +440,12 @@ class ResearchWorkspace:
             workspace_id=self.request.workspace_id,
             variables=variables,
             helper_sources=tuple(self._helper_sources),
-            files=snapshot_files(self._root, self.request.limits.max_file_bytes),
+            files=snapshot_files(
+                self._root,
+                self.request.limits.max_file_bytes,
+                self.request.limits.max_workspace_bytes,
+                self.request.limits.max_workspace_inodes,
+            ),
             skipped_variables=skipped,
         )
         self._record("snapshot", "success", detail=f"files={len(snapshot.files)}")
@@ -386,7 +457,13 @@ class ResearchWorkspace:
             raise ValueError("snapshot belongs to a different workspace")
         next_variables = copy_plain_mapping(snapshot.variables)
         next_helper_sources = list(snapshot.helper_sources)
-        restore_files(self._root, snapshot.files, self.request.limits.max_file_bytes)
+        restore_files(
+            self._root,
+            snapshot.files,
+            self.request.limits.max_file_bytes,
+            self.request.limits.max_workspace_bytes,
+            self.request.limits.max_workspace_inodes,
+        )
         if self._restricted is not None:
             from autocontext.execution.interpreter_workspace import WorkspaceSnapshot
 
@@ -399,29 +476,33 @@ class ResearchWorkspace:
     def close(self) -> WorkspaceCleanupResult:
         if self._closed:
             return WorkspaceCleanupResult("already_closed", str(self._root))
-        backend_error = ""
+        cleanup_errors: list[str] = []
         if self._sandbox_backend is not None:
             try:
                 backend_cleanup = self._sandbox_backend.cleanup(self.request.workspace_id)
                 if not backend_cleanup.succeeded:
-                    backend_error = backend_cleanup.detail or "sandbox backend could not verify cleanup"
+                    cleanup_errors.append(backend_cleanup.detail or "sandbox backend could not verify cleanup")
             except Exception as exc:  # noqa: BLE001 - cleanup failure must be reported, not mask local cleanup
-                backend_error = _redact_grant_ids(f"{type(exc).__name__}: {exc}", self.request)
+                cleanup_errors.append(f"sandbox backend cleanup failed: {type(exc).__name__}: {exc}")
         if self._restricted is not None:
-            self._restricted.close()
-        self.runtime_env.cleanup()
+            try:
+                self._restricted.close()
+            except Exception as exc:  # noqa: BLE001 - continue attempting every cleanup boundary
+                cleanup_errors.append(f"interpreter cleanup failed: {type(exc).__name__}: {exc}")
+        try:
+            self.runtime_env.cleanup()
+        except Exception as exc:  # noqa: BLE001 - continue to owned-root deletion
+            cleanup_errors.append(f"runtime workspace cleanup failed: {type(exc).__name__}: {exc}")
         outcome: Literal["retained", "deleted", "error"] = "retained"
-        detail = ""
         if self.request.lifecycle == "delete_on_close" and self._owned_root:
             try:
                 shutil.rmtree(self._root)
                 outcome = "deleted"
             except OSError as exc:
-                outcome = "error"
-                detail = str(exc)
-        if backend_error:
+                cleanup_errors.append(f"workspace root deletion failed: {type(exc).__name__}: {exc}")
+        if cleanup_errors:
             outcome = "error"
-            detail = _redact_grant_ids(backend_error, self.request)
+        detail = _redact_grant_ids("; ".join(cleanup_errors), self.request)
         self._record("cleanup", outcome, detail=detail)
         self._closed = True
         return WorkspaceCleanupResult(outcome, str(self._root), detail)

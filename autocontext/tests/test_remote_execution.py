@@ -15,6 +15,7 @@ from autocontext.execution.remote_execution import (
     RemoteResourceUsage,
     RemoteSecretGrant,
     parse_remote_stdout,
+    remote_request_provenance,
     requests_are_reuse_compatible,
 )
 
@@ -60,6 +61,79 @@ def test_remote_request_rejects_path_escape_expired_secrets_and_implicit_warmth(
         )
     with pytest.raises(ValueError, match="snapshot_id"):
         _request(lifecycle="warm_snapshot")
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"timeout_seconds": float("nan")},
+        {"network_policy": "alow"},
+        {"secrets_policy": "ambient"},
+        {"lifecycle": "reusable"},
+        {"environment": {"INVALID-NAME": "value"}},
+        {
+            "input_artifacts": (
+                RemoteInputArtifact("input.json", b"first"),
+                RemoteInputArtifact("input.json", b"second"),
+            )
+        },
+        {"expected_outputs": ("report.json", "report.json")},
+    ],
+)
+def test_remote_request_rejects_ambiguous_or_nonfinite_contracts(overrides: dict[str, object]) -> None:
+    with pytest.raises(ValueError):
+        _request(**overrides)
+
+
+def test_remote_resources_reject_nonfinite_values() -> None:
+    with pytest.raises(ValueError, match="finite"):
+        RemoteResourceRequest(cpu_cores=float("nan"))
+    with pytest.raises(ValueError, match="accelerator memory"):
+        RemoteAcceleratorRequest("A100", memory_gb=float("inf"))
+
+
+def test_prepared_fixture_provenance_is_complete_valid_and_preserved() -> None:
+    metadata = {
+        "fixture_digest": "a" * 64,
+        "fixture_state_sha256": "b" * 64,
+        "fixture_observation_sha256": "c" * 64,
+    }
+
+    provenance = remote_request_provenance(_request(metadata=metadata))
+
+    assert provenance.fixture_digest == "a" * 64
+    assert provenance.fixture_state_sha256 == "b" * 64
+    assert provenance.fixture_observation_sha256 == "c" * 64
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        {"fixture_digest": "a" * 64},
+        {
+            "fixture_digest": "a" * 64,
+            "fixture_state_sha256": "b" * 64,
+            "fixture_observation_sha256": "not-a-digest",
+        },
+    ],
+)
+def test_prepared_fixture_provenance_fails_closed_when_incomplete_or_invalid(
+    metadata: dict[str, str],
+) -> None:
+    with pytest.raises(ValueError, match="prepared fixture provenance"):
+        _request(metadata=metadata)
+
+
+def test_remote_request_snapshots_mutable_environment_and_metadata() -> None:
+    environment = {"DATASET": "first"}
+    metadata = {"seed": "7"}
+    request = _request(environment=environment, metadata=metadata)
+
+    environment["DATASET"] = "second"
+    metadata["seed"] = "8"
+
+    assert dict(request.environment) == {"DATASET": "first"}
+    assert dict(request.metadata) == {"seed": "7"}
 
 
 def test_parser_streams_events_and_collects_declared_artifacts() -> None:

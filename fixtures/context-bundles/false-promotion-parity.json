@@ -21,13 +21,16 @@
     {"candidate_index": 0, "alpha": 0.04, "required_confidence_z": 2.053748910632},
     {"candidate_index": 1, "alpha": 0.02, "required_confidence_z": 2.326347874041},
     {"candidate_index": 2, "alpha": 0.01, "required_confidence_z": 2.575829303549},
-    {"candidate_index": 3, "alpha": 0.005, "required_confidence_z": 2.807033768344}
+    {"candidate_index": 3, "alpha": 0.005, "required_confidence_z": 2.807033768344},
+    {"candidate_index": 47, "alpha": 2.842170943040401e-16, "required_confidence_z": 8.179841661073},
+    {"candidate_index": 48, "alpha": 1.4210854715202004e-16, "required_confidence_z": 8.262956071937},
+    {"candidate_index": 100, "alpha": 3.1554436208840473e-32, "required_confidence_z": 11.817880737072}
   ],
   "persisted_state_case": {
     "campaign_id": "parity-campaign",
     "candidate_fixture": "causal-attribution-manifest-parity.json",
     "expected_confirmation_policy_digest": "c1249fd5370550ecaefaaa9ef38aebcb81b8ebea288dcd6adccdc15dbf64c808",
-    "expected_state_digest": "1ee7db1e3a4d81de02668ff1cf37b0bcd6f9d4740d56c2f200ad77dc95f07323"
+    "expected_state_digest": "f6ed3d2ce3e0c825171b5fb8af77c4de9d80e5649073a01aafbb9cce674ce8d5"
   },
   "reservation_status_cases": [
     {
@@ -36,7 +39,7 @@
       "evidence_digest": null,
       "independent_confirmation_blocks": 0,
       "independent_heldout_blocks": 0,
-      "expected_state_digest": "1ee7db1e3a4d81de02668ff1cf37b0bcd6f9d4740d56c2f200ad77dc95f07323"
+      "expected_state_digest": "f6ed3d2ce3e0c825171b5fb8af77c4de9d80e5649073a01aafbb9cce674ce8d5"
     },
     {
       "status": "authorized",
@@ -44,7 +47,7 @@
       "evidence_digest": "evidence-authorized",
       "independent_confirmation_blocks": 2,
       "independent_heldout_blocks": 1,
-      "expected_state_digest": "3270d6a0e347fb535b86d674f225c0b4b60ebc1997233248f0cf81f461d027ac"
+      "expected_state_digest": "66ea7871116a47ef70d7eb6bce663734830a9ee6d95cc363ebf6f3425caa4f1e"
     },
     {
       "status": "rejected",
@@ -52,7 +55,7 @@
       "evidence_digest": null,
       "independent_confirmation_blocks": 0,
       "independent_heldout_blocks": 0,
-      "expected_state_digest": "5f5a13d241f6e7033d4b116455e341d77a52083c11800b68c49796f6a235db90"
+      "expected_state_digest": "ff5389ac870288caa612da34a107ae304254ae36755eb45ab2f0b4bc25b123fc"
     },
     {
       "status": "inconclusive",
@@ -60,7 +63,7 @@
       "evidence_digest": null,
       "independent_confirmation_blocks": 0,
       "independent_heldout_blocks": 0,
-      "expected_state_digest": "69479d4fc04a81d05c8f3d3cd04347663091fe156b840213bfdea8befd183cc9"
+      "expected_state_digest": "5067e67ae73046c1c34d7084812207756fd40c4bf145199d4be80134f01e0897"
     },
     {
       "status": "blocked",
@@ -68,7 +71,7 @@
       "evidence_digest": "evidence-blocked",
       "independent_confirmation_blocks": 1,
       "independent_heldout_blocks": 1,
-      "expected_state_digest": "a849545d4c235ef1a0150aaad46ab0bb160cdfcbfa1bd59aa6d585cc18b06495"
+      "expected_state_digest": "54306d234e022860319262cddd926d769541aa9ebe5c929b0a0888f4ac13e2e7"
     }
   ],
   "evidence_cases": [

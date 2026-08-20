@@ -10,6 +10,7 @@ import multiprocessing
 import os
 import subprocess
 import traceback
+import types
 import urllib.parse
 import urllib.request
 from collections.abc import Iterable, Mapping
@@ -55,6 +56,62 @@ _INFRA_NAMES = frozenset(
 )
 _SKIP = object()
 _PROCESS_START_TIMEOUT_SECONDS = 5.0
+
+
+class _CapabilityModuleFacade:
+    """Expose one allowlisted module without its ambient transitive powers."""
+
+    __slots__ = ("_allowed_imports", "_module", "_module_cache")
+
+    def __init__(
+        self,
+        module: types.ModuleType,
+        allowed_imports: frozenset[str],
+        module_cache: dict[str, _CapabilityModuleFacade],
+    ) -> None:
+        object.__setattr__(self, "_module", module)
+        object.__setattr__(self, "_allowed_imports", allowed_imports)
+        object.__setattr__(self, "_module_cache", module_cache)
+
+    def __getattribute__(self, name: str) -> Any:
+        if name in {"_allowed_imports", "_module", "_module_cache"}:
+            return object.__getattribute__(self, name)
+        if name == "__class__":
+            return object.__getattribute__(self, name)
+        if name.startswith("__"):
+            raise PermissionError(f"module metadata access denied: {name}")
+        module = object.__getattribute__(self, "_module")
+        value = getattr(module, name)
+        allowed_imports = object.__getattribute__(self, "_allowed_imports")
+        cache = object.__getattribute__(self, "_module_cache")
+        return _guard_imported_value(value, allowed_imports, cache)
+
+    def __repr__(self) -> str:
+        module = object.__getattribute__(self, "_module")
+        return f"<capability-scoped module {module.__name__!r}>"
+
+
+def _guard_imported_value(
+    value: Any,
+    allowed_imports: frozenset[str],
+    module_cache: dict[str, _CapabilityModuleFacade],
+) -> Any:
+    if isinstance(value, types.ModuleType):
+        top_level = value.__name__.split(".", 1)[0]
+        if top_level not in allowed_imports or top_level in _BLOCKED_MODULES:
+            raise PermissionError(f"transitive module access denied: {value.__name__}")
+        facade = module_cache.get(value.__name__)
+        if facade is None:
+            facade = _CapabilityModuleFacade(value, allowed_imports, module_cache)
+            module_cache[value.__name__] = facade
+        return facade
+    origin = getattr(value, "__module__", None)
+    if not isinstance(origin, str):
+        origin = type(value).__module__
+    top_level = origin.split(".", 1)[0]
+    if top_level in _BLOCKED_MODULES:
+        raise PermissionError(f"transitive capability access denied: {origin}")
+    return value
 
 
 class _DenyRedirectHandler(urllib.request.HTTPRedirectHandler):
@@ -149,13 +206,14 @@ def _execute_child(payload: Mapping[str, Any]) -> dict[str, Any]:
         for name in dir(builtins)
         if not name.startswith("_") and name not in _BLOCKED_NAMES and name != "open"
     }
+    module_cache: dict[str, _CapabilityModuleFacade] = {}
 
     def safe_import(name: str, globals: Any = None, locals: Any = None, fromlist: Any = (), level: int = 0) -> Any:
-        del globals, locals, fromlist
         top_level = name.split(".", 1)[0]
         if level or "package_import" not in capabilities or top_level not in allowed_imports or top_level in _BLOCKED_MODULES:
             raise PermissionError(f"import denied: {name}")
-        return builtins.__import__(name)
+        imported = builtins.__import__(name, globals, locals, fromlist, level)
+        return _guard_imported_value(imported, allowed_imports, module_cache)
 
     def resolve_path(file_path: str, capability: str) -> Path:
         if capability not in capabilities:
@@ -179,10 +237,15 @@ def _execute_child(payload: Mapping[str, Any]) -> dict[str, Any]:
         path = resolve_path(file_path, "workspace_write")
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(content)
+        aggregate_bytes, aggregate_inodes = _workspace_usage(root)
+        if aggregate_bytes > limits.max_workspace_bytes:
+            raise ValueError("workspace exceeds aggregate byte quota")
+        if aggregate_inodes > limits.max_workspace_inodes:
+            raise ValueError("workspace exceeds aggregate inode quota")
 
     def run_command(argv: Iterable[str], timeout_seconds: float | None = None) -> dict[str, Any]:
-        if profile != "trusted_local":
-            raise PermissionError("subprocess execution requires the trusted_local profile")
+        if profile not in {"trusted_local", "isolated_sandbox"}:
+            raise PermissionError("subprocess execution requires a capable workspace profile")
         if "subprocess" not in capabilities:
             raise PermissionError("subprocess capability was not granted")
         args = [str(item) for item in argv]
@@ -339,3 +402,13 @@ def _export_namespace(namespace: Mapping[str, Any]) -> tuple[dict[str, Any], tup
 
 def resource_detail(response: Mapping[str, Any]) -> str:
     return f"stdout_chars={response.get('stdout_chars', 0)} variables={response.get('variable_count', 0)}"
+
+
+def _workspace_usage(root: Path) -> tuple[int, int]:
+    aggregate_bytes = 0
+    aggregate_inodes = 0
+    for path in root.rglob("*"):
+        aggregate_inodes += 1
+        if path.is_file() and not path.is_symlink():
+            aggregate_bytes += path.stat().st_size
+    return aggregate_bytes, aggregate_inodes

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol, TypeAlias
@@ -18,6 +19,7 @@ WorkspaceCapability: TypeAlias = Literal[
 WorkspaceLifecyclePolicy: TypeAlias = Literal["retain", "delete_on_close"]
 CapabilityApprover: TypeAlias = Callable[["WorkspaceCapabilityRequest"], bool]
 HostBridge: TypeAlias = Callable[[str, Mapping[str, Any]], Any]
+WorkspaceCredentialBroker: TypeAlias = Callable[["WorkspaceSecretGrant", str, Mapping[str, Any]], Any]
 
 _CAPABILITIES: frozenset[str] = frozenset(
     {"workspace_read", "workspace_write", "package_import", "subprocess", "network", "host_bridge"}
@@ -30,27 +32,41 @@ class WorkspaceResourceLimits:
     subprocess_timeout_seconds: float = 10.0
     max_stdout_chars: int = 8192
     max_file_bytes: int = 8 * 1024 * 1024
+    max_workspace_bytes: int = 64 * 1024 * 1024
+    max_workspace_inodes: int = 4096
     max_network_bytes: int = 1024 * 1024
 
     def __post_init__(self) -> None:
-        if self.timeout_seconds <= 0 or self.subprocess_timeout_seconds <= 0:
-            raise ValueError("workspace timeouts must be positive")
-        if self.max_stdout_chars <= 0 or self.max_file_bytes <= 0 or self.max_network_bytes <= 0:
-            raise ValueError("workspace byte limits must be positive")
+        timeouts = (self.timeout_seconds, self.subprocess_timeout_seconds)
+        if any(not math.isfinite(value) or value <= 0 for value in timeouts):
+            raise ValueError("workspace timeouts must be positive and finite")
+        if (
+            self.max_stdout_chars <= 0
+            or self.max_file_bytes <= 0
+            or self.max_workspace_bytes <= 0
+            or self.max_workspace_inodes <= 0
+            or self.max_network_bytes <= 0
+        ):
+            raise ValueError("workspace byte and inode limits must be positive")
 
 
 @dataclass(frozen=True, slots=True)
 class WorkspaceSecretGrant:
-    """Opaque, expiring reference resolved only by an isolated backend."""
+    """Opaque, expiring reference usable only through a host-side broker."""
 
     name: str
     grant_id: str
     expires_at: float
-    env_var: str
+    env_var: str = ""
+    allowed_operations: frozenset[str] = frozenset()
 
     def __post_init__(self) -> None:
-        if not self.name.strip() or not self.grant_id.strip() or not self.env_var.strip():
-            raise ValueError("workspace secret grant fields must be non-empty")
+        if not self.name.strip() or not self.grant_id.strip():
+            raise ValueError("workspace secret grant name and id must be non-empty")
+        if not math.isfinite(self.expires_at):
+            raise ValueError("workspace secret grant expiry must be finite")
+        if any(not operation.strip() for operation in self.allowed_operations):
+            raise ValueError("workspace credential broker operations must be non-empty")
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,11 +85,23 @@ class WorkspaceCapabilityRequest:
     def __post_init__(self) -> None:
         if not self.workspace_id.strip():
             raise ValueError("workspace_id must be non-empty")
+        if len(self.workspace_id.encode("utf-8")) > 128:
+            raise ValueError("workspace_id must be at most 128 UTF-8 bytes")
+        if self.profile not in {"restricted_scratch", "trusted_local", "isolated_sandbox"}:
+            raise ValueError(f"unknown workspace profile: {self.profile}")
+        if self.lifecycle not in {"retain", "delete_on_close"}:
+            raise ValueError(f"unknown workspace lifecycle: {self.lifecycle}")
         unknown = set(self.requested_capabilities) - _CAPABILITIES
         if unknown:
             raise ValueError(f"unknown workspace capabilities: {sorted(unknown)}")
         if self.profile == "restricted_scratch" and self.requested_capabilities:
             raise ValueError("restricted_scratch does not accept elevated capabilities")
+        if self.profile == "isolated_sandbox" and {"package_import", "subprocess"}.issubset(
+            self.requested_capabilities
+        ):
+            raise ValueError(
+                "isolated_sandbox cannot combine package_import and subprocess; imported callables bypass command allowlists"
+            )
         if self.secret_grants and self.profile != "isolated_sandbox":
             raise ValueError("workspace secret grants require the isolated_sandbox profile")
 
@@ -213,6 +241,7 @@ __all__ = [
     "WorkspaceCapability",
     "WorkspaceCapabilityRequest",
     "WorkspaceCleanupResult",
+    "WorkspaceCredentialBroker",
     "WorkspaceGrant",
     "WorkspaceLifecyclePolicy",
     "WorkspaceProfile",

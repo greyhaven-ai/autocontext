@@ -45,20 +45,26 @@ def workspace_factory_from_settings(
     if settings.workspace_interpreter_allowed_commands:
         capabilities.add("subprocess")
 
+    backend = DockerResearchSandboxBackend(
+        image=settings.workspace_interpreter_docker_image,
+        memory_mb=settings.workspace_interpreter_memory_mb,
+        cpu_count=settings.workspace_interpreter_cpu_count,
+        pids_limit=settings.workspace_interpreter_pids_limit,
+    )
+
     def isolated_workspace() -> ResearchWorkspace:
-        backend = DockerResearchSandboxBackend(
-            image=settings.workspace_interpreter_docker_image,
-            memory_mb=settings.workspace_interpreter_memory_mb,
-            cpu_count=settings.workspace_interpreter_cpu_count,
-            pids_limit=settings.workspace_interpreter_pids_limit,
-        )
         request = WorkspaceCapabilityRequest(
             workspace_id=f"task-runner-{uuid.uuid4().hex}",
             profile="isolated_sandbox",
             requested_capabilities=frozenset(capabilities),
             allowed_imports=frozenset(settings.workspace_interpreter_allowed_imports),
             allowed_commands=frozenset(settings.workspace_interpreter_allowed_commands),
-            limits=WorkspaceResourceLimits(timeout_seconds=timeout),
+            limits=WorkspaceResourceLimits(
+                timeout_seconds=timeout,
+                max_file_bytes=settings.workspace_interpreter_max_file_bytes,
+                max_workspace_bytes=settings.workspace_interpreter_max_workspace_bytes,
+                max_workspace_inodes=settings.workspace_interpreter_max_workspace_inodes,
+            ),
             lifecycle="delete_on_close",
             approval_context={"source": "task-runner-settings"},
         )

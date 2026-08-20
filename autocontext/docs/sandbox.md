@@ -1,11 +1,12 @@
 # Sandbox Modes
 
-autocontext supports three shipped execution modes for game scenarios, plus judge-based evaluation for agent tasks:
+autocontext supports four shipped execution modes for game scenarios, plus judge-based evaluation for agent tasks:
 
 - `local` executor: runs strategies in a process pool with timeout controls, and applies memory limits in the subprocess path.
 - `primeintellect` executor: runs declared tasks through the provider-neutral
   remote-session contract and a Prime Intellect sandbox lifecycle.
 - `monty` executor: runs strategies in a pydantic-monty interpreter sandbox with external function callbacks and configurable timeout/call limits.
+- `ssh` executor: runs strategies on an explicitly registered, trusted user-owned host and can fall back to the exact prepared local fixture when enabled.
 - **Agent task evaluation**: Agent task scenarios bypass match execution entirely. `JudgeExecutor` delegates to `AgentTaskInterface.evaluate_output()`, which may use `LLMJudge` for LLM-based scoring against a rubric.
 
 ## Gondolin Boundary
@@ -62,7 +63,7 @@ recovery and audit contracts.
 ## Relevant Environment Variables
 
 - `AUTOCONTEXT_EXECUTOR_MODE` (`local`, `primeintellect`, `monty`, `ssh`; `gondolin` is reserved/fail-closed)
-- `AUTOCONTEXT_PRIMEINTELLECT_API_BASE`
+- `AUTOCONTEXT_PRIMEINTELLECT_API_BASE` (deprecated compatibility field; only the provider default is accepted)
 - `AUTOCONTEXT_PRIMEINTELLECT_API_KEY` (deployment secret; never store in prompts, traces, runtime-session events, background-session summaries, lifecycle hook payloads, or artifact metadata)
 - `AUTOCONTEXT_PRIMEINTELLECT_DOCKER_IMAGE`
 - `AUTOCONTEXT_PRIMEINTELLECT_CPU_CORES`
@@ -86,6 +87,9 @@ recovery and audit contracts.
 - `AUTOCONTEXT_WORKSPACE_INTERPRETER_MEMORY_MB`
 - `AUTOCONTEXT_WORKSPACE_INTERPRETER_CPU_COUNT`
 - `AUTOCONTEXT_WORKSPACE_INTERPRETER_PIDS_LIMIT`
+- `AUTOCONTEXT_WORKSPACE_INTERPRETER_MAX_FILE_BYTES`
+- `AUTOCONTEXT_WORKSPACE_INTERPRETER_MAX_WORKSPACE_BYTES`
+- `AUTOCONTEXT_WORKSPACE_INTERPRETER_MAX_WORKSPACE_INODES`
 - `AUTOCONTEXT_JUDGE_MODEL`
 - `AUTOCONTEXT_JUDGE_SAMPLES`
 - `AUTOCONTEXT_JUDGE_TEMPERATURE`
@@ -96,4 +100,7 @@ recovery and audit contracts.
 - PrimeIntellect remote-session execution retries provider failures with
   backoff around full sandbox lifecycle operations; candidate/task failures are
   returned without infrastructure retry.
-- If remote execution remains unavailable, fallback replay/result payloads are generated and captured through normal recovery markers.
+- Remote failures remain typed and fail closed by default. The legacy strategy
+  compatibility facade may generate a local fallback only when
+  `AUTOCONTEXT_ALLOW_PRIMEINTELLECT_FALLBACK=true`; prepared-fixture and campaign
+  execution never substitute an unattested local result.

@@ -37,7 +37,8 @@ class CampaignAuditCheckpointRunner:
         packet = self.packet_factory(checkpoint, evidence)
         if packet.checkpoint != checkpoint:
             raise ValueError("campaign audit packet factory returned the wrong checkpoint")
-        return self.auditor.review(packet, cancellation_event=cancellation_event)
+        audit = self.auditor.review(packet, cancellation_event=cancellation_event)
+        return _apply_operator_disposition(self.auditor, audit)
 
 
 class ContextBundlePrePromotionAuditor:
@@ -62,12 +63,38 @@ class ContextBundlePrePromotionAuditor:
         packet = self.packet_factory(candidate, comparison, trials)
         if packet.checkpoint != "pre_promotion":
             raise ValueError("context bundle audit packet must use the pre_promotion checkpoint")
-        audit = self.auditor.review(packet, cancellation_event=cancellation_event)
+        audit = _apply_operator_disposition(
+            self.auditor,
+            self.auditor.review(packet, cancellation_event=cancellation_event),
+        )
         if audit is None:
             return None
-        if audit.status == "canceled":
+        if audit.status != "completed":
             return "safe_pause_recommended"
         return audit.policy_outcome
+
+
+def _apply_operator_disposition(
+    auditor: CampaignAuditor,
+    audit: CampaignAudit | None,
+) -> CampaignAudit | None:
+    """Apply the latest durable operator resolution without mutating the audit."""
+
+    if audit is None:
+        return None
+    record = auditor.store.read_by_fingerprint(
+        audit.campaign_id,
+        audit.evidence_fingerprint,
+        configuration_fingerprint=audit.configuration_fingerprint,
+    )
+    if record is None or record.audit.audit_id != audit.audit_id or not record.dispositions:
+        return audit
+    disposition = record.dispositions[-1].disposition
+    if disposition in {"dismissed", "mitigated"}:
+        return audit.model_copy(update={"policy_outcome": "advisory"})
+    if disposition == "deferred":
+        return audit.model_copy(update={"policy_outcome": "safe_pause_recommended"})
+    return audit
 
 
 __all__ = ["CampaignAuditCheckpointRunner", "ContextBundlePrePromotionAuditor"]

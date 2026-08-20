@@ -140,6 +140,26 @@ class ScenarioInterface(ABC):
         """Default single-step execution for strategy scoring."""
 
         state = self.initial_state(seed=seed)
+        return self.execute_match_from_state(strategy, seed, state)
+
+    def execute_match_from_state(
+        self,
+        strategy: Mapping[str, Any],
+        seed: int,
+        initial_state: Mapping[str, Any],
+    ) -> Result:
+        """Score ``strategy`` from an explicitly materialized fixture state.
+
+        Executors use this entrypoint when evidence is bound to a predeclared
+        scenario fixture. Scenarios that override ``execute_match`` for custom
+        multi-step semantics must also override this method; silently falling
+        back to different semantics would invalidate the fixture attestation.
+        """
+
+        del seed
+        if type(self).execute_match is not ScenarioInterface.execute_match:
+            raise NotImplementedError("scenario overrides execute_match and must implement execute_match_from_state")
+        state = dict(initial_state)
         valid, reason = self.validate_actions(state, "challenger", strategy)
         if not valid:
             return Result(

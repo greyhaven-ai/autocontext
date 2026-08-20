@@ -3,6 +3,7 @@
 import {
   contextBundleManifestDiff,
   stableDigest,
+  validateContextBundle,
   type BundleComponent,
   type ContextBundle,
   type ContextBundleManifestDiff,
@@ -301,9 +302,12 @@ export function attributeControlledTrials(
 
 export function verifyControlledTrialManifestDiff(
   trial: ControlledAttributionTrial,
-  testedBundle: ContextBundle,
-  comparisonBundle: ContextBundle,
+  testedBundleValue: ContextBundle,
+  comparisonBundleValue: ContextBundle,
 ): ControlledTrialManifestVerification {
+  validateTrial(trial);
+  const testedBundle = validateContextBundle(testedBundleValue);
+  const comparisonBundle = validateContextBundle(comparisonBundleValue);
   if (testedBundle.digest !== trial.tested_bundle_digest) {
     throw new Error("tested bundle manifest does not match the controlled attribution trial");
   }

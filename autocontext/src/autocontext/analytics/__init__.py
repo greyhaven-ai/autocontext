@@ -1,5 +1,7 @@
 """Aggregate analytics for cross-run facets, signal extraction, and pattern clustering."""
 
+from typing import TYPE_CHECKING, Any
+
 from autocontext.analytics.campaign_mode_report import CampaignModeReport, build_campaign_mode_report
 from autocontext.analytics.context_attribution import (
     ComponentAttribution,
@@ -13,11 +15,6 @@ from autocontext.analytics.exploration_collapse_guard import (
     ExplorationCollapseReport,
     detect_exploration_collapse,
     render_exploration_collapse_report,
-)
-from autocontext.analytics.false_promotion_calibration import (
-    FalsePromotionCalibrationCase,
-    FalsePromotionCalibrationResult,
-    simulate_false_promotion_campaigns,
 )
 from autocontext.analytics.goal_run_report import GoalRunReport, build_goal_run_report
 from autocontext.analytics.manifest_attribution import (
@@ -35,6 +32,35 @@ from autocontext.analytics.trace_gate_operator_view import (
     build_trace_gate_operator_view,
     render_trace_gate_operator_view_lines,
 )
+
+if TYPE_CHECKING:
+    from autocontext.analytics.false_promotion_calibration import (
+        FalsePromotionCalibrationCase,
+        FalsePromotionCalibrationResult,
+        simulate_false_promotion_campaigns,
+    )
+
+
+def __getattr__(name: str) -> Any:
+    """Load calibration exports without creating an analytics/bundle cycle."""
+
+    if name in {
+        "FalsePromotionCalibrationCase",
+        "FalsePromotionCalibrationResult",
+        "simulate_false_promotion_campaigns",
+    }:
+        from autocontext.analytics.false_promotion_calibration import (
+            FalsePromotionCalibrationCase,
+            FalsePromotionCalibrationResult,
+            simulate_false_promotion_campaigns,
+        )
+
+        return {
+            "FalsePromotionCalibrationCase": FalsePromotionCalibrationCase,
+            "FalsePromotionCalibrationResult": FalsePromotionCalibrationResult,
+            "simulate_false_promotion_campaigns": simulate_false_promotion_campaigns,
+        }[name]
+    raise AttributeError(name)
 
 __all__ = [
     "CampaignModeReport",

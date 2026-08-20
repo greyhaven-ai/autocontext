@@ -27,6 +27,20 @@ from autocontext.context_bundles.models import (
     PromotionArtifact,
     stable_digest,
 )
+from autocontext.context_bundles.store_transactions import (
+    bound_confirmation_policy,
+    comparison_from_dict,
+    confirmation_policy_from_binding,
+    finalize_active_lifecycles,
+    matched_evidence_binding,
+    migrate_terminal_matched_evidence,
+    parse_matched_trials,
+    pending_candidates,
+    promotion_from_pointer,
+    replay_matched_trials,
+    rollover_evaluator_epoch,
+    stale_terminalization_path,
+)
 from autocontext.storage.scenario_paths import resolve_scenario_root
 from autocontext.util.file_lock import advisory_path_lock
 from autocontext.util.json_io import read_json, write_json, write_text_atomic
@@ -260,6 +274,12 @@ class ContextBundleStore:
             self._materialize_active_compatibility(bundle)
             return bundle
 
+    def rollover_evaluator_epoch(self, scenario: str, evaluator_epoch: str) -> ContextBundle:
+        return rollover_evaluator_epoch(self, scenario, evaluator_epoch)
+
+    def pending_candidates(self, scenario: str, source_run_id: str, source_generation: int) -> tuple[CandidateRecord, ...]:
+        return pending_candidates(self, scenario, source_run_id, source_generation)
+
     def propose(
         self,
         bundle: ContextBundle,
@@ -276,6 +296,8 @@ class ContextBundleStore:
             existing_path = self._record_path(bundle.scenario, bundle.digest)
             if existing_path.exists():
                 existing = CandidateRecord.from_dict(read_json(existing_path))
+                if existing.source_run_id != source_run_id or existing.source_generation != source_generation:
+                    raise ValueError("candidate digest is already bound to a different source generation")
                 self.save_bundle(bundle)
                 self._persist_manifest_diff(bundle)
                 return existing
@@ -302,6 +324,14 @@ class ContextBundleStore:
     def matched_trials(self, scenario: str, digest: str) -> list[MatchedTrial]:
         return self._matched_evidence(scenario, digest).trials
 
+    def matched_evidence_binding(self, scenario: str, digest: str) -> tuple[str, str, str]:
+        return matched_evidence_binding(
+            self,
+            scenario,
+            digest,
+            schema_version=MATCHED_EVIDENCE_SCHEMA_VERSION,
+        )
+
     def record_manifest_verified_attribution(
         self,
         scenario: str,
@@ -327,13 +357,25 @@ class ContextBundleStore:
     ) -> Path:
         """Persist one immutable, context-bound negative-result ledger."""
 
+        from autocontext.storage.negative_result_ledger_store import negative_result_ledger_path
+
         path = self._negative_result_path(scenario, digest)
+        discoverable_path = negative_result_ledger_path(
+            self.knowledge_root,
+            scenario,
+            f"context-bundle-{digest}",
+        )
         with self._lock(scenario):
             if path.exists():
                 if read_json(path) != artifact:
                     raise ValueError("candidate negative-result artifact is immutable")
-                return path
-            write_json(path, artifact)
+            else:
+                write_json(path, artifact)
+            if discoverable_path.exists():
+                if read_json(discoverable_path) != artifact:
+                    raise ValueError("discoverable candidate negative-result artifact is immutable")
+            else:
+                write_json(discoverable_path, artifact)
             return path
 
     def _matched_evidence(self, scenario: str, digest: str) -> _MatchedEvidence:
@@ -343,7 +385,7 @@ class ContextBundleStore:
         data = read_json(path)
         if isinstance(data, list):
             return _MatchedEvidence(
-                trials=_parse_matched_trials(data),
+                trials=parse_matched_trials(data),
                 confirmation_policy=None,
                 confirmation_policy_digest=None,
                 legacy=True,
@@ -371,7 +413,7 @@ class ContextBundleStore:
         if not isinstance(raw_trials, list):
             raise ValueError("matched evidence trials must be an array")
         return _MatchedEvidence(
-            trials=_parse_matched_trials(raw_trials),
+            trials=parse_matched_trials(raw_trials),
             confirmation_policy=dict(raw_policy),
             confirmation_policy_digest=raw_digest,
         )
@@ -402,10 +444,21 @@ class ContextBundleStore:
         trials: list[MatchedTrial],
         *,
         policy: ConfirmationPolicy | None = None,
+        evaluator_plan_digest: str | None = None,
     ) -> ComparisonResult:
         """Merge raw pairs, evaluate them, and advance only the candidate lifecycle."""
         effective_policy = policy or ConfirmationPolicy()
         with self._lock(scenario):
+            from autocontext.context_bundles.evaluator_plan import (
+                require_bound_evaluator_plan,
+            )
+
+            require_bound_evaluator_plan(
+                self,
+                scenario,
+                digest,
+                evaluator_plan_digest,
+            )
             record = self.candidate(scenario, digest)
             evidence = self._matched_evidence(scenario, digest)
             existing = evidence.trials
@@ -426,7 +479,7 @@ class ContextBundleStore:
             bundle = self.load_bundle(scenario, digest)
             policy_payload = effective_policy.to_dict()
             policy_digest = stable_digest(policy_payload)
-            bound_policy, bound_policy_digest = _bound_confirmation_policy(record, evidence)
+            bound_policy, bound_policy_digest = bound_confirmation_policy(record, evidence)
             if bound_policy is not None and (bound_policy != policy_payload or bound_policy_digest != policy_digest):
                 raise ValueError("confirmation policy cannot change while collecting matched evidence")
             by_key = dict(existing_by_key)
@@ -440,7 +493,7 @@ class ContextBundleStore:
             if recovering_terminal_legacy_evidence:
                 if record.comparison is None:
                     raise ValueError("terminal legacy candidate is missing its comparison")
-                recorded_comparison = _comparison_from_dict(record.comparison)
+                recorded_comparison = comparison_from_dict(record.comparison)
                 if comparison.to_dict() != recorded_comparison.to_dict():
                     raise ValueError("legacy confirmation policy does not reproduce the terminal comparison")
                 expected_terminal_lifecycle = {
@@ -485,16 +538,68 @@ class ContextBundleStore:
             write_json(self._record_path(scenario, digest), updated.to_dict())
             return comparison
 
-    def promote(self, scenario: str, digest: str, *, cohort: str, rationale: str) -> PromotionArtifact:
+    def replay_matched_trials(
+        self,
+        scenario: str,
+        digest: str,
+        *,
+        policy: ConfirmationPolicy,
+        evaluator_plan_digest: str | None = None,
+    ) -> ComparisonResult:
+        return replay_matched_trials(
+            self,
+            scenario,
+            digest,
+            policy,
+            evaluator_plan_digest=evaluator_plan_digest,
+        )
+
+    def migrate_terminal_matched_evidence(
+        self,
+        scenario: str,
+        digest: str,
+        *,
+        policy: ConfirmationPolicy,
+    ) -> bool:
+        return migrate_terminal_matched_evidence(self, scenario, digest, policy)
+
+    def promote(
+        self,
+        scenario: str,
+        digest: str,
+        *,
+        cohort: str,
+        rationale: str,
+        evaluator_plan_digest: str | None = None,
+    ) -> PromotionArtifact:
         """Atomically switch the active pointer after confirmed matched evidence."""
         if not cohort.strip():
             raise ValueError("promotion cohort is required")
         with self._lock(scenario):
+            from autocontext.context_bundles.evaluator_plan import (
+                require_bound_evaluator_plan,
+            )
+
+            require_bound_evaluator_plan(
+                self,
+                scenario,
+                digest,
+                evaluator_plan_digest,
+            )
+            pointer = self.active_pointer(scenario)
+            if pointer is not None and pointer.get("bundle_digest") == digest:
+                artifact = promotion_from_pointer(self, scenario, pointer)
+                if artifact.cohort != cohort:
+                    raise ValueError("recovered context bundle promotion cohort mismatch")
+                finalize_active_lifecycles(self, scenario, artifact, rationale)
+                return artifact
+
             record = self.candidate(scenario, digest)
             if record.lifecycle != BundleLifecycle.CONFIRMED or record.comparison is None:
                 raise ValueError("only a confirmed context bundle can be promoted")
+            if stale_terminalization_path(self, scenario, digest).exists():
+                raise ValueError("stale context bundle terminalization is already committed")
             bundle = self.load_bundle(scenario, digest)
-            pointer = self.active_pointer(scenario)
             incumbent_digest = str(pointer["bundle_digest"]) if pointer is not None else None
             if incumbent_digest != bundle.parent_digest:
                 raise ValueError("active bundle changed after confirmation; candidate must be re-evaluated")
@@ -505,21 +610,14 @@ class ContextBundleStore:
             trials = evidence.trials
             if {trial.cohort for trial in trials} != {cohort}:
                 raise ValueError("promotion cohort must exactly match every confirmation trial")
-            policy = _confirmation_policy_from_record(record)
+            policy = confirmation_policy_from_binding(record, evidence)
             if evidence.legacy:
-                self._write_matched_evidence(
-                    scenario,
-                    digest,
-                    trials=trials,
-                    confirmation_policy=policy.to_dict(),
-                    confirmation_policy_digest=record.confirmation_policy_digest or "",
-                )
-            elif (
-                evidence.confirmation_policy != policy.to_dict()
-                or evidence.confirmation_policy_digest != record.confirmation_policy_digest
+                raise ValueError("schema-v1 terminal evidence must be migrated before promotion")
+            if evidence.confirmation_policy != policy.to_dict() or evidence.confirmation_policy_digest != stable_digest(
+                policy.to_dict()
             ):
                 raise ValueError("matched evidence and candidate record bind different confirmation policies")
-            recorded_comparison = _comparison_from_dict(record.comparison)
+            recorded_comparison = comparison_from_dict(record.comparison)
             comparison = evaluate_matched_trials(bundle, trials, policy=policy)
             if comparison.to_dict() != recorded_comparison.to_dict():
                 raise ValueError("persisted matched trials and policy do not reproduce the candidate comparison")
@@ -537,7 +635,7 @@ class ContextBundleStore:
                 rationale=rationale,
                 comparison=comparison,
                 confirmation_policy=policy,
-                confirmation_policy_digest=record.confirmation_policy_digest or "",
+                confirmation_policy_digest=stable_digest(policy.to_dict()),
                 manifest_diff_digest=manifest_diff.digest,
                 promoted_at=now,
             )
@@ -560,10 +658,10 @@ class ContextBundleStore:
                 },
             )
             self._materialize_active_compatibility(bundle)
-            self._set_lifecycle(scenario, record, BundleLifecycle.ACTIVE, rationale)
-            if incumbent_digest is not None:
-                incumbent = self.candidate(scenario, incumbent_digest)
-                self._set_lifecycle(scenario, incumbent, BundleLifecycle.SUPERSEDED, f"superseded by {digest}")
+            # The pointer is the serving commit. Lifecycle mirrors are repaired
+            # best-effort and can be replayed from the durable promotion artifact
+            # if the process or filesystem fails after this point.
+            finalize_active_lifecycles(self, scenario, artifact, rationale)
             return artifact
 
     def _persist_manifest_diff(self, bundle: ContextBundle) -> ContextBundleManifestDiff:
@@ -589,7 +687,9 @@ class ContextBundleStore:
             raise ValueError("context bundle promotion requires an incumbent manifest")
         path = self._manifest_diff_path(bundle.scenario, bundle.digest)
         if not path.exists():
-            raise ValueError("context bundle promotion is missing its persisted manifest diff")
+            # Candidates created before manifest-diff persistence can be
+            # migrated exactly from their immutable parent/tested manifests.
+            return self._persist_manifest_diff(bundle)
         persisted = ContextBundleManifestDiff.from_dict(read_json(path))
         expected = context_bundle_manifest_diff(bundle, incumbent)
         if persisted != expected:
@@ -685,61 +785,3 @@ class ContextBundleStore:
         )
         write_json(self._record_path(scenario, record.bundle_digest), updated.to_dict())
         return updated
-
-
-def _comparison_from_dict(data: dict[str, Any]) -> ComparisonResult:
-    return ComparisonResult(
-        decision=ComparisonDecision(str(data["decision"])),
-        reason=str(data["reason"]),
-        screen_pairs=int(data["screen_pairs"]),
-        confirmation_pairs=int(data["confirmation_pairs"]),
-        heldout_pairs=int(data["heldout_pairs"]),
-        mean_effect=(float(data["mean_effect"]) if data.get("mean_effect") is not None else None),
-        confidence_low=(float(data["confidence_low"]) if data.get("confidence_low") is not None else None),
-        confidence_high=(float(data["confidence_high"]) if data.get("confidence_high") is not None else None),
-    )
-
-
-def _parse_matched_trials(values: list[Any]) -> list[MatchedTrial]:
-    trials = [MatchedTrial.from_dict(item) for item in values]
-    seen: set[str] = set()
-    for trial in trials:
-        if trial.pair_key in seen:
-            raise ValueError("matched trial artifact contains duplicate current pair identity")
-        seen.add(trial.pair_key)
-    return trials
-
-
-def _bound_confirmation_policy(
-    record: CandidateRecord,
-    evidence: _MatchedEvidence,
-) -> tuple[dict[str, Any] | None, str | None]:
-    record_payload = record.confirmation_policy
-    record_digest = record.confirmation_policy_digest
-    if (record_payload is None) != (record_digest is None):
-        raise ValueError("candidate record has an incomplete confirmation policy binding")
-    if record_payload is not None:
-        if stable_digest(record_payload) != record_digest:
-            raise ValueError("persisted confirmation policy digest mismatch")
-        ConfirmationPolicy.from_dict(record_payload)
-    evidence_payload = evidence.confirmation_policy
-    evidence_digest = evidence.confirmation_policy_digest
-    if (
-        record_payload is not None
-        and evidence_payload is not None
-        and (record_payload != evidence_payload or record_digest != evidence_digest)
-    ):
-        raise ValueError("matched evidence and candidate record bind different confirmation policies")
-    if evidence_payload is not None:
-        return evidence_payload, evidence_digest
-    return record_payload, record_digest
-
-
-def _confirmation_policy_from_record(record: CandidateRecord) -> ConfirmationPolicy:
-    payload = record.confirmation_policy
-    digest = record.confirmation_policy_digest
-    if payload is None or digest is None:
-        raise ValueError("confirmed candidate is missing its persisted confirmation policy")
-    if stable_digest(payload) != digest:
-        raise ValueError("persisted confirmation policy digest mismatch")
-    return ConfirmationPolicy.from_dict(payload)

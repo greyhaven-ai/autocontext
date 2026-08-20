@@ -32,8 +32,14 @@ requires all of the following:
    reservation created before the candidate is observed. Repeated seeds for
    one fixture collapse into one dependence block, evaluation lanes must be
    block-disjoint, and the campaign-adjusted interval must pass before serving.
+   Fixture digests derive from canonical initial state plus challenger
+   observation—not seed, lane, or display labels—and every planned fixture is
+   durably reserved before evaluation. A later adaptive candidate cannot reuse
+   any actual fixture previously exposed in the campaign.
 6. An optional read-only `pre_promotion` audit. `review_required` or
    `safe_pause_recommended` holds the candidate without changing its score.
+   Once enabled, audit transport or evidence-integrity failure also holds the
+   persisted confirmation for a resumable retry; it never fails open.
 7. A static serveability check that rejects unsupported routing fields,
    construction-bound route changes, and DAG/tuning changes that require
    lifecycle reconstruction.
@@ -62,12 +68,21 @@ replayed evidence summary, and rollback target under
 `context_bundles/promotions/`.
 
 `ContextBundlePromotionCoordinator` is the live evaluation boundary used by
-both standard and tree-search generation pipelines when configured on
-`GenerationRunner`. It alternates candidate/incumbent call order, stops early
+both standard and tree-search generation pipelines. Set
+`AUTOCONTEXT_CONTEXT_BUNDLE_PROMOTION_ENABLED=true` to make the shipped CLI,
+server, MCP, A/B, and ecosystem `GenerationRunner` entrypoints construct the
+coordinator automatically; constructor injection remains available for custom
+embeddings and tests. It alternates candidate/incumbent call order, stops early
 on rejection or exhausted uncertainty, runs the audit and false-promotion
 gates, then refreshes the active digest and serving routing immediately after
 the atomic pointer changes. A crash or gate failure leaves the incumbent
-pointer untouched.
+pointer untouched. Partial evidence, an audit hold, or an audit transport
+failure defers the generation instead of advancing to a new cohort. Retrying
+the same run and generation discovers its single pending candidate, verifies
+the persisted plan and policy, skips completed pair keys, and resumes before
+any new coach or architect work. A terminal campaign false-promotion block is
+recorded as a rejected candidate and is therefore never mistaken for a
+resumable audit hold.
 
 Every proposal also persists the exact `manifest_diff.json`. Promotion
 recomputes it from the immutable manifests. If a promoted experiment is an
@@ -106,19 +121,40 @@ coordinator = ContextBundlePromotionCoordinator(
 result = coordinator.evaluate_candidate("support", candidate.digest)
 ```
 
+The live runner keeps one `campaign_id` for the complete run, but rebuilds the
+coordinator with a deterministic generation-specific cohort and seed namespace.
+That preserves the alpha ledger across adaptive candidates while preventing
+confirmation and held-out plans from being recycled between generations. A
+schema-v1 risk ledger with prior candidates has no trustworthy fixture history,
+so it remains readable for audit but fails closed for further evaluation; start
+a new campaign identity to continue.
+
 `store.rollback(...)` restores the recorded rollback target with the same
 atomic pointer mechanism. The Python generation loop creates candidates on
-both its standard and tree-search paths. An evaluator or operator supplies the
-matched evidence; the strategy tournament is not reused as evidence for a
-context edit it never exercised.
+both its standard and tree-search paths. The shipped runtime evaluator builds
+each arm from its explicitly supplied immutable bundle and executes the real
+scenario evaluator in a clean model-session boundary; fixture and held-out seed
+identities remain outside model-visible prompts. The strategy tournament is
+not reused as evidence for a context edit it never exercised.
+
+Matched evaluation materializes the state and challenger observation once,
+hashes that exact pair, and supplies all three values to the execution
+supervisor. The local, Monty, Prime Intellect, and SSH executors implement this
+prepared-fixture contract. Prime packages and SSH responses carry the bound
+fixture digest back as an execution attestation; ordinary unprepared requests
+carry none of the prepared-fixture metadata. A custom executor that cannot
+consume the exact prepared state fails before scoring instead of regenerating
+the fixture from its seed or falling back to unattested execution.
 
 ## TypeScript parity
 
 The `autoctx/context-bundles` subpath exports the same component kinds,
 canonical JSON hashing, bundle validation, matched-trial keys, and adaptive
 comparison decision. It also exports the campaign alpha allocation,
-dependence-aware evidence gate, and persisted-state constructors. Python and
-TypeScript both validate
+dependence-aware evidence gate, exact candidate fixture reservations, and
+persisted-state constructors. Evidence authorization in both runtimes requires
+candidate, epoch, cohort, lane, fixture digest, seed, and plan digest to match
+the durable reservation. Python and TypeScript both validate
 `fixtures/context-bundles/manifest-parity.json`, pinning byte-identical digests
 across runtimes. `false-promotion-parity.json` pins alpha, rounded confidence
 thresholds, state digests, and every evidence-gate outcome.

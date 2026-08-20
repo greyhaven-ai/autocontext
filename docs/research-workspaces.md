@@ -70,24 +70,40 @@ OS isolation, workspace mounts, network policy, process limits, environment
 scrubbing, transactional files, terminable execution, and verified cleanup.
 Missing controls fail before candidate code runs.
 
+An isolated request cannot combine `package_import` and `subprocess`. Python
+packages can retain process-capable objects in function globals, which would
+bypass a command-name allowlist even when their public module attributes are
+wrapped. Deployments needing both must provide a lower-layer process broker;
+the shipped backend fails closed instead of treating an object facade as a
+security boundary.
+
 The shipped `DockerResearchSandboxBackend` is a concrete deny-network backend.
 It uses the same pinned clean Python image as hermetic remote scenarios, a
 read-only root filesystem, only the generated runtime-input, workspace, and
 result-output bind mounts (no repository or unrelated host mount),
 dropped Linux capabilities, `no-new-privileges`, a non-root UID, PID/CPU/memory
 limits, a bounded tmpfs, and an explicit environment. A timeout forcibly
-removes the named container. Workspace-labeled containers are removed and then
-queried again during cleanup, allowing restart reconciliation to find an
-orphan. It does not pretend a Docker bridge plus Python hostname check is an
+removes the named container. Every container carries its execution deadline;
+restart reconciliation removes only containers whose deadline has expired.
+Live containers owned by another worker, and legacy containers without a
+verifiable deadline, are never guessed to be orphans. The task-runner factory
+shares one backend across concurrent workspaces, while the deadline contract
+also makes independent worker processes safe. It does not pretend a Docker
+bridge plus Python hostname check is an
 egress firewall: any request for network access fails. Deployments needing
 allowlisted egress must supply a backend that enforces DNS, redirect, private
 range, and subprocess policy below the container.
 
-Opaque `WorkspaceSecretGrant` references are resolved by an optional host
-callback into a mode-0600 Docker env file. Grant ids and resolved values are
-never written into the request artifact. If candidate stdout, answers,
-variables, helpers, files, errors, or backend detail contain a resolved value,
-the entire generation is rejected and no state commits.
+Opaque `WorkspaceSecretGrant` references remain in the host control plane.
+Docker rejects callbacks that resolve a credential value for candidate use;
+an optional broker can perform only the operations allowlisted on the grant
+through `credential_call()`. Neither references nor credential values enter
+the container environment, payload, workspace, or result artifact.
+
+Aggregate workspace byte and inode quotas apply in addition to the per-file
+limit. Docker reconciles expired labeled orphan containers before every
+execution, and removal or verification failures propagate through the typed
+cleanup result instead of being logged as successful cleanup.
 
 Snapshots contain plain built-in variables, helper-function source, and
 workspace-rooted files. `snapshot()`, `restore()`, and `close()` are explicit;
@@ -131,7 +147,8 @@ export AUTOCONTEXT_WORKSPACE_INTERPRETER_ALLOWED_COMMANDS='[]'
 Candidate execution is accepted only with the Docker backend and explicit
 operator approval; selecting the legacy interpreter for this mode raises a
 configuration error. The image is pinned by digest by default, and memory,
-CPU, PID, timeout, import, and command settings are independently configurable.
+CPU, PID, timeout, per-file bytes, aggregate workspace bytes/inodes, import,
+and command settings are independently configurable.
 No network setting exists for the shipped Docker backend because its only
 supported policy is deny. Workspace execution and cleanup audit events are
 included in the persisted evolution trajectory. Applications may still inject

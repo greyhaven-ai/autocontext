@@ -16,7 +16,6 @@ from autocontext.context_bundles import (
     CampaignFalsePromotionController,
     CampaignFalsePromotionPolicy,
     ComparisonDecision,
-    ComparisonResult,
     ComponentKind,
     ConfirmationPolicy,
     ContextBundle,
@@ -31,6 +30,7 @@ from autocontext.context_bundles import (
     stable_digest,
 )
 from autocontext.context_bundles.assembly import build_candidate_bundle, bundle_mutations
+from autocontext.context_bundles.false_promotion import required_confidence_z
 from autocontext.harness.mutations import HarnessMutation, MutationType
 
 
@@ -813,18 +813,10 @@ def test_campaign_false_promotion_shared_python_typescript_fixture(tmp_path: Pat
     for allocation in fixture["candidate_allocations"]:
         index = allocation["candidate_index"]
         assert campaign_policy.alpha_for_candidate(index) == pytest.approx(allocation["alpha"])
-        probe = _bundle(playbook=f"candidate-{index}", parent=baseline.digest)
-        adjusted, reservation = controller.reserve_confirmation_policy(
-            "allocation-parity",
-            probe,
-            base_policy,
-        )
-        assert reservation.candidate_index == index
-        assert reservation.required_confidence_z == pytest.approx(
+        assert required_confidence_z(allocation["alpha"]) == pytest.approx(
             allocation["required_confidence_z"],
             abs=1e-12,
         )
-        assert adjusted.confidence_z == reservation.required_confidence_z
 
     state_case = fixture["persisted_state_case"]
     state_controller = CampaignFalsePromotionController(tmp_path / "state", campaign_policy)
@@ -846,10 +838,12 @@ def test_campaign_false_promotion_shared_python_typescript_fixture(tmp_path: Pat
             independent_heldout_blocks=status_case["independent_heldout_blocks"],
         )
         payload = {
-            "schema_version": 1,
+            "schema_version": 2,
             "campaign_id": state_case["campaign_id"],
             "policy": campaign_policy.to_dict(),
             "reservations": [reservation.to_dict()],
+            "fixture_reservations": [],
+            "fixture_history_complete": True,
         }
         assert stable_digest(payload) == status_case["expected_state_digest"]
 
@@ -872,16 +866,43 @@ def test_campaign_false_promotion_shared_python_typescript_fixture(tmp_path: Pat
             for observation in case["observations"]
         ]
         expected = case["expected"]
+        comparison = evaluate_matched_trials(candidate, trials, policy=adjusted)
+        assert comparison.decision == ComparisonDecision.CONFIRMED
+        fixture_units = tuple(
+            (trial.lane, trial.fixture_digest, trial.seed)
+            for trial in trials
+        )
+        if case["name"] == "repeated_seeds_are_one_block":
+            with pytest.raises(ValueError, match="insufficient independent confirmation fixtures"):
+                controller.reserve_fixture_plan(
+                    campaign_id,
+                    candidate,
+                    "parity-cohort",
+                    fixture_units,
+                    adjusted,
+                )
+            continue
+        if case["name"] == "lane_overlap_fails_closed":
+            with pytest.raises(ValueError, match="across evaluation lanes"):
+                controller.reserve_fixture_plan(
+                    campaign_id,
+                    candidate,
+                    "parity-cohort",
+                    fixture_units,
+                    adjusted,
+                )
+            continue
+        controller.reserve_fixture_plan(
+            campaign_id,
+            candidate,
+            "parity-cohort",
+            fixture_units,
+            adjusted,
+        )
         result = controller.authorize_promotion(
             campaign_id,
             candidate,
-            ComparisonResult(
-                decision=ComparisonDecision.CONFIRMED,
-                reason="fixture comparison",
-                screen_pairs=1,
-                confirmation_pairs=2,
-                heldout_pairs=1,
-            ),
+            comparison,
             trials,
             adjusted,
         )
@@ -930,13 +951,9 @@ def test_live_false_promotion_gate_collapses_correlated_fixture_seeds(tmp_path: 
         campaign_id="campaign-risk",
     )
 
-    result = coordinator.evaluate_candidate("demo", candidate.digest)
+    with pytest.raises(ValueError, match="insufficient independent confirmation fixtures"):
+        coordinator.evaluate_candidate("demo", candidate.digest)
 
-    assert result.comparison.decision == ComparisonDecision.CONFIRMED
-    assert result.false_promotion_result is not None
-    assert result.false_promotion_result.authorized is False
-    assert "independent confirmation blocks" in result.false_promotion_result.reason
-    assert result.promotion is None
     assert store.active_bundle("demo") == baseline
 
 

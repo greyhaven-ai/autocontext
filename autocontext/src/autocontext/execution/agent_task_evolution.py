@@ -605,12 +605,16 @@ class AgentTaskEvolutionRunner:
         )
 
         workspace = self._workspace_factory() if self._workspace_factory is not None else None
+        primary_error: BaseException | None = None
         try:
             for _ in range(num_generations):
                 state = self.run_generation(state, workspace=workspace)
+        except BaseException as exc:  # noqa: BLE001 - preserve the primary failure through cleanup
+            primary_error = exc
+            raise
         finally:
             if workspace is not None:
-                workspace.close()
+                cleanup = workspace.close()
                 audit_events = _serialized_workspace_audit_events(workspace)
                 if audit_events:
                     state = state.model_copy(
@@ -621,6 +625,13 @@ class AgentTaskEvolutionRunner:
                             }
                         }
                     )
+                if getattr(cleanup, "outcome", None) == "error":
+                    detail = str(getattr(cleanup, "detail", "") or "workspace cleanup failed")
+                    cleanup_error = RuntimeError(f"workspace cleanup could not be verified: {detail}")
+                    if primary_error is not None:
+                        primary_error.add_note(str(cleanup_error))
+                    else:
+                        raise cleanup_error
 
         trajectory = AgentTaskTrajectory(
             task_name=self._task_name,

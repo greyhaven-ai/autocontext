@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
+import math
 import os
 import pickle
 import shutil
 import subprocess
 import tempfile
 import threading
+import time
 import uuid
 from collections.abc import Callable, Mapping
 from pathlib import Path
@@ -21,6 +24,7 @@ from autocontext.execution.research_workspace_models import (
     ResearchSandboxExecutionResult,
     SandboxBackendCapabilities,
     SandboxBackendCleanupResult,
+    WorkspaceCredentialBroker,
     WorkspaceSecretGrant,
 )
 from autocontext.execution.scenario_remote_package import (
@@ -29,6 +33,9 @@ from autocontext.execution.scenario_remote_package import (
 )
 
 SecretGrantResolver = Callable[[WorkspaceSecretGrant], str]
+CredentialBroker = WorkspaceCredentialBroker
+_EXPIRY_LABEL = "ai.autocontext.expires-at"
+_CLEANUP_GRACE_SECONDS = 30.0
 
 
 class DockerResearchSandboxBackend:
@@ -45,20 +52,23 @@ class DockerResearchSandboxBackend:
         image: str = DEFAULT_REMOTE_RUNTIME_IMAGE,
         docker_binary: str = "docker",
         secret_resolver: SecretGrantResolver | None = None,
+        credential_broker: CredentialBroker | None = None,
         memory_mb: int = 512,
         cpu_count: float = 1.0,
         pids_limit: int = 64,
         source_root: Path | None = None,
     ) -> None:
         require_pinned_runtime_image(image)
-        if memory_mb < 64 or cpu_count <= 0 or pids_limit < 2:
+        if memory_mb < 64 or not math.isfinite(cpu_count) or cpu_count <= 0 or pids_limit < 2:
             raise ValueError("Docker sandbox resource limits are invalid")
+        if secret_resolver is not None:
+            raise ValueError("Docker secret value resolvers are unsafe; use a host-side credential_broker with opaque grants")
         resolved_binary = shutil.which(docker_binary)
         if resolved_binary is None:
             raise RuntimeError(f"Docker sandbox executable is unavailable: {docker_binary}")
         self.image = image
         self.docker_binary = resolved_binary
-        self.secret_resolver = secret_resolver
+        self.credential_broker = credential_broker
         self.memory_mb = memory_mb
         self.cpu_count = cpu_count
         self.pids_limit = pids_limit
@@ -77,19 +87,24 @@ class DockerResearchSandboxBackend:
             network_policy=True,
             process_limits=True,
             environment_scrubbing=True,
-            secret_grants=self.secret_resolver is not None,
+            secret_grants=self.credential_broker is not None,
             transactional_files=True,
             terminable_execution=True,
             cleanup_verification=True,
         )
 
     def execute(self, request: ResearchSandboxExecutionRequest) -> ResearchSandboxExecutionResult:
+        if {"package_import", "subprocess"}.issubset(request.granted_capabilities):
+            raise PermissionError(
+                "Docker sandbox cannot combine package_import and subprocess; imported callables bypass command allowlists"
+            )
         if "network" in request.granted_capabilities or request.allowed_network_hosts:
             raise PermissionError(
                 "DockerResearchSandboxBackend is deny-network only; configure an egress-policy backend for network grants"
             )
-        if request.secret_grants and self.secret_resolver is None:
-            raise PermissionError("Docker sandbox secret grants require a host secret resolver")
+        if request.secret_grants and self.credential_broker is None:
+            raise PermissionError("Docker sandbox secret grants require a host-side credential broker")
+        self._ensure_startup_reconciled()
         with self._lock:
             prepared = request.workspace_id in self._prepared_workspaces
         if not prepared:
@@ -99,7 +114,6 @@ class DockerResearchSandboxBackend:
             with self._lock:
                 self._prepared_workspaces.add(request.workspace_id)
         container_name = _container_name(request.workspace_id, request.sequence)
-        secret_values: list[str] = []
         with tempfile.TemporaryDirectory(prefix="autocontext-docker-sandbox-") as directory:
             root = Path(directory)
             input_root = root / "input"
@@ -108,7 +122,14 @@ class DockerResearchSandboxBackend:
             input_root.mkdir()
             output_root.mkdir()
             workspace_root.mkdir()
-            restore_files(workspace_root, request.files, request.limits.max_file_bytes)
+            if "workspace_read" in request.granted_capabilities:
+                restore_files(
+                    workspace_root,
+                    request.files,
+                    request.limits.max_file_bytes,
+                    request.limits.max_workspace_bytes,
+                    request.limits.max_workspace_inodes,
+                )
             runtime_root = input_root / "runtime"
             runtime_root.mkdir()
             for relative in (
@@ -123,7 +144,7 @@ class DockerResearchSandboxBackend:
                 "variables": dict(request.variables),
                 "helper_sources": request.helper_sources,
                 "workspace_root": "/workspace",
-                "profile": "trusted_local",
+                "profile": "isolated_sandbox",
                 "capabilities": tuple(request.granted_capabilities),
                 "allowed_imports": tuple(request.allowed_imports),
                 "allowed_commands": tuple(request.allowed_commands),
@@ -132,27 +153,15 @@ class DockerResearchSandboxBackend:
             }
             (input_root / "payload.pkl").write_bytes(pickle.dumps(payload, protocol=5))
             (input_root / "runner.py").write_text(_CONTAINER_RUNNER, encoding="utf-8")
-            env_file: Path | None = None
-            if request.secret_grants:
-                env_file = root / "secrets.env"
-                lines: list[str] = []
-                assert self.secret_resolver is not None
-                for grant in request.secret_grants:
-                    value = self.secret_resolver(grant)
-                    if not value or "\n" in value or "\r" in value:
-                        raise ValueError(f"secret resolver returned an invalid value for grant: {grant.name}")
-                    secret_values.append(value)
-                    lines.append(f"{grant.env_var}={value}")
-                env_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
-                os.chmod(env_file, 0o600)
-
             command = self._docker_command(
                 container_name,
                 request.workspace_id,
                 input_root,
                 output_root,
                 workspace_root,
-                env_file,
+                None,
+                request.granted_capabilities,
+                expires_at=time.time() + request.limits.timeout_seconds + _CLEANUP_GRACE_SECONDS,
             )
             with self._lock:
                 self._active.setdefault(request.workspace_id, set()).add(container_name)
@@ -170,14 +179,23 @@ class DockerResearchSandboxBackend:
                         env=host_environment,
                     )
                 except subprocess.TimeoutExpired as exc:
-                    self._remove_containers((container_name,))
+                    try:
+                        self._remove_containers((container_name,))
+                    except RuntimeError as cleanup_exc:
+                        raise RuntimeError(f"Docker sandbox timed out and cleanup failed: {cleanup_exc}") from exc
                     raise TimeoutError("Docker sandbox execution timed out and was terminated") from exc
                 if completed.returncode != 0:
-                    detail = _redact_values((completed.stderr or completed.stdout).strip(), secret_values)
+                    detail = (completed.stderr or completed.stdout).strip()
                     raise RuntimeError(f"Docker sandbox failed: {detail[-500:]}")
                 output_path = output_root / "result.json"
                 if not output_path.is_file():
                     raise RuntimeError("Docker sandbox did not produce its result artifact")
+                output_size = output_path.stat().st_size
+                if output_size > request.limits.max_file_bytes:
+                    raise RuntimeError(
+                        "Docker sandbox result artifact exceeds the per-file byte quota: "
+                        f"{output_size} > {request.limits.max_file_bytes}"
+                    )
                 raw = _wire_decode(json.loads(output_path.read_text(encoding="utf-8")))
                 if not isinstance(raw, Mapping):
                     raise RuntimeError("Docker sandbox result artifact is invalid")
@@ -187,23 +205,26 @@ class DockerResearchSandboxBackend:
                     answer=dict(raw.get("answer", {})),
                     variables=dict(raw.get("variables", {})),
                     helper_sources=tuple(raw.get("helper_sources", ())),
-                    files=snapshot_files(workspace_root, request.limits.max_file_bytes),
+                    files=(
+                        snapshot_files(
+                            workspace_root,
+                            request.limits.max_file_bytes,
+                            request.limits.max_workspace_bytes,
+                            request.limits.max_workspace_inodes,
+                        )
+                        if "workspace_write" in request.granted_capabilities
+                        else dict(request.files)
+                    ),
                     session_id=container_name,
                     detail="backend=docker network=deny rootfs=read-only",
                 )
-                if _contains_secret(response, secret_values):
-                    return ResearchSandboxExecutionResult(
-                        error="SandboxSecurityError: resolved secret appeared in candidate output or persisted state",
-                        session_id=container_name,
-                        detail="backend=docker secret-output-rejected",
-                    )
                 return response
             finally:
                 with self._lock:
                     self._active.get(request.workspace_id, set()).discard(container_name)
 
     def cleanup(self, workspace_id: str) -> SandboxBackendCleanupResult:
-        label = f"ai.autocontext.workspace={_safe_label(workspace_id)}"
+        label = f"ai.autocontext.workspace={_workspace_label(workspace_id)}"
         with self._lock:
             active = tuple(self._active.pop(workspace_id, set()))
             self._prepared_workspaces.discard(workspace_id)
@@ -224,11 +245,110 @@ class DockerResearchSandboxBackend:
                 text=True,
                 timeout=10.0,
             )
-        except (OSError, subprocess.SubprocessError) as exc:
-            return SandboxBackendCleanupResult(False, f"Docker cleanup verification failed: {type(exc).__name__}")
+        except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+            return SandboxBackendCleanupResult(
+                False,
+                f"Docker cleanup verification failed: {type(exc).__name__}: {str(exc)[-240:]}",
+            )
         if verify.stdout.strip():
             return SandboxBackendCleanupResult(False, "Docker cleanup left workspace containers behind")
         return SandboxBackendCleanupResult(True, "Docker workspace containers removed and verified")
+
+    def broker_call(
+        self,
+        grant: WorkspaceSecretGrant,
+        operation: str,
+        arguments: Mapping[str, Any],
+    ) -> Any:
+        """Perform a scoped credentialed operation entirely in the host plane."""
+
+        if self.credential_broker is None:
+            raise PermissionError("Docker credential broker is unavailable")
+        if grant.expires_at <= time.time():
+            raise PermissionError(f"workspace secret grant is expired: {grant.name}")
+        if operation not in grant.allowed_operations:
+            raise PermissionError(f"credential broker operation is not granted: {operation}")
+        return self.credential_broker(grant, operation, dict(arguments))
+
+    def _ensure_startup_reconciled(self) -> None:
+        """Remove only containers whose execution deadline has expired."""
+
+        with self._lock:
+            try:
+                listed = subprocess.run(  # noqa: S603
+                    [self.docker_binary, "ps", "-aq", "--filter", "label=ai.autocontext.workspace"],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=10.0,
+                )
+                candidates = tuple(item for item in listed.stdout.splitlines() if item.strip())
+                expired = self._expired_containers(candidates, now=time.time())
+                self._remove_containers(expired)
+                if not expired:
+                    return
+                verify = subprocess.run(  # noqa: S603
+                    [self.docker_binary, "ps", "-aq", "--filter", "label=ai.autocontext.workspace"],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=10.0,
+                )
+            except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+                raise RuntimeError(f"Docker startup orphan reconciliation failed: {type(exc).__name__}: {exc}") from exc
+            remaining = {item for item in verify.stdout.splitlines() if item.strip()}
+            if remaining.intersection(expired):
+                raise RuntimeError("Docker startup orphan reconciliation left expired containers behind")
+
+    def _expired_containers(self, container_ids: tuple[str, ...], *, now: float) -> tuple[str, ...]:
+        if not container_ids:
+            return ()
+        inspected = subprocess.run(  # noqa: S603
+            [
+                self.docker_binary,
+                "inspect",
+                "--format",
+                f'{{{{.Id}}}}\t{{{{ index .Config.Labels "{_EXPIRY_LABEL}" }}}}',
+                *container_ids,
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10.0,
+        )
+        if inspected.returncode != 0:
+            errors = [line for line in inspected.stderr.splitlines() if line.strip()]
+            # A container may exit normally between `docker ps` and `inspect`.
+            # That race is already reconciled and must not make unrelated new
+            # executions unavailable. Every other daemon/permission error is
+            # still terminal.
+            if not errors or not all(
+                "No such object" in line or "No such container" in line for line in errors
+            ):
+                detail = (inspected.stderr or inspected.stdout).strip()
+                raise RuntimeError(f"Docker orphan inspection failed: {detail[-240:]}")
+        expired: list[str] = []
+        known_ids = set(container_ids)
+        for line in inspected.stdout.splitlines():
+            inspected_id, separator, raw_expiry = line.partition("\t")
+            if not separator:
+                raise RuntimeError("Docker orphan reconciliation returned malformed expiry metadata")
+            container_id = next(
+                (candidate for candidate in known_ids if inspected_id.startswith(candidate)),
+                "",
+            )
+            if not container_id:
+                raise RuntimeError("Docker orphan reconciliation returned an unexpected container id")
+            try:
+                expires_at = float(raw_expiry)
+            except ValueError:
+                # Containers without this version's deadline label may belong
+                # to another live/rolling-upgrade worker. Never guess that they
+                # are abandoned.
+                continue
+            if math.isfinite(expires_at) and expires_at <= now:
+                expired.append(container_id)
+        return tuple(expired)
 
     def _docker_command(
         self,
@@ -238,7 +358,13 @@ class DockerResearchSandboxBackend:
         output_root: Path,
         workspace_root: Path,
         env_file: Path | None,
+        granted_capabilities: frozenset[str] = frozenset({"workspace_read", "workspace_write", "subprocess"}),
+        *,
+        expires_at: float | None = None,
     ) -> list[str]:
+        if env_file is not None:
+            raise ValueError("candidate-visible credential environment files are forbidden")
+        pids_limit = self.pids_limit if "subprocess" in granted_capabilities else 1
         command = [
             self.docker_binary,
             "run",
@@ -246,51 +372,80 @@ class DockerResearchSandboxBackend:
             "--name",
             container_name,
             "--label",
-            f"ai.autocontext.workspace={_safe_label(workspace_id)}",
-            "--read-only",
-            "--network",
-            "none",
-            "--cap-drop",
-            "ALL",
-            "--security-opt",
-            "no-new-privileges",
-            "--pids-limit",
-            str(self.pids_limit),
-            "--memory",
-            f"{self.memory_mb}m",
-            "--cpus",
-            str(self.cpu_count),
-            "--tmpfs",
-            "/tmp:rw,noexec,nosuid,nodev,size=16m",
-            "--mount",
-            f"type=bind,src={input_root},dst=/input,readonly",
-            "--mount",
-            f"type=bind,src={output_root},dst=/output",
-            "--mount",
-            f"type=bind,src={workspace_root},dst=/workspace",
-            "--env",
-            "LANG=C.UTF-8",
-            "--env",
-            "HOME=/tmp",
-            "--user",
-            f"{os.getuid()}:{os.getgid()}",
+            f"ai.autocontext.workspace={_workspace_label(workspace_id)}",
         ]
-        if env_file is not None:
-            command.extend(("--env-file", str(env_file)))
-        command.extend((self.image, "python", "-I", "/input/runner.py"))
+        if expires_at is not None:
+            if not math.isfinite(expires_at) or expires_at <= 0:
+                raise ValueError("Docker sandbox expiry must be a positive finite timestamp")
+            command.extend(("--label", f"{_EXPIRY_LABEL}={expires_at:.6f}"))
+        command.extend(
+            (
+                "--read-only",
+                "--network",
+                "none",
+                "--cap-drop",
+                "ALL",
+                "--security-opt",
+                "no-new-privileges",
+                "--pids-limit",
+                str(pids_limit),
+                "--memory",
+                f"{self.memory_mb}m",
+                "--cpus",
+                str(self.cpu_count),
+                "--tmpfs",
+                "/tmp:rw,noexec,nosuid,nodev,size=16m",
+                "--mount",
+                f"type=bind,src={input_root},dst=/input,readonly",
+                "--mount",
+                f"type=bind,src={output_root},dst=/output",
+                "--env",
+                "LANG=C.UTF-8",
+                "--env",
+                "HOME=/tmp",
+                "--user",
+                f"{os.getuid()}:{os.getgid()}",
+            )
+        )
+        if "workspace_read" in granted_capabilities or "workspace_write" in granted_capabilities:
+            workspace_mount = f"type=bind,src={workspace_root},dst=/workspace"
+            if "workspace_write" not in granted_capabilities:
+                workspace_mount += ",readonly"
+            command.extend(("--mount", workspace_mount))
+        command.extend(
+            (
+                self.image,
+                "env",
+                "-i",
+                "LANG=C.UTF-8",
+                "HOME=/tmp",
+                "PATH=/usr/local/bin:/usr/bin:/bin",
+                "python",
+                "-I",
+                "/input/runner.py",
+            )
+        )
         return command
 
     def _remove_containers(self, identifiers: tuple[str, ...]) -> None:
         unique = sorted({identifier for identifier in identifiers if identifier})
         if not unique:
             return
-        subprocess.run(  # noqa: S603
+        completed = subprocess.run(  # noqa: S603
             [self.docker_binary, "rm", "-f", *unique],
             check=False,
             capture_output=True,
             text=True,
             timeout=10.0,
         )
+        if completed.returncode != 0:
+            detail = (completed.stderr or completed.stdout).strip()
+            # Two workers may independently discover the same expired
+            # container. Docker reports a nonzero exit after the first worker
+            # removes it; that is already the desired terminal state.
+            if detail and all("No such container" in line for line in detail.splitlines()):
+                return
+            raise RuntimeError(f"Docker container removal failed: {detail[-240:]}")
 
 
 def _container_name(workspace_id: str, sequence: int) -> str:
@@ -298,22 +453,20 @@ def _container_name(workspace_id: str, sequence: int) -> str:
 
 
 def _safe_label(value: str) -> str:
-    rendered = "".join(char if char.isalnum() or char in "_.-" else "-" for char in value).strip("-.")
+    rendered = "".join(
+        char if (char.isascii() and char.isalnum()) or char in "_.-" else "-"
+        for char in value
+    ).strip("-.")
     if not rendered:
-        raise ValueError("Docker workspace identity has no safe label characters")
+        rendered = f"id-{hashlib.sha256(value.encode('utf-8')).hexdigest()[:24]}"
     return rendered
 
 
-def _redact_values(value: str, secrets: list[str]) -> str:
-    redacted = value
-    for secret in secrets:
-        redacted = redacted.replace(secret, "[REDACTED-SECRET]")
-    return redacted
+def _workspace_label(value: str) -> str:
+    """Return an injective Docker-safe encoding of workspace ownership."""
 
-
-def _contains_secret(response: ResearchSandboxExecutionResult, secrets: list[str]) -> bool:
-    rendered = repr(response)
-    return any(secret in rendered for secret in secrets)
+    encoded = base64.urlsafe_b64encode(value.encode("utf-8")).decode("ascii").rstrip("=")
+    return f"v2-{encoded}"
 
 
 def _wire_decode(value: Any) -> Any:
@@ -394,4 +547,4 @@ Path("/output/result.json").write_text(json.dumps(wire_encode(response), sort_ke
 """
 
 
-__all__ = ["DockerResearchSandboxBackend", "SecretGrantResolver"]
+__all__ = ["CredentialBroker", "DockerResearchSandboxBackend", "SecretGrantResolver"]

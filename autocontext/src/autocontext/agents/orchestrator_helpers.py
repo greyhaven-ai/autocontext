@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import AbstractContextManager, nullcontext
 from typing import TYPE_CHECKING, Any
 
 from autocontext.agents.parsers import parse_analyst_exec, parse_architect_exec, parse_coach_exec, parse_competitor_output
@@ -22,6 +23,7 @@ if TYPE_CHECKING:
     from autocontext.prompts.templates import PromptBundle, PromptPartsBundle, RolePromptParts
 
 NotifyFn = Callable[[str, str], None]
+RoleClientGuard = Callable[[object], AbstractContextManager[None]]
 
 
 def _direct_turn(
@@ -59,6 +61,7 @@ def _run_competitor_phase(
     generation_deadline: float | None,
     notify: NotifyFn,
     parts: PromptPartsBundle | None = None,
+    role_client_guard: RoleClientGuard | None = None,
 ) -> tuple[str, RoleExecution]:
     """Run the Competitor role, choosing RLM vs direct execution."""
     settings = orchestrator.settings
@@ -105,17 +108,26 @@ def _run_competitor_phase(
             scenario_name=scenario_name,
             generation_deadline=generation_deadline,
         ):
-            user_prompt, system = _direct_turn(
-                orchestrator,
-                parts.competitor if parts else None,
-                orchestrator.competitor,
-                competitor_prompt,
-                suffix=code_suffix,
-            )
-            if system:
-                raw_text, competitor_exec = orchestrator.competitor.run(user_prompt, tool_context=tool_context, system=system)
-            else:
-                raw_text, competitor_exec = orchestrator.competitor.run(user_prompt, tool_context=tool_context)
+            guard = role_client_guard(orchestrator.competitor.runtime.client) if role_client_guard is not None else nullcontext()
+            with guard:
+                user_prompt, system = _direct_turn(
+                    orchestrator,
+                    parts.competitor if parts else None,
+                    orchestrator.competitor,
+                    competitor_prompt,
+                    suffix=code_suffix,
+                )
+                if system:
+                    raw_text, competitor_exec = orchestrator.competitor.run(
+                        user_prompt,
+                        tool_context=tool_context,
+                        system=system,
+                    )
+                else:
+                    raw_text, competitor_exec = orchestrator.competitor.run(
+                        user_prompt,
+                        tool_context=tool_context,
+                    )
         notify("competitor", "completed")
 
     return raw_text, competitor_exec
@@ -129,6 +141,7 @@ def _run_translator_phase(
     scenario_name: str,
     generation_deadline: float | None,
     notify: NotifyFn,
+    role_client_guard: RoleClientGuard | None = None,
 ) -> tuple[dict[str, Any], RoleExecution]:
     """Run the Translator role against the Competitor's raw output."""
     settings = orchestrator.settings
@@ -140,10 +153,12 @@ def _run_translator_phase(
         scenario_name=scenario_name,
         generation_deadline=generation_deadline,
     ):
-        if settings.code_strategies_enabled:
-            strategy, translator_exec = orchestrator.translator.translate_code(raw_text)
-        else:
-            strategy, translator_exec = orchestrator.translator.translate(raw_text, strategy_interface)
+        guard = role_client_guard(orchestrator.translator.runtime.client) if role_client_guard is not None else nullcontext()
+        with guard:
+            if settings.code_strategies_enabled:
+                strategy, translator_exec = orchestrator.translator.translate_code(raw_text)
+            else:
+                strategy, translator_exec = orchestrator.translator.translate(raw_text, strategy_interface)
     notify("translator", "completed")
     return strategy, translator_exec
 

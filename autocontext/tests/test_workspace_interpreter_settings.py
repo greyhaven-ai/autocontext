@@ -87,6 +87,37 @@ def test_capable_execution_requires_docker_and_explicit_approval() -> None:
         )
 
 
+def test_docker_workspace_factory_reuses_one_backend_for_concurrent_tasks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from autocontext.execution.docker_research_sandbox import DockerResearchSandboxBackend
+    from autocontext.execution.research_workspace_models import SandboxBackendCleanupResult
+
+    monkeypatch.setattr(shutil, "which", lambda _: "/usr/bin/docker")
+    monkeypatch.setattr(
+        DockerResearchSandboxBackend,
+        "cleanup",
+        lambda _self, _workspace_id: SandboxBackendCleanupResult(True, "test cleanup"),
+    )
+    factory = _workspace_factory_from_settings(
+        AppSettings(
+            workspace_interpreter_enabled=True,
+            workspace_interpreter_backend="docker",
+            workspace_interpreter_capabilities_approved=True,
+        )
+    )
+    assert factory is not None
+
+    first = factory()
+    second = factory()
+
+    assert isinstance(first, ResearchWorkspace)
+    assert isinstance(second, ResearchWorkspace)
+    assert first._sandbox_backend is second._sandbox_backend  # noqa: SLF001
+    first.close()
+    second.close()
+
+
 def test_multi_generation_passes_workspace_factory_when_enabled(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     from autocontext.execution import task_runner as task_runner_module
 

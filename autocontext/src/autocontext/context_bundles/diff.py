@@ -31,14 +31,10 @@ class BundleManifestChange:
             component_kind=str(data["component_kind"]),
             component_key=str(data["component_key"]),
             tested_component_digest=(
-                str(data["tested_component_digest"])
-                if data.get("tested_component_digest") is not None
-                else None
+                str(data["tested_component_digest"]) if data.get("tested_component_digest") is not None else None
             ),
             comparison_component_digest=(
-                str(data["comparison_component_digest"])
-                if data.get("comparison_component_digest") is not None
-                else None
+                str(data["comparison_component_digest"]) if data.get("comparison_component_digest") is not None else None
             ),
         )
 

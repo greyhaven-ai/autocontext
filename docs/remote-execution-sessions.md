@@ -52,17 +52,20 @@ secret-grant, reuse, or warm/snapshot requests it cannot honor. GPU resources
 are optional; ordinary CPU requests do not assume an accelerator exists.
 
 `ephemeral_per_eval` is the default and always attempts sandbox deletion.
-Prime Intellect session reuse is fail-closed by default: the adapter does not
-advertise reuse until a provider integration can prove a clean task boundary.
-When an operator explicitly enables that capability, `execute_requests()`
-provides bounded reuse only for compatible matched-trial cohorts. Requests
-must share lifecycle, image, resources, network and secret policies, secret
-grants, input artifacts, environment, and snapshot, and all fit within the
-declared reuse bound. Per-task metadata may differ because it is not supplied
-when the sandbox is provisioned. One sandbox is then used and one cleanup is
-recorded for the cohort. `warm_snapshot` requires both an explicit snapshot
-reference and advertised Prime Intellect snapshot/warm capabilities from the
-AC-784 adapter contract. There is no silent warm-to-cold substitution.
+Prime Intellect session reuse is unconditionally disabled, even if a caller
+injects a `session_reuse` provider-capability flag. `execute_requests()` fails
+closed until the provider exposes a verified task-reset primitive; sequential
+commands are never run in one dirty sandbox. `warm_snapshot` requires both an
+explicit snapshot reference and advertised Prime Intellect snapshot/warm
+capabilities from the AC-784 adapter contract. There is no silent warm-to-cold
+substitution.
+
+The adapter keeps a thread-safe task-to-sandbox cancellation registry.
+`cancel_request()` accepts either the durable task id or its request and uses
+provider deletion to interrupt active work. Execution cleanup and concurrent
+cancellation share one exactly-once delete outcome, and a cancellation that
+arrives before sandbox creation is honored as soon as the provider returns the
+sandbox handle.
 
 Input artifacts are materialized beneath the task root. Declared output
 artifacts are read from the task's final JSON envelope, while JSON event lines
@@ -75,21 +78,31 @@ advertises secret-grant support.
 The Prime Intellect client contains no game rules or scoring formulas.
 `scenario_remote_task` builds a deterministic stdlib zipapp containing the
 exact built-in or custom scenario module, a minimal `ScenarioInterface` ABI,
-JSON constructor/instance state, strategy, and seed. Its manifest records every
-file digest. The remote command verifies the complete package digest, and the
+JSON instance state, strategy, seed, and recursively discovered local Python
+dependencies. Reconstruction bypasses `__init__` and restores the validated
+instance state, so scenarios with required constructor arguments remain
+executable without guessing constructor inputs. Its manifest records every
+file and provenance digest. The remote command verifies the complete package digest, and the
 zipapp independently re-verifies its format, runtime, and embedded file
 digests before importing or constructing the scenario. Those bootstrap checks
 use the request's typed infrastructure exit code. Imports outside the packaged source and standard library fail
 preflight, so missing dependencies are infrastructure/configuration failures,
 not candidate losses.
 
-The default image is an immutable digest-pinned Python 3.11 slim runtime. The
+The default image is an immutable digest-pinned Python 3.11 slim runtime, and
+mutable Prime image settings are rejected while settings are loaded. The
 package needs no in-sandbox installation and runs with network denied. Shared
 tests execute a built-in and a stateful non-game scenario with `python -I`; an
 opt-in Docker CI test executes the same custom artifact in the exact clean,
-read-only, network-denied image used by the adapter. The recorded image,
-package, file, scenario-state, strategy, and seed digests are sufficient to
-reconstruct the request. `PrimeIntellectExecutor` consumes the typed result and
+read-only, network-denied image used by the adapter. Image, package, input,
+file, scenario-state, strategy, and seed provenance is copied into every typed
+result and external-evaluation ledger entry. Prepared context-bundle
+evaluations additionally bind the canonical state-plus-observation fixture
+digest and separate hashes of both payloads; all three fields are absent for
+ordinary seeded execution and required together for prepared execution. A
+zero-exit scenario response is
+still an infrastructure `artifact_error` unless its result and replay envelopes
+pass structural and provenance validation. `PrimeIntellectExecutor` consumes the typed result and
 preserves the existing `ScenarioInterface` execution surface. Local execution
 remains unchanged.
 

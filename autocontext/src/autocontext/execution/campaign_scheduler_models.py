@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from typing import Literal, Protocol, TypeAlias
@@ -32,6 +33,19 @@ class SchedulerResources:
     accelerator_count: int = 0
 
     def __post_init__(self) -> None:
+        for field_name, value in (
+            ("cpu_cores", self.cpu_cores),
+            ("memory_gb", self.memory_gb),
+            ("disk_gb", self.disk_gb),
+        ):
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+                raise TypeError(f"scheduler resource {field_name} must be a finite number")
+        if isinstance(self.accelerator_count, bool) or not isinstance(self.accelerator_count, int):
+            raise TypeError("scheduler resource accelerator_count must be an integer")
+        if self.accelerator_kind is not None and (
+            not isinstance(self.accelerator_kind, str) or not self.accelerator_kind.strip()
+        ):
+            raise TypeError("scheduler resource accelerator_kind must be a non-empty string when provided")
         if self.cpu_cores < 0 or self.memory_gb < 0 or self.disk_gb < 0 or self.accelerator_count < 0:
             raise ValueError("scheduler resources cannot be negative")
         if self.accelerator_count and not self.accelerator_kind:
@@ -79,7 +93,24 @@ class SchedulerBudget:
     shared_evidence_tokens: int = 0
 
     def __post_init__(self) -> None:
-        if min(self.tokens, self.wall_seconds, self.compute_units, self.jobs, self.shared_evidence_tokens) < 0:
+        for field_name, value in (
+            ("tokens", self.tokens),
+            ("jobs", self.jobs),
+            ("shared_evidence_tokens", self.shared_evidence_tokens),
+        ):
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise TypeError(f"scheduler budget {field_name} must be an integer")
+        for field_name, numeric_value in (
+            ("wall_seconds", self.wall_seconds),
+            ("compute_units", self.compute_units),
+        ):
+            if (
+                isinstance(numeric_value, bool)
+                or not isinstance(numeric_value, (int, float))
+                or not math.isfinite(numeric_value)
+            ):
+                raise TypeError(f"scheduler budget {field_name} must be a finite number")
+        if self.tokens < 0 or self.wall_seconds < 0 or self.compute_units < 0 or self.jobs < 0 or self.shared_evidence_tokens < 0:
             raise ValueError("scheduler budgets cannot be negative")
 
     def add(self, other: SchedulerBudget) -> SchedulerBudget:
@@ -140,6 +171,10 @@ class WorkerDescriptor:
     environment_labels: Mapping[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        if isinstance(self.concurrency, bool) or not isinstance(self.concurrency, int):
+            raise TypeError("worker concurrency must be an integer")
+        if not isinstance(self.worker_id, str) or not isinstance(self.runtime, str):
+            raise TypeError("worker id/runtime must be strings")
         if not self.worker_id.strip() or not self.runtime.strip() or self.concurrency < 1:
             raise ValueError("worker id/runtime must be non-empty and concurrency must be positive")
 
@@ -166,6 +201,12 @@ class CampaignEvidenceGrant:
     evidence_ref: str
     token_cost: int
 
+    def __post_init__(self) -> None:
+        if isinstance(self.token_cost, bool) or not isinstance(self.token_cost, int):
+            raise TypeError("campaign evidence token_cost must be an integer")
+        if self.token_cost < 0:
+            raise ValueError("campaign evidence token_cost cannot be negative")
+
 
 @dataclass(frozen=True, slots=True)
 class CampaignJobRequest:
@@ -188,6 +229,8 @@ class CampaignJobRequest:
         identities = (self.job_id, self.idempotency_key, self.campaign_id, self.branch_id)
         if not all(value.strip() for value in identities):
             raise ValueError("campaign job identity fields must be non-empty")
+        if isinstance(self.max_attempts, bool) or not isinstance(self.max_attempts, int):
+            raise TypeError("campaign job max_attempts must be an integer")
         if self.max_attempts < 1:
             raise ValueError("campaign job max_attempts must be positive")
 
@@ -261,6 +304,7 @@ class _JobState:
     attempts: int = 0
     lease: CampaignLease | None = None
     result: CampaignJobResult | None = None
+    accounting_result: CampaignJobResult | None = None
     late_result: CampaignJobResult | None = None
     last_infrastructure_error: str = ""
 
@@ -272,6 +316,8 @@ class _WorkerState:
     active_leases: set[str] = field(default_factory=set)
     completed_jobs: int = 0
     failed_jobs: int = 0
+    cleanup_succeeded: int = 0
+    cleanup_failed: int = 0
     consumed: SchedulerBudget = field(default_factory=SchedulerBudget)
 
 
@@ -288,9 +334,12 @@ class CampaignSchedulerReport:
     retries: int
     reserved_by_campaign: Mapping[str, SchedulerBudget]
     consumed_by_campaign: Mapping[str, SchedulerBudget]
+    consumed_by_branch: Mapping[str, Mapping[str, SchedulerBudget]]
+    cleanup_by_campaign: Mapping[str, Mapping[str, int]]
     worker_utilization: Mapping[str, Mapping[str, object]]
     events: int
     audit_records_by_campaign: Mapping[str, tuple[Mapping[str, object], ...]] = field(default_factory=dict)
+    audit_failures_by_campaign: Mapping[str, tuple[Mapping[str, str], ...]] = field(default_factory=dict)
 
 
 def replace_lease_expiry(lease: CampaignLease, expires_at: float) -> CampaignLease:
@@ -315,3 +364,11 @@ def reuse_key(request: CampaignJobRequest) -> str:
 TERMINAL_STATUSES: frozenset[JobStatus] = frozenset(
     {"succeeded", "candidate_failed", "infrastructure_failed", "budget_exhausted", "canceled"}
 )
+
+
+def finite_number(value: object, *, minimum: float, inclusive: bool) -> bool:
+    """Return whether ``value`` is a non-boolean finite number within a bound."""
+
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        return False
+    return value >= minimum if inclusive else value > minimum

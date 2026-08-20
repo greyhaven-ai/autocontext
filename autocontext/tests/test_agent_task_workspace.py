@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -209,6 +210,23 @@ def test_run_with_state_closes_workspace_on_evaluate_exception() -> None:
     assert len(factory.created) == 1
     with pytest.raises(RuntimeError, match="closed"):
         factory.created[0].run("1")
+
+
+def test_run_with_state_fails_when_workspace_cleanup_cannot_be_verified() -> None:
+    class FailingCleanupWorkspace(InterpreterWorkspace):
+        def close(self) -> SimpleNamespace:
+            super().close()
+            return SimpleNamespace(outcome="error", detail="container remains")
+
+    runner = AgentTaskEvolutionRunner(
+        task_prompt="Task",
+        generate_fn=lambda prompt, gen: "code",
+        evaluate_fn=lambda output, gen: _evaluation(0.5),
+        workspace_factory=FailingCleanupWorkspace,
+    )
+
+    with pytest.raises(RuntimeError, match="cleanup could not be verified: container remains"):
+        runner.run_with_state(num_generations=1)
 
 
 def test_run_islands_one_workspace_per_island_all_closed() -> None:

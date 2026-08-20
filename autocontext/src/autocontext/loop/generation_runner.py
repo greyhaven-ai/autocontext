@@ -41,8 +41,7 @@ from autocontext.analytics.taxonomy import FacetTaxonomy
 from autocontext.analytics.trace_reporter import ReportStore, TraceReporter
 from autocontext.config import AppSettings
 from autocontext.context_bundles.promotion import ContextBundlePromotionCoordinator
-from autocontext.execution import ExecutionSupervisor
-from autocontext.execution.executors import LocalExecutor
+from autocontext.execution.runtime_factory import build_execution_runtime
 from autocontext.extensions import HookBus
 from autocontext.harness.meta_optimizer import MetaOptimizer
 from autocontext.harness.pipeline.gate import BackpressureGate
@@ -63,7 +62,6 @@ from autocontext.loop.runner_hooks import (
     initialize_hook_bus,
 )
 from autocontext.loop.trace_artifacts import persist_run_inspection
-from autocontext.offline import require_online
 from autocontext.scenarios import SCENARIO_REGISTRY
 from autocontext.scenarios.base import ScenarioInterface
 from autocontext.scenarios.families import detect_family
@@ -119,83 +117,9 @@ class GenerationRunner:
             )
         else:
             self.gate = BackpressureGate(min_delta=settings.backpressure_min_delta)
-        self.remote: Any | None = None
-        if settings.executor_mode == "primeintellect":
-            require_online("use the PrimeIntellect executor", settings=settings)
-            from autocontext.execution.executors.primeintellect import PrimeIntellectExecutor
-            from autocontext.integrations.primeintellect.client import PrimeIntellectClient
-
-            if not settings.primeintellect_api_key:
-                raise ValueError("AUTOCONTEXT_PRIMEINTELLECT_API_KEY is required for primeintellect executor mode")
-            self.remote = PrimeIntellectClient(
-                api_key=settings.primeintellect_api_key or "",
-                docker_image=settings.primeintellect_docker_image,
-                cpu_cores=settings.primeintellect_cpu_cores,
-                memory_gb=settings.primeintellect_memory_gb,
-                disk_size_gb=settings.primeintellect_disk_size_gb,
-                timeout_minutes=settings.primeintellect_timeout_minutes,
-                max_wait_attempts=settings.primeintellect_wait_attempts,
-                allow_fallback=settings.allow_primeintellect_fallback,
-            )
-            self.executor = ExecutionSupervisor(
-                executor=PrimeIntellectExecutor(
-                    self.remote,
-                    max_retries=settings.primeintellect_max_retries,
-                    backoff_seconds=settings.primeintellect_backoff_seconds,
-                )
-            )
-        elif settings.executor_mode == "monty":
-            # MontyExecutor: sandboxed execution via pydantic-monty interpreter.
-            # Scenario methods run on host; eval script runs in Monty sandbox.
-            from autocontext.execution.executors.monty import MontyExecutor
-
-            self.executor = ExecutionSupervisor(
-                executor=MontyExecutor(
-                    max_execution_time_seconds=settings.monty_max_execution_time_seconds,
-                    max_external_calls=settings.monty_max_external_calls,
-                )
-            )
-        elif settings.executor_mode == "ssh":
-            require_online("use the SSH executor", settings=settings, detail=settings.ssh_host)
-            if not settings.ssh_host:
-                raise ValueError("AUTOCONTEXT_SSH_HOST is required for ssh executor mode")
-            from autocontext.execution.executors.ssh import SSHExecutor
-            from autocontext.integrations.ssh.client import SSHClient
-            from autocontext.integrations.ssh.config import SSHHostConfig
-
-            ssh_config = SSHHostConfig(
-                name=settings.ssh_host,
-                hostname=settings.ssh_host,
-                port=settings.ssh_port,
-                user=settings.ssh_user,
-                identity_file=settings.ssh_identity_file,
-                working_directory=settings.ssh_working_directory,
-                connect_timeout=settings.ssh_connect_timeout,
-                command_timeout=settings.ssh_command_timeout,
-            )
-            ssh_client = SSHClient(ssh_config)
-            try:
-                ssh_client.validate_runtime()
-            except RuntimeError as exc:
-                if not settings.ssh_allow_fallback:
-                    raise
-                logger.warning("SSH executor preflight failed; falling back to local executor: %s", exc)
-                self.executor = ExecutionSupervisor(executor=LocalExecutor())
-            else:
-                self.executor = ExecutionSupervisor(
-                    executor=SSHExecutor(
-                        client=ssh_client,
-                        allow_fallback=settings.ssh_allow_fallback,
-                    )
-                )
-        elif settings.executor_mode == "gondolin":
-            raise ValueError(
-                "Gondolin executor mode is reserved for the optional microVM "
-                "sandbox backend and is not wired yet. Use monty for in-process "
-                "sandboxing, or local/ssh/primeintellect for supported executors."
-            )
-        else:
-            self.executor = ExecutionSupervisor(executor=LocalExecutor())
+        execution_runtime = build_execution_runtime(settings, logger=logger)
+        self.remote = execution_runtime.remote_adapter
+        self.executor = execution_runtime.supervisor
         self.events = EventStreamEmitter(settings.event_stream_path)
         if settings.rlm_enabled:
             logger.info(
@@ -1058,6 +982,32 @@ class GenerationRunner:
             gate_decision_history,
         )
 
+    def _context_promotion_for_generation(
+        self,
+        scenario_name: str,
+        scenario: ScenarioInterface,
+        run_id: str,
+        generation_index: int,
+    ) -> ContextBundlePromotionCoordinator | None:
+        from autocontext.loop.context_promotion_runtime import build_context_promotion_for_run
+
+        return build_context_promotion_for_run(
+            self.settings,
+            scenario_name=scenario_name,
+            scenario=scenario,
+            run_id=run_id,
+            generation_index=generation_index,
+            artifacts=self.artifacts,
+            orchestrator=self.agents,
+            supervisor=self.executor,
+            hook_bus=self.hook_bus,
+            # Some integrations construct a lightweight runner without invoking
+            # ``__init__`` (for example report-only/recovery tooling). Preserve
+            # that established compatibility path while keeping promotion
+            # opt-in unless a coordinator was explicitly supplied.
+            explicit=getattr(self, "_context_bundle_promotion", None),
+        )
+
     def run(
         self,
         scenario_name: str,
@@ -1172,6 +1122,7 @@ class GenerationRunner:
                     if hint:
                         coach_competitor_hints += f"\n\n[User guidance]: {hint}"
                 existing_generation = self.sqlite.get_generation(active_run_id, generation)
+                retrying_generation = False
                 if existing_generation is not None:
                     status = str(existing_generation.get("status") or "")
                     if status == "completed":
@@ -1181,6 +1132,7 @@ class GenerationRunner:
                             active_run_id,
                         )
                         continue
+                    retrying_generation = True
                     logger.warning(
                         "generation %s for run %s exists with status '%s'; rerunning generation",
                         generation,
@@ -1204,6 +1156,13 @@ class GenerationRunner:
                 try:
                     from autocontext.loop.generation_pipeline import GenerationPipeline
                     from autocontext.loop.stage_types import GenerationContext
+
+                    context_bundle_promotion = self._context_promotion_for_generation(
+                        scenario_name,
+                        scenario,
+                        active_run_id,
+                        generation,
+                    )
 
                     warm_fn = None
                     if self.settings.executor_mode == "primeintellect" and self.remote is not None:
@@ -1231,7 +1190,7 @@ class GenerationRunner:
                         warm_provision_fn=warm_fn,
                         chat_with_agent_fn=self._chat_with_agent,
                         meta_optimizer=self._meta_optimizer,
-                        context_bundle_promotion=getattr(self, "_context_bundle_promotion", None),
+                        context_bundle_promotion=context_bundle_promotion,
                     )
                     ctx = GenerationContext(
                         run_id=active_run_id,
@@ -1249,6 +1208,17 @@ class GenerationRunner:
                         replay_narrative=replay_narrative,
                         require_playbook_approval=require_playbook_approval,
                     )
+                    if retrying_generation:
+                        from autocontext.loop.context_bundle_evaluation import (
+                            resume_pending_context_candidate,
+                        )
+
+                        resume_pending_context_candidate(
+                            ctx,
+                            context_bundle_promotion,
+                            self.agents,
+                            self.events,
+                        )
                     ctx = pipeline.run_generation(ctx)
                     self.artifacts.mutation_log.append(
                         scenario_name,

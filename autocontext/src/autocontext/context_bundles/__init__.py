@@ -1,5 +1,7 @@
 """Outcome-gated immutable context bundles."""
 
+from typing import TYPE_CHECKING, Any
+
 from autocontext.context_bundles.assembly import (
     CONSTRUCTION_BOUND_ROUTING_FIELDS,
     DEFERRED_ROUTING_FIELDS,
@@ -24,6 +26,8 @@ from autocontext.context_bundles.false_promotion import (
     CampaignFalsePromotionController,
     CampaignFalsePromotionPolicy,
     CampaignFalsePromotionResult,
+    CampaignFixtureUnit,
+    CandidateFixtureReservation,
     CandidateRiskReservation,
     FalsePromotionMethod,
     FalsePromotionStatus,
@@ -54,11 +58,48 @@ from autocontext.context_bundles.promotion import (
 )
 from autocontext.context_bundles.store import CandidateRecord, ContextBundleStore
 
+if TYPE_CHECKING:
+    from autocontext.context_bundles.runtime_evaluator import (
+        RuntimeContextBundleEvaluator,
+        RuntimeContextFixture,
+        build_runtime_context_bundle_evaluator,
+        materialize_runtime_fixture,
+        runtime_fixture_digest,
+    )
+
+
+def __getattr__(name: str) -> Any:
+    if name in {
+        "RuntimeContextBundleEvaluator",
+        "RuntimeContextFixture",
+        "build_runtime_context_bundle_evaluator",
+        "materialize_runtime_fixture",
+        "runtime_fixture_digest",
+    }:
+        from autocontext.context_bundles.runtime_evaluator import (
+            RuntimeContextBundleEvaluator,
+            RuntimeContextFixture,
+            build_runtime_context_bundle_evaluator,
+            materialize_runtime_fixture,
+            runtime_fixture_digest,
+        )
+
+        return {
+            "RuntimeContextBundleEvaluator": RuntimeContextBundleEvaluator,
+            "RuntimeContextFixture": RuntimeContextFixture,
+            "build_runtime_context_bundle_evaluator": build_runtime_context_bundle_evaluator,
+            "materialize_runtime_fixture": materialize_runtime_fixture,
+            "runtime_fixture_digest": runtime_fixture_digest,
+        }[name]
+    raise AttributeError(name)
+
+
 __all__ = [
     "BundleComponent",
     "BundleLifecycle",
     "BundleManifestChange",
     "CandidateRecord",
+    "CandidateFixtureReservation",
     "CandidateRiskReservation",
     "ComparisonDecision",
     "ComparisonResult",
@@ -67,6 +108,7 @@ __all__ = [
     "CampaignFalsePromotionController",
     "CampaignFalsePromotionPolicy",
     "CampaignFalsePromotionResult",
+    "CampaignFixtureUnit",
     "ContextBundle",
     "ContextBundleManifestDiff",
     "ContextBundleStore",
@@ -99,4 +141,9 @@ __all__ = [
     "routing_snapshot",
     "stable_digest",
     "validate_bundle_promotion_contract",
+    "RuntimeContextBundleEvaluator",
+    "RuntimeContextFixture",
+    "build_runtime_context_bundle_evaluator",
+    "materialize_runtime_fixture",
+    "runtime_fixture_digest",
 ]

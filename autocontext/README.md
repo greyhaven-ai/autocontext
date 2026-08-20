@@ -54,7 +54,7 @@ with explicit file, import, network, and host-bridge grants. Only approved
 `trusted_local` workspaces may import packages or run allow-listed subprocesses;
 `isolated_sandbox` requires a complete OS backend and never falls back. The
 shipped Docker backend provides a pinned, read-only, deny-network container
-with resource limits, scoped secret resolution, transactional state, and
+with resource limits, opaque host-side credential brokering, transactional state, and
 verified cleanup; allowlisted egress needs a stronger deployment backend. The
 live queued-task path selects it with
 `AUTOCONTEXT_WORKSPACE_INTERPRETER_BACKEND=docker`, candidate execution, and
