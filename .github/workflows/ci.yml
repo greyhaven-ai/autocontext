@@ -86,10 +86,15 @@ jobs:
       - name: Install
         run: uv sync --locked --group dev
       - name: Package import smoke
-        run: uv run python -c "import autocontext.kernel_evolution"
+        run: >-
+          uv run python -c
+          "import autocontext.context_bundles;
+          import autocontext.execution;
+          import autocontext.kernel_evolution"
       - name: Portable lineage and benchmark lifecycle tests
         run: >-
           uv run pytest
+          tests/test_file_lock.py
           tests/test_kernel_lineage_lock.py
           tests/test_kernel_benchmark_contract.py
           -q

@@ -8,7 +8,6 @@ JSON store and its demote-not-delete rollback. See docs/internal/ac-885-slice-c-
 
 from __future__ import annotations
 
-import fcntl
 import json
 import logging
 import os
@@ -23,6 +22,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from autocontext.execution.evaluator_epoch import EvaluatorEpoch
+from autocontext.util.file_lock import advisory_path_lock
 
 logger = logging.getLogger(__name__)
 
@@ -118,12 +118,8 @@ class EvaluatorEpochRegistry:
         already holding the lock must use the ``_locked`` helpers.
         """
         lock_path = self.root / f"{_safe(scenario)}.lock"
-        with open(lock_path, "w") as handle:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-            try:
-                yield
-            finally:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        with advisory_path_lock(lock_path):
+            yield
 
     def register(self, record: EvaluatorEpochRecord) -> Path:
         path = self._path(record.scenario, record.epoch_id)

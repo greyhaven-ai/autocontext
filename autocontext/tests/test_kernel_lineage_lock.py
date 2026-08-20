@@ -3,19 +3,16 @@ from __future__ import annotations
 import json
 import multiprocessing
 import os
-import subprocess
-import sys
-import textwrap
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from autocontext.kernel_evolution._file_lock import _locked_append_fd, append_bytes_locked
+from autocontext.util.file_lock import append_bytes_locked, locked_append_fd
 
 
 def _hold_lock(path: str, acquired: Any, release: Any) -> None:
-    with _locked_append_fd(Path(path)):
+    with locked_append_fd(Path(path)):
         acquired.set()
         if not release.wait(10):
             raise TimeoutError("test did not release held append lock")
@@ -123,46 +120,3 @@ def test_locked_append_flushes_before_fsync(tmp_path: Path, monkeypatch: pytest.
 
     assert sizes_at_fsync == [len(payload)]
     assert target.read_bytes() == payload
-
-
-def test_kernel_evolution_import_does_not_require_fcntl(tmp_path: Path) -> None:
-    script = textwrap.dedent(
-        """
-        import builtins
-        import importlib.abc
-        import sys
-
-        real_import = builtins.__import__
-
-        def import_without_fcntl(name, globals=None, locals=None, fromlist=(), level=0):
-            if name == "fcntl" or name.startswith("fcntl."):
-                raise ModuleNotFoundError("fcntl intentionally unavailable")
-            return real_import(name, globals, locals, fromlist, level)
-
-        class NoFcntlFinder(importlib.abc.MetaPathFinder):
-            def find_spec(self, fullname, path, target=None):
-                if fullname == "fcntl" or fullname.startswith("fcntl."):
-                    raise ModuleNotFoundError("fcntl intentionally unavailable")
-                return None
-
-        sys.modules.pop("fcntl", None)
-        sys.meta_path.insert(0, NoFcntlFinder())
-        builtins.__import__ = import_without_fcntl
-        import autocontext.kernel_evolution
-        """
-    )
-    package_root = Path(__file__).parents[1]
-    env = os.environ.copy()
-    env["PYTHONPATH"] = os.pathsep.join(filter(None, (str(package_root / "src"), env.get("PYTHONPATH"))))
-
-    completed = subprocess.run(
-        [sys.executable, "-c", script],
-        cwd=tmp_path,
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=30,
-    )
-
-    assert completed.returncode == 0, completed.stderr

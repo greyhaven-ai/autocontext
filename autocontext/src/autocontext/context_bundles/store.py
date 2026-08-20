@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import ast
-import fcntl
 import json
 import re
 import uuid
@@ -28,6 +27,7 @@ from autocontext.context_bundles.models import (
     stable_digest,
 )
 from autocontext.storage.scenario_paths import resolve_scenario_root
+from autocontext.util.file_lock import advisory_path_lock
 from autocontext.util.json_io import read_json, write_json, write_text_atomic
 
 CANDIDATE_RECORD_SCHEMA_VERSION = 2
@@ -152,13 +152,8 @@ class ContextBundleStore:
     @contextmanager
     def _lock(self, scenario: str) -> Iterator[None]:
         lock_path = self._root(scenario) / ".lock"
-        lock_path.parent.mkdir(parents=True, exist_ok=True)
-        with lock_path.open("w", encoding="utf-8") as handle:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-            try:
-                yield
-            finally:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        with advisory_path_lock(lock_path):
+            yield
 
     def save_bundle(self, bundle: ContextBundle) -> Path:
         """Write a bundle once; refuse any attempted digest collision."""

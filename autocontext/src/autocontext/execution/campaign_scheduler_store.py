@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import fcntl
 import json
 import os
 import threading
@@ -12,6 +11,7 @@ from pathlib import Path
 
 from autocontext.context_bundles.models import stable_digest
 from autocontext.execution.campaign_scheduler_models import SchedulerEvent
+from autocontext.util.file_lock import advisory_path_lock
 
 
 class StaleCampaignSchedulerError(RuntimeError):
@@ -95,12 +95,8 @@ class CampaignSchedulerEventStore:
         """Serialize a complete read/compare/append operation across stores and processes."""
 
         with self._lock:
-            with self._lock_path.open("a+", encoding="utf-8") as handle:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-                try:
-                    yield
-                finally:
-                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            with advisory_path_lock(self._lock_path):
+                yield
 
 
 __all__ = ["CampaignSchedulerEventStore", "StaleCampaignSchedulerError"]

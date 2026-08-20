@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import fcntl
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -11,6 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from autocontext.context_bundles.models import stable_digest
+from autocontext.util.file_lock import advisory_path_lock
 from autocontext.util.json_io import read_json_guarded, write_json
 
 if TYPE_CHECKING:
@@ -71,12 +71,8 @@ class CampaignAuditStore:
 
         directory = self.root / _safe_segment(campaign_id)
         directory.mkdir(parents=True, exist_ok=True)
-        with (directory / ".audit.lock").open("a+", encoding="utf-8") as handle:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-            try:
-                yield
-            finally:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        with advisory_path_lock(directory / ".audit.lock"):
+            yield
 
     def count(self, campaign_id: str) -> int:
         directory = self.root / _safe_segment(campaign_id)
