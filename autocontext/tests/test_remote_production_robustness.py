@@ -140,6 +140,7 @@ def test_docker_command_enforces_process_file_and_environment_grants(
     )
 
     assert command[command.index("--pids-limit") + 1] == "1"
+    assert command[command.index("--pull") + 1] == "never"
     assert "-i" in command[command.index(DEFAULT_REMOTE_RUNTIME_IMAGE) :]
     assert not any("dst=/workspace" in item for item in command)
     assert "--env-file" not in command
@@ -164,6 +165,54 @@ def test_docker_command_enforces_process_file_and_environment_grants(
             tmp_path / "workspace",
             tmp_path / "secrets.env",
         )
+
+
+def test_docker_runtime_image_is_prepared_outside_the_candidate_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from autocontext.execution import docker_research_sandbox as docker_module
+
+    monkeypatch.setattr(shutil, "which", lambda _: "/usr/bin/docker")
+    calls: list[tuple[list[str], float]] = []
+    responses = iter(
+        (
+            subprocess.CompletedProcess([], 1, stdout="", stderr="Error: No such image"),
+            subprocess.CompletedProcess([], 0, stdout="pulled", stderr=""),
+            subprocess.CompletedProcess([], 0, stdout="image-id", stderr=""),
+        )
+    )
+
+    def fake_run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        calls.append((command, float(kwargs["timeout"])))
+        return next(responses)
+
+    monkeypatch.setattr(docker_module.subprocess, "run", fake_run)
+    backend = docker_module.DockerResearchSandboxBackend(image_preparation_timeout_seconds=45.0)
+
+    backend._ensure_image_available()  # noqa: SLF001 - provisioning boundary regression
+    backend._ensure_image_available()  # noqa: SLF001 - cached per backend
+
+    assert [command[1] for command, _ in calls] == ["image", "pull", "image"]
+    assert all(timeout == 45.0 for _, timeout in calls)
+
+
+def test_docker_runtime_image_preparation_timeout_is_an_infrastructure_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from autocontext.execution import docker_research_sandbox as docker_module
+
+    monkeypatch.setattr(shutil, "which", lambda _: "/usr/bin/docker")
+
+    def fake_run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        if command[1] == "image":
+            return subprocess.CompletedProcess(command, 1, stdout="", stderr="Error: No such image")
+        raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+
+    monkeypatch.setattr(docker_module.subprocess, "run", fake_run)
+    backend = docker_module.DockerResearchSandboxBackend(image_preparation_timeout_seconds=0.5)
+
+    with pytest.raises(RuntimeError, match="image preparation timed out"):
+        backend._ensure_image_available()  # noqa: SLF001
 
 
 def test_docker_workspace_ownership_labels_do_not_alias_sanitized_ids(

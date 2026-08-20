@@ -36,6 +36,7 @@ SecretGrantResolver = Callable[[WorkspaceSecretGrant], str]
 CredentialBroker = WorkspaceCredentialBroker
 _EXPIRY_LABEL = "ai.autocontext.expires-at"
 _CLEANUP_GRACE_SECONDS = 30.0
+_DEFAULT_IMAGE_PREPARATION_TIMEOUT_SECONDS = 120.0
 
 
 class DockerResearchSandboxBackend:
@@ -56,11 +57,14 @@ class DockerResearchSandboxBackend:
         memory_mb: int = 512,
         cpu_count: float = 1.0,
         pids_limit: int = 64,
+        image_preparation_timeout_seconds: float = _DEFAULT_IMAGE_PREPARATION_TIMEOUT_SECONDS,
         source_root: Path | None = None,
     ) -> None:
         require_pinned_runtime_image(image)
         if memory_mb < 64 or not math.isfinite(cpu_count) or cpu_count <= 0 or pids_limit < 2:
             raise ValueError("Docker sandbox resource limits are invalid")
+        if not math.isfinite(image_preparation_timeout_seconds) or image_preparation_timeout_seconds <= 0:
+            raise ValueError("Docker image preparation timeout must be positive and finite")
         if secret_resolver is not None:
             raise ValueError("Docker secret value resolvers are unsafe; use a host-side credential_broker with opaque grants")
         resolved_binary = shutil.which(docker_binary)
@@ -72,11 +76,13 @@ class DockerResearchSandboxBackend:
         self.memory_mb = memory_mb
         self.cpu_count = cpu_count
         self.pids_limit = pids_limit
+        self.image_preparation_timeout_seconds = image_preparation_timeout_seconds
         self.source_root = (source_root or Path(__file__).resolve().parents[2]).resolve()
         if not (self.source_root / "autocontext" / "execution" / "research_workspace_runtime.py").is_file():
             raise RuntimeError("Docker sandbox could not locate the autocontext Python source root")
         self._active: dict[str, set[str]] = {}
         self._prepared_workspaces: set[str] = set()
+        self._image_ready = False
         self._lock = threading.RLock()
 
     def capabilities(self) -> SandboxBackendCapabilities:
@@ -104,6 +110,7 @@ class DockerResearchSandboxBackend:
             )
         if request.secret_grants and self.credential_broker is None:
             raise PermissionError("Docker sandbox secret grants require a host-side credential broker")
+        self._ensure_image_available()
         self._ensure_startup_reconciled()
         with self._lock:
             prepared = request.workspace_id in self._prepared_workspaces
@@ -300,6 +307,68 @@ class DockerResearchSandboxBackend:
             if remaining.intersection(expired):
                 raise RuntimeError("Docker startup orphan reconciliation left expired containers behind")
 
+    def _ensure_image_available(self) -> None:
+        """Provision the pinned runtime image outside the candidate deadline."""
+
+        with self._lock:
+            if self._image_ready:
+                return
+            environment = {
+                key: os.environ[key]
+                for key in ("PATH", "HOME", "DOCKER_HOST", "DOCKER_CONFIG")
+                if key in os.environ
+            }
+            inspect_command = [self.docker_binary, "image", "inspect", self.image]
+            try:
+                inspected = subprocess.run(  # noqa: S603
+                    inspect_command,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=self.image_preparation_timeout_seconds,
+                    env=environment,
+                )
+            except (OSError, subprocess.SubprocessError) as exc:
+                raise RuntimeError(f"Docker runtime image inspection failed: {type(exc).__name__}: {exc}") from exc
+            if inspected.returncode != 0:
+                detail = (inspected.stderr or inspected.stdout).strip()
+                normalized = detail.casefold()
+                if "no such image" not in normalized and "no such object" not in normalized:
+                    raise RuntimeError(f"Docker runtime image inspection failed: {detail[-240:]}")
+                try:
+                    pulled = subprocess.run(  # noqa: S603
+                        [self.docker_binary, "pull", self.image],
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                        timeout=self.image_preparation_timeout_seconds,
+                        env=environment,
+                    )
+                except subprocess.TimeoutExpired as exc:
+                    raise RuntimeError("Docker runtime image preparation timed out") from exc
+                except (OSError, subprocess.SubprocessError) as exc:
+                    raise RuntimeError(f"Docker runtime image preparation failed: {type(exc).__name__}: {exc}") from exc
+                if pulled.returncode != 0:
+                    detail = (pulled.stderr or pulled.stdout).strip()
+                    raise RuntimeError(f"Docker runtime image preparation failed: {detail[-240:]}")
+                try:
+                    inspected = subprocess.run(  # noqa: S603
+                        inspect_command,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                        timeout=self.image_preparation_timeout_seconds,
+                        env=environment,
+                    )
+                except (OSError, subprocess.SubprocessError) as exc:
+                    raise RuntimeError(
+                        f"Docker runtime image verification failed: {type(exc).__name__}: {exc}"
+                    ) from exc
+                if inspected.returncode != 0:
+                    detail = (inspected.stderr or inspected.stdout).strip()
+                    raise RuntimeError(f"Docker runtime image verification failed: {detail[-240:]}")
+            self._image_ready = True
+
     def _expired_containers(self, container_ids: tuple[str, ...], *, now: float) -> tuple[str, ...]:
         if not container_ids:
             return ()
@@ -368,6 +437,8 @@ class DockerResearchSandboxBackend:
         command = [
             self.docker_binary,
             "run",
+            "--pull",
+            "never",
             "--rm",
             "--name",
             container_name,
