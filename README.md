@@ -163,6 +163,8 @@ The shipped families cover games, agent tasks, simulations, artifact editing, in
 [![npm downloads](https://img.shields.io/npm/dm/autoctx?logo=npm&label=npm%20downloads)](https://www.npmjs.com/package/autoctx)
 [![PyPI downloads](https://img.shields.io/pypi/dm/autocontext?logo=pypi&label=PyPI%20downloads)](https://pypi.org/project/autocontext/)
 
+[![Star History Chart](https://star-history.dera.page/svg?repos=greyhaven-ai/autocontext&type=Date)](https://star-history.dera.page/#greyhaven-ai/autocontext&Date)
+
 ## Acknowledgments
 
 Thanks to [George](https://github.com/GeorgeH87) for generously donating the `autocontext` name on PyPI.
