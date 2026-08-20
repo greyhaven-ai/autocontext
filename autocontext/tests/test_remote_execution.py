@@ -5,6 +5,7 @@ import time
 
 import pytest
 
+from autocontext.execution.campaign_scheduler_adapters import campaign_result_from_remote
 from autocontext.execution.remote_execution import (
     RemoteAcceleratorRequest,
     RemoteCleanupOutcome,
@@ -14,6 +15,7 @@ from autocontext.execution.remote_execution import (
     RemoteResourceUsage,
     RemoteSecretGrant,
     parse_remote_stdout,
+    remote_request_provenance,
     requests_are_reuse_compatible,
 )
 
@@ -59,6 +61,79 @@ def test_remote_request_rejects_path_escape_expired_secrets_and_implicit_warmth(
         )
     with pytest.raises(ValueError, match="snapshot_id"):
         _request(lifecycle="warm_snapshot")
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"timeout_seconds": float("nan")},
+        {"network_policy": "alow"},
+        {"secrets_policy": "ambient"},
+        {"lifecycle": "reusable"},
+        {"environment": {"INVALID-NAME": "value"}},
+        {
+            "input_artifacts": (
+                RemoteInputArtifact("input.json", b"first"),
+                RemoteInputArtifact("input.json", b"second"),
+            )
+        },
+        {"expected_outputs": ("report.json", "report.json")},
+    ],
+)
+def test_remote_request_rejects_ambiguous_or_nonfinite_contracts(overrides: dict[str, object]) -> None:
+    with pytest.raises(ValueError):
+        _request(**overrides)
+
+
+def test_remote_resources_reject_nonfinite_values() -> None:
+    with pytest.raises(ValueError, match="finite"):
+        RemoteResourceRequest(cpu_cores=float("nan"))
+    with pytest.raises(ValueError, match="accelerator memory"):
+        RemoteAcceleratorRequest("A100", memory_gb=float("inf"))
+
+
+def test_prepared_fixture_provenance_is_complete_valid_and_preserved() -> None:
+    metadata = {
+        "fixture_digest": "a" * 64,
+        "fixture_state_sha256": "b" * 64,
+        "fixture_observation_sha256": "c" * 64,
+    }
+
+    provenance = remote_request_provenance(_request(metadata=metadata))
+
+    assert provenance.fixture_digest == "a" * 64
+    assert provenance.fixture_state_sha256 == "b" * 64
+    assert provenance.fixture_observation_sha256 == "c" * 64
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        {"fixture_digest": "a" * 64},
+        {
+            "fixture_digest": "a" * 64,
+            "fixture_state_sha256": "b" * 64,
+            "fixture_observation_sha256": "not-a-digest",
+        },
+    ],
+)
+def test_prepared_fixture_provenance_fails_closed_when_incomplete_or_invalid(
+    metadata: dict[str, str],
+) -> None:
+    with pytest.raises(ValueError, match="prepared fixture provenance"):
+        _request(metadata=metadata)
+
+
+def test_remote_request_snapshots_mutable_environment_and_metadata() -> None:
+    environment = {"DATASET": "first"}
+    metadata = {"seed": "7"}
+    request = _request(environment=environment, metadata=metadata)
+
+    environment["DATASET"] = "second"
+    metadata["seed"] = "8"
+
+    assert dict(request.environment) == {"DATASET": "first"}
+    assert dict(request.metadata) == {"seed": "7"}
 
 
 def test_parser_streams_events_and_collects_declared_artifacts() -> None:
@@ -133,6 +208,23 @@ def test_cleanup_failure_takes_infrastructure_precedence_over_task_failure() -> 
     assert result.to_ledger_entry().infrastructure_succeeded is False
 
 
+def test_declared_bootstrap_failure_is_typed_as_infrastructure() -> None:
+    result = parse_remote_stdout(
+        _request(expected_outputs=(), metadata={"bootstrap_exit_code": "70"}),
+        provider="fake",
+        stdout="",
+        stderr='{"autocontext_bootstrap_error":"digest mismatch"}',
+        exit_code=70,
+        usage=RemoteResourceUsage(),
+        cleanup=RemoteCleanupOutcome(True, True, "sandbox-1"),
+        session_id="sandbox-1",
+    )
+
+    assert result.status == "artifact_error"
+    assert result.to_ledger_entry().infrastructure_succeeded is False
+    assert campaign_result_from_remote(result).outcome == "infrastructure_failure"
+
+
 def test_reuse_requires_a_bounded_equivalent_matched_lane() -> None:
     first = _request(
         task_id="trial-a",
@@ -159,11 +251,11 @@ def test_reuse_requires_a_bounded_equivalent_matched_lane() -> None:
         (
             {
                 "secrets_policy": "scoped_grants",
-                    "secret_grants": (RemoteSecretGrant("dataset", "grant-a", 32_503_680_000.0),),
+                "secret_grants": (RemoteSecretGrant("dataset", "grant-a", 32_503_680_000.0),),
             },
             {
                 "secrets_policy": "scoped_grants",
-                    "secret_grants": (RemoteSecretGrant("dataset", "grant-b", 32_503_680_000.0),),
+                "secret_grants": (RemoteSecretGrant("dataset", "grant-b", 32_503_680_000.0),),
             },
         ),
         (

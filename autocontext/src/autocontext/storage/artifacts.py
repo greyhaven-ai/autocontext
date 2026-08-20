@@ -167,7 +167,9 @@ class ArtifactStore(
 
         active = self.context_bundle_store.active_bundle(scenario_name)
         if active is not None:
-            return active
+            if active.evaluator_epoch == evaluator_epoch:
+                return active
+            return self.context_bundle_store.rollover_evaluator_epoch(scenario_name, evaluator_epoch)
         baseline = build_legacy_baseline(
             self,
             scenario_name,
@@ -210,6 +212,19 @@ class ArtifactStore(
             routing_config=routing_config,
         )
         if candidate is None:
+            return None
+        try:
+            existing = self.context_bundle_store.candidate(scenario_name, candidate.digest)
+        except FileNotFoundError:
+            existing = None
+        if existing is not None and (
+            existing.source_run_id != source_run_id
+            or existing.source_generation != source_generation
+        ):
+            # Content-addressed candidates retain the source generation that
+            # first proposed them. A later generation producing identical
+            # context is an unchanged proposal, not authority to relabel and
+            # re-evaluate the same immutable manifest.
             return None
         return self.context_bundle_store.propose(
             candidate,

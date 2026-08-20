@@ -313,6 +313,17 @@ def test_create_role_client_pi_rpc() -> None:
     assert config.timeout == 240.0
 
 
+def test_create_role_client_pi_rpc_model_override_is_authoritative() -> None:
+    settings = AppSettings(pi_model="settings-model")
+    with patch("autocontext.runtimes.pi_rpc.PiRPCRuntime") as mock_runtime:
+        mock_runtime.return_value = MagicMock()
+        client = create_role_client("pi-rpc", settings, model_override="role-model")
+
+    assert isinstance(client, RuntimeBridgeClient)
+    config = mock_runtime.call_args.args[0]
+    assert config.model == "role-model"
+
+
 def test_create_role_client_pi_rpc_uses_persistent_runtime_when_enabled() -> None:
     """Persistent Pi RPC is opt-in and should not change default pi-rpc behavior."""
     settings = AppSettings(pi_rpc_persistent=True)

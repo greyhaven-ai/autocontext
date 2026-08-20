@@ -1,4 +1,5 @@
 """ScenarioEvaluator — adapter bridging autocontext ScenarioInterface to harness Evaluator protocol."""
+
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -29,6 +30,10 @@ class ScenarioEvaluator:
         candidate: Mapping[str, Any],
         seed: int,
         limits: EvaluationLimits,
+        *,
+        fixture_state: Mapping[str, Any] | None = None,
+        fixture_observation: Any | None = None,
+        fixture_digest: str | None = None,
     ) -> EvaluationResult:
         from autocontext.execution.supervisor import ExecutionInput
         from autocontext.scenarios.base import ExecutionLimits as MtsLimits
@@ -38,15 +43,18 @@ class ScenarioEvaluator:
             max_memory_mb=limits.max_memory_mb,
             network_access=limits.network_access,
         )
-        payload = ExecutionInput(strategy=candidate, seed=seed, limits=mts_limits)
+        payload = ExecutionInput(
+            strategy=candidate,
+            seed=seed,
+            limits=mts_limits,
+            fixture_state=fixture_state,
+            fixture_observation=fixture_observation,
+            fixture_digest=fixture_digest,
+        )
         with active_hook_bus(self._hook_bus):
             output = self._supervisor.run(self._scenario, payload)
         metrics = dict(output.result.metrics) if hasattr(output.result, "metrics") else {}
-        raw_dimension_specs = (
-            self._scenario.scoring_dimensions()
-            if hasattr(self._scenario, "scoring_dimensions")
-            else None
-        )
+        raw_dimension_specs = self._scenario.scoring_dimensions() if hasattr(self._scenario, "scoring_dimensions") else None
         dimension_specs = normalize_dimension_specs(
             raw_dimension_specs if isinstance(raw_dimension_specs, list) else None,
         )

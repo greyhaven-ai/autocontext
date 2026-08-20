@@ -2,19 +2,30 @@
 
 from __future__ import annotations
 
-import concurrent.futures
 import json
-import time
+import threading
 from collections import defaultdict
 from datetime import datetime
-from typing import Any, Literal, Protocol
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import Field, field_validator, model_validator
 
-from autocontext.analytics.campaign_mode_report import CampaignModeReport
+from autocontext.audit import campaign_audit_routes as routes
+from autocontext.audit.campaign_audit_boundary import (
+    bounded_redacted_text,
+    evidence_fingerprint,
+    validate_evidence_boundary,
+)
+from autocontext.audit.campaign_audit_packet_builder import build_campaign_audit_packet
 from autocontext.audit.campaign_audit_store import CampaignAuditStore
+from autocontext.audit.campaign_audit_transport import (
+    AuditorCallHandle,
+    AuditorModelClient,
+    AuditorModelResponse,
+    CancellableAuditorModelClient,
+    execute_auditor_call,
+)
 from autocontext.context_bundles.models import canonical_json, stable_digest
-from autocontext.sharing.redactor import redact_content
 from autocontext.util.models import StrictModel
 
 AuditCheckpoint = Literal["pre_promotion", "inconclusive_gate", "integrity_alert", "final_completion"]
@@ -40,18 +51,37 @@ class CampaignAuditConfig(StrictModel):
     enabled: bool = False
     provider: str = Field(min_length=1)
     model: str = Field(min_length=1)
+    auditor_route: routes.CampaignAuditRoute | None = None
     proposer_provider: str = Field(min_length=1)
     proposer_model: str = Field(min_length=1)
+    proposer_routes: list[routes.CampaignAuditRoute] = Field(default_factory=list)
     allow_same_route: bool = False
     checkpoints: list[AuditCheckpoint] = Field(default_factory=_default_checkpoints)
     max_calls_per_campaign: int = Field(default=8, ge=1)
     max_input_chars: int = Field(default=24_000, ge=1_000)
     max_output_tokens: int = Field(default=1_200, ge=64)
     timeout_seconds: float = Field(default=30.0, gt=0)
+    allow_uncancellable_transport: bool = False
     prompt_version: str = "campaign-auditor-v1"
     policy: Literal["advisory", "review_required_on_high", "pause_recommended_on_critical"] = "advisory"
     input_cost_per_million: float = Field(default=0.0, ge=0.0)
     output_cost_per_million: float = Field(default=0.0, ge=0.0)
+
+    @field_validator("provider", "proposer_provider")
+    @classmethod
+    def _normalize_provider(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if not normalized:
+            raise ValueError("campaign audit provider must be non-empty")
+        return normalized
+
+    @field_validator("model", "proposer_model")
+    @classmethod
+    def _normalize_model(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("campaign audit model must be non-empty")
+        return normalized
 
 
 class AuditEvidenceReference(StrictModel):
@@ -82,10 +112,22 @@ class AuditMetricSummary(StrictModel):
     fixture_digest: str
     score: float | None
     valid: bool
-    classification: Literal["candidate_result", "candidate_failure", "infrastructure_failure"]
+    classification: Literal[
+        "candidate_result",
+        "candidate_failure",
+        "infrastructure_failure",
+        "canceled",
+        "budget_exhausted",
+    ]
     infrastructure_error: bool
     reconstruction_ref: str | None
     experiment_id: str | None = None
+    attempt: int = Field(default=0, ge=0)
+    consumed_tokens: int = Field(default=0, ge=0)
+    consumed_wall_seconds: float = Field(default=0.0, ge=0.0)
+    consumed_compute_units: float = Field(default=0.0, ge=0.0)
+    consumed_jobs: int = Field(default=0, ge=0)
+    cleanup_succeeded: bool | None = None
 
 
 class AuditGateDecision(StrictModel):
@@ -110,6 +152,8 @@ class CampaignAuditEvidencePacket(StrictModel):
     access_scope: Literal["read_only"] = "read_only"
     hidden_holdout_answers_included: bool
     credentials_included: Literal[False] = False
+    boundary_provenance: Literal["whitelisted_redacted_v1"]
+    boundary_digest: str = Field(min_length=1)
     campaign_id: str
     run_id: str
     scenario_name: str
@@ -125,7 +169,7 @@ class CampaignAuditEvidencePacket(StrictModel):
 
     @property
     def fingerprint(self) -> str:
-        return stable_digest(self.to_dict())
+        return evidence_fingerprint(self.to_dict())
 
 
 class CampaignAuditFinding(StrictModel):
@@ -147,7 +191,7 @@ class CampaignAudit(StrictModel):
     campaign_id: str
     checkpoint: AuditCheckpoint
     reviewed_at: str
-    status: Literal["completed", "timed_out", "failed", "budget_exhausted"]
+    status: Literal["completed", "timed_out", "canceled", "failed", "budget_exhausted"]
     evidence_fingerprint: str
     configuration_fingerprint: str = ""
     findings: list[CampaignAuditFinding]
@@ -156,6 +200,8 @@ class CampaignAudit(StrictModel):
     provider: str
     model: str
     prompt_version: str
+    auditor_route: routes.CampaignAuditRoute | None = None
+    proposer_routes: list[routes.CampaignAuditRoute] = Field(default_factory=list)
     route_distinct_from_proposer: bool
     frozen_non_trainable: Literal[True] = True
     model_call_attempted: bool = True
@@ -173,9 +219,8 @@ class CampaignAudit(StrictModel):
 
         if isinstance(value, dict) and "model_call_attempted" not in value:
             migrated = dict(value)
-            # The former exhausted branch persisted a decision without making
-            # a provider call. Other legacy failures are charged
-            # conservatively because their pre-call/post-call origin is lost.
+            # The former exhausted branch persisted without a provider call.
+            # Other legacy failures are charged because their origin is lost.
             migrated["model_call_attempted"] = (
                 value.get("status") != "budget_exhausted"
                 and value.get("failure_reason") != "bounded evidence packet exceeds max_input_chars"
@@ -198,23 +243,6 @@ class CampaignAuditRecord(StrictModel):
     dispositions: list[CampaignAuditDisposition]
 
 
-class AuditorModelResponse(Protocol):
-    text: str
-    usage: Any
-
-
-class AuditorModelClient(Protocol):
-    def generate(
-        self,
-        *,
-        model: str,
-        prompt: str,
-        max_tokens: int,
-        temperature: float,
-        role: str = "",
-    ) -> AuditorModelResponse: ...
-
-
 class CampaignAuditor:
     def __init__(
         self,
@@ -223,25 +251,63 @@ class CampaignAuditor:
         client: AuditorModelClient,
         store: CampaignAuditStore,
     ) -> None:
-        self.config = config
+        proposer_routes = routes.normalize_proposer_routes(
+            config.proposer_provider, config.proposer_model, config.proposer_routes
+        )
+        auditor_route = config.auditor_route or routes.CampaignAuditRoute.resolved(config.provider, config.model)
+        if (auditor_route.provider, auditor_route.model) != (config.provider, config.model):
+            raise ValueError("campaign auditor route identity must match the configured provider and model")
+        self.config = config.model_copy(
+            update={"auditor_route": auditor_route, "proposer_routes": proposer_routes}
+        )
         self.client = client
         self.store = store
-        self._validate_route()
+        self._route_distinct = routes.auditor_route_is_distinct(auditor_route, proposer_routes)
+        if not self._route_distinct and not self.config.allow_same_route:
+            raise ValueError("auditor route must differ from every proposer route unless explicitly overridden")
+        if (
+            self.config.enabled
+            and not self.config.allow_uncancellable_transport
+            and not callable(getattr(self.client, "start_generate", None))
+        ):
+            raise ValueError(
+                "enabled campaign auditor requires a cancellable transport; "
+                "set allow_uncancellable_transport only for trusted legacy clients"
+            )
 
-    def review(self, packet: CampaignAuditEvidencePacket) -> CampaignAudit | None:
+    def review(
+        self,
+        packet: CampaignAuditEvidencePacket,
+        *,
+        cancellation_event: threading.Event | None = None,
+    ) -> CampaignAudit | None:
         """Run one cached advisory review; disabled/failure paths never touch deterministic gates."""
 
         if not self.config.enabled or packet.checkpoint not in self.config.checkpoints:
             return None
-        _validate_evidence_boundary(packet)
+        validate_evidence_boundary(packet)
+        if cancellation_event is not None and cancellation_event.is_set():
+            audit = self._failure_audit(
+                packet,
+                "canceled",
+                "campaign audit canceled before model dispatch",
+                model_call_attempted=False,
+            )
+            self.store.write(CampaignAuditRecord(audit=audit, dispositions=[]))
+            return audit
         # Cache lookup, call-budget claim, provider request, and durable write
         # form one campaign transaction. This intentionally serializes the
         # bounded advisory route so concurrent callers cannot duplicate a
         # billable request or bypass max_calls_per_campaign.
         with self.store.campaign_lock(packet.campaign_id):
-            return self._review_locked(packet)
+            return self._review_locked(packet, cancellation_event=cancellation_event)
 
-    def _review_locked(self, packet: CampaignAuditEvidencePacket) -> CampaignAudit:
+    def _review_locked(
+        self,
+        packet: CampaignAuditEvidencePacket,
+        *,
+        cancellation_event: threading.Event | None,
+    ) -> CampaignAudit:
         configuration_fingerprint = stable_digest(self.config.to_dict())
         cached = self.store.read_by_fingerprint(
             packet.campaign_id,
@@ -250,6 +316,15 @@ class CampaignAuditor:
         )
         if cached is not None:
             return cached.audit
+        if cancellation_event is not None and cancellation_event.is_set():
+            audit = self._failure_audit(
+                packet,
+                "canceled",
+                "campaign audit canceled before model dispatch",
+                model_call_attempted=False,
+            )
+            self.store._write_unlocked(CampaignAuditRecord(audit=audit, dispositions=[]))
+            return audit
         if self.store.call_count(packet.campaign_id) >= self.config.max_calls_per_campaign:
             # This is a deterministic pre-call decision, not another audit
             # attempt. Do not persist one record per denied packet: doing so
@@ -277,68 +352,46 @@ class CampaignAuditor:
             evidence_fingerprint=packet.fingerprint,
             configuration_fingerprint=configuration_fingerprint,
         )
-        started = time.perf_counter()
-        pool: concurrent.futures.ThreadPoolExecutor | None = None
-        future: concurrent.futures.Future[Any] | None = None
-        try:
+        outcome = execute_auditor_call(
+            self.client,
+            model=self.config.model,
+            prompt=prompt,
+            max_tokens=self.config.max_output_tokens,
+            timeout_seconds=self.config.timeout_seconds,
+            cancellation_event=cancellation_event,
+        )
+        if outcome.response is not None:
             try:
-                pool = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="campaign-auditor")
-                future = pool.submit(
-                    self.client.generate,
-                    model=self.config.model,
-                    prompt=prompt,
-                    max_tokens=self.config.max_output_tokens,
-                    temperature=0.0,
-                    role="auditor",
-                )
-                response = future.result(timeout=self.config.timeout_seconds)
-            except concurrent.futures.TimeoutError:
-                if future is not None:
-                    future.cancel()
-                audit = self._failure_audit(
+                audit = self._completed_audit(
                     packet,
-                    "timed_out",
-                    "auditor model call timed out",
+                    outcome.response,
+                    outcome.latency_ms,
                     model_call_attempt_id=attempt_id,
                 )
             except Exception as exc:
-                model_call_attempted = future is not None
-                model_call_attempt_id = attempt_id if model_call_attempted else None
-                if not model_call_attempted:
-                    self.store._release_call_unlocked(packet.campaign_id, attempt_id)
+                input_tokens, output_tokens = _response_usage(outcome.response)
                 audit = self._failure_audit(
                     packet,
                     "failed",
-                    f"auditor model call failed: {type(exc).__name__}",
-                    model_call_attempted=model_call_attempted,
-                    model_call_attempt_id=model_call_attempt_id,
+                    f"invalid auditor response: {type(exc).__name__}",
+                    model_call_attempt_id=attempt_id,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    latency_ms=outcome.latency_ms,
                 )
-            else:
-                latency_ms = int((time.perf_counter() - started) * 1000)
-                try:
-                    audit = self._completed_audit(
-                        packet,
-                        response,
-                        latency_ms,
-                        model_call_attempt_id=attempt_id,
-                    )
-                except Exception as exc:
-                    audit = self._failure_audit(
-                        packet,
-                        "failed",
-                        f"invalid auditor response: {type(exc).__name__}",
-                        model_call_attempt_id=attempt_id,
-                    )
-        finally:
-            if pool is not None:
-                pool.shutdown(wait=False, cancel_futures=True)
+        else:
+            if not outcome.model_call_attempted:
+                self.store._release_call_unlocked(packet.campaign_id, attempt_id)
+            audit = self._failure_audit(
+                packet,
+                outcome.failure_status or "failed",
+                outcome.failure_reason or "auditor model call failed",
+                model_call_attempted=outcome.model_call_attempted,
+                model_call_attempt_id=attempt_id if outcome.model_call_attempted else None,
+                latency_ms=outcome.latency_ms,
+            )
         self.store._write_unlocked(CampaignAuditRecord(audit=audit, dispositions=[]))
         return audit
-
-    def _validate_route(self) -> None:
-        same_route = self.config.provider == self.config.proposer_provider and self.config.model == self.config.proposer_model
-        if same_route and not self.config.allow_same_route:
-            raise ValueError("auditor route must differ from proposer route unless explicitly overridden")
 
     def _completed_audit(
         self,
@@ -355,7 +408,7 @@ class CampaignAuditor:
         llm_findings = [_parse_llm_finding(item, allowed_refs) for item in parsed.get("findings", [])]
         deterministic = detect_campaign_integrity_findings(packet)
         findings = _deduplicate_findings([*deterministic, *llm_findings])
-        recommended_action = _bounded_text(parsed.get("recommended_action"), 600) or "Continue deterministic protocol."
+        recommended_action = bounded_redacted_text(parsed.get("recommended_action"), 600) or "Continue deterministic protocol."
         input_tokens = _usage_int(response.usage, "input_tokens")
         output_tokens = _usage_int(response.usage, "output_tokens")
         return CampaignAudit(
@@ -377,9 +430,9 @@ class CampaignAuditor:
             provider=self.config.provider,
             model=self.config.model,
             prompt_version=self.config.prompt_version,
-            route_distinct_from_proposer=(
-                self.config.provider != self.config.proposer_provider or self.config.model != self.config.proposer_model
-            ),
+            auditor_route=self.config.auditor_route,
+            proposer_routes=list(self.config.proposer_routes),
+            route_distinct_from_proposer=self._route_distinct,
             model_call_attempted=True,
             model_call_attempt_id=model_call_attempt_id,
             input_tokens=input_tokens,
@@ -396,11 +449,14 @@ class CampaignAuditor:
     def _failure_audit(
         self,
         packet: CampaignAuditEvidencePacket,
-        status: Literal["timed_out", "failed", "budget_exhausted"],
+        status: Literal["timed_out", "canceled", "failed", "budget_exhausted"],
         reason: str,
         *,
         model_call_attempted: bool = True,
         model_call_attempt_id: str | None = None,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        latency_ms: int = 0,
     ) -> CampaignAudit:
         reviewed_at = datetime.now().astimezone().isoformat()
         configuration_fingerprint = stable_digest(self.config.to_dict())
@@ -426,63 +482,21 @@ class CampaignAuditor:
             provider=self.config.provider,
             model=self.config.model,
             prompt_version=self.config.prompt_version,
-            route_distinct_from_proposer=(
-                self.config.provider != self.config.proposer_provider or self.config.model != self.config.proposer_model
-            ),
+            auditor_route=self.config.auditor_route,
+            proposer_routes=list(self.config.proposer_routes),
+            route_distinct_from_proposer=self._route_distinct,
             model_call_attempted=model_call_attempted,
             model_call_attempt_id=model_call_attempt_id,
-            input_tokens=0,
-            output_tokens=0,
-            latency_ms=0,
-            estimated_cost=0.0,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            latency_ms=latency_ms,
+            estimated_cost=round(
+                input_tokens * self.config.input_cost_per_million / 1_000_000
+                + output_tokens * self.config.output_cost_per_million / 1_000_000,
+                8,
+            ),
             failure_reason=reason,
         )
-
-
-def build_campaign_audit_packet(
-    report: CampaignModeReport,
-    *,
-    checkpoint: AuditCheckpoint,
-    bundle_lineage: list[dict[str, Any]],
-    metric_summaries: list[dict[str, Any]],
-    gate_decisions: list[dict[str, Any]],
-    negative_results: list[dict[str, Any]],
-    artifact_refs: list[dict[str, Any]],
-    hidden_holdout_answers_included: bool,
-    integrity_alerts: list[str] | None = None,
-    max_items_per_section: int = 100,
-) -> CampaignAuditEvidencePacket:
-    """Build a whitelisted packet that omits holdout answers and credential-bearing fields."""
-
-    lanes = [
-        AuditProtocolLane(
-            lane_id=_redact(lane.lane_id),
-            verifier_contract_ref=_redact(lane.verifier_contract_ref),
-            seed_count=len(lane.seeds),
-        )
-        for lane in report.eval_lanes[:max_items_per_section]
-    ]
-    return CampaignAuditEvidencePacket(
-        hidden_holdout_answers_included=hidden_holdout_answers_included,
-        campaign_id=_redact(report.campaign_id),
-        run_id=_redact(report.run_id),
-        scenario_name=_redact(report.scenario_name),
-        checkpoint=checkpoint,
-        terminal_state=report.terminal_state,
-        protocol_lanes=lanes,
-        bundle_lineage=[
-            AuditBundleLineage.from_dict(_redacted_fields(item, AuditBundleLineage))
-            for item in bundle_lineage[:max_items_per_section]
-        ],
-        metric_summaries=[
-            AuditMetricSummary.from_dict(_redacted_fields(item, AuditMetricSummary))
-            for item in metric_summaries[:max_items_per_section]
-        ],
-        gate_decisions=[_safe_gate_decision(item) for item in gate_decisions[:max_items_per_section]],
-        negative_results=[_safe_negative_result(item) for item in negative_results[:max_items_per_section]],
-        integrity_alerts=[_classify_integrity_alert(item) for item in (integrity_alerts or [])[:max_items_per_section]],
-        artifact_refs=[_safe_evidence_reference(item) for item in artifact_refs[:max_items_per_section]],
-    )
 
 
 def detect_campaign_integrity_findings(packet: CampaignAuditEvidencePacket) -> list[CampaignAuditFinding]:
@@ -490,7 +504,7 @@ def detect_campaign_integrity_findings(packet: CampaignAuditEvidencePacket) -> l
     metrics = packet.metric_summaries
     fallback_refs = [ref.uri for ref in packet.artifact_refs]
     cohorts = {metric.cohort for metric in metrics}
-    if len(cohorts) > 1:
+    if len(cohorts) > 1 or "non_comparable_cohorts" in packet.integrity_alerts:
         findings.append(
             _finding(
                 "non_comparable_cohorts",
@@ -506,7 +520,7 @@ def detect_campaign_integrity_findings(packet: CampaignAuditEvidencePacket) -> l
         | {item.evaluator_epoch for item in metrics}
         | {item.evaluator_epoch for item in packet.gate_decisions}
     )
-    if len(epochs) > 1:
+    if len(epochs) > 1 or "evaluator_epoch_mismatch" in packet.integrity_alerts:
         findings.append(
             _finding(
                 "evaluator_epoch_mismatch",
@@ -528,6 +542,17 @@ def detect_campaign_integrity_findings(packet: CampaignAuditEvidencePacket) -> l
                 fallback_refs,
             )
         )
+    if "evidence_truncated" in packet.integrity_alerts:
+        findings.append(
+            _finding(
+                "other",
+                "high",
+                "The bounded audit packet summarizes a larger evidence set.",
+                metrics,
+                "Require operator review of the durable campaign report before promotion.",
+                fallback_refs,
+            )
+        )
     missing_reconstruction = [metric for metric in metrics if metric.reconstruction_ref is None]
     if missing_reconstruction and any(gate.decision in {"accepted", "promote", "kept"} for gate in packet.gate_decisions):
         findings.append(
@@ -537,10 +562,7 @@ def detect_campaign_integrity_findings(packet: CampaignAuditEvidencePacket) -> l
                 "Promotion evidence is missing raw-trial reconstruction references.",
                 missing_reconstruction,
                 "Attach reconstructible raw trials before promotion.",
-                [
-                    *[gate.artifact_ref for gate in packet.gate_decisions if gate.artifact_ref],
-                    *fallback_refs,
-                ],
+                fallback_refs,
             )
         )
     misclassified = [metric for metric in metrics if metric.infrastructure_error and metric.classification == "candidate_failure"]
@@ -562,7 +584,8 @@ def detect_campaign_integrity_findings(packet: CampaignAuditEvidencePacket) -> l
         and gate.evidence_level in {"component_correlated", "unspecified"}
     ]
     if unsupported:
-        refs = [gate.artifact_ref for gate in unsupported if gate.artifact_ref] or fallback_refs
+        allowed_refs = set(fallback_refs)
+        refs = [gate.artifact_ref for gate in unsupported if gate.artifact_ref in allowed_refs] or fallback_refs
         findings.append(
             CampaignAuditFinding(
                 finding_id=stable_digest({"category": "unsupported_causal_claim", "gates": [g.gate_id for g in unsupported]}),
@@ -657,7 +680,8 @@ def _finding(
     recommended_action: str,
     fallback_refs: list[str],
 ) -> CampaignAuditFinding:
-    reconstruction_refs = sorted({metric.reconstruction_ref for metric in metrics if metric.reconstruction_ref})
+    allowed_refs = set(fallback_refs)
+    reconstruction_refs = sorted({metric.reconstruction_ref for metric in metrics if metric.reconstruction_ref in allowed_refs})
     evidence_refs = reconstruction_refs or fallback_refs[:2]
     return CampaignAuditFinding(
         finding_id=stable_digest({"category": category, "trials": [metric.trial_id for metric in metrics]}),
@@ -704,72 +728,9 @@ def _usage_int(usage: Any, field: str) -> int:
     return value if isinstance(value, int) and value >= 0 else 0
 
 
-def _validate_evidence_boundary(packet: CampaignAuditEvidencePacket) -> None:
-    if packet.hidden_holdout_answers_included:
-        raise ValueError("campaign auditor refuses packets that include hidden holdout answers")
-
-
-def _safe_gate_decision(data: dict[str, Any]) -> AuditGateDecision:
-    fields = _redacted_fields(data, AuditGateDecision)
-    decision = str(fields.get("decision", ""))
-    claim = str(fields.get("claim", ""))
-    if "caus" in claim.lower():
-        fields["claim"] = "Causal claim text withheld; categorical claim retained."
-    elif decision in {"accepted", "promote", "kept"}:
-        fields["claim"] = "Promotion claim text withheld; categorical decision retained."
-    else:
-        fields["claim"] = "Free-text claim withheld from auditor packet."
-    return AuditGateDecision.from_dict(fields)
-
-
-def _safe_negative_result(data: dict[str, Any]) -> AuditNegativeResult:
-    fields = _redacted_fields(data, AuditNegativeResult)
-    fields["reason"] = "Free-text negative-result reason withheld from auditor packet."
-    return AuditNegativeResult.from_dict(fields)
-
-
-def _classify_integrity_alert(value: str) -> str:
-    lowered = value.lower()
-    if "leakage" in lowered or "holdout answer" in lowered or "answer key" in lowered:
-        return "data_leakage"
-    if "infrastructure" in lowered:
-        return "infrastructure_integrity_alert"
-    return "integrity_alert"
-
-
-def _safe_evidence_reference(data: dict[str, Any]) -> AuditEvidenceReference:
-    fields = _redacted_fields(data, AuditEvidenceReference)
-    fields["summary"] = "Artifact contents and free-text summary excluded; metadata reference only."
-    return AuditEvidenceReference.from_dict(fields)
-
-
-def _redacted_fields(data: dict[str, Any], model: type[BaseModel]) -> dict[str, Any]:
-    allowed = model.model_fields
-    return {key: _redact_value(value) for key, value in data.items() if key in allowed}
-
-
-def _redact_value(value: Any) -> Any:
-    if isinstance(value, str):
-        return _redact(value)
-    if isinstance(value, list):
-        return [_redact_value(item) for item in value]
-    if isinstance(value, dict):
-        return {key: _redact_value(item) for key, item in value.items() if not _secret_key(key)}
-    return value
-
-
-def _redact(value: str) -> str:
-    return redact_content(value)
-
-
-def _secret_key(key: str) -> bool:
-    lowered = key.lower()
-    return any(marker in lowered for marker in ("secret", "password", "credential", "api_key", "authorization"))
-
-
-def _bounded_text(value: Any, max_chars: int) -> str:
-    text = _redact(value) if isinstance(value, str) else ""
-    return text if len(text) <= max_chars else text[: max_chars - 1].rstrip() + "…"
+def _response_usage(response: AuditorModelResponse) -> tuple[int, int]:
+    usage = getattr(response, "usage", None)
+    return _usage_int(usage, "input_tokens"), _usage_int(usage, "output_tokens")
 
 
 __all__ = [
@@ -783,6 +744,8 @@ __all__ = [
     "AuditPolicyOutcome",
     "AuditProtocolLane",
     "AuditSeverity",
+    "AuditorCallHandle",
+    "CancellableAuditorModelClient",
     "CampaignAudit",
     "CampaignAuditConfig",
     "CampaignAuditDisposition",

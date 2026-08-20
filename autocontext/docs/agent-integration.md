@@ -11,6 +11,11 @@ tools, validators, or routing is a proposal, not an immediate live write. The
 Python control plane records it as an immutable context-bundle candidate. An
 external evaluator must return matched candidate/incumbent trials from the same
 fixtures, seeds, cohort, and evaluator epoch before promotion is possible.
+Integrations that run adaptive campaigns should retain the campaign id and
+false-promotion state digest as well: changing the candidate generator must not
+reset its pre-observation alpha ledger. Exact causal component credit also
+requires the persisted tested/comparison manifests, not only their caller-
+asserted digest strings.
 Integrations should retain and display the active and candidate bundle digests
 from generation artifacts rather than infer activation from a strategy
 `advance` decision. See [context bundles](../../docs/context-bundles.md) for the
@@ -23,8 +28,10 @@ restricted interpreter. Code/research scenarios that need files or selected
 packages must explicitly request and receive a `trusted_local` or
 `isolated_sandbox` grant. Package imports and subprocess execution additionally
 require `trusted_local`; `isolated_sandbox` denies both until a real OS sandbox
-backend is available. Network and typed host-plane calls are separate grants, and
-credentials never enter the candidate kernel. See
+backend is supplied. The shipped Docker backend is a concrete read-only,
+deny-network option with no local fallback; network grants require a deployment
+backend with lower-layer egress enforcement. Network and typed host-plane calls
+are separate grants, and credentials never enter the candidate kernel. See
 [capability-scoped research workspaces](../../docs/research-workspaces.md) for
 profiles, lifecycle, snapshots, timeout behavior, and Python/TypeScript
 responsibilities.
@@ -32,8 +39,10 @@ responsibilities.
 External worker daemons can participate in campaign execution through the
 Python `CampaignScheduler` lease protocol: advertise resources/capabilities,
 claim bounded jobs, heartbeat active leases, and complete with separate
-candidate/infrastructure outcomes. The checksummed event log supports restart
-reconciliation and idempotent delivery. See the
+candidate/infrastructure outcomes. Cancellable workers acknowledge termination;
+otherwise late results remain unscored but their resource usage is charged.
+The checksummed event log supports restart reconciliation and idempotent
+delivery. See the
 [optional campaign scheduler](../../docs/campaign-scheduler.md).
 
 ## Why CLI-First

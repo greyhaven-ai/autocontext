@@ -47,8 +47,12 @@ def _load_validity_harness_loader(
             ctx.scenario_name,
             ctx.active_context_bundle_digest,
         )
-        if bundle_harness_dir is not None:
-            harness_dir = bundle_harness_dir
+        # An active immutable bundle is authoritative even when it deliberately
+        # contains no executable validators. Falling back to mutable legacy
+        # files would make serving apply a gate that matched evaluation did not.
+        if bundle_harness_dir is None:
+            return None
+        harness_dir = bundle_harness_dir
     if not harness_dir.exists():
         return None
 

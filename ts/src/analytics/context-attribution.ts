@@ -1,9 +1,12 @@
 /** Ablation-backed attribution for immutable context-bundle components (AC-974). */
 
 import {
+  contextBundleManifestDiff,
   stableDigest,
+  validateContextBundle,
   type BundleComponent,
   type ContextBundle,
+  type ContextBundleManifestDiff,
 } from "../context-bundles/index.js";
 
 export type EvidenceLevel = "causal_ablation" | "paired_shadow" | "component_correlated";
@@ -58,6 +61,18 @@ export interface ContextAttributionLedger {
   scenario: string;
   trials: ControlledAttributionTrial[];
   attributions: ComponentAttribution[];
+}
+
+export interface ControlledTrialManifestVerification {
+  trial_id: string;
+  manifest_diff_digest: string;
+  manifest_diff: ContextBundleManifestDiff;
+}
+
+export interface ManifestVerifiedComponentAttribution {
+  attribution: ComponentAttribution;
+  manifest_diff_digest: string;
+  trial_ids: string[];
 }
 
 export interface ReablationCandidate {
@@ -283,6 +298,111 @@ export function attributeControlledTrials(
       neutralEffect,
       highTokenCost,
     ));
+}
+
+export function verifyControlledTrialManifestDiff(
+  trial: ControlledAttributionTrial,
+  testedBundleValue: ContextBundle,
+  comparisonBundleValue: ContextBundle,
+): ControlledTrialManifestVerification {
+  validateTrial(trial);
+  const testedBundle = validateContextBundle(testedBundleValue);
+  const comparisonBundle = validateContextBundle(comparisonBundleValue);
+  if (testedBundle.digest !== trial.tested_bundle_digest) {
+    throw new Error("tested bundle manifest does not match the controlled attribution trial");
+  }
+  if (comparisonBundle.digest !== trial.comparison_bundle_digest) {
+    throw new Error("comparison bundle manifest does not match the controlled attribution trial");
+  }
+  if (
+    testedBundle.evaluator_epoch !== trial.evaluator_epoch
+    || comparisonBundle.evaluator_epoch !== trial.evaluator_epoch
+  ) {
+    throw new Error("controlled attribution manifest evaluator epoch mismatch");
+  }
+  const manifestDiff = contextBundleManifestDiff(testedBundle, comparisonBundle);
+  const matching = manifestDiff.changes.filter((change) => (
+    change.component_kind === trial.component_kind && change.component_key === trial.component_key
+  ));
+  if (
+    matching.length !== 1
+    || matching[0]?.tested_component_digest !== trial.component_digest
+    || matching[0]?.comparison_component_digest !== null
+  ) {
+    throw new Error("controlled attribution target does not match the exact manifest diff");
+  }
+  if (trial.evidence_level === "causal_ablation" && manifestDiff.changes.length !== 1) {
+    throw new Error("causal attribution requires an exact single-component manifest diff");
+  }
+  return {
+    trial_id: trial.trial_id,
+    manifest_diff_digest: manifestDiff.digest,
+    manifest_diff: manifestDiff,
+  };
+}
+
+export function attributeManifestVerifiedTrials(
+  trials: readonly ControlledAttributionTrial[],
+  opts: {
+    evaluatorEpoch: string;
+    bundleManifests: ReadonlyMap<string, ContextBundle>;
+    neutralEffect?: number;
+    highTokenCost?: number;
+  },
+): ManifestVerifiedComponentAttribution[] {
+  const verifications = new Map<string, ControlledTrialManifestVerification>();
+  for (const trial of trials) {
+    const tested = opts.bundleManifests.get(trial.tested_bundle_digest);
+    const comparison = opts.bundleManifests.get(trial.comparison_bundle_digest);
+    if (!tested || !comparison) {
+      throw new Error(`missing controlled attribution bundle manifest: ${!tested
+        ? trial.tested_bundle_digest
+        : trial.comparison_bundle_digest}`);
+    }
+    verifications.set(trial.trial_id, verifyControlledTrialManifestDiff(trial, tested, comparison));
+  }
+  return attributeControlledTrials(trials, opts).map((attribution) => {
+    const digests = new Set(attribution.trial_ids.map((trialId) => {
+      const verification = verifications.get(trialId);
+      if (!verification) throw new Error(`missing controlled attribution verification: ${trialId}`);
+      return verification.manifest_diff_digest;
+    }));
+    if (digests.size !== 1) throw new Error("controlled attribution group mixes exact manifest diffs");
+    return {
+      attribution,
+      manifest_diff_digest: [...digests][0]!,
+      trial_ids: attribution.trial_ids,
+    };
+  });
+}
+
+export function reconstructManifestVerifiedCausalCredit(
+  record: ManifestVerifiedComponentAttribution,
+  trials: readonly ControlledAttributionTrial[],
+  bundleManifests: ReadonlyMap<string, ContextBundle>,
+): number {
+  const byId = new Map<string, ControlledAttributionTrial>();
+  for (const trial of trials) {
+    if (byId.has(trial.trial_id)) throw new Error(`duplicate attribution trial: ${trial.trial_id}`);
+    byId.set(trial.trial_id, trial);
+  }
+  const referenced = record.trial_ids.map((trialId) => {
+    const trial = byId.get(trialId);
+    if (!trial) throw new Error(`missing referenced trial: ${trialId}`);
+    const tested = bundleManifests.get(trial.tested_bundle_digest);
+    const comparison = bundleManifests.get(trial.comparison_bundle_digest);
+    if (!tested || !comparison) {
+      throw new Error(`missing controlled attribution bundle manifest: ${!tested
+        ? trial.tested_bundle_digest
+        : trial.comparison_bundle_digest}`);
+    }
+    const verification = verifyControlledTrialManifestDiff(trial, tested, comparison);
+    if (verification.manifest_diff_digest !== record.manifest_diff_digest) {
+      throw new Error("controlled attribution manifest-diff binding mismatch");
+    }
+    return trial;
+  });
+  return reconstructCausalCredit(record.attribution, referenced);
 }
 
 export function reconstructCausalCredit(

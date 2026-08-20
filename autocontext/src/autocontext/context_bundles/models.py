@@ -483,6 +483,7 @@ class PromotionArtifact:
     comparison: ComparisonResult
     confirmation_policy: ConfirmationPolicy
     confirmation_policy_digest: str
+    manifest_diff_digest: str
     promoted_at: str
 
     def to_dict(self) -> dict[str, Any]:
@@ -498,5 +499,44 @@ class PromotionArtifact:
             "comparison": self.comparison.to_dict(),
             "confirmation_policy": self.confirmation_policy.to_dict(),
             "confirmation_policy_digest": self.confirmation_policy_digest,
+            "manifest_diff_digest": self.manifest_diff_digest,
             "promoted_at": self.promoted_at,
         }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PromotionArtifact:
+        if int(data.get("schema_version", SCHEMA_VERSION)) != SCHEMA_VERSION:
+            raise ValueError("unsupported context bundle promotion artifact schema version")
+        comparison = data.get("comparison")
+        confirmation_policy = data.get("confirmation_policy")
+        if not isinstance(comparison, dict) or not isinstance(confirmation_policy, dict):
+            raise ValueError("context bundle promotion artifact is missing its evidence policy")
+        policy = ConfirmationPolicy.from_dict(confirmation_policy)
+        policy_digest = str(data["confirmation_policy_digest"])
+        if stable_digest(policy.to_dict()) != policy_digest:
+            raise ValueError("context bundle promotion confirmation policy digest mismatch")
+        return cls(
+            promotion_id=str(data["promotion_id"]),
+            candidate_digest=str(data["candidate_digest"]),
+            incumbent_digest=(str(data["incumbent_digest"]) if data.get("incumbent_digest") is not None else None),
+            rollback_target_digest=(
+                str(data["rollback_target_digest"]) if data.get("rollback_target_digest") is not None else None
+            ),
+            evaluator_epoch=str(data["evaluator_epoch"]),
+            cohort=str(data["cohort"]),
+            rationale=str(data["rationale"]),
+            comparison=ComparisonResult(
+                decision=ComparisonDecision(str(comparison["decision"])),
+                reason=str(comparison["reason"]),
+                screen_pairs=int(comparison["screen_pairs"]),
+                confirmation_pairs=int(comparison["confirmation_pairs"]),
+                heldout_pairs=int(comparison["heldout_pairs"]),
+                mean_effect=(float(comparison["mean_effect"]) if comparison.get("mean_effect") is not None else None),
+                confidence_low=(float(comparison["confidence_low"]) if comparison.get("confidence_low") is not None else None),
+                confidence_high=(float(comparison["confidence_high"]) if comparison.get("confidence_high") is not None else None),
+            ),
+            confirmation_policy=policy,
+            confirmation_policy_digest=policy_digest,
+            manifest_diff_digest=str(data["manifest_diff_digest"]),
+            promoted_at=str(data["promoted_at"]),
+        )

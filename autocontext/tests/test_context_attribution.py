@@ -384,3 +384,82 @@ def test_edit_size_credit_and_reports_are_explicitly_noncausal() -> None:
     report = render_context_attribution_report([record])
     assert "component_correlated" in report
     assert "not causal" in report
+
+
+def test_causal_attribution_is_bound_to_exact_shared_manifest_diff() -> None:
+    from autocontext.analytics.context_attribution import ControlledAttributionTrial
+    from autocontext.analytics.manifest_attribution import (
+        attribute_manifest_verified_trials,
+        reconstruct_manifest_verified_causal_credit,
+    )
+    from autocontext.context_bundles import BundleComponent, ComponentKind, ContextBundle
+
+    manifests = json.loads(
+        (ROOT / "fixtures" / "context-bundles" / "causal-attribution-manifest-parity.json").read_text()
+    )
+    expected_diff = manifests["manifest_diff"]
+    tested = ContextBundle.from_dict(manifests["tested"])
+    comparison = ContextBundle.from_dict(manifests["comparison"])
+    component = next(item for item in tested.components if item.kind == ComponentKind.PLAYBOOK)
+    trial = ControlledAttributionTrial(
+        trial_id="manifest-bound-1",
+        component_kind=component.kind.value,
+        component_key=component.key,
+        component_digest=component.digest,
+        tested_bundle_digest=tested.digest,
+        comparison_bundle_digest=comparison.digest,
+        evaluator_epoch=tested.evaluator_epoch,
+        trial_cohort="manifest-cohort",
+        fixture_digest="fixture-1",
+        seed=1,
+        evidence_level="causal_ablation",
+        with_component_score=0.8,
+        without_component_score=0.6,
+        token_cost=100,
+        tested_at="2026-08-20T00:00:00Z",
+    )
+    bundle_manifests = {tested.digest: tested, comparison.digest: comparison}
+
+    record = attribute_manifest_verified_trials(
+        [trial],
+        evaluator_epoch=tested.evaluator_epoch,
+        bundle_manifests=bundle_manifests,
+    )[0]
+
+    assert record.manifest_diff_digest == expected_diff["digest"]
+    assert reconstruct_manifest_verified_causal_credit(
+        record,
+        [trial],
+        bundle_manifests=bundle_manifests,
+    ) == 0.2
+
+    extra = BundleComponent(ComponentKind.HINTS, "hints", "also changed")
+    multi_change = ContextBundle.create(
+        scenario=tested.scenario,
+        evaluator_epoch=tested.evaluator_epoch,
+        components=[*tested.components, extra],
+    )
+    invalid = trial.model_copy(update={"tested_bundle_digest": multi_change.digest})
+    with pytest.raises(ValueError, match="exact single-component manifest diff"):
+        attribute_manifest_verified_trials(
+            [invalid],
+            evaluator_epoch=tested.evaluator_epoch,
+            bundle_manifests={multi_change.digest: multi_change, comparison.digest: comparison},
+        )
+
+    replacement = ContextBundle.create(
+        scenario=tested.scenario,
+        evaluator_epoch=tested.evaluator_epoch,
+        parent_digest=tested.parent_digest,
+        components=[
+            BundleComponent(ComponentKind.PLAYBOOK, "playbook", "replacement", "text/markdown"),
+            *[item for item in tested.components if item.kind != ComponentKind.PLAYBOOK],
+        ],
+    )
+    replaced = trial.model_copy(update={"comparison_bundle_digest": replacement.digest})
+    with pytest.raises(ValueError, match="target does not match"):
+        attribute_manifest_verified_trials(
+            [replaced],
+            evaluator_epoch=tested.evaluator_epoch,
+            bundle_manifests={tested.digest: tested, replacement.digest: replacement},
+        )

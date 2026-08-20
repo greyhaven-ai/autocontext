@@ -1,5 +1,7 @@
 """Aggregate analytics for cross-run facets, signal extraction, and pattern clustering."""
 
+from typing import TYPE_CHECKING, Any
+
 from autocontext.analytics.campaign_mode_report import CampaignModeReport, build_campaign_mode_report
 from autocontext.analytics.context_attribution import (
     ComponentAttribution,
@@ -15,6 +17,10 @@ from autocontext.analytics.exploration_collapse_guard import (
     render_exploration_collapse_report,
 )
 from autocontext.analytics.goal_run_report import GoalRunReport, build_goal_run_report
+from autocontext.analytics.manifest_attribution import (
+    attribute_manifest_verified_trials,
+    reconstruct_manifest_verified_causal_credit,
+)
 from autocontext.analytics.negative_result_ledger import NegativeResultLedger, build_negative_result_ledger
 from autocontext.analytics.progress_report import RunProgressReport, build_run_progress_report
 from autocontext.analytics.run_utilization_report import RunUtilizationReport, build_run_utilization_report
@@ -27,11 +33,42 @@ from autocontext.analytics.trace_gate_operator_view import (
     render_trace_gate_operator_view_lines,
 )
 
+if TYPE_CHECKING:
+    from autocontext.analytics.false_promotion_calibration import (
+        FalsePromotionCalibrationCase,
+        FalsePromotionCalibrationResult,
+        simulate_false_promotion_campaigns,
+    )
+
+
+def __getattr__(name: str) -> Any:
+    """Load calibration exports without creating an analytics/bundle cycle."""
+
+    if name in {
+        "FalsePromotionCalibrationCase",
+        "FalsePromotionCalibrationResult",
+        "simulate_false_promotion_campaigns",
+    }:
+        from autocontext.analytics.false_promotion_calibration import (
+            FalsePromotionCalibrationCase,
+            FalsePromotionCalibrationResult,
+            simulate_false_promotion_campaigns,
+        )
+
+        return {
+            "FalsePromotionCalibrationCase": FalsePromotionCalibrationCase,
+            "FalsePromotionCalibrationResult": FalsePromotionCalibrationResult,
+            "simulate_false_promotion_campaigns": simulate_false_promotion_campaigns,
+        }[name]
+    raise AttributeError(name)
+
 __all__ = [
     "CampaignModeReport",
     "ComponentAttribution",
     "ContextAttributionLedger",
     "ExplorationCollapseReport",
+    "FalsePromotionCalibrationCase",
+    "FalsePromotionCalibrationResult",
     "GoalRunReport",
     "NegativeResultLedger",
     "RunProgressReport",
@@ -41,6 +78,7 @@ __all__ = [
     "TraceGateOperatorView",
     "build_campaign_mode_report",
     "attribute_controlled_trials",
+    "attribute_manifest_verified_trials",
     "build_goal_run_report",
     "detect_exploration_collapse",
     "build_negative_result_ledger",
@@ -50,7 +88,9 @@ __all__ = [
     "render_exploration_collapse_report",
     "plan_reablation",
     "reconstruct_causal_credit",
+    "reconstruct_manifest_verified_causal_credit",
     "render_trace_gate_operator_view_lines",
     "runtime_session_log_to_run_trace",
     "select_prompt_components",
+    "simulate_false_promotion_campaigns",
 ]

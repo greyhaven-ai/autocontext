@@ -6,8 +6,10 @@ import asyncio
 import base64
 import json
 import logging
+import math
 import re
 import shlex
+import threading
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
@@ -21,13 +23,16 @@ from autocontext.execution.remote_execution import (
     RemoteExecutionResult,
     RemoteResourceUsage,
     parse_remote_stdout,
-    requests_are_reuse_compatible,
+    remote_request_provenance,
 )
+from autocontext.execution.scenario_remote_package import DEFAULT_REMOTE_RUNTIME_IMAGE, require_pinned_runtime_image
 from autocontext.execution.scenario_remote_task import build_builtin_scenario_remote_request
+from autocontext.integrations.primeintellect import _lifecycle
 from autocontext.offline import require_online
 from autocontext.scenarios.base import ExecutionLimits
 
 logger = logging.getLogger(__name__)
+_CLEANUP_TIMEOUT_SECONDS = 30.0
 
 AsyncSandboxClient: Any | None = None
 CreateSandboxRequest: Any | None = None
@@ -69,8 +74,8 @@ class PrimeIntellectClient:
     transport, artifact collection, usage, cleanup, and ledger emission.
     """
 
-    api_key: str
-    docker_image: str = "python:3.11-slim"
+    api_key: str = field(repr=False)
+    docker_image: str = DEFAULT_REMOTE_RUNTIME_IMAGE
     cpu_cores: float = 1.0
     memory_gb: float = 2.0
     disk_size_gb: float = 5.0
@@ -92,10 +97,25 @@ class PrimeIntellectClient:
         }
     )
     ledger_sink: ExternalEvalLedgerSink | None = None
+    _active_lock: threading.RLock = field(default_factory=threading.RLock, init=False, repr=False)
+    _active_sandboxes: dict[str, _lifecycle.ActiveSandbox] = field(default_factory=dict, init=False, repr=False)
+    _inflight_tasks: set[str] = field(default_factory=set, init=False, repr=False)
+    _cancellation_requested: set[str] = field(default_factory=set, init=False, repr=False)
+    _result_committed: set[str] = field(default_factory=set, init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        if not self.api_key.strip():
+            raise ValueError("Prime Intellect API key must be non-empty")
+        require_pinned_runtime_image(self.docker_image)
+        resources = (self.cpu_cores, self.memory_gb, self.disk_size_gb)
+        if any(not math.isfinite(value) or value <= 0 for value in resources):
+            raise ValueError("Prime Intellect resource limits must be positive and finite")
+        if self.timeout_minutes < 1 or self.max_wait_attempts < 1:
+            raise ValueError("Prime Intellect timeout and wait attempts must be positive")
 
     def capabilities(self) -> dict[str, bool]:
         return {
-            name: self.provider_capabilities.get(name) is True
+            name: (False if name == "session_reuse" else self.provider_capabilities.get(name) is True)
             for name in ("accelerator", "session_reuse", "snapshot", "warm", "secret_grants")
         }
 
@@ -117,61 +137,143 @@ class PrimeIntellectClient:
         backoff_seconds: float = 0.75,
     ) -> RemoteExecutionResult:
         require_online("use the PrimeIntellect executor")
-        attempt = 0
-        while True:
-            # Grants can expire while a failed attempt is backing off. Recheck
-            # policy immediately before every provider attempt; policy errors
-            # are deliberately outside the provider-fallback exception path.
-            self._validate_request(request)
-            try:
-                result = asyncio.run(self._execute_request_once(request))
-                self._emit_ledger(result)
-                return result
-            except MissingPrimeIntellectExtraError:
-                raise
-            except Exception as exc:
-                logger.debug("integrations.primeintellect.client: provider failure", exc_info=True)
-                attempt += 1
-                if attempt <= max_retries:
-                    time.sleep(backoff_seconds * attempt)
-                    continue
-                if not self.allow_fallback:
+        if max_retries < 0 or not math.isfinite(backoff_seconds) or backoff_seconds < 0:
+            raise ValueError("Prime Intellect retry count and backoff must be non-negative and finite")
+        self._begin_task(request.task_id)
+        try:
+            attempt = 0
+            provider_wall_seconds = 0.0
+            while True:
+                if self._is_cancellation_requested(request.task_id):
+                    result = self._canceled_result(request)
+                    return self._commit_and_emit(request, result, provider_wall_seconds=provider_wall_seconds)
+                # Grants can expire while a failed attempt is backing off. Recheck
+                # policy immediately before every provider attempt; policy errors
+                # are deliberately outside the provider-fallback exception path.
+                self._validate_request(request)
+                attempt_started = time.perf_counter()
+                try:
+                    result = asyncio.run(self._execute_request_once(request))
+                except MissingPrimeIntellectExtraError:
                     raise
-                result = RemoteExecutionResult(
-                    task_id=request.task_id,
-                    provider="primeintellect",
-                    status="provider_error",
-                    cleanup=RemoteCleanupOutcome(attempted=False, succeeded=False),
-                    error=str(exc),
-                    events=(
-                        RemoteExecutionEvent(
-                            sequence=1,
-                            event_type="provider_error",
-                            message=str(exc),
-                            fields={"attempts": attempt},
+                except _lifecycle.SandboxCreationOutcomeUnknown as exc:
+                    provider_wall_seconds += max(0.0, time.perf_counter() - attempt_started)
+                    result = _lifecycle.ambiguous_creation_result(request, exc)
+                    if self._is_cancellation_requested(request.task_id):
+                        result = self._canceled_result(request, str(exc), completed=result)
+                        return self._commit_and_emit(
+                            request,
+                            result,
+                            provider_wall_seconds=provider_wall_seconds,
+                        )
+                    result = self._commit_and_emit(
+                        request,
+                        result,
+                        provider_wall_seconds=provider_wall_seconds,
+                    )
+                    return result
+                except _lifecycle.RetryableProvisioningError as exc:
+                    provider_wall_seconds += max(0.0, time.perf_counter() - attempt_started)
+                    if self._is_cancellation_requested(request.task_id):
+                        completed = _lifecycle.provider_error_result(
+                            request,
+                            detail=str(exc),
+                            cleanup=exc.cleanup,
+                            usage=exc.usage,
+                            session_id=exc.session_id,
+                            attempts=attempt + 1,
+                            lifecycle_event=exc.lifecycle_event,
+                        )
+                        result = self._canceled_result(request, str(exc), completed=completed)
+                        return self._commit_and_emit(request, result, provider_wall_seconds=provider_wall_seconds)
+                    attempt += 1
+                    if attempt <= max_retries:
+                        time.sleep(backoff_seconds * attempt)
+                        continue
+                    result = _lifecycle.provider_error_result(
+                        request,
+                        detail=str(exc),
+                        cleanup=exc.cleanup,
+                        usage=exc.usage,
+                        session_id=exc.session_id,
+                        attempts=attempt,
+                        lifecycle_event=exc.lifecycle_event,
+                    )
+                    return self._commit_and_emit(request, result, provider_wall_seconds=provider_wall_seconds)
+                except Exception as exc:
+                    provider_wall_seconds += max(0.0, time.perf_counter() - attempt_started)
+                    logger.debug("integrations.primeintellect.client: provider failure", exc_info=True)
+                    if self._is_cancellation_requested(request.task_id):
+                        result = self._canceled_result(request, str(exc))
+                        return self._commit_and_emit(request, result, provider_wall_seconds=provider_wall_seconds)
+                    attempt += 1
+                    if attempt <= max_retries:
+                        time.sleep(backoff_seconds * attempt)
+                        continue
+                    result = RemoteExecutionResult(
+                        task_id=request.task_id,
+                        provider="primeintellect",
+                        status="provider_error",
+                        cleanup=RemoteCleanupOutcome(
+                            attempted=False,
+                            succeeded=True,
+                            detail="no provider resource was registered",
                         ),
-                    ),
-                )
-                self._emit_ledger(result)
-                return result
+                        error=str(exc),
+                        provenance=remote_request_provenance(request),
+                        events=(
+                            RemoteExecutionEvent(
+                                sequence=1,
+                                event_type="provider_error",
+                                message=str(exc),
+                                fields={"attempts": attempt},
+                            ),
+                        ),
+                    )
+                    return self._commit_and_emit(request, result, provider_wall_seconds=provider_wall_seconds)
+                provider_wall_seconds += max(0.0, time.perf_counter() - attempt_started)
+                # Ledger persistence is deliberately outside the provider retry
+                # exception boundary. A sink failure must never execute a paid
+                # remote task a second time.
+                return self._commit_and_emit(request, result, provider_wall_seconds=provider_wall_seconds)
+        finally:
+            self._end_task(request.task_id)
 
     def execute_requests(
         self,
         requests: Sequence[RemoteExecutionRequest],
     ) -> tuple[RemoteExecutionResult, ...]:
-        """Execute a bounded matched cohort when isolated reuse is explicitly advertised."""
+        """Reject session reuse until Prime exposes a verified reset primitive."""
 
         require_online("use the PrimeIntellect executor")
-        if not self.capabilities()["session_reuse"]:
-            raise UnsupportedRemoteCapabilityError("Prime Intellect adapter does not advertise session_reuse")
-        if not requests_are_reuse_compatible(requests):
-            raise ValueError("requests are not compatible with bounded matched-trial reuse")
-        for request in requests:
-            self._validate_request(request)
-        results = asyncio.run(self._execute_reuse_batch_once(requests))
-        for result in results:
-            self._emit_ledger(result)
-        return results
+        del requests
+        raise UnsupportedRemoteCapabilityError(
+            "Prime Intellect session_reuse is disabled until the provider exposes a verified reset primitive"
+        )
+
+    def cancel_request(self, request: RemoteExecutionRequest | str) -> bool:
+        """Cancel an in-flight task by deleting its provider sandbox exactly once.
+
+        Campaign workers may only retain the durable task id, while the generic
+        scheduler adapter retains the full request. Both forms resolve through
+        the same host-side task-to-sandbox registry. Cancellation requested
+        before sandbox creation is remembered and honored immediately after the
+        provider returns the sandbox id.
+        """
+
+        task_id = request.task_id if isinstance(request, RemoteExecutionRequest) else request
+        if not task_id.strip():
+            return False
+        with self._active_lock:
+            if task_id not in self._inflight_tasks:
+                return False
+            if task_id in self._result_committed:
+                return False
+            self._cancellation_requested.add(task_id)
+            active = self._active_sandboxes.get(task_id)
+        if active is None:
+            return True
+        return asyncio.run(self._cancel_active_sandbox(active))
 
     def execute_strategy(
         self,
@@ -221,138 +323,334 @@ class PrimeIntellectClient:
     async def _execute_request_once(self, request: RemoteExecutionRequest) -> RemoteExecutionResult:
         sandbox_client_cls, create_sandbox_request = _prime_sandboxes_sdk()
         sandbox_id = ""
+        active: _lifecycle.ActiveSandbox | None = None
         started = time.perf_counter()
         response: Any | None = None
         timeout_error = ""
+        cancellation_error = ""
+        provider_error: Exception | None = None
+        client_exit_error: Exception | None = None
+        command_dispatched = False
         cleanup = RemoteCleanupOutcome(attempted=False, succeeded=False)
-        async with sandbox_client_cls(api_key=self.api_key) as client:
-            self._validate_request(request)
-            sandbox = await client.create(create_sandbox_request(**self._create_kwargs(request)))
-            sandbox_id = str(sandbox.id)
-            try:
-                await client.wait_for_creation(sandbox_id, max_attempts=self.max_wait_attempts)
+        try:
+            async with sandbox_client_cls(api_key=self.api_key) as client:
+                self._validate_request(request)
                 try:
-                    response = await client.execute_command(
-                        sandbox_id=sandbox_id,
-                        command=self._build_command(request),
-                        timeout=max(1, int(request.timeout_seconds)),
-                    )
-                except TimeoutError as exc:
-                    timeout_error = str(exc) or "remote task timed out"
-            finally:
-                cleanup = await self._cleanup(client, sandbox_id)
+                    sandbox = await client.create(create_sandbox_request(**self._create_kwargs(request)))
+                    raw_sandbox_id = getattr(sandbox, "id", None)
+                    if raw_sandbox_id is None or not str(raw_sandbox_id).strip():
+                        raise ValueError("provider returned a sandbox without a resource id")
+                    sandbox_id = str(raw_sandbox_id)
+                except Exception as exc:
+                    raise _lifecycle.SandboxCreationOutcomeUnknown(
+                        f"sandbox creation failed: {type(exc).__name__}: {exc}"
+                    ) from exc
+                active = self._register_sandbox(request.task_id, sandbox_id)
+                try:
+                    if self._is_cancellation_requested(request.task_id):
+                        cancellation_error = "remote task canceled"
+                    else:
+                        await client.wait_for_creation(sandbox_id, max_attempts=self.max_wait_attempts)
+                    if self._is_cancellation_requested(request.task_id):
+                        cancellation_error = "remote task canceled"
+                    elif not cancellation_error:
+                        try:
+                            command_dispatched = True
+                            response = await client.execute_command(
+                                sandbox_id=sandbox_id,
+                                command=self._build_command(request),
+                                timeout=max(1, math.ceil(request.timeout_seconds)),
+                            )
+                        except TimeoutError as exc:
+                            timeout_error = str(exc) or "remote task timed out"
+                except Exception as exc:
+                    provider_error = exc
+                finally:
+                    cleanup = await self._cleanup_once(client, active)
+        except _lifecycle.SandboxCreationOutcomeUnknown:
+            raise
+        except Exception as exc:
+            if not sandbox_id:
+                creation_error = exc.__context__
+                if isinstance(creation_error, _lifecycle.SandboxCreationOutcomeUnknown):
+                    detail = f"{creation_error}; Prime Intellect client context exit failed: {type(exc).__name__}: {exc}"
+                    raise _lifecycle.SandboxCreationOutcomeUnknown(detail, client_exit_error=exc) from exc
+                raise
+            client_exit_error = exc
+        if self._is_cancellation_requested(request.task_id):
+            cancellation_error = "remote task canceled"
         usage = RemoteResourceUsage(wall_seconds=time.perf_counter() - started)
         lifecycle_event = RemoteExecutionEvent(
             sequence=1,
-            event_type="lifecycle",
-            message=request.lifecycle,
+            event_type="canceled" if cancellation_error else "lifecycle",
+            message=cancellation_error or request.lifecycle,
             fields={"session_id": sandbox_id, "cleanup": cleanup.succeeded},
         )
-        if timeout_error:
-            cleanup_detail = _cleanup_failure_detail(timeout_error, cleanup)
-            return RemoteExecutionResult(
-                task_id=request.task_id,
-                provider="primeintellect",
-                status="cleanup_error" if not cleanup.succeeded else "timeout",
-                usage=usage,
-                cleanup=cleanup,
-                error=cleanup_detail if not cleanup.succeeded else timeout_error,
-                session_id=sandbox_id,
-                events=(lifecycle_event,),
+        finish = lambda result: _lifecycle.client_exit_error_result(result, client_exit_error, lifecycle_event)  # noqa: E731
+        if cancellation_error:
+            detail = (
+                _lifecycle.cleanup_failure_detail(cancellation_error, cleanup) if not cleanup.succeeded else cancellation_error
             )
-        if response is None:
-            raise RuntimeError("Prime Intellect returned no command response")
-        parsed = parse_remote_stdout(
-            request,
-            provider="primeintellect",
-            stdout=str(response.stdout),
-            stderr=str(response.stderr),
-            exit_code=int(response.exit_code),
-            usage=usage,
-            cleanup=cleanup,
-            session_id=sandbox_id,
-        )
-        return replace(parsed, events=(lifecycle_event, *parsed.events))
-
-    async def _execute_reuse_batch_once(
-        self,
-        requests: Sequence[RemoteExecutionRequest],
-    ) -> tuple[RemoteExecutionResult, ...]:
-        sandbox_client_cls, create_sandbox_request = _prime_sandboxes_sdk()
-        first = requests[0]
-        sandbox_id = ""
-        pending: list[RemoteExecutionResult] = []
-        cleanup = RemoteCleanupOutcome(attempted=False, succeeded=False)
-        async with sandbox_client_cls(api_key=self.api_key) as client:
-            self._validate_request(first)
-            sandbox = await client.create(create_sandbox_request(**self._create_kwargs(first)))
-            sandbox_id = str(sandbox.id)
-            try:
-                await client.wait_for_creation(sandbox_id, max_attempts=self.max_wait_attempts)
-                for request in requests:
-                    self._validate_request(request)
-                    started = time.perf_counter()
-                    try:
-                        response = await client.execute_command(
-                            sandbox_id=sandbox_id,
-                            command=self._build_command(request),
-                            timeout=max(1, int(request.timeout_seconds)),
-                        )
-                    except TimeoutError as exc:
-                        pending.append(
-                            RemoteExecutionResult(
-                                task_id=request.task_id,
-                                provider="primeintellect",
-                                status="timeout",
-                                usage=RemoteResourceUsage(wall_seconds=time.perf_counter() - started),
-                                error=str(exc) or "remote task timed out",
-                                session_id=sandbox_id,
-                            )
-                        )
-                        continue
-                    pending.append(
-                        parse_remote_stdout(
-                            request,
-                            provider="primeintellect",
-                            stdout=str(response.stdout),
-                            stderr=str(response.stderr),
-                            exit_code=int(response.exit_code),
-                            usage=RemoteResourceUsage(wall_seconds=time.perf_counter() - started),
-                            cleanup=RemoteCleanupOutcome(attempted=False, succeeded=True, resource_id=sandbox_id),
-                            session_id=sandbox_id,
-                        )
-                    )
-            finally:
-                cleanup = await self._cleanup(client, sandbox_id)
-        results: list[RemoteExecutionResult] = []
-        for index, (_request, result) in enumerate(zip(requests, pending, strict=True)):
-            status = "cleanup_error" if not cleanup.succeeded else result.status
-            event = RemoteExecutionEvent(
-                sequence=1,
-                event_type="lifecycle",
-                message="reuse_matched_trials",
-                fields={"session_id": sandbox_id, "cohort_index": index, "cleanup": cleanup.succeeded},
-            )
-            results.append(
-                replace(
-                    result,
-                    status=status,
+            return finish(
+                RemoteExecutionResult(
+                    task_id=request.task_id,
+                    provider="primeintellect",
+                    status="cleanup_error" if not cleanup.succeeded else "provider_error",
+                    usage=usage,
                     cleanup=cleanup,
-                    error=(_cleanup_failure_detail(result.error, cleanup) if status == "cleanup_error" else result.error),
-                    events=(event, *result.events),
+                    error=detail,
+                    session_id=sandbox_id,
+                    events=(lifecycle_event,),
+                    provenance=remote_request_provenance(request),
                 )
             )
-        return tuple(results)
-
-    async def _cleanup(self, client: Any, sandbox_id: str) -> RemoteCleanupOutcome:
-        if not sandbox_id:
-            return RemoteCleanupOutcome(attempted=False, succeeded=False)
+        if provider_error is not None:
+            if not cleanup.succeeded:
+                provider_detail = f"{type(provider_error).__name__}: {provider_error}"
+                return finish(
+                    _lifecycle.terminal_cleanup_error(
+                        request,
+                        cleanup=cleanup,
+                        usage=usage,
+                        session_id=sandbox_id,
+                        primary_error=provider_detail,
+                        lifecycle_event=lifecycle_event,
+                    )
+                )
+            if command_dispatched:
+                provider_detail = f"remote command outcome is unknown: {type(provider_error).__name__}: {provider_error}"
+                return finish(
+                    RemoteExecutionResult(
+                        task_id=request.task_id,
+                        provider="primeintellect",
+                        status="provider_error",
+                        usage=usage,
+                        cleanup=cleanup,
+                        error=provider_detail,
+                        session_id=sandbox_id,
+                        events=(lifecycle_event,),
+                        provenance=remote_request_provenance(request),
+                    )
+                )
+            if client_exit_error is not None:
+                detail = f"{type(provider_error).__name__}: {provider_error}"
+                return finish(_lifecycle.provider_error_result(request, detail, cleanup, usage, sandbox_id, 1, lifecycle_event))
+            raise _lifecycle.RetryableProvisioningError(
+                provider_error,
+                cleanup=cleanup,
+                usage=usage,
+                session_id=sandbox_id,
+                lifecycle_event=lifecycle_event,
+            ) from provider_error
+        if timeout_error:
+            cleanup_detail = _lifecycle.cleanup_failure_detail(timeout_error, cleanup)
+            return finish(
+                RemoteExecutionResult(
+                    task_id=request.task_id,
+                    provider="primeintellect",
+                    status="cleanup_error" if not cleanup.succeeded else "timeout",
+                    usage=usage,
+                    cleanup=cleanup,
+                    error=cleanup_detail if not cleanup.succeeded else timeout_error,
+                    session_id=sandbox_id,
+                    events=(lifecycle_event,),
+                    provenance=remote_request_provenance(request),
+                )
+            )
+        if response is None:
+            if not cleanup.succeeded:
+                return finish(
+                    _lifecycle.terminal_cleanup_error(
+                        request,
+                        cleanup=cleanup,
+                        usage=usage,
+                        session_id=sandbox_id,
+                        primary_error="Prime Intellect returned no command response",
+                        lifecycle_event=lifecycle_event,
+                    )
+                )
+            return finish(
+                RemoteExecutionResult(
+                    task_id=request.task_id,
+                    provider="primeintellect",
+                    status="provider_error",
+                    usage=usage,
+                    cleanup=cleanup,
+                    error="Prime Intellect returned no command response",
+                    session_id=sandbox_id,
+                    events=(lifecycle_event,),
+                    provenance=remote_request_provenance(request),
+                )
+            )
         try:
-            await client.delete(sandbox_id)
+            parsed = parse_remote_stdout(
+                request,
+                provider="primeintellect",
+                stdout=str(response.stdout),
+                stderr=str(response.stderr),
+                exit_code=int(response.exit_code),
+                usage=usage,
+                cleanup=cleanup,
+                session_id=sandbox_id,
+            )
         except Exception as exc:
-            logger.debug("integrations.primeintellect.client: cleanup failed", exc_info=True)
-            return RemoteCleanupOutcome(attempted=True, succeeded=False, resource_id=sandbox_id, detail=str(exc))
-        return RemoteCleanupOutcome(attempted=True, succeeded=True, resource_id=sandbox_id)
+            if not cleanup.succeeded:
+                return finish(
+                    _lifecycle.terminal_cleanup_error(
+                        request,
+                        cleanup=cleanup,
+                        usage=usage,
+                        session_id=sandbox_id,
+                        primary_error=f"{type(exc).__name__}: {exc}",
+                        lifecycle_event=lifecycle_event,
+                    )
+                )
+            return finish(
+                RemoteExecutionResult(
+                    task_id=request.task_id,
+                    provider="primeintellect",
+                    status="artifact_error",
+                    usage=usage,
+                    cleanup=cleanup,
+                    error=f"malformed provider command response: {type(exc).__name__}: {exc}",
+                    session_id=sandbox_id,
+                    events=(lifecycle_event,),
+                    provenance=remote_request_provenance(request),
+                )
+            )
+        events = (lifecycle_event, *parsed.events)
+        return finish(replace(parsed, events=events))
+
+    def _begin_task(self, task_id: str) -> None:
+        with self._active_lock:
+            if task_id in self._inflight_tasks:
+                raise RuntimeError(f"Prime Intellect task is already in flight: {task_id}")
+            self._inflight_tasks.add(task_id)
+
+    def _end_task(self, task_id: str) -> None:
+        with self._active_lock:
+            self._inflight_tasks.discard(task_id)
+            self._active_sandboxes.pop(task_id, None)
+            self._cancellation_requested.discard(task_id)
+            self._result_committed.discard(task_id)
+
+    def _register_sandbox(self, task_id: str, sandbox_id: str) -> _lifecycle.ActiveSandbox:
+        active = _lifecycle.ActiveSandbox(task_id=task_id, sandbox_id=sandbox_id)
+        with self._active_lock:
+            if task_id not in self._inflight_tasks:
+                raise RuntimeError(f"Prime Intellect task is no longer in flight: {task_id}")
+            self._active_sandboxes[task_id] = active
+        return active
+
+    def _is_cancellation_requested(self, task_id: str) -> bool:
+        with self._active_lock:
+            return task_id in self._cancellation_requested
+
+    async def _cancel_active_sandbox(self, active: _lifecycle.ActiveSandbox) -> bool:
+        sandbox_client_cls, _ = _prime_sandboxes_sdk()
+        async with sandbox_client_cls(api_key=self.api_key) as client:
+            cleanup = await self._cleanup_once(client, active)
+        return cleanup.succeeded
+
+    async def _cleanup_once(self, client: Any, active: _lifecycle.ActiveSandbox) -> RemoteCleanupOutcome:
+        with self._active_lock:
+            owns_cleanup = not active.cleanup_started
+            if owns_cleanup:
+                active.cleanup_started = True
+        if owns_cleanup:
+            try:
+                await asyncio.wait_for(
+                    client.delete(active.sandbox_id),
+                    timeout=_CLEANUP_TIMEOUT_SECONDS,
+                )
+            except Exception as exc:
+                logger.debug("integrations.primeintellect.client: cleanup failed", exc_info=True)
+                detail = (
+                    f"sandbox cleanup timed out after {_CLEANUP_TIMEOUT_SECONDS:g} seconds"
+                    if isinstance(exc, TimeoutError)
+                    else str(exc) or type(exc).__name__
+                )
+                outcome = RemoteCleanupOutcome(
+                    attempted=True,
+                    succeeded=False,
+                    resource_id=active.sandbox_id,
+                    detail=detail,
+                )
+            else:
+                outcome = RemoteCleanupOutcome(attempted=True, succeeded=True, resource_id=active.sandbox_id)
+            with self._active_lock:
+                active.cleanup_outcome = outcome
+                active.cleanup_done.set()
+                if self._active_sandboxes.get(active.task_id) is active:
+                    self._active_sandboxes.pop(active.task_id, None)
+            return outcome
+
+        completed = await asyncio.to_thread(active.cleanup_done.wait, _CLEANUP_TIMEOUT_SECONDS + 1.0)
+        with self._active_lock:
+            concurrent_outcome = active.cleanup_outcome
+        if completed and concurrent_outcome is not None:
+            return concurrent_outcome
+        return RemoteCleanupOutcome(
+            attempted=True,
+            succeeded=False,
+            resource_id=active.sandbox_id,
+            detail="timed out waiting for concurrent sandbox cleanup",
+        )
+
+    def _canceled_result(
+        self,
+        request: RemoteExecutionRequest,
+        detail: str = "",
+        *,
+        completed: RemoteExecutionResult | None = None,
+    ) -> RemoteExecutionResult:
+        message = "remote task canceled"
+        if detail and detail != message:
+            logger.debug("Prime cancellation followed provider error: %s", detail)
+        cleanup = completed.cleanup if completed is not None else RemoteCleanupOutcome(attempted=False, succeeded=True)
+        events = completed.events if completed is not None else ()
+        if not any(event.event_type == "canceled" for event in events):
+            events = (
+                *events,
+                RemoteExecutionEvent(
+                    sequence=len(events) + 1,
+                    event_type="canceled",
+                    message=message,
+                ),
+            )
+        return RemoteExecutionResult(
+            task_id=request.task_id,
+            provider="primeintellect",
+            status="cleanup_error" if not cleanup.succeeded else "provider_error",
+            usage=completed.usage if completed is not None else RemoteResourceUsage(),
+            cleanup=cleanup,
+            error=_lifecycle.cleanup_failure_detail(message, cleanup) if not cleanup.succeeded else message,
+            session_id=completed.session_id if completed is not None else "",
+            provenance=remote_request_provenance(request),
+            events=events,
+        )
+
+    def _commit_and_emit(
+        self,
+        request: RemoteExecutionRequest,
+        result: RemoteExecutionResult,
+        *,
+        provider_wall_seconds: float,
+    ) -> RemoteExecutionResult:
+        """Linearize terminal result publication against cancellation."""
+
+        if provider_wall_seconds > result.usage.wall_seconds:
+            result = replace(
+                result,
+                usage=replace(result.usage, wall_seconds=provider_wall_seconds),
+            )
+        with self._active_lock:
+            cancellation_won = request.task_id in self._cancellation_requested
+            self._result_committed.add(request.task_id)
+        if cancellation_won and not any(event.event_type == "canceled" for event in result.events):
+            result = self._canceled_result(request, completed=result)
+        self._emit_ledger(result)
+        return result
 
     def _validate_request(self, request: RemoteExecutionRequest) -> None:
         capabilities = self.capabilities()
@@ -471,11 +769,6 @@ def _last_json_object(stdout: str) -> dict[str, Any]:
 def _safe_name(value: str) -> str:
     cleaned = "".join(char if char.isalnum() or char in {"-", "_"} else "-" for char in value)
     return cleaned[:48] or "task"
-
-
-def _cleanup_failure_detail(primary_error: str, cleanup: RemoteCleanupOutcome) -> str:
-    cleanup_error = cleanup.detail.strip() or "remote resource cleanup failed"
-    return f"{primary_error}; cleanup failed: {cleanup_error}" if primary_error else cleanup_error
 
 
 __all__ = [

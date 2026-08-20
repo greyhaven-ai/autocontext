@@ -14076,6 +14076,374 @@
           ]
         }
       }
+    },
+    {
+      "id": "campaign.run",
+      "path": [
+        "campaign",
+        "run"
+      ],
+      "summary": "Run or resume a durable, resource-bounded campaign plan.",
+      "audience": "advanced",
+      "maturity": "stable",
+      "domain_concept": null,
+      "aliases": [],
+      "runtime_support": {
+        "python": {
+          "status": "yes"
+        },
+        "typescript": {
+          "status": "intentional_gap",
+          "reason": "The executable campaign scheduler is a Python control-plane surface."
+        }
+      },
+      "positionals": [
+        {
+          "name": "plan",
+          "type": "string",
+          "required": true,
+          "description": "Schema-versioned campaign plan JSON file."
+        }
+      ],
+      "flags": [
+        {
+          "name": "state-root",
+          "type": "path",
+          "aliases": [],
+          "short_names": [],
+          "required": false,
+          "description": "Override durable scheduler state root."
+        },
+        {
+          "name": "json",
+          "type": "bool",
+          "aliases": [],
+          "short_names": [],
+          "required": false,
+          "description": "Emit the report as JSON.",
+          "default": false
+        }
+      ],
+      "output_contract": "json",
+      "output": {
+        "modes": [
+          "json",
+          "text"
+        ],
+        "streaming": "single",
+        "success_stream": "stdout",
+        "error_stream": "stderr",
+        "schemas": {},
+        "fixtures": {}
+      },
+      "exit_codes": {
+        "success": 0,
+        "usage": 2,
+        "execution": 1
+      },
+      "examples": [
+        "autoctx campaign run campaign.json --json"
+      ],
+      "runtime_shapes": {
+        "python": {
+          "positionals": [
+            {
+              "name": "plan",
+              "type": "string",
+              "required": true,
+              "description": "Schema-versioned campaign plan JSON file."
+            }
+          ],
+          "flags": [
+            {
+              "name": "state-root",
+              "type": "path",
+              "aliases": [],
+              "short_names": [],
+              "required": false,
+              "description": "Override durable scheduler state root."
+            },
+            {
+              "name": "json",
+              "type": "bool",
+              "aliases": [],
+              "short_names": [],
+              "required": false,
+              "description": "Emit the report as JSON.",
+              "default": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "campaign.audit.list",
+      "path": [
+        "campaign",
+        "audit",
+        "list"
+      ],
+      "summary": "List durable independent audit records for a campaign.",
+      "audience": "advanced",
+      "maturity": "stable",
+      "domain_concept": null,
+      "aliases": [],
+      "runtime_support": {
+        "python": {
+          "status": "yes"
+        },
+        "typescript": {
+          "status": "intentional_gap",
+          "reason": "Campaign audit persistence is a Python control-plane surface."
+        }
+      },
+      "positionals": [
+        {
+          "name": "campaign-id",
+          "type": "string",
+          "required": true,
+          "description": "Durable campaign identity."
+        }
+      ],
+      "flags": [
+        {
+          "name": "store-root",
+          "type": "path",
+          "aliases": [],
+          "short_names": [],
+          "required": false,
+          "description": "Override the campaign-audit store root."
+        },
+        {
+          "name": "json",
+          "type": "bool",
+          "aliases": [],
+          "short_names": [],
+          "required": false,
+          "description": "Emit records as JSON.",
+          "default": false
+        }
+      ],
+      "output_contract": "json",
+      "output": {
+        "modes": [
+          "json",
+          "text"
+        ],
+        "streaming": "single",
+        "success_stream": "stdout",
+        "error_stream": "stderr",
+        "schemas": {},
+        "fixtures": {}
+      },
+      "exit_codes": {
+        "success": 0,
+        "usage": 2,
+        "execution": 1
+      },
+      "examples": [
+        "autoctx campaign audit list campaign-123 --json"
+      ],
+      "runtime_shapes": {
+        "python": {
+          "positionals": [
+            {
+              "name": "campaign-id",
+              "type": "string",
+              "required": true,
+              "description": "Durable campaign identity."
+            }
+          ],
+          "flags": [
+            {
+              "name": "store-root",
+              "type": "path",
+              "aliases": [],
+              "short_names": [],
+              "required": false,
+              "description": "Override the campaign-audit store root."
+            },
+            {
+              "name": "json",
+              "type": "bool",
+              "aliases": [],
+              "short_names": [],
+              "required": false,
+              "description": "Emit records as JSON.",
+              "default": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "campaign.audit.resolve",
+      "path": [
+        "campaign",
+        "audit",
+        "resolve"
+      ],
+      "summary": "Record an operator disposition that resolves or defers a campaign audit.",
+      "audience": "advanced",
+      "maturity": "stable",
+      "domain_concept": null,
+      "aliases": [],
+      "runtime_support": {
+        "python": {
+          "status": "yes"
+        },
+        "typescript": {
+          "status": "intentional_gap",
+          "reason": "Campaign audit persistence is a Python control-plane surface."
+        }
+      },
+      "positionals": [
+        {
+          "name": "campaign-id",
+          "type": "string",
+          "required": true,
+          "description": "Durable campaign identity."
+        },
+        {
+          "name": "evidence-fingerprint",
+          "type": "string",
+          "required": true,
+          "description": "Evidence fingerprint printed by audit list."
+        }
+      ],
+      "flags": [
+        {
+          "name": "operator",
+          "type": "string",
+          "aliases": [],
+          "short_names": [],
+          "required": true,
+          "description": "Operator identity recorded in the disposition."
+        },
+        {
+          "name": "disposition",
+          "type": "string",
+          "aliases": [],
+          "short_names": [],
+          "required": true,
+          "description": "One of accepted, dismissed, mitigated, or deferred.",
+          "choices": [
+            "accepted",
+            "dismissed",
+            "mitigated",
+            "deferred"
+          ]
+        },
+        {
+          "name": "rationale",
+          "type": "string",
+          "aliases": [],
+          "short_names": [],
+          "required": true,
+          "description": "Required operator rationale."
+        },
+        {
+          "name": "audit-id",
+          "type": "string",
+          "aliases": [],
+          "short_names": [],
+          "required": false,
+          "description": "Resolve a specific audit when multiple configurations exist."
+        },
+        {
+          "name": "store-root",
+          "type": "path",
+          "aliases": [],
+          "short_names": [],
+          "required": false,
+          "description": "Override the campaign-audit store root."
+        }
+      ],
+      "output_contract": "json",
+      "output": {
+        "modes": [
+          "json"
+        ],
+        "streaming": "single",
+        "success_stream": "stdout",
+        "error_stream": "stderr",
+        "schemas": {},
+        "fixtures": {}
+      },
+      "exit_codes": {
+        "success": 0,
+        "usage": 2,
+        "execution": 1
+      },
+      "examples": [
+        "autoctx campaign audit resolve campaign-123 evidence-sha --operator me@example.com --disposition dismissed --rationale 'verified false positive'"
+      ],
+      "runtime_shapes": {
+        "python": {
+          "positionals": [
+            {
+              "name": "campaign-id",
+              "type": "string",
+              "required": true,
+              "description": "Durable campaign identity."
+            },
+            {
+              "name": "evidence-fingerprint",
+              "type": "string",
+              "required": true,
+              "description": "Evidence fingerprint printed by audit list."
+            }
+          ],
+          "flags": [
+            {
+              "name": "operator",
+              "type": "string",
+              "aliases": [],
+              "short_names": [],
+              "required": true,
+              "description": "Operator identity recorded in the disposition."
+            },
+            {
+              "name": "disposition",
+              "type": "string",
+              "aliases": [],
+              "short_names": [],
+              "required": true,
+              "description": "One of accepted, dismissed, mitigated, or deferred.",
+              "choices": [
+                "accepted",
+                "dismissed",
+                "mitigated",
+                "deferred"
+              ]
+            },
+            {
+              "name": "rationale",
+              "type": "string",
+              "aliases": [],
+              "short_names": [],
+              "required": true,
+              "description": "Required operator rationale."
+            },
+            {
+              "name": "audit-id",
+              "type": "string",
+              "aliases": [],
+              "short_names": [],
+              "required": false,
+              "description": "Resolve a specific audit when multiple configurations exist."
+            },
+            {
+              "name": "store-root",
+              "type": "path",
+              "aliases": [],
+              "short_names": [],
+              "required": false,
+              "description": "Override the campaign-audit store root."
+            }
+          ]
+        }
+      }
     }
   ]
 }

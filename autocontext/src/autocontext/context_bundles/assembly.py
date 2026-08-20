@@ -79,9 +79,7 @@ def validate_bundle_promotion_contract(
         incumbent_config = bundle_routing_config(incumbent)
         for field in CONSTRUCTION_BOUND_ROUTING_FIELDS:
             if config.get(field) != incumbent_config.get(field):
-                raise ValueError(
-                    f"construction-bound routing field {field!r} cannot change through context promotion"
-                )
+                raise ValueError(f"construction-bound routing field {field!r} cannot change through context promotion")
     return config
 
 
@@ -254,21 +252,10 @@ def routing_snapshot(settings: Any) -> dict[str, Any]:
 
 
 def evaluator_epoch_for(scenario: Any, settings: Any) -> str:
-    """Compute the exact evaluator identity used for bundle comparisons."""
-    from autocontext.execution.evaluator_epoch import compute_evaluator_epoch
-    from autocontext.providers.registry import resolve_auto_judge_provider
+    """Compute the complete score/validity/prompt/runtime evaluator identity."""
+    from autocontext.context_bundles.evaluator_plan import complete_evaluator_epoch
 
-    provider = str(getattr(settings, "judge_provider", "auto"))
-    if provider == "auto":
-        provider = resolve_auto_judge_provider(settings)
-    rubric = scenario.describe_evaluation_criteria()
-    if not isinstance(rubric, str):
-        rubric = ""
-    return compute_evaluator_epoch(
-        rubric,
-        provider,
-        str(getattr(settings, "judge_model", "")),
-    ).epoch_id
+    return complete_evaluator_epoch(scenario, settings)
 
 
 def _mutation_components(mutations: Iterable[HarnessMutation]) -> list[BundleComponent]:

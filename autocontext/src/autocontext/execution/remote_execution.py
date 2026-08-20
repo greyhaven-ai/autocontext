@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import base64
+import binascii
+import hashlib
 import json
+import math
+import re
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import Literal, Protocol, TypeAlias
 
 RemoteLifecyclePolicy: TypeAlias = Literal[
@@ -35,6 +40,8 @@ class RemoteAcceleratorRequest:
     def __post_init__(self) -> None:
         if not self.kind.strip() or self.count < 1:
             raise ValueError("accelerator kind must be non-empty and count must be positive")
+        if self.memory_gb is not None and (not math.isfinite(self.memory_gb) or self.memory_gb <= 0):
+            raise ValueError("accelerator memory must be positive and finite when supplied")
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,8 +52,9 @@ class RemoteResourceRequest:
     accelerator: RemoteAcceleratorRequest | None = None
 
     def __post_init__(self) -> None:
-        if self.cpu_cores <= 0 or self.memory_gb <= 0 or self.disk_gb <= 0:
-            raise ValueError("remote CPU, memory, and disk requests must be positive")
+        values = (self.cpu_cores, self.memory_gb, self.disk_gb)
+        if any(not math.isfinite(value) or value <= 0 for value in values):
+            raise ValueError("remote CPU, memory, and disk requests must be positive and finite")
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +65,10 @@ class RemoteInputArtifact:
 
     def __post_init__(self) -> None:
         _validate_artifact_name(self.name)
+        if not isinstance(self.content, bytes):
+            raise TypeError("remote input artifact content must be bytes")
+        if not isinstance(self.media_type, str) or not self.media_type.strip():
+            raise ValueError("remote input artifact media_type must be non-empty")
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +76,13 @@ class RemoteOutputArtifact:
     name: str
     content: bytes
     media_type: str = "application/octet-stream"
+
+    def __post_init__(self) -> None:
+        _validate_artifact_name(self.name)
+        if not isinstance(self.content, bytes):
+            raise TypeError("remote output artifact content must be bytes")
+        if not isinstance(self.media_type, str) or not self.media_type.strip():
+            raise ValueError("remote output artifact media_type must be non-empty")
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,6 +96,8 @@ class RemoteSecretGrant:
     def __post_init__(self) -> None:
         if not self.name.strip() or not self.grant_id.strip():
             raise ValueError("secret grant name and id must be non-empty")
+        if not math.isfinite(self.expires_at):
+            raise ValueError("secret grant expiry must be finite")
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,17 +121,46 @@ class RemoteExecutionRequest:
     def __post_init__(self) -> None:
         if not self.task_id.strip() or not self.image.strip() or not self.command.strip():
             raise ValueError("remote task_id, image, and command must be non-empty")
-        if self.timeout_seconds <= 0 or self.max_reuse_tasks < 1:
-            raise ValueError("remote timeout and reuse bound must be positive")
+        if not math.isfinite(self.timeout_seconds) or self.timeout_seconds <= 0 or self.max_reuse_tasks < 1:
+            raise ValueError("remote timeout must be positive and finite and reuse bound must be positive")
+        if self.network_policy not in {"deny", "allow"}:
+            raise ValueError(f"unknown remote network policy: {self.network_policy}")
+        if self.secrets_policy not in {"deny", "scoped_grants"}:
+            raise ValueError(f"unknown remote secrets policy: {self.secrets_policy}")
+        if self.lifecycle not in {"ephemeral_per_eval", "reuse_matched_trials", "warm_snapshot"}:
+            raise ValueError(f"unknown remote lifecycle policy: {self.lifecycle}")
         if self.secrets_policy == "deny" and self.secret_grants:
             raise ValueError("secret grants require secrets_policy='scoped_grants'")
         for grant in self.secret_grants:
             if grant.expires_at <= time.time():
                 raise ValueError(f"secret grant is expired: {grant.name}")
+        input_names = [artifact.name for artifact in self.input_artifacts]
+        if len(input_names) != len(set(input_names)):
+            raise ValueError("remote input artifact names must be unique")
+        if len(self.expected_outputs) != len(set(self.expected_outputs)):
+            raise ValueError("remote expected output artifact names must be unique")
         for name in self.expected_outputs:
             _validate_artifact_name(name)
         if self.lifecycle == "warm_snapshot" and not self.snapshot_id:
             raise ValueError("warm_snapshot lifecycle requires snapshot_id")
+        if any(
+            not isinstance(name, str)
+            or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) is None
+            or not isinstance(value, str)
+            for name, value in self.environment.items()
+        ):
+            raise ValueError("remote environment names must be POSIX identifiers and values must be strings")
+        if any(
+            not isinstance(name, str) or not isinstance(value, str) or not name
+            for name, value in self.metadata.items()
+        ):
+            raise ValueError("remote metadata names and values must be strings with non-empty names")
+        _prepared_fixture_provenance(self.metadata)
+        # The request is replay provenance. Retaining caller-owned dictionaries
+        # would let another thread mutate the provider command or attestation
+        # after validation but before dispatch.
+        object.__setattr__(self, "environment", MappingProxyType(dict(self.environment)))
+        object.__setattr__(self, "metadata", MappingProxyType(dict(self.metadata)))
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,6 +177,36 @@ class RemoteResourceUsage:
     cpu_seconds: float | None = None
     peak_memory_mb: float | None = None
     accelerator_seconds: float | None = None
+
+    def __post_init__(self) -> None:
+        values = (
+            self.wall_seconds,
+            self.cpu_seconds,
+            self.peak_memory_mb,
+            self.accelerator_seconds,
+        )
+        if any(value is not None and (not math.isfinite(value) or value < 0) for value in values):
+            raise ValueError("remote resource usage must be non-negative and finite")
+
+
+@dataclass(frozen=True, slots=True)
+class RemoteInputProvenance:
+    name: str
+    sha256: str
+    size_bytes: int
+    media_type: str
+
+
+@dataclass(frozen=True, slots=True)
+class RemoteExecutionProvenance:
+    image: str = ""
+    image_digest: str = ""
+    package_sha256: str = ""
+    inputs: tuple[RemoteInputProvenance, ...] = ()
+    seed: int | None = None
+    fixture_digest: str = ""
+    fixture_state_sha256: str = ""
+    fixture_observation_sha256: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,6 +228,7 @@ class ExternalEvalLedgerEntry:
     usage: RemoteResourceUsage
     cleanup: RemoteCleanupOutcome
     detail: str = ""
+    provenance: RemoteExecutionProvenance = field(default_factory=RemoteExecutionProvenance)
 
 
 @dataclass(frozen=True, slots=True)
@@ -164,6 +245,7 @@ class RemoteExecutionResult:
     cleanup: RemoteCleanupOutcome = field(default_factory=lambda: RemoteCleanupOutcome(False, False))
     error: str = ""
     session_id: str = ""
+    provenance: RemoteExecutionProvenance = field(default_factory=RemoteExecutionProvenance)
 
     @property
     def succeeded(self) -> bool:
@@ -173,7 +255,12 @@ class RemoteExecutionResult:
         return next((artifact for artifact in self.artifacts if artifact.name == name), None)
 
     def to_ledger_entry(self) -> ExternalEvalLedgerEntry:
-        infrastructure_succeeded = self.status not in {"provider_error", "timeout", "cleanup_error"}
+        infrastructure_succeeded = self.status not in {
+            "provider_error",
+            "timeout",
+            "artifact_error",
+            "cleanup_error",
+        } and not any(event.event_type == "provider_client_exit_error" for event in self.events)
         return ExternalEvalLedgerEntry(
             task_id=self.task_id,
             provider=self.provider,
@@ -184,6 +271,7 @@ class RemoteExecutionResult:
             usage=self.usage,
             cleanup=self.cleanup,
             detail=self.error,
+            provenance=self.provenance,
         )
 
 
@@ -211,6 +299,7 @@ def parse_remote_stdout(
 
     events: list[RemoteExecutionEvent] = []
     final_payload: Mapping[str, object] = {}
+    provenance = remote_request_provenance(request)
     for line in stdout.splitlines():
         try:
             parsed = json.loads(line)
@@ -231,10 +320,12 @@ def parse_remote_stdout(
             final_payload = parsed
     if exit_code != 0:
         task_error = stderr.strip() or f"task exited with status {exit_code}"
+        declared_bootstrap_exit = request.metadata.get("bootstrap_exit_code")
+        bootstrap_failed = declared_bootstrap_exit is not None and str(exit_code) == str(declared_bootstrap_exit)
         return RemoteExecutionResult(
             task_id=request.task_id,
             provider=provider,
-            status="cleanup_error" if not cleanup.succeeded else "task_error",
+            status=("cleanup_error" if not cleanup.succeeded else "artifact_error" if bootstrap_failed else "task_error"),
             stdout=stdout,
             stderr=stderr,
             exit_code=exit_code,
@@ -243,9 +334,27 @@ def parse_remote_stdout(
             cleanup=cleanup,
             error=_cleanup_failure_detail(task_error, cleanup) if not cleanup.succeeded else task_error,
             session_id=session_id,
+            provenance=provenance,
         )
 
-    artifacts = _parse_artifacts(final_payload.get("artifacts"))
+    try:
+        artifacts = _parse_artifacts(final_payload.get("artifacts"))
+    except (TypeError, ValueError) as exc:
+        artifact_error = f"malformed output artifacts: {type(exc).__name__}: {exc}"
+        return RemoteExecutionResult(
+            task_id=request.task_id,
+            provider=provider,
+            status="cleanup_error" if not cleanup.succeeded else "artifact_error",
+            stdout=stdout,
+            stderr=stderr,
+            exit_code=exit_code,
+            events=tuple(events),
+            usage=usage,
+            cleanup=cleanup,
+            error=_cleanup_failure_detail(artifact_error, cleanup) if not cleanup.succeeded else artifact_error,
+            session_id=session_id,
+            provenance=provenance,
+        )
     names = {artifact.name for artifact in artifacts}
     missing = [name for name in request.expected_outputs if name not in names]
     if missing:
@@ -263,6 +372,28 @@ def parse_remote_stdout(
             cleanup=cleanup,
             error=_cleanup_failure_detail(artifact_error, cleanup) if not cleanup.succeeded else artifact_error,
             session_id=session_id,
+            provenance=provenance,
+        )
+    malformed_scenario = _malformed_scenario_output(request, final_payload)
+    if malformed_scenario:
+        return RemoteExecutionResult(
+            task_id=request.task_id,
+            provider=provider,
+            status="cleanup_error" if not cleanup.succeeded else "artifact_error",
+            stdout=stdout,
+            stderr=stderr,
+            exit_code=exit_code,
+            artifacts=artifacts,
+            events=tuple(events),
+            usage=usage,
+            cleanup=cleanup,
+            error=(
+                _cleanup_failure_detail(malformed_scenario, cleanup)
+                if not cleanup.succeeded
+                else malformed_scenario
+            ),
+            session_id=session_id,
+            provenance=provenance,
         )
     status: RemoteExecutionStatus = "success" if cleanup.succeeded else "cleanup_error"
     return RemoteExecutionResult(
@@ -278,16 +409,107 @@ def parse_remote_stdout(
         cleanup=cleanup,
         error="" if cleanup.succeeded else cleanup.detail,
         session_id=session_id,
+        provenance=provenance,
     )
 
 
+def remote_request_provenance(request: RemoteExecutionRequest) -> RemoteExecutionProvenance:
+    """Derive immutable replay provenance from request contents, not provider output."""
+
+    inputs = tuple(
+        RemoteInputProvenance(
+            name=artifact.name,
+            sha256=hashlib.sha256(artifact.content).hexdigest(),
+            size_bytes=len(artifact.content),
+            media_type=artifact.media_type,
+        )
+        for artifact in request.input_artifacts
+    )
+    packaged = next((item.sha256 for item in inputs if item.name == "autocontext-scenario.pyz"), "")
+    package_sha256 = packaged or str(request.metadata.get("package_sha256", ""))
+    seed_value = request.metadata.get("seed")
+    try:
+        seed = int(seed_value) if seed_value is not None else None
+    except (TypeError, ValueError):
+        seed = None
+    image_digest = request.image.rsplit("@sha256:", 1)[-1] if "@sha256:" in request.image else ""
+    fixture_digest, fixture_state_sha256, fixture_observation_sha256 = _prepared_fixture_provenance(
+        request.metadata
+    )
+    return RemoteExecutionProvenance(
+        image=request.image,
+        image_digest=image_digest,
+        package_sha256=package_sha256,
+        inputs=inputs,
+        seed=seed,
+        fixture_digest=fixture_digest,
+        fixture_state_sha256=fixture_state_sha256,
+        fixture_observation_sha256=fixture_observation_sha256,
+    )
+
+
+def _prepared_fixture_provenance(metadata: Mapping[str, str]) -> tuple[str, str, str]:
+    """Return a complete prepared-fixture attestation or reject partial metadata."""
+
+    keys = ("fixture_digest", "fixture_state_sha256", "fixture_observation_sha256")
+    raw_values = tuple(metadata.get(key) for key in keys)
+    present = tuple(value is not None for value in raw_values)
+    if any(present) and not all(present):
+        missing = ", ".join(key for key, supplied in zip(keys, present, strict=True) if not supplied)
+        raise ValueError(f"prepared fixture provenance is incomplete; missing: {missing}")
+    if not any(present):
+        return "", "", ""
+    values: list[str] = []
+    for key, raw_value in zip(keys, raw_values, strict=True):
+        if (
+            not isinstance(raw_value, str)
+            or len(raw_value) != 64
+            or any(character not in "0123456789abcdef" for character in raw_value)
+        ):
+            raise ValueError(f"prepared fixture provenance must use lowercase sha256 hex: {key}")
+        values.append(raw_value)
+    return values[0], values[1], values[2]
+
+
+def _malformed_scenario_output(request: RemoteExecutionRequest, payload: Mapping[str, object]) -> str:
+    if request.metadata.get("task_kind") != "scenario_match":
+        return ""
+    result = payload.get("result")
+    replay = payload.get("replay")
+    if not isinstance(result, Mapping) or not isinstance(replay, Mapping):
+        return "malformed scenario output: result and replay objects are required"
+    score = result.get("score")
+    if isinstance(score, bool) or not isinstance(score, (int, float)) or not math.isfinite(float(score)):
+        return "malformed scenario output: result.score must be finite"
+    if not isinstance(result.get("summary"), str):
+        return "malformed scenario output: result.summary must be a string"
+    if not isinstance(result.get("replay"), list):
+        return "malformed scenario output: result.replay must be an array"
+    if not isinstance(result.get("metrics"), Mapping) or not isinstance(result.get("validation_errors"), list):
+        return "malformed scenario output: result metrics and validation_errors are required"
+    replay_seed = replay.get("seed")
+    if not isinstance(replay.get("scenario"), str) or isinstance(replay_seed, bool) or not isinstance(replay_seed, int):
+        return "malformed scenario output: replay scenario and seed are required"
+    if not isinstance(replay.get("narrative"), str) or not isinstance(replay.get("timeline"), list):
+        return "malformed scenario output: replay narrative and timeline are required"
+    expected_scenario = request.metadata.get("scenario")
+    if expected_scenario is not None and replay.get("scenario") != expected_scenario:
+        return "malformed scenario output: replay scenario provenance mismatch"
+    expected_seed = request.metadata.get("seed")
+    if expected_seed is not None and str(replay.get("seed")) != str(expected_seed):
+        return "malformed scenario output: replay seed provenance mismatch"
+    return ""
+
+
 def _parse_artifacts(raw: object) -> tuple[RemoteOutputArtifact, ...]:
-    if not isinstance(raw, Mapping):
+    if raw is None:
         return ()
+    if not isinstance(raw, Mapping):
+        raise ValueError("artifacts must be an object")
     artifacts: list[RemoteOutputArtifact] = []
     for name, item in raw.items():
         if not isinstance(name, str):
-            continue
+            raise ValueError("artifact names must be strings")
         _validate_artifact_name(name)
         if isinstance(item, str):
             artifacts.append(RemoteOutputArtifact(name=name, content=item.encode("utf-8"), media_type="text/plain"))
@@ -295,15 +517,20 @@ def _parse_artifacts(raw: object) -> tuple[RemoteOutputArtifact, ...]:
         if isinstance(item, Mapping) and isinstance(item.get("base64"), str):
             try:
                 content = base64.b64decode(item["base64"], validate=True)
-            except ValueError:
-                continue
+            except (binascii.Error, ValueError) as exc:
+                raise ValueError(f"artifact has invalid base64 content: {name}") from exc
+            media_type = item.get("media_type", "application/octet-stream")
+            if not isinstance(media_type, str):
+                raise ValueError(f"artifact media_type must be a string: {name}")
             artifacts.append(
                 RemoteOutputArtifact(
                     name=name,
                     content=content,
-                    media_type=str(item.get("media_type", "application/octet-stream")),
+                    media_type=media_type,
                 )
             )
+            continue
+        raise ValueError(f"artifact value must be text or a base64 envelope: {name}")
     return tuple(artifacts)
 
 
@@ -340,7 +567,7 @@ def requests_are_reuse_compatible(requests: Sequence[RemoteExecutionRequest]) ->
 
 
 def _validate_artifact_name(name: str) -> None:
-    if not name or name.startswith("/") or ".." in name.split("/"):
+    if not isinstance(name, str) or not name or name.startswith("/") or ".." in name.split("/"):
         raise ValueError(f"artifact path must stay relative to the task root: {name!r}")
 
 
@@ -351,10 +578,12 @@ __all__ = [
     "RemoteCleanupOutcome",
     "RemoteExecutionAdapter",
     "RemoteExecutionEvent",
+    "RemoteExecutionProvenance",
     "RemoteExecutionRequest",
     "RemoteExecutionResult",
     "RemoteExecutionStatus",
     "RemoteInputArtifact",
+    "RemoteInputProvenance",
     "RemoteLifecyclePolicy",
     "RemoteNetworkPolicy",
     "RemoteOutputArtifact",
@@ -363,5 +592,6 @@ __all__ = [
     "RemoteSecretGrant",
     "RemoteSecretsPolicy",
     "parse_remote_stdout",
+    "remote_request_provenance",
     "requests_are_reuse_compatible",
 ]

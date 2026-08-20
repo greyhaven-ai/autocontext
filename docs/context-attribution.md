@@ -9,13 +9,22 @@ Context attribution separates three evidence levels:
 
 Every controlled trial joins to a component and distinct tested/comparison bundles by digest and records the evaluator epoch, cohort, fixture, seed, score pair, token cost, test time, and known interaction components. Aggregation rejects duplicate fixture/seed pairs and mixed comparison/cohort groups. A controlled record stores deterministic matched-pair keys and exact source-trial digests, so `reconstruct_causal_credit` / `reconstructCausalCredit` can verify its provenance before recomputing the mean effect from durable trials.
 
-The current API verifies source-trial provenance but receives bundle digests,
-not manifests. It therefore cannot independently prove that the two bundles
-differ by exactly the declared component. Until manifest-backed verification
-lands, untrusted callers must not be allowed to self-assert
-`causal_ablation`; use `paired_shadow` for comparisons whose exact manifest
-delta has not been verified. The manifest-verification work is tracked in
-[AC-997](https://linear.app/greyhaven/issue/AC-997/pr-1288-follow-up-verify-causal-attribution-against-exact).
+`attribute_manifest_verified_trials` / `attributeManifestVerifiedTrials`
+resolve both immutable manifests, recompute their digests and canonical
+manifest diff, require the same scenario/evaluator epoch, and bind the diff to
+the source trial. `causal_ablation` is accepted only when the tested manifest
+contains the declared `(kind, key, digest)`, the comparison omits it, and that
+is the sole component change. Replacements, unrelated bundles,
+multi-component edits, missing/tampered manifests, and post-hoc relabeling fail
+closed. `reconstruct_manifest_verified_causal_credit` redoes the same checks
+before replaying credit.
+
+The live context promotion path persists immutable `manifest_diff.json` on
+proposal and verifies it again before cutover. An exact component-addition
+experiment also writes held-out source trials and verified records to
+`causal_attribution.json` before promotion. Comparisons that are only
+replacement or multi-component evidence remain noncausal; they cannot reach
+that artifact by asserting an evidence label.
 
 ## Re-ablation
 
@@ -37,4 +46,4 @@ in both runtimes.
 
 `select_prompt_components` / `selectPromptComponents` can omit current-bundle components classified as harmful or neutral-and-expensive while retaining their full attribution history. Evidence from an older bundle composition is treated as uncertain and kept until re-ablation; evaluator-epoch mismatches are ignored.
 
-Shared Python/TypeScript cases for isolated causal credit, interaction re-ablation, and insufficient budget live in [`context-attribution-parity-fixture.json`](context-attribution-parity-fixture.json).
+Shared Python/TypeScript cases for isolated causal credit, interaction re-ablation, and insufficient budget live in [`context-attribution-parity-fixture.json`](context-attribution-parity-fixture.json). Exact valid removal and invalid replacement behavior is pinned by `fixtures/context-bundles/causal-attribution-manifest-parity.json`.

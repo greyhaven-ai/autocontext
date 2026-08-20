@@ -38,19 +38,28 @@ promotion; see [trainer-local statistical confirmation](../docs/training-statist
 
 Long-running campaign operators can opt into a separately routed, frozen
 `CampaignAuditor` that reviews a sanitized evidence packet without mutation
-authority. Reviews are cached, bounded, and advisory; see the
+authority. Live checkpoints and the pre-promotion gate are idempotent, and
+production calls require a cancellable transport by default. Reviews are
+cached, bounded, and advisory; see the
 [read-only campaign auditor](../docs/campaign-auditor.md).
 
 Campaign plans can be executed through the optional, provider-neutral
 `CampaignScheduler`, with durable leases, resource/capability matching,
-comparable lanes, bounded retries and budgets, and capability-driven warm
-affinity. See the [campaign scheduler](../docs/campaign-scheduler.md).
+comparable lanes, bounded retries and budgets, capability-driven warm reuse,
+worker cancellation, late-usage accounting, and a restart-safe service loop.
+See the [campaign scheduler](../docs/campaign-scheduler.md).
 
 Code and research scenarios can opt into a process-backed `ResearchWorkspace`
 with explicit file, import, network, and host-bridge grants. Only approved
 `trusted_local` workspaces may import packages or run allow-listed subprocesses;
-`isolated_sandbox` denies both until an OS sandbox backend exists. The existing
-restricted interpreter remains the default; see
+`isolated_sandbox` requires a complete OS backend and never falls back. The
+shipped Docker backend provides a pinned, read-only, deny-network container
+with resource limits, opaque host-side credential brokering, transactional state, and
+verified cleanup; allowlisted egress needs a stronger deployment backend. The
+live queued-task path selects it with
+`AUTOCONTEXT_WORKSPACE_INTERPRETER_BACKEND=docker`, candidate execution, and
+explicit capability-approval settings. The existing restricted interpreter
+remains the default; see
 [capability-scoped research workspaces](../docs/research-workspaces.md).
 
 Remote tasks use a provider-neutral request/result contract for resources,

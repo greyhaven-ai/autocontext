@@ -11,6 +11,8 @@ TDD test suite covering:
 
 from __future__ import annotations
 
+import ast
+import base64
 import json
 import subprocess
 from pathlib import Path
@@ -24,7 +26,7 @@ from autocontext.execution.executors.local import LocalExecutor
 from autocontext.execution.executors.ssh import SSHExecutor
 from autocontext.integrations.ssh.client import SSHClient, SSHCommandResult
 from autocontext.integrations.ssh.config import SSHHostCapabilities, SSHHostConfig
-from autocontext.scenarios.base import ExecutionLimits, ReplayEnvelope, Result
+from autocontext.scenarios.base import ExecutionLimits, Observation, ReplayEnvelope, Result
 
 # ===========================================================================
 # SSHHostCapabilities
@@ -133,7 +135,10 @@ class TestSSHClientExecute:
     def test_execute_command_success(self) -> None:
         client = self._make_client()
         mock_result = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="output\n", stderr="",
+            args=[],
+            returncode=0,
+            stdout="output\n",
+            stderr="",
         )
         with patch("subprocess.run", return_value=mock_result):
             result = client.execute_command("echo hello")
@@ -182,7 +187,10 @@ class TestSSHClientExecute:
     def test_execute_nonzero_exit(self) -> None:
         client = self._make_client()
         mock_result = subprocess.CompletedProcess(
-            args=[], returncode=127, stdout="", stderr="command not found",
+            args=[],
+            returncode=127,
+            stdout="",
+            stderr="command not found",
         )
         with patch("subprocess.run", return_value=mock_result):
             result = client.execute_command("nonexistent")
@@ -200,7 +208,10 @@ class TestSSHClientHealthCheck:
         cfg = SSHHostConfig(name="test", hostname="testhost")
         client = SSHClient(cfg)
         mock_result = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="testhost\n", stderr="",
+            args=[],
+            returncode=0,
+            stdout="testhost\n",
+            stderr="",
         )
         with patch("subprocess.run", return_value=mock_result):
             status = client.health_check()
@@ -218,7 +229,10 @@ class TestSSHClientHealthCheck:
         cfg = SSHHostConfig(name="test", hostname="badhost")
         client = SSHClient(cfg)
         mock_result = subprocess.CompletedProcess(
-            args=[], returncode=255, stdout="", stderr="Connection refused",
+            args=[],
+            returncode=255,
+            stdout="",
+            stderr="Connection refused",
         )
         with patch("subprocess.run", return_value=mock_result):
             status = client.health_check()
@@ -336,7 +350,7 @@ class TestSSHClientRuntimePreflight:
                     client.validate_runtime()
         command = mock_exec.call_args.args[0]
         assert "PYTHONPATH=src" in command
-        assert "import autocontext; print(\"ok\")" in command
+        assert 'import autocontext; print("ok")' in command
 
     def test_validate_runtime_unhealthy_host_raises(self) -> None:
         cfg = SSHHostConfig(name="test", hostname="testhost")
@@ -437,7 +451,10 @@ class TestSSHExecutor:
         executor.fallback_executor.execute.return_value = (local_result, local_replay)
 
         mock_cmd_result = SSHCommandResult(
-            exit_code=1, stdout="", stderr="error", duration_ms=100,
+            exit_code=1,
+            stdout="",
+            stderr="error",
+            duration_ms=100,
         )
         with patch.object(client, "execute_command", return_value=mock_cmd_result):
             with patch.object(client, "ensure_working_directory"):
@@ -458,7 +475,10 @@ class TestSSHExecutor:
         scenario.name = "grid_ctf"
 
         mock_cmd_result = SSHCommandResult(
-            exit_code=1, stdout="", stderr="error", duration_ms=100,
+            exit_code=1,
+            stdout="",
+            stderr="error",
+            duration_ms=100,
         )
         with patch.object(client, "execute_command", return_value=mock_cmd_result):
             with patch.object(client, "ensure_working_directory"):
@@ -492,7 +512,10 @@ class TestSSHExecutor:
         executor.fallback_executor.execute.return_value = (local_result, local_replay)
 
         mock_cmd_result = SSHCommandResult(
-            exit_code=0, stdout="not json", stderr="", duration_ms=100,
+            exit_code=0,
+            stdout="not json",
+            stderr="",
+            duration_ms=100,
         )
         with patch.object(client, "execute_command", return_value=mock_cmd_result):
             with patch.object(client, "ensure_working_directory"):
@@ -537,6 +560,57 @@ class TestSSHExecutor:
         assert "scenario = scenario_cls()" in captured_cmd[0]
         assert "execute_match(" in captured_cmd[0]
         assert "{}, payload['seed']" not in captured_cmd[0]
+
+    def test_execute_prepared_fixture_transmits_state_to_remote_command(self) -> None:
+        executor, client = self._make_executor(working_directory="/work")
+        scenario = MagicMock()
+        scenario.name = "grid_ctf"
+        prepared_state = {"seed": 123, "terminal": False}
+        prepared_observation = Observation(narrative="held-out", state={"visible": 123})
+        fixture_digest = "a" * 64
+        result_data = {
+            "result": {
+                "score": 0.5,
+                "winner": None,
+                "summary": "t",
+                "replay": [],
+                "metrics": {},
+                "validation_errors": [],
+            },
+            "replay": {
+                "scenario": "grid_ctf",
+                "seed": 999,
+                "narrative": "t",
+                "timeline": [],
+            },
+            "fixture_digest": fixture_digest,
+        }
+        response = SSHCommandResult(
+            exit_code=0,
+            stdout=json.dumps(result_data),
+            stderr="",
+            duration_ms=100,
+        )
+
+        with patch.object(client, "execute_command", return_value=response) as execute:
+            with patch.object(client, "ensure_working_directory"):
+                executor.execute_prepared_fixture(
+                    scenario,
+                    {"aggression": 0.6},
+                    999,
+                    ExecutionLimits(),
+                    initial_state=prepared_state,
+                    initial_observation=prepared_observation,
+                    fixture_digest=fixture_digest,
+                )
+
+        command = execute.call_args.args[0]
+        assert "execute_match_from_state" in command
+        encoded = command.split("base64.b64decode(", 1)[1].split(").decode()", 1)[0]
+        payload = json.loads(base64.b64decode(ast.literal_eval(encoded)).decode())
+        assert payload["initial_state"] == prepared_state
+        assert payload["initial_observation"] == prepared_observation.model_dump(mode="json")
+        assert payload["fixture_digest"] == fixture_digest
 
     def test_execute_timeout_in_limits(self) -> None:
         """Timeout from limits is passed to execute_command."""

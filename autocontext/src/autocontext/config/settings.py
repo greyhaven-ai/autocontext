@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, field_validator  # type: ignore[import-no
 
 from autocontext.config.output_budgets import OutputBudgetFields
 from autocontext.config.presets import apply_preset
+from autocontext.config.production_execution import ProductionExecutionFields
 from autocontext.config.role_routing import RoleRoutingFields
 from autocontext.config.workspace_interpreter import WorkspaceInterpreterFields
 from autocontext.runtimes.pi_defaults import PI_DEFAULT_TIMEOUT_SECONDS
@@ -45,7 +46,13 @@ class HarnessProfile(StrEnum):
     LEAN = "lean"
 
 
-class AppSettings(RoleRoutingFields, WorkspaceInterpreterFields, OutputBudgetFields, BaseModel):
+class AppSettings(
+    RoleRoutingFields,
+    WorkspaceInterpreterFields,
+    OutputBudgetFields,
+    ProductionExecutionFields,
+    BaseModel,
+):
     db_path: Path = Field(default=Path("runs/autocontext.sqlite3"))
     runs_root: Path = Field(default=Path("runs"))
     knowledge_root: Path = Field(default=Path("knowledge"))
@@ -215,17 +222,6 @@ class AppSettings(RoleRoutingFields, WorkspaceInterpreterFields, OutputBudgetFie
     max_retries: int = Field(default=2, ge=0)
     retry_backoff_seconds: float = Field(default=0.25, ge=0)
     event_stream_path: Path = Field(default=Path("runs/events.ndjson"))
-    primeintellect_api_base: str = Field(default="https://api.primeintellect.ai")
-    primeintellect_api_key: str | None = Field(default=None)
-    primeintellect_docker_image: str = Field(default="python:3.11-slim")
-    primeintellect_cpu_cores: float = Field(default=1.0, ge=0.25)
-    primeintellect_memory_gb: float = Field(default=2.0, ge=0.25)
-    primeintellect_disk_size_gb: float = Field(default=5.0, ge=1.0)
-    primeintellect_timeout_minutes: int = Field(default=30, ge=1)
-    primeintellect_wait_attempts: int = Field(default=60, ge=1)
-    primeintellect_max_retries: int = Field(default=2, ge=0)
-    primeintellect_backoff_seconds: float = Field(default=0.75, ge=0)
-    allow_primeintellect_fallback: bool = Field(default=False, description="Allow an unavailable local sentinel")
     local_sandbox_hardened: bool = Field(default=True)
     ablation_no_feedback: bool = Field(default=False)
     context_attribution: Literal["component", "span"] = "component"
@@ -803,7 +799,6 @@ class AppSettings(RoleRoutingFields, WorkspaceInterpreterFields, OutputBudgetFie
     @classmethod
     def _blank_agent_provider_uses_default(cls, v: object) -> object:
         return _DEFAULT_AGENT_PROVIDER if isinstance(v, str) and not v.strip() else v
-
 
 def load_settings() -> AppSettings:
     """Load settings from env vars and preset overrides.

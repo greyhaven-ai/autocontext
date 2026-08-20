@@ -7,10 +7,21 @@ import {
   createContextBundle,
   createJsonBundleComponent,
   canonicalJson,
+  campaignAdjustedConfirmationPolicy,
+  campaignAlphaForCandidate,
+  createCampaignFalsePromotionState,
+  createCandidateFixtureReservation,
+  createCandidateRiskReservation,
   evaluateMatchedTrials,
+  evaluateCampaignFalsePromotionEvidence,
   matchedTrialPairKey,
+  requiredConfidenceZ,
   stableDigest,
   type ComponentKind,
+  type CandidateRiskReservation,
+  type CampaignFalsePromotionPolicy,
+  type ConfirmationPolicy,
+  type FalsePromotionStatus,
   type MatchedTrial,
   validateContextBundle,
 } from "../src/context-bundles/index.js";
@@ -53,6 +64,37 @@ interface CanonicalParityFixture {
 const canonicalFixture = JSON.parse(
   readFileSync(join(import.meta.dirname, "../../fixtures/context-bundles/canonical-parity.json"), "utf8"),
 ) as CanonicalParityFixture;
+
+const falsePromotionFixture = JSON.parse(
+  readFileSync(join(import.meta.dirname, "../../fixtures/context-bundles/false-promotion-parity.json"), "utf8"),
+) as {
+  campaign_policy: CampaignFalsePromotionPolicy;
+  base_confirmation_policy: ConfirmationPolicy;
+  candidate_allocations: Array<{
+    candidate_index: number;
+    alpha: number;
+    required_confidence_z: number;
+  }>;
+  persisted_state_case: {
+    campaign_id: string;
+    candidate_fixture: string;
+    expected_confirmation_policy_digest: string;
+    expected_state_digest: string;
+  };
+  reservation_status_cases: Array<{
+    status: FalsePromotionStatus;
+    reason: string | null;
+    evidence_digest: string | null;
+    independent_confirmation_blocks: number;
+    independent_heldout_blocks: number;
+    expected_state_digest: string;
+  }>;
+  evidence_cases: Array<{
+    name: string;
+    observations: Array<{ lane: MatchedTrial["lane"]; block: string; seed: number; delta: number }>;
+    expected: ReturnType<typeof evaluateCampaignFalsePromotionEvidence>;
+  }>;
+};
 
 describe("context bundle parity", () => {
   it("reproduces Python component and manifest digests", () => {
@@ -241,6 +283,113 @@ describe("context bundle parity", () => {
     })).toThrow(/confirmation pairs exceed/);
   });
 
+  it("matches campaign-wide adaptive and non-IID false-promotion fixtures", () => {
+    const campaignPolicy = falsePromotionFixture.campaign_policy;
+    const basePolicy = falsePromotionFixture.base_confirmation_policy;
+    const evidenceCandidate = validateContextBundle(fixture.candidate);
+    for (const allocation of falsePromotionFixture.candidate_allocations) {
+      expect(campaignAlphaForCandidate(allocation.candidate_index, campaignPolicy)).toBeCloseTo(
+        allocation.alpha,
+        15,
+      );
+      const adjusted = campaignAdjustedConfirmationPolicy(
+        basePolicy,
+        allocation.candidate_index,
+        campaignPolicy,
+      );
+      expect(adjusted.confidence_z).toBeCloseTo(allocation.required_confidence_z, 10);
+    }
+    const extremeThreshold = requiredConfidenceZ(Number.MIN_VALUE);
+    expect(Number.isFinite(extremeThreshold)).toBe(true);
+    expect(extremeThreshold).toBeGreaterThan(38);
+
+    for (const fixtureCase of falsePromotionFixture.evidence_cases) {
+      const trials: MatchedTrial[] = fixtureCase.observations.map((observation) => ({
+        candidate_digest: evidenceCandidate.digest,
+        incumbent_digest: evidenceCandidate.parent_digest,
+        evaluator_epoch: evidenceCandidate.evaluator_epoch,
+        cohort: "parity-cohort",
+        fixture: `fixture-${observation.seed}`,
+        fixture_digest: observation.block,
+        seed: observation.seed,
+        lane: observation.lane,
+        candidate_score: 0.5 + observation.delta,
+        incumbent_score: 0.5,
+        candidate_valid: true,
+        incumbent_valid: true,
+      }));
+      const created = createCandidateRiskReservation(
+        `evidence-${fixtureCase.name}`,
+        evidenceCandidate,
+        0,
+        basePolicy,
+        campaignPolicy,
+      );
+      const fixtureReservation = createCandidateFixtureReservation(
+        created.reservation.campaign_id,
+        evidenceCandidate,
+        "parity-cohort",
+        trials.map((trial) => ({
+          lane: trial.lane,
+          fixture_digest: trial.fixture_digest,
+          seed: trial.seed,
+        })),
+      );
+      expect(
+        evaluateCampaignFalsePromotionEvidence(
+          evidenceCandidate,
+          trials,
+          created.confirmationPolicy,
+          created.reservation,
+          fixtureReservation,
+          campaignPolicy,
+        ),
+        fixtureCase.name,
+      ).toEqual(fixtureCase.expected);
+    }
+
+    const stateCase = falsePromotionFixture.persisted_state_case;
+    const candidateFixture = JSON.parse(
+      readFileSync(join(import.meta.dirname, "../../fixtures/context-bundles", stateCase.candidate_fixture), "utf8"),
+    ) as { tested: unknown };
+    const candidate = validateContextBundle(candidateFixture.tested);
+    const created = createCandidateRiskReservation(
+      stateCase.campaign_id,
+      candidate,
+      0,
+      basePolicy,
+      campaignPolicy,
+    );
+    expect(created.reservation.confirmation_policy_digest).toBe(
+      stateCase.expected_confirmation_policy_digest,
+    );
+    expect(
+      createCampaignFalsePromotionState(
+        stateCase.campaign_id,
+        campaignPolicy,
+        [created.reservation],
+      ).state_digest,
+    ).toBe(stateCase.expected_state_digest);
+    for (const statusCase of falsePromotionFixture.reservation_status_cases) {
+      const reservation: CandidateRiskReservation = {
+        ...created.reservation,
+        status: statusCase.status,
+        reason: statusCase.reason,
+        evidence_digest: statusCase.evidence_digest,
+        independent_confirmation_blocks: statusCase.independent_confirmation_blocks,
+        independent_heldout_blocks: statusCase.independent_heldout_blocks,
+      };
+      expect(
+        createCampaignFalsePromotionState(
+          stateCase.campaign_id,
+          campaignPolicy,
+          [reservation],
+        ).state_digest,
+        statusCase.status,
+      ).toBe(statusCase.expected_state_digest);
+    }
+  });
+
   it("rejects lane relabeling, invalid policy bounds, and non-finite scores", () => {
     const candidate = validateContextBundle(fixture.candidate);
     const identity = canonicalFixture.matched_pair_identity;
@@ -298,5 +447,134 @@ describe("context bundle parity", () => {
     for (const trial of invalidTrials) {
       expect(() => evaluateMatchedTrials(candidate, [trial])).toThrow(/finite/);
     }
+  });
+
+  it("binds false-promotion evidence to validated manifests, flags, policy, and reservation lineage", () => {
+    const candidate = validateContextBundle(fixture.candidate);
+    const campaignPolicy = falsePromotionFixture.campaign_policy;
+    const created = createCandidateRiskReservation(
+      "evidence-binding",
+      candidate,
+      0,
+      falsePromotionFixture.base_confirmation_policy,
+      campaignPolicy,
+    );
+    const makeBoundTrials = (
+      lane: MatchedTrial["lane"],
+      effects: readonly number[],
+      seedOffset: number,
+    ): MatchedTrial[] => effects.map((effect, index) => ({
+      candidate_digest: candidate.digest,
+      incumbent_digest: candidate.parent_digest,
+      evaluator_epoch: candidate.evaluator_epoch,
+      cohort: "binding-cohort",
+      fixture: `${lane}-${seedOffset + index}`,
+      fixture_digest: `${lane}-digest-${seedOffset + index}`,
+      seed: seedOffset + index,
+      lane,
+      candidate_score: 0.5 + effect,
+      incumbent_score: 0.5,
+      candidate_valid: true,
+      incumbent_valid: true,
+    }));
+    const trials = [
+      ...makeBoundTrials("screen", [0.3], 100),
+      ...makeBoundTrials("confirmation", [0.3, 0.3], 110),
+      ...makeBoundTrials("heldout", [0.3], 120),
+    ];
+    const fixtureReservation = createCandidateFixtureReservation(
+      created.reservation.campaign_id,
+      candidate,
+      "binding-cohort",
+      trials.map((trial) => ({
+        lane: trial.lane,
+        fixture_digest: trial.fixture_digest,
+        seed: trial.seed,
+      })),
+    );
+
+    const forgedCandidate = { ...candidate, digest: "0".repeat(64) };
+    expect(() => evaluateCampaignFalsePromotionEvidence(
+      forgedCandidate,
+      trials,
+      created.confirmationPolicy,
+      created.reservation,
+      fixtureReservation,
+      campaignPolicy,
+    )).toThrow("context bundle digest mismatch");
+
+    const invalidFlags = [{ ...trials[0]!, candidate_valid: 1 }, ...trials.slice(1)];
+    expect(() => evaluateCampaignFalsePromotionEvidence(
+      candidate,
+      invalidFlags,
+      created.confirmationPolicy,
+      created.reservation,
+      fixtureReservation,
+      campaignPolicy,
+    )).toThrow("matched trial has an invalid shape");
+
+    expect(() => evaluateCampaignFalsePromotionEvidence(
+      candidate,
+      trials,
+      { ...created.confirmationPolicy, min_effect: 0.01 },
+      created.reservation,
+      fixtureReservation,
+      campaignPolicy,
+    )).toThrow("policy different from its risk reservation");
+
+    expect(() => evaluateCampaignFalsePromotionEvidence(
+      candidate,
+      trials,
+      created.confirmationPolicy,
+      { ...created.reservation, incumbent_digest: "f".repeat(64) },
+      fixtureReservation,
+      campaignPolicy,
+    )).toThrow("candidate lineage");
+
+    expect(() => evaluateCampaignFalsePromotionEvidence(
+      candidate,
+      trials,
+      created.confirmationPolicy,
+      { ...created.reservation, status: "blocked" },
+      fixtureReservation,
+      campaignPolicy,
+    )).toThrow("only a pristine reserved");
+
+    const arbitraryFixture = [
+      ...trials.slice(0, 1),
+      { ...trials[1]!, fixture_digest: "adaptively-selected" },
+      ...trials.slice(2),
+    ];
+    expect(() => evaluateCampaignFalsePromotionEvidence(
+      candidate,
+      arbitraryFixture,
+      created.confirmationPolicy,
+      created.reservation,
+      fixtureReservation,
+      campaignPolicy,
+    )).toThrow("outside its reserved plan");
+
+    const relabeledLane = [
+      ...trials.slice(0, 1),
+      { ...trials[1]!, lane: "heldout" },
+      ...trials.slice(2),
+    ];
+    expect(() => evaluateCampaignFalsePromotionEvidence(
+      candidate,
+      relabeledLane,
+      created.confirmationPolicy,
+      created.reservation,
+      fixtureReservation,
+      campaignPolicy,
+    )).toThrow("relabels a reserved fixture lane");
+
+    expect(() => evaluateCampaignFalsePromotionEvidence(
+      candidate,
+      trials,
+      created.confirmationPolicy,
+      created.reservation,
+      { ...fixtureReservation, plan_digest: "0".repeat(64) },
+      campaignPolicy,
+    )).toThrow("fixture plan digest mismatch");
   });
 });

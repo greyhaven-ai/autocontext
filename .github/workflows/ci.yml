@@ -68,6 +68,32 @@ jobs:
           path: autocontext/htmlcov/
           retention-days: 14
 
+  sandbox-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: autocontext
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: false
+      - name: Install
+        run: uv sync --locked --group dev
+      - name: Verify Docker isolation and clean remote package
+        env:
+          AUTOCONTEXT_RUN_DOCKER_TESTS: "1"
+        run: >-
+          uv run pytest -q
+          tests/test_research_workspace.py::test_real_docker_workspace_is_transactional_and_cannot_read_unmounted_host
+          tests/test_scenario_remote_package.py::test_custom_package_runs_in_exact_clean_network_denied_runtime_image
+          tests/test_workspace_interpreter_settings.py::test_production_setting_selects_a_live_isolated_workspace
+
   kernel-lifecycle-windows:
     runs-on: windows-latest
     timeout-minutes: 10

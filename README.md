@@ -77,7 +77,10 @@ knowledge/<scenario>/
 
 Everything is filesystem-first: inspect it, diff it, replay it, export it, or feed it into training.
 Coach and architect context changes are stored as immutable candidates and are
-not served until matched candidate/incumbent trials confirm them. See
+not served until matched candidate/incumbent trials confirm them. The live
+serving boundary can additionally require a cancellable independent audit and
+a durable campaign-wide false-promotion budget; exact causal credit is accepted
+only from verified single-component manifest additions. See
 [context bundles and outcome-gated promotion](docs/context-bundles.md).
 Controlled component trials feed
 [ablation-backed attribution](docs/context-attribution.md), so prompt selection

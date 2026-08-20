@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import os
+import shutil
 import sys
+import tempfile
+import time
 from pathlib import Path
 
 import pytest
@@ -12,10 +16,92 @@ from autocontext.execution.research_workspace import (
     WorkspaceResourceLimits,
     benchmark_research_workspace,
 )
+from autocontext.execution.research_workspace_files import restore_files, snapshot_files
+from autocontext.execution.research_workspace_models import (
+    ResearchSandboxExecutionRequest,
+    ResearchSandboxExecutionResult,
+    SandboxBackendCapabilities,
+    SandboxBackendCleanupResult,
+    WorkspaceSecretGrant,
+)
+from autocontext.execution.scenario_remote_package import DEFAULT_REMOTE_RUNTIME_IMAGE
 
 
 def _approve(_: WorkspaceCapabilityRequest) -> bool:
     return True
+
+
+class _TestSandboxBackend:
+    """Exercise the backend boundary using the legacy child kernel in tests only."""
+
+    def __init__(self, *, capabilities: SandboxBackendCapabilities | None = None) -> None:
+        self._capabilities = capabilities or SandboxBackendCapabilities(
+            backend_name="test-only-emulator",
+            os_isolation=True,
+            workspace_mounts=True,
+            network_policy=True,
+            process_limits=True,
+            environment_scrubbing=True,
+            secret_grants=True,
+            transactional_files=True,
+            terminable_execution=True,
+            cleanup_verification=True,
+        )
+        self.requests: list[ResearchSandboxExecutionRequest] = []
+        self.cleaned: list[str] = []
+
+    def capabilities(self) -> SandboxBackendCapabilities:
+        return self._capabilities
+
+    def execute(self, request: ResearchSandboxExecutionRequest) -> ResearchSandboxExecutionResult:
+        self.requests.append(request)
+        with tempfile.TemporaryDirectory(prefix="autocontext-test-sandbox-") as directory:
+            root = Path(directory)
+            restore_files(root, request.files, request.limits.max_file_bytes)
+            response = research_workspace_runtime.run_in_child(
+                {
+                    "code": request.code,
+                    "variables": request.variables,
+                    "helper_sources": request.helper_sources,
+                    "workspace_root": str(root),
+                    "profile": "trusted_local",
+                    "capabilities": tuple(request.granted_capabilities),
+                    "allowed_imports": tuple(request.allowed_imports),
+                    "allowed_commands": tuple(request.allowed_commands),
+                    "allowed_network_hosts": tuple(request.allowed_network_hosts),
+                    "limits": request.limits,
+                },
+                request.limits.timeout_seconds,
+            )
+            if response is None:
+                raise TimeoutError("test sandbox timed out")
+            helpers = request.helper_sources
+            if not response.get("error"):
+                helpers = (*helpers, *research_workspace_runtime.new_helper_sources(request.code, helpers))
+            return ResearchSandboxExecutionResult(
+                stdout=str(response.get("stdout", "")),
+                error=str(response["error"]) if response.get("error") else None,
+                answer=dict(response.get("answer", {})),
+                variables=dict(response.get("variables", {})),
+                helper_sources=helpers,
+                files=snapshot_files(root, request.limits.max_file_bytes),
+                session_id="test-session",
+                detail="test sandbox",
+            )
+
+    def cleanup(self, workspace_id: str) -> SandboxBackendCleanupResult:
+        self.cleaned.append(workspace_id)
+        return SandboxBackendCleanupResult(succeeded=True)
+
+
+class _LeakingSandboxBackend(_TestSandboxBackend):
+    def __init__(self, leaked_value: str) -> None:
+        super().__init__()
+        self._leaked_value = leaked_value
+
+    def execute(self, request: ResearchSandboxExecutionRequest) -> ResearchSandboxExecutionResult:
+        self.requests.append(request)
+        return ResearchSandboxExecutionResult(stdout=self._leaked_value)
 
 
 def test_restricted_scratch_remains_default_and_rejects_elevation(tmp_path: Path) -> None:
@@ -47,6 +133,157 @@ def test_capable_profile_requires_explicit_approval(tmp_path: Path) -> None:
         ResearchWorkspace(request, workspace_root=tmp_path)
 
 
+def test_isolated_profile_requires_backend_and_all_security_controls(tmp_path: Path) -> None:
+    request = WorkspaceCapabilityRequest(
+        workspace_id="isolation",
+        profile="isolated_sandbox",
+        requested_capabilities=frozenset({"workspace_read"}),
+    )
+
+    with pytest.raises(PermissionError, match="requires an OS sandbox backend"):
+        ResearchWorkspace(request, workspace_root=tmp_path / "missing", approver=_approve)
+
+    weak_backend = _TestSandboxBackend(capabilities=SandboxBackendCapabilities(backend_name="weak"))
+    with pytest.raises(PermissionError, match="lacks required controls"):
+        ResearchWorkspace(
+            request,
+            workspace_root=tmp_path / "weak",
+            approver=_approve,
+            sandbox_backend=weak_backend,
+        )
+
+
+def test_docker_backend_declares_hardened_deny_network_command(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from autocontext.execution.docker_research_sandbox import DockerResearchSandboxBackend
+
+    monkeypatch.setattr(shutil, "which", lambda _: "/usr/bin/docker")
+    backend = DockerResearchSandboxBackend()
+    command = backend._docker_command(  # noqa: SLF001 - verify the security-critical adapter command
+        "sandbox-test",
+        "workspace-test",
+        tmp_path / "input",
+        tmp_path / "output",
+        tmp_path / "workspace",
+        None,
+    )
+
+    assert "--read-only" in command
+    assert command[command.index("--network") + 1] == "none"
+    assert command[command.index("--cap-drop") + 1] == "ALL"
+    assert "no-new-privileges" in command
+    assert "--pids-limit" in command
+    assert "--memory" in command
+    assert "--cpus" in command
+    assert DEFAULT_REMOTE_RUNTIME_IMAGE in command
+    assert not any("/opt/autocontext-src" in argument for argument in command)
+    assert {argument.rsplit("dst=", 1)[-1].split(",", 1)[0] for argument in command if "dst=" in argument} == {
+        "/input",
+        "/output",
+        "/workspace",
+    }
+
+    request = ResearchSandboxExecutionRequest(
+        workspace_id="network-denied",
+        sequence=1,
+        code="pass",
+        variables={},
+        helper_sources=(),
+        files={},
+        granted_capabilities=frozenset({"network"}),
+        allowed_imports=frozenset(),
+        allowed_commands=frozenset(),
+        allowed_network_hosts=frozenset({"example.com"}),
+        secret_grants=(),
+        limits=WorkspaceResourceLimits(),
+    )
+    with pytest.raises(PermissionError, match="deny-network only"):
+        backend.execute(request)
+
+
+@pytest.mark.skipif(
+    os.environ.get("AUTOCONTEXT_RUN_DOCKER_TESTS") != "1" or shutil.which("docker") is None,
+    reason="set AUTOCONTEXT_RUN_DOCKER_TESTS=1 on a Docker-capable CI worker",
+)
+def test_real_docker_workspace_is_transactional_and_cannot_read_unmounted_host(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from autocontext.execution.docker_research_sandbox import DockerResearchSandboxBackend
+
+    host_secret = tmp_path / "host-only.txt"
+    host_secret.write_text("must-not-enter-container", encoding="utf-8")
+    monkeypatch.setenv("AUTOCONTEXT_HOST_SENTINEL", "must-not-enter-container")
+    backend = DockerResearchSandboxBackend()
+    request = WorkspaceCapabilityRequest(
+        workspace_id="docker-live",
+        profile="isolated_sandbox",
+        requested_capabilities=frozenset({"workspace_read", "workspace_write", "subprocess"}),
+        allowed_commands=frozenset({"/usr/local/bin/python"}),
+        limits=WorkspaceResourceLimits(timeout_seconds=10.0),
+        lifecycle="delete_on_close",
+    )
+    workspace = ResearchWorkspace(request, approver=_approve, sandbox_backend=backend)
+    host_probe_source = f"from pathlib import Path; print(Path({str(host_secret)!r}).read_text())"
+    denied = workspace.run(f"probe = run_subprocess(['/usr/local/bin/python', '-c', {host_probe_source!r}])")
+    probes = workspace.run(
+        "network_probe = run_subprocess(['/usr/local/bin/python', '-c', "
+        "'import socket; socket.create_connection((\"1.1.1.1\", 53), 0.2)'])\n"
+        "env_probe = run_subprocess(['/usr/local/bin/python', '-c', "
+        '\'import os; print(os.environ.get("AUTOCONTEXT_HOST_SENTINEL", ""))\'])\n'
+        "hosts_probe = run_subprocess(['/usr/local/bin/python', '-c', "
+        "'print(open(\"/etc/hosts\").read())'])"
+    )
+    failed = workspace.run("workspace_write_text('candidate.txt', 'not committed')\nraise RuntimeError('reject')")
+    succeeded = workspace.run("workspace_write_text('accepted.txt', 'committed')")
+
+    assert denied.error is None
+    assert probes.error is None
+    assert denied.stdout == ""
+    assert workspace.run("probe['exit_code']").stdout.strip() != "0"
+    assert workspace.run("network_probe['exit_code']").stdout.strip() != "0"
+    assert workspace.run("env_probe['stdout'].strip()").stdout.strip() == "''"
+    assert "must-not-enter-container" not in workspace.run("hosts_probe['stdout']").stdout
+    assert failed.error is not None
+    assert not workspace.runtime_env.exists("candidate.txt")
+    assert succeeded.error is None
+    assert workspace.runtime_env.read_file("accepted.txt") == "committed"
+    assert workspace.close().outcome == "deleted"
+
+
+def test_isolated_secret_grants_are_opaque_and_leaks_are_rejected(tmp_path: Path) -> None:
+    grant = WorkspaceSecretGrant(
+        name="papers-api",
+        grant_id="opaque-grant-123",
+        expires_at=time.time() + 60,
+        env_var="PAPERS_API_TOKEN",
+    )
+    request = WorkspaceCapabilityRequest(
+        workspace_id="secret",
+        profile="isolated_sandbox",
+        secret_grants=(grant,),
+    )
+    backend = _LeakingSandboxBackend(grant.grant_id)
+    workspace = ResearchWorkspace(
+        request,
+        workspace_root=tmp_path,
+        approver=_approve,
+        sandbox_backend=backend,
+    )
+
+    result = workspace.run("answer['ready'] = True")
+
+    assert result.stdout == ""
+    assert result.error and result.error.startswith("SandboxSecurityError")
+    assert grant.grant_id not in result.error
+    assert backend.requests[0].secret_grants == (grant,)
+    cleanup = workspace.close()
+    assert cleanup.outcome == "retained"
+    assert backend.cleaned == ["secret"]
+
+
 def test_trusted_local_workspace_persists_helpers_files_and_imports(tmp_path: Path) -> None:
     request = WorkspaceCapabilityRequest(
         workspace_id="research",
@@ -76,14 +313,14 @@ def test_trusted_local_workspace_persists_helpers_files_and_imports(tmp_path: Pa
     workspace.close()
 
 
-def test_isolated_subprocess_fails_closed_but_trusted_local_can_run_approved_command(tmp_path: Path) -> None:
+def test_isolated_subprocess_requires_backend_but_trusted_local_can_run_approved_command(tmp_path: Path) -> None:
     isolated_request = WorkspaceCapabilityRequest(
         workspace_id="isolated-process",
         profile="isolated_sandbox",
         requested_capabilities=frozenset({"subprocess"}),
         allowed_commands=frozenset({sys.executable}),
     )
-    with pytest.raises(PermissionError, match="unavailable until an OS sandbox"):
+    with pytest.raises(PermissionError, match="requires an OS sandbox backend"):
         ResearchWorkspace(isolated_request, workspace_root=tmp_path / "isolated", approver=_approve)
 
     isolated_import_request = WorkspaceCapabilityRequest(
@@ -92,7 +329,7 @@ def test_isolated_subprocess_fails_closed_but_trusted_local_can_run_approved_com
         requested_capabilities=frozenset({"package_import"}),
         allowed_imports=frozenset({"statistics"}),
     )
-    with pytest.raises(PermissionError, match="package_import"):
+    with pytest.raises(PermissionError, match="requires an OS sandbox backend"):
         ResearchWorkspace(isolated_import_request, workspace_root=tmp_path / "isolated-import", approver=_approve)
 
     trusted_request = WorkspaceCapabilityRequest(
@@ -116,7 +353,12 @@ def test_path_network_and_secret_access_fail_closed(tmp_path: Path, monkeypatch:
         profile="isolated_sandbox",
         requested_capabilities=frozenset({"workspace_read", "workspace_write"}),
     )
-    workspace = ResearchWorkspace(request, workspace_root=tmp_path, approver=_approve)
+    workspace = ResearchWorkspace(
+        request,
+        workspace_root=tmp_path,
+        approver=_approve,
+        sandbox_backend=_TestSandboxBackend(),
+    )
 
     escaped = workspace.run("workspace_write_text('../outside.txt', 'bad')")
     network = workspace.run("network_fetch('https://example.com')")
@@ -171,7 +413,13 @@ def test_timeout_discards_memory_and_file_mutation(tmp_path: Path) -> None:
         requested_capabilities=frozenset({"workspace_read", "workspace_write"}),
         limits=WorkspaceResourceLimits(timeout_seconds=0.35),
     )
-    workspace = ResearchWorkspace(request, workspace_root=tmp_path, approver=_approve, seed={"counter": 1})
+    workspace = ResearchWorkspace(
+        request,
+        workspace_root=tmp_path,
+        approver=_approve,
+        sandbox_backend=_TestSandboxBackend(),
+        seed={"counter": 1},
+    )
 
     result = workspace.run("counter = 999\nworkspace_write_text('late.txt', 'bad')\nwhile True:\n    pass")
     probe = workspace.run("counter")
@@ -192,7 +440,13 @@ def test_failed_file_activation_preserves_files_variables_and_helpers(
         profile="isolated_sandbox",
         requested_capabilities=frozenset({"workspace_read", "workspace_write"}),
     )
-    workspace = ResearchWorkspace(request, workspace_root=tmp_path, approver=_approve, seed={"counter": 1})
+    workspace = ResearchWorkspace(
+        request,
+        workspace_root=tmp_path,
+        approver=_approve,
+        sandbox_backend=_TestSandboxBackend(),
+        seed={"counter": 1},
+    )
     baseline = workspace.run("def keep():\n    return counter\nworkspace_write_text('state.txt', 'old')")
     assert baseline.error is None
 

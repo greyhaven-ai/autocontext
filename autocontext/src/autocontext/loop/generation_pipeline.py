@@ -17,7 +17,10 @@ from autocontext.execution.phased_execution import (
 )
 from autocontext.extensions import HookEvents
 from autocontext.knowledge.coherence import check_coherence
+from autocontext.loop.context_bundle_evaluation import evaluate_context_candidate
 from autocontext.loop.cost_control import CostBudget, CostPolicy, CostTracker, throttle_state
+from autocontext.loop.phase_timing import build_phase_result, phase_exhausted
+from autocontext.loop.stage_helpers.context_loaders import _load_validity_harness_loader
 from autocontext.loop.stage_helpers.tournament_prep import _build_empty_tournament
 from autocontext.loop.stage_leakage import stage_leakage
 from autocontext.loop.stage_preflight import stage_preflight
@@ -42,6 +45,7 @@ from autocontext.loop.startup_verification import verify_startup
 if TYPE_CHECKING:
     from autocontext.agents.curator import KnowledgeCurator
     from autocontext.agents.orchestrator import AgentOrchestrator
+    from autocontext.context_bundles.promotion import ContextBundlePromotionCoordinator
     from autocontext.execution.supervisor import ExecutionSupervisor
     from autocontext.harness.core.controller import LoopController
     from autocontext.harness.meta_optimizer import MetaOptimizer
@@ -54,6 +58,14 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 _PHASE_SCAFFOLDING = "scaffolding"
 _PHASE_EXECUTION = "execution"
+
+
+def _phase_exhausted(start_time: float, budget: PhaseBudget | None) -> bool:
+    return phase_exhausted(start_time, budget, current_time=time.monotonic())
+
+
+def _build_phase_result(**kwargs: Any) -> PhaseResult:
+    return build_phase_result(**kwargs, current_time=time.monotonic())
 
 
 def _time_remaining(ctx: GenerationContext) -> float | None:
@@ -119,37 +131,6 @@ def _build_phase_plan(ctx: GenerationContext) -> PhasedExecutionPlan | None:
         phase_names=[_PHASE_SCAFFOLDING, _PHASE_EXECUTION],
         ratios=[scaffolding_ratio, execution_ratio],
         allow_rollover=ctx.settings.generation_phase_budget_rollover_enabled,
-    )
-
-
-def _phase_elapsed_seconds(start_time: float) -> float:
-    return max(0.0, time.monotonic() - start_time)
-
-
-def _phase_exhausted(start_time: float, budget: PhaseBudget | None) -> bool:
-    if budget is None:
-        return False
-    return _phase_elapsed_seconds(start_time) >= budget.budget_seconds
-
-
-def _build_phase_result(
-    *,
-    budget: PhaseBudget,
-    phase_start_time: float,
-    status: str,
-    error: str | None = None,
-    outputs: dict[str, Any] | None = None,
-) -> PhaseResult:
-    elapsed = _phase_elapsed_seconds(phase_start_time)
-    remaining = max(0.0, budget.budget_seconds - elapsed)
-    return PhaseResult(
-        phase_name=budget.phase_name,
-        status=status,
-        duration_seconds=round(elapsed, 3),
-        budget_seconds=round(budget.budget_seconds, 3),
-        budget_remaining_seconds=round(remaining, 3),
-        error=error,
-        outputs=outputs or {},
     )
 
 
@@ -287,6 +268,7 @@ class GenerationPipeline:
         warm_provision_fn: Callable[..., dict] | None = None,
         chat_with_agent_fn: Callable[[str, str, object, str], str] | None = None,
         meta_optimizer: MetaOptimizer | None = None,
+        context_bundle_promotion: ContextBundlePromotionCoordinator | None = None,
     ) -> None:
         self._orchestrator = orchestrator
         self._supervisor = supervisor
@@ -300,6 +282,7 @@ class GenerationPipeline:
         self._warm_provision_fn = warm_provision_fn
         self._chat_with_agent_fn = chat_with_agent_fn
         self._meta_optimizer = meta_optimizer
+        self._context_bundle_promotion = context_bundle_promotion
 
     def run_generation(self, ctx: GenerationContext) -> GenerationContext:
         """Execute all stages for a single generation."""
@@ -475,20 +458,11 @@ class GenerationPipeline:
 
                 # Stage 2.4: Pre-validation (optional — dry-run self-play before tournament)
                 if not _over_budget(ctx) and not _phase_exhausted(scaffolding_started_at, scaffolding_budget):
-                    harness_loader = None
-                    if ctx.settings.harness_validators_enabled:
-                        from autocontext.execution.harness_loader import HarnessLoader
-
-                        h_dir = self._artifacts.harness_dir(ctx.scenario_name)
-                        if h_dir.exists():
-                            harness_loader = HarnessLoader(h_dir, timeout_seconds=ctx.settings.harness_timeout_seconds)
-                            harness_loader.load()
-
                     ctx = stage_prevalidation(
                         ctx,
                         events=self._events,
                         agents=self._orchestrator,
-                        harness_loader=harness_loader,
+                        harness_loader=_load_validity_harness_loader(ctx, artifacts=self._artifacts),
                         artifacts=self._artifacts,
                         supervisor=self._supervisor,
                     )
@@ -666,6 +640,14 @@ class GenerationPipeline:
                         outputs=_execution_phase_outputs(ctx),
                     )
                     _record_phase_result(ctx, self._events, execution_result, phase_results)
+
+        evaluate_context_candidate(
+            ctx,
+            self._context_bundle_promotion,
+            self._orchestrator,
+            self._events,
+            cancellation_check=(self._controller.stop_requested if self._controller is not None else None),
+        )
 
         # Stage 3b: Stagnation check
         ctx = stage_stagnation_check(
