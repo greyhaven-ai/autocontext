@@ -14,6 +14,26 @@ These are copy-paste starting points for people evaluating the repo, integrating
 - Want to package generic Fetch/ESM agent app artifacts? Use the generated Fetch packaging example.
 - Want to prototype a reusable TypeScript agent handler? Use the experimental agent-runtime example.
 - Want always-on queued work? Use the persistent host worker recipe.
+- Want correctness-first recursive GPU-kernel search? Start with the kernel evolution MVP.
+
+## Kernel Evolution MVP
+
+The Python kernel adapter composes AutoContext's multi-generation loop with a
+strict external benchmark contract, hardware-scoped promotion gates, and
+append-only candidate lineage. Its deterministic single-problem example runs
+without a GPU:
+
+```bash
+cd autocontext
+uv run --frozen python ../examples/kernel_evolution/run.py
+```
+
+See [the example](kernel_evolution/README.md) and
+[kernel evolution guide](../autocontext/docs/kernel-evolution.md). The bundled
+orchestration adapter is synthetic. The companion
+[H100 contract smoke](kernel_evolution/kernelbench_h100/README.md) preserves a
+real KernelBench/AutoKernel comparison and sanitized result; live CUDA/Triton
+execution still belongs in an isolated, operator-owned worker.
 
 ## Python CLI From Source
 

@@ -1,0 +1,10 @@
+{
+  "problem_id": "kernelbench-demo-level1-problem1",
+  "reference_id": "pytorch-reference-demo-v1",
+  "reference_latency_ms": 0.2,
+  "seed_commitment": "demo-hidden-seeds-v1",
+  "correctness_trials": 5,
+  "hidden_trials": 5,
+  "timing_blocks": 12,
+  "calls_per_block": 20
+}

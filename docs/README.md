@@ -26,6 +26,7 @@ for scenario authoring and `autoctx serve mcp` for MCP clients.
 - [Python and TypeScript extension hooks](../autocontext/docs/extensions.md)
 - [Sandbox and executor notes](../autocontext/docs/sandbox.md)
 - [Persistent host worker](../autocontext/docs/persistent-host.md)
+- [Correctness-first external kernel evolution](../autocontext/docs/kernel-evolution.md)
 - [MLX host training notes](../autocontext/docs/mlx-training.md)
 - [Case study: recursive loop closed on local MLX](../autocontext/docs/case-study-recursive-loop.md)
 

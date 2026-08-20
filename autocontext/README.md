@@ -138,6 +138,7 @@ Detailed setup moved out of this README:
 - Persistent worker trust boundaries: [docs/persistent-host.md](docs/persistent-host.md)
 - Sandbox/executor notes: [docs/sandbox.md](docs/sandbox.md)
 - Extension hooks: [docs/extensions.md](docs/extensions.md)
+- Correctness-first external kernel evolution: [docs/kernel-evolution.md](docs/kernel-evolution.md)
 
 ## Contract probes
 
