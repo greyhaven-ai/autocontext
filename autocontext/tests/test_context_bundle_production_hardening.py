@@ -2051,7 +2051,12 @@ def test_evaluator_identity_mutation_stops_before_the_second_arm_or_evidence(
     assert store.candidate("demo", candidate.digest).lifecycle == BundleLifecycle.PROPOSED
 
 
-def test_context_evaluation_deadline_and_stop_fail_before_another_arm(tmp_path: Path) -> None:
+def test_context_evaluation_deadline_and_stop_fail_before_another_arm(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from autocontext.context_bundles import evaluation_control
+
     class _ControlledEvaluator:
         def __init__(self, on_first_call: Any) -> None:
             self.calls: list[tuple[str, str]] = []
@@ -2091,13 +2096,15 @@ def test_context_evaluation_deadline_and_stop_fail_before_another_arm(tmp_path: 
             candidate.digest,
         )
 
-    deadline_evaluator = _ControlledEvaluator(lambda: time.sleep(0.02))
+    clock = [0.0]
+    monkeypatch.setattr(evaluation_control, "time", SimpleNamespace(monotonic=lambda: clock[0]))
+    deadline_evaluator = _ControlledEvaluator(lambda: clock.__setitem__(0, 2.0))
     deadline_coordinator, deadline_digest = coordinator(tmp_path / "deadline", deadline_evaluator)
     with pytest.raises(TimeoutError, match="deadline"):
         deadline_coordinator.evaluate_candidate(
             "demo",
             deadline_digest,
-            deadline=time.monotonic() + 0.005,
+            deadline=1.0,
         )
     assert len(deadline_evaluator.calls) == 1
 

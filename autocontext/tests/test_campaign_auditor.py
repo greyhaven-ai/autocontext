@@ -29,21 +29,36 @@ def _pid_exists(process_id: int) -> bool:
 
 
 class _FakeClient:
-    def __init__(self, payload: dict[str, Any] | None = None, *, delay: float = 0.0) -> None:
+    def __init__(
+        self,
+        payload: dict[str, Any] | None = None,
+        *,
+        delay: float = 0.0,
+        started_event: threading.Event | None = None,
+        finished_event: threading.Event | None = None,
+    ) -> None:
         self.payload = payload or {"findings": [], "recommended_action": "Continue."}
         self.delay = delay
+        self.started_event = started_event
+        self.finished_event = finished_event
         self.calls = 0
         self.prompts: list[str] = []
 
     def generate(self, **kwargs: Any) -> Any:
         self.calls += 1
         self.prompts.append(kwargs["prompt"])
-        if self.delay:
-            time.sleep(self.delay)
-        return SimpleNamespace(
-            text=json.dumps(self.payload),
-            usage=SimpleNamespace(input_tokens=100, output_tokens=20),
-        )
+        if self.started_event is not None:
+            self.started_event.set()
+        try:
+            if self.delay:
+                time.sleep(self.delay)
+            return SimpleNamespace(
+                text=json.dumps(self.payload),
+                usage=SimpleNamespace(input_tokens=100, output_tokens=20),
+            )
+        finally:
+            if self.finished_event is not None:
+                self.finished_event.set()
 
 
 class _MalformedClient(_FakeClient):
@@ -678,22 +693,28 @@ def test_disabled_auditor_spends_no_call(tmp_path: Path) -> None:
 def test_audit_checkpoint_cancellation_is_terminal_for_that_evidence_decision(tmp_path: Path) -> None:
     from autocontext.audit.campaign_auditor import CampaignAuditor, CampaignAuditStore
 
-    client = _FakeClient(delay=0.05)
+    dispatched = threading.Event()
+    finished = threading.Event()
+    client = _FakeClient(delay=0.05, started_event=dispatched, finished_event=finished)
     store = CampaignAuditStore(tmp_path)
     auditor = CampaignAuditor(_config(), client=client, store=store)
     cancellation = threading.Event()
-    timer = threading.Timer(0.005, cancellation.set)
-    timer.start()
-    started = time.monotonic()
+
+    def cancel_after_dispatch() -> None:
+        if dispatched.wait(timeout=1.0):
+            cancellation.set()
+
+    canceler = threading.Thread(target=cancel_after_dispatch, daemon=True)
+    canceler.start()
 
     canceled = auditor.review(_packet(), cancellation_event=cancellation)
-    elapsed = time.monotonic() - started
-    timer.join(timeout=1)
+    canceler.join(timeout=1.0)
 
     assert canceled is not None and canceled.status == "canceled"
     assert canceled.model_call_attempted is True
-    assert elapsed < 0.05
+    assert not canceler.is_alive()
     assert store.call_count(canceled.campaign_id) == 1
+    assert finished.wait(timeout=1.0)
 
 
 def test_pre_dispatch_cancellation_spends_no_audit_budget(tmp_path: Path) -> None:
