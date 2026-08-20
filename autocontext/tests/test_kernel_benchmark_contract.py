@@ -9,7 +9,8 @@ import sys
 import threading
 import time
 import venv
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import NamedTuple
 
@@ -499,15 +500,12 @@ def test_external_runner_preflights_harness_before_execution(tmp_path: Path) -> 
     assert not marker.exists()
 
 
-@pytest.mark.parametrize(
-    ("tail", "timeout_seconds"),
-    [("time.sleep(10)", 0.05), ("raise SystemExit(7)", 2.0)],
-)
-def test_evaluator_prioritizes_postflight_harness_mutation(
+def _make_mutating_evaluator(
     tmp_path: Path,
+    *,
     tail: str,
     timeout_seconds: float,
-) -> None:
+) -> tuple[KernelBenchmarkEvaluator, Path]:
     harness = tmp_path / "harness.txt"
     harness.write_text("frozen", encoding="utf-8")
     adapter = tmp_path / "mutate_then_fail.py"
@@ -531,6 +529,42 @@ Path(sys.argv[4]).write_text("changed")
         runner,
         KernelBenchmarkEvaluatorConfig(problem_id="p1", timeout_seconds=timeout_seconds),
     )
+    return evaluator, harness
+
+
+def test_evaluator_prioritizes_postflight_harness_mutation_over_timeout(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    evaluator, harness = _make_mutating_evaluator(tmp_path, tail="time.sleep(10)", timeout_seconds=0.05)
+    real_wait = subprocess.Popen.wait
+    first_wait = True
+
+    def timeout_after_mutation(process: subprocess.Popen[bytes], timeout: float | None = None) -> int:
+        nonlocal first_wait
+        if not first_wait:
+            return real_wait(process, timeout=timeout)
+        first_wait = False
+        deadline = time.monotonic() + 5
+        while harness.read_text(encoding="utf-8") != "changed":
+            if process.poll() is not None:
+                raise AssertionError("benchmark exited before mutating the harness")
+            if time.monotonic() >= deadline:
+                raise AssertionError("benchmark did not mutate the harness before the test deadline")
+            time.sleep(0.01)
+        assert timeout is not None
+        raise subprocess.TimeoutExpired(process.args, timeout)
+
+    monkeypatch.setattr(subprocess.Popen, "wait", timeout_after_mutation)
+
+    observation = evaluator.evaluate(KernelCandidate(source="a"), KernelCandidate(source="b"))
+
+    assert not observation.eligible
+    assert observation.rejection_reason == "harness_modified"
+
+
+def test_evaluator_prioritizes_postflight_harness_mutation_over_nonzero_exit(tmp_path: Path) -> None:
+    evaluator, _ = _make_mutating_evaluator(tmp_path, tail="raise SystemExit(7)", timeout_seconds=2.0)
 
     observation = evaluator.evaluate(KernelCandidate(source="a"), KernelCandidate(source="b"))
 
@@ -859,6 +893,49 @@ time.sleep(10)
     assert execution.report_payload is None
     assert execution.error == "benchmark report directory exceeded max_report_depth=3 during execution"
     assert runner.manifest()["max_report_depth"] == 3
+
+
+def test_report_depth_scan_uses_consistent_path_identity_without_fd_scandir(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "report"
+    nested = root
+    for index in range(4):
+        nested /= str(index)
+        nested.mkdir(parents=index == 0)
+
+    real_scandir = os.scandir
+
+    class EntryWithIncompatibleEnumerationIdentity:
+        def __init__(self, entry: os.DirEntry[str]) -> None:
+            self._entry = entry
+
+        @property
+        def name(self) -> str:
+            return self._entry.name
+
+        def stat(self, *, follow_symlinks: bool = True) -> os.stat_result:
+            result = list(self._entry.stat(follow_symlinks=follow_symlinks))
+            result[1] += 1
+            return os.stat_result(result)
+
+    @contextmanager
+    def incompatible_scandir(path: Path) -> Iterator[Iterator[EntryWithIncompatibleEnumerationIdentity]]:
+        with real_scandir(path) as entries:
+            yield (EntryWithIncompatibleEnumerationIdentity(entry) for entry in entries)
+
+    monkeypatch.setattr(os, "scandir", incompatible_scandir)
+    limits = _process_control.ReportLimits(max_bytes=1024, max_entries=16, max_depth=2)
+
+    with pytest.raises(ValueError) as exc_info:
+        _process_control.inspect_report_tree(
+            root,
+            limits,
+            _process_control.filesystem_object_identity(root.lstat()),
+        )
+
+    assert str(exc_info.value) == "benchmark report directory exceeded max_report_depth=2 during execution"
 
 
 @pytest.mark.parametrize(("keyword", "value"), [("max_report_entries", 0), ("max_report_depth", 0)])

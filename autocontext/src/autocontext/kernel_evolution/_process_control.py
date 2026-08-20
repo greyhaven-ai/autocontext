@@ -158,6 +158,14 @@ def _report_quota_error(kind: str, limit: int) -> ValueError:
     return ValueError(f"benchmark report directory exceeded max_report_{kind}={limit} during execution")
 
 
+def _stat_report_entry(entry: os.DirEntry[str], path: Path) -> os.stat_result:
+    if os.scandir in os.supports_fd:
+        return entry.stat(follow_symlinks=False)
+    # Windows directory-enumeration metadata can omit stable file identity.
+    # Use the same no-follow path stat that anchors the subsequent scan.
+    return path.lstat()
+
+
 def inspect_report_tree(
     report_dir: Path,
     limits: ReportLimits,
@@ -179,11 +187,11 @@ def inspect_report_tree(
                     entry_depth = directory_depth + 1
                     if entry_depth > limits.max_depth:
                         raise _report_quota_error("depth", limits.max_depth)
+                    entry_path = directory / entry.name
                     try:
-                        entry_stat = entry.stat(follow_symlinks=False)
+                        entry_stat = _stat_report_entry(entry, entry_path)
                     except FileNotFoundError:
                         continue
-                    entry_path = directory / entry.name
                     if stat.S_ISLNK(entry_stat.st_mode):
                         raise ValueError(f"benchmark report directory cannot contain symlinks: {entry_path}")
                     if stat.S_ISDIR(entry_stat.st_mode):
