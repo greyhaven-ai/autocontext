@@ -1,0 +1,121 @@
+{
+  "schema_version": 1,
+  "campaign_policy": {
+    "familywise_alpha": 0.08,
+    "allocation_decay": 0.5,
+    "min_independent_confirmation_blocks": 2,
+    "require_disjoint_lane_blocks": true,
+    "robust_method": "cluster_t",
+    "effect_lower_bound": -1.0,
+    "effect_upper_bound": 1.0
+  },
+  "base_confirmation_policy": {
+    "min_screen_pairs": 1,
+    "min_confirmation_pairs": 2,
+    "max_confirmation_pairs": 2,
+    "min_heldout_pairs": 1,
+    "min_effect": 0.0,
+    "confidence_z": 1.96
+  },
+  "candidate_allocations": [
+    {"candidate_index": 0, "alpha": 0.04, "required_confidence_z": 2.053748910632},
+    {"candidate_index": 1, "alpha": 0.02, "required_confidence_z": 2.326347874041},
+    {"candidate_index": 2, "alpha": 0.01, "required_confidence_z": 2.575829303549},
+    {"candidate_index": 3, "alpha": 0.005, "required_confidence_z": 2.807033768344}
+  ],
+  "persisted_state_case": {
+    "campaign_id": "parity-campaign",
+    "candidate_fixture": "causal-attribution-manifest-parity.json",
+    "expected_confirmation_policy_digest": "c1249fd5370550ecaefaaa9ef38aebcb81b8ebea288dcd6adccdc15dbf64c808",
+    "expected_state_digest": "1ee7db1e3a4d81de02668ff1cf37b0bcd6f9d4740d56c2f200ad77dc95f07323"
+  },
+  "reservation_status_cases": [
+    {
+      "status": "reserved",
+      "reason": null,
+      "evidence_digest": null,
+      "independent_confirmation_blocks": 0,
+      "independent_heldout_blocks": 0,
+      "expected_state_digest": "1ee7db1e3a4d81de02668ff1cf37b0bcd6f9d4740d56c2f200ad77dc95f07323"
+    },
+    {
+      "status": "authorized",
+      "reason": "authorized fixture",
+      "evidence_digest": "evidence-authorized",
+      "independent_confirmation_blocks": 2,
+      "independent_heldout_blocks": 1,
+      "expected_state_digest": "3270d6a0e347fb535b86d674f225c0b4b60ebc1997233248f0cf81f461d027ac"
+    },
+    {
+      "status": "rejected",
+      "reason": "rejected fixture",
+      "evidence_digest": null,
+      "independent_confirmation_blocks": 0,
+      "independent_heldout_blocks": 0,
+      "expected_state_digest": "5f5a13d241f6e7033d4b116455e341d77a52083c11800b68c49796f6a235db90"
+    },
+    {
+      "status": "inconclusive",
+      "reason": "inconclusive fixture",
+      "evidence_digest": null,
+      "independent_confirmation_blocks": 0,
+      "independent_heldout_blocks": 0,
+      "expected_state_digest": "69479d4fc04a81d05c8f3d3cd04347663091fe156b840213bfdea8befd183cc9"
+    },
+    {
+      "status": "blocked",
+      "reason": "blocked fixture",
+      "evidence_digest": "evidence-blocked",
+      "independent_confirmation_blocks": 1,
+      "independent_heldout_blocks": 1,
+      "expected_state_digest": "a849545d4c235ef1a0150aaad46ab0bb160cdfcbfa1bd59aa6d585cc18b06495"
+    }
+  ],
+  "evidence_cases": [
+    {
+      "name": "independent_disjoint_blocks",
+      "observations": [
+        {"lane": "screen", "block": "screen-a", "seed": 1, "delta": 0.3},
+        {"lane": "confirmation", "block": "confirm-a", "seed": 2, "delta": 0.3},
+        {"lane": "confirmation", "block": "confirm-b", "seed": 3, "delta": 0.3},
+        {"lane": "heldout", "block": "heldout-a", "seed": 4, "delta": 0.3}
+      ],
+      "expected": {
+        "authorized": true,
+        "reason": "campaign alpha reservation and dependence-aware evidence authorized promotion",
+        "independent_confirmation_blocks": 2,
+        "independent_heldout_blocks": 1
+      }
+    },
+    {
+      "name": "repeated_seeds_are_one_block",
+      "observations": [
+        {"lane": "screen", "block": "screen-a", "seed": 1, "delta": 0.3},
+        {"lane": "confirmation", "block": "confirm-shared", "seed": 2, "delta": 0.3},
+        {"lane": "confirmation", "block": "confirm-shared", "seed": 3, "delta": 0.3},
+        {"lane": "heldout", "block": "heldout-a", "seed": 4, "delta": 0.3}
+      ],
+      "expected": {
+        "authorized": false,
+        "reason": "insufficient independent confirmation blocks after non-IID clustering",
+        "independent_confirmation_blocks": 1,
+        "independent_heldout_blocks": 1
+      }
+    },
+    {
+      "name": "lane_overlap_fails_closed",
+      "observations": [
+        {"lane": "screen", "block": "shared", "seed": 1, "delta": 0.3},
+        {"lane": "confirmation", "block": "shared", "seed": 2, "delta": 0.3},
+        {"lane": "confirmation", "block": "confirm-b", "seed": 3, "delta": 0.3},
+        {"lane": "heldout", "block": "heldout-a", "seed": 4, "delta": 0.3}
+      ],
+      "expected": {
+        "authorized": false,
+        "reason": "dependence blocks overlap across evaluation lanes",
+        "independent_confirmation_blocks": 0,
+        "independent_heldout_blocks": 0
+      }
+    }
+  ]
+}

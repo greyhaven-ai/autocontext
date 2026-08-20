@@ -54,11 +54,15 @@ after the retry bound. Duplicate enqueue returns the original job by
 idempotency key, and a reused `job_id` with a different key fails closed.
 Infrastructure retries persist and charge the usage of every completed attempt.
 
-Cancellation and lease expiry currently make scheduler state safe but do not
-cancel work already running at the provider. The worker protocol must gain a
-cancel-request/acknowledgment lifecycle before those leases can safely release
-their concurrency slots and before late provider usage can be accounted. Until
-then, operators must not treat scheduler cancellation as provider cancellation.
+Cancellation is a durable request/acknowledgment lifecycle. A queued job
+cancels immediately. A leased job enters `canceling`, and the scheduler invokes
+the worker's optional `cancel(assignment)` hook. An acknowledged termination
+releases its lease; without support, the lease remains active until completion
+or expiry. Any result that arrives after the request is recorded as
+`job_canceled_late`, charged to campaign/branch and worker usage, and counted in
+`late_completions` rather than scored. `RemoteCampaignWorker` forwards the hook
+when its adapter implements `cancel_request`; unsupported providers therefore
+remain explicit and fully accounted.
 
 The event store is an append-only, checksummed JSONL log that fsyncs every
 transition. Reconstructing a scheduler from the same store replays queued,
@@ -85,13 +89,28 @@ are checked on enqueue and charged against the campaign's evidence budget.
 `CallableCampaignWorker` adapts local/TaskRunner-style work, and
 `RemoteCampaignWorker` adapts any provider-neutral `RemoteExecutionAdapter`.
 `dispatch_once()` runs one bounded concurrent wave; `run_until_idle()` repeats
-waves until no schedulable job remains. External daemons may instead use
+waves until no schedulable job remains. `serve(stop_event)` is the live,
+restart-safe runner: it reconciles expired work, dispatches jobs that arrive
+after startup, and heartbeats every active lease during execution. External
+daemons may instead use
 `claim()`, `heartbeat()`, and `complete()` directly.
+
+When a worker advertises session reuse, compatible same-branch matched jobs are
+grouped and `RemoteCampaignWorker.execute_many()` submits them through one
+provider session with the exact reuse bound. Jobs never group across the
+campaign/branch reuse key. Missing batch support is an infrastructure failure;
+workers without a verified clean boundary receive an explicit cold-ephemeral
+lease instead.
 
 `report()` separates candidate failures from scheduler/infrastructure failures
 and includes queue state, retry count, reserved and consumed campaign budgets,
 and per-worker runtime, locality, concurrency, active leases, completion/failure
-counts, resource consumption, and heartbeat time.
+counts, resource consumption, and heartbeat time. When a
+`CampaignAuditCheckpointRunner` is supplied, infrastructure completions invoke
+`integrity_alert`, service/run termination invokes `final_completion`, and the
+report includes durable audit records plus dispositions grouped by campaign.
+Audit failures cannot rewrite scheduler status, scoring, retry, or budget
+state.
 
 The scheduler does not implement hosted tenant placement, organization quotas,
 provider billing, proprietary fleet routing, or a mandatory warm GPU pool.

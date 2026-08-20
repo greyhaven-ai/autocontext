@@ -5,9 +5,11 @@ import { describe, expect, it } from "vitest";
 import {
   appendReablation,
   attributeControlledTrials,
+  attributeManifestVerifiedTrials,
   parseContextAttributionLedger,
   planReablation,
   reconstructCausalCredit,
+  reconstructManifestVerifiedCausalCredit,
   renderContextAttributionReport,
   selectPromptComponents,
   type ComponentAttribution,
@@ -22,7 +24,12 @@ import {
   formatAttributionForAgent,
   GenerationChangeVector,
 } from "../src/analytics/credit-assignment.js";
-import { createBundleComponent, createContextBundle } from "../src/context-bundles/index.js";
+import {
+  contextBundleManifestDiff,
+  createBundleComponent,
+  createContextBundle,
+  validateContextBundle,
+} from "../src/context-bundles/index.js";
 
 const fixture = JSON.parse(
   readFileSync(join(import.meta.dirname, "..", "..", "docs", "context-attribution-parity-fixture.json"), "utf-8"),
@@ -55,7 +62,81 @@ const roundingFixture = JSON.parse(
   cases: Array<{ name: string; value: number; expected: number }>;
 };
 
+const bundleManifestFixture = JSON.parse(
+  readFileSync(join(import.meta.dirname, "..", "..", "fixtures", "context-bundles", "manifest-parity.json"), "utf-8"),
+) as { baseline: unknown; candidate: unknown };
+
+const causalManifestFixture = JSON.parse(
+  readFileSync(
+    join(
+      import.meta.dirname,
+      "..",
+      "..",
+      "fixtures",
+      "context-bundles",
+      "causal-attribution-manifest-parity.json",
+    ),
+    "utf-8",
+  ),
+) as { tested: unknown; comparison: unknown; manifest_diff: { digest: string } };
+
 describe("context attribution", () => {
+  it("binds causal attribution to the exact shared manifest diff", () => {
+    const tested = validateContextBundle(causalManifestFixture.tested);
+    const comparison = validateContextBundle(causalManifestFixture.comparison);
+    const component = tested.components.find((item) => item.kind === "playbook")!;
+    const trial: ControlledAttributionTrial = {
+      trial_id: "manifest-bound-1",
+      component_kind: component.kind,
+      component_key: component.key,
+      component_digest: component.digest,
+      tested_bundle_digest: tested.digest,
+      comparison_bundle_digest: comparison.digest,
+      evaluator_epoch: tested.evaluator_epoch,
+      trial_cohort: "manifest-cohort",
+      fixture_digest: "fixture-1",
+      seed: 1,
+      evidence_level: "causal_ablation",
+      with_component_score: 0.8,
+      without_component_score: 0.6,
+      token_cost: 100,
+      tested_at: "2026-08-20T00:00:00Z",
+      interaction_component_digests: [],
+    };
+    const manifests = new Map([[tested.digest, tested], [comparison.digest, comparison]]);
+
+    const record = attributeManifestVerifiedTrials([trial], {
+      evaluatorEpoch: tested.evaluator_epoch,
+      bundleManifests: manifests,
+    })[0]!;
+
+    expect(contextBundleManifestDiff(tested, comparison).digest).toBe(causalManifestFixture.manifest_diff.digest);
+    expect(record.manifest_diff_digest).toBe(causalManifestFixture.manifest_diff.digest);
+    expect(reconstructManifestVerifiedCausalCredit(record, [trial], manifests)).toBe(0.2);
+
+    const multiChange = createContextBundle({
+      scenario: tested.scenario,
+      evaluatorEpoch: tested.evaluator_epoch,
+      components: [...tested.components, createBundleComponent("hints", "hints", "also changed")],
+    });
+    expect(() => attributeManifestVerifiedTrials(
+      [{ ...trial, tested_bundle_digest: multiChange.digest }],
+      {
+        evaluatorEpoch: tested.evaluator_epoch,
+        bundleManifests: new Map([[multiChange.digest, multiChange], [comparison.digest, comparison]]),
+      },
+    )).toThrow("exact single-component manifest diff");
+
+    const replacement = validateContextBundle(bundleManifestFixture.baseline);
+    expect(() => attributeManifestVerifiedTrials(
+      [{ ...trial, comparison_bundle_digest: replacement.digest }],
+      {
+        evaluatorEpoch: tested.evaluator_epoch,
+        bundleManifests: new Map([[tested.digest, tested], [replacement.digest, replacement]]),
+      },
+    )).toThrow("target does not match");
+  });
+
   it("reconstructs single-component causal credit from shared stored trials", () => {
     const record = attributeControlledTrials(fixture.initial_trials, {
       evaluatorEpoch: fixture.evaluator_epoch,

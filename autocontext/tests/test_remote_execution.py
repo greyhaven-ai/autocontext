@@ -5,6 +5,7 @@ import time
 
 import pytest
 
+from autocontext.execution.campaign_scheduler_adapters import campaign_result_from_remote
 from autocontext.execution.remote_execution import (
     RemoteAcceleratorRequest,
     RemoteCleanupOutcome,
@@ -133,6 +134,23 @@ def test_cleanup_failure_takes_infrastructure_precedence_over_task_failure() -> 
     assert result.to_ledger_entry().infrastructure_succeeded is False
 
 
+def test_declared_bootstrap_failure_is_typed_as_infrastructure() -> None:
+    result = parse_remote_stdout(
+        _request(expected_outputs=(), metadata={"bootstrap_exit_code": "70"}),
+        provider="fake",
+        stdout="",
+        stderr='{"autocontext_bootstrap_error":"digest mismatch"}',
+        exit_code=70,
+        usage=RemoteResourceUsage(),
+        cleanup=RemoteCleanupOutcome(True, True, "sandbox-1"),
+        session_id="sandbox-1",
+    )
+
+    assert result.status == "artifact_error"
+    assert result.to_ledger_entry().infrastructure_succeeded is False
+    assert campaign_result_from_remote(result).outcome == "infrastructure_failure"
+
+
 def test_reuse_requires_a_bounded_equivalent_matched_lane() -> None:
     first = _request(
         task_id="trial-a",
@@ -159,11 +177,11 @@ def test_reuse_requires_a_bounded_equivalent_matched_lane() -> None:
         (
             {
                 "secrets_policy": "scoped_grants",
-                    "secret_grants": (RemoteSecretGrant("dataset", "grant-a", 32_503_680_000.0),),
+                "secret_grants": (RemoteSecretGrant("dataset", "grant-a", 32_503_680_000.0),),
             },
             {
                 "secrets_policy": "scoped_grants",
-                    "secret_grants": (RemoteSecretGrant("dataset", "grant-b", 32_503_680_000.0),),
+                "secret_grants": (RemoteSecretGrant("dataset", "grant-b", 32_503_680_000.0),),
             },
         ),
         (

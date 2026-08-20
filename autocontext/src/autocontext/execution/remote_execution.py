@@ -173,7 +173,12 @@ class RemoteExecutionResult:
         return next((artifact for artifact in self.artifacts if artifact.name == name), None)
 
     def to_ledger_entry(self) -> ExternalEvalLedgerEntry:
-        infrastructure_succeeded = self.status not in {"provider_error", "timeout", "cleanup_error"}
+        infrastructure_succeeded = self.status not in {
+            "provider_error",
+            "timeout",
+            "artifact_error",
+            "cleanup_error",
+        }
         return ExternalEvalLedgerEntry(
             task_id=self.task_id,
             provider=self.provider,
@@ -231,10 +236,12 @@ def parse_remote_stdout(
             final_payload = parsed
     if exit_code != 0:
         task_error = stderr.strip() or f"task exited with status {exit_code}"
+        declared_bootstrap_exit = request.metadata.get("bootstrap_exit_code")
+        bootstrap_failed = declared_bootstrap_exit is not None and str(exit_code) == str(declared_bootstrap_exit)
         return RemoteExecutionResult(
             task_id=request.task_id,
             provider=provider,
-            status="cleanup_error" if not cleanup.succeeded else "task_error",
+            status=("cleanup_error" if not cleanup.succeeded else "artifact_error" if bootstrap_failed else "task_error"),
             stdout=stdout,
             stderr=stderr,
             exit_code=exit_code,

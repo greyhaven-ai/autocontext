@@ -483,6 +483,7 @@ class PromotionArtifact:
     comparison: ComparisonResult
     confirmation_policy: ConfirmationPolicy
     confirmation_policy_digest: str
+    manifest_diff_digest: str
     promoted_at: str
 
     def to_dict(self) -> dict[str, Any]:
@@ -498,5 +499,6 @@ class PromotionArtifact:
             "comparison": self.comparison.to_dict(),
             "confirmation_policy": self.confirmation_policy.to_dict(),
             "confirmation_policy_digest": self.confirmation_policy_digest,
+            "manifest_diff_digest": self.manifest_diff_digest,
             "promoted_at": self.promoted_at,
         }

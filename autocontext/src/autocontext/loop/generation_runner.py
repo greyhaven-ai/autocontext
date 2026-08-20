@@ -40,6 +40,7 @@ from autocontext.analytics.store import FacetStore
 from autocontext.analytics.taxonomy import FacetTaxonomy
 from autocontext.analytics.trace_reporter import ReportStore, TraceReporter
 from autocontext.config import AppSettings
+from autocontext.context_bundles.promotion import ContextBundlePromotionCoordinator
 from autocontext.execution import ExecutionSupervisor
 from autocontext.execution.executors import LocalExecutor
 from autocontext.extensions import HookBus
@@ -95,8 +96,10 @@ class GenerationRunner:
         *,
         hook_bus: HookBus | None = None,
         loaded_extensions: list[str] | None = None,
+        context_bundle_promotion: ContextBundlePromotionCoordinator | None = None,
     ) -> None:
         self.settings = settings
+        self._context_bundle_promotion = context_bundle_promotion
         if hook_bus is None:
             self.hook_bus, self.loaded_extensions = initialize_hook_bus(settings)
         else:
@@ -1228,6 +1231,7 @@ class GenerationRunner:
                         warm_provision_fn=warm_fn,
                         chat_with_agent_fn=self._chat_with_agent,
                         meta_optimizer=self._meta_optimizer,
+                        context_bundle_promotion=getattr(self, "_context_bundle_promotion", None),
                     )
                     ctx = GenerationContext(
                         run_id=active_run_id,

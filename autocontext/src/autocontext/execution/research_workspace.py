@@ -1,8 +1,11 @@
-"""Capability-scoped persistent research workspaces (AC-977).
+"""Capability-scoped persistent research workspaces (AC-977, AC-981).
 
 The existing :class:`InterpreterWorkspace` remains the default restricted
 scratch surface. This module orchestrates explicitly approved, process-backed
 workspaces while execution and filesystem boundaries live in focused helpers.
+The ``isolated_sandbox`` profile never executes through the local child-process
+kernel: deployments must supply a backend that enforces the requested controls
+below candidate Python.
 """
 
 from __future__ import annotations
@@ -27,8 +30,12 @@ from autocontext.execution.research_workspace_files import (
 from autocontext.execution.research_workspace_models import (
     CapabilityApprover,
     HostBridge,
+    ResearchSandboxBackend,
+    ResearchSandboxExecutionRequest,
+    ResearchSandboxExecutionResult,
     ResearchWorkspaceBenchmark,
     ResearchWorkspaceSnapshot,
+    SandboxBackendCapabilities,
     WorkspaceAuditEvent,
     WorkspaceCapability,
     WorkspaceCapabilityRequest,
@@ -59,12 +66,7 @@ def grant_workspace_access(
     if request.profile == "restricted_scratch":
         granted: frozenset[WorkspaceCapability] = frozenset()
     elif approver is not None and approver(request):
-        # Process isolation is not an OS security boundary. Until the isolated
-        # profile is backed by a real sandbox, an allow-listed module,
-        # interpreter, or shell can expose already-loaded file/network/process
-        # primitives and escape every workspace-level grant.
-        unsafe_without_os_sandbox = {"package_import", "subprocess"}
-        granted = requested - unsafe_without_os_sandbox if request.profile == "isolated_sandbox" else requested
+        granted = requested
     else:
         granted = frozenset()
     return WorkspaceGrant(
@@ -138,20 +140,18 @@ class ResearchWorkspace:
         workspace_root: str | Path | None = None,
         approver: CapabilityApprover | None = None,
         host_bridge: HostBridge | None = None,
+        sandbox_backend: ResearchSandboxBackend | None = None,
         seed: Mapping[str, Any] | None = None,
     ) -> None:
         self.request = request
         self.grant = grant_workspace_access(request, approver)
         if self.grant.denied_capabilities:
             denied = ", ".join(sorted(self.grant.denied_capabilities))
-            if request.profile == "isolated_sandbox" and self.grant.denied_capabilities & {
-                "package_import",
-                "subprocess",
-            }:
-                raise PermissionError(
-                    f"isolated_sandbox capabilities unavailable until an OS sandbox backend is configured: {denied}"
-                )
             raise PermissionError(f"workspace capabilities were not approved: {denied}")
+        self._sandbox_backend = sandbox_backend
+        self._sandbox_capabilities: SandboxBackendCapabilities | None = None
+        if request.profile == "isolated_sandbox":
+            self._sandbox_capabilities = _validate_sandbox_backend(request, sandbox_backend)
         self._owned_root = workspace_root is None
         self._root = (
             Path(tempfile.mkdtemp(prefix=f"autocontext-{safe_workspace_id(request.workspace_id)}-"))
@@ -195,6 +195,9 @@ class ResearchWorkspace:
         except PermissionError as exc:
             self._record("execute", "denied", detail=str(exc))
             return ReplResult(stdout="", error=f"PermissionError: {exc}", answer={})
+        if self.request.profile == "isolated_sandbox":
+            return self._run_isolated(code)
+
         staging = Path(tempfile.mkdtemp(prefix=".autocontext-stage-", dir=self._root.parent)).resolve()
         try:
             copy_workspace(self._root, staging, self.request.limits.max_file_bytes)
@@ -243,6 +246,72 @@ class ResearchWorkspace:
             return result
         finally:
             shutil.rmtree(staging, ignore_errors=True)
+
+    def _run_isolated(self, code: str) -> ReplResult:
+        """Execute through the configured OS sandbox with no local fallback."""
+
+        backend = self._sandbox_backend
+        if backend is None:  # Defensive: construction validates this invariant.
+            raise RuntimeError("isolated sandbox backend is unavailable")
+        expired = [grant.name for grant in self.request.secret_grants if grant.expires_at <= time.time()]
+        if expired:
+            detail = f"expired secret grants: {', '.join(sorted(expired))}"
+            self._record("execute", "denied", detail=detail)
+            return ReplResult(stdout="", error=f"PermissionError: {detail}", answer={})
+        request = ResearchSandboxExecutionRequest(
+            workspace_id=self.request.workspace_id,
+            sequence=self._sequence + 1,
+            code=code,
+            variables=copy_plain_mapping(self._variables),
+            helper_sources=tuple(self._helper_sources),
+            files=snapshot_files(self._root, self.request.limits.max_file_bytes),
+            granted_capabilities=self.grant.granted_capabilities,
+            allowed_imports=self.request.allowed_imports,
+            allowed_commands=self.request.allowed_commands,
+            allowed_network_hosts=self.request.allowed_network_hosts,
+            secret_grants=self.request.secret_grants,
+            limits=self.request.limits,
+        )
+        try:
+            response = backend.execute(request)
+        except TimeoutError:
+            self._record("execute", "timeout", detail="sandbox execution terminated")
+            return ReplResult(stdout="", error="CodeTimeout: sandbox execution terminated", answer={})
+        except Exception as exc:  # noqa: BLE001 - backend failures must remain data-plane errors
+            detail = _redact_grant_ids(f"{type(exc).__name__}: {exc}", self.request)
+            self._record("execute", "backend_error", detail=detail[-240:])
+            return ReplResult(stdout="", error=f"SandboxBackendError: {detail}", answer={})
+
+        leak = _find_grant_reference(response, self.request)
+        if leak is not None:
+            self._record("execute", "security_error", detail="sandbox output contained an opaque secret grant reference")
+            return ReplResult(
+                stdout="",
+                error="SandboxSecurityError: sandbox output contained an opaque secret grant reference",
+                answer={},
+            )
+        stdout = response.stdout
+        if len(stdout) > self.request.limits.max_stdout_chars:
+            stdout = stdout[: self.request.limits.max_stdout_chars] + "\n... [truncated]"
+        result = ReplResult(stdout=stdout, error=response.error, answer=dict(response.answer))
+        if result.error is not None:
+            outcome = "timeout" if result.error.startswith("CodeTimeout") else "candidate_error"
+            self._record("execute", outcome, detail=result.error[-240:])
+            return result
+
+        next_variables = copy_plain_mapping(response.variables)
+        next_helper_sources = list(response.helper_sources)
+        try:
+            restore_files(self._root, response.files, self.request.limits.max_file_bytes)
+        except (OSError, ValueError) as exc:
+            detail = f"{type(exc).__name__}: {exc}"
+            self._record("execute", "commit_error", detail=detail[-240:])
+            return ReplResult(stdout=stdout, error=f"WorkspaceCommitError: {detail}", answer={})
+        self._variables = next_variables
+        self._helper_sources = next_helper_sources
+        detail = response.detail or f"backend={self._sandbox_capabilities.backend_name if self._sandbox_capabilities else ''}"
+        self._record("execute", "success", detail=detail[-240:])
+        return result
 
     def host_call(self, name: str, arguments: Mapping[str, Any]) -> Any:
         """Invoke a typed host-plane operation outside the candidate kernel."""
@@ -330,6 +399,14 @@ class ResearchWorkspace:
     def close(self) -> WorkspaceCleanupResult:
         if self._closed:
             return WorkspaceCleanupResult("already_closed", str(self._root))
+        backend_error = ""
+        if self._sandbox_backend is not None:
+            try:
+                backend_cleanup = self._sandbox_backend.cleanup(self.request.workspace_id)
+                if not backend_cleanup.succeeded:
+                    backend_error = backend_cleanup.detail or "sandbox backend could not verify cleanup"
+            except Exception as exc:  # noqa: BLE001 - cleanup failure must be reported, not mask local cleanup
+                backend_error = _redact_grant_ids(f"{type(exc).__name__}: {exc}", self.request)
         if self._restricted is not None:
             self._restricted.close()
         self.runtime_env.cleanup()
@@ -342,6 +419,9 @@ class ResearchWorkspace:
             except OSError as exc:
                 outcome = "error"
                 detail = str(exc)
+        if backend_error:
+            outcome = "error"
+            detail = _redact_grant_ids(backend_error, self.request)
         self._record("cleanup", outcome, detail=detail)
         self._closed = True
         return WorkspaceCleanupResult(outcome, str(self._root), detail)
@@ -365,6 +445,70 @@ class ResearchWorkspace:
                 detail=detail,
             )
         )
+
+
+_REQUIRED_SANDBOX_CONTROLS = (
+    "os_isolation",
+    "workspace_mounts",
+    "network_policy",
+    "process_limits",
+    "environment_scrubbing",
+    "transactional_files",
+    "terminable_execution",
+    "cleanup_verification",
+)
+
+
+def _validate_sandbox_backend(
+    request: WorkspaceCapabilityRequest,
+    backend: ResearchSandboxBackend | None,
+) -> SandboxBackendCapabilities:
+    if backend is None:
+        raise PermissionError("isolated_sandbox requires an OS sandbox backend; local fallback is disabled")
+    try:
+        capabilities = backend.capabilities()
+    except Exception as exc:  # noqa: BLE001 - configuration must fail closed
+        raise PermissionError(f"isolated_sandbox backend capability probe failed: {type(exc).__name__}") from exc
+    missing = [name for name in _REQUIRED_SANDBOX_CONTROLS if not getattr(capabilities, name)]
+    if request.secret_grants and not capabilities.secret_grants:
+        missing.append("secret_grants")
+    if missing:
+        raise PermissionError(f"isolated_sandbox backend lacks required controls: {', '.join(sorted(missing))}")
+    expired = [grant.name for grant in request.secret_grants if grant.expires_at <= time.time()]
+    if expired:
+        raise PermissionError(f"workspace secret grants are expired: {', '.join(sorted(expired))}")
+    return capabilities
+
+
+def _find_grant_reference(
+    response: ResearchSandboxExecutionResult,
+    request: WorkspaceCapabilityRequest,
+) -> str | None:
+    markers = tuple(grant.grant_id for grant in request.secret_grants)
+    if not markers:
+        return None
+    values: tuple[object, ...] = (
+        response.stdout,
+        response.error,
+        response.answer,
+        response.variables,
+        response.helper_sources,
+        response.files,
+        response.detail,
+    )
+    for marker in markers:
+        encoded = marker.encode("utf-8")
+        for value in values:
+            if marker in repr(value) or (isinstance(value, bytes) and encoded in value):
+                return marker
+    return None
+
+
+def _redact_grant_ids(detail: str, request: WorkspaceCapabilityRequest) -> str:
+    redacted = detail
+    for grant in request.secret_grants:
+        redacted = redacted.replace(grant.grant_id, "[REDACTED-GRANT]")
+    return redacted
 
 
 __all__ = [

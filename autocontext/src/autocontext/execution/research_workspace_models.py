@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Any, Literal, TypeAlias
+from typing import Any, Literal, Protocol, TypeAlias
 
 WorkspaceProfile: TypeAlias = Literal["restricted_scratch", "trusted_local", "isolated_sandbox"]
 WorkspaceCapability: TypeAlias = Literal[
@@ -40,6 +40,20 @@ class WorkspaceResourceLimits:
 
 
 @dataclass(frozen=True, slots=True)
+class WorkspaceSecretGrant:
+    """Opaque, expiring reference resolved only by an isolated backend."""
+
+    name: str
+    grant_id: str
+    expires_at: float
+    env_var: str
+
+    def __post_init__(self) -> None:
+        if not self.name.strip() or not self.grant_id.strip() or not self.env_var.strip():
+            raise ValueError("workspace secret grant fields must be non-empty")
+
+
+@dataclass(frozen=True, slots=True)
 class WorkspaceCapabilityRequest:
     workspace_id: str
     profile: WorkspaceProfile = "restricted_scratch"
@@ -47,6 +61,7 @@ class WorkspaceCapabilityRequest:
     allowed_imports: frozenset[str] = frozenset()
     allowed_commands: frozenset[str] = frozenset()
     allowed_network_hosts: frozenset[str] = frozenset()
+    secret_grants: tuple[WorkspaceSecretGrant, ...] = ()
     limits: WorkspaceResourceLimits = field(default_factory=WorkspaceResourceLimits)
     lifecycle: WorkspaceLifecyclePolicy = "retain"
     approval_context: Mapping[str, str] = field(default_factory=dict)
@@ -59,6 +74,8 @@ class WorkspaceCapabilityRequest:
             raise ValueError(f"unknown workspace capabilities: {sorted(unknown)}")
         if self.profile == "restricted_scratch" and self.requested_capabilities:
             raise ValueError("restricted_scratch does not accept elevated capabilities")
+        if self.secret_grants and self.profile != "isolated_sandbox":
+            raise ValueError("workspace secret grants require the isolated_sandbox profile")
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,6 +119,76 @@ class WorkspaceCleanupResult:
 
 
 @dataclass(frozen=True, slots=True)
+class SandboxBackendCapabilities:
+    """Security properties an isolated workspace backend must attest."""
+
+    backend_name: str
+    os_isolation: bool = False
+    workspace_mounts: bool = False
+    network_policy: bool = False
+    process_limits: bool = False
+    environment_scrubbing: bool = False
+    secret_grants: bool = False
+    transactional_files: bool = False
+    terminable_execution: bool = False
+    cleanup_verification: bool = False
+
+    def __post_init__(self) -> None:
+        if not self.backend_name.strip():
+            raise ValueError("sandbox backend_name must be non-empty")
+
+
+@dataclass(frozen=True, slots=True)
+class ResearchSandboxExecutionRequest:
+    workspace_id: str
+    sequence: int
+    code: str
+    variables: Mapping[str, Any]
+    helper_sources: tuple[str, ...]
+    files: Mapping[str, bytes]
+    granted_capabilities: frozenset[WorkspaceCapability]
+    allowed_imports: frozenset[str]
+    allowed_commands: frozenset[str]
+    allowed_network_hosts: frozenset[str]
+    secret_grants: tuple[WorkspaceSecretGrant, ...]
+    limits: WorkspaceResourceLimits
+
+
+@dataclass(frozen=True, slots=True)
+class ResearchSandboxExecutionResult:
+    stdout: str = ""
+    error: str | None = None
+    answer: Mapping[str, Any] = field(default_factory=dict)
+    variables: Mapping[str, Any] = field(default_factory=dict)
+    helper_sources: tuple[str, ...] = ()
+    files: Mapping[str, bytes] = field(default_factory=dict)
+    session_id: str = ""
+    detail: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class SandboxBackendCleanupResult:
+    succeeded: bool
+    detail: str = ""
+
+
+class ResearchSandboxBackend(Protocol):
+    """Adapter for an OS/VM/container isolation boundary."""
+
+    def capabilities(self) -> SandboxBackendCapabilities:
+        """Return security properties enforced below candidate code."""
+        ...
+
+    def execute(self, request: ResearchSandboxExecutionRequest) -> ResearchSandboxExecutionResult:
+        """Execute one transactional workspace generation."""
+        ...
+
+    def cleanup(self, workspace_id: str) -> SandboxBackendCleanupResult:
+        """Terminate and verify deletion of every resource for a workspace."""
+        ...
+
+
+@dataclass(frozen=True, slots=True)
 class ResearchWorkspaceBenchmark:
     restricted_task_quality: float
     capable_task_quality: float
@@ -116,7 +203,12 @@ __all__ = [
     "CapabilityApprover",
     "HostBridge",
     "ResearchWorkspaceBenchmark",
+    "ResearchSandboxBackend",
+    "ResearchSandboxExecutionRequest",
+    "ResearchSandboxExecutionResult",
     "ResearchWorkspaceSnapshot",
+    "SandboxBackendCapabilities",
+    "SandboxBackendCleanupResult",
     "WorkspaceAuditEvent",
     "WorkspaceCapability",
     "WorkspaceCapabilityRequest",
@@ -125,4 +217,5 @@ __all__ = [
     "WorkspaceLifecyclePolicy",
     "WorkspaceProfile",
     "WorkspaceResourceLimits",
+    "WorkspaceSecretGrant",
 ]

@@ -12,7 +12,7 @@ autocontext supports three shipped execution modes for game scenarios, plus judg
 
 Gondolin is reserved as an optional microVM sandbox backend for deployments that need stronger isolation, secret policy, and egress policy than the local/Monty paths provide. It is not a hosted scheduler or background-worker control plane by itself.
 
-`AUTOCONTEXT_EXECUTOR_MODE=gondolin` is intentionally fail-closed until a real backend adapter is configured. This prevents a deployment that expected a VM boundary from silently running tasks locally.
+`AUTOCONTEXT_EXECUTOR_MODE=gondolin` is intentionally fail-closed until a real backend adapter is configured. This prevents a deployment that expected a VM boundary from silently running tasks locally. Separately, capable code/research workspaces can use the shipped `DockerResearchSandboxBackend`; it implements the `ResearchSandboxBackend` boundary and is not selected by the game executor mode.
 
 Use the current modes this way:
 
@@ -35,6 +35,15 @@ capability-checked lifecycle policies. Results distinguish task, provider,
 timeout, artifact, and cleanup failures and can be projected directly into an
 external-evaluation ledger. See
 [provider-neutral remote execution sessions](../../docs/remote-execution-sessions.md).
+
+`ResearchWorkspace(profile="isolated_sandbox")` also fails closed unless its
+caller supplies a backend with every mandatory security control. The Docker
+implementation provides read-only-root, workspace-only container isolation
+with deny-network policy, bounded processes/resources, scrubbed environment,
+transactional result commit, terminable execution, opaque secret resolution,
+and verified labeled-container cleanup. It deliberately rejects network grants;
+an allowlist requires a lower-layer egress-policy backend. See
+[capability-scoped research workspaces](../../docs/research-workspaces.md).
 
 The contract carries policy and secret references, not secret values. Hosted fleet orchestration, tenant scheduling, policy UI, billing, proactive warm-pool management, image-cache economics, and managed audit retention remain deployment concerns outside this OSS boundary. A deployment is not multi-tenant safe merely because it uses a remote sandbox; it also needs tenant-aware credential brokering, per-tenant filesystem/network isolation, egress policy, audit, retention, and abuse controls. See [Background execution trust boundaries and credential model](../../docs/background-execution-trust-boundaries.md).
 
@@ -67,6 +76,16 @@ recovery and audit contracts.
 - `AUTOCONTEXT_LOCAL_SANDBOX_HARDENED`
 - `AUTOCONTEXT_MONTY_MAX_EXECUTION_TIME_SECONDS`
 - `AUTOCONTEXT_MONTY_MAX_EXTERNAL_CALLS`
+- `AUTOCONTEXT_WORKSPACE_INTERPRETER_ENABLED`
+- `AUTOCONTEXT_WORKSPACE_INTERPRETER_BACKEND` (`interpreter` or `docker`)
+- `AUTOCONTEXT_WORKSPACE_INTERPRETER_EXECUTE_CANDIDATES`
+- `AUTOCONTEXT_WORKSPACE_INTERPRETER_CAPABILITIES_APPROVED`
+- `AUTOCONTEXT_WORKSPACE_INTERPRETER_ALLOWED_IMPORTS` (JSON array)
+- `AUTOCONTEXT_WORKSPACE_INTERPRETER_ALLOWED_COMMANDS` (JSON array)
+- `AUTOCONTEXT_WORKSPACE_INTERPRETER_DOCKER_IMAGE` (must include `@sha256:`)
+- `AUTOCONTEXT_WORKSPACE_INTERPRETER_MEMORY_MB`
+- `AUTOCONTEXT_WORKSPACE_INTERPRETER_CPU_COUNT`
+- `AUTOCONTEXT_WORKSPACE_INTERPRETER_PIDS_LIMIT`
 - `AUTOCONTEXT_JUDGE_MODEL`
 - `AUTOCONTEXT_JUDGE_SAMPLES`
 - `AUTOCONTEXT_JUDGE_TEMPERATURE`

@@ -6,6 +6,41 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- A concrete `DockerResearchSandboxBackend` now backs explicitly approved
+  `isolated_sandbox` research workspaces with a pinned image, read-only rootfs,
+  workspace-only mounts, denied network, dropped capabilities, scrubbed
+  environment, CPU/memory/PID limits, terminable calls, scoped secret
+  resolution, transactional commit, and label-based cleanup verification. The
+  TaskRunner's multi-generation code path accepts the capable workspace
+  factory directly and never falls back to `trusted_local` (AC-981).
+- Remote scenario execution now uploads a deterministic, content-addressed
+  stdlib zipapp containing the exact built-in or custom scenario source,
+  constructor state, strategy, and seed. Both the package and the pinned clean
+  runtime image are verified before provisioning; network-denied built-in and
+  non-game integration tests exercise the same image contract (AC-982).
+- The live campaign scheduler now runs a restart-safe service loop, heartbeats
+  active leases, batches matched remote trials into one bounded reuse session,
+  invokes cooperative worker cancellation, and durably charges results and
+  provider usage that arrive after cancellation (AC-983).
+- Standard and tree-search generation can invoke one live
+  `ContextBundlePromotionCoordinator` for matched screen, adaptive
+  confirmation, held-out evaluation, audit, campaign error control, atomic
+  serving, and immediate routing refresh. Exact component-addition evidence
+  produces an immutable manifest-verified causal-attribution artifact before
+  cutover (AC-984, AC-997).
+- Campaign audits have a reusable live-checkpoint adapter and a pre-promotion
+  serving gate. Enabled production auditors require a provider-native
+  cancellable call handle by default; the legacy non-terminable transport is an
+  explicit opt-in. Cancellation and timeout decisions remain durable and do
+  not rewrite deterministic scores (AC-985).
+- Campaign-wide false-promotion state now pre-reserves a summable alpha slice
+  for every adaptive challenger, persists selection/spend/decision history
+  across restart, collapses repeated seeds into fixture dependence blocks, and
+  requires disjoint lanes. A bounded-Hoeffding option covers predeclared
+  bounded heavy-tailed effects; deterministic operating-characteristic
+  simulations and byte-compatible Python/TypeScript state fixtures pin the
+  policy (AC-986).
+
 - Python kernel evolution now supports a strict external benchmark contract,
   append-only champion lineage, fresh-protocol confirmation before promotion,
   and reproducible synthetic and live H100 examples.
@@ -24,6 +59,10 @@ All notable changes to this project will be documented in this file.
   capability-gated warm/snapshot requests, and keeps infrastructure, task,
   timeout, artifact, and cleanup failures distinct for external-eval ledgers
   (AC-978).
+- Hermetic scenario zipapps now re-verify their own format, runtime, and file
+  digests before import. A declared bootstrap exit is classified as
+  infrastructure (including in campaign scheduling), and clean pinned-image
+  Docker execution is exercised in CI (AC-982).
 - Python code/research scenarios can now opt into capability-scoped,
   process-backed persistent workspaces with explicit file, import, subprocess,
   network, and typed host-bridge grants. Transactional executions, bounded
@@ -31,12 +70,19 @@ All notable changes to this project will be documented in this file.
   the current restricted interpreter as the safe default (AC-977). TypeScript
   coordinates the shared runtime workspace boundary but does not embed a
   parallel Python interpreter.
+- TaskRunner can now select the pinned Docker research workspace directly from
+  settings, execute generated Python transactionally, judge observable output,
+  and persist workspace audit events. Capable execution rejects the local
+  interpreter and requires explicit operator capability approval (AC-981).
 - An optional Python `CampaignAuditor` now performs separately routed,
   read-only integrity reviews at bounded campaign checkpoints. Sanitized,
   fingerprinted evidence packets exclude holdout answers and credentials;
   duplicate reviews are cached, timeouts fail open to deterministic monitors,
   findings remain advisory by default, and operator dispositions are durable
   (AC-980). TypeScript parity is deferred with the Python campaign executor.
+- All four campaign audit checkpoints are connected to live promotion and
+  scheduler paths; durable audit/disposition records surface in scheduler
+  reports while audit failures leave deterministic gates unchanged (AC-985).
 - The Python autoresearch trainer now persists replayable checkpoint-promotion
   artifacts and supports deterministic minimum-effect gating plus adaptive
   matched screen/confirmation/held-out trials. Decisions distinguish accepted,
@@ -55,6 +101,9 @@ All notable changes to this project will be documented in this file.
   retest/supersession links prevent stale evidence from suppressing unrelated
   exploration; Python and TypeScript safely migrate v1 ledgers as qualified
   `context_unknown` evidence (AC-975).
+- Rejected and inconclusive context-bundle candidates now write an immutable,
+  exactly bound negative-result ledger from the live promotion coordinator
+  (AC-984).
 - Immutable, content-addressed `ContextBundle` manifests now group playbooks,
   hints, prompt and completion mutations, tool guidance/specifications,
   harness validators, and routing configuration under one evaluator epoch.

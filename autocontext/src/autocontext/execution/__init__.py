@@ -5,16 +5,19 @@ from typing import TYPE_CHECKING, Any
 from .action_filter import ActionFilterHarness
 from .campaign_scheduler import (
     CallableCampaignWorker,
+    CampaignBatchWorker,
     CampaignJobRequest,
     CampaignJobResult,
     CampaignScheduler,
     CampaignSchedulerEventStore,
+    CancellableCampaignWorker,
     RemoteCampaignWorker,
     SchedulerBudget,
     SchedulerResources,
     StaleCampaignSchedulerError,
     WorkerDescriptor,
 )
+from .docker_research_sandbox import DockerResearchSandboxBackend, SecretGrantResolver
 from .phased_execution import (
     PhaseBudget,
     PhasedExecutionPlan,
@@ -37,6 +40,14 @@ from .research_workspace import (
     WorkspaceResourceLimits,
     benchmark_research_workspace,
     grant_workspace_access,
+)
+from .research_workspace_models import (
+    ResearchSandboxBackend,
+    ResearchSandboxExecutionRequest,
+    ResearchSandboxExecutionResult,
+    SandboxBackendCapabilities,
+    SandboxBackendCleanupResult,
+    WorkspaceSecretGrant,
 )
 from .sandbox_adapter_contracts import (
     SANDBOX_CAPABILITY_NAMES,
@@ -64,6 +75,8 @@ _LAZY_SUPERVISOR_EXPORTS = frozenset({"ExecutionInput", "ExecutionOutput", "Exec
 __all__ = [
     "ActionFilterHarness",
     "CallableCampaignWorker",
+    "CampaignBatchWorker",
+    "CancellableCampaignWorker",
     "CampaignJobRequest",
     "CampaignJobResult",
     "CampaignScheduler",
@@ -71,6 +84,7 @@ __all__ = [
     "ExecutionSupervisor",
     "ExecutionInput",
     "ExecutionOutput",
+    "DockerResearchSandboxBackend",
     "SANDBOX_CAPABILITY_NAMES",
     "SandboxBootMode",
     "SandboxCapabilityName",
@@ -92,6 +106,9 @@ __all__ = [
     "ResearchWorkspace",
     "ResearchWorkspaceBenchmark",
     "ResearchWorkspaceSnapshot",
+    "ResearchSandboxBackend",
+    "ResearchSandboxExecutionRequest",
+    "ResearchSandboxExecutionResult",
     "RemoteAcceleratorRequest",
     "RemoteCampaignWorker",
     "RemoteExecutionRequest",
@@ -99,9 +116,13 @@ __all__ = [
     "RemoteResourceRequest",
     "SchedulerBudget",
     "SchedulerResources",
+    "SecretGrantResolver",
+    "SandboxBackendCapabilities",
+    "SandboxBackendCleanupResult",
     "StaleCampaignSchedulerError",
     "WorkspaceCapabilityRequest",
     "WorkspaceResourceLimits",
+    "WorkspaceSecretGrant",
     "WorkerDescriptor",
     "benchmark_research_workspace",
     "grant_workspace_access",

@@ -37,7 +37,9 @@ typed artifacts, resource usage, session identity, and cleanup outcome. Its
 status keeps `timeout`, `provider_error`, `task_error`, `artifact_error`, and
 `cleanup_error` distinct. `to_ledger_entry()` produces the external-evaluation
 ledger projection so infrastructure failures cannot be counted as candidate
-losses. When task/artifact processing and resource cleanup both fail,
+losses. `artifact_error` is an infrastructure outcome, including a declared
+scenario-package bootstrap exit; only a successfully bootstrapped scenario
+failure is a candidate `task_error`. When task/artifact processing and resource cleanup both fail,
 `cleanup_error` takes infrastructure precedence while the candidate failure is
 retained in the error detail.
 
@@ -71,18 +73,25 @@ advertises secret-grant support.
 ## Scenario compatibility
 
 The Prime Intellect client contains no game rules or scoring formulas.
-`scenario_remote_task` packages a scenario module/class, strategy, seed, and
-limits as a generic command; the remote image is responsible for containing
-the requested autocontext scenario package. `PrimeIntellectExecutor` consumes
-the typed result and preserves the existing `ScenarioInterface` execution
-surface. Local execution remains unchanged.
+`scenario_remote_task` builds a deterministic stdlib zipapp containing the
+exact built-in or custom scenario module, a minimal `ScenarioInterface` ABI,
+JSON constructor/instance state, strategy, and seed. Its manifest records every
+file digest. The remote command verifies the complete package digest, and the
+zipapp independently re-verifies its format, runtime, and embedded file
+digests before importing or constructing the scenario. Those bootstrap checks
+use the request's typed infrastructure exit code. Imports outside the packaged source and standard library fail
+preflight, so missing dependencies are infrastructure/configuration failures,
+not candidate losses.
 
-The adapter's bare `python:3.11-slim` default does not contain Autocontext.
-Live scenario execution must configure a hermetic image containing the exact
-Autocontext/scenario sources and dependencies; otherwise the task fails (or
-returns the explicit unavailable result when fallback is explicitly enabled;
-fallback is disabled by default). Packaging
-custom scenario modules and instance state is not inferred from the host.
+The default image is an immutable digest-pinned Python 3.11 slim runtime. The
+package needs no in-sandbox installation and runs with network denied. Shared
+tests execute a built-in and a stateful non-game scenario with `python -I`; an
+opt-in Docker CI test executes the same custom artifact in the exact clean,
+read-only, network-denied image used by the adapter. The recorded image,
+package, file, scenario-state, strategy, and seed digests are sufficient to
+reconstruct the request. `PrimeIntellectExecutor` consumes the typed result and
+preserves the existing `ScenarioInterface` execution surface. Local execution
+remains unchanged.
 
 Non-game code/research scenarios can construct `RemoteExecutionRequest`
 directly, so they do not need provider-specific code or a game-shaped result.

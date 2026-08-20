@@ -12,6 +12,7 @@ from autocontext.execution.remote_execution import RemoteLifecyclePolicy
 JobStatus: TypeAlias = Literal[
     "queued",
     "leased",
+    "canceling",
     "succeeded",
     "candidate_failed",
     "infrastructure_failed",
@@ -236,6 +237,14 @@ class CampaignWorker(Protocol):
     def execute(self, assignment: CampaignAssignment) -> CampaignJobResult: ...
 
 
+class CampaignBatchWorker(CampaignWorker, Protocol):
+    def execute_many(self, assignments: tuple[CampaignAssignment, ...]) -> tuple[CampaignJobResult, ...]: ...
+
+
+class CancellableCampaignWorker(CampaignWorker, Protocol):
+    def cancel(self, assignment: CampaignAssignment) -> bool: ...
+
+
 @dataclass(frozen=True, slots=True)
 class SchedulerEvent:
     sequence: int
@@ -252,6 +261,7 @@ class _JobState:
     attempts: int = 0
     lease: CampaignLease | None = None
     result: CampaignJobResult | None = None
+    late_result: CampaignJobResult | None = None
     last_infrastructure_error: str = ""
 
 
@@ -274,11 +284,13 @@ class CampaignSchedulerReport:
     infrastructure_failed: int
     budget_exhausted: int
     canceled: int
+    late_completions: int
     retries: int
     reserved_by_campaign: Mapping[str, SchedulerBudget]
     consumed_by_campaign: Mapping[str, SchedulerBudget]
     worker_utilization: Mapping[str, Mapping[str, object]]
     events: int
+    audit_records_by_campaign: Mapping[str, tuple[Mapping[str, object], ...]] = field(default_factory=dict)
 
 
 def replace_lease_expiry(lease: CampaignLease, expires_at: float) -> CampaignLease:

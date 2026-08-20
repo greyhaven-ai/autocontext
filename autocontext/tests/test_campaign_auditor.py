@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import json
+import threading
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -36,6 +37,38 @@ class _MalformedClient(_FakeClient):
         self.calls += 1
         self.prompts.append(kwargs["prompt"])
         return SimpleNamespace(usage=SimpleNamespace(input_tokens=100, output_tokens=20))
+
+
+class _CancellableHandle:
+    def __init__(self) -> None:
+        self._canceled = threading.Event()
+        self._finished = threading.Event()
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        self.thread.start()
+
+    def _run(self) -> None:
+        self._canceled.wait()
+        self._finished.set()
+
+    def result(self, timeout: float) -> Any:
+        if not self._finished.wait(timeout):
+            raise concurrent.futures.TimeoutError
+        raise RuntimeError("canceled call has no response")
+
+    def cancel(self) -> bool:
+        self._canceled.set()
+        self.thread.join(timeout=1.0)
+        return not self.thread.is_alive()
+
+
+class _CancellableClient:
+    def __init__(self) -> None:
+        self.handle: _CancellableHandle | None = None
+
+    def start_generate(self, **kwargs: Any) -> _CancellableHandle:
+        del kwargs
+        self.handle = _CancellableHandle()
+        return self.handle
 
 
 def _report() -> Any:
@@ -100,6 +133,7 @@ def _config(**overrides: Any) -> Any:
         "model": "auditor-model",
         "proposer_provider": "anthropic",
         "proposer_model": "proposer-model",
+        "allow_uncancellable_transport": True,
     }
     values.update(overrides)
     return CampaignAuditConfig(**values)
@@ -537,3 +571,66 @@ def test_disabled_auditor_spends_no_call(tmp_path: Path) -> None:
 
     assert auditor.review(_packet()) is None
     assert client.calls == 0
+
+
+def test_audit_checkpoint_cancellation_is_terminal_for_that_evidence_decision(tmp_path: Path) -> None:
+    from autocontext.audit.campaign_auditor import CampaignAuditor, CampaignAuditStore
+
+    client = _FakeClient(delay=0.05)
+    store = CampaignAuditStore(tmp_path)
+    auditor = CampaignAuditor(_config(), client=client, store=store)
+    cancellation = threading.Event()
+    timer = threading.Timer(0.005, cancellation.set)
+    timer.start()
+    started = time.monotonic()
+
+    canceled = auditor.review(_packet(), cancellation_event=cancellation)
+    elapsed = time.monotonic() - started
+    timer.join(timeout=1)
+
+    assert canceled is not None and canceled.status == "canceled"
+    assert canceled.model_call_attempted is True
+    assert elapsed < 0.05
+    assert store.call_count(canceled.campaign_id) == 1
+
+
+def test_pre_dispatch_cancellation_spends_no_audit_budget(tmp_path: Path) -> None:
+    from autocontext.audit.campaign_auditor import CampaignAuditor, CampaignAuditStore
+
+    client = _FakeClient()
+    store = CampaignAuditStore(tmp_path)
+    auditor = CampaignAuditor(_config(), client=client, store=store)
+    cancellation = threading.Event()
+    cancellation.set()
+
+    canceled = auditor.review(_packet(), cancellation_event=cancellation)
+
+    assert canceled is not None and canceled.status == "canceled"
+    assert canceled.model_call_attempted is False
+    assert client.calls == 0
+    assert store.call_count(canceled.campaign_id) == 0
+
+
+def test_production_auditor_requires_and_uses_terminable_transport(tmp_path: Path) -> None:
+    from autocontext.audit.campaign_auditor import CampaignAuditor, CampaignAuditStore
+
+    with pytest.raises(ValueError, match="requires a cancellable transport"):
+        CampaignAuditor(
+            _config(allow_uncancellable_transport=False),
+            client=_FakeClient(),
+            store=CampaignAuditStore(tmp_path / "legacy"),
+        )
+
+    client = _CancellableClient()
+    auditor = CampaignAuditor(
+        _config(allow_uncancellable_transport=False, timeout_seconds=0.005),
+        client=client,
+        store=CampaignAuditStore(tmp_path / "cancellable"),
+    )
+
+    audit = auditor.review(_packet())
+
+    assert audit is not None and audit.status == "timed_out"
+    assert audit.failure_reason == "auditor model call timed out and was canceled"
+    assert client.handle is not None
+    assert not client.handle.thread.is_alive()

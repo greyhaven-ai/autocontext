@@ -7,7 +7,9 @@ Use the Python package when you need the full Python control plane or local MLX/
 The `autoctx/context-bundles` subpath provides the cross-runtime immutable
 manifest, canonical digest, and matched-confirmation contract used by the
 Python control plane. It validates the same shared fixtures and can be used by
-Node evaluators before they return promotion evidence. See
+Node evaluators before they return promotion evidence. The subpath also
+reproduces campaign alpha allocation, dependence-block decisions, persisted
+state digests, and exact component-removal attribution verification. See
 [context bundles](../docs/context-bundles.md).
 The root library also exports ablation-backed component attribution, bounded
 re-testing, causal-credit reconstruction, and prompt-selection helpers; see

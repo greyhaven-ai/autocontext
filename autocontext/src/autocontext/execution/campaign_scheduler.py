@@ -20,6 +20,13 @@ from autocontext.execution.campaign_scheduler_adapters import (
     RemoteCampaignWorker,
     campaign_result_from_remote,
 )
+from autocontext.execution.campaign_scheduler_audits import (
+    SchedulerAuditRunner,
+    durable_audit_records,
+    final_summary_evidence,
+    integrity_evidence,
+    review_scheduler_checkpoint,
+)
 from autocontext.execution.campaign_scheduler_codecs import (
     as_float,
     budget_from,
@@ -38,12 +45,14 @@ from autocontext.execution.campaign_scheduler_models import (
     TERMINAL_STATUSES,
     AssignmentLifecycle,
     CampaignAssignment,
+    CampaignBatchWorker,
     CampaignEvidenceGrant,
     CampaignJobRequest,
     CampaignJobResult,
     CampaignLease,
     CampaignSchedulerReport,
     CampaignWorker,
+    CancellableCampaignWorker,
     EvaluationLaneIdentity,
     JobOutcome,
     JobStatus,
@@ -69,6 +78,7 @@ class CampaignScheduler:
         lease_seconds: float = 30.0,
         max_concurrency: int = 8,
         clock: Callable[[], float] = time.time,
+        audit_checkpoints: SchedulerAuditRunner | None = None,
     ) -> None:
         if lease_seconds <= 0 or max_concurrency < 1:
             raise ValueError("lease_seconds and max_concurrency must be positive")
@@ -76,6 +86,7 @@ class CampaignScheduler:
         self.lease_seconds = lease_seconds
         self.max_concurrency = max_concurrency
         self.clock = clock
+        self.audit_checkpoints = audit_checkpoints
         self._sequence = 0
         self._jobs: dict[str, _JobState] = {}
         self._idempotency: dict[tuple[str, str], str] = {}
@@ -93,6 +104,8 @@ class CampaignScheduler:
         self._cohort_environments: dict[tuple[str, str], str] = {}
         self._evidence_grants: dict[str, CampaignEvidenceGrant] = {}
         self._retry_count = 0
+        self._late_completions = 0
+        self._late_completion_leases: set[str] = set()
         self._lock = threading.RLock()
         for event in self.store.read():
             self._apply(event)
@@ -221,17 +234,33 @@ class CampaignScheduler:
             if job_id is None:
                 historical_job = self._lease_history.get(lease_id)
                 if historical_job is not None:
-                    completed = self._jobs[historical_job].result
+                    historical_state = self._jobs[historical_job]
+                    completed = historical_state.result
+                    if lease_id in self._late_completion_leases:
+                        return result
+                    if historical_state.status == "canceled":
+                        self._record(
+                            "job_canceled_late",
+                            {"job_id": historical_job, "lease_id": lease_id, "result": result_to_dict(result)},
+                        )
+                        return result
                     # A worker can finish after cancellation, lease expiry, or a
                     # replacement attempt.  The result is deliberately ignored,
                     # but a known stale lease must not crash the dispatcher.
                     return completed if completed is not None else result
                 raise ValueError("lease is stale or unknown")
             state = self._jobs[job_id]
+            if state.status == "canceling" and state.lease is not None and state.lease.lease_id == lease_id:
+                self._record(
+                    "job_canceled_late",
+                    {"job_id": job_id, "lease_id": lease_id, "result": result_to_dict(result)},
+                )
+                return result
             if state.status != "leased" or state.lease is None or state.lease.lease_id != lease_id:
                 if state.result is not None:
                     return state.result
                 raise ValueError("lease is no longer active")
+            assignment = CampaignAssignment(job=state.request, lease=state.lease)
             if result.outcome == "infrastructure_failure" and state.attempts < state.request.max_attempts:
                 self._record(
                     "job_requeued",
@@ -242,20 +271,45 @@ class CampaignScheduler:
                         "result": result_to_dict(result),
                     },
                 )
-                return result
-            self._record(
-                "job_finished",
-                {"job_id": job_id, "lease_id": lease_id, "result": result_to_dict(result)},
+            else:
+                self._record(
+                    "job_finished",
+                    {"job_id": job_id, "lease_id": lease_id, "result": result_to_dict(result)},
+                )
+        if result.outcome == "infrastructure_failure":
+            review_scheduler_checkpoint(
+                self.audit_checkpoints,
+                "integrity_alert",
+                integrity_evidence(assignment, result, source="worker_completion"),
             )
-            return result
+        return result
 
     def cancel(self, job_id: str) -> bool:
         with self._lock:
             state = self._jobs.get(job_id)
             if state is None or state.status in TERMINAL_STATUSES:
                 return False
-            self._record("job_canceled", {"job_id": job_id})
-            return True
+            if state.status == "queued":
+                self._record("job_canceled", {"job_id": job_id, "reason": "canceled_before_dispatch"})
+                return True
+            if state.status == "canceling":
+                return True
+            if state.lease is None:
+                return False
+            assignment = CampaignAssignment(job=state.request, lease=state.lease)
+            executor = self._executors.get(state.lease.worker_id)
+            self._record("job_cancel_requested", {"job_id": job_id, "lease_id": state.lease.lease_id})
+        cancel_worker = getattr(executor, "cancel", None)
+        cancellation_confirmed = bool(cancel_worker(assignment)) if callable(cancel_worker) else False
+        if cancellation_confirmed:
+            with self._lock:
+                current = self._jobs[job_id]
+                if current.status == "canceling":
+                    self._record(
+                        "job_canceled",
+                        {"job_id": job_id, "lease_id": assignment.lease.lease_id, "reason": "worker_acknowledged"},
+                    )
+        return True
 
     def reconcile(self, *, now: float | None = None) -> tuple[str, ...]:
         """Expire lost-worker leases and deterministically retry/fail their jobs."""
@@ -265,7 +319,14 @@ class CampaignScheduler:
             reconciled: list[str] = []
             for state in list(self._jobs.values()):
                 lease = state.lease
-                if state.status != "leased" or lease is None or lease.expires_at > current:
+                if state.status not in {"leased", "canceling"} or lease is None or lease.expires_at > current:
+                    continue
+                if state.status == "canceling":
+                    self._record(
+                        "job_canceled",
+                        {"job_id": state.request.job_id, "lease_id": lease.lease_id, "reason": "cancel_lease_expired"},
+                    )
+                    reconciled.append(state.request.job_id)
                     continue
                 event_type = "job_requeued" if state.attempts < state.request.max_attempts else "job_lease_failed"
                 self._record(
@@ -273,7 +334,21 @@ class CampaignScheduler:
                     {"job_id": state.request.job_id, "lease_id": lease.lease_id, "reason": "lease_expired"},
                 )
                 reconciled.append(state.request.job_id)
-            return tuple(reconciled)
+        for job_id in reconciled:
+            state = self._jobs[job_id]
+            if state.status == "infrastructure_failed" and state.result is not None:
+                review_scheduler_checkpoint(
+                    self.audit_checkpoints,
+                    "integrity_alert",
+                    {
+                        "campaign_id": state.request.campaign_id,
+                        "job_id": job_id,
+                        "branch_id": state.request.branch_id,
+                        "source": "lease_reconciliation",
+                        "result": result_to_dict(state.result),
+                    },
+                )
+        return tuple(reconciled)
 
     def dispatch_once(self) -> int:
         """Claim available internal workers and execute one concurrent wave."""
@@ -293,25 +368,78 @@ class CampaignScheduler:
         if not assignments:
             return 0
 
-        def execute_one(worker: CampaignWorker, assignment: CampaignAssignment) -> CampaignJobResult:
-            try:
-                return worker.execute(assignment)
-            except Exception as exc:
-                return CampaignJobResult(
-                    outcome="infrastructure_failure",
-                    consumed=SchedulerBudget(wall_seconds=0.0),
-                    detail=f"{type(exc).__name__}: {exc}",
-                    cleanup_succeeded=False,
-                )
+        def infrastructure_failure(exc: Exception) -> CampaignJobResult:
+            return CampaignJobResult(
+                outcome="infrastructure_failure",
+                consumed=SchedulerBudget(wall_seconds=0.0),
+                detail=f"{type(exc).__name__}: {exc}",
+                cleanup_succeeded=False,
+            )
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(assignments)) as pool:
-            futures = [
-                pool.submit(execute_one, executor, assignment)
-                for executor, assignment in zip(executors, assignments, strict=True)
-            ]
-            for assignment, future in zip(assignments, futures, strict=True):
-                self.complete(assignment.lease.lease_id, future.result())
+        def execute_group(
+            worker: CampaignWorker,
+            grouped: tuple[CampaignAssignment, ...],
+        ) -> tuple[CampaignJobResult, ...]:
+            heartbeat_stop = threading.Event()
+            heartbeat_thread = threading.Thread(
+                target=self._heartbeat_assignments,
+                args=(grouped, heartbeat_stop),
+                daemon=True,
+            )
+            heartbeat_thread.start()
+            try:
+                execute_many = getattr(worker, "execute_many", None)
+                if len(grouped) > 1 and callable(execute_many):
+                    results = tuple(execute_many(grouped))
+                    if len(results) != len(grouped):
+                        raise RuntimeError("campaign batch worker returned the wrong number of results")
+                    return results
+                return tuple(worker.execute(assignment) for assignment in grouped)
+            except Exception as exc:
+                return tuple(infrastructure_failure(exc) for _ in grouped)
+            finally:
+                heartbeat_stop.set()
+                heartbeat_thread.join(timeout=1.0)
+
+        grouped_work: dict[tuple[str, str], tuple[CampaignWorker, list[CampaignAssignment]]] = {}
+        for executor, assignment in zip(executors, assignments, strict=True):
+            supports_batch = callable(getattr(executor, "execute_many", None))
+            reusable = supports_batch and assignment.lease.lifecycle == "reuse_matched_trials"
+            group_key = (
+                assignment.lease.worker_id,
+                assignment.lease.reuse_key if reusable else assignment.lease.lease_id,
+            )
+            if group_key not in grouped_work:
+                grouped_work[group_key] = (executor, [])
+            grouped_work[group_key][1].append(assignment)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(grouped_work)) as pool:
+            futures = {
+                pool.submit(execute_group, executor, tuple(grouped)): tuple(grouped)
+                for executor, grouped in grouped_work.values()
+            }
+            for future, grouped in futures.items():
+                results = future.result()
+                for assignment, result in zip(grouped, results, strict=True):
+                    self.complete(assignment.lease.lease_id, result)
         return len(assignments)
+
+    def serve(self, stop_event: threading.Event, *, poll_interval: float = 0.25) -> int:
+        """Run a restart-safe live dispatch loop until ``stop_event`` is set."""
+
+        if poll_interval <= 0:
+            raise ValueError("campaign scheduler poll_interval must be positive")
+        dispatched = 0
+        try:
+            while not stop_event.is_set():
+                self.reconcile()
+                count = self.dispatch_once()
+                dispatched += count
+                if count == 0:
+                    stop_event.wait(poll_interval)
+        finally:
+            self._audit_final_summaries()
+        return dispatched
 
     def run_until_idle(self, *, max_waves: int = 100) -> int:
         dispatched = 0
@@ -320,6 +448,7 @@ class CampaignScheduler:
             if count == 0:
                 break
             dispatched += count
+        self._audit_final_summaries()
         return dispatched
 
     def job_status(self, job_id: str) -> JobStatus:
@@ -332,7 +461,7 @@ class CampaignScheduler:
 
     def report(self) -> CampaignSchedulerReport:
         with self._lock:
-            counts = {status: 0 for status in TERMINAL_STATUSES | {"queued", "leased"}}
+            counts = {status: 0 for status in TERMINAL_STATUSES | {"queued", "leased", "canceling"}}
             for state in self._jobs.values():
                 counts[state.status] += 1
             utilization = {
@@ -350,18 +479,42 @@ class CampaignScheduler:
             }
             return CampaignSchedulerReport(
                 queued=counts["queued"],
-                running=counts["leased"],
+                running=counts["leased"] + counts["canceling"],
                 succeeded=counts["succeeded"],
                 candidate_failed=counts["candidate_failed"],
                 infrastructure_failed=counts["infrastructure_failed"],
                 budget_exhausted=counts["budget_exhausted"],
                 canceled=counts["canceled"],
+                late_completions=self._late_completions,
                 retries=self._retry_count,
                 reserved_by_campaign=dict(self._campaign_reserved),
                 consumed_by_campaign=dict(self._campaign_consumed),
                 worker_utilization=utilization,
                 events=self._sequence,
+                audit_records_by_campaign=durable_audit_records(
+                    self.audit_checkpoints,
+                    tuple(self._campaign_ids()),
+                ),
             )
+
+    def _campaign_ids(self) -> set[str]:
+        return set(self._campaign_limits) | {state.request.campaign_id for state in self._jobs.values()}
+
+    def _audit_final_summaries(self) -> None:
+        with self._lock:
+            evidence = []
+            for campaign_id in sorted(self._campaign_ids()):
+                jobs = [state for state in self._jobs.values() if state.request.campaign_id == campaign_id]
+                if jobs and all(state.status in TERMINAL_STATUSES for state in jobs):
+                    evidence.append(
+                        final_summary_evidence(
+                            campaign_id,
+                            jobs,
+                            self._campaign_consumed.get(campaign_id, SchedulerBudget()),
+                        )
+                    )
+        for packet in evidence:
+            review_scheduler_checkpoint(self.audit_checkpoints, "final_completion", packet)
 
     def _record(self, event_type: str, payload: Mapping[str, Any]) -> None:
         # Keep sequence allocation, durable append, and in-memory application
@@ -377,6 +530,19 @@ class CampaignScheduler:
             )
             self.store.append(event)
             self._apply(event)
+
+    def _heartbeat_assignments(
+        self,
+        assignments: tuple[CampaignAssignment, ...],
+        stop_event: threading.Event,
+    ) -> None:
+        if not assignments:
+            return
+        worker_id = assignments[0].lease.worker_id
+        lease_ids = tuple(assignment.lease.lease_id for assignment in assignments)
+        interval = max(0.01, self.lease_seconds / 3.0)
+        while not stop_event.wait(interval):
+            self.heartbeat(worker_id, lease_ids)
 
     def _apply(self, event: SchedulerEvent) -> None:
         self._sequence = event.sequence
@@ -447,6 +613,25 @@ class CampaignScheduler:
             return
         if event.event_type == "job_budget_exhausted":
             self._jobs[str(payload["job_id"])].status = "budget_exhausted"
+            return
+        if event.event_type == "job_cancel_requested":
+            self._jobs[str(payload["job_id"])].status = "canceling"
+            return
+        if event.event_type == "job_canceled_late":
+            state = self._jobs[str(payload["job_id"])]
+            result = result_from(payload["result"])
+            lease_id = str(payload["lease_id"])
+            worker_id = state.lease.worker_id if state.lease else ""
+            self._release_lease(state)
+            state.status = "canceled"
+            state.late_result = result
+            self._late_completion_leases.add(lease_id)
+            self._consume(state.request, result.consumed)
+            self._late_completions += 1
+            if worker_id:
+                worker = self._workers[worker_id]
+                worker.failed_jobs += 1
+                worker.consumed = worker.consumed.add(result.consumed)
             return
         if event.event_type in {"job_requeued", "job_lease_failed", "job_canceled"}:
             state = self._jobs[str(payload["job_id"])]
@@ -520,9 +705,7 @@ class CampaignScheduler:
             consumed = self._campaign_consumed.get(request.campaign_id, SchedulerBudget())
             if not consumed.add(request.reservation).within(campaign_limit):
                 return "exhausted"
-            projected = self._campaign_reserved.get(request.campaign_id, SchedulerBudget()).add(consumed).add(
-                request.reservation
-            )
+            projected = self._campaign_reserved.get(request.campaign_id, SchedulerBudget()).add(consumed).add(request.reservation)
             if not projected.within(campaign_limit):
                 temporarily_reserved = True
         branch_key = (request.campaign_id, request.branch_id)
@@ -591,6 +774,8 @@ __all__ = [
     "AssignmentLifecycle",
     "CallableCampaignWorker",
     "CampaignAssignment",
+    "CampaignBatchWorker",
+    "CancellableCampaignWorker",
     "CampaignEvidenceGrant",
     "CampaignJobRequest",
     "CampaignJobResult",

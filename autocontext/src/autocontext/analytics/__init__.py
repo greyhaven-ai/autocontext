@@ -14,7 +14,16 @@ from autocontext.analytics.exploration_collapse_guard import (
     detect_exploration_collapse,
     render_exploration_collapse_report,
 )
+from autocontext.analytics.false_promotion_calibration import (
+    FalsePromotionCalibrationCase,
+    FalsePromotionCalibrationResult,
+    simulate_false_promotion_campaigns,
+)
 from autocontext.analytics.goal_run_report import GoalRunReport, build_goal_run_report
+from autocontext.analytics.manifest_attribution import (
+    attribute_manifest_verified_trials,
+    reconstruct_manifest_verified_causal_credit,
+)
 from autocontext.analytics.negative_result_ledger import NegativeResultLedger, build_negative_result_ledger
 from autocontext.analytics.progress_report import RunProgressReport, build_run_progress_report
 from autocontext.analytics.run_utilization_report import RunUtilizationReport, build_run_utilization_report
@@ -32,6 +41,8 @@ __all__ = [
     "ComponentAttribution",
     "ContextAttributionLedger",
     "ExplorationCollapseReport",
+    "FalsePromotionCalibrationCase",
+    "FalsePromotionCalibrationResult",
     "GoalRunReport",
     "NegativeResultLedger",
     "RunProgressReport",
@@ -41,6 +52,7 @@ __all__ = [
     "TraceGateOperatorView",
     "build_campaign_mode_report",
     "attribute_controlled_trials",
+    "attribute_manifest_verified_trials",
     "build_goal_run_report",
     "detect_exploration_collapse",
     "build_negative_result_ledger",
@@ -50,7 +62,9 @@ __all__ = [
     "render_exploration_collapse_report",
     "plan_reablation",
     "reconstruct_causal_credit",
+    "reconstruct_manifest_verified_causal_credit",
     "render_trace_gate_operator_view_lines",
     "runtime_session_log_to_run_trace",
     "select_prompt_components",
+    "simulate_false_promotion_campaigns",
 ]

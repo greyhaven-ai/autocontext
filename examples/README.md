@@ -16,7 +16,12 @@ These are copy-paste starting points for people evaluating the repo, integrating
 - Want always-on queued work? Use the persistent host worker recipe.
 - Want to build a Node evaluator for context promotion? Import the
   `autoctx/context-bundles` subpath and follow the
-  [matched-trial contract](../docs/context-bundles.md).
+  [matched-trial and campaign error-control contract](../docs/context-bundles.md).
+- Want OS-isolated multi-generation Python research? Enable the TaskRunner's
+  Docker workspace backend, candidate execution, and explicit capability
+  approval; custom runtimes may still inject a `ResearchWorkspace` factory.
+  Start with the settings and lifecycle requirements in
+  [research workspaces](../docs/research-workspaces.md).
 - Want correctness-first recursive GPU-kernel search? Start with the kernel evolution MVP.
 
 ## Kernel Evolution MVP

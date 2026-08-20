@@ -59,7 +59,9 @@ class CampaignAuditStore:
         deterministic_pre_call_failure = (
             record.audit.status == "failed" and record.audit.failure_reason == "bounded evidence packet exceeds max_input_chars"
         )
-        if record.audit.status == "timed_out" or (record.audit.status == "failed" and not deterministic_pre_call_failure):
+        if record.audit.status in {"timed_out", "canceled"} or (
+            record.audit.status == "failed" and not deterministic_pre_call_failure
+        ):
             cache_fingerprint = f"{cache_fingerprint}--attempt-{record.audit.audit_id}"
         path = self._path(record.audit.campaign_id, cache_fingerprint)
         write_json(path, record.to_dict())
@@ -77,6 +79,19 @@ class CampaignAuditStore:
     def count(self, campaign_id: str) -> int:
         directory = self.root / _safe_segment(campaign_id)
         return len(list(directory.glob("*.json"))) if directory.exists() else 0
+
+    def records(self, campaign_id: str) -> tuple[CampaignAuditRecord, ...]:
+        """Return every valid durable record for campaign reporting."""
+
+        directory = self.root / _safe_segment(campaign_id)
+        if not directory.exists():
+            return ()
+        records = [
+            record
+            for path in sorted(directory.glob("*.json"))
+            if (record := _record_from_data(read_json_guarded(path))) is not None
+        ]
+        return tuple(sorted(records, key=_record_recency_key))
 
     def call_count(self, campaign_id: str) -> int:
         """Return durable provider-call claims, including legacy attempts."""

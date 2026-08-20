@@ -187,17 +187,20 @@ def test_scheduler_respects_capabilities_resources_budgets_and_comparable_lanes(
 
     assert scheduler.claim("cpu") == ()
     assignment = scheduler.claim("gpu")[0]
-    assert assignment.lease.environment_fingerprint == _worker(
-        "gpu",
-        resources=SchedulerResources(
-            cpu_cores=4,
-            memory_gb=32,
-            disk_gb=100,
-            accelerator_kind="A100",
-            accelerator_count=1,
-        ),
-        capabilities=frozenset({"cuda"}),
-    ).environment_fingerprint
+    assert (
+        assignment.lease.environment_fingerprint
+        == _worker(
+            "gpu",
+            resources=SchedulerResources(
+                cpu_cores=4,
+                memory_gb=32,
+                disk_gb=100,
+                accelerator_kind="A100",
+                accelerator_count=1,
+            ),
+            capabilities=frozenset({"cuda"}),
+        ).environment_fingerprint
+    )
     scheduler.complete(assignment.lease.lease_id, _success(assignment))
 
     over_budget = _job(2, reservation=SchedulerBudget(tokens=30, jobs=1))
@@ -293,6 +296,15 @@ class _FakeRemoteAdapter:
         )
 
 
+class _ReusingRemoteAdapter(_FakeRemoteAdapter):
+    def __init__(self) -> None:
+        self.batches: list[tuple[RemoteExecutionRequest, ...]] = []
+
+    def execute_requests(self, requests: tuple[RemoteExecutionRequest, ...]) -> tuple[RemoteExecutionResult, ...]:
+        self.batches.append(requests)
+        return tuple(self.execute_request(request) for request in requests)
+
+
 def test_optional_remote_adapter_integrates_without_provider_specific_scheduler_code(tmp_path: Path) -> None:
     scheduler = CampaignScheduler(CampaignSchedulerEventStore(tmp_path / "events.jsonl"))
     remote_worker = RemoteCampaignWorker(
@@ -317,6 +329,73 @@ def test_optional_remote_adapter_integrates_without_provider_specific_scheduler_
     assert result.metadata["provider"] == "fake-remote"
     assert report.worker_utilization["remote"]["locality"] == "remote"
     assert report.consumed_by_campaign["campaign-1"].wall_seconds == 2.0
+
+
+def test_matched_remote_trials_use_one_advertised_reuse_batch(tmp_path: Path) -> None:
+    scheduler = CampaignScheduler(CampaignSchedulerEventStore(tmp_path / "events.jsonl"))
+    adapter = _ReusingRemoteAdapter()
+    scheduler.register_worker(
+        _worker(
+            "remote-reuse",
+            locality="remote",
+            concurrency=2,
+            capabilities=frozenset({"remote_execution"}),
+            sandbox_features=frozenset({"session_reuse"}),
+        ),
+        RemoteCampaignWorker(
+            adapter,
+            lambda assignment: RemoteExecutionRequest(
+                task_id=assignment.job.job_id,
+                image="research:latest",
+                command="python task.py",
+            ),
+        ),
+    )
+    for index in range(2):
+        scheduler.enqueue(
+            _job(
+                index,
+                cohort_id="matched-pair",
+                prefer_warm_reuse=True,
+                required_capabilities=frozenset({"remote_execution"}),
+            )
+        )
+
+    assert scheduler.run_until_idle() == 2
+
+    assert len(adapter.batches) == 1
+    assert len(adapter.batches[0]) == 2
+    assert {request.lifecycle for request in adapter.batches[0]} == {"reuse_matched_trials"}
+    assert {request.max_reuse_tasks for request in adapter.batches[0]} == {2}
+
+
+def test_live_service_claims_late_jobs_and_heartbeats_active_leases(tmp_path: Path) -> None:
+    store = CampaignSchedulerEventStore(tmp_path / "events.jsonl")
+    scheduler = CampaignScheduler(store, lease_seconds=0.03)
+    worker_finished = threading.Event()
+
+    def execute(assignment: CampaignAssignment) -> CampaignJobResult:
+        time.sleep(0.08)
+        worker_finished.set()
+        return _success(assignment)
+
+    scheduler.register_worker(_worker("live"), CallableCampaignWorker(execute))
+    stop = threading.Event()
+    dispatched: list[int] = []
+    service = threading.Thread(target=lambda: dispatched.append(scheduler.serve(stop, poll_interval=0.01)))
+    service.start()
+    scheduler.enqueue(_job(1))
+    assert worker_finished.wait(timeout=2)
+    deadline = time.monotonic() + 2
+    while scheduler.job_status("job-1") != "succeeded" and time.monotonic() < deadline:
+        time.sleep(0.01)
+    stop.set()
+    service.join(timeout=2)
+
+    assert not service.is_alive()
+    assert dispatched == [1]
+    assert scheduler.job_status("job-1") == "succeeded"
+    assert "worker_heartbeat" in [event.event_type for event in store.read()]
 
 
 def test_duplicate_enqueue_and_event_checksum_are_fail_closed(tmp_path: Path) -> None:
@@ -414,6 +493,60 @@ def test_retried_infrastructure_attempt_charges_actual_usage(tmp_path: Path) -> 
     )
 
 
+def test_live_scheduler_runs_integrity_and_final_audit_checkpoints(tmp_path: Path) -> None:
+    class DurableRecord:
+        def to_dict(self) -> dict[str, object]:
+            return {"audit": {"audit_id": "audit-1"}, "dispositions": [{"outcome": "mitigated"}]}
+
+    class DurableStore:
+        def records(self, campaign_id: str) -> tuple[DurableRecord, ...]:
+            assert campaign_id == "campaign-1"
+            return (DurableRecord(),)
+
+    class Auditor:
+        store = DurableStore()
+
+    class AuditRunner:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, dict[str, Any]]] = []
+            self.auditor = Auditor()
+
+        def review_checkpoint(self, checkpoint, evidence, *, cancellation_event=None):
+            del cancellation_event
+            self.calls.append((checkpoint, dict(evidence)))
+            return None
+
+    audits = AuditRunner()
+    scheduler = CampaignScheduler(
+        CampaignSchedulerEventStore(tmp_path / "events.jsonl"),
+        audit_checkpoints=audits,
+    )
+    scheduler.register_worker(
+        _worker("broken"),
+        CallableCampaignWorker(
+            lambda assignment: CampaignJobResult(
+                outcome="infrastructure_failure",
+                detail=f"sandbox failed for {assignment.job.job_id}",
+                cleanup_succeeded=False,
+            )
+        ),
+    )
+    scheduler.enqueue(_job(1, max_attempts=1))
+
+    assert scheduler.run_until_idle() == 1
+
+    assert [checkpoint for checkpoint, _ in audits.calls] == [
+        "integrity_alert",
+        "final_completion",
+    ]
+    final = audits.calls[-1][1]
+    assert final["jobs"][0]["status"] == "infrastructure_failed"
+    assert final["jobs"][0]["scored_result"]["outcome"] == "infrastructure_failure"
+    assert scheduler.report().audit_records_by_campaign["campaign-1"][0]["dispositions"] == [
+        {"outcome": "mitigated"}
+    ]
+
+
 def test_direct_claim_honors_global_concurrency_limit(tmp_path: Path) -> None:
     scheduler = CampaignScheduler(
         CampaignSchedulerEventStore(tmp_path / "events.jsonl"),
@@ -474,7 +607,53 @@ def test_cancel_during_dispatch_ignores_late_worker_completion(tmp_path: Path) -
     assert not dispatch_thread.is_alive()
     assert dispatched == [1]
     assert scheduler.job_status("job-1") == "canceled"
+    assert scheduler.job_result("job-1") is None
     assert scheduler.report().running == 0
+    assert scheduler.report().late_completions == 1
+    assert scheduler.report().consumed_by_campaign["campaign-1"].jobs == 1
+
+    restarted = CampaignScheduler(CampaignSchedulerEventStore(tmp_path / "events.jsonl"))
+    assert restarted.job_status("job-1") == "canceled"
+    assert restarted.job_result("job-1") is None
+    assert restarted.report().late_completions == 1
+    assert restarted.report().consumed_by_campaign["campaign-1"].jobs == 1
+
+
+def test_cancel_invokes_worker_termination_hook_and_accounts_final_usage(tmp_path: Path) -> None:
+    scheduler = CampaignScheduler(CampaignSchedulerEventStore(tmp_path / "events.jsonl"))
+    started = threading.Event()
+    terminated = threading.Event()
+
+    def execute(assignment: CampaignAssignment) -> CampaignJobResult:
+        started.set()
+        assert terminated.wait(timeout=2)
+        return CampaignJobResult(
+            outcome="infrastructure_failure",
+            consumed=SchedulerBudget(wall_seconds=0.1, jobs=1),
+            detail="canceled by scheduler",
+        )
+
+    def cancel(assignment: CampaignAssignment) -> bool:
+        assert assignment.job.job_id == "job-1"
+        terminated.set()
+        return True
+
+    scheduler.register_worker(_worker("local"), CallableCampaignWorker(execute, cancel=cancel))
+    scheduler.enqueue(_job(1))
+    dispatch_thread = threading.Thread(target=scheduler.dispatch_once)
+    dispatch_thread.start()
+    assert started.wait(timeout=2)
+
+    assert scheduler.cancel("job-1") is True
+    dispatch_thread.join(timeout=2)
+
+    assert terminated.is_set()
+    assert not dispatch_thread.is_alive()
+    assert scheduler.job_status("job-1") == "canceled"
+    assert scheduler.job_result("job-1") is None
+    report = scheduler.report()
+    assert report.late_completions == 1
+    assert report.consumed_by_campaign["campaign-1"].wall_seconds == pytest.approx(0.1)
 
 
 def test_concurrent_evidence_events_have_contiguous_replayable_sequences(tmp_path: Path) -> None:

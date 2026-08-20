@@ -49,6 +49,22 @@ export interface ContextBundle {
   digest: string;
 }
 
+export interface BundleManifestChange {
+  component_kind: string;
+  component_key: string;
+  tested_component_digest: string | null;
+  comparison_component_digest: string | null;
+}
+
+export interface ContextBundleManifestDiff {
+  schema_version: 1;
+  tested_bundle_digest: string;
+  comparison_bundle_digest: string;
+  evaluator_epoch: string;
+  changes: readonly BundleManifestChange[];
+  digest: string;
+}
+
 export interface MatchedTrial {
   candidate_digest: string;
   incumbent_digest: string | null;
@@ -85,6 +101,49 @@ export interface ComparisonResult {
   confidence_high: number | null;
 }
 
+export interface CampaignFalsePromotionPolicy {
+  familywise_alpha: number;
+  allocation_decay: number;
+  min_independent_confirmation_blocks: number;
+  require_disjoint_lane_blocks: boolean;
+  robust_method: "cluster_t" | "bounded_hoeffding";
+  effect_lower_bound: number;
+  effect_upper_bound: number;
+}
+
+export interface CampaignFalsePromotionEvidenceResult {
+  authorized: boolean;
+  reason: string;
+  independent_confirmation_blocks: number;
+  independent_heldout_blocks: number;
+}
+
+export type FalsePromotionStatus = "reserved" | "authorized" | "rejected" | "inconclusive" | "blocked";
+
+export interface CandidateRiskReservation {
+  campaign_id: string;
+  candidate_digest: string;
+  incumbent_digest: string;
+  evaluator_epoch: string;
+  candidate_index: number;
+  allocated_alpha: number;
+  required_confidence_z: number;
+  confirmation_policy_digest: string;
+  status: FalsePromotionStatus;
+  reason: string | null;
+  evidence_digest: string | null;
+  independent_confirmation_blocks: number;
+  independent_heldout_blocks: number;
+}
+
+export interface CampaignFalsePromotionState {
+  schema_version: 1;
+  campaign_id: string;
+  policy: CampaignFalsePromotionPolicy;
+  reservations: readonly CandidateRiskReservation[];
+  state_digest: string;
+}
+
 export const DEFAULT_CONFIRMATION_POLICY: Readonly<ConfirmationPolicy> = Object.freeze({
   min_screen_pairs: 2,
   min_confirmation_pairs: 6,
@@ -92,6 +151,16 @@ export const DEFAULT_CONFIRMATION_POLICY: Readonly<ConfirmationPolicy> = Object.
   min_heldout_pairs: 2,
   min_effect: 0,
   confidence_z: 1.96,
+});
+
+export const DEFAULT_CAMPAIGN_FALSE_PROMOTION_POLICY: Readonly<CampaignFalsePromotionPolicy> = Object.freeze({
+  familywise_alpha: 0.05,
+  allocation_decay: 0.5,
+  min_independent_confirmation_blocks: 2,
+  require_disjoint_lane_blocks: true,
+  robust_method: "cluster_t",
+  effect_lower_bound: -1,
+  effect_upper_bound: 1,
 });
 
 const COMPONENT_KIND_SET = new Set<string>([
@@ -184,6 +253,49 @@ export function createContextBundle(input: {
     components,
   };
   return Object.freeze({ ...payload, components: Object.freeze(components), digest: stableDigest(payload) });
+}
+
+export function contextBundleManifestDiff(
+  tested: ContextBundle,
+  comparison: ContextBundle,
+): ContextBundleManifestDiff {
+  if (tested.scenario !== comparison.scenario) {
+    throw new Error("context bundle manifest diff requires the same scenario");
+  }
+  if (tested.evaluator_epoch !== comparison.evaluator_epoch) {
+    throw new Error("context bundle manifest diff requires the same evaluator epoch");
+  }
+  const testedComponents = new Map(tested.components.map((component) => [
+    `${component.kind}\0${component.key}`,
+    component,
+  ]));
+  const comparisonComponents = new Map(comparison.components.map((component) => [
+    `${component.kind}\0${component.key}`,
+    component,
+  ]));
+  const identities = [...new Set([...testedComponents.keys(), ...comparisonComponents.keys()])]
+    .sort(compareUtf16);
+  const changes: BundleManifestChange[] = [];
+  for (const identity of identities) {
+    const testedComponent = testedComponents.get(identity);
+    const comparisonComponent = comparisonComponents.get(identity);
+    if (testedComponent?.digest === comparisonComponent?.digest) continue;
+    const separator = identity.indexOf("\0");
+    changes.push({
+      component_kind: identity.slice(0, separator),
+      component_key: identity.slice(separator + 1),
+      tested_component_digest: testedComponent?.digest ?? null,
+      comparison_component_digest: comparisonComponent?.digest ?? null,
+    });
+  }
+  const payload = {
+    schema_version: 1 as const,
+    tested_bundle_digest: tested.digest,
+    comparison_bundle_digest: comparison.digest,
+    evaluator_epoch: tested.evaluator_epoch,
+    changes,
+  };
+  return Object.freeze({ ...payload, changes: Object.freeze(changes), digest: stableDigest(payload) });
 }
 
 export function validateContextBundle(value: unknown): ContextBundle {
@@ -328,6 +440,257 @@ export function evaluateMatchedTrials(
     return result("rejected", "candidate regressed on the held-out lane", heldoutEffect, low, high);
   }
   return result("confirmed", "matched confirmation and held-out lanes passed", meanEffect, low, high);
+}
+
+export function campaignAlphaForCandidate(
+  candidateIndex: number,
+  policy: CampaignFalsePromotionPolicy = DEFAULT_CAMPAIGN_FALSE_PROMOTION_POLICY,
+): number {
+  validateCampaignFalsePromotionPolicy(policy);
+  if (!Number.isInteger(candidateIndex) || candidateIndex < 0) {
+    throw new Error("candidate_index must be a non-negative integer");
+  }
+  const allocated = policy.familywise_alpha
+    * (1 - policy.allocation_decay)
+    * policy.allocation_decay ** candidateIndex;
+  if (allocated === 0) {
+    throw new Error("campaign alpha allocation underflowed; no further promotion can be authorized");
+  }
+  return allocated;
+}
+
+export function requiredConfidenceZ(allocatedAlpha: number): number {
+  if (!Number.isFinite(allocatedAlpha) || !(allocatedAlpha > 0 && allocatedAlpha < 1)) {
+    throw new Error("allocated_alpha must be finite and between zero and one");
+  }
+  // Invert the same erfc implementation used by confidenceInterval. This
+  // keeps the TypeScript policy internally consistent with Python's
+  // two-sided normal-tail configuration surface.
+  let lower = 0;
+  let upper = 10;
+  for (let iteration = 0; iteration < 100; iteration += 1) {
+    const midpoint = (lower + upper) / 2;
+    if (complementaryErrorFunction(midpoint / Math.SQRT2) > allocatedAlpha) lower = midpoint;
+    else upper = midpoint;
+  }
+  return Number(((lower + upper) / 2).toFixed(12));
+}
+
+export function campaignAdjustedConfirmationPolicy(
+  basePolicy: ConfirmationPolicy,
+  candidateIndex: number,
+  campaignPolicy: CampaignFalsePromotionPolicy = DEFAULT_CAMPAIGN_FALSE_PROMOTION_POLICY,
+): ConfirmationPolicy {
+  validateConfirmationPolicy(basePolicy);
+  const requiredZ = requiredConfidenceZ(campaignAlphaForCandidate(candidateIndex, campaignPolicy));
+  return { ...basePolicy, confidence_z: Math.max(basePolicy.confidence_z, requiredZ) };
+}
+
+export function createCandidateRiskReservation(
+  campaignId: string,
+  candidate: ContextBundle,
+  candidateIndex: number,
+  basePolicy: ConfirmationPolicy,
+  campaignPolicy: CampaignFalsePromotionPolicy = DEFAULT_CAMPAIGN_FALSE_PROMOTION_POLICY,
+): { confirmationPolicy: ConfirmationPolicy; reservation: CandidateRiskReservation } {
+  if (!campaignId.trim()) throw new Error("campaign_id is required");
+  if (candidate.parent_digest === null) {
+    throw new Error("false-promotion control requires a candidate incumbent");
+  }
+  const confirmationPolicy = campaignAdjustedConfirmationPolicy(basePolicy, candidateIndex, campaignPolicy);
+  const allocatedAlpha = campaignAlphaForCandidate(candidateIndex, campaignPolicy);
+  return {
+    confirmationPolicy,
+    reservation: {
+      campaign_id: campaignId,
+      candidate_digest: candidate.digest,
+      incumbent_digest: candidate.parent_digest,
+      evaluator_epoch: candidate.evaluator_epoch,
+      candidate_index: candidateIndex,
+      allocated_alpha: allocatedAlpha,
+      required_confidence_z: requiredConfidenceZ(allocatedAlpha),
+      confirmation_policy_digest: stableDigest(confirmationPolicy),
+      status: "reserved",
+      reason: null,
+      evidence_digest: null,
+      independent_confirmation_blocks: 0,
+      independent_heldout_blocks: 0,
+    },
+  };
+}
+
+export function createCampaignFalsePromotionState(
+  campaignId: string,
+  policy: CampaignFalsePromotionPolicy,
+  reservations: readonly CandidateRiskReservation[],
+): CampaignFalsePromotionState {
+  validateCampaignFalsePromotionPolicy(policy);
+  if (!campaignId.trim()) throw new Error("campaign_id is required");
+  reservations.forEach((reservation, index) => {
+    if (reservation.campaign_id !== campaignId || reservation.candidate_index !== index) {
+      throw new Error("campaign false-promotion candidate indices or identities are invalid");
+    }
+    if (reservation.allocated_alpha !== campaignAlphaForCandidate(index, policy)) {
+      throw new Error("campaign false-promotion alpha allocation mismatch");
+    }
+  });
+  const payload = {
+    schema_version: 1 as const,
+    campaign_id: campaignId,
+    policy: { ...policy },
+    reservations: reservations.map((reservation) => ({ ...reservation })),
+  };
+  return { ...payload, state_digest: stableDigest(payload) };
+}
+
+export function evaluateCampaignFalsePromotionEvidence(
+  trials: readonly MatchedTrial[],
+  confirmationPolicy: ConfirmationPolicy,
+  campaignPolicy: CampaignFalsePromotionPolicy = DEFAULT_CAMPAIGN_FALSE_PROMOTION_POLICY,
+): CampaignFalsePromotionEvidenceResult {
+  validateConfirmationPolicy(confirmationPolicy);
+  validateCampaignFalsePromotionPolicy(campaignPolicy);
+  const lanes = new Map<TrialLane, Map<string, number[]>>([
+    ["screen", new Map()],
+    ["confirmation", new Map()],
+    ["heldout", new Map()],
+  ]);
+  for (const trial of trials) {
+    const blocks = lanes.get(trial.lane)!;
+    const effects = blocks.get(trial.fixture_digest) ?? [];
+    effects.push(delta(trial));
+    blocks.set(trial.fixture_digest, effects);
+  }
+  const screenBlocks = lanes.get("screen")!;
+  const confirmationBlocks = lanes.get("confirmation")!;
+  const heldoutBlocks = lanes.get("heldout")!;
+  if (campaignPolicy.require_disjoint_lane_blocks && (
+    mapsOverlap(screenBlocks, confirmationBlocks)
+    || mapsOverlap(screenBlocks, heldoutBlocks)
+    || mapsOverlap(confirmationBlocks, heldoutBlocks)
+  )) {
+    return falsePromotionEvidenceResult(false, "dependence blocks overlap across evaluation lanes", 0, 0);
+  }
+
+  const confirmationEffects = blockMeans(confirmationBlocks);
+  const heldoutEffects = blockMeans(heldoutBlocks);
+  const requiredConfirmationBlocks = Math.max(
+    confirmationPolicy.min_confirmation_pairs,
+    campaignPolicy.min_independent_confirmation_blocks,
+  );
+  if (confirmationEffects.length < requiredConfirmationBlocks) {
+    return falsePromotionEvidenceResult(
+      false,
+      "insufficient independent confirmation blocks after non-IID clustering",
+      confirmationEffects.length,
+      heldoutEffects.length,
+    );
+  }
+  if (heldoutEffects.length < confirmationPolicy.min_heldout_pairs) {
+    return falsePromotionEvidenceResult(
+      false,
+      "insufficient independent held-out blocks after non-IID clustering",
+      confirmationEffects.length,
+      heldoutEffects.length,
+    );
+  }
+  const maxLooks = confirmationPolicy.max_confirmation_pairs - confirmationPolicy.min_confirmation_pairs + 1;
+  let confidenceLow: number;
+  if (campaignPolicy.robust_method === "bounded_hoeffding") {
+    const allEffects = trials.map(delta);
+    if (allEffects.some((effect) => (
+      effect < campaignPolicy.effect_lower_bound || effect > campaignPolicy.effect_upper_bound
+    ))) {
+      return falsePromotionEvidenceResult(
+        false,
+        "paired effect falls outside the predeclared robust bounds",
+        confirmationEffects.length,
+        heldoutEffects.length,
+      );
+    }
+    const familyAlpha = complementaryErrorFunction(confirmationPolicy.confidence_z / Math.SQRT2);
+    const lookAlpha = familyAlpha / maxLooks;
+    const width = campaignPolicy.effect_upper_bound - campaignPolicy.effect_lower_bound;
+    confidenceLow = mean(confirmationEffects)
+      - width * Math.sqrt(Math.log(1 / lookAlpha) / (2 * confirmationEffects.length));
+  } else {
+    [, confidenceLow] = confidenceInterval(
+      confirmationEffects,
+      confirmationPolicy.confidence_z,
+      maxLooks,
+    );
+  }
+  if (confidenceLow <= confirmationPolicy.min_effect) {
+    return falsePromotionEvidenceResult(
+      false,
+      "campaign-adjusted block confidence interval does not clear the minimum effect",
+      confirmationEffects.length,
+      heldoutEffects.length,
+    );
+  }
+  if (mean(heldoutEffects) <= confirmationPolicy.min_effect) {
+    return falsePromotionEvidenceResult(
+      false,
+      "independent held-out blocks do not clear the minimum effect",
+      confirmationEffects.length,
+      heldoutEffects.length,
+    );
+  }
+  return falsePromotionEvidenceResult(
+    true,
+    "campaign alpha reservation and dependence-aware evidence authorized promotion",
+    confirmationEffects.length,
+    heldoutEffects.length,
+  );
+}
+
+function validateCampaignFalsePromotionPolicy(policy: CampaignFalsePromotionPolicy): void {
+  if (!Number.isFinite(policy.familywise_alpha) || !(policy.familywise_alpha > 0 && policy.familywise_alpha < 1)) {
+    throw new Error("familywise_alpha must be finite and between zero and one");
+  }
+  if (!Number.isFinite(policy.allocation_decay) || !(policy.allocation_decay > 0 && policy.allocation_decay < 1)) {
+    throw new Error("allocation_decay must be finite and between zero and one");
+  }
+  if (!Number.isInteger(policy.min_independent_confirmation_blocks)
+    || policy.min_independent_confirmation_blocks < 2) {
+    throw new Error("min_independent_confirmation_blocks must be an integer of at least two");
+  }
+  if (typeof policy.require_disjoint_lane_blocks !== "boolean") {
+    throw new Error("require_disjoint_lane_blocks must be a boolean");
+  }
+  if (policy.robust_method !== "cluster_t" && policy.robust_method !== "bounded_hoeffding") {
+    throw new Error("robust_method must be cluster_t or bounded_hoeffding");
+  }
+  if (!Number.isFinite(policy.effect_lower_bound)
+    || !Number.isFinite(policy.effect_upper_bound)
+    || policy.effect_lower_bound >= policy.effect_upper_bound) {
+    throw new Error("effect bounds must be finite and increasing");
+  }
+}
+
+function falsePromotionEvidenceResult(
+  authorized: boolean,
+  reason: string,
+  independentConfirmationBlocks: number,
+  independentHeldoutBlocks: number,
+): CampaignFalsePromotionEvidenceResult {
+  return {
+    authorized,
+    reason,
+    independent_confirmation_blocks: independentConfirmationBlocks,
+    independent_heldout_blocks: independentHeldoutBlocks,
+  };
+}
+
+function mapsOverlap(left: ReadonlyMap<string, unknown>, right: ReadonlyMap<string, unknown>): boolean {
+  for (const key of left.keys()) if (right.has(key)) return true;
+  return false;
+}
+
+function blockMeans(blocks: ReadonlyMap<string, readonly number[]>): number[] {
+  return [...blocks.keys()]
+    .sort(compareUtf16)
+    .map((key) => mean(blocks.get(key)!));
 }
 
 function validateTrials(candidate: ContextBundle, trials: readonly MatchedTrial[]): void {

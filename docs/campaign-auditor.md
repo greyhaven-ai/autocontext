@@ -50,10 +50,23 @@ budget claim rather than silently reopening the slot.
 Invalid responses, provider failures, and response-wait timeouts create
 separate attempt artifacts while deterministic monitoring continues unchanged.
 
-The current thread-level timeout bounds how long the control plane waits; it
-does not cancel a provider request that has already started. Production clients
-must enforce their own transport deadline/cancellation. Until that lifecycle is
-wired, operators should not automatically retry a timed-out paid request.
+Enabled production auditors require a client `start_generate()` boundary that
+returns an `AuditorCallHandle`. On deadline or campaign cancellation, the
+auditor calls `cancel()` and records `timed_out`/`canceled` only when the handle
+confirms termination; refusal is a failed audit. This avoids leaked non-daemon
+wait threads. Synchronous legacy clients are accepted only with the explicit
+`allow_uncancellable_transport` escape hatch, intended for trusted migration
+and tests rather than production.
+
+`CampaignAuditCheckpointRunner` invokes one typed packet factory for
+`pre_promotion`, `inconclusive_gate`, `integrity_alert`, and
+`final_completion`. The live context-bundle coordinator invokes the first two
+and reports evaluator exceptions through `integrity_alert`; a high/critical
+pre-promotion policy outcome holds the active incumbent without changing
+deterministic scores. The live campaign scheduler emits integrity alerts for
+infrastructure failures and a final completion packet when its service or
+bounded run ends. Evidence and configuration fingerprints make duplicate or
+restart-replayed checkpoints idempotent.
 
 ## Findings and disposition
 
@@ -64,6 +77,8 @@ and configuration fingerprint. `make_operator_disposition` and
 `add_disposition` append an operator response (`accepted`, `dismissed`,
 `mitigated`, or `deferred`) without rewriting the audit; disposition updates
 use the same cross-process lock so concurrent operators do not lose a response.
+Scheduler reports include the durable audit records and their operator
+dispositions by campaign.
 The legacy two-argument `read_by_fingerprint(campaign_id, evidence_fingerprint)`
 remains deterministic when retry or configuration history exists: it returns
 the latest completed review, or the latest valid attempt when none completed.

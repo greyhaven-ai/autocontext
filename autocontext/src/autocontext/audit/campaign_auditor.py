@@ -2,17 +2,23 @@
 
 from __future__ import annotations
 
-import concurrent.futures
 import json
-import time
+import threading
 from collections import defaultdict
 from datetime import datetime
-from typing import Any, Literal, Protocol
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
 from autocontext.analytics.campaign_mode_report import CampaignModeReport
 from autocontext.audit.campaign_audit_store import CampaignAuditStore
+from autocontext.audit.campaign_audit_transport import (
+    AuditorCallHandle,
+    AuditorModelClient,
+    AuditorModelResponse,
+    CancellableAuditorModelClient,
+    execute_auditor_call,
+)
 from autocontext.context_bundles.models import canonical_json, stable_digest
 from autocontext.sharing.redactor import redact_content
 from autocontext.util.models import StrictModel
@@ -48,6 +54,7 @@ class CampaignAuditConfig(StrictModel):
     max_input_chars: int = Field(default=24_000, ge=1_000)
     max_output_tokens: int = Field(default=1_200, ge=64)
     timeout_seconds: float = Field(default=30.0, gt=0)
+    allow_uncancellable_transport: bool = False
     prompt_version: str = "campaign-auditor-v1"
     policy: Literal["advisory", "review_required_on_high", "pause_recommended_on_critical"] = "advisory"
     input_cost_per_million: float = Field(default=0.0, ge=0.0)
@@ -147,7 +154,7 @@ class CampaignAudit(StrictModel):
     campaign_id: str
     checkpoint: AuditCheckpoint
     reviewed_at: str
-    status: Literal["completed", "timed_out", "failed", "budget_exhausted"]
+    status: Literal["completed", "timed_out", "canceled", "failed", "budget_exhausted"]
     evidence_fingerprint: str
     configuration_fingerprint: str = ""
     findings: list[CampaignAuditFinding]
@@ -198,23 +205,6 @@ class CampaignAuditRecord(StrictModel):
     dispositions: list[CampaignAuditDisposition]
 
 
-class AuditorModelResponse(Protocol):
-    text: str
-    usage: Any
-
-
-class AuditorModelClient(Protocol):
-    def generate(
-        self,
-        *,
-        model: str,
-        prompt: str,
-        max_tokens: int,
-        temperature: float,
-        role: str = "",
-    ) -> AuditorModelResponse: ...
-
-
 class CampaignAuditor:
     def __init__(
         self,
@@ -227,21 +217,47 @@ class CampaignAuditor:
         self.client = client
         self.store = store
         self._validate_route()
+        if (
+            self.config.enabled
+            and not self.config.allow_uncancellable_transport
+            and not callable(getattr(self.client, "start_generate", None))
+        ):
+            raise ValueError(
+                "enabled campaign auditor requires a cancellable transport; "
+                "set allow_uncancellable_transport only for trusted legacy clients"
+            )
 
-    def review(self, packet: CampaignAuditEvidencePacket) -> CampaignAudit | None:
+    def review(
+        self,
+        packet: CampaignAuditEvidencePacket,
+        *,
+        cancellation_event: threading.Event | None = None,
+    ) -> CampaignAudit | None:
         """Run one cached advisory review; disabled/failure paths never touch deterministic gates."""
 
         if not self.config.enabled or packet.checkpoint not in self.config.checkpoints:
             return None
         _validate_evidence_boundary(packet)
+        if cancellation_event is not None and cancellation_event.is_set():
+            return self._failure_audit(
+                packet,
+                "canceled",
+                "campaign audit canceled before model dispatch",
+                model_call_attempted=False,
+            )
         # Cache lookup, call-budget claim, provider request, and durable write
         # form one campaign transaction. This intentionally serializes the
         # bounded advisory route so concurrent callers cannot duplicate a
         # billable request or bypass max_calls_per_campaign.
         with self.store.campaign_lock(packet.campaign_id):
-            return self._review_locked(packet)
+            return self._review_locked(packet, cancellation_event=cancellation_event)
 
-    def _review_locked(self, packet: CampaignAuditEvidencePacket) -> CampaignAudit:
+    def _review_locked(
+        self,
+        packet: CampaignAuditEvidencePacket,
+        *,
+        cancellation_event: threading.Event | None,
+    ) -> CampaignAudit:
         configuration_fingerprint = stable_digest(self.config.to_dict())
         cached = self.store.read_by_fingerprint(
             packet.campaign_id,
@@ -250,6 +266,13 @@ class CampaignAuditor:
         )
         if cached is not None:
             return cached.audit
+        if cancellation_event is not None and cancellation_event.is_set():
+            return self._failure_audit(
+                packet,
+                "canceled",
+                "campaign audit canceled before model dispatch",
+                model_call_attempted=False,
+            )
         if self.store.call_count(packet.campaign_id) >= self.config.max_calls_per_campaign:
             # This is a deterministic pre-call decision, not another audit
             # attempt. Do not persist one record per denied packet: doing so
@@ -277,61 +300,39 @@ class CampaignAuditor:
             evidence_fingerprint=packet.fingerprint,
             configuration_fingerprint=configuration_fingerprint,
         )
-        started = time.perf_counter()
-        pool: concurrent.futures.ThreadPoolExecutor | None = None
-        future: concurrent.futures.Future[Any] | None = None
-        try:
+        outcome = execute_auditor_call(
+            self.client,
+            model=self.config.model,
+            prompt=prompt,
+            max_tokens=self.config.max_output_tokens,
+            timeout_seconds=self.config.timeout_seconds,
+            cancellation_event=cancellation_event,
+        )
+        if outcome.response is not None:
             try:
-                pool = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="campaign-auditor")
-                future = pool.submit(
-                    self.client.generate,
-                    model=self.config.model,
-                    prompt=prompt,
-                    max_tokens=self.config.max_output_tokens,
-                    temperature=0.0,
-                    role="auditor",
-                )
-                response = future.result(timeout=self.config.timeout_seconds)
-            except concurrent.futures.TimeoutError:
-                if future is not None:
-                    future.cancel()
-                audit = self._failure_audit(
+                audit = self._completed_audit(
                     packet,
-                    "timed_out",
-                    "auditor model call timed out",
+                    outcome.response,
+                    outcome.latency_ms,
                     model_call_attempt_id=attempt_id,
                 )
             except Exception as exc:
-                model_call_attempted = future is not None
-                model_call_attempt_id = attempt_id if model_call_attempted else None
-                if not model_call_attempted:
-                    self.store._release_call_unlocked(packet.campaign_id, attempt_id)
                 audit = self._failure_audit(
                     packet,
                     "failed",
-                    f"auditor model call failed: {type(exc).__name__}",
-                    model_call_attempted=model_call_attempted,
-                    model_call_attempt_id=model_call_attempt_id,
+                    f"invalid auditor response: {type(exc).__name__}",
+                    model_call_attempt_id=attempt_id,
                 )
-            else:
-                latency_ms = int((time.perf_counter() - started) * 1000)
-                try:
-                    audit = self._completed_audit(
-                        packet,
-                        response,
-                        latency_ms,
-                        model_call_attempt_id=attempt_id,
-                    )
-                except Exception as exc:
-                    audit = self._failure_audit(
-                        packet,
-                        "failed",
-                        f"invalid auditor response: {type(exc).__name__}",
-                        model_call_attempt_id=attempt_id,
-                    )
-        finally:
-            if pool is not None:
-                pool.shutdown(wait=False, cancel_futures=True)
+        else:
+            if not outcome.model_call_attempted:
+                self.store._release_call_unlocked(packet.campaign_id, attempt_id)
+            audit = self._failure_audit(
+                packet,
+                outcome.failure_status or "failed",
+                outcome.failure_reason or "auditor model call failed",
+                model_call_attempted=outcome.model_call_attempted,
+                model_call_attempt_id=attempt_id if outcome.model_call_attempted else None,
+            )
         self.store._write_unlocked(CampaignAuditRecord(audit=audit, dispositions=[]))
         return audit
 
@@ -396,7 +397,7 @@ class CampaignAuditor:
     def _failure_audit(
         self,
         packet: CampaignAuditEvidencePacket,
-        status: Literal["timed_out", "failed", "budget_exhausted"],
+        status: Literal["timed_out", "canceled", "failed", "budget_exhausted"],
         reason: str,
         *,
         model_call_attempted: bool = True,
@@ -783,6 +784,8 @@ __all__ = [
     "AuditPolicyOutcome",
     "AuditProtocolLane",
     "AuditSeverity",
+    "AuditorCallHandle",
+    "CancellableAuditorModelClient",
     "CampaignAudit",
     "CampaignAuditConfig",
     "CampaignAuditDisposition",

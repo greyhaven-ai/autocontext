@@ -23,6 +23,7 @@ from autocontext.execution.remote_execution import (
     parse_remote_stdout,
     requests_are_reuse_compatible,
 )
+from autocontext.execution.scenario_remote_package import DEFAULT_REMOTE_RUNTIME_IMAGE
 from autocontext.execution.scenario_remote_task import build_builtin_scenario_remote_request
 from autocontext.offline import require_online
 from autocontext.scenarios.base import ExecutionLimits
@@ -70,7 +71,7 @@ class PrimeIntellectClient:
     """
 
     api_key: str
-    docker_image: str = "python:3.11-slim"
+    docker_image: str = DEFAULT_REMOTE_RUNTIME_IMAGE
     cpu_cores: float = 1.0
     memory_gb: float = 2.0
     disk_size_gb: float = 5.0

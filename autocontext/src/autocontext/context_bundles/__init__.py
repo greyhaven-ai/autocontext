@@ -15,6 +15,19 @@ from autocontext.context_bundles.assembly import (
     validate_bundle_promotion_contract,
 )
 from autocontext.context_bundles.comparison import evaluate_matched_trials
+from autocontext.context_bundles.diff import (
+    BundleManifestChange,
+    ContextBundleManifestDiff,
+    context_bundle_manifest_diff,
+)
+from autocontext.context_bundles.false_promotion import (
+    CampaignFalsePromotionController,
+    CampaignFalsePromotionPolicy,
+    CampaignFalsePromotionResult,
+    CandidateRiskReservation,
+    FalsePromotionMethod,
+    FalsePromotionStatus,
+)
 from autocontext.context_bundles.models import (
     BundleComponent,
     BundleLifecycle,
@@ -29,18 +42,44 @@ from autocontext.context_bundles.models import (
     canonical_json,
     stable_digest,
 )
+from autocontext.context_bundles.promotion import (
+    ContextBundleEvaluationOutcome,
+    ContextBundleEvaluationUnit,
+    ContextBundleEvaluator,
+    ContextBundleLifecycleAudit,
+    ContextBundlePromotionAudit,
+    ContextBundlePromotionCoordinator,
+    ContextBundlePromotionResult,
+    PromotionAuditOutcome,
+)
 from autocontext.context_bundles.store import CandidateRecord, ContextBundleStore
 
 __all__ = [
     "BundleComponent",
     "BundleLifecycle",
+    "BundleManifestChange",
     "CandidateRecord",
+    "CandidateRiskReservation",
     "ComparisonDecision",
     "ComparisonResult",
     "ComponentKind",
     "ConfirmationPolicy",
+    "CampaignFalsePromotionController",
+    "CampaignFalsePromotionPolicy",
+    "CampaignFalsePromotionResult",
     "ContextBundle",
+    "ContextBundleManifestDiff",
     "ContextBundleStore",
+    "FalsePromotionStatus",
+    "FalsePromotionMethod",
+    "ContextBundleEvaluationOutcome",
+    "ContextBundleEvaluationUnit",
+    "ContextBundleEvaluator",
+    "ContextBundleLifecycleAudit",
+    "ContextBundlePromotionCoordinator",
+    "ContextBundlePromotionAudit",
+    "ContextBundlePromotionResult",
+    "PromotionAuditOutcome",
     "MatchedTrial",
     "PromotionArtifact",
     "TrialLane",
@@ -48,6 +87,7 @@ __all__ = [
     "DEFERRED_ROUTING_FIELDS",
     "LIVE_CONTEXT_ROUTING_FIELDS",
     "canonical_json",
+    "context_bundle_manifest_diff",
     "build_candidate_bundle",
     "build_legacy_baseline",
     "bundle_mutations",

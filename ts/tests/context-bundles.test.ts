@@ -7,10 +7,19 @@ import {
   createContextBundle,
   createJsonBundleComponent,
   canonicalJson,
+  campaignAdjustedConfirmationPolicy,
+  campaignAlphaForCandidate,
+  createCampaignFalsePromotionState,
+  createCandidateRiskReservation,
   evaluateMatchedTrials,
+  evaluateCampaignFalsePromotionEvidence,
   matchedTrialPairKey,
   stableDigest,
   type ComponentKind,
+  type CandidateRiskReservation,
+  type CampaignFalsePromotionPolicy,
+  type ConfirmationPolicy,
+  type FalsePromotionStatus,
   type MatchedTrial,
   validateContextBundle,
 } from "../src/context-bundles/index.js";
@@ -53,6 +62,37 @@ interface CanonicalParityFixture {
 const canonicalFixture = JSON.parse(
   readFileSync(join(import.meta.dirname, "../../fixtures/context-bundles/canonical-parity.json"), "utf8"),
 ) as CanonicalParityFixture;
+
+const falsePromotionFixture = JSON.parse(
+  readFileSync(join(import.meta.dirname, "../../fixtures/context-bundles/false-promotion-parity.json"), "utf8"),
+) as {
+  campaign_policy: CampaignFalsePromotionPolicy;
+  base_confirmation_policy: ConfirmationPolicy;
+  candidate_allocations: Array<{
+    candidate_index: number;
+    alpha: number;
+    required_confidence_z: number;
+  }>;
+  persisted_state_case: {
+    campaign_id: string;
+    candidate_fixture: string;
+    expected_confirmation_policy_digest: string;
+    expected_state_digest: string;
+  };
+  reservation_status_cases: Array<{
+    status: FalsePromotionStatus;
+    reason: string | null;
+    evidence_digest: string | null;
+    independent_confirmation_blocks: number;
+    independent_heldout_blocks: number;
+    expected_state_digest: string;
+  }>;
+  evidence_cases: Array<{
+    name: string;
+    observations: Array<{ lane: MatchedTrial["lane"]; block: string; seed: number; delta: number }>;
+    expected: ReturnType<typeof evaluateCampaignFalsePromotionEvidence>;
+  }>;
+};
 
 describe("context bundle parity", () => {
   it("reproduces Python component and manifest digests", () => {
@@ -239,6 +279,86 @@ describe("context bundle parity", () => {
       min_effect: 0,
       confidence_z: 1.96,
     })).toThrow(/confirmation pairs exceed/);
+  });
+
+  it("matches campaign-wide adaptive and non-IID false-promotion fixtures", () => {
+    const campaignPolicy = falsePromotionFixture.campaign_policy;
+    const basePolicy = falsePromotionFixture.base_confirmation_policy;
+    for (const allocation of falsePromotionFixture.candidate_allocations) {
+      expect(campaignAlphaForCandidate(allocation.candidate_index, campaignPolicy)).toBeCloseTo(
+        allocation.alpha,
+        15,
+      );
+      const adjusted = campaignAdjustedConfirmationPolicy(
+        basePolicy,
+        allocation.candidate_index,
+        campaignPolicy,
+      );
+      expect(adjusted.confidence_z).toBeCloseTo(allocation.required_confidence_z, 10);
+    }
+
+    for (const fixtureCase of falsePromotionFixture.evidence_cases) {
+      const trials: MatchedTrial[] = fixtureCase.observations.map((observation) => ({
+        candidate_digest: "candidate",
+        incumbent_digest: "incumbent",
+        evaluator_epoch: "epoch-1",
+        cohort: "parity-cohort",
+        fixture: `fixture-${observation.seed}`,
+        fixture_digest: observation.block,
+        seed: observation.seed,
+        lane: observation.lane,
+        candidate_score: 0.5 + observation.delta,
+        incumbent_score: 0.5,
+        candidate_valid: true,
+        incumbent_valid: true,
+      }));
+      const adjusted = campaignAdjustedConfirmationPolicy(basePolicy, 0, campaignPolicy);
+      expect(
+        evaluateCampaignFalsePromotionEvidence(trials, adjusted, campaignPolicy),
+        fixtureCase.name,
+      ).toEqual(fixtureCase.expected);
+    }
+
+    const stateCase = falsePromotionFixture.persisted_state_case;
+    const candidateFixture = JSON.parse(
+      readFileSync(join(import.meta.dirname, "../../fixtures/context-bundles", stateCase.candidate_fixture), "utf8"),
+    ) as { tested: unknown };
+    const candidate = validateContextBundle(candidateFixture.tested);
+    const created = createCandidateRiskReservation(
+      stateCase.campaign_id,
+      candidate,
+      0,
+      basePolicy,
+      campaignPolicy,
+    );
+    expect(created.reservation.confirmation_policy_digest).toBe(
+      stateCase.expected_confirmation_policy_digest,
+    );
+    expect(
+      createCampaignFalsePromotionState(
+        stateCase.campaign_id,
+        campaignPolicy,
+        [created.reservation],
+      ).state_digest,
+    ).toBe(stateCase.expected_state_digest);
+    for (const statusCase of falsePromotionFixture.reservation_status_cases) {
+      const reservation: CandidateRiskReservation = {
+        ...created.reservation,
+        status: statusCase.status,
+        reason: statusCase.reason,
+        evidence_digest: statusCase.evidence_digest,
+        independent_confirmation_blocks: statusCase.independent_confirmation_blocks,
+        independent_heldout_blocks: statusCase.independent_heldout_blocks,
+      };
+      expect(
+        createCampaignFalsePromotionState(
+          stateCase.campaign_id,
+          campaignPolicy,
+          [reservation],
+        ).state_digest,
+        statusCase.status,
+      ).toBe(statusCase.expected_state_digest);
+    }
   });
 
   it("rejects lane relabeling, invalid policy bounds, and non-finite scores", () => {

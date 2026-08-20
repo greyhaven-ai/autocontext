@@ -15,6 +15,7 @@ from typing import Any
 
 from autocontext.context_bundles.assembly import validate_bundle_promotion_contract
 from autocontext.context_bundles.comparison import evaluate_matched_trials
+from autocontext.context_bundles.diff import ContextBundleManifestDiff, context_bundle_manifest_diff
 from autocontext.context_bundles.models import (
     BundleLifecycle,
     ComparisonDecision,
@@ -98,14 +99,10 @@ class CandidateRecord:
             rationale=str(data.get("rationale", "")),
             comparison=(dict(data["comparison"]) if isinstance(data.get("comparison"), dict) else None),
             confirmation_policy=(
-                dict(data["confirmation_policy"])
-                if isinstance(data.get("confirmation_policy"), dict)
-                else None
+                dict(data["confirmation_policy"]) if isinstance(data.get("confirmation_policy"), dict) else None
             ),
             confirmation_policy_digest=(
-                str(data["confirmation_policy_digest"])
-                if data.get("confirmation_policy_digest") is not None
-                else None
+                str(data["confirmation_policy_digest"]) if data.get("confirmation_policy_digest") is not None else None
             ),
         )
 
@@ -145,6 +142,15 @@ class ContextBundleStore:
 
     def _trials_path(self, scenario: str, digest: str) -> Path:
         return self._candidate_dir(scenario, digest) / "matched_trials.json"
+
+    def _manifest_diff_path(self, scenario: str, digest: str) -> Path:
+        return self._candidate_dir(scenario, digest) / "manifest_diff.json"
+
+    def _causal_attribution_path(self, scenario: str, digest: str) -> Path:
+        return self._candidate_dir(scenario, digest) / "causal_attribution.json"
+
+    def _negative_result_path(self, scenario: str, digest: str) -> Path:
+        return self._candidate_dir(scenario, digest) / "negative_result.json"
 
     def _active_path(self, scenario: str) -> Path:
         return self._root(scenario) / "active.json"
@@ -271,8 +277,10 @@ class ContextBundleStore:
             if existing_path.exists():
                 existing = CandidateRecord.from_dict(read_json(existing_path))
                 self.save_bundle(bundle)
+                self._persist_manifest_diff(bundle)
                 return existing
             self.save_bundle(bundle)
+            self._persist_manifest_diff(bundle)
             now = _now()
             record = CandidateRecord(
                 bundle_digest=bundle.digest,
@@ -293,6 +301,40 @@ class ContextBundleStore:
 
     def matched_trials(self, scenario: str, digest: str) -> list[MatchedTrial]:
         return self._matched_evidence(scenario, digest).trials
+
+    def record_manifest_verified_attribution(
+        self,
+        scenario: str,
+        digest: str,
+        artifact: dict[str, Any],
+    ) -> Path:
+        """Persist one immutable attribution artifact before serving cutover."""
+
+        path = self._causal_attribution_path(scenario, digest)
+        with self._lock(scenario):
+            if path.exists():
+                if read_json(path) != artifact:
+                    raise ValueError("candidate causal attribution artifact is immutable")
+                return path
+            write_json(path, artifact)
+            return path
+
+    def record_negative_result(
+        self,
+        scenario: str,
+        digest: str,
+        artifact: dict[str, Any],
+    ) -> Path:
+        """Persist one immutable, context-bound negative-result ledger."""
+
+        path = self._negative_result_path(scenario, digest)
+        with self._lock(scenario):
+            if path.exists():
+                if read_json(path) != artifact:
+                    raise ValueError("candidate negative-result artifact is immutable")
+                return path
+            write_json(path, artifact)
+            return path
 
     def _matched_evidence(self, scenario: str, digest: str) -> _MatchedEvidence:
         path = self._trials_path(scenario, digest)
@@ -385,9 +427,7 @@ class ContextBundleStore:
             policy_payload = effective_policy.to_dict()
             policy_digest = stable_digest(policy_payload)
             bound_policy, bound_policy_digest = _bound_confirmation_policy(record, evidence)
-            if bound_policy is not None and (
-                bound_policy != policy_payload or bound_policy_digest != policy_digest
-            ):
+            if bound_policy is not None and (bound_policy != policy_payload or bound_policy_digest != policy_digest):
                 raise ValueError("confirmation policy cannot change while collecting matched evidence")
             by_key = dict(existing_by_key)
             for trial in trials:
@@ -460,6 +500,7 @@ class ContextBundleStore:
                 raise ValueError("active bundle changed after confirmation; candidate must be re-evaluated")
             incumbent_bundle = self.load_bundle(scenario, incumbent_digest) if incumbent_digest is not None else None
             validate_bundle_promotion_contract(bundle, incumbent=incumbent_bundle)
+            manifest_diff = self._verified_manifest_diff(bundle, incumbent_bundle)
             evidence = self._matched_evidence(scenario, digest)
             trials = evidence.trials
             if {trial.cohort for trial in trials} != {cohort}:
@@ -497,6 +538,7 @@ class ContextBundleStore:
                 comparison=comparison,
                 confirmation_policy=policy,
                 confirmation_policy_digest=record.confirmation_policy_digest or "",
+                manifest_diff_digest=manifest_diff.digest,
                 promoted_at=now,
             )
             promotion_path = self._root(scenario) / "promotions" / f"{artifact.promotion_id}.json"
@@ -512,6 +554,7 @@ class ContextBundleStore:
                     "evaluator_epoch": bundle.evaluator_epoch,
                     "promotion_id": artifact.promotion_id,
                     "rollback_target_digest": incumbent_digest,
+                    "manifest_diff_digest": manifest_diff.digest,
                     "activated_at": now,
                     "rationale": rationale,
                 },
@@ -522,6 +565,36 @@ class ContextBundleStore:
                 incumbent = self.candidate(scenario, incumbent_digest)
                 self._set_lifecycle(scenario, incumbent, BundleLifecycle.SUPERSEDED, f"superseded by {digest}")
             return artifact
+
+    def _persist_manifest_diff(self, bundle: ContextBundle) -> ContextBundleManifestDiff:
+        if bundle.parent_digest is None:
+            raise ValueError("candidate context bundle must have a parent manifest")
+        incumbent = self.load_bundle(bundle.scenario, bundle.parent_digest)
+        expected = context_bundle_manifest_diff(bundle, incumbent)
+        path = self._manifest_diff_path(bundle.scenario, bundle.digest)
+        if path.exists():
+            existing = ContextBundleManifestDiff.from_dict(read_json(path))
+            if existing != expected:
+                raise ValueError("immutable context bundle manifest diff does not match candidate manifests")
+            return existing
+        write_json(path, expected.to_dict())
+        return expected
+
+    def _verified_manifest_diff(
+        self,
+        bundle: ContextBundle,
+        incumbent: ContextBundle | None,
+    ) -> ContextBundleManifestDiff:
+        if incumbent is None:
+            raise ValueError("context bundle promotion requires an incumbent manifest")
+        path = self._manifest_diff_path(bundle.scenario, bundle.digest)
+        if not path.exists():
+            raise ValueError("context bundle promotion is missing its persisted manifest diff")
+        persisted = ContextBundleManifestDiff.from_dict(read_json(path))
+        expected = context_bundle_manifest_diff(bundle, incumbent)
+        if persisted != expected:
+            raise ValueError("persisted context bundle manifest diff does not match promotion manifests")
+        return persisted
 
     def rollback(self, scenario: str, *, rationale: str) -> ContextBundle:
         """Atomically restore the active pointer's explicit rollback target."""
@@ -651,8 +724,10 @@ def _bound_confirmation_policy(
         ConfirmationPolicy.from_dict(record_payload)
     evidence_payload = evidence.confirmation_policy
     evidence_digest = evidence.confirmation_policy_digest
-    if record_payload is not None and evidence_payload is not None and (
-        record_payload != evidence_payload or record_digest != evidence_digest
+    if (
+        record_payload is not None
+        and evidence_payload is not None
+        and (record_payload != evidence_payload or record_digest != evidence_digest)
     ):
         raise ValueError("matched evidence and candidate record bind different confirmation policies")
     if evidence_payload is not None:

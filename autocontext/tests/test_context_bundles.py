@@ -13,10 +13,16 @@ import pytest
 from autocontext.context_bundles import (
     BundleComponent,
     BundleLifecycle,
+    CampaignFalsePromotionController,
+    CampaignFalsePromotionPolicy,
     ComparisonDecision,
+    ComparisonResult,
     ComponentKind,
     ConfirmationPolicy,
     ContextBundle,
+    ContextBundleEvaluationOutcome,
+    ContextBundleEvaluationUnit,
+    ContextBundlePromotionCoordinator,
     ContextBundleStore,
     MatchedTrial,
     TrialLane,
@@ -660,3 +666,514 @@ def test_promotion_refuses_stale_parent_after_another_candidate_wins(tmp_path: P
 
     with pytest.raises(ValueError, match="active bundle changed"):
         store.promote("demo", second.digest, cohort="cohort-a", rationale="stale winner")
+
+
+def test_live_promotion_coordinator_runs_adaptive_pairs_and_serves_winner(tmp_path: Path) -> None:
+    store = ContextBundleStore(tmp_path)
+    baseline = store.bootstrap(_bundle(playbook="baseline"))
+    candidate = _bundle(playbook="candidate", parent=baseline.digest)
+    store.propose(candidate, source_run_id="run-live", source_generation=1)
+    calls: list[tuple[str, TrialLane, int]] = []
+
+    class Evaluator:
+        def evaluate(
+            self,
+            bundle: ContextBundle,
+            unit: ContextBundleEvaluationUnit,
+        ) -> ContextBundleEvaluationOutcome:
+            calls.append((bundle.digest, unit.lane, unit.seed))
+            return ContextBundleEvaluationOutcome(score=0.8 if bundle.digest == candidate.digest else 0.5)
+
+    units = tuple(
+        ContextBundleEvaluationUnit(
+            fixture=f"{lane.value}-{index}",
+            fixture_digest=f"digest-{lane.value}-{index}",
+            seed=index + (100 * list(TrialLane).index(lane)),
+            lane=lane,
+        )
+        for lane, count in ((TrialLane.SCREEN, 1), (TrialLane.CONFIRMATION, 2), (TrialLane.HELDOUT, 1))
+        for index in range(count)
+    )
+    coordinator = ContextBundlePromotionCoordinator(
+        store,
+        Evaluator(),
+        units,
+        cohort="live-cohort",
+        policy=ConfirmationPolicy(
+            min_screen_pairs=1,
+            min_confirmation_pairs=2,
+            max_confirmation_pairs=2,
+            min_heldout_pairs=1,
+        ),
+    )
+
+    result = coordinator.evaluate_candidate("demo", candidate.digest)
+
+    assert result.promotion is not None
+    assert result.comparison.decision == ComparisonDecision.CONFIRMED
+    assert result.evaluated_pairs == 4
+    assert store.active_bundle("demo") == candidate
+    assert len(calls) == 8
+    assert calls[:2] == [
+        (candidate.digest, TrialLane.SCREEN, 0),
+        (baseline.digest, TrialLane.SCREEN, 0),
+    ]
+
+
+def test_live_promotion_coordinator_stops_after_failed_screen(tmp_path: Path) -> None:
+    store = ContextBundleStore(tmp_path)
+    baseline = store.bootstrap(_bundle(playbook="baseline"))
+    candidate = _bundle(playbook="candidate", parent=baseline.digest)
+    store.propose(candidate, source_run_id="run-live", source_generation=1)
+
+    class Evaluator:
+        def evaluate(
+            self,
+            bundle: ContextBundle,
+            unit: ContextBundleEvaluationUnit,
+        ) -> ContextBundleEvaluationOutcome:
+            del unit
+            return ContextBundleEvaluationOutcome(score=0.4 if bundle.digest == candidate.digest else 0.5)
+
+    units = (
+        ContextBundleEvaluationUnit("screen", "screen-digest", 1, TrialLane.SCREEN),
+        ContextBundleEvaluationUnit("confirmation", "confirmation-digest", 2, TrialLane.CONFIRMATION),
+    )
+    coordinator = ContextBundlePromotionCoordinator(
+        store,
+        Evaluator(),
+        units,
+        cohort="live-cohort",
+        policy=ConfirmationPolicy(min_screen_pairs=1, min_confirmation_pairs=2),
+    )
+
+    result = coordinator.evaluate_candidate("demo", candidate.digest)
+
+    assert result.comparison.decision == ComparisonDecision.REJECTED
+    assert result.evaluated_pairs == 1
+    assert result.promotion is None
+    assert store.active_bundle("demo") == baseline
+    ledger_path = tmp_path / "demo" / "context_bundles" / "candidates" / candidate.digest / "negative_result.json"
+    ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+    assert ledger["entries"][0]["context"]["context_bundle_digest"] == candidate.digest
+    assert ledger["entries"][0]["context"]["evaluator_epoch"] == candidate.evaluator_epoch
+    assert ledger["entries"][0]["context"]["trial_cohort"] == "live-cohort"
+
+
+def test_campaign_false_promotion_reservations_are_durable_and_summable(tmp_path: Path) -> None:
+    controller = CampaignFalsePromotionController(
+        tmp_path,
+        CampaignFalsePromotionPolicy(familywise_alpha=0.08, allocation_decay=0.5),
+    )
+    baseline = _bundle(playbook="baseline")
+    first = _bundle(playbook="first", parent=baseline.digest)
+    second = _bundle(playbook="second", parent=baseline.digest)
+
+    first_policy, first_reservation = controller.reserve_confirmation_policy(
+        "campaign-a",
+        first,
+        ConfirmationPolicy(),
+    )
+    _, repeated = controller.reserve_confirmation_policy(
+        "campaign-a",
+        first,
+        ConfirmationPolicy(),
+    )
+    second_policy, second_reservation = controller.reserve_confirmation_policy(
+        "campaign-a",
+        second,
+        ConfirmationPolicy(),
+    )
+
+    assert repeated == first_reservation
+    assert first_reservation.candidate_index == 0
+    assert first_reservation.allocated_alpha == pytest.approx(0.04)
+    assert second_reservation.candidate_index == 1
+    assert second_reservation.allocated_alpha == pytest.approx(0.02)
+    assert first_policy.confidence_z > 1.96
+    assert second_policy.confidence_z > first_policy.confidence_z
+    assert sum(item.allocated_alpha for item in controller.reservations("campaign-a")) < 0.08
+
+    restarted = CampaignFalsePromotionController(
+        tmp_path,
+        CampaignFalsePromotionPolicy(familywise_alpha=0.08, allocation_decay=0.5),
+    )
+    assert restarted.reservations("campaign-a") == (first_reservation, second_reservation)
+
+
+def test_campaign_false_promotion_shared_python_typescript_fixture(tmp_path: Path) -> None:
+    fixture_path = Path(__file__).resolve().parents[2] / "fixtures" / "context-bundles" / "false-promotion-parity.json"
+    fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+    campaign_policy = CampaignFalsePromotionPolicy.from_dict(fixture["campaign_policy"])
+    base_policy = ConfirmationPolicy.from_dict(fixture["base_confirmation_policy"])
+    controller = CampaignFalsePromotionController(tmp_path, campaign_policy)
+    baseline = _bundle(playbook="baseline")
+    candidate = _bundle(playbook="candidate", parent=baseline.digest)
+
+    for allocation in fixture["candidate_allocations"]:
+        index = allocation["candidate_index"]
+        assert campaign_policy.alpha_for_candidate(index) == pytest.approx(allocation["alpha"])
+        probe = _bundle(playbook=f"candidate-{index}", parent=baseline.digest)
+        adjusted, reservation = controller.reserve_confirmation_policy(
+            "allocation-parity",
+            probe,
+            base_policy,
+        )
+        assert reservation.candidate_index == index
+        assert reservation.required_confidence_z == pytest.approx(
+            allocation["required_confidence_z"],
+            abs=1e-12,
+        )
+        assert adjusted.confidence_z == reservation.required_confidence_z
+
+    state_case = fixture["persisted_state_case"]
+    state_controller = CampaignFalsePromotionController(tmp_path / "state", campaign_policy)
+    _, state_reservation = state_controller.reserve_confirmation_policy(
+        state_case["campaign_id"],
+        candidate,
+        base_policy,
+    )
+    state = json.loads((tmp_path / "state" / state_case["campaign_id"] / "false-promotion.json").read_text(encoding="utf-8"))
+    assert state_reservation.confirmation_policy_digest == state_case["expected_confirmation_policy_digest"]
+    assert state["state_digest"] == state_case["expected_state_digest"]
+    for status_case in fixture["reservation_status_cases"]:
+        reservation = replace(
+            state_reservation,
+            status=status_case["status"],
+            reason=status_case["reason"],
+            evidence_digest=status_case["evidence_digest"],
+            independent_confirmation_blocks=status_case["independent_confirmation_blocks"],
+            independent_heldout_blocks=status_case["independent_heldout_blocks"],
+        )
+        payload = {
+            "schema_version": 1,
+            "campaign_id": state_case["campaign_id"],
+            "policy": campaign_policy.to_dict(),
+            "reservations": [reservation.to_dict()],
+        }
+        assert stable_digest(payload) == status_case["expected_state_digest"]
+
+    for case in fixture["evidence_cases"]:
+        campaign_id = f"evidence-{case['name']}"
+        adjusted, _ = controller.reserve_confirmation_policy(campaign_id, candidate, base_policy)
+        trials = [
+            MatchedTrial(
+                candidate_digest=candidate.digest,
+                incumbent_digest=baseline.digest,
+                evaluator_epoch=candidate.evaluator_epoch,
+                cohort="parity-cohort",
+                fixture=f"fixture-{observation['seed']}",
+                fixture_digest=observation["block"],
+                seed=observation["seed"],
+                lane=TrialLane(observation["lane"]),
+                candidate_score=0.5 + observation["delta"],
+                incumbent_score=0.5,
+            )
+            for observation in case["observations"]
+        ]
+        expected = case["expected"]
+        result = controller.authorize_promotion(
+            campaign_id,
+            candidate,
+            ComparisonResult(
+                decision=ComparisonDecision.CONFIRMED,
+                reason="fixture comparison",
+                screen_pairs=1,
+                confirmation_pairs=2,
+                heldout_pairs=1,
+            ),
+            trials,
+            adjusted,
+        )
+        assert result.authorized is expected["authorized"]
+        assert result.reason == expected["reason"]
+        assert result.reservation.independent_confirmation_blocks == expected["independent_confirmation_blocks"]
+        assert result.reservation.independent_heldout_blocks == expected["independent_heldout_blocks"]
+
+
+def test_live_false_promotion_gate_collapses_correlated_fixture_seeds(tmp_path: Path) -> None:
+    store = ContextBundleStore(tmp_path / "bundles")
+    baseline = store.bootstrap(_bundle(playbook="baseline"))
+    candidate = _bundle(playbook="candidate", parent=baseline.digest)
+    store.propose(candidate, source_run_id="run-risk", source_generation=1)
+
+    class Evaluator:
+        def evaluate(
+            self,
+            bundle: ContextBundle,
+            unit: ContextBundleEvaluationUnit,
+        ) -> ContextBundleEvaluationOutcome:
+            del unit
+            return ContextBundleEvaluationOutcome(score=0.8 if bundle.digest == candidate.digest else 0.5)
+
+    # The raw matched comparison has two confirmation rows, but they are two
+    # seeds from the same fixture/dependence block and therefore one piece of
+    # independent evidence for campaign-level error control.
+    units = (
+        ContextBundleEvaluationUnit("screen", "screen-block", 1, TrialLane.SCREEN),
+        ContextBundleEvaluationUnit("confirm-a", "shared-confirm-block", 2, TrialLane.CONFIRMATION),
+        ContextBundleEvaluationUnit("confirm-b", "shared-confirm-block", 3, TrialLane.CONFIRMATION),
+        ContextBundleEvaluationUnit("heldout", "heldout-block", 4, TrialLane.HELDOUT),
+    )
+    coordinator = ContextBundlePromotionCoordinator(
+        store,
+        Evaluator(),
+        units,
+        cohort="risk-cohort",
+        policy=ConfirmationPolicy(
+            min_screen_pairs=1,
+            min_confirmation_pairs=2,
+            max_confirmation_pairs=2,
+            min_heldout_pairs=1,
+        ),
+        false_promotion_controller=CampaignFalsePromotionController(tmp_path / "risk"),
+        campaign_id="campaign-risk",
+    )
+
+    result = coordinator.evaluate_candidate("demo", candidate.digest)
+
+    assert result.comparison.decision == ComparisonDecision.CONFIRMED
+    assert result.false_promotion_result is not None
+    assert result.false_promotion_result.authorized is False
+    assert "independent confirmation blocks" in result.false_promotion_result.reason
+    assert result.promotion is None
+    assert store.active_bundle("demo") == baseline
+
+
+def test_live_false_promotion_gate_authorizes_disjoint_independent_blocks(tmp_path: Path) -> None:
+    store = ContextBundleStore(tmp_path / "bundles")
+    baseline = store.bootstrap(_bundle(playbook="baseline"))
+    candidate = _bundle(playbook="candidate", parent=baseline.digest)
+    store.propose(candidate, source_run_id="run-risk", source_generation=1)
+
+    class Evaluator:
+        def evaluate(
+            self,
+            bundle: ContextBundle,
+            unit: ContextBundleEvaluationUnit,
+        ) -> ContextBundleEvaluationOutcome:
+            del unit
+            return ContextBundleEvaluationOutcome(score=0.8 if bundle.digest == candidate.digest else 0.5)
+
+    units = (
+        ContextBundleEvaluationUnit("screen", "screen-block", 1, TrialLane.SCREEN),
+        ContextBundleEvaluationUnit("confirm-a", "confirm-block-a", 2, TrialLane.CONFIRMATION),
+        ContextBundleEvaluationUnit("confirm-b", "confirm-block-b", 3, TrialLane.CONFIRMATION),
+        ContextBundleEvaluationUnit("heldout", "heldout-block", 4, TrialLane.HELDOUT),
+    )
+    controller = CampaignFalsePromotionController(tmp_path / "risk")
+    coordinator = ContextBundlePromotionCoordinator(
+        store,
+        Evaluator(),
+        units,
+        cohort="risk-cohort",
+        policy=ConfirmationPolicy(
+            min_screen_pairs=1,
+            min_confirmation_pairs=2,
+            max_confirmation_pairs=2,
+            min_heldout_pairs=1,
+        ),
+        false_promotion_controller=controller,
+        campaign_id="campaign-risk",
+    )
+
+    result = coordinator.evaluate_candidate("demo", candidate.digest)
+
+    assert result.false_promotion_result is not None
+    assert result.false_promotion_result.authorized is True
+    assert result.false_promotion_result.reservation.independent_confirmation_blocks == 2
+    assert result.promotion is not None
+    assert store.active_bundle("demo") == candidate
+    persisted = controller.reservations("campaign-risk")
+    assert len(persisted) == 1
+    assert persisted[0].status == "authorized"
+
+
+def test_live_promotion_persists_only_manifest_verified_causal_attribution(tmp_path: Path) -> None:
+    store = ContextBundleStore(tmp_path)
+    routing = BundleComponent.json(ComponentKind.ROUTING_CONFIG, "roles", {"model_competitor": "small"})
+    baseline = store.bootstrap(ContextBundle.create(scenario="demo", evaluator_epoch="epoch-1", components=[routing]))
+    playbook = BundleComponent(ComponentKind.PLAYBOOK, "playbook", "new exact component")
+    candidate = ContextBundle.create(
+        scenario="demo",
+        evaluator_epoch="epoch-1",
+        parent_digest=baseline.digest,
+        components=[routing, playbook],
+    )
+    store.propose(candidate, source_run_id="run-attribution", source_generation=1)
+
+    class Evaluator:
+        def evaluate(
+            self,
+            bundle: ContextBundle,
+            unit: ContextBundleEvaluationUnit,
+        ) -> ContextBundleEvaluationOutcome:
+            del unit
+            return ContextBundleEvaluationOutcome(score=0.8 if bundle.digest == candidate.digest else 0.5)
+
+    units = tuple(
+        ContextBundleEvaluationUnit(
+            f"{lane.value}-{index}",
+            f"{lane.value}-block-{index}",
+            index + 100 * list(TrialLane).index(lane),
+            lane,
+        )
+        for lane, count in ((TrialLane.SCREEN, 1), (TrialLane.CONFIRMATION, 2), (TrialLane.HELDOUT, 1))
+        for index in range(count)
+    )
+    coordinator = ContextBundlePromotionCoordinator(
+        store,
+        Evaluator(),
+        units,
+        cohort="attribution-cohort",
+        policy=ConfirmationPolicy(
+            min_screen_pairs=1,
+            min_confirmation_pairs=2,
+            max_confirmation_pairs=2,
+            min_heldout_pairs=1,
+        ),
+    )
+
+    result = coordinator.evaluate_candidate("demo", candidate.digest)
+
+    assert result.promotion is not None
+    artifact_path = tmp_path / "demo" / "context_bundles" / "candidates" / candidate.digest / "causal_attribution.json"
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    assert artifact["manifest_diff"]["changes"] == [
+        {
+            "component_kind": "playbook",
+            "component_key": "playbook",
+            "tested_component_digest": playbook.digest,
+            "comparison_component_digest": None,
+        }
+    ]
+    assert artifact["attributions"][0]["attribution"]["evidence_level"] == "causal_ablation"
+
+
+def test_live_pre_promotion_audit_can_hold_confirmed_candidate_for_review(tmp_path: Path) -> None:
+    store = ContextBundleStore(tmp_path)
+    baseline = store.bootstrap(_bundle(playbook="baseline"))
+    candidate = _bundle(playbook="candidate", parent=baseline.digest)
+    store.propose(candidate, source_run_id="run-audit", source_generation=1)
+
+    class Evaluator:
+        def evaluate(
+            self,
+            bundle: ContextBundle,
+            unit: ContextBundleEvaluationUnit,
+        ) -> ContextBundleEvaluationOutcome:
+            del unit
+            return ContextBundleEvaluationOutcome(score=0.8 if bundle.digest == candidate.digest else 0.5)
+
+    class AuditCheckpoint:
+        checkpoints: list[str] = []
+
+        def review_checkpoint(self, checkpoint, evidence, *, cancellation_event=None):
+            del evidence, cancellation_event
+            self.checkpoints.append(checkpoint)
+
+            class Audit:
+                status = "completed"
+                policy_outcome = "review_required"
+
+            return Audit()
+
+    units = tuple(
+        ContextBundleEvaluationUnit(
+            f"{lane.value}-{index}",
+            f"digest-{lane.value}-{index}",
+            index + (100 * list(TrialLane).index(lane)),
+            lane,
+        )
+        for lane, count in ((TrialLane.SCREEN, 1), (TrialLane.CONFIRMATION, 2), (TrialLane.HELDOUT, 1))
+        for index in range(count)
+    )
+    coordinator = ContextBundlePromotionCoordinator(
+        store,
+        Evaluator(),
+        units,
+        cohort="audit-cohort",
+        policy=ConfirmationPolicy(
+            min_screen_pairs=1,
+            min_confirmation_pairs=2,
+            max_confirmation_pairs=2,
+            min_heldout_pairs=1,
+        ),
+        lifecycle_auditor=AuditCheckpoint(),
+    )
+
+    result = coordinator.evaluate_candidate("demo", candidate.digest)
+
+    assert result.comparison.decision == ComparisonDecision.CONFIRMED
+    assert result.audit_policy_outcome == "review_required"
+    assert result.promotion is None
+    assert store.active_bundle("demo") == baseline
+
+
+def test_live_inconclusive_and_integrity_checkpoints_do_not_rewrite_gate_results(tmp_path: Path) -> None:
+    store = ContextBundleStore(tmp_path)
+    baseline = store.bootstrap(_bundle(playbook="baseline"))
+    candidate = _bundle(playbook="candidate", parent=baseline.digest)
+    store.propose(candidate, source_run_id="run-audit", source_generation=1)
+
+    class AuditCheckpoints:
+        def __init__(self) -> None:
+            self.seen: list[str] = []
+
+        def review_checkpoint(self, checkpoint, evidence, *, cancellation_event=None):
+            del evidence, cancellation_event
+            self.seen.append(checkpoint)
+            return None
+
+    audit = AuditCheckpoints()
+
+    class InconclusiveEvaluator:
+        def evaluate(self, bundle, unit):
+            if bundle.digest == baseline.digest:
+                return ContextBundleEvaluationOutcome(score=0.5)
+            scores = {"screen": 0.8, "confirmation-0": 1.0, "confirmation-1": 0.2}
+            return ContextBundleEvaluationOutcome(score=scores[unit.fixture])
+
+    coordinator = ContextBundlePromotionCoordinator(
+        store,
+        InconclusiveEvaluator(),
+        (
+            ContextBundleEvaluationUnit("screen", "screen-digest", 1, TrialLane.SCREEN),
+            ContextBundleEvaluationUnit("confirmation-0", "confirm-0", 2, TrialLane.CONFIRMATION),
+            ContextBundleEvaluationUnit("confirmation-1", "confirm-1", 3, TrialLane.CONFIRMATION),
+        ),
+        cohort="audit-cohort",
+        policy=ConfirmationPolicy(
+            min_screen_pairs=1,
+            min_confirmation_pairs=2,
+            max_confirmation_pairs=2,
+        ),
+        lifecycle_auditor=audit,
+    )
+
+    result = coordinator.evaluate_candidate("demo", candidate.digest)
+
+    assert result.comparison.decision == ComparisonDecision.INCONCLUSIVE
+    assert audit.seen == ["inconclusive_gate"]
+    assert store.active_bundle("demo") == baseline
+
+    failing = _bundle(playbook="failing", parent=baseline.digest)
+    store.propose(failing, source_run_id="run-integrity", source_generation=2)
+
+    class FailingEvaluator:
+        def evaluate(self, bundle, unit):
+            del bundle, unit
+            raise RuntimeError("evaluator transport broke")
+
+    failing_coordinator = ContextBundlePromotionCoordinator(
+        store,
+        FailingEvaluator(),
+        (ContextBundleEvaluationUnit("screen", "screen-fail", 4, TrialLane.SCREEN),),
+        cohort="audit-cohort",
+        policy=ConfirmationPolicy(min_screen_pairs=1),
+        lifecycle_auditor=audit,
+    )
+
+    with pytest.raises(RuntimeError, match="transport broke"):
+        failing_coordinator.evaluate_candidate("demo", failing.digest)
+    assert audit.seen[-1] == "integrity_alert"
