@@ -5,6 +5,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = PACKAGE_ROOT / "src"
 
@@ -53,6 +55,30 @@ for module_name in [
     importlib.import_module(module_name)
 """,
     )
+
+
+def test_kernel_evolution_import_does_not_require_posix_resource() -> None:
+    _run_python_with_blocked_imports(
+        ["resource"],
+        """
+import sys
+import autocontext.kernel_evolution
+
+assert 'autocontext.execution.supervisor' not in sys.modules
+assert 'autocontext.execution.executors.local' not in sys.modules
+""",
+    )
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="LocalExecutor currently requires POSIX resource limits")
+def test_execution_supervisor_package_exports_remain_available() -> None:
+    import autocontext.execution as execution
+    import autocontext.execution.supervisor as supervisor
+
+    assert execution.ExecutionInput is supervisor.ExecutionInput
+    assert execution.ExecutionOutput is supervisor.ExecutionOutput
+    assert execution.ExecutionSupervisor is supervisor.ExecutionSupervisor
+    assert {"ExecutionInput", "ExecutionOutput", "ExecutionSupervisor"} <= set(dir(execution))
 
 
 def test_browser_facade_import_does_not_require_cdp_dependencies() -> None:

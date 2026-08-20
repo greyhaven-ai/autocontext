@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
+
 from .action_filter import ActionFilterHarness
 from .phased_execution import (
     PhaseBudget,
@@ -23,8 +27,12 @@ from .sandbox_adapter_contracts import (
     normalize_sandbox_adapter_capabilities,
     plan_sandbox_startup,
 )
-from .supervisor import ExecutionInput, ExecutionOutput, ExecutionSupervisor
 from .task_queue_store import TaskQueueEnqueueStore, TaskQueueStore
+
+if TYPE_CHECKING:
+    from .supervisor import ExecutionInput, ExecutionOutput, ExecutionSupervisor
+
+_LAZY_SUPERVISOR_EXPORTS = frozenset({"ExecutionInput", "ExecutionOutput", "ExecutionSupervisor"})
 
 __all__ = [
     "ActionFilterHarness",
@@ -54,3 +62,19 @@ __all__ = [
     "plan_sandbox_startup",
     "split_budget",
 ]
+
+
+def __getattr__(name: str) -> Any:
+    if name in _LAZY_SUPERVISOR_EXPORTS:
+        from .supervisor import ExecutionInput, ExecutionOutput, ExecutionSupervisor
+
+        return {
+            "ExecutionInput": ExecutionInput,
+            "ExecutionOutput": ExecutionOutput,
+            "ExecutionSupervisor": ExecutionSupervisor,
+        }[name]
+    raise AttributeError(name)
+
+
+def __dir__() -> list[str]:
+    return sorted({*globals(), *_LAZY_SUPERVISOR_EXPORTS})
