@@ -1,0 +1,113 @@
+{
+  "canonical_cases": [
+    {
+      "name": "unicode-key-order-safe-integers-and-ecmascript-floats",
+      "value": {
+        "דּ": 9007199254740991,
+        "😀": 1.23e-05,
+        "€": -9007199254740991,
+        "ö": 1e-07,
+        "\u0080": 1e-06,
+        "nested": {
+          "safe_max": 9007199254740991,
+          "safe_min": -9007199254740991,
+          "😀": -0.0
+        },
+        "1": -0.0,
+        "\r": 1.0
+      },
+      "canonical": "{\"\\r\":1,\"1\":0,\"nested\":{\"safe_max\":9007199254740991,\"safe_min\":-9007199254740991,\"😀\":0},\"\u0080\":0.000001,\"ö\":1e-7,\"€\":-9007199254740991,\"😀\":0.0000123,\"דּ\":9007199254740991}",
+      "digest": "e27578386abee9a44e3ae32413238a1c5b770762169d6eaf67c717173f9a4def"
+    }
+  ],
+  "unsafe_integer_cases": [
+    {
+      "name": "positive-safe-boundary-plus-one",
+      "json": "9007199254740992"
+    },
+    {
+      "name": "negative-safe-boundary-minus-one",
+      "json": "-9007199254740992"
+    },
+    {
+      "name": "formerly-colliding-python-integer",
+      "json": "9007199254740993"
+    },
+    {
+      "name": "nested-unsafe-integer",
+      "json": "{\"outer\":[0,{\"unsafe\":9007199254740992}]}"
+    }
+  ],
+  "invalid_unicode_cases": [
+    {
+      "name": "lone-high-surrogate-value",
+      "json": "\"\\ud800\""
+    },
+    {
+      "name": "lone-low-surrogate-value",
+      "json": "\"\\udc00\""
+    },
+    {
+      "name": "lone-surrogate-key",
+      "json": "{\"\\ud800\":\"value\"}"
+    },
+    {
+      "name": "nested-lone-surrogate",
+      "json": "{\"outer\":[\"\\udc00\"]}"
+    }
+  ],
+  "bundle_input": {
+    "scenario": "unicode-😀",
+    "evaluator_epoch": "epoch-דּ",
+    "components": [
+      {
+        "kind": "routing_config",
+        "key": "דּ",
+        "value": {
+          "max_safe": 9007199254740991,
+          "whole_float": 1.0
+        }
+      },
+      {
+        "kind": "routing_config",
+        "key": "😀",
+        "value": {
+          "min_safe": -9007199254740991,
+          "negative_zero": -0.0,
+          "tiny": 1e-06
+        }
+      }
+    ]
+  },
+  "bundle_manifest": {
+    "schema_version": 1,
+    "scenario": "unicode-😀",
+    "evaluator_epoch": "epoch-דּ",
+    "parent_digest": null,
+    "components": [
+      {
+        "kind": "routing_config",
+        "key": "😀",
+        "content": "{\"min_safe\":-9007199254740991,\"negative_zero\":0,\"tiny\":0.000001}",
+        "media_type": "application/json",
+        "digest": "82dfea6af69071352ca47d6d77f98ad611f86daca88a9ebd10fe97d7d8d389d0"
+      },
+      {
+        "kind": "routing_config",
+        "key": "דּ",
+        "content": "{\"max_safe\":9007199254740991,\"whole_float\":1}",
+        "media_type": "application/json",
+        "digest": "716dbb595afed50aa783632095b0bb8dc4d8a377fd466c2923b1fdd1558e6ee1"
+      }
+    ],
+    "digest": "f7f247f6a894cef628007acc0f2955b152c1b5a6f360da78f29ae435cecdaae1"
+  },
+  "matched_pair_identity": {
+    "evaluator_epoch": "epoch-1",
+    "cohort": "cohort-a",
+    "fixture": "display-screen",
+    "fixture_digest": "sha256:fixture-7",
+    "seed": 7,
+    "pair_key": "5a3c17865358266e06cde9e3f6cad23a9eb2636552586d595692ea7e23e658b3"
+  }
+}

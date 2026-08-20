@@ -65,6 +65,7 @@ export function attributeCredit(vector: GenerationChangeVector): AttributionResu
     vector.generation,
     vector.scoreDelta,
     buildAttributedCredits(vector),
+    { evidence_level: "component_correlated", causal: false },
   );
 }
 

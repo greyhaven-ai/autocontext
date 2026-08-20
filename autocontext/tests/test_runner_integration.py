@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from autocontext.config import AppSettings
+from autocontext.context_bundles import ComponentKind, ContextBundleStore
 from autocontext.loop import GenerationRunner
 
 
@@ -80,7 +81,23 @@ def test_single_generation_persists_metadata_and_artifacts(tmp_path: Path) -> No
     # Playbook bundled alongside SKILL.md
     bundled_playbook = skill_dir / "playbook.md"
     assert bundled_playbook.exists()
-    assert "Strategy Updates" in bundled_playbook.read_text(encoding="utf-8")
+    assert "No playbook yet" in bundled_playbook.read_text(encoding="utf-8")
+
+    # The coach's replacement is present, but only in the candidate namespace
+    # until matched context trials confirm it.
+    bundle_store = ContextBundleStore(tmp_path / "knowledge")
+    candidate_digest = next(
+        path.parent.name
+        for path in (tmp_path / "knowledge" / "grid_ctf" / "context_bundles" / "candidates").glob(
+            "*/record.json"
+        )
+        if '"lifecycle": "proposed"' in path.read_text(encoding="utf-8")
+    )
+    candidate = bundle_store.load_bundle("grid_ctf", candidate_digest)
+    assert any(
+        "Strategy Updates" in component.content
+        for component in candidate.components_of_kind(ComponentKind.PLAYBOOK)
+    )
 
     # Playbook should be a clean replacement (no ## generation_N headings)
     playbook_path = tmp_path / "knowledge" / "grid_ctf" / "playbook.md"
@@ -89,7 +106,7 @@ def test_single_generation_persists_metadata_and_artifacts(tmp_path: Path) -> No
     assert "## generation_" not in playbook_content
 
 
-def test_playbook_not_updated_on_rollback(tmp_path: Path) -> None:
+def test_playbook_candidate_not_activated_on_rollback(tmp_path: Path) -> None:
     # Threshold 0.4: gen 1 advances (delta ≈ 0.5 from 0.0), gen 2 rolls back
     # (delta ≈ 0 since scores are similar).
     settings = AppSettings(
@@ -116,16 +133,15 @@ def test_playbook_not_updated_on_rollback(tmp_path: Path) -> None:
     playbook_path = tmp_path / "knowledge" / "grid_ctf" / "playbook.md"
     assert playbook_path.exists()
     playbook_content = playbook_path.read_text(encoding="utf-8")
-    # Gen 1 advances (first gen always does since previous_best=0), gen 2 rolls back.
-    # Playbook should only reflect gen 1's content (not updated by gen 2).
-    assert "Strategy Updates" in playbook_content
+    # Neither strategy result is matched evidence for a context mutation.
+    assert "No playbook yet" in playbook_content
 
     # Skills should be a proper Skill with failure lesson for gen 2
     skill_dir = tmp_path / "skills" / "grid-ctf-ops"
     skills_content = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
     assert "name: grid-ctf-ops" in skills_content
     assert "ROLLBACK" in skills_content
-    # Bundled playbook should exist (from gen 1 advance)
+    # Bundled playbook is the active baseline, not an unconfirmed proposal.
     assert (skill_dir / "playbook.md").exists()
 
 

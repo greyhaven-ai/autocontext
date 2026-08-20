@@ -14,6 +14,9 @@ These are copy-paste starting points for people evaluating the repo, integrating
 - Want to package generic Fetch/ESM agent app artifacts? Use the generated Fetch packaging example.
 - Want to prototype a reusable TypeScript agent handler? Use the experimental agent-runtime example.
 - Want always-on queued work? Use the persistent host worker recipe.
+- Want to build a Node evaluator for context promotion? Import the
+  `autoctx/context-bundles` subpath and follow the
+  [matched-trial contract](../docs/context-bundles.md).
 - Want correctness-first recursive GPU-kernel search? Start with the kernel evolution MVP.
 
 ## Kernel Evolution MVP

@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Protocol
 
-from autocontext.analytics.negative_result_ledger import NegativeResultLedger
+from autocontext.analytics.negative_result_ledger import NegativeResultApplicabilityContext, NegativeResultLedger
 from autocontext.storage.scenario_paths import normalize_scenario_name_segment
 from autocontext.util.json_io import read_json_guarded, write_json
 
@@ -53,6 +53,7 @@ def read_latest_negative_result_ledgers_markdown(
     scenario_name: str,
     *,
     max_ledgers: int = 2,
+    applicability_context: NegativeResultApplicabilityContext | None = None,
 ) -> str:
     root = knowledge_root / normalize_scenario_name_segment(scenario_name) / "negative_result_ledgers"
     if not root.exists():
@@ -62,7 +63,7 @@ def read_latest_negative_result_ledgers_markdown(
     for path in paths:
         ledger = read_negative_result_ledger_path(path)
         if ledger is not None:
-            parts.append(ledger.to_markdown())
+            parts.append(ledger.to_markdown(applicability_context=applicability_context))
     return "\n\n".join(parts)
 
 

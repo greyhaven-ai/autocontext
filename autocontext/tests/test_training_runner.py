@@ -257,6 +257,101 @@ class TestGitStateMachine:
         runner.discard_experiment()
         assert runner._git_head_sha() == head_before
 
+    def test_decision_history_survives_later_candidate_resets(
+        self,
+        git_workspace: tuple[TrainingRunner, Path],
+    ) -> None:
+        runner, workspace = git_workspace
+        (workspace / "train.py").write_text("# accepted experiment\n")
+        runner._git_commit("accepted experiment")
+        accepted_checkpoint = runner._checkpoint_dir(1)
+        accepted_checkpoint.mkdir(parents=True)
+        accepted_model = accepted_checkpoint / "weights.bin"
+        accepted_model.write_bytes(b"accepted model")
+        artifact_path = workspace / "promotion" / "experiment_1.json"
+        artifact_path.parent.mkdir(parents=True)
+        artifact_path.write_text('{"decision":"accepted"}\n', encoding="utf-8")
+        accepted = ExperimentResult(
+            experiment_index=1,
+            avg_score=0.49,
+            valid_rate=1.0,
+            peak_memory_mb=1.0,
+            training_seconds=1.0,
+            outcome=ExperimentOutcome.KEPT,
+            checkpoint_path=accepted_checkpoint,
+            promotion_decision="accepted",
+            promotion_artifact_path=artifact_path,
+        )
+
+        runner.record_result(accepted)
+        runner._amend_current_commit_with_promotion(accepted)
+        tracked = subprocess.run(
+            ["git", "show", "HEAD:promotion/experiment_1.json"],
+            cwd=workspace,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        assert '"accepted"' in tracked.stdout
+
+        (workspace / "train.py").write_text("# rejected experiment\n")
+        runner._git_commit("rejected experiment")
+        rejected_artifact = workspace / "promotion" / "experiment_2.json"
+        rejected_artifact.write_text('{"decision":"rejected"}\n', encoding="utf-8")
+        checkpoint_path = runner._checkpoint_dir(2)
+        checkpoint_path.mkdir(parents=True)
+        (checkpoint_path / "weights.bin").write_bytes(b"candidate")
+        rejected = ExperimentResult(
+            experiment_index=2,
+            avg_score=0.40,
+            valid_rate=1.0,
+            peak_memory_mb=1.0,
+            training_seconds=1.0,
+            outcome=ExperimentOutcome.DISCARDED,
+            promotion_decision="rejected",
+            promotion_artifact_path=rejected_artifact,
+        )
+        runner.discard_experiment(checkpoint_path=checkpoint_path)
+        runner.record_result(rejected)
+        runner._commit_decision_record(rejected)
+
+        # A subsequent candidate reset must return to the audit commit, not to a
+        # state before either prior decision record.
+        (workspace / "train.py").write_text("# another rejected candidate\n")
+        runner._git_commit("another candidate")
+        runner.discard_experiment()
+
+        assert artifact_path.exists()
+        assert '"accepted"' in artifact_path.read_text(encoding="utf-8")
+        assert rejected_artifact.exists()
+        assert '"rejected"' in rejected_artifact.read_text(encoding="utf-8")
+        assert accepted_model.read_bytes() == b"accepted model"
+        assert not checkpoint_path.exists()
+        results = (workspace / "results.tsv").read_text(encoding="utf-8")
+        assert "1\t0.49" in results
+        assert "2\t0.4" in results
+        tracked = subprocess.run(
+            ["git", "ls-files", "promotion/experiment_1.json", "promotion/experiment_2.json", "results.tsv"],
+            cwd=workspace,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        assert set(tracked.stdout.splitlines()) == {
+            "promotion/experiment_1.json",
+            "promotion/experiment_2.json",
+            "results.tsv",
+        }
+        accepted_model_relative = accepted_model.relative_to(workspace).as_posix()
+        checkpoint_tracking = subprocess.run(
+            ["git", "ls-files", "--", accepted_model_relative],
+            cwd=workspace,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        assert checkpoint_tracking.stdout == ""
+
     def test_record_result_appends_to_tsv(self, git_workspace: tuple[TrainingRunner, Path]) -> None:
         runner, workspace = git_workspace
         result = ExperimentResult(
@@ -581,6 +676,21 @@ class TestSummaryParsing:
         runner = TrainingRunner(cfg, work_dir=tmp_path / "workspace")
         assert runner.parse_summary("no summary here") is None
 
+    @pytest.mark.parametrize("value", ["nan", "inf", "-inf"])
+    def test_parse_non_finite_required_metric_returns_none(self, tmp_path: Path, value: str) -> None:
+        cfg = TrainingConfig(scenario="grid_ctf", data_path=tmp_path / "data.jsonl")
+        runner = TrainingRunner(cfg, work_dir=tmp_path / "workspace")
+        stdout = textwrap.dedent(f"""\
+            === TRAINING SUMMARY ===
+            avg_score: {value}
+            valid_rate: 1.0
+            training_seconds: 1.0
+            peak_memory_mb: 1.0
+            ========================
+        """)
+
+        assert runner.parse_summary(stdout) is None
+
 
 # ---------------------------------------------------------------------------
 # TrainingResult
@@ -699,6 +809,43 @@ class TestTrainingLoop:
         assert result.best_experiment_index == 2
         assert result.checkpoint_path == improved.checkpoint_path
         mock_discard.assert_called_once()
+
+    def test_matched_acceptance_advances_and_publishes_lower_raw_average(self, tmp_path: Path) -> None:
+        cfg = TrainingConfig(scenario="grid_ctf", data_path=tmp_path / "data.jsonl")
+        runner = TrainingRunner(cfg, work_dir=tmp_path / "workspace")
+        incumbent = ExperimentResult(
+            experiment_index=0,
+            avg_score=0.50,
+            valid_rate=1.0,
+            peak_memory_mb=1.0,
+            training_seconds=1.0,
+            outcome=ExperimentOutcome.KEPT,
+            checkpoint_path=tmp_path / "checkpoint-0",
+            promotion_decision="accepted",
+        )
+        matched_winner = ExperimentResult(
+            experiment_index=1,
+            avg_score=0.49,
+            valid_rate=1.0,
+            peak_memory_mb=1.0,
+            training_seconds=1.0,
+            outcome=ExperimentOutcome.KEPT,
+            checkpoint_path=tmp_path / "checkpoint-1",
+            promotion_decision="accepted",
+        )
+
+        runner._update_best(incumbent)
+        runner._update_best(matched_winner)
+        assert runner._best_experiment_index == 1
+        assert runner._best_score == pytest.approx(0.49)
+
+        with patch.object(runner, "_publish_best_model", return_value="model-1") as publish:
+            result = runner.build_training_result([incumbent, matched_winner])
+
+        publish.assert_called_once_with(matched_winner)
+        assert result.best_experiment_index == 1
+        assert result.best_score == pytest.approx(0.49)
+        assert result.checkpoint_path == matched_winner.checkpoint_path
 
     def test_build_training_result_publishes_best_checkpoint(self, tmp_path: Path) -> None:
         cfg = TrainingConfig(scenario="grid_ctf", data_path=tmp_path / "data.jsonl", max_experiments=1)

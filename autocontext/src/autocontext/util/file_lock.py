@@ -1,4 +1,4 @@
-"""Cross-platform advisory locking for durable append-only files."""
+"""Cross-platform advisory locks for durable local stores."""
 
 from __future__ import annotations
 
@@ -55,8 +55,29 @@ def _unlock(fd: int) -> None:
 
 
 @contextmanager
-def _locked_append_fd(path: Path, mode: int = 0o644) -> Iterator[int]:
+def advisory_path_lock(path: Path, mode: int = 0o600) -> Iterator[None]:
+    """Hold an exclusive advisory lock associated with ``path``."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_BINARY", 0)
+    fd = os.open(path, flags, mode)
+    locked = False
+    try:
+        _lock(fd)
+        locked = True
+        yield
+    finally:
+        try:
+            if locked:
+                _unlock(fd)
+        finally:
+            os.close(fd)
+
+
+@contextmanager
+def locked_append_fd(path: Path, mode: int = 0o644) -> Iterator[int]:
     """Open ``path`` for append and hold its platform advisory lock."""
+
     path.parent.mkdir(parents=True, exist_ok=True)
     flags = os.O_APPEND | os.O_CREAT | os.O_WRONLY | getattr(os, "O_BINARY", 0)
     fd = os.open(path, flags, mode)
@@ -75,10 +96,12 @@ def _locked_append_fd(path: Path, mode: int = 0o644) -> Iterator[int]:
 
 def append_bytes_locked(path: Path, payload: bytes, mode: int = 0o644) -> None:
     """Append one payload under an inter-process lock and durably sync it."""
-    with _locked_append_fd(path, mode) as fd:
-        # O_APPEND selects the write position atomically. The explicit flush and
-        # fsync keep the lineage's previous crash-durability contract.
+
+    with locked_append_fd(path, mode) as fd:
         with os.fdopen(fd, "ab", closefd=False) as stream:
             stream.write(payload)
             stream.flush()
             os.fsync(fd)
+
+
+__all__ = ["advisory_path_lock", "append_bytes_locked", "locked_append_fd"]

@@ -121,6 +121,10 @@
       "import": "./dist/harness-optimization/contract/validators.js",
       "types": "./dist/harness-optimization/contract/validators.d.ts"
     },
+    "./context-bundles": {
+      "import": "./dist/context-bundles/index.js",
+      "types": "./dist/context-bundles/index.d.ts"
+    },
     "./detectors/openai-python": {
       "types": "./dist/control-plane/instrument/detectors/openai-python/index.d.ts",
       "import": "./dist/control-plane/instrument/detectors/openai-python/index.js",

@@ -5,7 +5,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import Field, model_validator
+
+from autocontext.util.models import StrictModel
 
 GoalRunStatus = Literal[
     "continued",
@@ -22,23 +24,12 @@ GoalDecisionKind = Literal["continue", "stop"]
 GoalStopReason = Literal["verified_complete", "blocked", "budget_exhausted", "verifier_failed", "no_progress", "canceled"]
 
 
-class _StrictModel(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-
-    def to_dict(self) -> dict[str, Any]:
-        return self.model_dump(mode="json")
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Self:
-        return cls.model_validate(data)
-
-
-class GoalEvidenceRef(_StrictModel):
+class GoalEvidenceRef(StrictModel):
     uri: str = Field(min_length=1)
     summary: str = Field(min_length=1)
 
 
-class GoalBudget(_StrictModel):
+class GoalBudget(StrictModel):
     max_iterations: int | None = Field(ge=0)
     max_actions: int | None = Field(ge=0)
     max_seconds: float | None = Field(ge=0)
@@ -46,7 +37,7 @@ class GoalBudget(_StrictModel):
     max_no_progress_iterations: int | None = Field(ge=0)
 
 
-class GoalUsage(_StrictModel):
+class GoalUsage(StrictModel):
     iterations: int = Field(ge=0)
     actions: int = Field(ge=0)
     elapsed_seconds: float = Field(ge=0)
@@ -54,7 +45,7 @@ class GoalUsage(_StrictModel):
     no_progress_count: int = Field(ge=0)
 
 
-class GoalActionRecord(_StrictModel):
+class GoalActionRecord(StrictModel):
     action_id: str = Field(min_length=1)
     action_kind: GoalActionKind
     status: GoalActionStatus
@@ -66,7 +57,7 @@ class GoalActionRecord(_StrictModel):
     negative_result_ledger_uri: str | None
 
 
-class GoalVerifierState(_StrictModel):
+class GoalVerifierState(StrictModel):
     verifier_ref: str = Field(min_length=1)
     verified: bool
     verifier_failed: bool
@@ -81,7 +72,7 @@ class GoalVerifierState(_StrictModel):
         return self
 
 
-class GoalSupervisorDecision(_StrictModel):
+class GoalSupervisorDecision(StrictModel):
     decision_id: str = Field(min_length=1)
     decision_kind: GoalDecisionKind
     status: GoalRunStatus
@@ -101,7 +92,7 @@ class GoalSupervisorDecision(_StrictModel):
         return self
 
 
-class GoalRunReport(_StrictModel):
+class GoalRunReport(StrictModel):
     schema_version: Literal[1]
     goal_id: str = Field(min_length=1)
     goal_run_id: str = Field(min_length=1)

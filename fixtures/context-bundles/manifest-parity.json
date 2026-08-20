@@ -1,0 +1,48 @@
+{
+  "baseline": {
+    "components": [
+      {
+        "content": "baseline",
+        "digest": "c7e1a77f4b17622cca972f2c6cc6d8a97345f68ac2d2442b8b13ec8c57ff3bb9",
+        "key": "playbook",
+        "kind": "playbook",
+        "media_type": "text/markdown"
+      },
+      {
+        "content": "{\"model_competitor\":\"small\"}",
+        "digest": "1216df4141f028530b5409e8a0edf95f475d836528237b168d09d288d2791f14",
+        "key": "roles",
+        "kind": "routing_config",
+        "media_type": "application/json"
+      }
+    ],
+    "digest": "fec99f571c2b82be5e6056da3e4e9ee4492187348a63474eb33d4f13c4f10f63",
+    "evaluator_epoch": "epoch-1",
+    "parent_digest": null,
+    "scenario": "demo",
+    "schema_version": 1
+  },
+  "candidate": {
+    "components": [
+      {
+        "content": "candidate",
+        "digest": "2561579d13fc931a9b7f220494cd71565c38da0eac02e964c79fb868c94a5f98",
+        "key": "playbook",
+        "kind": "playbook",
+        "media_type": "text/markdown"
+      },
+      {
+        "content": "{\"model_competitor\":\"small\"}",
+        "digest": "1216df4141f028530b5409e8a0edf95f475d836528237b168d09d288d2791f14",
+        "key": "roles",
+        "kind": "routing_config",
+        "media_type": "application/json"
+      }
+    ],
+    "digest": "75a28f4545645422e2ab8d893ed58d10f7366109674f5486bb3b12948f498ff0",
+    "evaluator_epoch": "epoch-1",
+    "parent_digest": "fec99f571c2b82be5e6056da3e4e9ee4492187348a63474eb33d4f13c4f10f63",
+    "scenario": "demo",
+    "schema_version": 1
+  }
+}

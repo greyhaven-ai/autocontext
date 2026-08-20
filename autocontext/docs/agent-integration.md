@@ -4,6 +4,38 @@ autocontext provides three integration surfaces for external agents: the `autoct
 
 For the canonical user-facing and runtime vocabulary behind those surfaces, see [../../docs/concept-model.md](../../docs/concept-model.md).
 
+## Context mutation safety
+
+Coach and architect output that would change the playbook, hints, prompts,
+tools, validators, or routing is a proposal, not an immediate live write. The
+Python control plane records it as an immutable context-bundle candidate. An
+external evaluator must return matched candidate/incumbent trials from the same
+fixtures, seeds, cohort, and evaluator epoch before promotion is possible.
+Integrations should retain and display the active and candidate bundle digests
+from generation artifacts rather than infer activation from a strategy
+`advance` decision. See [context bundles](../../docs/context-bundles.md) for the
+artifact and comparison contract.
+
+## Research workspace capabilities
+
+External agents that only need plain data exploration should use the default
+restricted interpreter. Code/research scenarios that need files or selected
+packages must explicitly request and receive a `trusted_local` or
+`isolated_sandbox` grant. Package imports and subprocess execution additionally
+require `trusted_local`; `isolated_sandbox` denies both until a real OS sandbox
+backend is available. Network and typed host-plane calls are separate grants, and
+credentials never enter the candidate kernel. See
+[capability-scoped research workspaces](../../docs/research-workspaces.md) for
+profiles, lifecycle, snapshots, timeout behavior, and Python/TypeScript
+responsibilities.
+
+External worker daemons can participate in campaign execution through the
+Python `CampaignScheduler` lease protocol: advertise resources/capabilities,
+claim bounded jobs, heartbeat active leases, and complete with separate
+candidate/infrastructure outcomes. The checksummed event log supports restart
+reconciliation and idempotent delivery. See the
+[optional campaign scheduler](../../docs/campaign-scheduler.md).
+
 ## Why CLI-First
 
 The `autoctx` CLI is the default integration surface for external agents. Unix-style CLI interfaces are a natural fit for LLM agents:

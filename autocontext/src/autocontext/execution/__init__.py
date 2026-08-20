@@ -3,6 +3,18 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from .action_filter import ActionFilterHarness
+from .campaign_scheduler import (
+    CallableCampaignWorker,
+    CampaignJobRequest,
+    CampaignJobResult,
+    CampaignScheduler,
+    CampaignSchedulerEventStore,
+    RemoteCampaignWorker,
+    SchedulerBudget,
+    SchedulerResources,
+    StaleCampaignSchedulerError,
+    WorkerDescriptor,
+)
 from .phased_execution import (
     PhaseBudget,
     PhasedExecutionPlan,
@@ -10,6 +22,21 @@ from .phased_execution import (
     PhasedRunner,
     PhaseResult,
     split_budget,
+)
+from .remote_execution import (
+    RemoteAcceleratorRequest,
+    RemoteExecutionRequest,
+    RemoteExecutionResult,
+    RemoteResourceRequest,
+)
+from .research_workspace import (
+    ResearchWorkspace,
+    ResearchWorkspaceBenchmark,
+    ResearchWorkspaceSnapshot,
+    WorkspaceCapabilityRequest,
+    WorkspaceResourceLimits,
+    benchmark_research_workspace,
+    grant_workspace_access,
 )
 from .sandbox_adapter_contracts import (
     SANDBOX_CAPABILITY_NAMES,
@@ -36,6 +63,11 @@ _LAZY_SUPERVISOR_EXPORTS = frozenset({"ExecutionInput", "ExecutionOutput", "Exec
 
 __all__ = [
     "ActionFilterHarness",
+    "CallableCampaignWorker",
+    "CampaignJobRequest",
+    "CampaignJobResult",
+    "CampaignScheduler",
+    "CampaignSchedulerEventStore",
     "ExecutionSupervisor",
     "ExecutionInput",
     "ExecutionOutput",
@@ -57,6 +89,22 @@ __all__ = [
     "PhasedExecutionPlan",
     "PhasedExecutionResult",
     "PhasedRunner",
+    "ResearchWorkspace",
+    "ResearchWorkspaceBenchmark",
+    "ResearchWorkspaceSnapshot",
+    "RemoteAcceleratorRequest",
+    "RemoteCampaignWorker",
+    "RemoteExecutionRequest",
+    "RemoteExecutionResult",
+    "RemoteResourceRequest",
+    "SchedulerBudget",
+    "SchedulerResources",
+    "StaleCampaignSchedulerError",
+    "WorkspaceCapabilityRequest",
+    "WorkspaceResourceLimits",
+    "WorkerDescriptor",
+    "benchmark_research_workspace",
+    "grant_workspace_access",
     "lifecycle_hooks_for_boot_mode",
     "normalize_sandbox_adapter_capabilities",
     "plan_sandbox_startup",

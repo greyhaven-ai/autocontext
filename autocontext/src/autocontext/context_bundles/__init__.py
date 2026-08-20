@@ -1,0 +1,62 @@
+"""Outcome-gated immutable context bundles."""
+
+from autocontext.context_bundles.assembly import (
+    CONSTRUCTION_BOUND_ROUTING_FIELDS,
+    DEFERRED_ROUTING_FIELDS,
+    LIVE_CONTEXT_ROUTING_FIELDS,
+    build_candidate_bundle,
+    build_legacy_baseline,
+    bundle_mutations,
+    bundle_routing_config,
+    bundle_text,
+    bundle_tool_context,
+    evaluator_epoch_for,
+    routing_snapshot,
+    validate_bundle_promotion_contract,
+)
+from autocontext.context_bundles.comparison import evaluate_matched_trials
+from autocontext.context_bundles.models import (
+    BundleComponent,
+    BundleLifecycle,
+    ComparisonDecision,
+    ComparisonResult,
+    ComponentKind,
+    ConfirmationPolicy,
+    ContextBundle,
+    MatchedTrial,
+    PromotionArtifact,
+    TrialLane,
+    canonical_json,
+    stable_digest,
+)
+from autocontext.context_bundles.store import CandidateRecord, ContextBundleStore
+
+__all__ = [
+    "BundleComponent",
+    "BundleLifecycle",
+    "CandidateRecord",
+    "ComparisonDecision",
+    "ComparisonResult",
+    "ComponentKind",
+    "ConfirmationPolicy",
+    "ContextBundle",
+    "ContextBundleStore",
+    "MatchedTrial",
+    "PromotionArtifact",
+    "TrialLane",
+    "CONSTRUCTION_BOUND_ROUTING_FIELDS",
+    "DEFERRED_ROUTING_FIELDS",
+    "LIVE_CONTEXT_ROUTING_FIELDS",
+    "canonical_json",
+    "build_candidate_bundle",
+    "build_legacy_baseline",
+    "bundle_mutations",
+    "bundle_routing_config",
+    "bundle_text",
+    "bundle_tool_context",
+    "evaluate_matched_trials",
+    "evaluator_epoch_for",
+    "routing_snapshot",
+    "stable_digest",
+    "validate_bundle_promotion_contract",
+]

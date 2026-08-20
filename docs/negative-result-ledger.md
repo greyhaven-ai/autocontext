@@ -5,18 +5,30 @@ autocontext provides a durable ledger for failed, pruned, rejected, or refused b
 ## Contract
 
 Schema: [`negative-result-ledger.json`](negative-result-ledger.json)  
-Parity fixture: [`negative-result-ledger-parity-fixture.json`](negative-result-ledger-parity-fixture.json)
+Legacy migration parity fixture: [`negative-result-ledger-parity-fixture.json`](negative-result-ledger-parity-fixture.json)
+Applicability/retest parity fixture: [`negative-result-applicability-parity-fixture.json`](negative-result-applicability-parity-fixture.json)
 
-A ledger contains:
+A schema-v2 ledger contains:
 
 - `entries`: negative branch examples with `failure_kind`, `disposition`, `score_delta`, evaluated seeds/probes, branch lineage, and evidence references.
+- `context`: the scenario, exact context-bundle digest and family, evaluator epoch, verifier digest, trial cohort, component dependencies, and environment fingerprint under which the result occurred.
+- `applicability_scope`: one of `exact_bundle`, `bundle_family`, `scenario_local`, `cross_scenario`, or `context_unknown`.
+- Retest lineage: `retest_of_result_id`, `retest_outcome`, and `superseded_by_result_id` preserve later evidence without deleting the original result.
 - `failure_mode_summary`: grouped counts by `failure_kind` and `disposition`, with the source `result_ids` preserved.
 
 ## Disposition semantics
 
 - `caution`: evidence-backed warning. Prompt injection says it is **not a ban** and should only constrain retries with no differentiating evidence.
-- `hard_ban`: reproducible contraindication. Prompt injection says do not repeat without new evidence.
+- `hard_ban`: reproducible contraindication within its matching scope. A cross-scenario hard ban requires `safety_policy_authority`; otherwise it is injected as a caution.
 - `noise`: one-off or flaky result. It remains inspectable but is omitted from prompt lessons so exploration does not collapse.
+
+## Applicability and retesting
+
+Callers supply the current bundle, evaluator, verifier, trial cohort, dependencies, environment, and observation time when rendering prompt lessons. A bundle/family/scenario mismatch, evaluator, verifier, or cohort change, changed dependency, changed environment, expired evidence, or newly available stronger evidence marks the result `retest_due` and downgrades it to a caution. Every injected lesson states why it applies or why it is qualified.
+
+A `not_reproduced` retest links back to the original. It supersedes the original negative result only when its applicability scope and recorded context match, including the evaluator, verifier, trial cohort, environment, and component dependencies. An unrelated retest remains durable evidence but leaves the original result active. Retest result IDs must be new within the ledger, and superseded lessons are no longer injected.
+
+Schema-v1 ledgers remain readable in Python and TypeScript. They migrate to v2 with `context_unknown`, so legacy evidence stays visible but cannot become an unscoped hard ban.
 
 ## OSS boundary
 

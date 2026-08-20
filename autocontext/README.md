@@ -4,6 +4,15 @@ This package is the Python control plane for autocontext: scenario runs, `solve`
 
 Use it when you want the full harness in Python, a CLI installed with `uv`/`pip`, or the MCP/HTTP server that coding agents can call.
 
+Generation output that changes prompts or harness behavior is staged as an
+immutable `ContextBundle`. It becomes active only after matched screening,
+adaptive confirmation, and held-out evaluation; a successful strategy gate by
+itself does not activate a context edit. The artifact layout and Python API are
+documented in [context bundles](../docs/context-bundles.md).
+The `autocontext.analytics.context_attribution` API joins controlled trials to
+those immutable digests, plans bounded re-ablation, and returns non-destructive
+prompt-selection decisions. See [ablation-backed attribution](../docs/context-attribution.md).
+
 ## Install
 
 ```bash
@@ -21,6 +30,33 @@ pip install 'autocontext[mcp]'              # MCP server dependencies
 ```
 
 The CLI entrypoint is `autoctx`. Provider env vars are listed in the repo-level [`.env.example`](../.env.example).
+
+Autoresearch checkpoint selection uses a minimum-effect gate by default and
+supports adaptive matched-trial confirmation through the Python API. Raw
+trials and stopping rationale are persisted separately from deployment
+promotion; see [trainer-local statistical confirmation](../docs/training-statistical-confirmation.md).
+
+Long-running campaign operators can opt into a separately routed, frozen
+`CampaignAuditor` that reviews a sanitized evidence packet without mutation
+authority. Reviews are cached, bounded, and advisory; see the
+[read-only campaign auditor](../docs/campaign-auditor.md).
+
+Campaign plans can be executed through the optional, provider-neutral
+`CampaignScheduler`, with durable leases, resource/capability matching,
+comparable lanes, bounded retries and budgets, and capability-driven warm
+affinity. See the [campaign scheduler](../docs/campaign-scheduler.md).
+
+Code and research scenarios can opt into a process-backed `ResearchWorkspace`
+with explicit file, import, network, and host-bridge grants. Only approved
+`trusted_local` workspaces may import packages or run allow-listed subprocesses;
+`isolated_sandbox` denies both until an OS sandbox backend exists. The existing
+restricted interpreter remains the default; see
+[capability-scoped research workspaces](../docs/research-workspaces.md).
+
+Remote tasks use a provider-neutral request/result contract for resources,
+artifacts, lifecycle, events, usage, and cleanup. Prime Intellect implements
+that contract as an optional adapter and no longer owns scenario scoring logic;
+see [remote execution sessions](../docs/remote-execution-sessions.md).
 
 ## Run from a checkout
 

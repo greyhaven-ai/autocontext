@@ -8,7 +8,6 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from autocontext.kernel_evolution._file_lock import append_bytes_locked
 from autocontext.kernel_evolution.models import (
     KernelAttemptRecord,
     KernelBenchmarkObservation,
@@ -16,6 +15,7 @@ from autocontext.kernel_evolution.models import (
     KernelEvolutionResult,
     content_digest,
 )
+from autocontext.util.file_lock import append_bytes_locked
 from autocontext.util.json_io import write_json, write_text_atomic
 
 

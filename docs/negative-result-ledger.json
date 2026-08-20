@@ -6,7 +6,7 @@
   "additionalProperties": false,
   "required": ["schema_version", "run_id", "generated_at", "entries", "failure_mode_summary"],
   "properties": {
-    "schema_version": { "const": 1 },
+    "schema_version": { "const": 2 },
     "run_id": { "type": "string", "minLength": 1 },
     "generated_at": { "type": "string", "minLength": 1 },
     "entries": { "type": "array", "items": { "$ref": "#/$defs/entry" } },
@@ -26,6 +26,10 @@
       ]
     },
     "disposition": { "enum": ["caution", "hard_ban", "noise"] },
+    "applicabilityScope": {
+      "enum": ["exact_bundle", "bundle_family", "scenario_local", "cross_scenario", "context_unknown"]
+    },
+    "retestOutcome": { "enum": ["confirmed", "not_reproduced", "inconclusive", null] },
     "nullableString": { "type": ["string", "null"] },
     "nullableNumber": { "type": ["number", "null"] },
     "nullableNonNegativeInteger": { "type": ["integer", "null"], "minimum": 0 },
@@ -48,6 +52,43 @@
         "event_id": { "$ref": "#/$defs/nullableString" }
       }
     },
+    "componentDependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["component_kind", "key", "digest"],
+      "properties": {
+        "component_kind": { "type": "string", "minLength": 1 },
+        "key": { "type": "string", "minLength": 1 },
+        "digest": { "type": "string", "minLength": 1 }
+      }
+    },
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scenario_name",
+        "context_bundle_digest",
+        "context_bundle_family",
+        "evaluator_epoch",
+        "verifier_digest",
+        "trial_cohort",
+        "component_dependencies",
+        "environment_fingerprint"
+      ],
+      "properties": {
+        "scenario_name": { "$ref": "#/$defs/nullableString" },
+        "context_bundle_digest": { "$ref": "#/$defs/nullableString" },
+        "context_bundle_family": { "$ref": "#/$defs/nullableString" },
+        "evaluator_epoch": { "$ref": "#/$defs/nullableString" },
+        "verifier_digest": { "$ref": "#/$defs/nullableString" },
+        "trial_cohort": { "$ref": "#/$defs/nullableString" },
+        "component_dependencies": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/componentDependency" }
+        },
+        "environment_fingerprint": { "$ref": "#/$defs/nullableString" }
+      }
+    },
     "entry": {
       "type": "object",
       "additionalProperties": false,
@@ -64,7 +105,14 @@
         "evaluated_seeds",
         "evaluated_probes",
         "branch_lineage",
-        "evidence_refs"
+        "evidence_refs",
+        "applicability_scope",
+        "context",
+        "evidence_expires_at",
+        "safety_policy_authority",
+        "retest_of_result_id",
+        "retest_outcome",
+        "superseded_by_result_id"
       ],
       "properties": {
         "result_id": { "type": "string", "minLength": 1 },
@@ -79,7 +127,14 @@
         "evaluated_seeds": { "type": "array", "items": { "type": "string", "minLength": 1 } },
         "evaluated_probes": { "type": "array", "items": { "type": "string", "minLength": 1 } },
         "branch_lineage": { "type": "array", "items": { "$ref": "#/$defs/branchLineageEdge" } },
-        "evidence_refs": { "type": "array", "items": { "$ref": "#/$defs/evidenceRef" } }
+        "evidence_refs": { "type": "array", "items": { "$ref": "#/$defs/evidenceRef" } },
+        "applicability_scope": { "$ref": "#/$defs/applicabilityScope" },
+        "context": { "$ref": "#/$defs/context" },
+        "evidence_expires_at": { "$ref": "#/$defs/nullableString" },
+        "safety_policy_authority": { "$ref": "#/$defs/nullableString" },
+        "retest_of_result_id": { "$ref": "#/$defs/nullableString" },
+        "retest_outcome": { "$ref": "#/$defs/retestOutcome" },
+        "superseded_by_result_id": { "$ref": "#/$defs/nullableString" }
       }
     },
     "failureModeSummary": {

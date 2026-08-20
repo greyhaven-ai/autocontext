@@ -788,6 +788,120 @@ class TestStageKnowledgeSetup:
         assert "Coach hints for competitor:\n- Stale corner hint" not in result.prompts.competitor
         assert "Hint freshness warnings" in result.prompts.competitor
 
+    def test_promoted_bundle_hints_override_legacy_freshness_state(self) -> None:
+        from autocontext.context_bundles import BundleComponent, ComponentKind, ContextBundle, routing_snapshot
+
+        settings = AppSettings(agent_provider="deterministic", evidence_freshness_enabled=True)
+        ctx = _make_ctx(settings=settings)
+        active = ContextBundle.create(
+            scenario=ctx.scenario_name,
+            evaluator_epoch="epoch-1",
+            components=[
+                BundleComponent(ComponentKind.HINTS, "hints", "Promoted matched hint", "text/markdown"),
+                BundleComponent.json(ComponentKind.ROUTING_CONFIG, "roles", routing_snapshot(settings)),
+            ],
+        )
+        artifacts, trajectory = _make_knowledge_stage_mocks()
+        artifacts.ensure_context_bundle_baseline.return_value = active
+        artifacts.list_tool_names.return_value = []
+
+        with (
+            patch("autocontext.loop.stages._load_fresh_skill_context", return_value=("", "")),
+            patch("autocontext.loop.stages._load_fresh_hint_context") as legacy_hint_loader,
+        ):
+            result = stage_knowledge_setup(ctx, artifacts=artifacts, trajectory_builder=trajectory)
+
+        legacy_hint_loader.assert_not_called()
+        assert result.applied_competitor_hints == "Promoted matched hint"
+        assert result.prompts is not None
+        assert "Promoted matched hint" in result.prompts.competitor
+
+    def test_active_bundle_role_model_is_applied_and_synced_to_orchestrator(self) -> None:
+        from autocontext.context_bundles import BundleComponent, ComponentKind, ContextBundle, routing_snapshot
+
+        settings = AppSettings(agent_provider="deterministic")
+        ctx = _make_ctx(settings=settings)
+        routing = routing_snapshot(settings)
+        routing["model_competitor"] = "promoted-competitor-model"
+        active = ContextBundle.create(
+            scenario=ctx.scenario_name,
+            evaluator_epoch="epoch-1",
+            components=[BundleComponent.json(ComponentKind.ROUTING_CONFIG, "roles", routing)],
+        )
+        artifacts, trajectory = _make_knowledge_stage_mocks()
+        artifacts.ensure_context_bundle_baseline.return_value = active
+        artifacts.list_tool_names.return_value = []
+
+        result = stage_knowledge_setup(ctx, artifacts=artifacts, trajectory_builder=trajectory)
+        orchestrator = AgentOrchestrator(DeterministicDevClient(), settings)
+        orchestrator.apply_active_context_routing(result.settings, result.active_context_routing)
+
+        assert result.settings.model_competitor == "promoted-competitor-model"
+        assert orchestrator.competitor.model == "promoted-competitor-model"
+        _, resolved_model = orchestrator.resolve_role_execution("competitor", generation=1)
+        assert resolved_model == "promoted-competitor-model"
+
+        orchestrator.apply_active_context_routing(settings, {})
+        assert orchestrator.competitor.model == settings.model_competitor
+        _, restored_model = orchestrator.resolve_role_execution("competitor", generation=2)
+        assert restored_model == settings.model_competitor
+
+    @pytest.mark.parametrize(
+        ("update", "message"),
+        [
+            ({"agent_provider": "anthropic"}, "restart with matching settings"),
+            ({"dag_changes": [{"action": "remove_role", "name": "coach"}]}, "orchestrator reconstruction"),
+            ({"tuning_proposal": "{}"}, "gate and executor reconstruction"),
+        ],
+    )
+    def test_active_bundle_construction_bound_routing_fails_closed(
+        self,
+        update: dict[str, object],
+        message: str,
+    ) -> None:
+        from autocontext.context_bundles import BundleComponent, ComponentKind, ContextBundle, routing_snapshot
+
+        settings = AppSettings(agent_provider="deterministic")
+        ctx = _make_ctx(settings=settings)
+        routing = {**routing_snapshot(settings), **update}
+        active = ContextBundle.create(
+            scenario=ctx.scenario_name,
+            evaluator_epoch="epoch-1",
+            components=[BundleComponent.json(ComponentKind.ROUTING_CONFIG, "roles", routing)],
+        )
+        artifacts, trajectory = _make_knowledge_stage_mocks()
+        artifacts.ensure_context_bundle_baseline.return_value = active
+
+        with pytest.raises(RuntimeError, match=message):
+            stage_knowledge_setup(ctx, artifacts=artifacts, trajectory_builder=trajectory)
+
+    def test_active_tool_specs_are_reference_only_until_installed(self) -> None:
+        from autocontext.context_bundles import BundleComponent, ComponentKind, ContextBundle, routing_snapshot
+
+        settings = AppSettings(agent_provider="deterministic")
+        ctx = _make_ctx(settings=settings)
+        active = ContextBundle.create(
+            scenario=ctx.scenario_name,
+            evaluator_epoch="epoch-1",
+            components=[
+                BundleComponent.json(ComponentKind.ROUTING_CONFIG, "roles", routing_snapshot(settings)),
+                BundleComponent.json(
+                    ComponentKind.TOOL_SPEC,
+                    "promoted_helper",
+                    {"name": "promoted_helper", "description": "Analyze a board", "code": "def run(): return 1"},
+                ),
+            ],
+        )
+        artifacts, trajectory = _make_knowledge_stage_mocks()
+        artifacts.ensure_context_bundle_baseline.return_value = active
+        artifacts.list_tool_names.return_value = ["installed_tool.py"]
+
+        result = stage_knowledge_setup(ctx, artifacts=artifacts, trajectory_builder=trajectory)
+
+        assert "Reference helper (not installed or callable): promoted_helper" in result.tool_context
+        assert "do not invoke it as a runtime tool" in result.tool_context
+        assert result.base_tool_names == ["installed_tool"]
+
     def test_freshness_decay_filters_stale_notebook_context(self) -> None:
         artifacts = MagicMock()
         artifacts.read_playbook.return_value = ""
@@ -857,14 +971,15 @@ class TestStageAgentGeneration:
         ctx.strategy_interface = '{"aggression": float}'
 
         artifacts = MagicMock()
-        artifacts.persist_tools.return_value = ["tool1.py"]
         sqlite = MagicMock()
 
         result = stage_agent_generation(ctx, orchestrator=orch, artifacts=artifacts, sqlite=sqlite)
         assert result.outputs is not None
         assert len(result.outputs.role_executions) == 5
         assert isinstance(result.current_strategy, dict)
-        assert result.created_tools == ["tool1.py"]
+        assert result.created_tools == []
+        artifacts.persist_tools.assert_not_called()
+        artifacts.propose_context_bundle.assert_called_once()
 
     def test_raises_on_invalid_strategy(self) -> None:
         settings = _make_settings()
@@ -981,7 +1096,7 @@ class TestStageAgentGeneration:
         assert isinstance(written_tracker, ToolUsageTracker)
         assert written_tracker.get_stats()["cluster_evaluator"].total_refs == 1
 
-    def test_persists_approved_harness_mutations_from_architect_output(self) -> None:
+    def test_stages_harness_mutations_in_context_candidate_namespace(self) -> None:
         scenario = _make_scenario_mock()
         ctx = _make_ctx(settings=_make_settings(), scenario=scenario)
 
@@ -1018,21 +1133,19 @@ class TestStageAgentGeneration:
         orchestrator = MagicMock()
         orchestrator.run_generation.return_value = outputs
         artifacts = MagicMock()
-        artifacts.persist_tools.return_value = []
-        artifacts.load_harness_mutations.return_value = []
         sqlite = MagicMock()
 
         stage_agent_generation(ctx, orchestrator=orchestrator, artifacts=artifacts, sqlite=sqlite)
 
-        artifacts.save_harness_mutations.assert_called_once()
-        call = artifacts.save_harness_mutations.call_args
+        artifacts.save_harness_mutations.assert_not_called()
+        call = artifacts.propose_context_bundle.call_args
         assert call.args[0] == ctx.scenario_name
-        saved = call.args[1]
-        assert len(saved) == 1
-        assert saved[0].target_role == "competitor"
-        assert saved[0].content == "Check edge cases"
-        assert call.kwargs["generation"] == ctx.generation
-        assert call.kwargs["run_id"] == ctx.run_id
+        proposed = call.kwargs["mutations"]
+        assert len(proposed) == 1
+        assert proposed[0].target_role == "competitor"
+        assert proposed[0].content == "Check edge cases"
+        assert call.kwargs["source_generation"] == ctx.generation
+        assert call.kwargs["source_run_id"] == ctx.run_id
 
     def test_multi_basin_branching_selects_best_candidate_in_live_path(self) -> None:
         from autocontext.prompts.templates import build_prompt_bundle

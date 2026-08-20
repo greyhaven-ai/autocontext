@@ -225,7 +225,7 @@ class AppSettings(RoleRoutingFields, WorkspaceInterpreterFields, OutputBudgetFie
     primeintellect_wait_attempts: int = Field(default=60, ge=1)
     primeintellect_max_retries: int = Field(default=2, ge=0)
     primeintellect_backoff_seconds: float = Field(default=0.75, ge=0)
-    allow_primeintellect_fallback: bool = Field(default=True)
+    allow_primeintellect_fallback: bool = Field(default=False, description="Allow an unavailable local sentinel")
     local_sandbox_hardened: bool = Field(default=True)
     ablation_no_feedback: bool = Field(default=False)
     context_attribution: Literal["component", "span"] = "component"

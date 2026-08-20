@@ -9,6 +9,60 @@ All notable changes to this project will be documented in this file.
 - Python kernel evolution now supports a strict external benchmark contract,
   append-only champion lineage, fresh-protocol confirmation before promotion,
   and reproducible synthetic and live H100 examples.
+- An optional Python `CampaignScheduler` dispatches branch/trial jobs across
+  local workers and remote adapters using capability/resource matching,
+  expiring leases, heartbeats, bounded retry and concurrency, idempotent
+  completion, comparable-lane affinity, branch-scoped warm reuse, and enforced
+  campaign/branch/evidence budgets. A checksummed append-only event log enables
+  deterministic restart reconciliation, while reports separate candidate and
+  infrastructure outcomes and include utilization (AC-979). TypeScript retains
+  the shared campaign report artifact; executable scheduling is Python-first.
+- Remote execution now has provider-neutral typed requests/results for images,
+  commands, resources, optional accelerators, network and scoped-secret policy,
+  artifacts, events, usage, and cleanup. The optional Prime Intellect adapter
+  contains no game scoring logic, supports bounded matched-trial reuse and
+  capability-gated warm/snapshot requests, and keeps infrastructure, task,
+  timeout, artifact, and cleanup failures distinct for external-eval ledgers
+  (AC-978).
+- Python code/research scenarios can now opt into capability-scoped,
+  process-backed persistent workspaces with explicit file, import, subprocess,
+  network, and typed host-bridge grants. Transactional executions, bounded
+  resources, snapshots/restores, deterministic cleanup, and audit events keep
+  the current restricted interpreter as the safe default (AC-977). TypeScript
+  coordinates the shared runtime workspace boundary but does not embed a
+  parallel Python interpreter.
+- An optional Python `CampaignAuditor` now performs separately routed,
+  read-only integrity reviews at bounded campaign checkpoints. Sanitized,
+  fingerprinted evidence packets exclude holdout answers and credentials;
+  duplicate reviews are cached, timeouts fail open to deterministic monitors,
+  findings remain advisory by default, and operator dispositions are durable
+  (AC-980). TypeScript parity is deferred with the Python campaign executor.
+- The Python autoresearch trainer now persists replayable checkpoint-promotion
+  artifacts and supports deterministic minimum-effect gating plus adaptive
+  matched screen/confirmation/held-out trials. Decisions distinguish accepted,
+  rejected, inconclusive, invalid, and infrastructure-error outcomes; validity,
+  parse, and dimensional regressions are binding (AC-976). TypeScript parity is
+  deferred because the autoresearch trainer is Python-only.
+- Ablation-backed context attribution records controlled trial pairs against
+  stable component and bundle digests, reconstructs causal credit, schedules
+  bounded cadence/plateau/composition re-tests, preserves attribution history,
+  and lets prompt selection demote harmful or neutral high-cost components.
+  Paired-shadow and edit-size correlation remain explicitly noncausal in Python
+  and TypeScript reports (AC-974).
+- Negative-result ledger schema v2 binds evidence to context-bundle,
+  evaluator, verifier, cohort, dependency, and environment identity. Scoped
+  applicability, explicit retest triggers, hard-ban authority, and durable
+  retest/supersession links prevent stale evidence from suppressing unrelated
+  exploration; Python and TypeScript safely migrate v1 ledgers as qualified
+  `context_unknown` evidence (AC-975).
+- Immutable, content-addressed `ContextBundle` manifests now group playbooks,
+  hints, prompt and completion mutations, tool guidance/specifications,
+  harness validators, and routing configuration under one evaluator epoch.
+  Architect and coach output lands in a candidate namespace; matched screening,
+  adaptive confirmation, and a held-out lane are required before one atomic
+  active-pointer promotion. Promotion records include exact lineage, cohort,
+  rationale, and rollback target. Python and TypeScript share canonical digests
+  and parity fixtures through `autoctx/context-bundles` (AC-973).
 
 ## [0.16.1] - 2026-08-14
 

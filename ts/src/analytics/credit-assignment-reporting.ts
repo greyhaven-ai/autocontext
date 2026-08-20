@@ -21,10 +21,10 @@ const ROLE_TITLES: Record<string, string> = {
 };
 
 const ROLE_GUIDANCE: Record<string, string> = {
-  analyst: "Use this to focus your next diagnosis on the changes that actually moved score.",
-  coach: "Use this to reinforce the coaching changes that translated into measurable gains.",
-  architect: "Use this to prioritize tool work only where tooling actually moved outcomes.",
-  competitor: "Use this to lean into the strategy surfaces that correlated with progress.",
+  analyst: "Use this correlation to prioritize diagnosis; require controlled trials for causal claims.",
+  coach: "Treat this edit-size estimate as a lead, not proof that a coaching change caused the gain.",
+  architect: "Prioritize follow-up tests where tooling changes correlated with outcomes.",
+  competitor: "Use this correlation as a hypothesis for controlled follow-up.",
 };
 
 export function formatAttributionForAgent(result: AttributionResult, role: string): string {
@@ -64,6 +64,8 @@ export function formatAttributionForAgent(result: AttributionResult, role: strin
 
   const positiveDelta = result.totalDelta > 0;
   const lines = [`## ${title} (Gen ${result.generation})`];
+  const evidenceLevel = String(result.metadata.evidence_level ?? "component_correlated");
+  lines.push(`Evidence: ${evidenceLevel} (edit-size heuristic; not causal)`);
   if (positiveDelta) {
     lines.push(`Total score improvement: +${result.totalDelta.toFixed(4)}`);
     if (guidance) {

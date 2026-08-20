@@ -241,6 +241,28 @@ class AgentOrchestrator:
 
         return orch
 
+    def apply_active_context_routing(self, settings: AppSettings, routing: dict[str, Any]) -> None:
+        """Synchronize generation-time routes from the immutable active bundle.
+
+        Provider changes are construction-bound because they require replacing
+        clients and credentials. The knowledge stage rejects those before this
+        method is called; enforce the same invariant here for direct callers.
+        """
+
+        if settings.agent_provider != self.settings.agent_provider:
+            raise RuntimeError("active context cannot replace the constructed agent provider")
+        # An empty routing map is meaningful: the current active bundle no
+        # longer overrides generation-time routes. Always resynchronize from
+        # the generation's baseline settings so an older promoted bundle cannot
+        # leak its models or routing flags into later generations.
+        self.settings = settings
+        self.competitor.model = settings.model_competitor
+        self.analyst.model = settings.model_analyst
+        self.coach.model = settings.model_coach
+        self.architect.model = settings.model_architect
+        self._role_router = RoleRouter(settings)
+        self._harness_coverage_cache.clear()
+
     def _client_for_role(self, role: str) -> LanguageModelClient:
         return self._role_clients.get(role, self.client)
 
