@@ -1,0 +1,178 @@
+{
+  "schema_version": "autocontext.kernelbench-h100-recursive-evidence/v1",
+  "evidence_status": "observed_live_run",
+  "observed_at": "2026-08-17",
+  "sanitized": true,
+  "golden_performance_assertion": false,
+  "problem_id": "kernelbench-v0.1-level1-1-square-matmul-n4096",
+  "identity_contract": {
+    "observed_report_schema": "autocontext.kernelbench-eval/v1",
+    "artifact_digest_semantics": "legacy-source-sha256/v1",
+    "current_report_schema": "autocontext.kernelbench-eval/v2",
+    "migration_note": "Observed digests are preserved source-byte SHA-256 evidence and are not ABI-bound v2 artifact identities."
+  },
+  "campaign": {
+    "phase_one_run_id": "h100-confirm-tuned-20260817",
+    "recursive_run_id": "h100-recursive-10-20260817",
+    "proposal_budget": 10,
+    "proposals_evaluated": 10,
+    "promotions": 4,
+    "rejections": 6,
+    "final_decision": "promoted_and_confirmed"
+  },
+  "artifacts": {
+    "autokernel_starter_digest": "sha256:43ee29f4fb574b2110460685b2c934053e463b42477e433a5cc4bd8d77cd9cf5",
+    "phase_two_start_digest": "sha256:500a28c8bfd5374884eca49824de76855e314154c1e770d0ca7c8ad79a9e46e4",
+    "champion_artifact_digest": "sha256:3ba00003ea78dbee1d216331e88b5feb615283d7fd0e216aeea8c518ce122d4e",
+    "reference_baseline_id": "sha256:a0cbaf3608109c57fa0da9e92a760afc6b0dff16cc4c84e5fddd081db0b7708f",
+    "champion_source": "recursive_champion.py"
+  },
+  "hardware": {
+    "backend": "cuda",
+    "architecture": "sm90",
+    "device_name": "NVIDIA H100 80GB HBM3",
+    "driver": "580.159.03",
+    "runtime": "cuda-13.0",
+    "toolchain": "python-3.12.3/torch-2.13.0+cu130/triton-3.7.1",
+    "multiprocessors": 132
+  },
+  "protocol": {
+    "correctness_trials": 5,
+    "hidden_trials": 3,
+    "warmup_runs": 3,
+    "timing_blocks": 8,
+    "calls_per_block": 10,
+    "atol": 0.01,
+    "rtol": 0.01,
+    "primary_protocol_id": "sha256:c73d37aa027b0269158718d10bdef9865b8156b7151728e6c2911dac5400c670",
+    "confirmation_protocol_id": "sha256:538572bc58f556a58590062c26ac48a3208b12e6cbdcc97f92f326e8ddb2c17f",
+    "primary_seed_commitment": "sha256:6cd3e86b41cc546710198e3f274adfe2e54c636069e5ff0e4ac0c1ea3e50477a",
+    "confirmation_seed_commitment": "sha256:a54dd281c3ac16c02ccbc79636da1ed9851381ead9dc170476669f3613a82a97"
+  },
+  "phase_one": {
+    "purpose": "confirm the bundled SM90 candidate before recursion",
+    "primary": {
+      "candidate_median_ms": 2.106982326507568,
+      "incumbent_median_ms": 3.4484975814819334,
+      "reference_median_ms": 3.0841872215271,
+      "speedup_vs_incumbent": 1.6255179885594133,
+      "speedup_lcb95": 1.6156971020575575,
+      "correctness": "5/5"
+    },
+    "confirmation": {
+      "candidate_median_ms": 2.106060886383057,
+      "incumbent_median_ms": 3.4253135681152345,
+      "reference_median_ms": 3.076369571685791,
+      "speedup_vs_incumbent": 1.63516698180016,
+      "speedup_lcb95": 1.623873555707245,
+      "correctness": "5/5"
+    }
+  },
+  "champion": {
+    "strategy": "preconvert both fixed-shape float32 inputs to float16 once, then autotune a direct float16 Triton matmul with float32 accumulation and output",
+    "primary": {
+      "candidate_median_ms": 0.2887888073921204,
+      "incumbent_median_ms": 0.5415152072906495,
+      "reference_median_ms": 3.2230079650878904,
+      "speedup_vs_incumbent": 1.8786648936623356,
+      "speedup_vs_reference": 11.172951877025305,
+      "speedup_lcb95": 1.8735619537882386,
+      "candidate_p95_ms": 0.29218239784240724,
+      "environment_drift_ratio": 0.009253127133362349,
+      "correctness": {
+        "tests_passed": 5,
+        "hidden_tests_passed": 3,
+        "max_abs_error": 0.0555419921875,
+        "max_rel_error": 0.00005305722515913658
+      }
+    },
+    "confirmation": {
+      "candidate_median_ms": 0.2894879937171936,
+      "incumbent_median_ms": 0.5389264106750489,
+      "reference_median_ms": 3.2266752243041994,
+      "speedup_vs_incumbent": 1.8598529725356197,
+      "speedup_vs_reference": 11.177676088712227,
+      "speedup_lcb95": 1.8577342701948207,
+      "candidate_p95_ms": 0.29237120151519774,
+      "environment_drift_ratio": 0.02674060488061758,
+      "correctness": {
+        "tests_passed": 5,
+        "hidden_tests_passed": 3,
+        "max_abs_error": 0.0592041015625,
+        "max_rel_error": 0.000057883742556441575
+      }
+    },
+    "approximate_throughput_tflops": 475.9,
+    "speedup_vs_phase_two_start": 7.298
+  },
+  "lineage": [
+    {
+      "proposal": 1,
+      "decision": "promoted",
+      "reason": "exact-shape autotuned specialization",
+      "candidate_median_ms": 1.3418399810791017
+    },
+    {
+      "proposal": 2,
+      "decision": "rejected",
+      "reason": "compile_failed_non_constexpr_triton_global"
+    },
+    {
+      "proposal": 3,
+      "decision": "promoted",
+      "reason": "repaired FP16-input kernel",
+      "candidate_median_ms": 0.7132944107055664
+    },
+    {
+      "proposal": 4,
+      "decision": "rejected",
+      "reason": "FP8 correctness failure"
+    },
+    {
+      "proposal": 5,
+      "decision": "promoted",
+      "reason": "focused FP16 autotune",
+      "candidate_median_ms": 0.5313711881637573
+    },
+    {
+      "proposal": 6,
+      "decision": "rejected",
+      "reason": "correct but insufficient improvement",
+      "candidate_median_ms": 0.5386111974716187
+    },
+    {
+      "proposal": 7,
+      "decision": "rejected",
+      "reason": "compile_failed_shared_memory_278528_exceeds_232448"
+    },
+    {
+      "proposal": 8,
+      "decision": "rejected",
+      "reason": "repaired persistent kernel was slower",
+      "candidate_median_ms": 0.5616432189941407
+    },
+    {
+      "proposal": 9,
+      "decision": "promoted",
+      "reason": "preconverted FP16 inputs plus autotuned direct matmul",
+      "candidate_median_ms": 0.2887888073921204
+    },
+    {
+      "proposal": 10,
+      "decision": "rejected",
+      "reason": "compile_failed_INT8_dot"
+    }
+  ],
+  "export": {
+    "archive_size_bytes": 1116160,
+    "archive_sha256": "11147bd55ac83659207edda45c40b4f9dee8b59e8a2c726a8ba8742941123d83",
+    "manifest_entries_verified": 122
+  },
+  "notes": [
+    "Provider, account, billing, node, command, and export identifiers were removed.",
+    "The champion exploits the workload's 1% tolerance by converting inputs to float16; it is not bitwise-equivalent float32 matrix multiplication.",
+    "This fixed 4096 x 4096 workload result is not evidence of general shape or dtype performance.",
+    "Peak-memory fields were unavailable, so the memory gate was inactive; correctness, significance, tail-latency, drift, and fresh-confirmation gates were active.",
+    "This is evidence from one successful live campaign, not a portable speed claim or a golden CI fixture."
+  ]
+}

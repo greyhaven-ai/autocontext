@@ -1,0 +1,77 @@
+{
+  "schema_version": "autocontext.kernelbench-h100-evidence/v1",
+  "evidence_status": "observed_live_run",
+  "sanitized": true,
+  "golden_performance_assertion": false,
+  "problem_id": "kernelbench-v0.1-level1-1-square-matmul-n4096",
+  "identity_contract": {
+    "observed_report_schema": "autocontext.kernelbench-eval/v1",
+    "artifact_digest_semantics": "legacy-source-sha256/v1",
+    "current_report_schema": "autocontext.kernelbench-eval/v2",
+    "migration_note": "Observed digests are preserved source-byte SHA-256 evidence and are not ABI-bound v2 artifact identities."
+  },
+  "artifacts": {
+    "candidate_artifact_digest": "sha256:500a28c8bfd5374884eca49824de76855e314154c1e770d0ca7c8ad79a9e46e4",
+    "incumbent_artifact_digest": "sha256:43ee29f4fb574b2110460685b2c934053e463b42477e433a5cc4bd8d77cd9cf5",
+    "baseline_id": "sha256:a0cbaf3608109c57fa0da9e92a760afc6b0dff16cc4c84e5fddd081db0b7708f"
+  },
+  "hardware": {
+    "backend": "cuda",
+    "architecture": "sm90",
+    "device_name": "NVIDIA H100 80GB HBM3",
+    "driver": "580.159.03",
+    "runtime": "cuda-13.0",
+    "toolchain": "python-3.11.15/torch-2.13.0+cu130/triton-3.7.1",
+    "workload_fingerprint": "sha256:67ac345b68d5e1a3590732c746b0f7b23c71ca26a75b75c9780702248818b423",
+    "hardware_scope_id": "sha256:0abcf4483d1170de0bdec7a38e3d8bc133adc43d3234a201ca3f20d605de98e3",
+    "metadata": {
+      "device_index": "0",
+      "multiprocessors": "132"
+    }
+  },
+  "protocol": {
+    "correctness_trials": 5,
+    "hidden_trials": 3,
+    "warmup_runs": 3,
+    "timing_blocks": 8,
+    "calls_per_block": 10,
+    "atol": 0.01,
+    "rtol": 0.01,
+    "seed_commitment": "sha256:6cd3e86b41cc546710198e3f274adfe2e54c636069e5ff0e4ac0c1ea3e50477a",
+    "protocol_id": "sha256:c73d37aa027b0269158718d10bdef9865b8156b7151728e6c2911dac5400c670"
+  },
+  "compile": {
+    "candidate_passed": true,
+    "incumbent_passed": true,
+    "candidate_compile_ms": 1172.9215850064065
+  },
+  "correctness": {
+    "passed": true,
+    "tests_run": 5,
+    "tests_passed": 5,
+    "hidden_tests_run": 3,
+    "hidden_tests_passed": 3
+  },
+  "performance": {
+    "candidate_median_ms": 2.091774368286133,
+    "incumbent_median_ms": 3.4124032974243166,
+    "reference_median_ms": 3.056182384490967,
+    "candidate_p95_ms": 2.214339256286621,
+    "incumbent_p95_ms": 3.6602336883544924,
+    "speedup_vs_incumbent": 1.6293608529891253,
+    "speedup_vs_reference": 1.4649225815782452,
+    "speedup_lcb95": 1.6211812979141038,
+    "relative_improvement": 0.3862624119356609,
+    "environment_drift_ratio": 0.03381902315732177,
+    "raw_timing_blocks_included": false
+  },
+  "promotion": {
+    "decision": "promoted",
+    "promote": true,
+    "reason": "significant_improvement"
+  },
+  "notes": [
+    "Provider, account, billing, node, and job identifiers were removed.",
+    "This is evidence from one successful live run, not a portable speed claim or a golden test fixture."
+  ]
+}

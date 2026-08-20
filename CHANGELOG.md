@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Python kernel evolution now supports a strict external benchmark contract,
+  append-only champion lineage, fresh-protocol confirmation before promotion,
+  and reproducible synthetic and live H100 examples.
+
 ## [0.16.1] - 2026-08-14
 
 This release aligns the PyPI `autocontext` and npm `autoctx` packages at

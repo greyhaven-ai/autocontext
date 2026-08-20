@@ -440,6 +440,7 @@ class ScenarioFamilyGuide:
 GenerateFn = Callable[[str, int], str]
 EvaluateFn = Callable[[str, int], AgentTaskGenerationEvaluation]
 WorkspaceEvaluateFn = Callable[[str, int, InterpreterWorkspace], AgentTaskGenerationEvaluation]
+PromotionFn = Callable[[AgentTaskGenerationState, AgentTaskGenerationEvaluation], bool]
 
 
 class AgentTaskEvolutionRunner:
@@ -455,6 +456,7 @@ class AgentTaskEvolutionRunner:
         slot: FunctionSlot | None = None,
         workspace_factory: Callable[[], InterpreterWorkspace] | None = None,
         workspace_evaluate_fn: WorkspaceEvaluateFn | None = None,
+        promotion_fn: PromotionFn | None = None,
     ) -> None:
         if workspace_evaluate_fn is not None and workspace_factory is None:
             raise ValueError("workspace_evaluate_fn requires a workspace_factory")
@@ -466,6 +468,7 @@ class AgentTaskEvolutionRunner:
         self._slot = slot
         self._workspace_factory = workspace_factory
         self._workspace_evaluate_fn = workspace_evaluate_fn
+        self._promotion_fn = promotion_fn
 
     def run_generation(
         self,
@@ -525,7 +528,12 @@ class AgentTaskEvolutionRunner:
 
         new_best_output = state.best_output
         new_best_score = state.best_score
-        if not state.best_output or evaluation.score >= state.best_score:
+        should_promote = (
+            self._promotion_fn(state, evaluation)
+            if self._promotion_fn is not None
+            else not state.best_output or evaluation.score >= state.best_score
+        )
+        if should_promote:
             new_best_output = evaluated_output
             new_best_score = evaluation.score
 
