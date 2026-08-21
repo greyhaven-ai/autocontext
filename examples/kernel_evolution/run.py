@@ -95,7 +95,7 @@ def main() -> None:
             KernelBenchmarkEvaluatorConfig(
                 problem_id="kernelbench-demo-level1-problem1",
                 min_timing_blocks=10,
-                bootstrap_samples=500,
+                bootstrap_samples=2_000,
             ),
         )
 

@@ -281,10 +281,13 @@ def drain_bounded(
     result: BoundedOutput,
     quota_exceeded: threading.Event,
     terminate: Callable[[], None],
+    observer: Callable[[bytes], None] | None = None,
 ) -> None:
     kept = bytearray()
     try:
         while chunk := os.read(stream.fileno(), 64 * 1024):
+            if observer is not None:
+                observer(chunk)
             remaining = limit - len(kept)
             if remaining > 0:
                 kept.extend(chunk[:remaining])

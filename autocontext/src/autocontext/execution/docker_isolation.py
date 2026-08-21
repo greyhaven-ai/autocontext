@@ -49,6 +49,7 @@ def build_docker_isolation_command(
     argv: Sequence[str],
     gpu_device: str | None = None,
     auto_remove: bool = True,
+    interactive: bool = False,
     working_dir: str | None = None,
     ulimits: Mapping[str, tuple[int, int]] | None = None,
     environment: Mapping[str, str] | None = None,
@@ -69,7 +70,9 @@ def build_docker_isolation_command(
     command = [docker_binary, "run", "--pull", "never"]
     if auto_remove:
         command.append("--rm")
-    command.extend(("--name", container_name))
+    if interactive:
+        command.append("--interactive")
+    command.extend(("--name", container_name, "--log-driver", "none"))
     for name, value in sorted(labels.items()):
         if not name.strip() or any(char in f"{name}{value}" for char in "\r\n\0"):
             raise ValueError("Docker isolation labels must be non-empty single-line values")

@@ -19,11 +19,19 @@ The split is intentional:
 Generated Python, CUDA, or Triton must use `DockerKernelBenchmarkRunner` (or an
 equivalent VM/cgroup backend) in production. It provides an OS boundary with no
 network, no ambient credentials, read-only input and harness mounts, an
-ephemeral tmpfs candidate workspace, and an explicit GPU partition grant. The
-legacy local subprocess runner is lifecycle containment only and now requires
-the conspicuous `trusted_unsafe=True` opt-in.
+ephemeral tmpfs candidate workspace, and an explicit GPU partition grant. Host
+isolation is necessary but not sufficient for trustworthy evidence: generated
+code must also run outside the interpreter or process that owns private plans,
+correctness, timing, telemetry, and the authoritative report. The legacy local
+subprocess runner is lifecycle containment only and now requires the
+conspicuous `trusted_unsafe=True` opt-in.
 
-## Production Docker GPU worker
+## Production host-containment worker
+
+This composition establishes the host and GPU-partition boundary only. The
+adapter named in `command` must additionally isolate generated execution from
+its authoritative evaluator; importing candidate Python into that adapter
+would still make correctness, timing, telemetry, and report values untrusted.
 
 ```python
 from pathlib import Path
@@ -33,6 +41,7 @@ from autocontext.kernel_evolution import (
     DockerKernelWorkerLimits,
     KernelBenchmarkEvaluator,
     KernelBenchmarkEvaluatorConfig,
+    NvidiaSMIGPUDeviceAttestor,
 )
 
 gpu_limit = 20 * 1024**3
@@ -51,6 +60,7 @@ isolated = DockerKernelBenchmarkRunner(
         isolation_kind="mig",
         enforced_memory_bytes=gpu_limit,
     ),
+    gpu_attestor=NvidiaSMIGPUDeviceAttestor(),
     limits=DockerKernelWorkerLimits(max_gpu_memory_bytes=gpu_limit),
 )
 evaluator = KernelBenchmarkEvaluator(
@@ -71,10 +81,13 @@ no larger than the configured ceiling. Allocation/reservation telemetry is a
 second fail-closed check, not a substitute for that enforcement boundary.
 
 The worker applies wall-clock, CPU-time/CPU-share, RAM/swap, PID, bounded
-stdout/stderr/report, report inode/depth, and tmpfs byte/inode limits. Only the
+stdout/stderr/report, report-structure, and tmpfs byte/inode limits. Only the
 candidate/incumbent input directory and benchmark/reference paths are mounted
-read-only; the report directory is the sole host-writable mount and the
-candidate workspace is ephemeral tmpfs. The root filesystem is read-only,
+read-only. The candidate workspace and `/output` report area are ephemeral,
+bounded tmpfs mounts. While the authenticated supervisor and container remain
+alive, the host copies and verifies the bounded regular `/output/report.json`,
+then acknowledges completion and stops the container; only that verified report
+persists in a private host temporary directory. The root filesystem is read-only,
 Linux capabilities are dropped, `no-new-privileges` is enabled, the environment
 is rebuilt from an empty set, and network mode is `none`. Every outcome removes
 and verifies the labeled container. Before a new run, expired labeled workers
@@ -149,7 +162,11 @@ external = ExternalKernelBenchmarkRunner(
 )
 evaluator = KernelBenchmarkEvaluator(
     external,
-    KernelBenchmarkEvaluatorConfig(problem_id="kernelbench-level1-problem1"),
+    KernelBenchmarkEvaluatorConfig(
+        problem_id="kernelbench-level1-problem1",
+        # proposal_cap=20 spends alpha=.0025 per look; retain 100 tail draws.
+        bootstrap_samples=40_000,
+    ),
 )
 
 # Use a separately pinned adapter/profile with different host-owned seeds and
@@ -180,7 +197,10 @@ confirmation_external = ExternalKernelBenchmarkRunner(
 )
 confirmation_evaluator = KernelBenchmarkEvaluator(
     confirmation_external,
-    KernelBenchmarkEvaluatorConfig(problem_id="kernelbench-level1-problem1"),
+    KernelBenchmarkEvaluatorConfig(
+        problem_id="kernelbench-level1-problem1",
+        bootstrap_samples=40_000,
+    ),
 )
 
 def confirm(candidate, incumbent):
@@ -243,8 +263,12 @@ environment values cannot override those reserved paths.
 
 These local-process controls limit ordinary adapter mistakes, but they are not
 a hostile-code sandbox. Use them only with `trusted_unsafe=True` on a dedicated
-trusted worker. `DockerKernelBenchmarkRunner` is the shipped hostile-code
+trusted worker. `DockerKernelBenchmarkRunner` is the shipped host-containment
 boundary; equivalent custom backends must enforce and attest the same controls.
+Neither makes a report authoritative if candidate code shares a process with
+the evaluator. Production adapters need a second, evaluator-owned execution
+boundary so the candidate cannot observe private plans or replace correctness,
+timing, telemetry, and report controls.
 
 `confirmation_fn` is optional and backward compatible. When present, it
 receives the exact provisional candidate and incumbent and must return a
@@ -267,13 +291,19 @@ the attempt.
 
 ## Benchmark report contract
 
-The adapter writes `autocontext.kernelbench-eval/v2`. Pydantic validates it
+The adapter writes `autocontext.kernelbench-eval/v3`. Pydantic validates it
 with unknown fields forbidden and NaN, infinity, zero, or negative timings
-rejected. Important fields are:
+rejected. New v3 lineage and result artifacts also bind the complete
+statistics/decision policy, including whether candidate promotion requires a
+fresh confirmation, and replay every parent/champion transition and accepted
+resource gate from the embedded raw reports. Result, attempt, and report schema
+versions cannot be mixed. The reader accepts an all-v2 chain as explicitly
+legacy and non-authoritative only when it contains none of the v3 decision
+fields. Important fields are:
 
 ```json
 {
-  "schema_version": "autocontext.kernelbench-eval/v2",
+  "schema_version": "autocontext.kernelbench-eval/v3",
   "evaluation_status": "complete",
   "failure_kind": null,
   "problem_id": "kernelbench-level1-problem1",
@@ -385,6 +415,15 @@ so later proposals cannot weaken precision semantics, tolerances, holdout
 commitments, slice floors, search budget, warmups, timing blocks, or calls per
 block.
 
+The paired-bootstrap bound is a deterministic empirical percentile, not an
+exact distribution-free confidence interval. AutoContext requires at least 100
+expected resamples in the requested lower tail (`bootstrap_samples * alpha >=
+100`) so production evidence is not based on an unstable rank-one or rank-two
+order statistic. Runner construction validates that constraint against the
+host-owned proposal cap, and report consumption checks it again. For example,
+`alpha=0.005` requires at least 20,000 resamples; 2,000 resamples for a
+10,000-proposal Bonferroni budget fail closed.
+
 The v2 artifact digest is a domain-separated canonical-JSON hash of four
 framed fields: identity version, SHA-256 of the exact source bytes, source
 suffix, and entrypoint. Canonical JSON supplies unambiguous field boundaries;
@@ -418,7 +457,10 @@ generation's prompt. Gates run in this order:
 7. Candidate p95, reference drift, and peak-memory use remain within configured limits.
 8. When confirmation is configured, a distinct but compatibility-matched
    protocol must pass the same correctness, improvement, confidence, tail,
-   drift, and resource gates.
+   drift, and resource gates. Each attempted confirmation burns its protocol
+   identity; later adaptive proposals must use a new independently committed
+   confirmation plan. Detailed confirmation feedback and metrics are persisted
+   for audit but excluded from the recursive playbook.
 
 Compile failure, malformed JSON, nonzero command exit, timeout, correctness
 failure, insufficient gain, or measurement instability rejects only that
@@ -460,9 +502,13 @@ requests above the cap before benchmarking, uses the actual Bonferroni-adjusted
 bound for every proposal, and persists proposal index, cap, per-proposal alpha,
 cumulative spend, and confidence level with each attempt. Configure
 `confirmation_fn` as well so provisional winners face a fresh process,
-disjoint committed inputs, and a different measurement order. Legacy protocols
-without a sequential policy remain readable, but should not support new
-recursive performance claims.
+disjoint committed inputs, and a different measurement order. Supply enough
+fresh plans for every possible confirmation attempt; a fixed confirmation plan
+cannot be reused after its result has influenced champion selection. Legacy v2
+observations without a sequential policy are read by mapping their persisted
+95% bound into the generic lower-bound field. Missing adjusted metrics on a
+sequential observation still fail closed, and legacy protocols should not
+support new recursive performance claims.
 
 ## Why recursive kernel improvement matters
 

@@ -28,9 +28,9 @@ from pathlib import Path
 from typing import Any
 
 import torch
-from profile_contract import PROFILE_NAMES, PROFILES, load_private_plan
+from profile_contract import PROFILE_NAMES, PROFILES, gpu_attestation_metadata, load_private_plan
 
-SCHEMA_VERSION = "autocontext.kernelbench-eval/v2"
+SCHEMA_VERSION = "autocontext.kernelbench-eval/v3"
 PROTOCOL_COMPATIBILITY_VERSION = "autocontext.kernel-protocol-compatibility/v1"
 WARMUP_RUNS = 3
 TIMING_BLOCKS = 8
@@ -182,6 +182,9 @@ def _hardware(workload_family_id: str, workload_fingerprint: str) -> dict[str, A
         triton_version = triton.__version__
     except ImportError:
         triton_version = "unavailable"
+    # The unattested fallback exists only for the explicitly trusted local
+    # control smoke. Production campaign evidence rejects it.
+    device_metadata = gpu_attestation_metadata(os.environ)
     return {
         "backend": "cuda",
         "architecture": f"sm{major}{minor}",
@@ -193,8 +196,8 @@ def _hardware(workload_family_id: str, workload_fingerprint: str) -> dict[str, A
         "workload_fingerprint": workload_fingerprint,
         "metadata": {
             "device_index": "0",
-            "device_grant": os.environ.get("AUTOCONTEXT_GPU_DEVICE_ID", "unsafe-local-device-0"),
             "multiprocessors": str(properties.multi_processor_count),
+            **device_metadata,
         },
     }
 
@@ -206,9 +209,7 @@ def _case_tensor(rows: int, columns: int, case: dict[str, Any], *, layout: str, 
     value_class = case["value_class"]
     minimum = float(case["magnitude_min"])
     maximum = float(case["magnitude_max"])
-    if value_class == "positive-unit":
-        values = torch.rand(storage_shape, generator=generator, dtype=torch.float32)
-    elif value_class == "dynamic-range":
+    if value_class == "dynamic-range":
         exponents = torch.rand(storage_shape, generator=generator, dtype=torch.float32)
         exponents = math.log10(minimum) + exponents * (math.log10(maximum) - math.log10(minimum))
         signs = torch.where(
@@ -218,12 +219,14 @@ def _case_tensor(rows: int, columns: int, case: dict[str, Any], *, layout: str, 
         )
         values = signs * torch.pow(10.0, exponents)
     else:
-        values = torch.rand(storage_shape, generator=generator, dtype=torch.float32) * 2.0 - 1.0
-        values *= maximum
-        if value_class == "small":
-            values *= minimum / maximum
-        elif value_class == "cancellation":
-            values.reshape(-1)[1::2].neg_()
+        values = minimum + torch.rand(storage_shape, generator=generator, dtype=torch.float32) * (maximum - minimum)
+        if value_class != "positive-unit":
+            signs = torch.where(
+                torch.rand(storage_shape, generator=generator) < 0.5,
+                torch.tensor(-1.0),
+                torch.tensor(1.0),
+            )
+            values *= signs
     return values.t().cuda() if layout == "transposed" else values.cuda()
 
 
@@ -238,9 +241,14 @@ def _case_inputs(case: dict[str, Any]):
         generator = torch.Generator(device="cpu")
         generator.manual_seed(case["seed"])
         pairs = case["k"] // 2
+        minimum = float(case["magnitude_min"])
         maximum = float(case["magnitude_max"])
-        a_base = (torch.rand((case["m"], pairs), generator=generator) * 2.0 - 1.0) * maximum
-        b_base = (torch.rand((pairs, case["n"]), generator=generator) * 2.0 - 1.0) * maximum
+        a_magnitude = minimum + torch.rand((case["m"], pairs), generator=generator) * (maximum / 1.0003 - minimum)
+        b_magnitude = minimum + torch.rand((pairs, case["n"]), generator=generator) * (maximum - minimum)
+        a_sign = torch.where(torch.rand(a_magnitude.shape, generator=generator) < 0.5, -1.0, 1.0)
+        b_sign = torch.where(torch.rand(b_magnitude.shape, generator=generator) < 0.5, -1.0, 1.0)
+        a_base = a_magnitude * a_sign
+        b_base = b_magnitude * b_sign
         a = torch.repeat_interleave(a_base, 2, dim=1)
         a[:, 1::2] *= 1.0003
         b = torch.repeat_interleave(b_base, 2, dim=0)

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import math
 import uuid
-from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -18,6 +17,7 @@ from autocontext.execution.agent_task_evolution import (
     LessonSignal,
 )
 from autocontext.kernel_evolution.benchmark import KernelBenchmarkEvaluator
+from autocontext.kernel_evolution.confirmation import KernelConfirmationFn, evaluate_confirmation
 from autocontext.kernel_evolution.lineage import KernelLineageStore
 from autocontext.kernel_evolution.models import (
     ARTIFACT_IDENTITY_VERSION,
@@ -29,6 +29,7 @@ from autocontext.kernel_evolution.models import (
     KernelPromotionGateResult,
 )
 from autocontext.kernel_evolution.protocols import (
+    KernelDecisionPolicy,
     KernelSequentialEvidence,
     KernelSequentialTestingPolicy,
     PrecisionProfileName,
@@ -46,12 +47,6 @@ class KernelBaselineError(RuntimeError):
 
 class KernelIntegrityError(RuntimeError):
     """Raised after persisting an attempt that compromised the pinned harness."""
-
-
-KernelConfirmationFn = Callable[
-    [KernelCandidate, KernelCandidate],
-    KernelBenchmarkObservation | None,
-]
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,12 +110,13 @@ class KernelPromotionPolicy:
         "resource_telemetry",
         "environment_drift",
         "gpu_memory",
+        "case_no_regression",
         "relative_improvement",
         "confidence_interval",
         "tail_latency",
     )
 
-    def __init__(self, config: KernelEvolutionConfig) -> None:
+    def __init__(self, config: KernelDecisionPolicy | KernelEvolutionConfig) -> None:
         self.config = config
 
     def _decision(
@@ -231,9 +227,18 @@ class KernelPromotionPolicy:
         assert observation.candidate_p95_ms is not None
         assert observation.incumbent_p95_ms is not None
         if observation.all_case_no_regression_passed is False:
+            statuses["case_no_regression"] = "failed"
             reason = "case_regression"
             feedback = f"{observation.feedback} Rejected: at least one protected case missed its no-regression floor."
-            return KernelPromotionDecision(promote=False, decision="rejected", reason=reason, feedback=feedback)
+            return self._decision(
+                promote=False,
+                decision="rejected",
+                reason=reason,
+                feedback=feedback,
+                statuses=statuses,
+            )
+        if observation.all_case_no_regression_passed is True:
+            statuses["case_no_regression"] = "passed"
         if observation.relative_improvement + 1e-12 < self.config.min_relative_improvement:
             statuses["relative_improvement"] = "failed"
             reason = "insufficient_improvement"
@@ -310,11 +315,26 @@ class KernelEvolutionRunner:
         self._generate_fn = generate_fn
         self._evaluator = evaluator
         self._confirmation_fn = confirmation_fn
+        sequential = config.sequential_testing
+        if sequential is not None:
+            evaluator.config.validate_confidence_resolution(sequential.per_proposal_alpha)
         self.run_id = run_id or f"kernel_{uuid.uuid4().hex}"
         self._store = KernelLineageStore(lineage_root, self.run_id)
-        self._policy = KernelPromotionPolicy(config)
+        self._decision_policy = KernelDecisionPolicy(
+            statistics=evaluator.config.statistics_policy,
+            require_confirmation=confirmation_fn is not None,
+            min_relative_improvement=config.min_relative_improvement,
+            require_confidence=config.require_confidence,
+            max_p95_regression=config.max_p95_regression,
+            max_environment_drift=config.max_environment_drift,
+            max_peak_memory_fraction=config.max_peak_memory_fraction,
+            target_reference_speedup=config.target_reference_speedup,
+            sequential_testing=config.sequential_testing,
+        )
+        self._policy = KernelPromotionPolicy(self._decision_policy)
         self._attempts: list[KernelAttemptRecord] = []
         self._champion: _Champion | None = None
+        self._used_confirmation_protocol_ids: set[str] = set()
         self._has_run = False
 
     @property
@@ -333,6 +353,7 @@ class KernelEvolutionRunner:
         role: str,
         candidate: KernelCandidate,
         observation: KernelBenchmarkObservation,
+        primary_decision: KernelPromotionDecision,
         decision: KernelPromotionDecision,
         parent: _Champion | None,
         confirmation_required: bool = False,
@@ -380,25 +401,14 @@ class KernelEvolutionRunner:
             protocol_compatibility_id=observation.protocol_compatibility_id,
             created_at=datetime.now(UTC).isoformat(),
             observation=observation,
+            decision_policy=self._decision_policy,
+            primary_decision=primary_decision,
+            promotion_decision=decision,
             confirmation_required=confirmation_required,
             confirmation_report_digest=confirmation_report_digest,
             confirmation_observation=confirmation_observation,
             confirmation_decision=confirmation_decision,
             sequential_evidence=sequential_evidence,
-        )
-
-    @staticmethod
-    def _confirmation_veto(
-        provisional: KernelPromotionDecision,
-        confirmation: KernelPromotionDecision,
-    ) -> KernelPromotionDecision:
-        confirmation_gates = tuple(gate.model_copy(update={"name": f"confirmation.{gate.name}"}) for gate in confirmation.gates)
-        return KernelPromotionDecision(
-            promote=False,
-            decision="rejected",
-            reason=f"confirmation_{confirmation.reason}",
-            feedback=f"{provisional.feedback} Independent confirmation veto: {confirmation.feedback}",
-            gates=(*provisional.gates, *confirmation_gates),
         )
 
     def _confirm(
@@ -409,126 +419,15 @@ class KernelEvolutionRunner:
         provisional: KernelPromotionDecision,
     ) -> tuple[KernelBenchmarkObservation | None, KernelPromotionDecision | None, KernelPromotionDecision]:
         """Run the optional fresh confirmation only after all primary gates pass."""
-        if self._confirmation_fn is None or not provisional.promote:
-            return None, None, provisional
-
-        def reject(reason: str, feedback: str) -> KernelPromotionDecision:
-            return KernelPromotionDecision(
-                promote=False,
-                decision="rejected",
-                reason=reason,
-                feedback=f"{feedback} Gates: confirmation_contract=failed.",
-                gates=(KernelPromotionGateResult(name="confirmation_contract", status="failed"),),
-            )
-
-        try:
-            observation = self._confirmation_fn(candidate, incumbent)
-        except Exception as exc:
-            confirmation = reject(
-                "error",
-                f"Confirmation evaluator failed: {type(exc).__name__}: {str(exc)[:1_000]}",
-            )
-            return None, confirmation, self._confirmation_veto(provisional, confirmation)
-        if observation is None:
-            confirmation = reject("missing", "Confirmation evaluator returned no observation.")
-            return None, confirmation, self._confirmation_veto(provisional, confirmation)
-        if not isinstance(observation, KernelBenchmarkObservation):
-            confirmation = reject("invalid", "Confirmation evaluator returned an invalid observation type.")
-            return None, confirmation, self._confirmation_veto(provisional, confirmation)
-
-        report = observation.report
-        identity_matches = (
-            observation.artifact_identity_version == candidate.artifact_identity_version
-            and observation.candidate_artifact_digest == candidate.artifact_digest
-            and observation.incumbent_artifact_digest == incumbent.artifact_digest
-            and observation.candidate_source_digest == candidate.source_digest
-            and observation.incumbent_source_digest == incumbent.source_digest
-            and (
-                report is None
-                or (
-                    report.artifact_identity_version == candidate.artifact_identity_version
-                    and report.candidate_artifact_digest == candidate.artifact_digest
-                    and report.incumbent_artifact_digest == incumbent.artifact_digest
-                    and report.candidate_source_digest == candidate.source_digest
-                    and report.incumbent_source_digest == incumbent.source_digest
-                    and report.candidate_source_suffix == candidate.source_suffix
-                    and report.incumbent_source_suffix == incumbent.source_suffix
-                    and report.candidate_entrypoint == candidate.entrypoint
-                    and report.incumbent_entrypoint == incumbent.entrypoint
-                )
-            )
-        )
-        if not identity_matches:
-            confirmation = reject(
-                "identity_mismatch",
-                "Confirmation candidate, incumbent, or entrypoint identity does not match the provisional pair.",
-            )
-            audited_observation = observation.model_copy(
-                update={
-                    "eligible": False,
-                    "rejection_reason": "identity_mismatch",
-                    "feedback": confirmation.feedback,
-                }
-            )
-            return audited_observation, confirmation, self._confirmation_veto(provisional, confirmation)
-        if report is None:
-            confirmation = self._policy.decide(observation)
-            return observation, confirmation, self._confirmation_veto(provisional, confirmation)
-        if report is not None and report.problem_id != self.config.problem_id:
-            confirmation = reject("problem_mismatch", "Confirmation used a different kernel problem.")
-            return observation, confirmation, self._confirmation_veto(provisional, confirmation)
-        if observation.baseline_id != primary_observation.baseline_id:
-            confirmation = reject("baseline_mismatch", "Confirmation used a different reference baseline.")
-            return observation, confirmation, self._confirmation_veto(provisional, confirmation)
-        if report is not None and (
-            observation.hardware_scope_id != report.hardware_scope_id
-            or observation.baseline_id != report.baseline_id
-            or observation.protocol_id != report.protocol.protocol_id
-            or observation.protocol_compatibility_id != report.protocol.compatibility_id
-        ):
-            confirmation = reject("contract_mismatch", "Confirmation observation disagrees with its benchmark report.")
-            return observation, confirmation, self._confirmation_veto(provisional, confirmation)
-        primary_report = primary_observation.report
-        if primary_report is not None and report.hardware.workload_family_id != primary_report.hardware.workload_family_id:
-            confirmation = reject(
-                "workload_mismatch",
-                "Confirmation changed the static shape, dtype, reference, or input contract.",
-            )
-            return observation, confirmation, self._confirmation_veto(provisional, confirmation)
-        if primary_report is not None and (
-            report.hardware.execution_environment_id != primary_report.hardware.execution_environment_id
-        ):
-            confirmation = reject(
-                "environment_mismatch",
-                "Confirmation used a different backend, device, runtime, driver, or toolchain.",
-            )
-            return observation, confirmation, self._confirmation_veto(provisional, confirmation)
-        if observation.protocol_id == primary_observation.protocol_id:
-            confirmation = reject("not_fresh", "Confirmation reused the primary benchmark protocol.")
-            return observation, confirmation, self._confirmation_veto(provisional, confirmation)
-        if observation.protocol_compatibility_id != primary_observation.protocol_compatibility_id:
-            confirmation = reject(
-                "protocol_incompatible",
-                "Confirmation changed correctness, tolerance, trial-count, warmup, or timing semantics.",
-            )
-            return observation, confirmation, self._confirmation_veto(provisional, confirmation)
-
-        confirmation = self._policy.decide(observation)
-        if not confirmation.promote:
-            return observation, confirmation, self._confirmation_veto(provisional, confirmation)
-        return (
-            observation,
-            confirmation,
-            KernelPromotionDecision(
-                promote=True,
-                decision="promoted",
-                reason=provisional.reason,
-                feedback=f"{provisional.feedback} Independent fresh confirmation passed all promotion gates.",
-                gates=(
-                    *provisional.gates,
-                    *(gate.model_copy(update={"name": f"confirmation.{gate.name}"}) for gate in confirmation.gates),
-                ),
-            ),
+        return evaluate_confirmation(
+            confirmation_fn=self._confirmation_fn,
+            decide_fn=self._policy.decide,
+            problem_id=self.config.problem_id,
+            used_protocol_ids=self._used_confirmation_protocol_ids,
+            candidate=candidate,
+            incumbent=incumbent,
+            primary_observation=primary_observation,
+            provisional=provisional,
         )
 
     def _persist_record(self, record: KernelAttemptRecord) -> None:
@@ -542,7 +441,7 @@ class KernelEvolutionRunner:
             entrypoint=self.config.entrypoint,
         )
         return {
-            "schema_version": "autocontext.kernel-run/v2",
+            "schema_version": "autocontext.kernel-run/v3",
             "run_id": self.run_id,
             "status": status,
             "problem_id": self.config.problem_id,
@@ -551,6 +450,8 @@ class KernelEvolutionRunner:
             "baseline_source_digest": baseline.source_digest,
             "evolution": asdict(self.config) | {"baseline_source": "stored as a content-addressed artifact"},
             "benchmark": self._evaluator.manifest(),
+            "decision_policy": self._decision_policy.model_dump(mode="json"),
+            "decision_policy_id": self._decision_policy.policy_id,
             "confirmation": {"enabled": self._confirmation_fn is not None},
             **extra,
         }
@@ -595,6 +496,7 @@ class KernelEvolutionRunner:
             role="baseline",
             candidate=baseline,
             observation=baseline_observation,
+            primary_decision=baseline_decision,
             decision=baseline_decision,
             parent=None,
         )
@@ -653,21 +555,25 @@ class KernelEvolutionRunner:
             return AgentTaskGenerationEvaluation(
                 output=source,
                 score=self._score(observation),
-                reasoning=decision.feedback,
+                # Confirmation evidence is persisted for audit, but its
+                # detailed feedback and metrics must not become training data
+                # for later adaptive proposals.
+                reasoning=provisional_decision.feedback,
                 dimension_scores={
                     "correctness": 1.0 if observation.eligible else 0.0,
                     "performance": performance_dimension,
-                    "promotion_gate": 1.0 if decision.promote else 0.0,
+                    "promotion_gate": 1.0 if provisional_decision.promote else 0.0,
                 },
                 met_threshold=decision.promote,
                 lesson_signal=LessonSignal(
-                    hint=decision.feedback,
-                    plateau=decision.reason.removeprefix("confirmation_") in {"insufficient_improvement", "confidence_interval"},
+                    hint=provisional_decision.feedback,
+                    plateau=provisional_decision.reason in {"insufficient_improvement", "confidence_interval"},
                     metrics=metrics,
                 ),
                 metadata={
                     "candidate": candidate,
                     "observation": observation,
+                    "primary_decision": provisional_decision,
                     "decision": decision,
                     "confirmation_observation": confirmation_observation,
                     "confirmation_decision": confirmation_decision,
@@ -678,6 +584,7 @@ class KernelEvolutionRunner:
             assert self._champion is not None
             candidate = evaluation.metadata.get("candidate")
             observation = evaluation.metadata.get("observation")
+            primary_decision = evaluation.metadata.get("primary_decision")
             decision = evaluation.metadata.get("decision")
             confirmation_observation = evaluation.metadata.get("confirmation_observation")
             confirmation_decision = evaluation.metadata.get("confirmation_decision")
@@ -687,6 +594,8 @@ class KernelEvolutionRunner:
                 raise TypeError("kernel evaluation metadata is missing observation")
             if not isinstance(decision, KernelPromotionDecision):
                 raise TypeError("kernel evaluation metadata is missing promotion decision")
+            if not isinstance(primary_decision, KernelPromotionDecision):
+                raise TypeError("kernel evaluation metadata is missing primary promotion decision")
             if confirmation_observation is not None and not isinstance(confirmation_observation, KernelBenchmarkObservation):
                 raise TypeError("kernel evaluation metadata contains an invalid confirmation observation")
             if confirmation_decision is not None and not isinstance(confirmation_decision, KernelPromotionDecision):
@@ -697,6 +606,7 @@ class KernelEvolutionRunner:
                 role="candidate",
                 candidate=candidate,
                 observation=observation,
+                primary_decision=primary_decision,
                 decision=decision,
                 parent=parent,
                 confirmation_required=self._confirmation_fn is not None,
@@ -771,6 +681,7 @@ class KernelEvolutionRunner:
             champion_source=self._champion.candidate.source,
             champion_score=self._score(self._champion.observation),
             champion_speedup_vs_reference=champion_speedup,
+            decision_policy=self._decision_policy,
             attempts=list(self._attempts),
             playbook=state.playbook,
         )

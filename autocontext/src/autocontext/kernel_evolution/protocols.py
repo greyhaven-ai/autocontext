@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, model_validator
@@ -13,6 +15,32 @@ Probability = Annotated[FiniteFloat, Field(gt=0, lt=0.5)]
 
 class _ProtocolModel(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False, frozen=True)
+
+
+def _policy_digest(model: BaseModel) -> str:
+    payload = json.dumps(
+        model.model_dump(mode="json", exclude_none=True),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return f"sha256:{hashlib.sha256(payload).hexdigest()}"
+
+
+class KernelStatisticsPolicy(_ProtocolModel):
+    """Host-owned derivation policy for benchmark observations."""
+
+    schema_version: Literal["autocontext.kernel-statistics-policy/v1"] = "autocontext.kernel-statistics-policy/v1"
+    method: Literal["paired-percentile-bootstrap/v1"] = "paired-percentile-bootstrap/v1"
+    bootstrap_samples: int = Field(ge=1)
+    seed_derivation: Literal["sha256-baseline-hardware-protocol/v1"] = "sha256-baseline-hardware-protocol/v1"
+    min_timing_blocks: int = Field(ge=2)
+    require_resource_telemetry: bool
+    max_gpu_memory_bytes: int | None = Field(default=None, ge=1)
+
+    @property
+    def policy_id(self) -> str:
+        return _policy_digest(self)
 
 
 class KernelNumericalSemantics(_ProtocolModel):
@@ -91,31 +119,63 @@ class KernelProtocolSemantics(_ProtocolModel):
 
     @model_validator(mode="after")
     def validate_named_profile(self) -> Self:
-        if set(self.inputs.required_slices) != {"train", "holdout"}:
-            raise ValueError("named precision profiles require train and holdout slices")
-        if (
-            self.reference.tf32_allowed
-            or not self.reference.deterministic_algorithms
-            or not self.enforcement.require_every_correctness_slice
-            or not self.enforcement.require_every_case_no_regression
-            or not self.enforcement.require_paired_aggregate_performance
-            or not self.enforcement.candidate_controls_protected
-        ):
-            raise ValueError("named precision profiles require all protected reference and promotion controls")
-        if self.profile_name == "strict-fp32-v1":
-            required_shapes = {"non-tile-square", "rectangular"}
-            required_layouts = {"contiguous", "transposed"}
-            required_values = {"signed", "small", "large", "cancellation", "dynamic-range"}
-            if self.numerical.minimum_input_precision != "float32" or self.numerical.input_downcast_allowed:
-                raise ValueError("strict-fp32-v1 forbids input downcasts")
-            if (
-                not required_shapes <= set(self.inputs.required_shape_classes)
-                or not required_layouts <= set(self.inputs.required_layouts)
-                or not required_values <= set(self.inputs.required_value_classes)
-            ):
-                raise ValueError("strict-fp32-v1 requires varied shape, layout, and value classes")
-        elif self.numerical.minimum_input_precision != "float16" or not self.numerical.input_downcast_allowed:
-            raise ValueError("relaxed-precision-v1 must explicitly allow FP16 input downcasts")
+        common = {
+            "reference": {
+                "implementation": "torch.matmul",
+                "precision": "float32",
+                "tf32_allowed": False,
+                "deterministic_algorithms": True,
+            },
+            "enforcement": {
+                "require_every_correctness_slice": True,
+                "require_every_case_no_regression": True,
+                "require_paired_aggregate_performance": True,
+                "candidate_controls_protected": True,
+                "minimum_case_speedup_vs_incumbent": 0.98,
+            },
+        }
+        profile_specific = {
+            "strict-fp32-v1": {
+                "numerical": {
+                    "input_dtype": "float32",
+                    "minimum_input_precision": "float32",
+                    "accumulation_dtype": "float32",
+                    "output_dtype": "float32",
+                    "input_downcast_allowed": False,
+                },
+                "inputs": {
+                    "family": "matmul-generalization-v1",
+                    "required_shape_classes": ("non-tile-square", "rectangular"),
+                    "required_layouts": ("contiguous", "transposed"),
+                    "required_value_classes": ("signed", "small", "large", "cancellation", "dynamic-range"),
+                    "required_slices": ("train", "holdout"),
+                },
+            },
+            "relaxed-precision-v1": {
+                "numerical": {
+                    "input_dtype": "float32",
+                    "minimum_input_precision": "float16",
+                    "accumulation_dtype": "float32",
+                    "output_dtype": "float32",
+                    "input_downcast_allowed": True,
+                },
+                "inputs": {
+                    "family": "matmul-fixed-square-legacy-v1",
+                    "required_shape_classes": ("tile-aligned-square",),
+                    "required_layouts": ("contiguous",),
+                    "required_value_classes": ("positive-unit",),
+                    "required_slices": ("train", "holdout"),
+                },
+            },
+        }[self.profile_name]
+        if self.numerical.model_dump(mode="python") != profile_specific["numerical"]:
+            raise ValueError(f"{self.profile_name} numerical semantics must match the canonical named profile")
+        if self.reference.model_dump(mode="python") != common["reference"]:
+            raise ValueError(f"{self.profile_name} reference semantics must match the canonical named profile")
+        if self.inputs.model_dump(mode="python") != profile_specific["inputs"]:
+            raise ValueError(f"{self.profile_name} input semantics must match the canonical named profile")
+        if self.enforcement.model_dump(mode="python") != common["enforcement"]:
+            raise ValueError(f"{self.profile_name} enforcement semantics must match the canonical named profile")
         return self
 
 
@@ -133,6 +193,25 @@ class KernelSequentialTestingPolicy(_ProtocolModel):
     @property
     def confidence_level(self) -> float:
         return 1.0 - self.per_proposal_alpha
+
+
+class KernelDecisionPolicy(_ProtocolModel):
+    """Complete deterministic policy used to accept or reject an attempt."""
+
+    schema_version: Literal["autocontext.kernel-decision-policy/v1"] = "autocontext.kernel-decision-policy/v1"
+    statistics: KernelStatisticsPolicy
+    require_confirmation: bool
+    min_relative_improvement: Annotated[FiniteFloat, Field(ge=0, lt=1)]
+    require_confidence: bool
+    max_p95_regression: Annotated[FiniteFloat, Field(ge=0, lt=1)]
+    max_environment_drift: Annotated[FiniteFloat, Field(ge=0, lt=1)]
+    max_peak_memory_fraction: Annotated[FiniteFloat, Field(ge=0, lt=1)]
+    target_reference_speedup: PositiveFiniteFloat
+    sequential_testing: KernelSequentialTestingPolicy | None = None
+
+    @property
+    def policy_id(self) -> str:
+        return _policy_digest(self)
 
 
 class KernelSequentialEvidence(_ProtocolModel):

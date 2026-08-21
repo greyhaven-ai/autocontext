@@ -7,10 +7,14 @@ from autocontext.kernel_evolution.benchmark import (
     KernelBenchmarkExecution,
     KernelBenchmarkRunner,
 )
+from autocontext.kernel_evolution.confirmation import KernelConfirmationFn
 from autocontext.kernel_evolution.docker_worker import (
+    DockerGPUDeviceAttestation,
+    DockerGPUDeviceAttestor,
     DockerGPUDeviceGrant,
     DockerKernelBenchmarkRunner,
     DockerKernelWorkerLimits,
+    NvidiaSMIGPUDeviceAttestor,
 )
 from autocontext.kernel_evolution.lineage import KernelLineageStore
 from autocontext.kernel_evolution.models import (
@@ -40,6 +44,7 @@ from autocontext.kernel_evolution.models import (
 from autocontext.kernel_evolution.protocols import (
     RELAXED_PRECISION_SEMANTICS,
     STRICT_FP32_SEMANTICS,
+    KernelDecisionPolicy,
     KernelEnforcementPolicy,
     KernelInputDistribution,
     KernelNumericalSemantics,
@@ -47,11 +52,11 @@ from autocontext.kernel_evolution.protocols import (
     KernelReferenceSemantics,
     KernelSequentialEvidence,
     KernelSequentialTestingPolicy,
+    KernelStatisticsPolicy,
     PrecisionProfileName,
 )
 from autocontext.kernel_evolution.runner import (
     KernelBaselineError,
-    KernelConfirmationFn,
     KernelEvolutionConfig,
     KernelEvolutionRunner,
     KernelIntegrityError,
@@ -63,9 +68,12 @@ __all__ = [
     "PROTOCOL_COMPATIBILITY_VERSION",
     "SCHEMA_VERSION",
     "ExternalKernelBenchmarkRunner",
+    "DockerGPUDeviceAttestation",
+    "DockerGPUDeviceAttestor",
     "DockerGPUDeviceGrant",
     "DockerKernelBenchmarkRunner",
     "DockerKernelWorkerLimits",
+    "NvidiaSMIGPUDeviceAttestor",
     "KernelAttemptRecord",
     "KernelBaselineError",
     "KernelBenchmarkEvaluator",
@@ -80,6 +88,7 @@ __all__ = [
     "KernelCompileReport",
     "KernelCorrectnessSliceReport",
     "KernelCorrectnessReport",
+    "KernelDecisionPolicy",
     "KernelEvolutionConfig",
     "KernelEvolutionResult",
     "KernelEvolutionRunner",
@@ -99,6 +108,7 @@ __all__ = [
     "KernelReferenceSemantics",
     "KernelSequentialEvidence",
     "KernelSequentialTestingPolicy",
+    "KernelStatisticsPolicy",
     "PrecisionProfileName",
     "RELAXED_PRECISION_SEMANTICS",
     "STRICT_FP32_SEMANTICS",

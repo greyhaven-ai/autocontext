@@ -56,9 +56,10 @@ All notable changes to this project will be documented in this file.
 - Kernel promotion now names strict-FP32 and relaxed-precision profiles, binds
   numerical/reference/input/enforcement semantics and private-plan commitments
   into protocol identity, requires correctness plus per-case no-regression
-  gates, and uses a persisted Bonferroni proposal budget. The H100 campaign
-  writes profile-namespaced evidence from disjoint primary/confirmation plans
-  (AC-994).
+  gates, and uses a persisted Bonferroni proposal budget. Profile-namespaced
+  H100 evidence schema and export validation are prepared for disjoint
+  primary/confirmation plans; production execution remains fail-closed pending
+  the trusted evaluator boundary in AC-1003 (AC-994).
 - An optional Python `CampaignScheduler` dispatches branch/trial jobs across
   local workers and remote adapters using capability/resource matching,
   expiring leases, heartbeats, bounded retry and concurrency, idempotent

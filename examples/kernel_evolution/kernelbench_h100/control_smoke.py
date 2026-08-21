@@ -10,13 +10,14 @@ import os
 import sys
 import types
 from pathlib import Path
+from typing import Any
 
 from profile_contract import PROFILE_NAMES, private_plan_commitment
 
 PROBLEM_ID = "kernelbench-v0.1-level1-1-matmul-profiled-h100-v1"
 
 
-def _load_contract_modules(source_root: Path):
+def _load_contract_modules(source_root: Path) -> tuple[Any, Any]:
     """Load the real models/benchmark modules without importing full AutoContext."""
     package_root = source_root / "autocontext"
     kernel_root = package_root / "kernel_evolution"
@@ -44,7 +45,7 @@ def _load_contract_modules(source_root: Path):
     return loaded[0], loaded[1]
 
 
-def _promotion_decision(observation) -> dict[str, object]:
+def _promotion_decision(observation: Any) -> dict[str, object]:
     if not observation.eligible:
         return {"promote": False, "decision": "rejected", "reason": observation.rejection_reason}
     assert observation.environment_drift_ratio is not None
@@ -52,6 +53,11 @@ def _promotion_decision(observation) -> dict[str, object]:
     assert observation.speedup_lcb is not None
     assert observation.candidate_p95_ms is not None
     assert observation.incumbent_p95_ms is not None
+    resources = observation.report.resources if observation.report is not None else None
+    candidate_peak = resources.candidate_enforced_peak_bytes if resources is not None else None
+    device_capacity = resources.device_total_memory_bytes if resources is not None else None
+    if candidate_peak is not None and device_capacity is not None and candidate_peak > device_capacity * 0.80:
+        return {"promote": False, "decision": "rejected", "reason": "memory_limit"}
     if observation.environment_drift_ratio > 0.10:
         return {"promote": False, "decision": "rejected", "reason": "unstable_environment"}
     if observation.relative_improvement + 1.0e-12 < 0.05:
@@ -178,13 +184,28 @@ def main() -> None:
             problem_id=PROBLEM_ID,
             timeout_seconds=240.0,
             min_timing_blocks=8,
-            bootstrap_samples=1_000,
+            # The adapter pins a ten-proposal Bonferroni policy (alpha=.005).
+            # Keep at least 100 resamples in that empirical lower tail.
+            bootstrap_samples=20_000,
             require_resource_telemetry=True,
         ),
     )
     baseline = evaluator.evaluate(incumbent, incumbent)
     if not baseline.eligible:
-        print(baseline.model_dump_json(indent=2))
+        print(
+            json.dumps(
+                {
+                    "schema_version": "autocontext.kernel-h100-control-smoke/v1",
+                    "evidence_status": "non_authoritative_trusted_unsafe",
+                    "authoritative": False,
+                    "security_boundary": "same_interpreter_trusted_unsafe",
+                    "baseline_rejection_reason": baseline.rejection_reason,
+                    "baseline_feedback": baseline.feedback,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
         raise SystemExit(f"baseline failed: {baseline.rejection_reason}")
 
     assert baseline.hardware_scope_id is not None
@@ -200,6 +221,14 @@ def main() -> None:
     )
     decision = _promotion_decision(observation)
     summary = {
+        "schema_version": "autocontext.kernel-h100-control-smoke/v1",
+        "evidence_status": "non_authoritative_trusted_unsafe",
+        "authoritative": False,
+        "security_boundary": "same_interpreter_trusted_unsafe",
+        "warning": (
+            "candidate code shared the evaluator interpreter; all observed correctness, timing, telemetry, "
+            "and decision values are control diagnostics only"
+        ),
         "problem_id": PROBLEM_ID,
         "precision_profile": args.precision_profile,
         "private_plan_commitment": plan_commitment,
@@ -233,8 +262,7 @@ def main() -> None:
             "rejection_reason": observation.rejection_reason,
             "feedback": observation.feedback,
         },
-        "promotion": decision,
-        "report": observation.report.model_dump(mode="json") if observation.report is not None else None,
+        "control_decision": decision,
     }
     print(json.dumps(summary, indent=2, sort_keys=True))
     if not decision["promote"]:

@@ -25,16 +25,20 @@ from autocontext.kernel_evolution import (
     KernelCorrectnessReport,
     KernelCorrectnessSliceReport,
     KernelEvolutionConfig,
+    KernelEvolutionResult,
     KernelEvolutionRunner,
     KernelHardwareIdentity,
     KernelIntegrityError,
     KernelPerformanceReport,
+    KernelPromotionPolicy,
     KernelProtocolSemantics,
     KernelSequentialTestingPolicy,
     KernelTimingBlock,
     PrecisionProfileName,
     content_digest,
 )
+from autocontext.kernel_evolution.confirmation import _confirmation_veto
+from autocontext.kernel_evolution.models import kernel_benchmark_report_digest
 
 
 class FakeBenchmarkRunner:
@@ -172,7 +176,7 @@ class FakeBenchmarkRunner:
             incumbent_ms = self.latencies[incumbent.source.strip()]
             candidate_times = [candidate_ms] * 10
             if candidate.source.strip() == "noisy-margin":
-                candidate_times = [80.0] * 6 + [110.0] * 4
+                candidate_times = [70.0, 75.0, 80.0, 85.0, 90.0, 95.0, 100.0, 105.0, 110.0, 115.0]
             performance = KernelPerformanceReport(
                 blocks=[
                     KernelTimingBlock(
@@ -235,7 +239,7 @@ def _evaluator(fake: FakeBenchmarkRunner) -> KernelBenchmarkEvaluator:
             problem_id="kernelbench-level1-problem1",
             timeout_seconds=12.5,
             min_timing_blocks=5,
-            bootstrap_samples=200,
+            bootstrap_samples=6_000,
         ),
     )
 
@@ -284,6 +288,64 @@ def test_v2_artifact_identity_binds_exact_source_bytes_and_framed_abi() -> None:
     assert original.artifact_digest != boundary_collision.artifact_digest
     assert original.source_digest != different_bytes.source_digest
     assert original.artifact_digest != different_bytes.artifact_digest
+
+
+def test_pre_sequential_v2_observation_metrics_are_migrated_on_read() -> None:
+    observation = _evaluator(FakeBenchmarkRunner()).evaluate(
+        KernelCandidate(source="winner"),
+        KernelCandidate(source="baseline"),
+    )
+    payload = observation.model_dump(mode="json")
+    payload.pop("speedup_lcb")
+    payload.pop("confidence_level")
+
+    migrated = KernelBenchmarkObservation.model_validate(payload)
+
+    assert migrated.speedup_lcb == migrated.speedup_lcb95
+    assert migrated.confidence_level == pytest.approx(0.95)
+
+
+def test_sequential_v2_observation_missing_adjusted_metrics_fails_closed() -> None:
+    sequential = KernelSequentialTestingPolicy(proposal_cap=3)
+    observation = _evaluator(FakeBenchmarkRunner(sequential_testing=sequential)).evaluate(
+        KernelCandidate(source="winner"),
+        KernelCandidate(source="baseline"),
+    )
+    payload = observation.model_dump(mode="json")
+    payload.pop("speedup_lcb")
+    payload.pop("confidence_level")
+
+    with pytest.raises(ValueError, match="all derived metrics"):
+        KernelBenchmarkObservation.model_validate(payload)
+
+
+def test_v2_observation_rejects_invalid_or_protocol_mismatched_confidence() -> None:
+    sequential = KernelSequentialTestingPolicy(proposal_cap=3)
+    observation = _evaluator(FakeBenchmarkRunner(sequential_testing=sequential)).evaluate(
+        KernelCandidate(source="winner"),
+        KernelCandidate(source="baseline"),
+    )
+    payload = observation.model_dump(mode="json")
+
+    payload["confidence_level"] = 2.0
+    with pytest.raises(ValueError):
+        KernelBenchmarkObservation.model_validate(payload)
+
+    payload["confidence_level"] = 0.95
+    with pytest.raises(ValueError, match="disagrees with its benchmark protocol"):
+        KernelBenchmarkObservation.model_validate(payload)
+
+    legacy_payload = (
+        _evaluator(FakeBenchmarkRunner())
+        .evaluate(
+            KernelCandidate(source="winner"),
+            KernelCandidate(source="baseline"),
+        )
+        .model_dump(mode="json")
+    )
+    legacy_payload["confidence_level"] = 0.96
+    with pytest.raises(ValueError, match="disagrees with its benchmark protocol"):
+        KernelBenchmarkObservation.model_validate(legacy_payload)
 
 
 def test_protocol_compatibility_excludes_only_the_seed_order_commitment() -> None:
@@ -371,6 +433,28 @@ def test_named_precision_semantics_and_private_commitments_are_protocol_bound() 
     )
 
 
+@pytest.mark.parametrize(
+    ("profile", "section", "key", "value"),
+    [
+        (STRICT_FP32_SEMANTICS, "reference", "implementation", "custom.reference"),
+        (STRICT_FP32_SEMANTICS, "inputs", "family", "custom-family"),
+        (STRICT_FP32_SEMANTICS, "inputs", "required_shape_classes", ["non-tile-square", "rectangular", "extra"]),
+        (RELAXED_PRECISION_SEMANTICS, "enforcement", "minimum_case_speedup_vs_incumbent", 0.99),
+    ],
+)
+def test_named_profiles_reject_noncanonical_semantics(
+    profile: KernelProtocolSemantics,
+    section: str,
+    key: str,
+    value: object,
+) -> None:
+    payload = profile.model_dump(mode="json")
+    payload[section][key] = value
+
+    with pytest.raises(ValueError, match="canonical named profile"):
+        KernelProtocolSemantics.model_validate(payload)
+
+
 def test_sequential_policy_changes_actual_bound_and_persists_every_proposal(tmp_path: Path) -> None:
     sequential = KernelSequentialTestingPolicy(proposal_cap=3, familywise_alpha=0.05)
     fake = FakeBenchmarkRunner(sequential_testing=sequential)
@@ -405,6 +489,44 @@ def test_sequential_policy_changes_actual_bound_and_persists_every_proposal(tmp_
         and record.sequential_evidence.cumulative_alpha_spent == pytest.approx((0.05 / 3) * index)
         for index, record in enumerate(proposal_records, start=1)
     )
+
+
+def test_extreme_proposal_budget_with_too_few_bootstrap_samples_fails_closed(tmp_path: Path) -> None:
+    sequential = KernelSequentialTestingPolicy(proposal_cap=10_000, familywise_alpha=0.05)
+    fake = FakeBenchmarkRunner(sequential_testing=sequential)
+    with pytest.raises(ValueError, match="at least 2000"):
+        KernelBenchmarkEvaluatorConfig(problem_id="kernelbench-level1-problem1", bootstrap_samples=100)
+    evaluator = KernelBenchmarkEvaluator(
+        fake,
+        KernelBenchmarkEvaluatorConfig(problem_id="kernelbench-level1-problem1", bootstrap_samples=2_000),
+    )
+
+    observation = evaluator.evaluate(KernelCandidate(source="winner"), KernelCandidate(source="baseline"))
+
+    assert not observation.eligible
+    assert observation.rejection_reason == "contract_error"
+    assert "cannot resolve alpha" in observation.feedback
+    with pytest.raises(ValueError, match="cannot resolve alpha"):
+        KernelEvolutionRunner(
+            KernelEvolutionConfig(
+                problem_id="kernelbench-level1-problem1",
+                task_prompt="improve",
+                baseline_source="baseline",
+                proposal_cap=10_000,
+            ),
+            lambda _prompt, _generation: "winner",
+            evaluator,
+            tmp_path,
+        )
+
+
+def test_bootstrap_resolution_requires_one_hundred_tail_draws() -> None:
+    config = KernelBenchmarkEvaluatorConfig(problem_id="p", bootstrap_samples=19_999)
+
+    with pytest.raises(ValueError, match="at least 20000 samples"):
+        config.validate_confidence_resolution(0.005)
+
+    KernelBenchmarkEvaluatorConfig(problem_id="p", bootstrap_samples=20_000).validate_confidence_resolution(0.005)
 
 
 def test_host_owned_proposal_cap_rejects_excess_before_benchmarking(tmp_path: Path) -> None:
@@ -459,6 +581,10 @@ def test_per_case_no_regression_floor_vetoes_aggregate_winner(tmp_path: Path) ->
     assert result.champion_source == "baseline"
     assert result.precision_profile == "strict-fp32-v1"
     assert result.attempts[-1].reason == "case_regression"
+    decision = runner._policy.decide(result.attempts[-1].observation)
+    gates = {gate.name: gate.status for gate in decision.gates}
+    assert gates["case_no_regression"] == "failed"
+    assert gates["relative_improvement"] == "not-evaluated"
 
 
 def test_correctness_first_promotion_and_append_only_lineage(tmp_path: Path) -> None:
@@ -540,6 +666,55 @@ def test_provisional_winner_is_independently_confirmed_and_promoted(tmp_path: Pa
     summary = json.loads((tmp_path / "kernel-test" / "summary.json").read_text(encoding="utf-8"))
     assert summary["attempts"][-1]["confirmation_report_digest"] == attempt.confirmation_report_digest
     assert summary["attempts"][-1]["confirmation_decision"]["promote"] is True
+
+
+def test_confirmation_protocol_cannot_be_reused_by_an_adaptive_proposal(tmp_path: Path) -> None:
+    primary = FakeBenchmarkRunner()
+    confirmation = FakeBenchmarkRunner(seed_commitment="fresh-hidden-seeds-v2")
+    primary.latencies["winner-2"] = 75.0
+    confirmation.latencies["winner-2"] = 75.0
+    runner, _ = _runner(
+        tmp_path,
+        primary,
+        ["winner", "winner-2"],
+        confirmation_fn=_evaluator(confirmation).evaluate,
+    )
+
+    result = runner.run(proposals=2)
+
+    assert result.attempts[1].decision == "promoted"
+    assert result.attempts[2].decision == "rejected"
+    assert result.attempts[2].reason == "confirmation_not_fresh_across_proposals"
+    assert result.attempts[2].confirmation_decision is not None
+    assert result.attempts[2].confirmation_decision.reason == "not_fresh_across_proposals"
+
+
+def test_confirmation_details_are_quarantined_from_recursive_prompts(tmp_path: Path) -> None:
+    primary = FakeBenchmarkRunner()
+    confirmation = _evaluator(
+        FakeBenchmarkRunner(
+            incorrect_sources={"winner"},
+            seed_commitment="fresh-hidden-seeds-v2",
+        )
+    )
+    secret = "CONFIRMATION-HOLDOUT-SECRET"
+
+    def confirm(candidate: KernelCandidate, incumbent: KernelCandidate) -> KernelBenchmarkObservation:
+        observation = confirmation.evaluate(candidate, incumbent)
+        return observation.model_copy(update={"feedback": secret})
+
+    runner, prompts = _runner(
+        tmp_path,
+        primary,
+        ["winner", "tiny-gain"],
+        confirmation_fn=confirm,
+    )
+
+    result = runner.run(proposals=2)
+
+    assert result.attempts[1].confirmation_decision is not None
+    assert secret in result.attempts[1].confirmation_decision.feedback
+    assert secret not in prompts[1]
 
 
 def test_same_protocol_confirmation_fails_freshness_gate(tmp_path: Path) -> None:
@@ -685,6 +860,384 @@ def test_ineligible_confirmation_rejects_provisional_winner(tmp_path: Path) -> N
     assert not attempt.confirmation_observation.eligible
     assert attempt.confirmation_decision is not None
     assert attempt.confirmation_decision.reason == "correctness_failed"
+
+
+def test_serialized_result_rejects_inconsistent_champion_and_confirmation_evidence(tmp_path: Path) -> None:
+    runner, _ = _runner(
+        tmp_path,
+        FakeBenchmarkRunner(),
+        ["winner"],
+        confirmation_fn=_evaluator(FakeBenchmarkRunner(seed_commitment="fresh-hidden-seeds-v2")).evaluate,
+    )
+    result = runner.run(proposals=1)
+    payload = result.model_dump(mode="json")
+
+    with pytest.raises(ValueError, match="champion score"):
+        KernelEvolutionResult.model_validate({**payload, "champion_score": 999.0})
+
+    champion_index = next(
+        index for index, attempt in enumerate(payload["attempts"]) if attempt["attempt_id"] == payload["champion_attempt_id"]
+    )
+    ineligible = result.model_dump(mode="json")
+    ineligible["attempts"][champion_index]["confirmation_observation"]["eligible"] = False
+    ineligible["attempts"][champion_index]["confirmation_observation"]["rejection_reason"] = "forged"
+    with pytest.raises(ValueError, match="successful confirmation requires an eligible observation"):
+        KernelEvolutionResult.model_validate(ineligible)
+
+    wrong_index = result.model_dump(mode="json")
+    wrong_index["attempts"][champion_index]["sequential_evidence"] = None
+    # This run is unbounded, so exercise report receipt binding instead.
+    wrong_index["attempts"][champion_index]["report_digest"] = content_digest("forged-report")
+    with pytest.raises(ValueError, match="report digest does not match"):
+        KernelEvolutionResult.model_validate(wrong_index)
+
+
+def test_serialized_result_binds_policy_decisions_and_champion_graph(tmp_path: Path) -> None:
+    runner, _ = _runner(tmp_path, FakeBenchmarkRunner(), ["tiny-gain", "winner"])
+    result = runner.run(proposals=2)
+
+    forged_decision = result.model_dump(mode="json")
+    rejected = forged_decision["attempts"][1]
+    rejected["decision"] = "promoted"
+    rejected["reason"] = "significant_improvement"
+    rejected["promotion_decision"] = forged_decision["attempts"][2]["promotion_decision"]
+    with pytest.raises(ValueError, match="primary decision does not replay|final decision does not replay"):
+        KernelEvolutionResult.model_validate(forged_decision)
+
+    changed_statistics = result.model_dump(mode="json")
+    changed_statistics["decision_policy"]["statistics"]["bootstrap_samples"] *= 2
+    with pytest.raises(ValueError, match="one exact decision policy"):
+        KernelEvolutionResult.model_validate(changed_statistics)
+
+    forged_bound = result.model_dump(mode="json")
+    forged_bound["attempts"][2]["observation"]["speedup_lcb"] = 999.0
+    with pytest.raises(ValueError, match="bootstrap lower bound does not replay"):
+        KernelEvolutionResult.model_validate(forged_bound)
+
+    disconnected = result.model_dump(mode="json")
+    disconnected["attempts"][2]["parent_attempt_id"] = "attempt_missing"
+    with pytest.raises(ValueError, match="parent must identify the champion"):
+        KernelEvolutionResult.model_validate(disconnected)
+
+
+def test_confirmation_cannot_override_a_replayed_primary_rejection(tmp_path: Path) -> None:
+    runner, _ = _runner(
+        tmp_path,
+        FakeBenchmarkRunner(),
+        ["winner"],
+        confirmation_fn=_evaluator(FakeBenchmarkRunner(seed_commitment="fresh-hidden-seeds-v2")).evaluate,
+    )
+    result = runner.run(proposals=1)
+    payload = result.model_dump(mode="json")
+    attempt = payload["attempts"][1]
+
+    # Preserve the genuine successful confirmation, but forge the primary
+    # derived metric into a policy rejection and make every persisted decision
+    # internally agree with that rejected-primary/promoted-final story. Raw
+    # report replay is deliberately reached only after this lifecycle gate.
+    attempt["observation"]["relative_improvement"] = 0.0
+    attempt["relative_improvement"] = 0.0
+    observation = KernelBenchmarkObservation.model_validate(attempt["observation"])
+    assert result.decision_policy is not None
+    primary = KernelPromotionPolicy(result.decision_policy).decide(observation)
+    assert not primary.promote and primary.reason == "insufficient_improvement"
+    confirmation = result.attempts[1].confirmation_decision
+    assert confirmation is not None and confirmation.promote
+    final = result.attempts[1].promotion_decision
+    assert final is not None
+    forged_final = final.model_copy(
+        update={
+            "reason": primary.reason,
+            "feedback": (f"{primary.feedback} Independent fresh confirmation passed all promotion gates."),
+            "gates": (
+                *primary.gates,
+                *(gate for gate in final.gates if gate.name.startswith("confirmation.")),
+            ),
+        }
+    )
+    attempt["primary_decision"] = primary.model_dump(mode="json")
+    attempt["promotion_decision"] = forged_final.model_dump(mode="json")
+    attempt["reason"] = forged_final.reason
+
+    with pytest.raises(ValueError, match="confirmation evidence requires a provisionally promotable primary"):
+        KernelEvolutionResult.model_validate(payload)
+
+
+def test_confirmation_veto_cannot_be_attached_to_a_replayed_primary_rejection(tmp_path: Path) -> None:
+    runner, _ = _runner(
+        tmp_path,
+        FakeBenchmarkRunner(),
+        ["winner"],
+        confirmation_fn=_evaluator(
+            FakeBenchmarkRunner(
+                incorrect_sources={"winner"},
+                seed_commitment="fresh-hidden-seeds-v2",
+            )
+        ).evaluate,
+    )
+    result = runner.run(proposals=1)
+    payload = result.model_dump(mode="json")
+    attempt = payload["attempts"][1]
+    attempt["observation"]["relative_improvement"] = 0.0
+    attempt["relative_improvement"] = 0.0
+    observation = KernelBenchmarkObservation.model_validate(attempt["observation"])
+    assert result.decision_policy is not None
+    primary = KernelPromotionPolicy(result.decision_policy).decide(observation)
+    assert not primary.promote and primary.reason == "insufficient_improvement"
+    confirmation = result.attempts[1].confirmation_decision
+    assert confirmation is not None and not confirmation.promote
+    forged_final = _confirmation_veto(primary, confirmation)
+    attempt["primary_decision"] = primary.model_dump(mode="json")
+    attempt["promotion_decision"] = forged_final.model_dump(mode="json")
+    attempt["decision"] = forged_final.decision
+    attempt["reason"] = forged_final.reason
+
+    with pytest.raises(ValueError, match="confirmation evidence requires a provisionally promotable primary"):
+        KernelEvolutionResult.model_validate(payload)
+
+
+def test_v3_candidate_confirmation_requirement_is_policy_bound(tmp_path: Path) -> None:
+    runner, _ = _runner(
+        tmp_path,
+        FakeBenchmarkRunner(),
+        ["tiny-gain"],
+        confirmation_fn=_evaluator(FakeBenchmarkRunner(seed_commitment="fresh-hidden-seeds-v2")).evaluate,
+    )
+    result = runner.run(proposals=1)
+
+    assert result.decision_policy is not None and result.decision_policy.require_confirmation
+    assert result.attempts[0].confirmation_required is False
+    assert result.attempts[1].confirmation_required is True
+    forged = result.model_dump(mode="json")
+    forged["attempts"][1]["confirmation_required"] = False
+    with pytest.raises(ValueError, match="confirmation requirement disagrees"):
+        KernelEvolutionResult.model_validate(forged)
+
+
+def test_accepted_primary_and_confirmation_replay_resource_policy(tmp_path: Path) -> None:
+    primary_only, _ = _runner(tmp_path / "primary", FakeBenchmarkRunner(), [])
+    primary_payload = primary_only.run(proposals=0).model_dump(mode="json")
+    primary_policy = primary_payload["decision_policy"]["statistics"]
+    primary_policy["require_resource_telemetry"] = True
+    primary_attempt = primary_payload["attempts"][0]
+    primary_attempt["decision_policy"]["statistics"] = dict(primary_policy)
+    primary_attempt["observation"]["statistics_policy"] = dict(primary_policy)
+    with pytest.raises(ValueError, match="missing_resource_telemetry"):
+        KernelEvolutionResult.model_validate(primary_payload)
+
+    confirmed, _ = _runner(
+        tmp_path / "confirmation",
+        FakeBenchmarkRunner(),
+        ["winner"],
+        confirmation_fn=_evaluator(FakeBenchmarkRunner(seed_commitment="fresh-hidden-seeds-v2")).evaluate,
+    )
+    confirmation_payload = confirmed.run(proposals=1).model_dump(mode="json")
+    attempt = confirmation_payload["attempts"][1]
+    observation = attempt["confirmation_observation"]
+    report_payload = observation["report"]
+    report_payload["resources"] = {
+        "candidate_artifact_digest": report_payload["candidate_artifact_digest"],
+        "incumbent_artifact_digest": report_payload["incumbent_artifact_digest"],
+        "candidate_peak_allocated_bytes": 90,
+        "candidate_peak_reserved_bytes": 90,
+        "incumbent_peak_allocated_bytes": 10,
+        "incumbent_peak_reserved_bytes": 10,
+        "candidate_peak_memory_bytes": 90,
+        "incumbent_peak_memory_bytes": 10,
+        "device_total_memory_bytes": 100,
+    }
+    report = KernelBenchmarkReport.model_validate(report_payload)
+    attempt["confirmation_report_digest"] = kernel_benchmark_report_digest(report)
+    with pytest.raises(ValueError, match="GPU memory fraction"):
+        KernelEvolutionResult.model_validate(confirmation_payload)
+
+
+def test_result_rejects_mixed_schema_nesting_and_reads_exact_v2(tmp_path: Path) -> None:
+    runner, _ = _runner(tmp_path, FakeBenchmarkRunner(), ["winner"])
+    result = runner.run(proposals=1)
+
+    mixed = result.model_dump(mode="json")
+    mixed["attempts"][1]["observation"]["report"]["schema_version"] = "autocontext.kernelbench-eval/v2"
+    with pytest.raises(ValueError, match="embedded benchmark report schemas"):
+        KernelEvolutionResult.model_validate(mixed)
+
+    legacy = result.model_dump(mode="json")
+    legacy["schema_version"] = "autocontext.kernel-result/v2"
+    legacy.pop("decision_policy")
+    for attempt in legacy["attempts"]:
+        attempt["schema_version"] = "autocontext.kernel-lineage/v2"
+        attempt.pop("decision_policy")
+        attempt.pop("primary_decision")
+        attempt.pop("promotion_decision")
+        attempt["observation"]["report"]["schema_version"] = "autocontext.kernelbench-eval/v2"
+        attempt["report_digest"] = kernel_benchmark_report_digest(
+            KernelBenchmarkReport.model_validate(attempt["observation"]["report"])
+        )
+    parsed = KernelEvolutionResult.model_validate(legacy)
+    assert parsed.schema_version == "autocontext.kernel-result/v2"
+    assert all(attempt.schema_version == "autocontext.kernel-lineage/v2" for attempt in parsed.attempts)
+    assert "decision_policy" not in parsed.model_fields_set
+    assert all(
+        not {"decision_policy", "primary_decision", "promotion_decision"} & attempt.model_fields_set
+        for attempt in parsed.attempts
+    )
+
+    downgraded = result.model_dump(mode="json")
+    downgraded["schema_version"] = "autocontext.kernel-result/v2"
+    downgraded["attempts"][0]["schema_version"] = "autocontext.kernel-lineage/v2"
+    downgraded["attempts"][0]["observation"]["report"]["schema_version"] = "autocontext.kernelbench-eval/v2"
+    with pytest.raises(ValueError, match="v2 attempts cannot contain v3 decision-policy fields"):
+        KernelEvolutionResult.model_validate(downgraded)
+
+
+def test_every_eligible_primary_attempt_is_bound_to_result_identities(tmp_path: Path) -> None:
+    runner, _ = _runner(tmp_path, FakeBenchmarkRunner(), ["tiny-gain"])
+    result = runner.run(proposals=1)
+
+    changed_problem = result.model_dump(mode="json")
+    attempt = changed_problem["attempts"][1]
+    attempt["observation"]["report"]["problem_id"] = "different-problem"
+    report = KernelBenchmarkReport.model_validate(attempt["observation"]["report"])
+    attempt["report_digest"] = kernel_benchmark_report_digest(report)
+    with pytest.raises(ValueError, match="problem id does not match"):
+        KernelEvolutionResult.model_validate(changed_problem)
+
+    changed_protocol = result.model_dump(mode="json")
+    attempt = changed_protocol["attempts"][1]
+    report_payload = attempt["observation"]["report"]
+    report_payload["protocol"]["seed_commitment"] = content_digest("forged-eligible-primary-protocol")
+    report = KernelBenchmarkReport.model_validate(report_payload)
+    attempt["protocol_id"] = report.protocol.protocol_id
+    attempt["protocol_compatibility_id"] = report.protocol.compatibility_id
+    attempt["observation"]["protocol_id"] = report.protocol.protocol_id
+    attempt["observation"]["protocol_compatibility_id"] = report.protocol.compatibility_id
+    attempt["report_digest"] = kernel_benchmark_report_digest(report)
+    with pytest.raises(ValueError, match="pinned benchmark identities"):
+        KernelEvolutionResult.model_validate(changed_protocol)
+
+    changed_baseline = result.model_dump(mode="json")
+    attempt = changed_baseline["attempts"][1]
+    report_payload = attempt["observation"]["report"]
+    report_payload["baseline_id"] = content_digest("different-baseline")
+    report = KernelBenchmarkReport.model_validate(report_payload)
+    attempt["baseline_id"] = report.baseline_id
+    attempt["observation"]["baseline_id"] = report.baseline_id
+    attempt["report_digest"] = kernel_benchmark_report_digest(report)
+    with pytest.raises(ValueError, match="pinned benchmark identities"):
+        KernelEvolutionResult.model_validate(changed_baseline)
+
+    changed_hardware = result.model_dump(mode="json")
+    attempt = changed_hardware["attempts"][1]
+    report_payload = attempt["observation"]["report"]
+    report_payload["hardware"]["architecture"] = "sm80"
+    hardware = KernelHardwareIdentity.model_validate(report_payload["hardware"])
+    report_payload["hardware_scope_id"] = hardware.scope_id
+    report = KernelBenchmarkReport.model_validate(report_payload)
+    attempt["hardware_scope_id"] = report.hardware_scope_id
+    attempt["observation"]["hardware_scope_id"] = report.hardware_scope_id
+    attempt["report_digest"] = kernel_benchmark_report_digest(report)
+    with pytest.raises(ValueError, match="pinned benchmark identities"):
+        KernelEvolutionResult.model_validate(changed_hardware)
+
+    changed_compatibility = result.model_dump(mode="json")
+    attempt = changed_compatibility["attempts"][1]
+    report_payload = attempt["observation"]["report"]
+    report_payload["protocol"]["atol"] = 0.02
+    report_payload["protocol"]["rtol"] = 0.02
+    report = KernelBenchmarkReport.model_validate(report_payload)
+    attempt["protocol_id"] = report.protocol.protocol_id
+    attempt["protocol_compatibility_id"] = report.protocol.compatibility_id
+    attempt["observation"]["protocol_id"] = report.protocol.protocol_id
+    attempt["observation"]["protocol_compatibility_id"] = report.protocol.compatibility_id
+    attempt["report_digest"] = kernel_benchmark_report_digest(report)
+    with pytest.raises(ValueError, match="pinned benchmark identities"):
+        KernelEvolutionResult.model_validate(changed_compatibility)
+
+
+def test_attempt_metrics_are_bound_to_observation(tmp_path: Path) -> None:
+    runner, _ = _runner(tmp_path, FakeBenchmarkRunner(), ["winner"])
+    result = runner.run(proposals=1)
+
+    relative = result.model_dump(mode="json")
+    relative["attempts"][1]["relative_improvement"] = 0.25
+    with pytest.raises(ValueError, match="relative improvement does not match"):
+        KernelEvolutionResult.model_validate(relative)
+
+    score = result.model_dump(mode="json")
+    score["attempts"][1]["score"] = 0.25
+    with pytest.raises(ValueError, match="score does not match"):
+        KernelEvolutionResult.model_validate(score)
+
+    missing_score = result.model_dump(mode="json")
+    missing_score["attempts"][1]["score"] = None
+    with pytest.raises(ValueError, match="eligible observations require an attempt score"):
+        KernelEvolutionResult.model_validate(missing_score)
+
+
+def test_successful_confirmation_protocol_ids_are_unique_in_replayed_result(tmp_path: Path) -> None:
+    primary = FakeBenchmarkRunner()
+    primary.latencies["winner-2"] = 75.0
+    confirmation_runners = [
+        FakeBenchmarkRunner(seed_commitment="fresh-confirmation-one"),
+        FakeBenchmarkRunner(seed_commitment="fresh-confirmation-two"),
+    ]
+    for fake in confirmation_runners:
+        fake.latencies["winner-2"] = 75.0
+    evaluators = iter(_evaluator(fake) for fake in confirmation_runners)
+
+    def confirm(candidate: KernelCandidate, incumbent: KernelCandidate) -> KernelBenchmarkObservation:
+        return next(evaluators).evaluate(candidate, incumbent)
+
+    runner, _ = _runner(tmp_path, primary, ["winner", "winner-2"], confirmation_fn=confirm)
+    result = runner.run(proposals=2)
+    payload = result.model_dump(mode="json")
+    first = payload["attempts"][1]["confirmation_observation"]
+    second_attempt = payload["attempts"][2]
+    second = second_attempt["confirmation_observation"]
+    second["report"]["protocol"] = first["report"]["protocol"]
+    report = KernelBenchmarkReport.model_validate(second["report"])
+    second["protocol_id"] = report.protocol.protocol_id
+    second["protocol_compatibility_id"] = report.protocol.compatibility_id
+    second_attempt["confirmation_report_digest"] = kernel_benchmark_report_digest(report)
+
+    with pytest.raises(ValueError, match="confirmation protocol ids must be unique"):
+        KernelEvolutionResult.model_validate(payload)
+
+
+def test_new_wire_artifacts_use_explicit_v3_schemas(tmp_path: Path) -> None:
+    runner, _ = _runner(tmp_path, FakeBenchmarkRunner(), [])
+    result = runner.run(proposals=0)
+
+    assert result.schema_version == "autocontext.kernel-result/v3"
+    assert result.attempts[0].schema_version == "autocontext.kernel-lineage/v3"
+    assert result.attempts[0].observation.report is not None
+    assert result.attempts[0].observation.report.schema_version == "autocontext.kernelbench-eval/v3"
+    assert result.decision_policy is not None
+    assert result.attempts[0].decision_policy == result.decision_policy
+
+
+def test_statistics_configuration_changes_the_bound_policy_receipt() -> None:
+    candidate = KernelCandidate(source="noisy-margin")
+    incumbent = KernelCandidate(source="baseline")
+    first = KernelBenchmarkEvaluator(
+        FakeBenchmarkRunner(),
+        KernelBenchmarkEvaluatorConfig(
+            problem_id="kernelbench-level1-problem1",
+            bootstrap_samples=2_000,
+        ),
+    ).evaluate(candidate, incumbent)
+    second = KernelBenchmarkEvaluator(
+        FakeBenchmarkRunner(),
+        KernelBenchmarkEvaluatorConfig(
+            problem_id="kernelbench-level1-problem1",
+            bootstrap_samples=4_000,
+        ),
+    ).evaluate(candidate, incumbent)
+
+    assert first.statistics_policy is not None
+    assert second.statistics_policy is not None
+    assert first.statistics_policy.policy_id != second.statistics_policy.policy_id
+    assert first.speedup_lcb != second.speedup_lcb
 
 
 def test_missing_confirmation_rejects_provisional_winner(tmp_path: Path) -> None:

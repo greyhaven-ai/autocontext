@@ -826,7 +826,7 @@ class _ReportRunner:
 def test_evaluator_fails_closed_on_extreme_derived_statistics() -> None:
     evaluator = KernelBenchmarkEvaluator(
         _ReportRunner(extreme=True),
-        KernelBenchmarkEvaluatorConfig(problem_id="p1", bootstrap_samples=100),
+        KernelBenchmarkEvaluatorConfig(problem_id="p1", bootstrap_samples=2_000),
     )
 
     observation = evaluator.evaluate(KernelCandidate(source="a"), KernelCandidate(source="b"))
@@ -838,7 +838,7 @@ def test_evaluator_fails_closed_on_extreme_derived_statistics() -> None:
 def test_bootstrap_seed_does_not_depend_on_candidate_source() -> None:
     evaluator = KernelBenchmarkEvaluator(
         _ReportRunner(),
-        KernelBenchmarkEvaluatorConfig(problem_id="p1", bootstrap_samples=100),
+        KernelBenchmarkEvaluatorConfig(problem_id="p1", bootstrap_samples=2_000),
     )
     incumbent = KernelCandidate(source="incumbent")
 

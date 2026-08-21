@@ -13,7 +13,7 @@ from autocontext.kernel_evolution.models import (
     KernelBenchmarkObservation,
     KernelCandidate,
     KernelEvolutionResult,
-    content_digest,
+    kernel_benchmark_report_digest,
 )
 from autocontext.util.file_lock import append_bytes_locked
 from autocontext.util.json_io import write_json, write_text_atomic
@@ -65,7 +65,7 @@ class KernelLineageStore:
         if observation.report is None:
             return None
         content = observation.report.model_dump_json(indent=2)
-        digest = content_digest(content)
+        digest = kernel_benchmark_report_digest(observation.report)
         path = self.run_dir / "reports" / f"{digest.removeprefix('sha256:')}.json"
         if not path.exists():
             write_text_atomic(path, content)

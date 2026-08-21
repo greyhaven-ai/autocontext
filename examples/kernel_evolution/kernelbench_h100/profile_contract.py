@@ -9,6 +9,8 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -17,6 +19,13 @@ STRICT_PROFILE = "strict-fp32-v1"
 RELAXED_PROFILE = "relaxed-precision-v1"
 PROFILE_NAMES = (STRICT_PROFILE, RELAXED_PROFILE)
 PLAN_SCHEMA = "autocontext.kernel-private-plan/v1"
+GPU_ATTESTATION_ENV = {
+    "device_grant": "AUTOCONTEXT_GPU_DEVICE_ID",
+    "device_isolation_kind": "AUTOCONTEXT_GPU_ISOLATION_KIND",
+    "device_enforced_memory_bytes": "AUTOCONTEXT_GPU_ENFORCED_MEMORY_BYTES",
+    "device_attestor_id": "AUTOCONTEXT_GPU_ATTESTOR_ID",
+    "device_attestation_digest": "AUTOCONTEXT_GPU_ATTESTATION_DIGEST",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,6 +99,37 @@ PROFILES = {
 }
 
 
+def gpu_attestation_metadata(environment: Mapping[str, str]) -> dict[str, str]:
+    """Validate worker-provided GPU attestation as canonical identity metadata."""
+    metadata = {name: environment.get(variable) for name, variable in GPU_ATTESTATION_ENV.items()}
+    if not any(value is not None for value in metadata.values()):
+        return {
+            "device_grant": "unsafe-local-device-0",
+            "device_isolation_kind": "unattested",
+            "device_enforced_memory_bytes": "unattested",
+            "device_attestor_id": "unattested",
+            "device_attestation_digest": "unattested",
+        }
+    if any(value is None for value in metadata.values()):
+        raise RuntimeError("Docker GPU attestation environment is incomplete")
+    canonical = {name: value for name, value in metadata.items() if value is not None}
+    if canonical["device_isolation_kind"] not in {"mig", "hardware-partition"}:
+        raise RuntimeError("Docker GPU attestation has an unsupported isolation kind")
+    if not canonical["device_attestor_id"].strip() or any(character in canonical["device_attestor_id"] for character in "\r\n\0"):
+        raise RuntimeError("Docker GPU attestation has an invalid attestor identity")
+    enforced_memory_bytes = canonical["device_enforced_memory_bytes"]
+    if (
+        not enforced_memory_bytes.isascii()
+        or not enforced_memory_bytes.isdecimal()
+        or int(enforced_memory_bytes) < 1
+        or str(int(enforced_memory_bytes)) != enforced_memory_bytes
+    ):
+        raise RuntimeError("Docker GPU attestation capacity must be a canonical positive decimal integer")
+    if re.fullmatch(r"sha256:[0-9a-f]{64}", canonical["device_attestation_digest"]) is None:
+        raise RuntimeError("Docker GPU attestation digest is invalid")
+    return canonical
+
+
 def canonical_digest(payload: object) -> str:
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
@@ -141,10 +181,15 @@ def load_private_plan(
 def _validate_cases(cases: list[Any], *, spec: ProfileSpec) -> None:
     names: set[str] = set()
     seeds: set[int] = set()
-    splits: set[str] = set()
-    shape_classes: set[str] = set()
-    layouts: set[str] = set()
-    value_classes: set[str] = set()
+    coverage: dict[str, dict[str, set[str]]] = {
+        split: {
+            "shape classes": set(),
+            "A layouts": set(),
+            "B layouts": set(),
+            "value classes": set(),
+        }
+        for split in ("train", "holdout")
+    }
     required = {
         "name",
         "split",
@@ -177,8 +222,23 @@ def _validate_cases(cases: list[Any], *, spec: ProfileSpec) -> None:
             value = case[key]
             if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value) or value <= 0:
                 raise ValueError(f"{key} must be positive and finite")
-        if case["magnitude_min"] > case["magnitude_max"]:
-            raise ValueError("magnitude_min cannot exceed magnitude_max")
+        if case["magnitude_min"] >= case["magnitude_max"]:
+            raise ValueError("magnitude_min must be less than magnitude_max")
+        value_class = case["value_class"]
+        if value_class not in spec.required_value_classes:
+            raise ValueError(f"value_class must be one of the canonical {spec.name} classes")
+        minimum = float(case["magnitude_min"])
+        maximum = float(case["magnitude_max"])
+        if value_class == "positive-unit" and maximum > 1.0:
+            raise ValueError("positive-unit magnitudes must be in (0, 1]")
+        if value_class == "small" and maximum > 1.0e-2:
+            raise ValueError("small magnitudes must not exceed 1e-2")
+        if value_class == "large" and minimum < 1.0:
+            raise ValueError("large magnitudes must be at least 1")
+        if value_class == "dynamic-range" and (minimum >= 1.0 or maximum <= 1.0 or maximum / minimum < 1.0e6):
+            raise ValueError("dynamic-range cases must span 1 with at least six orders of magnitude")
+        if value_class == "cancellation" and maximum / 1.0003 <= minimum:
+            raise ValueError("cancellation magnitudes must leave room for the paired perturbation")
         if case["value_class"] == "cancellation" and case["k"] % 2:
             raise ValueError("cancellation cases require an even k dimension")
         case_layouts = {case["a_layout"], case["b_layout"]}
@@ -186,26 +246,27 @@ def _validate_cases(cases: list[Any], *, spec: ProfileSpec) -> None:
             raise ValueError("layouts must be contiguous or transposed")
         names.add(name)
         seeds.add(seed)
-        splits.add(split)
-        layouts.update(case_layouts)
-        value_classes.add(case["value_class"])
+        split_coverage = coverage[split]
+        split_coverage["A layouts"].add(case["a_layout"])
+        split_coverage["B layouts"].add(case["b_layout"])
+        split_coverage["value classes"].add(case["value_class"])
         m, n, k = dimensions
         if m == n and any(value % 128 for value in dimensions):
-            shape_classes.add("non-tile-square")
+            split_coverage["shape classes"].add("non-tile-square")
         elif m == n == k and all(value % 128 == 0 for value in dimensions):
-            shape_classes.add("tile-aligned-square")
+            split_coverage["shape classes"].add("tile-aligned-square")
         if len({m, n, k}) > 1:
-            shape_classes.add("rectangular")
-    if splits != {"train", "holdout"}:
-        raise ValueError("private plans must contain disjoint train and holdout slices")
-    for label, observed, required_values in (
-        ("shape classes", shape_classes, spec.required_shape_classes),
-        ("layouts", layouts, spec.required_layouts),
-        ("value classes", value_classes, spec.required_value_classes),
-    ):
-        missing = sorted(set(required_values) - observed)
-        if missing:
-            raise ValueError(f"private plan is missing required {label}: {', '.join(missing)}")
+            split_coverage["shape classes"].add("rectangular")
+    for split, split_coverage in coverage.items():
+        for label, required_values in (
+            ("shape classes", spec.required_shape_classes),
+            ("A layouts", spec.required_layouts),
+            ("B layouts", spec.required_layouts),
+            ("value classes", spec.required_value_classes),
+        ):
+            missing = sorted(set(required_values) - split_coverage[label])
+            if missing:
+                raise ValueError(f"private plan {split} split is missing required {label}: {', '.join(missing)}")
 
 
 def assert_fresh_plans(primary: dict[str, Any], confirmation: dict[str, Any]) -> None:
