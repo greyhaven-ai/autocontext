@@ -1,25 +1,27 @@
 # Live KernelBench H100 contract smoke
 
 This is the live-GPU companion to the synthetic kernel-evolution MVP in the
-parent directory. It evaluates one fixed workload on an NVIDIA H100, exercises
-AutoContext's real external benchmark contract, and applies the same promotion
-gates to a basic incumbent and a tuned candidate. It includes both a one-shot
-smoke comparison and a mailbox-driven recursive campaign capped at ten
-proposals. It is not a KernelBench leaderboard result.
+parent directory. It evaluates a named strict-FP32 or relaxed-precision profile
+on an NVIDIA H100 and applies correctness-slice, per-case, aggregate,
+fresh-confirmation, and bounded sequential gates. It is not a KernelBench
+leaderboard result.
 
 ## What is included
 
 | File | Role |
 | --- | --- |
-| `control_smoke.py` | Runs a baseline self-evaluation, pins its identities, evaluates the candidate, and makes the promotion decision. |
-| `campaign.py` | Runs the production recursive evolution/confirmation path with a hard ten-proposal cap and a human-operated mailbox. |
-| `adapter.py` | Owns compilation, primary seeded correctness, rotated CUDA-event timing, hardware identity, and the v2 JSON report. |
-| `confirmation_adapter.py` | Selects the independently seeded and reordered confirmation profile from the immutable adapter. |
+| `control_smoke.py` | Runs a same-interpreter diagnostic and emits an explicitly non-authoritative control decision. |
+| `campaign.py` | Validates production inputs and fails closed before evaluator, mailbox, or GPU work. |
+| `production_runtime.py` | Models pinned Docker/MIG/limit inputs and enforces the missing trusted-evaluator boundary at construction. |
+| `adapter.py` | Owns compilation, private-plan correctness, per-case and aggregate CUDA-event timing, hardware identity, and the v3 JSON report. |
+| `confirmation_adapter.py` | Runs the independently committed confirmation plan through the same immutable adapter. |
+| `profile_contract.py` | Defines both public precision profiles and validates private plan coverage, commitments, and freshness. |
 | `reference.py` | Pinned KernelBench v0.1 Level 1 problem 1 PyTorch reference. |
 | `tuned_candidate.py` | Grouped 128 x 128 x 64 Triton matmul tuned for SM90. |
 | `recursive_champion.py` | Exact source bytes of the champion produced by the verified ten-proposal campaign. |
 | `verified_h100_result.json` | Sanitized evidence from one successful H100 run; it is not a golden performance assertion. |
 | `verified_recursive_h100_result.json` | Sanitized phase-one, recursive-lineage, fresh-confirmation, and export evidence from the live campaign. |
+| `profile_reassessment.json` | Separately classifies that historical FP16-downcast champion under strict and relaxed semantics without claiming an unobserved live strict result. |
 | `THIRD_PARTY_NOTICES.md` | Source attribution and retained license notices. |
 
 The incumbent is not vendored. The driver reads `kernel.py` from a separately
@@ -36,12 +38,21 @@ checked-out, commit-pinned AutoKernel repository.
   Triton. The verified run used Python 3.11.15, PyTorch 2.13.0+cu130, and
   Triton 3.7.1.
 
-Generated kernel source executes inside the adapter process. This example is
-not a hostile-code sandbox. AutoContext tears down the adapter's inherited
-process tree on every outcome, but lifecycle containment does not restrict
-credentials, network access, filesystem access outside the temporary workspace,
-or host privilege. Use an isolated worker and evaluate only source you are
-prepared to execute; AC-991 tracks mandatory hostile-code isolation separately.
+`control_smoke.py` explicitly selects the legacy `trusted_unsafe=True`
+local-process runner. It is not a hostile-code sandbox and must evaluate only
+source the operator is prepared to execute on a dedicated disposable host.
+Its JSON uses the separate `autocontext.kernel-h100-control-smoke/v1` schema,
+sets `authoritative: false`, and deliberately omits the forgeable raw report;
+it must never be consumed as canonical promotion or profile evidence.
+
+`campaign.py` no longer has a local-process escape hatch. It validates the
+declarative inputs for a digest-pinned image, explicit MIG UUID and capacity,
+bounded resources, and private-plan schedule. It then fails closed before
+creating a mailbox, resolving Docker, running host attestation, or spending GPU
+time. The current adapter imports generated code into the Python process that
+owns the private plan, correctness oracle, CUDA timers, telemetry, and report.
+Docker protects the host; it cannot make values controlled by that same process
+authoritative.
 
 ## Pin the incumbent
 
@@ -65,7 +76,9 @@ cd /absolute/path/to/autocontext/autocontext
 uv run --frozen python ../examples/kernel_evolution/kernelbench_h100/control_smoke.py \
   --autocontext-src /absolute/path/to/autocontext/autocontext/src \
   --autokernel-root /absolute/path/to/autokernel \
-  --adapter-python /absolute/path/to/gpu-venv/bin/python
+  --adapter-python /absolute/path/to/gpu-venv/bin/python \
+  --precision-profile strict-fp32-v1 \
+  --private-plan /worker-private/strict-primary.json
 ```
 
 Pass the literal virtual-environment interpreter path. Do not transform it with
@@ -76,136 +89,145 @@ uses lexical `abspath` normalization only.
 
 Omit `--candidate` to use `tuned_candidate.py`, or pass another trusted Python
 source file exposing `kernel_fn(a, b)`. The incumbent must expose the same
-entrypoint.
+entrypoint. A strict comparison of `recursive_champion.py` is expected to exit
+`2`: it downcasts inputs and asserts the old fixed shape. The relaxed profile
+retains the historical 1%-tolerance evidence under a separate protocol.
 
-## Run a bounded recursive campaign
+## Prepare worker-private plans
 
-`campaign.py` delegates baseline evaluation, recursive prompt construction,
-promotion policy, fresh confirmation, append-only lineage, and champion updates
-to the production `KernelEvolutionRunner`. Its generator does not contain a
-model client or credentials. For generation `N` (zero based), it:
+No correctness seeds, shapes, ranges, or case order are checked in. Before a
+campaign, an operator creates one owner-readable primary plan and at least one
+distinct owner-readable confirmation plan per requested proposal. The primary
+file has `role: "primary"`; every confirmation file has `role: "confirmation"`.
+All use schema `autocontext.kernel-private-plan/v1`, the selected
+`profile_name`, a `cases` array, and a `timing_order` containing every case name
+once. Each case contains exactly:
 
-1. atomically writes the exact AutoContext prompt to `prompt_N.md`;
-2. prints the same full prompt to stdout for detached-job logs;
-3. waits for a stable, regular, non-symlink `candidate_N.py`;
-4. records the accepted candidate's exact digest before returning it to the
-   production runner.
+```text
+name, split, seed, m, n, k, a_layout, b_layout,
+value_class, magnitude_min, magnitude_max
+```
 
-The CLI accepts from one through ten proposals and rejects larger budgets. Each
-candidate wait is bounded to at most 24 hours and defaults to one hour.
+`split` is `train` or `holdout`; layouts are `contiguous` or `transposed`. In
+both splits, strict plans must cover non-tile-aligned square and rectangular
+shapes, both layouts independently for operand A and operand B,
+signed/small/large values, cancellation, and dynamic range. Magnitude ranges
+are validated against the named class and are used by the adapter. The relaxed
+profile is the legacy fixed, contiguous, positive-unit distribution. The
+validator also requires unique seeds, disjoint primary and confirmation inputs,
+and different relative timing orders.
 
-### Phase 1: confirm the bundled tuned candidate
+The campaign hashes each complete plan before the first proposal. A sound
+production evaluator must publish only its canonical SHA-256 commitment and
+must never mount or pass the private plan to a candidate-controlled process.
+The current adapter cannot enforce that separation, which is why the production
+entry point is disabled rather than publishing misleading evidence.
 
-Start a new one-proposal campaign with AutoKernel's `kernel.py` as the explicit
-baseline. Run this in a detached worker session or one terminal:
+## Production campaign status
+
+The recursive campaign is intentionally unavailable until the trusted
+evaluator/candidate boundary is implemented. Invoking `campaign.py` validates
+the private-plan schedule and declarative pinned-image/MIG/limit configuration,
+then raises
+`ProductionEvaluatorBoundaryUnavailable` before creating a mailbox or launching
+a container. It does not attest the host GPU or construct a Docker evaluator.
+There is no override flag, including for programmatic callers of the composition
+helper.
+
+The required architecture is an evaluator-owned GPU RPC (or equivalent native
+measurement boundary) where generated code receives only the inputs needed for
+one invocation. It must not be able to read private plans, load or replace the
+reference/incumbent, patch correctness or CUDA timing functions, forge resource
+telemetry, or write the authoritative report. The trusted side must compare
+outputs, measure candidate and incumbent independently, and bind its own report
+to the host-attested GPU identity.
+
+The production composition must require all of the following once that boundary
+exists:
+
+- a digest-pinned `--worker-image` and explicit `--container-python`;
+- `--gpu-device MIG-...`, `--gpu-isolation-kind mig`, and the exact
+  `--gpu-memory-bytes` reported by host `nvidia-smi`;
+- one `--primary-private-plan` and at least one distinct repeatable
+  `--confirmation-private-plan` per requested proposal;
+- explicit bounded worker limits, all of which are recorded in the runner
+manifest.
+
+The authoritative report must identify CUDA, `sm90`, and an NVIDIA H100. Its
+GPU receipt includes the exact device or MIG UUID, isolation kind, enforced
+capacity, and host `attestor_id`; profile export recomputes the branded digest
+over that complete payload and requires the confirmation receipt to match it.
+An A100/`sm80` report, a downgraded v2 link, or a missing/altered attestor field
+cannot be labeled H100 profile evidence.
+
+Each attempted confirmation consumes a different committed plan. Primary and
+all confirmation plans must be pairwise disjoint in inputs and relative timing
+order, preventing a later candidate from reusing a confirmation protocol.
+Confirmation details are retained in lineage but excluded from recursive
+feedback, scores, and lesson hints. Promotion still reveals the unavoidable
+pass/fail bit by deciding which champion is carried forward. The current
+lineage store writes full confirmation observations beneath `run_dir`, and the
+mailbox configuration publishes that path. AC-1003 must place those audit files
+in an evaluator-owned location inaccessible to an untrusted implementer before
+the campaign is enabled; fresh plans alone are not an access-control boundary.
+
+`strict-fp32-v1` currently binds `input_downcast_allowed: false` and challenges
+downcasts with strict numerical cases, but it does not prove the candidate's
+internal input precision. AC-1003 must add evaluator-owned IR/runtime precision
+attestation (or narrow the public claim) before strict evidence can be called
+authoritative.
+
+## Docker + MIG release gate
+
+The real Docker security/crash-cleanup test is opt-in and is not exercised by
+ordinary CI. Run it on the dedicated release host with one active MIG partition
+and a digest-pinned CUDA image containing PyTorch:
 
 ```bash
-mkdir /absolute/path/to/mailbox-phase1
 cd /absolute/path/to/autocontext/autocontext
-uv run --frozen python ../examples/kernel_evolution/kernelbench_h100/campaign.py \
-  --autokernel-root /absolute/path/to/autokernel \
-  --baseline /absolute/path/to/autokernel/kernel.py \
-  --adapter-python /absolute/path/to/gpu-venv/bin/python \
-  --mailbox /absolute/path/to/mailbox-phase1 \
-  --proposals 1 \
-  --candidate-wait-timeout 3600 \
-  --output /absolute/path/to/kernel-runs \
-  --run-id h100-confirm-tuned
+export AUTOCONTEXT_RUN_GPU_DOCKER_INTEGRATION=1
+export AUTOCONTEXT_GPU_DEVICE_ID=MIG-...
+export AUTOCONTEXT_GPU_DOCKER_IMAGE=registry.example/kernel@sha256:...
+export AUTOCONTEXT_GPU_DOCKER_PYTHON=/absolute/python/path/inside/the/image
+uv run --frozen pytest \
+  tests/test_docker_kernel_worker.py::test_real_docker_mig_security_and_crash_cleanup_release_gate \
+  -q
 ```
 
-After `prompt_0.md` appears, read it and atomically publish the checked-in tuned
-candidate from another terminal:
+Set `AUTOCONTEXT_DOCKER_BINARY` or `AUTOCONTEXT_NVIDIA_SMI_BINARY` only when the
+release host does not use the default command names. A passing gate verifies the
+real MIG grant/capacity, denied egress and host paths, bounded output tmpfs, and
+detached cleanup after coordinator `SIGKILL`. Record the command, image digest,
+MIG UUID/capacity, and test log in the release checklist. This gate validates
+the Docker worker; it does not satisfy AC-1003 or enable `campaign.py`.
 
-```bash
-less /absolute/path/to/mailbox-phase1/prompt_0.md
-cp /absolute/path/to/autocontext/examples/kernel_evolution/kernelbench_h100/tuned_candidate.py \
-  /absolute/path/to/mailbox-phase1/candidate_0.py.tmp
-mv /absolute/path/to/mailbox-phase1/candidate_0.py.tmp \
-  /absolute/path/to/mailbox-phase1/candidate_0.py
-```
+## Named workload and protocol
 
-Do not start phase 2 merely because the process exited successfully: a complete
-campaign may retain its baseline after rejecting a candidate. Require both
-primary promotion and fresh confirmation:
+New campaigns use problem ID
+`kernelbench-v0.1-level1-1-matmul-profiled-h100-v1`. The protocol explicitly
+names either `strict-fp32-v1` (`atol=rtol=0.0001`, no input downcast) or
+`relaxed-precision-v1` (`atol=rtol=0.01`, FP16 input downcast allowed). It binds
+input/accumulation/output precision, PyTorch FP32 reference settings with TF32
+disabled, public input-distribution requirements, enforcement policy, exact
+private-plan commitment, and the sequential budget into the protocol ID.
 
-```bash
-jq -e '
-  .attempts[-1].decision == "promoted" and
-  .attempts[-1].confirmation_decision.promote == true
-' /absolute/path/to/kernel-runs/h100-confirm-tuned/summary.json
-```
+Every private case is a named correctness slice and a named performance case.
+Train and holdout must each independently cover every shape, layout, and value
+class named by the selected canonical profile. Every slice must pass
+correctness; every case must meet the 0.98x incumbent no-regression floor before aggregate promotion. Eight paired
+timing blocks aggregate all cases geometrically while retaining per-case
+medians. The adapter uses three warmups and ten synchronized CUDA-event calls
+per implementation per block. Candidate, incumbent, and PyTorch reference
+orders rotate across blocks. Candidate and incumbent CUDA peak allocation and
+reservation are measured in separate reset windows across every case and are
+bound to their exact artifact identities. The static workload-family identity
+covers the reference and problem contract; the workload fingerprint also binds
+the selected profile, private-plan commitment, and sequential policy.
 
-The accepted phase-1 candidate digest should match the checked-in evidence:
-`sha256:500a28c8bfd5374884eca49824de76855e314154c1e770d0ca7c8ad79a9e46e4`.
-
-### Phase 2: recurse from the confirmed candidate
-
-Only after the phase-1 gate passes, start a new run and a new empty mailbox with
-`tuned_candidate.py` as the explicit baseline:
-
-```bash
-mkdir /absolute/path/to/mailbox-phase2
-cd /absolute/path/to/autocontext/autocontext
-uv run --frozen python ../examples/kernel_evolution/kernelbench_h100/campaign.py \
-  --autokernel-root /absolute/path/to/autokernel \
-  --baseline /absolute/path/to/autocontext/examples/kernel_evolution/kernelbench_h100/tuned_candidate.py \
-  --adapter-python /absolute/path/to/gpu-venv/bin/python \
-  --mailbox /absolute/path/to/mailbox-phase2 \
-  --proposals 10 \
-  --candidate-wait-timeout 3600 \
-  --output /absolute/path/to/kernel-runs \
-  --run-id h100-recursive-10
-```
-
-For each `N` from `0` through `9`, read `prompt_N.md`, author a complete source
-module using the current champion and accumulated benchmark feedback, and
-publish it via `candidate_N.py.tmp` followed by an atomic rename to
-`candidate_N.py`. A pre-existing prompt, candidate, or receipt is rejected, so
-use a new mailbox and run ID for every campaign. AutoContext may compact a long
-champion inside its recursive prompt; the exact champion remains available in
-the run directory as `champion.py` and as a content-addressed artifact.
-
-The run directory contains the production manifest, `campaign_config.json`,
-candidate/report artifacts, per-attempt JSON, append-only `lineage.jsonl`, the
-current champion, and a final `summary.json` on successful completion. The
-mailbox retains every prompt, submitted candidate, digest receipt, and
-`campaign_status.json`. SIGINT/SIGTERM is converted into a production
-`interrupted` manifest before exit; completed attempts and lineage remain
-durable. A candidate timeout records a failed manifest and preserves all prior
-attempts.
-
-## Fixed workload and protocol
-
-The problem ID is
-`kernelbench-v0.1-level1-1-square-matmul-n4096`: two 4096 x 4096 float32
-matrices and the exact semantics of KernelBench v0.1 Level 1 problem 1.
-
-The adapter owns the following fixed protocol:
-
-- five deterministic correctness trials with seeds `17011`, `17027`, `17041`,
-  `17053`, and `17077`; the final three are counted in the contract's
-  `hidden_trials` fields but are not secret in this checked-in smoke harness;
-- shape, dtype, finite-output, input-mutation, and PyTorch-reference checks at
-  `atol=0.01` and `rtol=0.01`;
-- one compile trial, then three warmups per implementation;
-- eight paired timing blocks with ten calls per implementation per block;
-- candidate, incumbent, and PyTorch reference order rotated across blocks and
-  measured with synchronized CUDA events;
-- a static workload-family ID covering the exact reference bytes and problem
-  contract, plus a full workload fingerprint covering that material and the
-  protocol; hardware/toolchain scope and baseline identities are separate.
-
-Provisional campaign winners then run through `confirmation_adapter.py`. Its
-fresh profile uses correctness seeds `27011`, `27031`, `27043`, `27059`, and
-`27077`, compile seed `26003`, timing-input seed `28001`, and timing-order seed
-`29009`. It shuffles all six permutations once, uses each exactly once, then
-takes two orders from a second seeded shuffle. A runtime invariant requires
-every implementation to occupy every timing position at least twice across the
-eight blocks. The confirmation seed commitment covers all seed values and the
-exact resulting schedule. Both the correctness inputs and execution order
-therefore differ from the primary profile. The confirmation command pins
-`confirmation_adapter.py`, the shared adapter, and the exact reference as
-immutable harness inputs.
+Provisional winners run through `confirmation_adapter.py` with a disjoint plan
+and different relative order. The fresh plan commitment changes protocol and
+workload-fingerprint identity, while compatible precision, reference, input
+family, enforcement, and sequential semantics keep the compatibility ID stable.
 
 For each provisional winner, the confirmation callback first self-evaluates
 its incumbent under this fresh profile, then evaluates the candidate while
@@ -213,8 +235,9 @@ pinning that fresh scope, baseline, and protocol. The production runner vetoes
 confirmation if the reference, static workload family, or execution environment
 changes, if the protocol is not fresh, if its compatibility identity changes,
 or if any correctness, significance, tail, drift, or resource gate fails.
-Compatibility fixes the tolerance, trial-count, warmup, and timing fields while
-permitting a new seed/order commitment.
+Compatibility fixes precision, reference, distribution, tolerance,
+no-regression floor, proposal budget, trial-count, warmup, and timing fields
+while permitting only a new committed private input/order plan.
 
 The control process first evaluates the incumbent against itself. Only after a
 valid baseline does it evaluate the candidate while requiring the same hardware
@@ -224,15 +247,28 @@ An eligible candidate is promoted only when all of these hold:
 
 - environment drift is at most 10%;
 - relative improvement is at least 5%;
-- the bootstrapped 95% lower speedup bound is at least `1 / (1 - 0.05)`;
+- every correctness slice and per-case no-regression floor passes;
+- the Bonferroni-adjusted lower speedup bound uses `0.05 / 10` and reaches at
+  least `1 / (1 - 0.05)` (the nominal 95% bound is reported separately);
 - candidate p95 latency is no more than 5% above incumbent p95 latency.
+
+The deterministic paired-bootstrap percentile is an empirical bound, not an
+exact distribution-free interval. The worker uses 20,000 resamples here and
+fails closed unless at least 100 expected resamples fall in the requested tail.
+The configured `alpha=0.005` therefore uses the 100th empirical tail rank rather
+than an unstable minimum or second-smallest resample.
 
 ## One-shot comparison output and exit status
 
-The command prints one JSON object with these top-level fields:
+`control_smoke.py` prints one JSON object with these top-level fields:
 
 ```text
+schema_version   autocontext.kernel-h100-control-smoke/v1
+evidence_status  non_authoritative_trusted_unsafe
+authoritative    false
+security_boundary, warning
 problem_id
+precision_profile, private_plan_commitment
 artifact_identity_version
 baseline   { eligible, artifact_digest, source_digest, median_ms,
              hardware_scope_id, baseline_id, protocol_id,
@@ -240,32 +276,32 @@ baseline   { eligible, artifact_digest, source_digest, median_ms,
 candidate  { path, eligible, artifact_digest, source_digest, median_ms,
              incumbent_median_ms, reference_median_ms,
              speedup_vs_incumbent, speedup_vs_reference, speedup_lcb95,
+             speedup_lcb, confidence_level, all_case_no_regression_passed,
              relative_improvement, environment_drift_ratio,
              rejection_reason, feedback }
-promotion  { promote, decision, reason }
-report     autocontext.kernelbench-eval/v2
+control_decision  { promote, decision, reason }
 ```
 
-The nested v2 report contains separate exact-source digests and ABI-bound
-artifact identities, hardware and workload identity, the complete protocol,
-compile/correctness reports, all eight raw
-timing blocks, and resource metadata. AutoContext ignores claimed scores from
-stdout and recomputes medians, speedups, the confidence bound, and drift from
-those blocks.
+The raw v3 report is deliberately omitted because it was produced by the same
+interpreter as candidate code and is forgeable. The displayed measurements and
+control decision are diagnostics only; they are not canonical promotion or
+profile evidence.
 
 The checked-in live evidence predates this v2 identity contract. Its observed
 `artifact_digest` values are deliberately preserved as legacy source-only
 SHA-256 values; they are tagged in the evidence files and must not be compared
-directly with current ABI-bound digests. Report v2 hashes a canonical mapping
-of the identity version, exact source digest, suffix, and entrypoint, and keeps
-the source digest separately for integrity and historical comparison.
+directly with current ABI-bound digests. The v2 artifact identity hashes a
+canonical mapping of the identity version, exact source digest, suffix, and
+entrypoint, and keeps the source digest separately for integrity and historical
+comparison.
 
-For `control_smoke.py`, exit status `0` means promoted. Status `2` means the
-comparison completed but the candidate was rejected; that remains a valid
-contract smoke result. A baseline or infrastructure failure exits nonzero with
-diagnostics. `campaign.py` instead exits `0` when the requested campaign
-completed, even if every proposal was rejected; inspect `summary.json` and use
-the phase-one gate above before starting phase two.
+For `control_smoke.py`, exit status `0` means its non-authoritative control
+decision passed; it does not mean a production promotion occurred. Status `2`
+means the comparison completed but the control decision rejected the candidate;
+that remains a valid contract smoke result. A baseline or infrastructure failure
+exits nonzero with diagnostics. `campaign.py` currently exits nonzero at its
+mandatory protected-evaluator preflight; it cannot emit new production campaign
+evidence until the boundary described above is implemented.
 
 [`verified_h100_result.json`](verified_h100_result.json) records a sanitized
 successful observation on an H100 80GB. It deliberately omits provider, node,
@@ -282,6 +318,19 @@ primary profile and 0.2895 ms in confirmation, or about 7.30x faster than the
 phase-two starting candidate. Its large gain depends partly on converting the
 fixed float32 inputs to float16 within the workload's 1% tolerance, so it is
 not a bitwise-equivalent or general-purpose float32 matmul result.
+
+[`profile_reassessment.json`](profile_reassessment.json) therefore retains that
+observation only as relaxed-precision evidence and records why the exact source
+is rejected by the strict contract. It explicitly marks the strict live H100
+campaign as blocked on AC-1003 and then pending an external H100 run. Once the
+boundary is implemented, a completed new campaign writes `profile_evidence.json`
+using schema `autocontext.kernel-h100-profile-evidence/v3`, with the exact
+champion artifact and attempt identity, content-addressed primary
+and confirmation report receipts, their plan commitments and protocol IDs,
+the complete host-owned decision policy and its canonical policy ID,
+the complete all-v3 result/lineage/report chain, CUDA/SM90/H100 identity, the
+digest-verified host GPU attestation including its attestor ID, holdout correctness and per-case floors,
+proposal spend, and whether an improvement survived strict FP32.
 
 ## Attribution
 

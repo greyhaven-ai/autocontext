@@ -12,7 +12,7 @@ import venv
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 import pytest
 from pydantic import ValidationError
@@ -20,7 +20,6 @@ from pydantic import ValidationError
 from autocontext.kernel_evolution import (
     ARTIFACT_IDENTITY_VERSION,
     SCHEMA_VERSION,
-    ExternalKernelBenchmarkRunner,
     KernelBenchmarkEvaluator,
     KernelBenchmarkEvaluatorConfig,
     KernelBenchmarkExecution,
@@ -35,6 +34,26 @@ from autocontext.kernel_evolution import (
     _process_control,
     content_digest,
 )
+from autocontext.kernel_evolution import (
+    ExternalKernelBenchmarkRunner as _ExternalKernelBenchmarkRunner,
+)
+
+
+def ExternalKernelBenchmarkRunner(*args: Any, **kwargs: Any) -> _ExternalKernelBenchmarkRunner:
+    """All local-process contract fixtures are explicit trusted/unsafe runs."""
+
+    kwargs.setdefault("trusted_unsafe", True)
+    return _ExternalKernelBenchmarkRunner(*args, **kwargs)
+
+
+def test_external_runner_requires_explicit_trusted_unsafe_opt_in(tmp_path: Path) -> None:
+    adapter = tmp_path / "adapter.py"
+    adapter.write_text("pass", encoding="utf-8")
+    with pytest.raises(PermissionError, match="trusted_unsafe=True"):
+        _ExternalKernelBenchmarkRunner(
+            [sys.executable, str(adapter), "{candidate}", "{incumbent}", "{report}"],
+            immutable_paths=[adapter],
+        )
 
 
 def _symlink_or_skip(link: Path, target: Path, *, target_is_directory: bool = False) -> None:
@@ -807,7 +826,7 @@ class _ReportRunner:
 def test_evaluator_fails_closed_on_extreme_derived_statistics() -> None:
     evaluator = KernelBenchmarkEvaluator(
         _ReportRunner(extreme=True),
-        KernelBenchmarkEvaluatorConfig(problem_id="p1", bootstrap_samples=100),
+        KernelBenchmarkEvaluatorConfig(problem_id="p1", bootstrap_samples=2_000),
     )
 
     observation = evaluator.evaluate(KernelCandidate(source="a"), KernelCandidate(source="b"))
@@ -819,7 +838,7 @@ def test_evaluator_fails_closed_on_extreme_derived_statistics() -> None:
 def test_bootstrap_seed_does_not_depend_on_candidate_source() -> None:
     evaluator = KernelBenchmarkEvaluator(
         _ReportRunner(),
-        KernelBenchmarkEvaluatorConfig(problem_id="p1", bootstrap_samples=100),
+        KernelBenchmarkEvaluatorConfig(problem_id="p1", bootstrap_samples=2_000),
     )
     incumbent = KernelCandidate(source="incumbent")
 

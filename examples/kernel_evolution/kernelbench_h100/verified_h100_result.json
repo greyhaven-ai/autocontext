@@ -7,7 +7,7 @@
   "identity_contract": {
     "observed_report_schema": "autocontext.kernelbench-eval/v1",
     "artifact_digest_semantics": "legacy-source-sha256/v1",
-    "current_report_schema": "autocontext.kernelbench-eval/v2",
+    "current_report_schema": "autocontext.kernelbench-eval/v3",
     "migration_note": "Observed digests are preserved source-byte SHA-256 evidence and are not ABI-bound v2 artifact identities."
   },
   "artifacts": {

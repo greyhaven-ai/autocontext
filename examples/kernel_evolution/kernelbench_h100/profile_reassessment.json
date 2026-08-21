@@ -1,0 +1,32 @@
+{
+  "schema_version": "autocontext.kernel-profile-reassessment/v1",
+  "evidence_status": "contract_reassessment",
+  "live_strict_campaign_status": "blocked_on_trusted_evaluator_boundary_then_pending_external_h100_run",
+  "candidate": {
+    "source": "recursive_champion.py",
+    "legacy_source_digest": "sha256:3ba00003ea78dbee1d216331e88b5feb615283d7fd0e216aeea8c518ce122d4e",
+    "historical_evidence": "verified_recursive_h100_result.json"
+  },
+  "profiles": {
+    "relaxed-precision-v1": {
+      "result": "retained_historical_evidence",
+      "basis": [
+        "The observed campaign used float32 inputs with candidate FP16 input downcasts.",
+        "The observed correctness gate used atol=0.01 and rtol=0.01 on fixed contiguous 4096x4096 positive inputs."
+      ]
+    },
+    "strict-fp32-v1": {
+      "result": "rejected_by_protocol_contract",
+      "observed_live_result": false,
+      "basis": [
+        "The candidate explicitly downcasts both float32 inputs to float16, which strict-fp32-v1 forbids.",
+        "The candidate asserts one fixed 4096x4096 shape and contiguous layouts, so it cannot pass the strict profile's required non-tile-aligned, rectangular, and transposed holdout cases.",
+        "Historical 1% tolerance evidence is not strict-FP32 correctness evidence."
+      ]
+    }
+  },
+  "notes": [
+    "This reassessment does not claim an unobserved H100 timing result.",
+    "campaign.py is blocked until the trusted evaluator boundary is implemented; only afterward can an external H100 run write observed profile_evidence.json."
+  ]
+}

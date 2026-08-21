@@ -10,11 +10,14 @@ import os
 import sys
 import types
 from pathlib import Path
+from typing import Any
 
-PROBLEM_ID = "kernelbench-v0.1-level1-1-square-matmul-n4096"
+from profile_contract import PROFILE_NAMES, private_plan_commitment
+
+PROBLEM_ID = "kernelbench-v0.1-level1-1-matmul-profiled-h100-v1"
 
 
-def _load_contract_modules(source_root: Path):
+def _load_contract_modules(source_root: Path) -> tuple[Any, Any]:
     """Load the real models/benchmark modules without importing full AutoContext."""
     package_root = source_root / "autocontext"
     kernel_root = package_root / "kernel_evolution"
@@ -42,20 +45,27 @@ def _load_contract_modules(source_root: Path):
     return loaded[0], loaded[1]
 
 
-def _promotion_decision(observation) -> dict[str, object]:
+def _promotion_decision(observation: Any) -> dict[str, object]:
     if not observation.eligible:
         return {"promote": False, "decision": "rejected", "reason": observation.rejection_reason}
     assert observation.environment_drift_ratio is not None
     assert observation.relative_improvement is not None
-    assert observation.speedup_lcb95 is not None
+    assert observation.speedup_lcb is not None
     assert observation.candidate_p95_ms is not None
     assert observation.incumbent_p95_ms is not None
+    resources = observation.report.resources if observation.report is not None else None
+    candidate_peak = resources.candidate_enforced_peak_bytes if resources is not None else None
+    device_capacity = resources.device_total_memory_bytes if resources is not None else None
+    if candidate_peak is not None and device_capacity is not None and candidate_peak > device_capacity * 0.80:
+        return {"promote": False, "decision": "rejected", "reason": "memory_limit"}
     if observation.environment_drift_ratio > 0.10:
         return {"promote": False, "decision": "rejected", "reason": "unstable_environment"}
     if observation.relative_improvement + 1.0e-12 < 0.05:
         return {"promote": False, "decision": "rejected", "reason": "insufficient_improvement"}
     required_confident_speedup = 1.0 / (1.0 - 0.05)
-    if observation.speedup_lcb95 + 1.0e-12 < required_confident_speedup:
+    if observation.all_case_no_regression_passed is False:
+        return {"promote": False, "decision": "rejected", "reason": "case_regression"}
+    if observation.speedup_lcb + 1.0e-12 < required_confident_speedup:
         return {"promote": False, "decision": "rejected", "reason": "confidence_interval"}
     if observation.candidate_p95_ms > observation.incumbent_p95_ms * 1.05:
         return {"promote": False, "decision": "rejected", "reason": "tail_regression"}
@@ -72,6 +82,8 @@ def main() -> None:
         required=True,
         help="Path containing the autocontext Python package (normally autocontext/src)",
     )
+    parser.add_argument("--precision-profile", choices=PROFILE_NAMES, required=True)
+    parser.add_argument("--private-plan", type=Path, required=True)
     parser.add_argument(
         "--candidate",
         type=Path,
@@ -96,8 +108,19 @@ def main() -> None:
     incumbent_path = autokernel_root / "kernel.py"
     reference_path = bundle / "reference.py"
     adapter_path = bundle / "adapter.py"
+    profile_contract_path = bundle / "profile_contract.py"
+    private_plan = args.private_plan.resolve()
+    plan_commitment = private_plan_commitment(private_plan)
 
-    for path in (candidate_path, incumbent_path, reference_path, adapter_path, args.adapter_python):
+    for path in (
+        candidate_path,
+        incumbent_path,
+        reference_path,
+        adapter_path,
+        profile_contract_path,
+        private_plan,
+        args.adapter_python,
+    ):
         if not path.exists():
             raise SystemExit(f"required path does not exist: {path}")
 
@@ -137,10 +160,21 @@ def main() -> None:
             PROBLEM_ID,
             "--autokernel-root",
             str(autokernel_root),
+            "--precision-profile",
+            args.precision_profile,
+            "--private-plan",
+            str(private_plan),
+            "--plan-commitment",
+            plan_commitment,
+            "--proposal-cap",
+            "10",
+            "--familywise-alpha",
+            "0.05",
         ],
         cwd=autokernel_root,
         source_suffix=".py",
-        immutable_paths=[adapter_path, reference_path],
+        trusted_unsafe=True,
+        immutable_paths=[adapter_path, profile_contract_path, reference_path, private_plan],
         max_output_bytes=64_000,
         max_report_bytes=2_000_000,
     )
@@ -150,12 +184,28 @@ def main() -> None:
             problem_id=PROBLEM_ID,
             timeout_seconds=240.0,
             min_timing_blocks=8,
-            bootstrap_samples=1_000,
+            # The adapter pins a ten-proposal Bonferroni policy (alpha=.005).
+            # Keep at least 100 resamples in that empirical lower tail.
+            bootstrap_samples=20_000,
+            require_resource_telemetry=True,
         ),
     )
     baseline = evaluator.evaluate(incumbent, incumbent)
     if not baseline.eligible:
-        print(baseline.model_dump_json(indent=2))
+        print(
+            json.dumps(
+                {
+                    "schema_version": "autocontext.kernel-h100-control-smoke/v1",
+                    "evidence_status": "non_authoritative_trusted_unsafe",
+                    "authoritative": False,
+                    "security_boundary": "same_interpreter_trusted_unsafe",
+                    "baseline_rejection_reason": baseline.rejection_reason,
+                    "baseline_feedback": baseline.feedback,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
         raise SystemExit(f"baseline failed: {baseline.rejection_reason}")
 
     assert baseline.hardware_scope_id is not None
@@ -171,7 +221,17 @@ def main() -> None:
     )
     decision = _promotion_decision(observation)
     summary = {
+        "schema_version": "autocontext.kernel-h100-control-smoke/v1",
+        "evidence_status": "non_authoritative_trusted_unsafe",
+        "authoritative": False,
+        "security_boundary": "same_interpreter_trusted_unsafe",
+        "warning": (
+            "candidate code shared the evaluator interpreter; all observed correctness, timing, telemetry, "
+            "and decision values are control diagnostics only"
+        ),
         "problem_id": PROBLEM_ID,
+        "precision_profile": args.precision_profile,
+        "private_plan_commitment": plan_commitment,
         "artifact_identity_version": candidate.artifact_identity_version,
         "baseline": {
             "eligible": baseline.eligible,
@@ -194,13 +254,15 @@ def main() -> None:
             "speedup_vs_incumbent": observation.speedup_vs_incumbent,
             "speedup_vs_reference": observation.speedup_vs_reference,
             "speedup_lcb95": observation.speedup_lcb95,
+            "speedup_lcb": observation.speedup_lcb,
+            "confidence_level": observation.confidence_level,
+            "all_case_no_regression_passed": observation.all_case_no_regression_passed,
             "relative_improvement": observation.relative_improvement,
             "environment_drift_ratio": observation.environment_drift_ratio,
             "rejection_reason": observation.rejection_reason,
             "feedback": observation.feedback,
         },
-        "promotion": decision,
-        "report": observation.report.model_dump(mode="json") if observation.report is not None else None,
+        "control_decision": decision,
     }
     print(json.dumps(summary, indent=2, sort_keys=True))
     if not decision["promote"]:

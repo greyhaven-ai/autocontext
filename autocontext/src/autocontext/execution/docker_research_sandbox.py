@@ -6,7 +6,6 @@ import base64
 import hashlib
 import json
 import math
-import os
 import pickle
 import shutil
 import subprocess
@@ -18,6 +17,11 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
+from autocontext.execution.docker_isolation import (
+    DockerIsolationLimits,
+    build_docker_isolation_command,
+    sanitized_docker_environment,
+)
 from autocontext.execution.research_workspace_files import restore_files, snapshot_files
 from autocontext.execution.research_workspace_models import (
     ResearchSandboxExecutionRequest,
@@ -174,16 +178,13 @@ class DockerResearchSandboxBackend:
                 self._active.setdefault(request.workspace_id, set()).add(container_name)
             try:
                 try:
-                    host_environment = {
-                        key: os.environ[key] for key in ("PATH", "HOME", "DOCKER_HOST", "DOCKER_CONFIG") if key in os.environ
-                    }
                     completed = subprocess.run(  # noqa: S603
                         command,
                         check=False,
                         capture_output=True,
                         text=True,
                         timeout=request.limits.timeout_seconds,
-                        env=host_environment,
+                        env=sanitized_docker_environment(),
                     )
                 except subprocess.TimeoutExpired as exc:
                     try:
@@ -313,11 +314,7 @@ class DockerResearchSandboxBackend:
         with self._lock:
             if self._image_ready:
                 return
-            environment = {
-                key: os.environ[key]
-                for key in ("PATH", "HOME", "DOCKER_HOST", "DOCKER_CONFIG")
-                if key in os.environ
-            }
+            environment = sanitized_docker_environment()
             inspect_command = [self.docker_binary, "image", "inspect", self.image]
             try:
                 inspected = subprocess.run(  # noqa: S603
@@ -361,9 +358,7 @@ class DockerResearchSandboxBackend:
                         env=environment,
                     )
                 except (OSError, subprocess.SubprocessError) as exc:
-                    raise RuntimeError(
-                        f"Docker runtime image verification failed: {type(exc).__name__}: {exc}"
-                    ) from exc
+                    raise RuntimeError(f"Docker runtime image verification failed: {type(exc).__name__}: {exc}") from exc
                 if inspected.returncode != 0:
                     detail = (inspected.stderr or inspected.stdout).strip()
                     raise RuntimeError(f"Docker runtime image verification failed: {detail[-240:]}")
@@ -391,9 +386,7 @@ class DockerResearchSandboxBackend:
             # That race is already reconciled and must not make unrelated new
             # executions unavailable. Every other daemon/permission error is
             # still terminal.
-            if not errors or not all(
-                "No such object" in line or "No such container" in line for line in errors
-            ):
+            if not errors or not all("No such object" in line or "No such container" in line for line in errors):
                 detail = (inspected.stderr or inspected.stdout).strip()
                 raise RuntimeError(f"Docker orphan inspection failed: {detail[-240:]}")
         expired: list[str] = []
@@ -434,69 +427,33 @@ class DockerResearchSandboxBackend:
         if env_file is not None:
             raise ValueError("candidate-visible credential environment files are forbidden")
         pids_limit = self.pids_limit if "subprocess" in granted_capabilities else 1
-        command = [
-            self.docker_binary,
-            "run",
-            "--pull",
-            "never",
-            "--rm",
-            "--name",
-            container_name,
-            "--label",
-            f"ai.autocontext.workspace={_workspace_label(workspace_id)}",
-        ]
+        labels = {"ai.autocontext.workspace": _workspace_label(workspace_id)}
         if expires_at is not None:
             if not math.isfinite(expires_at) or expires_at <= 0:
                 raise ValueError("Docker sandbox expiry must be a positive finite timestamp")
-            command.extend(("--label", f"{_EXPIRY_LABEL}={expires_at:.6f}"))
-        command.extend(
-            (
-                "--read-only",
-                "--network",
-                "none",
-                "--cap-drop",
-                "ALL",
-                "--security-opt",
-                "no-new-privileges",
-                "--pids-limit",
-                str(pids_limit),
-                "--memory",
-                f"{self.memory_mb}m",
-                "--cpus",
-                str(self.cpu_count),
-                "--tmpfs",
-                "/tmp:rw,noexec,nosuid,nodev,size=16m",
-                "--mount",
-                f"type=bind,src={input_root},dst=/input,readonly",
-                "--mount",
-                f"type=bind,src={output_root},dst=/output",
-                "--env",
-                "LANG=C.UTF-8",
-                "--env",
-                "HOME=/tmp",
-                "--user",
-                f"{os.getuid()}:{os.getgid()}",
-            )
-        )
+            labels[_EXPIRY_LABEL] = f"{expires_at:.6f}"
+        readonly_mounts = {input_root: "/input"}
+        writable_mounts = {output_root: "/output"}
         if "workspace_read" in granted_capabilities or "workspace_write" in granted_capabilities:
-            workspace_mount = f"type=bind,src={workspace_root},dst=/workspace"
             if "workspace_write" not in granted_capabilities:
-                workspace_mount += ",readonly"
-            command.extend(("--mount", workspace_mount))
-        command.extend(
-            (
-                self.image,
-                "env",
-                "-i",
-                "LANG=C.UTF-8",
-                "HOME=/tmp",
-                "PATH=/usr/local/bin:/usr/bin:/bin",
-                "python",
-                "-I",
-                "/input/runner.py",
-            )
+                readonly_mounts[workspace_root] = "/workspace"
+            else:
+                writable_mounts[workspace_root] = "/workspace"
+        return build_docker_isolation_command(
+            docker_binary=self.docker_binary,
+            image=self.image,
+            container_name=container_name,
+            labels=labels,
+            limits=DockerIsolationLimits(
+                memory_mb=self.memory_mb,
+                cpu_count=self.cpu_count,
+                pids_limit=pids_limit,
+            ),
+            readonly_mounts=readonly_mounts,
+            writable_mounts=writable_mounts,
+            tmpfs_mounts={"/tmp": "rw,noexec,nosuid,nodev,size=16m"},
+            argv=("python", "-I", "/input/runner.py"),
         )
-        return command
 
     def _remove_containers(self, identifiers: tuple[str, ...]) -> None:
         unique = sorted({identifier for identifier in identifiers if identifier})
@@ -524,10 +481,7 @@ def _container_name(workspace_id: str, sequence: int) -> str:
 
 
 def _safe_label(value: str) -> str:
-    rendered = "".join(
-        char if (char.isascii() and char.isalnum()) or char in "_.-" else "-"
-        for char in value
-    ).strip("-.")
+    rendered = "".join(char if (char.isascii() and char.isalnum()) or char in "_.-" else "-" for char in value).strip("-.")
     if not rendered:
         rendered = f"id-{hashlib.sha256(value.encode('utf-8')).hexdigest()[:24]}"
     return rendered

@@ -18,53 +18,23 @@ import math
 import os
 import platform
 import random
+import statistics
 import subprocess
 import sys
 import time
 import uuid
-from dataclasses import dataclass
 from itertools import permutations
 from pathlib import Path
 from typing import Any
 
 import torch
+from profile_contract import PROFILE_NAMES, PROFILES, gpu_attestation_metadata, load_private_plan
 
-SCHEMA_VERSION = "autocontext.kernelbench-eval/v2"
+SCHEMA_VERSION = "autocontext.kernelbench-eval/v3"
 PROTOCOL_COMPATIBILITY_VERSION = "autocontext.kernel-protocol-compatibility/v1"
 WARMUP_RUNS = 3
 TIMING_BLOCKS = 8
 CALLS_PER_BLOCK = 10
-ATOL = 1.0e-2
-RTOL = 1.0e-2
-
-
-@dataclass(frozen=True, slots=True)
-class BenchmarkProfile:
-    """Host-owned inputs and ordering for one benchmark protocol."""
-
-    name: str
-    correctness_seeds: tuple[int, ...]
-    hidden_trials: int
-    compile_seed: int
-    timing_input_seed: int
-    timing_order_seed: int | None = None
-
-
-PRIMARY_PROFILE = BenchmarkProfile(
-    name="primary-v1",
-    correctness_seeds=(17011, 17027, 17041, 17053, 17077),
-    hidden_trials=3,
-    compile_seed=16001,
-    timing_input_seed=18001,
-)
-CONFIRMATION_PROFILE = BenchmarkProfile(
-    name="fresh-confirmation-v1",
-    correctness_seeds=(27011, 27031, 27043, 27059, 27077),
-    hidden_trials=3,
-    compile_seed=26003,
-    timing_input_seed=28001,
-    timing_order_seed=29009,
-)
 
 
 def _digest(payload: bytes | str) -> str:
@@ -77,16 +47,12 @@ def _canonical_digest(payload: dict[str, Any]) -> str:
     return _digest(encoded)
 
 
-def _timing_orders(profile: BenchmarkProfile, names: tuple[str, ...]) -> tuple[tuple[str, ...], ...]:
-    if profile.timing_order_seed is None:
-        orders = tuple(names[index % len(names) :] + names[: index % len(names)] for index in range(TIMING_BLOCKS))
-    else:
-        generator = random.Random(profile.timing_order_seed)
-        first_cycle = list(permutations(names))
-        second_cycle = list(permutations(names))
-        generator.shuffle(first_cycle)
-        generator.shuffle(second_cycle)
-        orders = tuple([*first_cycle, *second_cycle[: TIMING_BLOCKS - len(first_cycle)]])
+def _timing_orders(seed_material: str, names: tuple[str, ...]) -> tuple[tuple[str, ...], ...]:
+    generator = random.Random(int(hashlib.sha256(seed_material.encode()).hexdigest()[:16], 16))
+    cycles = [list(permutations(names)) for _ in range(math.ceil(TIMING_BLOCKS / math.factorial(len(names))))]
+    for cycle in cycles:
+        generator.shuffle(cycle)
+    orders = tuple(order for cycle in cycles for order in cycle)[:TIMING_BLOCKS]
 
     for name in names:
         for position in range(len(names)):
@@ -94,22 +60,6 @@ def _timing_orders(profile: BenchmarkProfile, names: tuple[str, ...]) -> tuple[t
             if appearances < 2:
                 raise RuntimeError(f"unbalanced timing schedule: {name} occupies position {position} only {appearances} times")
     return orders
-
-
-def _seed_commitment(profile: BenchmarkProfile) -> str:
-    # Preserve the exact primary commitment used by verified_h100_result.json.
-    if profile.timing_order_seed is None:
-        return _digest(",".join(str(seed) for seed in profile.correctness_seeds))
-    names = ("candidate_ms", "incumbent_ms", "reference_ms")
-    material = {
-        "profile": profile.name,
-        "correctness_seeds": list(profile.correctness_seeds),
-        "compile_seed": profile.compile_seed,
-        "timing_input_seed": profile.timing_input_seed,
-        "timing_order_seed": profile.timing_order_seed,
-        "timing_orders": [list(order) for order in _timing_orders(profile, names)],
-    }
-    return _canonical_digest(material)
 
 
 def _write_report(path: Path, report: dict[str, Any]) -> None:
@@ -184,7 +134,7 @@ def _equal(left, right) -> bool:
     return left == right
 
 
-def _compare(output, expected) -> tuple[bool, float, float]:
+def _compare(output, expected, *, atol: float, rtol: float) -> tuple[bool, float, float]:
     if isinstance(output, torch.Tensor) and isinstance(expected, torch.Tensor):
         if output.shape != expected.shape or output.dtype != expected.dtype:
             return False, float("inf"), float("inf")
@@ -196,11 +146,11 @@ def _compare(output, expected) -> tuple[bool, float, float]:
         max_abs = float(absolute.max().item())
         denominator = expected_f.abs().clamp_min(torch.finfo(torch.float32).tiny)
         max_rel = float((absolute / denominator).max().item())
-        return bool(torch.allclose(output_f, expected_f, atol=ATOL, rtol=RTOL)), max_abs, max_rel
+        return bool(torch.allclose(output_f, expected_f, atol=atol, rtol=rtol)), max_abs, max_rel
     if isinstance(output, (list, tuple)) and isinstance(expected, (list, tuple)):
         if len(output) != len(expected):
             return False, float("inf"), float("inf")
-        comparisons = [_compare(a, b) for a, b in zip(output, expected, strict=True)]
+        comparisons = [_compare(a, b, atol=atol, rtol=rtol) for a, b in zip(output, expected, strict=True)]
         return (
             all(item[0] for item in comparisons),
             max((item[1] for item in comparisons), default=0.0),
@@ -232,6 +182,9 @@ def _hardware(workload_family_id: str, workload_fingerprint: str) -> dict[str, A
         triton_version = triton.__version__
     except ImportError:
         triton_version = "unavailable"
+    # The unattested fallback exists only for the explicitly trusted local
+    # control smoke. Production campaign evidence rejects it.
+    device_metadata = gpu_attestation_metadata(os.environ)
     return {
         "backend": "cuda",
         "architecture": f"sm{major}{minor}",
@@ -244,14 +197,67 @@ def _hardware(workload_family_id: str, workload_fingerprint: str) -> dict[str, A
         "metadata": {
             "device_index": "0",
             "multiprocessors": str(properties.multi_processor_count),
+            **device_metadata,
         },
     }
 
 
-def _inputs(get_inputs, seed: int):
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    return _to_cuda(get_inputs())
+def _case_tensor(rows: int, columns: int, case: dict[str, Any], *, layout: str, salt: int):
+    generator = torch.Generator(device="cpu")
+    generator.manual_seed(case["seed"] + salt)
+    storage_shape = (columns, rows) if layout == "transposed" else (rows, columns)
+    value_class = case["value_class"]
+    minimum = float(case["magnitude_min"])
+    maximum = float(case["magnitude_max"])
+    if value_class == "dynamic-range":
+        exponents = torch.rand(storage_shape, generator=generator, dtype=torch.float32)
+        exponents = math.log10(minimum) + exponents * (math.log10(maximum) - math.log10(minimum))
+        signs = torch.where(
+            torch.rand(storage_shape, generator=generator) < 0.5,
+            torch.tensor(-1.0),
+            torch.tensor(1.0),
+        )
+        values = signs * torch.pow(10.0, exponents)
+    else:
+        values = minimum + torch.rand(storage_shape, generator=generator, dtype=torch.float32) * (maximum - minimum)
+        if value_class != "positive-unit":
+            signs = torch.where(
+                torch.rand(storage_shape, generator=generator) < 0.5,
+                torch.tensor(-1.0),
+                torch.tensor(1.0),
+            )
+            values *= signs
+    return values.t().cuda() if layout == "transposed" else values.cuda()
+
+
+def _apply_layout(values, layout: str):
+    if layout == "transposed":
+        return values.t().contiguous().t().cuda()
+    return values.contiguous().cuda()
+
+
+def _case_inputs(case: dict[str, Any]):
+    if case["value_class"] == "cancellation":
+        generator = torch.Generator(device="cpu")
+        generator.manual_seed(case["seed"])
+        pairs = case["k"] // 2
+        minimum = float(case["magnitude_min"])
+        maximum = float(case["magnitude_max"])
+        a_magnitude = minimum + torch.rand((case["m"], pairs), generator=generator) * (maximum / 1.0003 - minimum)
+        b_magnitude = minimum + torch.rand((pairs, case["n"]), generator=generator) * (maximum - minimum)
+        a_sign = torch.where(torch.rand(a_magnitude.shape, generator=generator) < 0.5, -1.0, 1.0)
+        b_sign = torch.where(torch.rand(b_magnitude.shape, generator=generator) < 0.5, -1.0, 1.0)
+        a_base = a_magnitude * a_sign
+        b_base = b_magnitude * b_sign
+        a = torch.repeat_interleave(a_base, 2, dim=1)
+        a[:, 1::2] *= 1.0003
+        b = torch.repeat_interleave(b_base, 2, dim=0)
+        b[1::2].neg_()
+        return [_apply_layout(a, case["a_layout"]), _apply_layout(b, case["b_layout"])]
+    return [
+        _case_tensor(case["m"], case["k"], case, layout=case["a_layout"], salt=0),
+        _case_tensor(case["k"], case["n"], case, layout=case["b_layout"], salt=1_000_003),
+    ]
 
 
 def _timed_call(model, inputs, calls: int) -> float:
@@ -270,6 +276,17 @@ def _timed_call(model, inputs, calls: int) -> float:
     return elapsed
 
 
+def _cuda_peaks(model, inputs) -> tuple[int, int]:
+    """Measure one identity's allocation window independently."""
+
+    torch.cuda.synchronize()
+    torch.cuda.reset_peak_memory_stats()
+    with torch.inference_mode():
+        model(*_clone(inputs))
+    torch.cuda.synchronize()
+    return int(torch.cuda.max_memory_allocated()), int(torch.cuda.max_memory_reserved())
+
+
 def _base_report(
     *,
     problem_id: str,
@@ -285,7 +302,9 @@ def _base_report(
     reference_digest: str,
     hardware: dict[str, Any],
     protocol: dict[str, Any],
-    profile: BenchmarkProfile,
+    profile_name: str,
+    role: str,
+    public_case_manifest: list[dict[str, str]],
 ) -> dict[str, Any]:
     return {
         "schema_version": SCHEMA_VERSION,
@@ -314,18 +333,26 @@ def _base_report(
         "correctness": None,
         "performance": None,
         "resources": {
+            "candidate_artifact_digest": candidate_artifact_digest,
+            "incumbent_artifact_digest": incumbent_artifact_digest,
+            "candidate_peak_allocated_bytes": None,
+            "candidate_peak_reserved_bytes": None,
+            "incumbent_peak_allocated_bytes": None,
+            "incumbent_peak_reserved_bytes": None,
             "candidate_peak_memory_bytes": None,
             "incumbent_peak_memory_bytes": None,
             "device_total_memory_bytes": torch.cuda.get_device_properties(0).total_memory,
         },
         "metadata": {
             "adapter": "autoctx-live-kernelbench-smoke/v1",
-            "benchmark_profile": profile.name,
+            "benchmark_profile": profile_name,
+            "profile_role": role,
+            "case_manifest": public_case_manifest,
         },
     }
 
 
-def main(profile: BenchmarkProfile = PRIMARY_PROFILE) -> None:
+def main(role: str = "primary") -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--candidate", type=Path, required=True)
     parser.add_argument("--incumbent", type=Path, required=True)
@@ -342,7 +369,27 @@ def main(profile: BenchmarkProfile = PRIMARY_PROFILE) -> None:
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--problem-id", required=True)
     parser.add_argument("--autokernel-root", type=Path, required=True)
+    parser.add_argument("--precision-profile", choices=PROFILE_NAMES, required=True)
+    parser.add_argument("--private-plan", type=Path, required=True)
+    parser.add_argument("--plan-commitment", required=True)
+    parser.add_argument("--proposal-cap", type=int, required=True)
+    parser.add_argument("--familywise-alpha", type=float, required=True)
     args = parser.parse_args()
+
+    if role not in {"primary", "confirmation"}:
+        raise SystemExit("adapter role must be primary or confirmation")
+    if not 1 <= args.proposal_cap <= 10_000:
+        raise SystemExit("proposal cap must be between 1 and 10000")
+    if not math.isfinite(args.familywise_alpha) or not 0 < args.familywise_alpha < 0.5:
+        raise SystemExit("familywise alpha must be in (0, 0.5)")
+    profile = PROFILES[args.precision_profile]
+    private_plan = load_private_plan(
+        args.private_plan,
+        profile_name=profile.name,
+        role=role,
+        expected_commitment=args.plan_commitment,
+    )
+    cases = private_plan["cases"]
 
     if not torch.cuda.is_available():
         raise SystemExit("CUDA is required; CPU fallback is intentionally forbidden")
@@ -351,6 +398,8 @@ def main(profile: BenchmarkProfile = PRIMARY_PROFILE) -> None:
     if capability != (9, 0) or "H100" not in device_name:
         raise SystemExit(f"this example requires an NVIDIA H100 (SM90); found {device_name!r} with capability {capability}")
     sys.path.insert(0, str(args.autokernel_root.resolve()))
+    torch.backends.cuda.matmul.allow_tf32 = False
+    torch.use_deterministic_algorithms(True)
 
     candidate_bytes = args.candidate.read_bytes()
     incumbent_bytes = args.incumbent.read_bytes()
@@ -358,22 +407,32 @@ def main(profile: BenchmarkProfile = PRIMARY_PROFILE) -> None:
         raise SystemExit("runner-provided source digest does not match the exact staged source bytes")
     reference_bytes = args.reference.read_bytes()
     protocol = {
-        "correctness_trials": len(profile.correctness_seeds),
-        "hidden_trials": profile.hidden_trials,
+        "correctness_trials": len(cases),
+        "hidden_trials": sum(case["split"] == "holdout" for case in cases),
         "warmup_runs": WARMUP_RUNS,
         "timing_blocks": TIMING_BLOCKS,
         "calls_per_block": CALLS_PER_BLOCK,
-        "atol": ATOL,
-        "rtol": RTOL,
-        "seed_commitment": _seed_commitment(profile),
+        "atol": profile.atol,
+        "rtol": profile.rtol,
+        "seed_commitment": args.plan_commitment,
         "compatibility_version": PROTOCOL_COMPATIBILITY_VERSION,
+        "semantics": profile.semantics(),
+        "sequential_testing": {
+            "method": "bonferroni",
+            "proposal_cap": args.proposal_cap,
+            "familywise_alpha": args.familywise_alpha,
+        },
     }
     workload = _digest(
         reference_bytes
         + json.dumps(protocol, sort_keys=True, separators=(",", ":")).encode("utf-8")
         + args.problem_id.encode("utf-8")
     )
-    workload_family = _digest(reference_bytes + args.problem_id.encode("utf-8"))
+    workload_family = _digest(
+        reference_bytes
+        + json.dumps(profile.semantics(), sort_keys=True, separators=(",", ":")).encode("utf-8")
+        + args.problem_id.encode("utf-8")
+    )
     report = _base_report(
         problem_id=args.problem_id,
         artifact_identity_version=args.artifact_identity_version,
@@ -388,7 +447,9 @@ def main(profile: BenchmarkProfile = PRIMARY_PROFILE) -> None:
         reference_digest=_digest(reference_bytes),
         hardware=_hardware(workload_family, workload),
         protocol=protocol,
-        profile=profile,
+        profile_name=profile.name,
+        role=role,
+        public_case_manifest=[{"name": case["name"], "split": case["split"]} for case in cases],
     )
 
     try:
@@ -413,7 +474,7 @@ def main(profile: BenchmarkProfile = PRIMARY_PROFILE) -> None:
             entrypoint=args.candidate_entrypoint,
         )
 
-        compile_inputs = _inputs(reference_module.get_inputs, profile.compile_seed)
+        compile_inputs = _case_inputs(next(case for case in cases if case["split"] == "train"))
         torch.cuda.synchronize()
         compile_started = time.perf_counter()
         with torch.inference_mode():
@@ -427,7 +488,7 @@ def main(profile: BenchmarkProfile = PRIMARY_PROFILE) -> None:
         report["compile"]["diagnostics"] = ""
     except Exception as exc:
         report["evaluation_status"] = "candidate_error"
-        report["failure_kind"] = "compile"
+        report["failure_kind"] = "oom" if isinstance(exc, torch.cuda.OutOfMemoryError) else "compile"
         report["compile"]["diagnostics"] = f"{type(exc).__name__}: {exc}"
         _write_report(args.report, report)
         return
@@ -441,19 +502,37 @@ def main(profile: BenchmarkProfile = PRIMARY_PROFILE) -> None:
     failures: list[str] = []
     incumbent_failed = False
 
-    for index, seed in enumerate(profile.correctness_seeds):
-        source_inputs = _inputs(reference_module.get_inputs, seed)
+    slice_results: list[dict[str, Any]] = []
+    for case in cases:
+        source_inputs = _case_inputs(case)
         candidate_inputs = _clone(source_inputs)
         incumbent_inputs = _clone(source_inputs)
         reference_inputs = _clone(source_inputs)
         candidate_before = _clone(candidate_inputs)
-        with torch.inference_mode():
-            expected = reference(*reference_inputs)
-            incumbent_output = incumbent(*incumbent_inputs)
-            candidate_output = candidate(*candidate_inputs)
+        try:
+            with torch.inference_mode():
+                expected = reference(*reference_inputs)
+                incumbent_output = incumbent(*incumbent_inputs)
+                candidate_output = candidate(*candidate_inputs)
+        except torch.cuda.OutOfMemoryError as exc:
+            report["evaluation_status"] = "candidate_error"
+            report["failure_kind"] = "oom"
+            report["compile"]["diagnostics"] = f"CUDA OOM during correctness: {exc}"
+            _write_report(args.report, report)
+            return
         torch.cuda.synchronize()
-        candidate_match, abs_error, rel_error = _compare(candidate_output, expected)
-        incumbent_match, _, _ = _compare(incumbent_output, expected)
+        candidate_match, abs_error, rel_error = _compare(
+            candidate_output,
+            expected,
+            atol=profile.atol,
+            rtol=profile.rtol,
+        )
+        incumbent_match, _, _ = _compare(
+            incumbent_output,
+            expected,
+            atol=profile.atol,
+            rtol=profile.rtol,
+        )
         mutated = not _equal(candidate_before, candidate_inputs)
         input_mutation = input_mutation or mutated
         if math.isfinite(abs_error) and math.isfinite(rel_error):
@@ -464,30 +543,40 @@ def main(profile: BenchmarkProfile = PRIMARY_PROFILE) -> None:
         passed = candidate_match and not mutated
         if passed:
             tests_passed += 1
-            if index >= len(profile.correctness_seeds) - profile.hidden_trials:
+            if case["split"] == "holdout":
                 hidden_passed += 1
         else:
             failures.append(
-                f"trial {index} failed: match={candidate_match}, input_mutation={mutated}, "
+                f"case {case['name']} ({case['split']}) failed: match={candidate_match}, input_mutation={mutated}, "
                 f"max_abs={abs_error:.6g}, max_rel={rel_error:.6g}"
             )
         if not incumbent_match:
             incumbent_failed = True
+        slice_results.append(
+            {
+                "name": case["name"],
+                "split": case["split"],
+                "cases_run": 1,
+                "cases_passed": int(passed),
+                "passed": passed,
+            }
+        )
 
     correctness_passed = (
-        tests_passed == len(profile.correctness_seeds) and hidden_passed == profile.hidden_trials and not input_mutation
+        tests_passed == len(cases) and hidden_passed == sum(case["split"] == "holdout" for case in cases) and not input_mutation
     )
     report["correctness"] = {
         "passed": correctness_passed,
-        "tests_run": len(profile.correctness_seeds),
+        "tests_run": len(cases),
         "tests_passed": tests_passed,
-        "hidden_tests_run": profile.hidden_trials,
+        "hidden_tests_run": sum(case["split"] == "holdout" for case in cases),
         "hidden_tests_passed": hidden_passed,
         "max_abs_error": max_abs_error if finite_error_metrics else None,
         "max_rel_error": max_rel_error if finite_error_metrics else None,
         "parameter_state_match": True,
         "input_mutation_detected": input_mutation,
         "failures": failures,
+        "slices": slice_results,
     }
     if incumbent_failed:
         report["evaluation_status"] = "infrastructure_error"
@@ -501,12 +590,38 @@ def main(profile: BenchmarkProfile = PRIMARY_PROFILE) -> None:
         _write_report(args.report, report)
         return
 
-    timing_inputs = _inputs(reference_module.get_inputs, profile.timing_input_seed)
-    for model in (candidate, incumbent, reference):
-        with torch.inference_mode():
-            for _ in range(WARMUP_RUNS):
-                model(*timing_inputs)
-    torch.cuda.synchronize()
+    timing_cases = {case["name"]: (case, _case_inputs(case)) for case in cases}
+    try:
+        candidate_allocated = candidate_reserved = 0
+        incumbent_allocated = incumbent_reserved = 0
+        for _case, timing_inputs in timing_cases.values():
+            allocated, reserved = _cuda_peaks(candidate, timing_inputs)
+            candidate_allocated = max(candidate_allocated, allocated)
+            candidate_reserved = max(candidate_reserved, reserved)
+            allocated, reserved = _cuda_peaks(incumbent, timing_inputs)
+            incumbent_allocated = max(incumbent_allocated, allocated)
+            incumbent_reserved = max(incumbent_reserved, reserved)
+            for model in (candidate, incumbent, reference):
+                with torch.inference_mode():
+                    for _ in range(WARMUP_RUNS):
+                        model(*timing_inputs)
+        torch.cuda.synchronize()
+        report["resources"].update(
+            {
+                "candidate_peak_allocated_bytes": candidate_allocated,
+                "candidate_peak_reserved_bytes": candidate_reserved,
+                "incumbent_peak_allocated_bytes": incumbent_allocated,
+                "incumbent_peak_reserved_bytes": incumbent_reserved,
+                "candidate_peak_memory_bytes": candidate_reserved,
+                "incumbent_peak_memory_bytes": incumbent_reserved,
+            }
+        )
+    except torch.cuda.OutOfMemoryError as exc:
+        report["evaluation_status"] = "candidate_error"
+        report["failure_kind"] = "oom"
+        report["compile"]["diagnostics"] = f"CUDA OOM during resource/warmup measurement: {exc}"
+        _write_report(args.report, report)
+        return
 
     models = {
         "candidate_ms": candidate,
@@ -515,15 +630,52 @@ def main(profile: BenchmarkProfile = PRIMARY_PROFILE) -> None:
     }
     names = tuple(models)
     blocks: list[dict[str, Any]] = []
-    for block_index, order in enumerate(_timing_orders(profile, names)):
-        block: dict[str, Any] = {"block": block_index}
-        for name in order:
-            block[name] = _timed_call(models[name], timing_inputs, CALLS_PER_BLOCK)
-        blocks.append(block)
+    per_case_blocks: dict[str, dict[str, list[float]]] = {name: {model_name: [] for model_name in names} for name in timing_cases}
+    model_orders = _timing_orders(args.plan_commitment, names)
+    case_order = private_plan["timing_order"]
+    try:
+        for block_index, order in enumerate(model_orders):
+            block: dict[str, Any] = {"block": block_index}
+            aggregated: dict[str, list[float]] = {name: [] for name in names}
+            rotated_cases = case_order[block_index % len(case_order) :] + case_order[: block_index % len(case_order)]
+            for case_name in rotated_cases:
+                _, timing_inputs = timing_cases[case_name]
+                for name in order:
+                    elapsed = _timed_call(models[name], timing_inputs, CALLS_PER_BLOCK)
+                    per_case_blocks[case_name][name].append(elapsed)
+                    aggregated[name].append(elapsed)
+            for name in names:
+                block[name] = statistics.geometric_mean(aggregated[name])
+            blocks.append(block)
+    except torch.cuda.OutOfMemoryError as exc:
+        report["evaluation_status"] = "candidate_error"
+        report["failure_kind"] = "oom"
+        report["compile"]["diagnostics"] = f"CUDA OOM during timing: {exc}"
+        _write_report(args.report, report)
+        return
+
+    case_performance = []
+    for case_name in case_order:
+        case, _ = timing_cases[case_name]
+        values = per_case_blocks[case_name]
+        candidate_median = statistics.median(values["candidate_ms"])
+        incumbent_median = statistics.median(values["incumbent_ms"])
+        floor = 0.98
+        case_performance.append(
+            {
+                "name": case_name,
+                "split": case["split"],
+                "candidate_median_ms": candidate_median,
+                "incumbent_median_ms": incumbent_median,
+                "reference_median_ms": statistics.median(values["reference_ms"]),
+                "minimum_speedup_vs_incumbent": floor,
+                "passed_no_regression": incumbent_median / candidate_median + 1.0e-12 >= floor,
+            }
+        )
 
     report["evaluation_status"] = "complete"
     report["failure_kind"] = None
-    report["performance"] = {"blocks": blocks}
+    report["performance"] = {"blocks": blocks, "cases": case_performance}
     _write_report(args.report, report)
 
 

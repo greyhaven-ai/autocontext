@@ -40,8 +40,12 @@ See [the example](kernel_evolution/README.md) and
 [kernel evolution guide](../autocontext/docs/kernel-evolution.md). The bundled
 orchestration adapter is synthetic. The companion
 [H100 contract smoke](kernel_evolution/kernelbench_h100/README.md) preserves a
-real KernelBench/AutoKernel comparison and sanitized result; live CUDA/Triton
-execution still belongs in an isolated, operator-owned worker.
+real KernelBench/AutoKernel comparison and now separates strict-FP32 from
+relaxed-precision campaigns, binds private holdout commitments, and applies a
+bounded sequential promotion gate. The historical one-shot smoke accepts only
+trusted source. The production campaign is Docker-composed but intentionally
+fails closed until generated execution is separated from its authoritative
+evaluator.
 
 ## Python CLI From Source
 

@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from adapter import CONFIRMATION_PROFILE, main
+from adapter import main
 
 if __name__ == "__main__":
-    main(CONFIRMATION_PROFILE)
+    main("confirmation")
