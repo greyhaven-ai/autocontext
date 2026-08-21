@@ -10,6 +10,10 @@ from typing import Annotated, Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, model_validator
 
+from autocontext.kernel_evolution.authority_protocol import (
+    KernelEvaluatorAuthorityReceipt,
+    verify_authority_receipt_integrity,
+)
 from autocontext.kernel_evolution.protocols import (
     KernelDecisionPolicy,
     KernelProtocolSemantics,
@@ -255,7 +259,7 @@ class KernelCompileReport(StrictModel):
 
 
 class KernelResourceReport(StrictModel):
-    """Identity-bound CUDA allocator and device-capacity telemetry."""
+    """Identity-bound allocator or evaluator-observed accelerator telemetry."""
 
     candidate_artifact_digest: Digest | None = None
     incumbent_artifact_digest: Digest | None = None
@@ -266,6 +270,10 @@ class KernelResourceReport(StrictModel):
     # Retained for v2 readers; new workers set these to peak reservation.
     candidate_peak_memory_bytes: int | None = Field(default=None, ge=0)
     incumbent_peak_memory_bytes: int | None = Field(default=None, ge=0)
+    candidate_observed_peak_bytes: int | None = Field(default=None, ge=0)
+    incumbent_observed_peak_bytes: int | None = Field(default=None, ge=0)
+    telemetry_authority: Literal["trusted-evaluator-observed/v1"] | None = None
+    accelerator_attestation_digest: Digest | None = None
     device_total_memory_bytes: int | None = Field(default=None, gt=0)
 
     @model_validator(mode="after")
@@ -281,9 +289,19 @@ class KernelResourceReport(StrictModel):
                 self.candidate_peak_reserved_bytes,
                 self.incumbent_peak_allocated_bytes,
                 self.incumbent_peak_reserved_bytes,
+                self.candidate_observed_peak_bytes,
+                self.incumbent_observed_peak_bytes,
             ):
                 if value is not None and value > self.device_total_memory_bytes:
-                    raise ValueError("CUDA peak telemetry cannot exceed total device bytes")
+                    raise ValueError("accelerator peak telemetry cannot exceed total device bytes")
+        observed = (self.candidate_observed_peak_bytes, self.incumbent_observed_peak_bytes)
+        if any(value is not None for value in observed):
+            if any(value is None for value in observed):
+                raise ValueError("trusted evaluator peaks must cover candidate and incumbent")
+            if self.telemetry_authority != "trusted-evaluator-observed/v1":
+                raise ValueError("evaluator-observed peaks require the trusted telemetry authority")
+            if self.accelerator_attestation_digest is None:
+                raise ValueError("evaluator-observed peaks require an accelerator attestation digest")
         return self
 
     @property
@@ -292,6 +310,7 @@ class KernelResourceReport(StrictModel):
             self.candidate_peak_allocated_bytes,
             self.candidate_peak_reserved_bytes,
             self.candidate_peak_memory_bytes,
+            self.candidate_observed_peak_bytes,
         )
         present = [value for value in values if value is not None]
         return max(present) if present else None
@@ -307,6 +326,10 @@ KernelFailureKind = Literal[
     "crash",
     "unstable_environment",
     "contract",
+    "protocol_corruption",
+    "evaluator_crash",
+    "candidate_crash",
+    "teardown_failure",
     "reference_failure",
 ]
 
@@ -335,6 +358,7 @@ class KernelBenchmarkReport(StrictModel):
     correctness: KernelCorrectnessReport | None
     performance: KernelPerformanceReport | None
     resources: KernelResourceReport = Field(default_factory=KernelResourceReport)
+    evaluator_authority_receipt: KernelEvaluatorAuthorityReceipt | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -358,6 +382,15 @@ class KernelBenchmarkReport(StrictModel):
             raise ValueError("incumbent artifact digest does not match its source digest and ABI")
         if self.hardware_scope_id != self.hardware.scope_id:
             raise ValueError("hardware_scope_id does not match the canonical hardware identity")
+        if self.evaluator_authority_receipt is not None:
+            verify_authority_receipt_integrity(self.evaluator_authority_receipt, self.model_dump(mode="json"))
+            attestation = self.evaluator_authority_receipt.accelerator_attestation
+            if attestation.backend != self.hardware.backend or attestation.architecture != self.hardware.architecture:
+                raise ValueError("authority receipt accelerator identity does not match report hardware")
+            if self.resources.accelerator_attestation_digest != attestation.digest:
+                raise ValueError("resource telemetry is not bound to the receipt accelerator attestation")
+            if self.resources.device_total_memory_bytes != attestation.enforced_memory_bytes:
+                raise ValueError("resource telemetry capacity does not match receipt accelerator attestation")
         resources = self.resources
         if (
             resources.candidate_artifact_digest is not None

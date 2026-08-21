@@ -11,6 +11,8 @@ from autocontext.kernel_evolution import (
     RELAXED_PRECISION_SEMANTICS,
     SCHEMA_VERSION,
     STRICT_FP32_SEMANTICS,
+    AcceleratorAttestation,
+    AuthorityMeasurement,
     KernelBaselineError,
     KernelBenchmarkEvaluator,
     KernelBenchmarkEvaluatorConfig,
@@ -35,6 +37,8 @@ from autocontext.kernel_evolution import (
     KernelSequentialTestingPolicy,
     KernelTimingBlock,
     PrecisionProfileName,
+    build_authority_receipt,
+    canonical_authority_digest,
     content_digest,
 )
 from autocontext.kernel_evolution.confirmation import _confirmation_veto
@@ -232,7 +236,82 @@ class FakeBenchmarkRunner:
         )
 
 
-def _evaluator(fake: FakeBenchmarkRunner) -> KernelBenchmarkEvaluator:
+class _AuthoritySigningFakeRunner(FakeBenchmarkRunner):
+    def __init__(self, *, signing_secret: bytes, reference_comparable: bool) -> None:
+        super().__init__()
+        self.signing_secret = signing_secret
+        self.reference_comparable = reference_comparable
+        self.evaluator_build_digest = canonical_authority_digest("host-evaluator-build")
+        self.boundary_manifest_digest = canonical_authority_digest("host-boundary")
+
+    def run(
+        self,
+        candidate: KernelCandidate,
+        incumbent: KernelCandidate,
+        *,
+        timeout_seconds: float,
+    ) -> KernelBenchmarkExecution:
+        del timeout_seconds
+        payload = self._report(candidate, incumbent, correct=True).model_dump(mode="json")
+        attestation = AcceleratorAttestation(
+            backend=self.hardware.backend,
+            vendor="test-vendor",
+            architecture=self.hardware.architecture,
+            device_id="test-partition-1",
+            isolation_kind="test-partition",
+            enforced_memory_bytes=1_024,
+            runtime=self.hardware.runtime,
+            driver=self.hardware.driver,
+            attestor_id="test-host-attestor-v1",
+        )
+        payload["resources"] = {
+            "candidate_observed_peak_bytes": 100,
+            "incumbent_observed_peak_bytes": 101,
+            "telemetry_authority": "trusted-evaluator-observed/v1",
+            "accelerator_attestation_digest": attestation.digest,
+            "device_total_memory_bytes": attestation.enforced_memory_bytes,
+        }
+        payload["metadata"]["timing_comparability"] = {
+            "promotion_comparison": ["candidate_ms", "incumbent_ms"],
+            "candidate_incumbent_comparable": True,
+            "reference_comparable": self.reference_comparable,
+        }
+        payload = KernelBenchmarkReport.model_validate(payload).model_dump(mode="json")
+        measurements = tuple(
+            AuthorityMeasurement(
+                sequence=index,
+                role=role,
+                request_digest=canonical_authority_digest(f"request-{role}"),
+                response_digest=canonical_authority_digest(f"response-{role}"),
+                input_commitment=canonical_authority_digest(f"input-{role}"),
+                output_commitment=canonical_authority_digest(f"output-{role}"),
+                elapsed_ns=10 + index,
+                observed_peak_memory_bytes=100 + index,
+                outcome="complete",
+            )
+            for index, role in enumerate(("candidate", "incumbent"))
+        )
+        receipt = build_authority_receipt(
+            evaluator_build_digest=self.evaluator_build_digest,
+            boundary_manifest_digest=self.boundary_manifest_digest,
+            plan_commitment=payload["protocol"]["seed_commitment"],
+            accelerator_attestation=attestation,
+            candidate_artifact_digest=candidate.artifact_digest,
+            incumbent_artifact_digest=incumbent.artifact_digest,
+            measurements=measurements,
+            report=payload,
+            signing_key_id="operator-key-v1",
+            signing_secret=self.signing_secret,
+        )
+        payload["evaluator_authority_receipt"] = receipt.model_dump(mode="json")
+        return KernelBenchmarkExecution(returncode=0, report_payload=payload)
+
+
+def _evaluator(
+    fake: FakeBenchmarkRunner,
+    *,
+    adaptive_feedback_policy: str = "detailed",
+) -> KernelBenchmarkEvaluator:
     return KernelBenchmarkEvaluator(
         fake,
         KernelBenchmarkEvaluatorConfig(
@@ -240,8 +319,50 @@ def _evaluator(fake: FakeBenchmarkRunner) -> KernelBenchmarkEvaluator:
             timeout_seconds=12.5,
             min_timing_blocks=5,
             bootstrap_samples=6_000,
+            adaptive_feedback_policy=adaptive_feedback_policy,  # type: ignore[arg-type]
         ),
     )
+
+
+def test_authority_eligibility_rejects_self_issued_receipts_and_incomparable_timings(tmp_path: Path) -> None:
+    host_secret = b"operator-owned-authority-secret-material"
+    secret_path = tmp_path / "authority-hmac.secret"
+    secret_path.write_bytes(host_secret)
+    secret_path.chmod(0o600)
+    candidate = KernelCandidate(source="winner")
+    incumbent = KernelCandidate(source="baseline")
+
+    def evaluator(runner: _AuthoritySigningFakeRunner) -> KernelBenchmarkEvaluator:
+        return KernelBenchmarkEvaluator(
+            runner,
+            KernelBenchmarkEvaluatorConfig(
+                problem_id="kernelbench-level1-problem1",
+                timeout_seconds=12.5,
+                min_timing_blocks=5,
+                bootstrap_samples=6_000,
+                require_authority_receipt=True,
+                authority_hmac_key_id="operator-key-v1",
+                authority_hmac_secret_path=secret_path,
+                expected_evaluator_build_digest=runner.evaluator_build_digest,
+                expected_boundary_manifest_digest=runner.boundary_manifest_digest,
+            ),
+        )
+
+    self_issued = evaluator(
+        _AuthoritySigningFakeRunner(
+            signing_secret=b"candidate-controlled-signing-secret-material",
+            reference_comparable=True,
+        )
+    ).evaluate(candidate, incumbent)
+    assert not self_issued.eligible
+    assert self_issued.rejection_reason == "invalid_authority_receipt"
+    assert "authentication tag is invalid" in self_issued.feedback
+
+    incomparable = evaluator(
+        _AuthoritySigningFakeRunner(signing_secret=host_secret, reference_comparable=False)
+    ).evaluate(candidate, incumbent)
+    assert not incomparable.eligible
+    assert incomparable.rejection_reason == "timing_boundary_mismatch"
 
 
 def _runner(
@@ -252,6 +373,7 @@ def _runner(
     confirmation_fn: KernelConfirmationFn | None = None,
     precision_profile: PrecisionProfileName | None = None,
     proposal_cap: int | None = None,
+    adaptive_feedback_policy: str = "detailed",
 ) -> tuple[KernelEvolutionRunner, list[str]]:
     prompts: list[str] = []
 
@@ -270,7 +392,7 @@ def _runner(
             proposal_cap=proposal_cap,
         ),
         generate,
-        _evaluator(fake),
+        _evaluator(fake, adaptive_feedback_policy=adaptive_feedback_policy),
         tmp_path,
         run_id="kernel-test",
         confirmation_fn=confirmation_fn,
@@ -715,6 +837,24 @@ def test_confirmation_details_are_quarantined_from_recursive_prompts(tmp_path: P
     assert result.attempts[1].confirmation_decision is not None
     assert secret in result.attempts[1].confirmation_decision.feedback
     assert secret not in prompts[1]
+
+
+def test_aggregate_gate_feedback_blocks_candidate_timing_covert_channel(tmp_path: Path) -> None:
+    runner, prompts = _runner(
+        tmp_path,
+        FakeBenchmarkRunner(),
+        ["winner", "tiny-gain"],
+        adaptive_feedback_policy="aggregate-gates",
+    )
+
+    result = runner.run(proposals=2)
+
+    assert len(result.attempts) == 3
+    recursive_prompt = prompts[1]
+    assert "Aggregate benchmark gates:" in recursive_prompt
+    assert "paired speedup" not in recursive_prompt
+    assert "relative_improvement" in recursive_prompt
+    assert "1.1111" not in recursive_prompt
 
 
 def test_same_protocol_confirmation_fails_freshness_gate(tmp_path: Path) -> None:

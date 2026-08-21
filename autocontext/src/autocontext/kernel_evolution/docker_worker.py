@@ -48,6 +48,7 @@ from autocontext.kernel_evolution.gpu_attestation import (
     DockerGPUDeviceAttestor,
     DockerGPUDeviceGrant,
     NvidiaSMIGPUDeviceAttestor,
+    attest_partition_grant,
 )
 from autocontext.kernel_evolution.models import ARTIFACT_IDENTITY_VERSION, KernelCandidate, content_digest
 
@@ -324,29 +325,14 @@ class DockerKernelBenchmarkRunner:
             )
 
     def _attest_gpu(self) -> tuple[DockerGPUDeviceAttestation | None, str | None]:
-        if self.gpu_grant.isolation_kind == "visibility-only":
-            return None, "GPU memory enforcement is unavailable; use a verified MIG or hardware partition grant"
         try:
-            attestation = self.gpu_attestor.attest(self.gpu_grant)
+            attestation = attest_partition_grant(
+                self.gpu_grant,
+                self.gpu_attestor,
+                max_gpu_memory_bytes=self.limits.max_gpu_memory_bytes,
+            )
         except (OSError, RuntimeError, subprocess.SubprocessError, ValueError) as exc:
             return None, f"trusted GPU grant attestation failed: {type(exc).__name__}: {exc}"
-        if attestation.attestor_id != self.gpu_attestor.attestor_id:
-            return None, "trusted GPU grant attestation returned an unexpected attestor identity"
-        if (
-            attestation.device_id != self.gpu_grant.device_id
-            or attestation.isolation_kind != self.gpu_grant.isolation_kind
-        ):
-            return None, "trusted GPU grant attestation does not match the requested partition identity"
-        expected_capacity = self.gpu_grant.enforced_memory_bytes
-        if expected_capacity is None or attestation.enforced_memory_bytes != expected_capacity:
-            return None, "trusted GPU grant capacity does not match the configured hard partition capacity"
-        if attestation.enforced_memory_bytes > self.limits.max_gpu_memory_bytes:
-            return (
-                None,
-                "GPU partition capacity "
-                f"{attestation.enforced_memory_bytes} exceeds configured hard limit "
-                f"{self.limits.max_gpu_memory_bytes} bytes",
-            )
         return attestation, None
 
     def reconcile(self, *, now: float | None = None) -> int:

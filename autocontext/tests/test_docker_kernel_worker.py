@@ -347,24 +347,41 @@ def test_attested_capacity_must_exactly_match_configured_grant(
 @pytest.mark.parametrize(
     ("outcome", "expected"),
     [
+        ("timeout", "timeout"),
         ("oom", "oom"),
         ("resource_exceeded", "resource_exceeded"),
         ("resource_policy_unsupported", "resource_policy_unsupported"),
+        ("missing_resource_telemetry", "missing_resource_telemetry"),
         ("resource_identity_mismatch", "resource_identity_mismatch"),
+        ("protocol_corruption", "protocol_corruption"),
+        ("evaluator_crashed", "evaluator_crashed"),
+        ("candidate_crashed", "candidate_crashed"),
         ("teardown_failed", "teardown_failed"),
     ],
 )
 def test_evaluator_preserves_distinct_worker_outcomes(outcome: Any, expected: str) -> None:
     candidate = KernelCandidate(source="candidate")
     incumbent = KernelCandidate(source="incumbent")
+    forged_payload = _report(candidate, incumbent)
+    forged_payload["problem_id"] = "candidate-controlled-forged-problem"
     evaluator = KernelBenchmarkEvaluator(
-        _ExecutionRunner(KernelBenchmarkExecution(returncode=None, outcome=outcome, error=expected)),
+        _ExecutionRunner(
+            KernelBenchmarkExecution(
+                returncode=None,
+                timed_out=True,
+                outcome=outcome,
+                error=expected,
+                report_payload=forged_payload,
+            )
+        ),
         KernelBenchmarkEvaluatorConfig(problem_id="p1"),
     )
 
     observation = evaluator.evaluate(candidate, incumbent)
 
     assert observation.rejection_reason == expected
+    assert observation.feedback == expected
+    assert observation.report is None
 
 
 def test_required_telemetry_rejects_and_gate_feedback_is_three_state() -> None:
@@ -1229,6 +1246,43 @@ def test_detached_watchdog_removes_only_its_owned_container(
     assert result == 0
     assert removed == [["/usr/bin/docker", "rm", "-f", "owned-id"]]
     assert (tmp_path / "ready").read_text(encoding="ascii") == "ready\n"
+
+
+def test_detached_watchdog_removes_container_when_coordinator_parent_disappears(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    removed: list[list[str]] = []
+    parent_ids = iter((1234, 1))
+    listed = False
+
+    def fake_run(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        nonlocal listed
+        del kwargs
+        if argv[1:3] == ["ps", "-aq"]:
+            if not listed:
+                listed = True
+                return subprocess.CompletedProcess(argv, 0, stdout="owned-id\n", stderr="")
+            return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+        if argv[1:3] == ["rm", "-f"]:
+            removed.append(argv)
+            return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+        raise AssertionError(argv)
+
+    monkeypatch.setattr(docker_watchdog_module, "_POLL_SECONDS", 0.001)
+    monkeypatch.setattr(docker_watchdog_module.os, "getppid", lambda: next(parent_ids))
+    monkeypatch.setattr(docker_watchdog_module.subprocess, "run", fake_run)
+
+    result = docker_watchdog_module.run_deadline_watchdog(
+        "/usr/bin/docker",
+        "autoctx-kernel-deadbeef",
+        time.time() + 60,
+        tmp_path / "ready",
+        coordinator_pid=1234,
+    )
+
+    assert result == 0
+    assert removed == [["/usr/bin/docker", "rm", "-f", "owned-id"]]
 
 
 def test_worker_oom_is_distinct_and_verifies_cleanup(

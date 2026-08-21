@@ -48,7 +48,11 @@ from autocontext.kernel_evolution import (
     KernelEvolutionRunner,
     KernelSequentialTestingPolicy,
     KernelStatisticsPolicy,
+    build_profile_evidence_envelope,
     content_digest,
+    read_authority_hmac_secret,
+    verify_authority_receipt,
+    verify_profile_evidence_envelope,
 )
 
 PROBLEM_ID = "kernelbench-v0.1-level1-1-matmul-profiled-h100-v1"
@@ -313,6 +317,34 @@ def _verified_h100_attestation(report: Any, runtime: H100DockerRuntimeConfig) ->
     return {**payload, "digest": expected_digest}
 
 
+def _verified_profile_authority_receipt(
+    report: Any,
+    *,
+    runtime: H100DockerRuntimeConfig,
+    expected_identity: dict[str, str],
+) -> Any:
+    """Authenticate one exported report against its host-pinned evaluator identity."""
+
+    receipt = getattr(report, "evaluator_authority_receipt", None)
+    if receipt is None:
+        raise RuntimeError("H100 profile evidence is missing a trusted-evaluator authority receipt")
+    if set(expected_identity) != {"evaluator_build_digest", "boundary_manifest_digest"}:
+        raise RuntimeError("H100 profile evidence is missing its host-computed authority identity")
+    try:
+        report_payload = report.model_dump(mode="json")
+        verify_authority_receipt(
+            receipt,
+            report_payload,
+            trusted_key_id=runtime.authority_hmac_key_id,
+            trusted_secret=read_authority_hmac_secret(runtime.authority_hmac_secret_path),
+            expected_evaluator_build_digest=expected_identity["evaluator_build_digest"],
+            expected_boundary_manifest_digest=expected_identity["boundary_manifest_digest"],
+        )
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise RuntimeError("H100 profile authority receipt failed authenticated replay") from exc
+    return receipt
+
+
 def _build_profile_evidence(
     *,
     result: KernelEvolutionResult,
@@ -321,6 +353,7 @@ def _build_profile_evidence(
     primary_commitment: str,
     confirmation_commitments: tuple[str, ...],
     runtime: H100DockerRuntimeConfig,
+    authority_identities: dict[str, dict[str, str]],
 ) -> dict[str, Any]:
     """Build and validate the portable H100 profile receipt without side effects."""
     if result.run_id != run_id or result.problem_id != PROBLEM_ID:
@@ -372,6 +405,20 @@ def _build_profile_evidence(
         raise RuntimeError("the champion primary receipt is not bound to the configured primary plan")
 
     hardware_attestation = _verified_h100_attestation(champion_report, runtime)
+    primary_authority_receipt = _verified_profile_authority_receipt(
+        champion_report,
+        runtime=runtime,
+        expected_identity=authority_identities.get(primary_commitment, {}),
+    )
+    primary_accelerator = primary_authority_receipt.accelerator_attestation
+    if (
+        primary_accelerator.device_id != hardware_attestation["device_id"]
+        or primary_accelerator.isolation_kind != hardware_attestation["isolation_kind"]
+        or primary_accelerator.enforced_memory_bytes != hardware_attestation["enforced_memory_bytes"]
+        or primary_accelerator.attestor_id != hardware_attestation["attestor_id"]
+        or primary_accelerator.metadata.get("grant_attestation_digest") != hardware_attestation["digest"]
+    ):
+        raise RuntimeError("the champion authority receipt changed the host-attested accelerator identity")
 
     primary_receipt = {
         "report_digest": champion.report_digest,
@@ -380,6 +427,8 @@ def _build_profile_evidence(
         "plan_commitment": champion_report.protocol.seed_commitment,
         "hardware_scope_id": champion.hardware_scope_id,
         "baseline_id": champion.baseline_id,
+        "authority_receipt_digest": primary_authority_receipt.receipt_digest,
+        "authority_receipt": primary_authority_receipt.model_dump(mode="json"),
     }
     confirmation_receipt = None
     if champion.role == "candidate" and champion.decision == "promoted":
@@ -399,6 +448,20 @@ def _build_profile_evidence(
         confirmation_attestation = _verified_h100_attestation(confirmation_report, runtime)
         if confirmation_attestation != hardware_attestation:
             raise RuntimeError("the champion confirmation receipt changed the attested GPU partition")
+        confirmation_authority_receipt = _verified_profile_authority_receipt(
+            confirmation_report,
+            runtime=runtime,
+            expected_identity=authority_identities.get(confirmation_commitment, {}),
+        )
+        confirmation_accelerator = confirmation_authority_receipt.accelerator_attestation
+        if (
+            confirmation_accelerator.device_id != confirmation_attestation["device_id"]
+            or confirmation_accelerator.isolation_kind != confirmation_attestation["isolation_kind"]
+            or confirmation_accelerator.enforced_memory_bytes != confirmation_attestation["enforced_memory_bytes"]
+            or confirmation_accelerator.attestor_id != confirmation_attestation["attestor_id"]
+            or confirmation_accelerator.metadata.get("grant_attestation_digest") != confirmation_attestation["digest"]
+        ):
+            raise RuntimeError("the confirmation authority receipt changed the host-attested accelerator identity")
         confirmation_receipt = {
             "report_digest": champion.confirmation_report_digest,
             "protocol_id": confirmation.protocol_id,
@@ -406,6 +469,8 @@ def _build_profile_evidence(
             "plan_commitment": confirmation_commitment,
             "hardware_scope_id": confirmation.hardware_scope_id,
             "baseline_id": confirmation.baseline_id,
+            "authority_receipt_digest": confirmation_authority_receipt.receipt_digest,
+            "authority_receipt": confirmation_authority_receipt.model_dump(mode="json"),
         }
 
     holdout_correctness = (
@@ -418,7 +483,7 @@ def _build_profile_evidence(
         if champion_report.performance is not None
         else []
     )
-    return {
+    profile = {
         "schema_version": "autocontext.kernel-h100-profile-evidence/v3",
         "evidence_status": "observed_live_run",
         "run_id": run_id,
@@ -456,6 +521,18 @@ def _build_profile_evidence(
             if attempt.sequential_evidence is not None
         ],
     }
+    signing_secret = read_authority_hmac_secret(runtime.authority_hmac_secret_path)
+    envelope = build_profile_evidence_envelope(
+        profile,
+        signing_key_id=runtime.authority_hmac_key_id,
+        signing_secret=signing_secret,
+    )
+    verify_profile_evidence_envelope(
+        envelope,
+        trusted_key_id=runtime.authority_hmac_key_id,
+        trusted_secret=signing_secret,
+    )
+    return envelope.model_dump(mode="json")
 
 
 def _install_sigterm_interrupt() -> None:
@@ -486,6 +563,13 @@ def main() -> None:
         help="Host-attested isolation type; this composition currently supports explicit MIG UUIDs only",
     )
     parser.add_argument("--gpu-memory-bytes", type=_positive_int, required=True)
+    parser.add_argument("--authority-hmac-key-id", required=True, help="Operator-pinned evaluator signing key id")
+    parser.add_argument(
+        "--authority-hmac-secret-file",
+        type=Path,
+        required=True,
+        help="Owner-only host file mounted only into the trusted evaluator",
+    )
     parser.add_argument("--worker-memory-mb", type=_positive_int, default=16_384)
     parser.add_argument("--worker-cpu-count", type=_positive_float, default=8.0)
     parser.add_argument("--worker-cpu-time-seconds", type=_positive_int, default=600)
@@ -576,6 +660,8 @@ def main() -> None:
         gpu_device=args.gpu_device,
         gpu_isolation_kind=args.gpu_isolation_kind,
         gpu_memory_bytes=args.gpu_memory_bytes,
+        authority_hmac_key_id=args.authority_hmac_key_id,
+        authority_hmac_secret_path=args.authority_hmac_secret_file.resolve(strict=True),
         limits=limits,
         timeout_seconds=args.benchmark_timeout,
     )
@@ -613,6 +699,18 @@ def main() -> None:
         )
         for path, commitment in zip(confirmation_plan_paths, confirmation_commitments, strict=True)
     )
+    authority_identities = {
+        commitment: {
+            "evaluator_build_digest": evaluator.config.expected_evaluator_build_digest,
+            "boundary_manifest_digest": evaluator.config.expected_boundary_manifest_digest,
+        }
+        for commitment, evaluator in (
+            (primary_commitment, primary_evaluator),
+            *zip(confirmation_commitments, confirmation_evaluators, strict=True),
+        )
+    }
+    if any(not all(isinstance(value, str) for value in identity.values()) for identity in authority_identities.values()):
+        raise RuntimeError("protected evaluator omitted its host-computed authority identity")
 
     mailbox = args.mailbox.resolve()
     mailbox.mkdir(parents=True, exist_ok=True)
@@ -706,6 +804,7 @@ def main() -> None:
             primary_commitment=primary_commitment,
             confirmation_commitments=confirmation_commitments,
             runtime=runtime,
+            authority_identities=authority_identities,
         )
         status = {
             **campaign_config,

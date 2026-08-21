@@ -13,13 +13,14 @@ import sys
 import tempfile
 import threading
 from collections.abc import Mapping, Sequence
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, NoReturn, Protocol
 
 from pydantic import ValidationError
 
 from autocontext.kernel_evolution import _process_control
+from autocontext.kernel_evolution.benchmark_authority import BenchmarkAuthorityVerifier
 from autocontext.kernel_evolution.evaluator_config import KernelBenchmarkEvaluatorConfig
 from autocontext.kernel_evolution.models import (
     ARTIFACT_IDENTITY_VERSION,
@@ -28,23 +29,14 @@ from autocontext.kernel_evolution.models import (
     KernelCandidate,
     content_digest,
 )
-from autocontext.kernel_evolution.promotion_statistics import (
-    bootstrap_lcb,
-    geometric_mean_ratio,
-    percentile,
-)
+from autocontext.kernel_evolution.promotion_statistics import bootstrap_lcb, geometric_mean_ratio, percentile
 from autocontext.kernel_evolution.resource_policy import evaluate_kernel_resource_policy
 
 _WINDOWS_LAUNCH_GATE = b"\x01"
 KernelBenchmarkExecutionOutcome = Literal[
-    "complete",
-    "timeout",
-    "oom",
-    "resource_exceeded",
-    "resource_policy_unsupported",
-    "missing_resource_telemetry",
-    "resource_identity_mismatch",
-    "teardown_failed",
+    "complete", "timeout", "oom", "resource_exceeded", "resource_policy_unsupported",
+    "missing_resource_telemetry", "resource_identity_mismatch", "protocol_corruption",
+    "evaluator_crashed", "candidate_crashed", "teardown_failed",
 ]
 
 
@@ -591,9 +583,10 @@ class KernelBenchmarkEvaluator:
     def __init__(self, runner: KernelBenchmarkRunner, config: KernelBenchmarkEvaluatorConfig) -> None:
         self._runner = runner
         self.config = config
+        self._authority = BenchmarkAuthorityVerifier(config)
 
     def manifest(self) -> dict[str, Any]:
-        return {"evaluator": asdict(self.config), "runner": self._runner.manifest()}
+        return {"evaluator": self.config.manifest(), "runner": self._runner.manifest()}
 
     def evaluate(
         self,
@@ -638,10 +631,12 @@ class KernelBenchmarkEvaluator:
             return reject("harness_modified", "The immutable benchmark harness changed during evaluation.")
         if not execution.candidate_unchanged or not execution.incumbent_unchanged:
             return reject("artifact_modified", "A candidate or incumbent artifact changed during evaluation.")
+        if execution.outcome == "teardown_failed":
+            return reject("teardown_failed", execution.error or "Benchmark authority teardown could not be verified.")
+        if execution.outcome != "complete":
+            return reject(execution.outcome, execution.error or f"Benchmark failed with {execution.outcome}.")
         if execution.timed_out:
             return reject("timeout", f"Benchmark timed out after {self.config.timeout_seconds:g}s.")
-        if execution.outcome != "complete" and execution.report_payload is None:
-            return reject(execution.outcome, execution.error or f"Benchmark failed with {execution.outcome}.")
         if execution.error is not None and execution.outcome == "complete":
             return reject("contract_error", execution.error)
         if execution.returncode != 0 and execution.outcome == "complete":
@@ -676,8 +671,9 @@ class KernelBenchmarkEvaluator:
                 "Report source digest, suffix, entrypoint, or ABI-bound artifact identity does not match the evaluated pair.",
                 report,
             )
-        if execution.outcome != "complete":
-            return reject(execution.outcome, execution.error or f"Benchmark failed with {execution.outcome}.", report)
+        authority_rejection = self._authority.verify_receipt(report)
+        if authority_rejection is not None:
+            return reject(authority_rejection[0], authority_rejection[1], report)
         if expected_scope_id is not None and report.hardware_scope_id != expected_scope_id:
             return reject("scope_mismatch", "Hardware, toolchain, or workload fingerprint changed during the run.", report)
         if expected_baseline_id is not None and report.baseline_id != expected_baseline_id:
@@ -702,6 +698,9 @@ class KernelBenchmarkEvaluator:
             return reject("correctness_failed", f"Candidate correctness failed: {failures}", report)
         if report.evaluation_status != "complete" or report.performance is None:
             return reject("contract_error", "A successful candidate report did not contain performance measurements.", report)
+        timing_rejection = self._authority.verify_timing_comparability(report)
+        if timing_rejection is not None:
+            return reject(timing_rejection[0], timing_rejection[1], report)
         resource_policy = evaluate_kernel_resource_policy(
             report,
             require_telemetry=self.config.require_resource_telemetry,

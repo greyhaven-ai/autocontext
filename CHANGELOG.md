@@ -6,6 +6,19 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Hostile accelerator candidates can now execute behind an accelerator-neutral,
+  typed, bounded, non-pickle authority protocol. A protected Docker runner gives
+  the trusted evaluator and candidate/incumbent separate process, mount,
+  environment, socket, and report identities; evaluator-randomized timed
+  challenges, compact HMAC-authenticated replay receipts, host build/boundary
+  and accelerator-attestation binding, an authenticated outer envelope for
+  every portable profile-evidence field, plus verified normal teardown keep
+  candidate clocks/reports, private plans, and confirmation state outside the
+  generated-code boundary. H100/MIG is the first conformance profile, and its
+  production campaign and protected runner remain fail-closed until independently
+  attested role grants, out-of-interpreter mutation observation, comparable
+  reference timing, crash-safe container creation, and the opt-in live
+  adversarial gate are all available (AC-1003).
 - Generated GPU kernels can now run through a pinned-image Docker worker that
   shares the ResearchWorkspace lockdown primitive: read-only harness/input
   mounts, ephemeral byte/inode-bounded workspace, deny-network/scrubbed
@@ -58,8 +71,11 @@ All notable changes to this project will be documented in this file.
   into protocol identity, requires correctness plus per-case no-regression
   gates, and uses a persisted Bonferroni proposal budget. Profile-namespaced
   H100 evidence schema and export validation are prepared for disjoint
-  primary/confirmation plans; production execution remains fail-closed pending
-  the trusted evaluator boundary in AC-1003 (AC-994).
+  primary/confirmation plans. The authenticated AC-1003 authority prototype and
+  release guard are implemented, but AC-1003 remains incomplete: production
+  stays fail-closed pending role-separated telemetry, trusted mutation
+  observation, comparable reference timing, crash-safe container creation, and
+  subsequent H100/MIG validation (AC-994).
 - An optional Python `CampaignScheduler` dispatches branch/trial jobs across
   local workers and remote adapters using capability/resource matching,
   expiring leases, heartbeats, bounded retry and concurrency, idempotent

@@ -11,6 +11,7 @@ the pinned PyTorch reference can serve as the initial baseline.
 from __future__ import annotations
 
 import argparse
+import atexit
 import hashlib
 import importlib.util
 import json
@@ -28,13 +29,32 @@ from pathlib import Path
 from typing import Any
 
 import torch
+from authority_transport import (
+    AuthorityEndpoint,
+    AuthorityRecorder,
+    CandidateAuthorityError,
+    CudaGlobalMemoryProbe,
+    RemoteAuthorityModel,
+)
 from profile_contract import PROFILE_NAMES, PROFILES, gpu_attestation_metadata, load_private_plan
+
+from autocontext.kernel_evolution import AcceleratorAttestation, build_authority_receipt, read_authority_hmac_secret
+from autocontext.kernel_evolution.authority_tensor import copy_tensor_to_device_preserving_abi
 
 SCHEMA_VERSION = "autocontext.kernelbench-eval/v3"
 PROTOCOL_COMPATIBILITY_VERSION = "autocontext.kernel-protocol-compatibility/v1"
 WARMUP_RUNS = 3
 TIMING_BLOCKS = 8
 CALLS_PER_BLOCK = 10
+_ACTIVE_AUTHORITY_CONTEXT: _AuthorityReceiptContext | None = None
+
+
+def _require_protected_mutation_authority(*, protected_mode: bool) -> None:
+    if protected_mode:
+        raise SystemExit(
+            "protected evaluation requires a trusted out-of-process input-mutation observer; "
+            "the same-interpreter authority v1 is unsupported"
+        )
 
 
 def _digest(payload: bytes | str) -> str:
@@ -63,6 +83,8 @@ def _timing_orders(seed_material: str, names: tuple[str, ...]) -> tuple[tuple[st
 
 
 def _write_report(path: Path, report: dict[str, Any]) -> None:
+    if _ACTIVE_AUTHORITY_CONTEXT is not None:
+        _ACTIVE_AUTHORITY_CONTEXT.attach(report)
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     temporary.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
@@ -102,7 +124,7 @@ def _build_model(module, init_inputs: list[Any], *, entrypoint: str):
 
 def _clone(value):
     if isinstance(value, torch.Tensor):
-        return value.clone()
+        return copy_tensor_to_device_preserving_abi(value, device=str(value.device))
     if isinstance(value, list):
         return [_clone(item) for item in value]
     if isinstance(value, tuple):
@@ -126,7 +148,13 @@ def _to_cuda(value):
 
 def _equal(left, right) -> bool:
     if isinstance(left, torch.Tensor) and isinstance(right, torch.Tensor):
-        return bool(torch.equal(left, right))
+        return (
+            left.dtype == right.dtype
+            and left.shape == right.shape
+            and left.stride() == right.stride()
+            and left.storage_offset() == right.storage_offset()
+            and bool(torch.equal(left, right))
+        )
     if isinstance(left, (list, tuple)) and isinstance(right, (list, tuple)):
         return len(left) == len(right) and all(_equal(a, b) for a, b in zip(left, right, strict=True))
     if isinstance(left, dict) and isinstance(right, dict):
@@ -202,9 +230,48 @@ def _hardware(workload_family_id: str, workload_fingerprint: str) -> dict[str, A
     }
 
 
-def _case_tensor(rows: int, columns: int, case: dict[str, Any], *, layout: str, salt: int):
+def _accelerator_attestation(hardware: dict[str, Any]) -> AcceleratorAttestation:
+    required = {
+        name: os.environ.get(variable)
+        for name, variable in {
+            "device_id": "AUTOCONTEXT_ACCELERATOR_DEVICE_ID",
+            "isolation_kind": "AUTOCONTEXT_ACCELERATOR_ISOLATION_KIND",
+            "enforced_memory_bytes": "AUTOCONTEXT_ACCELERATOR_ENFORCED_MEMORY_BYTES",
+            "attestor_id": "AUTOCONTEXT_ACCELERATOR_ATTESTOR_ID",
+            "grant_attestation_digest": "AUTOCONTEXT_ACCELERATOR_ATTESTATION_DIGEST",
+        }.items()
+    }
+    if any(value is None for value in required.values()):
+        raise RuntimeError("protected evaluator accelerator attestation environment is incomplete")
+    raw_memory = required["enforced_memory_bytes"]
+    assert raw_memory is not None
+    if not raw_memory.isascii() or not raw_memory.isdecimal() or int(raw_memory) < 1:
+        raise RuntimeError("protected evaluator accelerator capacity is invalid")
+    return AcceleratorAttestation(
+        backend=str(hardware["backend"]),
+        vendor="nvidia",
+        architecture=str(hardware["architecture"]),
+        device_id=str(required["device_id"]),
+        isolation_kind=str(required["isolation_kind"]),
+        enforced_memory_bytes=int(raw_memory),
+        runtime=str(hardware["runtime"]),
+        driver=str(hardware["driver"]),
+        attestor_id=str(required["attestor_id"]),
+        metadata={"grant_attestation_digest": str(required["grant_attestation_digest"])},
+    )
+
+
+def _case_tensor(
+    rows: int,
+    columns: int,
+    case: dict[str, Any],
+    *,
+    layout: str,
+    salt: int,
+    challenge_salt: int = 0,
+):
     generator = torch.Generator(device="cpu")
-    generator.manual_seed(case["seed"] + salt)
+    generator.manual_seed((case["seed"] + salt + challenge_salt) % (2**63 - 1))
     storage_shape = (columns, rows) if layout == "transposed" else (rows, columns)
     value_class = case["value_class"]
     minimum = float(case["magnitude_min"])
@@ -236,10 +303,10 @@ def _apply_layout(values, layout: str):
     return values.contiguous().cuda()
 
 
-def _case_inputs(case: dict[str, Any]):
+def _case_inputs(case: dict[str, Any], *, challenge_salt: int = 0):
     if case["value_class"] == "cancellation":
         generator = torch.Generator(device="cpu")
-        generator.manual_seed(case["seed"])
+        generator.manual_seed((case["seed"] + challenge_salt) % (2**63 - 1))
         pairs = case["k"] // 2
         minimum = float(case["magnitude_min"])
         maximum = float(case["magnitude_max"])
@@ -255,25 +322,52 @@ def _case_inputs(case: dict[str, Any]):
         b[1::2].neg_()
         return [_apply_layout(a, case["a_layout"]), _apply_layout(b, case["b_layout"])]
     return [
-        _case_tensor(case["m"], case["k"], case, layout=case["a_layout"], salt=0),
-        _case_tensor(case["k"], case["n"], case, layout=case["b_layout"], salt=1_000_003),
+        _case_tensor(
+            case["m"],
+            case["k"],
+            case,
+            layout=case["a_layout"],
+            salt=0,
+            challenge_salt=challenge_salt,
+        ),
+        _case_tensor(
+            case["k"],
+            case["n"],
+            case,
+            layout=case["b_layout"],
+            salt=1_000_003,
+            challenge_salt=challenge_salt,
+        ),
     ]
 
 
-def _timed_call(model, inputs, calls: int) -> float:
+def _timed_call(model, inputs) -> tuple[Any, float]:
+    if isinstance(model, RemoteAuthorityModel):
+        with torch.inference_mode():
+            output = model(*inputs)
+        elapsed = model.elapsed_ms
+        if not elapsed > 0:
+            raise RuntimeError(f"authority measurement returned non-positive latency: {elapsed}")
+        return output, elapsed
+    before = _clone(inputs)
     torch.cuda.synchronize()
     start = torch.cuda.Event(enable_timing=True)
     end = torch.cuda.Event(enable_timing=True)
     start.record()
     with torch.inference_mode():
-        for _ in range(calls):
-            model(*inputs)
+        output = model(*inputs)
     end.record()
     end.synchronize()
-    elapsed = float(start.elapsed_time(end)) / calls
+    elapsed = float(start.elapsed_time(end))
     if not elapsed > 0:
         raise RuntimeError(f"CUDA event returned non-positive latency: {elapsed}")
-    return elapsed
+    if not _equal(before, inputs):
+        raise _TimingChallengeError("a timed model call mutated evaluator-owned inputs")
+    return output, elapsed
+
+
+class _TimingChallengeError(RuntimeError):
+    """Raised when a fresh timed output does not match the trusted reference."""
 
 
 def _cuda_peaks(model, inputs) -> tuple[int, int]:
@@ -285,6 +379,86 @@ def _cuda_peaks(model, inputs) -> tuple[int, int]:
         model(*_clone(inputs))
     torch.cuda.synchronize()
     return int(torch.cuda.max_memory_allocated()), int(torch.cuda.max_memory_reserved())
+
+
+class _AuthorityReceiptContext:
+    def __init__(
+        self,
+        *,
+        recorder: AuthorityRecorder,
+        attestation: AcceleratorAttestation,
+        evaluator_build_digest: str,
+        boundary_manifest_digest: str,
+        plan_commitment: str,
+        candidate_artifact_digest: str,
+        incumbent_artifact_digest: str,
+        signing_key_id: str,
+        signing_secret: bytes,
+    ) -> None:
+        self.recorder = recorder
+        self.attestation = attestation
+        self.evaluator_build_digest = evaluator_build_digest
+        self.boundary_manifest_digest = boundary_manifest_digest
+        self.plan_commitment = plan_commitment
+        self.candidate_artifact_digest = candidate_artifact_digest
+        self.incumbent_artifact_digest = incumbent_artifact_digest
+        self.signing_key_id = signing_key_id
+        self.signing_secret = signing_secret
+
+    def attach(self, report: dict[str, Any]) -> None:
+        measurements = tuple(self.recorder.measurements)
+        if {measurement.role for measurement in measurements} != {"candidate", "incumbent"}:
+            return
+        resources = report.get("resources")
+        if not isinstance(resources, dict):
+            raise RuntimeError("protected evaluator report omitted its resource section")
+        candidate_peak = max(
+            measurement.observed_peak_memory_bytes
+            for measurement in measurements
+            if measurement.role == "candidate"
+        )
+        incumbent_peak = max(
+            measurement.observed_peak_memory_bytes
+            for measurement in measurements
+            if measurement.role == "incumbent"
+        )
+        resources.update(
+            {
+                "candidate_observed_peak_bytes": candidate_peak,
+                "incumbent_observed_peak_bytes": incumbent_peak,
+                "candidate_peak_memory_bytes": candidate_peak,
+                "incumbent_peak_memory_bytes": incumbent_peak,
+                "telemetry_authority": "trusted-evaluator-observed/v1",
+                "accelerator_attestation_digest": self.attestation.digest,
+            }
+        )
+        receipt = build_authority_receipt(
+            evaluator_build_digest=self.evaluator_build_digest,
+            boundary_manifest_digest=self.boundary_manifest_digest,
+            plan_commitment=self.plan_commitment,
+            accelerator_attestation=self.attestation,
+            candidate_artifact_digest=self.candidate_artifact_digest,
+            incumbent_artifact_digest=self.incumbent_artifact_digest,
+            measurements=measurements,
+            report=report,
+            signing_key_id=self.signing_key_id,
+            signing_secret=self.signing_secret,
+        )
+        report["evaluator_authority_receipt"] = receipt.model_dump(mode="json")
+
+
+def _apply_execution_failure(report: dict[str, Any], exc: Exception, *, stage: str) -> None:
+    authority_kind = exc.kind if isinstance(exc, CandidateAuthorityError) else None
+    report["evaluation_status"] = (
+        "infrastructure_error" if authority_kind in {"protocol_corruption", "candidate_crashed"} else "candidate_error"
+    )
+    report["failure_kind"] = "correctness" if isinstance(exc, _TimingChallengeError) else {
+        "oom": "oom",
+        "protocol_corruption": "protocol_corruption",
+        "candidate_crashed": "candidate_crash",
+        "candidate_error": "compile" if stage == "compile" else "crash",
+    }.get(authority_kind, "oom" if isinstance(exc, torch.cuda.OutOfMemoryError) else "crash")
+    report["compile"]["diagnostics"] = f"{stage} failed with {type(exc).__name__}"
 
 
 def _base_report(
@@ -341,6 +515,10 @@ def _base_report(
             "incumbent_peak_reserved_bytes": None,
             "candidate_peak_memory_bytes": None,
             "incumbent_peak_memory_bytes": None,
+            "candidate_observed_peak_bytes": None,
+            "incumbent_observed_peak_bytes": None,
+            "telemetry_authority": None,
+            "accelerator_attestation_digest": None,
             "device_total_memory_bytes": torch.cuda.get_device_properties(0).total_memory,
         },
         "metadata": {
@@ -353,9 +531,13 @@ def _base_report(
 
 
 def main(role: str = "primary") -> None:
+    global _ACTIVE_AUTHORITY_CONTEXT
+    _ACTIVE_AUTHORITY_CONTEXT = None
     parser = argparse.ArgumentParser()
-    parser.add_argument("--candidate", type=Path, required=True)
-    parser.add_argument("--incumbent", type=Path, required=True)
+    parser.add_argument("--candidate", type=Path)
+    parser.add_argument("--incumbent", type=Path)
+    parser.add_argument("--candidate-socket", type=Path)
+    parser.add_argument("--incumbent-socket", type=Path)
     parser.add_argument("--artifact-identity-version", required=True)
     parser.add_argument("--candidate-artifact-digest", required=True)
     parser.add_argument("--incumbent-artifact-digest", required=True)
@@ -375,6 +557,16 @@ def main(role: str = "primary") -> None:
     parser.add_argument("--proposal-cap", type=int, required=True)
     parser.add_argument("--familywise-alpha", type=float, required=True)
     args = parser.parse_args()
+
+    protected_mode = args.candidate_socket is not None or args.incumbent_socket is not None
+    if protected_mode:
+        if args.candidate_socket is None or args.incumbent_socket is None:
+            raise SystemExit("protected evaluation requires both isolated authority sockets")
+        if args.candidate is not None or args.incumbent is not None:
+            raise SystemExit("protected evaluation cannot mount generated source into the evaluator")
+    elif args.candidate is None or args.incumbent is None:
+        raise SystemExit("trusted local evaluation requires candidate and incumbent source paths")
+    _require_protected_mutation_authority(protected_mode=protected_mode)
 
     if role not in {"primary", "confirmation"}:
         raise SystemExit("adapter role must be primary or confirmation")
@@ -401,10 +593,15 @@ def main(role: str = "primary") -> None:
     torch.backends.cuda.matmul.allow_tf32 = False
     torch.use_deterministic_algorithms(True)
 
-    candidate_bytes = args.candidate.read_bytes()
-    incumbent_bytes = args.incumbent.read_bytes()
-    if _digest(candidate_bytes) != args.candidate_source_digest or _digest(incumbent_bytes) != args.incumbent_source_digest:
-        raise SystemExit("runner-provided source digest does not match the exact staged source bytes")
+    if not protected_mode:
+        assert args.candidate is not None and args.incumbent is not None
+        candidate_bytes = args.candidate.read_bytes()
+        incumbent_bytes = args.incumbent.read_bytes()
+        if (
+            _digest(candidate_bytes) != args.candidate_source_digest
+            or _digest(incumbent_bytes) != args.incumbent_source_digest
+        ):
+            raise SystemExit("runner-provided source digest does not match the exact staged source bytes")
     reference_bytes = args.reference.read_bytes()
     protocol = {
         "correctness_trials": len(cases),
@@ -433,6 +630,7 @@ def main(role: str = "primary") -> None:
         + json.dumps(profile.semantics(), sort_keys=True, separators=(",", ":")).encode("utf-8")
         + args.problem_id.encode("utf-8")
     )
+    hardware = _hardware(workload_family, workload)
     report = _base_report(
         problem_id=args.problem_id,
         artifact_identity_version=args.artifact_identity_version,
@@ -445,12 +643,64 @@ def main(role: str = "primary") -> None:
         candidate_entrypoint=args.candidate_entrypoint,
         incumbent_entrypoint=args.incumbent_entrypoint,
         reference_digest=_digest(reference_bytes),
-        hardware=_hardware(workload_family, workload),
+        hardware=hardware,
         protocol=protocol,
         profile_name=profile.name,
         role=role,
         public_case_manifest=[{"name": case["name"], "split": case["split"]} for case in cases],
     )
+
+    candidate_endpoint: AuthorityEndpoint | None = None
+    incumbent_endpoint: AuthorityEndpoint | None = None
+    if protected_mode:
+        assert args.candidate_socket is not None and args.incumbent_socket is not None
+        recorder = AuthorityRecorder()
+        memory_probe = CudaGlobalMemoryProbe()
+        candidate_endpoint = AuthorityEndpoint(
+            args.candidate_socket,
+            role="candidate",
+            artifact_digest=args.candidate_artifact_digest,
+            recorder=recorder,
+            memory_probe=memory_probe,
+            timeout_seconds=240.0,
+        )
+        incumbent_endpoint = AuthorityEndpoint(
+            args.incumbent_socket,
+            role="incumbent",
+            artifact_digest=args.incumbent_artifact_digest,
+            recorder=recorder,
+            memory_probe=memory_probe,
+            timeout_seconds=240.0,
+        )
+        candidate_endpoint.listen()
+        incumbent_endpoint.listen()
+        atexit.register(candidate_endpoint.close)
+        atexit.register(incumbent_endpoint.close)
+        candidate_endpoint.accept()
+        incumbent_endpoint.accept()
+        evaluator_build_digest = os.environ.get("AUTOCONTEXT_EVALUATOR_BUILD_DIGEST")
+        boundary_manifest_digest = os.environ.get("AUTOCONTEXT_BOUNDARY_MANIFEST_DIGEST")
+        authority_hmac_key_id = os.environ.get("AUTOCONTEXT_AUTHORITY_HMAC_KEY_ID")
+        authority_hmac_secret_file = os.environ.get("AUTOCONTEXT_AUTHORITY_HMAC_SECRET_FILE")
+        if (
+            evaluator_build_digest is None
+            or boundary_manifest_digest is None
+            or authority_hmac_key_id is None
+            or authority_hmac_secret_file is None
+        ):
+            raise RuntimeError("protected evaluator build identity environment is incomplete")
+        authority_hmac_secret = read_authority_hmac_secret(Path(authority_hmac_secret_file))
+        _ACTIVE_AUTHORITY_CONTEXT = _AuthorityReceiptContext(
+            recorder=recorder,
+            attestation=_accelerator_attestation(hardware),
+            evaluator_build_digest=evaluator_build_digest,
+            boundary_manifest_digest=boundary_manifest_digest,
+            plan_commitment=args.plan_commitment,
+            candidate_artifact_digest=args.candidate_artifact_digest,
+            incumbent_artifact_digest=args.incumbent_artifact_digest,
+            signing_key_id=authority_hmac_key_id,
+            signing_secret=authority_hmac_secret,
+        )
 
     try:
         reference_module = _load_module(args.reference, "reference")
@@ -459,37 +709,61 @@ def main(role: str = "primary") -> None:
         if reference.state_dict():
             raise RuntimeError("this smoke adapter only accepts the stateless pinned Level 1 problem 1")
 
-        incumbent_module = _load_module(args.incumbent, "incumbent")
-        incumbent = _build_model(
-            incumbent_module,
-            init_inputs,
-            entrypoint=args.incumbent_entrypoint,
-        )
+        if protected_mode:
+            assert candidate_endpoint is not None and incumbent_endpoint is not None
+            candidate = RemoteAuthorityModel(candidate_endpoint)
+            incumbent = RemoteAuthorityModel(incumbent_endpoint)
+            incumbent_error: Exception | None = None
+            candidate_error: Exception | None = None
+            try:
+                incumbent.initialize(init_inputs)
+            except Exception as exc:  # bounded and receipt-recorded below
+                incumbent_error = exc
+            try:
+                candidate.initialize(init_inputs)
+            except Exception as exc:  # bounded and receipt-recorded below
+                candidate_error = exc
+            if incumbent_error is not None:
+                raise RuntimeError("isolated incumbent authority failed initialization") from incumbent_error
+            if candidate_error is not None:
+                raise candidate_error
+        else:
+            assert args.candidate is not None and args.incumbent is not None
+            incumbent_module = _load_module(args.incumbent, "incumbent")
+            incumbent = _build_model(
+                incumbent_module,
+                init_inputs,
+                entrypoint=args.incumbent_entrypoint,
+            )
+            candidate_module = _load_module(args.candidate, "candidate")
+            candidate = _build_model(
+                candidate_module,
+                init_inputs,
+                entrypoint=args.candidate_entrypoint,
+            )
         report["compile"]["incumbent_passed"] = True
 
-        candidate_module = _load_module(args.candidate, "candidate")
-        candidate = _build_model(
-            candidate_module,
-            init_inputs,
-            entrypoint=args.candidate_entrypoint,
-        )
-
         compile_inputs = _case_inputs(next(case for case in cases if case["split"] == "train"))
-        torch.cuda.synchronize()
-        compile_started = time.perf_counter()
-        with torch.inference_mode():
-            candidate(*_clone(compile_inputs))
-        torch.cuda.synchronize()
-        report["compile"]["candidate_compile_ms"] = (time.perf_counter() - compile_started) * 1000.0
+        if isinstance(candidate, RemoteAuthorityModel):
+            with torch.inference_mode():
+                candidate(*_clone(compile_inputs))
+            report["compile"]["candidate_compile_ms"] = candidate.elapsed_ms
+        else:
+            torch.cuda.synchronize()
+            compile_started = time.perf_counter()
+            with torch.inference_mode():
+                candidate(*_clone(compile_inputs))
+            torch.cuda.synchronize()
+            report["compile"]["candidate_compile_ms"] = (time.perf_counter() - compile_started) * 1000.0
         with torch.inference_mode():
             incumbent(*_clone(compile_inputs))
         torch.cuda.synchronize()
         report["compile"]["candidate_passed"] = True
         report["compile"]["diagnostics"] = ""
     except Exception as exc:
-        report["evaluation_status"] = "candidate_error"
-        report["failure_kind"] = "oom" if isinstance(exc, torch.cuda.OutOfMemoryError) else "compile"
-        report["compile"]["diagnostics"] = f"{type(exc).__name__}: {exc}"
+        _apply_execution_failure(report, exc, stage="compile")
+        if report["failure_kind"] == "crash":
+            report["failure_kind"] = "compile"
         _write_report(args.report, report)
         return
 
@@ -514,10 +788,8 @@ def main(role: str = "primary") -> None:
                 expected = reference(*reference_inputs)
                 incumbent_output = incumbent(*incumbent_inputs)
                 candidate_output = candidate(*candidate_inputs)
-        except torch.cuda.OutOfMemoryError as exc:
-            report["evaluation_status"] = "candidate_error"
-            report["failure_kind"] = "oom"
-            report["compile"]["diagnostics"] = f"CUDA OOM during correctness: {exc}"
+        except (torch.cuda.OutOfMemoryError, CandidateAuthorityError) as exc:
+            _apply_execution_failure(report, exc, stage="correctness")
             _write_report(args.report, report)
             return
         torch.cuda.synchronize()
@@ -592,34 +864,39 @@ def main(role: str = "primary") -> None:
 
     timing_cases = {case["name"]: (case, _case_inputs(case)) for case in cases}
     try:
-        candidate_allocated = candidate_reserved = 0
-        incumbent_allocated = incumbent_reserved = 0
-        for _case, timing_inputs in timing_cases.values():
-            allocated, reserved = _cuda_peaks(candidate, timing_inputs)
-            candidate_allocated = max(candidate_allocated, allocated)
-            candidate_reserved = max(candidate_reserved, reserved)
-            allocated, reserved = _cuda_peaks(incumbent, timing_inputs)
-            incumbent_allocated = max(incumbent_allocated, allocated)
-            incumbent_reserved = max(incumbent_reserved, reserved)
-            for model in (candidate, incumbent, reference):
-                with torch.inference_mode():
-                    for _ in range(WARMUP_RUNS):
-                        model(*timing_inputs)
+        if isinstance(candidate, RemoteAuthorityModel):
+            for _case, timing_inputs in timing_cases.values():
+                for model in (candidate, incumbent, reference):
+                    with torch.inference_mode():
+                        for _ in range(WARMUP_RUNS):
+                            model(*_clone(timing_inputs))
+        else:
+            candidate_allocated = candidate_reserved = 0
+            incumbent_allocated = incumbent_reserved = 0
+            for _case, timing_inputs in timing_cases.values():
+                allocated, reserved = _cuda_peaks(candidate, timing_inputs)
+                candidate_allocated = max(candidate_allocated, allocated)
+                candidate_reserved = max(candidate_reserved, reserved)
+                allocated, reserved = _cuda_peaks(incumbent, timing_inputs)
+                incumbent_allocated = max(incumbent_allocated, allocated)
+                incumbent_reserved = max(incumbent_reserved, reserved)
+                for model in (candidate, incumbent, reference):
+                    with torch.inference_mode():
+                        for _ in range(WARMUP_RUNS):
+                            model(*timing_inputs)
+            report["resources"].update(
+                {
+                    "candidate_peak_allocated_bytes": candidate_allocated,
+                    "candidate_peak_reserved_bytes": candidate_reserved,
+                    "incumbent_peak_allocated_bytes": incumbent_allocated,
+                    "incumbent_peak_reserved_bytes": incumbent_reserved,
+                    "candidate_peak_memory_bytes": candidate_reserved,
+                    "incumbent_peak_memory_bytes": incumbent_reserved,
+                }
+            )
         torch.cuda.synchronize()
-        report["resources"].update(
-            {
-                "candidate_peak_allocated_bytes": candidate_allocated,
-                "candidate_peak_reserved_bytes": candidate_reserved,
-                "incumbent_peak_allocated_bytes": incumbent_allocated,
-                "incumbent_peak_reserved_bytes": incumbent_reserved,
-                "candidate_peak_memory_bytes": candidate_reserved,
-                "incumbent_peak_memory_bytes": incumbent_reserved,
-            }
-        )
-    except torch.cuda.OutOfMemoryError as exc:
-        report["evaluation_status"] = "candidate_error"
-        report["failure_kind"] = "oom"
-        report["compile"]["diagnostics"] = f"CUDA OOM during resource/warmup measurement: {exc}"
+    except (torch.cuda.OutOfMemoryError, CandidateAuthorityError) as exc:
+        _apply_execution_failure(report, exc, stage="resource/warmup measurement")
         _write_report(args.report, report)
         return
 
@@ -629,9 +906,20 @@ def main(role: str = "primary") -> None:
         "reference_ms": reference,
     }
     names = tuple(models)
+    remote_authority_timing = isinstance(candidate, RemoteAuthorityModel)
+    comparable_names = ("candidate_ms", "incumbent_ms") if remote_authority_timing else names
+    report["metadata"]["timing_comparability"] = {
+        "promotion_comparison": ["candidate_ms", "incumbent_ms"],
+        "candidate_incumbent_comparable": True,
+        "candidate_incumbent_boundary": (
+            "evaluator-owned-authority-rpc/v1" if remote_authority_timing else "evaluator-owned-cuda-event/v1"
+        ),
+        "reference_boundary": "evaluator-owned-cuda-event/v1",
+        "reference_comparable": not remote_authority_timing,
+    }
     blocks: list[dict[str, Any]] = []
     per_case_blocks: dict[str, dict[str, list[float]]] = {name: {model_name: [] for model_name in names} for name in timing_cases}
-    model_orders = _timing_orders(args.plan_commitment, names)
+    model_orders = _timing_orders(args.plan_commitment, comparable_names)
     case_order = private_plan["timing_order"]
     try:
         for block_index, order in enumerate(model_orders):
@@ -639,18 +927,39 @@ def main(role: str = "primary") -> None:
             aggregated: dict[str, list[float]] = {name: [] for name in names}
             rotated_cases = case_order[block_index % len(case_order) :] + case_order[: block_index % len(case_order)]
             for case_name in rotated_cases:
-                _, timing_inputs = timing_cases[case_name]
-                for name in order:
-                    elapsed = _timed_call(models[name], timing_inputs, CALLS_PER_BLOCK)
+                case, _ = timing_cases[case_name]
+                call_samples: dict[str, list[float]] = {name: [] for name in names}
+                for _ in range(CALLS_PER_BLOCK):
+                    # Each timed exchange uses an evaluator-randomized challenge
+                    # and is checked against a trusted reference.  Candidate
+                    # authorities therefore cannot win by caching earlier
+                    # correctness outputs or acknowledging work they skipped.
+                    challenge_salt = int.from_bytes(os.urandom(8), "big") % (2**63 - 1)
+                    timing_inputs = _case_inputs(case, challenge_salt=challenge_salt)
+                    if remote_authority_timing:
+                        expected, reference_elapsed = _timed_call(reference, _clone(timing_inputs))
+                        call_samples["reference_ms"].append(reference_elapsed)
+                    else:
+                        with torch.inference_mode():
+                            expected = reference(*_clone(timing_inputs))
+                    for name in order:
+                        output, elapsed = _timed_call(models[name], _clone(timing_inputs))
+                        if name != "reference_ms":
+                            matched, _, _ = _compare(output, expected, atol=profile.atol, rtol=profile.rtol)
+                            if not matched:
+                                raise _TimingChallengeError(
+                                    f"{name} failed an evaluator-randomized timed correctness challenge"
+                                )
+                        call_samples[name].append(elapsed)
+                for name in names:
+                    elapsed = statistics.fmean(call_samples[name])
                     per_case_blocks[case_name][name].append(elapsed)
                     aggregated[name].append(elapsed)
             for name in names:
                 block[name] = statistics.geometric_mean(aggregated[name])
             blocks.append(block)
-    except torch.cuda.OutOfMemoryError as exc:
-        report["evaluation_status"] = "candidate_error"
-        report["failure_kind"] = "oom"
-        report["compile"]["diagnostics"] = f"CUDA OOM during timing: {exc}"
+    except (torch.cuda.OutOfMemoryError, CandidateAuthorityError, _TimingChallengeError) as exc:
+        _apply_execution_failure(report, exc, stage="timing")
         _write_report(args.report, report)
         return
 
