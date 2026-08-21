@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 import os
-import random
 import shutil
 import stat
 import statistics
@@ -29,6 +27,11 @@ from autocontext.kernel_evolution.models import (
     KernelBenchmarkReport,
     KernelCandidate,
     content_digest,
+)
+from autocontext.kernel_evolution.promotion_statistics import (
+    bootstrap_lcb,
+    geometric_mean_ratio,
+    percentile,
 )
 from autocontext.kernel_evolution.resource_policy import evaluate_kernel_resource_policy
 
@@ -582,34 +585,6 @@ class ExternalKernelBenchmarkRunner:
             )
 
 
-def _percentile(values: Sequence[float], fraction: float) -> float:
-    ordered = sorted(values)
-    index = max(0, math.ceil(fraction * len(ordered)) - 1)
-    return ordered[index]
-
-
-def _geometric_mean_ratio(numerators: Sequence[float], denominators: Sequence[float]) -> float:
-    mean_log = statistics.fmean(math.log(num) - math.log(den) for num, den in zip(numerators, denominators, strict=True))
-    result = math.exp(mean_log)
-    if not math.isfinite(result) or result <= 0:
-        raise ValueError("derived geometric mean ratio is not a positive finite number")
-    return result
-
-
-def _bootstrap_lcb95(blocks: Sequence[tuple[float, float]], *, samples: int, seed_material: str) -> float:
-    logs = [math.log(incumbent) - math.log(candidate) for candidate, incumbent in blocks]
-    seed = int(hashlib.sha256(seed_material.encode()).hexdigest()[:16], 16)
-    rng = random.Random(seed)
-    bootstrapped: list[float] = []
-    for _ in range(samples):
-        mean_log = statistics.fmean(logs[rng.randrange(len(logs))] for _ in logs)
-        value = math.exp(mean_log)
-        if not math.isfinite(value) or value <= 0:
-            raise ValueError("derived bootstrap speedup is not a positive finite number")
-        bootstrapped.append(value)
-    return _percentile(bootstrapped, 0.05)
-
-
 class KernelBenchmarkEvaluator:
     """Fail-closed consumer for the external kernel benchmark contract."""
 
@@ -748,12 +723,23 @@ class KernelBenchmarkEvaluator:
             candidate_median = statistics.median(candidate_times)
             incumbent_median = statistics.median(incumbent_times)
             reference_median = statistics.median(reference_times)
-            speedup_incumbent = _geometric_mean_ratio(incumbent_times, candidate_times)
-            speedup_reference = _geometric_mean_ratio(reference_times, candidate_times)
-            lcb95 = _bootstrap_lcb95(
+            speedup_incumbent = geometric_mean_ratio(incumbent_times, candidate_times)
+            speedup_reference = geometric_mean_ratio(reference_times, candidate_times)
+            sequential = report.protocol.sequential_testing
+            alpha = sequential.per_proposal_alpha if sequential is not None else 0.05
+            confidence_level = 1.0 - alpha
+            seed_material = f"{report.baseline_id}:{report.hardware_scope_id}:{report.protocol.seed_commitment}"
+            lcb95 = bootstrap_lcb(
                 list(zip(candidate_times, incumbent_times, strict=True)),
                 samples=self.config.bootstrap_samples,
-                seed_material=(f"{report.baseline_id}:{report.hardware_scope_id}:{report.protocol.seed_commitment}"),
+                seed_material=seed_material,
+                alpha=0.05,
+            )
+            lcb = bootstrap_lcb(
+                list(zip(candidate_times, incumbent_times, strict=True)),
+                samples=self.config.bootstrap_samples,
+                seed_material=seed_material,
+                alpha=alpha,
             )
             quartile = max(1, len(reference_times) // 4)
             first_reference = statistics.median(reference_times[:quartile])
@@ -763,7 +749,8 @@ class KernelBenchmarkEvaluator:
             feedback = (
                 f"Correct on {report.correctness.tests_passed}/{report.correctness.tests_run} trials; "
                 f"paired speedup {speedup_incumbent:.4f}x vs incumbent "
-                f"(95% lower bound {lcb95:.4f}x), {speedup_reference:.4f}x vs reference."
+                f"({confidence_level:.2%} sequential lower bound {lcb:.4f}x), "
+                f"{speedup_reference:.4f}x vs reference."
             )
             return KernelBenchmarkObservation(
                 artifact_identity_version=candidate.artifact_identity_version,
@@ -784,9 +771,14 @@ class KernelBenchmarkEvaluator:
                 speedup_vs_incumbent=speedup_incumbent,
                 speedup_vs_reference=speedup_reference,
                 speedup_lcb95=lcb95,
+                speedup_lcb=lcb,
+                confidence_level=confidence_level,
+                all_case_no_regression_passed=(
+                    all(case.passed_no_regression for case in report.performance.cases) if report.performance.cases else None
+                ),
                 relative_improvement=relative_improvement,
-                candidate_p95_ms=_percentile(candidate_times, 0.95),
-                incumbent_p95_ms=_percentile(incumbent_times, 0.95),
+                candidate_p95_ms=percentile(candidate_times, 0.95),
+                incumbent_p95_ms=percentile(incumbent_times, 0.95),
                 environment_drift_ratio=drift,
                 stdout=execution.stdout,
                 stderr=execution.stderr,

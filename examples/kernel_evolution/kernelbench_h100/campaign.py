@@ -21,6 +21,16 @@ from pathlib import Path
 from types import FrameType
 from typing import Any
 
+from profile_contract import (
+    PROFILE_NAMES,
+    PROFILES,
+    STRICT_PROFILE,
+    assert_fresh_plans,
+    load_private_plan,
+    private_plan_commitment,
+    profile_output_root,
+)
+
 from autocontext.kernel_evolution import (
     ExternalKernelBenchmarkRunner,
     KernelBenchmarkEvaluator,
@@ -31,7 +41,7 @@ from autocontext.kernel_evolution import (
     KernelEvolutionRunner,
 )
 
-PROBLEM_ID = "kernelbench-v0.1-level1-1-square-matmul-n4096"
+PROBLEM_ID = "kernelbench-v0.1-level1-1-matmul-profiled-h100-v1"
 MAX_PROPOSALS = 10
 MAX_WAIT_SECONDS = 86_400.0
 MAX_CANDIDATE_BYTES = 1_000_000
@@ -161,6 +171,11 @@ def _make_evaluator(
     reference: Path,
     autokernel_root: Path,
     confirmation: bool,
+    precision_profile: str,
+    private_plan: Path,
+    plan_commitment: str,
+    proposal_cap: int,
+    familywise_alpha: float,
 ) -> KernelBenchmarkEvaluator:
     immutable_paths = [adapter, reference]
     if confirmation:
@@ -199,11 +214,21 @@ def _make_evaluator(
             PROBLEM_ID,
             "--autokernel-root",
             str(autokernel_root),
+            "--precision-profile",
+            precision_profile,
+            "--private-plan",
+            str(private_plan),
+            "--plan-commitment",
+            plan_commitment,
+            "--proposal-cap",
+            str(proposal_cap),
+            "--familywise-alpha",
+            str(familywise_alpha),
         ],
         cwd=autokernel_root,
         source_suffix=".py",
         trusted_unsafe=True,
-        immutable_paths=immutable_paths,
+        immutable_paths=[*immutable_paths, adapter.parent / "profile_contract.py", private_plan],
         max_output_bytes=64_000,
         max_report_bytes=2_000_000,
     )
@@ -243,11 +268,33 @@ def main() -> None:
     )
     parser.add_argument("--adapter-python", type=Path, required=True)
     parser.add_argument("--mailbox", type=Path, required=True)
+    parser.add_argument("--precision-profile", choices=PROFILE_NAMES, required=True)
+    parser.add_argument("--primary-private-plan", type=Path, required=True)
+    parser.add_argument("--confirmation-private-plan", type=Path, required=True)
     parser.add_argument("--proposals", type=_bounded_proposals, default=3)
     parser.add_argument("--candidate-wait-timeout", type=_bounded_timeout, default=3_600.0)
     parser.add_argument("--output", type=Path, default=Path("runs/kernel-evolution-h100"))
     parser.add_argument("--run-id")
     args = parser.parse_args()
+
+    profile = PROFILES[args.precision_profile]
+    primary_plan_path = args.primary_private_plan.resolve()
+    confirmation_plan_path = args.confirmation_private_plan.resolve()
+    primary_commitment = private_plan_commitment(primary_plan_path)
+    confirmation_commitment = private_plan_commitment(confirmation_plan_path)
+    primary_plan = load_private_plan(
+        primary_plan_path,
+        profile_name=profile.name,
+        role="primary",
+        expected_commitment=primary_commitment,
+    )
+    confirmation_plan = load_private_plan(
+        confirmation_plan_path,
+        profile_name=profile.name,
+        role="confirmation",
+        expected_commitment=confirmation_commitment,
+    )
+    assert_fresh_plans(primary_plan, confirmation_plan)
 
     autokernel_root = args.autokernel_root.resolve()
     baseline_path = (args.baseline or (autokernel_root / "kernel.py")).resolve()
@@ -255,7 +302,15 @@ def main() -> None:
     confirmation_adapter = bundle / "confirmation_adapter.py"
     reference = bundle / "reference.py"
     adapter_python = os.path.abspath(os.fspath(args.adapter_python))
-    required = [baseline_path, primary_adapter, confirmation_adapter, reference, Path(adapter_python)]
+    required = [
+        baseline_path,
+        primary_adapter,
+        confirmation_adapter,
+        reference,
+        Path(adapter_python),
+        primary_plan_path,
+        confirmation_plan_path,
+    ]
     missing = [str(path) for path in required if not path.is_file()]
     if missing:
         raise SystemExit(f"required files do not exist: {', '.join(missing)}")
@@ -272,6 +327,11 @@ def main() -> None:
         reference=reference,
         autokernel_root=autokernel_root,
         confirmation=False,
+        precision_profile=profile.name,
+        private_plan=primary_plan_path,
+        plan_commitment=primary_commitment,
+        proposal_cap=MAX_PROPOSALS,
+        familywise_alpha=0.05,
     )
     confirmation_evaluator = _make_evaluator(
         adapter_python=adapter_python,
@@ -280,6 +340,11 @@ def main() -> None:
         reference=reference,
         autokernel_root=autokernel_root,
         confirmation=True,
+        precision_profile=profile.name,
+        private_plan=confirmation_plan_path,
+        plan_commitment=confirmation_commitment,
+        proposal_cap=MAX_PROPOSALS,
+        familywise_alpha=0.05,
     )
 
     def confirm(candidate: KernelCandidate, incumbent: KernelCandidate) -> KernelBenchmarkObservation | None:
@@ -294,14 +359,15 @@ def main() -> None:
             expected_protocol_id=fresh_baseline.protocol_id,
         )
 
-    run_id = args.run_id or f"kernel_h100_{uuid.uuid4().hex}"
+    run_id = args.run_id or f"kernel_h100_{profile.name}_{uuid.uuid4().hex}"
     generator = MailboxGenerator(mailbox, timeout_seconds=args.candidate_wait_timeout)
     runner = KernelEvolutionRunner(
         KernelEvolutionConfig(
             problem_id=PROBLEM_ID,
             task_prompt=(
-                "Optimize the complete Python/Triton kernel_fn(a, b) module for fixed 4096 x 4096 float32 matrix "
-                "multiplication on NVIDIA H100 SM90. Preserve exact semantics, shape, dtype, and inputs. Return only "
+                f"Optimize the complete Python/Triton kernel_fn(a, b) module under the host-owned {profile.name} "
+                "matrix-multiplication profile on NVIDIA H100 SM90. Preserve all shapes, layouts, signs, magnitudes, "
+                "cancellation behavior, dtype, and inputs. Return only "
                 "the complete executable Python source without Markdown fences. The immutable benchmark's correctness "
                 "and performance feedback is authoritative."
             ),
@@ -314,10 +380,13 @@ def main() -> None:
             max_environment_drift=0.10,
             max_peak_memory_fraction=0.80,
             target_reference_speedup=2.0,
+            precision_profile=profile.name,
+            proposal_cap=MAX_PROPOSALS,
+            familywise_alpha=0.05,
         ),
         generator,
         primary_evaluator,
-        args.output,
+        profile_output_root(args.output, profile.name),
         run_id=run_id,
         confirmation_fn=confirm,
     )
@@ -326,8 +395,17 @@ def main() -> None:
         "schema_version": "autocontext.kernel-mailbox-campaign/v2",
         "run_id": run_id,
         "problem_id": PROBLEM_ID,
+        "precision_profile": profile.name,
+        "profile_output_namespace": str(profile_output_root(args.output, profile.name)),
         "proposals_requested": args.proposals,
         "hard_proposal_cap": MAX_PROPOSALS,
+        "sequential_testing": {
+            "method": "bonferroni",
+            "familywise_alpha": 0.05,
+            "per_proposal_alpha": 0.05 / MAX_PROPOSALS,
+        },
+        "primary_private_plan_commitment": primary_commitment,
+        "confirmation_private_plan_commitment": confirmation_commitment,
         "candidate_wait_timeout_seconds": args.candidate_wait_timeout,
         "baseline_path": str(baseline_path),
         "artifact_identity_version": baseline.artifact_identity_version,
@@ -369,6 +447,46 @@ def main() -> None:
         "champion_speedup_vs_reference": result.champion_speedup_vs_reference,
         **_progress(runner.run_dir),
     }
+    promoted = [attempt for attempt in result.attempts if attempt.decision == "promoted"]
+    champion = next(attempt for attempt in result.attempts if attempt.attempt_id == result.champion_attempt_id)
+    champion_report = champion.observation.report
+    holdout_correctness = (
+        [item.model_dump(mode="json") for item in champion_report.correctness.slices if item.split == "holdout"]
+        if champion_report is not None and champion_report.correctness is not None
+        else []
+    )
+    holdout_performance = (
+        [item.model_dump(mode="json") for item in champion_report.performance.cases if item.split == "holdout"]
+        if champion_report is not None and champion_report.performance is not None
+        else []
+    )
+    profile_evidence = {
+        "schema_version": "autocontext.kernel-h100-profile-evidence/v1",
+        "evidence_status": "observed_live_run",
+        "run_id": run_id,
+        "precision_profile": profile.name,
+        "protocol_id": result.protocol_id,
+        "protocol_compatibility_id": result.protocol_compatibility_id,
+        "primary_private_plan_commitment": primary_commitment,
+        "confirmation_private_plan_commitment": confirmation_commitment,
+        "proposal_budget": MAX_PROPOSALS,
+        "proposals_evaluated": len(result.attempts) - 1,
+        "promotions": len(promoted),
+        "improvement_survived_profile": bool(promoted),
+        "improvement_survived_strict_fp32": bool(promoted) if profile.name == STRICT_PROFILE else None,
+        "all_holdout_correctness_passed": bool(holdout_correctness) and all(item["passed"] for item in holdout_correctness),
+        "all_holdout_no_regression_passed": bool(holdout_performance)
+        and all(item["passed_no_regression"] for item in holdout_performance),
+        "holdout_correctness": holdout_correctness,
+        "holdout_performance": holdout_performance,
+        "sequential_evidence": [
+            attempt.sequential_evidence.model_dump(mode="json")
+            for attempt in result.attempts
+            if attempt.sequential_evidence is not None
+        ],
+    }
+    _atomic_json(runner.run_dir / "profile_evidence.json", profile_evidence)
+    _atomic_json(mailbox / "profile_evidence.json", profile_evidence)
     _atomic_json(mailbox / "campaign_status.json", status)
     print(json.dumps(status, indent=2, sort_keys=True), flush=True)
 

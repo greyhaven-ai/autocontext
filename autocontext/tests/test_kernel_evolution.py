@@ -8,7 +8,9 @@ import pytest
 
 from autocontext.kernel_evolution import (
     ARTIFACT_IDENTITY_VERSION,
+    RELAXED_PRECISION_SEMANTICS,
     SCHEMA_VERSION,
+    STRICT_FP32_SEMANTICS,
     KernelBaselineError,
     KernelBenchmarkEvaluator,
     KernelBenchmarkEvaluatorConfig,
@@ -17,15 +19,20 @@ from autocontext.kernel_evolution import (
     KernelBenchmarkProtocol,
     KernelBenchmarkReport,
     KernelCandidate,
+    KernelCasePerformanceReport,
     KernelCompileReport,
     KernelConfirmationFn,
     KernelCorrectnessReport,
+    KernelCorrectnessSliceReport,
     KernelEvolutionConfig,
     KernelEvolutionRunner,
     KernelHardwareIdentity,
     KernelIntegrityError,
     KernelPerformanceReport,
+    KernelProtocolSemantics,
+    KernelSequentialTestingPolicy,
     KernelTimingBlock,
+    PrecisionProfileName,
     content_digest,
 )
 
@@ -42,11 +49,17 @@ class FakeBenchmarkRunner:
         architecture: str = "sm90",
         hardware_metadata: dict[str, str] | None = None,
         atol: float = 0.01,
+        semantics: KernelProtocolSemantics | None = None,
+        sequential_testing: KernelSequentialTestingPolicy | None = None,
+        case_regression: bool = False,
     ) -> None:
         self.invalid_baseline = invalid_baseline
         self.incorrect_sources = incorrect_sources or set()
         self.seed_commitment = seed_commitment
         self.atol = atol
+        self.semantics = semantics
+        self.sequential_testing = sequential_testing
+        self.case_regression = case_regression
         self.calls: list[tuple[str, str, float]] = []
         self.latencies = {
             "baseline": 100.0,
@@ -122,10 +135,12 @@ class FakeBenchmarkRunner:
             timing_blocks=10,
             calls_per_block=20,
             atol=self.atol,
-            rtol=0.01,
+            rtol=self.atol,
             seed_commitment=content_digest(
                 "different-seeds" if candidate.source.strip() == "protocol-mismatch" else self.seed_commitment
             ),
+            semantics=self.semantics,
+            sequential_testing=self.sequential_testing,
         )
         correctness = KernelCorrectnessReport(
             passed=correct,
@@ -136,6 +151,20 @@ class FakeBenchmarkRunner:
             max_abs_error=0.0 if correct else 1.0,
             max_rel_error=0.0 if correct else 1.0,
             failures=[] if correct else ["hidden trial 3 exceeded tolerance"],
+            slices=(
+                [
+                    KernelCorrectnessSliceReport(
+                        name=f"case-{index}",
+                        split="train" if index == 0 else "holdout",
+                        cases_run=1,
+                        cases_passed=int(correct or index < 4),
+                        passed=correct or index < 4,
+                    )
+                    for index in range(5)
+                ]
+                if self.semantics is not None
+                else []
+            ),
         )
         performance = None
         if correct:
@@ -153,7 +182,27 @@ class FakeBenchmarkRunner:
                         reference_ms=200.0,
                     )
                     for block, timing in enumerate(candidate_times)
-                ]
+                ],
+                cases=(
+                    [
+                        KernelCasePerformanceReport(
+                            name=f"case-{index}",
+                            split="train" if index == 0 else "holdout",
+                            candidate_median_ms=(
+                                incumbent_ms / 0.90
+                                if self.case_regression and candidate != incumbent and index == 4
+                                else candidate_ms
+                            ),
+                            incumbent_median_ms=incumbent_ms,
+                            reference_median_ms=200.0,
+                            minimum_speedup_vs_incumbent=0.98,
+                            passed_no_regression=not (self.case_regression and candidate != incumbent and index == 4),
+                        )
+                        for index in range(5)
+                    ]
+                    if self.semantics is not None
+                    else []
+                ),
             )
         return KernelBenchmarkReport(
             schema_version=SCHEMA_VERSION,
@@ -197,6 +246,8 @@ def _runner(
     proposals: list[str],
     *,
     confirmation_fn: KernelConfirmationFn | None = None,
+    precision_profile: PrecisionProfileName | None = None,
+    proposal_cap: int | None = None,
 ) -> tuple[KernelEvolutionRunner, list[str]]:
     prompts: list[str] = []
 
@@ -211,6 +262,8 @@ def _runner(
             baseline_source="baseline",
             min_relative_improvement=0.05,
             target_reference_speedup=3.0,
+            precision_profile=precision_profile,
+            proposal_cap=proposal_cap,
         ),
         generate,
         _evaluator(fake),
@@ -262,6 +315,150 @@ def test_protocol_compatibility_excludes_only_the_seed_order_commitment() -> Non
         seed_commitment="sha256:6cd3e86b41cc546710198e3f274adfe2e54c636069e5ff0e4ac0c1ea3e50477a",
     )
     assert historical_h100.protocol_id == "sha256:c73d37aa027b0269158718d10bdef9865b8156b7151728e6c2911dac5400c670"
+
+
+def test_named_precision_semantics_and_private_commitments_are_protocol_bound() -> None:
+    sequential = KernelSequentialTestingPolicy(proposal_cap=10, familywise_alpha=0.05)
+    primary = KernelBenchmarkProtocol(
+        correctness_trials=5,
+        hidden_trials=4,
+        warmup_runs=3,
+        timing_blocks=10,
+        calls_per_block=20,
+        atol=0.0001,
+        rtol=0.0001,
+        seed_commitment=content_digest("worker-private primary inputs and order"),
+        semantics=STRICT_FP32_SEMANTICS,
+        sequential_testing=sequential,
+    )
+    confirmation = primary.model_copy(update={"seed_commitment": content_digest("disjoint confirmation inputs and order")})
+    relaxed = primary.model_copy(
+        update={
+            "atol": 0.01,
+            "rtol": 0.01,
+            "semantics": RELAXED_PRECISION_SEMANTICS,
+        }
+    )
+
+    assert primary.protocol_id != confirmation.protocol_id
+    assert primary.compatibility_id == confirmation.compatibility_id
+    assert primary.compatibility_id != relaxed.compatibility_id
+    assert primary.semantics is not None and primary.semantics.profile_name == "strict-fp32-v1"
+    assert relaxed.semantics is not None and relaxed.semantics.profile_name == "relaxed-precision-v1"
+
+    assert primary.semantics is not None
+    changed_reference = primary.semantics.model_copy(
+        update={
+            "reference": primary.semantics.reference.model_copy(update={"tf32_allowed": True}),
+        }
+    )
+    changed_distribution = primary.semantics.model_copy(
+        update={
+            "inputs": primary.semantics.inputs.model_copy(update={"family": "different-input-family"}),
+        }
+    )
+    changed_enforcement = primary.semantics.model_copy(
+        update={
+            "enforcement": primary.semantics.enforcement.model_copy(update={"minimum_case_speedup_vs_incumbent": 0.99}),
+        }
+    )
+    for changed in (changed_reference, changed_distribution, changed_enforcement):
+        assert primary.compatibility_id != primary.model_copy(update={"semantics": changed}).compatibility_id
+    assert primary.compatibility_id != primary.model_copy(update={"atol": 0.001}).compatibility_id
+    assert (
+        primary.compatibility_id
+        != primary.model_copy(update={"sequential_testing": KernelSequentialTestingPolicy(proposal_cap=20)}).compatibility_id
+    )
+
+
+def test_sequential_policy_changes_actual_bound_and_persists_every_proposal(tmp_path: Path) -> None:
+    sequential = KernelSequentialTestingPolicy(proposal_cap=3, familywise_alpha=0.05)
+    fake = FakeBenchmarkRunner(sequential_testing=sequential)
+    evaluator = _evaluator(fake)
+    baseline = KernelCandidate(source="baseline")
+    noisy = KernelCandidate(source="noisy-margin")
+    baseline_observation = evaluator.evaluate(baseline, baseline)
+    observation = evaluator.evaluate(noisy, baseline)
+
+    assert baseline_observation.eligible and observation.eligible
+    assert observation.confidence_level == pytest.approx(1 - (0.05 / 3))
+    assert observation.speedup_lcb is not None and observation.speedup_lcb95 is not None
+    assert observation.speedup_lcb < observation.speedup_lcb95
+
+    runner, _ = _runner(
+        tmp_path,
+        fake,
+        ["winner", "tiny-gain", "boundary"],
+        proposal_cap=3,
+    )
+    result = runner.run(proposals=3)
+    baseline_record, *proposal_records = result.attempts
+    assert baseline_record.sequential_evidence is None
+    assert [record.sequential_evidence.proposal_index for record in proposal_records if record.sequential_evidence] == [
+        1,
+        2,
+        3,
+    ]
+    assert all(
+        record.sequential_evidence is not None
+        and record.sequential_evidence.per_proposal_alpha == pytest.approx(0.05 / 3)
+        and record.sequential_evidence.cumulative_alpha_spent == pytest.approx((0.05 / 3) * index)
+        for index, record in enumerate(proposal_records, start=1)
+    )
+
+
+def test_host_owned_proposal_cap_rejects_excess_before_benchmarking(tmp_path: Path) -> None:
+    sequential = KernelSequentialTestingPolicy(proposal_cap=2)
+    fake = FakeBenchmarkRunner(sequential_testing=sequential)
+    runner, _ = _runner(tmp_path, fake, ["winner", "tiny-gain", "boundary"], proposal_cap=2)
+
+    with pytest.raises(ValueError, match="host-owned proposal cap"):
+        runner.run(proposals=3)
+
+    assert fake.calls == []
+
+
+def test_host_owned_profile_mismatch_fails_before_generation(tmp_path: Path) -> None:
+    fake = FakeBenchmarkRunner(semantics=RELAXED_PRECISION_SEMANTICS)
+    runner, prompts = _runner(
+        tmp_path,
+        fake,
+        ["winner"],
+        precision_profile="strict-fp32-v1",
+    )
+
+    with pytest.raises(KernelBaselineError, match="controlled_protocol_mismatch"):
+        runner.run(proposals=1)
+
+    assert prompts == []
+    assert len(fake.calls) == 1
+
+
+def test_semantic_protocol_requires_exact_per_case_coverage() -> None:
+    fake = FakeBenchmarkRunner(semantics=STRICT_FP32_SEMANTICS, atol=0.0001)
+    candidate = KernelCandidate(source="winner")
+    incumbent = KernelCandidate(source="baseline")
+    payload = fake._report(candidate, incumbent, correct=True).model_dump(mode="json")
+    payload["performance"]["cases"].pop()
+
+    with pytest.raises(ValueError, match="cover every named correctness slice"):
+        KernelBenchmarkReport.model_validate(payload)
+
+
+def test_per_case_no_regression_floor_vetoes_aggregate_winner(tmp_path: Path) -> None:
+    fake = FakeBenchmarkRunner(semantics=STRICT_FP32_SEMANTICS, case_regression=True, atol=0.0001)
+    runner, _ = _runner(
+        tmp_path,
+        fake,
+        ["winner"],
+        precision_profile="strict-fp32-v1",
+    )
+
+    result = runner.run(proposals=1)
+
+    assert result.champion_source == "baseline"
+    assert result.precision_profile == "strict-fp32-v1"
+    assert result.attempts[-1].reason == "case_regression"
 
 
 def test_correctness_first_promotion_and_append_only_lineage(tmp_path: Path) -> None:

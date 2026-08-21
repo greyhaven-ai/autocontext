@@ -28,6 +28,11 @@ from autocontext.kernel_evolution.models import (
     KernelPromotionDecision,
     KernelPromotionGateResult,
 )
+from autocontext.kernel_evolution.protocols import (
+    KernelSequentialEvidence,
+    KernelSequentialTestingPolicy,
+    PrecisionProfileName,
+)
 
 
 class KernelBaselineError(RuntimeError):
@@ -62,6 +67,9 @@ class KernelEvolutionConfig:
     max_environment_drift: float = 0.03
     max_peak_memory_fraction: float = 0.80
     target_reference_speedup: float = 2.0
+    precision_profile: PrecisionProfileName | None = None
+    proposal_cap: int | None = None
+    familywise_alpha: float = 0.05
 
     def __post_init__(self) -> None:
         if not self.problem_id.strip() or not self.task_prompt.strip() or not self.baseline_source.strip():
@@ -76,7 +84,20 @@ class KernelEvolutionConfig:
                 raise ValueError(f"{name} must be in [0, 1)")
         if not math.isfinite(self.target_reference_speedup) or self.target_reference_speedup <= 0:
             raise ValueError("target_reference_speedup must be positive")
+        if self.proposal_cap is not None and not 1 <= self.proposal_cap <= 10_000:
+            raise ValueError("proposal_cap must be between 1 and 10000")
+        if not math.isfinite(self.familywise_alpha) or not 0 < self.familywise_alpha < 0.5:
+            raise ValueError("familywise_alpha must be in (0, 0.5)")
         KernelCandidate(source=self.baseline_source, source_suffix=self.source_suffix, entrypoint=self.entrypoint)
+
+    @property
+    def sequential_testing(self) -> KernelSequentialTestingPolicy | None:
+        if self.proposal_cap is None:
+            return None
+        return KernelSequentialTestingPolicy(
+            proposal_cap=self.proposal_cap,
+            familywise_alpha=self.familywise_alpha,
+        )
 
 
 @dataclass(slots=True)
@@ -206,9 +227,13 @@ class KernelPromotionPolicy:
             )
 
         assert observation.relative_improvement is not None
-        assert observation.speedup_lcb95 is not None
+        assert observation.speedup_lcb is not None
         assert observation.candidate_p95_ms is not None
         assert observation.incumbent_p95_ms is not None
+        if observation.all_case_no_regression_passed is False:
+            reason = "case_regression"
+            feedback = f"{observation.feedback} Rejected: at least one protected case missed its no-regression floor."
+            return KernelPromotionDecision(promote=False, decision="rejected", reason=reason, feedback=feedback)
         if observation.relative_improvement + 1e-12 < self.config.min_relative_improvement:
             statuses["relative_improvement"] = "failed"
             reason = "insufficient_improvement"
@@ -226,15 +251,15 @@ class KernelPromotionPolicy:
         statuses["relative_improvement"] = "passed"
         required_confident_speedup = 1.0 / (1.0 - self.config.min_relative_improvement)
         confidence_failed = (
-            observation.speedup_lcb95 <= 1.0
+            observation.speedup_lcb <= 1.0
             if self.config.min_relative_improvement == 0
-            else observation.speedup_lcb95 + 1e-12 < required_confident_speedup
+            else observation.speedup_lcb + 1e-12 < required_confident_speedup
         )
         if self.config.require_confidence and confidence_failed:
             statuses["confidence_interval"] = "failed"
             reason = "confidence_interval"
             feedback = (
-                f"{observation.feedback} Rejected: the paired 95% lower bound does not support the configured "
+                f"{observation.feedback} Rejected: the sequentially adjusted paired lower bound does not support the configured "
                 f"{self.config.min_relative_improvement:.2%} improvement margin."
             )
             return self._decision(
@@ -319,6 +344,19 @@ class KernelEvolutionRunner:
         confirmation_report_digest = (
             self._store.write_report(confirmation_observation) if confirmation_observation is not None else None
         )
+        sequential = self.config.sequential_testing
+        sequential_evidence = (
+            KernelSequentialEvidence(
+                proposal_index=generation,
+                proposal_cap=sequential.proposal_cap,
+                familywise_alpha=sequential.familywise_alpha,
+                per_proposal_alpha=sequential.per_proposal_alpha,
+                cumulative_alpha_spent=sequential.per_proposal_alpha * generation,
+                confidence_level=sequential.confidence_level,
+            )
+            if role != "baseline" and sequential is not None
+            else None
+        )
         return KernelAttemptRecord(
             run_id=self.run_id,
             attempt_id=f"attempt_{uuid.uuid4().hex}",
@@ -346,6 +384,7 @@ class KernelEvolutionRunner:
             confirmation_report_digest=confirmation_report_digest,
             confirmation_observation=confirmation_observation,
             confirmation_decision=confirmation_decision,
+            sequential_evidence=sequential_evidence,
         )
 
     @staticmethod
@@ -520,6 +559,8 @@ class KernelEvolutionRunner:
         """Evaluate the baseline, then run exactly ``proposals`` improvement attempts."""
         if proposals < 0:
             raise ValueError("proposals must be non-negative")
+        if self.config.proposal_cap is not None and proposals > self.config.proposal_cap:
+            raise ValueError(f"proposals ({proposals}) exceed the host-owned proposal cap ({self.config.proposal_cap})")
         if self._has_run:
             raise RuntimeError("KernelEvolutionRunner instances are single-use")
         self._has_run = True
@@ -531,6 +572,23 @@ class KernelEvolutionRunner:
             entrypoint=self.config.entrypoint,
         )
         baseline_observation = self._evaluator.evaluate(baseline, baseline)
+        expected_sequential = self.config.sequential_testing
+        report = baseline_observation.report
+        observed_sequential = report.protocol.sequential_testing if report is not None else None
+        observed_profile = (
+            report.protocol.semantics.profile_name if report is not None and report.protocol.semantics is not None else None
+        )
+        controlled_protocol_matches = observed_sequential == expected_sequential and (
+            self.config.precision_profile is None or observed_profile == self.config.precision_profile
+        )
+        if baseline_observation.eligible and not controlled_protocol_matches:
+            baseline_observation = baseline_observation.model_copy(
+                update={
+                    "eligible": False,
+                    "rejection_reason": "controlled_protocol_mismatch",
+                    "feedback": "Benchmark profile or sequential-testing budget disagrees with host-owned controls.",
+                }
+            )
         baseline_decision = self._policy.decide(baseline_observation, baseline=True)
         baseline_record = self._new_record(
             generation=0,
@@ -589,8 +647,8 @@ class KernelEvolutionRunner:
             metrics: dict[str, float] = {}
             if observation.relative_improvement is not None:
                 metrics["relative_improvement"] = float(observation.relative_improvement)
-            if observation.speedup_lcb95 is not None:
-                metrics["speedup_lcb95"] = float(observation.speedup_lcb95)
+            if observation.speedup_lcb is not None:
+                metrics["speedup_lcb"] = float(observation.speedup_lcb)
             performance_dimension = min(1.0, float(observation.speedup_vs_incumbent or 0.0))
             return AgentTaskGenerationEvaluation(
                 output=source,
@@ -704,6 +762,7 @@ class KernelEvolutionRunner:
             baseline_id=baseline_observation.baseline_id,
             protocol_id=baseline_observation.protocol_id,
             protocol_compatibility_id=baseline_observation.protocol_compatibility_id,
+            precision_profile=observed_profile,
             baseline_attempt_id=baseline_record.attempt_id,
             champion_attempt_id=self._champion.record.attempt_id,
             artifact_identity_version=self._champion.candidate.artifact_identity_version,

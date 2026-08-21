@@ -11,7 +11,9 @@ import sys
 import types
 from pathlib import Path
 
-PROBLEM_ID = "kernelbench-v0.1-level1-1-square-matmul-n4096"
+from profile_contract import PROFILE_NAMES, private_plan_commitment
+
+PROBLEM_ID = "kernelbench-v0.1-level1-1-matmul-profiled-h100-v1"
 
 
 def _load_contract_modules(source_root: Path):
@@ -47,7 +49,7 @@ def _promotion_decision(observation) -> dict[str, object]:
         return {"promote": False, "decision": "rejected", "reason": observation.rejection_reason}
     assert observation.environment_drift_ratio is not None
     assert observation.relative_improvement is not None
-    assert observation.speedup_lcb95 is not None
+    assert observation.speedup_lcb is not None
     assert observation.candidate_p95_ms is not None
     assert observation.incumbent_p95_ms is not None
     if observation.environment_drift_ratio > 0.10:
@@ -55,7 +57,9 @@ def _promotion_decision(observation) -> dict[str, object]:
     if observation.relative_improvement + 1.0e-12 < 0.05:
         return {"promote": False, "decision": "rejected", "reason": "insufficient_improvement"}
     required_confident_speedup = 1.0 / (1.0 - 0.05)
-    if observation.speedup_lcb95 + 1.0e-12 < required_confident_speedup:
+    if observation.all_case_no_regression_passed is False:
+        return {"promote": False, "decision": "rejected", "reason": "case_regression"}
+    if observation.speedup_lcb + 1.0e-12 < required_confident_speedup:
         return {"promote": False, "decision": "rejected", "reason": "confidence_interval"}
     if observation.candidate_p95_ms > observation.incumbent_p95_ms * 1.05:
         return {"promote": False, "decision": "rejected", "reason": "tail_regression"}
@@ -72,6 +76,8 @@ def main() -> None:
         required=True,
         help="Path containing the autocontext Python package (normally autocontext/src)",
     )
+    parser.add_argument("--precision-profile", choices=PROFILE_NAMES, required=True)
+    parser.add_argument("--private-plan", type=Path, required=True)
     parser.add_argument(
         "--candidate",
         type=Path,
@@ -96,8 +102,19 @@ def main() -> None:
     incumbent_path = autokernel_root / "kernel.py"
     reference_path = bundle / "reference.py"
     adapter_path = bundle / "adapter.py"
+    profile_contract_path = bundle / "profile_contract.py"
+    private_plan = args.private_plan.resolve()
+    plan_commitment = private_plan_commitment(private_plan)
 
-    for path in (candidate_path, incumbent_path, reference_path, adapter_path, args.adapter_python):
+    for path in (
+        candidate_path,
+        incumbent_path,
+        reference_path,
+        adapter_path,
+        profile_contract_path,
+        private_plan,
+        args.adapter_python,
+    ):
         if not path.exists():
             raise SystemExit(f"required path does not exist: {path}")
 
@@ -137,11 +154,21 @@ def main() -> None:
             PROBLEM_ID,
             "--autokernel-root",
             str(autokernel_root),
+            "--precision-profile",
+            args.precision_profile,
+            "--private-plan",
+            str(private_plan),
+            "--plan-commitment",
+            plan_commitment,
+            "--proposal-cap",
+            "10",
+            "--familywise-alpha",
+            "0.05",
         ],
         cwd=autokernel_root,
         source_suffix=".py",
         trusted_unsafe=True,
-        immutable_paths=[adapter_path, reference_path],
+        immutable_paths=[adapter_path, profile_contract_path, reference_path, private_plan],
         max_output_bytes=64_000,
         max_report_bytes=2_000_000,
     )
@@ -174,6 +201,8 @@ def main() -> None:
     decision = _promotion_decision(observation)
     summary = {
         "problem_id": PROBLEM_ID,
+        "precision_profile": args.precision_profile,
+        "private_plan_commitment": plan_commitment,
         "artifact_identity_version": candidate.artifact_identity_version,
         "baseline": {
             "eligible": baseline.eligible,
@@ -196,6 +225,9 @@ def main() -> None:
             "speedup_vs_incumbent": observation.speedup_vs_incumbent,
             "speedup_vs_reference": observation.speedup_vs_reference,
             "speedup_lcb95": observation.speedup_lcb95,
+            "speedup_lcb": observation.speedup_lcb,
+            "confidence_level": observation.confidence_level,
+            "all_case_no_regression_passed": observation.all_case_no_regression_passed,
             "relative_improvement": observation.relative_improvement,
             "environment_drift_ratio": observation.environment_drift_ratio,
             "rejection_reason": observation.rejection_reason,

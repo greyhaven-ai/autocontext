@@ -11,9 +11,9 @@ The split is intentional:
 | --- | --- |
 | Generate complete candidate source | Pin one problem, reference, inputs, seeds, and tolerances |
 | Carry the incumbent and benchmark feedback forward | Compile candidate and current incumbent |
-| Recompute benchmark statistics | Run host-owned correctness and hidden holdout trials |
+| Recompute benchmark statistics with a bounded sequential policy | Run host-owned correctness and worker-private holdout trials |
 | Decide promotion independently of scalar prompt score | Record paired/interleaved timing blocks |
-| Require an optional fresh-protocol confirmation before promotion | Re-run provisional winners with new host-owned seeds and measurement order |
+| Require an optional fresh-protocol confirmation before promotion | Re-run provisional winners with disjoint host-owned inputs and measurement order |
 | Persist source, raw reports, decisions, and lineage | Report hardware, runtime, driver, toolchain, and workload identity |
 
 Generated Python, CUDA, or Triton must use `DockerKernelBenchmarkRunner` (or an
@@ -201,6 +201,9 @@ runner = KernelEvolutionRunner(
         task_prompt="Optimize ModelNew; preserve its ABI and exact semantics.",
         baseline_source=Path("kernel.py").read_text(),
         min_relative_improvement=0.01,
+        precision_profile="strict-fp32-v1",
+        proposal_cap=20,
+        familywise_alpha=0.05,
     ),
     generate_fn=my_kernel_generator,
     evaluator=evaluator,
@@ -250,13 +253,15 @@ ineligible, identity-mismatched, same-protocol, protocol-incompatible, or
 different-environment confirmation. Successful confirmation may have a
 different workload scope because fresh seeds are part of the workload
 fingerprint, but its static workload-family ID must match. That family binds
-the shape, dtype, reference, and input contract while excluding only randomized
-seed/order material. The backend, device, runtime, driver, toolchain, hardware
+the named precision profile, numerical and reference semantics, tolerances,
+public input-distribution requirements, per-case floor, and enforcement policy
+while excluding only the committed private input/order material. The backend,
+device, runtime, driver, toolchain, hardware
 metadata (for example device UUID or MIG/topology identity), problem, and
 reference baseline must also match. Its protocol ID must differ while its
 compatibility ID must match, so only the seed/order commitment can change;
-tolerances, correctness/hidden trials, warmups, timing blocks, and calls per
-block remain fixed.
+tolerances, correctness/hidden trials, warmups, timing blocks, calls per block,
+and the bounded sequential-testing policy remain fixed.
 The confirmation observation, report digest, and decision are persisted with
 the attempt.
 
@@ -295,15 +300,23 @@ rejected. Important fields are:
   },
   "hardware_scope_id": "sha256:...",
   "protocol": {
-    "correctness_trials": 5,
-    "hidden_trials": 5,
+    "correctness_trials": 2,
+    "hidden_trials": 1,
     "warmup_runs": 3,
     "timing_blocks": 30,
     "calls_per_block": 20,
     "atol": 0.01,
     "rtol": 0.01,
     "seed_commitment": "sha256:...",
-    "compatibility_version": "autocontext.kernel-protocol-compatibility/v1"
+    "compatibility_version": "autocontext.kernel-protocol-compatibility/v1",
+    "semantics": {
+      "profile_name": "strict-fp32-v1",
+      "numerical": {"input_dtype": "float32", "minimum_input_precision": "float32", "accumulation_dtype": "float32", "output_dtype": "float32", "input_downcast_allowed": false},
+      "reference": {"implementation": "torch.matmul", "precision": "float32", "tf32_allowed": false, "deterministic_algorithms": true},
+      "inputs": {"family": "matmul-generalization-v1", "required_shape_classes": ["non-tile-square", "rectangular"], "required_layouts": ["contiguous", "transposed"], "required_value_classes": ["signed", "small", "large", "cancellation", "dynamic-range"], "required_slices": ["train", "holdout"]},
+      "enforcement": {"require_every_correctness_slice": true, "require_every_case_no_regression": true, "require_paired_aggregate_performance": true, "candidate_controls_protected": true, "minimum_case_speedup_vs_incumbent": 0.98}
+    },
+    "sequential_testing": {"method": "bonferroni", "proposal_cap": 20, "familywise_alpha": 0.05}
   },
   "compile": {
     "candidate_passed": true,
@@ -313,17 +326,25 @@ rejected. Important fields are:
   },
   "correctness": {
     "passed": true,
-    "tests_run": 5,
-    "tests_passed": 5,
-    "hidden_tests_run": 5,
-    "hidden_tests_passed": 5,
+    "tests_run": 2,
+    "tests_passed": 2,
+    "hidden_tests_run": 1,
+    "hidden_tests_passed": 1,
     "parameter_state_match": true,
     "input_mutation_detected": false,
-    "failures": []
+    "failures": [],
+    "slices": [
+      {"name": "worker-case-a", "split": "train", "cases_run": 1, "cases_passed": 1, "passed": true},
+      {"name": "worker-case-b", "split": "holdout", "cases_run": 1, "cases_passed": 1, "passed": true}
+    ]
   },
   "performance": {
     "blocks": [
       {"block": 0, "candidate_ms": 0.0183, "incumbent_ms": 0.0194, "reference_ms": 0.0271}
+    ],
+    "cases": [
+      {"name": "worker-case-a", "split": "train", "candidate_median_ms": 0.0183, "incumbent_median_ms": 0.0194, "reference_median_ms": 0.0271, "minimum_speedup_vs_incumbent": 0.98, "passed_no_regression": true},
+      {"name": "worker-case-b", "split": "holdout", "candidate_median_ms": 0.0200, "incumbent_median_ms": 0.0201, "reference_median_ms": 0.0290, "minimum_speedup_vs_incumbent": 0.98, "passed_no_regression": true}
     ]
   },
   "resources": {
@@ -354,13 +375,15 @@ reject as `missing_resource_telemetry`; CUDA/container OOM,
 teardown failure remain distinct outcomes.
 
 AutoContext does not trust supplied summary numbers. It recomputes geometric
-paired speedups, medians, p95 latency, reference drift, and a deterministic
-paired-bootstrap 95% lower confidence bound from raw blocks. It also recomputes
+paired speedups, medians, p95 latency, reference drift, the nominal 95% bound,
+and a deterministic paired-bootstrap lower bound adjusted for the complete
+proposal budget. It also recomputes
 source digests and the canonical hardware scope ID. A different GPU,
 driver/runtime/toolchain, workload fingerprint, or reference baseline is a hard
 scope mismatch. It also hashes and pins the complete protocol from the baseline,
-so later proposals cannot weaken tolerances, hidden-trial counts, seeds,
-warmups, timing blocks, or calls per block.
+so later proposals cannot weaken precision semantics, tolerances, holdout
+commitments, slice floors, search budget, warmups, timing blocks, or calls per
+block.
 
 The v2 artifact digest is a domain-separated canonical-JSON hash of four
 framed fields: identity version, SHA-256 of the exact source bytes, source
@@ -377,9 +400,10 @@ Promotion is separate from the normalized score used to enrich the next
 generation's prompt. Gates run in this order:
 
 1. The command, JSON contract, artifact hashes, problem, baseline, and hardware scope are valid.
-2. Candidate and incumbent compile, and every correctness/hidden trial passes.
-3. The report contains at least the configured number of paired blocks.
-4. Relative latency improvement meets the margin:
+2. Candidate and incumbent compile, and every named train and holdout correctness slice passes.
+3. Every named case meets the protocol-owned no-regression floor, including each holdout case.
+4. The report contains at least the configured number of paired aggregate blocks.
+5. Relative latency improvement meets the margin:
 
    ```text
    paired_speedup = geometric_mean(incumbent_ms / candidate_ms)
@@ -387,10 +411,12 @@ generation's prompt. Gates run in this order:
    ```
 
    The boundary is inclusive: a configured 5% margin accepts exactly 5%.
-5. The paired-bootstrap 95% lower bound supports the configured margin (enabled by default). For a 5% latency margin,
-   it must reach `1 / (1 - 0.05) = 1.05263x`; an exact boundary is accepted.
-6. Candidate p95, reference drift, and peak-memory use remain within configured limits.
-7. When confirmation is configured, a distinct but compatibility-matched
+6. The paired-bootstrap lower bound uses `familywise_alpha / proposal_cap`
+   (Bonferroni alpha spending) and supports the configured margin. The nominal
+   95% bound remains separately reported for compatibility; it is not the
+   bounded campaign's promotion statistic.
+7. Candidate p95, reference drift, and peak-memory use remain within configured limits.
+8. When confirmation is configured, a distinct but compatibility-matched
    protocol must pass the same correctness, improvement, confidence, tail,
    drift, and resource gates.
 
@@ -429,12 +455,14 @@ surface. Its lineage root is a standalone artifact directory and is not yet
 indexed by `autoctx status`, mirrored through `ArtifactStore`, or discoverable
 through the run API.
 
-For a long or open-ended search, repeated hypothesis testing makes a lucky
-false positive increasingly likely. Configure `confirmation_fn` so provisional
-winners face a fresh process, correctness seeds, and measurement order before
-promotion. Confirmation reduces selection bias but does not provide a complete
-sequential-testing guarantee; large campaigns should additionally use a fixed
-attempt budget or an explicit alpha-spending policy.
+Bounded searches set `proposal_cap` and `familywise_alpha`. AutoContext rejects
+requests above the cap before benchmarking, uses the actual Bonferroni-adjusted
+bound for every proposal, and persists proposal index, cap, per-proposal alpha,
+cumulative spend, and confidence level with each attempt. Configure
+`confirmation_fn` as well so provisional winners face a fresh process,
+disjoint committed inputs, and a different measurement order. Legacy protocols
+without a sequential policy remain readable, but should not support new
+recursive performance claims.
 
 ## Why recursive kernel improvement matters
 

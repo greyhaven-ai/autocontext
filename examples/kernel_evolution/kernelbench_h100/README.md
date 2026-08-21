@@ -1,11 +1,10 @@
 # Live KernelBench H100 contract smoke
 
 This is the live-GPU companion to the synthetic kernel-evolution MVP in the
-parent directory. It evaluates one fixed workload on an NVIDIA H100, exercises
-AutoContext's real external benchmark contract, and applies the same promotion
-gates to a basic incumbent and a tuned candidate. It includes both a one-shot
-smoke comparison and a mailbox-driven recursive campaign capped at ten
-proposals. It is not a KernelBench leaderboard result.
+parent directory. It evaluates a named strict-FP32 or relaxed-precision profile
+on an NVIDIA H100 and applies correctness-slice, per-case, aggregate,
+fresh-confirmation, and bounded sequential gates. It is not a KernelBench
+leaderboard result.
 
 ## What is included
 
@@ -13,13 +12,15 @@ proposals. It is not a KernelBench leaderboard result.
 | --- | --- |
 | `control_smoke.py` | Runs a baseline self-evaluation, pins its identities, evaluates the candidate, and makes the promotion decision. |
 | `campaign.py` | Runs the production recursive evolution/confirmation path with a hard ten-proposal cap and a human-operated mailbox. |
-| `adapter.py` | Owns compilation, primary seeded correctness, rotated CUDA-event timing, hardware identity, and the v2 JSON report. |
-| `confirmation_adapter.py` | Selects the independently seeded and reordered confirmation profile from the immutable adapter. |
+| `adapter.py` | Owns compilation, private-plan correctness, per-case and aggregate CUDA-event timing, hardware identity, and the v2 JSON report. |
+| `confirmation_adapter.py` | Runs the independently committed confirmation plan through the same immutable adapter. |
+| `profile_contract.py` | Defines both public precision profiles and validates private plan coverage, commitments, and freshness. |
 | `reference.py` | Pinned KernelBench v0.1 Level 1 problem 1 PyTorch reference. |
 | `tuned_candidate.py` | Grouped 128 x 128 x 64 Triton matmul tuned for SM90. |
 | `recursive_champion.py` | Exact source bytes of the champion produced by the verified ten-proposal campaign. |
 | `verified_h100_result.json` | Sanitized evidence from one successful H100 run; it is not a golden performance assertion. |
 | `verified_recursive_h100_result.json` | Sanitized phase-one, recursive-lineage, fresh-confirmation, and export evidence from the live campaign. |
+| `profile_reassessment.json` | Separately classifies that historical FP16-downcast champion under strict and relaxed semantics without claiming an unobserved live strict result. |
 | `THIRD_PARTY_NOTICES.md` | Source attribution and retained license notices. |
 
 The incumbent is not vendored. The driver reads `kernel.py` from a separately
@@ -66,7 +67,9 @@ cd /absolute/path/to/autocontext/autocontext
 uv run --frozen python ../examples/kernel_evolution/kernelbench_h100/control_smoke.py \
   --autocontext-src /absolute/path/to/autocontext/autocontext/src \
   --autokernel-root /absolute/path/to/autokernel \
-  --adapter-python /absolute/path/to/gpu-venv/bin/python
+  --adapter-python /absolute/path/to/gpu-venv/bin/python \
+  --precision-profile strict-fp32-v1 \
+  --private-plan /worker-private/strict-primary.json
 ```
 
 Pass the literal virtual-environment interpreter path. Do not transform it with
@@ -77,7 +80,37 @@ uses lexical `abspath` normalization only.
 
 Omit `--candidate` to use `tuned_candidate.py`, or pass another trusted Python
 source file exposing `kernel_fn(a, b)`. The incumbent must expose the same
-entrypoint.
+entrypoint. A strict comparison of `recursive_champion.py` is expected to exit
+`2`: it downcasts inputs and asserts the old fixed shape. The relaxed profile
+retains the historical 1%-tolerance evidence under a separate protocol.
+
+## Prepare worker-private plans
+
+No correctness seeds, shapes, ranges, or case order are checked in. Before a
+campaign, an operator creates two owner-readable JSON files on the worker, one
+with `role: "primary"` and one with `role: "confirmation"`. Both use schema
+`autocontext.kernel-private-plan/v1`, the selected `profile_name`, a `cases`
+array, and a `timing_order` containing every case name once. Each case contains
+exactly:
+
+```text
+name, split, seed, m, n, k, a_layout, b_layout,
+value_class, magnitude_min, magnitude_max
+```
+
+`split` is `train` or `holdout`; layouts are `contiguous` or `transposed`.
+Strict plans must jointly cover non-tile-aligned square and rectangular shapes,
+both layouts, signed/small/large values, cancellation, and dynamic range. The
+relaxed profile is the legacy fixed, contiguous, positive-unit distribution.
+The validator requires train and holdout cases, unique seeds, disjoint primary
+and confirmation inputs, and different relative timing orders.
+
+The campaign hashes each complete plan before the first proposal, publishes
+only its canonical SHA-256 commitment in `campaign_config.json`, and passes the
+plan as an immutable worker input. Candidate files and prompts do not receive
+the private material. Treat the worker process as the trust boundary; this
+subprocess-only example is not a defense against actively malicious code that
+inspects its host process.
 
 ## Run a bounded recursive campaign
 
@@ -107,6 +140,9 @@ uv run --frozen python ../examples/kernel_evolution/kernelbench_h100/campaign.py
   --autokernel-root /absolute/path/to/autokernel \
   --baseline /absolute/path/to/autokernel/kernel.py \
   --adapter-python /absolute/path/to/gpu-venv/bin/python \
+  --precision-profile relaxed-precision-v1 \
+  --primary-private-plan /worker-private/relaxed-primary.json \
+  --confirmation-private-plan /worker-private/relaxed-confirmation.json \
   --mailbox /absolute/path/to/mailbox-phase1 \
   --proposals 1 \
   --candidate-wait-timeout 3600 \
@@ -133,7 +169,7 @@ primary promotion and fresh confirmation:
 jq -e '
   .attempts[-1].decision == "promoted" and
   .attempts[-1].confirmation_decision.promote == true
-' /absolute/path/to/kernel-runs/h100-confirm-tuned/summary.json
+' /absolute/path/to/kernel-runs/relaxed-precision-v1/h100-confirm-tuned/summary.json
 ```
 
 The accepted phase-1 candidate digest should match the checked-in evidence:
@@ -151,6 +187,9 @@ uv run --frozen python ../examples/kernel_evolution/kernelbench_h100/campaign.py
   --autokernel-root /absolute/path/to/autokernel \
   --baseline /absolute/path/to/autocontext/examples/kernel_evolution/kernelbench_h100/tuned_candidate.py \
   --adapter-python /absolute/path/to/gpu-venv/bin/python \
+  --precision-profile relaxed-precision-v1 \
+  --primary-private-plan /worker-private/relaxed-primary.json \
+  --confirmation-private-plan /worker-private/relaxed-confirmation.json \
   --mailbox /absolute/path/to/mailbox-phase2 \
   --proposals 10 \
   --candidate-wait-timeout 3600 \
@@ -166,49 +205,50 @@ use a new mailbox and run ID for every campaign. AutoContext may compact a long
 champion inside its recursive prompt; the exact champion remains available in
 the run directory as `champion.py` and as a content-addressed artifact.
 
-The run directory contains the production manifest, `campaign_config.json`,
+The profile-namespaced run directory contains the production manifest, `campaign_config.json`,
 candidate/report artifacts, per-attempt JSON, append-only `lineage.jsonl`, the
-current champion, and a final `summary.json` on successful completion. The
+current champion, a final `summary.json`, and observed `profile_evidence.json`
+on successful completion. The
 mailbox retains every prompt, submitted candidate, digest receipt, and
 `campaign_status.json`. SIGINT/SIGTERM is converted into a production
 `interrupted` manifest before exit; completed attempts and lineage remain
 durable. A candidate timeout records a failed manifest and preserves all prior
 attempts.
 
-## Fixed workload and protocol
+The two phases above reproduce the historical relaxed search under private
+plans. Run a separate `strict-fp32-v1` campaign with strict primary and
+confirmation plans to make a strict claim. Do not seed it with
+`recursive_champion.py`: the control smoke and
+`profile_reassessment.json` demonstrate that exact FP16-downcast, fixed-shape
+artifact is ineligible. Strict and relaxed runs always live under different
+profile directories, even when their operator-supplied run IDs match.
 
-The problem ID is
-`kernelbench-v0.1-level1-1-square-matmul-n4096`: two 4096 x 4096 float32
-matrices and the exact semantics of KernelBench v0.1 Level 1 problem 1.
+## Named workload and protocol
 
-The adapter owns the following fixed protocol:
+New campaigns use problem ID
+`kernelbench-v0.1-level1-1-matmul-profiled-h100-v1`. The protocol explicitly
+names either `strict-fp32-v1` (`atol=rtol=0.0001`, no input downcast) or
+`relaxed-precision-v1` (`atol=rtol=0.01`, FP16 input downcast allowed). It binds
+input/accumulation/output precision, PyTorch FP32 reference settings with TF32
+disabled, public input-distribution requirements, enforcement policy, exact
+private-plan commitment, and the sequential budget into the protocol ID.
 
-- five deterministic correctness trials with seeds `17011`, `17027`, `17041`,
-  `17053`, and `17077`; the final three are counted in the contract's
-  `hidden_trials` fields but are not secret in this checked-in smoke harness;
-- shape, dtype, finite-output, input-mutation, and PyTorch-reference checks at
-  `atol=0.01` and `rtol=0.01`;
-- one compile trial, then three warmups per implementation;
-- eight paired timing blocks with ten calls per implementation per block;
-- candidate, incumbent, and PyTorch reference order rotated across blocks and
-  measured with synchronized CUDA events;
-- candidate and incumbent CUDA peak allocation and reservation measured in
-  separate reset windows and bound to their exact artifact identities;
-- a static workload-family ID covering the exact reference bytes and problem
-  contract, plus a full workload fingerprint covering that material and the
-  protocol; hardware/toolchain scope and baseline identities are separate.
+Every private case is a named correctness slice and a named performance case.
+Every train and holdout slice must pass correctness; every case must meet the
+0.98x incumbent no-regression floor before aggregate promotion. Eight paired
+timing blocks aggregate all cases geometrically while retaining per-case
+medians. The adapter uses three warmups and ten synchronized CUDA-event calls
+per implementation per block. Candidate, incumbent, and PyTorch reference
+orders rotate across blocks. Candidate and incumbent CUDA peak allocation and
+reservation are measured in separate reset windows across every case and are
+bound to their exact artifact identities. The static workload-family identity
+covers the reference and problem contract; the workload fingerprint also binds
+the selected profile, private-plan commitment, and sequential policy.
 
-Provisional campaign winners then run through `confirmation_adapter.py`. Its
-fresh profile uses correctness seeds `27011`, `27031`, `27043`, `27059`, and
-`27077`, compile seed `26003`, timing-input seed `28001`, and timing-order seed
-`29009`. It shuffles all six permutations once, uses each exactly once, then
-takes two orders from a second seeded shuffle. A runtime invariant requires
-every implementation to occupy every timing position at least twice across the
-eight blocks. The confirmation seed commitment covers all seed values and the
-exact resulting schedule. Both the correctness inputs and execution order
-therefore differ from the primary profile. The confirmation command pins
-`confirmation_adapter.py`, the shared adapter, and the exact reference as
-immutable harness inputs.
+Provisional winners run through `confirmation_adapter.py` with a disjoint plan
+and different relative order. The fresh plan commitment changes protocol and
+workload-fingerprint identity, while compatible precision, reference, input
+family, enforcement, and sequential semantics keep the compatibility ID stable.
 
 For each provisional winner, the confirmation callback first self-evaluates
 its incumbent under this fresh profile, then evaluates the candidate while
@@ -216,8 +256,9 @@ pinning that fresh scope, baseline, and protocol. The production runner vetoes
 confirmation if the reference, static workload family, or execution environment
 changes, if the protocol is not fresh, if its compatibility identity changes,
 or if any correctness, significance, tail, drift, or resource gate fails.
-Compatibility fixes the tolerance, trial-count, warmup, and timing fields while
-permitting a new seed/order commitment.
+Compatibility fixes precision, reference, distribution, tolerance,
+no-regression floor, proposal budget, trial-count, warmup, and timing fields
+while permitting only a new committed private input/order plan.
 
 The control process first evaluates the incumbent against itself. Only after a
 valid baseline does it evaluate the candidate while requiring the same hardware
@@ -227,7 +268,9 @@ An eligible candidate is promoted only when all of these hold:
 
 - environment drift is at most 10%;
 - relative improvement is at least 5%;
-- the bootstrapped 95% lower speedup bound is at least `1 / (1 - 0.05)`;
+- every correctness slice and per-case no-regression floor passes;
+- the Bonferroni-adjusted lower speedup bound uses `0.05 / 10` and reaches at
+  least `1 / (1 - 0.05)` (the nominal 95% bound is reported separately);
 - candidate p95 latency is no more than 5% above incumbent p95 latency.
 
 ## One-shot comparison output and exit status
@@ -243,6 +286,7 @@ baseline   { eligible, artifact_digest, source_digest, median_ms,
 candidate  { path, eligible, artifact_digest, source_digest, median_ms,
              incumbent_median_ms, reference_median_ms,
              speedup_vs_incumbent, speedup_vs_reference, speedup_lcb95,
+             speedup_lcb, confidence_level, all_case_no_regression_passed,
              relative_improvement, environment_drift_ratio,
              rejection_reason, feedback }
 promotion  { promote, decision, reason }
@@ -285,6 +329,13 @@ primary profile and 0.2895 ms in confirmation, or about 7.30x faster than the
 phase-two starting candidate. Its large gain depends partly on converting the
 fixed float32 inputs to float16 within the workload's 1% tolerance, so it is
 not a bitwise-equivalent or general-purpose float32 matmul result.
+
+[`profile_reassessment.json`](profile_reassessment.json) therefore retains that
+observation only as relaxed-precision evidence and records why the exact source
+is rejected by the strict contract. It explicitly marks the strict live H100
+campaign as pending. A completed new campaign writes `profile_evidence.json`
+with profile/protocol IDs, plan commitments, holdout correctness and per-case
+floors, proposal spend, and whether an improvement survived strict FP32.
 
 ## Attribution
 

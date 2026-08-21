@@ -10,6 +10,26 @@ from typing import Annotated, Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, model_validator
 
+from autocontext.kernel_evolution.protocols import (
+    KernelProtocolSemantics,
+    KernelSequentialEvidence,
+    KernelSequentialTestingPolicy,
+    PrecisionProfileName,
+)
+from autocontext.kernel_evolution.report_models import (
+    KernelCasePerformanceReport as KernelCasePerformanceReport,
+)
+from autocontext.kernel_evolution.report_models import (
+    KernelCorrectnessReport,
+    KernelPerformanceReport,
+)
+from autocontext.kernel_evolution.report_models import (
+    KernelCorrectnessSliceReport as KernelCorrectnessSliceReport,
+)
+from autocontext.kernel_evolution.report_models import (
+    KernelTimingBlock as KernelTimingBlock,
+)
+
 SCHEMA_VERSION: Literal["autocontext.kernelbench-eval/v2"] = "autocontext.kernelbench-eval/v2"
 ARTIFACT_IDENTITY_VERSION: Literal["autocontext.kernel-artifact/v2"] = "autocontext.kernel-artifact/v2"
 PROTOCOL_COMPATIBILITY_VERSION: Literal["autocontext.kernel-protocol-compatibility/v1"] = (
@@ -190,18 +210,24 @@ class KernelBenchmarkProtocol(StrictModel):
     rtol: NonNegativeFiniteFloat
     seed_commitment: Digest
     compatibility_version: ProtocolCompatibilityVersion = PROTOCOL_COMPATIBILITY_VERSION
+    semantics: KernelProtocolSemantics | None = None
+    sequential_testing: KernelSequentialTestingPolicy | None = None
 
     @model_validator(mode="after")
     def validate_hidden_trials(self) -> Self:
         if self.hidden_trials > self.correctness_trials:
             raise ValueError("hidden_trials cannot exceed correctness_trials")
+        if self.semantics is not None:
+            expected = 0.0001 if self.semantics.profile_name == "strict-fp32-v1" else 0.01
+            if abs(float(self.atol) - expected) > 1e-15 or abs(float(self.rtol) - expected) > 1e-15:
+                raise ValueError("tolerances do not match the named precision profile")
         return self
 
     @property
     def protocol_id(self) -> str:
         # Preserve the v1 protocol-id semantics for historical evidence. The
         # new compatibility version is domain separation for the family only.
-        return canonical_digest(self.model_dump(mode="json", exclude={"compatibility_version"}))
+        return canonical_digest(self.model_dump(mode="json", exclude={"compatibility_version"}, exclude_none=True))
 
     @property
     def compatibility_id(self) -> str:
@@ -212,6 +238,7 @@ class KernelBenchmarkProtocol(StrictModel):
                 **self.model_dump(
                     mode="json",
                     exclude={"compatibility_version", "seed_commitment"},
+                    exclude_none=True,
                 ),
             }
         )
@@ -222,57 +249,6 @@ class KernelCompileReport(StrictModel):
     incumbent_passed: bool
     candidate_compile_ms: NonNegativeFiniteFloat | None = None
     diagnostics: str = ""
-
-
-class KernelCorrectnessReport(StrictModel):
-    passed: bool
-    tests_run: int = Field(ge=1)
-    tests_passed: int = Field(ge=0)
-    hidden_tests_run: int = Field(ge=1)
-    hidden_tests_passed: int = Field(ge=0)
-    max_abs_error: NonNegativeFiniteFloat | None = None
-    max_rel_error: NonNegativeFiniteFloat | None = None
-    parameter_state_match: bool = True
-    input_mutation_detected: bool = False
-    failures: list[str] = Field(default_factory=list)
-
-    @model_validator(mode="after")
-    def validate_counts_and_pass_flag(self) -> Self:
-        if self.tests_passed > self.tests_run:
-            raise ValueError("tests_passed cannot exceed tests_run")
-        if self.hidden_tests_run > self.tests_run:
-            raise ValueError("hidden_tests_run cannot exceed tests_run")
-        if self.hidden_tests_passed > self.hidden_tests_run:
-            raise ValueError("hidden_tests_passed cannot exceed hidden_tests_run")
-        fully_correct = (
-            self.tests_passed == self.tests_run
-            and self.hidden_tests_passed == self.hidden_tests_run
-            and self.parameter_state_match
-            and not self.input_mutation_detected
-        )
-        if self.passed != fully_correct:
-            raise ValueError("correctness passed flag disagrees with trial, state, or mutation checks")
-        return self
-
-
-class KernelTimingBlock(StrictModel):
-    """One interleaved, paired measurement block."""
-
-    block: int = Field(ge=0)
-    candidate_ms: PositiveFiniteFloat
-    incumbent_ms: PositiveFiniteFloat
-    reference_ms: PositiveFiniteFloat
-
-
-class KernelPerformanceReport(StrictModel):
-    blocks: list[KernelTimingBlock] = Field(min_length=1)
-
-    @model_validator(mode="after")
-    def validate_blocks(self) -> Self:
-        block_ids = [block.block for block in self.blocks]
-        if block_ids != list(range(len(self.blocks))):
-            raise ValueError("timing block ids must be unique, ordered, and contiguous from zero")
-        return self
 
 
 class KernelResourceReport(StrictModel):
@@ -406,6 +382,33 @@ class KernelBenchmarkReport(StrictModel):
                 raise ValueError("complete reports require paired performance blocks")
             if len(self.performance.blocks) != self.protocol.timing_blocks:
                 raise ValueError("protocol timing_blocks does not match the performance block count")
+            semantics = self.protocol.semantics
+            if semantics is not None:
+                enforcement = semantics.enforcement
+                assert self.correctness is not None
+                if enforcement.require_every_correctness_slice:
+                    if not self.correctness.slices:
+                        raise ValueError("semantic protocols require named correctness slices")
+                    observed_splits = {item.split for item in self.correctness.slices}
+                    if observed_splits != set(semantics.inputs.required_slices):
+                        raise ValueError("correctness slices do not cover the protocol's required splits")
+                if enforcement.require_every_case_no_regression:
+                    if not self.performance.cases:
+                        raise ValueError("semantic protocols require per-case performance gates")
+                    correctness_cases = [(item.name, item.split) for item in self.correctness.slices]
+                    performance_cases = [(item.name, item.split) for item in self.performance.cases]
+                    if len(set(correctness_cases)) != len(correctness_cases):
+                        raise ValueError("correctness slice names and splits must be unique")
+                    if len(set(performance_cases)) != len(performance_cases):
+                        raise ValueError("performance case names and splits must be unique")
+                    if set(performance_cases) != set(correctness_cases):
+                        raise ValueError("performance cases must cover every named correctness slice")
+                    for case in self.performance.cases:
+                        if (
+                            abs(float(case.minimum_speedup_vs_incumbent) - float(enforcement.minimum_case_speedup_vs_incumbent))
+                            > 1e-12
+                        ):
+                            raise ValueError("case no-regression floor does not match the protocol")
         else:
             if self.failure_kind is None:
                 raise ValueError("failed reports require failure_kind")
@@ -436,6 +439,9 @@ class KernelBenchmarkObservation(StrictModel):
     speedup_vs_incumbent: PositiveFiniteFloat | None = None
     speedup_vs_reference: PositiveFiniteFloat | None = None
     speedup_lcb95: PositiveFiniteFloat | None = None
+    speedup_lcb: PositiveFiniteFloat | None = None
+    confidence_level: PositiveFiniteFloat | None = None
+    all_case_no_regression_passed: bool | None = None
     relative_improvement: FiniteFloat | None = None
     candidate_p95_ms: PositiveFiniteFloat | None = None
     incumbent_p95_ms: PositiveFiniteFloat | None = None
@@ -454,6 +460,8 @@ class KernelBenchmarkObservation(StrictModel):
             self.speedup_vs_incumbent,
             self.speedup_vs_reference,
             self.speedup_lcb95,
+            self.speedup_lcb,
+            self.confidence_level,
             self.relative_improvement,
             self.candidate_p95_ms,
             self.incumbent_p95_ms,
@@ -537,6 +545,7 @@ class KernelAttemptRecord(StrictModel):
     confirmation_report_digest: Digest | None = None
     confirmation_observation: KernelBenchmarkObservation | None = None
     confirmation_decision: KernelPromotionDecision | None = None
+    sequential_evidence: KernelSequentialEvidence | None = None
 
     @model_validator(mode="after")
     def validate_lineage(self) -> Self:
@@ -636,6 +645,15 @@ class KernelAttemptRecord(StrictModel):
                 assert self.confirmation_observation is not None
                 if self.confirmation_observation.incumbent_artifact_digest != self.parent_artifact_digest:
                     raise ValueError("successful confirmation incumbent digest does not match the candidate parent")
+            protocol_policy = self.observation.report.protocol.sequential_testing if self.observation.report is not None else None
+            if protocol_policy is not None:
+                if self.sequential_evidence is None:
+                    raise ValueError("bounded protocol attempts require sequential-testing evidence")
+                if (
+                    self.sequential_evidence.proposal_cap != protocol_policy.proposal_cap
+                    or abs(float(self.sequential_evidence.familywise_alpha) - float(protocol_policy.familywise_alpha)) > 1e-15
+                ):
+                    raise ValueError("attempt sequential evidence disagrees with its protocol")
         return self
 
 
@@ -649,6 +667,7 @@ class KernelEvolutionResult(StrictModel):
     baseline_id: Digest
     protocol_id: Digest
     protocol_compatibility_id: Digest
+    precision_profile: PrecisionProfileName | None = None
     baseline_attempt_id: str
     champion_attempt_id: str
     artifact_identity_version: ArtifactIdentityVersion
@@ -694,6 +713,13 @@ class KernelEvolutionResult(StrictModel):
             raise ValueError("result protocol does not match the baseline attempt")
         if baseline.protocol_compatibility_id != self.protocol_compatibility_id:
             raise ValueError("result protocol compatibility does not match the baseline attempt")
+        baseline_profile = (
+            baseline.observation.report.protocol.semantics.profile_name
+            if baseline.observation.report is not None and baseline.observation.report.protocol.semantics is not None
+            else None
+        )
+        if self.precision_profile != baseline_profile:
+            raise ValueError("result precision profile does not match the baseline protocol")
         if (
             champion.hardware_scope_id != self.hardware_scope_id
             or champion.baseline_id != self.baseline_id
