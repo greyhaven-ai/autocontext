@@ -3,10 +3,11 @@ from __future__ import annotations
 import io
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import pytest
 
+import autocontext.kernel_evolution.authority_readiness as authority_readiness
 from autocontext.kernel_evolution import (
     AcceleratorAttestation,
     AuthorityMeasurement,
@@ -14,12 +15,18 @@ from autocontext.kernel_evolution import (
     DockerGPUDeviceGrant,
     DockerKernelWorkerLimits,
     DockerProtectedKernelBenchmarkRunner,
+    KernelBenchmarkEvaluator,
+    KernelBenchmarkEvaluatorConfig,
+    KernelBenchmarkExecution,
     KernelCandidate,
     build_authority_receipt,
     canonical_authority_digest,
+    docker_watchdog,
 )
 
 _PINNED_IMAGE = f"registry.example/accelerator-evaluator@sha256:{'a' * 64}"
+_HMAC_KEY_ID = "authority-test-key-v1"
+_HMAC_SECRET = b"test authority hmac secret material"  # 35 bytes
 
 
 class _Attestor:
@@ -52,6 +59,7 @@ def authority_runner(
     reference = tmp_path / "trusted-reference.py"
     runtime = tmp_path / "candidate-authority-worker.py"
     support = tmp_path / "public-candidate-support"
+    hmac_secret = tmp_path / "authority-hmac-secret"
     for path, content in (
         (evaluator, "# trusted evaluator\n"),
         (private_plan, "{\"private\": true}\n"),
@@ -61,6 +69,8 @@ def authority_runner(
         path.write_text(content, encoding="utf-8")
     support.mkdir()
     (support / "kernel_api.py").write_text("# public API\n", encoding="utf-8")
+    hmac_secret.write_bytes(_HMAC_SECRET)
+    hmac_secret.chmod(0o600)
     grant = DockerGPUDeviceGrant(
         device_id="MIG-GPU-deadbeef/1/0",
         isolation_kind="mig",
@@ -92,6 +102,8 @@ def authority_runner(
         candidate_support_paths=(support,),
         gpu_grant=grant,
         gpu_attestor=_Attestor(),
+        authority_hmac_key_id=_HMAC_KEY_ID,
+        authority_hmac_secret_path=hmac_secret,
         limits=DockerKernelWorkerLimits(max_gpu_memory_bytes=8 * 1024**3),
         docker_binary="docker-test",
     )
@@ -101,7 +113,65 @@ def authority_runner(
         "reference": reference,
         "runtime": runtime,
         "support": support,
+        "hmac_secret": hmac_secret,
     }
+
+
+def _rebuild_authority_runner(
+    runner: DockerProtectedKernelBenchmarkRunner,
+    paths: dict[str, Path],
+    *,
+    evaluator_paths: tuple[Path, ...] | None = None,
+    candidate_runtime: Path | None = None,
+    hmac_secret: Path | None = None,
+) -> DockerProtectedKernelBenchmarkRunner:
+    return DockerProtectedKernelBenchmarkRunner(
+        runner._evaluator_command,
+        image=runner.image,
+        container_python=runner.container_python,
+        evaluator_immutable_paths=evaluator_paths
+        or (paths["evaluator"], paths["private_plan"], paths["reference"]),
+        candidate_runtime_path=candidate_runtime or paths["runtime"],
+        candidate_support_paths=(paths["support"],),
+        gpu_grant=runner.gpu_grant,
+        gpu_attestor=_Attestor(),
+        authority_hmac_key_id=_HMAC_KEY_ID,
+        authority_hmac_secret_path=hmac_secret or paths["hmac_secret"],
+        limits=runner.limits,
+        docker_binary="docker-test",
+    )
+
+
+def test_constructor_rejects_candidate_runtime_directory(
+    authority_runner: tuple[DockerProtectedKernelBenchmarkRunner, dict[str, Path]],
+    tmp_path: Path,
+) -> None:
+    runner, paths = authority_runner
+    runtime_directory = tmp_path / "runtime-directory"
+    runtime_directory.mkdir()
+
+    with pytest.raises(ValueError, match="candidate_runtime_path must be a regular file"):
+        _rebuild_authority_runner(runner, paths, candidate_runtime=runtime_directory)
+
+
+def test_constructor_rejects_hmac_secret_nested_in_evaluator_tree(
+    authority_runner: tuple[DockerProtectedKernelBenchmarkRunner, dict[str, Path]],
+    tmp_path: Path,
+) -> None:
+    runner, paths = authority_runner
+    evaluator_tree = tmp_path / "evaluator-tree"
+    evaluator_tree.mkdir()
+    nested_secret = evaluator_tree / "authority-hmac-secret"
+    nested_secret.write_bytes(_HMAC_SECRET)
+    nested_secret.chmod(0o600)
+
+    with pytest.raises(ValueError, match="dedicated evaluator-only mount"):
+        _rebuild_authority_runner(
+            runner,
+            paths,
+            evaluator_paths=(evaluator_tree, paths["private_plan"], paths["reference"]),
+            hmac_secret=nested_secret,
+        )
 
 
 def test_candidate_authority_mounts_cannot_reach_private_evaluator_material(
@@ -137,7 +207,8 @@ def test_candidate_authority_mounts_cannot_reach_private_evaluator_material(
     assert f"type=bind,src={paths['support']},dst=/support/0,readonly" in rendered
     assert "/output" not in rendered
     assert "/evaluator/" not in rendered
-    for private_path in (paths["evaluator"], paths["private_plan"], paths["reference"]):
+    assert "AUTOCONTEXT_AUTHORITY_HMAC" not in rendered
+    for private_path in (paths["evaluator"], paths["private_plan"], paths["reference"], paths["hmac_secret"]):
         assert str(private_path) not in rendered
         assert private_path.name not in rendered
     for credential_name in ("AWS_ACCESS_KEY_ID", "GITHUB_TOKEN", "OPENAI_API_KEY"):
@@ -176,6 +247,12 @@ def test_evaluator_authority_has_private_controls_but_no_generated_source(
     assert f"type=bind,src={report},dst=/output" in rendered
     assert f"type=bind,src={candidate_channel},dst=/channels/candidate" in rendered
     assert f"type=bind,src={incumbent_channel},dst=/channels/incumbent" in rendered
+    assert (
+        f"type=bind,src={paths['hmac_secret']},dst=/run/secrets/autocontext-authority-hmac,readonly" in rendered
+    )
+    assert f"AUTOCONTEXT_AUTHORITY_HMAC_KEY_ID={_HMAC_KEY_ID}" in rendered
+    assert "AUTOCONTEXT_AUTHORITY_HMAC_SECRET_FILE=/run/secrets/autocontext-authority-hmac" in rendered
+    assert _HMAC_SECRET.decode() not in rendered
     assert candidate.source not in rendered
     assert incumbent.source not in rendered
     assert "/artifact/" not in rendered
@@ -191,9 +268,114 @@ def test_public_manifest_uses_generic_accelerator_boundary_and_redacts_private_p
     assert manifest["evidence_boundary"] == "trusted-evaluator/isolated-accelerator-candidate-v1"
     assert manifest["kind"] == "docker-protected-accelerator-evaluator"
     assert manifest["candidate_mount_policy"] == "source+runtime+public-support+one-readonly-socket"
+    assert manifest["authority_authentication"] == {"algorithm": "hmac-sha256", "key_id": _HMAC_KEY_ID}
+    assert manifest["crash_safe_container_creation"] == {
+        "required": "supervised-create-before-coordinator-ownership/v1",
+        "available": False,
+        "reason": (
+            "protected accelerator evidence requires crash-safe container creation; "
+            "the v1 coordinator-owned docker create path is unsupported"
+        ),
+    }
+    assert manifest["accelerator_role_isolation"] == {
+        "required": "independently-attested-evaluator-candidate-incumbent-grants/v1",
+        "available": False,
+        "reason": (
+            "protected accelerator evidence requires independently attested evaluator, candidate, and incumbent "
+            "grants; the v1 shared-grant topology is unsupported"
+        ),
+    }
+    assert manifest["trusted_out_of_process_mutation_observation"] == {
+        "required": "trusted-out-of-process-input-mutation-observation/v1",
+        "available": False,
+        "reason": (
+            "protected accelerator evidence requires trusted out-of-process input-mutation observation; "
+            "the v1 same-interpreter authority is unsupported"
+        ),
+    }
+    assert manifest["comparable_timing_boundaries"] == {
+        "required": "comparable-candidate-incumbent-reference-timing/v1",
+        "available": False,
+        "reason": (
+            "protected accelerator evidence requires comparable candidate/incumbent/reference timing boundaries; "
+            "the v1 RPC/local timing topology is unsupported"
+        ),
+    }
+    assert manifest["protected_boundary_requirements"] == {
+        name: manifest[name]
+        for name in (
+            "accelerator_role_isolation",
+            "trusted_out_of_process_mutation_observation",
+            "comparable_timing_boundaries",
+            "crash_safe_container_creation",
+        )
+    }
     assert "H100" not in rendered
-    for private_path in (paths["evaluator"], paths["private_plan"], paths["reference"]):
+    for private_path in (paths["evaluator"], paths["private_plan"], paths["reference"], paths["hmac_secret"]):
         assert str(private_path) not in rendered
+
+
+def test_hostile_worker_response_patch_fails_before_any_protected_dispatch(
+    monkeypatch: pytest.MonkeyPatch,
+    authority_runner: tuple[DockerProtectedKernelBenchmarkRunner, dict[str, Path]],
+) -> None:
+    runner, _paths = authority_runner
+    candidate = KernelCandidate(
+        source=(
+            "import sys\n"
+            "worker = sys.modules['__main__']\n"
+            "worker._response = lambda *a, **k: {'outcome': 'complete'}\n"
+            "worker.send_authority_frame = lambda *a, **k: None\n"
+            "def kernel_fn(a, b): return a @ b\n"
+        ),
+        entrypoint="kernel_fn",
+    )
+    incumbent = KernelCandidate(source="def kernel_fn(a, b): return a.matmul(b)", entrypoint="kernel_fn")
+
+    def forbidden_dispatch(*_args: Any, **_kwargs: Any) -> Any:
+        pytest.fail("an unavailable protected boundary must fail before attestation or Docker dispatch")
+
+    monkeypatch.setattr(runner, "_attest_accelerator", forbidden_dispatch)
+    monkeypatch.setattr("autocontext.kernel_evolution.authority_runner.create_docker_container", forbidden_dispatch)
+    monkeypatch.setattr("autocontext.kernel_evolution.authority_runner.subprocess.run", forbidden_dispatch)
+    monkeypatch.setattr("autocontext.kernel_evolution.docker_watchdog.subprocess.Popen", forbidden_dispatch)
+
+    execution = runner.run(candidate, incumbent, timeout_seconds=1.0)
+
+    assert execution.outcome == "resource_policy_unsupported"
+    assert execution.timed_out is False
+    assert execution.report_payload is None
+    assert execution.error == (
+        "protected accelerator evidence requires independently attested evaluator, candidate, and incumbent grants; "
+        "the v1 shared-grant topology is unsupported"
+    )
+
+    monkeypatch.setattr(authority_readiness, "_ROLE_ISOLATION_AVAILABLE", True)
+    mutation_execution = runner.run(candidate, incumbent, timeout_seconds=1.0)
+
+    assert mutation_execution.outcome == "resource_policy_unsupported"
+    assert mutation_execution.error == (
+        "protected accelerator evidence requires trusted out-of-process input-mutation observation; "
+        "the v1 same-interpreter authority is unsupported"
+    )
+
+    monkeypatch.setattr(authority_readiness, "_MUTATION_OBSERVATION_AVAILABLE", True)
+    timing_execution = runner.run(candidate, incumbent, timeout_seconds=1.0)
+
+    assert timing_execution.outcome == "resource_policy_unsupported"
+    assert timing_execution.error == (
+        "protected accelerator evidence requires comparable candidate/incumbent/reference timing boundaries; "
+        "the v1 RPC/local timing topology is unsupported"
+    )
+
+    monkeypatch.setattr(authority_readiness, "_COMPARABLE_TIMING_AVAILABLE", True)
+    creation_execution = runner.run(candidate, incumbent, timeout_seconds=1.0)
+
+    assert creation_execution.outcome == "resource_policy_unsupported"
+    assert creation_execution.error == (
+        "protected accelerator evidence requires crash-safe container creation; "
+        "the v1 coordinator-owned docker create path is unsupported"
+    )
 
 
 @pytest.mark.parametrize(
@@ -217,7 +399,12 @@ def test_authority_failures_remain_distinct(failure: str, expected: str) -> None
     )
 
 
-def _receipt_payload(attestation: DockerGPUDeviceAttestation) -> dict[str, Any]:
+def _receipt_payload(
+    runner: DockerProtectedKernelBenchmarkRunner,
+    attestation: DockerGPUDeviceAttestation,
+    *,
+    boundary_digest: str | None = None,
+) -> dict[str, Any]:
     candidate_digest = canonical_authority_digest("candidate")
     incumbent_digest = canonical_authority_digest("incumbent")
     plan_digest = canonical_authority_digest("plan")
@@ -233,6 +420,7 @@ def _receipt_payload(attestation: DockerGPUDeviceAttestation) -> dict[str, Any]:
         attestor_id=attestation.attestor_id,
         metadata={"grant_attestation_digest": attestation.digest},
     )
+    roles: tuple[Literal["candidate", "incumbent"], ...] = ("candidate", "incumbent")
     measurements = tuple(
         AuthorityMeasurement(
             sequence=index,
@@ -245,37 +433,50 @@ def _receipt_payload(attestation: DockerGPUDeviceAttestation) -> dict[str, Any]:
             observed_peak_memory_bytes=100 + index,
             outcome="complete",
         )
-        for index, role in enumerate(("candidate", "incumbent"))
+        for index, role in enumerate(roles)
     )
     report: dict[str, Any] = {
         "candidate_artifact_digest": candidate_digest,
         "incumbent_artifact_digest": incumbent_digest,
         "protocol": {"seed_commitment": plan_digest},
+        "evaluation_status": "complete",
+        "resources": {
+            "candidate_observed_peak_bytes": 100,
+            "incumbent_observed_peak_bytes": 101,
+            "telemetry_authority": "trusted-evaluator-observed/v1",
+            "accelerator_attestation_digest": accelerator.digest,
+            "device_total_memory_bytes": accelerator.enforced_memory_bytes,
+        },
     }
     receipt = build_authority_receipt(
-        evaluator_build_digest=canonical_authority_digest("build"),
-        boundary_manifest_digest=canonical_authority_digest("boundary"),
+        evaluator_build_digest=runner._evaluator_digest,
+        boundary_manifest_digest=boundary_digest or canonical_authority_digest(runner.manifest()),
         plan_commitment=plan_digest,
         accelerator_attestation=accelerator,
         candidate_artifact_digest=candidate_digest,
         incumbent_artifact_digest=incumbent_digest,
         measurements=measurements,
         report=report,
+        signing_key_id=_HMAC_KEY_ID,
+        signing_secret=_HMAC_SECRET,
     )
     report["evaluator_authority_receipt"] = receipt.model_dump(mode="json")
     return report
 
 
-def test_authority_receipt_is_bound_to_the_host_attested_partition() -> None:
+def test_authority_receipt_is_bound_to_host_partition_build_boundary_and_key(
+    authority_runner: tuple[DockerProtectedKernelBenchmarkRunner, dict[str, Path]],
+) -> None:
+    runner, _paths = authority_runner
     host_attestation = DockerGPUDeviceAttestation(
         device_id="MIG-GPU-deadbeef/1/0",
         isolation_kind="mig",
         enforced_memory_bytes=8 * 1024**3,
         attestor_id="test-partition-attestor-v1",
     )
-    payload = _receipt_payload(host_attestation)
+    payload = _receipt_payload(runner, host_attestation)
 
-    assert DockerProtectedKernelBenchmarkRunner._validate_receipt(payload, host_attestation) is None
+    assert runner._validate_receipt(payload, host_attestation) is None
 
     forged_host_attestation = DockerGPUDeviceAttestation(
         device_id="MIG-GPU-forged/2/0",
@@ -284,8 +485,14 @@ def test_authority_receipt_is_bound_to_the_host_attested_partition() -> None:
         attestor_id="test-partition-attestor-v1",
     )
     assert "host-attested accelerator grant" in str(
-        DockerProtectedKernelBenchmarkRunner._validate_receipt(payload, forged_host_attestation)
+        runner._validate_receipt(payload, forged_host_attestation)
     )
+    wrong_boundary = _receipt_payload(
+        runner,
+        host_attestation,
+        boundary_digest=canonical_authority_digest("wrong-boundary"),
+    )
+    assert "omitted or forged" in str(runner._validate_receipt(wrong_boundary, host_attestation))
 
 
 def test_hostile_candidate_has_no_persistent_or_report_writable_mount(
@@ -322,6 +529,59 @@ def test_hostile_candidate_has_no_persistent_or_report_writable_mount(
     assert f"type=bind,src={channel},dst=/channel,readonly" in rendered
 
 
+def test_docker_authority_create_precedes_session_isolated_attach(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_calls: list[tuple[list[str], dict[str, Any]]] = []
+
+    def run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        run_calls.append((command, kwargs))
+        return subprocess.CompletedProcess(command, 0, stdout="container-id\n", stderr="")
+
+    popen_calls: list[tuple[list[str], dict[str, Any]]] = []
+
+    class Process:
+        pass
+
+    def popen(command: list[str], **kwargs: Any) -> Any:
+        popen_calls.append((command, kwargs))
+        return Process()
+
+    monkeypatch.setattr(docker_watchdog.subprocess, "run", run)
+    monkeypatch.setattr(docker_watchdog.subprocess, "Popen", popen)
+
+    docker_watchdog.create_docker_container(
+        ["/usr/bin/docker-test", "run", "--name", "authority", "pinned-image"],
+        timeout_seconds=3.0,
+    )
+    process = docker_watchdog.start_attached_docker_container(
+        "/usr/bin/docker-test",
+        "authority",
+        capture_output=True,
+    )
+
+    assert run_calls[0][0] == [
+        "/usr/bin/docker-test",
+        "create",
+        "--name",
+        "authority",
+        "pinned-image",
+    ]
+    assert run_calls[0][1]["timeout"] == 3.0
+    assert popen_calls[0][0] == ["/usr/bin/docker-test", "start", "--attach", "authority"]
+    assert popen_calls[0][1]["start_new_session"] is True
+    assert popen_calls[0][1]["stdout"] is subprocess.PIPE
+    assert popen_calls[0][1]["stderr"] is subprocess.PIPE
+    reaped: list[tuple[Any, str]] = []
+    monkeypatch.setattr(
+        docker_watchdog,
+        "terminate_process_group",
+        lambda value, *, description: reaped.append((value, description)),
+    )
+    assert docker_watchdog.terminate_attached_docker_processes([("evaluator", process)]) == []
+    assert reaped == [(process, "evaluator authority Docker attach")]
+
+
 def test_timeout_kills_every_authority_and_verifies_container_teardown(
     monkeypatch: pytest.MonkeyPatch,
     authority_runner: tuple[DockerProtectedKernelBenchmarkRunner, dict[str, Path]],
@@ -329,13 +589,15 @@ def test_timeout_kills_every_authority_and_verifies_container_teardown(
 ) -> None:
     runner, _paths = authority_runner
     processes: list[Any] = []
+    events: list[tuple[str, str]] = []
 
     class FakeProcess:
-        def __init__(self, command: list[str], **_kwargs: Any) -> None:
-            self.command = command
+        def __init__(self, name: str) -> None:
+            self.command = [name]
             self.stdout = io.BytesIO()
             self.stderr = io.BytesIO()
             self.killed = False
+            self.reaped = False
             processes.append(self)
 
         def wait(self, timeout: float | None = None) -> int:
@@ -349,15 +611,23 @@ def test_timeout_kills_every_authority_and_verifies_container_teardown(
         def kill(self) -> None:
             self.killed = True
 
-    monkeypatch.setattr(
-        "autocontext.kernel_evolution.authority_runner.subprocess.Popen",
-        FakeProcess,
-    )
+    def create(command: list[str], *, timeout_seconds: float) -> None:
+        assert timeout_seconds > 0
+        events.append(("create", command[-1]))
+
+    def start(_binary: str, name: str, *, capture_output: bool) -> FakeProcess:
+        assert capture_output is (name == "eval")
+        events.append(("start", name))
+        return FakeProcess(name)
+
+    monkeypatch.setattr("autocontext.kernel_evolution.authority_runner.create_docker_container", create)
+    monkeypatch.setattr("autocontext.kernel_evolution.authority_runner.start_attached_docker_container", start)
     monkeypatch.setattr(runner, "_wait_for_evaluator_sockets", lambda *args: None)
     watched: list[str] = []
 
     def launch_watchdog(_binary: str, name: str, _expires: float, _ready: Path) -> object:
         watched.append(name)
+        events.append(("watchdog", name))
         return object()
 
     monkeypatch.setattr(
@@ -368,20 +638,40 @@ def test_timeout_kills_every_authority_and_verifies_container_teardown(
         "autocontext.kernel_evolution.authority_runner.terminate_process_group",
         lambda *args, **kwargs: None,
     )
+    attached_roles: list[str] = []
+
+    def terminate_attached(attached: Any) -> list[str]:
+        for role, process in attached:
+            if process is not None:
+                attached_roles.append(role)
+                process.kill()
+                process.reaped = True
+        return []
+
+    monkeypatch.setattr(
+        "autocontext.kernel_evolution.authority_runner.terminate_attached_docker_processes",
+        terminate_attached,
+    )
     removed: list[str] = []
     verified: list[str] = []
+    drain_calls: list[tuple[int, Any, Any, Any]] = []
+
+    def drain(_stream: Any, limit: int, result: Any, quota: Any, terminate: Any) -> None:
+        drain_calls.append((limit, result, quota, terminate))
+
+    monkeypatch.setattr("autocontext.kernel_evolution._process_control.drain_bounded", drain)
     monkeypatch.setattr(runner, "_remove_container", removed.append)
     monkeypatch.setattr(runner, "_verify_removed", verified.append)
     attestation = _Attestor().attest(runner.gpu_grant)
 
     execution = runner._execute_authorities(
-        ["docker", "evaluator"],
-        ["docker", "candidate"],
-        ["docker", "incumbent"],
+        ["docker", "run", "evaluator-command"],
+        ["docker", "run", "candidate-command"],
+        ["docker", "run", "incumbent-command"],
         names={"evaluator": "eval", "candidate": "cand", "incumbent": "inc"},
         socket_paths=(tmp_path / "candidate.sock", tmp_path / "incumbent.sock"),
         report_path=tmp_path / "report.json",
-        report_identity=object(),  # ignored on the timeout path
+        report_identity=(0, 0, 0),  # ignored on the timeout path
         timeout_seconds=0.01,
         accelerator_attestation=attestation,
         watchdog_root=tmp_path,
@@ -390,9 +680,187 @@ def test_timeout_kills_every_authority_and_verifies_container_teardown(
 
     assert execution.outcome == "timeout"
     assert all(process.killed for process in processes)
+    assert all(process.reaped for process in processes)
+    assert attached_roles == ["evaluator", "candidate", "incumbent"]
     assert removed == ["eval", "cand", "inc"]
     assert verified == ["eval", "cand", "inc"]
     assert watched == ["eval", "cand", "inc"]
+    assert events == [
+        ("create", "evaluator-command"),
+        ("watchdog", "eval"),
+        ("start", "eval"),
+        ("create", "candidate-command"),
+        ("watchdog", "cand"),
+        ("start", "cand"),
+        ("create", "incumbent-command"),
+        ("watchdog", "inc"),
+        ("start", "inc"),
+    ]
+    assert len(drain_calls) == 2
+    assert {call[0] for call in drain_calls} == {runner.limits.max_output_bytes}
+    assert drain_calls[0][2] is drain_calls[1][2]
+    assert all(callable(call[3]) for call in drain_calls)
+
+
+def test_output_quota_terminates_all_names_and_blocks_candidate_start(
+    monkeypatch: pytest.MonkeyPatch,
+    authority_runner: tuple[DockerProtectedKernelBenchmarkRunner, dict[str, Path]],
+    tmp_path: Path,
+) -> None:
+    runner, _paths = authority_runner
+    created: list[str] = []
+    removed: list[str] = []
+
+    class EvaluatorProcess:
+        stdout = io.BytesIO()
+        stderr = io.BytesIO()
+
+    evaluator = EvaluatorProcess()
+
+    def create(command: list[str], *, timeout_seconds: float) -> None:
+        assert timeout_seconds > 0
+        created.append(command[-1])
+
+    def start(_binary: str, name: str, *, capture_output: bool) -> Any:
+        assert name == "eval" and capture_output
+        return evaluator
+
+    def exceed_quota(
+        _process: Any,
+        *,
+        max_output_bytes: int,
+        stdout: Any,
+        stderr: Any,
+        quota_exceeded: Any,
+        terminate: Any,
+    ) -> list[Any]:
+        assert max_output_bytes == runner.limits.max_output_bytes
+        assert stderr.exceeded is False
+        stdout.exceeded = True
+        quota_exceeded.set()
+        terminate()
+        return []
+
+    monkeypatch.setattr("autocontext.kernel_evolution.authority_runner.create_docker_container", create)
+    monkeypatch.setattr("autocontext.kernel_evolution.authority_runner.start_attached_docker_container", start)
+    monkeypatch.setattr("autocontext.kernel_evolution.authority_runner.launch_bounded_output_drains", exceed_quota)
+    monkeypatch.setattr(
+        "autocontext.kernel_evolution.authority_runner.launch_deadline_watchdog",
+        lambda *args: object(),
+    )
+    monkeypatch.setattr(
+        "autocontext.kernel_evolution.authority_runner.terminate_attached_docker_processes",
+        lambda attached: [],
+    )
+    monkeypatch.setattr(
+        "autocontext.kernel_evolution.authority_runner.terminate_process_group",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(runner, "_wait_for_evaluator_sockets", lambda *args: None)
+    monkeypatch.setattr(runner, "_remove_container", removed.append)
+    monkeypatch.setattr(runner, "_verify_removed", lambda _name: None)
+
+    execution = runner._execute_authorities(
+        ["docker", "run", "evaluator-command"],
+        ["docker", "run", "candidate-command"],
+        ["docker", "run", "incumbent-command"],
+        names={"evaluator": "eval", "candidate": "cand", "incumbent": "inc"},
+        socket_paths=(tmp_path / "candidate.sock", tmp_path / "incumbent.sock"),
+        report_path=tmp_path / "report.json",
+        report_identity=(0, 0, 0),
+        timeout_seconds=1.0,
+        accelerator_attestation=_Attestor().attest(runner.gpu_grant),
+        watchdog_root=tmp_path,
+        expires_at=2_000_000_000.0,
+    )
+
+    assert execution.outcome == "resource_exceeded"
+    assert execution.timed_out is False
+    assert execution.stdout_truncated is True
+    assert created == ["evaluator-command"]
+    assert removed[:3] == ["eval", "cand", "inc"]
+
+
+def test_failed_container_removal_retains_its_watchdog_and_reports_teardown(
+    monkeypatch: pytest.MonkeyPatch,
+    authority_runner: tuple[DockerProtectedKernelBenchmarkRunner, dict[str, Path]],
+    tmp_path: Path,
+) -> None:
+    runner, _paths = authority_runner
+
+    class FinishedProcess:
+        stdout = io.BytesIO()
+        stderr = io.BytesIO()
+
+        @staticmethod
+        def wait(timeout: float | None = None) -> int:
+            return 0
+
+        @staticmethod
+        def poll() -> int:
+            return 0
+
+    monkeypatch.setattr(
+        "autocontext.kernel_evolution.authority_runner.create_docker_container",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "autocontext.kernel_evolution.authority_runner.start_attached_docker_container",
+        lambda *args, **kwargs: FinishedProcess(),
+    )
+    monkeypatch.setattr(
+        "autocontext.kernel_evolution.authority_runner.launch_bounded_output_drains",
+        lambda *args, **kwargs: [],
+    )
+    watchers: dict[str, object] = {}
+
+    def launch_watchdog(_binary: str, name: str, _expires: float, _ready: Path) -> object:
+        watchers[name] = object()
+        return watchers[name]
+
+    monkeypatch.setattr(
+        "autocontext.kernel_evolution.authority_runner.launch_deadline_watchdog",
+        launch_watchdog,
+    )
+    monkeypatch.setattr(
+        "autocontext.kernel_evolution.authority_runner.terminate_attached_docker_processes",
+        lambda attached: [],
+    )
+    terminated_watchdogs: list[object] = []
+    monkeypatch.setattr(
+        "autocontext.kernel_evolution.authority_runner.terminate_process_group",
+        lambda process, **kwargs: terminated_watchdogs.append(process),
+    )
+    monkeypatch.setattr(runner, "_wait_for_evaluator_sockets", lambda *args: None)
+    monkeypatch.setattr(runner, "_read_report", lambda *args: None)
+
+    def remove(name: str) -> None:
+        if name == "cand":
+            raise RuntimeError("Docker daemon unavailable")
+
+    verified: list[str] = []
+    monkeypatch.setattr(runner, "_remove_container", remove)
+    monkeypatch.setattr(runner, "_verify_removed", verified.append)
+
+    execution = runner._execute_authorities(
+        ["docker", "run", "evaluator-command"],
+        ["docker", "run", "candidate-command"],
+        ["docker", "run", "incumbent-command"],
+        names={"evaluator": "eval", "candidate": "cand", "incumbent": "inc"},
+        socket_paths=(tmp_path / "candidate.sock", tmp_path / "incumbent.sock"),
+        report_path=tmp_path / "report.json",
+        report_identity=(0, 0, 0),
+        timeout_seconds=1.0,
+        accelerator_attestation=_Attestor().attest(runner.gpu_grant),
+        watchdog_root=tmp_path,
+        expires_at=2_000_000_000.0,
+    )
+
+    assert execution.outcome == "teardown_failed"
+    assert "cand: RuntimeError: Docker daemon unavailable" in str(execution.error)
+    assert verified == ["eval", "inc"]
+    assert terminated_watchdogs == [watchers["eval"], watchers["inc"]]
+    assert watchers["cand"] not in terminated_watchdogs
 
 
 def test_coordinator_loss_reconciliation_removes_expired_authority_containers(
@@ -419,3 +887,64 @@ def test_coordinator_loss_reconciliation_removes_expired_authority_containers(
     assert runner.reconcile(now=20.0) == 2
     assert removed == ["owned-evaluator", "owned-candidate"]
     assert verified == removed
+
+
+def test_removal_verification_inspects_the_exact_reconciled_container_id(
+    monkeypatch: pytest.MonkeyPatch,
+    authority_runner: tuple[DockerProtectedKernelBenchmarkRunner, dict[str, Path]],
+) -> None:
+    runner, _paths = authority_runner
+    calls: list[list[str]] = []
+
+    def missing(command: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 1, stdout="", stderr="Error: No such object: sha256:owned")
+
+    monkeypatch.setattr(docker_watchdog.subprocess, "run", missing)
+    runner._verify_removed("sha256:owned")
+
+    assert calls == [["/usr/bin/docker-test", "inspect", "sha256:owned"]]
+
+    monkeypatch.setattr(
+        docker_watchdog.subprocess,
+        "run",
+        lambda command, **kwargs: subprocess.CompletedProcess(command, 0, stdout="{}", stderr=""),
+    )
+    with pytest.raises(RuntimeError, match="remained after teardown"):
+        runner._verify_removed("sha256:owned")
+
+
+def test_teardown_failure_takes_precedence_over_timeout_rejection() -> None:
+    candidate = KernelCandidate(source="def kernel_fn(a, b): return a @ b", entrypoint="kernel_fn")
+    incumbent = KernelCandidate(source="def kernel_fn(a, b): return a.matmul(b)", entrypoint="kernel_fn")
+
+    class TeardownRunner:
+        @staticmethod
+        def run(
+            _candidate: KernelCandidate,
+            _incumbent: KernelCandidate,
+            *,
+            timeout_seconds: float,
+        ) -> KernelBenchmarkExecution:
+            assert timeout_seconds == 3.0
+            return KernelBenchmarkExecution(
+                returncode=None,
+                timed_out=True,
+                outcome="teardown_failed",
+                error="candidate container remained live",
+            )
+
+        @staticmethod
+        def manifest() -> dict[str, Any]:
+            return {"kind": "teardown-test"}
+
+    evaluator = KernelBenchmarkEvaluator(
+        TeardownRunner(),
+        KernelBenchmarkEvaluatorConfig(problem_id="p", timeout_seconds=3.0),
+    )
+
+    observation = evaluator.evaluate(candidate, incumbent)
+
+    assert observation.eligible is False
+    assert observation.rejection_reason == "teardown_failed"
+    assert observation.feedback == "candidate container remained live"

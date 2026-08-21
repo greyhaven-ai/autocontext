@@ -38,7 +38,8 @@ from authority_transport import (
 )
 from profile_contract import PROFILE_NAMES, PROFILES, gpu_attestation_metadata, load_private_plan
 
-from autocontext.kernel_evolution import AcceleratorAttestation, build_authority_receipt
+from autocontext.kernel_evolution import AcceleratorAttestation, build_authority_receipt, read_authority_hmac_secret
+from autocontext.kernel_evolution.authority_tensor import copy_tensor_to_device_preserving_abi
 
 SCHEMA_VERSION = "autocontext.kernelbench-eval/v3"
 PROTOCOL_COMPATIBILITY_VERSION = "autocontext.kernel-protocol-compatibility/v1"
@@ -46,6 +47,14 @@ WARMUP_RUNS = 3
 TIMING_BLOCKS = 8
 CALLS_PER_BLOCK = 10
 _ACTIVE_AUTHORITY_CONTEXT: _AuthorityReceiptContext | None = None
+
+
+def _require_protected_mutation_authority(*, protected_mode: bool) -> None:
+    if protected_mode:
+        raise SystemExit(
+            "protected evaluation requires a trusted out-of-process input-mutation observer; "
+            "the same-interpreter authority v1 is unsupported"
+        )
 
 
 def _digest(payload: bytes | str) -> str:
@@ -115,7 +124,7 @@ def _build_model(module, init_inputs: list[Any], *, entrypoint: str):
 
 def _clone(value):
     if isinstance(value, torch.Tensor):
-        return value.clone()
+        return copy_tensor_to_device_preserving_abi(value, device=str(value.device))
     if isinstance(value, list):
         return [_clone(item) for item in value]
     if isinstance(value, tuple):
@@ -139,7 +148,13 @@ def _to_cuda(value):
 
 def _equal(left, right) -> bool:
     if isinstance(left, torch.Tensor) and isinstance(right, torch.Tensor):
-        return bool(torch.equal(left, right))
+        return (
+            left.dtype == right.dtype
+            and left.shape == right.shape
+            and left.stride() == right.stride()
+            and left.storage_offset() == right.storage_offset()
+            and bool(torch.equal(left, right))
+        )
     if isinstance(left, (list, tuple)) and isinstance(right, (list, tuple)):
         return len(left) == len(right) and all(_equal(a, b) for a, b in zip(left, right, strict=True))
     if isinstance(left, dict) and isinstance(right, dict):
@@ -334,6 +349,7 @@ def _timed_call(model, inputs) -> tuple[Any, float]:
         if not elapsed > 0:
             raise RuntimeError(f"authority measurement returned non-positive latency: {elapsed}")
         return output, elapsed
+    before = _clone(inputs)
     torch.cuda.synchronize()
     start = torch.cuda.Event(enable_timing=True)
     end = torch.cuda.Event(enable_timing=True)
@@ -345,6 +361,8 @@ def _timed_call(model, inputs) -> tuple[Any, float]:
     elapsed = float(start.elapsed_time(end))
     if not elapsed > 0:
         raise RuntimeError(f"CUDA event returned non-positive latency: {elapsed}")
+    if not _equal(before, inputs):
+        raise _TimingChallengeError("a timed model call mutated evaluator-owned inputs")
     return output, elapsed
 
 
@@ -374,6 +392,8 @@ class _AuthorityReceiptContext:
         plan_commitment: str,
         candidate_artifact_digest: str,
         incumbent_artifact_digest: str,
+        signing_key_id: str,
+        signing_secret: bytes,
     ) -> None:
         self.recorder = recorder
         self.attestation = attestation
@@ -382,6 +402,8 @@ class _AuthorityReceiptContext:
         self.plan_commitment = plan_commitment
         self.candidate_artifact_digest = candidate_artifact_digest
         self.incumbent_artifact_digest = incumbent_artifact_digest
+        self.signing_key_id = signing_key_id
+        self.signing_secret = signing_secret
 
     def attach(self, report: dict[str, Any]) -> None:
         measurements = tuple(self.recorder.measurements)
@@ -419,6 +441,8 @@ class _AuthorityReceiptContext:
             incumbent_artifact_digest=self.incumbent_artifact_digest,
             measurements=measurements,
             report=report,
+            signing_key_id=self.signing_key_id,
+            signing_secret=self.signing_secret,
         )
         report["evaluator_authority_receipt"] = receipt.model_dump(mode="json")
 
@@ -542,6 +566,7 @@ def main(role: str = "primary") -> None:
             raise SystemExit("protected evaluation cannot mount generated source into the evaluator")
     elif args.candidate is None or args.incumbent is None:
         raise SystemExit("trusted local evaluation requires candidate and incumbent source paths")
+    _require_protected_mutation_authority(protected_mode=protected_mode)
 
     if role not in {"primary", "confirmation"}:
         raise SystemExit("adapter role must be primary or confirmation")
@@ -655,8 +680,16 @@ def main(role: str = "primary") -> None:
         incumbent_endpoint.accept()
         evaluator_build_digest = os.environ.get("AUTOCONTEXT_EVALUATOR_BUILD_DIGEST")
         boundary_manifest_digest = os.environ.get("AUTOCONTEXT_BOUNDARY_MANIFEST_DIGEST")
-        if evaluator_build_digest is None or boundary_manifest_digest is None:
+        authority_hmac_key_id = os.environ.get("AUTOCONTEXT_AUTHORITY_HMAC_KEY_ID")
+        authority_hmac_secret_file = os.environ.get("AUTOCONTEXT_AUTHORITY_HMAC_SECRET_FILE")
+        if (
+            evaluator_build_digest is None
+            or boundary_manifest_digest is None
+            or authority_hmac_key_id is None
+            or authority_hmac_secret_file is None
+        ):
             raise RuntimeError("protected evaluator build identity environment is incomplete")
+        authority_hmac_secret = read_authority_hmac_secret(Path(authority_hmac_secret_file))
         _ACTIVE_AUTHORITY_CONTEXT = _AuthorityReceiptContext(
             recorder=recorder,
             attestation=_accelerator_attestation(hardware),
@@ -665,6 +698,8 @@ def main(role: str = "primary") -> None:
             plan_commitment=args.plan_commitment,
             candidate_artifact_digest=args.candidate_artifact_digest,
             incumbent_artifact_digest=args.incumbent_artifact_digest,
+            signing_key_id=authority_hmac_key_id,
+            signing_secret=authority_hmac_secret,
         )
 
     try:
@@ -871,9 +906,20 @@ def main(role: str = "primary") -> None:
         "reference_ms": reference,
     }
     names = tuple(models)
+    remote_authority_timing = isinstance(candidate, RemoteAuthorityModel)
+    comparable_names = ("candidate_ms", "incumbent_ms") if remote_authority_timing else names
+    report["metadata"]["timing_comparability"] = {
+        "promotion_comparison": ["candidate_ms", "incumbent_ms"],
+        "candidate_incumbent_comparable": True,
+        "candidate_incumbent_boundary": (
+            "evaluator-owned-authority-rpc/v1" if remote_authority_timing else "evaluator-owned-cuda-event/v1"
+        ),
+        "reference_boundary": "evaluator-owned-cuda-event/v1",
+        "reference_comparable": not remote_authority_timing,
+    }
     blocks: list[dict[str, Any]] = []
     per_case_blocks: dict[str, dict[str, list[float]]] = {name: {model_name: [] for model_name in names} for name in timing_cases}
-    model_orders = _timing_orders(args.plan_commitment, names)
+    model_orders = _timing_orders(args.plan_commitment, comparable_names)
     case_order = private_plan["timing_order"]
     try:
         for block_index, order in enumerate(model_orders):
@@ -890,8 +936,12 @@ def main(role: str = "primary") -> None:
                     # correctness outputs or acknowledging work they skipped.
                     challenge_salt = int.from_bytes(os.urandom(8), "big") % (2**63 - 1)
                     timing_inputs = _case_inputs(case, challenge_salt=challenge_salt)
-                    with torch.inference_mode():
-                        expected = reference(*_clone(timing_inputs))
+                    if remote_authority_timing:
+                        expected, reference_elapsed = _timed_call(reference, _clone(timing_inputs))
+                        call_samples["reference_ms"].append(reference_elapsed)
+                    else:
+                        with torch.inference_mode():
+                            expected = reference(*_clone(timing_inputs))
                     for name in order:
                         output, elapsed = _timed_call(models[name], _clone(timing_inputs))
                         if name != "reference_ms":

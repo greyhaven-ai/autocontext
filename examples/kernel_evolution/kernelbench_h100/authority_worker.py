@@ -29,7 +29,11 @@ from autocontext.kernel_evolution import (
     receive_authority_frame,
     send_authority_frame,
 )
-from autocontext.kernel_evolution.authority_tensor import deserialize_tensor_list, serialize_tensor_list
+from autocontext.kernel_evolution.authority_tensor import (
+    copy_tensor_to_device_preserving_abi,
+    deserialize_tensor_list,
+    serialize_tensor_list,
+)
 
 
 class _FunctionModel(torch.nn.Module):
@@ -136,7 +140,11 @@ def _run(args: argparse.Namespace) -> int:
                     raise AuthorityWireError("input manifest does not match the evaluator request")
                 if request.operation == "initialize":
                     module = _load_module(source)
-                    model = _build_model(module, args.entrypoint, [value.cuda() for value in inputs])
+                    model = _build_model(
+                        module,
+                        args.entrypoint,
+                        [copy_tensor_to_device_preserving_abi(value, device="cuda") for value in inputs],
+                    )
                     response, response_payload = _response(
                         request,
                         outcome="complete",
@@ -146,7 +154,7 @@ def _run(args: argparse.Namespace) -> int:
                 elif request.operation == "execute":
                     if model is None:
                         raise RuntimeError("candidate authority was not initialized")
-                    cuda_inputs = [value.cuda(non_blocking=False) for value in inputs]
+                    cuda_inputs = [copy_tensor_to_device_preserving_abi(value, device="cuda") for value in inputs]
                     with torch.inference_mode():
                         raw_output = model(*cuda_inputs)
                     torch.cuda.synchronize()
@@ -157,7 +165,7 @@ def _run(args: argparse.Namespace) -> int:
                         request,
                         outcome="complete",
                         diagnostic_code="none",
-                        outputs=[value.detach().cpu() for value in values],
+                        outputs=[value.detach() for value in values],
                     )
                 else:
                     response, response_payload = _response(

@@ -22,7 +22,11 @@ from autocontext.kernel_evolution import (
     receive_authority_frame,
     send_authority_frame,
 )
-from autocontext.kernel_evolution.authority_tensor import deserialize_tensor_list, serialize_tensor_list
+from autocontext.kernel_evolution.authority_tensor import (
+    copy_tensor_to_device_preserving_abi,
+    deserialize_tensor_list,
+    serialize_tensor_list,
+)
 
 
 class CandidateAuthorityError(RuntimeError):
@@ -256,7 +260,7 @@ class RemoteAuthorityModel:
     def __call__(self, *inputs: Any) -> torch.Tensor | tuple[torch.Tensor, ...]:
         outputs, measurement = self.endpoint.execute(_require_tensor_list(list(inputs)))
         self.last_measurement = measurement
-        cuda_outputs = tuple(output.cuda(non_blocking=False) for output in outputs)
+        cuda_outputs = tuple(copy_tensor_to_device_preserving_abi(output, device="cuda") for output in outputs)
         if len(cuda_outputs) == 1:
             return cuda_outputs[0]
         return cuda_outputs

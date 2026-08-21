@@ -123,39 +123,56 @@ The campaign hashes each complete plan before the first proposal. The protected
 evaluator publishes only its canonical SHA-256 commitment. Its private plan,
 reference, evaluator code, report directory, and opposite-role socket are never
 mounted into a candidate container. The production entry point remains disabled
-only because this new boundary has not yet completed the real H100/MIG gate.
+until the authority uses independently attested role grants, observes mutation
+outside generated code's interpreter, measures candidate/incumbent/reference
+under comparable trusted boundaries, creates containers under crash-safe
+supervision, and completes the real H100/MIG gate.
 
 ## Production campaign status
 
-The trusted evaluator/candidate boundary is implemented, but the recursive
-campaign intentionally remains unavailable until the exact path is validated
-on a real H100/MIG partition. Invoking `campaign.py` validates
+The authenticated authority protocol prototype and fail-closed composition
+guard are implemented, but the trusted evaluator/candidate boundary remains
+incomplete. The recursive campaign stays unavailable until its four missing
+boundary requirements are implemented and the exact path is validated on a
+real H100/MIG partition. Invoking `campaign.py` validates
 the private-plan schedule and declarative pinned-image/MIG/limit configuration,
 then raises
 `ProductionEvaluatorBoundaryUnavailable` before creating a mailbox or launching
 a container. It does not attest the host GPU or construct a Docker evaluator.
-There is no campaign override flag. The protected composition helper is
-deliberately runnable by the opt-in release test so that validation exercises
-the exact future production factory without weakening the campaign guard.
+There is no campaign override flag. The protected composition helper remains
+inspectable, but its runner returns `resource_policy_unsupported` before host
+attestation or container launch whenever any of the four authority requirements
+is unavailable. The runner and runtime manifests publish the same authoritative
+requirement map. In particular, crash-safe supervised container creation stays
+explicitly unavailable as `crash_safe_container_creation` rather than relying
+on post-create expiry labels to cover a coordinator crash during `docker create`.
 
-The implemented architecture is an evaluator-owned accelerator RPC over
-bounded JSON headers and canonical safetensors payloads—never pickle. Generated
-code receives only the tensors needed for one invocation. The evaluator uses
-fresh random timed challenges, checks every response against its trusted
-reference, observes end-to-end latency and partition-global memory itself, and
-binds request/output commitments and measurements to both artifact identities,
-the private-plan commitment, evaluator/boundary builds, and host accelerator
-attestation in a replay-verifiable receipt. Candidate timing/report claims are
-not protocol fields. Exact statistics remain in evaluator-owned audit evidence;
-recursive prompts receive only aggregate gate states and the disposition, so a
-candidate cannot use deliberately modulated timing digits as a holdout-return
-channel.
+The implemented prototype is an evaluator-owned accelerator RPC over bounded
+JSON headers and canonical safetensors payloads—never pickle. Tensor payloads
+retain exact shape, stride, and storage offset; unsupported overlapping or
+aliased storage is rejected. Generated code receives only the tensors needed
+for one invocation. The production path remains fail-closed because the current
+same-interpreter authority cannot independently observe input mutation and the
+shared accelerator grant cannot attest role isolation. Worker-issued mutation
+claims are not accepted as evidence, reference timing is not comparable to the
+RPC boundary, and container creation is not yet crash-safe. The evaluator uses fresh random timed
+challenges, checks every response against its trusted reference, observes
+candidate/incumbent end-to-end RPC latency and partition-global memory itself,
+and binds request/output commitments and measurements to both artifact
+identities, the private-plan commitment, evaluator/boundary builds, and host
+accelerator attestation in a replay-verifiable receipt. Candidate timing/report
+claims are not protocol fields. Exact statistics remain in evaluator-owned audit
+evidence; recursive prompts receive only aggregate gate states and the
+disposition, so a candidate cannot use deliberately modulated timing digits as
+a holdout-return channel.
 
 The production composition requires all of the following:
 
 - a digest-pinned `--worker-image` and explicit `--container-python`;
 - `--gpu-device MIG-...`, `--gpu-isolation-kind mig`, and the exact
   `--gpu-memory-bytes` reported by host `nvidia-smi`;
+- an operator-pinned `--authority-hmac-key-id` and owner-only mode-0400/0600
+  `--authority-hmac-secret-file`; the secret path and bytes are never exported;
 - one `--primary-private-plan` and at least one distinct repeatable
   `--confirmation-private-plan` per requested proposal;
 - explicit bounded worker limits, all of which are recorded in the runner
@@ -164,7 +181,9 @@ manifest.
 The authoritative report must identify CUDA, `sm90`, and an NVIDIA H100. Its
 GPU receipt includes the exact device or MIG UUID, isolation kind, enforced
 capacity, and host `attestor_id`; profile export recomputes the branded digest
-over that complete payload and requires the confirmation receipt to match it.
+over that complete payload, reauthenticates the compact primary and confirmation
+authority receipts against the pinned host key and build/boundary digests, and
+exports those authenticated receipts without any private input transcript.
 An A100/`sm80` report, a downgraded v2 link, or a missing/altered attestor field
 cannot be labeled H100 profile evidence.
 
@@ -207,26 +226,33 @@ detached cleanup after coordinator `SIGKILL`. Record the command, image digest,
 MIG UUID/capacity, and test log in the release checklist. This gate validates
 the outer Docker worker; it does not by itself enable `campaign.py`.
 
-The AC-1003 gate exercises the protected factory twice with a hostile candidate
-that probes private mounts/environment and egress, patches `torch.cuda.Event`,
-starts a descendant, and writes a workspace marker. Its outputs remain correct
-only when all probes fail, and the second evaluation proves that no marker
-persists. Supply a valid strict primary plan outside the candidate-visible
-AutoKernel root:
+The reserved AC-1003 test composes the protected factory twice with a hostile
+candidate that would probe private mounts/environment and egress, patch
+`torch.cuda.Event`, start a descendant, and write a workspace marker. Until the
+role-isolated topology exists, both evaluations must fail with
+`resource_policy_unsupported` before that source or any container is launched.
+It is a pre-dispatch invariant, not a live H100 authority validation. The
+normal unit suite covers the unavailable manifest; operators can additionally
+exercise this reserved host setup with a valid strict primary plan outside the
+candidate-visible AutoKernel root:
 
 ```bash
 export AUTOCONTEXT_RUN_PROTECTED_GPU_INTEGRATION=1
 export AUTOCONTEXT_GPU_MEMORY_BYTES=<exact-MIG-capacity-bytes>
 export AUTOCONTEXT_AUTOKERNEL_ROOT=/absolute/path/to/autokernel
 export AUTOCONTEXT_KERNEL_PRIVATE_PLAN=/worker-private/strict-primary.json
+export AUTOCONTEXT_AUTHORITY_HMAC_KEY_ID=release-host-key-v1
+export AUTOCONTEXT_AUTHORITY_HMAC_SECRET_FILE=/worker-private/authority-hmac.secret
 uv run --frozen pytest \
-  tests/test_kernel_h100_production_runtime.py::test_real_h100_protected_authority_adversarial_release_gate \
+  tests/test_kernel_h100_production_runtime.py::test_reserved_h100_protected_authority_gate_remains_unavailable \
   -q
 ```
 
 Do not remove `require_protected_evaluator_boundary()` from `campaign.py` until
-this second gate passes on the digest-pinned release image and its authority
-receipt and teardown log have been reviewed.
+role-separated telemetry, trusted out-of-process mutation observation, and a
+comparable reference timing boundary and crash-safe supervised creation are
+implemented, then the reserved live gate passes on the digest-pinned image and
+its authenticated receipts and teardown log have been reviewed.
 
 ## Named workload and protocol
 
@@ -247,11 +273,13 @@ medians. The adapter uses three warmups and ten evaluator-randomized calls per
 implementation per block. Every timed candidate/incumbent output is checked
 against the trusted reference; the evaluator owns wall-clock measurement around
 the complete authority exchange, so a candidate cannot substitute its clock or
-replay an earlier output. Candidate, incumbent, and PyTorch reference orders
-rotate across blocks. In protected mode the evaluator observes partition-global
-memory changes independently for each authority; the legacy trusted control
-retains allocator peak measurements. Both are bound to exact artifact
-identities. The static workload-family identity
+replay an earlier output. Candidate and incumbent orders rotate across protected
+blocks and share that RPC boundary. The local PyTorch CUDA-event reference is a
+diagnostic with an explicitly non-comparable boundary and is excluded from
+promotion comparisons. Protected evidence therefore remains ineligible until a
+trusted boundary can make all required authority claims. The legacy trusted
+control retains allocator peak measurements. Measurements are bound to exact
+artifact identities. The static workload-family identity
 covers the reference and problem contract; the workload fingerprint also binds
 the selected profile, private-plan commitment, and sequential policy.
 
@@ -355,12 +383,17 @@ observation only as relaxed-precision evidence and records why the exact source
 is rejected by the strict contract. It explicitly marks the strict live H100
 campaign as blocked on AC-1003 and then pending an external H100 run. That
 historical statement remains accurate for the artifact; after the protected
-gate passes and the campaign guard is removed, a completed new campaign writes `profile_evidence.json`
-using schema `autocontext.kernel-h100-profile-evidence/v3`, with the exact
+gate passes and the campaign guard is removed, a completed new campaign writes
+`profile_evidence.json` using the authenticated outer schema
+`autocontext.kernel-profile-evidence-envelope/v1`. Its `profile` payload uses
+schema `autocontext.kernel-h100-profile-evidence/v3`, and the outer content
+digest plus operator-pinned HMAC key and tag authenticate every field, including
+the exact
 champion artifact and attempt identity, content-addressed primary
 and confirmation report receipts, their plan commitments and protocol IDs,
 the complete host-owned decision policy and its canonical policy ID,
-the complete all-v3 result/lineage/report chain, CUDA/SM90/H100 identity, the
+identities replayed from the complete all-v3 result/lineage/report chain before
+export, CUDA/SM90/H100 identity, the
 digest-verified host GPU attestation including its attestor ID, holdout correctness and per-case floors,
 proposal spend, and whether an improvement survived strict FP32.
 

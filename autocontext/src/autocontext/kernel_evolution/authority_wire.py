@@ -6,7 +6,7 @@ import json
 import socket
 import struct
 from collections.abc import Callable
-from typing import TypeVar
+from typing import Any, TypeVar
 
 from pydantic import ValidationError
 
@@ -66,7 +66,7 @@ def receive_authority_frame(
     *,
     max_payload_bytes: int = MAX_AUTHORITY_PAYLOAD_BYTES,
 ) -> tuple[_MessageT, bytes]:
-    """Read and validate one frame without invoking pickle or object hooks."""
+    """Read and validate one frame without invoking pickle or object construction."""
 
     if max_payload_bytes < 0:
         raise ValueError("max_payload_bytes must be non-negative")
@@ -81,7 +81,11 @@ def receive_authority_frame(
     raw_header = _read_exact(connection.recv, header_size)
     payload = _read_exact(connection.recv, payload_size)
     try:
-        decoded = json.loads(raw_header.decode("utf-8"), parse_constant=_reject_json_constant)
+        decoded = json.loads(
+            raw_header.decode("utf-8"),
+            parse_constant=_reject_json_constant,
+            object_pairs_hook=_reject_duplicate_json_keys,
+        )
         message = model.model_validate(decoded)
     except (UnicodeDecodeError, json.JSONDecodeError, ValidationError, RecursionError, ValueError) as exc:
         raise AuthorityWireError("authority frame contained an invalid typed JSON header") from exc
@@ -104,6 +108,15 @@ def send_authority_frame(
 
 def _reject_json_constant(value: str) -> None:
     raise ValueError(f"invalid JSON constant {value}")
+
+
+def _reject_duplicate_json_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    decoded: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in decoded:
+            raise ValueError(f"duplicate JSON object key {key!r}")
+        decoded[key] = value
+    return decoded
 
 
 __all__ = [

@@ -347,24 +347,41 @@ def test_attested_capacity_must_exactly_match_configured_grant(
 @pytest.mark.parametrize(
     ("outcome", "expected"),
     [
+        ("timeout", "timeout"),
         ("oom", "oom"),
         ("resource_exceeded", "resource_exceeded"),
         ("resource_policy_unsupported", "resource_policy_unsupported"),
+        ("missing_resource_telemetry", "missing_resource_telemetry"),
         ("resource_identity_mismatch", "resource_identity_mismatch"),
+        ("protocol_corruption", "protocol_corruption"),
+        ("evaluator_crashed", "evaluator_crashed"),
+        ("candidate_crashed", "candidate_crashed"),
         ("teardown_failed", "teardown_failed"),
     ],
 )
 def test_evaluator_preserves_distinct_worker_outcomes(outcome: Any, expected: str) -> None:
     candidate = KernelCandidate(source="candidate")
     incumbent = KernelCandidate(source="incumbent")
+    forged_payload = _report(candidate, incumbent)
+    forged_payload["problem_id"] = "candidate-controlled-forged-problem"
     evaluator = KernelBenchmarkEvaluator(
-        _ExecutionRunner(KernelBenchmarkExecution(returncode=None, outcome=outcome, error=expected)),
+        _ExecutionRunner(
+            KernelBenchmarkExecution(
+                returncode=None,
+                timed_out=True,
+                outcome=outcome,
+                error=expected,
+                report_payload=forged_payload,
+            )
+        ),
         KernelBenchmarkEvaluatorConfig(problem_id="p1"),
     )
 
     observation = evaluator.evaluate(candidate, incumbent)
 
     assert observation.rejection_reason == expected
+    assert observation.feedback == expected
+    assert observation.report is None
 
 
 def test_required_telemetry_rejects_and_gate_feedback_is_three_state() -> None:

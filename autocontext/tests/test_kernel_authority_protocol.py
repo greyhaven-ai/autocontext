@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
 import struct
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from pydantic import ValidationError
@@ -18,6 +20,7 @@ from autocontext.kernel_evolution import (
     build_authority_receipt,
     canonical_authority_digest,
     encode_authority_frame,
+    read_authority_hmac_secret,
     receive_authority_frame,
     verify_authority_receipt,
 )
@@ -38,6 +41,10 @@ class _MemoryConnection:
 
 def _digest(value: bytes | str) -> str:
     return canonical_authority_digest(value)
+
+
+_HMAC_KEY_ID = "test-authority-key-v1"
+_HMAC_SECRET = b"test-only-authority-secret-material-32-bytes"
 
 
 def _attestation() -> AcceleratorAttestation:
@@ -81,6 +88,31 @@ def _response(request: AuthorityRequest, payload: bytes = b"output-bytes") -> Au
         payload_digest=_digest(payload),
         payload_bytes=len(payload),
     )
+
+
+def _report(
+    candidate_digest: str,
+    incumbent_digest: str,
+    *,
+    candidate_peak: int,
+    incumbent_peak: int,
+) -> dict[str, object]:
+    attestation = _attestation()
+    return {
+        "evaluation_status": "complete",
+        "failure_kind": None,
+        "candidate_artifact_digest": candidate_digest,
+        "incumbent_artifact_digest": incumbent_digest,
+        "protocol": {"seed_commitment": _digest("private-plan")},
+        "performance": {"blocks": [{"candidate_ms": 0.01, "incumbent_ms": 0.011}]},
+        "resources": {
+            "candidate_observed_peak_bytes": candidate_peak,
+            "incumbent_observed_peak_bytes": incumbent_peak,
+            "telemetry_authority": "trusted-evaluator-observed/v1",
+            "accelerator_attestation_digest": attestation.digest,
+            "device_total_memory_bytes": attestation.enforced_memory_bytes,
+        },
+    }
 
 
 def test_authority_protocol_is_accelerator_neutral_and_strict() -> None:
@@ -136,6 +168,12 @@ def test_authority_wire_rejects_forged_truncated_and_oversized_frames() -> None:
 
     with pytest.raises(AuthorityWireError, match="byte limit"):
         encode_authority_frame(request, payload, max_payload_bytes=2)
+
+    raw_header = json.dumps(request.model_dump(mode="json"), separators=(",", ":"))
+    duplicate_header = raw_header.replace('"sequence":0', '"sequence":999,"sequence":0').encode()
+    duplicate_frame = struct.pack("!6sIQ", WIRE_MAGIC, len(duplicate_header), len(payload)) + duplicate_header + payload
+    with pytest.raises(AuthorityWireError, match="invalid typed JSON header"):
+        receive_authority_frame(_MemoryConnection(duplicate_frame), AuthorityRequest)
 
 
 def test_candidate_response_cannot_claim_timing_or_resources() -> None:
@@ -196,12 +234,12 @@ def test_authority_receipt_replays_report_and_detects_tampering() -> None:
             outcome="complete",
         ),
     )
-    report = {
-        "candidate_artifact_digest": candidate_request.artifact_digest,
-        "incumbent_artifact_digest": incumbent_request.artifact_digest,
-        "protocol": {"seed_commitment": _digest("private-plan")},
-        "performance": {"blocks": [{"candidate_ms": 0.01, "incumbent_ms": 0.011}]},
-    }
+    report = _report(
+        candidate_request.artifact_digest,
+        incumbent_request.artifact_digest,
+        candidate_peak=1_024,
+        incumbent_peak=2_048,
+    )
     receipt = build_authority_receipt(
         evaluator_build_digest=_digest("evaluator-build"),
         boundary_manifest_digest=_digest("boundary-manifest"),
@@ -211,16 +249,92 @@ def test_authority_receipt_replays_report_and_detects_tampering() -> None:
         incumbent_artifact_digest=incumbent_request.artifact_digest,
         measurements=measurements,
         report=report,
+        signing_key_id=_HMAC_KEY_ID,
+        signing_secret=_HMAC_SECRET,
     )
     report["evaluator_authority_receipt"] = receipt.model_dump(mode="json")
 
-    verify_authority_receipt(receipt, report)
+    verify_authority_receipt(
+        receipt,
+        report,
+        trusted_key_id=_HMAC_KEY_ID,
+        trusted_secret=_HMAC_SECRET,
+        expected_evaluator_build_digest=_digest("evaluator-build"),
+        expected_boundary_manifest_digest=_digest("boundary-manifest"),
+    )
     assert receipt.receipt_digest.startswith("sha256:")
+    assert receipt.transcript.measurement_count == 2
+    assert receipt.transcript.unique_request_count == 2
+    assert receipt.transcript.unique_response_count == 2
 
     tampered = json.loads(json.dumps(report))
     tampered["performance"]["blocks"][0]["candidate_ms"] = 0.000001
     with pytest.raises(ValueError, match="different report content"):
-        verify_authority_receipt(receipt, tampered)
+        verify_authority_receipt(
+            receipt,
+            tampered,
+            trusted_key_id=_HMAC_KEY_ID,
+            trusted_secret=_HMAC_SECRET,
+        )
+
+    forged_build = receipt.model_copy(update={"evaluator_build_digest": _digest("forged-build")})
+    with pytest.raises(ValueError, match="authentication tag"):
+        verify_authority_receipt(
+            forged_build,
+            report,
+            trusted_key_id=_HMAC_KEY_ID,
+            trusted_secret=_HMAC_SECRET,
+        )
+
+    with pytest.raises(ValueError, match="authentication key"):
+        verify_authority_receipt(
+            receipt,
+            report,
+            trusted_key_id="different-host-key",
+            trusted_secret=_HMAC_SECRET,
+        )
+
+    with pytest.raises(ValueError, match="host-computed digest"):
+        verify_authority_receipt(
+            receipt,
+            report,
+            trusted_key_id=_HMAC_KEY_ID,
+            trusted_secret=_HMAC_SECRET,
+            expected_evaluator_build_digest=_digest("different-host-build"),
+        )
+
+    contradictory = list(measurements)
+    contradictory[0] = contradictory[0].model_copy(update={"outcome": "candidate_error"})
+    with pytest.raises(ValueError, match="outcomes contradict a complete report"):
+        build_authority_receipt(
+            evaluator_build_digest=_digest("evaluator-build"),
+            boundary_manifest_digest=_digest("boundary-manifest"),
+            plan_commitment=_digest("private-plan"),
+            accelerator_attestation=_attestation(),
+            candidate_artifact_digest=candidate_request.artifact_digest,
+            incumbent_artifact_digest=incumbent_request.artifact_digest,
+            measurements=tuple(contradictory),
+            report={key: value for key, value in report.items() if key != "evaluator_authority_receipt"},
+            signing_key_id=_HMAC_KEY_ID,
+            signing_secret=_HMAC_SECRET,
+        )
+
+    wrong_resources = {key: value for key, value in report.items() if key != "evaluator_authority_receipt"}
+    wrong_resources = json.loads(json.dumps(wrong_resources))
+    wrong_resources["resources"]["candidate_observed_peak_bytes"] = 999
+    with pytest.raises(ValueError, match="transcript peaks"):
+        build_authority_receipt(
+            evaluator_build_digest=_digest("evaluator-build"),
+            boundary_manifest_digest=_digest("boundary-manifest"),
+            plan_commitment=_digest("private-plan"),
+            accelerator_attestation=_attestation(),
+            candidate_artifact_digest=candidate_request.artifact_digest,
+            incumbent_artifact_digest=incumbent_request.artifact_digest,
+            measurements=measurements,
+            report=wrong_resources,
+            signing_key_id=_HMAC_KEY_ID,
+            signing_secret=_HMAC_SECRET,
+        )
 
 
 def test_authority_receipt_requires_independent_contiguous_roles() -> None:
@@ -237,7 +351,7 @@ def test_authority_receipt_requires_independent_contiguous_roles() -> None:
         observed_peak_memory_bytes=1,
         outcome="complete",
     )
-    with pytest.raises(ValidationError, match="candidate and incumbent"):
+    with pytest.raises(ValueError, match="candidate and incumbent"):
         build_authority_receipt(
             evaluator_build_digest=_digest("evaluator-build"),
             boundary_manifest_digest=_digest("boundary-manifest"),
@@ -246,9 +360,127 @@ def test_authority_receipt_requires_independent_contiguous_roles() -> None:
             candidate_artifact_digest=_digest("candidate"),
             incumbent_artifact_digest=_digest("incumbent"),
             measurements=(measurement,),
-            report={
-                "candidate_artifact_digest": _digest("candidate"),
-                "incumbent_artifact_digest": _digest("incumbent"),
-                "protocol": {"seed_commitment": _digest("private-plan")},
-            },
+            report=_report(_digest("candidate"), _digest("incumbent"), candidate_peak=1, incumbent_peak=1),
+            signing_key_id=_HMAC_KEY_ID,
+            signing_secret=_HMAC_SECRET,
         )
+
+
+def test_authority_receipt_rejects_replayed_messages_and_stays_constant_size() -> None:
+    measurements = tuple(
+        AuthorityMeasurement(
+            sequence=index,
+            role="candidate" if index % 2 == 0 else "incumbent",
+            request_digest=_digest(f"request-{index}"),
+            response_digest=_digest(f"response-{index}"),
+            input_commitment=_digest(f"input-{index}"),
+            output_commitment=_digest(f"output-{index}"),
+            elapsed_ns=index + 1,
+            observed_peak_memory_bytes=1_000 + index,
+            outcome="complete",
+        )
+        for index in range(2_000)
+    )
+    report = _report(
+        _digest("candidate"),
+        _digest("incumbent"),
+        candidate_peak=2_998,
+        incumbent_peak=2_999,
+    )
+    receipt = build_authority_receipt(
+        evaluator_build_digest=_digest("evaluator-build"),
+        boundary_manifest_digest=_digest("boundary-manifest"),
+        plan_commitment=_digest("private-plan"),
+        accelerator_attestation=_attestation(),
+        candidate_artifact_digest=_digest("candidate"),
+        incumbent_artifact_digest=_digest("incumbent"),
+        measurements=measurements,
+        report=report,
+        signing_key_id=_HMAC_KEY_ID,
+        signing_secret=_HMAC_SECRET,
+    )
+
+    assert receipt.transcript.measurement_count == 2_000
+    assert "measurements" not in receipt.model_dump(mode="json")
+    assert len(receipt.model_dump_json()) < 4_096
+
+    replayed = list(measurements)
+    replayed[-1] = replayed[-1].model_copy(update={"response_digest": replayed[0].response_digest})
+    with pytest.raises(ValueError, match="replayed response digest"):
+        build_authority_receipt(
+            evaluator_build_digest=_digest("evaluator-build"),
+            boundary_manifest_digest=_digest("boundary-manifest"),
+            plan_commitment=_digest("private-plan"),
+            accelerator_attestation=_attestation(),
+            candidate_artifact_digest=_digest("candidate"),
+            incumbent_artifact_digest=_digest("incumbent"),
+            measurements=tuple(replayed),
+            report=report,
+            signing_key_id=_HMAC_KEY_ID,
+            signing_secret=_HMAC_SECRET,
+        )
+
+
+def test_authority_models_reject_coercible_protocol_values() -> None:
+    request = _request()
+    with pytest.raises(ValidationError, match="int_type"):
+        AuthorityRequest.model_validate({**request.model_dump(mode="json"), "sequence": "0"})
+    with pytest.raises(ValidationError, match="int_type"):
+        AuthorityRequest.model_validate({**request.model_dump(mode="json"), "payload_bytes": False})
+
+
+@pytest.mark.skipif(os.name == "nt", reason="authority secret ownership and mode are POSIX host controls")
+def test_authority_hmac_secret_reader_rejects_unsafe_or_unstable_files(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    secret = tmp_path / "authority.secret"
+    secret.write_bytes(_HMAC_SECRET)
+    secret.chmod(0o600)
+    assert read_authority_hmac_secret(secret) == _HMAC_SECRET
+
+    with pytest.raises(ValueError, match="regular file"):
+        read_authority_hmac_secret(Path("/"))
+
+    secret.chmod(0o644)
+    with pytest.raises(ValueError, match="exactly 0400 or 0600"):
+        read_authority_hmac_secret(secret)
+    secret.chmod(0o600)
+
+    oversized = tmp_path / "oversized.secret"
+    oversized.write_bytes(b"x" * 4_097)
+    oversized.chmod(0o600)
+    with pytest.raises(ValueError, match="between 32 and 4096"):
+        read_authority_hmac_secret(oversized)
+
+    secret_dir = tmp_path / "secret-dir"
+    secret_dir.mkdir()
+    nested = secret_dir / "nested.secret"
+    nested.write_bytes(_HMAC_SECRET)
+    nested.chmod(0o600)
+    symlink = tmp_path / "secret-link"
+    symlink.symlink_to(secret_dir, target_is_directory=True)
+    with pytest.raises(ValueError, match="cannot contain symlinks"):
+        read_authority_hmac_secret(symlink / nested.name)
+
+    real_fstat = os.fstat
+    calls = 0
+
+    def unstable_fstat(descriptor: int) -> os.stat_result | SimpleNamespace:
+        nonlocal calls
+        calls += 1
+        result = real_fstat(descriptor)
+        if calls != 2:
+            return result
+        return SimpleNamespace(
+            st_dev=result.st_dev,
+            st_ino=result.st_ino,
+            st_mode=result.st_mode,
+            st_uid=result.st_uid,
+            st_size=result.st_size,
+            st_mtime_ns=result.st_mtime_ns + 1,
+        )
+
+    monkeypatch.setattr(os, "fstat", unstable_fstat)
+    with pytest.raises(ValueError, match="changed while it was read"):
+        read_authority_hmac_secret(secret)

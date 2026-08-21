@@ -6,23 +6,159 @@ import math
 import os
 import re
 import signal
+import stat
 import subprocess
 import sys
+import threading
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 from typing import Any
 
 from autocontext.execution.docker_isolation import sanitized_docker_environment
+from autocontext.kernel_evolution import _process_control
 
 DOCKER_KERNEL_OWNER_LABEL = "ai.autocontext.kernel-worker"
 CLEANUP_TIMEOUT_SECONDS = 10.0
 _POLL_SECONDS = 0.2
 
 
+def crash_safe_container_creation_policy() -> dict[str, bool | str]:
+    """Describe the unavailable creator-supervisor ownership boundary."""
+
+    return {
+        "required": "supervised-create-before-coordinator-ownership/v1",
+        "available": False,
+        "reason": (
+            "protected accelerator evidence requires crash-safe container creation; "
+            "the v1 coordinator-owned docker create path is unsupported"
+        ),
+    }
+
+
 def docker_container_missing(completed: subprocess.CompletedProcess[Any]) -> bool:
     detail = f"{completed.stderr or ''}\n{completed.stdout or ''}".casefold()
     return "no such container" in detail or "no such object" in detail
+
+
+def is_unix_socket(path: Path) -> bool:
+    """Return whether a path currently names a Unix-domain socket."""
+
+    try:
+        return stat.S_ISSOCK(path.lstat().st_mode)
+    except OSError:
+        return False
+
+
+def create_docker_container(command: Sequence[str], *, timeout_seconds: float) -> None:
+    """Create, but do not start, one fully configured Docker container."""
+
+    if len(command) < 2 or command[1] != "run":
+        raise RuntimeError("Docker authority command must begin with 'docker run'")
+    if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
+        raise subprocess.TimeoutExpired(command, max(0.0, timeout_seconds))
+    completed = subprocess.run(  # noqa: S603
+        [command[0], "create", *command[2:]],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=timeout_seconds,
+        env=sanitized_docker_environment(),
+    )
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout).strip()[-240:]
+        raise RuntimeError(f"Docker authority container creation failed: {detail or 'unknown error'}")
+
+
+def start_attached_docker_container(
+    docker_binary: str,
+    container_name: str,
+    *,
+    capture_output: bool,
+) -> subprocess.Popen[bytes]:
+    """Start and attach to a container that already has a live watchdog."""
+
+    output = subprocess.PIPE if capture_output else subprocess.DEVNULL
+    return subprocess.Popen(  # noqa: S603
+        [docker_binary, "start", "--attach", container_name],
+        stdin=subprocess.DEVNULL,
+        stdout=output,
+        stderr=output,
+        start_new_session=True,
+        env=sanitized_docker_environment(),
+    )
+
+
+def launch_bounded_output_drains(
+    process: subprocess.Popen[bytes],
+    *,
+    max_output_bytes: int,
+    stdout: _process_control.BoundedOutput,
+    stderr: _process_control.BoundedOutput,
+    quota_exceeded: threading.Event,
+    terminate: Callable[[], None],
+) -> list[threading.Thread]:
+    """Drain both attached pipes with the shared quota and termination signal."""
+
+    assert process.stdout is not None and process.stderr is not None
+    drains = [
+        threading.Thread(
+            target=_process_control.drain_bounded,
+            args=(stream, max_output_bytes, result, quota_exceeded, terminate),
+            daemon=True,
+        )
+        for stream, result in ((process.stdout, stdout), (process.stderr, stderr))
+    ]
+    for thread in drains:
+        thread.start()
+    return drains
+
+
+def remove_docker_container(docker_binary: str, container_identity: str) -> None:
+    """Force-remove one exact Docker container identity."""
+
+    completed = subprocess.run(  # noqa: S603
+        [docker_binary, "rm", "-f", container_identity],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=CLEANUP_TIMEOUT_SECONDS,
+        env=sanitized_docker_environment(),
+    )
+    if completed.returncode != 0 and not docker_container_missing(completed):
+        raise RuntimeError((completed.stderr or completed.stdout).strip()[-240:])
+
+
+def verify_docker_container_removed(docker_binary: str, container_identity: str) -> None:
+    """Fail unless Docker confirms that the exact identity is absent."""
+
+    completed = subprocess.run(  # noqa: S603
+        [docker_binary, "inspect", container_identity],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=CLEANUP_TIMEOUT_SECONDS,
+        env=sanitized_docker_environment(),
+    )
+    if completed.returncode == 0:
+        raise RuntimeError("authority container remained after teardown")
+    if not docker_container_missing(completed):
+        detail = (completed.stderr or completed.stdout).strip()[-240:]
+        raise RuntimeError(f"authority container removal verification failed: {detail or 'unknown error'}")
+
+
+def docker_image_available(docker_binary: str, image: str) -> bool:
+    """Return whether the exact pinned image is present without pulling it."""
+
+    completed = subprocess.run(  # noqa: S603
+        [docker_binary, "image", "inspect", image],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=CLEANUP_TIMEOUT_SECONDS,
+        env=sanitized_docker_environment(),
+    )
+    return completed.returncode == 0
 
 
 def terminate_process_group(proc: subprocess.Popen[bytes], *, description: str) -> None:
@@ -47,6 +183,22 @@ def terminate_process_group(proc: subprocess.Popen[bytes], *, description: str) 
             raise RuntimeError(f"{description} process group remained alive after SIGKILL") from exc
     if proc.poll() is None:
         raise RuntimeError(f"{description} process remained alive after termination")
+
+
+def terminate_attached_docker_processes(
+    processes: Iterable[tuple[str, subprocess.Popen[bytes] | None]],
+) -> list[str]:
+    """Boundedly terminate and reap attached Docker CLI process groups."""
+
+    errors: list[str] = []
+    for role, process in processes:
+        if process is None:
+            continue
+        try:
+            terminate_process_group(process, description=f"{role} authority Docker attach")
+        except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+            errors.append(f"{role} Docker attach: {type(exc).__name__}: {exc}")
+    return errors
 
 
 def launch_deadline_watchdog(

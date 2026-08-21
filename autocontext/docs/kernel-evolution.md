@@ -111,7 +111,8 @@ the public authority worker/support files, and one read-only socket directory.
 It receives no private-plan path, report path, evaluator build identity, other
 role channel, ambient credential, network, or durable writable mount.
 
-The socket contract uses strict bounded JSON headers and canonical safetensors
+The socket contract uses strict bounded JSON headers (including duplicate-key
+rejection) and canonical safetensors
 payloads; pickle and candidate-authored timing/resource/report fields are not
 accepted. The evaluator creates fresh randomized timed inputs, independently
 checks each returned tensor against its trusted reference, measures wall time
@@ -124,17 +125,37 @@ Every report can carry an
 
 - candidate and incumbent artifact identities;
 - private-plan commitment and input/output commitments;
-- evaluator-owned ordered timing/resource measurements;
+- a constant-size evaluator-owned transcript summary: ordered transcript and
+  request/response set roots, unique exchange counts, outcome counts, and
+  role-specific resource peaks;
 - evaluator build and public boundary-manifest digests;
 - the generic accelerator attestation and the report content itself.
 
-`KernelBenchmarkEvaluatorConfig(require_authority_receipt=True)` rejects a
-missing receipt. The protected Docker runner additionally replays the receipt
-and requires its device, partition kind/capacity, attestor, and underlying host
-grant digest to match host attestation. Protocol corruption, evaluator crash,
+Receipts are authenticated with HMAC-SHA256 under an operator-pinned key id and
+owner-only 0400/0600 secret file. The secret is mounted only into the evaluator
+and is never serialized in a manifest, report, observation, or profile export.
+`KernelBenchmarkEvaluatorConfig(require_authority_receipt=True)` requires that
+external trust configuration and rejects missing, self-issued, tampered, or
+wrong-build receipts. Replay also reconciles transcript outcomes and resource
+peaks with the authenticated report. The protected Docker runner requires the
+authenticated evaluator/boundary digests, device, partition kind/capacity,
+attestor, and underlying host grant digest to match host-computed values.
+Protocol corruption, evaluator crash,
 candidate crash, OOM, timeout, and teardown failure remain separate outcomes.
-All containers are killed and removal-verified after every run; expiry labels
-support fail-closed orphan reconciliation after coordinator loss.
+
+Portable campaign profile evidence is separately wrapped in
+`autocontext.kernel-profile-evidence-envelope/v1`. Its canonical content digest
+and HMAC authenticate the complete profile payload—champion and report wrapper
+identities, decision policy, holdout summaries, resource claims, and campaign
+counts—so a valid evaluator receipt cannot be transplanted into a doctored
+profile artifact. Consumers must verify the outer envelope with the pinned key
+before using any profile field.
+
+Normal teardown kills and removal-verifies every created container. Crash-safe
+ownership during synchronous container creation is not implemented, so the
+protected runner remains unavailable; expiry labels alone do not close that
+pre-watchdog coordinator-loss window. Manifests expose this as the unavailable
+`crash_safe_container_creation` requirement.
 
 Protected adaptive campaigns should also set
 `adaptive_feedback_policy="aggregate-gates"`. Promotion and persisted audit
@@ -143,10 +164,14 @@ receive only documented passed/failed/not-evaluated gates and a disposition—no
 candidate-modulatable latency digits or exact derived metrics. Confirmation
 feedback remains quarantined as before.
 
-The H100 example's protected factory is available for the opt-in hardware gate,
-but its normal recursive campaign still fails before mailbox creation. That
-guard must remain until the exact digest-pinned Docker/MIG path passes a real
-H100 adversarial validation and its receipt is reviewed.
+The H100 example's protected factory is constructible and manifest-inspectable,
+but neither it nor the normal recursive campaign can execute authoritative
+work. The runner returns `resource_policy_unsupported` before Docker while
+independently attested role grants, trusted out-of-process mutation observation,
+comparable candidate/incumbent/reference timing boundaries, and crash-safe
+container creation are unavailable. The release guard must remain until all
+four requirements are implemented and
+the exact digest-pinned path passes real H100 adversarial validation.
 
 ## Run the vertical slice
 

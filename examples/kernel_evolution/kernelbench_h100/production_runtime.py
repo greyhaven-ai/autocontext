@@ -1,15 +1,17 @@
 """Protected evaluator composition for the H100 conformance campaign.
 
-The accelerator-neutral boundary is implemented and can be composed for a
-live validation run.  ``require_protected_evaluator_boundary`` deliberately
-keeps the production campaign disabled until that exact Docker/MIG path has
-produced and replayed a real H100 authority receipt.
+The accelerator-neutral boundary is constructible for manifest inspection, but
+execution deliberately remains unavailable. ``require_protected_evaluator_boundary``
+keeps production disabled until role isolation, trusted mutation observation,
+comparable timing boundaries, and crash-safe container creation are implemented
+and validated on H100/MIG.
 """
 
 from __future__ import annotations
 
 import math
-from dataclasses import asdict, dataclass
+import re
+from dataclasses import asdict, dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Literal, NoReturn
 
@@ -22,7 +24,12 @@ from autocontext.kernel_evolution import (
     KernelBenchmarkEvaluator,
     KernelBenchmarkEvaluatorConfig,
     NvidiaSMIGPUDeviceAttestor,
+    canonical_authority_digest,
+    protected_evaluator_boundary_requirements,
+    read_authority_hmac_secret,
 )
+
+_SAFE_AUTHORITY_HMAC_KEY_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,255}$")
 
 
 class ProductionEvaluatorBoundaryUnavailable(RuntimeError):
@@ -30,12 +37,13 @@ class ProductionEvaluatorBoundaryUnavailable(RuntimeError):
 
 
 def require_protected_evaluator_boundary() -> NoReturn:
-    """Fail before production GPU work while live validation is pending."""
+    """Fail before production GPU work while required authority boundaries are absent."""
     raise ProductionEvaluatorBoundaryUnavailable(
-        "production H100 campaigns remain disabled pending a real H100/MIG validation run for "
-        f"{PROTECTED_EVALUATOR_BOUNDARY}. The implemented evaluator-owned protocol keeps private plans and "
-        "authoritative correctness, measurement, telemetry, and report controls outside generated-code containers; "
-        "the release guard must remain until its live authority receipt is replay-verified."
+        f"production H100 campaigns remain disabled for {PROTECTED_EVALUATOR_BOUNDARY}: "
+        "independently attested evaluator/candidate/incumbent grants, trusted out-of-process input-mutation "
+        "observation, comparable candidate/incumbent/reference timing boundaries, and crash-safe container "
+        "creation are not yet implemented. "
+        "A hardware run alone cannot remove this release guard."
     )
 
 
@@ -50,6 +58,8 @@ class H100DockerRuntimeConfig:
     gpu_device: str
     gpu_isolation_kind: Literal["mig"]
     gpu_memory_bytes: int
+    authority_hmac_key_id: str
+    authority_hmac_secret_path: Path = field(repr=False)
     limits: DockerKernelWorkerLimits
     timeout_seconds: float = 240.0
 
@@ -59,6 +69,9 @@ class H100DockerRuntimeConfig:
             value = getattr(self, name)
             if not value.strip() or any(character in value for character in "\r\n\0"):
                 raise ValueError(f"{name} must be a non-empty single-line value")
+        if _SAFE_AUTHORITY_HMAC_KEY_ID.fullmatch(self.authority_hmac_key_id) is None:
+            raise ValueError("authority_hmac_key_id must be a safe non-empty identifier")
+        read_authority_hmac_secret(self.authority_hmac_secret_path)
         if self.gpu_memory_bytes < 1:
             raise ValueError("gpu_memory_bytes must be positive")
         DockerGPUDeviceGrant(
@@ -76,6 +89,7 @@ class H100DockerRuntimeConfig:
 
     def manifest(self) -> dict[str, object]:
         """Return non-secret deployment inputs captured alongside a run."""
+        requirements = protected_evaluator_boundary_requirements()
         return {
             "image": self.image,
             "docker_binary": self.docker_binary,
@@ -84,11 +98,21 @@ class H100DockerRuntimeConfig:
             "gpu_device": self.gpu_device,
             "gpu_isolation_kind": self.gpu_isolation_kind,
             "gpu_memory_bytes": self.gpu_memory_bytes,
+            "authority_authentication": {
+                "algorithm": "hmac-sha256",
+                "key_id": self.authority_hmac_key_id,
+            },
             "timeout_seconds": self.timeout_seconds,
             "limits": asdict(self.limits),
             "evidence_boundary": {
                 "required": PROTECTED_EVALUATOR_BOUNDARY,
-                "available": False,
+                "available": all(requirement.get("available") is True for requirement in requirements.values()),
+                "requirements": requirements,
+                "unmet_requirements": [
+                    str(requirement["reason"])
+                    for requirement in requirements.values()
+                    if requirement.get("available") is not True
+                ],
             },
         }
 
@@ -106,11 +130,12 @@ def _compose_docker_evaluator(
     proposal_cap: int,
     familywise_alpha: float,
 ) -> KernelBenchmarkEvaluator:
-    """Compose the protected path used for live boundary validation.
+    """Compose the protected path for inspection while execution stays fail-closed.
 
     The normal campaign still calls :func:`require_protected_evaluator_boundary`
-    before this factory.  Keeping the factory runnable lets operators exercise
-    the exact future production path without weakening that release guard.
+    before this factory. The runner itself also returns
+    ``resource_policy_unsupported`` before Docker until every authority boundary
+    represented in its manifest is available.
     """
     bundle = bundle.resolve(strict=True)
     autokernel_root = autokernel_root.resolve(strict=True)
@@ -187,9 +212,16 @@ def _compose_docker_evaluator(
         candidate_support_paths=(),
         gpu_grant=gpu_grant,
         gpu_attestor=gpu_attestor,
+        authority_hmac_key_id=runtime.authority_hmac_key_id,
+        authority_hmac_secret_path=runtime.authority_hmac_secret_path,
         limits=runtime.limits,
         docker_binary=runtime.docker_binary,
     )
+    runner_manifest = runner.manifest()
+    evaluator_build_digest = runner_manifest.get("evaluator_build_digest")
+    if not isinstance(evaluator_build_digest, str):
+        raise ValueError("protected runner manifest omitted its evaluator build digest")
+    boundary_manifest_digest = canonical_authority_digest(runner_manifest)
     return KernelBenchmarkEvaluator(
         runner,
         KernelBenchmarkEvaluatorConfig(
@@ -199,6 +231,10 @@ def _compose_docker_evaluator(
             bootstrap_samples=20_000,
             require_resource_telemetry=True,
             require_authority_receipt=True,
+            authority_hmac_key_id=runtime.authority_hmac_key_id,
+            authority_hmac_secret_path=runtime.authority_hmac_secret_path,
+            expected_evaluator_build_digest=evaluator_build_digest,
+            expected_boundary_manifest_digest=boundary_manifest_digest,
             adaptive_feedback_policy="aggregate-gates",
             max_gpu_memory_bytes=runtime.gpu_memory_bytes,
         ),

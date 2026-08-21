@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import importlib
 import json
 import os
@@ -11,22 +12,43 @@ from typing import Any
 import pytest
 
 from autocontext.kernel_evolution import (
+    AcceleratorAttestation,
+    AuthorityMeasurement,
     DockerKernelWorkerLimits,
     KernelCandidate,
     KernelDecisionPolicy,
     KernelSequentialTestingPolicy,
     KernelStatisticsPolicy,
+    ProfileEvidenceEnvelope,
+    build_authority_receipt,
+    canonical_authority_digest,
     canonical_digest,
+    read_authority_hmac_secret,
+    verify_profile_evidence_envelope,
 )
 
 _BUNDLE = Path(__file__).resolve().parents[2] / "examples" / "kernel_evolution" / "kernelbench_h100"
 _PINNED_IMAGE = f"registry.example/autocontext-kernel@sha256:{'a' * 64}"
+_AUTHORITY_KEY_ID = "test-h100-authority-v1"
+_AUTHORITY_SECRET = b"test-only-h100-authority-secret-material"
 
 
 class _SerializableNamespace(SimpleNamespace):
     def model_dump(self, *, mode: str) -> dict[str, Any]:
         assert mode == "json"
-        return dict(vars(self))
+
+        def convert(value: Any) -> Any:
+            if hasattr(value, "model_dump"):
+                return value.model_dump(mode="json")
+            if isinstance(value, list):
+                return [convert(item) for item in value]
+            if isinstance(value, tuple):
+                return [convert(item) for item in value]
+            if isinstance(value, dict):
+                return {key: convert(item) for key, item in value.items()}
+            return value
+
+        return {key: convert(value) for key, value in vars(self).items()}
 
 
 @pytest.fixture
@@ -37,7 +59,19 @@ def runtime_modules(monkeypatch: pytest.MonkeyPatch) -> tuple[Any, Any]:
     return production_runtime, campaign
 
 
-def _runtime(production_runtime: Any, *, gpu_memory_bytes: int = 8 * 1024**3) -> Any:
+def _authority_secret(tmp_path: Path) -> Path:
+    path = tmp_path / "authority-hmac.secret"
+    path.write_bytes(_AUTHORITY_SECRET)
+    path.chmod(0o600)
+    return path
+
+
+def _runtime(
+    production_runtime: Any,
+    authority_secret_path: Path,
+    *,
+    gpu_memory_bytes: int = 8 * 1024**3,
+) -> Any:
     return production_runtime.H100DockerRuntimeConfig(
         image=_PINNED_IMAGE,
         docker_binary="docker-production",
@@ -46,12 +80,14 @@ def _runtime(production_runtime: Any, *, gpu_memory_bytes: int = 8 * 1024**3) ->
         gpu_device="MIG-GPU-deadbeef/1/0",
         gpu_isolation_kind="mig",
         gpu_memory_bytes=gpu_memory_bytes,
+        authority_hmac_key_id=_AUTHORITY_KEY_ID,
+        authority_hmac_secret_path=authority_secret_path,
         limits=DockerKernelWorkerLimits(max_gpu_memory_bytes=8 * 1024**3),
         timeout_seconds=180.0,
     )
 
 
-def test_production_runtime_is_pinned_and_protected_composition_is_runnable_for_validation(
+def test_production_runtime_is_pinned_and_protected_composition_is_inspectable_while_unavailable(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     runtime_modules: tuple[Any, Any],
@@ -62,7 +98,8 @@ def test_production_runtime_is_pinned_and_protected_composition_is_runnable_for_
     (autokernel_root / "kernel.py").write_text("def kernel_fn(a, b): return a @ b\n", encoding="utf-8")
     private_plan = tmp_path / "private-plan.json"
     private_plan.write_text("{}\n", encoding="utf-8")
-    runtime = _runtime(production_runtime)
+    authority_secret = _authority_secret(tmp_path)
+    runtime = _runtime(production_runtime, authority_secret)
     runtime_manifest = runtime.manifest()
     assert runtime_manifest["image"] == _PINNED_IMAGE
     assert runtime_manifest["docker_binary"] == "docker-production"
@@ -70,10 +107,27 @@ def test_production_runtime_is_pinned_and_protected_composition_is_runnable_for_
     assert runtime_manifest["gpu_device"] == "MIG-GPU-deadbeef/1/0"
     assert runtime_manifest["gpu_memory_bytes"] == 8 * 1024**3
     assert runtime_manifest["limits"]["max_gpu_memory_bytes"] == 8 * 1024**3
-    assert runtime_manifest["evidence_boundary"] == {
-        "required": "trusted-evaluator/isolated-accelerator-candidate-v1",
+    assert runtime_manifest["evidence_boundary"]["required"] == (
+        "trusted-evaluator/isolated-accelerator-candidate-v1"
+    )
+    assert runtime_manifest["evidence_boundary"]["available"] is False
+    assert runtime_manifest["evidence_boundary"]["requirements"]["crash_safe_container_creation"] == {
+        "required": "supervised-create-before-coordinator-ownership/v1",
         "available": False,
+        "reason": (
+            "protected accelerator evidence requires crash-safe container creation; "
+            "the v1 coordinator-owned docker create path is unsupported"
+        ),
     }
+    assert any(
+        "crash-safe" in requirement
+        for requirement in runtime_manifest["evidence_boundary"]["unmet_requirements"]
+    )
+    assert runtime_manifest["authority_authentication"] == {
+        "algorithm": "hmac-sha256",
+        "key_id": _AUTHORITY_KEY_ID,
+    }
+    assert str(authority_secret) not in str(runtime_manifest)
 
     captured: dict[str, Any] = {}
 
@@ -87,7 +141,10 @@ def test_production_runtime_is_pinned_and_protected_composition_is_runnable_for_
             captured["runner"] = kwargs
 
         def manifest(self) -> dict[str, Any]:
-            return {"kind": "fake-protected-runner"}
+            return {
+                "kind": "fake-protected-runner",
+                "evaluator_build_digest": canonical_authority_digest("fake-evaluator-build"),
+            }
 
     monkeypatch.setattr(production_runtime, "NvidiaSMIGPUDeviceAttestor", FakeAttestor)
     monkeypatch.setattr(production_runtime, "DockerProtectedKernelBenchmarkRunner", FakeProtectedRunner)
@@ -108,9 +165,13 @@ def test_production_runtime_is_pinned_and_protected_composition_is_runnable_for_
     assert manifest["evaluator"]["require_authority_receipt"] is True
     assert manifest["evaluator"]["require_resource_telemetry"] is True
     assert manifest["evaluator"]["adaptive_feedback_policy"] == "aggregate-gates"
+    assert manifest["evaluator"]["authority_trust"]["key_id"] == _AUTHORITY_KEY_ID
+    assert str(authority_secret) not in str(manifest)
     assert captured["attestor_binary"] == "nvidia-smi-production"
     assert captured["runner"]["evaluator_immutable_paths"] == (_BUNDLE.resolve(), private_plan.resolve())
     assert captured["runner"]["candidate_runtime_path"] == _BUNDLE / "authority_worker.py"
+    assert captured["runner"]["authority_hmac_key_id"] == _AUTHORITY_KEY_ID
+    assert captured["runner"]["authority_hmac_secret_path"] == authority_secret
     command = captured["command"]
     assert "{candidate_socket}" in command and "{incumbent_socket}" in command
     assert "{candidate}" not in command and "{incumbent}" not in command
@@ -120,7 +181,10 @@ def test_production_runtime_is_pinned_and_protected_composition_is_runnable_for_
 def test_production_campaign_has_no_same_interpreter_override(runtime_modules: tuple[Any, Any]) -> None:
     production_runtime, _campaign = runtime_modules
 
-    with pytest.raises(production_runtime.ProductionEvaluatorBoundaryUnavailable, match="real H100/MIG validation"):
+    with pytest.raises(
+        production_runtime.ProductionEvaluatorBoundaryUnavailable,
+        match="comparable candidate/incumbent/reference timing boundaries",
+    ):
         production_runtime.require_protected_evaluator_boundary()
 
     source = (_BUNDLE / "campaign.py").read_text(encoding="utf-8")
@@ -185,6 +249,7 @@ def test_campaign_fails_before_creating_mailbox_or_launching_worker(
     confirmation_plan = tmp_path / "confirmation.json"
     primary_plan.write_text("{}\n", encoding="utf-8")
     confirmation_plan.write_text("{}\n", encoding="utf-8")
+    authority_secret = _authority_secret(tmp_path)
     mailbox = tmp_path / "must-not-exist"
     monkeypatch.setattr(campaign, "private_plan_commitment", lambda path: f"sha256:{'a' * 64}")
     monkeypatch.setattr(campaign, "load_private_plan", lambda *args, **kwargs: {"test": True})
@@ -209,6 +274,10 @@ def test_campaign_fails_before_creating_mailbox_or_launching_worker(
             "mig",
             "--gpu-memory-bytes",
             str(8 * 1024**3),
+            "--authority-hmac-key-id",
+            _AUTHORITY_KEY_ID,
+            "--authority-hmac-secret-file",
+            str(authority_secret),
             "--mailbox",
             str(mailbox),
             "--precision-profile",
@@ -242,6 +311,7 @@ def test_post_run_evidence_failure_publishes_failed_terminal_status(
     confirmation_plan = tmp_path / "confirmation.json"
     primary_plan.write_text("{}\n", encoding="utf-8")
     confirmation_plan.write_text("{}\n", encoding="utf-8")
+    authority_secret = _authority_secret(tmp_path)
     mailbox = tmp_path / "mailbox"
     run_dir = tmp_path / "run"
 
@@ -254,7 +324,13 @@ def test_post_run_evidence_failure_publishes_failed_terminal_status(
             assert proposals == 1
             return SimpleNamespace()
 
-    evaluator = SimpleNamespace(manifest=lambda: {"kind": "fake-protected-evaluator"})
+    evaluator = SimpleNamespace(
+        manifest=lambda: {"kind": "fake-protected-evaluator"},
+        config=SimpleNamespace(
+            expected_evaluator_build_digest=canonical_authority_digest("fake-evaluator-build"),
+            expected_boundary_manifest_digest=canonical_authority_digest("fake-boundary"),
+        ),
+    )
     monkeypatch.setattr(campaign, "private_plan_commitment", lambda path: f"sha256:{'a' * 64}")
     monkeypatch.setattr(campaign, "load_private_plan", lambda *args, **kwargs: {"test": True})
     monkeypatch.setattr(campaign, "_validate_confirmation_schedule", lambda *args, **kwargs: None)
@@ -291,6 +367,10 @@ def test_post_run_evidence_failure_publishes_failed_terminal_status(
             "mig",
             "--gpu-memory-bytes",
             str(8 * 1024**3),
+            "--authority-hmac-key-id",
+            _AUTHORITY_KEY_ID,
+            "--authority-hmac-secret-file",
+            str(authority_secret),
             "--mailbox",
             str(mailbox),
             "--precision-profile",
@@ -313,13 +393,17 @@ def test_post_run_evidence_failure_publishes_failed_terminal_status(
     assert status["error"] == "receipt export failed"
 
 
-def test_runtime_rejects_claimed_gpu_capacity_above_hard_limit(runtime_modules: tuple[Any, Any]) -> None:
+def test_runtime_rejects_claimed_gpu_capacity_above_hard_limit(
+    tmp_path: Path,
+    runtime_modules: tuple[Any, Any],
+) -> None:
     production_runtime, _campaign = runtime_modules
+    authority_secret = _authority_secret(tmp_path)
 
     with pytest.raises(ValueError, match="cannot exceed max_gpu_memory_bytes"):
-        _runtime(production_runtime, gpu_memory_bytes=9 * 1024**3)
+        _runtime(production_runtime, authority_secret, gpu_memory_bytes=9 * 1024**3)
 
-    runtime = _runtime(production_runtime)
+    runtime = _runtime(production_runtime, authority_secret)
     with pytest.raises(ValueError, match="absolute normalized path"):
         production_runtime.H100DockerRuntimeConfig(
             image=runtime.image,
@@ -329,6 +413,8 @@ def test_runtime_rejects_claimed_gpu_capacity_above_hard_limit(runtime_modules: 
             gpu_device=runtime.gpu_device,
             gpu_isolation_kind="mig",
             gpu_memory_bytes=runtime.gpu_memory_bytes,
+            authority_hmac_key_id=runtime.authority_hmac_key_id,
+            authority_hmac_secret_path=runtime.authority_hmac_secret_path,
             limits=runtime.limits,
         )
 
@@ -336,6 +422,8 @@ def test_runtime_rejects_claimed_gpu_capacity_above_hard_limit(runtime_modules: 
 def _profile_result(campaign: Any, runtime: Any) -> SimpleNamespace:
     primary_commitment = f"sha256:{'b' * 64}"
     confirmation_commitment = f"sha256:{'c' * 64}"
+    candidate_artifact_digest = f"sha256:{'3' * 64}"
+    incumbent_artifact_digest = f"sha256:{'9' * 64}"
     attestation_payload = {
         "device_id": runtime.gpu_device,
         "isolation_kind": runtime.gpu_isolation_kind,
@@ -351,28 +439,110 @@ def _profile_result(campaign: Any, runtime: Any) -> SimpleNamespace:
     }
     holdout_correctness = _SerializableNamespace(name="holdout", split="holdout", passed=True)
     holdout_performance = _SerializableNamespace(name="holdout", split="holdout", passed_no_regression=True)
-    primary_report = SimpleNamespace(
+    accelerator = AcceleratorAttestation(
+        backend="cuda",
+        vendor="nvidia",
+        architecture="sm90",
+        device_id=runtime.gpu_device,
+        isolation_kind=runtime.gpu_isolation_kind,
+        enforced_memory_bytes=runtime.gpu_memory_bytes,
+        runtime="cuda-12.8",
+        driver="570.1",
+        attestor_id=attestation_payload["attestor_id"],
+        metadata={"grant_attestation_digest": attestation["device_attestation_digest"]},
+    )
+    resources = {
+        "candidate_observed_peak_bytes": 101,
+        "incumbent_observed_peak_bytes": 102,
+        "telemetry_authority": "trusted-evaluator-observed/v1",
+        "accelerator_attestation_digest": accelerator.digest,
+        "device_total_memory_bytes": runtime.gpu_memory_bytes,
+    }
+    primary_report = _SerializableNamespace(
         schema_version="autocontext.kernelbench-eval/v3",
-        protocol=SimpleNamespace(seed_commitment=primary_commitment),
-        hardware=SimpleNamespace(
+        evaluation_status="complete",
+        failure_kind=None,
+        candidate_artifact_digest=candidate_artifact_digest,
+        incumbent_artifact_digest=incumbent_artifact_digest,
+        protocol=_SerializableNamespace(seed_commitment=primary_commitment),
+        resources=dict(resources),
+        hardware=_SerializableNamespace(
             backend="cuda",
             architecture="sm90",
             device_name="NVIDIA H100 80GB HBM3",
             metadata=dict(attestation),
         ),
-        correctness=SimpleNamespace(slices=[holdout_correctness]),
-        performance=SimpleNamespace(cases=[holdout_performance]),
+        correctness=_SerializableNamespace(slices=[holdout_correctness]),
+        performance=_SerializableNamespace(cases=[holdout_performance]),
     )
-    confirmation_report = SimpleNamespace(
+    confirmation_report = _SerializableNamespace(
         schema_version="autocontext.kernelbench-eval/v3",
-        protocol=SimpleNamespace(seed_commitment=confirmation_commitment),
-        hardware=SimpleNamespace(
+        evaluation_status="complete",
+        failure_kind=None,
+        candidate_artifact_digest=candidate_artifact_digest,
+        incumbent_artifact_digest=incumbent_artifact_digest,
+        protocol=_SerializableNamespace(seed_commitment=confirmation_commitment),
+        resources=dict(resources),
+        hardware=_SerializableNamespace(
             backend="cuda",
             architecture="sm90",
             device_name="NVIDIA H100 80GB HBM3",
             metadata=dict(attestation),
         ),
     )
+    evaluator_build_digest = canonical_authority_digest("profile-evaluator-build")
+    authority_identities = {
+        primary_commitment: {
+            "evaluator_build_digest": evaluator_build_digest,
+            "boundary_manifest_digest": canonical_authority_digest("primary-boundary"),
+        },
+        confirmation_commitment: {
+            "evaluator_build_digest": evaluator_build_digest,
+            "boundary_manifest_digest": canonical_authority_digest("confirmation-boundary"),
+        },
+    }
+
+    def attach_authority_receipt(report: _SerializableNamespace, *, commitment: str, label: str) -> None:
+        measurements = (
+            AuthorityMeasurement(
+                sequence=0,
+                role="candidate",
+                request_digest=canonical_authority_digest(f"{label}-candidate-request"),
+                response_digest=canonical_authority_digest(f"{label}-candidate-response"),
+                input_commitment=canonical_authority_digest(f"{label}-candidate-input"),
+                output_commitment=canonical_authority_digest(f"{label}-candidate-output"),
+                elapsed_ns=10,
+                observed_peak_memory_bytes=101,
+                outcome="complete",
+            ),
+            AuthorityMeasurement(
+                sequence=1,
+                role="incumbent",
+                request_digest=canonical_authority_digest(f"{label}-incumbent-request"),
+                response_digest=canonical_authority_digest(f"{label}-incumbent-response"),
+                input_commitment=canonical_authority_digest(f"{label}-incumbent-input"),
+                output_commitment=canonical_authority_digest(f"{label}-incumbent-output"),
+                elapsed_ns=11,
+                observed_peak_memory_bytes=102,
+                outcome="complete",
+            ),
+        )
+        identity = authority_identities[commitment]
+        report.evaluator_authority_receipt = build_authority_receipt(
+            evaluator_build_digest=identity["evaluator_build_digest"],
+            boundary_manifest_digest=identity["boundary_manifest_digest"],
+            plan_commitment=commitment,
+            accelerator_attestation=accelerator,
+            candidate_artifact_digest=candidate_artifact_digest,
+            incumbent_artifact_digest=incumbent_artifact_digest,
+            measurements=measurements,
+            report=report.model_dump(mode="json"),
+            signing_key_id=runtime.authority_hmac_key_id,
+            signing_secret=read_authority_hmac_secret(runtime.authority_hmac_secret_path),
+        )
+
+    attach_authority_receipt(primary_report, commitment=primary_commitment, label="primary")
+    attach_authority_receipt(confirmation_report, commitment=confirmation_commitment, label="confirmation")
     confirmation = SimpleNamespace(
         report=confirmation_report,
         protocol_id=f"sha256:{'e' * 64}",
@@ -386,7 +556,7 @@ def _profile_result(campaign: Any, runtime: Any) -> SimpleNamespace:
         role="candidate",
         decision="promoted",
         artifact_identity_version="autocontext.kernel-artifact/v2",
-        artifact_digest=f"sha256:{'3' * 64}",
+        artifact_digest=candidate_artifact_digest,
         source_digest=f"sha256:{'4' * 64}",
         source_suffix=".py",
         entrypoint="kernel_fn",
@@ -443,14 +613,16 @@ def _profile_result(campaign: Any, runtime: Any) -> SimpleNamespace:
         attempts=[baseline, champion],
         _primary_commitment=primary_commitment,
         _confirmation_commitment=confirmation_commitment,
+        _authority_identities=authority_identities,
     )
 
 
 def test_profile_evidence_builder_validates_exact_receipts_and_attestation(
+    tmp_path: Path,
     runtime_modules: tuple[Any, Any],
 ) -> None:
     production_runtime, campaign = runtime_modules
-    runtime = _runtime(production_runtime)
+    runtime = _runtime(production_runtime, _authority_secret(tmp_path))
     result = _profile_result(campaign, runtime)
 
     evidence = campaign._build_profile_evidence(
@@ -460,20 +632,69 @@ def test_profile_evidence_builder_validates_exact_receipts_and_attestation(
         primary_commitment=result._primary_commitment,
         confirmation_commitments=(result._confirmation_commitment,),
         runtime=runtime,
+        authority_identities=result._authority_identities,
     )
 
-    assert evidence["schema_version"] == "autocontext.kernel-h100-profile-evidence/v3"
-    assert evidence["champion"]["attempt_id"] == result.champion_attempt_id
-    assert evidence["primary_receipt"]["plan_commitment"] == result._primary_commitment
-    assert evidence["confirmation_receipt"]["plan_commitment"] == result._confirmation_commitment
-    assert evidence["hardware_attestation"]["device_id"] == runtime.gpu_device
-    assert evidence["hardware_attestation"]["attestor_id"] == "nvidia-smi-nvml-mig-v1"
-    assert evidence["decision_policy_id"] == result.decision_policy.policy_id
-    assert evidence["decision_policy"] == result.decision_policy.model_dump(mode="json")
-    assert evidence["proposals_evaluated"] == 1
-    assert evidence["promotions"] == 1
-    assert evidence["all_holdout_correctness_passed"] is True
-    assert evidence["all_holdout_no_regression_passed"] is True
+    assert evidence["schema_version"] == "autocontext.kernel-profile-evidence-envelope/v1"
+    assert evidence["authentication"]["key_id"] == _AUTHORITY_KEY_ID
+    verified = verify_profile_evidence_envelope(
+        ProfileEvidenceEnvelope.model_validate(evidence),
+        trusted_key_id=_AUTHORITY_KEY_ID,
+        trusted_secret=_AUTHORITY_SECRET,
+    )
+    profile = verified.profile
+    assert profile["schema_version"] == "autocontext.kernel-h100-profile-evidence/v3"
+    assert profile["champion"]["attempt_id"] == result.champion_attempt_id
+    assert profile["primary_receipt"]["plan_commitment"] == result._primary_commitment
+    assert profile["confirmation_receipt"]["plan_commitment"] == result._confirmation_commitment
+    assert profile["primary_receipt"]["authority_receipt"]["authentication"]["key_id"] == _AUTHORITY_KEY_ID
+    assert profile["confirmation_receipt"]["authority_receipt_digest"].startswith("sha256:")
+    assert profile["hardware_attestation"]["device_id"] == runtime.gpu_device
+    assert profile["hardware_attestation"]["attestor_id"] == "nvidia-smi-nvml-mig-v1"
+    assert profile["decision_policy_id"] == result.decision_policy.policy_id
+    assert profile["decision_policy"] == result.decision_policy.model_dump(mode="json")
+    assert profile["proposals_evaluated"] == 1
+    assert profile["promotions"] == 1
+    assert profile["all_holdout_correctness_passed"] is True
+    assert profile["all_holdout_no_regression_passed"] is True
+
+    mutations = (
+        lambda payload: payload["profile"]["champion"].__setitem__("source_digest", "sha256:" + "0" * 64),
+        lambda payload: payload["profile"]["decision_policy"].__setitem__("min_relative_improvement", 0.0),
+        lambda payload: payload["profile"].__setitem__("promotions", 999),
+        lambda payload: payload["profile"].__setitem__("all_holdout_correctness_passed", False),
+        lambda payload: payload["profile"]["primary_receipt"].__setitem__(
+            "report_digest", "sha256:" + "1" * 64
+        ),
+        lambda payload: payload["profile"]["primary_receipt"].__setitem__(
+            "authority_receipt_digest", "sha256:" + "2" * 64
+        ),
+    )
+    for mutate in mutations:
+        forged = copy.deepcopy(evidence)
+        mutate(forged)
+        forged["content_digest"] = canonical_authority_digest(forged["profile"])
+        with pytest.raises(ValueError, match="authentication tag"):
+            verify_profile_evidence_envelope(
+                forged,
+                trusted_key_id=_AUTHORITY_KEY_ID,
+                trusted_secret=_AUTHORITY_SECRET,
+            )
+
+    with pytest.raises(ValueError, match="authentication key"):
+        verify_profile_evidence_envelope(
+            evidence,
+            trusted_key_id="different-operator-key",
+            trusted_secret=_AUTHORITY_SECRET,
+        )
+    forged_tag = copy.deepcopy(evidence)
+    forged_tag["authentication"]["tag"] = "hmac-sha256:" + "0" * 64
+    with pytest.raises(ValueError, match="authentication tag"):
+        verify_profile_evidence_envelope(
+            forged_tag,
+            trusted_key_id=_AUTHORITY_KEY_ID,
+            trusted_secret=_AUTHORITY_SECRET,
+        )
 
     champion = result.attempts[1]
     champion.observation.report.hardware.metadata["device_grant"] = "MIG-GPU-forged/1/0"
@@ -485,6 +706,7 @@ def test_profile_evidence_builder_validates_exact_receipts_and_attestation(
             primary_commitment=result._primary_commitment,
             confirmation_commitments=(result._confirmation_commitment,),
             runtime=runtime,
+            authority_identities=result._authority_identities,
         )
 
     result.decision_policy = None
@@ -496,6 +718,7 @@ def test_profile_evidence_builder_validates_exact_receipts_and_attestation(
             primary_commitment=result._primary_commitment,
             confirmation_commitments=(result._confirmation_commitment,),
             runtime=runtime,
+            authority_identities=result._authority_identities,
         )
 
     result = _profile_result(campaign, runtime)
@@ -508,14 +731,48 @@ def test_profile_evidence_builder_validates_exact_receipts_and_attestation(
             primary_commitment=result._primary_commitment,
             confirmation_commitments=(result._confirmation_commitment,),
             runtime=runtime,
+            authority_identities=result._authority_identities,
+        )
+
+    result = _profile_result(campaign, runtime)
+    result.attempts[1].confirmation_observation.report.evaluator_authority_receipt = None
+    with pytest.raises(RuntimeError, match="missing a trusted-evaluator authority receipt"):
+        campaign._build_profile_evidence(
+            result=result,
+            run_id=result.run_id,
+            precision_profile=result.precision_profile,
+            primary_commitment=result._primary_commitment,
+            confirmation_commitments=(result._confirmation_commitment,),
+            runtime=runtime,
+            authority_identities=result._authority_identities,
+        )
+
+    result = _profile_result(campaign, runtime)
+    report = result.attempts[1].observation.report
+    receipt = report.evaluator_authority_receipt
+    report.evaluator_authority_receipt = receipt.model_copy(
+        update={
+            "authentication": receipt.authentication.model_copy(update={"tag": "hmac-sha256:" + "0" * 64})
+        }
+    )
+    with pytest.raises(RuntimeError, match="failed authenticated replay"):
+        campaign._build_profile_evidence(
+            result=result,
+            run_id=result.run_id,
+            precision_profile=result.precision_profile,
+            primary_commitment=result._primary_commitment,
+            confirmation_commitments=(result._confirmation_commitment,),
+            runtime=runtime,
+            authority_identities=result._authority_identities,
         )
 
 
 def test_profile_evidence_rejects_non_h100_or_incomplete_v3_chain(
+    tmp_path: Path,
     runtime_modules: tuple[Any, Any],
 ) -> None:
     production_runtime, campaign = runtime_modules
-    runtime = _runtime(production_runtime)
+    runtime = _runtime(production_runtime, _authority_secret(tmp_path))
     result = _profile_result(campaign, runtime)
     result.attempts[1].observation.report.hardware.architecture = "sm80"
     result.attempts[1].observation.report.hardware.device_name = "NVIDIA A100-SXM4-80GB"
@@ -528,6 +785,7 @@ def test_profile_evidence_rejects_non_h100_or_incomplete_v3_chain(
             primary_commitment=result._primary_commitment,
             confirmation_commitments=(result._confirmation_commitment,),
             runtime=runtime,
+            authority_identities=result._authority_identities,
         )
 
     result = _profile_result(campaign, runtime)
@@ -540,14 +798,16 @@ def test_profile_evidence_rejects_non_h100_or_incomplete_v3_chain(
             primary_commitment=result._primary_commitment,
             confirmation_commitments=(result._confirmation_commitment,),
             runtime=runtime,
+            authority_identities=result._authority_identities,
         )
 
 
 def test_profile_evidence_recomputes_complete_gpu_attestation(
+    tmp_path: Path,
     runtime_modules: tuple[Any, Any],
 ) -> None:
     production_runtime, campaign = runtime_modules
-    runtime = _runtime(production_runtime)
+    runtime = _runtime(production_runtime, _authority_secret(tmp_path))
     result = _profile_result(campaign, runtime)
     champion_report = result.attempts[1].observation.report
     champion_report.hardware.metadata["device_attestor_id"] = "forged-attestor-v1"
@@ -560,6 +820,7 @@ def test_profile_evidence_recomputes_complete_gpu_attestation(
             primary_commitment=result._primary_commitment,
             confirmation_commitments=(result._confirmation_commitment,),
             runtime=runtime,
+            authority_identities=result._authority_identities,
         )
 
 
@@ -567,8 +828,8 @@ def test_profile_evidence_recomputes_complete_gpu_attestation(
     os.environ.get("AUTOCONTEXT_RUN_PROTECTED_GPU_INTEGRATION") != "1",
     reason="requires an explicit protected H100/MIG release host",
 )
-def test_real_h100_protected_authority_adversarial_release_gate(runtime_modules: tuple[Any, Any]) -> None:
-    """Exercise the exact guarded production factory on a real H100/MIG host."""
+def test_reserved_h100_protected_authority_gate_remains_unavailable(runtime_modules: tuple[Any, Any]) -> None:
+    """Reserve the future live gate while proving current execution stops before Docker."""
 
     production_runtime, _campaign = runtime_modules
     profile_contract = importlib.import_module("profile_contract")
@@ -581,6 +842,8 @@ def test_real_h100_protected_authority_adversarial_release_gate(runtime_modules:
             "AUTOCONTEXT_GPU_MEMORY_BYTES",
             "AUTOCONTEXT_AUTOKERNEL_ROOT",
             "AUTOCONTEXT_KERNEL_PRIVATE_PLAN",
+            "AUTOCONTEXT_AUTHORITY_HMAC_KEY_ID",
+            "AUTOCONTEXT_AUTHORITY_HMAC_SECRET_FILE",
         )
     }
     missing = [name for name, value in required.items() if not value]
@@ -597,6 +860,8 @@ def test_real_h100_protected_authority_adversarial_release_gate(runtime_modules:
         gpu_device=str(required["AUTOCONTEXT_GPU_DEVICE_ID"]),
         gpu_isolation_kind="mig",
         gpu_memory_bytes=memory_bytes,
+        authority_hmac_key_id=str(required["AUTOCONTEXT_AUTHORITY_HMAC_KEY_ID"]),
+        authority_hmac_secret_path=Path(str(required["AUTOCONTEXT_AUTHORITY_HMAC_SECRET_FILE"])),
         limits=DockerKernelWorkerLimits(max_gpu_memory_bytes=memory_bytes),
         timeout_seconds=630.0,
     )
@@ -647,12 +912,9 @@ def kernel_fn(a, b):
     second = evaluator.evaluate(hostile, hostile)
 
     for observation in (first, second):
-        assert observation.eligible, observation.feedback
-        assert observation.report is not None
-        receipt = observation.report.evaluator_authority_receipt
-        assert receipt is not None
-        assert {measurement.role for measurement in receipt.measurements} == {"candidate", "incumbent"}
-        assert receipt.accelerator_attestation.device_id == runtime.gpu_device
+        assert not observation.eligible
+        assert observation.rejection_reason == "resource_policy_unsupported"
+        assert "independently attested" in observation.feedback
 
 
 def _plan(seed: int, order: tuple[int, int, int]) -> dict[str, Any]:

@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, model_validator
 
 from autocontext.kernel_evolution.authority_protocol import (
     KernelEvaluatorAuthorityReceipt,
-    verify_authority_receipt,
+    verify_authority_receipt_integrity,
 )
 from autocontext.kernel_evolution.protocols import (
     KernelDecisionPolicy,
@@ -383,7 +383,7 @@ class KernelBenchmarkReport(StrictModel):
         if self.hardware_scope_id != self.hardware.scope_id:
             raise ValueError("hardware_scope_id does not match the canonical hardware identity")
         if self.evaluator_authority_receipt is not None:
-            verify_authority_receipt(self.evaluator_authority_receipt, self.model_dump(mode="json"))
+            verify_authority_receipt_integrity(self.evaluator_authority_receipt, self.model_dump(mode="json"))
             attestation = self.evaluator_authority_receipt.accelerator_attestation
             if attestation.backend != self.hardware.backend or attestation.architecture != self.hardware.architecture:
                 raise ValueError("authority receipt accelerator identity does not match report hardware")
