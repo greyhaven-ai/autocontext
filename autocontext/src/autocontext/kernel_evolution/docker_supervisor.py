@@ -34,13 +34,10 @@ MAX_SUPERVISOR_WIRE_BYTES = len(SUPERVISOR_STATUS_PREFIX) + MAX_SUPERVISOR_FRAME
 _SECRET_BYTES = 32
 _PR_SET_DUMPABLE = 4
 _QUIESCE_SECONDS = 1.0
-_IGNORED_SUPERVISOR_SIGNALS = (
-    signal.SIGHUP,
-    signal.SIGINT,
-    signal.SIGQUIT,
-    signal.SIGTERM,
-    signal.SIGUSR1,
-    signal.SIGUSR2,
+_IGNORED_SUPERVISOR_SIGNALS = tuple(
+    getattr(signal, name)
+    for name in ("SIGHUP", "SIGINT", "SIGQUIT", "SIGTERM", "SIGUSR1", "SIGUSR2")
+    if hasattr(signal, name)
 )
 
 
