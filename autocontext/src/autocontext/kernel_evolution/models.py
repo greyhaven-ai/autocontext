@@ -276,9 +276,46 @@ class KernelPerformanceReport(StrictModel):
 
 
 class KernelResourceReport(StrictModel):
+    """Identity-bound CUDA allocator and device-capacity telemetry."""
+
+    candidate_artifact_digest: Digest | None = None
+    incumbent_artifact_digest: Digest | None = None
+    candidate_peak_allocated_bytes: int | None = Field(default=None, ge=0)
+    candidate_peak_reserved_bytes: int | None = Field(default=None, ge=0)
+    incumbent_peak_allocated_bytes: int | None = Field(default=None, ge=0)
+    incumbent_peak_reserved_bytes: int | None = Field(default=None, ge=0)
+    # Retained for v2 readers; new workers set these to peak reservation.
     candidate_peak_memory_bytes: int | None = Field(default=None, ge=0)
     incumbent_peak_memory_bytes: int | None = Field(default=None, ge=0)
     device_total_memory_bytes: int | None = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def validate_cuda_peaks(self) -> Self:
+        for role in ("candidate", "incumbent"):
+            allocated = getattr(self, f"{role}_peak_allocated_bytes")
+            reserved = getattr(self, f"{role}_peak_reserved_bytes")
+            if allocated is not None and reserved is not None and allocated > reserved:
+                raise ValueError(f"{role} peak allocated bytes cannot exceed peak reserved bytes")
+        if self.device_total_memory_bytes is not None:
+            for value in (
+                self.candidate_peak_allocated_bytes,
+                self.candidate_peak_reserved_bytes,
+                self.incumbent_peak_allocated_bytes,
+                self.incumbent_peak_reserved_bytes,
+            ):
+                if value is not None and value > self.device_total_memory_bytes:
+                    raise ValueError("CUDA peak telemetry cannot exceed total device bytes")
+        return self
+
+    @property
+    def candidate_enforced_peak_bytes(self) -> int | None:
+        values = (
+            self.candidate_peak_allocated_bytes,
+            self.candidate_peak_reserved_bytes,
+            self.candidate_peak_memory_bytes,
+        )
+        present = [value for value in values if value is not None]
+        return max(present) if present else None
 
 
 KernelEvaluationStatus = Literal["complete", "candidate_error", "infrastructure_error"]
@@ -342,6 +379,17 @@ class KernelBenchmarkReport(StrictModel):
             raise ValueError("incumbent artifact digest does not match its source digest and ABI")
         if self.hardware_scope_id != self.hardware.scope_id:
             raise ValueError("hardware_scope_id does not match the canonical hardware identity")
+        resources = self.resources
+        if (
+            resources.candidate_artifact_digest is not None
+            and resources.candidate_artifact_digest != self.candidate_artifact_digest
+        ):
+            raise ValueError("candidate resource telemetry is bound to a different artifact")
+        if (
+            resources.incumbent_artifact_digest is not None
+            and resources.incumbent_artifact_digest != self.incumbent_artifact_digest
+        ):
+            raise ValueError("incumbent resource telemetry is bound to a different artifact")
         if self.correctness is not None:
             if self.correctness.tests_run != self.protocol.correctness_trials:
                 raise ValueError("correctness tests_run does not match protocol correctness_trials")
@@ -442,6 +490,13 @@ class KernelBenchmarkObservation(StrictModel):
 
 
 KernelDecision = Literal["baseline", "promoted", "rejected"]
+KernelGateStatus = Literal["passed", "failed", "not-evaluated"]
+
+
+class KernelPromotionGateResult(StrictModel):
+    name: str
+    status: KernelGateStatus
+    detail: str = ""
 
 
 class KernelPromotionDecision(StrictModel):
@@ -449,6 +504,7 @@ class KernelPromotionDecision(StrictModel):
     decision: KernelDecision
     reason: str
     feedback: str
+    gates: tuple[KernelPromotionGateResult, ...] = ()
 
 
 class KernelAttemptRecord(StrictModel):

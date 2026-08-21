@@ -36,12 +36,13 @@ checked-out, commit-pinned AutoKernel repository.
   Triton. The verified run used Python 3.11.15, PyTorch 2.13.0+cu130, and
   Triton 3.7.1.
 
-Generated kernel source executes inside the adapter process. This example is
-not a hostile-code sandbox. AutoContext tears down the adapter's inherited
-process tree on every outcome, but lifecycle containment does not restrict
-credentials, network access, filesystem access outside the temporary workspace,
-or host privilege. Use an isolated worker and evaluate only source you are
-prepared to execute; AC-991 tracks mandatory hostile-code isolation separately.
+These historical smoke scripts explicitly select the legacy
+`trusted_unsafe=True` local-process runner. They are not a hostile-code sandbox
+and must evaluate only source the operator is prepared to execute on a
+dedicated disposable host. Production campaigns should package this adapter in
+a pinned image and use `DockerKernelBenchmarkRunner` with a verified MIG or
+hardware-partition grant, denied network, scrubbed credentials, and read-only
+harness mounts as described in `autocontext/docs/kernel-evolution.md`.
 
 ## Pin the incumbent
 
@@ -191,6 +192,8 @@ The adapter owns the following fixed protocol:
 - eight paired timing blocks with ten calls per implementation per block;
 - candidate, incumbent, and PyTorch reference order rotated across blocks and
   measured with synchronized CUDA events;
+- candidate and incumbent CUDA peak allocation and reservation measured in
+  separate reset windows and bound to their exact artifact identities;
 - a static workload-family ID covering the exact reference bytes and problem
   contract, plus a full workload fingerprint covering that material and the
   protocol; hardware/toolchain scope and baseline identities are separate.

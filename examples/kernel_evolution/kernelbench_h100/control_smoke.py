@@ -140,6 +140,7 @@ def main() -> None:
         ],
         cwd=autokernel_root,
         source_suffix=".py",
+        trusted_unsafe=True,
         immutable_paths=[adapter_path, reference_path],
         max_output_bytes=64_000,
         max_report_bytes=2_000_000,
@@ -151,6 +152,7 @@ def main() -> None:
             timeout_seconds=240.0,
             min_timing_blocks=8,
             bootstrap_samples=1_000,
+            require_resource_telemetry=True,
         ),
     )
     baseline = evaluator.evaluate(incumbent, incumbent)

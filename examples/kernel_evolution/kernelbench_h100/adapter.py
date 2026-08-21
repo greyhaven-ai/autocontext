@@ -243,6 +243,7 @@ def _hardware(workload_family_id: str, workload_fingerprint: str) -> dict[str, A
         "workload_fingerprint": workload_fingerprint,
         "metadata": {
             "device_index": "0",
+            "device_grant": os.environ.get("AUTOCONTEXT_GPU_DEVICE_ID", "unsafe-local-device-0"),
             "multiprocessors": str(properties.multi_processor_count),
         },
     }
@@ -268,6 +269,17 @@ def _timed_call(model, inputs, calls: int) -> float:
     if not elapsed > 0:
         raise RuntimeError(f"CUDA event returned non-positive latency: {elapsed}")
     return elapsed
+
+
+def _cuda_peaks(model, inputs) -> tuple[int, int]:
+    """Measure one identity's allocation window independently."""
+
+    torch.cuda.synchronize()
+    torch.cuda.reset_peak_memory_stats()
+    with torch.inference_mode():
+        model(*_clone(inputs))
+    torch.cuda.synchronize()
+    return int(torch.cuda.max_memory_allocated()), int(torch.cuda.max_memory_reserved())
 
 
 def _base_report(
@@ -314,6 +326,12 @@ def _base_report(
         "correctness": None,
         "performance": None,
         "resources": {
+            "candidate_artifact_digest": candidate_artifact_digest,
+            "incumbent_artifact_digest": incumbent_artifact_digest,
+            "candidate_peak_allocated_bytes": None,
+            "candidate_peak_reserved_bytes": None,
+            "incumbent_peak_allocated_bytes": None,
+            "incumbent_peak_reserved_bytes": None,
             "candidate_peak_memory_bytes": None,
             "incumbent_peak_memory_bytes": None,
             "device_total_memory_bytes": torch.cuda.get_device_properties(0).total_memory,
@@ -427,7 +445,7 @@ def main(profile: BenchmarkProfile = PRIMARY_PROFILE) -> None:
         report["compile"]["diagnostics"] = ""
     except Exception as exc:
         report["evaluation_status"] = "candidate_error"
-        report["failure_kind"] = "compile"
+        report["failure_kind"] = "oom" if isinstance(exc, torch.cuda.OutOfMemoryError) else "compile"
         report["compile"]["diagnostics"] = f"{type(exc).__name__}: {exc}"
         _write_report(args.report, report)
         return
@@ -447,10 +465,17 @@ def main(profile: BenchmarkProfile = PRIMARY_PROFILE) -> None:
         incumbent_inputs = _clone(source_inputs)
         reference_inputs = _clone(source_inputs)
         candidate_before = _clone(candidate_inputs)
-        with torch.inference_mode():
-            expected = reference(*reference_inputs)
-            incumbent_output = incumbent(*incumbent_inputs)
-            candidate_output = candidate(*candidate_inputs)
+        try:
+            with torch.inference_mode():
+                expected = reference(*reference_inputs)
+                incumbent_output = incumbent(*incumbent_inputs)
+                candidate_output = candidate(*candidate_inputs)
+        except torch.cuda.OutOfMemoryError as exc:
+            report["evaluation_status"] = "candidate_error"
+            report["failure_kind"] = "oom"
+            report["compile"]["diagnostics"] = f"CUDA OOM during correctness: {exc}"
+            _write_report(args.report, report)
+            return
         torch.cuda.synchronize()
         candidate_match, abs_error, rel_error = _compare(candidate_output, expected)
         incumbent_match, _, _ = _compare(incumbent_output, expected)
@@ -502,11 +527,30 @@ def main(profile: BenchmarkProfile = PRIMARY_PROFILE) -> None:
         return
 
     timing_inputs = _inputs(reference_module.get_inputs, profile.timing_input_seed)
-    for model in (candidate, incumbent, reference):
-        with torch.inference_mode():
-            for _ in range(WARMUP_RUNS):
-                model(*timing_inputs)
-    torch.cuda.synchronize()
+    try:
+        candidate_allocated, candidate_reserved = _cuda_peaks(candidate, timing_inputs)
+        incumbent_allocated, incumbent_reserved = _cuda_peaks(incumbent, timing_inputs)
+        report["resources"].update(
+            {
+                "candidate_peak_allocated_bytes": candidate_allocated,
+                "candidate_peak_reserved_bytes": candidate_reserved,
+                "incumbent_peak_allocated_bytes": incumbent_allocated,
+                "incumbent_peak_reserved_bytes": incumbent_reserved,
+                "candidate_peak_memory_bytes": candidate_reserved,
+                "incumbent_peak_memory_bytes": incumbent_reserved,
+            }
+        )
+        for model in (candidate, incumbent, reference):
+            with torch.inference_mode():
+                for _ in range(WARMUP_RUNS):
+                    model(*timing_inputs)
+        torch.cuda.synchronize()
+    except torch.cuda.OutOfMemoryError as exc:
+        report["evaluation_status"] = "candidate_error"
+        report["failure_kind"] = "oom"
+        report["compile"]["diagnostics"] = f"CUDA OOM during resource/warmup measurement: {exc}"
+        _write_report(args.report, report)
+        return
 
     models = {
         "candidate_ms": candidate,
@@ -515,11 +559,18 @@ def main(profile: BenchmarkProfile = PRIMARY_PROFILE) -> None:
     }
     names = tuple(models)
     blocks: list[dict[str, Any]] = []
-    for block_index, order in enumerate(_timing_orders(profile, names)):
-        block: dict[str, Any] = {"block": block_index}
-        for name in order:
-            block[name] = _timed_call(models[name], timing_inputs, CALLS_PER_BLOCK)
-        blocks.append(block)
+    try:
+        for block_index, order in enumerate(_timing_orders(profile, names)):
+            block: dict[str, Any] = {"block": block_index}
+            for name in order:
+                block[name] = _timed_call(models[name], timing_inputs, CALLS_PER_BLOCK)
+            blocks.append(block)
+    except torch.cuda.OutOfMemoryError as exc:
+        report["evaluation_status"] = "candidate_error"
+        report["failure_kind"] = "oom"
+        report["compile"]["diagnostics"] = f"CUDA OOM during timing: {exc}"
+        _write_report(args.report, report)
+        return
 
     report["evaluation_status"] = "complete"
     report["failure_kind"] = None

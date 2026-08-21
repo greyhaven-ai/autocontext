@@ -17,11 +17,12 @@ import threading
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, NoReturn, Protocol
+from typing import Any, Literal, NoReturn, Protocol
 
 from pydantic import ValidationError
 
 from autocontext.kernel_evolution import _process_control
+from autocontext.kernel_evolution.evaluator_config import KernelBenchmarkEvaluatorConfig
 from autocontext.kernel_evolution.models import (
     ARTIFACT_IDENTITY_VERSION,
     KernelBenchmarkObservation,
@@ -29,8 +30,19 @@ from autocontext.kernel_evolution.models import (
     KernelCandidate,
     content_digest,
 )
+from autocontext.kernel_evolution.resource_policy import evaluate_kernel_resource_policy
 
 _WINDOWS_LAUNCH_GATE = b"\x01"
+KernelBenchmarkExecutionOutcome = Literal[
+    "complete",
+    "timeout",
+    "oom",
+    "resource_exceeded",
+    "resource_policy_unsupported",
+    "missing_resource_telemetry",
+    "resource_identity_mismatch",
+    "teardown_failed",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,6 +60,7 @@ class KernelBenchmarkExecution:
     harness_unchanged: bool = True
     candidate_unchanged: bool = True
     incumbent_unchanged: bool = True
+    outcome: KernelBenchmarkExecutionOutcome = "complete"
 
 
 class KernelBenchmarkRunner(Protocol):
@@ -197,7 +210,10 @@ class ExternalKernelBenchmarkRunner:
         max_report_entries: int = 1_024,
         max_report_depth: int = 16,
         temporary_root: Path | None = None,
+        trusted_unsafe: bool = False,
     ) -> None:
+        if not trusted_unsafe:
+            raise PermissionError("local kernel execution requires trusted_unsafe=True; use an OS-isolated runner")
         if not command:
             raise ValueError("benchmark command must not be empty")
         if not immutable_paths:
@@ -245,6 +261,7 @@ class ExternalKernelBenchmarkRunner:
     def manifest(self) -> dict[str, Any]:
         return {
             "kind": "external-command",
+            "trusted_unsafe": True,
             "artifact_identity_version": ARTIFACT_IDENTITY_VERSION,
             "command": list(self._command),
             "executable_target": self._executable_target,
@@ -565,27 +582,6 @@ class ExternalKernelBenchmarkRunner:
             )
 
 
-@dataclass(frozen=True, slots=True)
-class KernelBenchmarkEvaluatorConfig:
-    problem_id: str
-    timeout_seconds: float = 630.0
-    min_timing_blocks: int = 5
-    bootstrap_samples: int = 1_000
-    max_feedback_chars: int = 4_000
-
-    def __post_init__(self) -> None:
-        if not self.problem_id.strip():
-            raise ValueError("problem_id must not be empty")
-        if not math.isfinite(self.timeout_seconds) or self.timeout_seconds <= 0:
-            raise ValueError("timeout_seconds must be positive")
-        if self.min_timing_blocks < 2:
-            raise ValueError("min_timing_blocks must be at least 2")
-        if self.bootstrap_samples < 100:
-            raise ValueError("bootstrap_samples must be at least 100")
-        if self.max_feedback_chars < 128:
-            raise ValueError("max_feedback_chars must be at least 128")
-
-
 def _percentile(values: Sequence[float], fraction: float) -> float:
     ordered = sorted(values)
     index = max(0, math.ceil(fraction * len(ordered)) - 1)
@@ -668,9 +664,11 @@ class KernelBenchmarkEvaluator:
             return reject("artifact_modified", "A candidate or incumbent artifact changed during evaluation.")
         if execution.timed_out:
             return reject("timeout", f"Benchmark timed out after {self.config.timeout_seconds:g}s.")
-        if execution.error is not None:
+        if execution.outcome != "complete" and execution.report_payload is None:
+            return reject(execution.outcome, execution.error or f"Benchmark failed with {execution.outcome}.")
+        if execution.error is not None and execution.outcome == "complete":
             return reject("contract_error", execution.error)
-        if execution.returncode != 0:
+        if execution.returncode != 0 and execution.outcome == "complete":
             diagnostics = execution.stderr.strip() or execution.stdout.strip() or "no diagnostics"
             return reject("command_failed", f"Benchmark command exited {execution.returncode}: {diagnostics}")
         if execution.report_payload is None:
@@ -702,6 +700,8 @@ class KernelBenchmarkEvaluator:
                 "Report source digest, suffix, entrypoint, or ABI-bound artifact identity does not match the evaluated pair.",
                 report,
             )
+        if execution.outcome != "complete":
+            return reject(execution.outcome, execution.error or f"Benchmark failed with {execution.outcome}.", report)
         if expected_scope_id is not None and report.hardware_scope_id != expected_scope_id:
             return reject("scope_mismatch", "Hardware, toolchain, or workload fingerprint changed during the run.", report)
         if expected_baseline_id is not None and report.baseline_id != expected_baseline_id:
@@ -712,6 +712,8 @@ class KernelBenchmarkEvaluator:
                 "Correctness seeds, tolerances, or timing protocol changed during the run.",
                 report,
             )
+        if report.failure_kind in {"oom", "timeout"}:
+            return reject(report.failure_kind, f"Benchmark failed with {report.failure_kind}.", report)
         if report.evaluation_status == "infrastructure_error":
             return reject("infrastructure_error", f"Benchmark infrastructure failed: {report.failure_kind}.", report)
         if not report.compile.incumbent_passed:
@@ -724,6 +726,13 @@ class KernelBenchmarkEvaluator:
             return reject("correctness_failed", f"Candidate correctness failed: {failures}", report)
         if report.evaluation_status != "complete" or report.performance is None:
             return reject("contract_error", "A successful candidate report did not contain performance measurements.", report)
+        resource_policy = evaluate_kernel_resource_policy(
+            report,
+            require_telemetry=self.config.require_resource_telemetry,
+            max_gpu_memory_bytes=self.config.max_gpu_memory_bytes,
+        )
+        if resource_policy.reason is not None:
+            return reject(resource_policy.reason, resource_policy.detail, report)
         blocks = report.performance.blocks
         if len(blocks) < self.config.min_timing_blocks:
             return reject(

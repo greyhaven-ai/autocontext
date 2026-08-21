@@ -7,6 +7,11 @@ from autocontext.kernel_evolution.benchmark import (
     KernelBenchmarkExecution,
     KernelBenchmarkRunner,
 )
+from autocontext.kernel_evolution.docker_worker import (
+    DockerGPUDeviceGrant,
+    DockerKernelBenchmarkRunner,
+    DockerKernelWorkerLimits,
+)
 from autocontext.kernel_evolution.lineage import KernelLineageStore
 from autocontext.kernel_evolution.models import (
     ARTIFACT_IDENTITY_VERSION,
@@ -22,6 +27,7 @@ from autocontext.kernel_evolution.models import (
     KernelEvolutionResult,
     KernelHardwareIdentity,
     KernelPerformanceReport,
+    KernelPromotionGateResult,
     KernelResourceReport,
     KernelTimingBlock,
     artifact_digest,
@@ -43,6 +49,9 @@ __all__ = [
     "PROTOCOL_COMPATIBILITY_VERSION",
     "SCHEMA_VERSION",
     "ExternalKernelBenchmarkRunner",
+    "DockerGPUDeviceGrant",
+    "DockerKernelBenchmarkRunner",
+    "DockerKernelWorkerLimits",
     "KernelAttemptRecord",
     "KernelBaselineError",
     "KernelBenchmarkEvaluator",
@@ -63,6 +72,7 @@ __all__ = [
     "KernelIntegrityError",
     "KernelLineageStore",
     "KernelPerformanceReport",
+    "KernelPromotionGateResult",
     "KernelPromotionPolicy",
     "KernelResourceReport",
     "KernelTimingBlock",

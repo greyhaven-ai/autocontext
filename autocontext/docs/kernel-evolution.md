@@ -16,10 +16,69 @@ The split is intentional:
 | Require an optional fresh-protocol confirmation before promotion | Re-run provisional winners with new host-owned seeds and measurement order |
 | Persist source, raw reports, decisions, and lineage | Report hardware, runtime, driver, toolchain, and workload identity |
 
-The external worker may be local, SSH-backed, or a container/job scheduler. A
-subprocess is lifecycle isolation, not a security boundary; generated Python,
-CUDA, or Triton must run on a dedicated worker with no secrets, no network,
-resource limits, read-only harness mounts, and an operator-owned GPU allocation.
+Generated Python, CUDA, or Triton must use `DockerKernelBenchmarkRunner` (or an
+equivalent VM/cgroup backend) in production. It provides an OS boundary with no
+network, no ambient credentials, read-only input and harness mounts, an
+ephemeral tmpfs candidate workspace, and an explicit GPU partition grant. The
+legacy local subprocess runner is lifecycle containment only and now requires
+the conspicuous `trusted_unsafe=True` opt-in.
+
+## Production Docker GPU worker
+
+```python
+from pathlib import Path
+from autocontext.kernel_evolution import (
+    DockerGPUDeviceGrant,
+    DockerKernelBenchmarkRunner,
+    DockerKernelWorkerLimits,
+    KernelBenchmarkEvaluator,
+    KernelBenchmarkEvaluatorConfig,
+)
+
+gpu_limit = 20 * 1024**3
+isolated = DockerKernelBenchmarkRunner(
+    [
+        "python", "{immutable_0}",
+        "--candidate", "{candidate}",
+        "--incumbent", "{incumbent}",
+        "--reference", "{immutable_1}",
+        "--report", "{report}",
+    ],
+    image="registry.example/kernelbench@sha256:<64-hex-digest>",
+    immutable_paths=[Path("adapter.py"), Path("reference.py")],
+    gpu_grant=DockerGPUDeviceGrant(
+        device_id="MIG-GPU-.../1/0",
+        isolation_kind="mig",
+        enforced_memory_bytes=gpu_limit,
+    ),
+    limits=DockerKernelWorkerLimits(max_gpu_memory_bytes=gpu_limit),
+)
+evaluator = KernelBenchmarkEvaluator(
+    isolated,
+    KernelBenchmarkEvaluatorConfig(
+        problem_id="kernelbench-level1-problem1",
+        require_resource_telemetry=True,
+        max_gpu_memory_bytes=gpu_limit,
+    ),
+)
+```
+
+`gpu_grant` is mandatory and `all` is forbidden. A plain visibility grant such
+as `--gpus device=0` does not enforce a byte ceiling, so it is rejected with
+`resource_policy_unsupported` when the worker has a GPU-memory limit. Use a MIG
+or other hardware partition whose capacity was independently verified and is
+no larger than the configured ceiling. Allocation/reservation telemetry is a
+second fail-closed check, not a substitute for that enforcement boundary.
+
+The worker applies wall-clock, CPU-time/CPU-share, RAM/swap, PID, bounded
+stdout/stderr/report, report inode/depth, and tmpfs byte/inode limits. Only the
+candidate/incumbent input directory and benchmark/reference paths are mounted
+read-only; the report directory is the sole host-writable mount and the
+candidate workspace is ephemeral tmpfs. The root filesystem is read-only,
+Linux capabilities are dropped, `no-new-privileges` is enabled, the environment
+is rebuilt from an empty set, and network mode is `none`. Every outcome removes
+and verifies the labeled container. Before a new run, expired labeled workers
+left by a crashed coordinator are reconciled.
 
 ## Run the vertical slice
 
@@ -86,6 +145,7 @@ external = ExternalKernelBenchmarkRunner(
         Path("/opt/kernel-worker/kernelbench_adapter.py"),
         Path("/opt/kernel-worker/problems/level1/1"),
     ],
+    trusted_unsafe=True,
 )
 evaluator = KernelBenchmarkEvaluator(
     external,
@@ -116,6 +176,7 @@ confirmation_external = ExternalKernelBenchmarkRunner(
         Path("/opt/kernel-worker/kernelbench_confirmation_adapter.py"),
         Path("/opt/kernel-worker/problems/level1/1-confirmation"),
     ],
+    trusted_unsafe=True,
 )
 confirmation_evaluator = KernelBenchmarkEvaluator(
     confirmation_external,
@@ -177,14 +238,10 @@ handle-close failures as contract errors. The adapter's `HOME`, `USERPROFILE`,
 `SystemRoot` and `WINDIR` are preserved from the control process. Custom
 environment values cannot override those reserved paths.
 
-These controls fail closed and limit ordinary adapter mistakes, but they are
-not a hostile-code sandbox. The report caps use a polling watchdog and can
-briefly overshoot. Process-tree cleanup does not prevent generated code from
-reading available credentials, using the network, writing elsewhere, asking a
-privileged service to launch work, or exploiting the host. AC-991 tracks that
-separate security boundary: a dedicated container/VM or equivalent isolated
-worker, cgroup or Job resource quotas, read-only mounts, restricted networking,
-and a worker account with no secrets.
+These local-process controls limit ordinary adapter mistakes, but they are not
+a hostile-code sandbox. Use them only with `trusted_unsafe=True` on a dedicated
+trusted worker. `DockerKernelBenchmarkRunner` is the shipped hostile-code
+boundary; equivalent custom backends must enforce and attest the same controls.
 
 `confirmation_fn` is optional and backward compatible. When present, it
 receives the exact provisional candidate and incumbent and must return a
@@ -270,6 +327,12 @@ rejected. Important fields are:
     ]
   },
   "resources": {
+    "candidate_artifact_digest": "sha256:...",
+    "incumbent_artifact_digest": "sha256:...",
+    "candidate_peak_allocated_bytes": 69206016,
+    "candidate_peak_reserved_bytes": 73400320,
+    "incumbent_peak_allocated_bytes": 67108864,
+    "incumbent_peak_reserved_bytes": 71303168,
     "candidate_peak_memory_bytes": 73400320,
     "incumbent_peak_memory_bytes": 71303168,
     "device_total_memory_bytes": 85899345920
@@ -282,6 +345,13 @@ The abbreviated block list above must contain exactly `timing_blocks` entries
 in a real report. Failed evaluations use `candidate_error` or
 `infrastructure_error`, set a `failure_kind`, omit performance, and may omit
 correctness when compilation never completed.
+
+Production evaluators set `require_resource_telemetry=True`. Candidate and
+incumbent peak allocation and reservation are measured in separate reset
+windows and bound to their ABI-qualified artifact digests. Missing metrics
+reject as `missing_resource_telemetry`; CUDA/container OOM,
+`resource_exceeded`, unsupported hard GPU-memory enforcement, and verified
+teardown failure remain distinct outcomes.
 
 AutoContext does not trust supplied summary numbers. It recomputes geometric
 paired speedups, medians, p95 latency, reference drift, and a deterministic
@@ -329,6 +399,10 @@ failure, insufficient gain, or measurement instability rejects only that
 proposal and preserves the incumbent. An invalid baseline is terminal because
 there is no trustworthy comparison scope, but its failed attempt remains
 auditable on disk.
+
+Every promotion decision also persists ordered gate results. Each gate is
+explicitly `passed`, `failed`, or `not-evaluated`, so an early fail-closed exit
+does not imply that later confidence, tail, or resource gates ran.
 
 ## Adapting AutoKernel / KernelBench
 

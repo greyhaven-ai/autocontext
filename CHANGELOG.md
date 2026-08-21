@@ -6,6 +6,15 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Generated GPU kernels can now run through a pinned-image Docker worker that
+  shares the ResearchWorkspace lockdown primitive: read-only harness/input
+  mounts, ephemeral byte/inode-bounded workspace, deny-network/scrubbed
+  environment, explicit partitioned GPU grant, CPU/RAM/PID/output limits,
+  verified teardown, and crashed-coordinator orphan reconciliation. Mandatory
+  identity-bound CUDA allocation/reservation telemetry and three-state gate
+  feedback keep missing metrics, OOM, excess, unsupported enforcement, and
+  teardown failures distinct; local execution requires `trusted_unsafe=True`
+  (AC-991).
 - A concrete `DockerResearchSandboxBackend` now backs explicitly approved
   `isolated_sandbox` research workspaces with a pinned image, read-only rootfs,
   workspace-only mounts, denied network, dropped capabilities, scrubbed

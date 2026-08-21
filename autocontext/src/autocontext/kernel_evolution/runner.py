@@ -26,6 +26,7 @@ from autocontext.kernel_evolution.models import (
     KernelCandidate,
     KernelEvolutionResult,
     KernelPromotionDecision,
+    KernelPromotionGateResult,
 )
 
 
@@ -88,43 +89,120 @@ class _Champion:
 class KernelPromotionPolicy:
     """Deterministic promotion gate, independent of the scalar prompt score."""
 
+    _GATE_NAMES = (
+        "valid_evaluation",
+        "resource_telemetry",
+        "environment_drift",
+        "gpu_memory",
+        "relative_improvement",
+        "confidence_interval",
+        "tail_latency",
+    )
+
     def __init__(self, config: KernelEvolutionConfig) -> None:
         self.config = config
 
+    def _decision(
+        self,
+        *,
+        promote: bool,
+        decision: str,
+        reason: str,
+        feedback: str,
+        statuses: dict[str, str],
+    ) -> KernelPromotionDecision:
+        gates = tuple(
+            KernelPromotionGateResult(
+                name=name,
+                status=statuses.get(name, "not-evaluated"),  # type: ignore[arg-type]
+            )
+            for name in self._GATE_NAMES
+        )
+        summary = ", ".join(f"{gate.name}={gate.status}" for gate in gates)
+        return KernelPromotionDecision(
+            promote=promote,
+            decision=decision,  # type: ignore[arg-type]
+            reason=reason,
+            feedback=f"{feedback} Gates: {summary}.",
+            gates=gates,
+        )
+
     def decide(self, observation: KernelBenchmarkObservation, *, baseline: bool = False) -> KernelPromotionDecision:
+        statuses: dict[str, str] = {}
         if not observation.eligible:
             reason = observation.rejection_reason or "invalid_evaluation"
-            return KernelPromotionDecision(
+            if reason == "missing_resource_telemetry":
+                statuses.update(valid_evaluation="passed", resource_telemetry="failed")
+            elif reason == "resource_exceeded":
+                statuses.update(valid_evaluation="passed", resource_telemetry="passed", gpu_memory="failed")
+            else:
+                statuses["valid_evaluation"] = "failed"
+            return self._decision(
                 promote=False,
                 decision="rejected",
                 reason=reason,
                 feedback=f"{observation.feedback} Promotion veto: {reason}.",
+                statuses=statuses,
             )
+        statuses["valid_evaluation"] = "passed"
+        resources = observation.report.resources if observation.report is not None else None
+        telemetry_present = resources is not None and all(
+            value is not None
+            for value in (
+                resources.candidate_artifact_digest,
+                resources.incumbent_artifact_digest,
+                resources.candidate_peak_allocated_bytes,
+                resources.candidate_peak_reserved_bytes,
+                resources.incumbent_peak_allocated_bytes,
+                resources.incumbent_peak_reserved_bytes,
+                resources.device_total_memory_bytes,
+            )
+        )
+        if telemetry_present:
+            statuses["resource_telemetry"] = "passed"
         assert observation.environment_drift_ratio is not None
         if observation.environment_drift_ratio > self.config.max_environment_drift:
+            statuses["environment_drift"] = "failed"
             reason = "unstable_environment"
             feedback = (
                 f"{observation.feedback} Rejected: reference drift {observation.environment_drift_ratio:.2%} exceeds "
                 f"{self.config.max_environment_drift:.2%}."
             )
-            return KernelPromotionDecision(promote=False, decision="rejected", reason=reason, feedback=feedback)
+            return self._decision(
+                promote=False,
+                decision="rejected",
+                reason=reason,
+                feedback=feedback,
+                statuses=statuses,
+            )
+        statuses["environment_drift"] = "passed"
 
-        resources = observation.report.resources if observation.report is not None else None
+        candidate_peak = resources.candidate_enforced_peak_bytes if resources is not None else None
         if (
             resources is not None
-            and resources.candidate_peak_memory_bytes is not None
+            and candidate_peak is not None
             and resources.device_total_memory_bytes is not None
-            and resources.candidate_peak_memory_bytes > resources.device_total_memory_bytes * self.config.max_peak_memory_fraction
+            and candidate_peak > resources.device_total_memory_bytes * self.config.max_peak_memory_fraction
         ):
+            statuses["gpu_memory"] = "failed"
             reason = "memory_limit"
             feedback = f"{observation.feedback} Rejected: peak device memory exceeds the configured fraction."
-            return KernelPromotionDecision(promote=False, decision="rejected", reason=reason, feedback=feedback)
+            return self._decision(
+                promote=False,
+                decision="rejected",
+                reason=reason,
+                feedback=feedback,
+                statuses=statuses,
+            )
+        if candidate_peak is not None:
+            statuses["gpu_memory"] = "passed"
         if baseline:
-            return KernelPromotionDecision(
+            return self._decision(
                 promote=True,
                 decision="baseline",
                 reason="baseline",
                 feedback=f"{observation.feedback} Valid baseline established.",
+                statuses=statuses,
             )
 
         assert observation.relative_improvement is not None
@@ -132,12 +210,20 @@ class KernelPromotionPolicy:
         assert observation.candidate_p95_ms is not None
         assert observation.incumbent_p95_ms is not None
         if observation.relative_improvement + 1e-12 < self.config.min_relative_improvement:
+            statuses["relative_improvement"] = "failed"
             reason = "insufficient_improvement"
             feedback = (
                 f"{observation.feedback} Rejected: latency improvement {observation.relative_improvement:.2%} is below "
                 f"the required {self.config.min_relative_improvement:.2%}."
             )
-            return KernelPromotionDecision(promote=False, decision="rejected", reason=reason, feedback=feedback)
+            return self._decision(
+                promote=False,
+                decision="rejected",
+                reason=reason,
+                feedback=feedback,
+                statuses=statuses,
+            )
+        statuses["relative_improvement"] = "passed"
         required_confident_speedup = 1.0 / (1.0 - self.config.min_relative_improvement)
         confidence_failed = (
             observation.speedup_lcb95 <= 1.0
@@ -145,21 +231,38 @@ class KernelPromotionPolicy:
             else observation.speedup_lcb95 + 1e-12 < required_confident_speedup
         )
         if self.config.require_confidence and confidence_failed:
+            statuses["confidence_interval"] = "failed"
             reason = "confidence_interval"
             feedback = (
                 f"{observation.feedback} Rejected: the paired 95% lower bound does not support the configured "
                 f"{self.config.min_relative_improvement:.2%} improvement margin."
             )
-            return KernelPromotionDecision(promote=False, decision="rejected", reason=reason, feedback=feedback)
+            return self._decision(
+                promote=False,
+                decision="rejected",
+                reason=reason,
+                feedback=feedback,
+                statuses=statuses,
+            )
+        statuses["confidence_interval"] = "passed" if self.config.require_confidence else "not-evaluated"
         if observation.candidate_p95_ms > observation.incumbent_p95_ms * (1 + self.config.max_p95_regression):
+            statuses["tail_latency"] = "failed"
             reason = "tail_regression"
             feedback = f"{observation.feedback} Rejected: candidate p95 latency regressed beyond the allowed limit."
-            return KernelPromotionDecision(promote=False, decision="rejected", reason=reason, feedback=feedback)
-        return KernelPromotionDecision(
+            return self._decision(
+                promote=False,
+                decision="rejected",
+                reason=reason,
+                feedback=feedback,
+                statuses=statuses,
+            )
+        statuses["tail_latency"] = "passed"
+        return self._decision(
             promote=True,
             decision="promoted",
             reason="significant_improvement",
             feedback=f"{observation.feedback} Promoted: all correctness, significance, tail, drift, and resource gates passed.",
+            statuses=statuses,
         )
 
 
@@ -250,11 +353,13 @@ class KernelEvolutionRunner:
         provisional: KernelPromotionDecision,
         confirmation: KernelPromotionDecision,
     ) -> KernelPromotionDecision:
+        confirmation_gates = tuple(gate.model_copy(update={"name": f"confirmation.{gate.name}"}) for gate in confirmation.gates)
         return KernelPromotionDecision(
             promote=False,
             decision="rejected",
             reason=f"confirmation_{confirmation.reason}",
             feedback=f"{provisional.feedback} Independent confirmation veto: {confirmation.feedback}",
+            gates=(*provisional.gates, *confirmation_gates),
         )
 
     def _confirm(
@@ -273,7 +378,8 @@ class KernelEvolutionRunner:
                 promote=False,
                 decision="rejected",
                 reason=reason,
-                feedback=feedback,
+                feedback=f"{feedback} Gates: confirmation_contract=failed.",
+                gates=(KernelPromotionGateResult(name="confirmation_contract", status="failed"),),
             )
 
         try:
@@ -379,6 +485,10 @@ class KernelEvolutionRunner:
                 decision="promoted",
                 reason=provisional.reason,
                 feedback=f"{provisional.feedback} Independent fresh confirmation passed all promotion gates.",
+                gates=(
+                    *provisional.gates,
+                    *(gate.model_copy(update={"name": f"confirmation.{gate.name}"}) for gate in confirmation.gates),
+                ),
             ),
         )
 

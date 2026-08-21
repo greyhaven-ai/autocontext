@@ -87,6 +87,7 @@ def main() -> None:
                 "--problem",
                 str(problem),
             ],
+            trusted_unsafe=True,
             immutable_paths=[ADAPTER, problem],
         )
         return KernelBenchmarkEvaluator(
