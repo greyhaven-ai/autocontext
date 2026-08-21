@@ -1,5 +1,32 @@
 """Correctness-first recursive optimization for externally benchmarked kernels."""
 
+from autocontext.kernel_evolution.authority_protocol import (
+    AUTHORITY_PROTOCOL_VERSION,
+    AUTHORITY_RECEIPT_VERSION,
+    AcceleratorAttestation,
+    AuthorityExecutionOutcome,
+    AuthorityMeasurement,
+    AuthorityRequest,
+    AuthorityResponse,
+    KernelEvaluatorAuthorityReceipt,
+    authority_message_digest,
+    authority_report_content_digest,
+    build_authority_receipt,
+    canonical_authority_digest,
+    verify_authority_receipt,
+)
+from autocontext.kernel_evolution.authority_runner import (
+    PROTECTED_EVALUATOR_BOUNDARY,
+    DockerProtectedKernelBenchmarkRunner,
+)
+from autocontext.kernel_evolution.authority_wire import (
+    MAX_AUTHORITY_HEADER_BYTES,
+    MAX_AUTHORITY_PAYLOAD_BYTES,
+    AuthorityWireError,
+    encode_authority_frame,
+    receive_authority_frame,
+    send_authority_frame,
+)
 from autocontext.kernel_evolution.benchmark import (
     ExternalKernelBenchmarkRunner,
     KernelBenchmarkEvaluator,
@@ -64,15 +91,25 @@ from autocontext.kernel_evolution.runner import (
 )
 
 __all__ = [
+    "AUTHORITY_PROTOCOL_VERSION",
+    "AUTHORITY_RECEIPT_VERSION",
     "ARTIFACT_IDENTITY_VERSION",
     "PROTOCOL_COMPATIBILITY_VERSION",
+    "PROTECTED_EVALUATOR_BOUNDARY",
     "SCHEMA_VERSION",
     "ExternalKernelBenchmarkRunner",
+    "AcceleratorAttestation",
+    "AuthorityExecutionOutcome",
+    "AuthorityMeasurement",
+    "AuthorityRequest",
+    "AuthorityResponse",
+    "AuthorityWireError",
     "DockerGPUDeviceAttestation",
     "DockerGPUDeviceAttestor",
     "DockerGPUDeviceGrant",
     "DockerKernelBenchmarkRunner",
     "DockerKernelWorkerLimits",
+    "DockerProtectedKernelBenchmarkRunner",
     "NvidiaSMIGPUDeviceAttestor",
     "KernelAttemptRecord",
     "KernelBaselineError",
@@ -95,6 +132,7 @@ __all__ = [
     "KernelHardwareIdentity",
     "KernelCasePerformanceReport",
     "KernelIntegrityError",
+    "KernelEvaluatorAuthorityReceipt",
     "KernelLineageStore",
     "KernelPerformanceReport",
     "KernelPromotionGateResult",
@@ -112,8 +150,18 @@ __all__ = [
     "PrecisionProfileName",
     "RELAXED_PRECISION_SEMANTICS",
     "STRICT_FP32_SEMANTICS",
+    "MAX_AUTHORITY_HEADER_BYTES",
+    "MAX_AUTHORITY_PAYLOAD_BYTES",
     "artifact_digest",
     "artifact_digest_from_source_digest",
     "canonical_digest",
+    "authority_message_digest",
+    "authority_report_content_digest",
+    "build_authority_receipt",
+    "canonical_authority_digest",
     "content_digest",
+    "encode_authority_frame",
+    "receive_authority_frame",
+    "send_authority_frame",
+    "verify_authority_receipt",
 ]

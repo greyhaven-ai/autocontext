@@ -232,7 +232,11 @@ class FakeBenchmarkRunner:
         )
 
 
-def _evaluator(fake: FakeBenchmarkRunner) -> KernelBenchmarkEvaluator:
+def _evaluator(
+    fake: FakeBenchmarkRunner,
+    *,
+    adaptive_feedback_policy: str = "detailed",
+) -> KernelBenchmarkEvaluator:
     return KernelBenchmarkEvaluator(
         fake,
         KernelBenchmarkEvaluatorConfig(
@@ -240,6 +244,7 @@ def _evaluator(fake: FakeBenchmarkRunner) -> KernelBenchmarkEvaluator:
             timeout_seconds=12.5,
             min_timing_blocks=5,
             bootstrap_samples=6_000,
+            adaptive_feedback_policy=adaptive_feedback_policy,  # type: ignore[arg-type]
         ),
     )
 
@@ -252,6 +257,7 @@ def _runner(
     confirmation_fn: KernelConfirmationFn | None = None,
     precision_profile: PrecisionProfileName | None = None,
     proposal_cap: int | None = None,
+    adaptive_feedback_policy: str = "detailed",
 ) -> tuple[KernelEvolutionRunner, list[str]]:
     prompts: list[str] = []
 
@@ -270,7 +276,7 @@ def _runner(
             proposal_cap=proposal_cap,
         ),
         generate,
-        _evaluator(fake),
+        _evaluator(fake, adaptive_feedback_policy=adaptive_feedback_policy),
         tmp_path,
         run_id="kernel-test",
         confirmation_fn=confirmation_fn,
@@ -715,6 +721,24 @@ def test_confirmation_details_are_quarantined_from_recursive_prompts(tmp_path: P
     assert result.attempts[1].confirmation_decision is not None
     assert secret in result.attempts[1].confirmation_decision.feedback
     assert secret not in prompts[1]
+
+
+def test_aggregate_gate_feedback_blocks_candidate_timing_covert_channel(tmp_path: Path) -> None:
+    runner, prompts = _runner(
+        tmp_path,
+        FakeBenchmarkRunner(),
+        ["winner", "tiny-gain"],
+        adaptive_feedback_policy="aggregate-gates",
+    )
+
+    result = runner.run(proposals=2)
+
+    assert len(result.attempts) == 3
+    recursive_prompt = prompts[1]
+    assert "Aggregate benchmark gates:" in recursive_prompt
+    assert "paired speedup" not in recursive_prompt
+    assert "relative_improvement" in recursive_prompt
+    assert "1.1111" not in recursive_prompt
 
 
 def test_same_protocol_confirmation_fails_freshness_gate(tmp_path: Path) -> None:

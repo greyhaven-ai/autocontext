@@ -163,16 +163,32 @@ class KernelPromotionPolicy:
             )
         statuses["valid_evaluation"] = "passed"
         resources = observation.report.resources if observation.report is not None else None
-        telemetry_present = resources is not None and all(
-            value is not None
-            for value in (
-                resources.candidate_artifact_digest,
-                resources.incumbent_artifact_digest,
-                resources.candidate_peak_allocated_bytes,
-                resources.candidate_peak_reserved_bytes,
-                resources.incumbent_peak_allocated_bytes,
-                resources.incumbent_peak_reserved_bytes,
-                resources.device_total_memory_bytes,
+        telemetry_present = (
+            resources is not None
+            and all(
+                value is not None
+                for value in (
+                    resources.candidate_artifact_digest,
+                    resources.incumbent_artifact_digest,
+                    resources.device_total_memory_bytes,
+                )
+            )
+            and (
+                all(
+                    value is not None
+                    for value in (
+                        resources.candidate_peak_allocated_bytes,
+                        resources.candidate_peak_reserved_bytes,
+                        resources.incumbent_peak_allocated_bytes,
+                        resources.incumbent_peak_reserved_bytes,
+                    )
+                )
+                or (
+                    resources.telemetry_authority == "trusted-evaluator-observed/v1"
+                    and resources.accelerator_attestation_digest is not None
+                    and resources.candidate_observed_peak_bytes is not None
+                    and resources.incumbent_observed_peak_bytes is not None
+                )
             )
         )
         if telemetry_present:
@@ -546,19 +562,33 @@ class KernelEvolutionRunner:
                 observation,
                 provisional_decision,
             )
-            metrics: dict[str, float] = {}
-            if observation.relative_improvement is not None:
-                metrics["relative_improvement"] = float(observation.relative_improvement)
-            if observation.speedup_lcb is not None:
-                metrics["speedup_lcb"] = float(observation.speedup_lcb)
-            performance_dimension = min(1.0, float(observation.speedup_vs_incumbent or 0.0))
+            aggregate_feedback = self._evaluator.config.adaptive_feedback_policy == "aggregate-gates"
+            if aggregate_feedback:
+                gate_status = {gate.name: gate.status for gate in provisional_decision.gates}
+                disclosed_feedback = (
+                    "Aggregate benchmark gates: "
+                    + ", ".join(f"{gate.name}={gate.status}" for gate in provisional_decision.gates)
+                    + f". Disposition={provisional_decision.reason}."
+                )
+                metrics: dict[str, float] = {}
+                performance_dimension = float(gate_status.get("relative_improvement") == "passed")
+                adaptive_score = float(provisional_decision.promote)
+            else:
+                disclosed_feedback = provisional_decision.feedback
+                metrics = {}
+                if observation.relative_improvement is not None:
+                    metrics["relative_improvement"] = float(observation.relative_improvement)
+                if observation.speedup_lcb is not None:
+                    metrics["speedup_lcb"] = float(observation.speedup_lcb)
+                performance_dimension = min(1.0, float(observation.speedup_vs_incumbent or 0.0))
+                adaptive_score = self._score(observation)
             return AgentTaskGenerationEvaluation(
                 output=source,
-                score=self._score(observation),
+                score=adaptive_score,
                 # Confirmation evidence is persisted for audit, but its
                 # detailed feedback and metrics must not become training data
                 # for later adaptive proposals.
-                reasoning=provisional_decision.feedback,
+                reasoning=disclosed_feedback,
                 dimension_scores={
                     "correctness": 1.0 if observation.eligible else 0.0,
                     "performance": performance_dimension,
@@ -566,7 +596,7 @@ class KernelEvolutionRunner:
                 },
                 met_threshold=decision.promote,
                 lesson_signal=LessonSignal(
-                    hint=provisional_decision.feedback,
+                    hint=disclosed_feedback,
                     plateau=provisional_decision.reason in {"insufficient_improvement", "confidence_interval"},
                     metrics=metrics,
                 ),

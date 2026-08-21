@@ -26,6 +26,13 @@ correctness, timing, telemetry, and the authoritative report. The legacy local
 subprocess runner is lifecycle containment only and now requires the
 conspicuous `trusted_unsafe=True` opt-in.
 
+For authoritative evaluation of hostile generated code, use
+`DockerProtectedKernelBenchmarkRunner`. Its core protocol is accelerator
+neutral: attestations name a backend, vendor, architecture, device/partition,
+runtime, driver, and capacity without encoding CUDA, NVIDIA, MIG, or H100 into
+the schema. The H100/MIG example is the first conformance profile, not a limit
+on future ROCm, other accelerator, or VM-backed implementations.
+
 ## Production host-containment worker
 
 This composition establishes the host and GPU-partition boundary only. The
@@ -92,6 +99,54 @@ Linux capabilities are dropped, `no-new-privileges` is enabled, the environment
 is rebuilt from an empty set, and network mode is `none`. Every outcome removes
 and verifies the labeled container. Before a new run, expired labeled workers
 left by a crashed coordinator are reconciled.
+
+## Protected evaluator authority boundary
+
+`DockerProtectedKernelBenchmarkRunner` creates three separately named
+containers: a trusted evaluator, an isolated candidate authority, and an
+isolated incumbent authority. The evaluator mounts private plans, references,
+its immutable code, two Unix-socket directories, and report storage, but no
+generated source. Each artifact container mounts only its own read-only source,
+the public authority worker/support files, and one read-only socket directory.
+It receives no private-plan path, report path, evaluator build identity, other
+role channel, ambient credential, network, or durable writable mount.
+
+The socket contract uses strict bounded JSON headers and canonical safetensors
+payloads; pickle and candidate-authored timing/resource/report fields are not
+accepted. The evaluator creates fresh randomized timed inputs, independently
+checks each returned tensor against its trusted reference, measures wall time
+around the authority exchange, and observes accelerator-partition memory from
+the trusted side. This prevents cached correctness outputs, forged clocks, or a
+candidate-local `torch` patch from becoming authoritative evidence.
+
+Every report can carry an
+`autocontext.accelerator-authority-receipt/v1` receipt binding:
+
+- candidate and incumbent artifact identities;
+- private-plan commitment and input/output commitments;
+- evaluator-owned ordered timing/resource measurements;
+- evaluator build and public boundary-manifest digests;
+- the generic accelerator attestation and the report content itself.
+
+`KernelBenchmarkEvaluatorConfig(require_authority_receipt=True)` rejects a
+missing receipt. The protected Docker runner additionally replays the receipt
+and requires its device, partition kind/capacity, attestor, and underlying host
+grant digest to match host attestation. Protocol corruption, evaluator crash,
+candidate crash, OOM, timeout, and teardown failure remain separate outcomes.
+All containers are killed and removal-verified after every run; expiry labels
+support fail-closed orphan reconciliation after coordinator loss.
+
+Protected adaptive campaigns should also set
+`adaptive_feedback_policy="aggregate-gates"`. Promotion and persisted audit
+evidence still use the exact trusted statistics, but later candidate prompts
+receive only documented passed/failed/not-evaluated gates and a disposition—no
+candidate-modulatable latency digits or exact derived metrics. Confirmation
+feedback remains quarantined as before.
+
+The H100 example's protected factory is available for the opt-in hardware gate,
+but its normal recursive campaign still fails before mailbox creation. That
+guard must remain until the exact digest-pinned Docker/MIG path passes a real
+H100 adversarial validation and its receipt is reviewed.
 
 ## Run the vertical slice
 

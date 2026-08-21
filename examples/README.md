@@ -43,9 +43,10 @@ orchestration adapter is synthetic. The companion
 real KernelBench/AutoKernel comparison and now separates strict-FP32 from
 relaxed-precision campaigns, binds private holdout commitments, and applies a
 bounded sequential promotion gate. The historical one-shot smoke accepts only
-trusted source. The production campaign is Docker-composed but intentionally
-fails closed until generated execution is separated from its authoritative
-evaluator.
+trusted source. The accelerator-neutral protected runner now separates
+generated execution from its authoritative evaluator; the production H100
+campaign intentionally remains fail-closed until that exact path passes the
+opt-in real MIG adversarial gate.
 
 ## Python CLI From Source
 

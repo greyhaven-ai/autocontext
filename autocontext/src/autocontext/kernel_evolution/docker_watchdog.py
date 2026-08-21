@@ -66,6 +66,7 @@ def launch_deadline_watchdog(
             container_name,
             f"{expires_at:.9f}",
             str(ready_path),
+            str(os.getpid()),
         ],
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
@@ -90,8 +91,9 @@ def run_deadline_watchdog(
     container_name: str,
     expires_at: float,
     ready_path: Path,
+    coordinator_pid: int | None = None,
 ) -> int:
-    """Remove the owned container at its wall deadline, even if the coordinator dies."""
+    """Remove the owned container at its deadline or when its coordinator dies."""
 
     if (
         not docker_binary
@@ -100,6 +102,7 @@ def run_deadline_watchdog(
         or re.fullmatch(r"[A-Za-z0-9_.-]+", container_name) is None
         or not math.isfinite(expires_at)
         or expires_at <= 0
+        or (coordinator_pid is not None and coordinator_pid < 2)
     ):
         return 2
     try:
@@ -107,7 +110,7 @@ def run_deadline_watchdog(
     except OSError:
         return 2
     deadline = time.monotonic() + max(0.0, expires_at - time.time())
-    while time.monotonic() < deadline:
+    while time.monotonic() < deadline and (coordinator_pid is None or os.getppid() == coordinator_pid):
         time.sleep(min(_POLL_SECONDS, max(0.0, deadline - time.monotonic())))
 
     env = sanitized_docker_environment()
@@ -143,13 +146,14 @@ def run_deadline_watchdog(
 
 
 def _entrypoint(argv: Sequence[str]) -> int:
-    if len(argv) != 6 or argv[1] != "--docker-deadline-watchdog":
+    if len(argv) != 7 or argv[1] != "--docker-deadline-watchdog":
         return 2
     try:
         expires_at = float(argv[4])
+        coordinator_pid = int(argv[6])
     except ValueError:
         return 2
-    return run_deadline_watchdog(argv[2], argv[3], expires_at, Path(argv[5]))
+    return run_deadline_watchdog(argv[2], argv[3], expires_at, Path(argv[5]), coordinator_pid)
 
 
 if __name__ == "__main__":  # pragma: no cover - exercised as a detached host helper

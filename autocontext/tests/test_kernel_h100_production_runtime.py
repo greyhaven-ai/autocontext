@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,6 +12,7 @@ import pytest
 
 from autocontext.kernel_evolution import (
     DockerKernelWorkerLimits,
+    KernelCandidate,
     KernelDecisionPolicy,
     KernelSequentialTestingPolicy,
     KernelStatisticsPolicy,
@@ -49,8 +51,10 @@ def _runtime(production_runtime: Any, *, gpu_memory_bytes: int = 8 * 1024**3) ->
     )
 
 
-def test_production_runtime_is_pinned_and_runnable_composition_is_unavailable(
-    tmp_path: Path, runtime_modules: tuple[Any, Any]
+def test_production_runtime_is_pinned_and_protected_composition_is_runnable_for_validation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    runtime_modules: tuple[Any, Any],
 ) -> None:
     production_runtime, _campaign = runtime_modules
     autokernel_root = tmp_path / "autokernel"
@@ -67,29 +71,56 @@ def test_production_runtime_is_pinned_and_runnable_composition_is_unavailable(
     assert runtime_manifest["gpu_memory_bytes"] == 8 * 1024**3
     assert runtime_manifest["limits"]["max_gpu_memory_bytes"] == 8 * 1024**3
     assert runtime_manifest["evidence_boundary"] == {
-        "required": "trusted-evaluator/isolated-gpu-candidate-v1",
+        "required": "trusted-evaluator/isolated-accelerator-candidate-v1",
         "available": False,
     }
 
-    with pytest.raises(production_runtime.ProductionEvaluatorBoundaryUnavailable):
-        production_runtime._compose_docker_evaluator(
-            runtime=runtime,
-            bundle=_BUNDLE,
-            adapter_name="adapter.py",
-            autokernel_root=autokernel_root,
-            private_plan=private_plan,
-            problem_id="kernel-problem",
-            precision_profile="strict-fp32-v1",
-            plan_commitment=f"sha256:{'b' * 64}",
-            proposal_cap=10,
-            familywise_alpha=0.05,
-        )
+    captured: dict[str, Any] = {}
+
+    class FakeAttestor:
+        def __init__(self, binary: str) -> None:
+            captured["attestor_binary"] = binary
+
+    class FakeProtectedRunner:
+        def __init__(self, command: list[str], **kwargs: Any) -> None:
+            captured["command"] = command
+            captured["runner"] = kwargs
+
+        def manifest(self) -> dict[str, Any]:
+            return {"kind": "fake-protected-runner"}
+
+    monkeypatch.setattr(production_runtime, "NvidiaSMIGPUDeviceAttestor", FakeAttestor)
+    monkeypatch.setattr(production_runtime, "DockerProtectedKernelBenchmarkRunner", FakeProtectedRunner)
+    evaluator = production_runtime._compose_docker_evaluator(
+        runtime=runtime,
+        bundle=_BUNDLE,
+        adapter_name="adapter.py",
+        autokernel_root=autokernel_root,
+        private_plan=private_plan,
+        problem_id="kernel-problem",
+        precision_profile="strict-fp32-v1",
+        plan_commitment=f"sha256:{'b' * 64}",
+        proposal_cap=10,
+        familywise_alpha=0.05,
+    )
+
+    manifest = evaluator.manifest()
+    assert manifest["evaluator"]["require_authority_receipt"] is True
+    assert manifest["evaluator"]["require_resource_telemetry"] is True
+    assert manifest["evaluator"]["adaptive_feedback_policy"] == "aggregate-gates"
+    assert captured["attestor_binary"] == "nvidia-smi-production"
+    assert captured["runner"]["evaluator_immutable_paths"] == (_BUNDLE.resolve(), private_plan.resolve())
+    assert captured["runner"]["candidate_runtime_path"] == _BUNDLE / "authority_worker.py"
+    command = captured["command"]
+    assert "{candidate_socket}" in command and "{incumbent_socket}" in command
+    assert "{candidate}" not in command and "{incumbent}" not in command
+    assert str(private_plan) not in command
 
 
 def test_production_campaign_has_no_same_interpreter_override(runtime_modules: tuple[Any, Any]) -> None:
     production_runtime, _campaign = runtime_modules
 
-    with pytest.raises(production_runtime.ProductionEvaluatorBoundaryUnavailable, match="same interpreter"):
+    with pytest.raises(production_runtime.ProductionEvaluatorBoundaryUnavailable, match="real H100/MIG validation"):
         production_runtime.require_protected_evaluator_boundary()
 
     source = (_BUNDLE / "campaign.py").read_text(encoding="utf-8")
@@ -191,7 +222,7 @@ def test_campaign_fails_before_creating_mailbox_or_launching_worker(
         ],
     )
 
-    with pytest.raises(SystemExit, match="production H100 campaigns are disabled"):
+    with pytest.raises(SystemExit, match="production H100 campaigns remain disabled"):
         campaign.main()
 
     assert not mailbox.exists()
@@ -530,6 +561,98 @@ def test_profile_evidence_recomputes_complete_gpu_attestation(
             confirmation_commitments=(result._confirmation_commitment,),
             runtime=runtime,
         )
+
+
+@pytest.mark.skipif(
+    os.environ.get("AUTOCONTEXT_RUN_PROTECTED_GPU_INTEGRATION") != "1",
+    reason="requires an explicit protected H100/MIG release host",
+)
+def test_real_h100_protected_authority_adversarial_release_gate(runtime_modules: tuple[Any, Any]) -> None:
+    """Exercise the exact guarded production factory on a real H100/MIG host."""
+
+    production_runtime, _campaign = runtime_modules
+    profile_contract = importlib.import_module("profile_contract")
+    required = {
+        name: os.environ.get(name)
+        for name in (
+            "AUTOCONTEXT_GPU_DOCKER_IMAGE",
+            "AUTOCONTEXT_GPU_DOCKER_PYTHON",
+            "AUTOCONTEXT_GPU_DEVICE_ID",
+            "AUTOCONTEXT_GPU_MEMORY_BYTES",
+            "AUTOCONTEXT_AUTOKERNEL_ROOT",
+            "AUTOCONTEXT_KERNEL_PRIVATE_PLAN",
+        )
+    }
+    missing = [name for name, value in required.items() if not value]
+    if missing:
+        pytest.fail(f"protected H100 release gate is missing environment: {', '.join(missing)}")
+    memory_bytes = int(str(required["AUTOCONTEXT_GPU_MEMORY_BYTES"]))
+    autokernel_root = Path(str(required["AUTOCONTEXT_AUTOKERNEL_ROOT"])).resolve(strict=True)
+    private_plan = Path(str(required["AUTOCONTEXT_KERNEL_PRIVATE_PLAN"])).resolve(strict=True)
+    runtime = production_runtime.H100DockerRuntimeConfig(
+        image=str(required["AUTOCONTEXT_GPU_DOCKER_IMAGE"]),
+        docker_binary=os.environ.get("AUTOCONTEXT_DOCKER_BINARY", "docker"),
+        nvidia_smi_binary=os.environ.get("AUTOCONTEXT_NVIDIA_SMI_BINARY", "nvidia-smi"),
+        container_python=str(required["AUTOCONTEXT_GPU_DOCKER_PYTHON"]),
+        gpu_device=str(required["AUTOCONTEXT_GPU_DEVICE_ID"]),
+        gpu_isolation_kind="mig",
+        gpu_memory_bytes=memory_bytes,
+        limits=DockerKernelWorkerLimits(max_gpu_memory_bytes=memory_bytes),
+        timeout_seconds=630.0,
+    )
+    plan_commitment = profile_contract.private_plan_commitment(private_plan)
+    evaluator = production_runtime._compose_docker_evaluator(
+        runtime=runtime,
+        bundle=_BUNDLE,
+        adapter_name="adapter.py",
+        autokernel_root=autokernel_root,
+        private_plan=private_plan,
+        problem_id="kernelbench-v0.1-level1-1-matmul-profiled-h100-v1",
+        precision_profile="strict-fp32-v1",
+        plan_commitment=plan_commitment,
+        proposal_cap=10,
+        familywise_alpha=0.05,
+    )
+    hostile_source = """
+import os
+import pathlib
+import socket
+import subprocess
+import sys
+import torch
+
+_marker = pathlib.Path('/workspace/ac1003-persistence-probe')
+_escaped = _marker.exists()
+_marker.write_text('candidate-state')
+for _private_root in ('/evaluator', '/output', '/channels'):
+    if pathlib.Path(_private_root).exists():
+        _escaped = True
+for _secret_name in ('AUTOCONTEXT_EVALUATOR_BUILD_DIGEST', 'AUTOCONTEXT_BOUNDARY_MANIFEST_DIGEST'):
+    if _secret_name in os.environ:
+        _escaped = True
+try:
+    socket.create_connection(('1.1.1.1', 53), timeout=0.05)
+    _escaped = True
+except OSError:
+    pass
+subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(3600)'])
+torch.cuda.Event = lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError('candidate clock'))
+
+def kernel_fn(a, b):
+    return torch.zeros_like(a @ b) if _escaped else a @ b
+""".strip()
+    hostile = KernelCandidate(source=hostile_source, entrypoint="kernel_fn")
+
+    first = evaluator.evaluate(hostile, hostile)
+    second = evaluator.evaluate(hostile, hostile)
+
+    for observation in (first, second):
+        assert observation.eligible, observation.feedback
+        assert observation.report is not None
+        receipt = observation.report.evaluator_authority_receipt
+        assert receipt is not None
+        assert {measurement.role for measurement in receipt.measurements} == {"candidate", "incumbent"}
+        assert receipt.accelerator_attestation.device_id == runtime.gpu_device
 
 
 def _plan(seed: int, order: tuple[int, int, int]) -> dict[str, Any]:

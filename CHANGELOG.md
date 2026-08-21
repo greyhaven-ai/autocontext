@@ -6,6 +6,16 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Hostile accelerator candidates can now execute behind an accelerator-neutral,
+  typed, bounded, non-pickle authority protocol. A protected Docker runner gives
+  the trusted evaluator and candidate/incumbent separate process, mount,
+  environment, socket, and report identities; evaluator-randomized timed
+  challenges, independently observed memory, replay-verifiable receipts, host
+  attestation binding, verified teardown, and orphan reconciliation keep
+  candidate clocks/reports, private plans, and confirmation state outside the
+  generated-code boundary. H100/MIG is the first conformance profile, and its
+  production campaign guard remains until the opt-in live adversarial gate
+  passes (AC-1003).
 - Generated GPU kernels can now run through a pinned-image Docker worker that
   shares the ResearchWorkspace lockdown primitive: read-only harness/input
   mounts, ephemeral byte/inode-bounded workspace, deny-network/scrubbed
@@ -58,8 +68,9 @@ All notable changes to this project will be documented in this file.
   into protocol identity, requires correctness plus per-case no-regression
   gates, and uses a persisted Bonferroni proposal budget. Profile-namespaced
   H100 evidence schema and export validation are prepared for disjoint
-  primary/confirmation plans; production execution remains fail-closed pending
-  the trusted evaluator boundary in AC-1003 (AC-994).
+  primary/confirmation plans; the subsequent AC-1003 authority boundary is now
+  implemented, while production execution remains fail-closed pending its real
+  H100/MIG validation (AC-994).
 - An optional Python `CampaignScheduler` dispatches branch/trial jobs across
   local workers and remote adapters using capability/resource matching,
   expiring leases, heartbeats, bounded retry and concurrency, idempotent

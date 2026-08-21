@@ -44,6 +44,9 @@ KernelBenchmarkExecutionOutcome = Literal[
     "resource_policy_unsupported",
     "missing_resource_telemetry",
     "resource_identity_mismatch",
+    "protocol_corruption",
+    "evaluator_crashed",
+    "candidate_crashed",
     "teardown_failed",
 ]
 
@@ -674,6 +677,12 @@ class KernelBenchmarkEvaluator:
             return reject(
                 "identity_mismatch",
                 "Report source digest, suffix, entrypoint, or ABI-bound artifact identity does not match the evaluated pair.",
+                report,
+            )
+        if self.config.require_authority_receipt and report.evaluator_authority_receipt is None:
+            return reject(
+                "missing_authority_receipt",
+                "Production evaluation requires a trusted-evaluator authority receipt.",
                 report,
             )
         if execution.outcome != "complete":

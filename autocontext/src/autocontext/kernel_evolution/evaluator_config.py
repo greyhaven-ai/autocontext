@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import Literal
 
 from autocontext.kernel_evolution.promotion_statistics import minimum_bootstrap_samples
 from autocontext.kernel_evolution.protocols import KernelStatisticsPolicy
@@ -17,6 +18,8 @@ class KernelBenchmarkEvaluatorConfig:
     bootstrap_samples: int = 2_000
     max_feedback_chars: int = 4_000
     require_resource_telemetry: bool = False
+    require_authority_receipt: bool = False
+    adaptive_feedback_policy: Literal["detailed", "aggregate-gates"] = "detailed"
     max_gpu_memory_bytes: int | None = None
 
     def __post_init__(self) -> None:
@@ -31,6 +34,8 @@ class KernelBenchmarkEvaluatorConfig:
             raise ValueError(f"bootstrap_samples must be at least {minimum_nominal_samples}")
         if self.max_feedback_chars < 128:
             raise ValueError("max_feedback_chars must be at least 128")
+        if self.adaptive_feedback_policy not in {"detailed", "aggregate-gates"}:
+            raise ValueError("adaptive_feedback_policy must be detailed or aggregate-gates")
         if self.max_gpu_memory_bytes is not None and self.max_gpu_memory_bytes < 1:
             raise ValueError("max_gpu_memory_bytes must be positive")
 

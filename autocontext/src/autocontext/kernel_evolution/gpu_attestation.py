@@ -90,6 +90,33 @@ class DockerGPUDeviceAttestor(Protocol):
     def attest(self, grant: DockerGPUDeviceGrant) -> DockerGPUDeviceAttestation: ...
 
 
+def attest_partition_grant(
+    grant: DockerGPUDeviceGrant,
+    attestor: DockerGPUDeviceAttestor,
+    *,
+    max_gpu_memory_bytes: int,
+) -> DockerGPUDeviceAttestation:
+    """Resolve and verify one hard accelerator partition grant."""
+
+    if max_gpu_memory_bytes < 1:
+        raise ValueError("max_gpu_memory_bytes must be positive")
+    if grant.isolation_kind == "visibility-only":
+        raise RuntimeError("GPU memory enforcement is unavailable; use a verified MIG or hardware partition grant")
+    attestation = attestor.attest(grant)
+    if attestation.attestor_id != attestor.attestor_id:
+        raise RuntimeError("trusted GPU grant attestation returned an unexpected attestor identity")
+    if attestation.device_id != grant.device_id or attestation.isolation_kind != grant.isolation_kind:
+        raise RuntimeError("trusted GPU grant attestation does not match the requested partition identity")
+    if grant.enforced_memory_bytes is None or attestation.enforced_memory_bytes != grant.enforced_memory_bytes:
+        raise RuntimeError("trusted GPU grant capacity does not match the configured hard partition capacity")
+    if attestation.enforced_memory_bytes > max_gpu_memory_bytes:
+        raise RuntimeError(
+            "GPU partition capacity "
+            f"{attestation.enforced_memory_bytes} exceeds configured hard limit {max_gpu_memory_bytes} bytes"
+        )
+    return attestation
+
+
 class _NvmlMemory(ctypes.Structure):
     _fields_ = [
         ("total", ctypes.c_ulonglong),
@@ -272,6 +299,7 @@ __all__ = [
     "DockerGPUDeviceGrant",
     "GPUIsolationKind",
     "NvidiaSMIGPUDeviceAttestor",
+    "attest_partition_grant",
 ]
 
 
