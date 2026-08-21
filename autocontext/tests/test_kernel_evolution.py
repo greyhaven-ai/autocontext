@@ -40,6 +40,7 @@ from autocontext.kernel_evolution import (
     build_authority_receipt,
     canonical_authority_digest,
     content_digest,
+    read_kernel_evolution_result,
 )
 from autocontext.kernel_evolution.confirmation import _confirmation_veto
 from autocontext.kernel_evolution.models import kernel_benchmark_report_digest
@@ -1195,6 +1196,17 @@ def test_accepted_primary_and_confirmation_replay_resource_policy(tmp_path: Path
 def test_result_rejects_mixed_schema_nesting_and_reads_exact_v2(tmp_path: Path) -> None:
     runner, _ = _runner(tmp_path, FakeBenchmarkRunner(), ["winner"])
     result = runner.run(proposals=1)
+    v3_payload = result.model_dump(mode="json")
+    assert "decision_policy_id" not in v3_payload
+    assert "evidence_family_version" not in v3_payload["decision_policy"]
+    assert "derived_statistics_receipt" not in v3_payload["attempts"][0]["observation"]
+    assert "block_definition" not in v3_payload["decision_policy"]["statistics"]
+    current = read_kernel_evolution_result(result.model_dump_json())
+    assert current.verification_status == "legacy-v3-empirical-unverified-policy-replay"
+    ambiguous_v3 = result.model_dump(mode="json")
+    ambiguous_v3["decision_policy_id"] = content_digest("wrong-v3-policy")
+    with pytest.raises(ValueError, match="ambiguous decision-policy digest"):
+        read_kernel_evolution_result(ambiguous_v3)
 
     mixed = result.model_dump(mode="json")
     mixed["attempts"][1]["observation"]["report"]["schema_version"] = "autocontext.kernelbench-eval/v2"
@@ -1204,9 +1216,11 @@ def test_result_rejects_mixed_schema_nesting_and_reads_exact_v2(tmp_path: Path) 
     legacy = result.model_dump(mode="json")
     legacy["schema_version"] = "autocontext.kernel-result/v2"
     legacy.pop("decision_policy")
+    legacy.pop("decision_policy_id", None)
     for attempt in legacy["attempts"]:
         attempt["schema_version"] = "autocontext.kernel-lineage/v2"
         attempt.pop("decision_policy")
+        attempt.pop("decision_policy_id", None)
         attempt.pop("primary_decision")
         attempt.pop("promotion_decision")
         attempt["observation"]["report"]["schema_version"] = "autocontext.kernelbench-eval/v2"
@@ -1221,6 +1235,9 @@ def test_result_rejects_mixed_schema_nesting_and_reads_exact_v2(tmp_path: Path) 
         not {"decision_policy", "primary_decision", "promotion_decision"} & attempt.model_fields_set
         for attempt in parsed.attempts
     )
+    read = read_kernel_evolution_result(legacy)
+    assert read.verification_status == "legacy-v2-unverified-policy-replay"
+    assert read.decision_policy_id is None
 
     downgraded = result.model_dump(mode="json")
     downgraded["schema_version"] = "autocontext.kernel-result/v2"

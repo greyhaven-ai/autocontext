@@ -244,8 +244,10 @@ evaluator = KernelBenchmarkEvaluator(
     external,
     KernelBenchmarkEvaluatorConfig(
         problem_id="kernelbench-level1-problem1",
-        # proposal_cap=20 spends alpha=.0025 per look; retain 100 tail draws.
-        bootstrap_samples=40_000,
+        min_timing_blocks=8,
+        bootstrap_samples=None,
+        statistics_method="paired-sign-eprocess/v1",
+        finite_sample_improvement_margin=0.05,
     ),
 )
 
@@ -279,7 +281,10 @@ confirmation_evaluator = KernelBenchmarkEvaluator(
     confirmation_external,
     KernelBenchmarkEvaluatorConfig(
         problem_id="kernelbench-level1-problem1",
-        bootstrap_samples=40_000,
+        min_timing_blocks=8,
+        bootstrap_samples=None,
+        statistics_method="paired-sign-eprocess/v1",
+        finite_sample_improvement_margin=0.05,
     ),
 )
 
@@ -300,17 +305,18 @@ runner = KernelEvolutionRunner(
         problem_id="kernelbench-level1-problem1",
         task_prompt="Optimize ModelNew; preserve its ABI and exact semantics.",
         baseline_source=Path("kernel.py").read_text(),
-        min_relative_improvement=0.01,
+        min_relative_improvement=0.05,
         precision_profile="strict-fp32-v1",
-        proposal_cap=20,
+        proposal_cap=10,
         familywise_alpha=0.05,
     ),
     generate_fn=my_kernel_generator,
     evaluator=evaluator,
     lineage_root=Path("runs/kernel-evolution"),
     confirmation_fn=confirm,
+    sealed_audit_root=Path("/operator-private/kernel-confirmation-audit"),
 )
-result = runner.run(proposals=20)
+result = runner.run(proposals=10)
 ```
 
 The command is an argv sequence and never uses a shell. It receives initially
@@ -366,24 +372,28 @@ reference baseline must also match. Its protocol ID must differ while its
 compatibility ID must match, so only the seed/order commitment can change;
 tolerances, correctness/hidden trials, warmups, timing blocks, calls per block,
 and the bounded sequential-testing policy remain fixed.
-The confirmation observation, report digest, and decision are persisted with
-the attempt.
+For finite-sample campaigns, the complete confirmation observation, raw report,
+case names, and detailed veto are first written to `sealed_audit_root`, which
+must be outside the mailbox and public lineage root. The adaptive run directory
+contains only report/audit digests and aggregate gate states. After generation
+has stopped, terminal completion, failure, or interruption publishes the sealed
+records under `audit/confirmation`; they cannot influence a later proposal.
 
 ## Benchmark report contract
 
-The adapter writes `autocontext.kernelbench-eval/v3`. Pydantic validates it
+New finite-sample adapters write `autocontext.kernelbench-eval/v4`. Pydantic validates it
 with unknown fields forbidden and NaN, infinity, zero, or negative timings
-rejected. New v3 lineage and result artifacts also bind the complete
-statistics/decision policy, including whether candidate promotion requires a
-fresh confirmation, and replay every parent/champion transition and accepted
-resource gate from the embedded raw reports. Result, attempt, and report schema
-versions cannot be mixed. The reader accepts an all-v2 chain as explicitly
-legacy and non-authoritative only when it contains none of the v3 decision
-fields. Important fields are:
+rejected. The v4 report includes a measurement-design receipt; the v4 derived
+statistics receipt binds the raw-report and raw-block digests, method, block
+definition, sample count, deterministic schedule-seed derivation, policy ID,
+and every promotion-affecting metric. V4 lineage, result, and H100 profile
+receipts reproduce the same complete decision-policy digest and replay every
+gate and champion transition. Result, attempt, and report versions cannot be
+mixed. Important fields are:
 
 ```json
 {
-  "schema_version": "autocontext.kernelbench-eval/v3",
+  "schema_version": "autocontext.kernelbench-eval/v4",
   "evaluation_status": "complete",
   "failure_kind": null,
   "problem_id": "kernelbench-level1-problem1",
@@ -413,8 +423,8 @@ fields. Important fields are:
     "correctness_trials": 2,
     "hidden_trials": 1,
     "warmup_runs": 3,
-    "timing_blocks": 30,
-    "calls_per_block": 20,
+    "timing_blocks": 8,
+    "calls_per_block": 10,
     "atol": 0.01,
     "rtol": 0.01,
     "seed_commitment": "sha256:...",
@@ -426,7 +436,7 @@ fields. Important fields are:
       "inputs": {"family": "matmul-generalization-v1", "required_shape_classes": ["non-tile-square", "rectangular"], "required_layouts": ["contiguous", "transposed"], "required_value_classes": ["signed", "small", "large", "cancellation", "dynamic-range"], "required_slices": ["train", "holdout"]},
       "enforcement": {"require_every_correctness_slice": true, "require_every_case_no_regression": true, "require_paired_aggregate_performance": true, "candidate_controls_protected": true, "minimum_case_speedup_vs_incumbent": 0.98}
     },
-    "sequential_testing": {"method": "bonferroni", "proposal_cap": 20, "familywise_alpha": 0.05}
+    "sequential_testing": {"method": "bonferroni", "proposal_cap": 10, "familywise_alpha": 0.05}
   },
   "compile": {
     "candidate_passed": true,
@@ -468,7 +478,17 @@ fields. Important fields are:
     "incumbent_peak_memory_bytes": 71303168,
     "device_total_memory_bytes": 85899345920
   },
-  "metadata": {}
+  "metadata": {
+    "measurement_design": {
+      "schema_version": "autocontext.kernel-measurement-design/v1",
+      "block_definition": "balanced-interleaved-paired-block/v1",
+      "schedule_seed_derivation": "sha256-plan-commitment-block-schedule/v1",
+      "dependence_assumption": "conditional-threshold-win-probability-lte-half/v1",
+      "fixed_block_count": 8,
+      "early_stopping_allowed": false,
+      "order_balanced": true
+    }
+  }
 }
 ```
 
@@ -485,9 +505,9 @@ reject as `missing_resource_telemetry`; CUDA/container OOM,
 teardown failure remain distinct outcomes.
 
 AutoContext does not trust supplied summary numbers. It recomputes geometric
-paired speedups, medians, p95 latency, reference drift, the nominal 95% bound,
-and a deterministic paired-bootstrap lower bound adjusted for the complete
-proposal budget. It also recomputes
+paired speedups, medians, p95 latency, reference drift, threshold-win signs,
+the terminal e-value, and its finite-sample p-value bound from the raw blocks
+and policy. It also recomputes
 source digests and the canonical hardware scope ID. A different GPU,
 driver/runtime/toolchain, workload fingerprint, or reference baseline is a hard
 scope mismatch. It also hashes and pins the complete protocol from the baseline,
@@ -495,14 +515,26 @@ so later proposals cannot weaken precision semantics, tolerances, holdout
 commitments, slice floors, search budget, warmups, timing blocks, or calls per
 block.
 
-The paired-bootstrap bound is a deterministic empirical percentile, not an
-exact distribution-free confidence interval. AutoContext requires at least 100
-expected resamples in the requested lower tail (`bootstrap_samples * alpha >=
-100`) so production evidence is not based on an unstable rank-one or rank-two
-order statistic. Runner construction validates that constraint against the
-host-owned proposal cap, and report consumption checks it again. For example,
-`alpha=0.005` requires at least 20,000 resamples; 2,000 resamples for a
-10,000-proposal Bonferroni budget fail closed.
+The production statistic is the pre-registered paired sign e-process. A block
+is a win only when `incumbent_ms / candidate_ms >= 1 / (1 - margin)`. With the
+fixed all-in bet and null conditional win probability at most one half, each
+win multiplies the e-value by two and any non-win zeros it. Therefore eight
+pre-registered blocks have exact per-look bound `2^-8 = 0.00390625`; ten
+Bonferroni looks have familywise bound at most `10 / 256 = 0.0390625`, below
+the configured 0.05 budget. The argument needs no Gaussian timing model and no
+independence assumption on timing magnitudes. It does require the documented
+conditional sign assumption at the block boundary, fixed block count, balanced
+order, no early stopping, and a schedule fixed by the private-plan commitment.
+
+`calibrate_kernel_promotion()` deterministically stress-tests the exact eight-
+block, ten-proposal configuration under null, heavy-tail, paired shared drift,
+across-block AR(1) magnitudes with conditionally symmetric signs, and
+heteroskedastic noise. Simulation is a
+diagnostic of the implementation and operating design; the theorem above, not
+a Monte Carlo percentile, supplies the advertised error bound. Historical v2
+and v3 evidence remains readable as explicitly unverified policy replay. The
+v1 empirical percentile bootstrap remains available for legacy/non-production
+reports and is never described as distribution-free coverage.
 
 The v2 artifact digest is a domain-separated canonical-JSON hash of four
 framed fields: identity version, SHA-256 of the exact source bytes, source
@@ -530,17 +562,18 @@ generation's prompt. Gates run in this order:
    ```
 
    The boundary is inclusive: a configured 5% margin accepts exactly 5%.
-6. The paired-bootstrap lower bound uses `familywise_alpha / proposal_cap`
-   (Bonferroni alpha spending) and supports the configured margin. The nominal
-   95% bound remains separately reported for compatibility; it is not the
-   bounded campaign's promotion statistic.
+6. The finite-sample receipt shows every pre-registered paired block clears the
+   configured margin and its sign e-process p-value is at most
+   `familywise_alpha / proposal_cap` (Bonferroni alpha spending). V4 evidence
+   contains no bootstrap field labeled as a confidence bound.
 7. Candidate p95, reference drift, and peak-memory use remain within configured limits.
 8. When confirmation is configured, a distinct but compatibility-matched
    protocol must pass the same correctness, improvement, confidence, tail,
    drift, and resource gates. Each attempted confirmation burns its protocol
    identity; later adaptive proposals must use a new independently committed
-   confirmation plan. Detailed confirmation feedback and metrics are persisted
-   for audit but excluded from the recursive playbook.
+   confirmation plan. Detailed confirmation evidence remains in sealed audit
+   storage until the adaptive campaign is terminal; prompts receive only
+   aggregate passed/failed/not-evaluated gates and disposition.
 
 Compile failure, malformed JSON, nonzero command exit, timeout, correctness
 failure, insufficient gain, or measurement instability rejects only that
@@ -579,16 +612,23 @@ through the run API.
 
 Bounded searches set `proposal_cap` and `familywise_alpha`. AutoContext rejects
 requests above the cap before benchmarking, uses the actual Bonferroni-adjusted
-bound for every proposal, and persists proposal index, cap, per-proposal alpha,
-cumulative spend, and confidence level with each attempt. Configure
+finite-sample bound for every proposal, and persists proposal index, cap,
+per-proposal alpha, cumulative spend, and confidence level with each attempt. Configure
 `confirmation_fn` as well so provisional winners face a fresh process,
 disjoint committed inputs, and a different measurement order. Supply enough
 fresh plans for every possible confirmation attempt; a fixed confirmation plan
-cannot be reused after its result has influenced champion selection. Legacy v2
-observations without a sequential policy are read by mapping their persisted
-95% bound into the generic lower-bound field. Missing adjusted metrics on a
-sequential observation still fail closed, and legacy protocols should not
-support new recursive performance claims.
+cannot be reused after its result has influenced champion selection.
+
+`read_kernel_evolution_result()` makes compatibility explicit:
+
+- v2: readable as `legacy-v2-unverified-policy-replay`;
+- v3: readable as `legacy-v3-empirical-unverified-policy-replay`;
+- v4: accepted only after finite-sample policy/raw-block/gate/lineage replay;
+- a reader capped at v2 or v3 rejects v4 with a clear newer-reader error.
+
+Duplicate JSON keys, non-finite constants, mixed nesting, missing policy IDs,
+and canonical-digest mismatches fail closed. There is no ambiguous automatic
+downgrade from v4 to a legacy evidence family.
 
 ## Why recursive kernel improvement matters
 

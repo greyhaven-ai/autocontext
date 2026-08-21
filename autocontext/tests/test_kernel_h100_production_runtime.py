@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import importlib
 import json
+import math
 import os
 import sys
 from pathlib import Path
@@ -17,6 +18,7 @@ from autocontext.kernel_evolution import (
     DockerKernelWorkerLimits,
     KernelCandidate,
     KernelDecisionPolicy,
+    KernelDerivedStatisticsReceipt,
     KernelSequentialTestingPolicy,
     KernelStatisticsPolicy,
     ProfileEvidenceEnvelope,
@@ -192,7 +194,7 @@ def test_production_campaign_has_no_same_interpreter_override(runtime_modules: t
     assert "trusted_unsafe" not in source
     assert "allow-untrusted" not in source
     for evidence_field in (
-        '"schema_version": "autocontext.kernel-h100-profile-evidence/v3"',
+        '"schema_version": "autocontext.kernel-h100-profile-evidence/v4"',
         '"champion":',
         '"primary_receipt":',
         '"confirmation_receipt":',
@@ -203,7 +205,7 @@ def test_production_campaign_has_no_same_interpreter_override(runtime_modules: t
         assert evidence_field in source
 
     control_source = (_BUNDLE / "control_smoke.py").read_text(encoding="utf-8")
-    assert "bootstrap_samples=20_000" in control_source
+    assert 'statistics_method="paired-sign-eprocess/v1"' in control_source
     assert '"evidence_status": "non_authoritative_trusted_unsafe"' in control_source
     assert '"authoritative": False' in control_source
     assert '"report": observation.report' not in control_source
@@ -222,7 +224,7 @@ def test_control_smoke_applies_the_profile_memory_fraction(monkeypatch: pytest.M
         ),
         environment_drift_ratio=0.0,
         relative_improvement=0.10,
-        speedup_lcb=1.20,
+        derived_statistics_receipt=SimpleNamespace(finite_sample_gate_passed=True),
         candidate_p95_ms=1.0,
         incumbent_p95_ms=1.1,
         all_case_no_regression_passed=True,
@@ -280,6 +282,8 @@ def test_campaign_fails_before_creating_mailbox_or_launching_worker(
             str(authority_secret),
             "--mailbox",
             str(mailbox),
+            "--sealed-audit-root",
+            str(tmp_path / "sealed-audit"),
             "--precision-profile",
             "strict-fp32-v1",
             "--primary-private-plan",
@@ -373,6 +377,8 @@ def test_post_run_evidence_failure_publishes_failed_terminal_status(
             str(authority_secret),
             "--mailbox",
             str(mailbox),
+            "--sealed-audit-root",
+            str(tmp_path / "sealed-audit"),
             "--precision-profile",
             "strict-fp32-v1",
             "--primary-private-plan",
@@ -459,7 +465,7 @@ def _profile_result(campaign: Any, runtime: Any) -> SimpleNamespace:
         "device_total_memory_bytes": runtime.gpu_memory_bytes,
     }
     primary_report = _SerializableNamespace(
-        schema_version="autocontext.kernelbench-eval/v3",
+        schema_version="autocontext.kernelbench-eval/v4",
         evaluation_status="complete",
         failure_kind=None,
         candidate_artifact_digest=candidate_artifact_digest,
@@ -476,7 +482,7 @@ def _profile_result(campaign: Any, runtime: Any) -> SimpleNamespace:
         performance=_SerializableNamespace(cases=[holdout_performance]),
     )
     confirmation_report = _SerializableNamespace(
-        schema_version="autocontext.kernelbench-eval/v3",
+        schema_version="autocontext.kernelbench-eval/v4",
         evaluation_status="complete",
         failure_kind=None,
         candidate_artifact_digest=candidate_artifact_digest,
@@ -545,13 +551,14 @@ def _profile_result(campaign: Any, runtime: Any) -> SimpleNamespace:
     attach_authority_receipt(confirmation_report, commitment=confirmation_commitment, label="confirmation")
     confirmation = SimpleNamespace(
         report=confirmation_report,
+        derived_statistics_receipt=_SerializableNamespace(receipt_id=f"sha256:{'d' * 64}"),
         protocol_id=f"sha256:{'e' * 64}",
         protocol_compatibility_id=f"sha256:{'f' * 64}",
         hardware_scope_id=f"sha256:{'1' * 64}",
         baseline_id=f"sha256:{'2' * 64}",
     )
     champion = SimpleNamespace(
-        schema_version="autocontext.kernel-lineage/v3",
+        schema_version="autocontext.kernel-lineage/v4",
         attempt_id="attempt-winner",
         role="candidate",
         decision="promoted",
@@ -565,18 +572,31 @@ def _profile_result(campaign: Any, runtime: Any) -> SimpleNamespace:
         protocol_compatibility_id=f"sha256:{'f' * 64}",
         hardware_scope_id=f"sha256:{'7' * 64}",
         baseline_id=f"sha256:{'2' * 64}",
-        observation=SimpleNamespace(report=primary_report),
+        observation=SimpleNamespace(
+            report=primary_report,
+            derived_statistics_receipt=_SerializableNamespace(receipt_id=f"sha256:{'a' * 64}"),
+        ),
         confirmation_observation=confirmation,
         confirmation_report_digest=f"sha256:{'8' * 64}",
         confirmation_decision=SimpleNamespace(promote=True),
         sequential_evidence=_SerializableNamespace(proposal_index=1),
     )
     decision_policy = KernelDecisionPolicy(
+        schema_version="autocontext.kernel-decision-policy/v2",
+        evidence_family_version="autocontext.kernel-evidence-family/v4",
         statistics=KernelStatisticsPolicy(
-            bootstrap_samples=20_000,
+            schema_version="autocontext.kernel-statistics-policy/v2",
+            method="paired-sign-eprocess/v1",
+            bootstrap_samples=None,
+            seed_derivation="sha256-plan-commitment-block-schedule/v1",
             min_timing_blocks=8,
             require_resource_telemetry=True,
             max_gpu_memory_bytes=runtime.gpu_memory_bytes,
+            block_definition="balanced-interleaved-paired-block/v1",
+            dependence_assumption="conditional-threshold-win-probability-lte-half/v1",
+            null_win_probability=0.5,
+            betting_fraction=1.0,
+            improvement_margin=0.05,
         ),
         require_confirmation=True,
         min_relative_improvement=0.05,
@@ -588,21 +608,58 @@ def _profile_result(campaign: Any, runtime: Any) -> SimpleNamespace:
         sequential_testing=KernelSequentialTestingPolicy(proposal_cap=10, familywise_alpha=0.05),
     )
     champion.decision_policy = decision_policy
+    champion.decision_policy_id = decision_policy.policy_id
+    def statistics_receipt(label: str, report_digest: str) -> KernelDerivedStatisticsReceipt:
+        return KernelDerivedStatisticsReceipt(
+            statistics_policy_id=decision_policy.statistics.policy_id,
+            raw_report_digest=report_digest,
+            raw_blocks_digest=canonical_digest({"blocks": label}),
+            schedule_seed_material_digest=canonical_digest({"seed": label}),
+            sample_count=8,
+            improvement_margin=0.05,
+            null_win_probability=0.5,
+            betting_fraction=1.0,
+            candidate_wins=8,
+            non_wins=0,
+            terminal_e_value_zeroed=False,
+            log_terminal_e_value=8 * math.log(2.0),
+            p_value_bound=1 / 256,
+            per_look_alpha=0.005,
+            finite_sample_gate_passed=True,
+            candidate_median_ms=0.8,
+            incumbent_median_ms=1.0,
+            reference_median_ms=2.0,
+            speedup_vs_incumbent=1.25,
+            speedup_vs_reference=2.5,
+            relative_improvement=0.2,
+            candidate_p95_ms=0.8,
+            incumbent_p95_ms=1.0,
+            environment_drift_ratio=0.0,
+            all_case_no_regression_passed=True,
+        )
+
+    champion.observation.derived_statistics_receipt = statistics_receipt("primary", champion.report_digest)
+    confirmation.derived_statistics_receipt = statistics_receipt("confirmation", champion.confirmation_report_digest)
     champion.primary_decision = SimpleNamespace(promote=True)
     champion.promotion_decision = SimpleNamespace(promote=True)
     baseline = SimpleNamespace(
-        schema_version="autocontext.kernel-lineage/v3",
+        schema_version="autocontext.kernel-lineage/v4",
         attempt_id="attempt-baseline",
         decision="baseline",
         decision_policy=decision_policy,
+        decision_policy_id=decision_policy.policy_id,
         primary_decision=SimpleNamespace(promote=True),
         promotion_decision=SimpleNamespace(promote=True),
-        observation=SimpleNamespace(report=primary_report),
+        observation=SimpleNamespace(
+            report=primary_report,
+            derived_statistics_receipt=_SerializableNamespace(receipt_id=f"sha256:{'b' * 64}"),
+        ),
         confirmation_observation=None,
         sequential_evidence=None,
     )
+    baseline.observation.derived_statistics_receipt = statistics_receipt("baseline", f"sha256:{'5' * 64}")
     return SimpleNamespace(
-        schema_version="autocontext.kernel-result/v3",
+        schema_version="autocontext.kernel-result/v4",
         run_id="kernel-h100-test",
         problem_id=campaign.PROBLEM_ID,
         precision_profile="strict-fp32-v1",
@@ -610,6 +667,7 @@ def _profile_result(campaign: Any, runtime: Any) -> SimpleNamespace:
         protocol_id=champion.protocol_id,
         protocol_compatibility_id=champion.protocol_compatibility_id,
         decision_policy=decision_policy,
+        decision_policy_id=decision_policy.policy_id,
         attempts=[baseline, champion],
         _primary_commitment=primary_commitment,
         _confirmation_commitment=confirmation_commitment,
@@ -643,7 +701,7 @@ def test_profile_evidence_builder_validates_exact_receipts_and_attestation(
         trusted_secret=_AUTHORITY_SECRET,
     )
     profile = verified.profile
-    assert profile["schema_version"] == "autocontext.kernel-h100-profile-evidence/v3"
+    assert profile["schema_version"] == "autocontext.kernel-h100-profile-evidence/v4"
     assert profile["champion"]["attempt_id"] == result.champion_attempt_id
     assert profile["primary_receipt"]["plan_commitment"] == result._primary_commitment
     assert profile["confirmation_receipt"]["plan_commitment"] == result._confirmation_commitment
@@ -657,6 +715,22 @@ def test_profile_evidence_builder_validates_exact_receipts_and_attestation(
     assert profile["promotions"] == 1
     assert profile["all_holdout_correctness_passed"] is True
     assert profile["all_holdout_no_regression_passed"] is True
+    campaign._verify_v4_profile_policy_receipts(profile)
+
+    forged_policy = copy.deepcopy(profile)
+    forged_policy["decision_policy_id"] = f"sha256:{'0' * 64}"
+    with pytest.raises(RuntimeError, match="canonical replay"):
+        campaign._verify_v4_profile_policy_receipts(forged_policy)
+
+    forged_calibration = copy.deepcopy(profile)
+    forged_calibration["calibration_report"]["exact_familywise_bound"] = 0.0
+    with pytest.raises(RuntimeError, match="canonical replay"):
+        campaign._verify_v4_profile_policy_receipts(forged_calibration)
+
+    forged_receipt = copy.deepcopy(profile)
+    forged_receipt["primary_receipt"]["report_digest"] = f"sha256:{'0' * 64}"
+    with pytest.raises(RuntimeError, match="canonical replay"):
+        campaign._verify_v4_profile_policy_receipts(forged_receipt)
 
     mutations = (
         lambda payload: payload["profile"]["champion"].__setitem__("source_digest", "sha256:" + "0" * 64),
@@ -767,7 +841,7 @@ def test_profile_evidence_builder_validates_exact_receipts_and_attestation(
         )
 
 
-def test_profile_evidence_rejects_non_h100_or_incomplete_v3_chain(
+def test_profile_evidence_rejects_non_h100_or_incomplete_v4_chain(
     tmp_path: Path,
     runtime_modules: tuple[Any, Any],
 ) -> None:
@@ -790,7 +864,7 @@ def test_profile_evidence_rejects_non_h100_or_incomplete_v3_chain(
 
     result = _profile_result(campaign, runtime)
     result.attempts[1].schema_version = "autocontext.kernel-lineage/v2"
-    with pytest.raises(RuntimeError, match="complete v3 result chain"):
+    with pytest.raises(RuntimeError, match="complete v4 result chain"):
         campaign._build_profile_evidence(
             result=result,
             run_id=result.run_id,

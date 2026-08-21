@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from autocontext.kernel_evolution.authority_protocol import read_authority_hmac_secret
+from autocontext.kernel_evolution.finite_sample import minimum_sign_eprocess_blocks
 from autocontext.kernel_evolution.promotion_statistics import minimum_bootstrap_samples
 from autocontext.kernel_evolution.protocols import KernelStatisticsPolicy
 
@@ -21,7 +22,11 @@ class KernelBenchmarkEvaluatorConfig:
     problem_id: str
     timeout_seconds: float = 630.0
     min_timing_blocks: int = 5
-    bootstrap_samples: int = 2_000
+    bootstrap_samples: int | None = 2_000
+    statistics_method: Literal["paired-percentile-bootstrap/v1", "paired-sign-eprocess/v1"] = (
+        "paired-percentile-bootstrap/v1"
+    )
+    finite_sample_improvement_margin: float | None = None
     max_feedback_chars: int = 4_000
     require_resource_telemetry: bool = False
     require_authority_receipt: bool = False
@@ -39,9 +44,20 @@ class KernelBenchmarkEvaluatorConfig:
             raise ValueError("timeout_seconds must be positive")
         if self.min_timing_blocks < 2:
             raise ValueError("min_timing_blocks must be at least 2")
-        minimum_nominal_samples = minimum_bootstrap_samples(0.05)
-        if self.bootstrap_samples < minimum_nominal_samples:
-            raise ValueError(f"bootstrap_samples must be at least {minimum_nominal_samples}")
+        if self.statistics_method not in {"paired-percentile-bootstrap/v1", "paired-sign-eprocess/v1"}:
+            raise ValueError("statistics_method is unsupported")
+        if self.statistics_method == "paired-percentile-bootstrap/v1":
+            minimum_nominal_samples = minimum_bootstrap_samples(0.05)
+            if self.bootstrap_samples is None or self.bootstrap_samples < minimum_nominal_samples:
+                raise ValueError(f"bootstrap_samples must be at least {minimum_nominal_samples}")
+            if self.finite_sample_improvement_margin is not None:
+                raise ValueError("bootstrap statistics cannot set a finite-sample improvement margin")
+        else:
+            if self.bootstrap_samples is not None:
+                raise ValueError("finite-sample statistics must not configure bootstrap samples")
+            margin = self.finite_sample_improvement_margin
+            if margin is None or not math.isfinite(margin) or not 0 <= margin < 1:
+                raise ValueError("finite_sample_improvement_margin must be finite and in [0, 1)")
         if self.max_feedback_chars < 128:
             raise ValueError("max_feedback_chars must be at least 128")
         if self.adaptive_feedback_policy not in {"detailed", "aggregate-gates"}:
@@ -71,8 +87,17 @@ class KernelBenchmarkEvaluatorConfig:
                     raise ValueError(f"{name} must be a branded SHA-256 digest")
 
     def validate_confidence_resolution(self, alpha: float) -> None:
-        """Fail closed when the configured resampling cannot resolve ``alpha``."""
+        """Fail closed when the configured method cannot resolve ``alpha``."""
+        if self.statistics_method == "paired-sign-eprocess/v1":
+            required_blocks = minimum_sign_eprocess_blocks(alpha)
+            if self.min_timing_blocks < required_blocks:
+                raise ValueError(
+                    f"min_timing_blocks ({self.min_timing_blocks}) cannot resolve alpha={alpha:.12g}; "
+                    f"at least {required_blocks} pre-registered paired blocks are required"
+                )
+            return
         required = minimum_bootstrap_samples(alpha)
+        assert self.bootstrap_samples is not None
         if self.bootstrap_samples < required:
             raise ValueError(
                 f"bootstrap_samples ({self.bootstrap_samples}) cannot resolve alpha={alpha:.12g}; "
@@ -84,6 +109,9 @@ class KernelBenchmarkEvaluatorConfig:
 
         payload = asdict(self)
         payload.pop("authority_hmac_secret_path")
+        if self.statistics_method == "paired-percentile-bootstrap/v1":
+            payload.pop("statistics_method")
+            payload.pop("finite_sample_improvement_margin")
         payload["authority_trust"] = (
             {
                 "algorithm": "hmac-sha256",
@@ -102,6 +130,23 @@ class KernelBenchmarkEvaluatorConfig:
     @property
     def statistics_policy(self) -> KernelStatisticsPolicy:
         """Canonical receipt for every derived benchmark observation."""
+        if self.statistics_method == "paired-sign-eprocess/v1":
+            assert self.finite_sample_improvement_margin is not None
+            return KernelStatisticsPolicy(
+                schema_version="autocontext.kernel-statistics-policy/v2",
+                method="paired-sign-eprocess/v1",
+                bootstrap_samples=None,
+                seed_derivation="sha256-plan-commitment-block-schedule/v1",
+                min_timing_blocks=self.min_timing_blocks,
+                require_resource_telemetry=self.require_resource_telemetry,
+                max_gpu_memory_bytes=self.max_gpu_memory_bytes,
+                block_definition="balanced-interleaved-paired-block/v1",
+                dependence_assumption="conditional-threshold-win-probability-lte-half/v1",
+                null_win_probability=0.5,
+                betting_fraction=1.0,
+                improvement_margin=self.finite_sample_improvement_margin,
+            )
+        assert self.bootstrap_samples is not None
         return KernelStatisticsPolicy(
             bootstrap_samples=self.bootstrap_samples,
             min_timing_blocks=self.min_timing_blocks,

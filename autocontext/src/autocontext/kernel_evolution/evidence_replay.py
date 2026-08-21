@@ -17,19 +17,15 @@ if TYPE_CHECKING:
 
 def _close(actual: float | None, expected: float, *, name: str) -> None:
     if actual is None or abs(actual - expected) > 1e-12 * max(1.0, abs(expected)):
-        raise ValueError(f"accepted observation {name} does not replay from its raw report")
+        raise ValueError(f"eligible observation {name} does not replay from its raw report")
 
 
-def _validate_accepted_observation(
+def _validate_eligible_observation(
     observation: KernelBenchmarkObservation,
     policy: KernelDecisionPolicy,
 ) -> None:
     """Recompute every promotion-affecting metric from authoritative raw blocks."""
-    from autocontext.kernel_evolution.promotion_statistics import (
-        bootstrap_lcb,
-        geometric_mean_ratio,
-        percentile,
-    )
+    from autocontext.kernel_evolution.promotion_statistics import bootstrap_lcb, geometric_mean_ratio, percentile
 
     report = observation.report
     if report is None or report.performance is None or report.correctness is None:
@@ -74,29 +70,51 @@ def _validate_accepted_observation(
     quartile = max(1, len(reference) // 4)
     drift = abs(statistics.median(reference[-quartile:]) / statistics.median(reference[:quartile]) - 1.0)
     _close(observation.environment_drift_ratio, drift, name="environment drift")
-    _close(
-        observation.speedup_lcb95,
-        bootstrap_lcb(
-            list(zip(candidate, incumbent, strict=True)),
-            samples=policy.statistics.bootstrap_samples,
-            seed_material=seed_material,
-            alpha=0.05,
-        ),
-        name="95% bootstrap lower bound",
-    )
-    _close(
-        observation.speedup_lcb,
-        bootstrap_lcb(
-            list(zip(candidate, incumbent, strict=True)),
-            samples=policy.statistics.bootstrap_samples,
-            seed_material=seed_material,
-            alpha=alpha,
-        ),
-        name="sequential bootstrap lower bound",
-    )
     expected_cases = all(case.passed_no_regression for case in report.performance.cases) if report.performance.cases else None
     if observation.all_case_no_regression_passed != expected_cases:
         raise ValueError("accepted observation per-case gate does not replay from its raw report")
+    if policy.statistics.schema_version == "autocontext.kernel-statistics-policy/v2":
+        from autocontext.kernel_evolution.finite_sample import derive_finite_sample_receipt
+        from autocontext.kernel_evolution.models import kernel_benchmark_report_digest
+
+        receipt = observation.derived_statistics_receipt
+        if receipt is None:
+            raise ValueError("v4 eligible observations require a finite-sample derivation receipt")
+        replayed = derive_finite_sample_receipt(
+            blocks=list(zip(candidate, incumbent, reference, strict=True)),
+            statistics_policy=policy.statistics,
+            raw_report_digest=kernel_benchmark_report_digest(report),
+            schedule_seed_material=report.protocol.seed_commitment,
+            per_look_alpha=alpha,
+            all_case_no_regression_passed=expected_cases,
+        )
+        if receipt != replayed:
+            raise ValueError("finite-sample derivation receipt does not replay from raw blocks and policy")
+        if observation.speedup_lcb95 is not None or observation.speedup_lcb is not None:
+            raise ValueError("v4 observations cannot contain empirical bootstrap confidence claims")
+    else:
+        if policy.statistics.bootstrap_samples is None:
+            raise ValueError("v1 statistics policy is missing its bootstrap sample count")
+        _close(
+            observation.speedup_lcb95,
+            bootstrap_lcb(
+                list(zip(candidate, incumbent, strict=True)),
+                samples=policy.statistics.bootstrap_samples,
+                seed_material=seed_material,
+                alpha=0.05,
+            ),
+            name="95% bootstrap lower bound",
+        )
+        _close(
+            observation.speedup_lcb,
+            bootstrap_lcb(
+                list(zip(candidate, incumbent, strict=True)),
+                samples=policy.statistics.bootstrap_samples,
+                seed_material=seed_material,
+                alpha=alpha,
+            ),
+            name="sequential bootstrap lower bound",
+        )
 
 
 def _validate_policy_binding(attempt: KernelAttemptRecord) -> None:
@@ -108,6 +126,14 @@ def _validate_policy_binding(attempt: KernelAttemptRecord) -> None:
         return
     if attempt.decision_policy is None or attempt.primary_decision is None or attempt.promotion_decision is None:
         raise ValueError("v3 attempts require complete decision-policy evidence")
+    if attempt.schema_version == "autocontext.kernel-lineage/v4":
+        if (
+            attempt.decision_policy.schema_version != "autocontext.kernel-decision-policy/v2"
+            or attempt.decision_policy_id != attempt.decision_policy.policy_id
+        ):
+            raise ValueError("v4 attempts require the exact canonical decision-policy digest")
+    elif attempt.decision_policy_id is not None and attempt.decision_policy_id != attempt.decision_policy.policy_id:
+        raise ValueError("v3 attempt contains an ambiguous decision-policy digest")
     if attempt.role == "baseline":
         if attempt.confirmation_required:
             raise ValueError("baseline attempts cannot require confirmation")
@@ -121,17 +147,18 @@ def _validate_policy_binding(attempt: KernelAttemptRecord) -> None:
         raise ValueError("confirmation evidence requires a provisionally promotable primary decision")
     if attempt.observation.statistics_policy != attempt.decision_policy.statistics:
         raise ValueError("attempt observation statistics policy disagrees with its decision policy")
-    if expected_primary.promote:
-        _validate_accepted_observation(attempt.observation, attempt.decision_policy)
+    if attempt.observation.eligible:
+        _validate_eligible_observation(attempt.observation, attempt.decision_policy)
+    confirmation = attempt.confirmation_observation
+    if confirmation is not None and confirmation.eligible:
+        if confirmation.statistics_policy != attempt.decision_policy.statistics:
+            raise ValueError("confirmation statistics policy disagrees with the decision policy")
+        _validate_eligible_observation(confirmation, attempt.decision_policy)
     if attempt.confirmation_decision is None:
         expected_final = expected_primary
     elif attempt.confirmation_decision.promote:
-        confirmation = attempt.confirmation_observation
         if confirmation is None:
             raise ValueError("successful confirmation requires an observation")
-        if confirmation.statistics_policy != attempt.decision_policy.statistics:
-            raise ValueError("confirmation statistics policy disagrees with the decision policy")
-        _validate_accepted_observation(confirmation, attempt.decision_policy)
         expected_confirmation = policy.decide(confirmation)
         if attempt.confirmation_decision != expected_confirmation:
             raise ValueError("successful confirmation decision does not replay under its bound policy")
@@ -160,11 +187,11 @@ def validate_attempt(attempt: KernelAttemptRecord) -> None:
         kernel_benchmark_report_digest,
     )
 
-    expected_report_schema = (
-        "autocontext.kernelbench-eval/v3"
-        if attempt.schema_version == "autocontext.kernel-lineage/v3"
-        else "autocontext.kernelbench-eval/v2"
-    )
+    expected_report_schema = {
+        "autocontext.kernel-lineage/v2": "autocontext.kernelbench-eval/v2",
+        "autocontext.kernel-lineage/v3": "autocontext.kernelbench-eval/v3",
+        "autocontext.kernel-lineage/v4": "autocontext.kernelbench-eval/v4",
+    }[attempt.schema_version]
     reports = (
         attempt.observation.report,
         attempt.confirmation_observation.report if attempt.confirmation_observation is not None else None,
@@ -172,7 +199,7 @@ def validate_attempt(attempt: KernelAttemptRecord) -> None:
     if any(report is not None and report.schema_version != expected_report_schema for report in reports):
         raise ValueError("attempt and embedded benchmark report schemas must use one exact version")
     if attempt.schema_version == "autocontext.kernel-lineage/v2":
-        v3_fields = {"decision_policy", "primary_decision", "promotion_decision"}
+        v3_fields = {"decision_policy", "decision_policy_id", "primary_decision", "promotion_decision"}
         if v3_fields & attempt.model_fields_set:
             raise ValueError("v2 attempts cannot contain v3 decision-policy fields")
     if attempt.artifact_identity_version != attempt.observation.artifact_identity_version:
@@ -323,15 +350,28 @@ def validate_result(result: KernelEvolutionResult) -> None:
 
     if not result.attempts:
         raise ValueError("kernel evolution results require at least the baseline attempt")
-    expected_attempt_schema = (
-        "autocontext.kernel-lineage/v3"
-        if result.schema_version == "autocontext.kernel-result/v3"
-        else "autocontext.kernel-lineage/v2"
-    )
+    expected_attempt_schema = {
+        "autocontext.kernel-result/v2": "autocontext.kernel-lineage/v2",
+        "autocontext.kernel-result/v3": "autocontext.kernel-lineage/v3",
+        "autocontext.kernel-result/v4": "autocontext.kernel-lineage/v4",
+    }[result.schema_version]
     if any(attempt.schema_version != expected_attempt_schema for attempt in result.attempts):
         raise ValueError("result and attempt schemas must use one exact version")
-    if result.schema_version == "autocontext.kernel-result/v2" and "decision_policy" in result.model_fields_set:
-        raise ValueError("v2 results cannot contain a v3 decision policy")
+    if result.schema_version == "autocontext.kernel-result/v2" and {
+        "decision_policy",
+        "decision_policy_id",
+    } & result.model_fields_set:
+        raise ValueError("v2 results cannot contain a newer decision policy")
+    if result.schema_version == "autocontext.kernel-result/v4":
+        if (
+            result.decision_policy is None
+            or result.decision_policy.schema_version != "autocontext.kernel-decision-policy/v2"
+            or result.decision_policy_id != result.decision_policy.policy_id
+        ):
+            raise ValueError("v4 results require the exact canonical decision-policy digest")
+    elif result.schema_version == "autocontext.kernel-result/v3" and result.decision_policy_id is not None:
+        if result.decision_policy is None or result.decision_policy_id != result.decision_policy.policy_id:
+            raise ValueError("v3 result contains an ambiguous decision-policy digest")
     by_id = {attempt.attempt_id: attempt for attempt in result.attempts}
     if len(by_id) != len(result.attempts):
         raise ValueError("attempt ids must be unique")
@@ -346,12 +386,12 @@ def validate_result(result: KernelEvolutionResult) -> None:
     for attempt in result.attempts:
         if attempt.run_id != result.run_id:
             raise ValueError("every attempt must belong to the enclosing result run")
-        if result.schema_version == "autocontext.kernel-result/v3" and (
-            attempt.schema_version != "autocontext.kernel-lineage/v3"
+        if result.schema_version in {"autocontext.kernel-result/v3", "autocontext.kernel-result/v4"} and (
+            attempt.schema_version != expected_attempt_schema
             or result.decision_policy is None
             or attempt.decision_policy != result.decision_policy
         ):
-            raise ValueError("v3 results require one exact decision policy across every v3 attempt")
+            raise ValueError("verified results require one exact decision policy across every attempt")
         if attempt.confirmation_decision is not None and attempt.confirmation_decision.promote:
             confirmation = attempt.confirmation_observation
             assert confirmation is not None and confirmation.protocol_id is not None

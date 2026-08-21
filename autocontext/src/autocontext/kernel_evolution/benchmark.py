@@ -7,7 +7,6 @@ import json
 import os
 import shutil
 import stat
-import statistics
 import subprocess
 import sys
 import tempfile
@@ -29,7 +28,7 @@ from autocontext.kernel_evolution.models import (
     KernelCandidate,
     content_digest,
 )
-from autocontext.kernel_evolution.promotion_statistics import bootstrap_lcb, geometric_mean_ratio, percentile
+from autocontext.kernel_evolution.observation_derivation import derive_observation_metrics
 from autocontext.kernel_evolution.resource_policy import evaluate_kernel_resource_policy
 
 _WINDOWS_LAUNCH_GATE = b"\x01"
@@ -717,41 +716,7 @@ class KernelBenchmarkEvaluator:
             )
 
         try:
-            candidate_times = [float(block.candidate_ms) for block in blocks]
-            incumbent_times = [float(block.incumbent_ms) for block in blocks]
-            reference_times = [float(block.reference_ms) for block in blocks]
-            candidate_median = statistics.median(candidate_times)
-            incumbent_median = statistics.median(incumbent_times)
-            reference_median = statistics.median(reference_times)
-            speedup_incumbent = geometric_mean_ratio(incumbent_times, candidate_times)
-            speedup_reference = geometric_mean_ratio(reference_times, candidate_times)
-            sequential = report.protocol.sequential_testing
-            alpha = sequential.per_proposal_alpha if sequential is not None else 0.05
-            confidence_level = 1.0 - alpha
-            seed_material = f"{report.baseline_id}:{report.hardware_scope_id}:{report.protocol.seed_commitment}"
-            lcb95 = bootstrap_lcb(
-                list(zip(candidate_times, incumbent_times, strict=True)),
-                samples=self.config.bootstrap_samples,
-                seed_material=seed_material,
-                alpha=0.05,
-            )
-            lcb = bootstrap_lcb(
-                list(zip(candidate_times, incumbent_times, strict=True)),
-                samples=self.config.bootstrap_samples,
-                seed_material=seed_material,
-                alpha=alpha,
-            )
-            quartile = max(1, len(reference_times) // 4)
-            first_reference = statistics.median(reference_times[:quartile])
-            last_reference = statistics.median(reference_times[-quartile:])
-            drift = abs(last_reference / first_reference - 1.0)
-            relative_improvement = 1.0 - (1.0 / speedup_incumbent)
-            feedback = (
-                f"Correct on {report.correctness.tests_passed}/{report.correctness.tests_run} trials; "
-                f"paired speedup {speedup_incumbent:.4f}x vs incumbent "
-                f"({confidence_level:.2%} sequential lower bound {lcb:.4f}x), "
-                f"{speedup_reference:.4f}x vs reference."
-            )
+            derived = derive_observation_metrics(report, self.config)
             return KernelBenchmarkObservation(
                 artifact_identity_version=candidate.artifact_identity_version,
                 candidate_artifact_digest=candidate.artifact_digest,
@@ -759,28 +724,14 @@ class KernelBenchmarkEvaluator:
                 candidate_source_digest=candidate.source_digest,
                 incumbent_source_digest=incumbent.source_digest,
                 eligible=True,
-                feedback=feedback,
+                feedback=derived.pop("feedback"),
                 report=report,
                 hardware_scope_id=report.hardware_scope_id,
                 baseline_id=report.baseline_id,
                 protocol_id=report.protocol.protocol_id,
                 protocol_compatibility_id=report.protocol.compatibility_id,
                 statistics_policy=self.config.statistics_policy,
-                candidate_median_ms=candidate_median,
-                incumbent_median_ms=incumbent_median,
-                reference_median_ms=reference_median,
-                speedup_vs_incumbent=speedup_incumbent,
-                speedup_vs_reference=speedup_reference,
-                speedup_lcb95=lcb95,
-                speedup_lcb=lcb,
-                confidence_level=confidence_level,
-                all_case_no_regression_passed=(
-                    all(case.passed_no_regression for case in report.performance.cases) if report.performance.cases else None
-                ),
-                relative_improvement=relative_improvement,
-                candidate_p95_ms=percentile(candidate_times, 0.95),
-                incumbent_p95_ms=percentile(incumbent_times, 0.95),
-                environment_drift_ratio=drift,
+                **derived,
                 stdout=execution.stdout,
                 stderr=execution.stderr,
                 stdout_truncated=execution.stdout_truncated,

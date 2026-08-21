@@ -27,6 +27,7 @@ from autocontext.kernel_evolution.models import (
     KernelEvolutionResult,
     KernelPromotionDecision,
     KernelPromotionGateResult,
+    kernel_benchmark_report_digest,
 )
 from autocontext.kernel_evolution.protocols import (
     KernelDecisionPolicy,
@@ -105,19 +106,27 @@ class _Champion:
 class KernelPromotionPolicy:
     """Deterministic promotion gate, independent of the scalar prompt score."""
 
-    _GATE_NAMES = (
+    _COMMON_GATE_NAMES = (
         "valid_evaluation",
         "resource_telemetry",
         "environment_drift",
         "gpu_memory",
         "case_no_regression",
         "relative_improvement",
-        "confidence_interval",
         "tail_latency",
     )
 
     def __init__(self, config: KernelDecisionPolicy | KernelEvolutionConfig) -> None:
         self.config = config
+
+    @property
+    def _gate_names(self) -> tuple[str, ...]:
+        finite_sample = (
+            isinstance(self.config, KernelDecisionPolicy)
+            and self.config.statistics.method == "paired-sign-eprocess/v1"
+        )
+        significance = "finite_sample_evidence" if finite_sample else "confidence_interval"
+        return (*self._COMMON_GATE_NAMES[:-1], significance, self._COMMON_GATE_NAMES[-1])
 
     def _decision(
         self,
@@ -133,7 +142,7 @@ class KernelPromotionPolicy:
                 name=name,
                 status=statuses.get(name, "not-evaluated"),  # type: ignore[arg-type]
             )
-            for name in self._GATE_NAMES
+            for name in self._gate_names
         )
         summary = ", ".join(f"{gate.name}={gate.status}" for gate in gates)
         return KernelPromotionDecision(
@@ -239,7 +248,6 @@ class KernelPromotionPolicy:
             )
 
         assert observation.relative_improvement is not None
-        assert observation.speedup_lcb is not None
         assert observation.candidate_p95_ms is not None
         assert observation.incumbent_p95_ms is not None
         if observation.all_case_no_regression_passed is False:
@@ -270,27 +278,48 @@ class KernelPromotionPolicy:
                 statuses=statuses,
             )
         statuses["relative_improvement"] = "passed"
-        required_confident_speedup = 1.0 / (1.0 - self.config.min_relative_improvement)
-        confidence_failed = (
-            observation.speedup_lcb <= 1.0
-            if self.config.min_relative_improvement == 0
-            else observation.speedup_lcb + 1e-12 < required_confident_speedup
+        finite_sample = (
+            isinstance(self.config, KernelDecisionPolicy)
+            and self.config.statistics.method == "paired-sign-eprocess/v1"
         )
-        if self.config.require_confidence and confidence_failed:
-            statuses["confidence_interval"] = "failed"
-            reason = "confidence_interval"
-            feedback = (
-                f"{observation.feedback} Rejected: the sequentially adjusted paired lower bound does not support the configured "
-                f"{self.config.min_relative_improvement:.2%} improvement margin."
+        if finite_sample:
+            receipt = observation.derived_statistics_receipt
+            if receipt is None or not receipt.finite_sample_gate_passed:
+                statuses["finite_sample_evidence"] = "failed"
+                return self._decision(
+                    promote=False,
+                    decision="rejected",
+                    reason="finite_sample_evidence",
+                    feedback=(
+                        f"{observation.feedback} Rejected: the pre-registered finite-sample sign e-test did not "
+                        "cross the per-look evidence threshold."
+                    ),
+                    statuses=statuses,
+                )
+            statuses["finite_sample_evidence"] = "passed"
+        else:
+            assert observation.speedup_lcb is not None
+            required_confident_speedup = 1.0 / (1.0 - self.config.min_relative_improvement)
+            confidence_failed = (
+                observation.speedup_lcb <= 1.0
+                if self.config.min_relative_improvement == 0
+                else observation.speedup_lcb + 1e-12 < required_confident_speedup
             )
-            return self._decision(
-                promote=False,
-                decision="rejected",
-                reason=reason,
-                feedback=feedback,
-                statuses=statuses,
-            )
-        statuses["confidence_interval"] = "passed" if self.config.require_confidence else "not-evaluated"
+            if self.config.require_confidence and confidence_failed:
+                statuses["confidence_interval"] = "failed"
+                reason = "confidence_interval"
+                feedback = (
+                    f"{observation.feedback} Rejected: the empirical paired quantile does not support the configured "
+                    f"{self.config.min_relative_improvement:.2%} improvement margin."
+                )
+                return self._decision(
+                    promote=False,
+                    decision="rejected",
+                    reason=reason,
+                    feedback=feedback,
+                    statuses=statuses,
+                )
+            statuses["confidence_interval"] = "passed" if self.config.require_confidence else "not-evaluated"
         if observation.candidate_p95_ms > observation.incumbent_p95_ms * (1 + self.config.max_p95_regression):
             statuses["tail_latency"] = "failed"
             reason = "tail_regression"
@@ -324,20 +353,39 @@ class KernelEvolutionRunner:
         *,
         run_id: str | None = None,
         confirmation_fn: KernelConfirmationFn | None = None,
+        sealed_audit_root: Path | None = None,
     ) -> None:
         if evaluator.config.problem_id != config.problem_id:
             raise ValueError("evaluator and evolution problem_id must match")
+        statistics_policy = evaluator.config.statistics_policy
+        finite_sample = statistics_policy.schema_version == "autocontext.kernel-statistics-policy/v2"
+        if finite_sample and statistics_policy.improvement_margin != config.min_relative_improvement:
+            raise ValueError("evaluator finite-sample margin and evolution promotion threshold must match")
+        if finite_sample and confirmation_fn is not None and sealed_audit_root is None:
+            raise ValueError("finite-sample confirmation requires a separate sealed_audit_root")
+        if finite_sample and confirmation_fn is not None and sealed_audit_root is not None:
+            public_root = lineage_root.resolve()
+            audit_root = sealed_audit_root.resolve()
+            if public_root == audit_root or public_root.is_relative_to(audit_root) or audit_root.is_relative_to(public_root):
+                raise ValueError("sealed_audit_root must be disjoint from the public lineage root")
         self.config = config
         self._generate_fn = generate_fn
         self._evaluator = evaluator
         self._confirmation_fn = confirmation_fn
+        self._finite_sample = finite_sample
         sequential = config.sequential_testing
         if sequential is not None:
             evaluator.config.validate_confidence_resolution(sequential.per_proposal_alpha)
         self.run_id = run_id or f"kernel_{uuid.uuid4().hex}"
-        self._store = KernelLineageStore(lineage_root, self.run_id)
+        self._store = KernelLineageStore(lineage_root, self.run_id, sealed_audit_root=sealed_audit_root)
         self._decision_policy = KernelDecisionPolicy(
-            statistics=evaluator.config.statistics_policy,
+            schema_version=(
+                "autocontext.kernel-decision-policy/v2"
+                if finite_sample
+                else "autocontext.kernel-decision-policy/v1"
+            ),
+            evidence_family_version="autocontext.kernel-evidence-family/v4" if finite_sample else None,
+            statistics=statistics_policy,
             require_confirmation=confirmation_fn is not None,
             min_relative_improvement=config.min_relative_improvement,
             require_confidence=config.require_confidence,
@@ -379,7 +427,9 @@ class KernelEvolutionRunner:
         self._store.write_candidate(candidate)
         report_digest = self._store.write_report(observation)
         confirmation_report_digest = (
-            self._store.write_report(confirmation_observation) if confirmation_observation is not None else None
+            kernel_benchmark_report_digest(confirmation_observation.report)
+            if confirmation_observation is not None and confirmation_observation.report is not None
+            else None
         )
         sequential = self.config.sequential_testing
         sequential_evidence = (
@@ -394,7 +444,9 @@ class KernelEvolutionRunner:
             if role != "baseline" and sequential is not None
             else None
         )
+        policy_identity = {"decision_policy_id": self._decision_policy.policy_id} if self._finite_sample else {}
         return KernelAttemptRecord(
+            schema_version=("autocontext.kernel-lineage/v4" if self._finite_sample else "autocontext.kernel-lineage/v3"),
             run_id=self.run_id,
             attempt_id=f"attempt_{uuid.uuid4().hex}",
             generation=generation,
@@ -418,6 +470,7 @@ class KernelEvolutionRunner:
             created_at=datetime.now(UTC).isoformat(),
             observation=observation,
             decision_policy=self._decision_policy,
+            **policy_identity,
             primary_decision=primary_decision,
             promotion_decision=decision,
             confirmation_required=confirmation_required,
@@ -457,7 +510,11 @@ class KernelEvolutionRunner:
             entrypoint=self.config.entrypoint,
         )
         return {
-            "schema_version": "autocontext.kernel-run/v3",
+            "schema_version": (
+                "autocontext.kernel-run/v4"
+                if self._finite_sample
+                else "autocontext.kernel-run/v3"
+            ),
             "run_id": self.run_id,
             "status": status,
             "problem_id": self.config.problem_id,
@@ -685,9 +742,17 @@ class KernelEvolutionRunner:
                         champion_attempt_id=self._champion.record.attempt_id,
                         attempts=len(self._attempts),
                         error_type=type(exc).__name__,
-                        error=str(exc)[:1_000],
+                        error=(
+                            "terminal failure; detailed confirmation evidence remains in sealed audit"
+                            if self._finite_sample and self._confirmation_fn is not None
+                            else str(exc)[:1_000]
+                        ),
                     )
                 )
+            except Exception:
+                pass
+            try:
+                self._store.release_sealed_audit()
             except Exception:
                 pass
             raise
@@ -695,7 +760,9 @@ class KernelEvolutionRunner:
         assert self._champion is not None
         champion_speedup = self._champion.observation.speedup_vs_reference
         assert champion_speedup is not None
+        policy_id = self._decision_policy.policy_id if self._finite_sample else None
         result = KernelEvolutionResult(
+            schema_version=("autocontext.kernel-result/v4" if self._finite_sample else "autocontext.kernel-result/v3"),
             run_id=self.run_id,
             problem_id=self.config.problem_id,
             hardware_scope_id=baseline_observation.hardware_scope_id,
@@ -712,9 +779,11 @@ class KernelEvolutionRunner:
             champion_score=self._score(self._champion.observation),
             champion_speedup_vs_reference=champion_speedup,
             decision_policy=self._decision_policy,
+            **({"decision_policy_id": policy_id} if policy_id is not None else {}),
             attempts=list(self._attempts),
             playbook=state.playbook,
         )
+        self._store.release_sealed_audit()
         self._store.write_summary(result)
         self._store.write_manifest(
             self._manifest(

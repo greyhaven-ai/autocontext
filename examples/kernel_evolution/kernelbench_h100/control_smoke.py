@@ -50,7 +50,7 @@ def _promotion_decision(observation: Any) -> dict[str, object]:
         return {"promote": False, "decision": "rejected", "reason": observation.rejection_reason}
     assert observation.environment_drift_ratio is not None
     assert observation.relative_improvement is not None
-    assert observation.speedup_lcb is not None
+    assert observation.derived_statistics_receipt is not None
     assert observation.candidate_p95_ms is not None
     assert observation.incumbent_p95_ms is not None
     resources = observation.report.resources if observation.report is not None else None
@@ -62,11 +62,10 @@ def _promotion_decision(observation: Any) -> dict[str, object]:
         return {"promote": False, "decision": "rejected", "reason": "unstable_environment"}
     if observation.relative_improvement + 1.0e-12 < 0.05:
         return {"promote": False, "decision": "rejected", "reason": "insufficient_improvement"}
-    required_confident_speedup = 1.0 / (1.0 - 0.05)
     if observation.all_case_no_regression_passed is False:
         return {"promote": False, "decision": "rejected", "reason": "case_regression"}
-    if observation.speedup_lcb + 1.0e-12 < required_confident_speedup:
-        return {"promote": False, "decision": "rejected", "reason": "confidence_interval"}
+    if not observation.derived_statistics_receipt.finite_sample_gate_passed:
+        return {"promote": False, "decision": "rejected", "reason": "finite_sample_evidence"}
     if observation.candidate_p95_ms > observation.incumbent_p95_ms * 1.05:
         return {"promote": False, "decision": "rejected", "reason": "tail_regression"}
     return {"promote": True, "decision": "promoted", "reason": "significant_improvement"}
@@ -184,9 +183,9 @@ def main() -> None:
             problem_id=PROBLEM_ID,
             timeout_seconds=240.0,
             min_timing_blocks=8,
-            # The adapter pins a ten-proposal Bonferroni policy (alpha=.005).
-            # Keep at least 100 resamples in that empirical lower tail.
-            bootstrap_samples=20_000,
+            bootstrap_samples=None,
+            statistics_method="paired-sign-eprocess/v1",
+            finite_sample_improvement_margin=0.05,
             require_resource_telemetry=True,
         ),
     )
@@ -253,8 +252,11 @@ def main() -> None:
             "reference_median_ms": observation.reference_median_ms,
             "speedup_vs_incumbent": observation.speedup_vs_incumbent,
             "speedup_vs_reference": observation.speedup_vs_reference,
-            "speedup_lcb95": observation.speedup_lcb95,
-            "speedup_lcb": observation.speedup_lcb,
+            "derived_statistics_receipt": (
+                observation.derived_statistics_receipt.model_dump(mode="json")
+                if observation.derived_statistics_receipt is not None
+                else None
+            ),
             "confidence_level": observation.confidence_level,
             "all_case_no_regression_passed": observation.all_case_no_regression_passed,
             "relative_improvement": observation.relative_improvement,

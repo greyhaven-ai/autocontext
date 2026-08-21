@@ -28,15 +28,75 @@ def _policy_digest(model: BaseModel) -> str:
 
 
 class KernelStatisticsPolicy(_ProtocolModel):
-    """Host-owned derivation policy for benchmark observations."""
+    """Host-owned derivation policy for benchmark observations.
 
-    schema_version: Literal["autocontext.kernel-statistics-policy/v1"] = "autocontext.kernel-statistics-policy/v1"
-    method: Literal["paired-percentile-bootstrap/v1"] = "paired-percentile-bootstrap/v1"
-    bootstrap_samples: int = Field(ge=1)
-    seed_derivation: Literal["sha256-baseline-hardware-protocol/v1"] = "sha256-baseline-hardware-protocol/v1"
+    Version 1 is the historical empirical percentile bootstrap.  Version 2 is
+    the finite-sample production policy: each pre-registered paired block is a
+    success only when it clears the complete improvement margin, and a fixed
+    sign e-test supplies the per-look error bound.  The v2 guarantee assumes
+    the conditional probability of a threshold success is at most one half
+    under the null; it does not assume Gaussian timing noise or independent
+    block magnitudes.
+    """
+
+    schema_version: Literal[
+        "autocontext.kernel-statistics-policy/v1",
+        "autocontext.kernel-statistics-policy/v2",
+    ] = "autocontext.kernel-statistics-policy/v1"
+    method: Literal[
+        "paired-percentile-bootstrap/v1",
+        "paired-sign-eprocess/v1",
+    ] = "paired-percentile-bootstrap/v1"
+    bootstrap_samples: int | None = Field(default=None, ge=1, exclude_if=lambda value: value is None)
+    seed_derivation: Literal[
+        "sha256-baseline-hardware-protocol/v1",
+        "sha256-plan-commitment-block-schedule/v1",
+    ] = "sha256-baseline-hardware-protocol/v1"
     min_timing_blocks: int = Field(ge=2)
     require_resource_telemetry: bool
     max_gpu_memory_bytes: int | None = Field(default=None, ge=1)
+    block_definition: Literal["balanced-interleaved-paired-block/v1"] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    dependence_assumption: Literal["conditional-threshold-win-probability-lte-half/v1"] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    null_win_probability: Annotated[FiniteFloat, Field(gt=0, le=0.5)] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    betting_fraction: Annotated[FiniteFloat, Field(gt=0, le=1)] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    improvement_margin: Annotated[FiniteFloat, Field(ge=0, lt=1)] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+
+    @model_validator(mode="after")
+    def validate_method_version(self) -> Self:
+        finite_fields = (
+            self.block_definition,
+            self.dependence_assumption,
+            self.null_win_probability,
+            self.betting_fraction,
+            self.improvement_margin,
+        )
+        if self.schema_version == "autocontext.kernel-statistics-policy/v1":
+            if self.method != "paired-percentile-bootstrap/v1" or self.bootstrap_samples is None:
+                raise ValueError("v1 statistics policy requires the paired percentile bootstrap")
+            if any(value is not None for value in finite_fields):
+                raise ValueError("v1 statistics policy cannot contain finite-sample fields")
+            if self.seed_derivation != "sha256-baseline-hardware-protocol/v1":
+                raise ValueError("v1 statistics policy has an invalid seed derivation")
+            return self
+        if self.method != "paired-sign-eprocess/v1" or self.bootstrap_samples is not None:
+            raise ValueError("v2 statistics policy requires the paired sign e-process without bootstrap samples")
+        if any(value is None for value in finite_fields):
+            raise ValueError("v2 statistics policy requires the complete finite-sample contract")
+        if self.seed_derivation != "sha256-plan-commitment-block-schedule/v1":
+            raise ValueError("v2 statistics policy has an invalid schedule seed derivation")
+        if self.null_win_probability != 0.5 or self.betting_fraction != 1.0:
+            raise ValueError("paired-sign-eprocess/v1 requires p0=0.5 and the pre-registered all-in bet")
+        return self
 
     @property
     def policy_id(self) -> str:
@@ -195,10 +255,36 @@ class KernelSequentialTestingPolicy(_ProtocolModel):
         return 1.0 - self.per_proposal_alpha
 
 
+class KernelMeasurementDesign(_ProtocolModel):
+    """Receipt-bound timing-block construction and dependence assumption."""
+
+    schema_version: Literal["autocontext.kernel-measurement-design/v1"] = (
+        "autocontext.kernel-measurement-design/v1"
+    )
+    block_definition: Literal["balanced-interleaved-paired-block/v1"] = (
+        "balanced-interleaved-paired-block/v1"
+    )
+    schedule_seed_derivation: Literal["sha256-plan-commitment-block-schedule/v1"] = (
+        "sha256-plan-commitment-block-schedule/v1"
+    )
+    dependence_assumption: Literal["conditional-threshold-win-probability-lte-half/v1"] = (
+        "conditional-threshold-win-probability-lte-half/v1"
+    )
+    fixed_block_count: int = Field(ge=2)
+    early_stopping_allowed: Literal[False] = False
+    order_balanced: Literal[True] = True
+
+
 class KernelDecisionPolicy(_ProtocolModel):
     """Complete deterministic policy used to accept or reject an attempt."""
 
-    schema_version: Literal["autocontext.kernel-decision-policy/v1"] = "autocontext.kernel-decision-policy/v1"
+    schema_version: Literal[
+        "autocontext.kernel-decision-policy/v1",
+        "autocontext.kernel-decision-policy/v2",
+    ] = "autocontext.kernel-decision-policy/v1"
+    evidence_family_version: Literal["autocontext.kernel-evidence-family/v4"] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     statistics: KernelStatisticsPolicy
     require_confirmation: bool
     min_relative_improvement: Annotated[FiniteFloat, Field(ge=0, lt=1)]
@@ -208,6 +294,22 @@ class KernelDecisionPolicy(_ProtocolModel):
     max_peak_memory_fraction: Annotated[FiniteFloat, Field(ge=0, lt=1)]
     target_reference_speedup: PositiveFiniteFloat
     sequential_testing: KernelSequentialTestingPolicy | None = None
+
+    @model_validator(mode="after")
+    def validate_evidence_family(self) -> Self:
+        statistics_v2 = self.statistics.schema_version == "autocontext.kernel-statistics-policy/v2"
+        if self.schema_version == "autocontext.kernel-decision-policy/v2":
+            if not statistics_v2 or self.evidence_family_version != "autocontext.kernel-evidence-family/v4":
+                raise ValueError("v2 decision policy requires the complete v4 finite-sample evidence family")
+            if self.sequential_testing is None:
+                raise ValueError("v2 decision policy requires a bounded sequential-testing policy")
+            if not self.require_confidence:
+                raise ValueError("v2 decision policy cannot disable finite-sample evidence")
+            if self.statistics.improvement_margin != self.min_relative_improvement:
+                raise ValueError("finite-sample improvement margin must match the decision threshold")
+        elif statistics_v2 or self.evidence_family_version is not None:
+            raise ValueError("v1 decision policy cannot contain v4 finite-sample evidence fields")
+        return self
 
     @property
     def policy_id(self) -> str:
