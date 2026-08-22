@@ -30,6 +30,7 @@ from autocontext.kernel_evolution.report_models import (
 from autocontext.kernel_evolution.report_models import (
     KernelCorrectnessReport,
     KernelPerformanceReport,
+    exact_case_speedup_floor_passed,
 )
 from autocontext.kernel_evolution.report_models import (
     KernelCorrectnessSliceReport as KernelCorrectnessSliceReport,
@@ -378,6 +379,11 @@ class KernelBenchmarkReport(StrictModel):
                 raise ValueError("v4 reports require a complete measurement-design receipt") from exc
             if design.fixed_block_count != self.protocol.timing_blocks:
                 raise ValueError("measurement design block count must match the benchmark protocol")
+            semantics = self.protocol.semantics
+            if semantics is not None:
+                expected_tolerance = 0.0001 if semantics.profile_name == "strict-fp32-v1" else 0.01
+                if float(self.protocol.atol) != expected_tolerance or float(self.protocol.rtol) != expected_tolerance:
+                    raise ValueError("v4 protocol tolerances must exactly match the named precision profile")
         if not self.candidate_entrypoint.strip() or not self.incumbent_entrypoint.strip():
             raise ValueError("candidate and incumbent entrypoints must not be empty")
         expected_candidate = artifact_digest_from_source_digest(
@@ -432,6 +438,18 @@ class KernelBenchmarkReport(StrictModel):
                 raise ValueError("complete reports require paired performance blocks")
             if len(self.performance.blocks) != self.protocol.timing_blocks:
                 raise ValueError("protocol timing_blocks does not match the performance block count")
+            for case in self.performance.cases:
+                if self.schema_version == "autocontext.kernelbench-eval/v4":
+                    case_passed = exact_case_speedup_floor_passed(
+                        incumbent_ms=float(case.incumbent_median_ms),
+                        candidate_ms=float(case.candidate_median_ms),
+                        minimum_speedup=float(case.minimum_speedup_vs_incumbent),
+                    )
+                else:
+                    actual_speedup = float(case.incumbent_median_ms) / float(case.candidate_median_ms)
+                    case_passed = actual_speedup + 1e-12 >= float(case.minimum_speedup_vs_incumbent)
+                if case.passed_no_regression != case_passed:
+                    raise ValueError("case no-regression result does not match the report schema")
             semantics = self.protocol.semantics
             if semantics is not None:
                 enforcement = semantics.enforcement
@@ -454,10 +472,13 @@ class KernelBenchmarkReport(StrictModel):
                     if set(performance_cases) != set(correctness_cases):
                         raise ValueError("performance cases must cover every named correctness slice")
                     for case in self.performance.cases:
-                        if (
-                            abs(float(case.minimum_speedup_vs_incumbent) - float(enforcement.minimum_case_speedup_vs_incumbent))
-                            > 1e-12
-                        ):
+                        expected_floor = float(enforcement.minimum_case_speedup_vs_incumbent)
+                        observed_floor = float(case.minimum_speedup_vs_incumbent)
+                        if self.schema_version == "autocontext.kernelbench-eval/v4":
+                            floor_matches = observed_floor == expected_floor
+                        else:
+                            floor_matches = abs(observed_floor - expected_floor) <= 1e-12
+                        if not floor_matches:
                             raise ValueError("case no-regression floor does not match the protocol")
         else:
             if self.failure_kind is None:
@@ -563,6 +584,8 @@ class KernelBenchmarkObservation(StrictModel):
             raise ValueError("eligible observations cannot have a rejection_reason")
         if not self.eligible and not self.rejection_reason:
             raise ValueError("ineligible observations require a rejection_reason")
+        if not self.eligible and self.derived_statistics_receipt is not None:
+            raise ValueError("ineligible v4 observations cannot carry a derived statistics receipt")
         if self.report is not None:
             report = self.report
             if report.schema_version == "autocontext.kernelbench-eval/v3" and self.statistics_policy is None:
@@ -601,7 +624,7 @@ class KernelBenchmarkObservation(StrictModel):
                     for name, expected in receipt_metrics.items():
                         actual = getattr(self, name)
                         if isinstance(expected, float):
-                            if actual is None or abs(float(actual) - expected) > 1e-12 * max(1.0, abs(expected)):
+                            if actual is None or float(actual) != expected:
                                 raise ValueError(f"observation {name} disagrees with its derivation receipt")
                         elif actual != expected:
                             raise ValueError(f"observation {name} disagrees with its derivation receipt")
@@ -625,7 +648,7 @@ class KernelBenchmarkObservation(StrictModel):
                 assert self.confidence_level is not None
                 sequential = report.protocol.sequential_testing
                 expected_confidence = sequential.confidence_level if sequential is not None else 0.95
-                if abs(float(self.confidence_level) - expected_confidence) > 1e-15:
+                if float(self.confidence_level) != expected_confidence:
                     raise ValueError("observation confidence_level disagrees with its benchmark protocol")
         return self
 

@@ -11,6 +11,10 @@ from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, model_validator
 PrecisionProfileName = Literal["strict-fp32-v1", "relaxed-precision-v1"]
 PositiveFiniteFloat = Annotated[FiniteFloat, Field(gt=0)]
 Probability = Annotated[FiniteFloat, Field(gt=0, lt=0.5)]
+# ``2**-1074`` is binary64's smallest positive value.  The v2 sign
+# e-process fixes p0 at one half, so a larger block count would make its exact
+# all-win probability unrepresentable in the receipt's binary64 bound field.
+MAX_FINITE_SAMPLE_BLOCKS = 1074
 
 
 class _ProtocolModel(BaseModel):
@@ -96,6 +100,10 @@ class KernelStatisticsPolicy(_ProtocolModel):
             raise ValueError("v2 statistics policy has an invalid schedule seed derivation")
         if self.null_win_probability != 0.5 or self.betting_fraction != 1.0:
             raise ValueError("paired-sign-eprocess/v1 requires p0=0.5 and the pre-registered all-in bet")
+        if self.min_timing_blocks > MAX_FINITE_SAMPLE_BLOCKS:
+            raise ValueError(
+                f"paired-sign-eprocess/v1 supports at most {MAX_FINITE_SAMPLE_BLOCKS} timing blocks"
+            )
         return self
 
     @property
@@ -246,6 +254,21 @@ class KernelSequentialTestingPolicy(_ProtocolModel):
     proposal_cap: int = Field(default=10, ge=1, le=10_000)
     familywise_alpha: Probability = 0.05
 
+    @model_validator(mode="after")
+    def validate_representable_budget(self) -> Self:
+        per_proposal = float(self.familywise_alpha) / self.proposal_cap
+        confidence = 1.0 - per_proposal
+        if per_proposal <= 0.0:
+            raise ValueError("per-proposal alpha must be representable as positive binary64")
+        if confidence >= 1.0:
+            raise ValueError("per-proposal alpha must produce a confidence level below one")
+        if confidence <= 0.5:
+            raise ValueError("per-proposal alpha must produce a confidence level above one half")
+        maximum_spend = per_proposal * self.proposal_cap
+        if not 0.0 < maximum_spend < 0.5:
+            raise ValueError("maximum cumulative alpha spend must remain in (0, 0.5)")
+        return self
+
     @property
     def per_proposal_alpha(self) -> float:
         return float(self.familywise_alpha) / self.proposal_cap
@@ -270,7 +293,7 @@ class KernelMeasurementDesign(_ProtocolModel):
     dependence_assumption: Literal["conditional-threshold-win-probability-lte-half/v1"] = (
         "conditional-threshold-win-probability-lte-half/v1"
     )
-    fixed_block_count: int = Field(ge=2)
+    fixed_block_count: int = Field(ge=2, le=MAX_FINITE_SAMPLE_BLOCKS)
     early_stopping_allowed: Literal[False] = False
     order_balanced: Literal[True] = True
 
@@ -321,7 +344,7 @@ class KernelSequentialEvidence(_ProtocolModel):
 
     method: Literal["bonferroni"] = "bonferroni"
     proposal_index: int = Field(ge=1)
-    proposal_cap: int = Field(ge=1)
+    proposal_cap: int = Field(ge=1, le=10_000)
     familywise_alpha: Probability
     per_proposal_alpha: Probability
     cumulative_alpha_spent: Probability
@@ -332,11 +355,11 @@ class KernelSequentialEvidence(_ProtocolModel):
         expected = float(self.familywise_alpha) / self.proposal_cap
         if self.proposal_index > self.proposal_cap:
             raise ValueError("proposal_index exceeds proposal_cap")
-        if abs(float(self.per_proposal_alpha) - expected) > 1e-15:
+        if float(self.per_proposal_alpha) != expected:
             raise ValueError("per_proposal_alpha disagrees with Bonferroni policy")
-        if abs(float(self.cumulative_alpha_spent) - expected * self.proposal_index) > 1e-15:
+        if float(self.cumulative_alpha_spent) != expected * self.proposal_index:
             raise ValueError("cumulative_alpha_spent disagrees with proposal index")
-        if abs(float(self.confidence_level) - (1.0 - expected)) > 1e-15:
+        if float(self.confidence_level) != 1.0 - expected:
             raise ValueError("confidence_level disagrees with per-proposal alpha")
         return self
 

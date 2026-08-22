@@ -40,6 +40,7 @@ from profile_contract import PROFILE_NAMES, PROFILES, gpu_attestation_metadata, 
 
 from autocontext.kernel_evolution import AcceleratorAttestation, build_authority_receipt, read_authority_hmac_secret
 from autocontext.kernel_evolution.authority_tensor import copy_tensor_to_device_preserving_abi
+from autocontext.kernel_evolution.report_models import exact_case_speedup_floor_passed
 
 SCHEMA_VERSION = "autocontext.kernelbench-eval/v4"
 PROTOCOL_COMPATIBILITY_VERSION = "autocontext.kernel-protocol-compatibility/v1"
@@ -987,7 +988,11 @@ def main(role: str = "primary") -> None:
                 "incumbent_median_ms": incumbent_median,
                 "reference_median_ms": statistics.median(values["reference_ms"]),
                 "minimum_speedup_vs_incumbent": floor,
-                "passed_no_regression": incumbent_median / candidate_median + 1.0e-12 >= floor,
+                "passed_no_regression": exact_case_speedup_floor_passed(
+                    incumbent_ms=incumbent_median,
+                    candidate_ms=candidate_median,
+                    minimum_speedup=floor,
+                ),
             }
         )
 

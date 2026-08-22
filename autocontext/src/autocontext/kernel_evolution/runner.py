@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 import uuid
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
@@ -15,6 +14,13 @@ from autocontext.execution.agent_task_evolution import (
     AgentTaskGenerationState,
     GenerateFn,
     LessonSignal,
+)
+from autocontext.kernel_evolution import promotion_margin
+from autocontext.kernel_evolution.adaptive_evidence import (
+    confirmation_identity_unavailable,
+    release_sealed_audit_best_effort,
+    terminal_error_text,
+    validate_sealed_evidence_roots,
 )
 from autocontext.kernel_evolution.benchmark import KernelBenchmarkEvaluator
 from autocontext.kernel_evolution.confirmation import KernelConfirmationFn, evaluate_confirmation
@@ -32,9 +38,8 @@ from autocontext.kernel_evolution.models import (
 from autocontext.kernel_evolution.protocols import (
     KernelDecisionPolicy,
     KernelSequentialEvidence,
-    KernelSequentialTestingPolicy,
-    PrecisionProfileName,
 )
+from autocontext.kernel_evolution.runner_config import KernelEvolutionConfig
 
 
 class KernelBaselineError(RuntimeError):
@@ -48,52 +53,6 @@ class KernelBaselineError(RuntimeError):
 
 class KernelIntegrityError(RuntimeError):
     """Raised after persisting an attempt that compromised the pinned harness."""
-
-
-@dataclass(frozen=True, slots=True)
-class KernelEvolutionConfig:
-    problem_id: str
-    task_prompt: str
-    baseline_source: str
-    source_suffix: str = ".py"
-    entrypoint: str = "ModelNew"
-    min_relative_improvement: float = 0.01
-    require_confidence: bool = True
-    max_p95_regression: float = 0.02
-    max_environment_drift: float = 0.03
-    max_peak_memory_fraction: float = 0.80
-    target_reference_speedup: float = 2.0
-    precision_profile: PrecisionProfileName | None = None
-    proposal_cap: int | None = None
-    familywise_alpha: float = 0.05
-
-    def __post_init__(self) -> None:
-        if not self.problem_id.strip() or not self.task_prompt.strip() or not self.baseline_source.strip():
-            raise ValueError("problem_id, task_prompt, and baseline_source must not be empty")
-        for name, value in (
-            ("min_relative_improvement", self.min_relative_improvement),
-            ("max_p95_regression", self.max_p95_regression),
-            ("max_environment_drift", self.max_environment_drift),
-            ("max_peak_memory_fraction", self.max_peak_memory_fraction),
-        ):
-            if not math.isfinite(value) or not 0 <= value < 1:
-                raise ValueError(f"{name} must be in [0, 1)")
-        if not math.isfinite(self.target_reference_speedup) or self.target_reference_speedup <= 0:
-            raise ValueError("target_reference_speedup must be positive")
-        if self.proposal_cap is not None and not 1 <= self.proposal_cap <= 10_000:
-            raise ValueError("proposal_cap must be between 1 and 10000")
-        if not math.isfinite(self.familywise_alpha) or not 0 < self.familywise_alpha < 0.5:
-            raise ValueError("familywise_alpha must be in (0, 0.5)")
-        KernelCandidate(source=self.baseline_source, source_suffix=self.source_suffix, entrypoint=self.entrypoint)
-
-    @property
-    def sequential_testing(self) -> KernelSequentialTestingPolicy | None:
-        if self.proposal_cap is None:
-            return None
-        return KernelSequentialTestingPolicy(
-            proposal_cap=self.proposal_cap,
-            familywise_alpha=self.familywise_alpha,
-        )
 
 
 @dataclass(slots=True)
@@ -119,12 +78,12 @@ class KernelPromotionPolicy:
     def __init__(self, config: KernelDecisionPolicy | KernelEvolutionConfig) -> None:
         self.config = config
 
+    def _uses_finite_sample(self) -> bool:
+        config = self.config
+        return isinstance(config, KernelDecisionPolicy) and config.statistics.method == "paired-sign-eprocess/v1"
     @property
     def _gate_names(self) -> tuple[str, ...]:
-        finite_sample = (
-            isinstance(self.config, KernelDecisionPolicy)
-            and self.config.statistics.method == "paired-sign-eprocess/v1"
-        )
+        finite_sample = self._uses_finite_sample()
         significance = "finite_sample_evidence" if finite_sample else "confidence_interval"
         return (*self._COMMON_GATE_NAMES[:-1], significance, self._COMMON_GATE_NAMES[-1])
 
@@ -155,6 +114,7 @@ class KernelPromotionPolicy:
 
     def decide(self, observation: KernelBenchmarkObservation, *, baseline: bool = False) -> KernelPromotionDecision:
         statuses: dict[str, str] = {}
+        finite_sample = self._uses_finite_sample()
         if not observation.eligible:
             reason = observation.rejection_reason or "invalid_evaluation"
             if reason == "missing_resource_telemetry":
@@ -203,7 +163,9 @@ class KernelPromotionPolicy:
         if telemetry_present:
             statuses["resource_telemetry"] = "passed"
         assert observation.environment_drift_ratio is not None
-        if observation.environment_drift_ratio > self.config.max_environment_drift:
+        if not promotion_margin.environment_drift_margin_passed(
+            observation, self.config.max_environment_drift, finite_sample=finite_sample
+        ):
             statuses["environment_drift"] = "failed"
             reason = "unstable_environment"
             feedback = (
@@ -224,7 +186,10 @@ class KernelPromotionPolicy:
             resources is not None
             and candidate_peak is not None
             and resources.device_total_memory_bytes is not None
-            and candidate_peak > resources.device_total_memory_bytes * self.config.max_peak_memory_fraction
+            and not promotion_margin.peak_memory_fraction_passed(
+                candidate_peak, resources.device_total_memory_bytes, self.config.max_peak_memory_fraction,
+                finite_sample=finite_sample,
+            )
         ):
             statuses["gpu_memory"] = "failed"
             reason = "memory_limit"
@@ -263,7 +228,15 @@ class KernelPromotionPolicy:
             )
         if observation.all_case_no_regression_passed is True:
             statuses["case_no_regression"] = "passed"
-        if observation.relative_improvement + 1e-12 < self.config.min_relative_improvement:
+        aggregate_margin_passed = (
+            observation.relative_improvement + 1e-12 >= self.config.min_relative_improvement
+        )
+        if finite_sample:
+            aggregate_margin_passed = promotion_margin.finite_sample_aggregate_margin_passed(
+                observation,
+                self.config.min_relative_improvement,
+            )
+        if not aggregate_margin_passed:
             statuses["relative_improvement"] = "failed"
             reason = "insufficient_improvement"
             feedback = (
@@ -278,10 +251,6 @@ class KernelPromotionPolicy:
                 statuses=statuses,
             )
         statuses["relative_improvement"] = "passed"
-        finite_sample = (
-            isinstance(self.config, KernelDecisionPolicy)
-            and self.config.statistics.method == "paired-sign-eprocess/v1"
-        )
         if finite_sample:
             receipt = observation.derived_statistics_receipt
             if receipt is None or not receipt.finite_sample_gate_passed:
@@ -320,7 +289,16 @@ class KernelPromotionPolicy:
                     statuses=statuses,
                 )
             statuses["confidence_interval"] = "passed" if self.config.require_confidence else "not-evaluated"
-        if observation.candidate_p95_ms > observation.incumbent_p95_ms * (1 + self.config.max_p95_regression):
+        tail_margin_passed = (
+            observation.candidate_p95_ms
+            <= observation.incumbent_p95_ms * (1 + self.config.max_p95_regression)
+        )
+        if finite_sample:
+            tail_margin_passed = promotion_margin.finite_sample_tail_margin_passed(
+                observation,
+                self.config.max_p95_regression,
+            )
+        if not tail_margin_passed:
             statuses["tail_latency"] = "failed"
             reason = "tail_regression"
             feedback = f"{observation.feedback} Rejected: candidate p95 latency regressed beyond the allowed limit."
@@ -359,25 +337,34 @@ class KernelEvolutionRunner:
             raise ValueError("evaluator and evolution problem_id must match")
         statistics_policy = evaluator.config.statistics_policy
         finite_sample = statistics_policy.schema_version == "autocontext.kernel-statistics-policy/v2"
+        quarantine_primary_evidence = (
+            finite_sample and evaluator.config.adaptive_feedback_policy == "aggregate-gates"
+        )
         if finite_sample and statistics_policy.improvement_margin != config.min_relative_improvement:
             raise ValueError("evaluator finite-sample margin and evolution promotion threshold must match")
-        if finite_sample and confirmation_fn is not None and sealed_audit_root is None:
-            raise ValueError("finite-sample confirmation requires a separate sealed_audit_root")
-        if finite_sample and confirmation_fn is not None and sealed_audit_root is not None:
-            public_root = lineage_root.resolve()
-            audit_root = sealed_audit_root.resolve()
-            if public_root == audit_root or public_root.is_relative_to(audit_root) or audit_root.is_relative_to(public_root):
-                raise ValueError("sealed_audit_root must be disjoint from the public lineage root")
+        validate_sealed_evidence_roots(
+            finite_sample=finite_sample,
+            confirmation_enabled=confirmation_fn is not None,
+            quarantine_primary_evidence=quarantine_primary_evidence,
+            public_root=lineage_root,
+            sealed_audit_root=sealed_audit_root,
+        )
         self.config = config
         self._generate_fn = generate_fn
         self._evaluator = evaluator
         self._confirmation_fn = confirmation_fn
         self._finite_sample = finite_sample
+        self._quarantine_primary_evidence = quarantine_primary_evidence
         sequential = config.sequential_testing
         if sequential is not None:
             evaluator.config.validate_confidence_resolution(sequential.per_proposal_alpha)
         self.run_id = run_id or f"kernel_{uuid.uuid4().hex}"
-        self._store = KernelLineageStore(lineage_root, self.run_id, sealed_audit_root=sealed_audit_root)
+        self._store = KernelLineageStore(
+            lineage_root,
+            self.run_id,
+            sealed_audit_root=sealed_audit_root,
+            quarantine_primary_evidence=quarantine_primary_evidence,
+        )
         self._decision_policy = KernelDecisionPolicy(
             schema_version=(
                 "autocontext.kernel-decision-policy/v2"
@@ -398,7 +385,7 @@ class KernelEvolutionRunner:
         self._policy = KernelPromotionPolicy(self._decision_policy)
         self._attempts: list[KernelAttemptRecord] = []
         self._champion: _Champion | None = None
-        self._used_confirmation_protocol_ids: set[str] = set()
+        self._used_confirmation_evidence_ids: set[str] = set()
         self._has_run = False
 
     @property
@@ -425,7 +412,10 @@ class KernelEvolutionRunner:
         confirmation_decision: KernelPromotionDecision | None = None,
     ) -> KernelAttemptRecord:
         self._store.write_candidate(candidate)
-        report_digest = self._store.write_report(observation)
+        report_digest = self._store.write_report(
+            observation,
+            publish=not self._quarantine_primary_evidence,
+        )
         confirmation_report_digest = (
             kernel_benchmark_report_digest(confirmation_observation.report)
             if confirmation_observation is not None and confirmation_observation.report is not None
@@ -492,7 +482,7 @@ class KernelEvolutionRunner:
             confirmation_fn=self._confirmation_fn,
             decide_fn=self._policy.decide,
             problem_id=self.config.problem_id,
-            used_protocol_ids=self._used_confirmation_protocol_ids,
+            used_evidence_ids=self._used_confirmation_evidence_ids,
             candidate=candidate,
             incumbent=incumbent,
             primary_observation=primary_observation,
@@ -556,13 +546,14 @@ class KernelEvolutionRunner:
             self.config.precision_profile is None or observed_profile == self.config.precision_profile
         )
         if baseline_observation.eligible and not controlled_protocol_matches:
-            baseline_observation = baseline_observation.model_copy(
-                update={
-                    "eligible": False,
-                    "rejection_reason": "controlled_protocol_mismatch",
-                    "feedback": "Benchmark profile or sequential-testing budget disagrees with host-owned controls.",
-                }
+            rejected_payload = baseline_observation.model_dump(mode="python")
+            rejected_payload.update(
+                eligible=False,
+                rejection_reason="controlled_protocol_mismatch",
+                feedback="Benchmark profile or sequential-testing budget disagrees with host-owned controls.",
+                derived_statistics_receipt=None,
             )
+            baseline_observation = KernelBenchmarkObservation.model_validate(rejected_payload)
         baseline_decision = self._policy.decide(baseline_observation, baseline=True)
         baseline_record = self._new_record(
             generation=0,
@@ -576,6 +567,7 @@ class KernelEvolutionRunner:
         self._persist_record(baseline_record)
         if not baseline_decision.promote:
             self._store.write_manifest(self._manifest(status="baseline_failed", baseline_attempt_id=baseline_record.attempt_id))
+            release_sealed_audit_best_effort(self._store)
             raise KernelBaselineError(
                 baseline_decision.feedback,
                 attempt_id=baseline_record.attempt_id,
@@ -701,6 +693,14 @@ class KernelEvolutionRunner:
                 confirmation_decision=confirmation_decision,
             )
             self._persist_record(record)
+            if confirmation_identity_unavailable(
+                finite_sample=self._finite_sample,
+                decision=confirmation_decision,
+                observation=confirmation_observation,
+            ):
+                raise KernelIntegrityError(
+                    "confirmation protocol identity is unavailable; the adaptive campaign cannot continue safely"
+                )
             if decision.reason in {"harness_modified", "confirmation_harness_modified"}:
                 raise KernelIntegrityError(decision.feedback)
             if decision.promote:
@@ -742,10 +742,11 @@ class KernelEvolutionRunner:
                         champion_attempt_id=self._champion.record.attempt_id,
                         attempts=len(self._attempts),
                         error_type=type(exc).__name__,
-                        error=(
-                            "terminal failure; detailed confirmation evidence remains in sealed audit"
-                            if self._finite_sample and self._confirmation_fn is not None
-                            else str(exc)[:1_000]
+                        error=terminal_error_text(
+                            exc,
+                            finite_sample=self._finite_sample,
+                            confirmation_enabled=self._confirmation_fn is not None,
+                            quarantine_primary_evidence=self._quarantine_primary_evidence,
                         ),
                     )
                 )

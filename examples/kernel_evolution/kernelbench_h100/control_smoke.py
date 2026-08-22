@@ -17,11 +17,11 @@ from profile_contract import PROFILE_NAMES, private_plan_commitment
 PROBLEM_ID = "kernelbench-v0.1-level1-1-matmul-profiled-h100-v1"
 
 
-def _load_contract_modules(source_root: Path) -> tuple[Any, Any]:
-    """Load the real models/benchmark modules without importing full AutoContext."""
+def _load_contract_modules(source_root: Path) -> tuple[Any, Any, Any]:
+    """Load the real contract and exact promotion modules without importing full AutoContext."""
     package_root = source_root / "autocontext"
     kernel_root = package_root / "kernel_evolution"
-    for path in (kernel_root / "models.py", kernel_root / "benchmark.py"):
+    for path in (kernel_root / "models.py", kernel_root / "promotion_margin.py", kernel_root / "benchmark.py"):
         if not path.exists():
             raise SystemExit(f"AutoContext kernel contract module not found: {path}")
 
@@ -33,7 +33,7 @@ def _load_contract_modules(source_root: Path) -> tuple[Any, Any]:
     sys.modules["autocontext.kernel_evolution"] = kernel_package
 
     loaded = []
-    for short_name in ("models", "benchmark"):
+    for short_name in ("models", "promotion_margin", "benchmark"):
         name = f"autocontext.kernel_evolution.{short_name}"
         spec = importlib.util.spec_from_file_location(name, kernel_root / f"{short_name}.py")
         if spec is None or spec.loader is None:
@@ -42,10 +42,10 @@ def _load_contract_modules(source_root: Path) -> tuple[Any, Any]:
         sys.modules[name] = module
         spec.loader.exec_module(module)
         loaded.append(module)
-    return loaded[0], loaded[1]
+    return loaded[0], loaded[1], loaded[2]
 
 
-def _promotion_decision(observation: Any) -> dict[str, object]:
+def _promotion_decision(observation: Any, *, margin_contract: Any) -> dict[str, object]:
     if not observation.eligible:
         return {"promote": False, "decision": "rejected", "reason": observation.rejection_reason}
     assert observation.environment_drift_ratio is not None
@@ -56,17 +56,19 @@ def _promotion_decision(observation: Any) -> dict[str, object]:
     resources = observation.report.resources if observation.report is not None else None
     candidate_peak = resources.candidate_enforced_peak_bytes if resources is not None else None
     device_capacity = resources.device_total_memory_bytes if resources is not None else None
-    if candidate_peak is not None and device_capacity is not None and candidate_peak > device_capacity * 0.80:
+    if candidate_peak is not None and device_capacity is not None and not margin_contract.peak_memory_fraction_passed(
+        candidate_peak, device_capacity, 0.80, finite_sample=True
+    ):
         return {"promote": False, "decision": "rejected", "reason": "memory_limit"}
-    if observation.environment_drift_ratio > 0.10:
+    if not margin_contract.environment_drift_margin_passed(observation, 0.10, finite_sample=True):
         return {"promote": False, "decision": "rejected", "reason": "unstable_environment"}
-    if observation.relative_improvement + 1.0e-12 < 0.05:
+    if not margin_contract.finite_sample_aggregate_margin_passed(observation, 0.05):
         return {"promote": False, "decision": "rejected", "reason": "insufficient_improvement"}
     if observation.all_case_no_regression_passed is False:
         return {"promote": False, "decision": "rejected", "reason": "case_regression"}
     if not observation.derived_statistics_receipt.finite_sample_gate_passed:
         return {"promote": False, "decision": "rejected", "reason": "finite_sample_evidence"}
-    if observation.candidate_p95_ms > observation.incumbent_p95_ms * 1.05:
+    if not margin_contract.finite_sample_tail_margin_passed(observation, 0.05):
         return {"promote": False, "decision": "rejected", "reason": "tail_regression"}
     return {"promote": True, "decision": "promoted", "reason": "significant_improvement"}
 
@@ -96,7 +98,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    models_module, benchmark_module = _load_contract_modules(args.autocontext_src.resolve())
+    models_module, promotion_margin_module, benchmark_module = _load_contract_modules(args.autocontext_src.resolve())
     ExternalKernelBenchmarkRunner = benchmark_module.ExternalKernelBenchmarkRunner
     KernelBenchmarkEvaluator = benchmark_module.KernelBenchmarkEvaluator
     KernelBenchmarkEvaluatorConfig = benchmark_module.KernelBenchmarkEvaluatorConfig
@@ -218,7 +220,10 @@ def main() -> None:
         expected_baseline_id=baseline.baseline_id,
         expected_protocol_id=baseline.protocol_id,
     )
-    decision = _promotion_decision(observation)
+    decision = _promotion_decision(
+        observation,
+        margin_contract=promotion_margin_module,
+    )
     summary = {
         "schema_version": "autocontext.kernel-h100-control-smoke/v1",
         "evidence_status": "non_authoritative_trusted_unsafe",

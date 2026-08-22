@@ -11,7 +11,7 @@ from typing import Any, Literal
 from autocontext.kernel_evolution.authority_protocol import read_authority_hmac_secret
 from autocontext.kernel_evolution.finite_sample import minimum_sign_eprocess_blocks
 from autocontext.kernel_evolution.promotion_statistics import minimum_bootstrap_samples
-from autocontext.kernel_evolution.protocols import KernelStatisticsPolicy
+from autocontext.kernel_evolution.protocols import MAX_FINITE_SAMPLE_BLOCKS, KernelStatisticsPolicy
 
 _DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 _KEY_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,255}$")
@@ -23,10 +23,6 @@ class KernelBenchmarkEvaluatorConfig:
     timeout_seconds: float = 630.0
     min_timing_blocks: int = 5
     bootstrap_samples: int | None = 2_000
-    statistics_method: Literal["paired-percentile-bootstrap/v1", "paired-sign-eprocess/v1"] = (
-        "paired-percentile-bootstrap/v1"
-    )
-    finite_sample_improvement_margin: float | None = None
     max_feedback_chars: int = 4_000
     require_resource_telemetry: bool = False
     require_authority_receipt: bool = False
@@ -36,6 +32,10 @@ class KernelBenchmarkEvaluatorConfig:
     expected_boundary_manifest_digest: str | None = None
     adaptive_feedback_policy: Literal["detailed", "aggregate-gates"] = "detailed"
     max_gpu_memory_bytes: int | None = None
+    statistics_method: Literal["paired-percentile-bootstrap/v1", "paired-sign-eprocess/v1"] = (
+        "paired-percentile-bootstrap/v1"
+    )
+    finite_sample_improvement_margin: float | None = None
 
     def __post_init__(self) -> None:
         if not self.problem_id.strip():
@@ -55,6 +55,10 @@ class KernelBenchmarkEvaluatorConfig:
         else:
             if self.bootstrap_samples is not None:
                 raise ValueError("finite-sample statistics must not configure bootstrap samples")
+            if self.min_timing_blocks > MAX_FINITE_SAMPLE_BLOCKS:
+                raise ValueError(
+                    f"finite-sample statistics support at most {MAX_FINITE_SAMPLE_BLOCKS} timing blocks"
+                )
             margin = self.finite_sample_improvement_margin
             if margin is None or not math.isfinite(margin) or not 0 <= margin < 1:
                 raise ValueError("finite_sample_improvement_margin must be finite and in [0, 1)")

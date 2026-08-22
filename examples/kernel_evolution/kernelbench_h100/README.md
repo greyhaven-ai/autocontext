@@ -193,12 +193,18 @@ cannot be labeled H100 profile evidence.
 Each attempted confirmation consumes a different committed plan. Primary and
 all confirmation plans must be pairwise disjoint in inputs and relative timing
 order, preventing a later candidate from reusing a confirmation protocol.
-Confirmation details are retained first in sealed operator audit storage and
-excluded from the run directory, recursive feedback, scores, and lesson hints.
-Only report/audit digests and aggregate gate states are public during
-generation; terminal completion, failure, or interruption releases the audit
-copy under the run directory. Promotion still reveals the unavoidable pass/fail
-bit by deciding which champion is carried forward. Candidate
+Primary and confirmation raw reports, derived metrics, case details, and vetoes
+are retained first in sealed operator audit storage and excluded from the run
+directory, recursive feedback, scores, and lesson hints. Every returned
+confirmation's report-backed protocol ID and private-plan commitment are both
+consumed, even on rejection; reuse of either identity fails freshness. A
+confirmation that raises, returns no result, returns malformed evidence, or
+otherwise lacks report-backed identity is persisted and terminates the campaign
+before another proposal. Only report/audit digests and aggregate gate names and states are
+public during generation; terminal completion, failure, interruption, or
+baseline rejection releases the audit copy under the run directory. Promotion
+still reveals the unavoidable pass/fail bit by deciding which champion is
+carried forward. Candidate
 containers mount neither `run_dir` nor mailbox/report storage, have no network
 or durable filesystem, and are destroyed between evaluations, so confirmation
 details cannot persist into a later proposal.
@@ -273,7 +279,8 @@ private-plan commitment, and the sequential budget into the protocol ID.
 Every private case is a named correctness slice and a named performance case.
 Train and holdout must each independently cover every shape, layout, and value
 class named by the selected canonical profile. Every slice must pass
-correctness; every case must meet the 0.98x incumbent no-regression floor before aggregate promotion. Eight paired
+correctness; every case must meet the exact 0.98x incumbent no-regression floor,
+without an additive tolerance, before aggregate promotion. Eight paired
 timing blocks aggregate all cases geometrically while retaining per-case
 medians. The adapter uses three warmups and ten evaluator-randomized calls per
 implementation per block. Every timed candidate/incumbent output is checked
@@ -310,7 +317,7 @@ scope, reference baseline, and protocol IDs.
 
 An eligible candidate is promoted only when all of these hold:
 
-- environment drift is at most 10%;
+- exact canonical reference drift is at most 10%;
 - relative improvement is at least 5%;
 - every correctness slice and per-case no-regression floor passes;
 - all eight pre-registered paired blocks clear the 5% margin, giving the sign

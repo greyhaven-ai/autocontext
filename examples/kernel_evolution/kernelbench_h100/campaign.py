@@ -266,25 +266,43 @@ def _require_complete_v4_result_chain(result: KernelEvolutionResult) -> None:
     ):
         raise RuntimeError("H100 profile evidence requires a complete v4 result chain")
     for attempt in result.attempts:
-        report = attempt.observation.report
+        observation = attempt.observation
+        report = observation.report
         if (
             attempt.schema_version != "autocontext.kernel-lineage/v4"
             or attempt.decision_policy != result.decision_policy
             or attempt.decision_policy_id != result.decision_policy_id
             or attempt.primary_decision is None
             or attempt.promotion_decision is None
-            or report is None
-            or report.schema_version != "autocontext.kernelbench-eval/v4"
-            or attempt.observation.derived_statistics_receipt is None
+        ):
+            raise RuntimeError("H100 profile evidence requires a complete v4 result chain")
+        if observation.eligible:
+            if (
+                report is None
+                or report.schema_version != "autocontext.kernelbench-eval/v4"
+                or observation.derived_statistics_receipt is None
+            ):
+                raise RuntimeError("H100 profile evidence requires a complete v4 result chain")
+        elif observation.derived_statistics_receipt is not None or (
+            report is not None and report.schema_version != "autocontext.kernelbench-eval/v4"
         ):
             raise RuntimeError("H100 profile evidence requires a complete v4 result chain")
         confirmation = attempt.confirmation_observation
-        if confirmation is not None and (
-            confirmation.report is None
-            or confirmation.report.schema_version != "autocontext.kernelbench-eval/v4"
-            or confirmation.derived_statistics_receipt is None
-        ):
-            raise RuntimeError("H100 profile evidence requires a complete v4 result chain")
+        if confirmation is not None:
+            confirmation_report = confirmation.report
+            if confirmation_report is None or confirmation.protocol_id is None:
+                raise RuntimeError("H100 profile evidence requires report-backed confirmation identity")
+            if confirmation.eligible:
+                if (
+                    confirmation_report.schema_version != "autocontext.kernelbench-eval/v4"
+                    or confirmation.derived_statistics_receipt is None
+                ):
+                    raise RuntimeError("H100 profile evidence requires a complete v4 result chain")
+            elif confirmation.derived_statistics_receipt is not None or (
+                confirmation_report is not None
+                and confirmation_report.schema_version != "autocontext.kernelbench-eval/v4"
+            ):
+                raise RuntimeError("H100 profile evidence requires a complete v4 result chain")
 
 
 def _verify_v4_profile_policy_receipts(profile: dict[str, Any]) -> None:

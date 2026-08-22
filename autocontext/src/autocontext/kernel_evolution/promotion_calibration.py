@@ -11,8 +11,8 @@ from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, model_validator
 
-from autocontext.kernel_evolution.finite_sample import minimum_sign_eprocess_blocks
-from autocontext.kernel_evolution.protocols import KernelDecisionPolicy
+from autocontext.kernel_evolution.finite_sample import _all_win_p_value_bound, minimum_sign_eprocess_blocks
+from autocontext.kernel_evolution.protocols import MAX_FINITE_SAMPLE_BLOCKS, KernelDecisionPolicy
 
 Digest = Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
 
@@ -55,12 +55,12 @@ class KernelCalibrationReport(_CalibrationModel):
     )
     decision_policy_id: Digest
     simulation_seed_digest: Digest
-    block_count: int = Field(ge=2)
+    block_count: int = Field(ge=2, le=MAX_FINITE_SAMPLE_BLOCKS)
     proposal_cap: int = Field(ge=1)
     familywise_alpha: Annotated[FiniteFloat, Field(gt=0, lt=0.5)]
     per_look_alpha: Annotated[FiniteFloat, Field(gt=0, lt=0.5)]
-    exact_per_look_bound: Annotated[FiniteFloat, Field(ge=0, le=1)]
-    exact_familywise_bound: Annotated[FiniteFloat, Field(ge=0, le=1)]
+    exact_per_look_bound: Annotated[FiniteFloat, Field(gt=0, le=1)]
+    exact_familywise_bound: Annotated[FiniteFloat, Field(gt=0, le=1)]
     scenarios: tuple[KernelCalibrationScenarioResult, ...]
 
     @model_validator(mode="after")
@@ -74,17 +74,17 @@ class KernelCalibrationReport(_CalibrationModel):
         }:
             raise ValueError("calibration must cover every required timing-noise scenario")
         expected_per_look_alpha = float(self.familywise_alpha) / self.proposal_cap
-        if abs(float(self.per_look_alpha) - expected_per_look_alpha) > 1e-15:
+        if float(self.per_look_alpha) != expected_per_look_alpha:
             raise ValueError("calibration per-look alpha disagrees with its Bonferroni budget")
-        expected_per_look_bound = 0.5**self.block_count
+        expected_per_look_bound = _all_win_p_value_bound(0.5, self.block_count)
         expected_familywise_bound = min(1.0, self.proposal_cap * expected_per_look_bound)
-        if abs(float(self.exact_per_look_bound) - expected_per_look_bound) > 1e-15:
+        if float(self.exact_per_look_bound) != expected_per_look_bound:
             raise ValueError("calibration per-look bound disagrees with its fixed sign design")
-        if abs(float(self.exact_familywise_bound) - expected_familywise_bound) > 1e-15:
+        if float(self.exact_familywise_bound) != expected_familywise_bound:
             raise ValueError("calibration familywise bound disagrees with its proposal budget")
-        if self.exact_per_look_bound > self.per_look_alpha + 1e-15:
+        if self.exact_per_look_bound > self.per_look_alpha:
             raise ValueError("finite-sample per-look bound exceeds its alpha allocation")
-        if self.exact_familywise_bound > self.familywise_alpha + 1e-15:
+        if self.exact_familywise_bound > self.familywise_alpha:
             raise ValueError("finite-sample familywise bound exceeds the configured budget")
         if any(
             item.passed_calibration
@@ -179,7 +179,7 @@ def calibrate_kernel_promotion(
     )
     if blocks < required:
         raise ValueError("configured block count cannot resolve the per-look alpha")
-    exact_per_look = float(statistics_policy.null_win_probability) ** blocks
+    exact_per_look = _all_win_p_value_bound(float(statistics_policy.null_win_probability), blocks)
     exact_familywise = min(1.0, sequential.proposal_cap * exact_per_look)
     scenario_results: list[KernelCalibrationScenarioResult] = []
     for name, dependence_model, sample_noise in _SCENARIOS:

@@ -372,11 +372,19 @@ reference baseline must also match. Its protocol ID must differ while its
 compatibility ID must match, so only the seed/order commitment can change;
 tolerances, correctness/hidden trials, warmups, timing blocks, calls per block,
 and the bounded sequential-testing policy remain fixed.
-For finite-sample campaigns, the complete confirmation observation, raw report,
-case names, and detailed veto are first written to `sealed_audit_root`, which
-must be outside the mailbox and public lineage root. The adaptive run directory
-contains only report/audit digests and aggregate gate states. After generation
-has stopped, terminal completion, failure, or interruption publishes the sealed
+For finite-sample campaigns using `aggregate-gates`, complete primary and
+confirmation observations, raw reports, case names, derived metrics, and
+detailed vetoes are first written to `sealed_audit_root`, which must be outside
+the mailbox and public lineage root. Separate public `reports/` artifacts are
+not written in this mode; the adaptive run directory contains only report/audit
+digests and gate names and states. Confirmation details are likewise sealed for
+finite-sample campaigns using detailed primary feedback. Every returned
+report-backed confirmation protocol ID and private-plan commitment is consumed,
+including rejected evidence; reuse of either identity fails freshness. An
+exception, missing result, invalid result, or other confirmation without
+report-backed identity is persisted and then terminates the campaign before
+another proposal. After generation has stopped, terminal
+completion, failure, interruption, or baseline rejection publishes the sealed
 records under `audit/confirmation`; they cannot influence a later proposal.
 
 ## Benchmark report contract
@@ -389,7 +397,12 @@ definition, sample count, deterministic schedule-seed derivation, policy ID,
 and every promotion-affecting metric. V4 lineage, result, and H100 profile
 receipts reproduce the same complete decision-policy digest and replay every
 gate and champion transition. Result, attempt, and report versions cannot be
-mixed. Important fields are:
+mixed. Named-profile tolerances and protocol-owned per-case floors match their
+canonical values exactly. Each v4 per-case pass flag is replayed with an exact
+rational comparison of the canonical finite timings; aggregate, tail,
+reference-drift, and integer memory-fraction gates likewise compare canonical
+values exactly. The additive tolerances retained for legacy v2/v3 evidence do
+not apply to v4 promotion. Important fields are:
 
 ```json
 {
@@ -516,8 +529,11 @@ commitments, slice floors, search budget, warmups, timing blocks, or calls per
 block.
 
 The production statistic is the pre-registered paired sign e-process. A block
-is a win only when `incumbent_ms / candidate_ms >= 1 / (1 - margin)`. With the
-fixed all-in bet and null conditional win probability at most one half, each
+is a win only when `incumbent_ms / candidate_ms >= 1 / (1 - margin)`. The
+comparison uses canonical decimal spellings of the finite binary64 timings and
+is inclusive at equality, with no additive tolerance; any representable value
+above the latency boundary is a non-win. With the fixed all-in bet and null
+conditional win probability at most one half, each
 win multiplies the e-value by two and any non-win zeros it. Therefore eight
 pre-registered blocks have exact per-look bound `2^-8 = 0.00390625`; ten
 Bonferroni looks have familywise bound at most `10 / 256 = 0.0390625`, below
@@ -525,6 +541,12 @@ the configured 0.05 budget. The argument needs no Gaussian timing model and no
 independence assumption on timing magnitudes. It does require the documented
 conditional sign assumption at the block boundary, fixed block count, balanced
 order, no early stopping, and a schedule fixed by the private-plan commitment.
+V4 caps the fixed design at 1,074 blocks, whose all-win probability `2^-1074`
+is the smallest positive binary64 value; larger designs fail closed instead of
+persisting a false zero p-value bound. Sequential configurations also fail
+early if per-proposal alpha underflows or if its confidence gap rounds away to
+one. Persisted per-look alpha, cumulative spend, and confidence receipts must
+exactly reproduce the canonical Bonferroni arithmetic.
 
 `calibrate_kernel_promotion()` deterministically stress-tests the exact eight-
 block, ten-proposal configuration under null, heavy-tail, paired shared drift,

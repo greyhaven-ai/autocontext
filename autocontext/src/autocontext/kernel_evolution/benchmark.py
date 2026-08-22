@@ -603,8 +603,15 @@ class KernelBenchmarkEvaluator:
                 returncode=None,
                 error=f"benchmark runner failed: {type(exc).__name__}: {exc}",
             )
+        statistics_policy = self.config.statistics_policy
+        expected_report_schema = (
+            "autocontext.kernelbench-eval/v4"
+            if statistics_policy.schema_version == "autocontext.kernel-statistics-policy/v2"
+            else "autocontext.kernelbench-eval/v3"
+        )
 
         def reject(reason: str, feedback: str, report: KernelBenchmarkReport | None = None) -> KernelBenchmarkObservation:
+            compatible_report = report if report is None or report.schema_version == expected_report_schema else None
             return KernelBenchmarkObservation(
                 artifact_identity_version=candidate.artifact_identity_version,
                 candidate_artifact_digest=candidate.artifact_digest,
@@ -614,12 +621,14 @@ class KernelBenchmarkEvaluator:
                 eligible=False,
                 rejection_reason=reason,
                 feedback=feedback[: self.config.max_feedback_chars],
-                report=report,
-                hardware_scope_id=report.hardware_scope_id if report is not None else None,
-                baseline_id=report.baseline_id if report is not None else None,
-                protocol_id=report.protocol.protocol_id if report is not None else None,
-                protocol_compatibility_id=report.protocol.compatibility_id if report is not None else None,
-                statistics_policy=self.config.statistics_policy,
+                report=compatible_report,
+                hardware_scope_id=compatible_report.hardware_scope_id if compatible_report is not None else None,
+                baseline_id=compatible_report.baseline_id if compatible_report is not None else None,
+                protocol_id=compatible_report.protocol.protocol_id if compatible_report is not None else None,
+                protocol_compatibility_id=(
+                    compatible_report.protocol.compatibility_id if compatible_report is not None else None
+                ),
+                statistics_policy=statistics_policy,
                 stdout=execution.stdout,
                 stderr=execution.stderr,
                 stdout_truncated=execution.stdout_truncated,
@@ -647,6 +656,13 @@ class KernelBenchmarkEvaluator:
             report = KernelBenchmarkReport.model_validate(execution.report_payload)
         except ValidationError as exc:
             return reject("contract_error", f"Benchmark report failed schema validation: {exc}")
+        if report.schema_version != expected_report_schema:
+            return reject(
+                "contract_error",
+                f"Benchmark report schema {report.schema_version!r} does not match the configured "
+                f"evidence family ({expected_report_schema!r}).",
+                report,
+            )
 
         if report.problem_id != self.config.problem_id:
             return reject("problem_mismatch", f"Expected problem {self.config.problem_id!r}, got {report.problem_id!r}.", report)

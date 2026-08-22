@@ -7,11 +7,12 @@ import json
 import math
 import statistics
 from collections.abc import Sequence
+from fractions import Fraction
 from typing import Annotated, Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, model_validator
 
-from autocontext.kernel_evolution.protocols import KernelStatisticsPolicy
+from autocontext.kernel_evolution.protocols import MAX_FINITE_SAMPLE_BLOCKS, KernelStatisticsPolicy
 
 Digest = Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
 NonNegativeFiniteFloat = Annotated[FiniteFloat, Field(ge=0)]
@@ -27,6 +28,24 @@ class _FiniteSampleModel(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False, frozen=True)
 
 
+def _all_win_p_value_bound(null_win_probability: float, sample_count: int) -> float:
+    """Return the all-win bound without a lossy log/exp round trip."""
+
+    bound = null_win_probability**sample_count
+    if bound == 0.0:
+        raise ValueError("finite-sample all-win probability underflows binary64")
+    return bound
+
+
+def _clears_improvement_margin(*, candidate_ms: float, incumbent_ms: float, margin: float) -> bool:
+    """Compare canonical decimal spellings without an additive tolerance."""
+
+    candidate = Fraction(repr(candidate_ms))
+    incumbent = Fraction(repr(incumbent_ms))
+    retained_latency = Fraction(1) - Fraction(repr(margin))
+    return candidate <= incumbent * retained_latency
+
+
 class KernelDerivedStatisticsReceipt(_FiniteSampleModel):
     """Replayable derivation receipt for one authoritative v4 report."""
 
@@ -38,7 +57,7 @@ class KernelDerivedStatisticsReceipt(_FiniteSampleModel):
     raw_report_digest: Digest
     raw_blocks_digest: Digest
     schedule_seed_material_digest: Digest
-    sample_count: int = Field(ge=2)
+    sample_count: int = Field(ge=2, le=MAX_FINITE_SAMPLE_BLOCKS)
     improvement_margin: Annotated[FiniteFloat, Field(ge=0, lt=1)]
     null_win_probability: Annotated[FiniteFloat, Field(gt=0, le=0.5)]
     betting_fraction: Annotated[FiniteFloat, Field(gt=0, le=1)]
@@ -46,7 +65,7 @@ class KernelDerivedStatisticsReceipt(_FiniteSampleModel):
     non_wins: int = Field(ge=0)
     terminal_e_value_zeroed: bool
     log_terminal_e_value: NonNegativeFiniteFloat
-    p_value_bound: Annotated[FiniteFloat, Field(ge=0, le=1)]
+    p_value_bound: Annotated[FiniteFloat, Field(gt=0, le=1)]
     per_look_alpha: Annotated[FiniteFloat, Field(gt=0, lt=0.5)]
     finite_sample_gate_passed: bool
     candidate_median_ms: PositiveFiniteFloat
@@ -62,16 +81,22 @@ class KernelDerivedStatisticsReceipt(_FiniteSampleModel):
 
     @model_validator(mode="after")
     def validate_evidence_arithmetic(self) -> Self:
+        if self.null_win_probability != 0.5 or self.betting_fraction != 1.0:
+            raise ValueError("paired-sign-eprocess/v1 receipts require p0=0.5 and the all-in bet")
         if self.candidate_wins + self.non_wins != self.sample_count:
             raise ValueError("finite-sample win counts must sum to sample_count")
         all_wins = self.non_wins == 0
         if self.terminal_e_value_zeroed == all_wins:
             raise ValueError("terminal e-value zero flag disagrees with the paired outcomes")
         expected_log = self.sample_count * math.log(1.0 / float(self.null_win_probability)) if all_wins else 0.0
-        if abs(float(self.log_terminal_e_value) - expected_log) > 1e-12:
+        if float(self.log_terminal_e_value) != expected_log:
             raise ValueError("log terminal e-value does not replay from the paired outcomes")
-        expected_p = math.exp(-expected_log) if all_wins else 1.0
-        if abs(float(self.p_value_bound) - expected_p) > 1e-15:
+        expected_p = (
+            _all_win_p_value_bound(float(self.null_win_probability), self.sample_count)
+            if all_wins
+            else 1.0
+        )
+        if float(self.p_value_bound) != expected_p:
             raise ValueError("finite-sample p-value bound does not replay from the paired outcomes")
         if self.finite_sample_gate_passed != (expected_p <= float(self.per_look_alpha)):
             raise ValueError("finite-sample gate disagrees with its p-value bound and alpha")
@@ -93,7 +118,12 @@ def minimum_sign_eprocess_blocks(alpha: float, *, null_win_probability: float = 
         raise ValueError("alpha must be finite and in (0, 0.5)")
     if not math.isfinite(null_win_probability) or not 0 < null_win_probability <= 0.5:
         raise ValueError("null_win_probability must be finite and in (0, 0.5]")
-    return max(2, math.ceil(math.log(alpha) / math.log(null_win_probability) - 1e-15))
+    block_count = max(2, math.ceil(math.log(alpha) / math.log(null_win_probability)))
+    while block_count > 2 and _all_win_p_value_bound(null_win_probability, block_count - 1) <= alpha:
+        block_count -= 1
+    while _all_win_p_value_bound(null_win_probability, block_count) > alpha:
+        block_count += 1
+    return block_count
 
 
 def _percentile(values: Sequence[float], fraction: float) -> float:
@@ -124,6 +154,10 @@ def derive_finite_sample_receipt(
         raise ValueError("finite-sample receipts require a v2 statistics policy")
     if len(blocks) < statistics_policy.min_timing_blocks:
         raise ValueError("finite-sample evidence has fewer blocks than its statistics policy")
+    if len(blocks) > MAX_FINITE_SAMPLE_BLOCKS:
+        raise ValueError(
+            f"finite-sample evidence supports at most {MAX_FINITE_SAMPLE_BLOCKS} timing blocks"
+        )
     assert statistics_policy.improvement_margin is not None
     assert statistics_policy.null_win_probability is not None
     assert statistics_policy.betting_fraction is not None
@@ -143,12 +177,22 @@ def derive_finite_sample_receipt(
     reference = [float(item[2]) for item in blocks]
     if any(not math.isfinite(value) or value <= 0 for item in blocks for value in item):
         raise ValueError("finite-sample timing blocks must contain positive finite values")
-    required_speedup = 1.0 / (1.0 - float(statistics_policy.improvement_margin))
-    wins = sum((incumbent_ms / candidate_ms) + 1e-12 >= required_speedup for candidate_ms, incumbent_ms, _ in blocks)
+    wins = sum(
+        _clears_improvement_margin(
+            candidate_ms=candidate_ms,
+            incumbent_ms=incumbent_ms,
+            margin=float(statistics_policy.improvement_margin),
+        )
+        for candidate_ms, incumbent_ms, _ in blocks
+    )
     non_wins = len(blocks) - wins
     all_wins = non_wins == 0
     log_e_value = len(blocks) * math.log(1.0 / float(statistics_policy.null_win_probability)) if all_wins else 0.0
-    p_value_bound = math.exp(-log_e_value) if all_wins else 1.0
+    p_value_bound = (
+        _all_win_p_value_bound(float(statistics_policy.null_win_probability), len(blocks))
+        if all_wins
+        else 1.0
+    )
     speedup_incumbent = _geometric_mean_ratio(incumbent, candidate)
     speedup_reference = _geometric_mean_ratio(reference, candidate)
     quartile = max(1, len(reference) // 4)

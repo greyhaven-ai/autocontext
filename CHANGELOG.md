@@ -16,8 +16,15 @@ All notable changes to this project will be documented in this file.
   blocks, derived statistics, decisions, attempts, results, and H100 profile
   evidence reproduce one canonical policy digest; explicit readers distinguish
   unverified legacy v2/v3 evidence and fail closed on ambiguous/tampered/newer
-  versions. Fresh confirmation details remain in a disjoint sealed audit root
-  until adaptive generation is terminal. A real H100/MIG v4 release run remains
+  versions. Aggregate-feedback primary evidence and every confirmation outcome
+  remain in a disjoint sealed audit root until adaptive generation is terminal;
+  unidentified confirmation attempts terminate before another proposal, and
+  replay consumes report-backed protocol IDs and private-plan commitments from
+  successful and rejected exposures. Exact rational aggregate, tail,
+  reference-drift, memory-fraction, and protected-case threshold comparisons,
+  exact named-profile tolerances, and representable, exactly replayed
+  Bonferroni receipts fail closed at binary64 boundary cases.
+  A real H100/MIG v4 release run remains
   pending the protected-boundary readiness gates documented under AC-1003
   (AC-1004).
 - Hostile accelerator candidates can now execute behind an accelerator-neutral,

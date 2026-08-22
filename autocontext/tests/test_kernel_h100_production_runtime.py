@@ -5,6 +5,7 @@ import importlib
 import json
 import math
 import os
+import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -25,6 +26,7 @@ from autocontext.kernel_evolution import (
     build_authority_receipt,
     canonical_authority_digest,
     canonical_digest,
+    promotion_margin,
     read_authority_hmac_secret,
     verify_profile_evidence_envelope,
 )
@@ -211,6 +213,32 @@ def test_production_campaign_has_no_same_interpreter_override(runtime_modules: t
     assert '"report": observation.report' not in control_source
 
 
+def test_control_smoke_loads_all_contract_modules() -> None:
+    source_root = Path(__file__).resolve().parents[1] / "src"
+    script = """
+import sys
+from pathlib import Path
+
+sys.path.insert(0, sys.argv[1])
+import control_smoke
+
+loaded = control_smoke._load_contract_modules(Path(sys.argv[2]))
+assert tuple(module.__name__ for module in loaded) == (
+    "autocontext.kernel_evolution.models",
+    "autocontext.kernel_evolution.promotion_margin",
+    "autocontext.kernel_evolution.benchmark",
+)
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", script, str(_BUNDLE), str(source_root)],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+
+
 def test_control_smoke_applies_the_profile_memory_fraction(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.syspath_prepend(str(_BUNDLE))
     control_smoke = importlib.import_module("control_smoke")
@@ -230,11 +258,95 @@ def test_control_smoke_applies_the_profile_memory_fraction(monkeypatch: pytest.M
         all_case_no_regression_passed=True,
     )
 
-    assert control_smoke._promotion_decision(observation) == {
+    assert control_smoke._promotion_decision(
+        observation,
+        margin_contract=promotion_margin,
+    ) == {
         "promote": False,
         "decision": "rejected",
         "reason": "memory_limit",
     }
+
+
+def test_control_smoke_uses_exact_finite_sample_aggregate_margin(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.syspath_prepend(str(_BUNDLE))
+    control_smoke = importlib.import_module("control_smoke")
+
+    def observation(candidate_ms: float) -> SimpleNamespace:
+        return SimpleNamespace(
+            eligible=True,
+            report=SimpleNamespace(
+                resources=SimpleNamespace(
+                    candidate_enforced_peak_bytes=None,
+                    device_total_memory_bytes=None,
+                ),
+                performance=SimpleNamespace(
+                    blocks=[
+                        SimpleNamespace(candidate_ms=candidate_ms, incumbent_ms=1.0, reference_ms=1.0)
+                        for _ in range(8)
+                    ]
+                ),
+            ),
+            environment_drift_ratio=0.0,
+            relative_improvement=0.05,
+            derived_statistics_receipt=SimpleNamespace(finite_sample_gate_passed=True),
+            candidate_p95_ms=candidate_ms,
+            incumbent_p95_ms=1.0,
+            all_case_no_regression_passed=True,
+        )
+
+    assert control_smoke._promotion_decision(
+        observation(0.95),
+        margin_contract=promotion_margin,
+    )["promote"]
+    assert control_smoke._promotion_decision(
+        observation(math.nextafter(0.95, math.inf)),
+        margin_contract=promotion_margin,
+    ) == {
+        "promote": False,
+        "decision": "rejected",
+        "reason": "insufficient_improvement",
+    }
+
+
+@pytest.mark.parametrize(
+    ("first_reference", "last_reference", "stored_drift", "expected_reason"),
+    [
+        (1.0, 1.10, 0.10000000000000009, "significant_improvement"),
+        (4.333163826127088, 4.766480208739797, 0.09999999999999987, "unstable_environment"),
+    ],
+)
+def test_control_smoke_uses_exact_reference_drift_gate(
+    monkeypatch: pytest.MonkeyPatch,
+    first_reference: float,
+    last_reference: float,
+    stored_drift: float,
+    expected_reason: str,
+) -> None:
+    monkeypatch.syspath_prepend(str(_BUNDLE))
+    control_smoke = importlib.import_module("control_smoke")
+    blocks = [
+        SimpleNamespace(candidate_ms=0.9, incumbent_ms=1.0, reference_ms=reference)
+        for reference in ([first_reference] * 6 + [last_reference] * 2)
+    ]
+    observation = SimpleNamespace(
+        eligible=True,
+        report=SimpleNamespace(
+            resources=SimpleNamespace(
+                candidate_enforced_peak_bytes=None,
+                device_total_memory_bytes=None,
+            ),
+            performance=SimpleNamespace(blocks=blocks),
+        ),
+        environment_drift_ratio=stored_drift,
+        relative_improvement=0.10,
+        derived_statistics_receipt=SimpleNamespace(finite_sample_gate_passed=True),
+        candidate_p95_ms=0.9,
+        incumbent_p95_ms=1.0,
+        all_case_no_regression_passed=True,
+    )
+
+    assert control_smoke._promotion_decision(observation, margin_contract=promotion_margin)["reason"] == expected_reason
 
 
 def test_campaign_fails_before_creating_mailbox_or_launching_worker(
@@ -550,6 +662,7 @@ def _profile_result(campaign: Any, runtime: Any) -> SimpleNamespace:
     attach_authority_receipt(primary_report, commitment=primary_commitment, label="primary")
     attach_authority_receipt(confirmation_report, commitment=confirmation_commitment, label="confirmation")
     confirmation = SimpleNamespace(
+        eligible=True,
         report=confirmation_report,
         derived_statistics_receipt=_SerializableNamespace(receipt_id=f"sha256:{'d' * 64}"),
         protocol_id=f"sha256:{'e' * 64}",
@@ -573,6 +686,7 @@ def _profile_result(campaign: Any, runtime: Any) -> SimpleNamespace:
         hardware_scope_id=f"sha256:{'7' * 64}",
         baseline_id=f"sha256:{'2' * 64}",
         observation=SimpleNamespace(
+            eligible=True,
             report=primary_report,
             derived_statistics_receipt=_SerializableNamespace(receipt_id=f"sha256:{'a' * 64}"),
         ),
@@ -651,6 +765,7 @@ def _profile_result(campaign: Any, runtime: Any) -> SimpleNamespace:
         primary_decision=SimpleNamespace(promote=True),
         promotion_decision=SimpleNamespace(promote=True),
         observation=SimpleNamespace(
+            eligible=True,
             report=primary_report,
             derived_statistics_receipt=_SerializableNamespace(receipt_id=f"sha256:{'b' * 64}"),
         ),
@@ -874,6 +989,63 @@ def test_profile_evidence_rejects_non_h100_or_incomplete_v4_chain(
             runtime=runtime,
             authority_identities=result._authority_identities,
         )
+
+
+@pytest.mark.parametrize("report_schema", [None, "autocontext.kernelbench-eval/v4"])
+def test_complete_v4_chain_allows_schema_valid_ineligible_attempts(
+    report_schema: str | None,
+    tmp_path: Path,
+    runtime_modules: tuple[Any, Any],
+) -> None:
+    production_runtime, campaign = runtime_modules
+    runtime = _runtime(production_runtime, _authority_secret(tmp_path))
+    result = _profile_result(campaign, runtime)
+    report = SimpleNamespace(schema_version=report_schema) if report_schema is not None else None
+    rejected = SimpleNamespace(
+        schema_version="autocontext.kernel-lineage/v4",
+        decision_policy=result.decision_policy,
+        decision_policy_id=result.decision_policy_id,
+        primary_decision=SimpleNamespace(promote=False),
+        promotion_decision=SimpleNamespace(promote=False),
+        observation=SimpleNamespace(
+            eligible=False,
+            report=report,
+            derived_statistics_receipt=None,
+        ),
+        confirmation_observation=None,
+    )
+    result.attempts.insert(1, rejected)
+
+    campaign._require_complete_v4_result_chain(result)
+
+
+def test_complete_v4_chain_still_requires_receipt_for_eligible_attempt(
+    tmp_path: Path,
+    runtime_modules: tuple[Any, Any],
+) -> None:
+    production_runtime, campaign = runtime_modules
+    runtime = _runtime(production_runtime, _authority_secret(tmp_path))
+    result = _profile_result(campaign, runtime)
+    result.attempts[0].observation.derived_statistics_receipt = None
+
+    with pytest.raises(RuntimeError, match="complete v4 result chain"):
+        campaign._require_complete_v4_result_chain(result)
+
+
+def test_complete_v4_chain_requires_report_backed_confirmation_identity(
+    tmp_path: Path,
+    runtime_modules: tuple[Any, Any],
+) -> None:
+    production_runtime, campaign = runtime_modules
+    runtime = _runtime(production_runtime, _authority_secret(tmp_path))
+    result = _profile_result(campaign, runtime)
+    confirmation = result.attempts[1].confirmation_observation
+    confirmation.eligible = False
+    confirmation.report = None
+    confirmation.derived_statistics_receipt = None
+
+    with pytest.raises(RuntimeError, match="report-backed confirmation identity"):
+        campaign._require_complete_v4_result_chain(result)
 
 
 def test_profile_evidence_recomputes_complete_gpu_attestation(

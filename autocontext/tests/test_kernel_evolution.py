@@ -1189,7 +1189,7 @@ def test_accepted_primary_and_confirmation_replay_resource_policy(tmp_path: Path
     }
     report = KernelBenchmarkReport.model_validate(report_payload)
     attempt["confirmation_report_digest"] = kernel_benchmark_report_digest(report)
-    with pytest.raises(ValueError, match="GPU memory fraction"):
+    with pytest.raises(ValueError, match="confirmation decision does not replay"):
         KernelEvolutionResult.model_validate(confirmation_payload)
 
 
@@ -1357,7 +1357,7 @@ def test_successful_confirmation_protocol_ids_are_unique_in_replayed_result(tmp_
     second["protocol_compatibility_id"] = report.protocol.compatibility_id
     second_attempt["confirmation_report_digest"] = kernel_benchmark_report_digest(report)
 
-    with pytest.raises(ValueError, match="confirmation protocol ids must be unique"):
+    with pytest.raises(ValueError, match="confirmation protocol and plan identities must be unique"):
         KernelEvolutionResult.model_validate(payload)
 
 
@@ -1460,7 +1460,7 @@ def test_confirmation_artifact_mismatch_fails_closed_and_is_audited(tmp_path: Pa
     assert attempt.confirmation_decision.reason == "identity_mismatch"
 
 
-def test_confirmation_entrypoint_mismatch_fails_closed(tmp_path: Path) -> None:
+def test_malformed_confirmation_report_fails_closed(tmp_path: Path) -> None:
     confirmation = _evaluator(FakeBenchmarkRunner(seed_commitment="fresh-hidden-seeds-v2"))
 
     def mismatch(candidate: KernelCandidate, incumbent: KernelCandidate) -> KernelBenchmarkObservation:
@@ -1480,10 +1480,10 @@ def test_confirmation_entrypoint_mismatch_fails_closed(tmp_path: Path) -> None:
 
     assert result.champion_source == "baseline"
     attempt = result.attempts[-1]
-    assert attempt.reason == "confirmation_identity_mismatch"
-    assert attempt.confirmation_observation is not None
+    assert attempt.reason == "confirmation_invalid"
+    assert attempt.confirmation_observation is None
     assert attempt.confirmation_decision is not None
-    assert attempt.confirmation_decision.reason == "identity_mismatch"
+    assert attempt.confirmation_decision.reason == "invalid"
 
 
 def test_exact_improvement_boundary_promotes(tmp_path: Path) -> None:
