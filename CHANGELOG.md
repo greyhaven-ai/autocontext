@@ -6,6 +6,27 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Kernel promotion now has a versioned v4 finite-sample evidence family. Eight
+  pre-registered balanced paired blocks use a fixed sign e-process, and a
+  ten-proposal Bonferroni budget gives exact per-look and familywise bounds of
+  1/256 and 10/256 under the receipt-bound conditional sign assumption.
+  Deterministic calibration covers null, heavy-tail, paired drift,
+  across-block autocorrelated magnitudes, heteroskedasticity, and repeated
+  adaptive proposals. Raw
+  blocks, derived statistics, decisions, attempts, results, and H100 profile
+  evidence reproduce one canonical policy digest; explicit readers distinguish
+  unverified legacy v2/v3 evidence and fail closed on ambiguous/tampered/newer
+  versions. Aggregate-feedback primary evidence and every confirmation outcome
+  remain in a disjoint sealed audit root until adaptive generation is terminal;
+  unidentified confirmation attempts terminate before another proposal, and
+  replay consumes report-backed protocol IDs and private-plan commitments from
+  successful and rejected exposures. Exact rational aggregate, tail,
+  reference-drift, memory-fraction, and protected-case threshold comparisons,
+  exact named-profile tolerances, and representable, exactly replayed
+  Bonferroni receipts fail closed at binary64 boundary cases.
+  A real H100/MIG v4 release run remains
+  pending the protected-boundary readiness gates documented under AC-1003
+  (AC-1004).
 - Hostile accelerator candidates can now execute behind an accelerator-neutral,
   typed, bounded, non-pickle authority protocol. A protected Docker runner gives
   the trusted evaluator and candidate/incumbent separate process, mount,

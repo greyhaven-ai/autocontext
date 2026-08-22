@@ -40,8 +40,9 @@ from profile_contract import PROFILE_NAMES, PROFILES, gpu_attestation_metadata, 
 
 from autocontext.kernel_evolution import AcceleratorAttestation, build_authority_receipt, read_authority_hmac_secret
 from autocontext.kernel_evolution.authority_tensor import copy_tensor_to_device_preserving_abi
+from autocontext.kernel_evolution.report_models import exact_case_speedup_floor_passed
 
-SCHEMA_VERSION = "autocontext.kernelbench-eval/v3"
+SCHEMA_VERSION = "autocontext.kernelbench-eval/v4"
 PROTOCOL_COMPATIBILITY_VERSION = "autocontext.kernel-protocol-compatibility/v1"
 WARMUP_RUNS = 3
 TIMING_BLOCKS = 8
@@ -526,6 +527,15 @@ def _base_report(
             "benchmark_profile": profile_name,
             "profile_role": role,
             "case_manifest": public_case_manifest,
+            "measurement_design": {
+                "schema_version": "autocontext.kernel-measurement-design/v1",
+                "block_definition": "balanced-interleaved-paired-block/v1",
+                "schedule_seed_derivation": "sha256-plan-commitment-block-schedule/v1",
+                "dependence_assumption": "conditional-threshold-win-probability-lte-half/v1",
+                "fixed_block_count": TIMING_BLOCKS,
+                "early_stopping_allowed": False,
+                "order_balanced": True,
+            },
         },
     }
 
@@ -978,7 +988,11 @@ def main(role: str = "primary") -> None:
                 "incumbent_median_ms": incumbent_median,
                 "reference_median_ms": statistics.median(values["reference_ms"]),
                 "minimum_speedup_vs_incumbent": floor,
-                "passed_no_regression": incumbent_median / candidate_median + 1.0e-12 >= floor,
+                "passed_no_regression": exact_case_speedup_floor_passed(
+                    incumbent_ms=incumbent_median,
+                    candidate_ms=candidate_median,
+                    minimum_speedup=floor,
+                ),
             }
         )
 

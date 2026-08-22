@@ -2,12 +2,26 @@
 
 from __future__ import annotations
 
+from fractions import Fraction
 from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, model_validator
 
 PositiveFiniteFloat = Annotated[FiniteFloat, Field(gt=0)]
 NonNegativeFiniteFloat = Annotated[FiniteFloat, Field(ge=0)]
+
+
+def exact_case_speedup_floor_passed(
+    *,
+    incumbent_ms: float,
+    candidate_ms: float,
+    minimum_speedup: float,
+) -> bool:
+    """Compare a case speedup to its floor without additive tolerance."""
+    incumbent = Fraction(str(incumbent_ms))
+    candidate = Fraction(str(candidate_ms))
+    floor = Fraction(str(minimum_speedup))
+    return incumbent >= candidate * floor
 
 
 class _ReportModel(BaseModel):
@@ -97,9 +111,6 @@ class KernelCasePerformanceReport(_ReportModel):
     def validate_floor(self) -> Self:
         if not self.name.strip():
             raise ValueError("performance case name must not be empty")
-        actual = float(self.incumbent_median_ms) / float(self.candidate_median_ms)
-        if self.passed_no_regression != (actual + 1e-12 >= float(self.minimum_speedup_vs_incumbent)):
-            raise ValueError("passed_no_regression disagrees with the per-case speedup floor")
         return self
 
 
@@ -121,4 +132,5 @@ __all__ = [
     "KernelCorrectnessSliceReport",
     "KernelPerformanceReport",
     "KernelTimingBlock",
+    "exact_case_speedup_floor_passed",
 ]

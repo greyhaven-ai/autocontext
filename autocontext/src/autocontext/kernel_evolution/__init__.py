@@ -55,6 +55,17 @@ from autocontext.kernel_evolution.docker_worker import (
     DockerKernelWorkerLimits,
     NvidiaSMIGPUDeviceAttestor,
 )
+from autocontext.kernel_evolution.evidence_versions import (
+    KernelEvidenceReadResult,
+    KernelEvidenceVerificationStatus,
+    KernelEvidenceVersionError,
+    read_kernel_evolution_result,
+)
+from autocontext.kernel_evolution.finite_sample import (
+    KernelDerivedStatisticsReceipt,
+    derive_finite_sample_receipt,
+    minimum_sign_eprocess_blocks,
+)
 from autocontext.kernel_evolution.lineage import KernelLineageStore
 from autocontext.kernel_evolution.models import (
     ARTIFACT_IDENTITY_VERSION,
@@ -87,12 +98,18 @@ from autocontext.kernel_evolution.profile_evidence import (
     build_profile_evidence_envelope,
     verify_profile_evidence_envelope,
 )
+from autocontext.kernel_evolution.promotion_calibration import (
+    KernelCalibrationReport,
+    KernelCalibrationScenarioResult,
+    calibrate_kernel_promotion,
+)
 from autocontext.kernel_evolution.protocols import (
     RELAXED_PRECISION_SEMANTICS,
     STRICT_FP32_SEMANTICS,
     KernelDecisionPolicy,
     KernelEnforcementPolicy,
     KernelInputDistribution,
+    KernelMeasurementDesign,
     KernelNumericalSemantics,
     KernelProtocolSemantics,
     KernelReferenceSemantics,
@@ -147,12 +164,18 @@ __all__ = [
     "KernelBenchmarkReport",
     "KernelBenchmarkRunner",
     "KernelCandidate",
+    "KernelCalibrationReport",
+    "KernelCalibrationScenarioResult",
     "KernelConfirmationFn",
     "KernelCompileReport",
     "KernelCorrectnessSliceReport",
     "KernelCorrectnessReport",
     "KernelDecisionPolicy",
+    "KernelDerivedStatisticsReceipt",
     "KernelEvolutionConfig",
+    "KernelEvidenceReadResult",
+    "KernelEvidenceVerificationStatus",
+    "KernelEvidenceVersionError",
     "KernelEvolutionResult",
     "KernelEvolutionRunner",
     "KernelHardwareIdentity",
@@ -167,6 +190,7 @@ __all__ = [
     "KernelTimingBlock",
     "KernelEnforcementPolicy",
     "KernelInputDistribution",
+    "KernelMeasurementDesign",
     "KernelNumericalSemantics",
     "KernelProtocolSemantics",
     "KernelReferenceSemantics",
@@ -188,14 +212,18 @@ __all__ = [
     "build_authority_receipt",
     "build_profile_evidence_envelope",
     "canonical_authority_digest",
+    "calibrate_kernel_promotion",
     "content_digest",
+    "derive_finite_sample_receipt",
     "encode_authority_frame",
     "receive_authority_frame",
     "read_authority_hmac_secret",
+    "read_kernel_evolution_result",
     "send_authority_frame",
     "verify_authority_receipt",
     "verify_authority_receipt_integrity",
     "verify_profile_evidence_envelope",
     "protected_evaluator_boundary_error",
     "protected_evaluator_boundary_requirements",
+    "minimum_sign_eprocess_blocks",
 ]

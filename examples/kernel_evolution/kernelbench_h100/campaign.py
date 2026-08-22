@@ -41,14 +41,17 @@ from autocontext.kernel_evolution import (
     DockerKernelWorkerLimits,
     KernelBenchmarkEvaluator,
     KernelBenchmarkObservation,
+    KernelCalibrationReport,
     KernelCandidate,
     KernelDecisionPolicy,
+    KernelDerivedStatisticsReceipt,
     KernelEvolutionConfig,
     KernelEvolutionResult,
     KernelEvolutionRunner,
     KernelSequentialTestingPolicy,
     KernelStatisticsPolicy,
     build_profile_evidence_envelope,
+    calibrate_kernel_promotion,
     content_digest,
     read_authority_hmac_secret,
     verify_authority_receipt,
@@ -254,26 +257,95 @@ def _best_effort_progress(run_dir: Path) -> dict[str, int]:
         return {}
 
 
-def _require_complete_v3_result_chain(result: KernelEvolutionResult) -> None:
+def _require_complete_v4_result_chain(result: KernelEvolutionResult) -> None:
     """Reject downgraded or partially upgraded evidence before profile export."""
-    if result.schema_version != "autocontext.kernel-result/v3" or result.decision_policy is None:
-        raise RuntimeError("H100 profile evidence requires a complete v3 result chain")
+    if (
+        result.schema_version != "autocontext.kernel-result/v4"
+        or result.decision_policy is None
+        or result.decision_policy_id != result.decision_policy.policy_id
+    ):
+        raise RuntimeError("H100 profile evidence requires a complete v4 result chain")
     for attempt in result.attempts:
-        report = attempt.observation.report
+        observation = attempt.observation
+        report = observation.report
         if (
-            attempt.schema_version != "autocontext.kernel-lineage/v3"
+            attempt.schema_version != "autocontext.kernel-lineage/v4"
             or attempt.decision_policy != result.decision_policy
+            or attempt.decision_policy_id != result.decision_policy_id
             or attempt.primary_decision is None
             or attempt.promotion_decision is None
-            or report is None
-            or report.schema_version != "autocontext.kernelbench-eval/v3"
         ):
-            raise RuntimeError("H100 profile evidence requires a complete v3 result chain")
+            raise RuntimeError("H100 profile evidence requires a complete v4 result chain")
+        if observation.eligible:
+            if (
+                report is None
+                or report.schema_version != "autocontext.kernelbench-eval/v4"
+                or observation.derived_statistics_receipt is None
+            ):
+                raise RuntimeError("H100 profile evidence requires a complete v4 result chain")
+        elif observation.derived_statistics_receipt is not None or (
+            report is not None and report.schema_version != "autocontext.kernelbench-eval/v4"
+        ):
+            raise RuntimeError("H100 profile evidence requires a complete v4 result chain")
         confirmation = attempt.confirmation_observation
-        if confirmation is not None and (
-            confirmation.report is None or confirmation.report.schema_version != "autocontext.kernelbench-eval/v3"
-        ):
-            raise RuntimeError("H100 profile evidence requires a complete v3 result chain")
+        if confirmation is not None:
+            confirmation_report = confirmation.report
+            if confirmation_report is None or confirmation.protocol_id is None:
+                raise RuntimeError("H100 profile evidence requires report-backed confirmation identity")
+            if confirmation.eligible:
+                if (
+                    confirmation_report.schema_version != "autocontext.kernelbench-eval/v4"
+                    or confirmation.derived_statistics_receipt is None
+                ):
+                    raise RuntimeError("H100 profile evidence requires a complete v4 result chain")
+            elif confirmation.derived_statistics_receipt is not None or (
+                confirmation_report is not None
+                and confirmation_report.schema_version != "autocontext.kernelbench-eval/v4"
+            ):
+                raise RuntimeError("H100 profile evidence requires a complete v4 result chain")
+
+
+def _verify_v4_profile_policy_receipts(profile: dict[str, Any]) -> None:
+    """Reproduce every canonical policy/calibration/statistics identity in a profile."""
+    try:
+        if profile.get("schema_version") != "autocontext.kernel-h100-profile-evidence/v4":
+            raise ValueError("unsupported H100 profile evidence schema")
+        if profile.get("evidence_family_version") != "autocontext.kernel-evidence-family/v4":
+            raise ValueError("unsupported kernel evidence family")
+        policy = KernelDecisionPolicy.model_validate(profile.get("decision_policy"))
+        if profile.get("decision_policy_id") != policy.policy_id:
+            raise ValueError("decision policy digest does not reproduce")
+        calibration = KernelCalibrationReport.model_validate(profile.get("calibration_report"))
+        if profile.get("calibration_report_id") != calibration.report_id:
+            raise ValueError("calibration report digest does not reproduce")
+        if calibration.decision_policy_id != policy.policy_id:
+            raise ValueError("calibration report is bound to a different decision policy")
+        sequential = policy.sequential_testing
+        if sequential is None or profile.get("proposal_budget") != sequential.proposal_cap:
+            raise ValueError("profile proposal budget disagrees with its decision policy")
+        proposals_evaluated = profile.get("proposals_evaluated")
+        promotions = profile.get("promotions")
+        if not isinstance(proposals_evaluated, int) or not 0 <= proposals_evaluated <= sequential.proposal_cap:
+            raise ValueError("profile proposal count is outside its decision-policy budget")
+        if not isinstance(promotions, int) or not 0 <= promotions <= proposals_evaluated:
+            raise ValueError("profile promotion count is inconsistent")
+        for name in ("primary_receipt", "confirmation_receipt"):
+            wrapper = profile.get(name)
+            if wrapper is None:
+                if name == "primary_receipt" or (name == "confirmation_receipt" and promotions > 0):
+                    raise ValueError(f"{name} is required by the profile disposition")
+                continue
+            if not isinstance(wrapper, dict):
+                raise ValueError(f"{name} must be an object")
+            receipt = KernelDerivedStatisticsReceipt.model_validate(wrapper.get("derived_statistics_receipt"))
+            if wrapper.get("derived_statistics_receipt_id") != receipt.receipt_id:
+                raise ValueError(f"{name} derived statistics digest does not reproduce")
+            if receipt.statistics_policy_id != policy.statistics.policy_id:
+                raise ValueError(f"{name} statistics receipt is bound to a different policy")
+            if receipt.raw_report_digest != wrapper.get("report_digest"):
+                raise ValueError(f"{name} statistics receipt is bound to a different report")
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("H100 profile policy receipts failed canonical replay") from exc
 
 
 def _verified_h100_attestation(report: Any, runtime: H100DockerRuntimeConfig) -> dict[str, Any]:
@@ -364,11 +436,21 @@ def _build_profile_evidence(
     if decision_policy is None:
         raise RuntimeError("the campaign result is missing its immutable decision policy")
     expected_policy = KernelDecisionPolicy(
+        schema_version="autocontext.kernel-decision-policy/v2",
+        evidence_family_version="autocontext.kernel-evidence-family/v4",
         statistics=KernelStatisticsPolicy(
-            bootstrap_samples=20_000,
+            schema_version="autocontext.kernel-statistics-policy/v2",
+            method="paired-sign-eprocess/v1",
+            bootstrap_samples=None,
+            seed_derivation="sha256-plan-commitment-block-schedule/v1",
             min_timing_blocks=8,
             require_resource_telemetry=True,
             max_gpu_memory_bytes=runtime.gpu_memory_bytes,
+            block_definition="balanced-interleaved-paired-block/v1",
+            dependence_assumption="conditional-threshold-win-probability-lte-half/v1",
+            null_win_probability=0.5,
+            betting_fraction=1.0,
+            improvement_margin=0.05,
         ),
         require_confirmation=True,
         min_relative_improvement=0.05,
@@ -384,8 +466,9 @@ def _build_profile_evidence(
     )
     if decision_policy != expected_policy:
         raise RuntimeError("the campaign result decision policy does not match the canonical H100 profile")
-    _require_complete_v3_result_chain(result)
+    _require_complete_v4_result_chain(result)
     decision_policy_id = decision_policy.policy_id
+    calibration = calibrate_kernel_promotion(decision_policy)
     policy_digest = decision_policy_id.removeprefix("sha256:")
     if (
         not decision_policy_id.startswith("sha256:")
@@ -399,7 +482,8 @@ def _build_profile_evidence(
     if champion is None:
         raise RuntimeError("the exact champion attempt is absent from the campaign result")
     champion_report = champion.observation.report
-    if champion_report is None or champion.report_digest is None:
+    primary_statistics = champion.observation.derived_statistics_receipt
+    if champion_report is None or champion.report_digest is None or primary_statistics is None:
         raise RuntimeError("the exact champion is missing its primary benchmark receipt")
     if champion_report.protocol.seed_commitment != primary_commitment:
         raise RuntimeError("the champion primary receipt is not bound to the configured primary plan")
@@ -429,6 +513,8 @@ def _build_profile_evidence(
         "baseline_id": champion.baseline_id,
         "authority_receipt_digest": primary_authority_receipt.receipt_digest,
         "authority_receipt": primary_authority_receipt.model_dump(mode="json"),
+        "derived_statistics_receipt_id": primary_statistics.receipt_id,
+        "derived_statistics_receipt": primary_statistics.model_dump(mode="json"),
     }
     confirmation_receipt = None
     if champion.role == "candidate" and champion.decision == "promoted":
@@ -440,9 +526,12 @@ def _build_profile_evidence(
             or champion.confirmation_report_digest is None
             or champion.confirmation_decision is None
             or not champion.confirmation_decision.promote
+            or confirmation.derived_statistics_receipt is None
         ):
             raise RuntimeError("a promoted champion is missing its successful confirmation receipt")
         confirmation_commitment = confirmation_report.protocol.seed_commitment
+        confirmation_statistics = confirmation.derived_statistics_receipt
+        assert confirmation_statistics is not None
         if confirmation_commitment not in confirmation_commitments:
             raise RuntimeError("the champion confirmation receipt is not bound to an approved confirmation plan")
         confirmation_attestation = _verified_h100_attestation(confirmation_report, runtime)
@@ -471,6 +560,8 @@ def _build_profile_evidence(
             "baseline_id": confirmation.baseline_id,
             "authority_receipt_digest": confirmation_authority_receipt.receipt_digest,
             "authority_receipt": confirmation_authority_receipt.model_dump(mode="json"),
+            "derived_statistics_receipt_id": confirmation_statistics.receipt_id,
+            "derived_statistics_receipt": confirmation_statistics.model_dump(mode="json"),
         }
 
     holdout_correctness = (
@@ -484,7 +575,7 @@ def _build_profile_evidence(
         else []
     )
     profile = {
-        "schema_version": "autocontext.kernel-h100-profile-evidence/v3",
+        "schema_version": "autocontext.kernel-h100-profile-evidence/v4",
         "evidence_status": "observed_live_run",
         "run_id": run_id,
         "precision_profile": precision_profile,
@@ -499,8 +590,11 @@ def _build_profile_evidence(
         "primary_receipt": primary_receipt,
         "confirmation_receipt": confirmation_receipt,
         "hardware_attestation": hardware_attestation,
+        "evidence_family_version": "autocontext.kernel-evidence-family/v4",
         "decision_policy_id": decision_policy_id,
         "decision_policy": decision_policy.model_dump(mode="json"),
+        "calibration_report_id": calibration.report_id,
+        "calibration_report": calibration.model_dump(mode="json"),
         "protocol_id": result.protocol_id,
         "protocol_compatibility_id": result.protocol_compatibility_id,
         "primary_private_plan_commitment": primary_commitment,
@@ -521,18 +615,21 @@ def _build_profile_evidence(
             if attempt.sequential_evidence is not None
         ],
     }
+    _verify_v4_profile_policy_receipts(profile)
     signing_secret = read_authority_hmac_secret(runtime.authority_hmac_secret_path)
     envelope = build_profile_evidence_envelope(
         profile,
         signing_key_id=runtime.authority_hmac_key_id,
         signing_secret=signing_secret,
     )
-    verify_profile_evidence_envelope(
+    verified = verify_profile_evidence_envelope(
         envelope,
         trusted_key_id=runtime.authority_hmac_key_id,
         trusted_secret=signing_secret,
     )
-    return envelope.model_dump(mode="json")
+    _verify_v4_profile_policy_receipts(verified.profile)
+    payload: dict[str, Any] = envelope.model_dump(mode="json")
+    return payload
 
 
 def _install_sigterm_interrupt() -> None:
@@ -582,6 +679,12 @@ def main() -> None:
     parser.add_argument("--max-workspace-inodes", type=_positive_int, default=8_192)
     parser.add_argument("--benchmark-timeout", type=_positive_float, default=240.0)
     parser.add_argument("--mailbox", type=Path, required=True)
+    parser.add_argument(
+        "--sealed-audit-root",
+        type=Path,
+        required=True,
+        help="Operator-only root not mounted into or disclosed through the adaptive mailbox",
+    )
     parser.add_argument("--precision-profile", choices=PROFILE_NAMES, required=True)
     parser.add_argument("--primary-private-plan", type=Path, required=True)
     parser.add_argument(
@@ -674,6 +777,16 @@ def main() -> None:
     except ProductionEvaluatorBoundaryUnavailable as exc:
         raise SystemExit(str(exc)) from exc
 
+    mailbox = args.mailbox.resolve()
+    output_root = args.output.resolve()
+    sealed_audit_root = args.sealed_audit_root.resolve()
+    public_roots = (mailbox, output_root)
+    if any(
+        sealed_audit_root == public or sealed_audit_root.is_relative_to(public) or public.is_relative_to(sealed_audit_root)
+        for public in public_roots
+    ):
+        raise SystemExit("sealed audit root must be disjoint from mailbox and public output roots")
+
     primary_evaluator = _make_evaluator(
         runtime=runtime,
         bundle=bundle,
@@ -712,7 +825,6 @@ def main() -> None:
     if any(not all(isinstance(value, str) for value in identity.values()) for identity in authority_identities.values()):
         raise RuntimeError("protected evaluator omitted its host-computed authority identity")
 
-    mailbox = args.mailbox.resolve()
     mailbox.mkdir(parents=True, exist_ok=True)
     if any(mailbox.iterdir()):
         raise SystemExit(f"mailbox must be a new or empty directory: {mailbox}")
@@ -762,6 +874,7 @@ def main() -> None:
         profile_output_root(args.output, profile.name),
         run_id=run_id,
         confirmation_fn=confirm,
+        sealed_audit_root=sealed_audit_root,
     )
     baseline = _candidate(baseline_path.read_text(encoding="utf-8"))
     campaign_config = {
@@ -785,7 +898,11 @@ def main() -> None:
         "baseline_artifact_digest": baseline.artifact_digest,
         "baseline_source_digest": baseline.source_digest,
         "mailbox": str(mailbox),
-        "run_dir": str(runner.run_dir),
+        "sealed_confirmation_audit": {
+            "schema_version": "autocontext.kernel-sealed-audit-boundary/v1",
+            "available_to_adaptive_generator": False,
+            "published_after_terminal": True,
+        },
         "docker_runtime": runtime.manifest(),
         "primary_benchmark": primary_evaluator.manifest(),
         "confirmation_benchmarks": [evaluator.manifest() for evaluator in confirmation_evaluators],

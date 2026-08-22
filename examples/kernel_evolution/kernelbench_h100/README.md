@@ -175,6 +175,9 @@ The production composition requires all of the following:
   `--authority-hmac-secret-file`; the secret path and bytes are never exported;
 - one `--primary-private-plan` and at least one distinct repeatable
   `--confirmation-private-plan` per requested proposal;
+- an operator-only `--sealed-audit-root` disjoint from both `--mailbox` and
+  `--output`; confirmation reports, case names, and detailed vetoes remain
+  there until generation is terminal;
 - explicit bounded worker limits, all of which are recorded in the runner
 manifest.
 
@@ -190,9 +193,18 @@ cannot be labeled H100 profile evidence.
 Each attempted confirmation consumes a different committed plan. Primary and
 all confirmation plans must be pairwise disjoint in inputs and relative timing
 order, preventing a later candidate from reusing a confirmation protocol.
-Confirmation details are retained in lineage but excluded from recursive
-feedback, scores, and lesson hints. Promotion still reveals the unavoidable
-pass/fail bit by deciding which champion is carried forward. Candidate
+Primary and confirmation raw reports, derived metrics, case details, and vetoes
+are retained first in sealed operator audit storage and excluded from the run
+directory, recursive feedback, scores, and lesson hints. Every returned
+confirmation's report-backed protocol ID and private-plan commitment are both
+consumed, even on rejection; reuse of either identity fails freshness. A
+confirmation that raises, returns no result, returns malformed evidence, or
+otherwise lacks report-backed identity is persisted and terminates the campaign
+before another proposal. Only report/audit digests and aggregate gate names and states are
+public during generation; terminal completion, failure, interruption, or
+baseline rejection releases the audit copy under the run directory. Promotion
+still reveals the unavoidable pass/fail bit by deciding which champion is
+carried forward. Candidate
 containers mount neither `run_dir` nor mailbox/report storage, have no network
 or durable filesystem, and are destroyed between evaluations, so confirmation
 details cannot persist into a later proposal.
@@ -267,7 +279,8 @@ private-plan commitment, and the sequential budget into the protocol ID.
 Every private case is a named correctness slice and a named performance case.
 Train and holdout must each independently cover every shape, layout, and value
 class named by the selected canonical profile. Every slice must pass
-correctness; every case must meet the 0.98x incumbent no-regression floor before aggregate promotion. Eight paired
+correctness; every case must meet the exact 0.98x incumbent no-regression floor,
+without an additive tolerance, before aggregate promotion. Eight paired
 timing blocks aggregate all cases geometrically while retaining per-case
 medians. The adapter uses three warmups and ten evaluator-randomized calls per
 implementation per block. Every timed candidate/incumbent output is checked
@@ -304,18 +317,23 @@ scope, reference baseline, and protocol IDs.
 
 An eligible candidate is promoted only when all of these hold:
 
-- environment drift is at most 10%;
+- exact canonical reference drift is at most 10%;
 - relative improvement is at least 5%;
 - every correctness slice and per-case no-regression floor passes;
-- the Bonferroni-adjusted lower speedup bound uses `0.05 / 10` and reaches at
-  least `1 / (1 - 0.05)` (the nominal 95% bound is reported separately);
+- all eight pre-registered paired blocks clear the 5% margin, giving the sign
+  e-process bound `2^-8 = 0.00390625 <= 0.05 / 10`;
 - candidate p95 latency is no more than 5% above incumbent p95 latency.
 
-The deterministic paired-bootstrap percentile is an empirical bound, not an
-exact distribution-free interval. The worker uses 20,000 resamples here and
-fails closed unless at least 100 expected resamples fall in the requested tail.
-The configured `alpha=0.005` therefore uses the 100th empirical tail rank rather
-than an unstable minimum or second-smallest resample.
+The resulting ten-look Bonferroni familywise bound is at most `10 / 256 =
+0.0390625`. This finite-sample claim assumes that, under the null and conditional
+on prior blocks, each balanced paired block has probability at most one half of
+clearing the full margin. It does not assume Gaussian timing noise or
+independent timing magnitudes. The fixed block count, no early stopping,
+balanced order, and schedule derivation from the committed private plan are
+receipt-bound. Deterministic calibration exercises null, heavy-tail, paired
+shared drift, across-block autocorrelated magnitudes, heteroskedasticity, and
+all ten adaptive looks;
+it is a stress diagnostic, not the source of the theorem claim.
 
 ## One-shot comparison output and exit status
 
@@ -334,14 +352,14 @@ baseline   { eligible, artifact_digest, source_digest, median_ms,
              protocol_compatibility_id }
 candidate  { path, eligible, artifact_digest, source_digest, median_ms,
              incumbent_median_ms, reference_median_ms,
-             speedup_vs_incumbent, speedup_vs_reference, speedup_lcb95,
-             speedup_lcb, confidence_level, all_case_no_regression_passed,
+             speedup_vs_incumbent, speedup_vs_reference,
+             derived_statistics_receipt, confidence_level, all_case_no_regression_passed,
              relative_improvement, environment_drift_ratio,
              rejection_reason, feedback }
 control_decision  { promote, decision, reason }
 ```
 
-The raw v3 report is deliberately omitted because it was produced by the same
+The raw v4 report is deliberately omitted because it was produced by the same
 interpreter as candidate code and is forgeable. The displayed measurements and
 control decision are diagnostics only; they are not canonical promotion or
 profile evidence.
@@ -386,13 +404,14 @@ historical statement remains accurate for the artifact; after the protected
 gate passes and the campaign guard is removed, a completed new campaign writes
 `profile_evidence.json` using the authenticated outer schema
 `autocontext.kernel-profile-evidence-envelope/v1`. Its `profile` payload uses
-schema `autocontext.kernel-h100-profile-evidence/v3`, and the outer content
+schema `autocontext.kernel-h100-profile-evidence/v4`, and the outer content
 digest plus operator-pinned HMAC key and tag authenticate every field, including
 the exact
 champion artifact and attempt identity, content-addressed primary
 and confirmation report receipts, their plan commitments and protocol IDs,
-the complete host-owned decision policy and its canonical policy ID,
-identities replayed from the complete all-v3 result/lineage/report chain before
+the complete host-owned decision policy and its canonical policy ID, the
+policy-bound finite-sample derivation receipts and deterministic calibration,
+identities replayed from the complete all-v4 result/lineage/report chain before
 export, CUDA/SM90/H100 identity, the
 digest-verified host GPU attestation including its attestor ID, holdout correctness and per-case floors,
 proposal spend, and whether an improvement survived strict FP32.
