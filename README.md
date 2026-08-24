@@ -76,6 +76,8 @@ knowledge/<scenario>/
 ```
 
 Everything is filesystem-first: inspect it, diff it, replay it, export it, or feed it into training.
+Kernel campaigns extend that contract with exact provider-generation receipts,
+bounded paid-call accounting, content-addressed lineage, and safe stop/status/resume.
 Coach and architect context changes are stored as immutable candidates and are
 not served until matched candidate/incumbent trials confirm them. The live
 serving boundary can additionally require a cancellable independent audit and

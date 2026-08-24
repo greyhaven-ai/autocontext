@@ -204,6 +204,99 @@ Each new proposal's parent is the current champion, not the most recent
 rejected attempt, and the final summary reports the champion rather than the
 last trial.
 
+## Durable autonomous campaigns
+
+Production generators should return `KernelGenerationResult`, normally through
+`ProviderKernelGenerator`. The receipt preserves the exact response/source
+bytes and binds provider, actual model, system-prompt and recursive-prompt
+digests, response/source/artifact digests, normalized token usage, cost and its
+source, provider latency, stop reason, and every rejected or failed retry.
+Empty, fenced, prose-only, malformed, missing-entrypoint, oversized, and
+provider-truncated Python responses fail before external evaluation. Legacy
+`(prompt, generation) -> str` callables remain compatible for synthetic and
+trusted integrations, but they do not provide provider-native validation or
+usage provenance.
+
+`KernelGenerationBudget` makes proposal, retry, per-call output-token,
+campaign token, cost, provider/backoff wall-time, and source-size limits
+explicit. Construct the registry provider with transport retries disabled so
+the campaign owns the only retry loop and accounts for every call:
+
+```python
+from autocontext.kernel_evolution import KernelGenerationBudget, ProviderKernelGenerator
+from autocontext.providers.registry import create_provider
+
+generation_budget = KernelGenerationBudget(
+    proposal_cap=10,
+    max_retries_per_proposal=2,
+    max_output_tokens_per_call=8192,
+    max_total_tokens=300_000,
+    max_cost_usd=100.0,
+    max_wall_seconds=86_400,
+)
+generator = ProviderKernelGenerator(
+    create_provider("openai", model="gpt-5.6-terra", max_retries=0),
+    provider_id="openai",
+    model="gpt-5.6-terra",
+    budget=generation_budget,
+    entrypoint="ModelNew",
+)
+```
+
+Credentials are resolved and held by the provider in the control process.
+They are never passed to the benchmark worker or serialized in campaign
+configuration, prompts, receipts, lineage, status, or the artifact index.
+
+Each provider call and benchmark dispatch has an immutable pre-dispatch claim.
+Successful generation receipts and source are persisted before GPU work;
+attempt IDs are deterministic from run, proposal, receipt, and artifact
+identity. Resume verifies the manifest, generator/budget identities, prompts,
+receipts, sources, lineage, reports, attempts, sealed evidence, and champion,
+then reconstructs the exact playbook and continues at the next proposal. A
+crash after a durable generation receipt but before evaluation reuses the exact
+source without another paid call. A claim without its result, or an evaluation
+claim without its attempt, is deliberately reported as ambiguous and is never
+re-dispatched automatically.
+
+```python
+from autocontext.kernel_evolution import (
+    KernelEvolutionRunner,
+    read_kernel_campaign_status,
+    request_kernel_campaign_stop,
+)
+
+# Start uses resume=False (the default) and blocks until completion or stop.
+KernelEvolutionRunner(
+    config,
+    generator,
+    evaluator,
+    lineage_root,
+    run_id="kernel-campaign-001",
+    generation_budget=generation_budget,
+).run(proposals=10)
+
+status = read_kernel_campaign_status(lineage_root, "kernel-campaign-001")
+request_kernel_campaign_stop(lineage_root, "kernel-campaign-001", requested_by="release-operator")
+
+# In a later process after a safe cancellation/interruption, reconstruct an
+# equivalent provider generator, evaluator, and config before resuming.
+resumed = KernelEvolutionRunner(
+    config,
+    generator,
+    evaluator,
+    lineage_root,
+    run_id="kernel-campaign-001",
+    generation_budget=generation_budget,
+    resume=True,
+).run(proposals=10)
+```
+
+`artifact-index.json` inventories prompts, generation claims/receipts/failures,
+exact sources, reports, evaluation claims, attempt links, lineage, champion,
+summary, profile evidence, and released audit files with byte digests. Operator
+status reports progress, budget consumption, stop state, and whether automatic
+resume is safe.
+
 ## Python API
 
 ```python
@@ -383,9 +476,11 @@ report-backed confirmation protocol ID and private-plan commitment is consumed,
 including rejected evidence; reuse of either identity fails freshness. An
 exception, missing result, invalid result, or other confirmation without
 report-backed identity is persisted and then terminates the campaign before
-another proposal. After generation has stopped, terminal
-completion, failure, interruption, or baseline rejection publishes the sealed
-records under `audit/confirmation`; they cannot influence a later proposal.
+another proposal. Completion, non-resumable failure, or baseline rejection
+publishes the sealed records under `audit/confirmation`. Safe cancellation and
+interruption retain them in the disjoint sealed root so a resumed adaptive
+proposal cannot inspect holdout evidence; they are published only when that
+campaign becomes terminal.
 
 ## Benchmark report contract
 

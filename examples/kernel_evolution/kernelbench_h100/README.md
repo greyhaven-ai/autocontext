@@ -11,7 +11,8 @@ leaderboard result.
 | File | Role |
 | --- | --- |
 | `control_smoke.py` | Runs a same-interpreter diagnostic and emits an explicitly non-authoritative control decision. |
-| `campaign.py` | Validates production inputs and fails closed before evaluator, mailbox, or GPU work. |
+| `campaign.py` | Starts or resumes a provider-backed or mailbox-fallback campaign; validates production inputs and fails closed before provider, mailbox, or GPU work. |
+| `campaign_control.py` | Reads durable status or requests a safe stop without provider or GPU access. |
 | `production_runtime.py` | Composes the protected Docker/MIG evaluator path used for live validation while retaining the production release guard. |
 | `adapter.py` | Trusted evaluator: owns private plans, references, fresh timing challenges, telemetry, and the v3 JSON report without importing generated source in protected mode. |
 | `authority_transport.py` | Evaluator-owned, typed and bounded Unix-socket transport plus independent timing and partition-global memory observation. |
@@ -50,7 +51,7 @@ it must never be consumed as canonical promotion or profile evidence.
 `campaign.py` has no local-process escape hatch. It validates the
 declarative inputs for a digest-pinned image, explicit MIG UUID and capacity,
 bounded resources, and private-plan schedule. It then fails closed before
-creating a mailbox, resolving Docker, running host attestation, or spending GPU
+creating a mailbox, resolving provider credentials or Docker, running host attestation, or spending GPU
 time until the protected path passes its real H100/MIG release gate. The path
 itself is now split: the trusted evaluator and candidate/incumbent authorities
 run in distinct containers, and protected adapter mode never receives generated
@@ -201,8 +202,10 @@ consumed, even on rejection; reuse of either identity fails freshness. A
 confirmation that raises, returns no result, returns malformed evidence, or
 otherwise lacks report-backed identity is persisted and terminates the campaign
 before another proposal. Only report/audit digests and aggregate gate names and states are
-public during generation; terminal completion, failure, interruption, or
-baseline rejection releases the audit copy under the run directory. Promotion
+public during generation; completion, non-resumable failure, or baseline
+rejection releases the audit copy under the run directory. Safe cancellation
+or interruption retains the sealed copy for resume and does not expose it to
+later proposals. Promotion
 still reveals the unavoidable pass/fail bit by deciding which champion is
 carried forward. Candidate
 containers mount neither `run_dir` nor mailbox/report storage, have no network
@@ -265,6 +268,74 @@ role-separated telemetry, trusted out-of-process mutation observation, and a
 comparable reference timing boundary and crash-safe supervised creation are
 implemented, then the reserved live gate passes on the digest-pinned image and
 its authenticated receipts and teardown log have been reviewed.
+
+## Autonomous campaign lifecycle
+
+The production entry point is prepared for both provider-registry generation
+and the existing operator mailbox. The protected evaluator readiness check runs
+before provider construction, so an unavailable GPU trust boundary cannot
+resolve credentials, make a paid model call, create a mailbox, or dispatch GPU
+work.
+
+After the protected release gate is enabled, add these options to the required
+runtime/private-plan arguments documented above to start an autonomous run:
+
+```bash
+uv run --frozen python ../examples/kernel_evolution/kernelbench_h100/campaign.py \
+  <required protected-runtime and private-plan arguments> \
+  --generator provider \
+  --generation-provider openai \
+  --generation-model gpt-5.6-terra \
+  --generation-max-retries 2 \
+  --generation-max-output-tokens 8192 \
+  --generation-max-tokens-total 300000 \
+  --generation-max-cost-usd 100 \
+  --generation-max-wall-seconds 86400 \
+  --mailbox runs/kernel-evolution-h100-mailbox/strict-campaign-001 \
+  --proposals 10 \
+  --run-id strict-campaign-001
+```
+
+The provider registry reads its normal control-plane environment credential.
+Secrets are not passed to either worker and are not written to
+`campaign_config.json`, generation receipts, lineage, status, or the artifact
+index. Registry transport retries are disabled; the campaign's durable retry
+loop accounts for every failed, rejected, or successful provider call.
+
+`--mailbox` is required in both modes as the operator status and evidence-export
+channel. With `--generator mailbox` (the compatibility default), it also accepts
+manual `candidate_N.py` submissions and produces the same typed receipt and
+source validation as provider mode. To resume, supply the identical arguments,
+proposal target, run ID, generation budget, plans, and runtime identities, then
+add `--resume`. The runner verifies all durable identities and continues from
+the first safe unfinished proposal. It never repeats a provider or GPU dispatch
+whose pre-dispatch claim has no corresponding result.
+
+Status and stop do not load plans, providers, credentials, Docker, or GPU code:
+
+```bash
+uv run --frozen python ../examples/kernel_evolution/kernelbench_h100/campaign_control.py \
+  status strict-campaign-001 \
+  --precision-profile strict-fp32-v1 \
+  --output runs/kernel-evolution-h100
+
+uv run --frozen python ../examples/kernel_evolution/kernelbench_h100/campaign_control.py \
+  stop strict-campaign-001 \
+  --precision-profile strict-fp32-v1 \
+  --output runs/kernel-evolution-h100 \
+  --requested-by release-operator
+```
+
+The control command's top-level `status` covers the full H100 lifecycle,
+including signed profile-evidence export. Kernel-runner progress, budget, stop,
+and resumability details are nested under `kernel`; a post-run export error is
+reported as top-level `failed`, never `complete`.
+
+An operator stop is observed before a new provider call, after a returned source
+has been durably receipted but before GPU evaluation, or between proposals. A
+safe cancelled run remains resumable. `artifact-index.json` inventories prompts,
+source and report artifacts, generation/evaluation claims, receipts, attempts,
+lineage, champion, summary, profile evidence, and released audit material.
 
 ## Named workload and protocol
 

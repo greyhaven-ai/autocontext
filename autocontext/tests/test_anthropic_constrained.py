@@ -234,6 +234,22 @@ def test_strict_schema_rejection_retries_without_tools(monkeypatch: pytest.Monke
     assert "tool_choice" not in messages.calls[1]
 
 
+def test_single_dispatch_mode_does_not_retry_schema_rejection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("autocontext.providers.anthropic.anthropic.APIError", _RejectedRequest)
+    provider, messages = _provider(
+        _RejectedRequest("strict structured output is not supported for this model"),
+        _response([_text_block("fallback prose")]),
+    )
+    provider._single_dispatch = True
+
+    with pytest.raises(ProviderError, match="strict structured output"):
+        provider.complete("sys", "user", output_schema=_schema())
+
+    assert len(messages.calls) == 1
+
+
 def test_unrelated_api_error_does_not_retry_without_schema(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("autocontext.providers.anthropic.anthropic.APIError", _RejectedRequest)
     provider, messages = _provider(_RejectedRequest("invalid authentication token"))

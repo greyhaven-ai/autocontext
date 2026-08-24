@@ -159,6 +159,11 @@ class LLMProvider(ABC):
         return False
 
     @property
+    def supports_single_dispatch(self) -> bool:
+        """Whether one ``complete`` call can issue at most one physical request."""
+        return False
+
+    @property
     def supports_thinking_output_schema(self) -> bool:
         """Whether ``complete_with_thinking`` actually honors ``output_schema``.
 

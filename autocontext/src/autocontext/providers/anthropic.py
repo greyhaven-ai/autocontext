@@ -42,9 +42,14 @@ class AnthropicProvider(LLMProvider):
         self,
         api_key: str | None = None,
         default_model_name: str = "claude-sonnet-5",
+        single_dispatch: bool = False,
     ) -> None:
-        self._client = anthropic.Anthropic(api_key=api_key)
+        kwargs: dict[str, Any] = {"api_key": api_key}
+        if single_dispatch:
+            kwargs["max_retries"] = 0
+        self._client = anthropic.Anthropic(**kwargs)
         self._default_model = default_model_name
+        self._single_dispatch = single_dispatch
 
     def complete(
         self,
@@ -126,7 +131,11 @@ class AnthropicProvider(LLMProvider):
                 require_online("call the Anthropic API")
                 return self._client.messages.create(**request), constrained
             except anthropic.APIError as exc:
-                if constrained and _is_unsupported_strict_schema_error(exc):
+                if (
+                    not getattr(self, "_single_dispatch", False)
+                    and constrained
+                    and _is_unsupported_strict_schema_error(exc)
+                ):
                     logger.info(
                         "providers.anthropic: %s rejected strict structured output; retrying unconstrained",
                         model_id,
@@ -252,6 +261,10 @@ class AnthropicProvider(LLMProvider):
 
     def default_model(self) -> str:
         return self._default_model
+
+    @property
+    def supports_single_dispatch(self) -> bool:
+        return getattr(self, "_single_dispatch", False)
 
     @property
     def supports_thinking_output_schema(self) -> bool:

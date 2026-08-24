@@ -79,6 +79,18 @@ def test_explicit_response_format_rejection_retries_unconstrained() -> None:
     assert "response_format" not in completions.calls[1]
 
 
+def test_single_dispatch_mode_does_not_redispatch_compatibility_fallback() -> None:
+    provider, completions = _provider(
+        [_RejectedRequest("response_format json_schema is not supported"), _response("fallback")]
+    )
+    provider._single_dispatch = True
+
+    with pytest.raises(ProviderError, match="response_format"):
+        provider.complete("system", "user", output_schema=_schema())
+
+    assert len(completions.calls) == 1
+
+
 def test_successful_schema_request_is_reported_as_constrained() -> None:
     provider, completions = _provider([_response()])
 

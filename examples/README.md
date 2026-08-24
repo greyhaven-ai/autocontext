@@ -47,7 +47,10 @@ trusted source. The accelerator-neutral protected runner now separates
 generated execution from its authoritative evaluator and authenticates compact
 receipts against an operator-pinned host key. New v4 evidence uses a
 finite-sample paired sign e-process, canonical policy/calibration receipts, and
-sealed confirmation audit storage. The production H100 campaign
+sealed confirmation audit storage. Model-backed campaigns additionally persist
+exact generation provenance and deterministic retry/token/cost/wall budgets,
+support safe stop/status/resume, and retain mailbox generation as a fallback.
+The production H100 campaign
 remains fail-closed until role-separated telemetry, trusted mutation
 observation, comparable reference timing, and crash-safe container creation are
 implemented and the exact path passes the opt-in real MIG adversarial gate.

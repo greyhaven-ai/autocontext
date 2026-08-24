@@ -8,22 +8,26 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from autocontext.execution.agent_task_evolution import (
-    AgentTaskEvolutionRunner,
-    AgentTaskGenerationEvaluation,
-    AgentTaskGenerationState,
-    GenerateFn,
-    LessonSignal,
-)
 from autocontext.kernel_evolution import promotion_margin
 from autocontext.kernel_evolution.adaptive_evidence import (
-    confirmation_identity_unavailable,
-    release_sealed_audit_best_effort,
-    terminal_error_text,
     validate_sealed_evidence_roots,
 )
 from autocontext.kernel_evolution.benchmark import KernelBenchmarkEvaluator
+from autocontext.kernel_evolution.campaign_journal import (
+    KernelCampaignAmbiguousExecution,
+    KernelCampaignJournal,
+)
 from autocontext.kernel_evolution.confirmation import KernelConfirmationFn, evaluate_confirmation
+from autocontext.kernel_evolution.generation import (
+    KernelGenerateFn,
+    KernelGenerationBudget,
+    KernelGenerationBudgetExceeded,
+    KernelGenerationCancelled,
+    KernelGenerationProviderError,
+    KernelGenerationResult,
+    KernelGenerationUsage,
+    validate_kernel_source,
+)
 from autocontext.kernel_evolution.lineage import KernelLineageStore
 from autocontext.kernel_evolution.models import (
     ARTIFACT_IDENTITY_VERSION,
@@ -33,6 +37,8 @@ from autocontext.kernel_evolution.models import (
     KernelEvolutionResult,
     KernelPromotionDecision,
     KernelPromotionGateResult,
+    canonical_digest,
+    content_digest,
     kernel_benchmark_report_digest,
 )
 from autocontext.kernel_evolution.protocols import (
@@ -40,6 +46,7 @@ from autocontext.kernel_evolution.protocols import (
     KernelSequentialEvidence,
 )
 from autocontext.kernel_evolution.runner_config import KernelEvolutionConfig
+from autocontext.util.file_lock import advisory_path_lock
 
 
 class KernelBaselineError(RuntimeError):
@@ -325,13 +332,16 @@ class KernelEvolutionRunner:
     def __init__(
         self,
         config: KernelEvolutionConfig,
-        generate_fn: GenerateFn,
+        generate_fn: KernelGenerateFn,
         evaluator: KernelBenchmarkEvaluator,
         lineage_root: Path,
         *,
         run_id: str | None = None,
         confirmation_fn: KernelConfirmationFn | None = None,
         sealed_audit_root: Path | None = None,
+        generation_budget: KernelGenerationBudget | None = None,
+        confirmation_identity: str | None = None,
+        resume: bool = False,
     ) -> None:
         if evaluator.config.problem_id != config.problem_id:
             raise ValueError("evaluator and evolution problem_id must match")
@@ -359,12 +369,58 @@ class KernelEvolutionRunner:
         if sequential is not None:
             evaluator.config.validate_confidence_resolution(sequential.per_proposal_alpha)
         self.run_id = run_id or f"kernel_{uuid.uuid4().hex}"
+        if resume and run_id is None:
+            raise ValueError("resuming a kernel campaign requires its stable run_id")
+        proposal_cap = config.proposal_cap or 10_000
+        generator_budget = getattr(generate_fn, "budget", None)
+        self._generation_budget = generation_budget or (
+            generator_budget
+            if isinstance(generator_budget, KernelGenerationBudget)
+            else KernelGenerationBudget(proposal_cap=proposal_cap)
+        )
+        if config.proposal_cap is not None and self._generation_budget.proposal_cap != config.proposal_cap:
+            raise ValueError("generation and evaluation proposal caps must match")
+        if (
+            isinstance(generator_budget, KernelGenerationBudget)
+            and generator_budget.budget_id != self._generation_budget.budget_id
+        ):
+            raise ValueError("runner and generator generation budgets must match")
+        generator_budget_id = getattr(generate_fn, "generation_budget_id", None)
+        if (
+            generator_budget_id is not None
+            and generator_budget_id != self._generation_budget.budget_id
+        ):
+            raise ValueError("runner and generator generation budget identities must match")
+        if confirmation_identity is not None and not confirmation_identity.strip():
+            raise ValueError("confirmation_identity must not be empty")
+        self._confirmation_identity = confirmation_identity or (
+            self._callable_identity(confirmation_fn) if confirmation_fn is not None else None
+        )
+        self._generator_identity = self._build_generator_identity()
+        self._resume = resume
         self._store = KernelLineageStore(
             lineage_root,
             self.run_id,
             sealed_audit_root=sealed_audit_root,
             quarantine_primary_evidence=quarantine_primary_evidence,
+            resume=resume,
         )
+        self._journal = KernelCampaignJournal(self._store.run_dir, self.run_id)
+        set_call_observer = getattr(self._generate_fn, "set_call_observer", None)
+        set_failure_observer = getattr(self._generate_fn, "set_failure_observer", None)
+        self._call_fence_resume_safe = bool(
+            getattr(self._generate_fn, "supports_durable_call_fence", False) is True
+            and callable(set_call_observer)
+            and callable(set_failure_observer)
+            and callable(getattr(self._generate_fn, "restore_pending_failures", None))
+        )
+        if callable(set_call_observer):
+            set_call_observer(self._journal.claim_generation_call)
+        if callable(set_failure_observer):
+            set_failure_observer(self._journal.write_generation_failure)
+        restored_generations = self._journal.generation_results() if resume else []
+        self._generation_results = {item.proposal_index: item for item in restored_generations}
+        self._execution_lock_path = lineage_root / ".kernel-execution-locks" / f"{self.run_id}.lock"
         self._decision_policy = KernelDecisionPolicy(
             schema_version=(
                 "autocontext.kernel-decision-policy/v2"
@@ -392,6 +448,11 @@ class KernelEvolutionRunner:
     def run_dir(self) -> Path:
         return self._store.run_dir
 
+    @property
+    def attempts(self) -> tuple[KernelAttemptRecord, ...]:
+        """Attempts durably reconstructed or persisted by the active campaign."""
+        return tuple(self._attempts)
+
     def _score(self, observation: KernelBenchmarkObservation) -> float:
         if not observation.eligible or observation.speedup_vs_reference is None:
             return 0.0
@@ -410,6 +471,7 @@ class KernelEvolutionRunner:
         confirmation_required: bool = False,
         confirmation_observation: KernelBenchmarkObservation | None = None,
         confirmation_decision: KernelPromotionDecision | None = None,
+        attempt_id: str | None = None,
     ) -> KernelAttemptRecord:
         self._store.write_candidate(candidate)
         report_digest = self._store.write_report(
@@ -438,7 +500,7 @@ class KernelEvolutionRunner:
         return KernelAttemptRecord(
             schema_version=("autocontext.kernel-lineage/v4" if self._finite_sample else "autocontext.kernel-lineage/v3"),
             run_id=self.run_id,
-            attempt_id=f"attempt_{uuid.uuid4().hex}",
+            attempt_id=attempt_id or f"attempt_{uuid.uuid4().hex}",
             generation=generation,
             role="baseline" if role == "baseline" else "candidate",
             artifact_identity_version=candidate.artifact_identity_version,
@@ -492,6 +554,195 @@ class KernelEvolutionRunner:
     def _persist_record(self, record: KernelAttemptRecord) -> None:
         self._store.append_attempt(record)
         self._attempts.append(record)
+        if record.role == "candidate":
+            generation = self._generation_results.get(record.generation)
+            if generation is None:
+                raise KernelIntegrityError("candidate attempt has no durable generation receipt")
+            self._journal.link_attempt(
+                generation,
+                attempt_id=record.attempt_id,
+                artifact_digest=record.artifact_digest,
+            )
+        self._journal.refresh_artifact_index()
+
+    def _generate_source(self, prompt: str, generation: int) -> str:
+        proposal_index = generation + 1
+        existing = self._journal.read_generation_result(proposal_index)
+        if existing is not None:
+            if existing.prompt_digest != content_digest(prompt.encode("utf-8")):
+                raise KernelIntegrityError("resumed generation prompt does not match its durable receipt")
+            self._generation_results[proposal_index] = existing
+            self._require_generation_budget()
+            return existing.source
+        if self._journal.stop_requested():
+            raise KernelGenerationCancelled("kernel campaign stop requested before provider dispatch")
+        if proposal_index > self._generation_budget.proposal_cap:
+            raise KernelGenerationBudgetExceeded("kernel generation proposal cap is exhausted")
+        system_prompt = getattr(self._generate_fn, "system_prompt", None)
+        existing_claim = self._journal.read_generation_claim(proposal_index)
+        claim_resume_safe = bool(getattr(self._generate_fn, "supports_claim_resume", False))
+        if existing_claim is not None:
+            _, unresolved_calls = self._journal.generation_call_state(proposal_index)
+            resume_safe = not unresolved_calls and (
+                self._call_fence_resume_safe or claim_resume_safe
+            )
+            if (
+                not resume_safe
+                or existing_claim.prompt_digest != content_digest(prompt.encode("utf-8"))
+                or existing_claim.generator_identity != self._generator_identity
+            ):
+                raise KernelCampaignAmbiguousExecution(
+                    f"proposal {proposal_index} has an unresolved generation claim and will not be repeated"
+                )
+        else:
+            self._journal.claim_generation(
+                proposal_index=proposal_index,
+                prompt=prompt,
+                generator_identity=self._generator_identity,
+                system_prompt=system_prompt if isinstance(system_prompt, str) else None,
+            )
+        try:
+            generated = self._generate_fn(prompt, generation)
+        except KernelGenerationCancelled as exc:
+            self._journal.write_generation_cancellation(
+                proposal_index,
+                tuple(getattr(exc, "failures", ())),
+            )
+            raise
+        except KernelGenerationProviderError as exc:
+            self._journal.write_terminal_failures(proposal_index, exc.failures, outcome="provider_error")
+            raise
+        except KernelGenerationBudgetExceeded as exc:
+            if exc.result is not None:
+                self._store.write_candidate(
+                    KernelCandidate(
+                        source=exc.result.source,
+                        source_suffix=exc.result.source_suffix,
+                        entrypoint=exc.result.entrypoint,
+                    )
+                )
+                self._journal.write_generation_result(exc.result)
+                self._generation_results[proposal_index] = exc.result
+            self._journal.write_terminal_failures(proposal_index, exc.failures, outcome="budget_exceeded")
+            raise
+        if isinstance(generated, KernelGenerationResult):
+            result = generated
+            validate_kernel_source(
+                result.source,
+                source_suffix=result.source_suffix,
+                entrypoint=result.entrypoint,
+                stop_reason=result.stop_reason,
+                max_source_bytes=self._generation_budget.max_source_bytes,
+            )
+        else:
+            candidate = KernelCandidate(
+                source=generated,
+                source_suffix=self.config.source_suffix,
+                entrypoint=self.config.entrypoint,
+            )
+            result = KernelGenerationResult(
+                proposal_index=proposal_index,
+                provider="callable",
+                model=self._callable_identity(),
+                system_prompt_digest=content_digest(b"legacy callable generation adapter"),
+                prompt_digest=content_digest(prompt.encode("utf-8")),
+                response_digest=content_digest(generated.encode("utf-8")),
+                source_digest=candidate.source_digest,
+                artifact_digest=candidate.artifact_digest,
+                source=generated,
+                source_suffix=self.config.source_suffix,
+                entrypoint=self.config.entrypoint,
+                usage=KernelGenerationUsage(),
+                cost_usd=0.0,
+                cost_source="not-billable",
+                latency_seconds=0.0,
+                retry_count=0,
+                completed_at=datetime.now(UTC).isoformat(),
+            )
+        if (
+            result.proposal_index != proposal_index
+            or result.prompt_digest != content_digest(prompt.encode("utf-8"))
+            or result.source_suffix != self.config.source_suffix
+            or result.entrypoint != self.config.entrypoint
+        ):
+            raise KernelIntegrityError("generated source receipt conflicts with the active proposal contract")
+        from autocontext.kernel_evolution.runner_resume import validate_generation_budget_contract
+
+        validate_generation_budget_contract(self, (result,))
+        candidate = KernelCandidate(
+            source=result.source,
+            source_suffix=result.source_suffix,
+            entrypoint=result.entrypoint,
+        )
+        self._store.write_candidate(candidate)
+        self._journal.write_generation_result(result)
+        self._generation_results[proposal_index] = result
+        try:
+            self._require_generation_budget()
+        except KernelGenerationBudgetExceeded as exc:
+            self._journal.write_terminal_failures(
+                proposal_index,
+                exc.failures,
+                outcome="budget_exceeded",
+            )
+            raise
+        if self._journal.stop_requested():
+            raise KernelGenerationCancelled(
+                "kernel campaign stop requested after provider completion; generated source was preserved without GPU work"
+            )
+        return result.source
+
+    def _require_generation_budget(self) -> None:
+        state = self._journal.budget_state()
+        exceeded = []
+        if state.input_tokens > self._generation_budget.max_total_input_tokens:
+            exceeded.append("input_tokens")
+        if state.output_tokens > self._generation_budget.max_total_output_tokens:
+            exceeded.append("output_tokens")
+        if state.total_tokens > self._generation_budget.max_total_tokens:
+            exceeded.append("total_tokens")
+        if float(state.cost_usd) > float(self._generation_budget.max_cost_usd):
+            exceeded.append("cost_usd")
+        if float(state.wall_seconds) > float(self._generation_budget.max_wall_seconds):
+            exceeded.append("wall_seconds")
+        if exceeded:
+            raise KernelGenerationBudgetExceeded(
+                f"kernel generation budget exceeded: {', '.join(exceeded)}",
+                result=(
+                    self._generation_results[max(self._generation_results)]
+                    if self._generation_results
+                    else None
+                ),
+            )
+
+    def _build_generator_identity(self) -> str:
+        system_prompt = getattr(self._generate_fn, "system_prompt", None)
+        return canonical_digest(
+            {
+                "kind": "kernel-generator-identity/v1",
+                "callable": self._callable_identity(),
+                "provider": getattr(self._generate_fn, "provider_id", None),
+                "model": getattr(self._generate_fn, "model", None),
+                "transport_identity": getattr(self._generate_fn, "transport_identity", None),
+                "system_prompt_digest": (
+                    content_digest(system_prompt.encode("utf-8"))
+                    if isinstance(system_prompt, str)
+                    else None
+                ),
+                "temperature": getattr(self._generate_fn, "temperature", None),
+                "source_suffix": getattr(self._generate_fn, "source_suffix", None),
+                "entrypoint": getattr(self._generate_fn, "entrypoint", None),
+                "generation_budget_id": self._generation_budget.budget_id,
+            }
+        )
+
+    def _callable_identity(self, function: Any | None = None) -> str:
+        target = self._generate_fn if function is None else function
+        module = getattr(target, "__module__", None)
+        qualname = getattr(target, "__qualname__", None)
+        if isinstance(module, str) and isinstance(qualname, str):
+            return f"{module}.{qualname}"
+        return f"{type(target).__module__}.{type(target).__qualname__}"
 
     def _manifest(self, *, status: str, **extra: Any) -> dict[str, Any]:
         baseline = KernelCandidate(
@@ -511,290 +762,35 @@ class KernelEvolutionRunner:
             "artifact_identity_version": ARTIFACT_IDENTITY_VERSION,
             "baseline_artifact_digest": baseline.artifact_digest,
             "baseline_source_digest": baseline.source_digest,
-            "evolution": asdict(self.config) | {"baseline_source": "stored as a content-addressed artifact"},
+            "evolution": self._evolution_contract(),
             "benchmark": self._evaluator.manifest(),
             "decision_policy": self._decision_policy.model_dump(mode="json"),
             "decision_policy_id": self._decision_policy.policy_id,
-            "confirmation": {"enabled": self._confirmation_fn is not None},
+            "confirmation": self._confirmation_contract(),
+            "generation": {
+                "generator_identity": self._generator_identity,
+                "claim_resume_safe": bool(
+                    getattr(self._generate_fn, "supports_claim_resume", False)
+                ),
+                "call_fence_resume_safe": self._call_fence_resume_safe,
+                "budget_id": self._generation_budget.budget_id,
+                "budget": self._generation_budget.model_dump(mode="json"),
+                "budget_state": self._journal.budget_state().model_dump(mode="json"),
+            },
             **extra,
         }
 
+    def _evolution_contract(self) -> dict[str, Any]:
+        return asdict(self.config) | {"baseline_source": "stored as a content-addressed artifact"}
+
+    def _confirmation_contract(self) -> dict[str, Any]:
+        return {
+            "enabled": self._confirmation_fn is not None,
+            "identity": self._confirmation_identity,
+        }
+
     def run(self, proposals: int) -> KernelEvolutionResult:
-        """Evaluate the baseline, then run exactly ``proposals`` improvement attempts."""
-        if proposals < 0:
-            raise ValueError("proposals must be non-negative")
-        if self.config.proposal_cap is not None and proposals > self.config.proposal_cap:
-            raise ValueError(f"proposals ({proposals}) exceed the host-owned proposal cap ({self.config.proposal_cap})")
-        if self._has_run:
-            raise RuntimeError("KernelEvolutionRunner instances are single-use")
-        self._has_run = True
-        self._store.write_manifest(self._manifest(status="evaluating_baseline"))
+        from autocontext.kernel_evolution.runner_lifecycle import run_kernel_evolution
 
-        baseline = KernelCandidate(
-            source=self.config.baseline_source,
-            source_suffix=self.config.source_suffix,
-            entrypoint=self.config.entrypoint,
-        )
-        baseline_observation = self._evaluator.evaluate(baseline, baseline)
-        expected_sequential = self.config.sequential_testing
-        report = baseline_observation.report
-        observed_sequential = report.protocol.sequential_testing if report is not None else None
-        observed_profile = (
-            report.protocol.semantics.profile_name if report is not None and report.protocol.semantics is not None else None
-        )
-        controlled_protocol_matches = observed_sequential == expected_sequential and (
-            self.config.precision_profile is None or observed_profile == self.config.precision_profile
-        )
-        if baseline_observation.eligible and not controlled_protocol_matches:
-            rejected_payload = baseline_observation.model_dump(mode="python")
-            rejected_payload.update(
-                eligible=False,
-                rejection_reason="controlled_protocol_mismatch",
-                feedback="Benchmark profile or sequential-testing budget disagrees with host-owned controls.",
-                derived_statistics_receipt=None,
-            )
-            baseline_observation = KernelBenchmarkObservation.model_validate(rejected_payload)
-        baseline_decision = self._policy.decide(baseline_observation, baseline=True)
-        baseline_record = self._new_record(
-            generation=0,
-            role="baseline",
-            candidate=baseline,
-            observation=baseline_observation,
-            primary_decision=baseline_decision,
-            decision=baseline_decision,
-            parent=None,
-        )
-        self._persist_record(baseline_record)
-        if not baseline_decision.promote:
-            self._store.write_manifest(self._manifest(status="baseline_failed", baseline_attempt_id=baseline_record.attempt_id))
-            release_sealed_audit_best_effort(self._store)
-            raise KernelBaselineError(
-                baseline_decision.feedback,
-                attempt_id=baseline_record.attempt_id,
-                run_dir=self.run_dir,
-            )
-        self._champion = _Champion(baseline, baseline_observation, baseline_record)
-        self._store.write_champion(baseline, baseline_record)
-        assert baseline_observation.hardware_scope_id is not None
-        assert baseline_observation.baseline_id is not None
-        assert baseline_observation.protocol_id is not None
-        assert baseline_observation.protocol_compatibility_id is not None
-        self._store.write_manifest(
-            self._manifest(
-                status="running",
-                baseline_attempt_id=baseline_record.attempt_id,
-                hardware_scope_id=baseline_observation.hardware_scope_id,
-                baseline_id=baseline_observation.baseline_id,
-                protocol_id=baseline_observation.protocol_id,
-                protocol_compatibility_id=baseline_observation.protocol_compatibility_id,
-            )
-        )
-
-        def evaluate_source(source: str, _generation: int) -> AgentTaskGenerationEvaluation:
-            assert self._champion is not None
-            candidate = KernelCandidate(
-                source=source,
-                source_suffix=self.config.source_suffix,
-                entrypoint=self.config.entrypoint,
-            )
-            observation = self._evaluator.evaluate(
-                candidate,
-                self._champion.candidate,
-                expected_scope_id=baseline_observation.hardware_scope_id,
-                expected_baseline_id=baseline_observation.baseline_id,
-                expected_protocol_id=baseline_observation.protocol_id,
-            )
-            provisional_decision = self._policy.decide(observation)
-            confirmation_observation, confirmation_decision, decision = self._confirm(
-                candidate,
-                self._champion.candidate,
-                observation,
-                provisional_decision,
-            )
-            aggregate_feedback = self._evaluator.config.adaptive_feedback_policy == "aggregate-gates"
-            if aggregate_feedback:
-                gate_status = {gate.name: gate.status for gate in provisional_decision.gates}
-                disclosed_feedback = (
-                    "Aggregate benchmark gates: "
-                    + ", ".join(f"{gate.name}={gate.status}" for gate in provisional_decision.gates)
-                    + f". Disposition={provisional_decision.reason}."
-                )
-                metrics: dict[str, float] = {}
-                performance_dimension = float(gate_status.get("relative_improvement") == "passed")
-                adaptive_score = float(provisional_decision.promote)
-            else:
-                disclosed_feedback = provisional_decision.feedback
-                metrics = {}
-                if observation.relative_improvement is not None:
-                    metrics["relative_improvement"] = float(observation.relative_improvement)
-                if observation.speedup_lcb is not None:
-                    metrics["speedup_lcb"] = float(observation.speedup_lcb)
-                performance_dimension = min(1.0, float(observation.speedup_vs_incumbent or 0.0))
-                adaptive_score = self._score(observation)
-            return AgentTaskGenerationEvaluation(
-                output=source,
-                score=adaptive_score,
-                # Confirmation evidence is persisted for audit, but its
-                # detailed feedback and metrics must not become training data
-                # for later adaptive proposals.
-                reasoning=disclosed_feedback,
-                dimension_scores={
-                    "correctness": 1.0 if observation.eligible else 0.0,
-                    "performance": performance_dimension,
-                    "promotion_gate": 1.0 if provisional_decision.promote else 0.0,
-                },
-                met_threshold=decision.promote,
-                lesson_signal=LessonSignal(
-                    hint=disclosed_feedback,
-                    plateau=provisional_decision.reason in {"insufficient_improvement", "confidence_interval"},
-                    metrics=metrics,
-                ),
-                metadata={
-                    "candidate": candidate,
-                    "observation": observation,
-                    "primary_decision": provisional_decision,
-                    "decision": decision,
-                    "confirmation_observation": confirmation_observation,
-                    "confirmation_decision": confirmation_decision,
-                },
-            )
-
-        def promote(state: AgentTaskGenerationState, evaluation: AgentTaskGenerationEvaluation) -> bool:
-            assert self._champion is not None
-            candidate = evaluation.metadata.get("candidate")
-            observation = evaluation.metadata.get("observation")
-            primary_decision = evaluation.metadata.get("primary_decision")
-            decision = evaluation.metadata.get("decision")
-            confirmation_observation = evaluation.metadata.get("confirmation_observation")
-            confirmation_decision = evaluation.metadata.get("confirmation_decision")
-            if not isinstance(candidate, KernelCandidate):
-                raise TypeError("kernel evaluation metadata is missing candidate")
-            if not isinstance(observation, KernelBenchmarkObservation):
-                raise TypeError("kernel evaluation metadata is missing observation")
-            if not isinstance(decision, KernelPromotionDecision):
-                raise TypeError("kernel evaluation metadata is missing promotion decision")
-            if not isinstance(primary_decision, KernelPromotionDecision):
-                raise TypeError("kernel evaluation metadata is missing primary promotion decision")
-            if confirmation_observation is not None and not isinstance(confirmation_observation, KernelBenchmarkObservation):
-                raise TypeError("kernel evaluation metadata contains an invalid confirmation observation")
-            if confirmation_decision is not None and not isinstance(confirmation_decision, KernelPromotionDecision):
-                raise TypeError("kernel evaluation metadata contains an invalid confirmation decision")
-            parent = self._champion
-            record = self._new_record(
-                generation=state.generation + 1,
-                role="candidate",
-                candidate=candidate,
-                observation=observation,
-                primary_decision=primary_decision,
-                decision=decision,
-                parent=parent,
-                confirmation_required=self._confirmation_fn is not None,
-                confirmation_observation=confirmation_observation,
-                confirmation_decision=confirmation_decision,
-            )
-            self._persist_record(record)
-            if confirmation_identity_unavailable(
-                finite_sample=self._finite_sample,
-                decision=confirmation_decision,
-                observation=confirmation_observation,
-            ):
-                raise KernelIntegrityError(
-                    "confirmation protocol identity is unavailable; the adaptive campaign cannot continue safely"
-                )
-            if decision.reason in {"harness_modified", "confirmation_harness_modified"}:
-                raise KernelIntegrityError(decision.feedback)
-            if decision.promote:
-                self._champion = _Champion(candidate, observation, record)
-                self._store.write_champion(candidate, record)
-            return decision.promote
-
-        baseline_score = self._score(baseline_observation)
-        state = AgentTaskGenerationState(
-            generation=0,
-            best_output=baseline.source,
-            best_score=baseline_score,
-            playbook="",
-            score_history=[baseline_score],
-            lesson_history=[],
-            metadata={},
-        )
-        evolution = AgentTaskEvolutionRunner(
-            task_prompt=self.config.task_prompt,
-            generate_fn=self._generate_fn,
-            evaluate_fn=evaluate_source,
-            task_name=f"kernel:{self.config.problem_id}",
-            promotion_fn=promote,
-        )
-        try:
-            for _ in range(proposals):
-                state = evolution.run_generation(state)
-        except BaseException as exc:
-            assert self._champion is not None
-            status = "interrupted" if isinstance(exc, KeyboardInterrupt) else "failed"
-            try:
-                self._store.write_manifest(
-                    self._manifest(
-                        status=status,
-                        hardware_scope_id=baseline_observation.hardware_scope_id,
-                        baseline_id=baseline_observation.baseline_id,
-                        protocol_id=baseline_observation.protocol_id,
-                        protocol_compatibility_id=baseline_observation.protocol_compatibility_id,
-                        champion_attempt_id=self._champion.record.attempt_id,
-                        attempts=len(self._attempts),
-                        error_type=type(exc).__name__,
-                        error=terminal_error_text(
-                            exc,
-                            finite_sample=self._finite_sample,
-                            confirmation_enabled=self._confirmation_fn is not None,
-                            quarantine_primary_evidence=self._quarantine_primary_evidence,
-                        ),
-                    )
-                )
-            except Exception:
-                pass
-            try:
-                self._store.release_sealed_audit()
-            except Exception:
-                pass
-            raise
-
-        assert self._champion is not None
-        champion_speedup = self._champion.observation.speedup_vs_reference
-        assert champion_speedup is not None
-        policy_id = self._decision_policy.policy_id if self._finite_sample else None
-        result = KernelEvolutionResult(
-            schema_version=("autocontext.kernel-result/v4" if self._finite_sample else "autocontext.kernel-result/v3"),
-            run_id=self.run_id,
-            problem_id=self.config.problem_id,
-            hardware_scope_id=baseline_observation.hardware_scope_id,
-            baseline_id=baseline_observation.baseline_id,
-            protocol_id=baseline_observation.protocol_id,
-            protocol_compatibility_id=baseline_observation.protocol_compatibility_id,
-            precision_profile=observed_profile,
-            baseline_attempt_id=baseline_record.attempt_id,
-            champion_attempt_id=self._champion.record.attempt_id,
-            artifact_identity_version=self._champion.candidate.artifact_identity_version,
-            champion_artifact_digest=self._champion.candidate.artifact_digest,
-            champion_source_digest=self._champion.candidate.source_digest,
-            champion_source=self._champion.candidate.source,
-            champion_score=self._score(self._champion.observation),
-            champion_speedup_vs_reference=champion_speedup,
-            decision_policy=self._decision_policy,
-            **({"decision_policy_id": policy_id} if policy_id is not None else {}),
-            attempts=list(self._attempts),
-            playbook=state.playbook,
-        )
-        self._store.release_sealed_audit()
-        self._store.write_summary(result)
-        self._store.write_manifest(
-            self._manifest(
-                status="complete",
-                hardware_scope_id=result.hardware_scope_id,
-                baseline_id=result.baseline_id,
-                protocol_id=result.protocol_id,
-                protocol_compatibility_id=result.protocol_compatibility_id,
-                champion_attempt_id=result.champion_attempt_id,
-                attempts=len(result.attempts),
-            )
-        )
-        return result
+        with advisory_path_lock(self._execution_lock_path):
+            return run_kernel_evolution(self, proposals)

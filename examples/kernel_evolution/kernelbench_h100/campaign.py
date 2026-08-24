@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Run a bounded, mailbox-driven H100 kernel evolution campaign.
+"""Run a bounded, autonomous or mailbox-driven H100 kernel campaign.
 
 From the ``autocontext/`` Python package directory, see ``README.md`` for the
-full command. The generator writes AutoContext's exact recursive prompt to a
-mailbox, prints it for detached logs, and waits for an operator-authored
-``candidate_N.py`` response, numbered from zero.
+full commands. Provider mode uses AutoContext's provider registry with durable
+per-call accounting. Mailbox mode writes the exact recursive prompt and waits
+for an operator-authored ``candidate_N.py`` response, numbered from zero.
 """
 
 from __future__ import annotations
@@ -13,10 +13,12 @@ import argparse
 import json
 import math
 import os
+import re
 import signal
 import sys
 import time
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from types import FrameType
 from typing import Any
@@ -48,21 +50,33 @@ from autocontext.kernel_evolution import (
     KernelEvolutionConfig,
     KernelEvolutionResult,
     KernelEvolutionRunner,
+    KernelGenerationBudget,
+    KernelGenerationCancelled,
+    KernelGenerationResult,
     KernelSequentialTestingPolicy,
     KernelStatisticsPolicy,
+    ProviderKernelGenerator,
+    build_generation_result,
     build_profile_evidence_envelope,
     calibrate_kernel_promotion,
     content_digest,
     read_authority_hmac_secret,
+    read_kernel_campaign_status,
     verify_authority_receipt,
     verify_profile_evidence_envelope,
 )
+from autocontext.providers.base import CompletionResult
+from autocontext.providers.registry import create_provider
+from autocontext.util.file_lock import advisory_path_lock
 
 PROBLEM_ID = "kernelbench-v0.1-level1-1-matmul-profiled-h100-v1"
 MAX_PROPOSALS = 10
 MAX_WAIT_SECONDS = 86_400.0
 MAX_CANDIDATE_BYTES = 1_000_000
 POLL_SECONDS = 1.0
+_CONFIRMATION_RESERVATION_SCHEMA = "autocontext.kernel-confirmation-plan-reservation/v1"
+_CONFIRMATION_RESERVATION_NAME = re.compile(r"(?P<index>[0-9]{6})\.json")
+_SAFE_RUN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 
 
 def _bounded_proposals(raw: str) -> int:
@@ -92,6 +106,16 @@ def _positive_int(raw: str) -> int:
         raise argparse.ArgumentTypeError("value must be an integer") from exc
     if value < 1:
         raise argparse.ArgumentTypeError("value must be positive")
+    return value
+
+
+def _non_negative_int(raw: str) -> int:
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("value must be an integer") from exc
+    if value < 0:
+        raise argparse.ArgumentTypeError("value must be non-negative")
     return value
 
 
@@ -128,6 +152,126 @@ def _atomic_json(path: Path, payload: dict[str, Any]) -> None:
     temporary.replace(path)
 
 
+def _read_json_object(path: Path, *, label: str) -> dict[str, Any]:
+    if path.is_symlink() or not path.is_file():
+        raise RuntimeError(f"{label} must be a regular non-symlink file: {path}")
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"{label} is not valid UTF-8 JSON: {path}") from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"{label} must contain a JSON object: {path}")
+    return payload
+
+
+def _require_exact_json(path: Path, expected: dict[str, Any], *, label: str) -> None:
+    if _read_json_object(path, label=label) != expected:
+        raise RuntimeError(f"{label} does not match the exact durable campaign contract: {path}")
+
+
+def _write_immutable_json(path: Path, payload: dict[str, Any], *, label: str) -> None:
+    """Create one durable JSON commitment without ever replacing prior state."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.is_symlink() or path.exists():
+        _require_exact_json(path, payload, label=label)
+        return
+    encoded = json.dumps(payload, indent=2, sort_keys=True) + "\n"
+    try:
+        with path.open("x", encoding="utf-8") as handle:
+            handle.write(encoded)
+            handle.flush()
+            os.fsync(handle.fileno())
+    except FileExistsError:
+        _require_exact_json(path, payload, label=label)
+
+
+class _ConfirmationPlanSchedule:
+    """Durably burn a public plan commitment before any holdout evaluation."""
+
+    def __init__(
+        self,
+        run_dir: Path,
+        *,
+        run_id: str,
+        plan_commitments: tuple[str, ...],
+        confirmation_identity: str,
+        proposal_limit: int,
+    ) -> None:
+        self._directory = run_dir / "confirmation-plan-reservations"
+        self._run_id = run_id
+        self._plan_commitments = plan_commitments
+        self._confirmation_identity = confirmation_identity
+        self._proposal_limit = proposal_limit
+        self._cursor, self._last_proposal_index = self._restore()
+
+    def _restore(self) -> tuple[int, int]:
+        if self._directory.is_symlink():
+            raise RuntimeError(f"confirmation reservation directory must not be a symlink: {self._directory}")
+        if not self._directory.exists():
+            return 0, 0
+        if not self._directory.is_dir():
+            raise RuntimeError(f"confirmation reservation path must be a directory: {self._directory}")
+
+        indexed_paths: list[tuple[int, Path]] = []
+        for path in self._directory.iterdir():
+            match = _CONFIRMATION_RESERVATION_NAME.fullmatch(path.name)
+            if match is None or path.is_symlink() or not path.is_file():
+                raise RuntimeError(f"unexpected confirmation reservation entry: {path}")
+            indexed_paths.append((int(match.group("index")), path))
+        indexed_paths.sort()
+        if [index for index, _path in indexed_paths] != list(range(len(indexed_paths))):
+            raise RuntimeError("confirmation plan reservations must be contiguous from plan index zero")
+        if len(indexed_paths) > len(self._plan_commitments):
+            raise RuntimeError("confirmation plan reservations exceed the committed schedule")
+
+        last_proposal_index = 0
+        for plan_index, path in indexed_paths:
+            payload = _read_json_object(path, label="confirmation plan reservation")
+            proposal_index = payload.get("proposal_index")
+            if (
+                not isinstance(proposal_index, int)
+                or isinstance(proposal_index, bool)
+                or not 1 <= proposal_index <= self._proposal_limit
+                or proposal_index < last_proposal_index
+            ):
+                raise RuntimeError("confirmation plan reservation has an invalid proposal index")
+            expected = self._payload(plan_index=plan_index, proposal_index=proposal_index)
+            if payload != expected:
+                raise RuntimeError(f"confirmation plan reservation changed its durable identity: {path}")
+            last_proposal_index = proposal_index
+        return len(indexed_paths), last_proposal_index
+
+    def _payload(self, *, plan_index: int, proposal_index: int) -> dict[str, Any]:
+        return {
+            "schema_version": _CONFIRMATION_RESERVATION_SCHEMA,
+            "run_id": self._run_id,
+            "plan_index": plan_index,
+            "proposal_index": proposal_index,
+            "plan_commitment": self._plan_commitments[plan_index],
+            "confirmation_identity": self._confirmation_identity,
+            "state": "reserved_before_evaluation",
+        }
+
+    def reserve(self, *, proposal_index: int) -> int:
+        if not 1 <= proposal_index <= self._proposal_limit:
+            raise RuntimeError("confirmation proposal index is outside the committed campaign budget")
+        if proposal_index < self._last_proposal_index:
+            raise RuntimeError("confirmation proposal index moved backwards")
+        if self._cursor >= len(self._plan_commitments):
+            raise RuntimeError("confirmation plan schedule is exhausted")
+        plan_index = self._cursor
+        payload = self._payload(plan_index=plan_index, proposal_index=proposal_index)
+        _write_immutable_json(
+            self._directory / f"{plan_index:06d}.json",
+            payload,
+            label="confirmation plan reservation",
+        )
+        self._cursor += 1
+        self._last_proposal_index = proposal_index
+        return plan_index
+
+
 def _atomic_text(path: Path, content: str) -> None:
     temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     temporary.write_text(content, encoding="utf-8")
@@ -139,58 +283,93 @@ def _candidate(source: str) -> KernelCandidate:
     return KernelCandidate(source=source, source_suffix=".py", entrypoint="kernel_fn")
 
 
-class VerbatimSource(str):
-    """Keep byte-addressed source intact through generic text normalization."""
-
-    def strip(self, chars: str | None = None) -> str:
-        if chars is None:
-            return self
-        return super().strip(chars)
-
-
 class MailboxGenerator:
     """Persist each recursive prompt and wait for one stable source file."""
 
-    def __init__(self, mailbox: Path, *, timeout_seconds: float) -> None:
+    provider_id = "mailbox"
+    model = "operator-supplied"
+    system_prompt = "Operator mailbox source generation."
+    supports_claim_resume = True
+
+    def __init__(
+        self,
+        mailbox: Path,
+        *,
+        timeout_seconds: float,
+        cancellation_requested: Callable[[], bool] | None = None,
+    ) -> None:
         self._mailbox = mailbox
         self._timeout_seconds = timeout_seconds
+        self._cancelled = cancellation_requested or (lambda: False)
+        self.transport_identity = content_digest(str(mailbox.resolve()))
 
-    def __call__(self, prompt: str, generation: int) -> str:
+    def __call__(self, prompt: str, generation: int) -> KernelGenerationResult:
         number = generation
         prompt_path = self._mailbox / f"prompt_{number}.md"
         candidate_path = self._mailbox / f"candidate_{number}.py"
         receipt_path = self._mailbox / f"accepted_candidate_{number}.json"
-        collisions = [path for path in (prompt_path, candidate_path, receipt_path) if path.exists() or path.is_symlink()]
-        if collisions:
-            names = ", ".join(path.name for path in collisions)
-            raise FileExistsError(f"mailbox contains stale generation {number} files: {names}")
+        if prompt_path.is_symlink() or (prompt_path.exists() and not prompt_path.is_file()):
+            raise ValueError(f"prompt mailbox path must be a regular non-symlink file: {prompt_path}")
+        if prompt_path.exists():
+            if prompt_path.read_bytes() != prompt.encode("utf-8"):
+                raise ValueError(f"resumed mailbox prompt changed for generation {number}")
+            print(f"resuming mailbox generation {number}; waiting for {candidate_path}", flush=True)
+        else:
+            if candidate_path.exists() or candidate_path.is_symlink() or receipt_path.exists() or receipt_path.is_symlink():
+                raise FileExistsError(f"mailbox generation {number} has candidate state without its prompt")
+            _atomic_text(prompt_path, prompt)
+            print(f"\n===== AUTOCONTEXT KERNEL PROMPT {number} ({prompt_path}) =====", flush=True)
+            print(prompt, flush=True)
+            print(f"===== END PROMPT {number}; WAITING FOR {candidate_path} =====\n", flush=True)
 
-        _atomic_text(prompt_path, prompt)
-        print(f"\n===== AUTOCONTEXT KERNEL PROMPT {number} ({prompt_path}) =====", flush=True)
-        print(prompt, flush=True)
-        print(f"===== END PROMPT {number}; WAITING FOR {candidate_path} =====\n", flush=True)
-
-        deadline = time.monotonic() + self._timeout_seconds
+        started = time.monotonic()
+        deadline = started + self._timeout_seconds
         while True:
+            if self._cancelled():
+                raise KernelGenerationCancelled(
+                    f"kernel campaign stop requested while waiting for {candidate_path}"
+                )
             if candidate_path.is_symlink():
                 raise ValueError(f"candidate mailbox file must not be a symlink: {candidate_path}")
             if candidate_path.exists():
                 source = self._read_stable_candidate(candidate_path, deadline=deadline)
                 candidate = _candidate(source)
-                _atomic_json(
-                    receipt_path,
-                    {
-                        "schema_version": "autocontext.kernel-mailbox-receipt/v2",
-                        "generation": number,
-                        "candidate_path": str(candidate_path),
-                        "artifact_identity_version": candidate.artifact_identity_version,
-                        "artifact_digest": candidate.artifact_digest,
-                        "source_digest": candidate.source_digest,
-                        "source_bytes": len(candidate.source_bytes),
-                    },
+                result = build_generation_result(
+                    proposal_index=generation + 1,
+                    provider=self.provider_id,
+                    model=self.model,
+                    system_prompt=self.system_prompt,
+                    prompt=prompt,
+                    completion=CompletionResult(
+                        text=source,
+                        model=self.model,
+                        cost_usd=0.0,
+                        stop_reason="operator-submitted",
+                    ),
+                    source_suffix=".py",
+                    entrypoint="kernel_fn",
+                    latency_seconds=max(0.0, time.monotonic() - started),
+                    max_source_bytes=MAX_CANDIDATE_BYTES,
+                    billable=False,
                 )
+                mailbox_receipt = {
+                    "schema_version": "autocontext.kernel-mailbox-receipt/v2",
+                    "generation": number,
+                    "candidate_path": str(candidate_path),
+                    "artifact_identity_version": candidate.artifact_identity_version,
+                    "artifact_digest": candidate.artifact_digest,
+                    "source_digest": candidate.source_digest,
+                    "source_bytes": len(candidate.source_bytes),
+                }
+                if receipt_path.is_symlink() or (receipt_path.exists() and not receipt_path.is_file()):
+                    raise ValueError(f"mailbox receipt must be a regular non-symlink file: {receipt_path}")
+                if receipt_path.exists():
+                    if json.loads(receipt_path.read_text(encoding="utf-8")) != mailbox_receipt:
+                        raise ValueError(f"resumed mailbox receipt changed for generation {number}")
+                else:
+                    _atomic_json(receipt_path, mailbox_receipt)
                 print(f"accepted candidate {number}: {candidate.artifact_digest}", flush=True)
-                return VerbatimSource(source)
+                return result
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise TimeoutError(f"timed out after {self._timeout_seconds:g}s waiting for {candidate_path}")
@@ -695,10 +874,43 @@ def main() -> None:
         help="Fresh confirmation plan; repeat at least once per requested proposal",
     )
     parser.add_argument("--proposals", type=_bounded_proposals, default=3)
+    parser.add_argument(
+        "--generator",
+        choices=("provider", "mailbox"),
+        default="mailbox",
+        help="Use a provider-registry model or the operator mailbox fallback.",
+    )
+    parser.add_argument(
+        "--generation-provider",
+        default="anthropic",
+        help="Provider-registry transport used when --generator=provider.",
+    )
+    parser.add_argument("--generation-model", help="Provider model override.")
+    parser.add_argument("--generation-base-url", help="OpenAI-compatible provider base URL.")
+    parser.add_argument(
+        "--generation-max-retries",
+        type=_non_negative_int,
+        default=2,
+        help="Durably accounted retries per proposal.",
+    )
+    parser.add_argument("--generation-max-output-tokens", type=_positive_int, default=8_192)
+    parser.add_argument("--generation-max-input-tokens-total", type=_positive_int, default=200_000)
+    parser.add_argument("--generation-max-output-tokens-total", type=_positive_int, default=100_000)
+    parser.add_argument("--generation-max-tokens-total", type=_positive_int, default=300_000)
+    parser.add_argument("--generation-max-cost-usd", type=_positive_float, default=100.0)
+    parser.add_argument("--generation-max-wall-seconds", type=_positive_float, default=86_400.0)
     parser.add_argument("--candidate-wait-timeout", type=_bounded_timeout, default=3_600.0)
     parser.add_argument("--output", type=Path, default=Path("runs/kernel-evolution-h100"))
     parser.add_argument("--run-id")
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume the exact run ID after verifying its durable lineage and generation receipts.",
+    )
     args = parser.parse_args()
+
+    if args.resume and not args.run_id:
+        parser.error("--resume requires --run-id")
 
     profile = PROFILES[args.precision_profile]
     primary_plan_path = args.primary_private_plan.resolve()
@@ -777,8 +989,12 @@ def main() -> None:
     except ProductionEvaluatorBoundaryUnavailable as exc:
         raise SystemExit(str(exc)) from exc
 
-    mailbox = args.mailbox.resolve()
+    run_id = args.run_id or f"kernel_h100_{profile.name}_{uuid.uuid4().hex}"
+    if _SAFE_RUN_ID.fullmatch(run_id) is None or ".." in run_id:
+        raise SystemExit("run ID must be a safe path segment")
     output_root = args.output.resolve()
+    output_namespace = profile_output_root(output_root, profile.name)
+    mailbox = args.mailbox.resolve()
     sealed_audit_root = args.sealed_audit_root.resolve()
     public_roots = (mailbox, output_root)
     if any(
@@ -825,64 +1041,77 @@ def main() -> None:
     if any(not all(isinstance(value, str) for value in identity.values()) for identity in authority_identities.values()):
         raise RuntimeError("protected evaluator omitted its host-computed authority identity")
 
-    mailbox.mkdir(parents=True, exist_ok=True)
-    if any(mailbox.iterdir()):
-        raise SystemExit(f"mailbox must be a new or empty directory: {mailbox}")
-
-    confirmation_iterator = iter(confirmation_evaluators)
-
-    def confirm(candidate: KernelCandidate, incumbent: KernelCandidate) -> KernelBenchmarkObservation | None:
-        confirmation_evaluator = next(confirmation_iterator)
-        fresh_baseline = confirmation_evaluator.evaluate(incumbent, incumbent)
-        if not fresh_baseline.eligible:
-            return None
-        return confirmation_evaluator.evaluate(
-            candidate,
-            incumbent,
-            expected_scope_id=fresh_baseline.hardware_scope_id,
-            expected_baseline_id=fresh_baseline.baseline_id,
-            expected_protocol_id=fresh_baseline.protocol_id,
+    generation_budget = KernelGenerationBudget(
+        proposal_cap=MAX_PROPOSALS,
+        max_retries_per_proposal=args.generation_max_retries,
+        max_output_tokens_per_call=args.generation_max_output_tokens,
+        max_total_input_tokens=args.generation_max_input_tokens_total,
+        max_total_output_tokens=args.generation_max_output_tokens_total,
+        max_total_tokens=args.generation_max_tokens_total,
+        max_cost_usd=args.generation_max_cost_usd,
+        max_wall_seconds=args.generation_max_wall_seconds,
+        max_source_bytes=MAX_CANDIDATE_BYTES,
+    )
+    if args.generator == "provider":
+        provider = create_provider(
+            args.generation_provider,
+            base_url=args.generation_base_url,
+            model=args.generation_model,
+            max_retries=0,
         )
-
-    run_id = args.run_id or f"kernel_h100_{profile.name}_{uuid.uuid4().hex}"
-    generator = MailboxGenerator(mailbox, timeout_seconds=args.candidate_wait_timeout)
-    runner = KernelEvolutionRunner(
-        KernelEvolutionConfig(
-            problem_id=PROBLEM_ID,
-            task_prompt=(
-                f"Optimize the complete Python/Triton kernel_fn(a, b) module under the host-owned {profile.name} "
-                "matrix-multiplication profile on NVIDIA H100 SM90. Preserve all shapes, layouts, signs, magnitudes, "
-                "cancellation behavior, dtype, and inputs. Return only "
-                "the complete executable Python source without Markdown fences. The immutable benchmark's correctness "
-                "and performance feedback is authoritative."
+        generator = ProviderKernelGenerator(
+            provider,
+            provider_id=args.generation_provider,
+            model=args.generation_model,
+            budget=generation_budget,
+            transport_identity=content_digest(
+                json.dumps(
+                    {
+                        "provider": args.generation_provider,
+                        "base_url": args.generation_base_url or "registry-default",
+                    },
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
             ),
-            baseline_source=baseline_path.read_text(encoding="utf-8"),
             source_suffix=".py",
             entrypoint="kernel_fn",
-            min_relative_improvement=0.05,
-            require_confidence=True,
-            max_p95_regression=0.05,
-            max_environment_drift=0.10,
-            max_peak_memory_fraction=0.80,
-            target_reference_speedup=2.0,
-            precision_profile=profile.name,
-            proposal_cap=MAX_PROPOSALS,
-            familywise_alpha=0.05,
-        ),
-        generator,
-        primary_evaluator,
-        profile_output_root(args.output, profile.name),
-        run_id=run_id,
-        confirmation_fn=confirm,
-        sealed_audit_root=sealed_audit_root,
-    )
+            cancellation_requested=lambda: (output_namespace / run_id / "control" / "stop.json").is_file(),
+        )
+    else:
+        generator = MailboxGenerator(
+            mailbox,
+            timeout_seconds=args.candidate_wait_timeout,
+            cancellation_requested=lambda: (output_namespace / run_id / "control" / "stop.json").is_file(),
+        )
     baseline = _candidate(baseline_path.read_text(encoding="utf-8"))
+    runtime_manifest = runtime.manifest()
+    primary_benchmark = primary_evaluator.manifest()
+    confirmation_benchmarks = tuple(evaluator.manifest() for evaluator in confirmation_evaluators)
+    confirmation_contract = {
+        "schema_version": "autocontext.kernel-h100-confirmation-contract/v1",
+        "docker_runtime": runtime_manifest,
+        "plans": [
+            {
+                "plan_index": plan_index,
+                "plan_commitment": commitment,
+                "benchmark": benchmark,
+                "authority_identity": authority_identities[commitment],
+            }
+            for plan_index, (commitment, benchmark) in enumerate(
+                zip(confirmation_commitments, confirmation_benchmarks, strict=True)
+            )
+        ],
+    }
+    confirmation_identity = content_digest(
+        json.dumps(confirmation_contract, sort_keys=True, separators=(",", ":"))
+    )
     campaign_config = {
-        "schema_version": "autocontext.kernel-mailbox-campaign/v2",
+        "schema_version": "autocontext.kernel-campaign/v4",
         "run_id": run_id,
         "problem_id": PROBLEM_ID,
         "precision_profile": profile.name,
-        "profile_output_namespace": str(profile_output_root(args.output, profile.name)),
+        "profile_output_namespace": str(output_namespace),
         "proposals_requested": args.proposals,
         "hard_proposal_cap": MAX_PROPOSALS,
         "sequential_testing": {
@@ -893,6 +1122,14 @@ def main() -> None:
         "primary_private_plan_commitment": primary_commitment,
         "confirmation_private_plan_commitments": list(confirmation_commitments),
         "candidate_wait_timeout_seconds": args.candidate_wait_timeout,
+        "generator": {
+            "kind": args.generator,
+            "provider": args.generation_provider if args.generator == "provider" else "mailbox",
+            "model": getattr(generator, "model", None),
+            "transport_identity": getattr(generator, "transport_identity", None),
+            "generation_budget_id": generation_budget.budget_id,
+            "generation_budget": generation_budget.model_dump(mode="json"),
+        },
         "baseline_path": str(baseline_path),
         "artifact_identity_version": baseline.artifact_identity_version,
         "baseline_artifact_digest": baseline.artifact_digest,
@@ -900,58 +1137,189 @@ def main() -> None:
         "mailbox": str(mailbox),
         "sealed_confirmation_audit": {
             "schema_version": "autocontext.kernel-sealed-audit-boundary/v1",
+            "root_identity": content_digest(str(sealed_audit_root)),
             "available_to_adaptive_generator": False,
             "published_after_terminal": True,
         },
-        "docker_runtime": runtime.manifest(),
-        "primary_benchmark": primary_evaluator.manifest(),
-        "confirmation_benchmarks": [evaluator.manifest() for evaluator in confirmation_evaluators],
+        "docker_runtime": runtime_manifest,
+        "primary_benchmark": primary_benchmark,
+        "confirmation_benchmarks": list(confirmation_benchmarks),
+        "confirmation_identity": confirmation_identity,
+        "confirmation_contract": confirmation_contract,
     }
-    _atomic_json(runner.run_dir / "campaign_config.json", campaign_config)
-    _atomic_json(mailbox / "campaign_config.json", campaign_config)
-    _atomic_json(mailbox / "campaign_status.json", {**campaign_config, "status": "running"})
-    _install_sigterm_interrupt()
+    run_dir = output_namespace / run_id
+    invocation_lock = output_namespace / ".kernel-h100-invocation-locks" / f"{run_id}.lock"
 
-    try:
-        result = runner.run(proposals=args.proposals)
-        profile_evidence = _build_profile_evidence(
-            result=result,
+    with advisory_path_lock(invocation_lock):
+        if args.resume:
+            _require_exact_json(
+                run_dir / "campaign_config.json",
+                campaign_config,
+                label="resumed run campaign config",
+            )
+            _require_exact_json(
+                mailbox / "campaign_config.json",
+                campaign_config,
+                label="resumed mailbox campaign config",
+            )
+        else:
+            mailbox.mkdir(parents=True, exist_ok=True)
+            if any(mailbox.iterdir()):
+                raise SystemExit(f"mailbox must be a new or empty directory: {mailbox}")
+
+        confirmation_schedule = _ConfirmationPlanSchedule(
+            run_dir,
             run_id=run_id,
-            precision_profile=profile.name,
-            primary_commitment=primary_commitment,
-            confirmation_commitments=confirmation_commitments,
-            runtime=runtime,
-            authority_identities=authority_identities,
+            plan_commitments=confirmation_commitments,
+            confirmation_identity=confirmation_identity,
+            proposal_limit=args.proposals,
         )
-        status = {
-            **campaign_config,
-            "status": "complete",
-            "champion_artifact_digest": result.champion_artifact_digest,
-            "champion_source_digest": result.champion_source_digest,
-            "champion_speedup_vs_reference": result.champion_speedup_vs_reference,
-            **_progress(runner.run_dir),
-        }
-        _atomic_json(runner.run_dir / "profile_evidence.json", profile_evidence)
-        _atomic_json(mailbox / "profile_evidence.json", profile_evidence)
-        # Publish `complete` only after all required evidence is validated and
-        # durably exported. Any failure above is reported by the handler below.
-        _atomic_json(mailbox / "campaign_status.json", status)
-    except KeyboardInterrupt:
-        status = {**campaign_config, "status": "interrupted", **_best_effort_progress(runner.run_dir)}
-        _atomic_json(mailbox / "campaign_status.json", status)
-        print(json.dumps(status, indent=2, sort_keys=True), file=sys.stderr, flush=True)
-        raise SystemExit(130) from None
-    except Exception as exc:
-        status = {
-            **campaign_config,
-            "status": "failed",
-            "error_type": type(exc).__name__,
-            "error": str(exc)[:1_000],
-            **_best_effort_progress(runner.run_dir),
-        }
-        _atomic_json(mailbox / "campaign_status.json", status)
-        raise
-    print(json.dumps(status, indent=2, sort_keys=True), flush=True)
+        runner: KernelEvolutionRunner
+
+        def confirm(candidate: KernelCandidate, incumbent: KernelCandidate) -> KernelBenchmarkObservation | None:
+            plan_index = confirmation_schedule.reserve(proposal_index=len(runner.attempts))
+            confirmation_evaluator = confirmation_evaluators[plan_index]
+            fresh_baseline = confirmation_evaluator.evaluate(incumbent, incumbent)
+            if not fresh_baseline.eligible:
+                return None
+            return confirmation_evaluator.evaluate(
+                candidate,
+                incumbent,
+                expected_scope_id=fresh_baseline.hardware_scope_id,
+                expected_baseline_id=fresh_baseline.baseline_id,
+                expected_protocol_id=fresh_baseline.protocol_id,
+            )
+
+        runner = KernelEvolutionRunner(
+            KernelEvolutionConfig(
+                problem_id=PROBLEM_ID,
+                task_prompt=(
+                    f"Optimize the complete Python/Triton kernel_fn(a, b) module under the host-owned {profile.name} "
+                    "matrix-multiplication profile on NVIDIA H100 SM90. Preserve all shapes, layouts, signs, "
+                    "magnitudes, cancellation behavior, dtype, and inputs. Return only the complete executable "
+                    "Python source without Markdown fences. The immutable benchmark's correctness and performance "
+                    "feedback is authoritative."
+                ),
+                baseline_source=baseline.source,
+                source_suffix=".py",
+                entrypoint="kernel_fn",
+                min_relative_improvement=0.05,
+                require_confidence=True,
+                max_p95_regression=0.05,
+                max_environment_drift=0.10,
+                max_peak_memory_fraction=0.80,
+                target_reference_speedup=2.0,
+                precision_profile=profile.name,
+                proposal_cap=MAX_PROPOSALS,
+                familywise_alpha=0.05,
+            ),
+            generator,
+            primary_evaluator,
+            output_namespace,
+            run_id=run_id,
+            confirmation_fn=confirm,
+            sealed_audit_root=sealed_audit_root,
+            generation_budget=generation_budget,
+            confirmation_identity=confirmation_identity,
+            resume=args.resume,
+        )
+        if args.resume:
+            resumable_status = read_kernel_campaign_status(
+                output_namespace,
+                run_id,
+                generation_budget=generation_budget,
+            )
+            # A complete kernel run is intentionally idempotent: runner.run()
+            # restores its summary so a failed outer evidence export can be
+            # retried without any provider or GPU dispatch.
+            if not resumable_status.can_resume and resumable_status.status != "complete":
+                detail = resumable_status.ambiguity or resumable_status.status
+                raise RuntimeError(f"kernel campaign cannot be resumed safely: {detail}")
+        else:
+            _write_immutable_json(
+                runner.run_dir / "campaign_config.json",
+                campaign_config,
+                label="run campaign config",
+            )
+            _write_immutable_json(
+                mailbox / "campaign_config.json",
+                campaign_config,
+                label="mailbox campaign config",
+            )
+        running_status = {**campaign_config, "status": "running", **_best_effort_progress(runner.run_dir)}
+        _atomic_json(runner.run_dir / "campaign_status.json", running_status)
+        _atomic_json(mailbox / "campaign_status.json", running_status)
+        _install_sigterm_interrupt()
+
+        try:
+            result = runner.run(proposals=args.proposals)
+            profile_evidence = _build_profile_evidence(
+                result=result,
+                run_id=run_id,
+                precision_profile=profile.name,
+                primary_commitment=primary_commitment,
+                confirmation_commitments=confirmation_commitments,
+                runtime=runtime,
+                authority_identities=authority_identities,
+            )
+            status = {
+                **campaign_config,
+                "status": "complete",
+                "champion_artifact_digest": result.champion_artifact_digest,
+                "champion_source_digest": result.champion_source_digest,
+                "champion_speedup_vs_reference": result.champion_speedup_vs_reference,
+                **_progress(runner.run_dir),
+            }
+            _write_immutable_json(
+                runner.run_dir / "profile_evidence.json",
+                profile_evidence,
+                label="run profile evidence",
+            )
+            _write_immutable_json(
+                mailbox / "profile_evidence.json",
+                profile_evidence,
+                label="mailbox profile evidence",
+            )
+            kernel_status = read_kernel_campaign_status(
+                output_namespace,
+                run_id,
+                generation_budget=generation_budget,
+            )
+            if kernel_status.status != "complete":
+                raise RuntimeError("kernel runner did not publish a complete terminal manifest")
+            # Publish `complete` only after all required evidence is validated
+            # and durably exported to both operator-visible locations.
+            _atomic_json(runner.run_dir / "campaign_status.json", status)
+            _atomic_json(mailbox / "campaign_status.json", status)
+        except KernelGenerationCancelled as exc:
+            status = {
+                **campaign_config,
+                "status": "cancelled",
+                "reason": str(exc)[:1_000],
+                **_best_effort_progress(runner.run_dir),
+            }
+            _atomic_json(runner.run_dir / "campaign_status.json", status)
+            _atomic_json(mailbox / "campaign_status.json", status)
+            print(json.dumps(status, indent=2, sort_keys=True), flush=True)
+            raise SystemExit(0) from None
+        except KeyboardInterrupt:
+            status = {**campaign_config, "status": "interrupted", **_best_effort_progress(runner.run_dir)}
+            _atomic_json(runner.run_dir / "campaign_status.json", status)
+            _atomic_json(mailbox / "campaign_status.json", status)
+            print(json.dumps(status, indent=2, sort_keys=True), file=sys.stderr, flush=True)
+            raise SystemExit(130) from None
+        except Exception as exc:
+            status = {
+                **campaign_config,
+                "status": "failed",
+                "error_type": type(exc).__name__,
+                "error": str(exc)[:1_000],
+                **_best_effort_progress(runner.run_dir),
+            }
+            _atomic_json(runner.run_dir / "campaign_status.json", status)
+            _atomic_json(mailbox / "campaign_status.json", status)
+            raise
+        print(json.dumps(status, indent=2, sort_keys=True), flush=True)
 
 
 if __name__ == "__main__":

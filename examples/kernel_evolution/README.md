@@ -22,6 +22,9 @@ host-owned problem profile whose seed/order commitment differs while every
 correctness, tolerance, trial-count, warmup, and timing field remains compatible.
 Inspect the printed run directory for the manifest, exact content-addressed
 sources, primary and confirmation reports, append-only lineage, and champion.
+The production runner also accepts typed provider-backed generation receipts,
+durable token/cost/retry/wall budgets, operator stop/status, and lineage-verified
+resume; see the main kernel evolution guide for the API.
 
 For a pinned live comparison on an NVIDIA H100, use the
 [KernelBench L1/P1 H100 example](kernelbench_h100/README.md). Its trusted-only
