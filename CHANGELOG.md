@@ -6,6 +6,19 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Kernel evolution can now compose bounded studies across variable-shape
+  matmul, fused elementwise/reduction, and causal-attention families while
+  reusing the existing evaluator, confirmation, promotion, lineage, and
+  generation-budget contracts. Versioned workload specifications bind trusted
+  references, primary/fresh-confirmation protocols, required correctness
+  slices, case floors, and per-family proposal/token/cost/wall budgets. Study
+  receipts keep each workload visible, record cross-shape, cross-hardware, and
+  cross-family transfer trials, distinguish portable/partial/specialist/plateau
+  outcomes, and reject aggregate portability claims when any required target
+  fails or remains untested. A deterministic three-family example exercises the
+  contract without claiming synthetic latencies as accelerator evidence
+  (AC-996).
+
 - Prime accelerator execution is now reachable through an explicit,
   provider-neutral capability contract. App settings and campaign plans bind
   accelerator type/count, immutable image, region, and required telemetry into

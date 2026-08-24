@@ -94,6 +94,14 @@ Controlled component trials feed
 [ablation-backed attribution](docs/context-attribution.md), so prompt selection
 can demote low-value context without presenting edit-size correlation as causal.
 
+Python kernel evolution can also compose bounded studies across variable-shape
+matmul, fused elementwise/reduction, and causal-attention families. Each family
+retains independent primary/confirmation evidence and per-case floors;
+cross-shape, cross-hardware, and cross-family trials distinguish portable,
+partially transferring, specialist, and plateau outcomes without an aggregate
+score hiding a failed workload. See the
+[kernel evolution guide](autocontext/docs/kernel-evolution.md#multi-workload-studies).
+
 ## Core Surfaces
 
 | Surface       | Command                                                 | Use it for                                              |

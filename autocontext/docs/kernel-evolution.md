@@ -204,6 +204,56 @@ Each new proposal's parent is the current champion, not the most recent
 rejected attempt, and the final summary reports the champion rather than the
 last trial.
 
+## Multi-workload studies
+
+`KernelWorkloadStudyReport` composes completed kernel runs without replacing
+their trusted evaluator or inventing a cross-workload scalar score. Each
+`KernelWorkloadSpec` pins one problem, workload-family and reference digest,
+primary protocol, reserved fresh-confirmation protocols, compatibility family,
+required correctness slices, case floor, transfer dimensions, task prompt,
+and proposal/token/cost/wall budget. `KernelWorkloadRunEvidence` then binds the
+final champion to independently measured primary and confirmation reports plus
+the durable generation-budget state.
+
+Promoted champions can be re-evaluated with
+`build_kernel_transfer_evidence()` on another shape profile, execution
+environment, or workload family. A study classifies the result as:
+
+- `portable` only when the champion passes every workload and covers the
+  required shape, hardware, and workload-family dimensions;
+- `cross-workload` when it transfers beyond its source but not everywhere;
+- `specialist` when target correctness or per-case floors fail; or
+- `unconfirmed` when required target evidence is missing.
+
+Plateaus remain explicit per-workload outcomes. Derived transfer lessons and
+regressions are replayed from the underlying trials; callers cannot edit the
+summary independently. Protocol, reference, family, environment, required
+slice, floor, and budget mismatches fail report validation. Consequently,
+`portable_champion_artifact_digests` cannot contain a candidate with a failed
+or untested target.
+
+The runnable conformance study needs no GPU:
+
+```bash
+cd autocontext
+uv run --frozen python ../examples/kernel_evolution/multi_workload/run.py
+```
+
+It runs variable-shape matrix multiplication, fused bias/GELU/reduction, and
+causal attention through the same runner/report/confirmation/lineage path. It
+also performs target-family and second-hardware-identity evaluations. The
+adapter and timings are deliberately synthetic; the output proves control and
+evidence contracts, not accelerator effectiveness.
+
+For a production study, keep the exact case material and confirmation order in
+worker-private plans while publishing their commitments. Pin every trusted
+reference, evaluator build, runtime image, and resolved accelerator identity;
+reserve one fresh confirmation profile per adaptive look; require protected
+OS/process authority and resource telemetry; and place the family-specific
+proposal, token, cost, and wall ceilings in the immutable study manifest. Raw
+per-workload and transfer receipts must be published alongside the study so
+specialists, regressions, and stalled searches remain inspectable.
+
 ## Durable autonomous campaigns
 
 Production generators should return `KernelGenerationResult`, normally through
@@ -721,11 +771,13 @@ the structured contract and keep all evaluator-controlled inputs outside
 candidate control. The synthetic adapter in the example is a reference for the
 I/O boundary, not for CUDA measurement methodology.
 
-This MVP is intentionally Python-first and library-only: it adds no public CLI,
-island/concurrent GPU search, cross-hardware champion transfer, or TypeScript
-surface. Its lineage root is a standalone artifact directory and is not yet
-indexed by `autoctx status`, mirrored through `ArtifactStore`, or discoverable
-through the run API.
+This surface is intentionally Python-first and library-only: it adds no public
+CLI, island/concurrent GPU search, or TypeScript execution surface. The study
+layer can record cross-hardware transfer evidence, but the bundled example is
+synthetic and the protected production H100 path remains fail-closed. Its
+lineage root is a standalone artifact directory and is not yet indexed by
+`autoctx status`, mirrored through `ArtifactStore`, or discoverable through the
+run API.
 
 Bounded searches set `proposal_cap` and `familywise_alpha`. AutoContext rejects
 requests above the cap before benchmarking, uses the actual Bonferroni-adjusted

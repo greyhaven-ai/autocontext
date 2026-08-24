@@ -26,6 +26,14 @@ The production runner also accepts typed provider-backed generation receipts,
 durable token/cost/retry/wall budgets, operator stop/status, and lineage-verified
 resume; see the main kernel evolution guide for the API.
 
+The [multi-workload study](multi_workload/README.md) composes the same runner
+and evaluator contract across variable-shape matmul, fused
+elementwise/reduction, and causal-attention families. It emits independent
+primary/confirmation evidence and explicit cross-shape, cross-hardware, and
+cross-family transfer classifications without collapsing failures into an
+aggregate score. The bundled study adapter is synthetic contract evidence, not
+accelerator performance data.
+
 For a pinned live comparison on an NVIDIA H100, use the
 [KernelBench L1/P1 H100 example](kernelbench_h100/README.md). Its trusted-only
 control smoke preserves the historical comparison. Its Docker production

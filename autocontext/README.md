@@ -189,7 +189,8 @@ Detailed setup moved out of this README:
 - Sandbox/executor notes: [docs/sandbox.md](docs/sandbox.md)
 - Extension hooks: [docs/extensions.md](docs/extensions.md)
 - Correctness-first external kernel evolution, including durable autonomous
-  provider campaigns and resume: [docs/kernel-evolution.md](docs/kernel-evolution.md)
+  provider campaigns, resume, and fail-closed multi-workload transfer studies:
+  [docs/kernel-evolution.md](docs/kernel-evolution.md)
 
 ## Contract probes
 
