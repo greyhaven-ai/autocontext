@@ -213,6 +213,33 @@ def test_production_campaign_has_no_same_interpreter_override(runtime_modules: t
     assert '"report": observation.report' not in control_source
 
 
+def test_mailbox_generator_stop_and_resume_reuse_the_exact_claim(
+    tmp_path: Path,
+    runtime_modules: tuple[Any, Any],
+) -> None:
+    _production_runtime, campaign = runtime_modules
+    mailbox = tmp_path / "mailbox"
+    mailbox.mkdir()
+    stopped = campaign.MailboxGenerator(
+        mailbox,
+        timeout_seconds=1.0,
+        cancellation_requested=lambda: True,
+    )
+
+    with pytest.raises(campaign.KernelGenerationCancelled):
+        stopped("exact recursive prompt", 0)
+
+    source = "def kernel_fn(a, b):\n    return a @ b\n"
+    (mailbox / "candidate_0.py").write_text(source, encoding="utf-8")
+    resumed = campaign.MailboxGenerator(mailbox, timeout_seconds=1.0)
+    result = resumed("exact recursive prompt", 0)
+
+    assert result.source == source
+    assert result.provider == "mailbox"
+    assert result.model == "operator-supplied"
+    assert (mailbox / "accepted_candidate_0.json").is_file()
+
+
 def test_control_smoke_loads_all_contract_modules() -> None:
     source_root = Path(__file__).resolve().parents[1] / "src"
     script = """
@@ -370,6 +397,11 @@ def test_campaign_fails_before_creating_mailbox_or_launching_worker(
     monkeypatch.setattr(campaign, "_validate_confirmation_schedule", lambda *args, **kwargs: None)
     monkeypatch.setattr(campaign, "_make_evaluator", lambda **kwargs: object())
     monkeypatch.setattr(
+        campaign,
+        "create_provider",
+        lambda *args, **kwargs: pytest.fail("provider credentials resolved before protected preflight"),
+    )
+    monkeypatch.setattr(
         sys,
         "argv",
         [
@@ -404,6 +436,8 @@ def test_campaign_fails_before_creating_mailbox_or_launching_worker(
             str(confirmation_plan),
             "--proposals",
             "1",
+            "--generator",
+            "provider",
         ],
     )
 

@@ -29,6 +29,8 @@ for scenario authoring and `autoctx serve mcp` for MCP clients.
 - [Provider-neutral remote execution sessions](remote-execution-sessions.md)
 - [Persistent host worker](../autocontext/docs/persistent-host.md)
 - [Correctness-first external kernel evolution](../autocontext/docs/kernel-evolution.md)
+  — including typed provider generation, durable budgets, status/stop, and
+  crash-safe resume.
 - [MLX host training notes](../autocontext/docs/mlx-training.md)
 - [Case study: recursive loop closed on local MLX](../autocontext/docs/case-study-recursive-loop.md)
 

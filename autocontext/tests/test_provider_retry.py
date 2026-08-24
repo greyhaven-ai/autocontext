@@ -21,6 +21,19 @@ class TestProviderRegistryRetry:
         )
         assert isinstance(provider, RetryProvider)
 
+    def test_create_provider_can_disable_transport_retries_for_durable_callers(self) -> None:
+        from autocontext.providers.registry import create_provider
+        from autocontext.providers.retry import RetryProvider
+
+        provider = create_provider(
+            provider_type="anthropic",
+            api_key="sk-test",
+            max_retries=0,
+        )
+
+        assert isinstance(provider, RetryProvider)
+        assert provider.max_retries == 0
+
     def test_ollama_provider_returns_retry_wrapped(self) -> None:
         """Ollama uses OpenAI-compatible — skip if openai not installed."""
         import pytest

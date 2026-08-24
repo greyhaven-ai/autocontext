@@ -6,6 +6,14 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Kernel evolution now supports provider-registry-backed autonomous campaigns
+  with exact source/provenance receipts, fail-closed response validation,
+  deterministic proposal/retry/token/cost/wall budgets, control-plane-only
+  credentials, operator status/stop, indexed campaign artifacts, and
+  content-addressed crash-safe resume. Durable pre-dispatch claims prevent a
+  restart from duplicating an ambiguous paid provider call or GPU attempt;
+  mailbox generation remains available as the manual fallback (AC-995).
+
 - Kernel promotion now has a versioned v4 finite-sample evidence family. Eight
   pre-registered balanced paired blocks use a fixed sign e-process, and a
   ten-proposal Bonferroni budget gives exact per-look and familywise bounds of

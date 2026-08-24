@@ -16,6 +16,7 @@ from autocontext.kernel_evolution.models import (
     KernelCandidate,
     KernelEvolutionResult,
     canonical_digest,
+    content_digest,
     kernel_benchmark_report_digest,
 )
 from autocontext.util.file_lock import append_bytes_locked
@@ -44,13 +45,18 @@ class KernelLineageStore:
         *,
         sealed_audit_root: Path | None = None,
         quarantine_primary_evidence: bool = False,
+        resume: bool = False,
     ) -> None:
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", run_id) or ".." in run_id:
             raise ValueError("run_id must be a safe path segment")
         self.run_id = run_id
         self.run_dir = root / run_id
-        if self.run_dir.exists() and any(self.run_dir.iterdir()):
-            raise FileExistsError(f"kernel run directory is not empty; resume is not supported: {self.run_dir}")
+        populated = self.run_dir.exists() and any(self.run_dir.iterdir())
+        if resume:
+            if not populated:
+                raise FileNotFoundError(f"kernel run directory does not contain resumable state: {self.run_dir}")
+        elif populated:
+            raise FileExistsError(f"kernel run directory is not empty: {self.run_dir}")
         self.run_dir.mkdir(parents=True, exist_ok=True)
         self._lineage_path = self.run_dir / "lineage.jsonl"
         self._quarantine_primary_evidence = quarantine_primary_evidence
@@ -58,7 +64,13 @@ class KernelLineageStore:
         if sealed_audit_root is not None:
             audit_segment = canonical_digest({"run_id": run_id}).removeprefix("sha256:")
             self._sealed_audit_dir = sealed_audit_root / audit_segment
-            self._sealed_audit_dir.mkdir(parents=True, exist_ok=False, mode=0o700)
+            if resume:
+                if not self._sealed_audit_dir.is_dir():
+                    raise FileNotFoundError(
+                        f"sealed adaptive evidence is required to resume this run: {self._sealed_audit_dir}"
+                    )
+            else:
+                self._sealed_audit_dir.mkdir(parents=True, exist_ok=False, mode=0o700)
             if os.name != "nt":
                 self._sealed_audit_dir.chmod(0o700)
 
@@ -183,16 +195,157 @@ class KernelLineageStore:
     def write_summary(self, result: KernelEvolutionResult) -> None:
         write_text_atomic(self.run_dir / "summary.json", result.model_dump_json(indent=2))
 
+    def read_manifest(self) -> dict[str, Any]:
+        path = self.run_dir / "manifest.json"
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict) or payload.get("run_id") != self.run_id:
+            raise ValueError("kernel run manifest identity is invalid")
+        return payload
+
+    def read_attempts(self) -> list[KernelAttemptRecord]:
+        """Load full attempt evidence and verify public lineage/audit bindings."""
+        if not self._lineage_path.is_file():
+            return []
+        lines = self._lineage_path.read_text(encoding="utf-8").splitlines()
+        attempts: list[KernelAttemptRecord] = []
+        for line_number, line in enumerate(lines, start=1):
+            try:
+                public = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"kernel lineage line {line_number} is invalid JSON") from exc
+            if not isinstance(public, dict):
+                raise ValueError(f"kernel lineage line {line_number} must be an object")
+            attempt_id = public.get("attempt_id")
+            if not isinstance(attempt_id, str):
+                raise ValueError(f"kernel lineage line {line_number} has no attempt identity")
+            attempt_path = self.run_dir / "attempts" / f"{attempt_id}.json"
+            if not attempt_path.is_file():
+                raise ValueError(f"kernel lineage attempt file is missing: {attempt_id}")
+            persisted_public = json.loads(attempt_path.read_text(encoding="utf-8"))
+            if persisted_public != public:
+                raise ValueError(f"kernel lineage and attempt file disagree: {attempt_id}")
+            attempt = self._validated_attempt(public, attempt_id)
+            self._validate_attempt_artifacts(attempt)
+            attempts.append(attempt)
+        generations = [attempt.generation for attempt in attempts]
+        if generations != list(range(len(attempts))):
+            raise ValueError("kernel lineage generations must be contiguous from zero")
+        return attempts
+
+    def reconcile_attempt_files(self, *, expected_attempt_ids: set[str]) -> None:
+        """Append fully persisted deterministic attempts missing only their lineage line."""
+        self.read_attempts()
+        lines = self._lineage_path.read_text(encoding="utf-8").splitlines() if self._lineage_path.is_file() else []
+        lineage_ids: set[str] = set()
+        for line_number, line in enumerate(lines, start=1):
+            try:
+                public = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"kernel lineage line {line_number} is invalid JSON") from exc
+            attempt_id = public.get("attempt_id") if isinstance(public, dict) else None
+            if not isinstance(attempt_id, str) or attempt_id in lineage_ids:
+                raise ValueError("kernel lineage contains an invalid or duplicate attempt identity")
+            lineage_ids.add(attempt_id)
+
+        orphans: list[tuple[int, dict[str, Any]]] = []
+        for path in sorted((self.run_dir / "attempts").glob("*.json")):
+            if path.stem in lineage_ids:
+                continue
+            public = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(public, dict) or public.get("attempt_id") != path.stem:
+                raise ValueError(f"orphan kernel attempt identity is invalid: {path.name}")
+            if path.stem not in expected_attempt_ids:
+                raise ValueError(f"orphan kernel attempt has no durable evaluation claim: {path.name}")
+            attempt = self._validated_attempt(public, path.stem)
+            self._validate_attempt_artifacts(attempt)
+            orphans.append((attempt.generation, public))
+
+        orphans.sort(key=lambda item: item[0])
+        expected_generations = list(range(len(lines), len(lines) + len(orphans)))
+        if [generation for generation, _public in orphans] != expected_generations:
+            raise ValueError("orphan kernel attempts do not form the exact next lineage suffix")
+        for _generation, public in orphans:
+            encoded_line = (json.dumps(public, separators=(",", ":")) + "\n").encode("utf-8")
+            append_bytes_locked(self._lineage_path, encoded_line)
+
+    def _validated_attempt(self, public: dict[str, Any], attempt_id: str) -> KernelAttemptRecord:
+        payload: Any = public
+        if public.get("schema_version") == "autocontext.kernel-lineage-public/v4":
+            sealed = self._read_sealed_attempt(attempt_id)
+            expected_digest = public.get("confirmation_audit_digest")
+            if not isinstance(expected_digest, str) or canonical_digest(sealed) != expected_digest:
+                raise ValueError(f"sealed adaptive evidence digest changed: {attempt_id}")
+            payload = sealed.get("attempt")
+            if not isinstance(payload, dict):
+                raise ValueError(f"sealed adaptive evidence is incomplete: {attempt_id}")
+        attempt = KernelAttemptRecord.model_validate(payload)
+        if attempt.run_id != self.run_id or attempt.attempt_id != attempt_id:
+            raise ValueError(f"kernel attempt identity changed: {attempt_id}")
+        return attempt
+
+    def _validate_attempt_artifacts(self, attempt: KernelAttemptRecord) -> None:
+        self.read_candidate(attempt)
+        if attempt.report_digest is None:
+            return
+        report_path = self.run_dir / "reports" / (
+            f"{attempt.report_digest.removeprefix('sha256:')}.json"
+        )
+        if report_path.is_file():
+            if content_digest(report_path.read_bytes()) != attempt.report_digest:
+                raise ValueError(f"kernel report artifact changed: {attempt.report_digest}")
+        elif not self._quarantine_primary_evidence:
+            raise ValueError(f"kernel report artifact is missing: {attempt.report_digest}")
+
+    def read_candidate(self, record: KernelAttemptRecord) -> KernelCandidate:
+        path = self.run_dir / "artifacts" / f"{record.artifact_digest.removeprefix('sha256:')}{record.source_suffix}"
+        if not path.is_file():
+            raise ValueError(f"kernel candidate artifact is missing: {record.artifact_digest}")
+        candidate = KernelCandidate(
+            source=path.read_bytes().decode("utf-8"),
+            source_suffix=record.source_suffix,
+            entrypoint=record.entrypoint,
+        )
+        if candidate.artifact_digest != record.artifact_digest or candidate.source_digest != record.source_digest:
+            raise ValueError(f"kernel candidate artifact changed: {record.artifact_digest}")
+        return candidate
+
+    def read_summary(self) -> KernelEvolutionResult | None:
+        path = self.run_dir / "summary.json"
+        if not path.is_file():
+            return None
+        return KernelEvolutionResult.model_validate_json(path.read_text(encoding="utf-8"))
+
+    def _read_sealed_attempt(self, attempt_id: str) -> dict[str, Any]:
+        candidates = []
+        if self._sealed_audit_dir is not None:
+            candidates.append(self._sealed_audit_dir / f"{attempt_id}.json")
+        candidates.append(self.run_dir / "audit" / "confirmation" / f"{attempt_id}.json")
+        for path in candidates:
+            if path.is_file():
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(payload, dict):
+                    return payload
+        raise ValueError(f"sealed adaptive evidence is unavailable: {attempt_id}")
+
     def release_sealed_audit(self) -> Path | None:
         """Publish confirmation audit material only after adaptive generation ends."""
 
         if self._sealed_audit_dir is None:
             return None
         destination = self.run_dir / "audit" / "confirmation"
-        destination.mkdir(parents=True, exist_ok=False)
-        for source in sorted(self._sealed_audit_dir.glob("*.json")):
+        destination.mkdir(parents=True, exist_ok=True)
+        sources = sorted(self._sealed_audit_dir.glob("*.json"))
+        expected_names = {source.name for source in sources}
+        observed_names = {path.name for path in destination.glob("*.json")}
+        if not observed_names <= expected_names:
+            raise RuntimeError("released confirmation audit contains an unknown record")
+        for source in sources:
             target = destination / source.name
-            shutil.copyfile(source, target)
+            if target.exists():
+                if target.read_bytes() != source.read_bytes():
+                    raise RuntimeError(f"released confirmation audit changed at {target}")
+            else:
+                shutil.copyfile(source, target)
             if os.name != "nt":
                 target.chmod(0o600)
         write_json(
@@ -200,7 +353,7 @@ class KernelLineageStore:
             {
                 "schema_version": "autocontext.kernel-audit-release/v1",
                 "status": "terminal",
-                "adaptive_evidence_records": len(tuple(destination.glob("*.json"))),
+                "adaptive_evidence_records": len(sources),
             },
         )
         return destination

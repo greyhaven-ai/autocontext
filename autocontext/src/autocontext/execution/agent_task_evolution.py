@@ -475,6 +475,7 @@ class AgentTaskEvolutionRunner:
         workspace_factory: Callable[[], EvolutionWorkspace] | None = None,
         workspace_evaluate_fn: WorkspaceEvaluateFn | None = None,
         promotion_fn: PromotionFn | None = None,
+        preserve_generated_output: bool = False,
     ) -> None:
         if workspace_evaluate_fn is not None and workspace_factory is None:
             raise ValueError("workspace_evaluate_fn requires a workspace_factory")
@@ -487,6 +488,7 @@ class AgentTaskEvolutionRunner:
         self._workspace_factory = workspace_factory
         self._workspace_evaluate_fn = workspace_evaluate_fn
         self._promotion_fn = promotion_fn
+        self._preserve_generated_output = preserve_generated_output
 
     def run_generation(
         self,
@@ -512,8 +514,13 @@ class AgentTaskEvolutionRunner:
         if state.generation == 0 and self._initial_output:
             candidate_output = self._initial_output
         else:
-            candidate_output = self._generate_fn(prompt, state.generation).strip()
-            if not candidate_output:
+            generated_output = self._generate_fn(prompt, state.generation)
+            candidate_output = (
+                generated_output
+                if self._preserve_generated_output
+                else generated_output.strip()
+            )
+            if not candidate_output.strip():
                 candidate_output = state.best_output
 
         if self._slot is not None:
@@ -531,7 +538,13 @@ class AgentTaskEvolutionRunner:
         if self._slot is not None:
             evaluated_output = candidate_output
         else:
-            evaluated_output = evaluation.output.strip() or candidate_output
+            evaluated_output = (
+                evaluation.output
+                if self._preserve_generated_output
+                else evaluation.output.strip()
+            )
+            if not evaluated_output.strip():
+                evaluated_output = candidate_output
 
         judge_result = AgentTaskResult(
             score=evaluation.score,

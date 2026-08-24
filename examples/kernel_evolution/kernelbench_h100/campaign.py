@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Run a bounded, mailbox-driven H100 kernel evolution campaign.
+"""Run a bounded, autonomous or mailbox-driven H100 kernel campaign.
 
 From the ``autocontext/`` Python package directory, see ``README.md`` for the
-full command. The generator writes AutoContext's exact recursive prompt to a
-mailbox, prints it for detached logs, and waits for an operator-authored
-``candidate_N.py`` response, numbered from zero.
+full commands. Provider mode uses AutoContext's provider registry with durable
+per-call accounting. Mailbox mode writes the exact recursive prompt and waits
+for an operator-authored ``candidate_N.py`` response, numbered from zero.
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ import signal
 import sys
 import time
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from types import FrameType
 from typing import Any
@@ -48,15 +49,23 @@ from autocontext.kernel_evolution import (
     KernelEvolutionConfig,
     KernelEvolutionResult,
     KernelEvolutionRunner,
+    KernelGenerationBudget,
+    KernelGenerationCancelled,
+    KernelGenerationResult,
     KernelSequentialTestingPolicy,
     KernelStatisticsPolicy,
+    ProviderKernelGenerator,
+    build_generation_result,
     build_profile_evidence_envelope,
     calibrate_kernel_promotion,
     content_digest,
     read_authority_hmac_secret,
+    read_kernel_campaign_status,
     verify_authority_receipt,
     verify_profile_evidence_envelope,
 )
+from autocontext.providers.base import CompletionResult
+from autocontext.providers.registry import create_provider
 
 PROBLEM_ID = "kernelbench-v0.1-level1-1-matmul-profiled-h100-v1"
 MAX_PROPOSALS = 10
@@ -92,6 +101,16 @@ def _positive_int(raw: str) -> int:
         raise argparse.ArgumentTypeError("value must be an integer") from exc
     if value < 1:
         raise argparse.ArgumentTypeError("value must be positive")
+    return value
+
+
+def _non_negative_int(raw: str) -> int:
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("value must be an integer") from exc
+    if value < 0:
+        raise argparse.ArgumentTypeError("value must be non-negative")
     return value
 
 
@@ -139,58 +158,92 @@ def _candidate(source: str) -> KernelCandidate:
     return KernelCandidate(source=source, source_suffix=".py", entrypoint="kernel_fn")
 
 
-class VerbatimSource(str):
-    """Keep byte-addressed source intact through generic text normalization."""
-
-    def strip(self, chars: str | None = None) -> str:
-        if chars is None:
-            return self
-        return super().strip(chars)
-
-
 class MailboxGenerator:
     """Persist each recursive prompt and wait for one stable source file."""
 
-    def __init__(self, mailbox: Path, *, timeout_seconds: float) -> None:
+    provider_id = "mailbox"
+    model = "operator-supplied"
+    system_prompt = "Operator mailbox source generation."
+    supports_claim_resume = True
+
+    def __init__(
+        self,
+        mailbox: Path,
+        *,
+        timeout_seconds: float,
+        cancellation_requested: Callable[[], bool] | None = None,
+    ) -> None:
         self._mailbox = mailbox
         self._timeout_seconds = timeout_seconds
+        self._cancelled = cancellation_requested or (lambda: False)
+        self.transport_identity = content_digest(str(mailbox.resolve()))
 
-    def __call__(self, prompt: str, generation: int) -> str:
+    def __call__(self, prompt: str, generation: int) -> KernelGenerationResult:
         number = generation
         prompt_path = self._mailbox / f"prompt_{number}.md"
         candidate_path = self._mailbox / f"candidate_{number}.py"
         receipt_path = self._mailbox / f"accepted_candidate_{number}.json"
-        collisions = [path for path in (prompt_path, candidate_path, receipt_path) if path.exists() or path.is_symlink()]
-        if collisions:
-            names = ", ".join(path.name for path in collisions)
-            raise FileExistsError(f"mailbox contains stale generation {number} files: {names}")
+        if prompt_path.is_symlink() or (prompt_path.exists() and not prompt_path.is_file()):
+            raise ValueError(f"prompt mailbox path must be a regular non-symlink file: {prompt_path}")
+        if prompt_path.exists():
+            if prompt_path.read_bytes() != prompt.encode("utf-8"):
+                raise ValueError(f"resumed mailbox prompt changed for generation {number}")
+            print(f"resuming mailbox generation {number}; waiting for {candidate_path}", flush=True)
+        else:
+            if candidate_path.exists() or candidate_path.is_symlink() or receipt_path.exists() or receipt_path.is_symlink():
+                raise FileExistsError(f"mailbox generation {number} has candidate state without its prompt")
+            _atomic_text(prompt_path, prompt)
+            print(f"\n===== AUTOCONTEXT KERNEL PROMPT {number} ({prompt_path}) =====", flush=True)
+            print(prompt, flush=True)
+            print(f"===== END PROMPT {number}; WAITING FOR {candidate_path} =====\n", flush=True)
 
-        _atomic_text(prompt_path, prompt)
-        print(f"\n===== AUTOCONTEXT KERNEL PROMPT {number} ({prompt_path}) =====", flush=True)
-        print(prompt, flush=True)
-        print(f"===== END PROMPT {number}; WAITING FOR {candidate_path} =====\n", flush=True)
-
-        deadline = time.monotonic() + self._timeout_seconds
+        started = time.monotonic()
+        deadline = started + self._timeout_seconds
         while True:
+            if self._cancelled():
+                raise KernelGenerationCancelled(
+                    f"kernel campaign stop requested while waiting for {candidate_path}"
+                )
             if candidate_path.is_symlink():
                 raise ValueError(f"candidate mailbox file must not be a symlink: {candidate_path}")
             if candidate_path.exists():
                 source = self._read_stable_candidate(candidate_path, deadline=deadline)
                 candidate = _candidate(source)
-                _atomic_json(
-                    receipt_path,
-                    {
-                        "schema_version": "autocontext.kernel-mailbox-receipt/v2",
-                        "generation": number,
-                        "candidate_path": str(candidate_path),
-                        "artifact_identity_version": candidate.artifact_identity_version,
-                        "artifact_digest": candidate.artifact_digest,
-                        "source_digest": candidate.source_digest,
-                        "source_bytes": len(candidate.source_bytes),
-                    },
+                result = build_generation_result(
+                    proposal_index=generation + 1,
+                    provider=self.provider_id,
+                    model=self.model,
+                    system_prompt=self.system_prompt,
+                    prompt=prompt,
+                    completion=CompletionResult(
+                        text=source,
+                        model=self.model,
+                        cost_usd=0.0,
+                        stop_reason="operator-submitted",
+                    ),
+                    source_suffix=".py",
+                    entrypoint="kernel_fn",
+                    latency_seconds=max(0.0, time.monotonic() - started),
+                    max_source_bytes=MAX_CANDIDATE_BYTES,
                 )
+                mailbox_receipt = {
+                    "schema_version": "autocontext.kernel-mailbox-receipt/v2",
+                    "generation": number,
+                    "candidate_path": str(candidate_path),
+                    "artifact_identity_version": candidate.artifact_identity_version,
+                    "artifact_digest": candidate.artifact_digest,
+                    "source_digest": candidate.source_digest,
+                    "source_bytes": len(candidate.source_bytes),
+                }
+                if receipt_path.is_symlink() or (receipt_path.exists() and not receipt_path.is_file()):
+                    raise ValueError(f"mailbox receipt must be a regular non-symlink file: {receipt_path}")
+                if receipt_path.exists():
+                    if json.loads(receipt_path.read_text(encoding="utf-8")) != mailbox_receipt:
+                        raise ValueError(f"resumed mailbox receipt changed for generation {number}")
+                else:
+                    _atomic_json(receipt_path, mailbox_receipt)
                 print(f"accepted candidate {number}: {candidate.artifact_digest}", flush=True)
-                return VerbatimSource(source)
+                return result
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise TimeoutError(f"timed out after {self._timeout_seconds:g}s waiting for {candidate_path}")
@@ -695,10 +748,43 @@ def main() -> None:
         help="Fresh confirmation plan; repeat at least once per requested proposal",
     )
     parser.add_argument("--proposals", type=_bounded_proposals, default=3)
+    parser.add_argument(
+        "--generator",
+        choices=("provider", "mailbox"),
+        default="mailbox",
+        help="Use a provider-registry model or the operator mailbox fallback.",
+    )
+    parser.add_argument(
+        "--generation-provider",
+        default="anthropic",
+        help="Provider-registry transport used when --generator=provider.",
+    )
+    parser.add_argument("--generation-model", help="Provider model override.")
+    parser.add_argument("--generation-base-url", help="OpenAI-compatible provider base URL.")
+    parser.add_argument(
+        "--generation-max-retries",
+        type=_non_negative_int,
+        default=2,
+        help="Durably accounted retries per proposal.",
+    )
+    parser.add_argument("--generation-max-output-tokens", type=_positive_int, default=8_192)
+    parser.add_argument("--generation-max-input-tokens-total", type=_positive_int, default=200_000)
+    parser.add_argument("--generation-max-output-tokens-total", type=_positive_int, default=100_000)
+    parser.add_argument("--generation-max-tokens-total", type=_positive_int, default=300_000)
+    parser.add_argument("--generation-max-cost-usd", type=_positive_float, default=100.0)
+    parser.add_argument("--generation-max-wall-seconds", type=_positive_float, default=86_400.0)
     parser.add_argument("--candidate-wait-timeout", type=_bounded_timeout, default=3_600.0)
     parser.add_argument("--output", type=Path, default=Path("runs/kernel-evolution-h100"))
     parser.add_argument("--run-id")
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume the exact run ID after verifying its durable lineage and generation receipts.",
+    )
     args = parser.parse_args()
+
+    if args.resume and not args.run_id:
+        parser.error("--resume requires --run-id")
 
     profile = PROFILES[args.precision_profile]
     primary_plan_path = args.primary_private_plan.resolve()
@@ -777,6 +863,8 @@ def main() -> None:
     except ProductionEvaluatorBoundaryUnavailable as exc:
         raise SystemExit(str(exc)) from exc
 
+    run_id = args.run_id or f"kernel_h100_{profile.name}_{uuid.uuid4().hex}"
+    output_namespace = profile_output_root(args.output, profile.name)
     mailbox = args.mailbox.resolve()
     output_root = args.output.resolve()
     sealed_audit_root = args.sealed_audit_root.resolve()
@@ -826,13 +914,22 @@ def main() -> None:
         raise RuntimeError("protected evaluator omitted its host-computed authority identity")
 
     mailbox.mkdir(parents=True, exist_ok=True)
-    if any(mailbox.iterdir()):
+    if not args.resume and any(mailbox.iterdir()):
         raise SystemExit(f"mailbox must be a new or empty directory: {mailbox}")
 
-    confirmation_iterator = iter(confirmation_evaluators)
+    confirmation_cursor: int | None = None
 
     def confirm(candidate: KernelCandidate, incumbent: KernelCandidate) -> KernelBenchmarkObservation | None:
-        confirmation_evaluator = next(confirmation_iterator)
+        nonlocal confirmation_cursor
+        if confirmation_cursor is None:
+            confirmation_cursor = sum(
+                attempt.role == "candidate" and attempt.confirmation_observation is not None
+                for attempt in runner.attempts
+            )
+        if confirmation_cursor >= len(confirmation_evaluators):
+            raise RuntimeError("confirmation plan schedule is exhausted")
+        confirmation_evaluator = confirmation_evaluators[confirmation_cursor]
+        confirmation_cursor += 1
         fresh_baseline = confirmation_evaluator.evaluate(incumbent, incumbent)
         if not fresh_baseline.eligible:
             return None
@@ -844,8 +941,49 @@ def main() -> None:
             expected_protocol_id=fresh_baseline.protocol_id,
         )
 
-    run_id = args.run_id or f"kernel_h100_{profile.name}_{uuid.uuid4().hex}"
-    generator = MailboxGenerator(mailbox, timeout_seconds=args.candidate_wait_timeout)
+    generation_budget = KernelGenerationBudget(
+        proposal_cap=MAX_PROPOSALS,
+        max_retries_per_proposal=args.generation_max_retries,
+        max_output_tokens_per_call=args.generation_max_output_tokens,
+        max_total_input_tokens=args.generation_max_input_tokens_total,
+        max_total_output_tokens=args.generation_max_output_tokens_total,
+        max_total_tokens=args.generation_max_tokens_total,
+        max_cost_usd=args.generation_max_cost_usd,
+        max_wall_seconds=args.generation_max_wall_seconds,
+        max_source_bytes=MAX_CANDIDATE_BYTES,
+    )
+    if args.generator == "provider":
+        provider = create_provider(
+            args.generation_provider,
+            base_url=args.generation_base_url,
+            model=args.generation_model,
+            max_retries=0,
+        )
+        generator = ProviderKernelGenerator(
+            provider,
+            provider_id=args.generation_provider,
+            model=args.generation_model,
+            budget=generation_budget,
+            transport_identity=content_digest(
+                json.dumps(
+                    {
+                        "provider": args.generation_provider,
+                        "base_url": args.generation_base_url or "registry-default",
+                    },
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+            ),
+            source_suffix=".py",
+            entrypoint="kernel_fn",
+            cancellation_requested=lambda: (output_namespace / run_id / "control" / "stop.json").is_file(),
+        )
+    else:
+        generator = MailboxGenerator(
+            mailbox,
+            timeout_seconds=args.candidate_wait_timeout,
+            cancellation_requested=lambda: (output_namespace / run_id / "control" / "stop.json").is_file(),
+        )
     runner = KernelEvolutionRunner(
         KernelEvolutionConfig(
             problem_id=PROBLEM_ID,
@@ -871,18 +1009,20 @@ def main() -> None:
         ),
         generator,
         primary_evaluator,
-        profile_output_root(args.output, profile.name),
+        output_namespace,
         run_id=run_id,
         confirmation_fn=confirm,
         sealed_audit_root=sealed_audit_root,
+        generation_budget=generation_budget,
+        resume=args.resume,
     )
     baseline = _candidate(baseline_path.read_text(encoding="utf-8"))
     campaign_config = {
-        "schema_version": "autocontext.kernel-mailbox-campaign/v2",
+        "schema_version": "autocontext.kernel-campaign/v3",
         "run_id": run_id,
         "problem_id": PROBLEM_ID,
         "precision_profile": profile.name,
-        "profile_output_namespace": str(profile_output_root(args.output, profile.name)),
+        "profile_output_namespace": str(output_namespace),
         "proposals_requested": args.proposals,
         "hard_proposal_cap": MAX_PROPOSALS,
         "sequential_testing": {
@@ -893,6 +1033,14 @@ def main() -> None:
         "primary_private_plan_commitment": primary_commitment,
         "confirmation_private_plan_commitments": list(confirmation_commitments),
         "candidate_wait_timeout_seconds": args.candidate_wait_timeout,
+        "generator": {
+            "kind": args.generator,
+            "provider": args.generation_provider if args.generator == "provider" else "mailbox",
+            "model": getattr(generator, "model", None),
+            "generation_budget_id": generation_budget.budget_id,
+            "generation_budget": generation_budget.model_dump(mode="json"),
+        },
+        "resume": args.resume,
         "baseline_path": str(baseline_path),
         "artifact_identity_version": baseline.artifact_identity_version,
         "baseline_artifact_digest": baseline.artifact_digest,
@@ -933,9 +1081,20 @@ def main() -> None:
         }
         _atomic_json(runner.run_dir / "profile_evidence.json", profile_evidence)
         _atomic_json(mailbox / "profile_evidence.json", profile_evidence)
+        read_kernel_campaign_status(output_namespace, run_id)
         # Publish `complete` only after all required evidence is validated and
         # durably exported. Any failure above is reported by the handler below.
         _atomic_json(mailbox / "campaign_status.json", status)
+    except KernelGenerationCancelled as exc:
+        status = {
+            **campaign_config,
+            "status": "cancelled",
+            "reason": str(exc)[:1_000],
+            **_best_effort_progress(runner.run_dir),
+        }
+        _atomic_json(mailbox / "campaign_status.json", status)
+        print(json.dumps(status, indent=2, sort_keys=True), flush=True)
+        raise SystemExit(0) from None
     except KeyboardInterrupt:
         status = {**campaign_config, "status": "interrupted", **_best_effort_progress(runner.run_dir)}
         _atomic_json(mailbox / "campaign_status.json", status)

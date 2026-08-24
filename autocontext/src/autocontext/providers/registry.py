@@ -61,6 +61,8 @@ def create_provider(
     api_key: str | None = None,
     base_url: str | None = None,
     model: str | None = None,
+    *,
+    max_retries: int = 3,
 ) -> LLMProvider:
     """Create an LLM provider by type name.
 
@@ -70,6 +72,8 @@ def create_provider(
         api_key: API key for the provider.
         base_url: Base URL for OpenAI-compatible endpoints.
         model: Default model name.
+        max_retries: Transport retry count. Set to zero when a caller owns a
+            durable retry budget and must account for every provider call.
 
     Returns:
         An initialized LLMProvider instance.
@@ -78,6 +82,8 @@ def create_provider(
         ProviderError: If the provider type is unknown or configuration is invalid.
     """
     provider_type = provider_type.lower().strip()
+    if max_retries < 0:
+        raise ValueError("max_retries must be non-negative")
 
     # AC-917: refuse the subprocess runtimes here rather than letting them
     # start and dial out. They shell out to a third-party binary whose sockets
@@ -93,7 +99,8 @@ def create_provider(
             AnthropicProvider(
                 api_key=api_key or os.getenv("ANTHROPIC_API_KEY") or os.getenv("AUTOCONTEXT_ANTHROPIC_API_KEY"),
                 default_model_name=model or "claude-sonnet-5",
-            )
+            ),
+            max_retries=max_retries,
         )
 
     if provider_type in ("openai", "openai-compatible"):
@@ -105,7 +112,7 @@ def create_provider(
             "default_model_name": model or "gpt-5.6-terra",
             "base_url": resolve_provider_base_url(provider_type, base_url),
         }
-        return RetryProvider(OpenAICompatibleProvider(**kwargs))
+        return RetryProvider(OpenAICompatibleProvider(**kwargs), max_retries=max_retries)
 
     if provider_type == "openrouter":
         from autocontext.providers.openai_compat import OpenAICompatibleProvider
@@ -124,7 +131,8 @@ def create_provider(
                 ),
                 base_url=resolve_provider_base_url(provider_type, base_url),
                 default_model_name=model or "anthropic/claude-sonnet-5",
-            )
+            ),
+            max_retries=max_retries,
         )
 
     if provider_type == "ollama":
@@ -136,7 +144,8 @@ def create_provider(
                 api_key="ollama",
                 base_url=resolve_provider_base_url(provider_type, base_url),
                 default_model_name=model or "llama3.1",
-            )
+            ),
+            max_retries=max_retries,
         )
 
     if provider_type == "vllm":
@@ -148,7 +157,8 @@ def create_provider(
                 api_key=api_key or "no-key",
                 base_url=resolve_provider_base_url(provider_type, base_url),
                 default_model_name=model or "default",
-            )
+            ),
+            max_retries=max_retries,
         )
 
     if provider_type == "mlx":
