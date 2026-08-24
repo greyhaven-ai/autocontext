@@ -48,7 +48,7 @@ def write_text_atomic(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f"{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
     try:
-        tmp.write_text(content, encoding="utf-8")
+        tmp.write_bytes(content.encode("utf-8"))
         os.replace(tmp, path)
     finally:
         if tmp.exists():
