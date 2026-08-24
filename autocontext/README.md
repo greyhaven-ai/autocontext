@@ -66,6 +66,11 @@ Remote tasks use a provider-neutral request/result contract for resources,
 artifacts, lifecycle, events, usage, and cleanup. Prime Intellect implements
 that contract as an optional adapter and no longer owns scenario scoring logic;
 see [remote execution sessions](../docs/remote-execution-sessions.md).
+Accelerators remain opt-in. Configure both the requested type/count and an
+operator-verified capability allowlist; image, region, required telemetry,
+resolved hardware, and attributable usage then remain identity-bound through
+campaign scheduling and external-evaluation accounting. Unsupported requests
+fail before provider creation and never fall back to local CPU execution.
 
 ## Run from a checkout
 

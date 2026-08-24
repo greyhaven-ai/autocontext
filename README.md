@@ -51,6 +51,12 @@ Use `AUTOCONTEXT_AGENT_PROVIDER=anthropic`, `openai-compatible`, `openrouter`, `
 Running it on your own GPU instead? [Self-hosted models](autocontext/docs/self-hosted-models.md) covers the whole loop on vLLM, Ollama, or any OpenAI-compatible endpoint — including what each role actually resolves to, and why constrained output matters more on open weights.
 Self-hosted endpoints can additionally declare `AUTOCONTEXT_PROVIDER_HOSTING=local` and a `fast`, `mid_tier`, or `frontier` `AUTOCONTEXT_PROVIDER_CAPABILITY`; role-specific endpoints use matching `<ROLE>_PROVIDER_*` declarations.
 
+Prime remote execution also supports opt-in accelerator requests with explicit
+type/count, immutable-image, region, and telemetry capability validation. It
+fails before provider creation when the configured pool cannot satisfy the
+request and never downgrades accelerator work to CPU; see
+[remote execution sessions](docs/remote-execution-sessions.md).
+
 ## Agent Entry Points
 
 - **Pi:** install `pi-autocontext`, then ask Pi to solve, judge, improve, list, or inspect runs through the packaged skill.

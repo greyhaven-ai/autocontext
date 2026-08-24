@@ -359,7 +359,7 @@ describe("TUI durable view-model reducer", () => {
   it("rejects hello messages that omit transcript negotiation", () => {
     const model = feed([{
       type: "hello",
-      protocol_version: 1,
+      protocol_version: 2,
       capabilities: ["run_transcript_v1"],
     }]);
     expect(model.protocolCompatible).toBe(false);

@@ -279,6 +279,7 @@ def _dispatcher_failure(
         detail=f"{type(exc).__name__}: {exc}",
         cleanup_succeeded=False,
         metadata={"usage_estimated": True, "ambiguous_dispatch": True},
+        retryable=False,
     )
 
 

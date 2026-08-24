@@ -181,7 +181,7 @@ async function openSocket(url: string): Promise<BufferedSocket> {
 describe("Protocol types", () => {
   it("exports PROTOCOL_VERSION", async () => {
     const { PROTOCOL_VERSION } = await import("../src/server/protocol.js");
-    expect(PROTOCOL_VERSION).toBe(1);
+    expect(PROTOCOL_VERSION).toBe(2);
   });
 
   it("exports server message schemas", async () => {
@@ -208,9 +208,9 @@ describe("Protocol types", () => {
 
   it("HelloMsg parses correctly", async () => {
     const { HelloMsgSchema } = await import("../src/server/protocol.js");
-    const msg = HelloMsgSchema.parse({ type: "hello", protocol_version: 1 });
+    const msg = HelloMsgSchema.parse({ type: "hello", protocol_version: 2 });
     expect(msg.type).toBe("hello");
-    expect(msg.protocol_version).toBe(1);
+    expect(msg.protocol_version).toBe(2);
   });
 
   it("StartRunCmd validates scenario and generations", async () => {
@@ -228,12 +228,12 @@ describe("Protocol types", () => {
     expect(cmd.command_id).toBe("command-start-1");
   });
 
-  it("advertises and validates transcript resume metadata without bumping protocol v1", async () => {
+  it("advertises and validates the v1 transcript extension on protocol v2", async () => {
     const { HelloMsgSchema, ResumeRunCmdSchema } = await import("../src/server/protocol.js");
     expect(
       HelloMsgSchema.parse({
         type: "hello",
-        protocol_version: 1,
+        protocol_version: 2,
         transcript_protocol_version: 1,
         capabilities: [
           "run_transcript_v1",
@@ -243,7 +243,7 @@ describe("Protocol types", () => {
         ],
       }),
     ).toMatchObject({
-      protocol_version: 1,
+      protocol_version: 2,
       transcript_protocol_version: 1,
     });
     expect(
@@ -742,7 +742,7 @@ describe("InteractiveServer", () => {
       const cli = await openSocket(server.url);
       try {
         await expect(cli.waitFor((message) => message.type === "hello")).resolves.toMatchObject({
-          protocol_version: 1,
+          protocol_version: 2,
         });
       } finally {
         cli.close();
@@ -998,7 +998,7 @@ describe("InteractiveServer", () => {
 
     try {
       const hello = await socket.waitFor((msg) => msg.type === "hello");
-      expect(LegacyHelloSchema.parse(hello).protocol_version).toBe(1);
+      expect(LegacyHelloSchema.parse(hello).protocol_version).toBe(2);
       expect((await socket.waitFor((msg) => msg.type === "environments")).type).toBe(
         "environments",
       );
@@ -1402,7 +1402,7 @@ describe("InteractiveServer", () => {
     try {
       const hello = await socket.waitFor((msg) => msg.type === "hello");
       expect(hello).toMatchObject({
-        protocol_version: 1,
+        protocol_version: 2,
         transcript_protocol_version: 1,
         capabilities: [
           "run_transcript_v1",
@@ -1892,7 +1892,7 @@ describe("InteractiveServer", () => {
         await observer.waitFor(
           (msg) => msg.type === "hello" && msg.transcript_protocol_version === 1,
         ),
-      ).toMatchObject({ protocol_version: 1, transcript_protocol_version: 1 });
+      ).toMatchObject({ protocol_version: 2, transcript_protocol_version: 1 });
 
       socket.send({ type: "chat_agent", role: "analyst", message: "What changed?" });
       const reply = await socket.waitFor((msg) => msg.type === "chat_response");

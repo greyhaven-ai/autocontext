@@ -47,6 +47,56 @@ scheduler state when either value differs.
 }
 ```
 
+### Prime accelerator plans
+
+Accelerator work is declared per job under `remote`. This structure is part of
+the durable scheduler request and evaluation-lane identity; changing its image,
+region, resources, accelerator, or telemetry while reusing an idempotency key
+fails closed. The process-level Prime capability allowlists described in
+[remote execution sessions](remote-execution-sessions.md) must admit the
+resolved request before campaign state is created.
+
+```json
+{
+  "job_id": "trial-gpu-1",
+  "idempotency_key": "trial-gpu-1-v1",
+  "branch_id": "branch-gpu",
+  "objective": "evaluate on the configured accelerator cohort",
+  "strategy": {"mobility_weight": 0.5, "corner_weight": 1.0},
+  "seed": 11,
+  "lane_id": "confirmation",
+  "fixture_digest": "<materialized fixture digest>",
+  "evaluator_epoch": "<derived evaluator epoch>",
+  "verifier_contract_ref": "<derived verifier contract>",
+  "timeout_seconds": 120,
+  "max_memory_mb": 16384,
+  "remote": {
+    "image": "python:3.11.10-slim-bookworm@sha256:<full digest>",
+    "cpu_cores": 4,
+    "memory_gb": 16,
+    "disk_gb": 40,
+    "accelerator": {"kind": "H100", "count": 1},
+    "region": "us-central-1",
+    "required_telemetry": ["hardware_identity"]
+  },
+  "reservation": {"jobs": 1, "wall_seconds": 120, "compute_units": 120}
+}
+```
+
+Campaigns with no `remote` field remain CPU-only. Prime campaign jobs do not
+inherit the global default accelerator selection. Accelerator reservations
+conservatively include the configured Prime creation-poll, cleanup, internal
+retry, and backoff envelope in wall admission. Compute admission includes every
+provider-active retry window times `accelerator_count` (but not host-side
+backoff). When optional usage telemetry is missing, the final compute charge is
+at least the admitted reservation or aggregate provider wall time times the
+requested accelerator count, whichever is greater, so retries cannot bypass a
+campaign budget.
+Workers and jobs share an exact remote-requirements capability digest; cohort
+lane identity also includes that digest. Result artifacts and scheduler result
+metadata retain remote usage and full requested/resolved provenance, and
+external-evaluation ledger entries use the same typed values.
+
 ```python
 from pathlib import Path
 
@@ -92,10 +142,18 @@ campaign/branch reservations, and a complete evaluation-lane identity
 concurrency, branch-budget, and campaign-budget checks succeed. `heartbeat()`
 extends leases owned by that worker. `reconcile()` releases an expired
 reservation and either requeues the job or records an infrastructure failure
-after the retry bound. An exact duplicate enqueue returns the original job by
-idempotency key; reusing that key for a different request, or reusing a
-`job_id` with a different key, fails closed.
-Infrastructure retries persist and charge the usage of every completed attempt.
+after the retry bound. The append-only `retry_expired_lease` request policy
+defaults to `true` for existing local/idempotent workers. Production remote
+campaign requests set it to `false`, because a lost lease cannot prove whether
+paid work ran or its provider resource was cleaned up. An exact duplicate
+enqueue returns the original job by idempotency key; reusing that key for a
+different request, or reusing a `job_id` with a different key, fails closed.
+Completed infrastructure failures requeue only when their typed result is
+retryable. Existing local results retain the legacy default; remote adapters
+set it only for a verified-cleaned pre-dispatch provisioning failure and make
+ambiguous creation, capability drift, cleanup failure, post-dispatch unknown,
+timeout, and malformed completed output terminal. Every completed attempt is
+persisted and charged.
 
 Cancellation is a durable request/acknowledgment lifecycle. A queued job
 cancels immediately. A leased job enters `canceling`, and the scheduler invokes

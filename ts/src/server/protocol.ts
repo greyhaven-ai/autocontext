@@ -49,7 +49,7 @@ export type {
   AgentTaskPlanStepStatus,
 } from "../loop/agent-task-plan.js";
 
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 export const TRANSCRIPT_PROTOCOL_VERSION = 1;
 export const TRANSCRIPT_PROTOCOL_QUERY_PARAM = "transcript_protocol_version";
 export const TRANSCRIPT_PROTOCOL_QUERY_VALUE = String(TRANSCRIPT_PROTOCOL_VERSION);
@@ -138,12 +138,20 @@ export const RoutingContextSchema = protocolObject({
   roles: z.record(RoutingRoleInfoSchema),
 });
 
+export const ExecutorAcceleratorSchema = protocolObject({
+  kind: z.string(),
+  count: z.number().int().min(1),
+});
+
 export const ExecutorResourcesSchema = protocolObject({
   docker_image: z.string(),
-  cpu_cores: z.number().int(),
-  memory_gb: z.number().int(),
-  disk_gb: z.number().int(),
+  cpu_cores: z.number().positive(),
+  memory_gb: z.number().positive(),
+  disk_gb: z.number().positive(),
   timeout_minutes: z.number().int(),
+  accelerator: ExecutorAcceleratorSchema.optional().nullable(),
+  region: z.string().optional().nullable(),
+  required_telemetry: z.array(z.string()).optional(),
 });
 
 export const ExecutorInfoSchema = protocolObject({

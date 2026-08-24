@@ -23,6 +23,10 @@ These are copy-paste starting points for people evaluating the repo, integrating
   Start with the settings and lifecycle requirements in
   [research workspaces](../docs/research-workspaces.md).
 - Want correctness-first recursive GPU-kernel search? Start with the kernel evolution MVP.
+- Want a scenario campaign on a managed accelerator? Use the
+  [capability-validated Prime plan](../docs/campaign-scheduler.md#prime-accelerator-plans);
+  accelerator type/count, image, region, and telemetry must be declared and
+  are never silently downgraded to CPU.
 
 ## Kernel Evolution MVP
 

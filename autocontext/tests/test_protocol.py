@@ -22,6 +22,7 @@ from autocontext.server.protocol import (
     EnvironmentsMsg,
     ErrorMsg,
     EventMsg,
+    ExecutorResources,
     GateDecidedPayload,
     GenerationCompletedPayload,
     GenerationStartedPayload,
@@ -87,6 +88,7 @@ class TestHelloMsg:
         msg = HelloMsg()
         assert msg.type == "hello"
         assert msg.protocol_version == PROTOCOL_VERSION
+        assert PROTOCOL_VERSION == 2
 
     def test_round_trip(self) -> None:
         msg = HelloMsg()
@@ -116,6 +118,23 @@ class TestServerMessageRoundTrip:
             "type": "event",
             "event": "run_started",
             "payload": {"run_id": "r1"},
+        }
+
+    def test_cpu_executor_resources_preserve_the_v1_wire_shape(self) -> None:
+        resources = ExecutorResources(
+            docker_image="python:3.11",
+            cpu_cores=1.0,
+            memory_gb=2.0,
+            disk_gb=5.0,
+            timeout_minutes=30,
+        )
+
+        assert resources.model_dump() == {
+            "docker_image": "python:3.11",
+            "cpu_cores": 1.0,
+            "memory_gb": 2.0,
+            "disk_gb": 5.0,
+            "timeout_minutes": 30,
         }
 
     @pytest.mark.parametrize(

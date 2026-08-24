@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from autocontext.execution.executors import ExecutionEngine, LocalExecutor
+from autocontext.execution.remote_execution import RemoteExecutionRequirements
 from autocontext.scenarios.base import (
     ExecutionLimits,
     Observation,
@@ -23,6 +24,7 @@ class ExecutionInput:
     fixture_state: Mapping[str, Any] | None = None
     fixture_observation: Observation | None = None
     fixture_digest: str | None = None
+    remote_requirements: RemoteExecutionRequirements | None = None
 
     def __post_init__(self) -> None:
         if self.task_id is not None and not self.task_id.strip():
@@ -53,8 +55,12 @@ class ExecutionSupervisor:
         self.executor = executor or LocalExecutor()
 
     def run(self, scenario: ScenarioInterface, payload: ExecutionInput) -> ExecutionOutput:
+        if payload.remote_requirements is not None and payload.task_id is None:
+            raise RuntimeError("explicit remote requirements require a task-identified prepared fixture")
         if payload.fixture_state is not None:
             return self._run_prepared_fixture(scenario, payload)
+        if payload.remote_requirements is not None:
+            raise RuntimeError("explicit remote requirements require a task-identified prepared fixture")
         execute_with_task_id = getattr(self.executor, "execute_with_task_id", None)
         if payload.task_id is not None and callable(execute_with_task_id):
             result, replay = execute_with_task_id(
@@ -87,18 +93,28 @@ class ExecutionSupervisor:
         if actual_digest != payload.fixture_digest:
             raise ValueError("prepared execution fixture digest does not match its state and observation")
         if payload.task_id is not None:
-            execute = getattr(self.executor, "execute_prepared_fixture_with_task_id", None)
+            method = (
+                "execute_prepared_fixture_with_task_id_and_remote_requirements"
+                if payload.remote_requirements is not None
+                else "execute_prepared_fixture_with_task_id"
+            )
+            execute = getattr(self.executor, method, None)
             if not callable(execute):
-                raise RuntimeError("configured executor cannot preserve task identity for a prepared fixture")
+                raise RuntimeError("configured executor cannot satisfy prepared remote execution requirements")
+            kwargs: dict[str, Any] = {
+                "scenario": scenario,
+                "strategy": payload.strategy,
+                "seed": payload.seed,
+                "limits": payload.limits,
+                "initial_state": payload.fixture_state,
+                "initial_observation": payload.fixture_observation,
+                "fixture_digest": payload.fixture_digest,
+                "task_id": payload.task_id,
+            }
+            if payload.remote_requirements is not None:
+                kwargs["remote_requirements"] = payload.remote_requirements
             result, replay = execute(
-                scenario=scenario,
-                strategy=payload.strategy,
-                seed=payload.seed,
-                limits=payload.limits,
-                initial_state=payload.fixture_state,
-                initial_observation=payload.fixture_observation,
-                fixture_digest=payload.fixture_digest,
-                task_id=payload.task_id,
+                **kwargs,
             )
         else:
             execute = getattr(self.executor, "execute_prepared_fixture", None)

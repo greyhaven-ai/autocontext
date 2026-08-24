@@ -13,6 +13,7 @@ from autocontext.cli import app
 from autocontext.config.settings import AppSettings
 from autocontext.context_bundles.models import stable_digest
 from autocontext.context_bundles.runtime_evaluator import materialize_runtime_fixture, runtime_fixture_digest
+from autocontext.execution.campaign_remote import campaign_result_with_reservation
 from autocontext.execution.campaign_runtime import (
     CampaignPlan,
     ScenarioCampaignWorker,
@@ -33,9 +34,19 @@ from autocontext.execution.campaign_scheduler_models import (
     SchedulerBudget,
     WorkerDescriptor,
 )
+from autocontext.execution.remote_execution import (
+    RemoteAcceleratorRequest,
+    RemoteCleanupOutcome,
+    RemoteExecutionProvenance,
+    RemoteExecutionRequirements,
+    RemoteExecutionResult,
+    RemoteResourceRequest,
+    RemoteResourceUsage,
+)
 from autocontext.execution.runtime_factory import ExecutionRuntime
-from autocontext.execution.supervisor import ExecutionSupervisor
-from autocontext.scenarios.base import ReplayEnvelope, Result
+from autocontext.execution.supervisor import ExecutionInput, ExecutionSupervisor
+from autocontext.runtime_images import PINNED_PYTHON_RUNTIME_IMAGE
+from autocontext.scenarios.base import ExecutionLimits, ReplayEnvelope, Result
 from autocontext.scenarios.othello import OthelloScenario
 
 
@@ -141,6 +152,35 @@ def test_campaign_runtime_normalizes_mandatory_job_and_timeout_reservations() ->
     assert request.reservation.wall_seconds == 17.0
 
 
+def test_prime_campaign_reservation_and_drain_cover_provider_retry_envelope() -> None:
+    settings = AppSettings(
+        executor_mode="primeintellect",
+        primeintellect_wait_attempts=3,
+        primeintellect_max_retries=2,
+        primeintellect_backoff_seconds=0.5,
+    )
+    plan = _plan(settings)
+    item = plan.jobs[0].model_copy(update={"timeout_seconds": 30.25, "max_attempts": 2})
+    plan = plan.model_copy(update={"jobs": [item]})
+    requirements = RemoteExecutionRequirements(
+        image=PINNED_PYTHON_RUNTIME_IMAGE,
+        resources=RemoteResourceRequest(
+            accelerator=RemoteAcceleratorRequest(kind="H100", count=2),
+        ),
+    )
+
+    request = _job_request(plan, item, remote_requirements=requirements, settings=settings)
+
+    # Three provider attempts each reserve six seconds of creation polling and
+    # thirty seconds of cleanup; the command runs at most once. Linear retry
+    # backoff contributes only to the wall envelope.
+    assert request.reservation.compute_units == pytest.approx(278.0)
+    assert request.reservation.wall_seconds == pytest.approx(140.5)
+    assert request.retry_expired_lease is False
+    assert _campaign_drain_timeout(plan, settings) == pytest.approx(296.0)
+    assert _campaign_drain_timeout(plan) == pytest.approx(75.5)
+
+
 @pytest.mark.parametrize(
     ("path", "value"),
     [
@@ -224,9 +264,10 @@ def test_campaign_runtime_persists_immutable_plan_identity_for_audit_boundary(
     artifact_path = Path(identity.artifact_uri)
     assert artifact_path.name == "campaign-plan.json"
     assert json.loads(artifact_path.read_text(encoding="utf-8")) == plan.to_dict()
-    assert outcome.report.eval_lanes[0].verifier_contract_ref == derive_campaign_evaluation_identity(
-        settings, "othello"
-    ).verifier_contract_ref
+    assert (
+        outcome.report.eval_lanes[0].verifier_contract_ref
+        == derive_campaign_evaluation_identity(settings, "othello").verifier_contract_ref
+    )
 
 
 def test_campaign_plan_rejects_ambiguous_job_and_cohort_identities() -> None:
@@ -518,6 +559,183 @@ def test_campaign_worker_uses_same_lease_unique_remote_id_for_run_and_cancel(tmp
     assert "same-seed-job" not in executor.task_ids[0]
 
 
+def test_supervisor_rejects_prepared_remote_requirements_without_task_identity() -> None:
+    class LegacyPreparedExecutor:
+        calls = 0
+
+        def execute_prepared_fixture(self, *args: Any, **kwargs: Any) -> tuple[Result, ReplayEnvelope]:
+            self.calls += 1
+            raise AssertionError("remote requirements must never fall back to legacy prepared execution")
+
+    scenario = OthelloScenario()
+    fixture = materialize_runtime_fixture(scenario, 13)
+    executor = LegacyPreparedExecutor()
+    payload = ExecutionInput(
+        strategy={"mobility_weight": 1.0},
+        seed=13,
+        limits=ExecutionLimits(),
+        fixture_state=fixture.state,
+        fixture_observation=fixture.observation,
+        fixture_digest=fixture.digest,
+        remote_requirements=RemoteExecutionRequirements(
+            image=PINNED_PYTHON_RUNTIME_IMAGE,
+            resources=RemoteResourceRequest(
+                accelerator=RemoteAcceleratorRequest(kind="H100", count=1),
+            ),
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="task-identified prepared fixture"):
+        ExecutionSupervisor(executor).run(scenario, payload)  # type: ignore[arg-type]
+
+    assert executor.calls == 0
+
+
+def test_campaign_accelerator_without_usage_telemetry_charges_admitted_reservation() -> None:
+    reservation = SchedulerBudget(compute_units=960.0, jobs=1)
+    accelerator_result = RemoteExecutionResult(
+        task_id="gpu-job",
+        provider="primeintellect",
+        status="success",
+        usage=RemoteResourceUsage(wall_seconds=0.25, cpu_seconds=0.25),
+        cleanup=RemoteCleanupOutcome(attempted=True, succeeded=True),
+        provenance=RemoteExecutionProvenance(
+            requested_accelerator_kind="H100",
+            requested_accelerator_count=8,
+        ),
+    )
+    cpu_result = replace(
+        accelerator_result,
+        task_id="cpu-job",
+        provenance=RemoteExecutionProvenance(),
+    )
+
+    accelerator_charge = campaign_result_with_reservation(
+        accelerator_result,
+        reservation,
+        output_ref="artifact://gpu-job",
+    )
+    cpu_charge = campaign_result_with_reservation(
+        cpu_result,
+        reservation,
+        output_ref="artifact://cpu-job",
+    )
+
+    assert accelerator_charge.consumed.compute_units == pytest.approx(960.0)
+    assert cpu_charge.consumed.compute_units == pytest.approx(0.25)
+
+
+def test_campaign_accelerator_without_telemetry_charges_aggregate_retry_duration() -> None:
+    remote = RemoteExecutionResult(
+        task_id="retrying-gpu-job",
+        provider="primeintellect",
+        status="provider_error",
+        usage=RemoteResourceUsage(wall_seconds=345.0, cpu_seconds=0.25),
+        cleanup=RemoteCleanupOutcome(attempted=True, succeeded=True),
+        provenance=RemoteExecutionProvenance(
+            requested_accelerator_kind="H100",
+            requested_accelerator_count=2,
+        ),
+    )
+
+    charge = campaign_result_with_reservation(
+        remote,
+        SchedulerBudget(compute_units=60.0, jobs=1),
+        output_ref="artifact://retrying-gpu-job",
+    )
+
+    assert charge.consumed.compute_units == pytest.approx(690.0)
+
+
+def test_campaign_worker_treats_invalid_successful_remote_payload_as_infrastructure_failure(
+    tmp_path: Path,
+) -> None:
+    class InvalidRemotePayloadExecutor:
+        def __init__(self) -> None:
+            self.results: dict[str, RemoteExecutionResult] = {}
+
+        def execute_prepared_fixture_with_task_id_and_remote_requirements(
+            self,
+            *args: Any,
+            task_id: str,
+            **kwargs: Any,
+        ) -> tuple[Result, ReplayEnvelope]:
+            self.results[task_id] = RemoteExecutionResult(
+                task_id=task_id,
+                provider="primeintellect",
+                status="success",
+                usage=RemoteResourceUsage(wall_seconds=3.0, accelerator_seconds=2.5),
+                cleanup=RemoteCleanupOutcome(attempted=True, succeeded=True),
+            )
+            raise ValueError("provider payload is not a valid scenario result")
+
+        def take_remote_result(self, task_id: str) -> RemoteExecutionResult | None:
+            return self.results.pop(task_id, None)
+
+    class CancelableRemote:
+        def cancel_request(self, task_id: str) -> bool:
+            del task_id
+            return True
+
+    fixture = materialize_runtime_fixture(OthelloScenario(), 17)
+    executor = InvalidRemotePayloadExecutor()
+    worker = ScenarioCampaignWorker(
+        settings=AppSettings(knowledge_root=tmp_path / "knowledge"),
+        runtime=ExecutionRuntime(ExecutionSupervisor(executor), CancelableRemote()),  # type: ignore[arg-type]
+        scenario_name="othello",
+        results_root=tmp_path / "results",
+    )
+    job = CampaignJobRequest(
+        job_id="invalid-remote-payload",
+        idempotency_key="invalid-remote-payload-v1",
+        campaign_id="campaign-live",
+        branch_id="branch-a",
+        job_kind="trial",
+        lane=EvaluationLaneIdentity("confirmation", fixture.digest, ("17",), "epoch-1", "contract-1"),
+        reservation=SchedulerBudget(wall_seconds=10.0, compute_units=10.0, jobs=1),
+        payload={
+            "strategy": {"mobility_weight": 1.0},
+            "seed": 17,
+            "timeout_seconds": 10.0,
+            "max_memory_mb": 1024,
+            "remote_requirements": {
+                "image": PINNED_PYTHON_RUNTIME_IMAGE,
+                "resources": {
+                    "cpu_cores": 1.0,
+                    "memory_gb": 1.0,
+                    "disk_gb": 5.0,
+                    "accelerator": {"kind": "H100", "count": 1},
+                },
+                "region": "us-central-1",
+                "required_telemetry": ["hardware_identity"],
+            },
+        },
+    )
+    assignment = CampaignAssignment(
+        job,
+        CampaignLease(
+            lease_id="lease-invalid-payload",
+            job_id=job.job_id,
+            worker_id="prime-gpu",
+            attempt=1,
+            issued_at=0.0,
+            expires_at=10.0,
+            environment_fingerprint="prime-gpu-env",
+            lifecycle="cold_ephemeral",
+            reuse_key="",
+        ),
+    )
+
+    result = worker.execute(assignment)
+
+    assert result.outcome == "infrastructure_failure"
+    assert result.consumed.compute_units == pytest.approx(2.5)
+    assert "remote result validation failed" in result.detail
+    artifact = json.loads(Path(result.output_ref).read_text(encoding="utf-8"))
+    assert artifact["status"] == "success"
+    assert artifact["validation_error"] == result.detail
+
+
 def test_campaign_worker_executes_the_exact_materialized_nondeterministic_fixture(tmp_path: Path) -> None:
     class NondeterministicOthello(OthelloScenario):
         nonce = 0
@@ -684,6 +902,7 @@ def test_campaign_report_branch_usage_includes_retry_attempts(tmp_path: Path) ->
         CampaignJobResult(
             outcome="infrastructure_failure",
             consumed=SchedulerBudget(tokens=7, jobs=1),
+            retryable=True,
         ),
     )
     second = scheduler.claim("worker")[0]

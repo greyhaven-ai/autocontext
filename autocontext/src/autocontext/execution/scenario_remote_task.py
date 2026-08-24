@@ -6,7 +6,13 @@ import importlib
 from collections.abc import Mapping
 from typing import Any
 
-from autocontext.execution.remote_execution import RemoteExecutionRequest, RemoteInputArtifact, RemoteResourceRequest
+from autocontext.execution.remote_execution import (
+    RemoteAcceleratorRequest,
+    RemoteExecutionRequest,
+    RemoteInputArtifact,
+    RemoteResourceRequest,
+    RemoteTelemetryKind,
+)
 from autocontext.execution.scenario_remote_package import (
     build_remote_scenario_package,
     require_pinned_runtime_image,
@@ -29,6 +35,9 @@ def build_scenario_remote_request(
     cpu_cores: float,
     disk_gb: float,
     memory_gb: float | None = None,
+    accelerator: RemoteAcceleratorRequest | None = None,
+    region: str | None = None,
+    required_telemetry: frozenset[RemoteTelemetryKind] = frozenset(),
     task_id: str | None = None,
     initial_state: Mapping[str, Any] | None = None,
     initial_observation: Mapping[str, Any] | None = None,
@@ -43,6 +52,9 @@ def build_scenario_remote_request(
         cpu_cores=cpu_cores,
         disk_gb=disk_gb,
         memory_gb=memory_gb,
+        accelerator=accelerator,
+        region=region,
+        required_telemetry=required_telemetry,
         task_id=task_id,
         initial_state=initial_state,
         initial_observation=initial_observation,
@@ -60,6 +72,9 @@ def build_builtin_scenario_remote_request(
     cpu_cores: float,
     disk_gb: float,
     memory_gb: float | None = None,
+    accelerator: RemoteAcceleratorRequest | None = None,
+    region: str | None = None,
+    required_telemetry: frozenset[RemoteTelemetryKind] = frozenset(),
     task_id: str | None = None,
     initial_state: Mapping[str, Any] | None = None,
     initial_observation: Mapping[str, Any] | None = None,
@@ -80,6 +95,9 @@ def build_builtin_scenario_remote_request(
         cpu_cores=cpu_cores,
         disk_gb=disk_gb,
         memory_gb=memory_gb,
+        accelerator=accelerator,
+        region=region,
+        required_telemetry=required_telemetry,
         task_id=task_id,
         initial_state=initial_state,
         initial_observation=initial_observation,
@@ -97,6 +115,9 @@ def _build_request(
     cpu_cores: float,
     disk_gb: float,
     memory_gb: float | None,
+    accelerator: RemoteAcceleratorRequest | None,
+    region: str | None,
+    required_telemetry: frozenset[RemoteTelemetryKind],
     task_id: str | None,
     initial_state: Mapping[str, Any] | None,
     initial_observation: Mapping[str, Any] | None,
@@ -146,7 +167,10 @@ def _build_request(
             cpu_cores=cpu_cores,
             memory_gb=requested_memory_gb,
             disk_gb=disk_gb,
+            accelerator=accelerator,
         ),
+        region=region,
+        required_telemetry=required_telemetry,
         timeout_seconds=limits.timeout_seconds,
         network_policy="allow" if limits.network_access else "deny",
         input_artifacts=(

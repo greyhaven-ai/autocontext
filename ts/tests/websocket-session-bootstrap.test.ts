@@ -48,7 +48,7 @@ describe("websocket session bootstrap", () => {
     expect(buildSessionBootstrapMessages(environment, state)).toEqual([
       {
         type: "hello",
-        protocol_version: 1,
+        protocol_version: 2,
       },
       {
         type: "environments",
@@ -72,7 +72,7 @@ describe("websocket session bootstrap", () => {
     expect(buildSessionBootstrapMessages(environment, state, { runTranscript: true })).toEqual([
       {
         type: "hello",
-        protocol_version: 1,
+        protocol_version: 2,
         transcript_protocol_version: 1,
         capabilities: [
           "run_transcript_v1",

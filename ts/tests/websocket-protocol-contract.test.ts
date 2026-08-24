@@ -11,6 +11,7 @@ import {
   ChatAgentCmdSchema,
   ExecutorResourcesSchema,
   MonitorAlertMsgSchema,
+  PROTOCOL_VERSION,
   PYTHON_SHARED_CLIENT_MESSAGE_TYPES,
   PYTHON_SHARED_SERVER_MESSAGE_TYPES,
   ScenarioErrorMsgSchema,
@@ -206,6 +207,11 @@ function runtimeOnlyTypes(items: RuntimeOnlyMessage[]): string[] {
 }
 
 describe("WebSocket protocol shared contract", () => {
+  it("keeps the TypeScript protocol version aligned with the shared manifest", () => {
+    expect(PROTOCOL_VERSION).toBe(2);
+    expect(PROTOCOL_VERSION).toBe(CONTRACT.protocol_version);
+  });
+
   it("keeps TypeScript message inventories aligned with the shared manifest", () => {
     const tsOnlyServer = runtimeOnlyTypes(CONTRACT.typescript_only_server_messages);
     const tsOnlyClient = runtimeOnlyTypes(CONTRACT.typescript_only_client_messages);
@@ -409,15 +415,18 @@ describe("WebSocket protocol shared contract", () => {
         message: "",
       }),
     ).toThrow();
-    expect(() =>
+    expect(
       ExecutorResourcesSchema.parse({
         docker_image: "python:3.11",
         cpu_cores: 1.5,
         memory_gb: 2,
         disk_gb: 5,
         timeout_minutes: 30,
-      }),
-    ).toThrow();
+        accelerator: { kind: "H100", count: 1 },
+        region: "us-central-1",
+        required_telemetry: ["hardware_identity"],
+      }).accelerator,
+    ).toEqual({ kind: "H100", count: 1 });
     expect(() =>
       ScenarioErrorMsgSchema.parse({
         type: "scenario_error",

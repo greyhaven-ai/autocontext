@@ -30,7 +30,7 @@ class FakeTransport implements TuiTransport {
     if (this.autoHello) {
       this.message({
         type: "hello",
-        protocol_version: 1,
+        protocol_version: 2,
         transcript_protocol_version: 1,
         capabilities: [],
       });
@@ -130,7 +130,7 @@ describe("TuiSession", () => {
     await session.start();
     transport.message({
       type: "hello",
-      protocol_version: 1,
+      protocol_version: 2,
       transcript_protocol_version: 1,
       capabilities: ["run_transcript_v1", "safe_run_stop_v1"],
     });
@@ -168,7 +168,7 @@ describe("TuiSession", () => {
     await session.start();
     transport.message({
       type: "hello",
-      protocol_version: 1,
+      protocol_version: 2,
       transcript_protocol_version: 1,
       capabilities: ["run_transcript_v1", "safe_run_stop_v1"],
     });
@@ -198,7 +198,7 @@ describe("TuiSession", () => {
     transport.connection({ status: "connected", attempt: 3 });
     transport.message({
       type: "hello",
-      protocol_version: 1,
+      protocol_version: 2,
       transcript_protocol_version: 1,
       capabilities: ["run_transcript_v1", "safe_run_stop_v1"],
     });
@@ -224,7 +224,7 @@ describe("TuiSession", () => {
     await session.start();
     transport.message({
       type: "hello",
-      protocol_version: 1,
+      protocol_version: 2,
       transcript_protocol_version: 1,
       capabilities: ["run_transcript_v1"],
     });
@@ -272,7 +272,7 @@ describe("TuiSession", () => {
     transport.connection({ status: "connected", attempt: 3 });
     transport.message({
       type: "hello",
-      protocol_version: 1,
+      protocol_version: 2,
       transcript_protocol_version: 1,
       capabilities: ["run_transcript_v1"],
     });
@@ -358,7 +358,7 @@ describe("TuiSession", () => {
     const starting = session.start();
     await expect(session.whoami()).rejects.toThrow("required transcript protocol");
     expect(transport.sent).toHaveLength(0);
-    transport.message({ type: "hello", protocol_version: 1 });
+    transport.message({ type: "hello", protocol_version: 2 });
     await expect(starting).rejects.toThrow("required transcript protocol");
     await expect(session.whoami()).rejects.toThrow("required transcript protocol");
     expect(transport.sent).toEqual([]);
@@ -429,7 +429,7 @@ describe("WebSocket TUI transport", () => {
       expect(JSON.parse(sockets[0]!.sent[0]!)).toEqual({ type: "whoami" });
       sockets[0]!.serverMessage({
         type: "hello",
-        protocol_version: 1,
+        protocol_version: 2,
         transcript_protocol_version: 1,
         capabilities: ["run_transcript_v1"],
       });

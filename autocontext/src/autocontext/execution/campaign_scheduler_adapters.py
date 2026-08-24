@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import replace
+from dataclasses import asdict, replace
 
 from autocontext.execution.campaign_scheduler_models import (
     CampaignAssignment,
@@ -94,7 +94,14 @@ def campaign_result_from_remote(result: RemoteExecutionResult) -> CampaignJobRes
         ),
         detail=result.error,
         cleanup_succeeded=result.cleanup.succeeded,
-        metadata={"remote_status": result.status, "provider": result.provider, "session_id": result.session_id},
+        retryable=result.retryable,
+        metadata={
+            "remote_status": result.status,
+            "provider": result.provider,
+            "session_id": result.session_id,
+            "remote_usage": asdict(result.usage),
+            "remote_provenance": asdict(result.provenance),
+        },
     )
 
 
