@@ -11,8 +11,16 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+from autocontext.config.production_execution import parse_csv_values
 from autocontext.config.settings import AppSettings
 from autocontext.execution.executors import LocalExecutor
+from autocontext.execution.remote_execution import (
+    RemoteAcceleratorRequest,
+    RemoteExecutionRequirements,
+    RemoteExecutionResult,
+    RemoteProviderCapabilities,
+    RemoteResourceRequest,
+)
 from autocontext.execution.supervisor import ExecutionSupervisor
 from autocontext.offline import require_online
 
@@ -21,6 +29,11 @@ from autocontext.offline import require_online
 class ExecutionRuntime:
     supervisor: ExecutionSupervisor
     remote_adapter: Any | None = None
+
+    def take_remote_result(self, task_id: str) -> RemoteExecutionResult | None:
+        take = getattr(self.supervisor.executor, "take_remote_result", None)
+        result = take(task_id) if callable(take) else None
+        return result if isinstance(result, RemoteExecutionResult) else None
 
 
 def build_execution_runtime(
@@ -47,6 +60,8 @@ def build_execution_runtime(
             timeout_minutes=settings.primeintellect_timeout_minutes,
             max_wait_attempts=settings.primeintellect_wait_attempts,
             allow_fallback=settings.allow_primeintellect_fallback,
+            default_requirements=prime_default_requirements(settings),
+            resource_capabilities=prime_resource_capabilities(settings),
         )
         return ExecutionRuntime(
             supervisor=ExecutionSupervisor(
@@ -114,4 +129,36 @@ def build_execution_runtime(
     raise ValueError(f"Unsupported executor mode: {settings.executor_mode!r}")
 
 
-__all__ = ["ExecutionRuntime", "build_execution_runtime"]
+def prime_default_requirements(settings: AppSettings) -> RemoteExecutionRequirements:
+    kind = settings.primeintellect_accelerator_kind.strip()
+    accelerator = RemoteAcceleratorRequest(kind=kind, count=settings.primeintellect_accelerator_count) if kind else None
+    required = parse_csv_values(settings.primeintellect_required_telemetry) if accelerator is not None else frozenset()
+    return RemoteExecutionRequirements(
+        image=settings.primeintellect_docker_image,
+        resources=RemoteResourceRequest(
+            cpu_cores=settings.primeintellect_cpu_cores,
+            memory_gb=settings.primeintellect_memory_gb,
+            disk_gb=settings.primeintellect_disk_size_gb,
+            accelerator=accelerator,
+        ),
+        region=settings.primeintellect_region.strip() or None,
+        required_telemetry=required,  # type: ignore[arg-type]
+    )
+
+
+def prime_resource_capabilities(settings: AppSettings) -> RemoteProviderCapabilities:
+    kinds = parse_csv_values(settings.primeintellect_supported_accelerator_kinds)
+    return RemoteProviderCapabilities(
+        images=parse_csv_values(settings.primeintellect_supported_images),
+        regions=parse_csv_values(settings.primeintellect_supported_regions),
+        accelerator_limits={kind: settings.primeintellect_max_accelerator_count for kind in kinds},
+        telemetry=parse_csv_values(settings.primeintellect_available_telemetry),  # type: ignore[arg-type]
+    )
+
+
+__all__ = [
+    "ExecutionRuntime",
+    "build_execution_runtime",
+    "prime_default_requirements",
+    "prime_resource_capabilities",
+]

@@ -52,6 +52,7 @@ def _lane_from(value: object) -> EvaluationLaneIdentity:
         seeds=tuple(str(seed) for seed in data["seeds"]),
         evaluator_epoch=str(data["evaluator_epoch"]),
         verifier_contract_ref=str(data["verifier_contract_ref"]),
+        execution_environment_digest=str(data.get("execution_environment_digest", "")),
     )
 
 

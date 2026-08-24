@@ -29,7 +29,10 @@ from .phased_execution import (
 from .remote_execution import (
     RemoteAcceleratorRequest,
     RemoteExecutionRequest,
+    RemoteExecutionRequirements,
     RemoteExecutionResult,
+    RemoteProviderCapabilities,
+    RemoteResolvedEnvironment,
     RemoteResourceRequest,
 )
 from .research_workspace import (
@@ -111,8 +114,11 @@ __all__ = [
     "ResearchSandboxExecutionResult",
     "RemoteAcceleratorRequest",
     "RemoteCampaignWorker",
+    "RemoteExecutionRequirements",
     "RemoteExecutionRequest",
     "RemoteExecutionResult",
+    "RemoteProviderCapabilities",
+    "RemoteResolvedEnvironment",
     "RemoteResourceRequest",
     "SchedulerBudget",
     "SchedulerResources",

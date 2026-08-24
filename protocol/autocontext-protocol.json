@@ -434,6 +434,26 @@
         "title": "EventMsg",
         "type": "object"
       },
+      "ExecutorAccelerator": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "count": {
+            "minimum": 1,
+            "title": "Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind",
+          "count"
+        ],
+        "title": "ExecutorAccelerator",
+        "type": "object"
+      },
       "ExecutorInfo": {
         "additionalProperties": false,
         "properties": {
@@ -477,20 +497,53 @@
             "type": "string"
           },
           "cpu_cores": {
+            "exclusiveMinimum": 0.0,
             "title": "Cpu Cores",
-            "type": "integer"
+            "type": "number"
           },
           "memory_gb": {
+            "exclusiveMinimum": 0.0,
             "title": "Memory Gb",
-            "type": "integer"
+            "type": "number"
           },
           "disk_gb": {
+            "exclusiveMinimum": 0.0,
             "title": "Disk Gb",
-            "type": "integer"
+            "type": "number"
           },
           "timeout_minutes": {
             "title": "Timeout Minutes",
             "type": "integer"
+          },
+          "accelerator": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ExecutorAccelerator"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Region"
+          },
+          "required_telemetry": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Required Telemetry",
+            "type": "array"
           }
         },
         "required": [

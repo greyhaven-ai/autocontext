@@ -148,6 +148,7 @@ class EvaluationLaneIdentity:
     seeds: tuple[str, ...]
     evaluator_epoch: str
     verifier_contract_ref: str
+    execution_environment_digest: str = ""
 
     def __post_init__(self) -> None:
         values = (self.lane_id, self.fixture_digest, self.evaluator_epoch, self.verifier_contract_ref)

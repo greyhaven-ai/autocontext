@@ -27,6 +27,8 @@ for scenario authoring and `autoctx serve mcp` for MCP clients.
 - [Sandbox and executor notes](../autocontext/docs/sandbox.md)
 - [Capability-scoped research workspaces](research-workspaces.md)
 - [Provider-neutral remote execution sessions](remote-execution-sessions.md)
+  — including capability-validated Prime accelerator requests, resolved
+  hardware provenance, and fail-closed no-CPU-downgrade semantics.
 - [Persistent host worker](../autocontext/docs/persistent-host.md)
 - [Correctness-first external kernel evolution](../autocontext/docs/kernel-evolution.md)
   — including typed provider generation, durable budgets, status/stop, and

@@ -6,6 +6,17 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Prime accelerator execution is now reachable through an explicit,
+  provider-neutral capability contract. App settings and campaign plans bind
+  accelerator type/count, immutable image, region, and required telemetry into
+  scheduler resources, idempotency fingerprints, evaluation cohorts, Prime
+  create requests, result provenance, and external-evaluation ledgers.
+  Configured capability mismatches fail before provider creation; resolved
+  image/region/hardware drift fails before command execution; accelerator work
+  can never use the local CPU fallback. Provider-reported accelerator usage and
+  peak memory are recorded when available, while CPU-only execution remains the
+  unchanged default (AC-998).
+
 - Kernel evolution now supports provider-registry-backed autonomous campaigns
   with exact source/provenance receipts, fail-closed response validation,
   deterministic proposal/retry/token/cost/wall budgets, control-plane-only

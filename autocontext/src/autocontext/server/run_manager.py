@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from autocontext.config import AppSettings, load_settings
+from autocontext.config.production_execution import parse_csv_values
 from autocontext.loop.controller import LoopController
 from autocontext.loop.events import EventStreamEmitter
 from autocontext.loop.generation_runner import GenerationRunner
@@ -76,6 +77,8 @@ class RunManager:
             )
 
         pi_configured = bool(self.settings.primeintellect_api_key)
+        accelerator_kind = self.settings.primeintellect_accelerator_kind.strip()
+        required_telemetry = sorted(parse_csv_values(self.settings.primeintellect_required_telemetry)) if accelerator_kind else []
         executors: list[dict[str, Any]] = [
             {
                 "mode": "local",
@@ -92,6 +95,16 @@ class RunManager:
                     "memory_gb": self.settings.primeintellect_memory_gb,
                     "disk_gb": self.settings.primeintellect_disk_size_gb,
                     "timeout_minutes": self.settings.primeintellect_timeout_minutes,
+                    "accelerator": (
+                        {
+                            "kind": accelerator_kind,
+                            "count": self.settings.primeintellect_accelerator_count,
+                        }
+                        if accelerator_kind
+                        else None
+                    ),
+                    "region": self.settings.primeintellect_region.strip() or None,
+                    "required_telemetry": required_telemetry,
                 },
             },
         ]

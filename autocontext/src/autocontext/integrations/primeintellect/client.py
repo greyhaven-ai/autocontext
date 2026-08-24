@@ -3,12 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-import base64
-import json
 import logging
 import math
-import re
-import shlex
 import threading
 import time
 from collections.abc import Mapping, Sequence
@@ -20,14 +16,28 @@ from autocontext.execution.remote_execution import (
     RemoteCleanupOutcome,
     RemoteExecutionEvent,
     RemoteExecutionRequest,
+    RemoteExecutionRequirements,
     RemoteExecutionResult,
+    RemoteProviderCapabilities,
+    RemoteResolvedEnvironment,
+    RemoteResourceRequest,
     RemoteResourceUsage,
     parse_remote_stdout,
     remote_request_provenance,
+    remote_request_sha256,
 )
 from autocontext.execution.scenario_remote_package import DEFAULT_REMOTE_RUNTIME_IMAGE, require_pinned_runtime_image
 from autocontext.execution.scenario_remote_task import build_builtin_scenario_remote_request
 from autocontext.integrations.primeintellect import _lifecycle
+from autocontext.integrations.primeintellect import _request as _request_helpers
+from autocontext.integrations.primeintellect.accelerators import (
+    ProviderCapabilityDriftError,
+    create_kwargs,
+    resolved_environment,
+    resource_usage,
+    validate_required_telemetry,
+    validate_resolved_environment,
+)
 from autocontext.offline import require_online
 from autocontext.scenarios.base import ExecutionLimits
 
@@ -83,6 +93,8 @@ class PrimeIntellectClient:
     max_wait_attempts: int = 60
     network_access: bool = True
     allow_fallback: bool = False
+    default_requirements: RemoteExecutionRequirements | None = None
+    resource_capabilities: RemoteProviderCapabilities = field(default_factory=RemoteProviderCapabilities)
     provider_capabilities: Mapping[str, bool] = field(
         default_factory=lambda: {
             "accelerator": False,
@@ -112,12 +124,38 @@ class PrimeIntellectClient:
             raise ValueError("Prime Intellect resource limits must be positive and finite")
         if self.timeout_minutes < 1 or self.max_wait_attempts < 1:
             raise ValueError("Prime Intellect timeout and wait attempts must be positive")
+        if self.default_requirements is None:
+            self.default_requirements = RemoteExecutionRequirements(
+                image=self.docker_image,
+                resources=self._default_resource_request(),
+            )
+        elif self.default_requirements.image != self.docker_image:
+            raise ValueError("Prime default requirements image must match docker_image")
+        self.validate_requirements(self.default_requirements)
 
     def capabilities(self) -> dict[str, bool]:
         return {
-            name: (False if name == "session_reuse" else self.provider_capabilities.get(name) is True)
+            name: (
+                bool(self.resource_capabilities.accelerator_limits)
+                if name == "accelerator"
+                else False
+                if name == "session_reuse"
+                else self.provider_capabilities.get(name) is True
+            )
             for name in ("accelerator", "session_reuse", "snapshot", "warm", "secret_grants")
         }
+
+    def validate_requirements(self, requirements: RemoteExecutionRequirements) -> None:
+        reason = self.resource_capabilities.mismatch_reason(requirements)
+        if reason:
+            raise UnsupportedRemoteCapabilityError(f"Prime Intellect capability mismatch: {reason}")
+
+    def _default_resource_request(self) -> RemoteResourceRequest:
+        return RemoteResourceRequest(
+            cpu_cores=self.cpu_cores,
+            memory_gb=self.memory_gb,
+            disk_gb=self.disk_size_gb,
+        )
 
     def warm_provision(self, environment_name: str, max_retries: int = 2, backoff_seconds: float = 0.75) -> dict[str, Any]:
         del max_retries, backoff_seconds
@@ -150,7 +188,7 @@ class PrimeIntellectClient:
                 # Grants can expire while a failed attempt is backing off. Recheck
                 # policy immediately before every provider attempt; policy errors
                 # are deliberately outside the provider-fallback exception path.
-                self._validate_request(request)
+                self.validate_request(request)
                 attempt_started = time.perf_counter()
                 try:
                     result = asyncio.run(self._execute_request_once(request))
@@ -289,6 +327,9 @@ class PrimeIntellectClient:
     ) -> dict[str, Any]:
         """Compatibility facade for existing scenario executors."""
 
+        requirements = self.default_requirements
+        if requirements is None:
+            raise RuntimeError("Prime Intellect execution requirements are unavailable")
         request = build_builtin_scenario_remote_request(
             scenario_name,
             strategy,
@@ -298,19 +339,22 @@ class PrimeIntellectClient:
                 max_memory_mb=max_memory_mb,
                 network_access=network_access,
             ),
-            image=self.docker_image,
-            cpu_cores=self.cpu_cores,
-            disk_gb=self.disk_size_gb,
-            memory_gb=self.memory_gb,
+            image=requirements.image,
+            cpu_cores=requirements.resources.cpu_cores,
+            disk_gb=requirements.resources.disk_gb,
+            memory_gb=requirements.resources.memory_gb,
+            accelerator=requirements.resources.accelerator,
+            region=requirements.region,
+            required_telemetry=requirements.required_telemetry,
         )
         result = self.execute_request(request, max_retries=max_retries, backoff_seconds=backoff_seconds)
         if not result.succeeded:
-            if self.allow_fallback:
+            if self.allow_fallback and requirements.resources.accelerator is None:
                 return self.fallback_local_response(scenario_name, seed)
             raise RuntimeError(f"primeintellect {result.status}: {result.error}")
-        payload = _last_json_object(result.stdout)
+        payload = _request_helpers.last_json_object(result.stdout)
         if not isinstance(payload.get("result"), Mapping) or not isinstance(payload.get("replay"), Mapping):
-            if self.allow_fallback:
+            if self.allow_fallback and requirements.resources.accelerator is None:
                 return self.fallback_local_response(scenario_name, seed)
             raise ValueError("primeintellect task response missing result or replay")
         return {"result": dict(payload["result"]), "replay": dict(payload["replay"])}
@@ -332,11 +376,20 @@ class PrimeIntellectClient:
         client_exit_error: Exception | None = None
         command_dispatched = False
         cleanup = RemoteCleanupOutcome(attempted=False, succeeded=False)
+        resolved = RemoteResolvedEnvironment()
         try:
             async with sandbox_client_cls(api_key=self.api_key) as client:
-                self._validate_request(request)
+                self.validate_request(request)
                 try:
-                    sandbox = await client.create(create_sandbox_request(**self._create_kwargs(request)))
+                    sandbox = await client.create(
+                        create_sandbox_request(
+                            **create_kwargs(
+                                request,
+                                timeout_minutes=self.timeout_minutes,
+                                network_access=self.network_access,
+                            )
+                        )
+                    )
                     raw_sandbox_id = getattr(sandbox, "id", None)
                     if raw_sandbox_id is None or not str(raw_sandbox_id).strip():
                         raise ValueError("provider returned a sandbox without a resource id")
@@ -347,6 +400,8 @@ class PrimeIntellectClient:
                     ) from exc
                 active = self._register_sandbox(request.task_id, sandbox_id)
                 try:
+                    resolved = resolved_environment(sandbox)
+                    validate_resolved_environment(request, resolved)
                     if self._is_cancellation_requested(request.task_id):
                         cancellation_error = "remote task canceled"
                     else:
@@ -358,7 +413,7 @@ class PrimeIntellectClient:
                             command_dispatched = True
                             response = await client.execute_command(
                                 sandbox_id=sandbox_id,
-                                command=self._build_command(request),
+                                command=_request_helpers.build_command(request),
                                 timeout=max(1, math.ceil(request.timeout_seconds)),
                             )
                         except TimeoutError as exc:
@@ -379,14 +434,33 @@ class PrimeIntellectClient:
             client_exit_error = exc
         if self._is_cancellation_requested(request.task_id):
             cancellation_error = "remote task canceled"
-        usage = RemoteResourceUsage(wall_seconds=time.perf_counter() - started)
+        try:
+            usage = resource_usage(response, wall_seconds=time.perf_counter() - started)
+            if response is not None:
+                validate_required_telemetry(request, resolved, usage)
+        except ProviderCapabilityDriftError as exc:
+            usage = RemoteResourceUsage(wall_seconds=time.perf_counter() - started)
+            provider_error = provider_error or exc
         lifecycle_event = RemoteExecutionEvent(
             sequence=1,
             event_type="canceled" if cancellation_error else "lifecycle",
             message=cancellation_error or request.lifecycle,
-            fields={"session_id": sandbox_id, "cleanup": cleanup.succeeded},
+            fields={
+                "session_id": sandbox_id,
+                "cleanup": cleanup.succeeded,
+                "request_sha256": remote_request_sha256(request),
+                "resolved_image": resolved.image,
+                "resolved_region": resolved.region,
+                "resolved_accelerator_kind": resolved.accelerator_kind,
+                "resolved_accelerator_count": resolved.accelerator_count,
+                "runtime": resolved.runtime,
+            },
         )
-        finish = lambda result: _lifecycle.client_exit_error_result(result, client_exit_error, lifecycle_event)  # noqa: E731
+
+        def finish(result: RemoteExecutionResult) -> RemoteExecutionResult:
+            enriched = replace(result, provenance=remote_request_provenance(request, resolved=resolved))
+            return _lifecycle.client_exit_error_result(enriched, client_exit_error, lifecycle_event)
+
         if cancellation_error:
             detail = (
                 _lifecycle.cleanup_failure_detail(cancellation_error, cleanup) if not cleanup.succeeded else cancellation_error
@@ -415,6 +489,20 @@ class PrimeIntellectClient:
                         session_id=sandbox_id,
                         primary_error=provider_detail,
                         lifecycle_event=lifecycle_event,
+                    )
+                )
+            if isinstance(provider_error, ProviderCapabilityDriftError):
+                detail = f"provider capability drift: {provider_error}"
+                return finish(
+                    RemoteExecutionResult(
+                        task_id=request.task_id,
+                        provider="primeintellect",
+                        status="provider_error",
+                        usage=usage,
+                        cleanup=cleanup,
+                        error=detail,
+                        session_id=sandbox_id,
+                        events=(lifecycle_event,),
                     )
                 )
             if command_dispatched:
@@ -652,11 +740,12 @@ class PrimeIntellectClient:
         self._emit_ledger(result)
         return result
 
-    def _validate_request(self, request: RemoteExecutionRequest) -> None:
+    def validate_request(self, request: RemoteExecutionRequest) -> None:
         capabilities = self.capabilities()
         expired_grants = [grant.name for grant in request.secret_grants if grant.expires_at <= time.time()]
         if expired_grants:
             raise ValueError(f"remote secret grant expired before dispatch: {', '.join(sorted(expired_grants))}")
+        self.validate_requirements(request.requirements)
         if request.resources.accelerator is not None and not capabilities["accelerator"]:
             raise UnsupportedRemoteCapabilityError("Prime Intellect adapter does not advertise accelerator support")
         if request.lifecycle == "reuse_matched_trials" and not capabilities["session_reuse"]:
@@ -668,73 +757,12 @@ class PrimeIntellectClient:
         if request.network_policy == "allow" and not self.network_access:
             raise UnsupportedRemoteCapabilityError("Prime Intellect network access is disabled by adapter policy")
 
-    def _create_kwargs(self, request: RemoteExecutionRequest) -> dict[str, Any]:
-        resources = request.resources
-        kwargs: dict[str, Any] = {
-            "name": f"autocontext-{_safe_name(request.task_id)}",
-            "docker_image": request.image,
-            "cpu_cores": resources.cpu_cores,
-            "memory_gb": resources.memory_gb,
-            "disk_size_gb": resources.disk_gb,
-            "timeout_minutes": max(self.timeout_minutes, max(1, int(request.timeout_seconds // 60) + 1)),
-            "network_access": request.network_policy == "allow" and self.network_access,
-        }
-        if resources.accelerator is not None:
-            kwargs.update({"gpu_type": resources.accelerator.kind, "gpu_count": resources.accelerator.count})
-            if resources.accelerator.memory_gb is not None:
-                kwargs["gpu_memory_gb"] = resources.accelerator.memory_gb
-        if request.snapshot_id:
-            kwargs["snapshot_id"] = request.snapshot_id
-        if request.secret_grants:
-            kwargs["secret_grants"] = [grant.grant_id for grant in request.secret_grants]
-        return kwargs
-
-    def _build_command(self, request: RemoteExecutionRequest) -> str:
-        parts: list[str] = []
-        if request.input_artifacts:
-            encoded = [
-                {"name": artifact.name, "content": base64.b64encode(artifact.content).decode("ascii")}
-                for artifact in request.input_artifacts
-            ]
-            bootstrap = (
-                "import base64,json,pathlib\n"
-                f"items=json.loads({json.dumps(json.dumps(encoded))})\n"
-                "root=pathlib.Path.cwd().resolve()\n"
-                "for item in items:\n"
-                " p=(root/item['name']).resolve(); p.relative_to(root); p.parent.mkdir(parents=True,exist_ok=True); "
-                "p.write_bytes(base64.b64decode(item['content']))\n"
-            )
-            parts.append("python - <<'PY'\n" + bootstrap + "PY")
-        for name, value in sorted(request.environment.items()):
-            if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
-                raise ValueError(f"invalid remote environment name: {name!r}")
-            parts.append(f"export {name}={shlex.quote(value)}")
-        parts.append(request.command)
-        return "\n".join(parts)
-
     def _emit_ledger(self, result: RemoteExecutionResult) -> None:
         if self.ledger_sink is not None:
             self.ledger_sink(result.to_ledger_entry())
 
     def fallback_local_response(self, scenario_name: str, seed: int) -> dict[str, Any]:
-        """Return the historical caller-side recovery shape."""
-
-        return {
-            "result": {
-                "score": 0.0,
-                "winner": "incumbent",
-                "summary": "primeintellect execution unavailable",
-                "replay": [{"event": "remote_unavailable"}],
-                "metrics": {"remote_available": 0.0},
-                "validation_errors": ["remote execution unavailable"],
-            },
-            "replay": {
-                "scenario": scenario_name,
-                "seed": seed,
-                "narrative": "Remote execution unavailable; fallback result generated.",
-                "timeline": [{"event": "remote_unavailable"}],
-            },
-        }
+        return _request_helpers.fallback_local_response(scenario_name, seed)
 
     def unavailable_state(self, environment_name: str, reason: str) -> dict[str, Any]:
         return {"environment": environment_name, "status": "failed", "error": reason}
@@ -742,37 +770,20 @@ class PrimeIntellectClient:
     def _build_eval_command(self, *, scenario_name: str, strategy: dict[str, Any], seed: int) -> str:
         """Compatibility helper; scenario logic lives in its packaged entrypoint."""
 
-        request = build_builtin_scenario_remote_request(
-            scenario_name,
-            strategy,
-            seed,
-            ExecutionLimits(),
-            image=self.docker_image,
-            cpu_cores=self.cpu_cores,
-            disk_gb=self.disk_size_gb,
-            memory_gb=self.memory_gb,
+        requirements = self.default_requirements
+        if requirements is None:
+            raise RuntimeError("Prime Intellect execution requirements are unavailable")
+        return _request_helpers.build_eval_command(
+            requirements,
+            scenario_name=scenario_name,
+            strategy=strategy,
+            seed=seed,
         )
-        return request.command
-
-
-def _last_json_object(stdout: str) -> dict[str, Any]:
-    for line in reversed(stdout.splitlines()):
-        try:
-            parsed = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(parsed, dict):
-            return parsed
-    return {}
-
-
-def _safe_name(value: str) -> str:
-    cleaned = "".join(char if char.isalnum() or char in {"-", "_"} else "-" for char in value)
-    return cleaned[:48] or "task"
 
 
 __all__ = [
     "MissingPrimeIntellectExtraError",
     "PrimeIntellectClient",
+    "ProviderCapabilityDriftError",
     "UnsupportedRemoteCapabilityError",
 ]

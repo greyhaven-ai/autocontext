@@ -138,12 +138,20 @@ export const RoutingContextSchema = protocolObject({
   roles: z.record(RoutingRoleInfoSchema),
 });
 
+export const ExecutorAcceleratorSchema = protocolObject({
+  kind: z.string(),
+  count: z.number().int().min(1),
+});
+
 export const ExecutorResourcesSchema = protocolObject({
   docker_image: z.string(),
-  cpu_cores: z.number().int(),
-  memory_gb: z.number().int(),
-  disk_gb: z.number().int(),
+  cpu_cores: z.number().positive(),
+  memory_gb: z.number().positive(),
+  disk_gb: z.number().positive(),
   timeout_minutes: z.number().int(),
+  accelerator: ExecutorAcceleratorSchema.optional().nullable(),
+  region: z.string().optional().nullable(),
+  required_telemetry: z.array(z.string()).optional(),
 });
 
 export const ExecutorInfoSchema = protocolObject({

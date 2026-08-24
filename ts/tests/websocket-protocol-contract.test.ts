@@ -409,15 +409,18 @@ describe("WebSocket protocol shared contract", () => {
         message: "",
       }),
     ).toThrow();
-    expect(() =>
+    expect(
       ExecutorResourcesSchema.parse({
         docker_image: "python:3.11",
         cpu_cores: 1.5,
         memory_gb: 2,
         disk_gb: 5,
         timeout_minutes: 30,
-      }),
-    ).toThrow();
+        accelerator: { kind: "H100", count: 1 },
+        region: "us-central-1",
+        required_telemetry: ["hardware_identity"],
+      }).accelerator,
+    ).toEqual({ kind: "H100", count: 1 });
     expect(() =>
       ScenarioErrorMsgSchema.parse({
         type: "scenario_error",

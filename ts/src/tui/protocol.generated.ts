@@ -5,12 +5,20 @@
 
 import { z } from "zod";
 
+export const ExecutorAcceleratorSchema = z.object({
+  kind: z.string(),
+  count: z.number().int().gte(1),
+}).strict();
+
 export const ExecutorResourcesSchema = z.object({
   docker_image: z.string(),
-  cpu_cores: z.number().int(),
-  memory_gb: z.number().int(),
-  disk_gb: z.number().int(),
+  cpu_cores: z.number().gt(0.0),
+  memory_gb: z.number().gt(0.0),
+  disk_gb: z.number().gt(0.0),
   timeout_minutes: z.number().int(),
+  accelerator: ExecutorAcceleratorSchema.optional().nullable(),
+  region: z.string().optional().nullable(),
+  required_telemetry: z.array(z.string()).optional(),
 }).strict();
 
 export const ExecutorInfoSchema = z.object({

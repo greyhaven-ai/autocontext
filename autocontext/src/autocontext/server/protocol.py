@@ -34,14 +34,24 @@ class ScenarioInfo(BaseModel):
     description: str
 
 
+class ExecutorAccelerator(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: str
+    count: int = Field(ge=1)
+
+
 class ExecutorResources(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     docker_image: str
-    cpu_cores: int
-    memory_gb: int
-    disk_gb: int
+    cpu_cores: float = Field(gt=0.0)
+    memory_gb: float = Field(gt=0.0)
+    disk_gb: float = Field(gt=0.0)
     timeout_minutes: int
+    accelerator: ExecutorAccelerator | None = Field(default=None, exclude_if=_is_none)
+    region: str | None = Field(default=None, exclude_if=_is_none)
+    required_telemetry: list[str] = Field(default_factory=list)
 
 
 class ExecutorInfo(BaseModel):

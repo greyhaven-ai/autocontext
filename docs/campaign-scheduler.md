@@ -47,6 +47,50 @@ scheduler state when either value differs.
 }
 ```
 
+### Prime accelerator plans
+
+Accelerator work is declared per job under `remote`. This structure is part of
+the durable scheduler request and evaluation-lane identity; changing its image,
+region, resources, accelerator, or telemetry while reusing an idempotency key
+fails closed. The process-level Prime capability allowlists described in
+[remote execution sessions](remote-execution-sessions.md) must admit the
+resolved request before campaign state is created.
+
+```json
+{
+  "job_id": "trial-gpu-1",
+  "idempotency_key": "trial-gpu-1-v1",
+  "branch_id": "branch-gpu",
+  "objective": "evaluate on the configured accelerator cohort",
+  "strategy": {"mobility_weight": 0.5, "corner_weight": 1.0},
+  "seed": 11,
+  "lane_id": "confirmation",
+  "fixture_digest": "<materialized fixture digest>",
+  "evaluator_epoch": "<derived evaluator epoch>",
+  "verifier_contract_ref": "<derived verifier contract>",
+  "timeout_seconds": 120,
+  "remote": {
+    "image": "python:3.11.10-slim-bookworm@sha256:<full digest>",
+    "cpu_cores": 4,
+    "memory_gb": 16,
+    "disk_gb": 40,
+    "accelerator": {"kind": "H100", "count": 1},
+    "region": "us-central-1",
+    "required_telemetry": ["hardware_identity"]
+  },
+  "reservation": {"jobs": 1, "wall_seconds": 120, "compute_units": 120}
+}
+```
+
+Campaigns with no `remote` field remain CPU-only. Prime campaign jobs do not
+inherit the global default accelerator selection. Accelerator reservations
+conservatively reserve at least `timeout_seconds * accelerator_count` compute
+units, so missing optional usage telemetry cannot bypass a campaign budget.
+Workers and jobs share an exact remote-requirements capability digest; cohort
+lane identity also includes that digest. Result artifacts and scheduler result
+metadata retain remote usage and full requested/resolved provenance, and
+external-evaluation ledger entries use the same typed values.
+
 ```python
 from pathlib import Path
 

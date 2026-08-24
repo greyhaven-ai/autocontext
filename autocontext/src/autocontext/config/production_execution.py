@@ -43,6 +43,27 @@ class ProductionExecutionFields(BaseModel):
     primeintellect_cpu_cores: float = Field(default=1.0, ge=0.25)
     primeintellect_memory_gb: float = Field(default=2.0, ge=0.25)
     primeintellect_disk_size_gb: float = Field(default=5.0, ge=1.0)
+    primeintellect_accelerator_kind: str = Field(
+        default="",
+        description="Optional default accelerator kind for non-campaign Prime execution.",
+    )
+    primeintellect_accelerator_count: int = Field(default=0, ge=0)
+    primeintellect_region: str = Field(default="")
+    primeintellect_required_telemetry: str = Field(
+        default="hardware_identity",
+        description="Comma-separated telemetry required for configured accelerator execution.",
+    )
+    primeintellect_supported_accelerator_kinds: str = Field(
+        default="",
+        description="Comma-separated accelerator kinds explicitly configured as available from Prime.",
+    )
+    primeintellect_max_accelerator_count: int = Field(default=0, ge=0)
+    primeintellect_supported_regions: str = Field(default="")
+    primeintellect_supported_images: str = Field(
+        default="",
+        description="Comma-separated immutable images validated for the configured Prime accelerator pool.",
+    )
+    primeintellect_available_telemetry: str = Field(default="hardware_identity")
     primeintellect_timeout_minutes: int = Field(default=30, ge=1)
     primeintellect_wait_attempts: int = Field(default=60, ge=1)
     primeintellect_max_retries: int = Field(default=2, ge=0)
@@ -86,19 +107,53 @@ class ProductionExecutionFields(BaseModel):
     def _primeintellect_api_base_is_supported(cls, value: str) -> str:
         normalized = value.rstrip("/").removesuffix("/api/v1")
         if normalized != "https://api.primeintellect.ai":
-            raise ValueError(
-                "custom AUTOCONTEXT_PRIMEINTELLECT_API_BASE values are unsupported by prime-sandboxes"
-            )
+            raise ValueError("custom AUTOCONTEXT_PRIMEINTELLECT_API_BASE values are unsupported by prime-sandboxes")
         return "https://api.primeintellect.ai"
 
     @model_validator(mode="after")
     def _validate_context_bundle_promotion_counts(self) -> Self:
         if self.context_bundle_promotion_max_confirmation_pairs < self.context_bundle_promotion_min_confirmation_pairs:
             raise ValueError(
-                "context_bundle_promotion_max_confirmation_pairs must be >= "
-                "context_bundle_promotion_min_confirmation_pairs"
+                "context_bundle_promotion_max_confirmation_pairs must be >= context_bundle_promotion_min_confirmation_pairs"
             )
+        supported_kinds = parse_csv_values(self.primeintellect_supported_accelerator_kinds)
+        supported_regions = parse_csv_values(self.primeintellect_supported_regions)
+        supported_images = parse_csv_values(self.primeintellect_supported_images)
+        required_telemetry = parse_csv_values(self.primeintellect_required_telemetry)
+        available_telemetry = parse_csv_values(self.primeintellect_available_telemetry)
+        telemetry_names = {"hardware_identity", "accelerator_usage", "accelerator_peak_memory"}
+        unknown = (required_telemetry | available_telemetry) - telemetry_names
+        if unknown:
+            raise ValueError(f"unknown Prime telemetry names: {', '.join(sorted(unknown))}")
+        if bool(supported_kinds) != (self.primeintellect_max_accelerator_count > 0):
+            raise ValueError(
+                "Prime supported accelerator kinds and primeintellect_max_accelerator_count must be configured together"
+            )
+        kind = self.primeintellect_accelerator_kind.strip()
+        if bool(kind) != (self.primeintellect_accelerator_count > 0):
+            raise ValueError("Prime accelerator kind and count must be configured together")
+        if supported_images and self.primeintellect_docker_image not in supported_images:
+            raise ValueError("Prime docker image is not in primeintellect_supported_images")
+        region = self.primeintellect_region.strip()
+        if region and region not in supported_regions:
+            raise ValueError("Prime region is not in primeintellect_supported_regions")
+        if kind:
+            if kind not in supported_kinds:
+                raise ValueError("Prime accelerator kind is not in primeintellect_supported_accelerator_kinds")
+            if self.primeintellect_accelerator_count > self.primeintellect_max_accelerator_count:
+                raise ValueError("Prime accelerator count exceeds primeintellect_max_accelerator_count")
+            if not supported_images:
+                raise ValueError("Prime accelerator execution requires primeintellect_supported_images")
+            if "hardware_identity" not in required_telemetry:
+                raise ValueError("Prime accelerator execution must require hardware_identity telemetry")
+            missing_telemetry = required_telemetry - available_telemetry
+            if missing_telemetry:
+                raise ValueError(f"Prime required telemetry is unavailable: {', '.join(sorted(missing_telemetry))}")
         return self
 
 
-__all__ = ["ProductionExecutionFields"]
+def parse_csv_values(value: str) -> frozenset[str]:
+    return frozenset(item.strip() for item in value.split(",") if item.strip())
+
+
+__all__ = ["ProductionExecutionFields", "parse_csv_values"]
