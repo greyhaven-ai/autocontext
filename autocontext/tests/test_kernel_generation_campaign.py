@@ -996,6 +996,7 @@ def test_complete_campaign_indexes_operator_artifacts(tmp_path: Path) -> None:
     kinds = {artifact["kind"] for artifact in index["artifacts"]}
 
     assert status.status == "complete"
+    assert all(not artifact["path"].endswith(".lock") for artifact in index["artifacts"])
     assert not status.can_resume
     assert status.generation_budget_id == KernelGenerationBudget(proposal_cap=2).budget_id
     assert {

@@ -557,7 +557,7 @@ class KernelCampaignJournal:
         index_path = self.run_dir / "artifact-index.json"
         if self.run_dir.exists():
             for path in sorted(item for item in self.run_dir.rglob("*") if item.is_file()):
-                if path == index_path or ".tmp" in path.name:
+                if path == index_path or path.suffix == ".lock" or ".tmp" in path.name:
                     continue
                 relative = path.relative_to(self.run_dir).as_posix()
                 content = path.read_bytes()
