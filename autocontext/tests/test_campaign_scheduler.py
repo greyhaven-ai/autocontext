@@ -3,6 +3,7 @@ from __future__ import annotations
 import multiprocessing
 import threading
 import time
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -430,30 +431,73 @@ def test_matched_remote_trials_use_one_advertised_reuse_batch(tmp_path: Path) ->
     assert {request.max_reuse_tasks for request in adapter.batches[0]} == {2}
 
 
-def test_live_service_claims_late_jobs_and_heartbeats_active_leases(tmp_path: Path) -> None:
+def test_live_service_claims_late_jobs_and_heartbeats_active_leases(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = [100.0]
     store = CampaignSchedulerEventStore(tmp_path / "events.jsonl")
-    scheduler = CampaignScheduler(store, lease_seconds=0.03)
-    worker_finished = threading.Event()
+    scheduler = CampaignScheduler(store, lease_seconds=0.03, clock=lambda: now[0])
+    worker_started = threading.Event()
+    release_worker = threading.Event()
+    first_claim_seen = threading.Event()
+    heartbeat_seen = threading.Event()
 
     def execute(assignment: CampaignAssignment) -> CampaignJobResult:
-        time.sleep(0.08)
-        worker_finished.set()
+        worker_started.set()
+        if not release_worker.wait(timeout=2):
+            raise TimeoutError("test did not release campaign worker")
         return _success(assignment)
 
+    original_claim = scheduler.claim
+
+    def observed_claim(worker_id: str, *, limit: int | None = None) -> tuple[CampaignAssignment, ...]:
+        assignments = original_claim(worker_id, limit=limit)
+        if assignments and not first_claim_seen.is_set():
+            first_claim_seen.set()
+            now[0] = 100.02
+        return assignments
+
+    original_heartbeat = scheduler.heartbeat
+
+    def observed_heartbeat(worker_id: str, lease_ids: Sequence[str] = ()) -> None:
+        original_heartbeat(worker_id, lease_ids)
+        if lease_ids:
+            heartbeat_seen.set()
+
+    monkeypatch.setattr(scheduler, "claim", observed_claim)
+    monkeypatch.setattr(scheduler, "heartbeat", observed_heartbeat)
     scheduler.register_worker(_worker("live"), CallableCampaignWorker(execute))
     stop = threading.Event()
     dispatched: list[int] = []
-    service = threading.Thread(target=lambda: dispatched.append(scheduler.serve(stop, poll_interval=0.01)))
+    service_errors: list[BaseException] = []
+
+    def run_service() -> None:
+        try:
+            dispatched.append(scheduler.serve(stop, poll_interval=0.01))
+        except BaseException as exc:
+            service_errors.append(exc)
+
+    service = threading.Thread(target=run_service)
     service.start()
-    scheduler.enqueue(_job(1))
-    assert worker_finished.wait(timeout=2)
-    deadline = time.monotonic() + 2
-    while scheduler.job_status("job-1") != "succeeded" and time.monotonic() < deadline:
-        time.sleep(0.01)
-    stop.set()
-    service.join(timeout=2)
+    try:
+        scheduler.enqueue(_job(1))
+        assert worker_started.wait(timeout=2)
+        assert heartbeat_seen.wait(timeout=2)
+        now[0] = 100.04
+        assert scheduler.reconcile() == ()
+        assert scheduler.job_status("job-1") == "leased"
+        release_worker.set()
+        deadline = time.monotonic() + 2
+        while scheduler.job_status("job-1") != "succeeded" and time.monotonic() < deadline:
+            time.sleep(0.01)
+    finally:
+        release_worker.set()
+        stop.set()
+        service.join(timeout=2)
 
     assert not service.is_alive()
+    assert service_errors == []
     assert dispatched == [1]
     assert scheduler.job_status("job-1") == "succeeded"
     assert "worker_heartbeat" in [event.event_type for event in store.read()]
@@ -1110,12 +1154,19 @@ def test_drain_refills_freed_slots_before_slowest_wave_member_finishes(tmp_path:
         CampaignSchedulerEventStore(tmp_path / "events.jsonl"),
         max_concurrency=4,
     )
-    starts: dict[str, float] = {}
-    origin = time.monotonic()
+    slow_release = threading.Event()
+    slow_finished = threading.Event()
+    refilled_before_slow_finished: list[bool] = []
 
     def execute(assignment: CampaignAssignment) -> CampaignJobResult:
-        starts[assignment.job.job_id] = time.monotonic() - origin
-        time.sleep(0.25 if assignment.job.job_id == "job-0" else 0.02)
+        if assignment.job.job_id == "job-0":
+            try:
+                slow_release.wait(timeout=5)
+            finally:
+                slow_finished.set()
+        elif assignment.job.job_id == "job-4":
+            refilled_before_slow_finished.append(not slow_finished.is_set())
+            slow_release.set()
         return _success(assignment)
 
     scheduler.register_worker(
@@ -1129,8 +1180,13 @@ def test_drain_refills_freed_slots_before_slowest_wave_member_finishes(tmp_path:
     for index in range(5):
         scheduler.enqueue(_job(index))
 
-    assert scheduler.run_until_idle(poll_interval=0.005, timeout_seconds=2.0) == 5
-    assert starts["job-4"] < 0.15
+    try:
+        dispatched = scheduler.run_until_idle(poll_interval=0.005, timeout_seconds=10.0)
+    finally:
+        slow_release.set()
+
+    assert dispatched == 5
+    assert refilled_before_slow_finished == [True]
     assert scheduler.report().succeeded == 5
 
 
